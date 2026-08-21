@@ -63,6 +63,21 @@ public static class Temperature
     /// </summary>
     public const double ImplausibleThermalResistanceCPerW = 1e4;
 
+    /// <summary>
+    /// Above this, a junction temperature is not a junction temperature, °C. The highest real
+    /// rating on any part is around 250 °C (SiC and GaN); silicon itself melts at 1414 °C. A
+    /// thousand sits four times past the most extreme real rating and still below the melting
+    /// point, so nothing a design could legitimately be asking for is anywhere near it.
+    ///
+    /// <para>What this is FOR: a thermal node with no usable reference reaches whatever its own
+    /// dissipation times that non-resistance implies, which is hundreds of thousands of degrees.
+    /// The solve can still meet an absolute residual tolerance there — a norm says nothing about
+    /// whether the point is physical — so the temperature has to be looked at directly. Not a
+    /// general check on every thermal node: a node the design references properly is entitled to
+    /// whatever answer its network gives.</para>
+    /// </summary>
+    public const double ImplausibleJunctionTemperatureC = 1e3;
+
     /// <summary>°C → K.</summary>
     public static double ToKelvin(double celsius) => celsius + KelvinOffset;
 

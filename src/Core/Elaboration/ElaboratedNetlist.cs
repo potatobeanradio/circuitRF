@@ -92,6 +92,26 @@ public sealed class ElaboratedNetlist : IDisposable
     }
 
     /// <summary>
+    /// Things the run WORKED OUT and is reporting, rather than things it is unhappy about.
+    ///
+    /// <para><b>Why a separate list and not a warning.</b> A warning says something may be wrong. A
+    /// note says circuitRF established something the design did not state and is telling you what it
+    /// established — a resolution, not a complaint. Mixed into the warnings, a run that resolved
+    /// everything correctly still reads as a run with problems, and the warnings that DO need
+    /// attention are harder to pick out for it.</para>
+    ///
+    /// <para>Carried to the Messages pane at <c>Info</c> by the same route the warnings take.</para>
+    /// </summary>
+    public IReadOnlyList<string> Notes => _notes;
+    private readonly List<string> _notes = [];
+
+    /// <summary>Adds a note only if <paramref name="key"/> has not been seen in this run.</summary>
+    public void AddNoteOnce(string key, string message)
+    {
+        if (_seenWarningKeys.Add(key)) _notes.Add(message);
+    }
+
+    /// <summary>
     /// R-mk-7/R-mk-8 (brief-mklopf-performance-and-messages.md): after stamping a component, drains
     /// and records any warnings it accumulated during <c>Stamp</c> (e.g. a microstrip validity-range
     /// violation) — the ONLY route from deep inside a per-frequency <c>Stamp()</c> call, which has no

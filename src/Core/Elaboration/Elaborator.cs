@@ -265,6 +265,281 @@ public sealed class Elaborator
         }
     }
 
+    /// <summary>
+    /// Which of a device's nodes the model writes NO equation for — confirmed over several bias
+    /// points, not taken on the provider's word at one.
+    ///
+    /// <para><b>Why the provider's own flag is a trigger and not the answer.</b> A worker measures
+    /// "degenerate" as an empty Jacobian row at the ONE point it probed, which is normally the
+    /// origin — and at the origin an ordinary FET's drain row is empty too, because the device is
+    /// off. Refusing on that flag alone refuses every working device whose provider probes cold.
+    /// What separates the two is whether the row is empty EVERYWHERE: a node the model never writes
+    /// stays empty at any bias, while a node that is merely off comes to life as soon as the device
+    /// does.</para>
+    ///
+    /// <para><b>And the column is half the test.</b> A row that is empty while its column is empty
+    /// too is an inert node — nothing reads it, gmin pins it, and it costs nothing. The fatal shape
+    /// is an empty row whose column is NOT: the model reads a value it never determines, so the node
+    /// can be neither solved for nor pinned, and every equation that reads it inherits whatever the
+    /// solver wandered to.</para>
+    ///
+    /// <para>A point the model refuses is skipped rather than counted; if it refuses all of them,
+    /// nothing is claimed and the design is left exactly as written.</para>
+    /// </summary>
+    private static List<int> UnwrittenNodes(ExternalDeviceModel model)
+    {
+        var d = model.Descriptor;
+
+        var suspects = d.Nodes
+            .Where(n => n.Degenerate && n.SlavedTo is null && !n.CollapsedToGround)
+            .Select(n => n.Index)
+            .Where(i => i < d.NodeCount)
+            .ToList();
+        if (suspects.Count == 0) return [];
+
+        // Small, scattered, and all positive: large enough that a device is on, small enough that no
+        // model refuses the point, and never uniform — a uniform vector puts zero volts across every
+        // pair of nodes, which is the degenerate case all over again.
+        double[][] points =
+        [
+            [0.05, 0.11, 0.02, 0.08],
+            [0.20, 0.05, 0.13, 0.02],
+            [0.02, 0.17, 0.09, 0.20],
+        ];
+
+        var writesNothing = suspects.ToHashSet();
+        var isRead        = new HashSet<int>();
+        int answered      = 0;
+
+        foreach (var pattern in points)
+        {
+            var v = new double[model.PortCount];
+            for (int k = 0; k < v.Length; k++) v[k] = pattern[k % pattern.Length];
+
+            NonlinearResult r;
+            try   { r = model.Evaluate(new PortVoltages(v)); }
+            catch { continue; }                       // refused this point: it says nothing
+
+            int n = Math.Min(r.Dg.GetLength(0), r.Dg.GetLength(1));
+            if (n == 0) continue;
+            answered++;
+
+            double maxRow = 0.0;
+            for (int i = 0; i < n; i++)
+            {
+                double row = 0.0;
+                for (int k = 0; k < n; k++) row += Math.Abs(r.Dg[i, k]);
+                if (row > maxRow) maxRow = row;
+            }
+            if (maxRow <= 0.0) continue;
+
+            foreach (int i in suspects)
+            {
+                if (i >= n) continue;
+
+                double row = 0.0, col = 0.0;
+                for (int k = 0; k < n; k++) { row += Math.Abs(r.Dg[i, k]); col += Math.Abs(r.Dg[k, i]); }
+
+                if (row > EmptyRowFraction * maxRow) writesNothing.Remove(i);
+                if (col > EmptyRowFraction * maxRow) isRead.Add(i);
+            }
+        }
+
+        if (answered == 0) return [];
+
+        return [.. suspects.Where(i => writesNothing.Contains(i) && isRead.Contains(i))];
+    }
+
+    /// <summary>
+    /// Which node each unwritten node follows, MEASURED from the model's own derivatives — or null
+    /// when the measurement does not separate the candidates.
+    ///
+    /// <para><b>What is being measured, and why it answers the question.</b> A compact model ships
+    /// analytic derivatives of its own currents. If it wrote those derivatives assuming a node is not
+    /// independent — that it carries some other node's voltage — then evaluating it with that node
+    /// held separately makes its analytic Jacobian disagree with a finite difference of its own
+    /// current. Feed the node the RIGHT voltage and the two agree again. So the disagreement is a
+    /// direct read on whether a candidate is the one the model was written for; nothing here knows
+    /// anything about any particular model, only that a model's derivatives should match its own
+    /// currents.</para>
+    ///
+    /// <para><b>Measured on a real compiled model</b> (two unwritten nodes, six candidate pairings):
+    /// the correct pairing scored 0.0308 against 0.0417 and 0.0556 for the wrong ones, and it was the
+    /// only one that also produced the right drain current. Ties happen and are benign — where two
+    /// candidates score identically the model genuinely cannot tell them apart, and neither choice
+    /// changes its output.</para>
+    ///
+    /// <para><b>The margin is the safety rule.</b> A wrong choice here converges to a wrong number
+    /// rather than failing, so a ranking that is flat is not a weak answer, it is no answer: unless
+    /// the best candidate beats the worst by <see cref="MinMasterSeparation"/> the whole thing comes
+    /// back null and the caller stops. Deciding by a hair is the one outcome worse than stopping.</para>
+    ///
+    /// <para>Solved one node at a time, each choice fixed before the next is measured, because the
+    /// nodes are read by the same equations and measuring one while another is still wrong measures
+    /// both at once.</para>
+    /// </summary>
+    private static (Dictionary<int, int> Masters, string Evidence)? DeriveMasters(
+        ExternalDeviceModel model, IReadOnlyList<int> unwritten)
+    {
+        var d          = model.Descriptor;
+        int n          = d.NodeCount;
+        var unwrittenSet = unwritten.ToHashSet();
+
+        // A master must be a node the model actually solves for: not one of the unwritten nodes
+        // (which would answer nothing), and not a temperature, since a voltage does not follow one.
+        var candidates = d.Nodes
+            .Where(x => !unwrittenSet.Contains(x.Index)
+                     && x.QuantityKind != NodeQuantityKind.Thermal
+                     && !x.CollapsedToGround
+                     && x.Index < n)
+            .Select(x => x.Index)
+            .ToList();
+        if (candidates.Count < 2) return null;   // nothing to choose between
+
+        var masters = new Dictionary<int, int>();
+        var evidence = new List<string>();
+
+        foreach (int k in unwritten)
+        {
+            double best = double.PositiveInfinity, worst = 0.0;
+            int    pick = -1;
+
+            foreach (int m in candidates)
+            {
+                var trial = new Dictionary<int, int>(masters) { [k] = m };
+                double score = DerivativeDisagreement(model, trial, n);
+                if (double.IsNaN(score)) continue;
+
+                if (score > worst) worst = score;
+                if (score < best - TieWidth) { best = score; pick = m; }
+            }
+
+            if (pick < 0 || worst <= 0.0) return null;
+            if ((worst - best) / worst < MinMasterSeparation) return null;
+
+            masters[k] = pick;
+            evidence.Add($"node {k} follows node {pick} ({best:G3} against {worst:G3} for the worst " +
+                         $"candidate)");
+        }
+
+        return (masters, string.Join("; ", evidence));
+    }
+
+    /// <summary>
+    /// How badly the model's analytic Jacobian disagrees with a finite difference of its own current,
+    /// with <paramref name="substitution"/> applied — each listed node given its master's voltage
+    /// before the model is called, and its column folded onto the master's by the chain rule, which
+    /// is exactly what slaving the node in the matrix will do.
+    ///
+    /// <para>Scaled by the model's own unsubstituted Jacobian magnitude, so scores are comparable
+    /// across candidates AND across devices: the absolute size of a device's conductances says
+    /// nothing about whether its derivatives are right. NaN when the model refuses every point,
+    /// which is not a score of zero — it is the absence of one.</para>
+    /// </summary>
+    private static double DerivativeDisagreement(
+        ExternalDeviceModel model, Dictionary<int, int> substitution, int n)
+    {
+        double[][] points =
+        [
+            [0.05, 0.11, 0.02, 0.08],
+            [0.20, 0.05, 0.13, 0.02],
+            [0.02, 0.17, 0.09, 0.20],
+        ];
+
+        double total = 0.0;
+        int    scored = 0;
+
+        foreach (var pattern in points)
+        {
+            var v = new double[model.PortCount];
+            for (int k = 0; k < v.Length; k++) v[k] = pattern[k % pattern.Length];
+
+            // The scale is taken from the model UNSUBSTITUTED, so it is the same number for every
+            // candidate. Dividing instead by each candidate's own Jacobian magnitude would rank
+            // candidates by how large their derivatives happen to be as much as by whether those
+            // derivatives are right, and two candidates disagreeing by exactly the same amount would
+            // come back with different scores.
+            var reference = TryEvaluate(model, v, []);
+            if (reference is not { } r0) continue;
+
+            double scale = 0.0;
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++) scale += Math.Abs(r0.Dg[i, j]);
+            if (scale <= 0.0) continue;
+
+            var baseline = TryEvaluate(model, v, substitution);
+            if (baseline is not { } b) continue;
+
+            double num = 0.0;
+            bool   ok  = true;
+
+            foreach (int j in Enumerable.Range(0, n).Where(x => !substitution.ContainsKey(x)))
+            {
+                var vj = (double[])v.Clone();
+                vj[j] += DerivativeStep;
+
+                var moved = TryEvaluate(model, vj, substitution);
+                if (moved is not { } mv) { ok = false; break; }
+
+                for (int i = 0; i < n; i++)
+                {
+                    // Analytic, with the chain rule: moving j moves every node slaved to it too.
+                    double analytic = b.Dg[i, j];
+                    foreach (var (slave, master) in substitution)
+                        if (master == j) analytic += b.Dg[i, slave];
+
+                    double finite = (mv.I[i] - b.I[i]) / DerivativeStep;
+
+                    num += Math.Abs(analytic - finite);
+                }
+            }
+
+            if (!ok) continue;
+            total += num / scale;
+            scored++;
+        }
+
+        return scored == 0 ? double.NaN : total / scored;
+    }
+
+    /// <summary>
+    /// Evaluates the model with a substitution applied to the voltage vector, or null if it refuses
+    /// the point. A refused point is skipped rather than scored — a model saying "not here" is not
+    /// evidence about which node follows which.
+    /// </summary>
+    private static NonlinearResult? TryEvaluate(
+        ExternalDeviceModel model, double[] v, Dictionary<int, int> substitution)
+    {
+        var applied = (double[])v.Clone();
+        foreach (var (slave, master) in substitution)
+            if (slave < applied.Length && master < applied.Length) applied[slave] = applied[master];
+
+        try   { return model.Evaluate(new PortVoltages(applied)); }
+        catch { return null; }
+    }
+
+    /// <summary>Step for the finite difference the model's own derivatives are checked against.</summary>
+    private const double DerivativeStep = 1e-4;
+
+    /// <summary>
+    /// How much better than the WORST candidate the winner has to be for the ranking to count as an
+    /// answer rather than as noise. Deliberately a spread over the whole field rather than a gap to
+    /// the runner-up: two candidates the model cannot tell apart score the same, legitimately, and a
+    /// runner-up rule would read that agreement as a failure.
+    /// </summary>
+    private const double MinMasterSeparation = 0.05;
+
+    /// <summary>Scores closer together than this are one score; the lower node index wins.</summary>
+    private const double TieWidth = 1e-9;
+
+    /// <summary>
+    /// How small a Jacobian row has to be, against the largest row in the same matrix, to count as
+    /// not written at all. Measured on a real compiled model: the rows in question came back eleven
+    /// orders of magnitude down (2e-8 against 336), so there is nothing marginal about the
+    /// separation and the exact figure is not load-bearing.
+    /// </summary>
+    private const double EmptyRowFraction = 1e-6;
+
     // ── Scope helpers ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -745,6 +1020,68 @@ public sealed class Elaborator
                     $"ExtDevice '{childPath}' (type '{d.TypeId}'): external pin {node.Index} is reported " +
                     $"as collapsed to ground, but a pin the user wires cannot be grounded from inside " +
                     $"the device. The provider should not offer it as a pin under these parameters.");
+        }
+
+        // A node the model writes NO equation for is not an independent unknown, and which node it
+        // follows has to be established before anything is stamped.
+        //
+        // WHAT GOES WRONG OTHERWISE. Such a node is still read by the model's other equations, so it
+        // is not inert and cannot be pinned to anything safely. Left as a free unknown it is an
+        // almost-empty matrix row that nothing holds: the bias ramp wanders to its iteration budget
+        // and the residual it finally reports names a supply branch rather than the node responsible.
+        // Measured on a real compiled model: 30,675 Newton iterations and 32 seconds of wall clock,
+        // against 4 iterations once the node had a master.
+        //
+        // AND IT CANNOT BE GUESSED. On that same model every candidate converged and the drain
+        // current differed by 130x between them — a wrong choice is not a failure anyone would
+        // notice. So it is MEASURED (see DeriveMasters), and when the measurement does not separate
+        // the candidates the run stops rather than picking one.
+        var unresolved = UnwrittenNodes(model);
+
+        if (unresolved.Count > 0)
+        {
+            var derived = DeriveMasters(model, unresolved);
+
+            if (derived is null)
+            {
+                throw new ExternalDeviceException(
+                    $"ExtDevice '{childPath}' (type '{d.TypeId}'): the model writes no equation for " +
+                    $"{(unresolved.Count == 1 ? "node" : "nodes")} {string.Join(", ", unresolved)}, " +
+                    $"so {(unresolved.Count == 1 ? "it is" : "they are")} not " +
+                    $"{(unresolved.Count == 1 ? "an independent unknown" : "independent unknowns")}, " +
+                    $"and circuitRF could not work out which node " +
+                    $"{(unresolved.Count == 1 ? "it follows" : "each follows")}: the model's own " +
+                    $"derivatives agree equally well with every candidate. Running anyway would spend " +
+                    $"the whole iteration budget and report a residual against a supply rather than " +
+                    $"against this. Name the missing " +
+                    $"{(unresolved.Count == 1 ? "master" : "masters")} in an " +
+                    $"'{DeviceLibraryDiscovery.AliasMapFileName}' beside the kit and re-import it. " +
+                    $"circuitRF does not pick one on a coin toss: the choice changes the answer, and " +
+                    $"every wrong choice still converges.");
+            }
+
+            // Recorded on the descriptor rather than kept here, so node allocation below and every
+            // later reader see one account of what these nodes are.
+            var nodes = d.Nodes
+                .Select(n => derived.Value.Masters.TryGetValue(n.Index, out int mst)
+                    ? n with { SlavedTo = mst }
+                    : n)
+                .ToList();
+
+            model.ResolveNodes(d with { Nodes = nodes });
+            d = model.Descriptor;
+
+            // A NOTE, not a warning: nothing here is wrong. circuitRF established something the
+            // design could not state and is saying what it established.
+            netlist.AddNoteOnce(
+                $"unwritten-nodes-resolved:{d.TypeId}",
+                $"Type '{d.TypeId}': the model writes no equation for " +
+                $"{(unresolved.Count == 1 ? "node" : "nodes")} {string.Join(", ", unresolved)}, so " +
+                $"{(unresolved.Count == 1 ? "it is" : "they are")} not " +
+                $"{(unresolved.Count == 1 ? "an unknown" : "unknowns")} of their own. circuitRF " +
+                $"measured which node each follows from the model's own derivatives — " +
+                $"{derived.Value.Evidence} — and is solving it that way. Left as free unknowns these " +
+                $"nodes have no operating point at all.");
         }
 
         // Collapsed nodes are merged in GROUPS, and within a group AN EXTERNAL PIN ALWAYS WINS.

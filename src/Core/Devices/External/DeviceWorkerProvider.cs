@@ -454,7 +454,13 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
                 SlavedTo:     ReadSlavedTo(n) ?? original?.SlavedTo,
                 // A probe refines; it does not repeal. A worker whose collapse report came back at
                 // create and whose probe says nothing about node roles must keep the collapse.
-                CollapsedToGround: ReadBool(n, "collapsedToGround", original?.CollapsedToGround ?? false)));
+                CollapsedToGround: ReadBool(n, "collapsedToGround", original?.CollapsedToGround ?? false),
+                // MEASURED BY THE WORKER, on the live instance: this node's Jacobian row is zero, so
+                // the model writes no equation for it. Read here rather than re-derived on this side
+                // because the host cannot measure it as well — at the all-zero point the solve starts
+                // from, a thermal pin's row is indistinguishable from an absent one, and away from it
+                // the host would be choosing a bias to interrogate the device at.
+                Degenerate: ReadBool(n, "degenerate", original?.Degenerate ?? false)));
         }
 
         return nodes.Count == 0 ? declared : declared with { Nodes = nodes };

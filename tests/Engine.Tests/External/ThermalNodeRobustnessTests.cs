@@ -184,20 +184,21 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
 
     private static string Netlist(
         double rThermal, HeatShape shape = HeatShape.Saturating,
-        double minTemp = -1e30, double maxTemp = 1e30, double vElec = 1.0)
+        double minTemp = -1e30, double maxTemp = 1e30, double vElec = 1.0, double power = P0,
+        double ambientC = 0.0)
     {
         static string N(double d) => d.ToString("G17", CultureInfo.InvariantCulture);
 
-        // AMBIENT 0 °C, deliberately. This fixture's thermal resistance runs to ground, so the
+        // AMBIENT 0 °C by default, deliberately. This fixture's thermal resistance runs to ground, so the
         // temperature it produces is a rise above zero — which is only the junction temperature if
         // the ambient IS zero. Saying so keeps the oracle below (T/R = P(T)) exact and keeps this
         // file's subject the SOLVER, rather than quietly making every case here an example of the
         // mis-referenced network that AThermalNetworkTiedToGround_IsReported is about.
-        return $"temp = 0\n" +
+        return $"temp = {N(ambientC)}\n" +
                $"Vdc:V1  e  0  Vdc={N(vElec)}\n" +
                $"R:Rth   tj 0  R={N(rThermal)}\n" +
                $"ExtDevice:X1  e  tj  Provider={Provider} Type={HeaterProvider.TypeName} " +
-               $"Power={N(P0)} Gelec=0.001 Shape={(int)shape} " +
+               $"Power={N(power)} Gelec=0.001 Shape={(int)shape} " +
                $"MinTemp={N(minTemp)} MaxTemp={N(maxTemp)}\n";
     }
 
@@ -315,12 +316,17 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         // value, which is not a thermal resistance by five orders of magnitude.
         var (r, nl) = Run(Netlist(rThermal: 5e7, shape: HeatShape.Constant));
 
-        Assert.True(r.Converged, "this is a warning, not a failure — the run must still answer");
+        Assert.True(r.Converged, "the run must still answer");
 
-        string warning = Assert.Single(nl.Warnings, w => w.Contains("thermal node", StringComparison.Ordinal));
+        string warning = Assert.Single(nl.Warnings,
+            w => w.Contains("reaches its reference", StringComparison.Ordinal));
         Assert.Contains("tj",    warning, StringComparison.Ordinal);   // the node, by name
         Assert.Contains("X1",    warning, StringComparison.Ordinal);   // the device that owns it
         Assert.Contains("5E+07", warning, StringComparison.Ordinal);   // what was actually measured
+
+        // And the measurement is not just filed: 5 mW through 5e7 °C/W is 250,000 °C, which is not
+        // an operating point however small the residual gets. The answer comes back at the ambient.
+        Assert.Equal(0.0, NodeV(r, nl, "tj"), 6);
     }
 
     [Fact]
@@ -498,6 +504,16 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         Assert.True(r.Converged);
         Assert.DoesNotContain(nl.Warnings, w => w.Contains("not connected", StringComparison.Ordinal));
         Assert.Equal(P0 * rth, NodeV(r, nl, "tj"), 6);   // its own rise, above its own zero, intact
+
+        // And it is not called weakly referenced either. The driving-point resistance is solved from
+        // the LINEAR system, and this device's own thermal resistance is not in it — it lives in a
+        // Jacobian the linear stamp never sees. Measured from the network alone, a part that
+        // references its own thermal node perfectly well reads as having no path at all. (What IS
+        // reported here is the reference: this device's own resistance runs to its own zero, and the
+        // ambient is 25 °C — which is true, and is the warning the false one used to hide.)
+        Assert.DoesNotContain(nl.Warnings,
+            w => w.Contains("reaches its reference", StringComparison.Ordinal));
+        Assert.Contains(nl.Warnings, w => w.Contains("referenced to", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -520,7 +536,130 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         Assert.Equal(25.0, NodeV(r, nl, "tj"), 6);
     }
 
+    // ── A keep-alive resistor is a connection, and not a reference ────────────
+
+    /// <summary>
+    /// The heater with an ORDINARY ambient, its thermal pin reached only through a keep-alive leak
+    /// resistor, and the dissipation shape whose feedback outruns that resistor. Nothing here is
+    /// unconnected, so the elaborator's own open-pin guard never looks at it.
+    /// </summary>
+    private static string KeepAliveNetlist(double ambientC = 25.0, double rThermal = 1e7)
+        => Netlist(rThermal: rThermal, shape: HeatShape.Runaway, ambientC: ambientC);
+
+    [Fact]
+    public void AThermalNodeReachedOnlyThroughAKeepAliveResistor_ThatCannotSettle_IsSolvedAtTheAmbient()
+    {
+        // THE REGRESSION, and the half the open-pin guard could not reach. A thermal pin wired to a
+        // vendor's keep-alive leak resistor is exactly as unreferenced as one wired to nothing — the
+        // device's own power drives it away without limit and there is no temperature it settles at
+        // — but it IS connected, so a guard written in topology walks straight past it. Measured on a
+        // real kit at a real bias: 1,518 Newton iterations and no answer, on a circuit that solves in
+        // 4 once the node has a reference.
+        var (r, nl) = Run(KeepAliveNetlist());
+
+        Assert.True(r.Converged, "a keep-alive leak resistor must not cost the whole solve");
+        Assert.True(r.Iterations < 100, $"took {r.Iterations} iterations — the runaway is back");
+        Assert.Equal(25.0, NodeV(r, nl, "tj"), 6);   // ambient, and no rise: none was stated
+    }
+
+    [Fact]
+    public void HoldingAWeaklyReferencedThermalNodeAtTheAmbient_IsAnnounced()
+    {
+        // The design did not ask for this, so it is never allowed to be silent — and what it says
+        // has to be enough to undo: which node, which device, and what it was held at.
+        var (_, nl) = Run(KeepAliveNetlist());
+
+        // A NOTE, not a warning: the run it accompanies converged, and what it carries is what
+        // circuitRF worked out rather than a complaint about the answer it is reporting.
+        string w = Assert.Single(nl.Notes, x => x.Contains("re-solved", StringComparison.Ordinal));
+        Assert.DoesNotContain(nl.Warnings, x => x.Contains("re-solved", StringComparison.Ordinal));
+        Assert.Contains("tj", w, StringComparison.Ordinal);
+        Assert.Contains("X1", w, StringComparison.Ordinal);
+        Assert.Contains("25", w, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AConvergedResultAtAnImpossibleTemperature_IsNotAnOperatingPoint()
+    {
+        // The half that a convergence flag cannot express, and the one this was first reported as.
+        // The stopping rule is an ABSOLUTE residual norm, and a norm says nothing about whether the
+        // point it was measured at is physical: this fixture meets it — the thermal node is linear,
+        // so Newton lands on it exactly — at 250,000 °C. Measured on a real kit, the same circuit
+        // fell on opposite sides of that tolerance on two machines, reported as "converges here,
+        // does not converge there", when both runs were the same non-answer.
+        var (r, nl) = Run(Netlist(rThermal: 5e7, shape: HeatShape.Constant, ambientC: 25.0));
+
+        Assert.True(r.Converged);
+        Assert.Equal(25.0, NodeV(r, nl, "tj"), 6);   // NOT 5e7 × 5 mW = 250,000
+        Assert.Contains(nl.Notes, w => w.Contains("re-solved", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AWeaklyReferencedNodeAtAnORDINARYTemperature_IsStillLeftAlone()
+    {
+        // Where the line has to sit. 20,000 °C/W is past the resistance threshold and worth a
+        // warning — and 5 mW through it is 100 °C, which is a temperature a real part is at. The
+        // design gets its own answer; only a temperature nothing can be at is refused.
+        var (r, nl) = Run(Netlist(rThermal: 20_000.0, shape: HeatShape.Constant));
+
+        Assert.True(r.Converged);
+        // 100 °C, its own rise, intact. Four places, not six: the engine's own gmin sits in
+        // parallel with a 20,000 °C/W path and pulls it down by 2e-6.
+        Assert.Equal(P0 * 20_000.0, NodeV(r, nl, "tj"), 4);
+        Assert.DoesNotContain(nl.Notes.Concat(nl.Warnings),
+                              w => w.Contains("re-solved", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ASolveThatConvergesAsWritten_IsLeftExactlyAsWritten()
+    {
+        // The other half of the contract, and the reason the hold is a retry rather than a repair up
+        // front. 20,000 °C/W is well past the line this file draws for a resistance worth warning
+        // about — and it still has a perfectly good operating point, which the design is entitled to
+        // get. A threshold is grounds for a warning; it is not grounds for overruling an answer.
+        var (r, nl) = Run(Netlist(rThermal: 20_000.0));
+
+        Assert.True(r.Converged);
+        AssertSettlesAt(20_000.0, NodeV(r, nl, "tj"));   // its own rise, intact
+        Assert.DoesNotContain(nl.Notes.Concat(nl.Warnings),
+                              w => w.Contains("re-solved", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AFailureTheThermalHoldDoesNotFix_StillReportsTheOriginalFailure()
+    {
+        // A run can have BOTH: a weakly-referenced thermal node worth holding and a separate reason
+        // it cannot settle. Holding the first must not swallow the diagnosis of the second — a
+        // failure that comes back saying nothing is the state this whole file exists to leave.
+        static string N(double d) => d.ToString("G17", CultureInfo.InvariantCulture);
+        string cnl = "temp = 25\n" +
+                     "Vdc:V1  e  0  Vdc=1\n" +
+                     $"R:Rleak  tj  0  R={N(1e7)}\n" +
+                     $"ExtDevice:XW  e  tj  Provider={Provider} Type={HeaterProvider.TypeName} " +
+                     $"Power={N(P0)} Gelec=0.001 Shape={(int)HeatShape.Constant}\n" +
+                     $"R:Rth2   tj2 0  R={N(5_000.0)}\n" +
+                     $"ExtDevice:XU  e  tj2 Provider={Provider} Type={HeaterProvider.TypeName} " +
+                     $"Power={N(0.5)} Gelec=0.001 Shape={(int)HeatShape.Runaway}\n";
+
+        var (r, nl) = Run(cnl);
+
+        Assert.False(r.Converged, "the second device is chosen to have no reachable solution");
+        Assert.Contains(nl.Warnings, w => w.Contains("Worst-unsettled", StringComparison.Ordinal));
+        Assert.DoesNotContain(nl.Notes.Concat(nl.Warnings),
+                              w => w.Contains("re-solved", StringComparison.Ordinal));
+    }
+
     // ── A solve that cannot settle has to give up in bounded time ─────────────
+
+    /// <summary>
+    /// A circuit with no reachable operating point, built WITHOUT a weak thermal reference: 5,000
+    /// °C/W is an ordinary thermal resistance and is left exactly as written, while half a watt
+    /// through this shape's positive feedback makes the thermal Jacobian point the wrong way from
+    /// the start. Newton's first step is a large negative excursion into the absolute-zero floor,
+    /// and no amount of continuation finds its way back.
+    /// </summary>
+    private static string UnsettleableNetlist()
+        => Netlist(rThermal: 5_000.0, shape: HeatShape.Runaway, power: 0.5);
 
     [Fact]
     public void ASolveThatCannotSettle_GivesUpWithinItsBudget()
@@ -532,10 +671,16 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         // it, a solve that creeps spends an unlimited number of Newton iterations arriving nowhere.
         // Measured on a real design before this was bounded: 403,893 iterations, every one of them a
         // round trip to an external model, before an answer that was already true at a few thousand.
+        //
+        // The thermal resistance here is an ORDINARY one, and the dissipation is what makes the
+        // feedback outrun it. That combination is deliberate: the keep-alive resistance this used to
+        // be written with is now given a reference before the solve ever starts, so it converges, and
+        // a budget test whose fixture converges measures nothing. What must stay bounded is a solve
+        // that genuinely cannot settle for reasons the host cannot repair.
         var settings = new AnalysisSettings();
         int budget   = settings.DcBiasRampSteps * settings.NonlinearMaxHalvings * settings.NonlinearMaxIter;
 
-        var (r, _) = Run(Netlist(rThermal: 1e7, shape: HeatShape.Runaway));
+        var (r, _) = Run(UnsettleableNetlist());
 
         Assert.False(r.Converged, "the fixture is chosen to have no solution — if this passes, it is wrong");
         Assert.True(r.Iterations <= budget,
@@ -548,7 +693,7 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         // "residual 6.83" is a number with no address: it names neither the part of the circuit that
         // will not settle nor how far off it is, which leaves bisecting the schematic as the only way
         // forward. One row is almost always enormously worse than the rest.
-        var (r, nl) = Run(Netlist(rThermal: 1e7, shape: HeatShape.Runaway));
+        var (r, nl) = Run(UnsettleableNetlist());
 
         Assert.False(r.Converged);
         string w = Assert.Single(nl.Warnings, x => x.Contains("Worst-unsettled", StringComparison.Ordinal));

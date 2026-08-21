@@ -2614,6 +2614,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // the one thing worth knowing about a run somebody stopped. keepBar: false (owner
             // request, 2026-08-14) — the bar glyph goes once the run settles; the text stays.
             live.Finish(MessageLevel.Warning, "cancelled, no results written", keepBar: false);
+            foreach (var n in result.Notes)    Messages.Info(n);
             foreach (var w in result.Warnings) Messages.Warning(w);
             Messages.Info($"Stopped '{testBenchName}'.");
             return;
@@ -2625,6 +2626,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Owner request, 2026-08-14: the bar glyph is dropped once the row settles (keepBar: false)
         // — only the text, including this appended outcome, remains. A short "Finished" line follows,
         // purely for its timestamp: the live row's own timestamp is when the run STARTED.
+        // Notes first, warnings after: what the run WORKED OUT reads before what it is unhappy
+        // about, and the two are separable at a glance rather than one undifferentiated block.
+        foreach (var n in result.Notes)
+            Messages.Info(n);
+
         foreach (var w in result.Warnings)
             Messages.Warning(w);
 
@@ -4053,7 +4059,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         //
         // The corners are recorded on the same terms and for the same reason: learning them means
         // reading every netlist in the kit, and the answer only changes when the kit does.
-        bool settingsAreNew = outcome.Settings is not null && r.Settings is null;
+        // "New" means DIFFERENT, not merely absent. Settings are also re-derived when the recorded
+        // ones no longer resolve here — a workspace opened on another operating system, where the
+        // entry that applies names paths belonging to the machine that wrote it. Recording only the
+        // absent case would leave that workspace deriving again on every single open, and still
+        // carrying the settings that do not work.
+        bool settingsAreNew = outcome.Settings is not null
+                              && (r.Settings is null || !JsonNode.DeepEquals(outcome.Settings, r.Settings));
         bool cornersAreNew  = (r.Corners is null || r.Corners.Count == 0)
                               && outcome.CornerAxes is { Count: > 0 };
         if (settingsAreNew || cornersAreNew)

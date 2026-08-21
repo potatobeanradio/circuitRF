@@ -43,7 +43,25 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
         _scratch     = new double[Descriptor.NodeCount];
     }
 
-    public ExternalDeviceDescriptor Descriptor => _instance.Descriptor;
+    /// <summary>
+    /// What this device's nodes are, as the provider reported them — unless elaboration has since
+    /// MEASURED something the provider could not say, in which case that stands in its place.
+    ///
+    /// <para>The one case today is a node the model writes no equation for. A provider can measure
+    /// that much on its own, but not which node such a node follows; the elaborator works that out
+    /// from the model's own derivatives and records it here, so every later reader — node
+    /// allocation, the engine's thermal survey, a UI pin list — sees one answer rather than the
+    /// provider's incomplete one plus a correction carried alongside it.</para>
+    /// </summary>
+    public ExternalDeviceDescriptor Descriptor => _resolved ?? _instance.Descriptor;
+
+    private ExternalDeviceDescriptor? _resolved;
+
+    /// <summary>
+    /// Records node roles worked out after the provider spoke. Called once, by the elaborator, and
+    /// never with anything the provider itself stated — it fills gaps rather than overruling.
+    /// </summary>
+    internal void ResolveNodes(ExternalDeviceDescriptor resolved) => _resolved = resolved;
     public string ProviderName  { get; }
     public string InstanceLabel { get; }
 

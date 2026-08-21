@@ -154,7 +154,7 @@ public static class PdkPartInstaller
         // devices is the ORDINARY case: a vendor kit is written for its own simulator and knows
         // nothing about circuitRF, so deriving is the difference between "import the kit" and
         // "import the kit, then go and configure it".
-        JsonNode? settings = KeepIfStillCurrent(recordedSettings)
+        JsonNode? settings = KeepIfStillCurrent(recordedSettings, haveRoot ? report.RootPath : null, kit)
                           ?? (haveRoot ? TryReadKitSettings(report.RootPath, diags) : null)
                           ?? (haveRoot ? SynthesiseProviderSettings(report, kit, discovered, diags, notes,
                                                                      libraryRoots: libraryRoots,
@@ -360,7 +360,7 @@ public static class PdkPartInstaller
     /// runs: a set of settings can be entirely runnable and still be missing something added since,
     /// and one that runs is exactly the one nothing else would ever replace.</para>
     /// </summary>
-    private static JsonNode? KeepIfStillCurrent(JsonNode? recorded)
+    private static JsonNode? KeepIfStillCurrent(JsonNode? recorded, string? kitRoot, string kitName)
     {
         // Settings are an object. Anything else is not something to replay — and because JsonNode
         // converts implicitly from string, a caller passing the wrong argument entirely would
@@ -370,13 +370,85 @@ public static class PdkPartInstaller
         try
         {
             if (recorded["generatedBy"]?.GetValue<string>() != GeneratedMarker) return recorded;
-            return (recorded["generatedFormat"]?.GetValue<int>() ?? 1) < GeneratedFormat ? null : recorded;
+            if ((recorded["generatedFormat"]?.GetValue<int>() ?? 1) < GeneratedFormat) return null;
         }
         catch (Exception ex) when (ex is FormatException or InvalidOperationException or JsonException)
         {
             // Not shaped the way our own generator writes them, so not ours to redo.
             return recorded;
         }
+
+        return kitRoot is null || StillRunsHere(recorded, kitRoot, kitName) ? recorded : null;
+    }
+
+    /// <summary>
+    /// Whether settings circuitRF derived itself still describe a way to evaluate this kit's devices
+    /// ON THIS MACHINE.
+    ///
+    /// <para><b>This is what makes a workspace portable between platforms.</b> A workspace carries
+    /// what circuitRF worked out, so the next open replays it instead of byte-scanning a multi-MB
+    /// package again — but "what circuitRF worked out" was worked out somewhere, and the answer names
+    /// files. Open the same workspace on another operating system and the entry that applies there
+    /// may name a library build that machine has under a different path, or may not exist at all
+    /// because the platform was never described. Replaying it then is worse than having recorded
+    /// nothing: every part places, every step works, and only Run fails.</para>
+    ///
+    /// <para>So the recorded answer is kept only while it still resolves. It is our own working-out
+    /// being reconsidered, never a kit's settings or a user's edits — those are theirs, and stay.</para>
+    ///
+    /// <para>Only the entry for THIS machine is judged, deliberately: a manifest naming three
+    /// platforms is right to name paths belonging to the machine that wrote it for the other two, and
+    /// re-deriving over a build this host could never run would throw away a perfectly good
+    /// description of everywhere else.</para>
+    /// </summary>
+    private static bool StillRunsHere(JsonNode settings, string kitRoot, string kitName)
+    {
+        var manifest = ManifestFrom(settings, kitRoot, kitName);
+        if (manifest is null) return true;             // unreadable is not ours to judge
+
+        var launch = manifest.LaunchForThisMachine();
+        if (launch is null) return false;              // written where this machine is not
+
+        IReadOnlyList<string> arguments;
+        try { arguments = manifest.Resolve(launch).Arguments; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+
+        // THE VM HOST'S ARGUMENTS ARE TWO DIFFERENT KINDS OF THING and only the first kind is a path
+        // on this machine. Everything past the `--` is a GUEST path — it names a place inside the VM
+        // and is SUPPOSED not to exist here, so checking it would condemn every working macOS entry.
+        if (VmHostArguments.IsVmHost(launch.Command))
+        {
+            int argv = VmHostArguments.GuestArgvIndex(arguments);
+            if (argv < 0) return false;                // no separator: not a command we wrote
+
+            for (int i = 0; i < argv; i++)
+                if (!ShareTargetExists(arguments[i])) return false;
+
+            return true;
+        }
+
+        // A native entry names the model library, and the alias map when there is one. Both are
+        // absolute; a relative value has already been resolved against the kit by Resolve, and one
+        // that is still relative is a bare name the running machine looks up for itself.
+        foreach (string a in arguments)
+            if (Path.IsPathRooted(a) && !File.Exists(a) && !Directory.Exists(a)) return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether one VM-host argument that offers a host directory still points at one. A flag, or
+    /// anything not shaped like a share, is not a claim about this machine and passes.
+    /// </summary>
+    private static bool ShareTargetExists(string argument)
+    {
+        int eq = argument.IndexOf('=');
+        if (eq <= 0) return true;
+
+        string path = argument[(eq + 1)..];
+        if (path.EndsWith(":ro", StringComparison.Ordinal)) path = path[..^3];
+
+        return !Path.IsPathRooted(path) || Directory.Exists(path);
     }
 
     /// <summary>
@@ -493,53 +565,63 @@ public static class PdkPartInstaller
 
         var profile = DeviceLibraryDiscovery.Profiles[0];
 
-        // Where the worker actually is. circuitRF's tools directory is where it belongs, but a worker
-        // sitting beside the kit is found too — otherwise a user holding one is blocked until a
-        // release ships it.
-        string? worker = DeviceLibraryDiscovery.FindWorker(profile, report.RootPath, ancestorLevels)
-                      ?? libraryRoots?.Select(r => DeviceLibraryDiscovery.FindWorker(profile, r, 0))
-                                      .FirstOrDefault(w => w is not null);
-        if (worker is null)
-        {
-            diags.Add($"The program that evaluates this kit's devices ('{profile.Worker}') was not " +
-                      $"found in circuitRF's tools folder or near the kit. The kit's parts still " +
-                      $"build; simulating its devices needs that program.");
-            return null;
-        }
+        // ONE SEARCH PER TARGET HERE TOO, for the same reason as the libraries above: the worker is a
+        // DIFFERENT program per platform, so "find the worker" is not one question. The Linux build
+        // is an ELF and the Windows one a PE, and a search that took whichever had the right name
+        // would name a Linux binary as the Windows command — a manifest entry that is wrong in a way
+        // nothing reports until Run.
+        //
+        // circuitRF's tools directory is where the worker belongs, but one sitting beside the kit is
+        // found too — otherwise a user holding one is blocked until a release ships it.
+        string? Worker(DeviceLibraryDiscovery.LibraryFormat format)
+            => DeviceLibraryDiscovery.FindWorker(profile, report.RootPath, ancestorLevels, format)
+            ?? libraryRoots?.Select(r => DeviceLibraryDiscovery.FindWorker(profile, r, 0, format))
+                            .FirstOrDefault(w => w is not null);
 
-        string workerDir  = Path.GetDirectoryName(worker)!;
-        string workerName = Path.GetFileName(worker);
+        string? elfWorker = Worker(DeviceLibraryDiscovery.LibraryFormat.Elf);
+        string? peWorker  = Worker(DeviceLibraryDiscovery.LibraryFormat.Pe);
 
         var workers = new JsonArray();
 
         // Native hosts run the worker directly against their own build. An entry is written only for
-        // a platform whose build is actually present — naming one that is not there would turn "this
-        // kit has no Windows build" into a failure to start a program.
+        // a platform whose LIBRARY build is actually present — naming one that is not there would
+        // turn "this kit has no Windows build" into a failure to start a program.
+        //
         // The alias map, when circuitRF ships one. It names internal nodes a compiled model never
         // drives; minting an unknown for one solves an equation the model did not state, and the
         // symptom is a bias ramp that stalls rather than anything that reports itself.
         // Searched at the KIT itself first now, rather than a folder the workspace made for it —
         // which is where a kit-specific alias belongs anyway, beside the kit it describes.
-        string? aliasMap = FindAliasMap(report.RootPath, workerDir);
+        string? aliasMap = FindAliasMap(report.RootPath, Path.GetDirectoryName(elfWorker ?? peWorker ?? ""));
 
+        // A NATIVE ENTRY IS WRITTEN WHENEVER ITS LIBRARY BUILD IS THERE, whether or not that
+        // platform's worker is on THIS machine. The worker is circuitRF's own component and ships in
+        // its tools folder on every platform, so a bare name is a promise the running machine keeps —
+        // and demanding it at import time would mean an import performed on one platform could never
+        // describe another, which is the whole reason a manifest names platforms at all.
+        //
+        // An absolute path is used when the worker for that target IS here, so a user's own build
+        // sitting beside the kit still wins over whatever the install happens to ship.
         if (linux is not null)
-            workers.Add(Launch("linux-x64", worker,
+            workers.Add(Launch("linux-x64", elfWorker ?? profile.Worker,
                 aliasMap is not null ? [linux.Path, aliasMap] : [linux.Path]));
 
-        // Windows runs the same worker against the library's own Windows build. The command is named
-        // rather than resolved to a path here on purpose: the Windows worker is a DIFFERENT
-        // executable from the Linux one, so on a Mac or a Linux box (where this import very often
-        // happens) it does not exist to point at. A bare name resolves through
-        // DeviceWorkerManifest.ToolsDirectory on whichever machine actually runs it.
+        // Windows runs its own build of the worker against the library's own Windows build — a
+        // DIFFERENT executable from the Linux one, which is why it is looked for separately and why
+        // its absence here is not a reason to leave the entry out.
         if (windows is not null)
-            workers.Add(Launch("win-x64", WindowsWorkerCommand(profile, worker),
+            workers.Add(Launch("win-x64", peWorker ?? profile.Worker + ".exe",
                 aliasMap is not null ? [windows.Path, aliasMap] : [windows.Path]));
 
         // macOS cannot load a Linux library at all, so the worker runs in the VM circuitRF ships.
         // Two shares, because the worker and the library come from different places: ours and the
         // vendor's.
-        if (linux is not null)
+        // Unlike the two above, this one CANNOT fall back to a bare name: the worker is shared into
+        // the guest from a host folder, so a real path on this machine is the thing being written.
+        if (linux is not null && elfWorker is not null)
         {
+            string workerDir  = Path.GetDirectoryName(elfWorker)!;
+            string workerName = Path.GetFileName(elfWorker);
             string dir  = Path.GetDirectoryName(linux.Path)!;
             string file = Path.GetFileName(linux.Path);
             var vmArgs = new List<string>
@@ -584,6 +666,18 @@ public static class PdkPartInstaller
             }
 
             workers.Add(Launch("osx", VmHostCommand, [.. vmArgs]));
+        }
+        else if (linux is not null)
+        {
+            // Said rather than left blank. The other platforms' entries are unaffected, so the kit
+            // still imports and still simulates elsewhere — but on macOS the Linux build is the ONLY
+            // one that can run, and a manifest quietly missing its entry is indistinguishable from a
+            // kit that has nothing to run at all.
+            diags.Add($"No Linux build of the program that evaluates this kit's devices " +
+                      $"('{profile.Worker}') was found in circuitRF's tools folder or near the kit, " +
+                      $"so this kit has no macOS entry — macOS runs that build inside circuitRF's own " +
+                      $"VM and needs the file itself, not just its name. Other platforms are " +
+                      $"unaffected.");
         }
 
         if (workers.Count == 0) return null;
@@ -676,17 +770,6 @@ public static class PdkPartInstaller
     }
 
     /// <summary>
-    /// What the <c>win-x64</c> entry should name as its command: the absolute path when the worker
-    /// found is genuinely the Windows one (an import performed ON Windows), otherwise the bare
-    /// <c>&lt;worker&gt;.exe</c> name, which <c>DeviceWorkerManifest.ResolveCommand</c> resolves out
-    /// of circuitRF's own tools folder wherever the design is eventually run.
-    /// </summary>
-    private static string WindowsWorkerCommand(DeviceLibraryDiscovery.WorkerProfile profile, string worker)
-        => worker.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? worker
-            : profile.Worker + ".exe";
-
-    /// <summary>
     /// The map of internal nodes a compiled model does not drive. Null when there is none, which is
     /// the correct default — every node then stays an ordinary unknown, and a model with nothing to
     /// declare is unaffected.
@@ -707,7 +790,7 @@ public static class PdkPartInstaller
     /// together means the pair. circuitRF's own tools folder is last, as the shipped fallback — it
     /// carries no family entries, only the note saying where they go.</para>
     /// </summary>
-    private static string? FindAliasMap(string kitInstallDir, string workerDir)
+    private static string? FindAliasMap(string kitInstallDir, string? workerDir)
     {
         foreach (string? dir in new[] { kitInstallDir, workerDir, DeviceWorkerManifest.ToolsDirectory })
         {

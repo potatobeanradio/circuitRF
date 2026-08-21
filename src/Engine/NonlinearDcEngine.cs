@@ -119,8 +119,94 @@ public sealed class NonlinearDcEngine
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Solves the operating point — and, if there is none as the design stands and the reason is a
+    /// thermal node with no usable reference, solves it again with those nodes held at the ambient.
+    ///
+    /// <para><b>Why a retry rather than a repair up front.</b> A thermal node reached only through a
+    /// keep-alive leak resistor has no operating point: the device's own dissipated power drives its
+    /// temperature away without limit, the model starts refusing points, and the solve grinds
+    /// through every ramp step and every halving before failing with a residual that names a supply
+    /// branch rather than the node that caused it. The elaborator already holds such a node at the
+    /// ambient when NOTHING is attached to it, but that guard reads the topology, and a leak resistor
+    /// is a connection in exactly the sense it is written in — so the case this exists for walks
+    /// straight past it. Measured on a real kit: 1,518 iterations, no convergence, at a bias the
+    /// same circuit answers in 4 once the node is referenced.</para>
+    ///
+    /// <para><b>And only ever on the way out of one.</b> Holding the node up front would mean
+    /// deciding, from a threshold, that a design which solves perfectly well was written wrong — and
+    /// a resistance high enough to be worth warning about is not the same thing as one with no
+    /// answer behind it. A design that produces an operating point is returned exactly as it stands,
+    /// whatever its thermal network looks like.</para>
+    ///
+    /// <para><b>"Failure" here is not only a non-zero convergence flag.</b> The stopping rule is an
+    /// absolute residual norm, and a norm says nothing about whether the point it was measured at is
+    /// physical: the same circuit that will not converge on one machine squeaks under the tolerance
+    /// on another, after hundreds of iterations, with its thermal nodes at hundreds of thousands of
+    /// degrees. Measured on a real kit, one bias, three wirings of the exposed thermal pins — open,
+    /// 1 MΩ, and shorted to ground — all "converged", at 227 to 502 iterations, with residuals of
+    /// 3e-7 to 9.6e-7 against a tolerance of 1e-6 and two junctions at ~700,000 °C. That is not an
+    /// operating point that happens to be reported oddly; it is the same non-solution, on the near
+    /// side of a knife edge. So a converged result is ALSO rejected when a node already measured as
+    /// unreferenced came back at a temperature no part can be at.</para>
+    /// </summary>
     public static DcResult Run(ElaboratedNetlist netlist, AnalysisSettings? settings = null)
-        => new NonlinearDcEngine(netlist, settings ?? AnalysisSettings.Default).Solve();
+    {
+        var s      = settings ?? AnalysisSettings.Default;
+        var direct = new NonlinearDcEngine(netlist, s);
+
+        if (direct.UnreferencedThermalRows.Count == 0) return direct.Solve();
+
+        // The failure report is held back while a retry could still make it wrong: it would name a
+        // supply branch on a run that ends up converging, which is worse than saying nothing.
+        direct._deferFailureReport = true;
+
+        DcResult? asWritten = null;
+        NonlinearDcNotConvergedException? refused = null;
+        try   { asWritten = direct.Solve(); }
+        catch (NonlinearDcNotConvergedException ex) { refused = ex; }
+
+        if (asWritten is { Converged: true } && !direct.ThermalNodesRanAway(asWritten))
+            return asWritten;
+
+        var held = new NonlinearDcEngine(netlist, s, [.. direct.UnreferencedThermalRows]);
+        held._deferFailureReport = true;   // if this fails too, the design as written is the story
+
+        DcResult? repaired = null;
+        try   { repaired = held.Solve(); }
+        catch (NonlinearDcNotConvergedException) { }
+
+        if (repaired is { Converged: true })
+        {
+            // A NOTE, not a warning. This run has an operating point and is reported as converged;
+            // what the message carries is something circuitRF WORKED OUT that the design did not
+            // state — which thermal nodes it held, and at what — rather than a complaint about the
+            // run it accompanies. Raised as a warning it makes a successful run read as a failed
+            // one, and buries the warnings that do need attention.
+            netlist.AddNoteOnce("thermal-hold-retry", direct.ThermalHoldRetryMessage());
+            return repaired;
+        }
+
+        // The thermal reference was not what stopped it. Report the original failure as it stood.
+        direct.EmitDeferredFailureReport();
+        if (refused is not null) throw refused;
+        return asWritten!;
+    }
+
+    /// <summary>
+    /// Whether any thermal node already measured as unreferenced came back at a temperature no
+    /// part can be at — the case a residual norm cannot object to and a user cannot use.
+    /// </summary>
+    private bool ThermalNodesRanAway(DcResult r)
+    {
+        foreach (int row in _unreferencedThermalRows)
+            if (row < r.NodeVoltages.Length &&
+                (!double.IsFinite(r.NodeVoltages[row]) ||
+                 Math.Abs(r.NodeVoltages[row]) > Temperature.ImplausibleJunctionTemperatureC))
+                return true;
+
+        return false;
+    }
 
     // ── Implementation ────────────────────────────────────────────────────────
 
@@ -143,11 +229,33 @@ public sealed class NonlinearDcEngine
     /// </summary>
     private readonly Dictionary<int, string> _thermalNodes = [];
 
-    private NonlinearDcEngine(ElaboratedNetlist nl, AnalysisSettings settings)
+    /// <summary>
+    /// Thermal matrix rows this solve is holding at the ambient. Empty on the first attempt, which
+    /// always solves the design exactly as it was written.
+    /// </summary>
+    private readonly IReadOnlyList<int> _heldThermalRows;
+
+    /// <summary>
+    /// Thermal rows measured to reach their reference through no thermal resistance worth the name,
+    /// so a solve that fails has somewhere to look. Populated by <see cref="ReportThermalNodes"/>.
+    /// </summary>
+    internal IReadOnlyList<int> UnreferencedThermalRows => _unreferencedThermalRows;
+    private readonly List<int> _unreferencedThermalRows = [];
+
+    /// <summary>
+    /// Whether a failed solve keeps its worst-unsettled report to itself. Set while a retry could
+    /// still overturn the failure; <see cref="EmitDeferredFailureReport"/> releases it if not.
+    /// </summary>
+    private bool _deferFailureReport;
+    private string? _deferredFailureReport;
+
+    private NonlinearDcEngine(ElaboratedNetlist nl, AnalysisSettings settings,
+                              IReadOnlyList<int>? holdThermalRowsAtAmbient = null)
     {
-        _nl        = nl;
-        _settings  = settings;
-        _nodeCount = nl.Nodes.Count - 1;  // nodes 1..N; node 0 = ground excluded
+        _nl              = nl;
+        _settings        = settings;
+        _nodeCount       = nl.Nodes.Count - 1;  // nodes 1..N; node 0 = ground excluded
+        _heldThermalRows = holdThermalRowsAtAmbient ?? [];
 
         // Build the linear part using MnaSystem at ω=0.
         // MnaSystem gives us the augmented (nodes + branches) system.
@@ -173,24 +281,47 @@ public sealed class NonlinearDcEngine
             nl.DrainModelWarnings(ec.Model);
         }
 
-        _systemSize = mna.Size;  // nodeCount + branchCount
-        _gAug       = new double[_systemSize, _systemSize];
-        _bSource    = new double[_systemSize];
-
-        for (int i = 0; i < _systemSize; i++)
-        {
-            _bSource[i] = mna.GetRhs(i).Real;
-            for (int k = 0; k < _systemSize; k++)
-                _gAug[i, k] = mna.GetEntry(i, k).Real;
-        }
-
         // Resolve control-current branch indices for any SDD with C[n] references.
         // Branch indices are now assigned (the stamp loop above ran all linear devices).
         ResolveControlCurrentBranches();
 
+        // Every held thermal node costs a branch row, so the system is one row longer per hold than
+        // what the components themselves stamped.
+        int stamped = mna.Size;                       // nodeCount + branchCount
+        _systemSize = stamped + _heldThermalRows.Count;
+        _gAug       = new double[_systemSize, _systemSize];
+        _bSource    = new double[_systemSize];
+
+        for (int i = 0; i < stamped; i++)
+        {
+            _bSource[i] = mna.GetRhs(i).Real;
+            for (int k = 0; k < stamped; k++)
+                _gAug[i, k] = mna.GetEntry(i, k).Real;
+        }
+
         CollectThermalNodes();
-        ReportThermalNodes();
+
+        // Measured against what the components stamped — the holds below are this engine's own
+        // addition and must not be mistaken for the design's thermal network on the way back out.
+        ReportThermalNodes(stamped);
+
+        // One ideal source per held node, stamped exactly as VdcModel stamps a Vdc to ground: a
+        // constraint row saying the node sits at the ambient, and the branch current that takes into
+        // the node's own row. Ramped with every other source, so the hold arrives as the bias does.
+        for (int i = 0; i < _heldThermalRows.Count; i++)
+        {
+            int br  = stamped + i;
+            int row = _heldThermalRows[i];            // matrix row; circuit node is row + 1
+            _gAug[br, row]    = +1.0;
+            _gAug[row, br]    = +1.0;
+            _bSource[br]      = _nl.AmbientC;
+            _branchOwners[br] = $"ambient hold on '{NodeName(row)}'";
+        }
     }
+
+    /// <summary>The circuit's name for a voltage-unknown matrix row, for a message to quote.</summary>
+    private string NodeName(int row)
+        => row + 1 < _nl.Nodes.Count ? _nl.Nodes.NameOf(row + 1) : $"node {row + 1}";
 
     /// <summary>
     /// Which matrix rows are temperatures, from the devices that own them.
@@ -261,25 +392,27 @@ public sealed class NonlinearDcEngine
     /// "no path at all" warning in the file. Observed on a kit's own reference bench, where the
     /// answer was correct to six figures. A solve has no such blind spot.</para>
     /// </summary>
-    private Dictionary<int, ThermalMeasurement> MeasureThermalNodes()
+    private Dictionary<int, ThermalMeasurement> MeasureThermalNodes(int size)
     {
         var measured = new Dictionary<int, ThermalMeasurement>();
         if (_thermalNodes.Count == 0) return measured;
 
-        var j = new List<(int R, int C, double V)>(_systemSize * 4);
-        for (int i = 0; i < _systemSize; i++)
-            for (int k = 0; k < _systemSize; k++)
+        var ownConductance = DeviceThermalConductance();
+
+        var j = new List<(int R, int C, double V)>(size * 4);
+        for (int i = 0; i < size; i++)
+            for (int k = 0; k < size; k++)
             {
                 double g = _gAug[i, k];
                 if (i == k && i < _nodeCount) g += DefaultGmin;
                 if (g != 0.0) j.Add((i, k, g));
             }
 
-        var x     = new double[_systemSize];
-        var probe = new double[_systemSize];
+        var x     = new double[size];
+        var probe = new double[size];
         try
         {
-            var csc  = AssembleCsc(j, _systemSize);
+            var csc  = AssembleCsc(j, size);
             var perm = AMD.Generate(csc, ColumnOrdering.MinimumDegreeAtA);
             var lu   = SparseLU.Create(csc, perm, 1.0);
             if (lu is null) return measured;
@@ -288,15 +421,23 @@ public sealed class NonlinearDcEngine
 
             foreach (int row in _thermalNodes.Keys)
             {
-                if (row >= _systemSize || !double.IsFinite(x[row])) continue;
+                if (row >= size || !double.IsFinite(x[row])) continue;
 
                 Array.Clear(probe);
                 probe[row] = 1.0;                       // one watt in, at this node only
-                var rise = new double[_systemSize];
+                var rise = new double[size];
                 lu.Solve(probe, rise);
                 if (!double.IsFinite(rise[row])) continue;
 
-                measured[row] = new ThermalMeasurement(x[row], Math.Abs(rise[row]));
+                // The device's own path back, in parallel: it shunts this node exactly as a
+                // resistor to ground would, so the two combine as conductances and nothing more.
+                double network = Math.Abs(rise[row]);
+                double gOwn    = ownConductance.TryGetValue(row, out double g0) ? g0 : 0.0;
+                double total   = double.IsPositiveInfinity(gOwn)
+                               ? 0.0
+                               : 1.0 / (SafeReciprocal(network) + gOwn);
+
+                measured[row] = new ThermalMeasurement(x[row], total);
             }
         }
         catch
@@ -309,19 +450,84 @@ public sealed class NonlinearDcEngine
         return measured;
     }
 
+    /// <summary>1/x, with an infinite resistance reading as no conductance rather than as NaN.</summary>
+    private static double SafeReciprocal(double x)
+        => double.IsPositiveInfinity(x) ? 0.0 : (x <= 0.0 ? double.PositiveInfinity : 1.0 / x);
+
+    /// <summary>
+    /// How strongly each thermal node is held by the DEVICES on it, rather than by the network
+    /// around them — the sum of their own positive thermal-diagonal entries, in W/°C.
+    ///
+    /// <para><b>Why it has to be asked for separately.</b> The measurement above solves the LINEAR
+    /// system, and a device's own internal thermal resistance is not in it: the device is nonlinear,
+    /// so its conductance lives in a Jacobian the linear stamp never sees. A provider is entitled to
+    /// carry one, and one that does has already referenced the node — the rise it solves for is the
+    /// answer the design wanted, and treating the node as unreferenced would silently delete the
+    /// part's self-heating.</para>
+    ///
+    /// <para><b>A real path is a POSITIVE conductance, not a non-zero one.</b> An electrothermal
+    /// model's thermal diagonal is routinely non-zero and NEGATIVE: that entry is its self-heating
+    /// FEEDBACK, which pushes the node away from a solution rather than holding it near one. Reading
+    /// "non-zero" as "referenced" leaves the exact devices this exists for unreferenced, so the sign
+    /// is the test — the same rule <c>Elaborator.SelfReferencedThermalNodes</c> draws, at the same
+    /// all-zero point, which is where the solve's own ramp starts and therefore where any device
+    /// that can be solved at all will answer.</para>
+    ///
+    /// <para>A device that refuses that point returns an INFINITE conductance: nothing was learned,
+    /// and the conservative reading is that the node is fine as it is.</para>
+    /// </summary>
+    private Dictionary<int, double> DeviceThermalConductance()
+    {
+        var byRow = new Dictionary<int, double>();
+        if (_thermalNodes.Count == 0) return byRow;
+
+        foreach (var ec in _nl.Components)
+        {
+            if (ec.Model is not ExternalDeviceModel ed) continue;
+
+            var thermalPins = ed.Descriptor.Nodes
+                .Where(n => n.QuantityKind == NodeQuantityKind.Thermal)
+                .ToList();
+            if (thermalPins.Count == 0) continue;
+
+            double[,]? dg;
+            try   { dg = ec.Evaluate(new PortVoltages(new double[ec.Model.PortCount]),
+                                     ControlCurrents.Empty).Dg; }
+            catch { dg = null; }   // refused the point: nothing learned, so nothing claimed
+
+            foreach (var n in thermalPins)
+            {
+                int np = ec.Nodes.Length > 2 * n.Index ? ec.Nodes[2 * n.Index] : 0;
+                if (np <= 0 || np - 1 >= _nodeCount) continue;
+                int row = np - 1;
+
+                double g;
+                if (dg is null) g = double.PositiveInfinity;
+                else if (n.Index >= dg.GetLength(0) || n.Index >= dg.GetLength(1)) continue;
+                else g = Math.Max(0.0, dg[n.Index, n.Index]);
+
+                byRow[row] = byRow.TryGetValue(row, out double had) ? had + g : g;
+            }
+        }
+
+        return byRow;
+    }
+
     /// <summary>
     /// Reports the two ways a thermal node ends up somewhere nothing intended: too weakly referenced
     /// to be a thermal path at all, and referenced to GROUND rather than to the ambient.
     ///
-    /// <para><b>Both are worth a warning and neither is a failure.</b> In both cases the network is
-    /// well conditioned, the solve converges in the same number of iterations, and every number that
+    /// <para><b>Neither is refused, and both are easy to miss.</b> Where the solve converges the
+    /// network is well conditioned, it takes the same number of iterations, and every number that
     /// comes back is finite and plausible. What is wrong is the temperature the model was evaluated
     /// at, and there is no symptom to notice — which is precisely the case a user cannot see and the
     /// solver cannot object to.</para>
     ///
     /// <para><b>Weakly referenced</b> — the device's own dissipated power sets the node to P × R, and
     /// with R at keep-alive scale that is tens of thousands of degrees, which a model clamps and
-    /// evaluates without complaint.</para>
+    /// evaluates without complaint. Where it does NOT converge, that same reading is what
+    /// <see cref="Run"/> retries against, so the rows measured this way are recorded on the way past
+    /// — recorded only: what to do about them is a decision the solve's own outcome makes.</para>
     ///
     /// <para><b>Referenced to ground</b> — the standard electrothermal sub-network is a thermal
     /// resistance and capacitance in parallel, connected NOT to ground but to a source whose value is
@@ -335,22 +541,29 @@ public sealed class NonlinearDcEngine
     /// and a check that fired there would go off loudest on the designs that modelled most carefully.
     /// It is "the reference is zero WHILE the ambient is not". A design whose ambient really is 0 °C
     /// says so and is silent. And a node that has no usable reference at all is left to the
-    /// resistance warning above rather than being reported twice for one condition.</para>
+    /// resistance case above rather than being reported twice for one condition.</para>
     /// </summary>
-    private void ReportThermalNodes()
+    private void ReportThermalNodes(int size)
     {
-        var measured = MeasureThermalNodes();
+        var measured = MeasureThermalNodes(size);
         double ambient = _nl.AmbientC;
 
         foreach (var (row, owner) in _thermalNodes.OrderBy(e => e.Key))
         {
-            string node = row + 1 < _nl.Nodes.Count ? _nl.Nodes.NameOf(row + 1) : $"node {row + 1}";
+            string node = NodeName(row);
 
             if (!measured.TryGetValue(row, out var m)) continue;
 
             if (m.ResistanceCPerW > ImplausibleThermalResistance)
             {
-                _nl.AddWarningOnce(
+                // Remembered, not acted on. Run() reaches for this only if the solve then fails.
+                if (!_heldThermalRows.Contains(row)) _unreferencedThermalRows.Add(row);
+
+                // A NOTE, not a warning: this is a MEASUREMENT of what the design's own network
+                // does to this node, reported on every run whether or not anything came of it.
+                // Whether it cost the run an operating point — and what was done about that — is
+                // said separately, by the one message that only appears when it did.
+                _nl.AddNoteOnce(
                     $"thermal-resistance:{owner}:{row}",
                     $"{owner}: the thermal node '{node}' reaches its reference only through " +
                     $"{(double.IsPositiveInfinity(m.ResistanceCPerW) ? "no path at all" : $"{m.ResistanceCPerW:G3} °C/W")}, " +
@@ -669,9 +882,45 @@ public sealed class NonlinearDcEngine
                 : $"{name} = {_lastX[e.Index]:G4} V (residual {e.Residual:G3} A)";
         });
 
-        _nl.AddWarningOnce(
-            "dc-worst-unsettled",
-            "DC did not converge. Worst-unsettled: " + string.Join("; ", parts) + ".");
+        string message = "DC did not converge. Worst-unsettled: " + string.Join("; ", parts) + ".";
+
+        if (_deferFailureReport) { _deferredFailureReport = message; return; }
+        _nl.AddWarningOnce("dc-worst-unsettled", message);
+    }
+
+    /// <summary>
+    /// Releases a failure report that was held back for a retry which did not, in the end, help.
+    /// </summary>
+    private void EmitDeferredFailureReport()
+    {
+        if (_deferredFailureReport is { } m) _nl.AddWarningOnce("dc-worst-unsettled", m);
+    }
+
+    /// <summary>
+    /// What to say when the operating point only exists once the weakly-referenced thermal nodes are
+    /// held at the ambient. The design did not ask for this, so it names every node it did it to.
+    /// </summary>
+    private string ThermalHoldRetryMessage()
+    {
+        var named = _unreferencedThermalRows
+            .Select(r => $"'{NodeName(r)}'" +
+                         (_thermalNodes.TryGetValue(r, out var o) ? $" ({o})" : ""))
+            .ToList();
+
+        bool one = named.Count == 1;
+
+        // Leads with what circuitRF DID, not with the failure that prompted it. The run this
+        // message accompanies has an operating point and is reported as converged; a headline of
+        // "no operating point" on a successful run reads as the run having failed.
+        return $"DC re-solved with the thermal " +
+               $"{(one ? "node" : "nodes")} {string.Join(", ", named)} held at the ambient " +
+               $"{_nl.AmbientC:0.##} °C — this run DID find an operating point, with no temperature " +
+               $"rise on {(one ? "that part" : "those parts")}. The design as written does not: " +
+               $"{(one ? "that node is" : "those nodes are")} held only by a resistance that is not " +
+               $"a thermal resistance, which leaves {(one ? "it" : "them")} with no temperature to " +
+               $"settle at — either no convergence at all, or hundreds of thousands of degrees at a " +
+               $"residual small enough to pass for one. To model self-heating, connect each of these " +
+               $"nodes through the part's thermal resistance to a source holding the ambient.";
     }
 
     /// <summary>The iterate the report above reads its values from — set alongside every call.</summary>

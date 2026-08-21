@@ -83,7 +83,7 @@ static int RunSparam(string[] args)
     {
         var (lib, tb) = CnlReader.ReadFile(input);
         var nl = new Elaborator(lib).Elaborate(tb);
-        int shown = PrintWarnings(nl);
+        var shown = PrintWarnings(nl);
 
         // Prefer typed SParameterAnalysis from the netlist unless --freq was explicitly given.
         double[] freqs;
@@ -143,7 +143,7 @@ static int RunDc(string[] args)
     {
         var (lib, tb) = CnlReader.ReadFile(input);
         var nl = new Elaborator(lib).Elaborate(tb);
-        int shown = PrintWarnings(nl);
+        var shown = PrintWarnings(nl);
 
         var result = NonlinearDcEngine.Run(nl, settings);
 
@@ -276,7 +276,7 @@ static int RunHb(string[] args)
         }
 
         var nl    = new Elaborator(lib).Elaborate(tb);
-        int shown = PrintWarnings(nl);
+        var shown = PrintWarnings(nl);
 
         // Pick what to run: the named analysis, else the outermost runnable chain that bottoms out
         // in an HB. A parametric_sweep wrapping the HB must be dispatched at the SWEEP, not the HB —
@@ -802,10 +802,19 @@ static string[] TakeKitFolders(string[] args, out List<string> folders)
 // Returns how many warnings have now been printed, so a caller can print again later — elaboration
 // and the engine each add their own, at different times — without repeating what was already said,
 // which would read as the same problem happening twice.
-static int PrintWarnings(ElaboratedNetlist nl, int from = 0)
+/// <summary>
+/// Prints everything the run has to say that is not its result: first the NOTES — what circuitRF
+/// worked out and is reporting — then the warnings. Two cursors rather than one, because the two
+/// lists fill independently and a single index into either would re-print or skip the other.
+/// </summary>
+static (int Notes, int Warnings) PrintWarnings(ElaboratedNetlist nl, (int Notes, int Warnings) from = default)
 {
-    for (; from < nl.Warnings.Count; from++)
-        Console.Error.WriteLine($"[circuitRF] {nl.Warnings[from]}");
+    for (; from.Notes < nl.Notes.Count; from.Notes++)
+        Console.Error.WriteLine($"[circuitRF] {nl.Notes[from.Notes]}");
+
+    for (; from.Warnings < nl.Warnings.Count; from.Warnings++)
+        Console.Error.WriteLine($"[circuitRF] {nl.Warnings[from.Warnings]}");
+
     return from;
 }
 

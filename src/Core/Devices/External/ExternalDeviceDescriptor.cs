@@ -47,6 +47,14 @@ public sealed record ExternalParamDescriptor(
 /// naming what it follows is a hard error at elaboration, because the alternative is a silently
 /// wrong operating point.</para>
 ///
+/// <para><b>Degenerate</b> is the provider's own measurement that this node has no equation: its row
+/// in the device's Jacobian is zero, so the model writes nothing for it while other equations still
+/// read it. It is reported SEPARATELY from <b>SlavedTo</b> because the two answer different
+/// questions — "is this an independent unknown" and "if not, which node does it follow" — and a
+/// provider can measure the first without knowing the second. Degenerate with nothing naming a
+/// master is the hard error described above; the value cannot be guessed, and guessing wrong is not
+/// a failure to converge but a converged answer that is wrong.</para>
+///
 /// <para><b>CollapsedToGround</b> is the other degenerate case: a node the provider reports as tied
 /// to the ground reference rather than to another node of the same device. It is a separate field
 /// and not <c>SlavedTo = 0</c>, because node 0 is an ordinary device node like any other — a device
@@ -60,7 +68,8 @@ public sealed record ExternalNodeDescriptor(
     NodeQuantityKind QuantityKind      = NodeQuantityKind.Electrical,
     string           Label             = "",
     int?             SlavedTo          = null,
-    bool             CollapsedToGround = false);
+    bool             CollapsedToGround = false,
+    bool             Degenerate        = false);
 
 /// <summary>
 /// Everything circuitRF knows about an externally-provided device type. All of it is learned at

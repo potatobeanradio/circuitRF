@@ -250,49 +250,60 @@ public static class DeviceLibraryDiscovery
     /// kit's. But a worker sitting beside a kit has to be found too, or a user who has one cannot use
     /// it until a release ships, which is a long time to be blocked by a file they already have.</para>
     ///
-    /// <para>Only an ELF is accepted for the Linux target. The alternative — sharing a macOS binary
-    /// into the VM because it happened to have the right name — fails inside the guest with a message
-    /// about a program that plainly IS there, which is a bad way to spend an afternoon.</para>
+    /// <para><b><paramref name="format"/> says which platform's worker is wanted, and it is a filter
+    /// on the file's own magic bytes rather than on its name.</b> The worker is a DIFFERENT program
+    /// per platform — the Windows one is a launcher stub that stages the callback module the model
+    /// asks for, the Linux one is the whole worker — so "the worker" is not a single file to find.
+    /// Accepting whichever happened to have the right name is how a Linux ELF gets named as the
+    /// Windows command, or a Windows stub gets shared into the Linux VM: both fail at Run, and both
+    /// fail complaining about a program that plainly IS there, which is a bad way to spend an
+    /// afternoon.</para>
+    ///
+    /// <para>Both spellings of the name are looked for — with and without <c>.exe</c> — because the
+    /// magic decides the platform and the extension is only a convention. A Windows build named
+    /// without <c>.exe</c> is still a Windows build; a name-only search would simply not see it.</para>
     /// </summary>
-    public static string? FindWorker(WorkerProfile profile, string? searchRoot, int ancestorLevels = 2)
+    public static string? FindWorker(
+        WorkerProfile profile, string? searchRoot, int ancestorLevels = 2,
+        LibraryFormat format = LibraryFormat.Elf)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
-        foreach (string name in new[] { profile.Worker, profile.Worker + ".exe" })
+        string[] names = [profile.Worker, profile.Worker + ".exe"];
+
+        foreach (string name in names)
         {
             string shipped = SafeCombine(DeviceWorkerManifest.ToolsDirectory, name);
-            if (shipped.Length > 0 && File.Exists(shipped)) return shipped;
+            if (shipped.Length > 0 && File.Exists(shipped) && MatchesFormat(shipped, format)) return shipped;
         }
 
         if (string.IsNullOrWhiteSpace(searchRoot)) return null;
 
         int examined = 0;
         foreach (string root in SearchRoots(searchRoot, ancestorLevels))
-        {
-            IEnumerable<string> hits;
-            try
+            foreach (string name in names)
             {
-                hits = Directory.EnumerateFiles(root, profile.Worker, new EnumerationOptions
+                IEnumerable<string> hits;
+                try
                 {
-                    RecurseSubdirectories = true,
-                    IgnoreInaccessible    = true,
-                    MaxRecursionDepth     = 8,
-                });
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+                    hits = Directory.EnumerateFiles(root, name, new EnumerationOptions
+                    {
+                        RecurseSubdirectories = true,
+                        IgnoreInaccessible    = true,
+                        MaxRecursionDepth     = 8,
+                    });
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
-            foreach (string hit in hits)
-            {
-                if (++examined > MaxCandidates) return null;
-                if (IsElf(hit)) return hit;
+                foreach (string hit in hits)
+                {
+                    if (++examined > MaxCandidates) return null;
+                    if (MatchesFormat(hit, format)) return hit;
+                }
             }
-        }
 
         return null;
     }
-
-    /// <summary>True when the file starts with the ELF magic — i.e. it is a Linux executable.</summary>
-    private static bool IsElf(string path) => MatchesFormat(path, LibraryFormat.Elf);
 
     /// <summary>
     /// Whether a file's own magic bytes say it is the container format asked for.

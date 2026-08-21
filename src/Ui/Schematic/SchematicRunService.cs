@@ -32,7 +32,8 @@ public sealed class RunResult(
     string                           statusMessage,
     IReadOnlyList<AnalysisResult>?   results  = null,
     IReadOnlyList<string>?           warnings = null,
-    DataSet?                         grouped  = null)
+    DataSet?                         grouped  = null,
+    IReadOnlyList<string>?           notes    = null)
 {
     public RunStatus                       Status        { get; } = status;
     public string                          StatusMessage { get; } = statusMessage;
@@ -44,6 +45,14 @@ public sealed class RunResult(
     /// Non-empty even on <see cref="RunStatus.EngineError"/> when the run partially succeeded.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; } = warnings ?? [];
+
+    /// <summary>
+    /// What the run WORKED OUT and is reporting — drained from
+    /// <see cref="CircuitRF.Core.Elaboration.ElaboratedNetlist.Notes"/>. Rendered at Info, because a
+    /// resolution is not a complaint: a run that resolved everything correctly must not read as a
+    /// run with problems, or the warnings that do need attention are harder to pick out for it.
+    /// </summary>
+    public IReadOnlyList<string> Notes { get; } = notes ?? [];
 
     /// <summary>
     /// One grouped DataSet for the whole run (one group per analysis + "measurements" group).
@@ -303,7 +312,8 @@ public static class SchematicRunService
                 // one artifact — the grouped DataSet a Data Display opens — and half of one, silently
                 // missing whichever analyses had not started, is worse than none. The user asked to
                 // stop; stopping is the whole answer.
-                return new RunResult(RunStatus.Cancelled, "Run cancelled.", warnings: DrainWarnings(nl));
+                return new RunResult(RunStatus.Cancelled, "Run cancelled.",
+                                     warnings: DrainWarnings(nl), notes: DrainNotes(nl));
             }
             catch (Exception ex)
             {
@@ -340,14 +350,15 @@ public static class SchematicRunService
         // ── 5. Build outcome ───────────────────────────────────────────────────
         // Drain elaboration + engine run-time warnings from the netlist.
         IReadOnlyList<string> nlWarnings = DrainWarnings(nl);
+        IReadOnlyList<string> nlNotes    = DrainNotes(nl);
 
         if (errors.Count > 0 && results.Count == 0)
             return new RunResult(RunStatus.EngineError,
-                string.Join("; ", errors), warnings: nlWarnings);
+                string.Join("; ", errors), warnings: nlWarnings, notes: nlNotes);
 
         if (results.Count == 0)
             return new RunResult(RunStatus.NoAnalysis,
-                "No supported analysis dispatched.", warnings: nlWarnings);
+                "No supported analysis dispatched.", warnings: nlWarnings, notes: nlNotes);
 
         var allNotes = new List<string>(notes);
         if (errors.Count > 0)
@@ -356,7 +367,7 @@ public static class SchematicRunService
         var summary = allNotes.Count > 0
             ? string.Join("; ", allNotes)
             : $"{results.Count} analysis run(s) complete";
-        return new RunResult(RunStatus.Success, summary, results, nlWarnings, grouped);
+        return new RunResult(RunStatus.Success, summary, results, nlWarnings, grouped, nlNotes);
     }
 
     /// <summary>
@@ -369,6 +380,9 @@ public static class SchematicRunService
 
     private static IReadOnlyList<string> DrainWarnings(ElaboratedNetlist nl)
         => nl.Warnings.Count > 0 ? [.. nl.Warnings] : [];
+
+    private static IReadOnlyList<string> DrainNotes(ElaboratedNetlist nl)
+        => nl.Notes.Count > 0 ? [.. nl.Notes] : [];
 
     // ── Pre-flight description ────────────────────────────────────────────────
 
