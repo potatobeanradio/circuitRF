@@ -1087,10 +1087,19 @@ public static class PdkPartInstaller
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            found.Add(manifest.LaunchForThisMachine() is not null
-                ? $"can be simulated on this machine ({string.Join(", ", platforms)})"
-                : $"can be simulated on {string.Join(", ", platforms)} — NOT on this machine " +
-                  $"({DeviceWorkerManifest.CurrentRuntimeIdentifier()})");
+            var chosen = manifest.LaunchForThisMachine(out bool translated);
+
+            found.Add(chosen is null
+                ? $"can be simulated on {string.Join(", ", platforms)} — NOT on this machine " +
+                  $"({DeviceWorkerManifest.CurrentRuntimeIdentifier()})"
+                : translated
+                    // Said rather than left implicit. The kit names no build for this machine, and it
+                    // still runs — through the operating system's own translation of another
+                    // instruction set. A user who reads the platform list and expects to be refused
+                    // is owed the reason they were not.
+                    ? $"can be simulated on this machine ({string.Join(", ", platforms)}) — its " +
+                      $"{chosen.Platform} build, run here through this machine's compatibility layer"
+                    : $"can be simulated on this machine ({string.Join(", ", platforms)})");
         }
 
         if (manifest.Variants.Count > 0)

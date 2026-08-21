@@ -245,6 +245,27 @@ public sealed class DeviceWorkerAutoResolutionTests : IDisposable
     }
 
     [Fact]
+    public void AKitBuiltForThisSystemButAnotherInstructionSet_SaysThatIsWhatHappened()
+    {
+        // The two refusals read identically and are not alike. The reasonable first thought on being
+        // refused here is that the operating system will run the other build anyway — which is true
+        // on the machines that translate it, and those never reach this message at all. Reaching it
+        // means this machine does not, and saying so is the difference between an answer and a
+        // puzzle.
+        string elsewhere = DeviceWorkerManifest.CurrentOs() + "-notthisone";
+
+        WriteKit("AcmeKit", $$"""
+        { "workers": [ { "platform": "{{elsewhere}}", "command": "worker" } ] }
+        """, "worker");
+
+        var ex = Assert.Throws<ExternalDeviceException>(
+            () => new DeviceWorkerProviderResolver([_root]).Resolve("AcmeKit"));
+
+        Assert.Contains(elsewhere, ex.Message);
+        Assert.Contains("different instruction set", ex.Message);
+    }
+
+    [Fact]
     public void AKitWhoseManifestIsBroken_IsReportedAgainstThatKit()
     {
         WriteKit("AcmeKit", "{ this is not json");

@@ -401,7 +401,16 @@ public sealed class DeviceWorkerManifest
     /// none. A manifest listing only other platforms is a normal, explainable situation — a kit
     /// built for one operating system, opened on another — so it is reported, not thrown.
     /// </summary>
-    public DeviceWorkerLaunch? LaunchForThisMachine()
+    public DeviceWorkerLaunch? LaunchForThisMachine() => LaunchForThisMachine(out _);
+
+    /// <param name="throughCompatibilityLayer">
+    /// True when the entry chosen is for a different instruction set than this machine's own and
+    /// will therefore run through the operating system's own translation. Worth being able to say
+    /// out loud: it is the one kind of match that depends on something outside circuitRF being
+    /// present, and it is slower than a native worker.
+    /// </param>
+    /// <inheritdoc cref="LaunchForThisMachine()"/>
+    public DeviceWorkerLaunch? LaunchForThisMachine(out bool throughCompatibilityLayer)
     {
         DeviceWorkerLaunch? best = null;
         int bestScore = 0;
@@ -412,31 +421,92 @@ public sealed class DeviceWorkerManifest
             if (score > bestScore) { bestScore = score; best = launch; }
         }
 
+        throughCompatibilityLayer = bestScore == TranslatedScore;
         return best;
     }
 
     private static int MatchScore(string platform) => MatchScore(platform, CurrentRuntimeIdentifier(), CurrentOs());
 
+    // The four ways an entry can fit, worst to best. Named rather than written as bare numbers
+    // because their ORDER is the semantics, and the one addition that is not obvious is the last:
+    // a build for another instruction set is a real match, and the weakest one there is.
+    private const int TranslatedScore = 1;   // another instruction set, run by the OS's translation
+    private const int AnyScore        = 2;   // an entry the kit says works anywhere
+    private const int OsScore         = 3;   // this operating system, whatever the instruction set
+    private const int ExactScore      = 4;   // this exact machine
+
     /// <summary>
     /// How well a platform string fits a machine: an exact runtime identifier beats an operating
-    /// system alone, which beats a catch-all. Zero means it does not apply there at all.
+    /// system alone, which beats a catch-all, which beats a build for an instruction set this
+    /// machine can only run by translating it. Zero means it does not apply there at all.
     ///
     /// <para>This ordering is the manifest's own semantics, which is why it is stated as a function
     /// rather than buried in a comparison — a kit can give one general entry and override it for a
     /// single platform, and that only works if "more specific wins" is exact.</para>
+    ///
+    /// <para><b>The translated entry ranks last on purpose.</b> Every other match is an entry
+    /// claiming this machine; a translated one is an entry claiming a different machine that this
+    /// one happens to be able to run. So a kit that ships a native build for this machine, or says
+    /// its entry works anywhere, is always taken at its word first.</para>
     /// </summary>
     public static int MatchScore(string platform, string runtimeIdentifier, string os)
     {
         if (string.IsNullOrWhiteSpace(platform) || platform.Equals("any", StringComparison.OrdinalIgnoreCase))
-            return 1;
+            return AnyScore;
 
         if (platform.Equals(os, StringComparison.OrdinalIgnoreCase))
-            return 2;
+            return OsScore;
 
         if (platform.Equals(runtimeIdentifier, StringComparison.OrdinalIgnoreCase))
-            return 3;
+            return ExactScore;
 
-        return 0;
+        return RunsThroughCompatibilityLayer(runtimeIdentifier, platform) ? TranslatedScore : 0;
+    }
+
+    /// <summary>
+    /// Every runtime identifier a machine can run BESIDES its own, because its operating system
+    /// translates that instruction set for it.
+    ///
+    /// <para><b>Why a kit built for another instruction set can be used at all: a worker is a
+    /// separate PROCESS.</b> circuitRF loads no model library itself — it starts a program that
+    /// does — so the translation has a whole process to work on, and the worker and the library it
+    /// loads are the same instruction set as each other while differing from circuitRF's. Were the
+    /// model loaded in-process none of this would be possible, because a process holds exactly one
+    /// instruction set. This is the same property that made a worker a process in the first place.</para>
+    ///
+    /// <para><b>Stated as a short list of facts, not derived from the names.</b> Each row is a
+    /// property of one operating system: 64-bit ARM Windows runs x64 and x86 programs, and 64-bit
+    /// x86 Windows runs x86 ones. ARM Linux translates nothing and so appears nowhere — inferring
+    /// "arm64 can run x64" from the strings would be wrong there.</para>
+    ///
+    /// <para>macOS is deliberately absent although it has such a layer: it is an optional install
+    /// that may simply not be present, so naming it here would trade a message that says exactly
+    /// which platforms a kit covers for a failure to start a program. Nothing needs it either —
+    /// these libraries ship no macOS build, which is why macOS runs the Linux one in the VM
+    /// circuitRF supplies.</para>
+    ///
+    /// <para>A machine too old for the translation it is listed as having (ARM Windows gained x64
+    /// translation later than x86) reports a failure to start the program, which names the program
+    /// — a worse message than the one above, but only reachable on a machine that cannot run the
+    /// kit at all.</para>
+    /// </summary>
+    private static readonly (string Machine, string[] AlsoRuns)[] Translated =
+    [
+        ("win-arm64", ["win-x64", "win-x86"]),
+        ("win-x64",   ["win-x86"]),
+    ];
+
+    /// <summary>
+    /// Whether programs built for <paramref name="platform"/> run on the machine
+    /// <paramref name="runtimeIdentifier"/> names, through the operating system's own translation.
+    /// </summary>
+    public static bool RunsThroughCompatibilityLayer(string runtimeIdentifier, string platform)
+    {
+        foreach (var (machine, alsoRuns) in Translated)
+            if (machine.Equals(runtimeIdentifier, StringComparison.OrdinalIgnoreCase))
+                return alsoRuns.Contains(platform, StringComparer.OrdinalIgnoreCase);
+
+        return false;
     }
 
     /// <summary>This machine's runtime identifier, e.g. <c>linux-x64</c>. Appears in messages about a

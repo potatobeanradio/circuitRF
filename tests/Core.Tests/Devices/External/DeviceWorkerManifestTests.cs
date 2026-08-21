@@ -135,6 +135,52 @@ public sealed class DeviceWorkerManifestTests : IDisposable
     }
 
     [Fact]
+    public void ABuildForAnInstructionSetTheMachineTranslates_IsUsable()
+    {
+        // A worker is a separate PROCESS, which is what makes this possible at all: the worker and
+        // the model library it loads are the same instruction set as each other, and only circuitRF's
+        // own process differs. So a machine whose operating system translates that instruction set
+        // can run the kit, and refusing it would refuse a kit that works.
+        Assert.True(DeviceWorkerManifest.MatchScore("win-x64", "win-arm64", "win") > 0);
+        Assert.True(DeviceWorkerManifest.MatchScore("win-x86", "win-x64",   "win") > 0);
+    }
+
+    [Fact]
+    public void ATranslatedBuildRanksBelowEveryEntryThatClaimsThisMachine()
+    {
+        // Every other kind of match is an entry saying it is for this machine; a translated one is an
+        // entry for a different machine that this one happens to be able to run. So a kit shipping a
+        // native build, or saying its entry works anywhere, is taken at its word first.
+        int translated = DeviceWorkerManifest.MatchScore("win-x64", "win-arm64", "win");
+
+        foreach (string claimsThisMachine in new[] { "win-arm64", "win", "any", "" })
+            Assert.True(DeviceWorkerManifest.MatchScore(claimsThisMachine, "win-arm64", "win") > translated);
+    }
+
+    [Fact]
+    public void WhichInstructionSetsAMachineTranslates_IsAFactAboutIt_NotInferredFromTheNames()
+    {
+        // These strings look exactly like the pair above, and ARM Linux runs no x64 binaries. A rule
+        // derived from the spelling would name a build this machine cannot start.
+        Assert.Equal(0, DeviceWorkerManifest.MatchScore("linux-x64", "linux-arm64", "linux"));
+
+        // And translation never reaches across operating systems: an executable format is not the
+        // instruction set it holds.
+        Assert.False(DeviceWorkerManifest.RunsThroughCompatibilityLayer("win-arm64", "linux-x64"));
+        Assert.Equal(0, DeviceWorkerManifest.MatchScore("win-x64", "linux-arm64", "linux"));
+    }
+
+    [Fact]
+    public void AnEntryNamingThisMachineIsNotReportedAsTranslated()
+    {
+        string here = DeviceWorkerManifest.CurrentRuntimeIdentifier();
+        var m = Read($$"""{ "workers": [ { "platform": "{{here}}", "command": "w" } ] }""");
+
+        Assert.NotNull(m.LaunchForThisMachine(out bool translated));
+        Assert.False(translated);
+    }
+
+    [Fact]
     public void TheMostSpecificEntryIsChosen_HoweverTheyAreOrdered()
     {
         string here = DeviceWorkerManifest.CurrentRuntimeIdentifier();

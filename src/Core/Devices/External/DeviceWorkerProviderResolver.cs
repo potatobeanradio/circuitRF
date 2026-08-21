@@ -178,6 +178,14 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
     /// situation a user can be in for an ordinary reason — a kit built for one operating system,
     /// opened on another — and the message says which platforms it does cover rather than leaving
     /// them to guess what is wrong.</para>
+    ///
+    /// <para><b>A build for THIS operating system but another instruction set is called out
+    /// separately</b>, because the two situations look identical in the message and are not alike at
+    /// all. The reasonable first thought on being refused there is that the operating system will
+    /// run the other build anyway — which is true on the machines
+    /// <see cref="DeviceWorkerManifest.RunsThroughCompatibilityLayer"/> lists, and those never reach
+    /// this message. Getting here means it is not true on this one, and saying so is the difference
+    /// between an answer and a puzzle.</para>
     /// </summary>
     private static IExternalDeviceProvider Launch(
         string name, DeviceWorkerManifest manifest, Launcher launcher, string? library = null)
@@ -190,10 +198,17 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
                 .Select(l => string.IsNullOrWhiteSpace(l.Platform) ? "(unspecified)" : l.Platform)
                 .Distinct(StringComparer.OrdinalIgnoreCase));
 
+            string prefix = DeviceWorkerManifest.CurrentOs() + "-";
+            bool sameSystem = manifest.Launches.Any(
+                l => l.Platform.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
             throw new ExternalDeviceException(
                 $"The kit '{name}' cannot evaluate its devices on this machine " +
                 $"({DeviceWorkerManifest.CurrentRuntimeIdentifier()}). It describes how to do so " +
-                $"for: {offered}.");
+                $"for: {offered}." + (sameSystem
+                    ? " Those are the same operating system built for a different instruction set, " +
+                      "which this machine has no way to run."
+                    : ""));
         }
 
         var (command, arguments) = manifest.Resolve(launch);
