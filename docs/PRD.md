@@ -43,7 +43,7 @@ circuitRF v1 is deliberately bounded. The following are **not** in v1:
 
 ## 4. Hero circuits & acceptance criteria
 
-These circuits define "done" for the v1 engine; every proposed feature is gated against "does a hero need it for v1?" Each hero ships with a reference in `testdata/` and a regression test. **References are owner-generated from other simulators exports**, with the **identical SDD FET model transcribed into the reference tool** (other tools' equation-defined devices) so HB comparisons test circuitRF's HB math, not a different transistor. **All heroes use a 2 GHz center frequency** unless noted.
+These circuits define "done" for the v1 engine; every proposed feature is gated against "does a hero need it for v1?" Each hero ships with a reference in `testdata/` and a regression test. **References are externally generated** — produced independently of circuitRF, then committed as fixed data — with the **identical SDD FET definition on both sides**, so an HB comparison tests circuitRF's HB math rather than a different transistor. This is what constrains the SDD language: its equations must be expressible in whatever equation-defined-device form the reference is authored in. **All heroes use a 2 GHz center frequency** unless noted.
 
 ### Hero 1 — Linear / S-parameters
 **Circuit:** a 4-port RLC matching network that *embeds a Touchstone (SNP) block*, compared against a 4-port Touchstone reference.
@@ -74,7 +74,7 @@ These circuits define "done" for the v1 engine; every proposed feature is gated 
 ### Hero 5 — Two-tone intermodulation
 **Circuit:** the Hero-2 PA (same SDD FET, same extrinsic network), driven **two-tone**: f₁ = 1.995 GHz, f₂ = 2.005 GHz (2 GHz center, **Δf = 10 MHz**), reporting **IM2, IM3, IM4, IM5** products.
 **Exercises:** two-tone HB — the `{k₁f₁ + k₂f₂}` spectrum, the truncation/index map, the almost-periodic transform, and the baseband/harmonic-zone mixing products. Capturing the close-in fifth-order products (3f₁−2f₂ = 1.975 GHz, 3f₂−2f₁ = 2.025 GHz) requires a **two-tone mixing order ≥ 5**; capturing the even-order baseband product (f₂−f₁ = 10 MHz) validates the engine's handling of baseband terms — directly relevant to the source/load baseband-termination effects this tool targets. Close-in third-order products sit at 2f₁−f₂ = 1.985 GHz and 2f₂−f₁ = 2.015 GHz.
-**Acceptance [PROPOSED]:** at the chosen drive level(s), HB converges and product levels (in dBc relative to the carriers) match the reference within: **IM3 ±0.5 dBc**, **IM2/IM4/IM5 ±1.0 dBc** (high-order, low-level products are numerically delicate). Included **only if** IM data can be exported from other simulators; otherwise treated as a circuitRF self-consistency target.
+**Acceptance [PROPOSED]:** at the chosen drive level(s), HB converges and product levels (in dBc relative to the carriers) match the reference within: **IM3 ±0.5 dBc**, **IM2/IM4/IM5 ±1.0 dBc** (high-order, low-level products are numerically delicate). Included **only if** an external IM reference is obtainable; otherwise treated as a circuitRF self-consistency target.
 
 > **Validation-methodology note (resolved).** Because the *same SDD FET equations* are used on both sides, the tight Hero-2/4 tolerances (±0.01 dB / ±0.1 pp) test circuitRF's HB engine, not two different transistor models. Requirement this creates: the SDD's v1 expression language (§7) must be expressible such that its equations can be transcribed into other tools' equation-defined devices — straightforward for algebraic `i = f(v)` models, which is what the heroes use.
 
@@ -219,9 +219,9 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 
 **Resolved (v1.0 baseline):**
 - Hero 1 → `1e-6`. Hero 2/4 → Pout/gain ±0.01 dB, efficiency/PAE ±0.1 pp. Hero 4 added; Hero 5 (two-tone IM) added.
-- Hero 2/4 reference-model match → **identical SDD FET transcribed into other simulators** (the SDD language must be transcribable into other tools' equation-defined devices).
+- Hero 2/4 reference-model match → **identical SDD FET definition on both sides** (the SDD language must be expressible in the equation-defined-device form the reference is authored in).
 - Tone defaults → **2 GHz center; two-tone f₁ = 1.995 / f₂ = 2.005 GHz, Δf = 10 MHz; check IM2–IM5**; two-tone truncation **mixing order ≥ 5**.
-- IM check → included **if** IM data is exportable from other simulators; else a self-consistency target.
+- IM check → included **if** an external IM reference is obtainable; else a self-consistency target.
 - Expression language → variables, `+ - * / ^ ( )`, function set incl. `tan`/`tanh`, **conditionals (v1)**, user-defined expression functions; grows later.
 - **Cell parameters** with hierarchical passing → in v1 (§7, §8, §13).
 - ASM-HEMT → v2 via Verilog-A/OSDI (§6.1).

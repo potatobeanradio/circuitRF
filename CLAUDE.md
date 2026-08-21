@@ -265,7 +265,7 @@ serves global variables, cell parameters, SDD device equations, and measurements
   **conditionals** (`< <= > >= == !=`, `&& || !`, `if(cond,then,else)`); user-defined expression
   functions with arbitrary parameters. Values are kinded Real/Complex/Bool. Built to extend
   without breaking v1 files.
-- The SDD's equations must stay transcribable into other tools' equation-defined devices (hero references depend on it).
+- The SDD's equations must stay expressible in an ordinary equation-defined-device form (hero references depend on it).
 
 ## How to add a component type
 Derive from `ComponentModel` (the single base for passive **and** active parts — "Device" is
@@ -294,8 +294,9 @@ with selectable gate charge via `CapModel` — 0 none, 1 constant Cgs/Cgd, 2 jun
 ## Validation expectations
 Numerical changes require a `testdata/` regression test within the tolerance in the PRD.
 The five heroes are the acceptance anchors (S-params 1e-6; HB Pout/gain ±0.01 dB, eff/PAE ±0.1 pp;
-loadpull contours; two-tone IM2–IM5). References are owner-generated from other simulators using
-the **identical SDD FET** so HB comparisons test our math, not a different transistor. CI runs the
+loadpull contours; two-tone IM2–IM5). References are **externally generated** — produced
+independently of circuitRF, then committed as fixed data — with the **identical SDD FET definition
+on both sides**, so HB comparisons test our math, not a different transistor. CI runs the
 suite on Windows, macOS, and Linux.
 
 ## Ask before

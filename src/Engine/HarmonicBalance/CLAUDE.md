@@ -253,9 +253,9 @@ by `AddBranch()`).
   slice must survive into the result cubes, not be discarded after convergence.
 
 ## Validation
-Hero 2 (single-FET PA power sweep), Hero 4 (2-stage PA), Hero 5 (two-tone IM). References use the
-**identical SDD FET** transcribed into other simulators with matched harmonic count and solver
-tolerances — so a tolerance miss points at our HB math, not the transistor model.
+Hero 2 (single-FET PA power sweep), Hero 4 (2-stage PA), Hero 5 (two-tone IM). References are
+externally generated using the **identical SDD FET definition on both sides**, with matched harmonic
+count and solver tolerances — so a tolerance miss points at our HB math, not the transistor model.
 
 ## Phase 4c deliverable — multi-tone (two-tone) HB — COMPLETE (2026-06-05)
 GENERALIZES the single-tone engine from the scalar harmonic axis k to the 2-D mixing lattice
@@ -301,8 +301,8 @@ slope checks must sit in a drive window where the product current is well above 
 compression.
 
 ### Owed
-Cross-check Hero 5 against other simulators with the identical SDD FET (currently self-consistent
-only). Phase 4d (multi-device → Hero 4) remains to complete Phase 4.
+Cross-check Hero 5 against an external reference with the identical SDD FET definition (currently
+self-consistent only). Phase 4d (multi-device → Hero 4) remains to complete Phase 4.
 
 ## Phase 5 corrective brief — COMPLETE (2026-06-06)
 Three coordinated corrections to the Phase 5-3/5-5 retrofit:

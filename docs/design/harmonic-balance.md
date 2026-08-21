@@ -436,7 +436,7 @@ CONTINUATION
 
 ## 14. Validation
 
-The HB engine is validated against owner-generated references from other simulators using the **identical SDD FET** transcribed into both tools (PRD §4), so the comparison tests circuitRF's HB math, not a different transistor:
+The HB engine is validated against externally generated references using the **identical SDD FET definition on both sides** (PRD §4), so the comparison tests circuitRF's HB math, not a different transistor:
 
 - **Hero 2 / 4** — Pout, gain within ±0.01 dB; DE, PAE within ±0.1 pp absolute; convergence at every power-sweep point into ≥ 3 dB compression at H = 7.
 - **Hero 3** — Pout/PAE loadpull contours within Hero-2 tolerances; ≥ 95% of ≥100 Γ points converge with previous-point continuation.

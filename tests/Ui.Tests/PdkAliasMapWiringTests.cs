@@ -188,33 +188,35 @@ public sealed class PdkAliasMapWiringTests : IDisposable
     }
 
     /// <summary>
-    /// The shipped map still carries the entries that make a FRESH import converge, and emptying it
-    /// is a slow, silent regression — this test exists because that was done once.
-    ///
-    /// <para>The kit-folder override above is what lets a per-kit entry live beside its own kit; it
-    /// is not a reason to drop the fallback. circuitRF cannot derive which node a degenerate node
-    /// follows, so with no entry anywhere the first import of that kit goes back to 279,127
-    /// iterations at residual 35.6 instead of 5 at 7.6e-12 — and nothing about that symptom points
-    /// at a missing file.</para>
+    /// The shipped map declares no families. Data belongs beside the library it applies to, at
+    /// <c>&lt;workspace&gt;/pdk/&lt;kit&gt;/alias-map.json</c>, which the override test above proves
+    /// is found first.
     /// </summary>
     [Fact]
-    public void TheShippedAliasMap_StillCarriesTheFallbackEntries_AFreshImportNeeds()
+    public void TheShippedAliasMap_DeclaresNoFamilies()
     {
         var shipped = JsonNode.Parse(ReadRepoFile("tools/senior-worker/alias-map.json"))!.AsObject();
 
-        var families = shipped.Where(kv => kv.Value is JsonObject).ToList();
-        Assert.True(families.Count > 0,
-            "circuitRF's shipped alias map declares no families. A fresh import of a kit whose model " +
-            "has undriven internal nodes will grind (279,127 iterations vs 5) with no message saying " +
-            "why. Per-kit overrides belong in <workspace>/pdk/<kit>/alias-map.json — they do not " +
-            "replace this fallback.");
+        var families = shipped.Where(kv => kv.Value is JsonObject).Select(kv => kv.Key).ToList();
+        Assert.True(families.Count == 0,
+            $"The shipped alias map declares {families.Count} family entr{(families.Count == 1 ? "y" : "ies")} " +
+            $"({string.Join(", ", families)}). This file ships with none; data belongs at " +
+            "<workspace>/pdk/<kit>/alias-map.json, beside the library it applies to.");
+    }
 
-        // Each entry must be node→master integer pairs, or the worker skips it and the fallback is
-        // silently absent rather than merely wrong.
-        foreach (var (name, value) in families)
-            foreach (var (node, master) in value!.AsObject())
-                Assert.True(int.TryParse(node, out _) && master is JsonValue v && v.TryGetValue<int>(out _),
-                    $"'{name}' has a non-integer alias entry '{node}'; the worker will skip it.");
+    /// <summary>
+    /// The file documents its own format, so an entry can be written without reading the worker
+    /// source. Kept as a test because the file ships empty and the note is the only thing in it.
+    /// </summary>
+    [Fact]
+    public void TheShippedAliasMap_DocumentsItsFormat()
+    {
+        var note = string.Join(' ',
+            JsonNode.Parse(ReadRepoFile("tools/senior-worker/alias-map.json"))!
+                    .AsObject()["_note"]!.AsArray().Select(n => n!.GetValue<string>()));
+
+        Assert.Contains("FAMILY_NAME", note);
+        Assert.Contains("<workspace>/pdk/<kit>/alias-map.json", note);
     }
 
     [Fact]

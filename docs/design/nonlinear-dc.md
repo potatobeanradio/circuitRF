@@ -99,7 +99,7 @@ In HB (Phase 4) `Evaluate` runs per time sample × per Newton iteration × per s
 
 ## 3. The SDD device
 
-The **SDD** (symbolically-defined device) is a `ComponentModel` whose behavior is a set of **user-authored expressions** rather than hardcoded C#. It is the device that exercises the AD path, and it is how the hero FET (and Heroes 2–5's FET) are authored — the same equations the owner transcribes into the reference tool, so the validation tests circuitRF's math against an identical device.
+The **SDD** (symbolically-defined device) is a `ComponentModel` whose behavior is a set of **user-authored expressions** rather than hardcoded C#. It is the device that exercises the AD path, and it is how the hero FET (and Heroes 2–5's FET) are authored — the same equations the golden reference is authored from, so the validation tests circuitRF's math against an identical device.
 
 ### 3.1 Authoring surface (`.cnl`) — the `SDD:` grammar
 An SDD line declares its ports by **2N nets in `+/−` pairs** and its behavior by per-port equations:
@@ -267,7 +267,7 @@ At vgs = −3.05 V, the self-consistent "series R" solve (`vds = 48 − i2·20`)
 - **Overflow-safe `exp`/softplus** and **domain-error clamp-and-warn** (HB §11) in the dual evaluator — the hero device will probe extreme arguments under continuation.
 - **AD validated against finite-difference** of the same expression — the single most important Phase-3 test; FD is also the fallback tier.
 - **`Dual` is allocation-free** (fixed-size gradient) for the HB hot path, though Phase 3 (DC) does not stress it.
-- **SDD device** authored as user expressions, evaluated in dual arithmetic; the hero FET (and Heroes 2–5's FET) are SDDs — same equations transcribed into the reference tool.
+- **SDD device** authored as user expressions, evaluated in dual arithmetic; the hero FET (and Heroes 2–5's FET) are SDDs — the same equations the golden reference is authored from.
 - **Nonlinear-DC Newton**: real, sparse, full-circuit; `J = G_linear + dg`; `gmin` continuity; source-stepping continuation with step-backoff; reuses Phase-2 linear DC stamps. **It is the HB initial-guess generator** (one nonlinear-DC formulation, standalone and as the HB seed).
 - **Phase-3 hero**: grounded-source GaN HEMT SDD, gate −3.05 V (choke), drain 48 V through Rd = 20 Ω; golden point **i2 ≈ 49.12 mA, vds ≈ 47.018 V, i1 = −61 mA, gm ≈ 62.4 mS, gds ≈ −9.45 µS** (verified). Acceptance: AD matches FD; Newton converges to the "series R" point; robustness under overshoot.
 

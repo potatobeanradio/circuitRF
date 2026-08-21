@@ -52,12 +52,11 @@ Two mechanisms exist, and they need different worker designs:
 | **dynamic** | `LoadLibrary` + `GetProcAddress` at run time; the names are not in the import table | intercept those two calls and answer whatever is asked for |
 
 `--scan` classifies which one a library uses. **This is the first thing to run against any library,
-because the answer decides everything downstream** — and it is not guessable. The library measured
-here resolves **dynamically**: its whole import table is `KERNEL32`, `USER32`, `MSVCP120`, `MSVCR120`
-and `SHLWAPI`, with `LoadLibraryA`, `GetProcAddress` and `GetModuleHandleA` among the KERNEL32
-imports and no host module anywhere in it.
+because the answer decides everything downstream** — and it is not guessable. A library can carry
+nothing but system imports, resolving every host callback **dynamically** at run time, with no host
+module named in its import table at all.
 
-That result is worth stating plainly because it contradicts the obvious assumption. `senior-worker`
+That case is worth stating plainly because it contradicts the obvious assumption. `senior-worker`
 handles a library of the **static** kind, and its `derive_host_module` reads the import table to find
 the module name. The same approach against a dynamic library finds nothing at all — not an error, a
 silence. Anyone extending either worker should run `--scan` first rather than reason from the other
@@ -164,7 +163,7 @@ calling the right slot is a guess, and a wrong guess faults. Identify first, cal
 
 - `--scan` — classifies the resolution mechanism. That classification is the finding recorded above.
 - `--list` — intercepts the run-time resolver, loads the library, and reports everything it
-  registered. On a library of that shape that is **119 records, every one named**, obtained with
+  registered. That can run to a hundred or more records, every one named, obtained with
   no input but the path to the library.
 - `--build` — **builds a real part and reads its netlist out of the library.** Measured on the
   library available here:
@@ -222,7 +221,7 @@ time from a class name. It exists nowhere in the image, so no static scan can fi
 way to learn which interfaces a library needs is to watch it ask. Each one it asks for and does not
 get is a piece of host still to supply — the list is read off the library rather than guessed at.
 
-Worth recording: on a library of that shape, **a part builds to completion with every one of those
+Worth recording: **a part can build to completion with every one of those
 factories answered NULL.** They are not on the path from a record to a netlist. That is a result, not
 an assumption, and it is why `--build` did not have to implement any of them.
 
@@ -287,7 +286,7 @@ read** — and the integers it does report remain undecoded, because they do not
 topology's node numbering either. The library is stating something real that no current reading
 decodes correctly.
 
-There is a one-line mapping that reconciles a part of that shape. It is not adopted, and that is
+There is a one-line mapping that would reconcile such a part. It is not adopted, and that is
 deliberate: reproducing observed numbers while assigning them the wrong meaning is the specific
 failure this tool exists to prevent, and it has already happened three times to the offline decode
 of this same library. It stays a hypothesis until parts with different device-to-port arithmetic

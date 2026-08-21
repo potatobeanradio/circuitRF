@@ -381,7 +381,12 @@ not converge.
 
 Probing finds *which* nodes are degenerate. It cannot find **which node each one follows** — that comes
 from what the model does with the pair. So it is supplied as run-time data (`alias-map.json`), keyed by
-family name, searched **kit folder first**, then beside the worker, then circuitRF's shipped fallback.
+family name, searched **kit folder first**, then beside the worker, then circuitRF's shipped copy.
+
+**circuitRF's shipped copy declares no families.** This is §0's corollary applied: an alias is
+definition data about one library's models, so it is data beside that library and not knowledge inside
+the product. It belongs at `<workspace>/pdk/<kit>/alias-map.json` — the first location searched. What
+ships is the mechanism and the file format, documented in that file's own `_note`.
 
 Measured with and without: **279,127 iterations at residual 35.6 → 5 iterations at 7.6e-12.**
 

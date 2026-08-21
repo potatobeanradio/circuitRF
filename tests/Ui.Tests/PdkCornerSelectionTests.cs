@@ -117,7 +117,7 @@ public sealed class PdkCornerSelectionTests : IDisposable
     [Fact]
     public void S3b_TwoAxesSharingAName_AreQualifiedByWhatActuallyDiffers_AndAUniqueOneIsNot()
     {
-        // THE KIT'S SHAPE, and the reason the first attempt at this was wrong: it files its
+        // THE SHAPE THAT OCCURS IN PRACTICE, and the reason the first attempt at this was wrong: it files its
         // corner files one directory per simulator flavour and then a `models` folder inside EACH,
         // so every path ends in the same leaf. Qualifying by the folder leaf produced two rows both
         // reading "models · capCorners" — a qualifier that does not qualify.

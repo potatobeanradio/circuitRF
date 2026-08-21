@@ -53,7 +53,7 @@ verify-windows: WHAT A PASS HERE DOES AND DOES NOT MEAN
   Still open, and only a real Windows machine with a kit can close it:
     - whether the 15 symbols are SUFFICIENT (they are demonstrably necessary);
     - a CRT mismatch against a UCRT-built library;
-    - whether the kit's own an extra export export wants anything at load time;
+    - whether a library's own additional exports want anything at load time;
     - the vectored exception handler under a real access violation.
 CAVEAT
 

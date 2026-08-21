@@ -56,7 +56,7 @@ not is visible in the library:
 | | how the model finds its host callbacks |
 |---|---|
 | Linux `.so` | *undefined* symbols, resolved against whatever loaded it. The worker supplies them; that is what `-rdynamic` is for. |
-| Windows `.dll` | *imports by name* from a named module (a named host module, in a kit of that shape). |
+| Windows `.dll` | *imports by name* from a named module (a named host module). |
 
 An executable exporting those symbols does not satisfy an import-by-name from a named module — the
 loader looks for a *module*, and an EXE's exports are never consulted. So a DLL under that name must
@@ -167,16 +167,10 @@ converging beautifully, is the worst outcome available here.
 
 ## Verified
 
-**Against a compiled model library (Linux):** built from this directory and run against it, all four
-families it serves are found from the symbol table alone, with no names compiled in:
-
-```
-family[0] … ext=4 int=0 pars=10
-family[1] … ext=4 int=6 pars=60
-family[2] … ext=4 int=6 pars=4
-family[3] … ext=6 int=0 pars=15
-worker ready: 4 families
-```
+**Against a compiled model library (Linux):** built from this directory and run against it, every
+family the library serves is found from the symbol table alone, with no names compiled in. The worker
+reports each family's external and internal node counts and its parameter count, then `worker ready`
+with the total — all of it read from the library at run time.
 
 **Against `tools/fake-model-lib` (Linux), a full request/reply exchange:** `describe` reports
 `CRF_TEST_V1` with its parameter and node counts, `create` succeeds, `probe` classifies both nodes
@@ -197,11 +191,11 @@ which is precisely why this bug is easy to ship and why a `describe`-only test c
 
 **What is still NOT proven, and only a real Windows machine with a kit can settle it:**
 whether the 15 symbols are *sufficient* (they are demonstrably necessary); a CRT mismatch against a
-UCRT-built library; whether the kit's own `an extra export` export wants anything at load
-time (it is exported by the kit, so it should be self-contained — but it is the first place to look
-if a load fails with all 15 satisfied); and the vectored exception handler under a real access
-violation. Wine is a reimplementation and the fixture is ours; a PASS there exercises the mechanism,
-it does not stand in for the vendor's library.
+UCRT-built library; whether a library's own additional exports want anything at load time (they
+should be self-contained, but they are the first place to look if a load fails with all 15
+satisfied); and the vectored exception handler under a real access violation. Wine is a
+reimplementation and the fixture is ours; a PASS there exercises the mechanism, it does not stand in
+for a real library.
 
 ## The shim is an owner decision, taken knowingly
 
@@ -212,7 +206,7 @@ the ordinary shim pattern.
 
 ## Not the second ABI
 
-A delivery can contain libraries using a completely different callback set
-(`the second-profile loader`, `its derivative callback`, `its thermal-node callback`, `its parameter callbacks`, 21–22 symbols).
-`DeviceLibraryDiscovery.Profiles` is a list precisely so a second profile can be added — but that is
-a distinct worker on **every** platform and has nothing to do with Windows. Out of scope here.
+A delivery can contain libraries built against a completely different callback set, with its own
+entry points and its own symbol count. `DeviceLibraryDiscovery.Profiles` is a list precisely so a
+second profile can be added — but that is a distinct worker on **every** platform and has nothing to
+do with Windows. Out of scope here.

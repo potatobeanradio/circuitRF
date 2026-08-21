@@ -44,12 +44,19 @@
 
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
                     <Run FontWeight="SemiBold">CSparse.NET</Run>
-                    <Run> — Sparse matrix library for .NET. LGPL v2.1.</Run>
+                    <Run> — Sparse matrix library for .NET. © Christian Woltering. LGPL v2.1 only.</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">Linked statically into this build. LGPL §6 gives you the right to modify CSparse.NET and relink it into a working circuitRF; complete source for doing so is published at the project repository. See THIRD-PARTY-NOTICES.md.</Run>
                 </TextBlock>
 
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
                     <Run FontWeight="SemiBold">NumFlat</Run>
                     <Run> — Dense linear algebra for .NET. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">FftFlat</Run>
+                    <Run> — Fast Fourier transform for .NET. MIT License.</Run>
                 </TextBlock>
 
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
@@ -60,6 +67,21 @@
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
                     <Run FontWeight="SemiBold">PureHDF</Run>
                     <Run> — HDF5 library for .NET. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Markdig</Run>
+                    <Run> — Markdown processor for .NET. BSD-2-Clause License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Svg / Svg.Skia</Run>
+                    <Run> — SVG rasterisation, used when generating application icons. Microsoft Public License (MS-PL) and MIT License respectively.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">osdi.h</Run>
+                    <Run> — OSDI ABI header from the ngspice OSDI component, used by the OSDI device worker. © 2022 SemiMod GmbH. Mozilla Public License 2.0.</Run>
                 </TextBlock>
 
                 <TextBlock Text="Fonts" FontSize="14" FontWeight="SemiBold" Margin="0,8,0,4"/>
@@ -80,6 +102,18 @@
                     <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">© 2017 IBM Corp. SIL Open Font License, Version 1.1.</Run>
                     <LineBreak/>
                     <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">Embedded at: Assets/Fonts/IBM_Plex_Sans/static/IBMPlexSans-*.ttf</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18" Margin="0,6,0,0">
+                    <Run FontWeight="SemiBold">Inter</Run>
+                    <Run> — Supplied by Avalonia.Fonts.Inter and used by the generated user documentation.</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">© The Inter Project Authors. SIL Open Font License, Version 1.1.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="11" LineHeight="16" Margin="0,14,0,0"
+                           Foreground="{DynamicResource SystemBaseMediumColor}">
+                    <Run>Full terms for every component above, including redistribution obligations, are in THIRD-PARTY-NOTICES.md at the root of the circuitRF repository.</Run>
                 </TextBlock>
 
             </StackPanel>

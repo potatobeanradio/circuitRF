@@ -73,7 +73,7 @@ v1 ships built-in diode/FET/BJT + the SDD; **full Verilog-A is v2.** **ASM-HEMT*
 A first-class "experiment": pick the DUT port, a Smith-chart grid of Γ (fundamental and optionally harmonic), and the FOMs; run HB per point into the DataCube; plot contours via the shared Smith chart. Spend UX effort here.
 
 ### 3.6 SDD + automatic differentiation
-The SDD needs an expression parser and exact `di/dv` via forward-mode AD (or symbolic), so users write `i = f(v)` and get correct Jacobian stamps. Build it before any Verilog-A work. Note the heroes use the SDD FET (the same equations are transcribed into other tools for the golden references), so the SDD language must stay transcribable into other tools' equation-defined devices.
+The SDD needs an expression parser and exact `di/dv` via forward-mode AD (or symbolic), so users write `i = f(v)` and get correct Jacobian stamps. Build it before any Verilog-A work. Note the heroes use the SDD FET, and the golden references are authored from the same equations, so the SDD language must stay expressible in an ordinary equation-defined-device form.
 
 ### 3.7 Variables, expressions & cell parameters *(new)*
 One expression engine serves global variables, **cell parameters** (hierarchical, parameterized-subcircuit passing), and the SDD. Elaboration resolves parameters **top-down** (instance overrides bound in parent scope; cell evaluates its values and sub-cell passes in its scope) with **cycle detection** across variables, defaults, and overrides. v1 language: refs; `+ - * / ^ ( )`; functions (`tan`,`tanh`,…); **conditionals** (`< <= > >= == !=`, `&& || !`, `if(cond,then,else)`); user-defined expression functions. → `docs/design/expressions.md`.
@@ -150,7 +150,7 @@ Update each at the end of the phase that touches its subsystem.
 | Native libs vs cross-platform | Stay managed (CSparse.NET, NumFlat) for v1; native interop only as a profiled option |
 | Schematic-canvas perf & auto-routing | Custom virtualized canvas + spatial index; orthogonal A* to start |
 | Scope creep vs "lightweight" | The five heroes + PRD §2 non-goals are the gate |
-| Validation / golden references | Owner-generated from other simulators with the **identical SDD FET**; `testdata/` regression suite in CI from Phase 2 |
+| Validation / golden references | Externally generated with the **identical SDD FET definition on both sides**; `testdata/` regression suite in CI from Phase 2 |
 | Solo-dev + AI architectural drift | `CLAUDE.md` invariants; Opus subsystem-boundary reviews; engine-first |
 | Swift → C# semantics | Design the C# model deliberately (don't transliterate); review the Swift before Phase 1 |
 | Big-sweep memory | `DataSet`/`DataCube` backing store swappable to chunked/memory-mapped; deep measurement reach noted for a future prune-to-referenced-nodes pass |

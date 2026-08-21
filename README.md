@@ -275,11 +275,15 @@ dotnet test       # optional 5-10 min tests; runs the regression test suite
 A green `dotnet test` means your environment is good. (On Windows use the same commands in PowerShell or
 the terminal; on macOS/Linux use any shell.)
 
-**Loadpull/contour test fixtures are not included.** A handful of tests under `Engine.Tests` and
-`Ui.Tests` read real lab-measured GaN FET `.spl`/`.lpcwave` files from `testdata/spl_test_data/` and
-`testdata/lpwave_test_data/`. That data is proprietary and is not committed to the repo (see
-`.gitignore`). On a fresh clone those tests report as **Skipped**, with a reason naming the missing
-path — they never fail. Contact the repo owner if you need the files for full coverage.
+**Loadpull/contour test fixtures are not included, and cannot be.** A handful of tests under
+`Engine.Tests` and `Ui.Tests` read real lab-measured GaN FET `.spl`/`.lpcwave` files from
+`testdata/spl_test_data/` and `testdata/lpwave_test_data/`. That data is third-party measured data
+held under terms that do not permit redistribution, so it has never been committed to this repository
+and is not available on request. On a fresh clone those tests report as **Skipped**, with a reason
+naming the missing path — they never fail, and a fresh clone is fully green without them.
+
+If you have your own loadpull measurements in either format, dropping them at those paths exercises
+the same code. The parsers and the tests that read them are in the repository; only the data is not.
 
 
 ### 4. Optional — package it as an app
@@ -477,17 +481,43 @@ features they need.** If that describes you, you're in the right place.
 
 ## License
 
-circuitRF's core is released under the **[MIT License](LICENSE)**. (No GPL/copyleft code is ingested; a
-future commercial superset, if any, layers on through a clean extension boundary without forking the core.)
+circuitRF's own source code is released under the **[MIT License](LICENSE)**. A future commercial
+superset, if any, layers on through a clean extension boundary without forking the core.
+
+The distribution also contains third-party components under their own terms, inventoried in
+**[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**. Two of them are copyleft and worth knowing about
+before you redistribute a build:
+
+- **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU, used throughout the engine)
+  is **LGPL-2.1-only**. The packaged installers link it statically, so LGPL §6's relink requirement
+  applies — satisfied here by publishing complete source, since anyone can substitute a modified
+  CSparse.NET and rebuild. If you redistribute circuitRF binaries, that obligation travels with them.
+- **[`tools/osdi-worker/osdi.h`](tools/osdi-worker/osdi.h)** is **MPL-2.0** (© 2022 SemiMod GmbH, from
+  ngspice). MPL is copyleft at file scope: the file may live inside an MIT project, but it stays MPL
+  and its header notice must not be removed.
+
+No strong-copyleft (GPL/AGPL) code is ingested, and none is planned — see `CLAUDE.md` for the standing
+rule on learning from GPL simulators without copying them.
 
 ---
 
 ## Acknowledgments
 
-- **[Avalonia](https://avaloniaui.net/)** (cross-platform UI)
-- **[SkiaSharp](https://github.com/mono/SkiaSharp)** (2D rendering)
-- **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU)
-- **[NumFlat](https://github.com/sinshu/numflat)** (dense linear algebra)
+- **[Avalonia](https://avaloniaui.net/)** (cross-platform UI — MIT)
+- **[SkiaSharp](https://github.com/mono/SkiaSharp)** (2D rendering — MIT)
+- **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU — **LGPL-2.1-only**)
+- **[NumFlat](https://github.com/sinshu/numflat)** (dense linear algebra — MIT)
+- **[FftFlat](https://github.com/sinshu/FftFlat)** (FFT — MIT)
 - **[Clipper2](https://github.com/AngusJohnson/Clipper2)** (integer-coordinate polygon clipping and offsetting, used by the layout editor — Boost Software License)
-- **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)**
+- **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)** (MIT)
+- **[Dock.Avalonia](https://github.com/wieslawsoltes/Dock)** (docking — MIT)
+- **[Material.Icons.Avalonia](https://github.com/SKProCH/Material.Icons)** (icon set — MIT)
+- **[PureHDF](https://github.com/Apollo3zehn/PureHDF)** (HDF5 export — MIT)
+- **[Markdig](https://github.com/xoofx/markdig)** (Markdown rendering — BSD-2-Clause)
+- **[Svg](https://github.com/svg-net/SVG)** (MS-PL) and **[Svg.Skia](https://github.com/wieslawsoltes/Svg.Skia)** (MIT), used by `tools/IconGen` at packaging time
+- Fonts: **IBM Plex Sans** and **Inter** (SIL Open Font License 1.1), **DejaVu Sans** (Bitstream Vera Fonts License)
+- **[`osdi.h`](tools/osdi-worker/osdi.h)** from the ngspice OSDI component (© 2022 SemiMod GmbH — MPL-2.0)
+
+Full terms, and what each one obliges you to do if you redistribute a build, are in
+**[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**.
 

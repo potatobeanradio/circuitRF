@@ -1352,11 +1352,11 @@ calls neutralised and nothing else changed: the identical payload comes back cor
 desyncs, while `describe` passes identically in both runs — which is exactly why the bug is easy to
 ship and why a `describe`-only test cannot catch it.
 
-**STILL OPEN — and it is the one that matters: no production library has been loaded on Windows.**
+**STILL OPEN — and it is the one that matters: only the test fixture has been loaded on Windows.**
 Wine is a reimplementation and the fixture is ours, so a PASS exercises the mechanism without
-standing in for the kit. Unsettled until a Windows machine with a kit runs it: whether the 15
+standing in for a production library. Unsettled until a Windows machine with a kit runs it: whether the 15
 symbols are *sufficient* (they are demonstrably necessary); a CRT mismatch against a genuinely
-UCRT-built library; whether the kit's own `an extra export` export wants anything at load time; and
+UCRT-built library; whether a library's own additional exports want anything at load time; and
 the vectored exception handler under a real access violation. See `tools/senior-worker/README.md`.
 
 **Bisected with the CLI, 2026-07-31 — the solver and the topology are NOT the problem.** A vendor
@@ -1588,8 +1588,8 @@ re-derived:
 
 **Option 2 is built and proven (2026-07-31).** `tools/macos-vmhost` (a Swift VM host driving
 `Virtualization.framework`) plus `tools/macos-vmimage` (a reproducible, Mac-buildable Linux image).
-Verified with the production library: the worker starts under Rosetta, `dlopen`s the x86-64 Linux
-library and reports its device families ready. See `tools/macos-vmhost/README.md` for the five
+Verified end to end: the worker starts under Rosetta, `dlopen`s an x86-64 Linux library and
+reports its device families ready. See `tools/macos-vmhost/README.md` for the five
 non-obvious things that had to be right, each found by measurement.
 
 **A kit may now name a shipped helper by BARE NAME** — `"command": "crf-vmhost"` — and
