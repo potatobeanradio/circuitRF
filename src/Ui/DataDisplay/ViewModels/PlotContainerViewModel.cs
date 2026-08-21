@@ -686,6 +686,15 @@ public partial class PlotContainerViewModel : ViewModelBase
         => _parent.RemoveMarkerWithUndo(marker, trace, this);
 
     /// <summary>
+    /// Records this plot's axis-window change (pan / wheel zoom / Autoscale) on the display's undo
+    /// stack, which is also what dirties the document. Pass the windows as they were BEFORE the
+    /// gesture; the current ones are read here. See
+    /// <see cref="DataDisplayViewModel.PushAxesWindowChange"/> for <paramref name="coalesce"/>.
+    /// </summary>
+    public void PushAxesWindowChange(Rect oldWindow, Rect oldSecondary, bool coalesce = false)
+        => _parent.PushAxesWindowChange(this, oldWindow, oldSecondary, coalesce);
+
+    /// <summary>
     /// Returns the MarkerInfoBoxViewModel for the given marker,
     /// or null if no info box currently exists (e.g. before the first PlotChanged).
     /// </summary>

@@ -172,7 +172,9 @@ public sealed class UnwrittenNodeResolutionTests : IDisposable
 
         var nl = Elaborate();
 
-        string w = Assert.Single(nl.Warnings,
+        // A NOTE, not a warning: nothing here is wrong. circuitRF established something the design
+        // could not state and is saying what it established.
+        string w = Assert.Single(nl.Notes,
             x => x.Contains("writes no equation", StringComparison.Ordinal));
         Assert.Contains(CollapsedInnerProvider.TypeName, w, StringComparison.Ordinal);
         Assert.Contains($"node {CollapsedInnerProvider.Inner} follows node {CollapsedInnerProvider.Mid}",
@@ -209,7 +211,7 @@ public sealed class UnwrittenNodeResolutionTests : IDisposable
 
         Assert.Equal(CollapsedInnerProvider.A,
                      ed.Descriptor.Nodes.Single(n => n.Index == CollapsedInnerProvider.Inner).SlavedTo);
-        Assert.DoesNotContain(nl.Warnings,
+        Assert.DoesNotContain(nl.Notes.Concat(nl.Warnings),
                               w => w.Contains("writes no equation", StringComparison.Ordinal));
     }
 

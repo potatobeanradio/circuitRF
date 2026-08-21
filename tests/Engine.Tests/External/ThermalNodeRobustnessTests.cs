@@ -318,11 +318,14 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
 
         Assert.True(r.Converged, "the run must still answer");
 
-        string warning = Assert.Single(nl.Warnings,
+        // A NOTE, not a warning: this is a MEASUREMENT of what the design's own network does to
+        // this node, reported on every run whether or not anything came of it. Whether it cost the
+        // run an operating point is said separately.
+        string report = Assert.Single(nl.Notes,
             w => w.Contains("reaches its reference", StringComparison.Ordinal));
-        Assert.Contains("tj",    warning, StringComparison.Ordinal);   // the node, by name
-        Assert.Contains("X1",    warning, StringComparison.Ordinal);   // the device that owns it
-        Assert.Contains("5E+07", warning, StringComparison.Ordinal);   // what was actually measured
+        Assert.Contains("tj",    report, StringComparison.Ordinal);   // the node, by name
+        Assert.Contains("X1",    report, StringComparison.Ordinal);   // the device that owns it
+        Assert.Contains("5E+07", report, StringComparison.Ordinal);   // what was actually measured
 
         // And the measurement is not just filed: 5 mW through 5e7 °C/W is 250,000 °C, which is not
         // an operating point however small the residual gets. The answer comes back at the ambient.
@@ -336,7 +339,8 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         // here would be noise, and noise is what stops the real warning being read.
         var (_, nl) = Run(Netlist(rThermal: 200.0, shape: HeatShape.Constant));
 
-        Assert.DoesNotContain(nl.Warnings, w => w.Contains("thermal node", StringComparison.Ordinal));
+        Assert.DoesNotContain(nl.Notes.Concat(nl.Warnings),
+                              w => w.Contains("thermal node", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -734,6 +738,7 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
 
         Assert.True(r.Converged);
         Assert.Equal(25.0, NodeV(r, nl, "tj"), 9);
-        Assert.DoesNotContain(nl.Warnings, w => w.Contains("thermal node", StringComparison.Ordinal));
+        Assert.DoesNotContain(nl.Notes.Concat(nl.Warnings),
+                              w => w.Contains("thermal node", StringComparison.Ordinal));
     }
 }

@@ -59,7 +59,12 @@
         <!-- ── Centre: PlotControl + resize grip ───────────────────────── -->
         <Panel Grid.Column="1">
 
-            <!-- Plot control — panning disabled; container handles left-drag for moving -->
+            <!--
+                Plot control. Panning is NOT disabled here any more: whether a left-drag pans the
+                axes or moves the container is decided per plot by Axes.LockedPanning (locked for
+                every new plot), and PlotControl marks the event handled when it takes the drag, so
+                the container's own move/select handler never sees it.
+            -->
             <!--
                 ClipToBounds=True: clip the Skia draw to the control's own bounds so
                 antialiased axis-label text at the edge cannot bleed past the control
@@ -73,7 +78,6 @@
                             Plot="{Binding PlotVM.Plot}"
                             PlotTheme="{Binding Theme}"
                             Library="{Binding Library}"
-                            EnablePanning="False"
                             ZoomFactor="1.15"
                             ClipToBounds="True"
                             Cursor="Arrow"/>

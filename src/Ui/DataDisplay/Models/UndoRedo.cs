@@ -87,6 +87,13 @@ public sealed class UndoRedoManager
     public bool CanRedo => _redoStack.Count > 0;
 
     /// <summary>
+    /// The command that would be undone next, without disturbing either stack — the seam a caller
+    /// needs to COALESCE a repeated gesture into the entry it already pushed, rather than filling
+    /// the history with one step per wheel notch.
+    /// </summary>
+    public IUndoableCommand? Top => _undoStack.TryPeek(out var top) ? top : null;
+
+    /// <summary>
     /// Calls <c>command.Execute()</c> then pushes it onto the undo stack.
     /// Clears the redo stack.
     /// </summary>

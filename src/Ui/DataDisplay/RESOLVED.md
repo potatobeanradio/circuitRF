@@ -5,6 +5,320 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## Who owns a left-drag inside a plot, and the Autoscale command (2026-08-21)
+
+Follow-ups to the panning work above, once panning actually worked.
+
+### The drag is ONE gesture and only one thing can have it
+
+*"when a plot is added to a Data Display, the Lock Axes Panning is turned off by default, but user
+cannot pan due to Data Display drag moving of the plot itself."*
+
+`PlotContainerView.axaml` set `EnablePanning="False"` on its `PlotControl` outright, and the
+container took every left-drag to move the plot. So **Lock Axes Panning was inert in the Data
+Display** — the menu item toggled a flag nothing consulted. It worked in Match Designer for a reason
+worth knowing: **Match Designer hosts `PlotControl` directly** (`MatchDesignerWindow.axaml`), with no
+container and no drag-move, which is why every panning report so far came from there.
+
+A drag inside a plot is either an axis pan or the container's move/select gesture. `Axes.LockedPanning`
+now decides which, and the two halves are:
+
+- **Locked** — `PlotControl` leaves the press unhandled, `PlotContainerView` moves and selects
+  exactly as before.
+- **Unlocked** — `PlotControl` takes the drag AND marks the event handled. The handled flag is the
+  load-bearing part: without it the container also starts a move and drags the plot out from under
+  the pan. It also means the container never sees the press, which is why click-selection had to be
+  reproduced (below) rather than left to it.
+
+**Every new plot starts LOCKED** (owner: *"So we get the same behavior as before despite these new
+changes"*). The default lives in `Plot(PlotType, FreqUnit)` — the "new plot" constructor — and
+deliberately NOT on `Axes`, because `LockedPanning` means nothing outside this control (harmonicaRF's
+panels never read it) and a model-wide default of "locked" would assert something untrue about axes
+in general. `AxesConfig` does not persist the flag, so a `.cdd` load goes through the same
+constructor and lands locked too.
+
+**Trap that would have silently undone it:** `Plot.SetPlotType` swaps the whole `Axes` object (one
+per plot type, kept in `_axesStorage`) and **constructs a fresh one for a type visited for the first
+time** — which would have reverted the lock to the `Axes` default and left a locked plot suddenly
+undraggable after a type change. The lock is carried across explicitly.
+
+### Selection works in both states; only the drag differs
+
+*"Allow a plot to be selected even if Locked Axes Panning is turned on."*
+
+Read as: selection must not depend on the lock state at all. Locked was already fine (the container
+handles it). Unlocked was not — this control swallows the press to keep the pan and the pointer
+capture with it, so `PlotContainerView`'s release-time click-selection never ran. Handing the press
+back is not an option: the container would take the capture and the pan with it. So `PlotControl`
+reproduces the click half itself on release, when the pointer travelled less than
+`ClickSelectThreshold`. That constant is 4.0 and **must equal `PlotContainerView.DragThreshold`** —
+they decide the same question about the same gesture, and a plot needing a different amount of
+stillness than the one beside it just feels broken. A test holds them together.
+
+The right-button (secondary-axis) drag deliberately does not select, matching the container, which
+ignores anything but the left button.
+
+### Plain scroll zooms an unlocked plot's axes
+
+*"if Lock Axes Panning is turned off the scroll wheel will zoom in/out when the mouse cursor is over
+the plot. (When mouse is outside the plot, the scroll wheel zooms the data display instead)"*
+
+`PlotControl.OnPointerWheel` zoomed the axes on Ctrl+scroll only; it now also does so on a plain
+scroll while the plot is unlocked. **"Over the plot" needs no hit test** — the event only reaches
+this handler when the pointer is over the control. And "outside the plot zooms the display" needs no
+new code either: returning unhandled is what gives the canvas the wheel, since
+`PlotCanvasView.OnContentGridWheel` bails on an already-handled event. Ctrl+scroll still zooms the
+axes in both lock states, unchanged.
+
+### Autoscale from the context menu — two silent defects in one four-line handler
+
+*"The plot doesn't render as autoscaled after I issue the command. (I need to start a pan to see it
+render properly)"*
+
+1. **It never repainted.** `Plot.Autoscale()` mutates the axes model, which raises no notification,
+   so the new window was computed correctly and simply never drawn — until some later gesture
+   happened to invalidate the visual, which is exactly what starting a pan does. Every other
+   window-changing handler in the file already called `InvalidateVisual()` + `PlotChanged`; this one
+   did not.
+2. **It could do nothing at all.** `Plot.Autoscale()` is gated on the per-axis autoscale flags, and
+   the Axes Limits panel clears them the moment a user types a limit — so the command was a silent
+   no-op for precisely the user who would reach for it. It now passes `force: true`, which bypasses
+   the gate for that one call **without rewriting the flags**, so the user's standing preference for
+   later automatic autoscales survives.
+
+### A pan is an EDIT: dirty the document, and make it undoable
+
+*"changing the axes panning does not dirty the .cdd document; also an axis panning change needs to
+be undoable."*
+
+The axis windows are saved state (`AxesConfig.Window*`), so moving them is an edit like any other.
+But the only signal `PlotControl` raised was `PlotChanged`, and that path
+(`PlotContainerViewModel.OnPlotChanged`) refreshes bindings and rebuilds marker info boxes **without
+ever reaching `ContentChanged`**. So a pan changed what would be written to the file and the document
+still looked saved — closing without saving lost it silently.
+
+**The two halves are one fix.** `DataDisplayViewModel` wires `UndoRedo.StateChanged` to
+`RaiseContentChanged`, so recording the pan as an undo entry dirties the document by construction.
+The new `AxesWindowCommand` records BOTH windows: a Rect plot's right-hand axis has its own, and
+undoing a pan that moved only one of them still has to put both back, or the secondary silently
+ratchets. Restoring also resets `WindowState`/`WindowSecondaryState`, since those are what the NEXT
+pan translates from — without it the first pan after an undo jumps back to where the window used to
+be.
+
+**Wheel zoom and Autoscale move the same state and get the same treatment.** Not scope creep: they
+had the identical non-dirtying defect, and leaving them would mean a display that loses a zoom on
+close but not a pan.
+
+**Coalescing, and the trap in it.** A pan ends at pointer-release, so one drag is one entry. The
+wheel has no end, and one entry per notch would bury the rest of the history — so a zoom EXTENDS the
+entry already on top. The obvious condition ("same plot, top of stack is an axes entry") is wrong,
+and a test caught it: a zoom straight after a pan found the pan's entry and extended it, so one undo
+jumped back past both and the pan vanished as a separate step. An entry is only extendable if a
+repeated gesture created it — `AxesWindowCommand.Coalescable`, set only on the wheel path.
+
+**Not changed, deliberately: the Lock Axes Panning toggle still does not dirty the document.**
+`AxesConfig` does not persist `LockedPanning`, so marking the document dirty for it would claim an
+unsaved change that saving cannot capture. Persisting it is a separate decision, not this fix.
+
+Gate tests: `tests/Ui.Tests/AxesWindowUndoTests.cs` (10),
+`tests/Ui.Tests/PlotPanLockDefaultTests.cs` (14) and
+`tests/Ui.Tests/PlotAutoscaleCommandTests.cs` (4), each verified to fail against the unfixed code.
+`PlotControl`/`PlotContainerView` are Avalonia controls this suite does not instantiate, so their
+wiring is gated against the source with comments stripped — everything expressible on the model is
+gated on the model. `dotnet test tests/Ui.Tests` 8,547 passed; `tests/Firewall.Tests` 6 passed.
+
+## Panning with a right-hand axis, marker glyph clipping, and the marker's own label (2026-08-21)
+
+Three owner reports against Match Designer's response plots, all reproducible in the Data Display —
+the plots are the same `PlotControl`/`PlotRenderer` in both.
+
+### 1 — the right-Y traces "glitch out" while panning
+
+*"If Lock Axes panning is turned off, and I drag within the plot, the right-y axis trace rendering
+glitches out as I pan the plot's axis."*
+
+`PlotControl.OnPointerMoved` converted the pointer delta to world units **once**, with the PRIMARY
+axis's scale, then handed that same world number to `Axes.TranslateSecondary`. The two axes do not
+share a scale: the right-hand window is a different world range over the same pixels. So the right
+axis panned by `Δpx / primaryScale` world units when it should have panned `Δpx / secondaryScale` —
+wrong by the RATIO OF THE TWO Y RANGES.
+
+That ratio is not small in the plots this was reported against. Match Designer's magnitude plot is
+|S11| against |S21|; its phase plot is degrees (360 units) against group delay. A 40 dB left axis
+under a 360° right axis is a factor of **nine** — the right-hand traces slide nine times too slowly
+under the cursor while the grid they are drawn against moves at full speed, which is what reads as
+"glitching" rather than as a plain offset.
+
+**Both conversions now live in one place** — `Axes.TranslateFromPointer(dxPx, dyPx, primaryX,
+primaryY, secondaryX, secondaryY)` — precisely so a caller cannot hand one axis's scale to the
+other again. `PlotControl` passes `tf.Primary.*` and `tf.Secondary.*` from the transform set it
+already built. The X delta is converted the same way, for the same reason; it is identical while
+the two windows share an X range (they normally do), and correct if they ever do not.
+
+Not a bug in `LockedPanning` itself — that flag was doing exactly what it says. It is only how the
+report is phrased, because with panning locked the wrong arithmetic never runs.
+
+### 1b — the tick numbers "wiggle/glitch slightly" on the axis you are NOT panning
+
+*"as I pan left or right in an axis, the y-axis and right y-axis numbers and the ticks wiggle/glitch
+slightly … (same with x-axis when I pan up or down in the axis)."*
+
+A separate defect from §1, found while gating it. **The tick geometry was innocent:** a
+provably PURE horizontal pan leaves every Y tick's canvas position bit-identical (measured, not
+argued — the left- and right-margin pixels are unchanged frame to frame), and the mirror holds for a
+pure vertical pan. So the model was never the problem.
+
+**Nobody drags along an exact axis.** A "horizontal" drag carries a few tenths of a pixel of Y, and
+the pointer delta is a fractional number of pixels to begin with. Unrounded, those tenths went
+straight into the world window, and the whole Y tick column was re-rasterized at a NEW SUB-PIXEL
+PHASE on every pointer event. Measured with a realistic jitter track (|dy| < 0.5 px): **~700 changed
+pixels in the left Y numbers and ~900 in the right ones, every frame.** That is the shimmer.
+
+The right axis is the worse of the two, which is why the report names it separately. With
+`SecondaryShareGrid` (the default) its tick VALUES are derived from
+`(y − Window.Top) / Window.Height` — so a sub-pixel change in `Window.Top` does not merely re-place
+the right-hand numbers, it **re-numbers** them.
+
+**Fix: `Axes.TranslateFromPointer` quantizes the delta to whole canvas pixels** (and
+`TranslateSecondaryFromPointer` does the same for the right-button drag). One rounding fixes both
+halves:
+
+- the orthogonal axis does not move at all until the pointer crosses a whole pixel, so an
+  axis-aligned drag leaves it **pixel-identical**; and
+- the axis being panned translates by an EXACT integer. A tick's canvas position is
+  `world·scale + offset`, and the offset term absorbs the pan exactly — `after = before + Δpx` — so
+  with an integer Δ every glyph keeps its sub-pixel phase and simply slides, rather than being
+  re-rasterized.
+
+Round the **accumulated drag-start delta**, never a per-event increment: `dxPx`/`dyPx` are measured
+from `_dragStartScreen`, so the result is a clean staircase with no accumulated drift. Whole-DIP
+granularity is the right quantum here because a Rect plot's canvas size IS the control's `Bounds` —
+the container sizes plots by `ZoomLevel` rather than applying a render transform, and `PlotRenderer`
+forwards `zoomLevel` only to `TableRenderer`.
+
+### 1c — the root cause: the draw operation was reading the LIVE plot
+
+The one that actually mattered, and the one the earlier fixes only masked. Reported as *"still
+glitchy … I even see some ticks leave the world space and render outside the rect plot's box"*,
+with the decisive clue arriving a message later: **"I don't see it much if I pan slowly with mouse.
+But if I pan fast with the mouse, it becomes way more obvious."**
+
+Speed-dependence rules out geometry — every candidate above is speed-invariant. It points at the
+frame being composed from state that is *moving underneath it*.
+
+`PlotControl.Render` only RECORDS an `ICustomDrawOperation`; the compositor executes it afterwards.
+`PlotDrawOperation` captured the **live `Plot`**, so the drawing code read `Axes.Window` at
+execution time — by which point further pointer events had already moved it. Worse, the draw path
+reads the window MANY times per frame: once for the world→canvas transform, again inside
+`Axes.Ticks()`, again for every tick-mark and gridline endpoint. A pan landing between two of those
+reads yields a frame whose tick VALUES came from one window and whose TRANSFORM came from another —
+and ticks then land wherever the mismatch puts them, **including outside the axes**. That is the
+reported symptom, precisely, and its magnitude is how far the window moved between two reads: a slow
+drag hides it, a fast one does not.
+
+It is also why quantizing the pan (§1b) helped without curing it — quantization shrinks the
+per-event delta at LOW speed, which is exactly where the artefact was already hard to see.
+
+**Fix: `Plot.RenderSnapshot()`**, taken in `PlotControl.Render` and handed to the draw operation in
+place of the live plot. `MemberwiseClone` plus a fresh `new Axes(Axes)` — deliberately not a
+hand-written field list, because the renderers read a long tail of plot state (title, custom axis
+labels, table layout, format strings) and a copy that forgets one renders the frame WRONG rather
+than failing. The traces are shared on purpose: their geometry is rebuilt only on a structural
+change, never during a pan. So is the trace collection — whose `CollectionChanged` subscription
+still belongs to the live plot, so the snapshot adds no handler and can trigger no autoscale.
+
+**The general rule this is an instance of:** anything handed to an `ICustomDrawOperation` must be a
+value the frame owns. The file already said as much about its `aliasFor` delegate ("so
+PlotDrawOperation stays a snapshot of what THIS frame needs, matching every other captured field on
+it") — every field was a snapshot except the one that mattered.
+
+### 1d — gridline shade flicker, from an exact-equality dedup
+
+Found while gating §1b. `Axes.Ticks` walked each axis by repeated addition (`v += step`) and then
+separated minor ticks from major ones by putting the major VALUES in a `HashSet<double>` and
+dropping exact matches. With a spacing of 0.2 — which `CalcInterval` returns constantly, and which
+has no exact binary form — five accumulated 0.2s are not bit-equal to one accumulated 1.0, so the
+dedup silently failed and the minor gridline was painted over the major one in the lighter minor
+paint: **three of every four major gridlines rendered in the wrong shade.** Which ones failed
+changed as the window moved (measured over a 400 px pan: `.XXX` → `..XX` → `X.XX` → `.X.X` →
+`XXXX`), so the gridlines visibly changed shade while dragging.
+
+The Y axis never showed it, which is why it went unnoticed for so long: its spacings came out 2 and
+4, and doubling a power of two IS exact.
+
+Now `Axes.Lattice(from, to, step, skipEvery)` generates a tick as `n · step` and identifies a major
+as `n % majorMultiplier == 0` — an integer fact that cannot round off. Multiplying by the index also
+means a given gridline's value is identical at every pan offset, which repeated addition could not
+promise: the value depended on how many additions it took to reach it, and that count changes as the
+window moves.
+
+### 1e — the Rect grid was the only grid drawn unclipped
+
+`DrawPolarGrid` and `DrawSmithGrid` have always clipped to the plot box; `DrawRectGrid` did not. The
+tick lattice is absolute, so a pan repeatedly brings the window boundary onto it, and a gridline
+sitting exactly ON an edge has half its 1.25 px stroke outside the axes — a full-height line one
+pixel beyond the axis, appearing and disappearing as the window moves. The tick NUMBERS stay
+unclipped (they live in the margin by design), and so does `DrawBorder`, whose frame is meant to
+straddle the edge at full thickness.
+
+**Worth recording because it cost time: a single-frame "is there ink outside the box" check cannot
+gate this**, and two attempts at one passed against the unfixed code. The escaped gridline hides
+inside the border's own stroke, and the tick numbers out there swamp any clipped-vs-unclipped diff.
+Comparing FRAMES is what works — the border and the numbers are static and cancel, leaving only what
+the pan is wrongly moving. `Pan_HorizontalDragWithJitter_LeavesBothYNumberColumnsPixelIdentical`
+gates §1b and §1e together, and was verified to fail for each on its own.
+
+### 2 — marker glyphs pan outside the axes
+
+*"as I pan, the glyph for any markers attached to any trace will pan out of the plotting area — it
+should be clipped to be within the axis limits. (Exception to Smith and Polar where it is allowed to
+pan into the corners of the circle if necessary.)"*
+
+`PlotRenderer.Draw` clips traces, contour fills and multi-marker lines to the viewport, then calls
+`canvas.Restore()` — and only afterwards draws marker SYMBOLS. So a marker whose data point had been
+panned out of view kept drawing its triangle and its name over the tick labels and past the axes.
+The VSWR locus in the very same loop was already re-clipping itself; the symbol never was.
+
+`MarkerRenderer.DrawSymbol` is now wrapped in the same `viewportClip` that loop already computes.
+**The owner's Smith/Polar exception falls out of this rather than needing a branch:** a complex
+plot's viewport is the SQUARE that bounds the chart circle (`ComputeViewport`), so clipping to the
+viewport rect still permits a marker in the corners outside the circle. One clip, both behaviours.
+
+**Trap in gating this.** The obvious fixture — pan the marker off the bottom of the plot box — puts
+the glyph at canvas y ≈ 751 on a 500 px bitmap, i.e. off the IMAGE, where an unclipped renderer also
+writes no pixels and the test passes for the wrong reason. `MarkerGlyph_PannedOutOfThePlotBox_…`
+therefore pans horizontally into the left margin (glyph at x ≈ 68 px, plot box starts at 120 px) and
+asserts the fixture's own geometry before it asserts the pixels. It was checked to fail with the
+clip removed; the paired `…_InsideThePlotBox_StillDraws` exists so deleting the marker renderer
+outright could not satisfy the first one.
+
+### 3 — the marker readout and the Y-axis label spelled one quantity two ways
+
+*"I plot an S(1,1) trace and the y label renders as 'S(1,1) dB20' on a rect plot. However, the
+marker is rendering it as 'dB(S(1,1))'. I don't want these two text renderings to drift, 'S(1,1)
+dB20' is the correct."*
+
+Round 7 (2026-08-20) moved the AXIS label onto `TraceLabeler`'s display language for both trace
+kinds. It did not move the MARKER readouts, which still read `Trace.Description` /
+`ShortDescription` — the function-call form. So one plot showed one trace named two ways, in the
+axis and in the box beside it.
+
+The per-trace half of the labeller is now public as **`TraceLabeler.QuantityFor(trace)`** (the same
+`BuildNetworkQuantity`/`BuildCubeQuantity` pair `ComputeMinimalLabels` uses, minus the source
+component), and `Trace.ReadoutDescription(showFilePrefix)` wraps it with the file-stem prefix.
+Six call sites moved onto it: `GetMarkerValString`, `GetStemValString`, `GetEditorDataLine`,
+`BuildCubeMarkerBoxLines`, both multi-marker row builders, and the info box's own
+"Change to Trace…" submenu.
+
+**`Description`/`ShortDescription` are deliberately unchanged.** They are the trace's own
+description, and `BuildPickerYExpression` reads `ShortDescription` as an EXPRESSION fallback — a
+trailing `" dB20"` suffix would not parse there. Changing them to fix a label would have broken spec
+round-tripping instead, which is why the round-7 note already refused it and why the fix belongs at
+the readout call sites. `ShortDescription_StaysTheExpressionForm` gates that refusal.
+
+Gate tests: `tests/Ui.Tests/PanAndMarkerLabelTests.cs` (32). `dotnet test tests/Ui.Tests` 8,519
+passed; `tests/Firewall.Tests` 6 passed.
+
 ## Plot versus (`Gain vs Pout`): the X side is a FIELD, not expression text (2026-08-19)
 
 Owner's ask: plot one cube slice against another in a Rect plot (and a Table), with families

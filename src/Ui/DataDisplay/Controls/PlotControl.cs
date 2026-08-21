@@ -183,6 +183,18 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private bool        _isDragging;
         private bool        _isDraggingSecondary;
         private Point       _dragStartScreen;
+
+        // The axis windows as they were when the current pan began — the "before" half of the undo
+        // entry pushed on release. Kept separately from Axes.WindowState, which the pan itself
+        // rewrites as it goes.
+        private Avalonia.Rect _panUndoWindow;
+        private Avalonia.Rect _panUndoSecondary;
+
+        /// <summary>Pointer travel below which a press-release is a CLICK rather than a pan, in
+        /// canvas pixels. Matches <c>PlotContainerView.DragThreshold</c> deliberately: the two
+        /// decide the same question about the same gesture, and a plot whose click-to-select needed
+        /// a different amount of stillness than the one beside it would just feel broken.</summary>
+        private const double ClickSelectThreshold = 4.0;
         private bool        _rightButtonDown;
         private bool        _rightDragOccurred;
         private ContextMenu _contextMenu = null!;
@@ -640,7 +652,28 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         private void OnMenuActionAutoscale(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
-            _plot?.Autoscale();
+            if (_plot is null) return;
+
+            // force: an explicit menu command must DO the thing it names. Plot.Autoscale() without
+            // it is gated on the per-axis autoscale flags, which the Axes Limits panel clears the
+            // moment a user types a limit — so the command silently did nothing for precisely the
+            // user who would reach for it. Forcing bypasses the gate WITHOUT rewriting the flags,
+            // so their standing preference for later, automatic autoscales is untouched.
+            var beforeWindow    = _plot.Axes.Window;
+            var beforeSecondary = _plot.Axes.WindowSecondary;
+
+            _plot.Autoscale(force: true);
+
+            // And the control has to be told to repaint. Nothing else was doing it: Autoscale
+            // mutates the axes model, which raises no notification, so the new window sat unpainted
+            // until some later gesture happened to invalidate the visual (owner, 2026-08-21: "The
+            // plot doesn't render as autoscaled after I issue the command. I need to start a pan to
+            // see it render properly"). Every other window-changing handler here already does both.
+            InvalidateVisual();
+            PlotChanged?.Invoke(this, EventArgs.Empty);
+
+            // Autoscale moves the same saved state a pan does, so it dirties and undoes the same way.
+            ContainerProvider?.Invoke()?.PushAxesWindowChange(beforeWindow, beforeSecondary);
         }
 
         private async void OnMenuExport(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -715,7 +748,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             context.Custom(new PlotDrawOperation(
                 new Rect(Bounds.Size),
-                _plot,
+                // A SNAPSHOT, never the live plot: this method only records the draw operation —
+                // the compositor runs it later, by which time a fast drag has already moved the
+                // axes out from under it. See Plot.RenderSnapshot.
+                _plot?.RenderSnapshot(),
                 _theme,
                 _renderDetail,
                 showFilePrefix,
@@ -946,13 +982,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     return;
                 }
 
-                if (EnablePanning)
+                // A left-drag inside the plot is EITHER an axis pan OR the container's
+                // move/select gesture — one gesture, and Axes.LockedPanning decides which owns it.
+                // Locked (every new plot): fall through unhandled so PlotContainerView's own
+                // handler moves and selects the plot, exactly as before. Unlocked: take the drag
+                // and mark it handled, which is what stops the container from ALSO moving the plot
+                // out from under the pan (owner, 2026-08-21 — the drag-move is why panning could
+                // not be used at all) and, deliberately, what turns selection off for this plot
+                // while it is unlocked.
+                if (EnablePanning && !_plot.Axes.LockedPanning)
                 {
                     _isDragging                      = true;
+                    _panUndoWindow                   = _plot.Axes.Window;
+                    _panUndoSecondary                = _plot.Axes.WindowSecondary;
                     _plot.Axes.WindowState           = _plot.Axes.Window;
                     _plot.Axes.WindowSecondaryState  = _plot.Axes.WindowSecondary;
                     _renderDetail                    = PlotDetail.Full;
                     e.Pointer.Capture(this);
+                    e.Handled                        = true;
                 }
             }
             else if (props.IsRightButtonPressed)
@@ -974,6 +1021,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 if (_plot.Axes.ShowSecondary)
                 {
                     _isDraggingSecondary            = true;
+                    _panUndoWindow                  = _plot.Axes.Window;
+                    _panUndoSecondary               = _plot.Axes.WindowSecondary;
                     _plot.Axes.WindowSecondaryState = _plot.Axes.WindowSecondary;
                     _renderDetail                   = PlotDetail.Full;
                     e.Pointer.Capture(this);
@@ -1123,18 +1172,17 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             if (_isDragging)
             {
-                double dxWorld = dxPx / tf.Primary.XScale;
-                double dyWorld = dyPx / tf.Primary.YScale;
-
-                _plot.Axes.Translate(dxWorld, dyWorld);
-                if (_plot.Axes.ShowSecondary)
-                    _plot.Axes.TranslateSecondary(dxWorld, dyWorld);
+                // Each axis converts the pointer delta with its OWN scale — see
+                // Axes.TranslateFromPointer for why sharing the primary's was the bug.
+                _plot.Axes.TranslateFromPointer(
+                    dxPx, dyPx,
+                    tf.Primary.XScale,   tf.Primary.YScale,
+                    tf.Secondary.XScale, tf.Secondary.YScale);
             }
             else
             {
                 _rightDragOccurred = true;
-                double dyWorld = dyPx / tf.Secondary.YScale;
-                _plot.Axes.TranslateSecondary(0, dyWorld);
+                _plot.Axes.TranslateSecondaryFromPointer(dyPx, tf.Secondary.YScale);
             }
 
             InvalidateVisual();
@@ -1212,6 +1260,18 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             if (_isDragging || _isDraggingSecondary)
             {
+                // A LEFT press that never became a drag is a click, and a click selects the plot —
+                // even though this control swallowed the press to keep the pan (owner, 2026-08-21).
+                // PlotContainerView normally owns click-selection, but it only sees a press this
+                // control left unhandled, and an unlocked plot's press is always handled here. So
+                // the click half is reproduced rather than given back: giving the press back would
+                // hand the container the pointer capture and the pan with it.
+                //
+                // Selection therefore works in BOTH lock states. Only the drag differs — it moves
+                // the plot when locked, and pans the axes when not — which is the whole point: one
+                // gesture, and only one of them can have it.
+                bool wasLeftDrag = _isDragging;
+
                 _isDragging          = false;
                 _isDraggingSecondary = false;
                 _renderDetail        = PlotDetail.Full;
@@ -1219,6 +1279,25 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 e.Pointer.Capture(null);
                 InvalidateVisual();
                 PlotChanged?.Invoke(this, EventArgs.Empty);
+
+                // The axis windows are saved state, so a pan is an edit: record it, which both
+                // makes it undoable and dirties the document (PlotChanged alone does neither).
+                // A no-op when nothing moved, so a click leaves no history entry.
+                ContainerProvider?.Invoke()?.PushAxesWindowChange(_panUndoWindow, _panUndoSecondary);
+
+                if (wasLeftDrag && ContainerProvider?.Invoke() is { } container)
+                {
+                    var    up = e.GetPosition(this);
+                    double dx = up.X - _dragStartScreen.X;
+                    double dy = up.Y - _dragStartScreen.Y;
+                    if (Math.Sqrt(dx * dx + dy * dy) < ClickSelectThreshold)
+                    {
+                        bool isCtrlOrMeta = e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+                                            e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+                        if (isCtrlOrMeta) container.RequestToggleSelect();
+                        else              container.RequestSelectOnly();
+                    }
+                }
             }
 
             if (_rightButtonDown && !_rightDragOccurred)
@@ -1263,10 +1342,16 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 return;
             }
 
-            // Ctrl+scroll → zoom this plot's axes window.
+            // Zoom this plot's axes window on Ctrl+scroll always, and on a PLAIN scroll while the
+            // plot's panning is unlocked (owner, 2026-08-21: "if Lock Axes Panning is turned off the
+            // scroll wheel will zoom in/out when the mouse cursor is over the plot. When mouse is
+            // outside the plot, the scroll wheel zooms the data display instead"). Returning
+            // unhandled is what gives the Data Display canvas the wheel — PlotCanvasView's handler
+            // bails on an already-handled event — so a locked plot keeps today's behaviour and
+            // "over the plot" needs no hit test: the event only reaches here when it is.
             bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
                         e.KeyModifiers.HasFlag(KeyModifiers.Meta);
-            if (!ctrl) return;
+            if (!ctrl && _plot.Axes.LockedPanning) return;
 
             var cursor = e.GetPosition(this);
             var tf     = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
@@ -1276,6 +1361,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             double factor = e.Delta.Y > 0 ? 1.0 / ZoomFactor : ZoomFactor;
 
+            var beforeWindow    = _plot.Axes.Window;
+            var beforeSecondary = _plot.Axes.WindowSecondary;
+
             _plot.Axes.Window               = ZoomedWindow(_plot.Axes.Window,          wxP, wyP, factor);
             _plot.Axes.WindowSecondary      = ZoomedWindow(_plot.Axes.WindowSecondary, wxS, wyS, factor);
             _plot.Axes.WindowState          = _plot.Axes.Window;
@@ -1284,6 +1372,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             e.Handled = true;
             InvalidateVisual();
             PlotChanged?.Invoke(this, EventArgs.Empty);
+
+            // Same saved state the pan moves, so the same treatment — coalesced, because the wheel
+            // has no gesture end and one undo entry per notch would bury the rest of the history.
+            ContainerProvider?.Invoke()?.PushAxesWindowChange(beforeWindow, beforeSecondary, coalesce: true);
         }
 
         // ============================================================

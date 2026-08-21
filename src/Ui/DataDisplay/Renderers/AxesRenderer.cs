@@ -141,6 +141,20 @@ namespace CircuitRF.Ui.DataDisplay
                 Style       = SKPaintStyle.Stroke,
                 IsAntialias = false
             };
+            // Grid and tick STROKES are clipped to the plot box. The tick NUMBERS drawn in the
+            // loops above are not — they live in the margin by design — and neither is DrawBorder,
+            // whose frame is meant to straddle the edge at full thickness.
+            //
+            // Smith and Polar have always clipped their grids (see DrawPolarGrid/DrawSmithGrid);
+            // Rect was the one that did not. A gridline landing exactly ON an edge — which happens
+            // whenever a pan brings the window boundary onto the tick lattice — has half its
+            // 1.25 px stroke outside the axes, so it painted a full-height line one pixel beyond
+            // the axis (owner, 2026-08-21: "I even see some ticks leave the world space and render
+            // outside the rect plot's box").
+            var plotBox = PlotRenderer.ViewportClipRect(tf.Viewport, canvasSize);
+
+            canvas.Save();
+            canvas.ClipRect(plotBox);
             canvas.DrawPath(majorGridPath,  gridPaint);
             canvas.DrawPath(majorGridPathY, gridPaint);
             if (axes.ShowSecondary && !axes.SecondaryShareGrid)
@@ -150,6 +164,7 @@ namespace CircuitRF.Ui.DataDisplay
             canvas.DrawPath(majorTickPath,  tickPaint);
             canvas.DrawPath(majorTickPathY, tickPaint);
             if (axes.ShowSecondary) canvas.DrawPath(majorTickPathY2, tickPaint);
+            canvas.Restore();
 
             if (!minorTicks) return;
 
@@ -181,12 +196,15 @@ namespace CircuitRF.Ui.DataDisplay
                 Style       = SKPaintStyle.Stroke,
                 IsAntialias = false
             };
+            canvas.Save();
+            canvas.ClipRect(plotBox);
             canvas.DrawPath(minorGridPath,  mgPaint);
             canvas.DrawPath(minorGridPathY, mgPaint);
 
             using var mtPaint = StrokePaint(theme.TickColor, (float)axes.TickThicknessFactor * lw / 2f);
             canvas.DrawPath(minorTickPath,  mtPaint);
             canvas.DrawPath(minorTickPathY, mtPaint);
+            canvas.Restore();
         }
 
         // ================================================================

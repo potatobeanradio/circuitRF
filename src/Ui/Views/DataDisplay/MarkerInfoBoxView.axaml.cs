@@ -137,7 +137,7 @@ public partial class MarkerInfoBoxView : UserControl
         foreach (var t in otherTraces)
         {
             var captured = t;
-            var sub = new MenuItem { Header = showFilePrefix ? t.Description : t.ShortDescription };
+            var sub = new MenuItem { Header = t.ReadoutDescription(showFilePrefix) };
             sub.Click += (_, _) => changeToTrace(captured);
             changeItem.Items.Add(sub);
         }

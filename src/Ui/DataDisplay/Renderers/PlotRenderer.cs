@@ -312,9 +312,18 @@ namespace CircuitRF.Ui.DataDisplay
                             MarkerRenderer.DrawVswrLocus(canvas, canvasSize, marker, trace, tf, vplane, z0Ref);
                             canvas.Restore();
                         }
+                        // The marker glyph is clipped to the plot box, like the trace it is
+                        // attached to. Panning moves a marker's DATA POINT out of view; drawn
+                        // unclipped its triangle and name kept going, over the tick labels and
+                        // outside the axes entirely. On Smith/Polar the viewport is the SQUARE
+                        // that bounds the chart circle, so this clip still lets a marker sit in
+                        // the corners outside the circle — which is what those plots want.
+                        canvas.Save();
+                        canvas.ClipRect(viewportClip);
                         MarkerRenderer.DrawSymbol(canvas, canvasSize, marker, trace, tf, theme,
                             isSelected:     selectedMarkers?.Contains(marker) ?? false,
                             selectionColor: selectionColor);
+                        canvas.Restore();
                     }
 
                 // ---- Live VSWR drag readout (unclipped — must not be cut off near the edge) ----

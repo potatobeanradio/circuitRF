@@ -124,6 +124,42 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         => RebuildMarkerInfoBoxesForContainer(container);
 
     /// <summary>
+    /// Records a change to one plot's axis windows — a pan, a wheel zoom, an Autoscale — as an undo
+    /// entry, which is also what marks the document dirty (<c>UndoRedo.StateChanged</c> is wired to
+    /// <see cref="RaiseContentChanged"/>). No-op when nothing actually moved, so a click that never
+    /// became a drag leaves no history behind.
+    /// </summary>
+    /// <param name="oldWindow">The primary window as it was before the gesture began.</param>
+    /// <param name="oldSecondary">The secondary window as it was before the gesture began.</param>
+    /// <param name="coalesce">
+    /// True for a REPEATED gesture with no natural end — the wheel. It extends the entry already on
+    /// top of the stack when that entry belongs to this same plot, so a run of notches undoes in one
+    /// step instead of ten. A pan passes false: pointer-release ends it, so one drag is one entry.
+    /// </param>
+    internal void PushAxesWindowChange(
+        PlotContainerViewModel container,
+        Rect oldWindow, Rect oldSecondary,
+        bool coalesce = false)
+    {
+        var axes = container.PlotVM.Plot.Axes;
+        if (axes.Window == oldWindow && axes.WindowSecondary == oldSecondary) return;
+
+        // top.Coalescable is what stops a run from swallowing whatever preceded it: an entry is
+        // only extendable if a repeated gesture created it. A pan's entry is closed on push.
+        if (coalesce && UndoRedo.Top is AxesWindowCommand { Coalescable: true } top
+                     && top.Container == container)
+        {
+            top.ExtendTo(axes.Window, axes.WindowSecondary);
+            RaiseContentChanged();
+            return;
+        }
+
+        UndoRedo.Push(new AxesWindowCommand(
+            container, oldWindow, oldSecondary, axes.Window, axes.WindowSecondary,
+            coalescable: coalesce));
+    }
+
+    /// <summary>
     /// Targeted show/hide of a single marker's InfoBox VM, without tearing down and
     /// recreating every InfoBox in the container (which a full rebuild does). Used by the
     /// ShowInfoBox toggle so an open MarkerEditor flyout — bound to a specific

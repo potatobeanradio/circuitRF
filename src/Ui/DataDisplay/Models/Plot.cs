@@ -337,10 +337,29 @@ namespace CircuitRF.Ui.DataDisplay
             _traces.CollectionChanged += OnTracesChanged;
         }
 
+        /// <summary>
+        /// A newly created plot. <b>Axis panning starts LOCKED</b> — see
+        /// <see cref="Axes.LockedPanning"/> for what the two states cost each other.
+        /// </summary>
+        /// <remarks>
+        /// <b>Owner, 2026-08-21:</b> <i>"have all new plots be placed with Lock Axes Panning turned
+        /// on. So we get the same behavior as before despite these new changes."</i> A drag inside
+        /// an UNLOCKED plot pans its axes, which means it can no longer move or select the plot —
+        /// the two gestures are the same gesture, and only one of them can have it. Moving and
+        /// selecting are what a user does constantly while arranging a display; panning is
+        /// deliberate and occasional. So the default is the one that keeps the display usable, and
+        /// panning is opted into per plot from its own context menu.
+        ///
+        /// <para>The default lives here rather than on <see cref="Axes"/> because
+        /// <c>LockedPanning</c> means nothing outside the Data Display's own
+        /// <c>PlotControl</c> — harmonicaRF's panels never read it — and a model-wide default of
+        /// "locked" would be asserting something about axes in general that is not true.</para>
+        /// </remarks>
         public Plot(PlotType plotType, FreqUnit freqUnits)
         {
             PlotType   = plotType;
             _freqUnits = freqUnits;
+            Axes.LockedPanning = true;
             SetAxesViewport();
             Autoscale();
             if (PlotType != PlotType.Table)
@@ -371,6 +390,48 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             _traces.CollectionChanged += OnTracesChanged;
+        }
+
+        /// <summary>
+        /// A view of this plot for ONE frame, safe to hand to a draw operation: every field is
+        /// shared with the live plot except <see cref="Axes"/>, which is a private copy taken at
+        /// the moment of the call.
+        /// </summary>
+        /// <remarks>
+        /// <b>A draw operation must not read live, mutable state, and this is what happens when it
+        /// does</b> (owner, 2026-08-21: <i>"still glitchy … I even see some ticks leave the world
+        /// space and render outside the rect plot's box … I don't see it much if I pan slowly with
+        /// mouse. But if I pan fast with the mouse, it becomes way more obvious."</i>).
+        ///
+        /// <para><c>PlotControl.Render</c> only RECORDS an <c>ICustomDrawOperation</c>; the
+        /// compositor executes it afterwards. Handing it the live <c>Plot</c> meant the drawing
+        /// code read <c>Axes.Window</c> at execution time, by which point further pointer events
+        /// had already moved it — and it reads the window MANY times per frame: once to build the
+        /// world→canvas transform, again inside <c>Ticks()</c>, again for the tick-mark and
+        /// gridline endpoints. Any pan landing between two of those reads produced a frame whose
+        /// tick VALUES came from one window and whose TRANSFORM came from another. Ticks then land
+        /// wherever the mismatch puts them, including outside the axes — the reported symptom
+        /// exactly.</para>
+        ///
+        /// <para>It is speed-dependent for the same reason: the artefact is proportional to how far
+        /// the window moves between two reads, so a slow drag hides it and a fast one makes it
+        /// obvious. That is also why it survived quantizing the pan to whole pixels — quantization
+        /// shrinks the per-event delta at low speed, which is precisely where it was already hard
+        /// to see.</para>
+        ///
+        /// <para><c>MemberwiseClone</c> rather than a hand-written field list on purpose: the
+        /// renderers read a long tail of plot state (title, custom axis labels, table layout,
+        /// format strings), and a copy constructor that forgets one renders the frame WRONG rather
+        /// than failing. The traces are deliberately shared — their geometry is rebuilt only on a
+        /// structural change, never during a pan — and so is the trace collection, whose
+        /// <c>CollectionChanged</c> subscription still belongs to the live plot, so the snapshot
+        /// adds no handler and can trigger no autoscale.</para>
+        /// </remarks>
+        public Plot RenderSnapshot()
+        {
+            var snapshot = (Plot)MemberwiseClone();
+            snapshot.Axes = new Axes(Axes);
+            return snapshot;
         }
 
         // ---- Axes limit setters -----------------------------------------
@@ -772,6 +833,12 @@ namespace CircuitRF.Ui.DataDisplay
 
             foreach (var t in _traces) t.BuildPath(PlotType, FreqUnits);
 
+            // Each plot type keeps its own axes, so switching type swaps the whole Axes object —
+            // and a type visited for the first time gets a brand-new one. Panning locked/unlocked
+            // is a property of the PLOT the user is working with, not of the type they happen to be
+            // viewing it as, so it is carried across rather than silently reverting to the Axes
+            // default (which would leave a locked plot suddenly undraggable after a type change).
+            bool lockedPanning = Axes.LockedPanning;
             if (_axesStorage.TryGetValue(newType, out var saved))
                 Axes = saved;
             else
@@ -779,6 +846,7 @@ namespace CircuitRF.Ui.DataDisplay
                 Axes = new Axes();
                 _axesStorage[newType] = Axes;
             }
+            Axes.LockedPanning = lockedPanning;
 
             Axes.ShowSecondary = NeedsSecondary;
             SetAxesViewport();

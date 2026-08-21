@@ -209,6 +209,91 @@ internal sealed class ResizePlotCommand : IUndoableCommand
     public void Undo()    { _vm.Width = _oldW; _vm.Height = _oldH; }
 }
 
+// ---- Axes window (pan / zoom / autoscale) ----------------------------
+
+/// <summary>
+/// A change to one plot's axis WINDOWS — what a pan, a wheel zoom or an Autoscale moves.
+/// </summary>
+/// <remarks>
+/// <b>Owner, 2026-08-21:</b> <i>"changing the axes panning does not dirty the .cdd document; also
+/// an axis panning change needs to be undoable."</i>
+///
+/// <para>The windows are saved state (<c>AxesConfig.Window*</c>), so moving them is an edit like
+/// any other — but the only signal <c>PlotControl</c> raised was <c>PlotChanged</c>, and that path
+/// (<c>PlotContainerViewModel.OnPlotChanged</c>) rebuilds marker info boxes without ever reaching
+/// <c>ContentChanged</c>. So a pan changed the file and the document still looked saved. Pushing an
+/// undo entry fixes both halves at once: <c>UndoRedoManager.StateChanged</c> IS the dirty channel
+/// (<c>DataDisplayViewModel</c> wires it to <c>RaiseContentChanged</c>).</para>
+///
+/// <para>Both windows move together and are restored together. A Rect plot's right-hand axis has
+/// its own window, and undoing a pan that moved only one of them still has to put both back where
+/// they were — recording just the primary would silently ratchet the secondary.</para>
+/// </remarks>
+internal sealed class AxesWindowCommand : IUndoableCommand
+{
+    private readonly PlotContainerViewModel _vm;
+    private readonly Avalonia.Rect _oldWindow, _oldSecondary;
+
+    // Not readonly: consecutive wheel-zoom steps EXTEND the entry already on the stack rather than
+    // pushing one per notch — see ExtendTo.
+    private Avalonia.Rect _newWindow, _newSecondary;
+
+    public AxesWindowCommand(
+        PlotContainerViewModel vm,
+        Avalonia.Rect oldWindow, Avalonia.Rect oldSecondary,
+        Avalonia.Rect newWindow, Avalonia.Rect newSecondary,
+        bool coalescable = false)
+    {
+        _vm            = vm;
+        _oldWindow     = oldWindow;
+        _oldSecondary  = oldSecondary;
+        _newWindow     = newWindow;
+        _newSecondary  = newSecondary;
+        Coalescable    = coalescable;
+    }
+
+    /// <summary>The container this entry belongs to — a caller may only coalesce into its own.</summary>
+    public PlotContainerViewModel Container => _vm;
+
+    /// <summary>
+    /// True only for an entry a REPEATED gesture created, and therefore the only kind a later step
+    /// of that gesture may extend.
+    /// </summary>
+    /// <remarks>
+    /// Without this, "extend the entry on top if it belongs to this plot" swallows whatever came
+    /// before: a zoom immediately after a pan found the pan's entry on top, extended it, and one
+    /// undo then jumped back past BOTH — losing the pan as a separate step. A pan ends at
+    /// pointer-release, so its entry is closed the moment it is pushed.
+    /// </remarks>
+    public bool Coalescable { get; }
+
+    /// <summary>Moves this entry's "after" state forward, keeping its original "before". Folds a
+    /// run of wheel-zoom steps into ONE undo entry, so a single undo returns to where the run
+    /// started rather than unwinding it a notch at a time.</summary>
+    public void ExtendTo(Avalonia.Rect newWindow, Avalonia.Rect newSecondary)
+    {
+        _newWindow    = newWindow;
+        _newSecondary = newSecondary;
+    }
+
+    public void Execute() => Apply(_newWindow, _newSecondary);
+    public void Undo()    => Apply(_oldWindow, _oldSecondary);
+
+    private void Apply(Avalonia.Rect window, Avalonia.Rect secondary)
+    {
+        var axes = _vm.PlotVM.Plot.Axes;
+        axes.Window          = window;
+        axes.WindowSecondary = secondary;
+
+        // The drag-start snapshots are what the NEXT pan translates from, so they have to follow
+        // the window or the first pan after an undo would jump back to where the window used to be.
+        axes.WindowState          = axes.Window;
+        axes.WindowSecondaryState = axes.WindowSecondary;
+
+        _vm.RequestPlotRedraw();
+    }
+}
+
 // ---- Tab add / remove -----------------------------------------------
 
 /// <summary>

@@ -81,6 +81,25 @@ namespace CircuitRF.Ui.DataDisplay
             return result;
         }
 
+        /// <summary>
+        /// One trace's quantity on its own, in the display language the plot's axis label uses —
+        /// <c>S(1,1) dB20</c>, never <c>dB(S(1,1))</c>. This is the per-trace half of
+        /// <see cref="ComputeMinimalLabels"/> (which adds the source component on top of it), so a
+        /// caller that needs the quantity for ONE trace — a marker readout, an info box — spells it
+        /// exactly as the axis does rather than reaching for
+        /// <see cref="Trace.ShortDescription"/> and getting the function-call form.
+        /// </summary>
+        /// <remarks>
+        /// <b>Owner, 2026-08-21:</b> <i>"the MarkerInfoBox and popup window are not respecting the
+        /// y-label used for s-parameters … I don't want these two text renderings to drift,
+        /// 'S(1,1) dB20' is the correct."</i> The axis label was moved onto this language on
+        /// 2026-08-20; the marker readouts were still on <c>ShortDescription</c>, so the two forms
+        /// sat on one plot. Both now come through this method, which is the only way they cannot
+        /// drift again.
+        /// </remarks>
+        public static string QuantityFor(Trace t) =>
+            t.IsCubeBound ? BuildCubeQuantity(t) : BuildNetworkQuantity(t);
+
         // ----------------------------------------------------------------
         //  Private helpers
         // ----------------------------------------------------------------

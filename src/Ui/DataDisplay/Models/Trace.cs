@@ -674,6 +674,36 @@ namespace CircuitRF.Ui.DataDisplay
         public string ShortDescription => DescriptionFor(includePrefix: false);
 
         /// <summary>
+        /// The trace's quantity as a READOUT writes it — marker info box, marker editor, the
+        /// info box's own trace menu — in the same display language the plot's Y-axis label uses:
+        /// <c>S(1,1) dB20</c>, never <c>dB(S(1,1))</c>. Optionally prefixed with the source-file
+        /// stem, exactly as <see cref="Description"/> does.
+        /// </summary>
+        /// <remarks>
+        /// <b>Owner, 2026-08-21:</b> <i>"the MarkerInfoBox and popup window are not respecting the
+        /// y-label used for s-parameters … I don't want these two text renderings to drift,
+        /// 'S(1,1) dB20' is the correct."</i>
+        ///
+        /// <para>The axis label moved onto <see cref="TraceLabeler"/>'s language on 2026-08-20; the
+        /// marker readouts still read <see cref="ShortDescription"/>, so one plot showed a trace
+        /// labelled two ways. Both halves now come through
+        /// <see cref="TraceLabeler.QuantityFor"/> — the same single transform-suffix table — which
+        /// is the only arrangement in which they cannot drift apart again.</para>
+        ///
+        /// <para><see cref="Description"/>/<see cref="ShortDescription"/> are deliberately left
+        /// alone: they are the trace's own description, and <c>BuildPickerYExpression</c> reads
+        /// <see cref="ShortDescription"/> as an EXPRESSION fallback, where a trailing " dB20"
+        /// suffix would not parse.</para>
+        /// </remarks>
+        public string ReadoutDescription(bool showFilePrefix)
+        {
+            string prefix = showFilePrefix && SourcePath != null
+                ? System.IO.Path.GetFileNameWithoutExtension(SourcePath) + ".."
+                : "";
+            return prefix + TraceLabeler.QuantityFor(this);
+        }
+
+        /// <summary>
         /// The file this trace's data came from: <see cref="SourcePath"/> when set, otherwise the
         /// bound network's own <c>FilePath</c>.
         ///
@@ -1997,7 +2027,7 @@ namespace CircuitRF.Ui.DataDisplay
             var lines = new List<(string, bool)> { (m.MarkerString, true) };
 
             var pts = CubeMarkerPoints(m);
-            string desc = showFilePrefix ? Description : ShortDescription;
+            string desc = ReadoutDescription(showFilePrefix);
 
             // NaN only when there is genuinely no data. A Table real-valued cube builds NO Points
             // (BuildCubePath skips the Rect/Smith geometry), yet still has _cubeXValues — so an empty
@@ -2194,14 +2224,14 @@ namespace CircuitRF.Ui.DataDisplay
                 double oth   = compatible ? other.CubeScalarAt(xIdx) : double.NaN;
                 double delta = oth - own;
                 string valStr = double.IsFinite(delta) ? delta.ToString($"{m.FormatString}{m.MaximumFractionDigits}") : "NaN";
-                return $"  Δ{other.ShortDescription}={valStr}";
+                return $"  Δ{other.ReadoutDescription(false)}={valStr}";
             }
 
             string val = compatible
                 ? other.FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits)
                 : "NaN";
             if (string.IsNullOrEmpty(val)) val = "NaN";
-            return $"{other.ShortDescription}={val}";
+            return $"{other.ReadoutDescription(false)}={val}";
         }
 
         private Vector2 StemPointFor(Marker m)
@@ -2265,7 +2295,7 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>Marker value string for a harmonic-stem marker.</summary>
         public string GetStemValString(Marker m, bool showFilePrefix)
         {
-            string desc = showFilePrefix ? Description : ShortDescription;
+            string desc = ReadoutDescription(showFilePrefix);
             if (CubeXValues is null || CubeXValues.Count == 0 || Points.Count == 0) return $"{desc}=NaN";
             int    idx = FindStemIndex(m);
             string val = FormatCubeCell(idx, m.FormatString, m.MaximumFractionDigits);
@@ -2288,7 +2318,7 @@ namespace CircuitRF.Ui.DataDisplay
             if (IsHarmonicStem) return GetStemValString(m, showFilePrefix);
             if (IsCubeXMarker)
             {
-                string desc = showFilePrefix ? Description : ShortDescription;
+                string desc = ReadoutDescription(showFilePrefix);
                 var pts = CubeMarkerPoints(m);
                 if (pts.Count == 0 || _cubeXValues is null || _cubeXValues.Length == 0)
                     return $"{desc}=NaN";
@@ -2540,7 +2570,7 @@ namespace CircuitRF.Ui.DataDisplay
         public string GetMarkerValString(Marker m, bool showFilePrefix = true)
         {
             string suffix = IsStabilityCircle ? " Γ" : "";
-            string desc   = showFilePrefix ? Description : ShortDescription;
+            string desc   = ReadoutDescription(showFilePrefix);
 
             if (YAxis == DependentVarFormat.Complex)
                 return $"{desc}{suffix}={m.FormatComplex(GetMarkerDataPoint(m))}";
@@ -2563,18 +2593,18 @@ namespace CircuitRF.Ui.DataDisplay
                 string valStr   = double.IsFinite(delta)
                     ? other.FormatScalarValue(delta, m)
                     : "NaN";
-                return $"  Δ{other.ShortDescription}={valStr}";
+                return $"  Δ{other.ReadoutDescription(false)}={valStr}";
             }
 
             if (other.YAxis == DependentVarFormat.Complex)
             {
                 var    dp     = other.GetMarkerDataPoint(m);
                 string valStr = double.IsNaN(dp.Real) ? "NaN" : m.FormatComplex(dp);
-                return $"{other.ShortDescription}={valStr}";
+                return $"{other.ReadoutDescription(false)}={valStr}";
             }
 
             double scalar = other.DataPointScalar(m.Freq);
-            return $"{other.ShortDescription}={other.FormatScalarValue(scalar, m)}";
+            return $"{other.ReadoutDescription(false)}={other.FormatScalarValue(scalar, m)}";
         }
 
         public string MuString(Marker m)
