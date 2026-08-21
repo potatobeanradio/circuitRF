@@ -51,36 +51,120 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
         set => _owner.SetTransformN(Index, value);
     }
 
-    /// <summary>The numeric box's text.</summary>
-    public string NText
+    /// <summary>
+    /// N as the inline editor reads and writes it, <b>validated on commit and refused when bad</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"the textedit box of the N1/N2… transforms to text. Allow user to
+    /// change it using the inline text editor. Its input must be validated/refused if bad input."</i>
+    ///
+    /// <para>There are two kinds of bad input and they are refused differently. <b>Not a number</b>
+    /// (or zero, or negative, or infinite) is not a turns ratio at all and is thrown away.
+    /// <b>Outside the range</b> is a number this transform cannot take at this point in the ladder —
+    /// <c>MatchRebuild</c> derives <see cref="NMin"/>/<see cref="NMax"/> from the element values as
+    /// they stand, and a value past either bound puts an element negative. It is refused with the
+    /// bound NAMED rather than silently clamped into it: a field that answers a typed 4 with a 2.37
+    /// and says nothing is a field the user stops believing.</para>
+    ///
+    /// <para>Either way the property re-raises itself, so the editor's own commit writes the stored
+    /// value straight back over the rejected text — the same shape <c>OrderEntry</c> uses.</para>
+    /// </remarks>
+    public string NEntry
     {
-        get => _nStaged ?? N.ToString("0.#####", CultureInfo.InvariantCulture);
-        set { _nStaged = value; OnPropertyChanged(); _owner.NotifyPendingEdits(); }
+        get => N.ToString("0.#####", CultureInfo.InvariantCulture);
+        set
+        {
+            string typed = (value ?? "").Trim();
+            if (!double.TryParse(typed, NumberStyles.Float, CultureInfo.InvariantCulture, out double n)
+                || !double.IsFinite(n) || n <= 0)
+            {
+                _owner.SetTransformNote(
+                    $"'{typed}' is not a turns ratio. {Label} takes a positive number.");
+            }
+            else if (InRange(n))
+            {
+                _owner.SetTransformNote("");
+                // Clamped only across the DISPLAY SLACK below — a value the field itself printed
+                // rounds to a hair outside its own bound, and refusing the number the user was just
+                // shown is the one refusal nobody can act on.
+                N = Math.Clamp(n, NMin, NMax);
+            }
+            else
+            {
+                // WHICH bound was hit decides what the user can do about it, so the sentence names
+                // it. Past the positivity range, the transform's own products would go negative;
+                // short of that but past the reachable range, it is the linkage holding it back and
+                // the remedy is a different one entirely.
+                bool positivity = Range is not { } r
+                                  || n < r.Min - DisplaySlack || n > r.Max + DisplaySlack;
+                _owner.SetTransformNote(
+                    $"{Label} must be between {Fmt(NMin)} and {Fmt(NMax)} — "
+                    + (positivity
+                        ? "outside that this transform drives one of its own three products "
+                          + "negative. "
+                          + (_owner.Design.AllowNegativeComponents
+                              ? "Lock another transform to move the bound."
+                              : "Turn on \u201CAllow negative components\u201D to widen it.")
+                        : "with Link on, the other transforms cannot absorb any more than that. "
+                          + "Unlock one, or turn Link off, to reach further."));
+            }
+            OnPropertyChanged();
+        }
     }
-    private string? _nStaged;
 
-    /// <summary>Parses and commits the staged N.</summary>
-    public void CommitN()
-    {
-        if (_nStaged is null) return;
-        string staged = _nStaged;
-        _nStaged = null;
-        if (double.TryParse(staged, NumberStyles.Float, CultureInfo.InvariantCulture, out double n))
-            N = n;
-        OnPropertyChanged(nameof(NText));
-    }
+    /// <summary>What the inline editor's tooltip says — the range it will accept.</summary>
+    public string NTooltip => CanEditN
+        ? $"Double-click to edit. {Label} accepts {Fmt(NMin)} to {Fmt(NMax)}."
+        : DisabledReason;
 
-    /// <summary>True when the numeric box holds unparsed text.</summary>
-    public bool HasPendingText => _nStaged is not null;
+    // THE SLIDER CARRIES NO TOOLTIP AT ALL (owner, 2026-08-20: "completely remove the slider
+    // tooltips"). It used to bind ToolTip.Tip to DisabledReason, which is "" for every ordinary
+    // enabled row — and Avalonia's tooltip service opens on any tip that is not null, an empty
+    // string included, so hovering a normal slider popped the tooltip panel's own bordered box with
+    // nothing in it (owner-reported the same day: "some kind of transparent rectangle rendering over
+    // the sliders... it has a black stroke outline"). Nothing is lost by dropping it: NTooltip, on
+    // the N field immediately to its left, already states the accepted range when the row is live and
+    // DisabledReason when it is not.
+    //
+    // AN EMPTY STRING IS NOT "NO TOOLTIP". Anything bound to ToolTip.Tip anywhere in this
+    // application must be non-empty whenever it is set at all, or it renders as that rectangle.
 
-    /// <summary>The recomputed lower bound.</summary>
-    public double NMin => Range?.Min ?? 1.0;
+    /// <summary>
+    /// Slack on each end, sized to <b>the display quantum of the format this field prints with</b>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Fmt"/> is <c>"0.#####"</c> — five DECIMAL places, so a printed bound is up to
+    /// 5e-6 away from the real one. A tolerance below that refuses the number the field itself just
+    /// showed, which is the one refusal a user cannot act on. Anything inside the slack is clamped
+    /// onto the bound rather than taken literally, so nothing outside the range is ever applied.
+    /// </remarks>
+    private const double DisplaySlack = 5e-6;
 
-    /// <summary>The recomputed upper bound.</summary>
-    public double NMax => Range?.Max ?? 1.0;
+    private bool InRange(double n) => n >= NMin - DisplaySlack && n <= NMax + DisplaySlack;
+
+    private static string Fmt(double v) => v.ToString("0.#####", CultureInfo.InvariantCulture);
+
+    /// <summary>The lowest N this row can actually be dragged to.</summary>
+    public double NMin => Reachable?.Min ?? Range?.Min ?? 1.0;
+
+    /// <summary>The highest N this row can actually be dragged to.</summary>
+    public double NMax => Reachable?.Max ?? Range?.Max ?? 1.0;
 
     /// <summary>The range in force at this point in the sequence, or null when the transform dropped.</summary>
     public TransformRange? Range { get; internal set; }
+
+    /// <summary>
+    /// The sub-range of <see cref="Range"/> this row's N can actually settle in, given the linkage and
+    /// where the other transforms are. <b>This is what the slider is bounded by</b>, not
+    /// <see cref="Range"/> — see <c>MatchDesignerViewModel.RefreshReachableRanges</c> for why the two
+    /// differ and what went wrong when the slider used the wrong one.
+    /// </summary>
+    public TransformRange? Reachable { get; internal set; }
+
+    // THERE IS NO "no travel" DISABLE. A collapsed reachable interval used to switch this row off,
+    // and it took the whole rack down on any design whose required ratio is out of reach — which is
+    // exactly the design the user is trying to rescue (owner, 2026-08-20). The narrowing now applies
+    // only when it describes a real interval; see MatchDesignerViewModel.RefreshReachableRanges.
 
     /// <summary>True when the stored N had to be brought inside its range at the last rebuild.</summary>
     public bool WasClamped { get; internal set; }
@@ -162,14 +246,15 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
     /// <summary>Raises everything after a rebuild.</summary>
     internal void Refresh()
     {
-        _nStaged = null;
         OnPropertyChanged(nameof(Label));
         OnPropertyChanged(nameof(Record));
         OnPropertyChanged(nameof(N));
-        OnPropertyChanged(nameof(NText));
+        OnPropertyChanged(nameof(NEntry));
+        OnPropertyChanged(nameof(NTooltip));
         OnPropertyChanged(nameof(NMin));
         OnPropertyChanged(nameof(NMax));
         OnPropertyChanged(nameof(Range));
+        OnPropertyChanged(nameof(Reachable));
         OnPropertyChanged(nameof(WasClamped));
         OnPropertyChanged(nameof(IsDropped));
         OnPropertyChanged(nameof(Form));

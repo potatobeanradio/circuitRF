@@ -149,7 +149,7 @@ public sealed class MinimalLabelTests
         };
         var tCube = CubeTrace(src, "V", cubeSlice, CubeTransform.dB);
 
-        // Network-bound: dB(S(2,1))
+        // Network-bound: S(2,1) dB20
         var tNet = NetworkTrace(src, MatrixType.S, 1, 0, DependentVarFormat.Db, snp);
 
         var labels = TraceLabeler.ComputeMinimalLabels(new[] { tCube, tNet });

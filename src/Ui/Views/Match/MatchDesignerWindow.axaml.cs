@@ -79,6 +79,26 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
     private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (Vm is null) return;
+
+        // ── An open inline editor is committed by a press anywhere outside it ──
+        //
+        // Owner-reported, 2026-08-20: "if I click away from the inline text editor in the schematic,
+        // it does not close." The box dismisses itself on LostFocus, and LostFocus never came: almost
+        // nothing in this window is FOCUSABLE — the schematic canvas is a plain Control, and so are
+        // the pane backgrounds, the TextBlocks and the borders — so a click on any of them moves
+        // focus nowhere and the box is never told. The schematic page does not have this problem
+        // because its canvas takes focus for its own keyboard tools.
+        //
+        // Checked BEFORE the left-button and modifier guards below, and on the whole window: a
+        // right-click or a Ctrl-click away from the box is just as much "away" as a plain one. The
+        // press that OPENS an editor is unaffected — it lands on the canvas, commits whatever was
+        // open (which OnSchematicLabelDoubleTapped did anyway) and the double-tap then opens the new
+        // one against a hidden box.
+        if (_labelEditor is { IsVisible: true }
+            && (e.Source is not Visual from
+                || from.FindAncestorOfType<Controls.SchematicInlineEditBox>(includeSelf: true) is null))
+            CommitLabelEdit();
+
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta))
             return;
@@ -118,6 +138,33 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
             Open.Remove(comp);
             vm.Dispose();
         };
+
+        ShowUnowned(window, owner);
+        return window;
+    }
+
+    /// <summary>
+    /// Opens a Designer bound to <b>nothing</b> — Tools ▸ Match Designer.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"add a Match Designer to the circuitRF Tools menu. When selected,
+    /// an 'orphaned' Designer window appears that still allows user to author a design and Flatten to
+    /// Cell."</i>
+    ///
+    /// <para><b>Not deduplicated, unlike <see cref="Show"/>.</b> That method keeps one window per
+    /// component because two views of one <c>Design</c> parameter would write it from two working
+    /// copies. A standalone Designer writes no component at all, so two of them are two independent
+    /// scratch designs — which is a thing a user may legitimately want open side by side.</para>
+    /// </remarks>
+    /// <param name="workspaceRoot">The open workspace's root, or null — a starting folder for Flatten.</param>
+    /// <param name="owner">The window to cascade off, and to close with. May be null.</param>
+    public static MatchDesignerWindow ShowStandalone(string? workspaceRoot, Window? owner)
+    {
+        var vm = new MatchDesignerViewModel();
+        vm.SetStandalone(workspaceRoot);
+
+        var window = new MatchDesignerWindow { DataContext = vm };
+        window.Closed += (_, _) => vm.Dispose();
 
         ShowUnowned(window, owner);
         return window;
@@ -193,19 +240,64 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
     // view-model's own *Entry properties, so the LostFocus handlers and the BindNumericBox plumbing
     // those fields used to need are gone rather than left wired to controls that no longer exist.
 
-    private void OnTransformNLostFocus(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Control)?.Tag is MatchTransformRowViewModel r) r.CommitN();
-    }
+    // The transform rack's N is an InlineEditText now, which owns the whole three-key contract and
+    // commits through MatchTransformRowViewModel.NEntry — so the LostFocus handler that used to
+    // parse the old TextBox is gone rather than left wired to a control that no longer exists.
 
     // ── The slider gesture ────────────────────────────────────────────────────
     //
     // Begin/end around the pointer, not around each value change: the ladder and every element value
     // track the slider live, and only the response PLOTS are held for the gesture (brief §5).
 
+    /// <summary>
+    /// Wires one transform slider's drag gesture. <b>Tunnelling, and registered here rather than as a
+    /// XAML <c>PointerPressed=</c> attribute.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"when I change Transforms with the slider UI controls,
+    /// the plot's render glitches."</i>
+    ///
+    /// <para>The plots are supposed to be HELD for the duration of a drag and run once on release
+    /// (<c>MatchDesignerViewModel.BeginTransformDrag</c>) — an S-parameter sweep at 401 points per
+    /// mouse-move is the one part of the chain that cannot keep up, and each sweep re-autoscales both
+    /// axes, which is the movement the owner is describing. The hold never happened: a XAML
+    /// <c>PointerPressed=</c> attribute subscribes to the BUBBLING route with
+    /// <c>handledEventsToo: false</c>, and Avalonia's <c>Thumb</c> marks both the press and the
+    /// release handled before either reaches the Slider. So grabbing the thumb — the ordinary way to
+    /// drag a slider — never started a gesture, never ended one, and every intermediate value ran a
+    /// full sweep. Clicking the slider's TRACK did work, which is why this survived review.</para>
+    ///
+    /// <para>Tunnelling handlers run from the root DOWN, so they reach the Slider before the Thumb
+    /// gets to mark anything handled. <c>handledEventsToo</c> is set as well, belt and braces, and
+    /// costs nothing: <c>BeginTransformDrag</c> is idempotent and <c>EndTransformDrag</c> returns
+    /// immediately when no gesture is running.</para>
+    ///
+    /// <para>The table is keyed weakly on the Slider because an <c>ItemsControl</c> builds a new one
+    /// per row per rebuild, and <c>Loaded</c> fires again on every re-attach — subscribing twice would
+    /// be harmless but unbounded.</para>
+    /// </remarks>
+    private void OnSliderLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Slider slider) return;
+        if (_wiredSliders.TryGetValue(slider, out _)) return;
+        _wiredSliders.Add(slider, this);
+
+        const RoutingStrategies both = RoutingStrategies.Tunnel | RoutingStrategies.Bubble;
+        slider.AddHandler(PointerPressedEvent, OnSliderPressed, both, handledEventsToo: true);
+        slider.AddHandler(PointerReleasedEvent, OnSliderReleased, both, handledEventsToo: true);
+        slider.AddHandler(PointerCaptureLostEvent, OnSliderCaptureLost, both, handledEventsToo: true);
+    }
+
+    private readonly ConditionalWeakTable<Slider, MatchDesignerWindow> _wiredSliders = new();
+
     private void OnSliderPressed(object? sender, PointerPressedEventArgs e) => Vm?.BeginTransformDrag();
 
     private void OnSliderReleased(object? sender, PointerReleasedEventArgs e) => Vm?.EndTransformDrag();
+
+    // A capture lost without a release — the window losing focus mid-drag, say — must still end the
+    // gesture, or the plots stay held for the rest of the session and stop tracking anything.
+    private void OnSliderCaptureLost(object? sender, PointerCaptureLostEventArgs e) =>
+        Vm?.EndTransformDrag();
 
     // ── Buttons ───────────────────────────────────────────────────────────────
 
@@ -223,12 +315,22 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         var availability = Vm.FlattenAvailability;
         if (!availability.CanRun || availability.ParentDir is null) return;
 
-        var dialog = new Dialogs.MatchFlattenDialog(
-            Vm.InstanceName, availability.DefaultName, availability.ParentDir);
+        // A standalone Designer has no instance to replace and no workspace to stay inside of, so it
+        // gets the dialog without the checkbox and without the confinement — see the dialog's own
+        // standalone constructor.
+        var dialog = Vm.IsStandalone
+            ? new Dialogs.MatchFlattenDialog(availability.DefaultName, availability.ParentDir)
+            : new Dialogs.MatchFlattenDialog(
+                Vm.InstanceName, availability.DefaultName, availability.ParentDir);
+
         var choice = await dialog.ShowDialog<Dialogs.MatchFlattenChoice?>(this);
         if (choice is null) return;
 
-        Vm.Flatten(choice.ParentDir, choice.CellName, choice.ReplaceInPlace);
+        var result = Vm.Flatten(choice.ParentDir, choice.CellName, choice.ReplaceInPlace);
+
+        // A schematic-bound Designer posts through the schematic's own MessageSink; a standalone one
+        // has none, so the outcome is said where the user asked for it.
+        if (Vm.IsStandalone) Vm.SetFlattenOutcome(result.Message, result.Ok);
     }
 
     private void OnApplySolution(object? sender, RoutedEventArgs e)
@@ -245,11 +347,19 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
-        if (Vm is null) return;
+        if (Vm is not { } vm) return;
+
+        // ONCE. Loaded fires again on every re-attach, and everything below is a subscription — a
+        // second pass would run each button's handler twice and hold two view-model subscriptions.
+        if (_wired) return;
+        _wired = true;
 
         // There is no CloseButton to wire (owner, 2026-08-20: "remove the close button from the top
         // of window") — the title bar's own is the one that closes this window.
-        WireButton("ApplyButton", (_, _) => Vm.Apply());
+        // No Apply button to wire (owner, 2026-08-20: "the Apply button is always disabled, even
+        // after I make changes. What does apply do?"). It never sent the design anywhere — every
+        // edit already commits as it is made — and the half-typed-field state it flushed stopped
+        // existing when the last box became an InlineEditText. See MatchDesignerViewModel's own note.
         WireButton("RevertButton", (_, _) => Vm.Revert());
         WireElementsContextMenu();
         WireSchematicContextMenu();
@@ -264,6 +374,15 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         // §10 gave Match a chapter of its own, and this window is what it documents). Listed in
         // DocAnchors.WholePages, so the docs build fails if that page stops being emitted.
         WireButton("HelpButton", (_, _) => DocLauncher.Open("reference/match.html"));
+        WireButton("NetworkZoomFitButton",
+                   (_, _) => this.FindControl<MatchSchematicCanvas>("NetworkSchematic")?.ZoomToFit());
+
+        // The two pane expanders move COLUMN WIDTHS, which no binding can reach — see SyncPaneLayout.
+        // The view-model is captured rather than re-read on Closed: DataContext can already be gone
+        // by then, and an unsubscribe that quietly does nothing is a leak with no symptom.
+        vm.PropertyChanged += OnVmPropertyChanged;
+        Closed += (_, _) => vm.PropertyChanged -= OnVmPropertyChanged;
+        SyncPaneLayout();
 
         BindNumericBox(
             "BandFractionBox",
@@ -275,9 +394,75 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
             t => Vm.CommitPlotWindow(null, MatchDesignerViewModel.ParsePlotPoints(t)));
     }
 
+    private bool _wired;
+
     private void WireButton(string name, EventHandler<RoutedEventArgs> handler)
     {
         if (this.FindControl<Button>(name) is { } b) b.Click += handler;
+    }
+
+    // ── Pane expansion (owner, 2026-08-20) ────────────────────────────────────
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MatchDesignerViewModel.NetworkExpanded)
+                           or nameof(MatchDesignerViewModel.ResponseExpanded))
+            SyncPaneLayout();
+    }
+
+    /// <summary>
+    /// Gives one of the two right-hand panes the other's column, or puts both back.
+    /// </summary>
+    /// <remarks>
+    /// <b>From code, not from a <c>{Binding}</c> on the <c>ColumnDefinition</c>.</b> A
+    /// <c>ColumnDefinition</c> is an <c>AvaloniaObject</c> that is not in the logical tree, so no
+    /// DataContext reaches it and a binding on its <c>Width</c> silently resolves to nothing — the
+    /// column would simply keep whatever the AXAML gave it, with no error to notice.
+    ///
+    /// <para>Hiding the pane is not enough on its own and is done as well, in the AXAML: a collapsed
+    /// pane with its column still standing leaves a 380 px hole where the response used to be. The
+    /// two together are what "expand over it" means.</para>
+    /// </remarks>
+    private void SyncPaneLayout()
+    {
+        if (Vm is null || this.FindControl<Grid>("PaneGrid") is not { } grid) return;
+        if (grid.ColumnDefinitions.Count < 3) return;
+
+        var star = new GridLength(1, GridUnitType.Star);
+        var zero = new GridLength(0, GridUnitType.Pixel);
+
+        grid.ColumnDefinitions[1].Width = Vm.ResponseExpanded ? zero : star;
+        grid.ColumnDefinitions[2].Width =
+            Vm.NetworkExpanded  ? zero
+            : Vm.ResponseExpanded ? star
+            : new GridLength(ResponseColumnWidth, GridUnitType.Pixel);
+    }
+
+    /// <summary>The response pane's resting width. Matches the AXAML's own literal.</summary>
+    private const double ResponseColumnWidth = 380;
+
+    /// <summary>
+    /// <b>F re-frames the network schematic</b>, the same key the schematic editor uses for the same
+    /// thing (owner, 2026-08-20: "make sure the keystroke &lt;F&gt; will zoom the schematic to fit").
+    /// </summary>
+    /// <remarks>
+    /// Handled here rather than as a <c>Window.KeyBindings</c> entry, and the reason is the one thing
+    /// a bare-letter gesture always gets wrong: a <c>TextBox</c> does not mark <c>KeyDown</c> handled
+    /// for an ordinary character — it consumes <c>TextInput</c> — so a window-level <c>F</c> binding
+    /// would re-frame the drawing every time the user typed an "f" into a field. This is
+    /// <c>SchematicView</c>'s own guard, in the shape this window needs: nothing happens while a text
+    /// box owns the keyboard, and that covers both the schematic's inline label editor and every
+    /// <c>InlineEditText</c> in the specification pane and the transform rack, since each opens a real
+    /// <c>TextBox</c> while it is being typed into.
+    /// </remarks>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Handled || e.Key != Key.F || e.KeyModifiers != KeyModifiers.None) return;
+        if (FocusManager?.GetFocusedElement() is TextBox) return;
+
+        this.FindControl<MatchSchematicCanvas>("NetworkSchematic")?.ZoomToFit();
+        e.Handled = true;
     }
 
     /// <summary>

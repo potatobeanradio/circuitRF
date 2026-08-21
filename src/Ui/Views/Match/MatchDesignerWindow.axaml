@@ -75,13 +75,18 @@
                          A column of these is readable at a glance, which a mixed row of radio
                          buttons, boxes and combos never was. -->
                     <StackPanel Grid.Column="1" Spacing="3" Margin="6,0,0,0">
+                        <!-- No "Topology" label (owner, 2026-08-20: "remove the Topology text
+                             object (2 instance) and move the Parallel/Series UI selector to the
+                             left in place of Topology"). The selector's own face already reads
+                             "Series" or "Parallel", so the label was the word next to the word. -->
                         <Grid ColumnDefinitions="Auto,*">
-                            <TextBlock Classes="detailLabel" Text="Topology"/>
-                            <ddc:IconSelectButton Grid.Column="1" Width="56" Height="19"
-                                                  HorizontalAlignment="Right"
+                            <ddc:IconSelectButton Width="56" Height="19"
+                                                  HorizontalAlignment="Left"
+                                                  Background="{DynamicResource ButtonBackground}"
+                                                  IsEnabled="{Binding TopologyEnabled}"
                                                   ItemsSource="{x:Static mvm:MatchTerminationViewModel.TopologyOptions}"
                                                   SelectedItem="{Binding TopologyChoice, Mode=TwoWay}"
-                                                  ToolTip.Tip="Whether the reactance sits in series with R or across it">
+                                                  ToolTip.Tip="{Binding TopologyTooltip}">
                                 <ddc:IconSelectButton.ItemTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding}" FontSize="10"
@@ -91,9 +96,15 @@
                             </ddc:IconSelectButton>
                         </Grid>
 
-                        <Grid ColumnDefinitions="Auto,*">
-                            <TextBlock Classes="detailLabel" Text="R"/>
-                            <ctl:InlineEditText Grid.Column="1" Classes="val"
+                        <!-- 24 px, the WIDTH OF THE KIND SELECTOR BELOW, with the letter centred
+                             in it (owner, 2026-08-20: "the UI control to set L, C or - is not
+                             horizontally aligned to the R text rendered above it"). It could not be:
+                             an `Auto` column sized to a 7 px "R" while the row under it sized to a
+                             24 px button, so the two glyphs started 10 px apart. One shared column
+                             width is what makes them one column. -->
+                        <Grid ColumnDefinitions="24,*">
+                            <TextBlock Classes="detailLabel" Text="R" HorizontalAlignment="Center"/>
+                            <ctl:InlineEditText Grid.Column="1" Classes="val" Margin="4,0,0,0"
                                                 Text="{Binding ResistanceEntry, Mode=TwoWay}"
                                                 ToolTip.Tip="Double-click to edit. Type a unit (50, 50 Ω, 1.2 kΩ) — the number is pre-selected and the unit is left alone."/>
                         </Grid>
@@ -110,9 +121,10 @@
                              clears it, so this one field is the whole reactance. Disabling it on "–"
                              would be a door that locks behind you — see
                              MatchTerminationViewModel.ReactanceEntry. -->
-                        <Grid ColumnDefinitions="Auto,*">
+                        <Grid ColumnDefinitions="24,*">
                             <ddc:IconSelectButton Width="24" Height="19"
                                                   HorizontalAlignment="Left"
+                                                  Background="{DynamicResource ButtonBackground}"
                                                   ItemsSource="{x:Static mvm:MatchTerminationViewModel.KindOptions}"
                                                   SelectedItem="{Binding KindChoice, Mode=TwoWay}"
                                                   ToolTip.Tip="C, L, or – for purely resistive (Q = 0, nothing to absorb)">
@@ -131,25 +143,27 @@
                 </Grid>
 
                 <!-- ── Probe (match.md §10) ──────────────────────────────────────
-                     The button is disabled with a tooltip that says WHICH of §10.4's reasons it is;
-                     the conjugate note beside it is the sentence §10.3 says the Designer must state
-                     once rather than let the user rediscover. -->
-                <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
-                    <Button Content="Probe" FontSize="11" Padding="8,2"
-                            Command="{Binding ProbeCommand}"
-                            IsEnabled="{Binding CanProbe}"
-                            ToolTip.Tip="{Binding ProbeTooltip}"/>
-                    <CheckBox Grid.Column="1" Content="Conjugate" FontSize="11" Margin="8,0,0,0"
-                              IsChecked="{Binding Conjugate, Mode=TwoWay}"
-                              ToolTip.Tip="{x:Static mvm:MatchTerminationViewModel.ConjugateNote}"/>
-                    <TextBlock Grid.Column="2" Classes="detailLabel" Text="{Binding ProbeProvenance}"
-                               Margin="6,0,0,0" TextTrimming="CharacterEllipsis"/>
-                </Grid>
+                     The button is disabled with a tooltip that says WHICH of §10.4's reasons it is.
 
-                <!-- The conjugate note used to be repeated HERE, as a wrapped paragraph that appeared
-                     the moment the checkbox was ticked — and every control beneath it jumped down the
-                     pane (owner, 2026-08-19: "not a good UX; don't show that text, we already have a
-                     tooltip"). The checkbox's own ToolTip.Tip above says the same sentence. -->
+                     Probe, and the provenance of what it last wrote. NO Conjugate checkbox (owner,
+                     2026-08-20: "remove the Conjugate checkbox (2 instance) — we should not need it;
+                     clicking Probe gets the answer of which R, L, C and topology to use"). The probe
+                     reports the network it MEASURED looking outward, which is the termination the
+                     synthesis absorbs; conjugating it was a second question asked at the wrong
+                     moment. MatchDesign.Term1Conjugate/Term2Conjugate stay on the model and stay
+                     false, so an older design that carries one still decodes. -->
+                <!-- The button and NOTHING beside it. The "probed 2026-08-20 14:31" line that used
+                     to sit here is gone (owner, 2026-08-20: "remove the 'probed' date text that can
+                     sometimes appear next to the probe button") — it appeared only after a probe, so
+                     the card changed shape under the user for a provenance nobody had asked for. The
+                     provenance itself is unaffected: it lives on the design (Termination.Probed /
+                     ProbedAtUtc), still survives a save and reload, and is still what §10.5's
+                     "a hand edit clears the badge" rule is written against. -->
+                <Button Content="Probe" FontSize="11" Padding="8,2" Margin="0,4,0,0"
+                        HorizontalAlignment="Left"
+                        Command="{Binding ProbeCommand}"
+                        IsEnabled="{Binding CanProbe}"
+                        ToolTip.Tip="{Binding ProbeTooltip}"/>
 
                 <TextBlock Classes="warn" Text="{Binding ProbeError}"
                            IsVisible="{Binding ProbeError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -157,35 +171,19 @@
                 <TextBlock Classes="warn" Text="{Binding ProbeFlag}"
                            IsVisible="{Binding ProbeFlag, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                <!-- All four candidates with their residuals, physical or not: §10.2 is explicit that
-                     the residual is data the user is entitled to see, never a hidden gate. -->
-                <ItemsControl ItemsSource="{Binding ProbeFits}" Margin="0,2,0,0"
-                              IsVisible="{Binding HasProbeResult}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="mvm:MatchProbeFitRowViewModel">
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,1">
-                                <StackPanel Spacing="0">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <TextBlock FontSize="10" Text="{Binding Name}"/>
-                                        <TextBlock FontSize="10" Text="— applied" Opacity="0.7"
-                                                   IsVisible="{Binding IsBest}"/>
-                                    </StackPanel>
-                                    <TextBlock FontSize="10" Opacity="0.85" Text="{Binding ValuesText}"/>
-                                    <TextBlock FontSize="10" Opacity="0.7" Text="{Binding ResidualText}"/>
-                                    <TextBlock FontSize="10" Opacity="0.7" Text="{Binding TargetNote}"
-                                               IsVisible="{Binding TargetNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                    <TextBlock Classes="warn" Text="{Binding PhysicalNote}"
-                                               IsVisible="{Binding PhysicalNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                </StackPanel>
-                                <Button Grid.Column="1" Content="Use" FontSize="10" Padding="6,1"
-                                        VerticalAlignment="Center"
-                                        Command="{Binding ApplyCommand}"
-                                        IsVisible="{Binding IsPhysical}"
-                                        ToolTip.Tip="Take this fit instead of the best-scoring one"/>
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- The four-candidate listing is GONE (owner, 2026-08-20: "when clicking probe,
+                     do not show all the options to the user — simply pick the best option and
+                     automatically use it"). It was already applying the best fit; what it also did
+                     was print the other three with their residuals and a Use button each, which is
+                     a decision handed back to the user immediately after making it for them.
+
+                     Nothing is lost that cannot be undone: applying a probed termination goes
+                     through MatchDesignerViewModel.Commit, which is ONE SetParametersCommand on the
+                     owning schematic's stack — so Ctrl/Cmd+Z in this window or in the schematic puts
+                     the terminations back exactly as they were before the probe. §10.2's poor-fit
+                     WARNING is still shown above (ProbeFlag): a fit the user should not trust is
+                     said out loud, it is just not a menu. -->
+
               </StackPanel>
             </Border>
         </DataTemplate>
@@ -259,6 +257,20 @@
         <Style Selector="ctl|InlineEditText.val">
             <Setter Property="FontSize"                   Value="10"/>
             <Setter Property="HorizontalContentAlignment" Value="Right"/>
+        </Style>
+
+        <!-- A DISABLED settable value has to LOOK disabled, and nothing else in the stack makes it
+             (owner-reported, 2026-08-20, about the ripple field: "the inline text editor does not
+             show when I double click on its value"). An InlineEditText at rest is a bare TextBlock,
+             and Avalonia's Fluent theme dims neither a disabled TextBlock nor a disabled Panel — so a
+             field that was switched off read exactly like one that was on and simply swallowed the
+             double-click. `:disabled` follows IsEffectivelyEnabled, so a row whose GRID is disabled
+             dims here too, which is what the ripple row and the locked transform rows both are. -->
+        <Style Selector="ctl|InlineEditText:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+        <Style Selector="TextBlock.detailLabel:disabled">
+            <Setter Property="Opacity" Value="0.3"/>
         </Style>
 
         <!-- A click-to-sort column header. Borderless, transparent and with NO horizontal padding,
@@ -347,7 +359,19 @@
              row left is "Topology" (about 46 px at 10 pt) plus a 56 px selector, in a card interior
              of 169 px once the pictogram's 44 + 6 is taken out — which leaves room for the pane's
              own scrollbar as well. -->
-        <Grid Grid.Row="1" ColumnDefinitions="215,*,380,Auto">
+        <!-- Either of the two right-hand panes can be given the other's width (owner, 2026-08-20:
+             "add a button in front of Impedance Matching Network… when clicked, the Schematic and
+             Transforms panels expand to the right to occupy more space and the Response panel is no
+             longer visible… do the same thing with the Response panel").
+
+             Hiding a pane is NOT enough on its own — a collapsed IsVisible leaves its 380 px column
+             standing and the window shows a hole — so the column WIDTH moves with it. The widths are
+             set from code-behind (SyncPaneLayout), not bound here: a ColumnDefinition is not in the
+             logical tree, so it inherits no DataContext and a {Binding} on one silently resolves to
+             nothing. The specification column is untouched in both states: it is the input side, and
+             an expansion that hid it would make the window unusable in exactly the moment the user is
+             reading detail off the other two. -->
+        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="215,*,380,Auto">
 
             <!-- Specification -->
             <Border Grid.Column="0" Classes="pane">
@@ -356,18 +380,14 @@
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <!-- A probe is a real S-parameter sweep, and on a biased transistor a real DC
-                             solve first, so it runs off the UI thread with the engine's own progress
-                             and cancellation. -->
-                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsProbing}" Margin="0,0,0,5">
-                            <StackPanel Spacing="1">
-                                <TextBlock FontSize="10" Text="{Binding ProbeStatus}" Opacity="0.85"/>
-                                <ProgressBar Height="4" Minimum="0" Maximum="1"
-                                             Value="{Binding ProbeProgress}"/>
-                            </StackPanel>
-                            <Button Grid.Column="1" Content="Cancel" FontSize="10" Padding="6,1"
-                                    Margin="6,0,0,0" Command="{Binding CancelProbeCommand}"/>
-                        </Grid>
+                        <!-- The probe's PROGRESS is not here any more — it is in the footer, beside
+                             the solutions summary (owner-reported, 2026-08-20: "if I click probe, the
+                             Group box rendering glitches out then returns to normal. Need no
+                             glitches"). It was a row that appeared for the duration of the run and
+                             then vanished, INSIDE this pane's stack: every card under it slid down
+                             when the probe started and back up when it finished. The footer is a
+                             fixed Auto row whose content is always present, so the same two lines and
+                             the same Cancel button now cost nothing to show. -->
 
                         <TextBlock Classes="warn" Text="{Binding PayloadError}"
                                    IsVisible="{Binding PayloadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -400,11 +420,27 @@
                         <Border Classes="card">
                             <StackPanel Spacing="3">
                                 <TextBlock Classes="cardhdr" Text="Order"/>
+                                <!-- A SELECTOR, not a typed field (owner, 2026-08-20: "the Order
+                                     needs to be that custom icon selector UI element whose options
+                                     change depending on the two terminations"). Its items ARE
+                                     OrderOptions — only the parities this termination pair permits
+                                     (match.md §4.2) — so the refusal the typed field had to spell out
+                                     is now made by simply not offering the order. -->
                                 <Grid ColumnDefinitions="Auto,*">
                                     <TextBlock Classes="detailLabel" Text="Elements"/>
-                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
-                                                        Text="{Binding OrderEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="{Binding OrderTooltip}"/>
+                                    <ddc:IconSelectButton Grid.Column="1" Width="34" Height="19"
+                                                          HorizontalAlignment="Right"
+                                                          Background="{DynamicResource ButtonBackground}"
+                                                          ItemsSource="{Binding OrderChoices}"
+                                                          SelectedItem="{Binding OrderChoice, Mode=TwoWay}"
+                                                          ToolTip.Tip="{Binding OrderTooltip}">
+                                        <ddc:IconSelectButton.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontSize="10"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </ddc:IconSelectButton.ItemTemplate>
+                                    </ddc:IconSelectButton>
                                 </Grid>
                                 <TextBlock Classes="note" Text="{Binding OrderNote}"
                                            IsVisible="{Binding OrderNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -435,13 +471,26 @@
                                 <TextBlock Classes="warn" Text="{Binding ResponseRefusal}"
                                            IsVisible="{Binding ResponseRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                                <!-- Ripple: four characters is the whole ask ("0.05"). -->
+                                <!-- Ripple: four characters is the whole ask ("0.05"). It IS an
+                                     input — but only for the real-to-real prototype, and the row was
+                                     disabled with nothing to show for it (owner, 2026-08-20: "is
+                                     Ripple, dB supposed to be an input? If so, the inline text editor
+                                     does not show when I double click on its value").
+
+                                     It could not: InlineEditText rests as a bare TextBlock, and a
+                                     disabled TextBlock in Avalonia looks EXACTLY like an enabled one
+                                     — so the row read as a live field that ignored the gesture. Two
+                                     things fix that and neither is "make it always editable": the
+                                     row dims when it does not apply, and RippleNote says which of
+                                     the two terminations is the reason. -->
                                 <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding RippleEnabled}">
                                     <TextBlock Classes="detailLabel" Text="Ripple, dB"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="46"
                                                         Text="{Binding RippleEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="Equal-ripple level in dB — the real-to-real prototype only"/>
+                                                        ToolTip.Tip="Equal-ripple level in dB — the real-to-real prototype only. Double-click to edit."/>
                                 </Grid>
+                                <TextBlock Classes="note" Text="{Binding RippleNote}"
+                                           IsVisible="{Binding RippleNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                             </StackPanel>
                         </Border>
 
@@ -462,7 +511,7 @@
             </Border>
 
             <!-- Network + Transforms -->
-            <Grid Grid.Column="1" RowDefinitions="*,Auto">
+            <Grid Grid.Column="1" RowDefinitions="*,Auto" IsVisible="{Binding !ResponseExpanded}">
                 <Border Classes="pane">
                     <!-- The schematic on top, the component listing UNDER it (owner, 2026-08-19:
                          "move the grid listing of components so that it appears in a scrollview under
@@ -470,10 +519,21 @@
                          views of one network, and a selector that showed one at a time made the user
                          choose between the picture and the numbers. -->
                     <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
-                        <!-- The pane header carries NOTHING but its own name (owner, 2026-08-20:
-                             "remove the entire 'scroll to zoom...' text that is rendered above the
-                             Match Designer schematic view"). -->
-                        <TextBlock Classes="panelhdr" Text="Impedance Matching Network"/>
+                        <!-- The pane header carries its name and ONE control: the expander that
+                             gives this pane the response pane's width (owner, 2026-08-20). The
+                             glyph IS the state — down-and-right while there is room to take, up-and-
+                             left once it has been taken. The "scroll to zoom…" line the header used
+                             to carry is still gone (owner, same round). -->
+                        <Grid ColumnDefinitions="Auto,*">
+                            <ToggleButton Name="NetworkExpandButton" Padding="3,1" Margin="0,0,6,4"
+                                          MinWidth="0" MinHeight="0" VerticalAlignment="Center"
+                                          IsChecked="{Binding NetworkExpanded, Mode=TwoWay}"
+                                          ToolTip.Tip="{Binding NetworkExpandTooltip}">
+                                <mi:MaterialIcon Kind="{Binding NetworkExpandIcon}" Width="14" Height="14"/>
+                            </ToggleButton>
+                            <TextBlock Grid.Column="1" Classes="panelhdr"
+                                       Text="Impedance Matching Network"/>
+                        </Grid>
 
                         <!-- A REAL circuitRF schematic, drawn by the editor's own renderer. See
                              MatchSchematicCanvas — nothing here is editable. -->
@@ -491,6 +551,23 @@
                                  has no visual children of its own. -->
                             <Panel Name="NetworkSchematicHost">
                                 <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
+                                <!-- OVERLAID, top-left, and outside the canvas's own transform, so it
+                                     stays put through any zoom or pan (owner, 2026-08-20: "add a Zoom
+                                     to Fit (F) button overlayed in the top left corner of the
+                                     schematic… it should look and feel exactly like the Schematic
+                                     editor's Zoom to Fit button"). Same glyph, same 16 px, same
+                                     Padding="6,3", same tooltip text as SchematicView's toolbar
+                                     button — a source-scan test holds the three together.
+
+                                     It is why the double-click re-frame is gone: two ways to do one
+                                     thing, one of which also had to be told apart from the
+                                     double-click that opens a value's inline editor. -->
+                                <Button Name="NetworkZoomFitButton"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                                        Margin="4" Padding="6,3"
+                                        ToolTip.Tip="Zoom to Fit  (F)">
+                                    <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                                </Button>
                             </Panel>
                         </Border>
 
@@ -545,13 +622,18 @@
                 </Border>
 
                 <Border Grid.Row="1" Classes="pane" MinHeight="150">
-                    <Grid RowDefinitions="Auto,*">
+                    <Grid RowDefinitions="Auto,*,Auto">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Classes="panelhdr" Text="Transforms"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                                <Button Name="AddTransformButton" FontSize="11" Padding="6,2">
+                                <!-- "+" and a chevron, no word (owner, 2026-08-20: "remove the word
+                                     'add' from the add transform button"). The chevron is what says
+                                     it opens a menu; beside the "−" next to it the pair reads as one
+                                     control. The tooltip carries what the word used to. -->
+                                <Button Name="AddTransformButton" FontSize="11" Padding="6,2"
+                                        ToolTip.Tip="Add a transform on one of the pairs this ladder offers">
                                     <StackPanel Orientation="Horizontal" Spacing="3">
-                                        <TextBlock Text="+ add" VerticalAlignment="Center"/>
+                                        <TextBlock Text="+" VerticalAlignment="Center"/>
                                         <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
                                     </StackPanel>
                                 </Button>
@@ -562,16 +644,22 @@
                                      shipped fallback either, so Skia substituted the platform colour-emoji
                                      font and the generated figures carried a name that only resolves on
                                      this machine. The same fix the Technology chevron already took. -->
+                                <!-- The glyph alone (owner, 2026-08-20: "remove the word 'link' from
+                                     the link button"). A chain link beside a lock in the same rack is
+                                     already the pair the user reads; the word only repeated it. -->
                                 <ToggleButton FontSize="11" Padding="6,2"
                                               IsChecked="{Binding LinkTransforms, Mode=TwoWay}"
-                                              ToolTip.Tip="Moving one N re-solves the unlocked others so Π N² stays on target">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <mi:MaterialIcon Kind="LinkVariant" Width="13" Height="13"/>
-                                        <TextBlock Text="link" VerticalAlignment="Center"/>
-                                    </StackPanel>
+                                              ToolTip.Tip="Link — moving one N re-solves the unlocked others so Π N² stays on target">
+                                    <mi:MaterialIcon Kind="LinkVariant" Width="13" Height="13"/>
                                 </ToggleButton>
                             </StackPanel>
                         </Grid>
+
+                        <!-- One refusal line for the whole rack, not one per row: a per-row message
+                             would move every row below it the moment it appeared, which is the shift
+                             the inline editor was built to avoid in the first place. -->
+                        <TextBlock Grid.Row="2" Classes="warn" Text="{Binding TransformNote}"
+                                   IsVisible="{Binding TransformNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding Transforms}">
@@ -595,19 +683,26 @@
                                                     </DataTemplate>
                                                 </ddc:IconSelectButton.ItemTemplate>
                                             </ddc:IconSelectButton>
-                                            <TextBox Grid.Column="2" Classes="num" Margin="4,0,0,0"
-                                                     TextAlignment="Center"
-                                                     Text="{Binding NText, Mode=TwoWay}"
-                                                     IsEnabled="{Binding CanEditN}" Tag="{Binding}"
-                                                     LostFocus="OnTransformNLostFocus"/>
+                                            <!-- N reads as TEXT and opens the same inline editor every
+                                                 other settable value in this window uses (owner,
+                                                 2026-08-20: "the textedit box of the N1/N2… transforms
+                                                 to text; allow user to change it using the inline text
+                                                 editor; its input must be validated/refused if bad
+                                                 input"). The refusal is the view-model's — see
+                                                 MatchTransformRowViewModel.NEntry — and it names the
+                                                 range rather than silently clamping into it. -->
+                                            <ctl:InlineEditText Grid.Column="2" Classes="val"
+                                                               Margin="4,0,0,0"
+                                                               HorizontalContentAlignment="Center"
+                                                               IsEnabled="{Binding CanEditN}"
+                                                               Text="{Binding NEntry, Mode=TwoWay}"
+                                                               ToolTip.Tip="{Binding NTooltip}"/>
                                             <Slider Grid.Column="3" Classes="compact"
                                                     Minimum="{Binding NMin}" Maximum="{Binding NMax}"
                                                     Value="{Binding N, Mode=TwoWay}"
                                                     IsEnabled="{Binding CanEditN}"
-                                                    ToolTip.Tip="{Binding DisabledReason}"
                                                     Tag="{Binding}"
-                                                    PointerPressed="OnSliderPressed"
-                                                    PointerReleased="OnSliderReleased"/>
+                                                    Loaded="OnSliderLoaded"/>
                                             <ToggleButton Grid.Column="4" FontSize="11" Padding="2"
                                                           MinHeight="0" MinWidth="0"
                                                           IsChecked="{Binding Locked, Mode=TwoWay}"
@@ -629,6 +724,7 @@
                  Data display"). CrfDataDisplayCanvasBrush is the same application-scope key
                  PlotCanvasView paints with — see Styles/CircuitRfResources.axaml. -->
             <Border Grid.Column="2" Classes="pane"
+                    IsVisible="{Binding !NetworkExpanded}"
                     Background="{DynamicResource CrfDataDisplayCanvasBrush}">
               <!-- The two plots are laid out at a FIXED aspect ratio, so their height follows the
                    pane's width rather than the pane's height — which means a short window can run out
@@ -636,7 +732,19 @@
                    not a golden-ratio plot. -->
               <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-                    <TextBlock Classes="panelhdr" Text="Response"/>
+                    <!-- The Response pane's own expander, mirrored: down-and-LEFT at rest, because
+                         the space it takes is the network pane's and that is where it comes from
+                         (owner, 2026-08-20), and up-and-right once it has it. The two toggles are
+                         mutually exclusive — see MatchDesignerViewModel.NetworkExpanded. -->
+                    <Grid ColumnDefinitions="Auto,*">
+                        <ToggleButton Name="ResponseExpandButton" Padding="3,1" Margin="0,0,6,4"
+                                      MinWidth="0" MinHeight="0" VerticalAlignment="Center"
+                                      IsChecked="{Binding ResponseExpanded, Mode=TwoWay}"
+                                      ToolTip.Tip="{Binding ResponseExpandTooltip}">
+                            <mi:MaterialIcon Kind="{Binding ResponseExpandIcon}" Width="14" Height="14"/>
+                        </ToggleButton>
+                        <TextBlock Grid.Column="1" Classes="panelhdr" Text="Response"/>
+                    </Grid>
                     <!-- Golden aspect ratio on both rect plots (owner, 2026-08-19). AspectRatioPanel
                          LAYS the plot out at 1.618:1 — a Viewbox would scale the axis text and the
                          stroke weights along with the frame, which is a different thing entirely. -->
@@ -786,15 +894,34 @@
                     <TextBlock Text="Searching solutions and response families…" FontSize="11" Opacity="0.7"
                                VerticalAlignment="Center" IsVisible="{Binding IsAnalysing}"/>
                 </StackPanel>
+
+                <!-- A probe is a real S-parameter sweep, and on a biased transistor a real DC solve
+                     first, so it runs off the UI thread with the engine's own progress and
+                     cancellation — and it reports HERE, in a row that already exists, rather than by
+                     growing the specification pane for the duration of the run. -->
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                            IsVisible="{Binding IsProbing}">
+                    <TextBlock FontSize="11" Opacity="0.85" VerticalAlignment="Center"
+                               Text="{Binding ProbeStatus}"/>
+                    <ProgressBar Width="120" Height="4" Minimum="0" Maximum="1"
+                                 VerticalAlignment="Center" Value="{Binding ProbeProgress}"/>
+                    <Button Content="Cancel" FontSize="10" Padding="6,1"
+                            Command="{Binding CancelProbeCommand}"/>
+                </StackPanel>
+                <!-- Where a standalone Designer says what its Flatten did. A schematic-bound one
+                     posts the same sentence to the workspace's Messages pane through its schematic's
+                     MessageSink; with no schematic there is no sink, and a flatten that writes a
+                     folder and says nothing is one the user has no reason to believe happened. -->
+                <TextBlock Text="{Binding FlattenOutcome}" FontSize="11" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           IsVisible="{Binding FlattenOutcome, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           ToolTip.Tip="{Binding FlattenOutcome}"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                 <Button Content="Flatten to Cell…" FontSize="11" Padding="8,3"
                         IsEnabled="{Binding CanFlatten}"
                         Click="OnFlattenToCell"
                         ToolTip.Tip="{Binding FlattenTooltip}"/>
-                <Button Name="ApplyButton" Content="Apply" FontSize="11" Padding="8,3"
-                        IsEnabled="{Binding HasPendingEdits}"
-                        ToolTip.Tip="Parse every field that is still being typed and commit it. Edits commit as they are made, so this is only ever about a box that has not lost focus."/>
                 <Button Name="RevertButton" Content="Revert" FontSize="11" Padding="8,3"
                         IsEnabled="{Binding !IsOrphaned}"
                         ToolTip.Tip="Put the design back the way this window found it — one undoable step"/>

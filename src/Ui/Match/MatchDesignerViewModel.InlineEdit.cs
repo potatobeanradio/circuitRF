@@ -131,9 +131,45 @@ public sealed partial class MatchDesignerViewModel
             return false;
         }
 
+        // ── Nothing typed, nothing to do ─────────────────────────────────────
+        //
+        // Owner-reported, 2026-08-20: "if I double click on a component value in the LC ladder and
+        // then close the inline text editor without changing anything, I get an error 'L1_N1 cannot
+        // reach x pH; no transform in this rack moves it…'. I shouldn't get an error or warning if I
+        // didn't change anything."
+        //
+        // The editor opens seeded with the label's text, and that text is ROUNDED to the display's
+        // significant digits — "725 pH" for an element that is actually 724.83… pH. Committing it
+        // unchanged therefore asked the rack to REACH 725 pH exactly, which it truthfully cannot, so
+        // the refusal was correct about a question the user never asked.
+        //
+        // The comparison is at DISPLAY precision rather than at full precision, and that is the whole
+        // point: two values that render to the same string are the same value as far as this field is
+        // concerned, so re-stating one is not an edit. It is checked here rather than in
+        // SetElementValue so it covers the termination-R door onto the same canvas too.
+        if (RendersAsShown(value, target)) return false;
+
         return target.Kind == MatchInlineEditKind.TerminationResistance
             ? SetTerminationResistance(target.End, value)
             : SetElementValue(target.Name, value);
+    }
+
+    /// <summary>
+    /// True when <paramref name="value"/> formats to the same text the label was already showing.
+    /// </summary>
+    /// <remarks>
+    /// The formatting is <c>MatchDesignerViewModel.ValueTextFor</c>'s, argument for argument, because
+    /// the string this compares against is the one the canvas drew and the editor seeded itself from.
+    /// A comparison against the stored double instead would answer "different" for every unedited
+    /// commit, which is the bug.
+    /// </remarks>
+    private bool RendersAsShown(double value, MatchInlineEditTarget target)
+    {
+        int digits = Settings.SignificantDigits;
+        return string.Equals(
+            MatchValueFormat.FormatWithUnit(target.Current, target.Quantity, target.Unit, digits),
+            MatchValueFormat.FormatWithUnit(value, target.Quantity, target.Unit, digits),
+            StringComparison.Ordinal);
     }
 
     /// <summary>True for anything carrying an imaginary part, however it is spelled.</summary>

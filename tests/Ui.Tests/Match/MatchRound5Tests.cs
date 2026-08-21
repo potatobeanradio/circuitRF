@@ -126,18 +126,23 @@ public sealed class MatchRound5Tests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// A double-click on empty pane still re-frames; one on a label raises the edit request instead.
+    /// A double-click edits a label and does <b>nothing else</b> — the re-frame is a button now.
     /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"remove the Zoom to Fit on double click of the Schematic canvas
+    /// because now user has this button."</i> Asserted as an ABSENCE as well as a presence: the
+    /// gesture is only interesting for what it no longer does, and a fix that left the call behind an
+    /// unreachable branch would satisfy a presence-only test.
+    /// </remarks>
     [Fact]
-    public void ADoubleClick_EditsALabelOrRefames_NeverBoth()
+    public void ADoubleClick_EditsALabel_AndNoLongerReframes()
     {
         string tap = Body(Canvas(), "protected override void OnDoubleTapped");
         output.WriteLine(tap);
 
         Assert.Contains("HitLabel(", tap, StringComparison.Ordinal);
         Assert.Contains("LabelDoubleTapped?.Invoke", tap, StringComparison.Ordinal);
-        Assert.Contains("else", tap, StringComparison.Ordinal);
-        Assert.Contains("ZoomToFit()", tap, StringComparison.Ordinal);
+        Assert.DoesNotContain("ZoomToFit()", tap, StringComparison.Ordinal);
     }
 
     // ══ The inline editor is the schematic editor's own ══════════════════════

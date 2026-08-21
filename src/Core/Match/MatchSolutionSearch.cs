@@ -67,8 +67,12 @@ public static class MatchSolutionSearch
     /// <b>The tolerance is RELATIVE.</b> The reference implementation compares the achieved and
     /// required transform ratios with an absolute 1e3*epsilon (about 2.2e-13), which is meaningless
     /// against a required ratio of ~119 — it is 1e-15 of the quantity being tested.
+    ///
+    /// <para>It is <see cref="MatchLinkage.RatioTolerance"/>'s value, not a second opinion: the
+    /// status strip, the linkage and this search must agree about what "reached" means, or a solution
+    /// this list offers can be reported as not reached the moment it is applied.</para>
     /// </summary>
-    public const double RatioTolerance = 1e-9;
+    public const double RatioTolerance = MatchLinkage.RatioTolerance;
 
     /// <summary>Searches a design for buildable solutions.</summary>
     /// <param name="design">The design. Its own <see cref="MatchDesign.Transforms"/> are not consulted.</param>

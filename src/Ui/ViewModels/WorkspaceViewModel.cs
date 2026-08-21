@@ -5650,6 +5650,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// Opens a <b>standalone Match Designer</b> — Tools ▸ Match Designer (owner, 2026-08-20).
+    /// </summary>
+    /// <remarks>
+    /// <b>No workspace and no schematic required</b>, deliberately, for the same reason harmonicaRF
+    /// needs none: the Designer synthesises a matching network from two terminations and a band, and
+    /// none of that comes from a drawing. What a workspace supplies, when one is open, is only a
+    /// starting FOLDER for Flatten to Cell — the standalone Designer writes its cell wherever the
+    /// user points it, because that cell is referenced by no schematic and so has nothing to be
+    /// relative to.
+    ///
+    /// <para>The window opens unowned and cascaded, exactly as the one a placed <c>Match</c> opens
+    /// does, and appears in the Window menu through <c>ICrfMenuWindow</c> like every other standalone
+    /// editor. It is NOT deduplicated: see <c>MatchDesignerWindow.ShowStandalone</c>.</para>
+    /// </remarks>
+    [RelayCommand]
+    private void NewMatchDesigner() =>
+        Views.Match.MatchDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null));
+
+    /// <summary>
     /// Opens a blank wBond editor — wbond.md §10's third entry point.
     ///
     /// <para><b>No workspace and no layout context required</b>, deliberately: that entry point exists

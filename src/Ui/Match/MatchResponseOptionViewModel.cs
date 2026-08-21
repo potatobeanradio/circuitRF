@@ -15,6 +15,12 @@ public sealed partial class MatchResponseOptionViewModel : ObservableObject
         Shape = shape;
         Display = display;
         Description = description;
+        // SEEDED, not left blank until the first background analysis lands. Avalonia's tooltip
+        // service opens on any tip that is not null, an empty string included — so a blank Tooltip
+        // renders as the tooltip panel's own bordered rectangle with nothing in it. Same trap as the
+        // transform slider's, which was dropped outright for the same reason; an empty string is
+        // not "no tooltip".
+        Tooltip = description;
     }
 
     /// <summary>The prototype family this entry selects.</summary>

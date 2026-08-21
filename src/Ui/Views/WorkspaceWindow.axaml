@@ -191,6 +191,7 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
+                        <NativeMenuItem Header="Match Designer" Command="{Binding NewMatchDesignerCommand}"/>
                         <!-- wBond: WITHDRAWN FOR v1 (owner, 2026-08-17). The standalone wirebond
                              WINDOW is a v2 feature; wirebonds reach v1 through the wBond COMPONENT and
                              the wirebond CELL (WB40) — the layout editor's own wire tools, panels and
@@ -650,6 +651,11 @@
                           Command="{Binding NewHarmonicaCommand}"
                           ToolTip.Tip="Interactive harmonic-termination explorer. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Match Designer"
+                          Command="{Binding NewMatchDesignerCommand}"
+                          ToolTip.Tip="Synthesise an impedance-matching network from two terminations and a band, then flatten it to a cell. Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="TransitConnectionVariant" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- wBond: WITHDRAWN FOR v1 (owner, 2026-08-17) — see the NativeMenu's own note.
                      The standalone window is deferred to v2; every other wirebond surface stays.

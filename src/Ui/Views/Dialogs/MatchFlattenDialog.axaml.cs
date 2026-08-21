@@ -25,6 +25,12 @@ public partial class MatchFlattenDialog : Window
     private string _parentDir = "";
     private string _workspaceRoot = "";
 
+    /// <summary>
+    /// True for a standalone Designer's flatten: any folder is allowed, because the cell it writes is
+    /// referenced by no schematic and so has nothing to be relative to.
+    /// </summary>
+    private bool _anywhere;
+
     /// <summary>The AXAML designer needs a parameterless constructor.</summary>
     public MatchFlattenDialog() => InitializeComponent();
 
@@ -43,6 +49,34 @@ public partial class MatchFlattenDialog : Window
         NameBox.Text = defaultName;
         DestinationBox.Text = parentDir;
         ReplaceBox.Content = $"Replace {instanceName} with an instance of the new cell";
+
+        Opened += (_, _) => { NameBox.Focus(); NameBox.SelectAll(); };
+    }
+
+    /// <summary>
+    /// The <b>standalone</b> shape (owner, 2026-08-20: Tools ▸ Match Designer) — no instance to name
+    /// and no instance to replace, so the checkbox and its note are dropped rather than shown ticked
+    /// against nothing, and the destination is unconfined.
+    /// </summary>
+    /// <param name="defaultName">The seeded cell name.</param>
+    /// <param name="startingDir">Where the picker starts. Not a boundary.</param>
+    public MatchFlattenDialog(string defaultName, string startingDir) : this()
+    {
+        _parentDir = startingDir;
+        _workspaceRoot = startingDir;
+        _anywhere = true;
+
+        PromptLabel.Text =
+            "Write this matching network as ordinary L and C components in a new cell. Both "
+            + "terminations travel with it, disabled, and the design is recorded in the cell's "
+            + "annotation and on the cell itself. This Designer is not attached to a schematic, so "
+            + "nothing is replaced and the cell is referenced by nothing until you place it.";
+        NameBox.Text = defaultName;
+        DestinationBox.Text = startingDir;
+
+        ReplaceBox.IsChecked = false;
+        ReplaceBox.IsVisible = false;
+        ReplaceNote.IsVisible = false;
 
         Opened += (_, _) => { NameBox.Focus(); NameBox.SelectAll(); };
     }
@@ -76,7 +110,7 @@ public partial class MatchFlattenDialog : Window
         // is a path relative to the schematic that uses it. A folder outside the workspace would
         // give a reference that resolves today and breaks the moment the workspace is moved or
         // archived — so it is refused here rather than allowed and reported later.
-        if (!IsInsideWorkspace(chosen))
+        if (!_anywhere && !IsInsideWorkspace(chosen))
         {
             ValidationMessage.Text =
                 "That folder is outside this workspace. A flattened cell has to live inside the "

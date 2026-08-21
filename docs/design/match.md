@@ -858,24 +858,37 @@ the `Match` is placed in, and fills in R, reactance kind, topology and value.
    refuses and reports the DC failure** rather than returning an impedance computed at zero bias.
 5. `Z(f) = 50·(1+Γ)/(1−Γ)`.
 
-### 10.2 Choosing the topology — fit all four, rank by Γ error
+### 10.2 Choosing the topology — fit all five, rank by Γ error
 
 Each candidate is a **linear** least-squares fit in its natural domain, so there is no optimiser and no
 starting guess:
 
 | model | fit domain | unknowns (both linear) |
 |---|---|---|
+| R alone | `Z = R` | R |
 | series R+C | `Z = R + (1/C)·(1/jω)` | R, 1/C |
 | series R+L | `Z = R + jωL` | R, L |
 | parallel R‖C | `Y = G + jωC` | G, C |
 | parallel R‖L | `Y = G + (1/L)·(1/jω)` | G, 1/L |
 
 Each fit is then converted **back to Γ over the band** and scored by mean |Γ_model − Γ_measured|. That
-single bounded metric ranks all four on equal terms — impedance-domain residuals would over-weight
+single bounded metric ranks all five on equal terms — impedance-domain residuals would over-weight
 frequencies where |Z| is large and would not be comparable between the series and parallel forms.
 
-- The best-scoring physical fit (R > 0 and the reactive value > 0) is applied.
-- **All four are shown with their residuals**, in Γ units, so the user can take the second-best when
+**R alone was added on 2026-08-20, and the reason is that without it the SIMPLEST termination was the
+one case the fitter refused.** A bare 50 Ω port is fitted perfectly by all four two-element models —
+each returns R = 50 Ω with a residual around 1e-16 — but a linear least squares can only put their
+reactance at its degenerate end (C = 0 or ∞, L = 0 or ∞), and every one of those fails the
+"reactive value > 0" test below. So a schematic with a plain `Term` on the far pin answered *"none of
+the models fits this network"* about a network that every model fits exactly. `ReactanceKind.None` is
+first class everywhere else here — it is what `Termination.Resistive` makes and what the Designer's
+kind selector shows as "–" — so the fifth model simply says it. It is scored by the same residual as
+the rest and wins only when it earns it.
+
+- The best-scoring physical fit is applied: R > 0, and the reactive value > 0 for the four models that
+  have one. The R-alone model has no reactance to be positive, which is what makes it applicable
+  exactly when the measured impedance is flat.
+- **All of them are shown with their residuals**, in Γ units, so the user can take the second-best when
   they know better. The residual is data the user is entitled to see, never a hidden gate.
 - If even the best residual exceeds a warning threshold — a setting, **default mean |ΔΓ| > 0.05**
   (§14.5) — the result is still applied but is **flagged**: "the external network is not well described

@@ -50,6 +50,33 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// False when there is no reactance for the topology to arrange, and the selector is then
+    /// disabled rather than left changing nothing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"the series/parallel graphic indicator does not update
+    /// when the selector is changed."</i> It does — <b>when there is something to draw</b>. With
+    /// <c>ReactanceKind.None</c> the pictogram is a resistor on its own and there is no second
+    /// element to put beside it or under it, so both topologies are the same picture. That is not a
+    /// rendering bug: nothing downstream distinguishes them either. <c>Termination.CeqAt</c> and
+    /// <c>QAt</c> both answer 0 for a reactance-free end, and <c>MatchOrders.ValidOrders</c>
+    /// short-circuits on <c>!HasReactance</c> before it ever compares the two topologies — so on a
+    /// bare R the choice changes the pictogram, the synthesis, the order parity and the ladder
+    /// exactly not at all.
+    ///
+    /// <para>A selector that can be moved to no effect is the thing to fix, not the picture. It is
+    /// disabled here, with <see cref="TopologyTooltip"/> saying why — the same treatment the ripple
+    /// field got in the same round, and for the same reason.</para>
+    /// </remarks>
+    public bool TopologyEnabled => Kind != ReactanceKind.None;
+
+    /// <summary>What the topology selector offers, or the one thing standing in its way.</summary>
+    public string TopologyTooltip => TopologyEnabled
+        ? "Whether the reactance sits in series with R or across it"
+        : "Nothing to arrange: this termination has no reactance, so series and parallel describe the "
+          + "same network. Set C or L first.";
+
     /// <summary>Two-state selector, series half.</summary>
     public bool IsSeries
     {
@@ -121,7 +148,6 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         {
             _resistanceStaged = value;
             OnPropertyChanged();
-            _owner.NotifyPendingEdits();
         }
     }
     private string? _resistanceStaged;
@@ -231,7 +257,6 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         {
             _reactanceStaged = value;
             OnPropertyChanged();
-            _owner.NotifyPendingEdits();
         }
     }
     private string? _reactanceStaged;
@@ -442,6 +467,13 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
     /// <summary>
     /// match.md §10.3 — aim at the conjugate of what is measured rather than at the measurement.
     /// </summary>
+    /// <remarks>
+    /// <b>No longer on the specification pane</b> (owner, 2026-08-20: "remove the Conjugate checkbox
+    /// (2 instance) — we should not need it; clicking Probe gets the answer of which R, L, C and
+    /// topology to use"). It stays here, and on <c>MatchDesign</c>, for two reasons: an older design
+    /// that carries the flag still decodes and still means what it said, and the probe still reads it.
+    /// It is simply false for every design nobody set it on, which is every design made from now on.
+    /// </remarks>
     public bool Conjugate
     {
         get => End == 1 ? _owner.Design.Term1Conjugate : _owner.Design.Term2Conjugate;
@@ -453,15 +485,15 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The sentence match.md §10.3 says the Designer must state once, next to the toggle, rather than
-    /// leave the user to rediscover.
+    /// The sentence match.md §10.3 says the Designer must state once rather than leave the user to
+    /// rediscover. It has no toggle to sit beside any more — see <see cref="Conjugate"/>.
     /// </summary>
     public static string ConjugateNote =>
         "A conjugate match is the right target for a small-signal stage, and generally the WRONG one "
         + "for a power amplifier's output — there the load should come from loadpull (Ropt), not from "
         + "the device's own output impedance.";
 
-    /// <summary>All four candidate models from the last probe, best residual first.</summary>
+    /// <summary>Every candidate model from the last probe, best residual first.</summary>
     public ObservableCollection<MatchProbeFitRowViewModel> ProbeFits { get; } = [];
 
     /// <summary>§10.2's poor-fit warning from the last probe, or empty.</summary>
@@ -511,7 +543,16 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
     /// <summary>True when §10's probe supplied this termination rather than the user.</summary>
     public bool IsProbed => Value.Probed;
 
-    /// <summary>Provenance line for a probed termination, or empty.</summary>
+    /// <summary>
+    /// Provenance line for a probed termination, or empty.
+    /// </summary>
+    /// <remarks>
+    /// <b>No longer rendered</b> (owner, 2026-08-20: "remove the 'probed' date text that can
+    /// sometimes appear next to the probe button"). It stays because it is the readable form of the
+    /// provenance the DESIGN carries — <c>Termination.Probed</c> / <c>ProbedAtUtc</c>, which survive a
+    /// save and reload and which match.md §10.5's "a hand edit clears the badge" rule is written
+    /// against; <c>MatchProbeTests</c> reads it for exactly that.
+    /// </remarks>
     public string ProbeProvenance => Value is { Probed: true, ProbedAtUtc: { } t }
         ? $"probed {t.ToLocalTime():yyyy-MM-dd HH:mm}"
         : "";
@@ -538,6 +579,8 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSeries));
         OnPropertyChanged(nameof(IsParallel));
         OnPropertyChanged(nameof(TopologyChoice));
+        OnPropertyChanged(nameof(TopologyEnabled));
+        OnPropertyChanged(nameof(TopologyTooltip));
         OnPropertyChanged(nameof(Resistance));
         OnPropertyChanged(nameof(ResistanceText));
         OnPropertyChanged(nameof(Kind));

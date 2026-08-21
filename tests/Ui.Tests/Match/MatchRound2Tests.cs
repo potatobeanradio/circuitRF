@@ -364,6 +364,16 @@ public sealed class MatchRound2Tests
         // The slider still occupies the row's star column, so its width is unchanged.
         Assert.Contains("<Slider Grid.Column=\"3\" Classes=\"compact\"", xaml, StringComparison.Ordinal);
 
-        Assert.Contains("TextAlignment=\"Center\"", xaml, StringComparison.Ordinal);
+        // The N field is an InlineEditText now (owner, 2026-08-20: "the textedit box of the N1/N2…
+        // transforms to text; allow user to change it using the inline text editor"), so the
+        // centring is that control's HorizontalContentAlignment rather than a TextBox's
+        // TextAlignment. The property under test — the number reads centred in its column — is
+        // unchanged; only the control that carries it is.
+        int n = xaml.IndexOf("Text=\"{Binding NEntry, Mode=TwoWay}\"", StringComparison.Ordinal);
+        Assert.True(n > 0, "the transform row's N is not bound to NEntry");
+        int rowStart = xaml.LastIndexOf("<ctl:InlineEditText Grid.Column=\"2\"", n, StringComparison.Ordinal);
+        Assert.True(rowStart > 0, "N is not an InlineEditText in the row's third column");
+        Assert.Contains("HorizontalContentAlignment=\"Center\"", xaml[rowStart..n],
+                        StringComparison.Ordinal);
     }
 }

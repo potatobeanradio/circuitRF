@@ -48,8 +48,26 @@ public sealed record MatchStatus(
         : $"IL {F(InsertionLossDb, "0.000")} dB, ripple {F(RippleDb, "0.000")} dB";
 
     /// <summary>The transform-product line, with the tick or the cross §4.8 asks for.</summary>
-    public string RatioText =>
-        $"Π N² {F(Achieved, "0.###")} / {F(Required, "0.###")}  " + (OnTarget ? "✔ matched" : "✘ not reached");
+    /// <remarks>
+    /// <b>A cross must never sit beside two numbers that look equal</b> (owner-reported, 2026-08-20:
+    /// "Π N² 10 / 10 ✘ not reached" on a network that was matched). Three decimals is the right
+    /// density for the ✔ case and hides the whole disagreement in the ✘ one, so the shortfall is
+    /// stated outright when there is one. The tolerance that decides the verdict is
+    /// <c>MatchLinkage.RatioTolerance</c>; anything that fails it is now at least 0.0001 % off, which
+    /// this line can show.
+    /// </remarks>
+    public string RatioText
+    {
+        get
+        {
+            string head = $"Π N² {F(Achieved, "0.###")} / {F(Required, "0.###")}  ";
+            if (OnTarget) return head + "✔ matched";
+
+            double off = Required != 0 ? (Achieved / Required - 1.0) * 100.0 : double.NaN;
+            string by = double.IsFinite(off) ? $" ({off:+0.####;-0.####}%)" : "";
+            return head + "✘ not reached" + by;
+        }
+    }
 
     /// <summary>The whole strip as one line — what a test and a tooltip both read.</summary>
     public string Text => IsRefused
@@ -299,9 +317,32 @@ public sealed partial class MatchDesignerViewModel
     /// <summary>What the Flatten button offers, or the one thing standing in its way.</summary>
     public string FlattenTooltip => IsOrphaned ? OrphanNote : FlattenAvailability.Reason;
 
+    /// <summary>
+    /// What the last Flatten did, for a Designer that has no Messages region to post it to.
+    /// </summary>
+    /// <remarks>
+    /// A schematic-bound Designer reports through <c>SchematicViewModel.MessageSink</c>, which is the
+    /// workspace's Messages pane. A standalone one (Tools ▸ Match Designer) has no schematic and so no
+    /// sink — and a flatten that writes a folder somewhere and says nothing is a flatten the user has
+    /// no reason to believe happened.
+    /// </remarks>
+    [ObservableProperty] private string _flattenOutcome = "";
+
+    /// <summary>True when <see cref="FlattenOutcome"/> is a refusal rather than a success.</summary>
+    [ObservableProperty] private bool _flattenFailed;
+
+    /// <summary>Records one flatten outcome for the footer to show.</summary>
+    public void SetFlattenOutcome(string message, bool ok)
+    {
+        FlattenOutcome = message ?? "";
+        FlattenFailed = !ok;
+    }
+
     private void RefreshFlatten()
     {
-        FlattenAvailability = MatchFlattenService.Availability(_schematicVm, _target);
+        FlattenAvailability = _isStandalone
+            ? MatchFlattenService.StandaloneAvailability(_rebuild, InstanceName, _standaloneRoot)
+            : MatchFlattenService.Availability(_schematicVm, _target);
         OnPropertyChanged(nameof(FlattenAvailability));
         OnPropertyChanged(nameof(CanFlatten));
         OnPropertyChanged(nameof(FlattenTooltip));
@@ -313,6 +354,17 @@ public sealed partial class MatchDesignerViewModel
     /// </summary>
     public MatchFlattenService.RunResult Flatten(string parentDir, string cellName, bool replaceInPlace)
     {
+        // A standalone Designer writes the cell and stops: there is no schematic to put an instance
+        // into, no undo stack to record the write on, and no workspace the destination has to be
+        // inside of. See MatchDesignerViewModel.SetStandalone.
+        if (_isStandalone)
+        {
+            var standalone = MatchFlattenService.RunStandalone(
+                _rebuild, _design, InstanceName, parentDir, cellName);
+            RefreshFlatten();
+            return standalone;
+        }
+
         if (_schematicVm is null || _target is null)
             return new(false, "This Designer is not bound to a component.", null, null);
 

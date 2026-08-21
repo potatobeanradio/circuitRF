@@ -7,11 +7,11 @@ using CommunityToolkit.Mvvm.Input;
 namespace CircuitRF.Ui.Matching;
 
 /// <summary>
-/// One of match.md §10.2's four candidate models, as the Designer lists it: what it fitted, what it
+/// One of match.md §10.2's candidate models, as the Designer lists it: what it fitted, what it
 /// cost in Γ, whether it is physical, and a button to take it instead of the winner.
 /// </summary>
 /// <remarks>
-/// <b>All four are always listed, including the non-physical ones.</b> §10.2 is explicit that the
+/// <b>All of them are always listed, including the non-physical ones.</b> §10.2 is explicit that the
 /// residual is data the user is entitled to see and never a hidden gate — a fit with a negative
 /// element is shown, labelled, and simply not applicable.
 /// </remarks>
@@ -60,6 +60,10 @@ public sealed partial class MatchProbeFitRowViewModel : ObservableObject
             var settings = _owner.Settings;
             string r = MatchValueFormat.FormatWithUnit(
                 Fit.R, MatchQuantity.Resistance, settings.ResistanceUnit, settings.SignificantDigits);
+
+            // The R-alone model has no reactance, and "C = 0 pF" would be a value where there is none.
+            if (Fit.Kind == ReactanceKind.None) return $"R = {r},  no reactance";
+
             var q = Fit.Kind == ReactanceKind.L ? MatchQuantity.Inductance : MatchQuantity.Capacitance;
             string x = MatchValueFormat.FormatWithUnit(
                 Fit.Value, q, settings.UnitFor(q), settings.SignificantDigits);
@@ -74,7 +78,7 @@ public sealed partial class MatchProbeFitRowViewModel : ObservableObject
     public string PhysicalNote => Fit.Physical
         ? ""
         : Fit.R <= 0 ? "non-physical: R came out negative"
-                     : "non-physical: the reactance came out negative";
+                     : "non-physical: the reactance came out negative or degenerate";
 
     /// <summary>What Apply would install — the conjugate when the toggle is on.</summary>
     public string TargetNote

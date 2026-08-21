@@ -240,15 +240,20 @@ public class MatchDesignerTests(ITestOutputHelper output)
     {
         var (_, _, designer) = Open(Golden());
         designer.LinkTransforms = true;
-        designer.AddTransform(designer.AvailablePairs().First());
+        designer.AddTransform(Pair(designer, "L1 / L2"));
 
         Assert.Single(designer.Transforms);
         Assert.False(designer.Transforms[0].CanEditN);
         Assert.Contains("fully determined", designer.Transforms[0].DisabledReason);
 
-        // A second one makes both movable again — the rule is about the COUNT, not about link.
-        designer.AddTransform(designer.AvailablePairs().First());
+        // A second one makes both movable again — PROVIDED it has room of its own. With link on, one
+        // transform's travel is what the OTHERS can absorb (2026-08-20), so a second pair whose
+        // positivity range is a single point gives nothing back and both rows stay determined. The
+        // pairs are named rather than taken from AvailablePairs().First(), which on this fixture
+        // picks exactly such a pair and made this assertion pass for the wrong reason.
+        designer.AddTransform(Pair(designer, "L3 / L4"));
         Assert.True(designer.Transforms[0].CanEditN);
+        Assert.True(designer.Transforms[1].CanEditN);
 
         designer.Dispose();
     }

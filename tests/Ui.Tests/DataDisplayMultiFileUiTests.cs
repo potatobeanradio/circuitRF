@@ -71,8 +71,8 @@ public sealed class DataDisplayMultiFileUiTests : IDisposable
             aliasFor: t => lib.AliasFor(t.SourcePath));
 
         Assert.Equal(withoutResolver, withResolver);
-        Assert.Equal("dB(S(1,1))", withResolver[0]);
-        Assert.Equal("dB(S(2,1))", withResolver[1]);
+        Assert.Equal("S(1,1) dB20", withResolver[0]);
+        Assert.Equal("S(2,1) dB20", withResolver[1]);
     }
 
     // ── Gate 3 (R-dd-1): two-file labels are alias:metric; removing one reverts ─────────────
@@ -95,12 +95,12 @@ public sealed class DataDisplayMultiFileUiTests : IDisposable
         var t2  = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db) { SourcePath = pathB };
 
         var twoFile = TraceLabeler.ComputeMinimalLabels(new[] { t1, t2 }, aliasFor: t => lib.AliasFor(t.SourcePath));
-        Assert.Equal("baseline·dB(S(1,1))", twoFile[0]);
-        Assert.Equal("tuned·dB(S(1,1))", twoFile[1]);
+        Assert.Equal("baseline·S(1,1) dB20", twoFile[0]);
+        Assert.Equal("tuned·S(1,1) dB20", twoFile[1]);
 
         // Remove the second dataset (from the plot's own perspective) — alias reverts to dropped.
         var oneFile = TraceLabeler.ComputeMinimalLabels(new[] { t1 }, aliasFor: t => lib.AliasFor(t.SourcePath));
-        Assert.Equal("dB(S(1,1))", oneFile[0]);
+        Assert.Equal("S(1,1) dB20", oneFile[0]);
     }
 
     // ── Gate 4 (R-dd-2): picker shows no source column with one dataset, does with two ─────

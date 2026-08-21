@@ -6,6 +6,288 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Match Designer round 6: a hold that never started, and a Designer with nothing behind it (2026-08-20)
+
+The owner's sixth round. Two items were real defects with non-obvious causes; the rest was layout and
+one new entry point.
+
+**1. The plots "glitching" during a slider drag: the hold existed and was never STARTED.** The rack's
+sliders were wired with XAML attributes — `PointerPressed="OnSliderPressed"` /
+`PointerReleased="OnSliderReleased"` — which subscribe to the **bubbling** route with
+`handledEventsToo: false`. Avalonia's `Thumb` marks both the press and the release handled before
+either reaches the `Slider`, so **grabbing the thumb, which is the ordinary way to drag a slider,
+never called `BeginTransformDrag` and never called `EndTransformDrag`.** Every intermediate value
+therefore ran the full held-back path: a 401-point S-parameter sweep, both plots rebuilt, and
+`Autoscale(force: true)` on each — which is exactly the axis movement the owner was describing.
+Clicking the slider's *track* did work, which is why it survived review: the gesture is correct for
+the one interaction nobody uses. The handlers are registered from `Loaded` now, **tunnelling** (so
+they run before the Thumb can mark anything handled) and `handledEventsToo: true` as well;
+`PointerCaptureLost` is wired too, or a drag interrupted by a focus change leaves the plots held for
+the rest of the session. The table of wired sliders is a `ConditionalWeakTable` because an
+`ItemsControl` builds a new Slider per row per rebuild and `Loaded` fires again on every re-attach.
+
+**2. "Is Ripple, dB supposed to be an input?" — yes, and it was disabled with nothing to show for
+it.** The row is `IsEnabled="{Binding RippleEnabled}"`, false whenever either termination carries a
+reactance (match.md §6.6: the prototype is then the singly- or doubly-prescribed one and the ripple
+follows from the terminations). The trap is that **an `InlineEditText` at rest is a bare `TextBlock`,
+and Avalonia's Fluent theme dims neither a disabled `TextBlock` nor a disabled `Panel`** — so a
+switched-off field is pixel-identical to a live one and simply swallows the double-click. Fixed in
+two places rather than by making the field always editable: a window-scope
+`ctl|InlineEditText:disabled` style (plus one for `TextBlock.detailLabel`), which now covers every
+settable value in the window, and a `RippleNote` line that names *which* termination is the reason.
+`:disabled` follows `IsEffectivelyEnabled`, so disabling the row's **Grid** dims its children too.
+
+**3. `IsStandalone` is NOT `IsOrphaned`, and conflating them would have been the bug.** Tools ▸ Match
+Designer opens a Designer with no component and no schematic. `IsOrphaned` is the *other* window with
+no component — the one whose component was **deleted** — and it is deliberately frozen read-only,
+because writing to a component that is no longer in the drawing is the thing that must not happen. A
+standalone Designer has nothing to write to in the first place, so every setter runs and `Commit` is
+simply the no-op it already was for a null target. Three capabilities are shut off where each is
+decided rather than at every call site: undo/redo (no schematic stack — `Revert` still restores the
+opening design), Probe (`MatchProbeAvailability` already answers `NoSchematic` from a null model), and
+replace-in-place on flatten. Flatten itself goes through `MatchFlatten.Write` **directly** rather than
+through `FlattenMatchCommand`, whose whole job is the half this case does not have; the cell is
+identical because the write is the same primitive, and the destination is unconfined because a cell no
+schematic references has nothing to be relative to.
+
+**4. A `ColumnDefinition` is not in the logical tree, so a `{Binding}` on its `Width` silently
+resolves to nothing.** The two new pane expanders (network over response, response over network) have
+to move a column width — hiding a pane alone leaves its 380 px column standing and the window shows a
+hole. The width is therefore set from code-behind (`SyncPaneLayout`), reacting to the view-model's own
+property change, with `IsVisible` bound in the AXAML as the other half. The two toggles are mutually
+exclusive in the view-model rather than in the two bindings, because each takes the *other* pane's
+column and both on at once is a state with no width left to describe.
+
+**5. `Button.seg-btn` paints the icon selector's face transparent from APPLICATION scope, and a host
+cannot reliably out-style it.** The owner wanted the C/L/– selector to read as a button rather than as
+text in a box. Style-vs-style precedence across scopes is not a thing to bet a look on, so
+`SegmentedSelect.axaml`'s control theme now passes the `IconSelectButton`'s own `Background` down to
+`PART_Button` as a **template value** — a local value, which outranks any style — defaulting to
+`Transparent`, so every existing selector in the application is pixel-identical and only a host that
+sets `Background` sees a change.
+
+**6. "Not aligned" was a column-width mismatch, not a margin.** The termination card's R row sized its
+label column `Auto` to a ~7 px glyph while the reactance row beneath it sized to a 24 px button, so the
+two started 10 px apart and no amount of margin tweaking would have held. Both rows share one fixed
+24 px column now, with the "R" centred in it.
+
+Also in this round, without incident: the Topology label and the Conjugate checkbox removed from the
+termination card (the design's `Term1Conjugate`/`Term2Conjugate` stay, so an older design still
+decodes); the probe's four-candidate listing removed — it was already applying the best fit, and doing
+so is one `SetParametersCommand`, so a single undo puts the terminations back; the N field turned into
+an inline editor that **refuses** out-of-range input with the range named rather than clamping into it
+silently; a Zoom to Fit button overlaid on the network pane (the schematic editor's own glyph, padding
+and tooltip, held together by a source-scan test) with the F key handled as an `OnKeyDown` override
+rather than a `KeyBindings` entry — a `TextBox` does not mark `KeyDown` handled for an ordinary
+character, so a bare-letter window binding would re-frame the drawing every time the user typed an "f";
+and the double-click re-frame removed, which also stops a double-click that misses a value label by a
+pixel from re-framing the whole drawing under the cursor.
+
+**The Plot Properties item was disabled and did not LOOK disabled.** Avalonia's Fluent `MenuItem`
+`:disabled` greys the header text and leaves the `Icon` at full colour, which on macOS reads as a live
+row that ignores the click. `PlotControl` now dims the item as well as disabling it, through one
+`ApplyMenuAvailability` called from the menu **builder** as well as from `Opening` — so the first open
+does not depend on that event having fired.
+
+### Round 6 follow-ups — four more, and two of them were the same class of "the control is lying"
+
+**7. The empty tooltip is a rectangle.** Owner: *"there's some kind of transparent rectangle rendering
+over the sliders when I move my mouse over them (it has a black stroke outline)."* The transform
+slider bound `ToolTip.Tip` straight to `DisabledReason`, which is `""` for every ordinary enabled row
+— and **Avalonia's tooltip service opens on any tip that is not `null`, an empty string included**, so
+hovering a perfectly normal slider popped the tooltip panel's own bordered box with nothing in it.
+This applies to every `ToolTip.Tip="{Binding …}"` in the application whose source can be blank; the
+Response family's own `Tooltip` was the second instance (blank until the first background analysis
+landed) and is seeded now. Fixed by having something to say, not by binding null — a slider whose
+range is recomputed on every rebuild is exactly the control whose bounds are worth stating.
+
+**8. The slider was bounded by the wrong range.** Owner: *"sometimes I can move the slider control
+higher, but the transform is already at its maximum level."* `TransformRange` is the **positivity**
+bound — how far a transform can go before one of its own three products goes negative — and it is the
+right bound for `MatchLinkage.Redistribute` to clamp against. It is **not** how far the user can drag.
+With link on, `Redistribute` ends by recomputing the dragged transform from what the *others* settled
+at (`n[current] = Clamp(sqrt(required / rest))`), so once the other unlocked transforms are parked on
+their own bounds `rest` stops moving and the dragged N stops with it, while the thumb keeps
+travelling. With every other transform locked, N is a constant and the slider moved its whole length
+for nothing. The reachable end points are now **measured, not derived**: ask `Redistribute` — the very
+function that will run — what it settles on for a request at each end of the positivity range. The
+settled value is monotone non-decreasing in the request, so those two probes are the interval's ends,
+and a second analytic implementation of the same rule would only be a second thing to disagree with
+it. A row whose reachable interval has collapsed is disabled with the reason, distinguishing the two
+ways it happens (link holding it, versus a pair with no positivity range at all) because the remedies
+differ. **This also invalidated an existing assertion**: `LinkWithOneTransform_DisablesTheSliderAndThe
+NumericBox` claimed a second transform always makes the first movable again — on its own fixture
+`AvailablePairs().First()` picks a pair whose range is the single point `[1, 1]`, which gives nothing
+back, and the test had been passing because `CanEditN` only counted rows.
+
+**9. Apply could never light, and never did what its name said.** Owner: *"the Apply button is always
+disabled, even after I make changes. What does apply do?"* It never sent the design anywhere — every
+edit in the window already writes the component's `Design` parameter as it is made, as one
+`SetParametersCommand` on the schematic's undo stack. What it flushed was a number half-typed in a box
+that had not lost focus; once the last such box became an `InlineEditText` (2026-08-19/20) that state
+stopped existing, because the control commits on Return *and* on LostFocus and every `*Entry` setter
+parses and writes in the same breath. `HasPendingEdits` was therefore structurally false. The button
+and its plumbing are gone rather than left on the footer as a control the user is entitled to think
+does something.
+
+**10. Order is a selector now**, whose items are `OrderOptions` — only the parities the termination
+pair permits (match.md §4.2). The refusal the typed field had to spell out is made by not offering the
+order. The item list is a **stable `ObservableCollection` whose contents change**, rewritten only when
+the permitted set actually differs: this repository has already been bitten by a selector losing its
+selection when its list was replaced underneath it (see `src/Ui/CLAUDE.md` on ComboBox notification
+order). The setter still refuses anything outside the list, because a control that is correct only
+because its UI never offers the wrong value is one restyling away from not being correct.
+
+Also: the `probed <date>` line is gone from the termination card (it appeared only after a probe, so
+the card changed shape under the user); the provenance itself is untouched on the design and is still
+what §10.5's "a hand edit clears the badge" rule is written against. And the typed-N tolerance is
+sized to **the display quantum of the format the field prints with** (`"0.#####"`, so 5e-6) rather
+than a token 1e-9 — below that, typing back the bound the field had just shown was refused.
+
+### Round 6, last three — and one of them is why the whole "empty tooltip" story ends in a deletion
+
+**11. The slider tooltip is gone outright.** Owner: *"completely remove the slider tooltips… I don't
+want to see anything rendered."* Note what this does NOT mean: binding the tip to `null` or to `""`.
+An empty tip **is** a rendered box (finding 7 above); the only way nothing renders is for the control
+to carry no `ToolTip.Tip` at all. Nothing is lost — the N field immediately to the slider's left
+already states the accepted range when the row is live, and the disabled reason when it is not.
+**An empty string is not "no tooltip"** is worth carrying out of this round as a general rule for this
+codebase.
+
+**12. The inline editor did not close on a click away, because almost nothing here is focusable.**
+The box dismisses itself on `LostFocus`, which never came: the Match Designer's schematic canvas is a
+plain `Control`, and so are the pane backgrounds, the `TextBlock`s and the borders — a click on any of
+them moves focus nowhere, so the box was never told. **The schematic PAGE does not have this problem
+because its canvas takes focus for its own keyboard tools**, which is exactly why the same wiring,
+copied from there, worked there and not here. It is now committed from the window's own tunnelling
+`PointerPressed` handler, checked *before* that handler's left-button and modifier guards: a
+right-click or a Ctrl-click away from the box is just as much "away" as a plain one.
+
+**13. Clicking Probe made the specification pane "glitch out and return to normal".** The probe's
+progress row lived inside that pane's stack and was visible only for the duration of the run, so every
+card under it slid down when the probe started and back up when it finished. It reports from the
+footer now — a fixed `Auto` row whose content is always present, so two lines and a Cancel button cost
+no layout at all. This is the same shape as finding 2's dimming and the `InlineEditText` measure
+override: **a control that appears and disappears inside a stack is a layout shift, and in this window
+they are all treated as bugs.**
+
+### The probe refused the simplest termination there is
+
+Owner-reported, 2026-08-20, on a schematic whose port 2 is a bare 50 Ω `Term`: *"the Match designer
+probe cannot seem to find my simple 50 ohm port 2 termination… I get a 'None of the four two-element
+models…' error. I would have thought finding the 50 ohm solution would have been super easy."*
+
+**Every one of the four models fitted it perfectly and every one was then thrown away.** The probe's
+four candidates are series R+C, series R+L, parallel R‖C and parallel R‖L, each a linear least squares
+in its natural domain. Against a flat 50 + j0 all four return **R = 50 Ω with a residual around
+1e-16** — and the reactance, which the fit has no information about, lands at its degenerate end:
+C = ∞, L = 0, C = 0, L = ∞. `ProbeFit.Physical` demanded a finite, strictly positive reactance, so all
+four were non-physical, `best` was null, and the refusal reported a fit problem where the fit was
+exact. The message even named the number it had found.
+
+`ReactanceKind.None` is first class everywhere else in this feature — it is what `Termination.Resistive`
+makes, it is what the kind selector shows as "–", and `Termination.CeqAt`/`QAt` both answer 0 for it —
+so the fitter simply had no way to say the thing the rest of the code was built to represent. There is
+a **fifth model, R alone**, scored by the same Γ residual as the other four; it wins a flat impedance
+outright and loses to a real reactance, so nothing is special-cased. `Physical` now reads "R > 0, and
+the reactive value > 0 **for the models that have one**".
+
+**The gap had a test-shaped cause too.** The probe fixture has had 200 Ω ‖ 0.125 pF on pin 1 and a bare
+50 Ω on pin 2 since MN-4 landed, and every test in the file probed **pin 1**. The one case that was
+already sitting in the fixture was the one nobody asked for.
+
+### Round 6, the last four — two labels, one selector that could not matter, and a refusal to a question nobody asked
+
+**13c. …and then the rack went dead, which is the more important half.** Owner: *"I can't slide any
+transforms anymore — they are all disabled, even when they are unlocked."* Finding 8 gated
+`CanEditN` on the reachable interval being non-degenerate, and **a collapsed interval does not mean
+"this N cannot move"** — it means "the linkage cannot improve `Π N²` from where the rack stands".
+Those are different statements, and the state that produces the second is an UNREACHABLE ratio:
+5 Ω into 200 Ω needs a product of 54 while every transform's positivity range caps at 1, so every
+probe clamps to the same bound at BOTH ends and every row reads as pinned. Disabling on that reading
+took the entire rack away in exactly the design the user was trying to rescue — and the message it
+offered ("every other transform is locked or already on a bound") was half wrong, since nothing was
+locked. **Nothing is ever disabled for lack of computed travel now.** The narrowing applies only when
+it describes a real interval; otherwise the slider keeps its positivity range and behaves exactly as
+it did before any of this, so the change is strictly an improvement where it applies and a no-op
+where it does not. Locking is once again the only thing that switches a row off.
+
+**13b. Locking a slider moved its thumb — a regression from finding 8, and the shape is worth keeping.**
+Owner: *"when I lock a slider it is disabled (good), but the position of the slider circle changes
+between locked and unlocked state (bad)."* The reachable-range pass fell back to the POSITIVITY range
+for a locked row, so its bounds widened the instant it was locked — and **a thumb draws at a fraction
+of its range**, so N stood perfectly still while the circle jumped. A lock decides whether a value may
+be MOVED and says nothing about where that value could live; `MatchLinkage.Redistribute` agrees, since
+it ignores the driven slot's own lock. Dropping `slots[i].Locked` from the early-out makes the locked
+and unlocked bounds identical **by construction** rather than by coincidence. (Locking a row still
+narrows its NEIGHBOURS' reachable ranges — that one is truthful: a locked neighbour genuinely cannot
+absorb any more.)
+
+**14. The axis labels were never the Match Designer's to get wrong — the trace KIND was.** Owner:
+*"the left y / right y axis labels need to use the same transform language as the data display —
+instead of `dB(S(1,1))` it should say `S(1,1) dB20`. Don't hard code it in; have the plot render it
+just the way it's done in the data display so that they won't ever drift."* The Designer's plots
+already go through `TraceLabeler.ComputeMinimalLabels` and `AxesRenderer` like every other plot in the
+application. What differed is that a trace built from an `SNP` is **network-bound** and read
+`Trace.ShortDescription` — the function-call form — while a trace built from a simulation cube read
+`BuildCubeQuantity`, the name-then-transform form. **Two forms for one quantity, chosen by which path
+produced the data.** Both branches now end with one `TransformSuffix` table, and the network branch
+maps `DependentVarFormat` → `CubeTransform` (`Db` is **dB20**, because every network path in `Trace`
+computes 20·log10 for it). This moves the Data Display's own Touchstone traces onto the same language,
+which is the point rather than a side effect. `Trace.ShortDescription` is deliberately unchanged:
+`BuildPickerYExpression` reads it as an EXPRESSION fallback, where a suffix would not parse.
+
+**15. "The series/parallel graphic doesn't update" — it does, when there is something to draw.** With
+`ReactanceKind.None` the pictogram is a resistor on its own, and both topologies are the same picture.
+So is everything else: `Termination.CeqAt` and `QAt` both answer 0 for a reactance-free end, and
+`MatchOrders.ValidOrders` **short-circuits on `!HasReactance` before it ever compares the two
+topologies**. On a bare R the choice changes the pictogram, the synthesis, the order parity and the
+ladder exactly not at all. The fix is not to the drawing: the selector is disabled, with a tooltip
+saying why. A control that can be moved to no effect is the bug.
+
+**16. Committing an unedited value was refused, correctly, about a question nobody asked.** Owner:
+*"if I double click on a component value in the LC ladder and then close the inline text editor
+without changing anything, I get 'L1_N1 cannot reach x pH; no transform in this rack moves it…'."*
+The editor seeds itself from the LABEL, and the label is **rounded to the display's significant
+digits** — `L1` reads "725 pH" for an element that is 724.93 pH. Committing that text unchanged asked
+`MatchElementSolve` to reach 725 pH *exactly*, which it truthfully cannot, so the refusal was a right
+answer to a question the user never asked. `CommitInlineEdit` now returns early when the typed value
+**formats to the same string the field was showing** — at display precision, which is the only
+precision the field has. Comparing the stored doubles instead would answer "different" for every
+unedited commit, which is the bug restated.
+
+### "I can't match terminal 2" on a matched network — three findings from one report
+
+Owner-reported, 2026-08-20, on `matchedRFTest.csch`: *"I'm getting a warning that I can't match
+terminal 2, but it looks matched to 50 ohms to me."* Decoding the stored design and running the
+rebuild against it answered all three parts.
+
+**17. "On target" was a floating-point equality test wearing an engineering label.** The design was
+off by **2e-9** — two parts in a billion — against a tolerance of `1e-9`, so the status strip read
+`Π N² 10 / 10 ✘ not reached` and `RefreshStatus` flagged termination 2 (the ⚑ is driven by
+`!Status.OnTarget`, and the far end is the flagged one by construction). `MatchLinkage.Redistribute`
+reaches its target by a sequential pass of divides and clamps, and `Π N²` **squares** every term, so
+a few units in the last place of a ratio near 10 land exactly there — a re-link after a dropped
+transform lands there routinely. The tolerance is now one shared constant,
+`MatchLinkage.RatioTolerance = 1e-6`, read by `LinkResult.OnTarget`, `MatchRebuild.OnTarget`,
+`Redistribute`'s own convergence break and `MatchSolutionSearch.RatioTolerance` — the last of which
+matters on its own: a solution the list offers must not be reported as "not reached" the moment it is
+applied. A part per million of an impedance ratio is 4e-6 dB.
+
+**18. The strip printed a cross beside two numbers that looked equal.** `Π N² 10 / 10 ✘ not reached`
+is unreadable whatever the tolerance says. Three decimals is the right density for the ✔ case and
+hides the entire disagreement in the ✘ one, so `RatioText` now states the shortfall as a percentage
+when there is one — `Π N² 1 / 54.215 ✘ not reached (-98.1555%)`.
+
+**19. An infeasible response family refuted itself.** Butterworth and Bessel were listed with
+*"cannot absorb termination 2 at order 3 — its far-end Q reaches only **0** against the **0**
+needed."* `PrototypeSearchResult.MaxQFar` is 0 in **two** different situations — the family's best
+really was 0, and *nothing was evaluated at all* (the `-∞` sentinel is normalised to 0 on the way
+out) — and against a purely resistive far end the required Q is 0 as well, so the two zeros met and
+the sentence said nothing. The real reason here is the second: with an analysis-end Q of 0.0625 the
+one-parameter search finds no member with a positive g-vector at order 3. `AnyMember` now tells the
+two apart and each gets its own sentence.
+
 ## Match Designer round 5: editing a value that nothing owns, and four host-shaped omissions (2026-08-20)
 
 The owner's fifth round on the Match Designer. Most of it was layout; four items were the same class

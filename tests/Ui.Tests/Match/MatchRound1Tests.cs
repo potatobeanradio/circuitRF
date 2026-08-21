@@ -428,11 +428,18 @@ public sealed class MatchRound1Tests
     }
 
     /// <summary>
-    /// The order field is an inline editor now, and an order the terminations cannot absorb is
-    /// REFUSED with the permitted set named — the same refusal the ComboBox made by not listing it.
+    /// The order field is an <b>icon selector</b> now (owner, 2026-08-20), and it offers exactly the
+    /// orders this termination pair permits — so the refusal the typed field had to spell out is made
+    /// by not offering the order at all.
     /// </summary>
+    /// <remarks>
+    /// Both halves are asserted, because the selector's honesty rests on them together: the item list
+    /// IS <c>OrderOptions</c>, and the setter still refuses anything outside it — a selector can be
+    /// written to from a binding, and a control that is correct only because its UI never offers the
+    /// wrong value is one restyling away from not being correct.
+    /// </remarks>
     [Fact]
-    public void TheOrderEntry_RefusesAnOrderTheParityForbids()
+    public void TheOrderSelector_OffersExactlyThePermittedOrders_AndRefusesAnyOther()
     {
         var (_, _, d) = Open(new MatchDesign
         {
@@ -442,18 +449,28 @@ public sealed class MatchRound1Tests
         });
 
         var valid = d.OrderOptions;
+        Assert.Equal(
+            valid.Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            d.OrderChoices);
+        Assert.Equal(d.Order.ToString(System.Globalization.CultureInfo.InvariantCulture), d.OrderChoice);
+
         int forbidden = Enumerable.Range(2, 5).First(n => !valid.Contains(n));
         int before = d.Order;
 
-        d.OrderEntry = forbidden.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
+        d.OrderChoice = forbidden.ToString(System.Globalization.CultureInfo.InvariantCulture);
         Assert.Equal(before, d.Order);
-        Assert.Contains(string.Join(", ", valid), d.OrderNote, StringComparison.Ordinal);
 
         // A permitted one goes straight through.
         int allowed = valid.First(n => n != before);
-        d.OrderEntry = allowed.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        d.OrderChoice = allowed.ToString(System.Globalization.CultureInfo.InvariantCulture);
         Assert.Equal(allowed, d.Order);
+
+        // And the item list FOLLOWS the terminations: a pair with the other parity offers the other
+        // orders, which is the whole ask.
+        d.SetTermination(2, new Termination(20.0, ReactanceKind.C, TerminationTopology.Series, 5e-12));
+        Assert.Equal(
+            d.OrderOptions.Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            d.OrderChoices);
     }
 
     /// <summary>

@@ -255,11 +255,21 @@ public static class MatchSynthesis
             familyMaxQFar = search.MaxQFar;
             g = search.G;
             if (g is null)
+                // TWO refusals, because there are two reasons and they need different sentences
+                // (owner-reported, 2026-08-20: "Butterworth cannot absorb termination 2 at order 3 —
+                // its far-end Q reaches only 0 against the 0 needed", which refutes itself). MaxQFar
+                // is 0 both when the family's best was genuinely 0 and when NOTHING was evaluated,
+                // and against a purely resistive far end the required Q is 0 too — so the absorbing
+                // sentence is only true when there was something to absorb with.
                 return MatchSynthesisResult.Refuse(MatchRefusal.Create(
                     MatchRefusalKind.ResponseInfeasible,
-                    $"{design.Response} cannot absorb termination {(anaIsTerm1 ? 2 : 1)} at order {n} — " +
-                    $"its far-end Q reaches only {familyMaxQFar:0.###} against the " +
-                    $"{qFarActual:0.###} needed.",
+                    search.AnyMember
+                        ? $"{design.Response} cannot absorb termination {(anaIsTerm1 ? 2 : 1)} at "
+                          + $"order {n} — its far-end Q reaches only {familyMaxQFar:0.###} against "
+                          + $"the {qFarActual:0.###} needed."
+                        : $"{design.Response} has no realizable prototype at order {n} for an "
+                          + $"analysis-end Q of {qAna:0.####}: no member of the family produces a "
+                          + "positive g-vector there. Another order, or a Chebyshev family, will.",
                     anaIsTerm1 ? 2 : 1,
                     ("order", n), ("maxQFar", familyMaxQFar), ("qRequired", qFarActual)));
         }

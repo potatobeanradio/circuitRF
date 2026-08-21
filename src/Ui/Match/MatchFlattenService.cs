@@ -59,6 +59,42 @@ public static class MatchFlattenService
             root, MatchFlatten.SuggestFreeName(root, seed));
     }
 
+    /// <summary>
+    /// The same question for a <b>standalone</b> Designer — one opened from Tools ▸ Match Designer,
+    /// with no component and no schematic behind it (owner, 2026-08-20).
+    /// </summary>
+    /// <remarks>
+    /// Two of <see cref="Availability"/>'s four refusals cannot apply here and are deliberately not
+    /// re-stated: there is no schematic to have been saved, and no workspace the destination has to
+    /// sit inside — the cell a standalone Designer writes is referenced by nothing, so nothing breaks
+    /// when it is moved. What remains is the one that always matters: a design that does not
+    /// synthesise has no ladder to write.
+    /// </remarks>
+    /// <param name="rebuild">The Designer's current rebuild.</param>
+    /// <param name="instanceName">What the Designer calls itself — seeds the cell name.</param>
+    /// <param name="startingDir">The open workspace root, or null. A starting folder only.</param>
+    public static MatchFlattenAvailability StandaloneAvailability(
+        MatchRebuildResult? rebuild, string instanceName, string? startingDir)
+    {
+        string seed = MatchFlatten.DefaultCellName(instanceName);
+
+        if (rebuild?.Network is null)
+            return new(false,
+                "This design does not synthesise, so there is no ladder to write. "
+                + (rebuild?.Refusal?.Message ?? ""), null, seed);
+
+        string dir = startingDir is not null && Directory.Exists(startingDir)
+            ? startingDir
+            : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+        return new(true,
+            "Write this ladder as ordinary L and C components in a new cell, with both terminations "
+            + "carried along disabled and the design recorded in the cell's annotation. Choose where "
+            + "it goes — this Designer is not attached to a schematic, so the cell is referenced by "
+            + "nothing until you place it.",
+            dir, MatchFlatten.SuggestFreeName(dir, seed));
+    }
+
     /// <summary>What one Flatten did, or why it did not.</summary>
     /// <param name="Ok">True when the cell was written.</param>
     /// <param name="Message">What to post to the Messages region — a success line or a refusal.</param>
@@ -148,5 +184,60 @@ public static class MatchFlattenService
             $"Flatten to Cell: wrote '{cellName}' ({elements.ToString(System.Globalization.CultureInfo.InvariantCulture)} "
             + $"elements, both terminations carried disabled). {tail}",
             cellDir, replacement);
+    }
+
+    /// <summary>
+    /// Writes the cell for a <b>standalone</b> Designer: no instance to replace, no undo stack to
+    /// record on, no workspace to be inside of.
+    /// </summary>
+    /// <remarks>
+    /// It goes through <see cref="MatchFlatten.Write"/> directly rather than through
+    /// <c>FlattenMatchCommand</c>, because that command's whole job is the half this case does not
+    /// have — swapping the <c>Match</c> for a cell instance, and undoing both together. The write
+    /// itself is <see cref="MatchFlatten.Write"/>'s either way, so the two entry points still produce
+    /// the same cell from the same design; only the surrounding transaction differs.
+    ///
+    /// <para><b>The write is not undoable, and that is stated rather than pretended otherwise</b> —
+    /// a standalone Designer has no stack, and inventing one that could delete a folder the user has
+    /// since edited would be a worse answer than "the cell is on disk now".</para>
+    /// </remarks>
+    public static RunResult RunStandalone(
+        MatchRebuildResult? rebuild, MatchDesign design, string instanceName,
+        string parentDir, string cellName, DateTime? stampedUtc = null)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+
+        var availability = StandaloneAvailability(rebuild, instanceName, parentDir);
+        if (!availability.CanRun) return new(false, availability.Reason, null, null);
+
+        string? reason = NameValidator.Validate(cellName);
+        if (reason is not null)
+            return new(false, $"Flatten to Cell: invalid cell name '{cellName}': {reason}", null, null);
+
+        string cellDir = Path.Combine(parentDir, cellName);
+        if (Directory.Exists(cellDir))
+            return new(false,
+                $"Flatten to Cell: a cell named '{cellName}' already exists here. Choose another "
+                + "name — flattening never writes over a cell that is already there.", null, null);
+
+        try
+        {
+            var cellSchematic = MatchFlatten.BuildSchematic(rebuild!, design, instanceName, stampedUtc);
+            MatchFlatten.Write(parentDir, cellName, cellSchematic, design);
+
+            int elements = cellSchematic.Components.Count(
+                c => c.Disable == DisableState.None
+                     && c.Symbol is SymbolKind.Inductor or SymbolKind.Capacitor);
+
+            return new(true,
+                $"Flatten to Cell: wrote '{cellName}' ({elements.ToString(System.Globalization.CultureInfo.InvariantCulture)} "
+                + "elements, both terminations carried disabled) to " + cellDir + ".",
+                cellDir, null);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException
+                                    or ArgumentException or InvalidOperationException)
+        {
+            return new(false, $"Flatten to Cell: {e.Message}", null, null);
+        }
     }
 }

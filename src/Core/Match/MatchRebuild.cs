@@ -33,8 +33,11 @@ public sealed class MatchRebuildResult
     /// <summary>The product of N^2 they had to reach.</summary>
     public double Required { get; init; } = 1.0;
 
-    /// <summary>True when <see cref="Achieved"/> is on target to a relative 1e-9.</summary>
-    public bool OnTarget => Math.Abs(Achieved / Required - 1.0) <= 1e-9;
+    /// <summary>
+    /// True when <see cref="Achieved"/> is on target to <see cref="MatchLinkage.RatioTolerance"/> —
+    /// see that constant for why it is 1e-6 and not a floating-point equality test.
+    /// </summary>
+    public bool OnTarget => Math.Abs(Achieved / Required - 1.0) <= MatchLinkage.RatioTolerance;
 
     /// <summary>Anything the caller should be told but that is not a refusal.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];

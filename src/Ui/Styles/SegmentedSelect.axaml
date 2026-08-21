@@ -21,6 +21,14 @@
         <Setter Property="Height" Value="22"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="VerticalAlignment"   Value="Stretch"/>
+        <!-- Transparent by default, which is exactly what Button.seg-btn painted before this
+             property existed, so every existing selector looks identical. It is a TemplateBinding
+             on PART_Button below rather than a style, so a HOST that sets Background on the
+             IconSelectButton wins over the application-scope seg-btn style (a value set inside a
+             template is a local value; seg-btn's is a Style). That is what lets the Match Designer's
+             C/L/- selector read as a BUTTON against its card instead of as text in a box (owner,
+             2026-08-20). -->
+        <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Template">
             <ControlTemplate>
                 <Panel>
@@ -28,6 +36,7 @@
                          IconSelectButton.ApplyHighlight(). -->
                     <Button x:Name="PART_Button"
                             Classes="seg-btn"
+                            Background="{TemplateBinding Background}"
                             Width="{TemplateBinding Width}"
                             Height="{TemplateBinding Height}"
                             Padding="2,0"

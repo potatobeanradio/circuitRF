@@ -122,8 +122,8 @@ public sealed class MultiDatasetAliasTests : IDisposable
 
         var labels = TraceLabeler.ComputeMinimalLabels(new[] { t1, t2 }, aliasFor: t => lib.AliasFor(t.SourcePath));
 
-        Assert.Equal("baseline·dB(S(1,1))", labels[0]);
-        Assert.Equal("tuned·dB(S(1,1))", labels[1]);
+        Assert.Equal("baseline·S(1,1) dB20", labels[0]);
+        Assert.Equal("tuned·S(1,1) dB20", labels[1]);
     }
 
     [Fact]

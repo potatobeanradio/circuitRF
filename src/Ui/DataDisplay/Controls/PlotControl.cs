@@ -370,6 +370,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var item1 = new MenuItem { Header = "Plot Properties…", Icon = icon };
             item1.Click += OnMenuPlotProperties;
             _plotPropertiesMenuItem = item1;
+            // Set NOW as well as on every open. The Opening refresh below is what keeps a host that
+            // flips the flag later honest; this is what makes the FIRST open right without depending
+            // on that event having fired at all.
+            ApplyMenuAvailability();
 
             icon = new MaterialIcon { Kind = MaterialIconKind.Numeric };
             var item2 = new MenuItem { Header = "Axes Limits", Icon = icon };
@@ -446,13 +450,43 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 // Re-read on every open, not once at build time: the menu instance is cached for the
                 // control's lifetime (Pattern A), so a host that sets either flag after the first
                 // right-click would otherwise never be heard.
-                if (_plotPropertiesMenuItem is not null)
-                    _plotPropertiesMenuItem.IsEnabled = CanEditPlotProperties;
-                if (_deletePlotMenuItem is not null)
-                    _deletePlotMenuItem.IsEnabled = CanDeletePlot;
+                ApplyMenuAvailability();
             };
 
             return menu;
+        }
+
+        /// <summary>
+        /// Applies <see cref="CanEditPlotProperties"/> / <see cref="CanDeletePlot"/> to the two menu
+        /// items they gate — <b>enablement and the greying that goes with it</b>.
+        /// </summary>
+        /// <remarks>
+        /// <b>Owner-reported, 2026-08-20:</b> <i>"the Plot Properties context menu item (in the plot)
+        /// is not greyed out (at least on macOS)."</i> The item was disabled and behaved as disabled
+        /// — clicking it did nothing, and <see cref="ShowPlotInspector"/> refuses a second time — but
+        /// it did not READ as disabled, which is the same bug from where the user sits: an item that
+        /// looks live and ignores the click is worse than one that is plainly unavailable.
+        ///
+        /// <para>So the dimming is applied here rather than left to the theme's <c>:disabled</c>
+        /// selector, which greys the header text and nothing else — the icon beside it keeps its full
+        /// colour and, at a glance and on a platform whose disabled foreground is close to its enabled
+        /// one, the row still reads as live. <c>Opacity</c> on the item takes the icon with it and is
+        /// the same on every platform.</para>
+        ///
+        /// <para>Called from BOTH build time and every open, so the state is right even if the
+        /// <c>Opening</c> event never reaches this menu.</para>
+        /// </remarks>
+        private void ApplyMenuAvailability()
+        {
+            Set(_plotPropertiesMenuItem, CanEditPlotProperties);
+            Set(_deletePlotMenuItem, CanDeletePlot);
+
+            static void Set(MenuItem? item, bool on)
+            {
+                if (item is null) return;
+                item.IsEnabled = on;
+                item.Opacity = on ? 1.0 : 0.4;
+            }
         }
 
         private void OnMenuPlotProperties(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

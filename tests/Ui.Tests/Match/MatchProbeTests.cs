@@ -203,6 +203,63 @@ public class MatchProbeTests(ITestOutputHelper output)
         Assert.Equal(MatchProbeBlock.NoSchematic, d.Term1.Availability.Block);
     }
 
+    /// <summary>
+    /// <b>A purely resistive termination is the SIMPLEST case, and it was the one case the fitter
+    /// refused</b> (owner-reported, 2026-08-20, on a schematic whose port 2 is a bare 50 Ω Term:
+    /// "the Match designer probe cannot seem to find my simple 50 ohm port 2 termination… I get a
+    /// 'None of the four two-element models…' error").
+    /// </summary>
+    /// <remarks>
+    /// Every one of the four models carries a reactance, and <c>ProbeFit.Physical</c> requires its
+    /// value to be finite and strictly positive. Against a flat 50 + j0 the least squares put every
+    /// reactance at its degenerate end — C = 0 or ∞, L = 0 or ∞ — so all four were non-physical, none
+    /// could be applied, and the refusal named a fit problem where there was none. A
+    /// <c>ReactanceKind.None</c> termination is first class everywhere else in the Designer (it is
+    /// what <c>Termination.Resistive</c> makes, and the kind selector's "–"), so the fitter now
+    /// offers it as a fifth model and it wins on residual.
+    /// </remarks>
+    [Fact]
+    public async Task ProbingABarePortResistance_FindsRAlone_RatherThanRefusingAllFourModels()
+    {
+        var model = Interstage(Band());
+        var d = Open(model);
+
+        await d.ProbeAsync(2);
+
+        output.WriteLine(d.Term2.ProbeError);
+        foreach (var f in d.Term2.ProbeFits)
+            output.WriteLine($"  {f.Name}: {f.ValuesText}  {f.ResidualText}  physical={f.IsPhysical}");
+
+        Assert.Equal("", d.Term2.ProbeError);
+        Assert.True(d.Term2.IsProbed);
+        Assert.Equal(50.0, d.Design.Term2.R, 1e-6);
+        Assert.Equal(ReactanceKind.None, d.Design.Term2.Kind);
+        Assert.False(d.Design.Term2.HasReactance);
+
+        // …and it wins because it FITS, not because it was special-cased: a flat 50 Ω is described
+        // exactly, so the residual is zero to numerical noise.
+        var best = d.Term2.ProbeFits.First();
+        Assert.Equal(ReactanceKind.None, best.Fit.Kind);
+        Assert.True(best.Fit.Residual < 1e-9, $"residual was {best.Fit.Residual:G6}");
+    }
+
+    /// <summary>
+    /// <b>The fifth model does not steal a fit that a real reactance explains better.</b>
+    /// </summary>
+    [Fact]
+    public async Task ARealReactiveTermination_StillFitsTheTwoElementModel()
+    {
+        var model = Interstage(Band());
+        var d = Open(model);
+
+        await d.ProbeAsync(1);      // 200 Ω ‖ 0.125 pF
+
+        Assert.Equal("", d.Term1.ProbeError);
+        Assert.Equal(ReactanceKind.C, d.Design.Term1.Kind);
+        Assert.Equal(TerminationTopology.Parallel, d.Design.Term1.Topology);
+        Assert.Equal(200.0, d.Design.Term1.R, 0.2);
+    }
+
     // ── §6 / §10.5 — provenance ──────────────────────────────────────────────
 
     [Fact]
@@ -236,12 +293,16 @@ public class MatchProbeTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task AllFourFitsAreListedWithTheirResiduals()
+    public async Task EveryFitIsListedWithItsResidual()
     {
         var d = Open(Interstage(Band()));
         await d.ProbeAsync(1);
 
-        Assert.Equal(4, d.Term1.ProbeFits.Count);
+        // FIVE, not four: the four two-element models and R alone, which was added on 2026-08-20
+        // because without it a bare port resistance had no representable fit at all. It is ranked by
+        // the same residual as the rest and listed like the rest.
+        Assert.Equal(5, d.Term1.ProbeFits.Count);
+        Assert.Single(d.Term1.ProbeFits.Where(f => f.Fit.Kind == ReactanceKind.None));
         Assert.True(d.Term1.HasProbeResult);
         Assert.Single(d.Term1.ProbeFits.Where(f => f.IsBest));
         Assert.Contains(d.Term1.ProbeFits, f => !f.IsPhysical);   // shown, labelled, not applicable

@@ -11,6 +11,7 @@ using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Material.Icons;
 
 namespace CircuitRF.Ui.Matching;
 
@@ -124,14 +125,70 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(InstanceName));
     }
 
+    /// <summary>
+    /// Binds this Designer to <b>nothing</b> — the Tools ▸ Match Designer entry point.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"add a Match Designer to the circuitRF Tools menu. When selected,
+    /// an 'orphaned' Designer window appears that still allows user to author a design and Flatten to
+    /// Cell."</i>
+    ///
+    /// <para><b>This is NOT <see cref="IsOrphaned"/>, and conflating the two would be the bug.</b>
+    /// An orphaned Designer is one whose component was DELETED: it is deliberately frozen and
+    /// read-only, because writing to a component that is no longer in the drawing is the thing that
+    /// must not happen. A standalone one has no component to write to in the first place, so there is
+    /// nothing to protect — every setter runs, and <see cref="Commit"/> is simply a no-op, which it
+    /// already was for a null target. The design lives in this window and leaves it as a CELL.</para>
+    ///
+    /// <para>Three things a standalone Designer does not have, each shut off where it is decided
+    /// rather than at every call site: <b>undo/redo</b> (there is no schematic stack — Revert still
+    /// restores the design this window opened with), <b>Probe</b> (<c>MatchProbeAvailability</c>
+    /// answers <c>NoSchematic</c> from a null model, which is exactly what this is), and
+    /// <b>Replace-in-place</b> on flatten (there is no instance to replace).</para>
+    /// </remarks>
+    /// <param name="workspaceRoot">
+    /// The open workspace's root, or null. Only ever a STARTING FOLDER for the flatten prompt: a
+    /// standalone Designer writes wherever the user points it, because the cell it produces is not
+    /// referenced from any schematic and so has nothing to be relative to.
+    /// </param>
+    public void SetStandalone(string? workspaceRoot)
+    {
+        Detach();
+
+        _schematicVm = null;
+        _target = null;
+        _isStandalone = true;
+        _standaloneRoot = workspaceRoot;
+        HookStack(null);
+
+        _design = MatchEmbedding.DefaultDesign();
+        PayloadError = "";
+        _openingDesign = _design.Clone();
+        Refresh(specChanged: true);
+        RefreshProbeAvailability();
+        OnPropertyChanged(nameof(IsStandalone));
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(InstanceName));
+    }
+
+    private bool _isStandalone;
+    private string? _standaloneRoot;
+
+    /// <summary>True for a Designer opened from Tools ▸ Match Designer, with no component behind it.</summary>
+    public bool IsStandalone => _isStandalone;
+
     /// <summary>The component this Designer edits — one window per instance keys on it.</summary>
     public EditableComponent? Target => _target;
 
     /// <summary>The instance name, "MN1".</summary>
-    public string InstanceName => _target?.InstanceName ?? "";
+    /// <remarks>
+    /// A standalone Designer has no instance, and "MN1" is what it calls itself: the name seeds the
+    /// flattened cell's default name and the labels the ladder draws, both of which need a word.
+    /// </remarks>
+    public string InstanceName => _target?.InstanceName ?? (_isStandalone ? "MN1" : "");
 
-    /// <summary>"Match — MN1".</summary>
-    public string Title => $"Match — {InstanceName}";
+    /// <summary>"Match — MN1", or "Match Designer" when there is no instance to name.</summary>
+    public string Title => _isStandalone ? "Match Designer" : $"Match — {InstanceName}";
 
     /// <summary>The working design. <b>Read it; write it only through this class's setters</b>, which
     /// rebuild and commit.</summary>
@@ -139,6 +196,61 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
     /// <summary>Display and search settings (§9.9). Not part of the design.</summary>
     public MatchDesignerSettings Settings { get; }
+
+    // ── Pane expansion (owner, 2026-08-20) ────────────────────────────────────
+
+    /// <summary>
+    /// True while the network + transforms column has been given the response pane's width.
+    /// </summary>
+    /// <remarks>
+    /// The two expanders are <b>mutually exclusive</b> rather than independent, and they have to be:
+    /// each one takes the OTHER pane's column, so both on at once is a state with no width left to
+    /// describe. Setting either turns the other off here, once, instead of in the two toggles that
+    /// bind to them.
+    /// </remarks>
+    [ObservableProperty] private bool _networkExpanded;
+
+    /// <inheritdoc cref="NetworkExpanded"/>
+    [ObservableProperty] private bool _responseExpanded;
+
+    partial void OnNetworkExpandedChanged(bool value)
+    {
+        if (value) ResponseExpanded = false;
+        OnPropertyChanged(nameof(NetworkExpandIcon));
+        OnPropertyChanged(nameof(NetworkExpandTooltip));
+    }
+
+    partial void OnResponseExpandedChanged(bool value)
+    {
+        if (value) NetworkExpanded = false;
+        OnPropertyChanged(nameof(ResponseExpandIcon));
+        OnPropertyChanged(nameof(ResponseExpandTooltip));
+    }
+
+    /// <summary>
+    /// The network expander's glyph — <b>the arrow points where the pane is about to go</b>
+    /// (owner, 2026-08-20: "the button icon shows state").
+    /// </summary>
+    /// <remarks>
+    /// Typed rather than a string the binding would have to parse into the enum: a misspelt glyph
+    /// name is then a build error instead of a blank square nobody notices until the screenshot.
+    /// </remarks>
+    public MaterialIconKind NetworkExpandIcon =>
+        NetworkExpanded ? MaterialIconKind.ArrowTopLeft : MaterialIconKind.ArrowBottomRight;
+
+    /// <inheritdoc cref="NetworkExpandIcon"/>
+    public MaterialIconKind ResponseExpandIcon =>
+        ResponseExpanded ? MaterialIconKind.ArrowTopRight : MaterialIconKind.ArrowBottomLeft;
+
+    /// <summary>What the network expander offers, in the state it is in.</summary>
+    public string NetworkExpandTooltip => NetworkExpanded
+        ? "Give the response pane its width back"
+        : "Expand the schematic and transforms over the response pane";
+
+    /// <inheritdoc cref="NetworkExpandTooltip"/>
+    public string ResponseExpandTooltip => ResponseExpanded
+        ? "Give the schematic and transforms their width back"
+        : "Expand the response over the schematic and transforms";
 
     /// <summary>The result of the last rebuild — the source of every number on screen.</summary>
     public MatchRebuildResult? Rebuild => _rebuild;
@@ -232,7 +344,6 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     {
         OnPropertyChanged(nameof(OrphanNote));
         OnPropertyChanged(nameof(CanFlatten));
-        OnPropertyChanged(nameof(HasPendingEdits));
         Term1.RefreshProbeState();
         Term2.RefreshProbeState();
     }
@@ -471,6 +582,31 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// </summary>
     public bool RippleEnabled => !_design.Term1.HasReactance && !_design.Term2.HasReactance;
 
+    /// <summary>
+    /// Why the ripple field is not settable right now, or empty when it is.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"Is Ripple, dB supposed to be an input? If so, the inline text
+    /// editor does not show when I double click on its value."</i> It is an input, and it was
+    /// disabled — but an <c>InlineEditText</c> at rest is a bare <c>TextBlock</c>, and Avalonia does
+    /// not dim one for being disabled, so the row looked live and swallowed the gesture. The row
+    /// dims (an <c>InlineEditText:disabled</c> style in the window, since nothing in the stack did)
+    /// and this line says which end is the reason.
+    /// </remarks>
+    public string RippleNote
+    {
+        get
+        {
+            if (RippleEnabled) return "";
+            bool one = _design.Term1.HasReactance, two = _design.Term2.HasReactance;
+            string which = one && two ? "Both terminations carry" : one ? "Termination 1 carries" : "Termination 2 carries";
+            return $"{which} a reactance, so the prototype is the singly- or doubly-prescribed one "
+                   + "and the ripple is set by the terminations rather than by hand (match.md §6.6). "
+                   + "Clear the reactance to – to set it here.";
+        }
+    }
+
+
     /// <summary>Deliberately inflated analysis-end Q (match.md §4.6), or 0 for none.</summary>
     public double QAdjust
     {
@@ -563,7 +699,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     {
         get => _f1Staged ?? MatchValueFormat.Format(
             F1, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
-        set { _f1Staged = value; OnPropertyChanged(); NotifyPendingEdits(); }
+        set { _f1Staged = value; OnPropertyChanged(); }
     }
     private string? _f1Staged;
 
@@ -572,7 +708,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     {
         get => _f2Staged ?? MatchValueFormat.Format(
             F2, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
-        set { _f2Staged = value; OnPropertyChanged(); NotifyPendingEdits(); }
+        set { _f2Staged = value; OnPropertyChanged(); }
     }
     private string? _f2Staged;
 
@@ -639,34 +775,49 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     }
 
     /// <summary>
-    /// The network order as text, for the inline editor.
+    /// The orders this termination pair permits, as the selector's items.
     /// </summary>
     /// <remarks>
-    /// <b>An order the terminations cannot absorb is REFUSED, not accepted and quietly corrected.</b>
-    /// <see cref="OrderOptions"/> is not a preference list — with a like or mixed termination pair the
-    /// arms alternate and only one parity fits at all (match.md §4.2), which is why the picker never
-    /// offered the others. Typing one of them puts the field straight back and leaves
-    /// <see cref="OrderNote"/> saying which orders do fit; that is the same refusal the ComboBox made
-    /// by simply not listing them, said out loud instead.
+    /// <b>Owner, 2026-08-20:</b> <i>"the Order needs to be that custom icon selector UI element whose
+    /// options change depending on the two terminations."</i>
+    ///
+    /// <para><see cref="OrderOptions"/> is not a preference list — with a like or mixed termination
+    /// pair the arms alternate and only one parity fits at all (match.md §4.2). A selector that offers
+    /// exactly those is therefore the honest control: the refusal the old typed field had to SAY
+    /// ("order must be one of 3, 5") the selector makes by not offering it, and there is nothing left
+    /// to refuse.</para>
+    ///
+    /// <para><b>A stable collection whose CONTENTS change</b>, not a fresh list per read: this
+    /// repository has already been bitten by a selector losing its selection when its item list was
+    /// replaced underneath it (see src/Ui/CLAUDE.md on ComboBox notification order). It is also only
+    /// rewritten when the permitted set actually differs, so an ordinary edit does not churn it.</para>
     /// </remarks>
-    public string OrderEntry
+    public ObservableCollection<string> OrderChoices { get; } = [];
+
+    /// <summary>The order as one of <see cref="OrderChoices"/>.</summary>
+    public string OrderChoice
     {
         get => Order.ToString(CultureInfo.InvariantCulture);
         set
         {
-            var valid = OrderOptions;
             if (int.TryParse((value ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture,
                              out int n)
-                && valid.Contains(n))
-            {
+                && OrderOptions.Contains(n))
                 Order = n;
-            }
             else
-            {
-                OrderNote = $"Order must be one of {string.Join(", ", valid)} for this termination pair.";
-            }
-            OnPropertyChanged();
+                OnPropertyChanged();
         }
+    }
+
+    private void RefreshOrderChoices()
+    {
+        var wanted = OrderOptions.Select(o => o.ToString(CultureInfo.InvariantCulture)).ToList();
+        if (OrderChoices.SequenceEqual(wanted, StringComparer.Ordinal)) return;
+
+        OrderChoices.Clear();
+        foreach (var w in wanted) OrderChoices.Add(w);
+        // The item list just changed underneath the selector, so the selection has to be re-pushed.
+        OnPropertyChanged(nameof(OrderChoice));
     }
 
     /// <summary>What the order field's tooltip states — the orders this pair actually permits.</summary>
@@ -674,37 +825,19 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         $"Only the parities the two terminations permit: {string.Join(", ", OrderOptions)}. "
         + "An order that cannot absorb both ends is refused.";
 
-    // ── Apply / Revert ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// True when a field holds text nobody has parsed yet.
-    /// </summary>
-    /// <remarks>
-    /// <b>This is what Apply is FOR.</b> Every committed edit already writes the design, so there is
-    /// no "pending design" to apply — what can be pending is a number half-typed in a box that has not
-    /// lost focus. Apply flushes those. An Apply button that could only ever be a no-op would be
-    /// worse than none.
-    /// </remarks>
-    public bool HasPendingEdits =>
-        _f1Staged is not null || _f2Staged is not null
-        || Term1.HasPendingText || Term2.HasPendingText
-        || Transforms.Any(t => t.HasPendingText);
-
-    /// <summary>Raises <see cref="HasPendingEdits"/>; called by every staged-text setter.</summary>
-    internal void NotifyPendingEdits() => OnPropertyChanged(nameof(HasPendingEdits));
-
-    /// <summary>Parses every staged field and commits.</summary>
-    public void Apply()
-    {
-        CommitBand();
-        Term1.CommitResistance();
-        Term1.CommitReactance();
-        Term2.CommitResistance();
-        Term2.CommitReactance();
-        foreach (var t in Transforms.ToList()) t.CommitN();
-        NotifyPendingEdits();
-        UpdatePlots();
-    }
+    // ── Revert ────────────────────────────────────────────────────────────────
+    //
+    // THERE IS NO APPLY, and there is nothing for one to do (owner-reported, 2026-08-20: "the Apply
+    // button is always disabled, even after I make changes. What does apply do?").
+    //
+    // It never sent the design anywhere: every edit in this window already writes the component's
+    // Design parameter as it is made, as one SetParametersCommand on the schematic's own undo stack.
+    // What Apply flushed was a number half-typed in a box that had not lost focus yet — and once the
+    // last of those boxes became an InlineEditText (2026-08-19/20), that state stopped existing:
+    // the control's three-key contract commits on Return AND on LostFocus, and every *Entry setter
+    // parses and writes in the same breath. So `HasPendingEdits` was structurally false, the button
+    // could never light, and it has been removed along with the plumbing that fed it rather than
+    // left on the footer as a control the user is entitled to think does something.
 
     /// <summary>
     /// Restores the design this window opened with, as ONE undoable command. Not a discard: the
@@ -736,7 +869,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
             // MatchDesignerViewModel.Analysis.cs for why they are the only two that do.
             QueueAnalysis();
             OnPropertyChanged(nameof(OrderOptions));
+            RefreshOrderChoices();
             OnPropertyChanged(nameof(RippleEnabled));
+            OnPropertyChanged(nameof(RippleNote));
         }
 
         Term1.Refresh();
@@ -762,10 +897,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(F1Entry));
         OnPropertyChanged(nameof(F2Entry));
         OnPropertyChanged(nameof(RippleEntry));
-        OnPropertyChanged(nameof(OrderEntry));
+        OnPropertyChanged(nameof(OrderChoice));
         OnPropertyChanged(nameof(OrderTooltip));
         OnPropertyChanged(nameof(LinkTransforms));
-        NotifyPendingEdits();
     }
 
     // ── Commit ────────────────────────────────────────────────────────────────

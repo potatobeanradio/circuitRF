@@ -187,8 +187,16 @@ public sealed record PrototypeEvaluation(bool Feasible, double QFar, double Scor
 /// <param name="ShapeParam">eps (Chebyshev/Butterworth) or alpha (Bessel) at the winner.</param>
 /// <param name="OtherParam">K (Chebyshev/Butterworth) or C (Bessel) at the winner.</param>
 /// <param name="Score">The winner's worst in-band |S11|, dB.</param>
+/// <param name="AnyMember">
+/// True when at least one realizable member was evaluated. <b>Distinguishes "the family's best Q_far
+/// was too small" from "the family produced nothing at all here"</b>, which
+/// <paramref name="MaxQFar"/> alone cannot: with no member evaluated it is reported as 0, and against
+/// a purely resistive far end (which needs 0) the refusal then read "reaches only 0 against the 0
+/// needed" — a sentence that refutes itself (owner-reported, 2026-08-20).
+/// </param>
 public sealed record PrototypeSearchResult(
-    double[]? G, double MaxQFar, double ShapeParam, double OtherParam, double Score);
+    double[]? G, double MaxQFar, double ShapeParam, double OtherParam, double Score,
+    bool AnyMember = true);
 
 /// <summary>
 /// match.md §6.2's general route: write |Gamma|^2 as a two-parameter family in the lowpass-prototype
@@ -383,7 +391,8 @@ public static class MatchPrototypes
 
         return new PrototypeSearchResult(
             bestG, double.IsNegativeInfinity(maxQFar) ? 0.0 : maxQFar, bestShape, bestOther,
-            bestG is null ? double.NaN : bestScore);
+            bestG is null ? double.NaN : bestScore,
+            AnyMember: !double.IsNegativeInfinity(maxQFar));
     }
 
     /// <summary>

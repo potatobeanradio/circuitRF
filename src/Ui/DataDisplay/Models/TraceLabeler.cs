@@ -56,7 +56,7 @@ namespace CircuitRF.Ui.DataDisplay
                     : (t.EffectiveSourcePath is { } sp ? Path.GetFileNameWithoutExtension(sp) : null);
                 quantities[i] = t.IsCubeBound
                     ? BuildCubeQuantity(t)
-                    : t.ShortDescription;
+                    : BuildNetworkQuantity(t);
             }
 
             // ---- Step 2: decide which components to show -------------------
@@ -84,6 +84,78 @@ namespace CircuitRF.Ui.DataDisplay
         // ----------------------------------------------------------------
         //  Private helpers
         // ----------------------------------------------------------------
+
+        /// <summary>
+        /// A NETWORK-bound trace's quantity, in the same language a cube-bound one uses:
+        /// <c>S(1,1) dB20</c>, not <c>dB(S(1,1))</c>.
+        /// </summary>
+        /// <remarks>
+        /// <b>Owner, 2026-08-20:</b> <i>"the left y / right y axis labels for the plots need to use
+        /// the same transform language as the data display — instead of dB(S(1,1)) it should say
+        /// S(1,1) dB20. Don't hard code it in; have the plot render it just the way it's done in the
+        /// data display so that they won't ever drift."</i>
+        ///
+        /// <para><b>The Match Designer was never labelling anything itself.</b> Its plots go through
+        /// this method and <c>AxesRenderer</c> like every other plot in the application; what differed
+        /// was the TRACE KIND. A trace built from an <c>SNP</c> is network-bound and read
+        /// <c>Trace.ShortDescription</c> — the function-call form <c>dB(S(1,1))</c> — while a trace
+        /// built from a simulation cube read <see cref="BuildCubeQuantity"/>, the name-then-transform
+        /// form. Two forms for one quantity, chosen by which path produced it.</para>
+        ///
+        /// <para>So the fix is here, in the one method both kinds already come through, and both now
+        /// end with <see cref="TransformSuffix"/> — a single table, so the two cannot drift. It moves
+        /// the Data Display's own Touchstone traces onto the same language, which is the point rather
+        /// than a side effect. <c>Trace.ShortDescription</c> is deliberately NOT changed: it is the
+        /// trace's own description, and <c>BuildPickerYExpression</c> reads it as an EXPRESSION
+        /// fallback, where a suffix would not parse.</para>
+        /// </remarks>
+        private static string BuildNetworkQuantity(Trace t)
+        {
+            // A contour has no matrix element and no transform — its own title is the whole label.
+            if (t.IsContourTrace) return t.ShortDescription;
+
+            string name = t.IsDerived
+                ? t.Derived.Description()
+                : $"{t.MatrixType}({t.Row + 1},{t.Col + 1})";
+
+            return name + TransformSuffix(FromDependentVarFormat(t.YAxis));
+        }
+
+        /// <summary>
+        /// The network trace's Y format as the cube transform that computes the same number.
+        /// </summary>
+        /// <remarks>
+        /// <c>Db</c> is <b>dB20</b> and not merely "dB": every network path in <c>Trace</c> computes
+        /// <c>20·log10(|z|)</c> for it (the value path, the derived path and the readout path alike),
+        /// so naming it dB20 is a statement about the arithmetic rather than a guess. <c>Complex</c>
+        /// has no transform — it is the raw value — which is what <c>None</c> means here.
+        /// </remarks>
+        private static CubeTransform FromDependentVarFormat(DependentVarFormat f) => f switch
+        {
+            DependentVarFormat.Db        => CubeTransform.dB20,
+            DependentVarFormat.Mag       => CubeTransform.Mag,
+            DependentVarFormat.Phase     => CubeTransform.Phase,
+            DependentVarFormat.Real      => CubeTransform.Real,
+            DependentVarFormat.Imaginary => CubeTransform.Imag,
+            _                            => CubeTransform.None,
+        };
+
+        /// <summary>
+        /// The one transform-suffix table, shared by both trace kinds. Empty for
+        /// <see cref="CubeTransform.None"/>, so a raw complex trace carries no suffix at all.
+        /// </summary>
+        private static string TransformSuffix(CubeTransform t) => t switch
+        {
+            CubeTransform.dB20  => " dB20",
+            CubeTransform.dB10  => " dB10",
+            CubeTransform.dB    => " dB",
+            CubeTransform.Mag   => " Mag",
+            CubeTransform.Phase => " Phase",
+            CubeTransform.Real  => " Real",
+            CubeTransform.Imag  => " Imag",
+            CubeTransform.Conj  => " Conj",
+            _                   => "",
+        };
 
         private static string BuildCubeQuantity(Trace t)
         {
@@ -138,21 +210,7 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             // Append transform suffix (not folded into the cube name).
-            if (t.Transform != CubeTransform.None)
-            {
-                sb.Append(t.Transform switch
-                {
-                    CubeTransform.dB20  => " dB20",
-                    CubeTransform.dB10  => " dB10",
-                    CubeTransform.dB    => " dB",
-                    CubeTransform.Mag   => " Mag",
-                    CubeTransform.Phase => " Phase",
-                    CubeTransform.Real  => " Real",
-                    CubeTransform.Imag  => " Imag",
-                    CubeTransform.Conj  => " Conj",
-                    _                   => ""
-                });
-            }
+            sb.Append(TransformSuffix(t.Transform));
 
             // A binding that FAILED to resolve must say so on the plot, not only under the spec box on
             // the card. Nothing else in this label can express it: the label is built from the trace's

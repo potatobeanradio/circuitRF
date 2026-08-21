@@ -13,7 +13,7 @@ namespace CircuitRF.Engine.Matching;
 
 /// <summary>
 /// match.md §10 — looks <b>outward</b> from one pin of a placed <c>Match</c> into the circuit it sits
-/// in, measures that network's impedance over the design band, fits the four two-element termination
+/// in, measures that network's impedance over the design band, fits the five termination
 /// models to it, and returns them ranked.
 /// </summary>
 /// <remarks>
@@ -48,7 +48,10 @@ public static class TerminationProbe
 
     // ── Results ───────────────────────────────────────────────────────────────
 
-    /// <summary>One of match.md §10.2's four candidate models, fitted and scored.</summary>
+    /// <summary>
+    /// One of match.md §10.2's candidate models, fitted and scored. <b>Five, not four</b>: the four
+    /// two-element ones and R alone — see <see cref="Physical"/> for why the fifth had to exist.
+    /// </summary>
     /// <param name="Topology">Series or parallel against R.</param>
     /// <param name="Kind">C or L.</param>
     /// <param name="R">Fitted resistance, ohms. Negative means non-physical, and is reported anyway.</param>
@@ -58,22 +61,39 @@ public static class TerminationProbe
         TerminationTopology Topology, ReactanceKind Kind, double R, double Value, double Residual)
     {
         /// <summary>
-        /// False when <see cref="R"/> ≤ 0 or <see cref="Value"/> ≤ 0 (or either is not finite). A
-        /// non-physical fit stays in the ranking so the user can see it was considered; it is never
-        /// auto-applied.
+        /// False when <see cref="R"/> ≤ 0, or when a REACTIVE model's <see cref="Value"/> is ≤ 0 or
+        /// not finite. A non-physical fit stays in the ranking so the user can see it was considered;
+        /// it is never auto-applied.
         /// </summary>
+        /// <remarks>
+        /// <b>The <see cref="ReactanceKind.None"/> model is the exception, and it is why this reads the
+        /// way it does</b> (owner-reported, 2026-08-20: a schematic whose port 2 is a bare 50 Ω Term
+        /// answered "None of the four two-element models fits this network"). A flat 50 + j0 is fitted
+        /// PERFECTLY by all four two-element models — every one of them returns R = 50 Ω with a
+        /// residual around 1e-16 — but the least squares can only put the reactance at its degenerate
+        /// end, C = 0 or ∞ and L = 0 or ∞, so every candidate failed a test that demands a strictly
+        /// positive reactance and the simplest possible termination became the one case the fitter
+        /// refused. An R-alone model has no reactance to be positive, and <c>Value == 0</c> is what
+        /// says so rather than a missing number.
+        /// </remarks>
         public bool Physical =>
-            double.IsFinite(R) && R > 0.0 && double.IsFinite(Value) && Value > 0.0;
+            double.IsFinite(R) && R > 0.0
+            && (Kind == ReactanceKind.None
+                    ? Value == 0.0
+                    : double.IsFinite(Value) && Value > 0.0);
 
         /// <summary>"parallel R‖C", "series R+L", … — the label the Designer shows.</summary>
         public string Name =>
-            Topology == TerminationTopology.Parallel
+            Kind == ReactanceKind.None ? "R alone"
+            : Topology == TerminationTopology.Parallel
                 ? Kind == ReactanceKind.C ? "parallel R‖C" : "parallel R‖L"
                 : Kind == ReactanceKind.C ? "series R+C" : "series R+L";
 
         /// <summary>This model's own impedance at one frequency, in ohms.</summary>
         public Complex ImpedanceAt(double freqHz)
         {
+            if (Kind == ReactanceKind.None) return new Complex(R, 0.0);
+
             double w = 2.0 * Math.PI * freqHz;
             if (Topology == TerminationTopology.Series)
                 return Kind == ReactanceKind.C
@@ -129,7 +149,7 @@ public static class TerminationProbe
     /// </summary>
     /// <param name="Ok">True when <see cref="Termination"/> is populated and may be applied.</param>
     /// <param name="Refusal">Why nothing was measured or nothing was applicable; null when Ok.</param>
-    /// <param name="Fits">All four candidates, best residual first — including non-physical ones.</param>
+    /// <param name="Fits">All five candidates, best residual first — including non-physical ones.</param>
     /// <param name="Best">
     /// The best-scoring PHYSICAL fit — <b>always a description of the network as measured</b>, never
     /// of a conjugate target. See <paramref name="Target"/>.
@@ -397,6 +417,14 @@ public static class TerminationProbe
 
         var candidates = new List<ProbeFit>
         {
+            // R ALONE — the fifth model, and the one that makes a bare port resistance representable
+            // (owner, 2026-08-20). It is not a special case bolted on after the fact: it is scored by
+            // the same residual as the other four and wins only when it earns it, which for a flat
+            // 50 + j0 it does exactly and for anything with a real reactance it does not. Parallel is
+            // its declared topology to match Termination.Resistive's own default; for a termination
+            // with no reactance the two topologies describe the same network anyway.
+            Score(TerminationTopology.Parallel, ReactanceKind.None, rSeries,          0.0),
+
             Score(TerminationTopology.Series,   ReactanceKind.C, rSeries,           Reciprocal(invCSeries)),
             Score(TerminationTopology.Series,   ReactanceKind.L, rSeries,           lSeries),
             Score(TerminationTopology.Parallel, ReactanceKind.C, Reciprocal(gParallel), cParallel),
@@ -411,9 +439,9 @@ public static class TerminationProbe
         if (best is null)
             return new ProbeResult(
                 false,
-                "None of the four two-element models fits this network with a positive resistance and a "
-                + "positive reactance. All four are listed with their residuals; nothing has been "
-                + "applied, because a negative element is not a termination anyone can build.",
+                "None of the five models fits this network with a positive resistance. All five are "
+                + "listed with their residuals; nothing has been applied, because a negative element "
+                + "is not a termination anyone can build.",
                 ranked, null, null, null, conjugate, omega0, "", freqsHz, z);
 
         string flag = best.Residual > residualWarning

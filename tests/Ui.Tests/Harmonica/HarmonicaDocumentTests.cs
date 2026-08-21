@@ -67,9 +67,15 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
         // the whole document type stay. Asserted as ABSENT on both surfaces rather than simply dropped
         // from the list: a commented-out item that someone re-indents back into the tree would
         // otherwise reappear silently on one surface only.
-        Assert.Equal(["harmonicaRF"], nativeEntries);
+        //
+        // "Match Designer" joined it on 2026-08-20 (owner: "add a Match Designer to the circuitRF
+        // Tools menu"), and is listed here for the same reason harmonicaRF is — the order is the
+        // property under test, not the membership.
+        Assert.Equal(["harmonicaRF", "Match Designer"], nativeEntries);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
+        Assert.Contains(native[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewMatchDesignerCommand") == true);
         Assert.DoesNotContain(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
 
@@ -83,9 +89,11 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Where(e => e.Name.LocalName == "MenuItem")
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["_harmonicaRF"], inWindowEntries);
+        Assert.Equal(["_harmonicaRF", "_Match Designer"], inWindowEntries);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
+        Assert.Contains(inWindow[0].Descendants(),
+            e => ((string?)e.Attribute("Command"))?.Contains("NewMatchDesignerCommand") == true);
         Assert.DoesNotContain(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewWBondCommand") == true);
     }

@@ -164,11 +164,20 @@ public sealed class LabelAndAspectFixTests
         Assert.Contains("i=1", label);
     }
 
+    /// <summary>
+    /// A network trace labels in the SAME language a cube trace does — name then transform (owner,
+    /// 2026-08-20: "instead of dB(S(1,1)) it should say S(1,1) dB20").
+    /// </summary>
+    /// <remarks>
+    /// It used to be <c>dB(S(1,2))</c>: the two trace kinds had two forms for one quantity, chosen by
+    /// which path produced the data. Both now end with <c>TraceLabeler.TransformSuffix</c>, one table,
+    /// so they cannot drift apart again.
+    /// </remarks>
     [Fact]
-    public void NetworkSParameter_LabelUnchanged()
+    public void NetworkSParameter_LabelsInTheSameLanguageAsACubeTrace()
     {
         var t = new Trace(S2("/x/amp.s2p"), MatrixType.S, 0, 1, DependentVarFormat.Db) { SourcePath = "/x/amp.s2p" };
-        Assert.Equal("dB(S(1,2))", TraceLabeler.ComputeMinimalLabels([t])[0]);
+        Assert.Equal("S(1,2) dB20", TraceLabeler.ComputeMinimalLabels([t])[0]);
     }
 }
 

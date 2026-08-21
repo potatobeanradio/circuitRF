@@ -19,8 +19,8 @@ public sealed record LinkResult(
     IReadOnlyList<double> N, double Achieved, double Required, double Shortfall,
     IReadOnlyList<int> AtLimit)
 {
-    /// <summary>True when the product is on target to a relative 1e-9.</summary>
-    public bool OnTarget => Math.Abs(Shortfall - 1.0) <= 1e-9;
+    /// <summary>True when the product is on target to <see cref="MatchLinkage.RatioTolerance"/>.</summary>
+    public bool OnTarget => Math.Abs(Shortfall - 1.0) <= MatchLinkage.RatioTolerance;
 }
 
 /// <summary>
@@ -28,6 +28,28 @@ public sealed record LinkResult(
 /// </summary>
 public static class MatchLinkage
 {
+    /// <summary>
+    /// <b>How close <c>Π N²</c> has to be to the required ratio to count as reached — RELATIVE.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> a design whose status strip read <i>"Π N² 10 / 10 ✘ not
+    /// reached"</i>, with termination 2 flagged, on a network that was matched. It was off by
+    /// <b>2e-9</b> — two parts in a billion — against a tolerance of 1e-9.
+    ///
+    /// <para>1e-9 was a floating-point equality test wearing an engineering label.
+    /// <see cref="Redistribute"/> reaches the target by a sequential pass of divides and clamps, and
+    /// <c>Π N²</c> squares every term, so a few units in the last place of a ratio near 10 land
+    /// exactly there; a re-link after a dropped transform lands there routinely. <b>1e-6 is still six
+    /// orders of magnitude finer than anything measurable</b> — a part per million of an impedance
+    /// ratio is 4e-6 dB — and it is far above the arithmetic's own noise, so the verdict now answers
+    /// a question about the network rather than about the last bits of a double.</para>
+    ///
+    /// <para>It lives HERE, on the lowest-level of the three places that ask the question
+    /// (<see cref="LinkResult.OnTarget"/>, <c>MatchRebuild.OnTarget</c> and
+    /// <c>MatchSolutionSearch.RatioTolerance</c>), so all three cannot drift into three answers.</para>
+    /// </remarks>
+    public const double RatioTolerance = 1e-6;
+
     /// <summary>
     /// Moves one transform to <paramref name="requestedN"/> and, with link on, re-solves the unlocked
     /// others so <c>product(N^2)</c> stays on <paramref name="required"/>.
@@ -71,7 +93,7 @@ public static class MatchLinkage
                     // clearer than reproducing an identity.
                     n[t] = slots[t].Range.Clamp(target);
 
-                    if (Math.Abs(Product(n) / required - 1.0) <= 1e-9) break;
+                    if (Math.Abs(Product(n) / required - 1.0) <= RatioTolerance) break;
                 }
 
                 double rest = 1.0;

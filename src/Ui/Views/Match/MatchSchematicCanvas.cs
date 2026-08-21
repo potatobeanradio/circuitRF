@@ -242,16 +242,24 @@ public sealed class MatchSchematicCanvas : Control
     }
 
     /// <summary>
-    /// Double-click on a value label opens its inline editor; anywhere else it re-frames — the way
-    /// back from a pan that lost the drawing.
+    /// <b>Double-click opens a value label's inline editor, and does nothing anywhere else.</b>
     /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"remove the Zoom to Fit on double click of the Schematic canvas
+    /// because now user has this button."</i> The pane carries a real Zoom to Fit button in its
+    /// top-left corner now (and the F key), so the double-click re-frame was a second way to do one
+    /// thing — and the worse of the two, because it fired on any double-click that MISSED a label,
+    /// which is most of the pane. A user aiming at a value and landing a pixel off got the whole
+    /// drawing re-framed under the cursor instead of an editor.
+    ///
+    /// <para>The event is only marked handled when a label actually took it, so a double-click on
+    /// empty canvas now falls through untouched rather than being swallowed.</para>
+    /// </remarks>
     protected override void OnDoubleTapped(TappedEventArgs e)
     {
         base.OnDoubleTapped(e);
-        if (HitLabel(e.GetPosition(this)) is { } hit)
-            LabelDoubleTapped?.Invoke(this, hit);
-        else
-            ZoomToFit();
+        if (HitLabel(e.GetPosition(this)) is not { } hit) return;
+        LabelDoubleTapped?.Invoke(this, hit);
         e.Handled = true;
     }
 

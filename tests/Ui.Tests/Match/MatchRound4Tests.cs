@@ -607,10 +607,24 @@ public sealed class MatchRound4Tests(ITestOutputHelper output)
         Assert.Equal(2, Regex.Matches(xaml, @"CanDeletePlot=""False""").Count);
         Assert.Equal(2, Regex.Matches(xaml, @"CanEditPlotProperties=""False""").Count);
 
+        // Both halves go through ONE method now (owner, 2026-08-20: "the Plot Properties context menu
+        // item is not greyed out, at least on macOS"), called at BUILD time as well as on every open —
+        // so the very first right-click is right even if the Opening event never reaches this menu —
+        // and dimming the item as well as disabling it, because the theme's :disabled greys the
+        // header text and leaves the icon at full colour.
         string plot = Src("src", "Ui", "DataDisplay", "Controls", "PlotControl.cs");
         var opening = Between(plot, "menu.Opening +=");
-        Assert.Contains("CanEditPlotProperties", opening, StringComparison.Ordinal);
-        Assert.Contains("CanDeletePlot", opening, StringComparison.Ordinal);
+        Assert.Contains("ApplyMenuAvailability()", opening, StringComparison.Ordinal);
+
+        var apply = Between(plot, "private void ApplyMenuAvailability()");
+        Assert.Contains("CanEditPlotProperties", apply, StringComparison.Ordinal);
+        Assert.Contains("CanDeletePlot", apply, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled", apply, StringComparison.Ordinal);
+        Assert.Contains("Opacity", apply, StringComparison.Ordinal);
+
+        // Called from the BUILDER too, or the first open depends on an event firing.
+        var build = Between(plot, "private ContextMenu BuildContextMenu()");
+        Assert.Contains("ApplyMenuAvailability()", build, StringComparison.Ordinal);
 
         // The inspector itself refuses, so a double-tap cannot get in round the back.
         var inspector = Between(plot, "private void ShowPlotInspector(int scrollToTraceIndex = -1)");

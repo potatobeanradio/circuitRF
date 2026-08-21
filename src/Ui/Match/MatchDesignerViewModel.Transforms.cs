@@ -17,6 +17,20 @@ public sealed partial class MatchDesignerViewModel
     /// <summary>One row per applied transform, in application order.</summary>
     public ObservableCollection<MatchTransformRowViewModel> Transforms { get; } = [];
 
+    /// <summary>
+    /// What the last typed N did, or empty — the rack's single refusal line.
+    /// </summary>
+    /// <remarks>
+    /// One line for the WHOLE rack rather than one per row (owner, 2026-08-20: the N boxes became
+    /// inline editors, and "its input must be validated/refused if bad input"). A message that
+    /// appears inside a row pushes every row under it down, which is the same layout shift
+    /// <c>InlineEditText</c>'s own measure exists to prevent.
+    /// </remarks>
+    [ObservableProperty] private string _transformNote = "";
+
+    /// <summary>Posts one refusal from a row's inline editor. Empty clears it.</summary>
+    internal void SetTransformNote(string note) => TransformNote = note ?? "";
+
     /// <summary>Moving one N re-solves the unlocked others so <c>Π N²</c> stays on target.</summary>
     public bool LinkTransforms
     {
@@ -185,6 +199,86 @@ public sealed partial class MatchDesignerViewModel
             // keeps the linkage arithmetic well-defined without inventing a bound for it.
             : new TransformRange(rec.N, rec.N, true, rec.N, rec.N > 1.0);
 
+    /// <summary>
+    /// Narrows every row's slider travel to the N it can <b>actually reach</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"sometimes I can move the slider control higher, but the
+    /// transform is already at its maximum level."</i>
+    ///
+    /// <para><b>The slider was bounded by the wrong range.</b> <c>TransformRange</c> is the
+    /// POSITIVITY bound — how far this transform can go before one of its own three products goes
+    /// negative — and that is the right bound for <c>MatchLinkage.Redistribute</c> to clamp against.
+    /// It is not what the user can drag to. With link on, <c>Redistribute</c> ends by recomputing the
+    /// dragged transform from what the OTHERS settled at
+    /// (<c>n[current] = Clamp(sqrt(required / rest))</c>), so once the other unlocked transforms are
+    /// parked on their own bounds, <c>rest</c> stops moving and the dragged N stops with it — while
+    /// the thumb, bounded by the positivity range, keeps travelling. Dragged far enough with every
+    /// other transform LOCKED, the value is a constant and the slider moves the whole way for
+    /// nothing.</para>
+    ///
+    /// <para>So the reachable end points are <b>measured, not derived</b>: ask
+    /// <c>Redistribute</c> — the very function that will run — what it settles on for a request at
+    /// each end of the positivity range, and use those two answers as the slider's bounds. A second,
+    /// analytic implementation of the same rule is a second thing to disagree with it. The settled
+    /// value is monotone non-decreasing in the request, so the two probes are the interval's ends.
+    /// It costs two O(k²) arithmetic passes over a handful of slots per rebuild.</para>
+    ///
+    /// <para>With link OFF the two coincide (the request is simply clamped into the range) and this
+    /// changes nothing, which is the check that it is narrowing for the right reason.</para>
+    /// </remarks>
+    private void RefreshReachableRanges()
+    {
+        double required = _rebuild?.Required ?? 1.0;
+        if (!double.IsFinite(required) || required <= 0) required = 1.0;
+
+        var slots = new List<LinkSlot>(_design.Transforms.Count);
+        for (int i = 0; i < _design.Transforms.Count; i++)
+        {
+            var rec = _design.Transforms[i];
+            slots.Add(new LinkSlot(rec.N, rec.Locked, RangeFor(i, rec)));
+        }
+
+        for (int i = 0; i < Transforms.Count && i < slots.Count; i++)
+        {
+            var row = Transforms[i];
+            var range = slots[i].Range;
+
+            // NOT gated on this row's OWN lock (owner-reported, 2026-08-20: "when I lock a slider it
+            // is disabled — good — but the position of the slider circle changes between locked and
+            // unlocked state — bad"). Falling back to the positivity range for a locked row made its
+            // bounds widen the moment it was locked, and a thumb draws at a FRACTION of its range, so
+            // N stood still while the circle jumped. A lock decides whether the value may be moved;
+            // it says nothing about where the value could live, and `Redistribute` agrees — it
+            // ignores the driven slot's own lock, so probing a locked row returns exactly what
+            // probing it unlocked does. Dropping the term makes the two states identical by
+            // construction rather than by coincidence.
+            if (!_design.LinkTransforms || slots.Count < 2 || row.IsDropped)
+            {
+                row.Reachable = range;
+                continue;
+            }
+
+            double lo = MatchLinkage.Redistribute(slots, i, range.Min, required, link: true).N[i];
+            double hi = MatchLinkage.Redistribute(slots, i, range.Max, required, link: true).N[i];
+            if (lo > hi) (lo, hi) = (hi, lo);
+
+            // A COLLAPSED interval is not "this N cannot move" — it is "the linkage cannot improve
+            // Π N² from where the rack stands", and those are different statements (owner-reported,
+            // 2026-08-20: "I can't slide any transforms anymore, they are all disabled even when they
+            // are unlocked"). The state that produces it is an UNREACHABLE ratio: ask for 5 Ω into
+            // 200 Ω and the required product is 54 while every transform's positivity range caps at
+            // 1, so every probe clamps to the same bound at both ends and every row reads as pinned.
+            // That is precisely the design the user is trying to rescue, and taking the whole rack
+            // away from them is the worst possible moment to do it. So the narrowing applies only
+            // when it describes a real interval; otherwise the slider keeps its positivity range and
+            // behaves exactly as it did before any of this.
+            row.Reachable = hi - lo > Math.Max(1e-12, Math.Abs(hi) * 1e-9)
+                ? range with { Min = lo, Max = hi }
+                : range;
+        }
+    }
+
     private void RefreshTransformRows()
     {
         while (Transforms.Count > _design.Transforms.Count) Transforms.RemoveAt(Transforms.Count - 1);
@@ -219,8 +313,12 @@ public sealed partial class MatchDesignerViewModel
                 row.Range = null;
                 row.WasClamped = false;
             }
-            row.Refresh();
         }
+
+        // A SECOND pass, after every row's Range is in place: the reachable end points are a question
+        // about the whole rack, so no row can be asked before all of them have been told.
+        RefreshReachableRanges();
+        foreach (var row in Transforms) row.Refresh();
 
         OnPropertyChanged(nameof(CanRemoveTransform));
     }
