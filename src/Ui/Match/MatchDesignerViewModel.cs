@@ -187,8 +187,25 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// </remarks>
     public string InstanceName => _target?.InstanceName ?? (_isStandalone ? "MN1" : "");
 
-    /// <summary>"Match — MN1", or "Match Designer" when there is no instance to name.</summary>
-    public string Title => _isStandalone ? "Match Designer" : $"Match — {InstanceName}";
+    /// <summary>The schematic this Designer's component lives on — "matchedRFTest.csch", or "".</summary>
+    public string DocumentName => _schematicVm?.DocumentName ?? "";
+
+    /// <summary>
+    /// "Match — MN1 — matchedRFTest.csch", or "Match Designer" when there is no instance to name.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"add the name of the schematic (in addition to the MN instance
+    /// name) to the window title and the text in the top left of the window."</i> One string serves
+    /// all three surfaces — the OS window title, the pane's own title bar, and the application's
+    /// Window menu entry (<c>MatchDesignerWindow.WindowMenuHeader</c>) — which is why it is stated
+    /// once here and not formatted at any of them. A Designer opened on a schematic with no file yet
+    /// (a scratch tab) names the tab; one opened with no schematic at all names neither.
+    /// </remarks>
+    public string Title => _isStandalone
+        ? "Match Designer"
+        : DocumentName.Length == 0
+            ? $"Match — {InstanceName}"
+            : $"Match — {InstanceName} — {DocumentName}";
 
     /// <summary>The working design. <b>Read it; write it only through this class's setters</b>, which
     /// rebuild and commit.</summary>
@@ -264,6 +281,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             _design = decoded;
             PayloadError = "";
+            CheckEchoParameters();
         }
         else
         {
@@ -276,6 +294,57 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
                   + "nothing has been written back, so the stored payload is still there to repair.";
         }
     }
+
+    /// <summary>
+    /// Reports an ECHO parameter that no longer agrees with the design — <b>never rewrites one</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"why is there an 'F1' and 'F2' parameter for a Match component,
+    /// but also a nested 'F1' and 'F2'? Why are we carrying two versions of these 2 variables?"</i>
+    ///
+    /// <para>The six beside <c>Design</c> are ECHOES and nothing reads them back
+    /// (<c>MatchComponentTests.TheEchoParameters_AreNeverReadBack</c> pins that). They exist because
+    /// an instance has to CARRY a value to be able to show one: F1, F2 and Order are drawn beside the
+    /// symbol, and all six make the <c>.cnl</c> line legible, where the payload is still a base64
+    /// token. The design stays authoritative (match.md §7.2), so an echo can never become a second
+    /// input.</para>
+    ///
+    /// <para><b>What changed on 2026-08-20 is that the payload became readable and therefore
+    /// EDITABLE by hand</b>, and a hand-edited band leaves the echoes behind — so the schematic would
+    /// go on drawing "F1 = 1.8 GHz" beside a design that says 2.4. That was unreachable while the
+    /// payload was base64 and it is reachable now, so it is stated. It is deliberately not fixed by
+    /// writing the echoes here: a commit on load would put an edit on the schematic's undo stack that
+    /// nobody made and mark the document dirty the moment it is opened. The next edit refreshes them,
+    /// and this line says so.</para>
+    /// </remarks>
+    private void CheckEchoParameters()
+    {
+        EchoNote = "";
+        if (_target is null) return;
+
+        var stale = new List<string>(3);
+        Check("F1", _design.F1 / 1e9);
+        Check("F2", _design.F2 / 1e9);
+        Check("Order", _design.Order);
+
+        if (stale.Count > 0)
+            EchoNote =
+                $"The {string.Join(" and ", stale)} shown beside this component on the schematic "
+                + $"{(stale.Count == 1 ? "does" : "do")} not match the design — the design is what "
+                + "counts, and the label will catch up on the next edit here.";
+
+        void Check(string name, double expected)
+        {
+            string? text = _target!.Parameters.FirstOrDefault(p => p.Name == name)?.Expression;
+            if (text is null) return;
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+                return;                                   // an expression, not a number — not ours to judge
+            if (Math.Abs(v - expected) > 1e-6 * Math.Max(1.0, Math.Abs(expected))) stale.Add(name);
+        }
+    }
+
+    /// <summary>An echo parameter that has fallen behind the design, or empty.</summary>
+    [ObservableProperty] private string _echoNote = "";
 
     private void Detach()
     {
@@ -310,6 +379,11 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         if (CheckOrphaned()) return;
         LoadFromComponent();
         Refresh(specChanged: true);
+        // A Save As renames the document under a live Designer. Nothing raises this at the moment the
+        // rename happens — the window is not a document tab — so it is re-read on the next model
+        // change, which is the first point anything in here could be looking at the new file anyway.
+        OnPropertyChanged(nameof(DocumentName));
+        OnPropertyChanged(nameof(Title));
         // Availability depends on the SCHEMATIC and on nothing in the design, so it is recomputed
         // here and not in Refresh: a band edit or a slider cannot change what is wired to a pin, and
         // an extraction per keystroke on a hierarchical schematic reads every referenced cell off disk.
@@ -418,9 +492,8 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
             replacement = replacement with { Probed = false, ProbedAtUtc = null };
         if (end == 1) _design.Term1 = replacement; else _design.Term2 = replacement;
         AdjustOrderForParity();
-        Refresh(specChanged: true);
-        if (RelinkAfterSpecChange()) return;
-        Commit();
+        AdjustQAdjustForAnalysisEnd();
+        CommitSpecChange();
     }
 
     /// <summary>
@@ -452,6 +525,17 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     {
         if (!_design.LinkTransforms) return false;
 
+        // Nothing to absorb, and saying so cheaply is what lets EVERY specification edit call this
+        // rather than the one that was known to need it. A spec change that does not move
+        // RequiredTransformRatio — AllowNegativeComponents, and any edit whose new target happens to
+        // equal the old — leaves Π N² already on target, and re-driving a transform there would put a
+        // no-op on the schematic's undo stack for a value nobody changed.
+        if (Status.OnTarget) return false;
+
+        // A refused design has no ladder to link. The transforms are still stored and still shown; the
+        // rack simply cannot be solved against a basis that does not exist.
+        if (_rebuild?.Basis is not { Ok: true }) return false;
+
         int index = -1;
         for (int i = 0; i < _design.Transforms.Count; i++)
         {
@@ -464,6 +548,40 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
         SetTransformN(index, _design.Transforms[index].N);   // refreshes and commits
         return true;
+    }
+
+    /// <summary>
+    /// <b>The one way a specification edit lands</b>: rebuild, re-solve the transform rack against the
+    /// ratio the specification now requires, and commit.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"when I change the Filter Response, sometimes the
+    /// Termination indicates unsatisfied, but if I tweak a slider transformer, the termination becomes
+    /// satisfied — even when I slide it past the transform value it was before."</i>
+    ///
+    /// <para><see cref="RelinkAfterSpecChange"/> had exactly ONE caller — <see cref="SetTermination"/>
+    /// — because that is the edit the owner reported first. Every other specification edit wrote
+    /// <c>Refresh(specChanged: true); Commit();</c> and left the rack where it was, so a design that
+    /// was matched a moment ago read "not reached" until the user happened to touch a slider, at which
+    /// point <see cref="SetTransformN"/>'s own linkage silently did the work the spec edit should have
+    /// done. Measured on 50 Ω into 5 Ω ∥ 1 pF at order 4 with one applied transform: Fano requires
+    /// Π N² = 10.134 and two-ended requires 13.554, so switching the family alone left the far
+    /// termination presenting 37.4 Ω against a declared 50 Ω, and a no-op slider nudge — setting N to
+    /// the value it ALREADY had — restored it. The ORDER and the BAND edges do the same thing (order 6
+    /// wants 10.054, moving f2 to 2.6 GHz wants 10.875), which is why the fix is a shared entry point
+    /// and not a third copy of the two lines.</para>
+    ///
+    /// <para><b>Still only user edits.</b> <see cref="SetTarget"/>, <see cref="SetStandalone"/>,
+    /// <see cref="OnModelChanged"/> and <see cref="Revert"/> call <see cref="Refresh"/> directly and
+    /// deliberately do not come through here: a design must not rewrite itself just by being opened or
+    /// restored, and a commit on load would put an edit on the schematic's undo stack that nobody
+    /// made.</para>
+    /// </remarks>
+    private void CommitSpecChange()
+    {
+        Refresh(specChanged: true);
+        if (RelinkAfterSpecChange()) return;   // it has already refreshed and committed
+        Commit();
     }
 
     /// <summary>
@@ -489,6 +607,48 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// <summary>The one line explaining an automatic order change, or empty.</summary>
     [ObservableProperty] private string _orderNote = "";
 
+    /// <summary>
+    /// Clears a stored <c>QAdjust</c> that the terminations have overtaken — <b>and says so in one
+    /// line</b>, exactly as <see cref="AdjustOrderForParity"/> does for the order.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"I press the probe button on Terminal 2 and the parasitic
+    /// updates to 1000 pH, but the schematic keeps rendering as 2000 pH."</i>
+    ///
+    /// <para>A Q-adjust INFLATES the analysis end's Q (match.md §4.6) and cannot reduce one, but it is
+    /// stored as an absolute number — so an edit that RAISES that end's own Q leaves the stored value
+    /// underneath it, which is a design <c>MatchSynthesis</c> now refuses outright
+    /// (<c>AnalysisEndNotAbsorbable</c>; before that refusal existed it silently drew an absorbed
+    /// element the termination does not supply). The probe is the sharpest way in: it writes a
+    /// measured reactance where there may have been none, and a Q of 4 arriving under a Q-adjust of 2
+    /// is a refusal caused by a button whose whole job is to make the specification correct.</para>
+    ///
+    /// <para>So it is cleared, not clamped. Zero means "no adjustment", which is always legal and is
+    /// what the design would have carried had the user probed first; clamping to the new Q would
+    /// invent a number nobody chose. <b>Only the two paths that can invalidate it without being ABOUT
+    /// it call this</b> — a termination change and an analysis-end change. A user who types a low
+    /// Q-adjust directly still gets the refusal, which names the number to use, because silently
+    /// undoing what someone just typed is worse than refusing it.</para>
+    /// </remarks>
+    private void AdjustQAdjustForAnalysisEnd()
+    {
+        if (!(_design.QAdjust > 0)) { QAdjustNote = ""; return; }
+
+        bool anaIsTerm1 = MatchSynthesis.AnalysisIsTerm1(_design);
+        double qActual = (anaIsTerm1 ? _design.Term1 : _design.Term2).QAt(_design.Omega0);
+        if (!(qActual > 0) || _design.QAdjust >= qActual * (1.0 - 1e-9)) { QAdjustNote = ""; return; }
+
+        double old = _design.QAdjust;
+        _design.QAdjust = 0.0;
+        QAdjustNote =
+            $"Termination {(anaIsTerm1 ? 1 : 2)}'s own Q is now {qActual:0.###}, above the Q-adjust of "
+            + $"{old:0.###} — and a Q-adjust inflates an end's Q, it cannot reduce one. It has been "
+            + "cleared.";
+    }
+
+    /// <summary>The one line explaining an automatic Q-adjust change, or empty.</summary>
+    [ObservableProperty] private string _qAdjustNote = "";
+
     /// <summary>The orders <c>MatchOrders.ValidOrders</c> permits for the current pair.</summary>
     public IReadOnlyList<int> OrderOptions => MatchOrders.ValidOrders(_design.Term1, _design.Term2);
 
@@ -501,8 +661,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
             if (value == _design.Order) return;
             _design.Order = value;
             OrderNote = "";
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -517,8 +676,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.Response) return;
             _design.Response = value;
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -571,8 +729,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.RippleDb || !(value > 0)) return;
             _design.RippleDb = value;
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -593,18 +750,53 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// dims (an <c>InlineEditText:disabled</c> style in the window, since nothing in the stack did)
     /// and this line says which end is the reason.
     /// </remarks>
-    public string RippleNote
+    /// <remarks>
+    /// <b>ONE SHORT LINE, with the paragraph moved to <see cref="RippleTooltip"/></b> (owner,
+    /// 2026-08-20: <i>"reduce the text below the Filter Response, or else delete it and add it back
+    /// as a tooltip addition in the combobox — there is not enough height space for the current
+    /// amount of text"</i>). This was three sentences, and in a 300-pixel specification column three
+    /// sentences is five wrapped lines that are present WHENEVER either termination carries a
+    /// reactance, which is most designs. Deleting it outright would put back the round-6 bug it was
+    /// written for — a disabled <c>InlineEditText</c> rests as a bare <c>TextBlock</c> and Avalonia
+    /// does not dim one, so the row read as live and swallowed the double-click — so what stays is the
+    /// half that answers "why can I not type here", naming the end, and the rest is one hover away on
+    /// the row it is about.
+    /// </remarks>
+    public string RippleNote =>
+        RippleEnabled ? ""
+        : BothEndsReactive ? "The terminations' reactances set this."
+        : $"{WhichEnd(lower: false)}'s reactance sets this.";
+
+    /// <summary>The whole of §6.6's explanation, on the Ripple row itself.</summary>
+    public string RippleTooltip => RippleEnabled
+        ? "Equal-ripple level in dB — the real-to-real prototype only. Double-click to edit."
+        : $"{WhichEnd(lower: false)} carr{(BothEndsReactive ? "y" : "ies")} a reactance, so the "
+          + "prototype is the singly- or doubly-prescribed one and the ripple is set by the "
+          + "terminations rather than by hand (match.md §6.6). Clear the reactance to – to set it here.";
+
+    private bool BothEndsReactive => _design.Term1.HasReactance && _design.Term2.HasReactance;
+
+    private string WhichEnd(bool lower)
     {
-        get
-        {
-            if (RippleEnabled) return "";
-            bool one = _design.Term1.HasReactance, two = _design.Term2.HasReactance;
-            string which = one && two ? "Both terminations carry" : one ? "Termination 1 carries" : "Termination 2 carries";
-            return $"{which} a reactance, so the prototype is the singly- or doubly-prescribed one "
-                   + "and the ripple is set by the terminations rather than by hand (match.md §6.6). "
-                   + "Clear the reactance to – to set it here.";
-        }
+        bool one = _design.Term1.HasReactance;
+        string s = BothEndsReactive ? "Both terminations" : one ? "Termination 1" : "Termination 2";
+        return lower ? char.ToLowerInvariant(s[0]) + s[1..] : s;
     }
+
+    /// <summary>
+    /// What the CLOSED Response combo says on hover — the selected family's own line, or the refusal
+    /// that disabled it.
+    /// </summary>
+    /// <remarks>
+    /// The owner's own second option ("add it back as a tooltip addition in the combobox"). Each ITEM
+    /// already carries its description in the drop-down; the closed control carried nothing at all, so
+    /// the one place a user looks after picking a family had no explanation on it.
+    /// </remarks>
+    public string ResponseTooltip =>
+        SelectedResponseOption?.Tooltip is { Length: > 0 } t
+            ? t
+            : "Which prototype family the synthesis draws from. An infeasible family stays in the list, "
+              + "disabled, carrying the reason it cannot absorb both ends.";
 
 
     /// <summary>Deliberately inflated analysis-end Q (match.md §4.6), or 0 for none.</summary>
@@ -615,8 +807,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.QAdjust) return;
             _design.QAdjust = value;
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -630,8 +821,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
             _design.QAdjust = value
                 ? MatchSolutionSearch.FindQAdjust(_design, Settings.QMin) ?? Settings.QMin
                 : 0.0;
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -643,8 +833,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.AllowNegativeComponents) return;
             _design.AllowNegativeComponents = value;
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -656,8 +845,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.AnalysisEnd) return;
             _design.AnalysisEnd = value;
-            Refresh(specChanged: true);
-            Commit();
+            // Swapping which end pins g1 can put a legal Q-adjust under a different, higher Q.
+            AdjustQAdjustForAnalysisEnd();
+            CommitSpecChange();
         }
     }
 
@@ -669,8 +859,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.F1 || !(value > 0)) return;
             _design.F1 = value;
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -682,8 +871,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.F2 || !(value > 0)) return;
             _design.F2 = value;
-            Refresh(specChanged: true);
-            Commit();
+            CommitSpecChange();
         }
     }
 
@@ -856,6 +1044,24 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// two expensive searches.</summary>
     public void Refresh(bool specChanged)
     {
+        // ── The inline-edit note is about the LAST inline edit, and only that ──
+        //
+        // Owner-reported, 2026-08-20: "sometimes the error messages in the grid area (below
+        // schematic) don't go away. For example, I will change a termination value and the error is
+        // still there. Is it being updated?"
+        //
+        // It was not. InlineEditNote was cleared only on the way INTO the next inline edit
+        // (CommitInlineEdit's first statement), so "L1 cannot reach 725 pH with the transforms this
+        // ladder has" outlived the ladder it was about: change the termination, the order, the band or
+        // a transform's N and the sentence stayed on screen naming a value the network no longer has.
+        // Clearing it here — at the one place every change to the design funnels through — makes the
+        // note last exactly as long as the state it describes.
+        //
+        // The failure paths that SET it do not come through here (a parse refusal, a locked rack, an
+        // unreachable value: none of them changes the design and none of them rebuilds), and the one
+        // path that does — SetElementValue's successful solve — sets the note AFTER its Refresh.
+        InlineEditNote = "";
+
         _rebuild = MatchRebuild.Rebuild(_design);
 
         RefreshTransformRows();
@@ -885,6 +1091,8 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(Order));
         OnPropertyChanged(nameof(Response));
         OnPropertyChanged(nameof(SelectedResponseOption));
+        OnPropertyChanged(nameof(ResponseTooltip));
+        OnPropertyChanged(nameof(RippleTooltip));
         OnPropertyChanged(nameof(RippleDb));
         OnPropertyChanged(nameof(QAdjust));
         OnPropertyChanged(nameof(QAdjustEnabled));
@@ -933,6 +1141,11 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         _isCommitting = true;
         try { _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated)); }
         finally { _isCommitting = false; }
+
+        // The echoes were just rewritten from the design, so they agree by construction — and this is
+        // the "the label will catch up on the next edit" half of CheckEchoParameters' own promise.
+        // Cleared here rather than re-checked: the commit is what made them true.
+        EchoNote = "";
 
         return;
 

@@ -43,6 +43,23 @@ public sealed record MatchLadderElement(
     MatchElementRole Role, double X, double Y, string ValueText)
 {
     /// <summary>
+    /// 1 or 2 when this element IS one termination's own reactance, 0 otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>An absorbed element is a SPECIFICATION INPUT wearing a ladder element's clothes</b>, and the
+    /// inline editor has to be able to tell (owner-reported, 2026-08-20: <i>"I could not change the C
+    /// in the schematic that was part of the specification. Any L or C that is part of the
+    /// specification should always be editable using the inline text editor, just as the TermG
+    /// component is today"</i>). Its value is <c>Termination.Value</c> — the synthesis does not choose
+    /// it, it absorbs it — so an edit belongs at the termination, not at the transform rack that
+    /// cannot move it. Carried on the layout record rather than re-derived because
+    /// <c>MatchElement.AbsorbedEnd</c> is the authority and the layout is the only thing the Designer's
+    /// canvas and its hit-test can see. An <c>init</c> property rather than a positional parameter so
+    /// the record's existing call sites — and its tests — are unchanged.
+    /// </remarks>
+    public int AbsorbedEnd { get; init; }
+
+    /// <summary>
     /// The theme role the element's SYMBOL is drawn in — the single mapping from meaning to colour.
     /// </summary>
     /// <remarks>
@@ -254,7 +271,10 @@ public sealed class MatchLadderLayout
         {
             placed.Add(new MatchLadderElement(
                 e.Name, e.Type, e.IsShunt, e.Value, RoleOf(e),
-                x, e.IsShunt ? ShuntY : SpineY, valueText(e)));
+                x, e.IsShunt ? ShuntY : SpineY, valueText(e))
+            {
+                AbsorbedEnd = e.AbsorbedEnd,
+            });
             xByName[e.Name] = x;
             x += Pitch;
         }

@@ -6,6 +6,209 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Match Designer round 7 — and the three application-wide defects it exposed (2026-08-20)
+
+The owner's seventh round. Three of the items were not Match Designer bugs at all: one is in the
+project tree, one is in a control the Data Display shares, and one is in a file format.
+
+**1. "Closing the Match Designer made the project tree's cell go from dirty to NOT dirty, while the
+document stayed dirty." Closing ANY window does that, and the Designer only happened to be the
+second window open.** The dirty indicator is *pushed* onto a tree node — `ProjectTreeTool.SetCellDirty`
+sets `node.IsDirty`, and that flag lives nowhere else. `ProjectTreeView` re-scans the workspace on the
+hosting window's `Activated` (a debounced `tool.Refresh()`), which is exactly what closing a second
+window raises, and `RebuildVmTree` throws every node away and builds new ones whose `IsDirty` is the
+field default. So every unsaved cell in the tree silently went clean on a focus change. Nothing had
+LOST the state: `ITreeActions.IsNodeDirty` — which the per-node Save context menu already uses —
+answers the same question from the session registry and the open documents, and both survive a rescan.
+`RebuildVmTree` now walks the new tree and asks it (`RestoreDirtyFlags`). Worth remembering as a shape:
+**a flag pushed onto a rebuildable view object needs the rebuild to pull it back**, or the push site
+looks correct forever and the bug reads as belonging to whatever raised the rebuild.
+
+**2. The hard crash — `NullReferenceException` inside `Avalonia.Controls.Primitives.Popup.RootTemplateApplied`,
+reached from `IconSelectButton.OnButtonClick`'s `IsOpen = true`.** The stack is entirely inside
+Avalonia and the exception kills the process. The defect on our side is an ORDER-of-operations one in
+`IconSelectButton.OnListBoxSelectionChanged`: it published `SelectedItem` FIRST and closed the popup
+afterwards, so everything the application does in reaction to a selection ran inside the ListBox's own
+`SelectionChanged`, **with the popup still open**. In the Match Designer that reaction includes
+`MatchDesignerViewModel.RefreshOrderChoices`, which `Clear()`s and refills the very
+`ObservableCollection` the open popup's ListBox is bound to — a re-entrant mutation of a live popup
+that makes the ListBox raise `SelectionChanged` again from inside the handler, and leaves the
+`PopupRoot` being torn down a beat later with a layout pass still owing. Fixed by closing first and
+posting the publish to the next dispatcher turn, so **no consumer of this control can run while its
+popup is open, whatever that consumer does**. A second, smaller bug fell out of the same place: a
+REPLACED `ItemsSource` clears the ListBox's selection with nothing telling the control, so the popup
+opened next with nothing highlighted — `OnPropertyChanged` now re-syncs on `ItemsSourceProperty` too.
+The Designer's Order selector is the only `IconSelectButton` in the application whose item list is
+rebuilt by the act of choosing from it, which is why it is the one that crashed.
+
+**3. "The `.csch` shows a Match instance with Expression all crazy text."** It was base64, and the
+reason base64 existed is real but belongs to ONE format: a `.cnl` is whitespace-delimited and its only
+string escape is a pair of quotes with no way to escape a quote inside one, so a design's JSON — which
+is all quotes — cannot be a `.cnl` token. **A `.csch` is JSON and never had that problem.** So the
+constraint is discharged where it applies: `MatchEmbedding.Encode` writes plain JSON (shorter than the
+blob it replaced, as well as legible), and `CnlWriter.FormatParam` converts a brace-leading `Design`
+expression to a bare unpadded token on its way into a `.cnl`. `MatchEmbedding.TryDecode` already read
+both spellings, so every existing file still loads, and `EncodeToken` is there for the handful of
+tests that hand-build `.cnl` text. Making the payload readable also exposed that four COMPUTED
+properties (`Omega0`, `W`, `Termination.HasReactance`, `AbsorbedType`) were being serialized as if they
+were inputs; they carry `[JsonIgnore]` now.
+
+**4. "The error messages in the grid area don't go away."** `InlineEditNote` was cleared only on the
+way *into* the next inline edit, so a refusal about an element outlived the ladder it was about —
+change the termination, the order or a transform and the sentence stayed on screen naming a value the
+network no longer had. It is cleared at the top of `Refresh` now. The one path that both refreshes AND
+reports (`SetElementValue`'s partial solve) already writes its note after its `Refresh`, which is what
+makes the clear safe; a test pins that ordering rather than trusting it.
+
+**5. "After a probe the R, L and C units don't match the Settings units."** They never did — the
+termination fields carried their own unit (a hard-coded `"Ω"`, and `AutoUnit` for the reactance) with
+no connection to §9.9's per-dimension display units. While the user TYPES the values the two agree by
+accident, because a typed unit pins the field. A probe writes a measured value nobody typed, Auto then
+picks per value (0.34 pF arrives as "340 fF"), and the disagreement becomes visible. The settings unit
+is the default now and a typed one is an override; `ResetDisplayUnits` drops the override on both
+probe-application paths. **A typed unit that equals the settings unit deliberately does NOT pin** — the
+resistance field re-commits its unit on every edit, so pinning unconditionally would freeze the field
+against Settings the first time anyone typed a number into it.
+
+**6. Round 7's own small bugs, each with a cause worth one line.**
+- *"Terminal 2 is matched and I get no warnings, but the instance still says `Z = 50 Ω (target 50 Ω)`."*
+  The guard was NUMERIC (a relative 1e-9) under a label RENDERED at three significant digits. A probed
+  termination carries 49.999999999999993; the ladder reached it to a part in 10¹⁰ but not 10⁹. The
+  comparison is on the rendered strings now — the same rule `CommitInlineEdit`'s `RendersAsShown`
+  already applies in the same pane, and the exact shortfall still lives on the Π N² line.
+- *The inline editor on a `TermG` opened holding the `(target …)` suffix, which its own parser then
+  refused.* The window seeded the box from the LABEL — what the canvas drew, annotations and all — so
+  the user's way out of an unmatched design was the one field the unmatched design had broken.
+  `MatchInlineEditTarget.SeedText` is computed from the value instead.
+- *An absorbed L or C could not be edited.* It went down the ELEMENT path, which aims the transform
+  rack at a target, and no transform can move an absorbed element — so the refusal ("C1 is set by the
+  synthesis. Add a transform…") was truthful and wrong. An absorbed element IS `Termination.Value`;
+  it now resolves to `MatchInlineEditKind.TerminationReactance` and is written straight through, like
+  the `TermG` beside it. **`MatchLadderElement.AbsorbedEnd` is the new carrier** — the layout is all the
+  canvas's hit-test can see.
+- *…and the tolerance that guards "nothing changed" cannot be copied between quantities.*
+  `SetTerminationResistance`'s `1e-12 * max(1, R)` reads as rounding noise in ohms; the same expression
+  on farads is **an absolute floor of one picofarad**, and it swallowed 1 pF → 2 pF whole. A reactance
+  has no natural scale, so its tolerance is purely relative.
+
+**7. "Can it really not match 50 Ω to 5 Ω ∥ 1 pF at 2 GHz?" — it can, at order 4, and the refusal was
+right but not actionable.** Measured over 1.8-2.2 GHz: Chebyshev-Fano needs Π N² = 10, and at **order 3
+the whole rack reaches 1.016**, so there is genuinely nothing to offer; **order 4 reaches it and gives
+−43.5 dB** worst in-band return loss, order 5 −48.1 dB, and two-ended Chebyshev reaches it at order 3.
+The user was one picker click away and the refusal — "Allow negative components, change the order, or
+change the response" — named the right knob and left them to find the setting by trying five. That is
+the failure mode this repository already has a standing lesson about (the MoM ceiling refusal that
+named three inert knobs): **a remedy is only a remedy if it BINDS.** `MatchDesignerViewModel.FindWaysOut`
+now re-runs the solution search at each permitted order and each feasible response and names the ones
+that work, by number. It costs one search per permitted order — the picker offers two or three, never a
+range — it runs ONLY on a design that has already refused, and it runs on the analysis worker under the
+same cancellation, so a design with solutions pays nothing.
+
+## Match Designer round 7, part 2 — four more, and two were the same shape (2026-08-20)
+
+**8. "Changing the Filter Response leaves the Termination unsatisfied until I tweak a slider — even
+sliding it past the value it was before."** Every response family asks for a DIFFERENT Π N².
+`RelinkAfterSpecChange` — which re-solves the rack against the ratio the specification now requires —
+had exactly ONE caller, `SetTermination`, because that is the edit the owner reported first. Every
+other specification edit wrote `Refresh(specChanged: true); Commit();` and left the rack where it
+was, so `SetTransformN`'s own linkage quietly did the work the spec edit should have done the next
+time a slider moved. Measured on 50 Ω into 5 Ω ∥ 1 pF at order 4 with one applied transform: Fano
+needs Π N² = 10.134, two-ended 13.554, so switching the family alone left the far termination
+presenting **37.4 Ω against a declared 50 Ω** — and the ORDER (order 6 → 10.054) and the BAND
+(f2 → 2.6 GHz → 10.875) do the same. Fixed with one shared entry point, `CommitSpecChange`, that every
+spec setter now uses including `SetTermination`; a source test holds them together so the next setter
+added cannot reintroduce it. `RelinkAfterSpecChange` also short-circuits on `Status.OnTarget` now,
+which is what makes it safe to call from everywhere — otherwise a spec edit that does not move the
+target would put a no-op transform write on the schematic's undo stack.
+
+**9. "The Filter Response card has more text than height."** `RippleNote` was three sentences and
+therefore five wrapped lines in a ~300 px column, present whenever either termination carries a
+reactance — most designs. It is one short line now ("Termination 2's reactance sets this.") and §6.6's
+paragraph moved to the row's own tooltip. **Deleting it outright was the owner's other option and
+would have put the round-6 bug straight back**: a disabled `InlineEditText` rests as a bare
+`TextBlock`, Avalonia does not dim one, and the row then reads as live and swallows the double-click.
+The closed Response combo also gained a tooltip of its own (the items always had theirs; the control
+the user is left looking at afterwards had none).
+
+**10. The window title names the schematic.** `SchematicViewModel.DocumentName`, written in
+`RegisterSession` — the single choke point every path-backed session goes through, Save As included —
+and in the two scratch paths, which have a title and no file. `EditModel.SchematicDirectory` is the
+FOLDER and cannot answer this: a cell's schematic file is not obliged to be named after its cell. One
+string (`MatchDesignerViewModel.Title`) feeds the OS window title, the pane's own title bar and the
+Window menu entry.
+
+**11. "I probe Terminal 2, the parasitic updates to 1000 pH, and the schematic keeps rendering
+2000 pH." — not stale rendering, and the tell is that the ladder was INSENSITIVE to the termination
+entirely** (1 nH and 2 nH produced element-for-element identical networks). `QAdjust` was 2,
+legitimately set while that end's Q was lower; the probe made termination 2 a 1 nH parallel L whose
+own Q at band centre is 3.999. `MatchSynthesis` takes `qAna = QAdjust > 0 ? QAdjust : qActual` with
+**no check that the adjustment is above the end's own Q**, so the end arm was built for Q = 2 — a
+1999 pH shunt inductor — and `WithEndSplits` skips its split whenever `qSynth <= qActual`, so that
+element kept the SYNTHESIS's value while still carrying `AbsorbedEnd = 2`. The drawing then labelled
+1999 pH "supplied by the external termination" when the termination supplies 1000 pH, and the status
+strip called it matched at −37 dB from a network the circuit does not contain.
+
+The far end has had exactly this refusal all along (`FarEndNotAbsorbable`, "the synthesis reaches
+Q_far = X against the termination's own Y"); the analysis end simply never got its counterpart.
+`AnalysisEndNotAbsorbable` is that counterpart, checked before any prototype work since it depends on
+nothing the prototype produces. **A parasitic cannot be subtracted** — §4.6's Q-adjust *inflates* an
+end's Q — so this is a refusal, not a clamp. On top of it, the UI clears a stored Q-adjust that the
+terminations have overtaken and says so in one line (`AdjustQAdjustForAnalysisEnd`, the treatment
+`AdjustOrderForParity` already gives an automatic order change), because otherwise the probe — a
+button whose whole job is to make the specification correct — hands back a refusal. It is CLEARED
+rather than clamped: zero is always legal and is what the design would have carried had the user
+probed first, while clamping to the new Q invents a number nobody chose. Only the two paths that can
+invalidate it *without being about it* call it; a Q-adjust typed low by hand still gets the refusal,
+which names the number to use.
+
+**12. The design is a nested OBJECT in the `.csch` now**, not a string. Part 1 made the payload plain
+JSON, which left it inside a JSON *string* — every quote escaped, the whole design one long line.
+`CschParameter.Value` (a `JsonNode`) writes it as an ordinary nested object under `WriteIndented`: one
+field per line, no escapes, diffable. **The rule is general, not a Match special case** — any
+expression beginning with `{`, which is exactly the set that cannot be an expression, since
+circuitRF's expression language has no brace token. Same discriminator `MatchEmbedding.TryDecode` and
+`CnlWriter.FormatParam` already branch on, which is what keeps the three from disagreeing about what a
+payload is. `Expression` is nullable and omitted when `Value` carries the parameter, and a value that
+merely *starts* with a brace but is not valid JSON survives verbatim rather than being lost to an
+exception on save.
+
+## Match Designer round 7, part 3 — a short is an answer, and an echo can now go stale (2026-08-20)
+
+**13. "With shunt L = 0, Termination 2 does not probe correctly (can't find an impedance)."** An ideal
+0 H shunt inductor IS a short to ground, so the pin genuinely presents 0 Ω and applying nothing was
+right. **The message was wrong, and pointed at the wrong thing entirely.** With no guard the
+measurement fell through to the fitter, where all five models fitted it PERFECTLY — residual exactly
+0 — with R = 0 or NaN, and each was then rejected for a non-positive R. The user was told "none of the
+five models fits this network with a positive resistance… a negative element is not a termination
+anyone can build": the fitter blamed, negative elements invoked, and the actual answer (the pin is
+shorted) never said.
+
+`TerminationProbe` has always caught the OPEN case before the fit and said so plainly
+(`|1 − Γ| < 1e-14`). The SHORT — `|1 + Γ| < 1e-14` — simply had no counterpart. It does now, and it
+names the net to go and look at rather than the fitter. **This is the second missing-mirror-image
+defect in one round** (the other being `AnalysisEndNotAbsorbable` against the long-standing
+`FarEndNotAbsorbable`): when a guard is written for one degenerate end of something, check for the
+other end in the same sitting. `MatchProbeFitRowViewModel.PhysicalNote` also says "zero or negative"
+now, because zero is what a shorted pin produces and calling it negative sends the reader looking for
+a sign error that is not there.
+
+**14. Why a Match carries F1/F2/Order twice, and what the readable payload changed about it.** The six
+parameters beside `Design` are ECHOES: they are drawn beside the symbol (F1, F2, Order have
+`ShowOnSchematic`), they make the `.cnl` instance line legible — where the payload is still a base64
+token — and **nothing reads them back** (`MatchComponentTests.TheEchoParameters_AreNeverReadBack`
+pins it; match.md §7.2 makes the design authoritative). An instance has to CARRY a value to be able
+to show one, which is why they are duplicated rather than derived at render time. So the duplication
+is deliberate and stays.
+
+What changed is the failure mode. While the payload was base64 nobody could hand-edit it, so an echo
+could only ever fall behind through a bug. **The payload is now readable JSON in the `.csch` — the
+whole point of items 3 and 12 — which invites a hand edit, and a hand-edited band leaves the echoes
+behind with the schematic still drawing the old one.** `CheckEchoParameters` states it on load and
+`Commit` clears it, because the next edit genuinely does refresh them. It deliberately does NOT
+rewrite them on load: that would put an edit on the schematic's undo stack that nobody made and mark
+the document dirty the moment it is opened — which is the very confusion item 1 of this round was
+about.
+
 ## Match Designer round 6: a hold that never started, and a Designer with nothing behind it (2026-08-20)
 
 The owner's sixth round. Two items were real defects with non-obvious causes; the rest was layout and

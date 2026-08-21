@@ -45,6 +45,29 @@ public sealed partial class SchematicViewModel : ObservableObject
     public string? WorkspaceRoot => WorkspaceRootProvider?.Invoke();
 
     /// <summary>
+    /// What this session's document is CALLED — "matchedRFTest.csch", or a scratch tab's title, or
+    /// empty when neither is known.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"add the name of the schematic (in addition to the MN instance
+    /// name) to the window title and the text in the top left of the window. For example
+    /// 'Match — MN1 — schematic_name.csch'."</i>
+    ///
+    /// <para>A plain string rather than one of the <c>Func</c> providers above, because unlike a
+    /// workspace root or a technology this does not change under a live session: it is written by
+    /// <c>WorkspaceViewModel.RegisterSession</c>, the single choke point every path-backed session
+    /// goes through — including the re-registration a Save As performs — and by the two scratch paths,
+    /// which have a title and no path. <see cref="EditModel"/>'s <c>SchematicDirectory</c> is the
+    /// FOLDER and cannot answer this: a cell's schematic file is not obliged to be named after its
+    /// cell.</para>
+    ///
+    /// <para>Anything that opens beside a schematic and needs to name it reads this — the Match
+    /// Designer is the first, and it is a separate top-level window with no document tab of its own to
+    /// borrow a title from.</para>
+    /// </remarks>
+    public string DocumentName { get; set; } = "";
+
+    /// <summary>
     /// The workspace technology's own display unit (<c>.ctech</c>'s <c>DefaultDisplayUnit</c>), or null
     /// when no workspace or no technology is open. Supplied by <c>WorkspaceViewModel</c>, which owns the
     /// technology cache and the resolution order.

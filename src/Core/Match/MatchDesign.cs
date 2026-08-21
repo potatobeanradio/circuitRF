@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace CircuitRF.Core.Matching;
 
 /// <summary>Which single reactive element a termination carries, if any (match.md §5.3).</summary>
@@ -120,9 +122,11 @@ public sealed record Termination(
     }
 
     /// <summary>True when this end has a reactance for the synthesis to absorb.</summary>
+    [JsonIgnore]
     public bool HasReactance => Kind != ReactanceKind.None && Value > 0.0;
 
     /// <summary>Which ladder element type this end supplies, or null when it supplies none.</summary>
+    [JsonIgnore]
     public ElementType? AbsorbedType => Kind switch
     {
         ReactanceKind.C => ElementType.C,
@@ -153,6 +157,15 @@ public sealed record TransformRecord(
 /// element list, the response, the transform ranges) is derived at load and never stored, so a design
 /// cannot disagree with its own inputs (match.md §7.1).
 /// </summary>
+/// <remarks>
+/// <b>A computed property carries <c>[JsonIgnore]</c>, and since 2026-08-20 that matters to a person
+/// and not only to a serializer.</b> <c>MatchEmbedding.Encode</c> writes this type's JSON straight
+/// into the <c>.csch</c> so the stored design is readable, and a reader looking at it has to be able
+/// to tell the INPUTS from the arithmetic. <c>Omega0</c>, <c>W</c>, <c>HasReactance</c> and
+/// <c>AbsorbedType</c> were being written as if they were settable, which invites exactly the edit
+/// that does nothing (they have no setter, so a reader ignores them). Anything derived from a field
+/// on this record belongs behind the attribute.
+/// </remarks>
 public sealed class MatchDesign
 {
     /// <summary>Payload version, for future readers.</summary>
@@ -221,9 +234,11 @@ public sealed class MatchDesign
     public bool Term2Conjugate { get; set; }
 
     /// <summary>Band centre, rad/s: omega0 = sqrt(omega1*omega2).</summary>
+    [JsonIgnore]
     public double Omega0 => 2.0 * Math.PI * Math.Sqrt(F1 * F2);
 
     /// <summary>Fractional bandwidth w = (omega2 - omega1)/omega0.</summary>
+    [JsonIgnore]
     public double W => (F2 - F1) / Math.Sqrt(F1 * F2);
 
     /// <summary>A deep copy — the rebuild and the solution search both mutate working copies.</summary>

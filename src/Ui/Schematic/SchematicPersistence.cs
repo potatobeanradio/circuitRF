@@ -95,12 +95,76 @@ public sealed class CschComponent
 public sealed class CschParameter
 {
     public string Name            { get; set; } = "";
-    public string Expression      { get; set; } = "";
+
+    /// <summary>
+    /// The expression, when it is one. <b>Null — and therefore absent from the file — when
+    /// <see cref="Value"/> carries the parameter instead</b>, so a payload parameter does not also
+    /// write an empty string beside its own document. An ordinary parameter with nothing in it is
+    /// omitted for the same reason and reads back as "".
+    /// </summary>
+    public string? Expression     { get; set; }
+
     public string Unit            { get; set; } = "";
     public bool   ShowOnSchematic { get; set; } = true;
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public UnitDimension Dimension { get; set; } = UnitDimension.None;
+
+    /// <summary>
+    /// A parameter whose value is a JSON DOCUMENT, stored as one — a nested object rather than a
+    /// string full of <c>\"</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-20:</b> <i>"how much work is it to support the expression as a nested object
+    /// in the .csch json? If it won't break anything else or conflict with another philosophy, then
+    /// please do it."</i>
+    ///
+    /// <para>It is the last step of making an embedded design readable. <c>MatchEmbedding.Encode</c>
+    /// already writes plain JSON instead of base64, but a JSON document inside a JSON STRING is
+    /// escaped — <c>"{\"F1\":1800000000,…}"</c> — so every quote in it is two characters and the
+    /// whole design is one very long line. Written here it is an ordinary nested object under
+    /// <c>WriteIndented</c>: one field per line, no escapes, and diffable.</para>
+    ///
+    /// <para><b>The rule is general, not a Match special case.</b> Any parameter whose expression
+    /// begins with <c>{</c> is stored this way, because that is exactly the set of parameters whose
+    /// value is a document rather than an expression: circuitRF's expression language has no brace
+    /// token, so no real expression can collide with the discriminator. It is the same test
+    /// <c>MatchEmbedding.TryDecode</c> and <c>CnlWriter.FormatParam</c> already branch on, which is
+    /// what keeps the three from disagreeing about what a payload is.</para>
+    ///
+    /// <para>Exactly one of <see cref="Expression"/> and this is written. The reader accepts either —
+    /// a hand-authored file, or one written before this existed, still loads.</para>
+    /// </remarks>
+    public JsonNode? Value { get; set; }
+
+    /// <summary>The expression this parameter carries, whichever form it was written in.</summary>
+    public string ReadExpression() => Value?.ToJsonString() ?? Expression ?? "";
+
+    /// <summary>Builds one, choosing the form from the expression itself.</summary>
+    public static CschParameter From(
+        string name, string expression, string unit, bool showOnSchematic, UnitDimension dimension)
+    {
+        var p = new CschParameter
+        {
+            Name = name, Unit = unit, ShowOnSchematic = showOnSchematic, Dimension = dimension,
+        };
+
+        // TryParse, not just a leading '{': a value that merely STARTS with a brace and is not valid
+        // JSON has to survive verbatim, and losing it to an exception on save would be the worst
+        // possible trade for a formatting improvement.
+        if (expression.TrimStart().StartsWith('{'))
+        {
+            try
+            {
+                p.Value = JsonNode.Parse(expression);
+                if (p.Value is not null) return p;
+            }
+            catch (JsonException) { /* not a document after all — store it as the string it is */ }
+        }
+
+        p.Expression = expression;
+        return p;
+    }
 }
 
 public sealed class CschWire
@@ -349,8 +413,8 @@ public static class SchematicPersistence
                 UnknownSymbolRawName = c.UnknownSymbolRawName,
             };
             foreach (var p in c.Parameters)
-                cc.Parameters.Add(new CschParameter
-                    { Name = p.Name, Expression = p.Expression, Unit = p.Unit, ShowOnSchematic = p.ShowOnSchematic, Dimension = p.Dimension });
+                cc.Parameters.Add(CschParameter.From(
+                    p.Name, p.Expression, p.Unit, p.ShowOnSchematic, p.Dimension));
             if (c.LabelOffsets.Any(o => o.DX != 0 || o.DY != 0))
                 cc.LabelOffsets = c.LabelOffsets.Select(o => new[] { o.DX, o.DY }).ToList();
             // Omit when true (the default) to keep files compact.
@@ -430,7 +494,7 @@ public static class SchematicPersistence
             };
             foreach (var cp in cc.Parameters)
                 c.Parameters.Add(new EditableParameter
-                    { Name = cp.Name, Expression = cp.Expression, Unit = cp.Unit, ShowOnSchematic = cp.ShowOnSchematic, Dimension = cp.Dimension });
+                    { Name = cp.Name, Expression = cp.ReadExpression(), Unit = cp.Unit, ShowOnSchematic = cp.ShowOnSchematic, Dimension = cp.Dimension });
             if (cc.LabelOffsets is not null)
                 foreach (var lo in cc.LabelOffsets)
                     if (lo.Length >= 2) c.LabelOffsets.Add((lo[0], lo[1]));

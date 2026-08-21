@@ -126,24 +126,35 @@ public sealed partial class MatchDesignerViewModel
 
         Ladder = MatchLadderLayout.Build(network, _rebuild?.Applied, ValueTextFor, OhmsTextFor);
 
-        Elements.Clear();
-        if (network is not null)
+        // ── The rows are REUSED, never replaced ───────────────────────────────
+        //
+        // The value column is an inline editor now (MatchElementRowViewModel.ValueEntry), and
+        // committing one rebuilds the ladder — which is this method. Clearing the collection here, as
+        // this used to, would destroy the ItemsControl container holding the very editor that was
+        // mid-commit. So the collection is resized and each row is overwritten in place, exactly as
+        // RefreshTransformRows does with the rack for the same reason.
+        var display = network is not null
+            ? MatchLadderLayout.DisplayOrder(network.Elements).ToList()
+            : [];
+
+        while (Elements.Count > display.Count) Elements.RemoveAt(Elements.Count - 1);
+        while (Elements.Count < display.Count) Elements.Add(new MatchElementRowViewModel(this));
+
+        for (int i = 0; i < display.Count; i++)
         {
+            var e = display[i];
+            var quantity = MatchValueFormat.QuantityOf(e.Type);
+            var (text, unit) = MatchValueFormat.Format(
+                e.Value, quantity, Settings.UnitFor(quantity), Settings.SignificantDigits);
             // The grid lists an element under the SAME name the schematic labels it with — "L1", not
             // "MN1.L1" (owner, 2026-08-20). The qualified spelling was a path to a component that
             // does not exist: a Match contains no sub-instances, and the one place the user reads
             // both views at once is this pane, where two names for one element is just a puzzle.
             // The same order the schematic draws in, so the two views of one network read down the
             // page together — see MatchLadderLayout.DisplayOrder for why that is not ladder order.
-            foreach (var e in MatchLadderLayout.DisplayOrder(network.Elements))
-            {
-                var quantity = MatchValueFormat.QuantityOf(e.Type);
-                var (text, unit) = MatchValueFormat.Format(
-                    e.Value, quantity, Settings.UnitFor(quantity), Settings.SignificantDigits);
-                Elements.Add(new MatchElementRowViewModel(
-                    e.Name, e.Name, e.Type, e.IsShunt, e.Value,
-                    MatchLadderLayout.RoleOf(e), text, unit));
-            }
+            Elements[i].Update(
+                e.Name, e.Name, e.Type, e.IsShunt, e.Value,
+                MatchLadderLayout.RoleOf(e), text, unit);
         }
 
         // The payload error is NOT repeated here: it has its own line at the top of the
@@ -226,12 +237,29 @@ public sealed partial class MatchDesignerViewModel
         string text = MatchValueFormat.FormatWithUnit(ladderR, MatchQuantity.Resistance, unit, digits);
 
         double declared = (end == 1 ? _design.Term1 : _design.Term2).R;
-        if (!double.IsFinite(ladderR) || !double.IsFinite(declared)
-            || Math.Abs(ladderR - declared) <= 1e-9 * Math.Max(1.0, Math.Abs(declared)))
-            return text;
+        if (!double.IsFinite(ladderR) || !double.IsFinite(declared)) return text;
 
-        return text + " (target "
-             + MatchValueFormat.FormatWithUnit(declared, MatchQuantity.Resistance, unit, digits) + ")";
+        // ── The annotation is suppressed when it would repeat the number beside it ──
+        //
+        // Owner-reported, 2026-08-20: "Terminal 2 is matched and I get no warnings, but the schematic
+        // instance still says 'Z = 50 Ω (target 50 Ω)'. It should just say 'Z = 50 Ω'."
+        //
+        // It did that because the guard was NUMERIC — a relative 1e-9 — while the label is RENDERED at
+        // the readout's significant digits. A probed termination carries 49.999999999999993 and the
+        // ladder reaches it to within a part in 10^10 but not a part in 10^9, so two numbers that are
+        // the same number as far as anything on screen is concerned were reported as a disagreement,
+        // in the one place a disagreement means "your network does not present what you asked for".
+        //
+        // The comparison is now on the rendered STRINGS, which is the same rule CommitInlineEdit's
+        // RendersAsShown already applies to the same pane and for the same reason: two values that
+        // render identically are one value to a field that can only show one of them. A real shortfall
+        // is still stated — and the status strip's Π N² line carries the exact size of it, to a
+        // precision this label was never going to have.
+        string declaredText =
+            MatchValueFormat.FormatWithUnit(declared, MatchQuantity.Resistance, unit, digits);
+        if (string.Equals(text, declaredText, StringComparison.Ordinal)) return text;
+
+        return text + " (target " + declaredText + ")";
     }
 
     private void RefreshStatus()

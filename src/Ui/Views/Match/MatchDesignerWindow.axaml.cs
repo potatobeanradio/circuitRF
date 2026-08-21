@@ -625,7 +625,11 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
 
         _labelEditTarget = target;
         _labelEditAnchor = (hit.ComponentId, target.Row);
-        _labelEditor.Open(at.Text, at.ScreenX, at.ScreenY, at.FontSize);
+        // The ANCHOR comes from the drawing; the TEXT does not. A label may carry an annotation the
+        // parser would refuse — a termination's "(target 50 Ω)" is the one that bit
+        // (MatchInlineEditTarget.SeedText) — so the editor is seeded with the value the view-model
+        // resolved, formatted exactly as the canvas formats a value.
+        _labelEditor.Open(target.SeedText, at.ScreenX, at.ScreenY, at.FontSize);
 
         Dispatcher.UIThread.Post(
             () =>

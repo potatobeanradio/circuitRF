@@ -37,7 +37,7 @@ public class MatchStampTests(ITestOutputHelper output)
     /// <summary>One <c>Match</c> between <c>p1</c> and <c>p2</c>.</summary>
     private static string MatchInstance(MatchDesign design, string name = "MN1",
                                         string p1 = "p1", string p2 = "p2")
-        => $"Match:{name}  {p1} {p2}  Design={MatchEmbedding.Encode(design)}";
+        => $"Match:{name}  {p1} {p2}  Design={MatchEmbedding.EncodeToken(design)}";
 
     /// <summary>
     /// The same ladder as ordinary primitives, one component per element and one node per series

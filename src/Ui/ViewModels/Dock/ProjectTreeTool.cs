@@ -275,9 +275,42 @@ public partial class ProjectTreeTool : Tool
         RootItems.Clear();
         var root = new ProjectTreeNodeViewModel(_workspaceModel.RootNode, FilterState, expandedPaths, _actions);
         RootItems.Add(root);
+        RestoreDirtyFlags(root);
         // Point the tree at the workspace root's children — the header already names the workspace,
         // so the root row itself is omitted from the rendered tree.
         TopLevelItems = root.FilteredChildren;
+    }
+
+    /// <summary>
+    /// Re-asks <see cref="ITreeActions.IsNodeDirty"/> for every node of a freshly-built tree.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"when I closed my Match Designer, the schematic document
+    /// became dirty, but the cell in the project tree indicated that it was not dirty — as soon as I
+    /// closed the Match Designer window, the indicator on the cell changed from dirty to not
+    /// dirty."</i>
+    ///
+    /// <para>Nothing about the Match Designer did that; <b>closing any window did</b>. The dirty
+    /// indicator is PUSHED onto a node (<see cref="SetCellDirty"/>, <see cref="SetTechFileDirty"/>) and
+    /// therefore lives only on the node object. <see cref="ProjectTreeView"/> re-scans on the
+    /// workspace window's <c>Activated</c>, which is exactly what closing a second window raises, and
+    /// <see cref="RebuildVmTree"/> throws every node away and builds new ones whose <c>IsDirty</c> is
+    /// the field default. Every unsaved cell in the tree therefore went clean on a focus change, with
+    /// the document tab still correctly showing its dot — the two disagreeing is the whole
+    /// report.</para>
+    ///
+    /// <para>The fix is here rather than at the push sites because the state was never lost by any of
+    /// them: <see cref="ITreeActions.IsNodeDirty"/> already answers the same question for the Save
+    /// context menu, from the session registry and the open documents, which SURVIVE the rescan. A
+    /// rebuilt tree simply has to ask it. Cheap, too — it is the same walk the build itself just
+    /// did.</para>
+    /// </remarks>
+    private void RestoreDirtyFlags(ProjectTreeNodeViewModel node)
+    {
+        if (_actions is null) return;
+        node.IsDirty = _actions.IsNodeDirty(node);
+        foreach (var child in node.Children)
+            RestoreDirtyFlags(child);
     }
 
     private HashSet<string> CollectExpandedPaths()

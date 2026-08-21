@@ -127,6 +127,26 @@ public static class MatchSynthesis
     /// </remarks>
     private const int MemoCapacity = 256;
 
+    /// <summary>
+    /// Which end pins g1 — <see cref="AnalysisEndChoice.Highest"/> resolved against the two Q's.
+    /// </summary>
+    /// <remarks>
+    /// Public because the ANSWER is needed outside a synthesis: the Designer has to know which end a
+    /// Q-adjust is about before it can tell whether the stored one is still legal, and re-deriving
+    /// "highest" at a second site is how the two would come to disagree.
+    /// </remarks>
+    public static bool AnalysisIsTerm1(MatchDesign design)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+        double om0 = design.Omega0;
+        return design.AnalysisEnd switch
+        {
+            AnalysisEndChoice.Term1 => true,
+            AnalysisEndChoice.Term2 => false,
+            _ => design.Term1.QAt(om0) >= design.Term2.QAt(om0),
+        };
+    }
+
     /// <summary>Synthesises the basis ladder for a design.</summary>
     public static MatchSynthesisResult Synthesize(MatchDesign design)
     {
@@ -201,17 +221,46 @@ public static class MatchSynthesis
         int n = design.Order;
 
         double q1 = design.Term1.QAt(om0), q2 = design.Term2.QAt(om0);
-        bool anaIsTerm1 = design.AnalysisEnd switch
-        {
-            AnalysisEndChoice.Term1 => true,
-            AnalysisEndChoice.Term2 => false,
-            _ => q1 >= q2,
-        };
+        bool anaIsTerm1 = AnalysisIsTerm1(design);
         Termination ana = anaIsTerm1 ? design.Term1 : design.Term2;
         Termination far = anaIsTerm1 ? design.Term2 : design.Term1;
         double qAnaActual = anaIsTerm1 ? q1 : q2;
         double qFarActual = anaIsTerm1 ? q2 : q1;
         double qAna = design.QAdjust > 0 ? design.QAdjust : qAnaActual;
+
+        // ── A Q-adjust may INFLATE an end's Q. It may not reduce one. ────────────
+        //
+        // Owner-reported, 2026-08-20: "I press the probe button on Terminal 2 and the parasitic
+        // updates to 1000 pH, but the schematic keeps rendering as 2000 pH."
+        //
+        // It was not stale rendering. QAdjust was 2 — legitimately set when that end's Q was lower —
+        // and the probe then made termination 2 a 1 nH parallel L, whose own Q at band centre is
+        // 3.999. `qAna` therefore came out BELOW the termination's own Q, the end arm was built for
+        // Q = 2 (a 1999 pH shunt inductor), and WithEndSplits' split is skipped whenever
+        // qSynth <= qActual — so the element kept the SYNTHESIS's value while still carrying
+        // AbsorbedEnd = 2. The drawing then labelled 1999 pH as "supplied by the external
+        // termination" when the termination supplies 1000 pH, the response was computed from the
+        // 1999 pH the circuit does not contain, and the status strip called it matched at -37 dB.
+        // The ladder was also completely INSENSITIVE to the termination: 1 nH and 2 nH produced
+        // element-for-element identical networks, which is the tell.
+        //
+        // This is the exact counterpart of the FarEndNotAbsorbable refusal below and it was simply
+        // missing. A parasitic cannot be subtracted: if the end arm needs less reactance than the
+        // termination already provides, there is no network, and saying so with both numbers is the
+        // only honest answer. Checked HERE — before any prototype work — because it depends on
+        // nothing the prototype produces and a refusal is cheapest the moment it is knowable.
+        if (design.QAdjust > 0 && qAnaActual > 0 && design.QAdjust < qAnaActual * (1.0 - 1e-9))
+            return MatchSynthesisResult.Refuse(MatchRefusal.Create(
+                MatchRefusalKind.AnalysisEndNotAbsorbable,
+                $"The Q-adjust of {design.QAdjust:0.####} is BELOW termination "
+                + $"{(anaIsTerm1 ? 1 : 2)}'s own Q of {qAnaActual:0.####}, so the ladder's end arm "
+                + "would be smaller than the reactance that termination already supplies — and a "
+                + "parasitic cannot be subtracted. Q-adjust inflates an analysis end's Q "
+                + "(match.md §4.6); it cannot reduce one. Clear it, or set it to at least "
+                + $"{qAnaActual:0.####}.",
+                anaIsTerm1 ? 1 : 2,
+                ("qAdjust", design.QAdjust), ("qActual", qAnaActual),
+                ("ratio", design.QAdjust / qAnaActual)));
 
         var notes = new List<string>();
         bool ripple = qAna <= 0.0

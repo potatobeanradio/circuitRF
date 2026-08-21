@@ -7,21 +7,30 @@ using System.Text.Json.Serialization;
 namespace CircuitRF.Core.Matching;
 
 /// <summary>
-/// The design a Match component carries INSIDE the schematic — base64 of UTF-8 JSON, exactly the
-/// <c>WBondEmbedding</c> pattern (match.md §7.2).
+/// The design a Match component carries INSIDE the schematic — <b>plain JSON</b> (match.md §7.2).
 /// </summary>
 /// <remarks>
-/// <para><b>Base64, and why not raw JSON.</b> The payload has to survive both <c>.csch</c> (a JSON
-/// string) and <c>.cnl</c> (a whitespace-delimited line format whose only string escape is a pair of
-/// quotes, with no way to escape a quote inside one). A design's JSON is full of quotes, so it cannot
-/// be a quoted <c>.cnl</c> token. Base64 is a single bare token needing no quoting rule on either
-/// side.</para>
+/// <para><b>The stored form is READABLE, and that is the whole point</b> (owner-reported, 2026-08-20:
+/// <i>"the .csch is showing a Match component instance with Expression all crazy text — recall that
+/// all circuitRF file formats are supposed to be human readable"</i>). <see cref="Encode"/> writes the
+/// JSON itself, so a <c>.csch</c> shows the band edges, the order, both terminations and every applied
+/// transform as numbers a person can read and repair. The previous base64 blob was two hundred
+/// characters of nothing.</para>
 ///
-/// <para><b>The padding is stripped, and that is load-bearing.</b> <c>CnlReader</c>'s spaced-assignment
-/// merge reads a token ENDING in <c>=</c> as <c>name=</c> with an empty value and glues the NEXT token
-/// on as that value, so a padded payload followed by any other parameter on the same instance line
-/// arrives as one run-on string and decodes to nothing. <see cref="TryDecode"/> re-pads before
-/// decoding; do not "restore" the padding here.</para>
+/// <para><b>The constraint that produced base64 is real, but it belongs to ONE format, not to the
+/// payload.</b> A <c>.cnl</c> is whitespace-delimited and its only string escape is a pair of quotes,
+/// with no way to escape a quote inside one — so a design's JSON, which is full of quotes, cannot be a
+/// <c>.cnl</c> token. A <c>.csch</c> is JSON and has no such problem. So the <b>.cnl writer</b>
+/// converts the payload to a token on its way out (<c>CnlWriter.FormatParam</c> →
+/// <see cref="EncodeToken"/>), and nothing else in the application has to carry base64 to satisfy a
+/// format it is not being written to. <see cref="TryDecode"/> reads both, so every file written before
+/// this change still loads.</para>
+///
+/// <para><b>The token's padding is stripped, and that is load-bearing.</b> <c>CnlReader</c>'s
+/// spaced-assignment merge reads a token ENDING in <c>=</c> as <c>name=</c> with an empty value and
+/// glues the NEXT token on as that value, so a padded payload followed by any other parameter on the
+/// same instance line arrives as one run-on string and decodes to nothing. <see cref="TryDecode"/>
+/// re-pads before decoding; do not "restore" the padding in <see cref="EncodeToken"/>.</para>
 /// </remarks>
 public static class MatchEmbedding
 {
@@ -47,9 +56,32 @@ public static class MatchEmbedding
         JsonSerializer.Deserialize<MatchDesign>(json, Options)
         ?? throw new JsonException("The Match design payload decoded to null.");
 
-    /// <summary>Encodes a design for storage on a component.</summary>
-    public static string Encode(MatchDesign design) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(Write(design))).TrimEnd('=');
+    /// <summary>
+    /// Encodes a design for storage on a component — the readable JSON form. See the class remark.
+    /// </summary>
+    public static string Encode(MatchDesign design) => Write(design);
+
+    /// <summary>
+    /// Encodes a design as a single bare <c>.cnl</c> TOKEN — base64 of the same JSON, unpadded.
+    /// </summary>
+    /// <remarks>
+    /// Only a whitespace-delimited format needs this. Anything writing to a container that can hold a
+    /// string (a <c>.csch</c>, a <c>.ccell</c>, a component parameter) wants <see cref="Encode"/>.
+    /// </remarks>
+    public static string EncodeToken(MatchDesign design) => ToToken(Write(design));
+
+    /// <summary>
+    /// Wraps an already-serialized JSON payload as a bare <c>.cnl</c> token.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="EncodeToken"/> because the <c>.cnl</c> writer holds the payload as a
+    /// STRING it was handed, not as a <see cref="MatchDesign"/> — and re-parsing it only to
+    /// re-serialize it would risk a round trip the writer never asked for. It is also format-neutral:
+    /// the same wrapping works for any embedded-JSON parameter, which is why <c>CnlWriter</c> applies
+    /// it by parameter name rather than by component type.
+    /// </remarks>
+    public static string ToToken(string json) =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(json ?? "")).TrimEnd('=');
 
     /// <summary>
     /// Decodes a stored payload. Accepts base64 (what <see cref="Encode"/> writes) or raw JSON (what a
@@ -172,6 +204,11 @@ public static class MatchEmbedding
     /// string, so two of them decode to the same design and rebuild identically.
     /// </summary>
     public static string DefaultPayload => _defaultPayload ??= Encode(DefaultDesign());
+
+    /// <summary>The default, as a bare <c>.cnl</c> token. See <see cref="EncodeToken"/>.</summary>
+    public static string DefaultPayloadToken => _defaultPayloadToken ??= ToToken(DefaultPayload);
+
+    private static string? _defaultPayloadToken;
 
     private static string? _defaultPayload;
 

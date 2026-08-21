@@ -1,9 +1,13 @@
 <!-- The Match Designer window (match.md §9).
 
-     Its opening size is the GOLDEN RATIO, 1360 : 841 (owner, 2026-08-20: "have the Match Designer
-     window size open at the Golden Ratio"). The two response plots inside it are already laid out at
-     1.618:1 by AspectRatioPanel, so the window and its contents now agree. MinHeight stays 700 —
-     1000 / 1.618 is 618, and a Designer that short cannot show the specification pane at all.
+     Its opening size is the GOLDEN RATIO, 1199 : 741 (owner, 2026-08-20: "have the Match Designer
+     window size open at the Golden Ratio", then "reduce the Match Designer window height by ~100
+     pixels; reduce width to maintain the Golden ratio"). 841 - 100 = 741, and 741 x 1.618 = 1199, so
+     the ratio is held to four figures rather than approximately. The two response plots inside it are
+     already laid out at 1.618:1 by AspectRatioPanel, so the window and its contents still agree.
+     MinHeight stays 700 — 1000 / 1.618 is 618, and a Designer that short cannot show the
+     specification pane at all; 741 clears it, so the opening size is still a size the window can
+     actually take.
 
      There is deliberately NO WindowStartupLocation here: the Designer is shown UNOWNED so it can go
      behind the workspace, and CenterOwner needs an Owner. MatchDesignerWindow.ShowUnowned sets both
@@ -20,7 +24,7 @@
         x:Class="CircuitRF.Ui.Views.Match.MatchDesignerWindow"
         x:DataType="mvm:MatchDesignerViewModel"
         Title="{Binding Title}"
-        Width="1360" Height="841"
+        Width="1199" Height="741"
         MinWidth="1000" MinHeight="700"
         CanResize="True">
 
@@ -391,6 +395,11 @@
 
                         <TextBlock Classes="warn" Text="{Binding PayloadError}"
                                    IsVisible="{Binding PayloadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <!-- An echo parameter that has fallen behind the design — reachable since the
+                             payload became hand-editable. See CheckEchoParameters for why it is
+                             reported and not rewritten. -->
+                        <TextBlock Classes="note" Text="{Binding EchoNote}"
+                                   IsVisible="{Binding EchoNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                         <ContentControl Content="{Binding Term1}" ContentTemplate="{StaticResource TerminationTemplate}"/>
                         <ContentControl Content="{Binding Term2}" ContentTemplate="{StaticResource TerminationTemplate}"/>
@@ -456,9 +465,15 @@
                         <Border Classes="card">
                             <StackPanel Spacing="3">
                                 <TextBlock Classes="cardhdr" Text="Filter Response"/>
+                                <!-- The CLOSED control carries the selected family's own line, or
+                                     the refusal that disabled it (owner, 2026-08-20: "add it back as
+                                     a tooltip addition in the combobox"). The drop-down's items have
+                                     always carried theirs; the control the user is left looking at
+                                     afterwards carried nothing. -->
                                 <ComboBox FontSize="11" HorizontalAlignment="Stretch"
                                           ItemsSource="{Binding ResponseOptions}"
-                                          SelectedItem="{Binding SelectedResponseOption, Mode=TwoWay}">
+                                          SelectedItem="{Binding SelectedResponseOption, Mode=TwoWay}"
+                                          ToolTip.Tip="{Binding ResponseTooltip}">
                                     <ComboBox.ItemTemplate>
                                         <DataTemplate x:DataType="mvm:MatchResponseOptionViewModel">
                                             <TextBlock Text="{Binding Display}" FontSize="11"
@@ -482,12 +497,18 @@
                                      — so the row read as a live field that ignored the gesture. Two
                                      things fix that and neither is "make it always editable": the
                                      row dims when it does not apply, and RippleNote says which of
-                                     the two terminations is the reason. -->
+                                     the two terminations is the reason.
+
+                                     RippleNote is ONE SHORT LINE since 2026-08-20 ("set by
+                                     termination 2.") — the paragraph it used to be is on this row's
+                                     own tooltip now, because five wrapped lines were present in this
+                                     column for most designs and the card had no height for them.
+                                     Deleting it outright would put the round-6 bug straight back. -->
                                 <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding RippleEnabled}">
                                     <TextBlock Classes="detailLabel" Text="Ripple, dB"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="46"
                                                         Text="{Binding RippleEntry, Mode=TwoWay}"
-                                                        ToolTip.Tip="Equal-ripple level in dB — the real-to-real prototype only. Double-click to edit."/>
+                                                        ToolTip.Tip="{Binding RippleTooltip}"/>
                                 </Grid>
                                 <TextBlock Classes="note" Text="{Binding RippleNote}"
                                            IsVisible="{Binding RippleNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -503,6 +524,13 @@
                                 <CheckBox FontSize="11" Content="Allow negative components" MinHeight="0"
                                           IsChecked="{Binding AllowNegativeComponents, Mode=TwoWay}"
                                           ToolTip.Tip="Widens every transform's range past its positivity threshold"/>
+                                <!-- A Q-adjust the terminations have overtaken is CLEARED, and this is
+                                     the line that says so — the same treatment OrderNote gives an
+                                     automatic order change, and for the same reason: a control that
+                                     silently changes another control is worse than one that explains
+                                     itself. See AdjustQAdjustForAnalysisEnd. -->
+                                <TextBlock Classes="note" Text="{Binding QAdjustNote}"
+                                           IsVisible="{Binding QAdjustNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -612,7 +640,16 @@
                                         <Grid ColumnDefinitions="1.6*,*,1.4*" Margin="0,1">
                                             <TextBlock Text="{Binding Instance}" FontSize="11"/>
                                             <TextBlock Grid.Column="1" Text="{Binding TypeText}" FontSize="11"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding ValueWithUnit}" FontSize="11"/>
+                                            <!-- The VALUE is editable, by the same control and the
+                                                 same validator as the drawing above it (owner,
+                                                 2026-08-20). Double-click opens it, the unit is left
+                                                 alone while the number is pre-selected, and the
+                                                 commit goes through
+                                                 MatchDesignerViewModel.CommitInlineEdit — see
+                                                 MatchElementRowViewModel.ValueEntry. -->
+                                            <ctl:InlineEditText Grid.Column="2" FontSize="11"
+                                                                Text="{Binding ValueEntry, Mode=TwoWay}"
+                                                                ToolTip.Tip="Double-click to edit. An element value is aimed at through the transform rack, exactly as it is on the drawing above."/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

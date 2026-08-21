@@ -25,7 +25,7 @@ public class MatchComponentTests
 
     private static MatchModel ModelOf(MatchDesign design)
     {
-        var netlist = Elaborate(Cnl(MatchEmbedding.Encode(design)));
+        var netlist = Elaborate(Cnl(MatchEmbedding.EncodeToken(design)));
         return (MatchModel)netlist.Components.Single(c => c.InstancePath == "MN1").Model;
     }
 
@@ -165,7 +165,7 @@ public class MatchComponentTests
     [Fact]
     public void TwoInstancesOfOneDesign_GetSeparateInternalNets()
     {
-        string design = MatchEmbedding.Encode(MatchAbcdOracle.GoldenDesign());
+        string design = MatchEmbedding.EncodeToken(MatchAbcdOracle.GoldenDesign());
         var netlist = Elaborate($"""
             Term:T1  p1 0  Num=1 Z=50
             Term:T2  p3 0  Num=2 Z=50
@@ -196,7 +196,7 @@ public class MatchComponentTests
     [Fact]
     public void TheEchoParameters_AreNeverReadBack()
     {
-        string design = MatchEmbedding.Encode(MatchEmbedding.DefaultDesign());
+        string design = MatchEmbedding.EncodeToken(MatchEmbedding.DefaultDesign());
         var netlist = Elaborate($"""
             Term:T1  p1 0  Num=1 Z=50
             Term:T2  p2 0  Num=2 Z=50

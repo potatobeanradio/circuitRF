@@ -15,6 +15,22 @@ public enum MatchInlineEditKind
 
     /// <summary>A <c>TermG</c>'s resistance, which is a specification input and is written directly.</summary>
     TerminationResistance,
+
+    /// <summary>
+    /// An ABSORBED L or C — one termination's own reactance, which is likewise a specification input.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"I could not change the C in the schematic that was part
+    /// of the specification. Any L or C that is part of the specification should always be editable
+    /// using the inline text editor (just as the TermG component is today)."</i>
+    ///
+    /// <para>It was refused because it went down the ELEMENT path, which aims the transform rack at a
+    /// target — and no transform can move an absorbed element, so the answer was truthfully "C1 is set
+    /// by the synthesis. Add a transform…". Truthful and useless: it is not set by the synthesis at
+    /// all. <c>Termination.Value</c> is where it comes from, the synthesis merely absorbs it, and that
+    /// is a number the user owns exactly as much as they own the <c>TermG</c> beside it.</para>
+    /// </remarks>
+    TerminationReactance,
 }
 
 /// <summary>
@@ -27,9 +43,25 @@ public enum MatchInlineEditKind
 /// <param name="Quantity">Which unit ladder the typed text is parsed against.</param>
 /// <param name="Unit">The unit the label is currently displayed in — the fallback when none is typed.</param>
 /// <param name="Current">The value as it stands, SI base units.</param>
+/// <param name="SeedText">
+/// What the editor OPENS WITH — the value and its unit, and nothing else.
+/// </param>
+/// <remarks>
+/// <b><paramref name="SeedText"/> is computed from the value, never taken from the drawing</b>
+/// (owner-reported, 2026-08-20: <i>"when I use the inline text editor on a TermG schematic component
+/// that is not matched and has a 'target …' suffix, the inline editor includes the '(target…' suffix.
+/// This makes it hard to change the TermG value because anything with that suffix gets
+/// rejected."</i>).
+///
+/// <para>The window used to seed the box with the LABEL — which is what the canvas drew, annotations
+/// and all. A termination's label carries "(target 50 Ω)" whenever the ladder does not present the
+/// declared resistance, so the editor opened holding a string its own parser refuses, and the user's
+/// way out of an unmatched design was the one field the unmatched design had broken. An annotation is
+/// not part of the value, so it is not part of what the editor edits.</para>
+/// </remarks>
 public sealed record MatchInlineEditTarget(
     MatchInlineEditKind Kind, int Row, string Name, int End,
-    MatchQuantity Quantity, string Unit, double Current);
+    MatchQuantity Quantity, string Unit, double Current, string SeedText = "");
 
 /// <summary>
 /// The network pane's inline value editor (owner, 2026-08-20).
@@ -83,9 +115,8 @@ public sealed partial class MatchDesignerViewModel
         {
             if (!string.Equals(t.InstanceName, componentId, StringComparison.Ordinal)) continue;
             var term = t.End == 1 ? _design.Term1 : _design.Term2;
-            return new MatchInlineEditTarget(
-                MatchInlineEditKind.TerminationResistance, MatchSchematicModel.ValueRow, "", t.End,
-                MatchQuantity.Resistance, Settings.UnitFor(MatchQuantity.Resistance), term.R);
+            return EditTarget(MatchInlineEditKind.TerminationResistance, "", t.End,
+                          MatchQuantity.Resistance, term.R);
         }
 
         var element = Ladder.Elements.FirstOrDefault(
@@ -93,9 +124,26 @@ public sealed partial class MatchDesignerViewModel
         if (element is null) return null;
 
         var quantity = MatchValueFormat.QuantityOf(element.Type);
+
+        // An absorbed element IS a termination's reactance — see MatchInlineEditKind.TerminationReactance.
+        if (element.AbsorbedEnd is 1 or 2)
+            return EditTarget(MatchInlineEditKind.TerminationReactance, element.Name, element.AbsorbedEnd,
+                          quantity, element.Value);
+
+        return EditTarget(MatchInlineEditKind.ElementValue, element.Name, 0, quantity, element.Value);
+    }
+
+    /// <summary>
+    /// One target, with its seed text formatted the same way the canvas formats a VALUE — so the
+    /// editor opens holding a string its own parser accepts, whatever the label around it says.
+    /// </summary>
+    private MatchInlineEditTarget EditTarget(
+        MatchInlineEditKind kind, string name, int end, MatchQuantity quantity, double current)
+    {
+        string unit = Settings.UnitFor(quantity);
         return new MatchInlineEditTarget(
-            MatchInlineEditKind.ElementValue, MatchSchematicModel.ValueRow, element.Name, 0,
-            quantity, Settings.UnitFor(quantity), element.Value);
+            kind, MatchSchematicModel.ValueRow, name, end, quantity, unit, current,
+            MatchValueFormat.FormatWithUnit(current, quantity, unit, Settings.SignificantDigits));
     }
 
     /// <summary>
@@ -149,9 +197,12 @@ public sealed partial class MatchDesignerViewModel
         // SetElementValue so it covers the termination-R door onto the same canvas too.
         if (RendersAsShown(value, target)) return false;
 
-        return target.Kind == MatchInlineEditKind.TerminationResistance
-            ? SetTerminationResistance(target.End, value)
-            : SetElementValue(target.Name, value);
+        return target.Kind switch
+        {
+            MatchInlineEditKind.TerminationResistance => SetTerminationResistance(target.End, value),
+            MatchInlineEditKind.TerminationReactance  => SetTerminationReactance(target.End, value),
+            _                                         => SetElementValue(target.Name, value),
+        };
     }
 
     /// <summary>
@@ -198,6 +249,24 @@ public sealed partial class MatchDesignerViewModel
         var term = end == 1 ? _design.Term1 : _design.Term2;
         if (Math.Abs(r - term.R) <= 1e-12 * Math.Max(1.0, term.R)) return false;
         SetTermination(end, term with { R = r });
+        InlineEditNote = "";
+        return true;
+    }
+
+    /// <summary>
+    /// Writes one termination's reactance — the absorbed element's real home. The KIND is left alone:
+    /// the drawing already says which one this is, and a value typed onto a capacitor is a
+    /// capacitance.
+    /// </summary>
+    private bool SetTerminationReactance(int end, double v)
+    {
+        var term = end == 1 ? _design.Term1 : _design.Term2;
+        // PURELY RELATIVE, with no absolute floor. SetTerminationResistance's "1e-12 * max(1, R)"
+        // reads as a rounding tolerance because a resistance is tens of ohms; the same expression on
+        // a capacitance is an absolute floor of ONE PICOFARAD, which silently swallowed 1 pF → 2 pF.
+        // A reactance has no natural scale, so the only defensible tolerance is a relative one.
+        if (Math.Abs(v - term.Value) <= 1e-12 * Math.Abs(term.Value)) return false;
+        SetTermination(end, term with { Value = v });
         InlineEditNote = "";
         return true;
     }

@@ -9,6 +9,12 @@ public enum MatchRefusalKind
     /// <summary>Q_far &lt; Q_actual — the termination's reactance exceeds what the network can take.</summary>
     FarEndNotAbsorbable,
 
+    /// <summary>
+    /// The same thing at the ANALYSIS end: <c>QAdjust</c> is set BELOW that end's own Q, so the
+    /// ladder's end arm is smaller than the reactance the termination supplies.
+    /// </summary>
+    AnalysisEndNotAbsorbable,
+
     /// <summary>No member of the response family reaches the required far-end Q.</summary>
     ResponseInfeasible,
 

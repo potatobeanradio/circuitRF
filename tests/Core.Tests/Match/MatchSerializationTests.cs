@@ -28,14 +28,46 @@ public class MatchSerializationTests
         return d;
     }
 
+    /// <summary>
+    /// The <c>.cnl</c> TOKEN form is still one unpadded bare token — the constraint that produced
+    /// base64 in the first place, now discharged only where it applies.
+    /// </summary>
     [Fact]
-    public void EncodedPayload_IsOneUnpaddedBareToken()
+    public void EncodedToken_IsOneUnpaddedBareToken()
     {
-        string payload = MatchEmbedding.Encode(MatchAbcdOracle.GoldenDesign());
+        string payload = MatchEmbedding.EncodeToken(MatchAbcdOracle.GoldenDesign());
         Assert.DoesNotContain('=', payload);
         Assert.DoesNotContain(' ', payload);
         Assert.DoesNotContain('"', payload);
         Assert.DoesNotContain('\n', payload);
+    }
+
+    /// <summary>
+    /// What a component CARRIES is readable JSON, because a <c>.csch</c> can hold it and a person has
+    /// to be able to read it (owner, 2026-08-20: "all circuitRF file formats are supposed to be human
+    /// readable").
+    /// </summary>
+    /// <remarks>
+    /// Asserted on the CONTENT rather than on "it is not base64": the point is that the band edges,
+    /// the order and the terminations are legible in the file, which is the thing that regressing to
+    /// a blob would take away. One line, too — a <c>.csch</c> stores this as a JSON string, and a
+    /// newline in one is an escape sequence rather than a line break.
+    /// </remarks>
+    [Fact]
+    public void EncodedPayload_IsReadableJson()
+    {
+        string payload = MatchEmbedding.Encode(MatchAbcdOracle.GoldenDesign());
+
+        Assert.StartsWith("{", payload, StringComparison.Ordinal);
+        Assert.DoesNotContain('\n', payload);
+        Assert.Contains("\"F1\":", payload, StringComparison.Ordinal);
+        Assert.Contains("\"F2\":", payload, StringComparison.Ordinal);
+        Assert.Contains("\"Order\":", payload, StringComparison.Ordinal);
+        Assert.Contains("\"Term1\":", payload, StringComparison.Ordinal);
+        Assert.Contains("ChebyshevFano", payload, StringComparison.Ordinal);
+
+        // ...and it is shorter than the blob it replaced, not merely nicer.
+        Assert.True(payload.Length < MatchEmbedding.EncodeToken(MatchAbcdOracle.GoldenDesign()).Length);
     }
 
     [Fact]

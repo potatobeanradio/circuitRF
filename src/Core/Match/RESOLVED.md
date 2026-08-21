@@ -5,6 +5,112 @@ Findings from the Match component's own briefs, kept out of any `CLAUDE.md`. Sam
 would cost someone real time to rediscover.
 
 
+## Round 7 — the stored payload is JSON, and the order picker is the real remedy (2026-08-20)
+
+### `Encode` writes JSON; only `CnlWriter` makes a token
+
+Owner: *"the .csch is showing a Match component instance with Expression all crazy text. Recall that
+all circuitRF file formats are supposed to be human readable."*
+
+Base64 was there for a real reason, and the reason belongs to exactly one format. A `.cnl` is
+whitespace-delimited and its only string escape is a pair of quotes, with no way to escape a quote
+inside one — so a design's JSON cannot be a `.cnl` token. **A `.csch` is JSON and never had that
+problem**, and nothing else in the application writes a design to a token format. So:
+
+- `MatchEmbedding.Encode` → the JSON (also *shorter* than the base64 it replaced, by a third).
+- `MatchEmbedding.EncodeToken` / `ToToken` → base64, unpadded, for a `.cnl`.
+- `CnlWriter.FormatParam` converts a brace-leading `Design` expression on its way out. Keyed on the
+  PARAMETER NAME, not the component type: `"Design"` is the embedded-payload parameter for Match and
+  for wBond alike, and `Core` cannot see the wBond assembly to ask it anything. Nothing else in the
+  netlist writes a brace-leading expression — the expression language has no token starting with `{`.
+- `TryDecode` already accepted both, so every file written before this still loads and a hand-authored
+  `.cnl` may still carry base64. **The padding must stay stripped** — `CnlReader`'s spaced-assignment
+  merge reads a token ending in `=` as an empty assignment and glues the next parameter on as its
+  value.
+
+Tests that hand-build `.cnl` TEXT (`MatchComponentTests`, `MatchStampTests`, `TerminationProbeTests`,
+`MatchFlattenPlanTests`) must use `EncodeToken`. Anything writing a component parameter wants `Encode`.
+
+Making the payload legible immediately exposed that four **computed** properties — `MatchDesign.Omega0`,
+`W`, `Termination.HasReactance`, `AbsorbedType` — were being serialized as though they were inputs.
+They have no setter, so a reader silently ignored them; a person reading the file would not have.
+`[JsonIgnore]`, and anything derived from a field on that record belongs behind it too.
+
+### 50 Ω into 5 Ω ∥ 1 pF: order 3 genuinely cannot, order 4 gives −43.5 dB
+
+Owner: *"I find it hard to believe that the Match component cannot match a 50 ohm termination to a
+parallel RC of 5 ohms // 1pF at 2 GHz. Am I doing something wrong?"*
+
+Measured over 1.8-2.2 GHz, Chebyshev-Fano, Π N² required = 10:
+
+| order | reachable Π N² | solutions | worst in-band RL after applying |
+|------:|---------------:|----------:|--------------------------------:|
+| 2     | 1              | 0         | —                               |
+| 3     | 1.016          | 0         | —                               |
+| 4     | 10             | 6         | **−43.5 dB**                    |
+| 5     | 10             | 16        | −48.1 dB                        |
+
+Two-ended Chebyshev reaches it at order 3 (6 solutions). Butterworth and Bessel refuse the prototype
+outright at every order for an analysis-end Q of 0.0625 — a very low-Q end is the case those two
+families have no positive g-vector for, which is worth knowing before reading their refusal as a bug.
+
+So the refusal was CORRECT and the design was one picker click from working. What it lacked is what
+the MoM-ceiling lesson in `src/Engine/Mom/RESOLVED.md` is about: **a remedy is only a remedy if it
+binds.** "Allow negative components, change the order, or change the response" named the right knob and
+left the user to find the setting by trying five. `MatchDesignerViewModel.FindWaysOut` now re-runs the
+search at each permitted order and each FEASIBLE response and names the ones that work by number, so
+the sentence ends *"Order 4, 5 and 6 do reach it with this response, and two-ended reaches it at this
+order."* It runs only on an already-refused design, on the analysis worker, under the same
+cancellation — a design with solutions pays nothing, and `MatchOrders.ValidOrders` is a short list (a
+termination pair fixes the parity), never a range.
+
+## Round 7, part 2 — a Q-adjust may inflate an end's Q, never reduce one (2026-08-20)
+
+Owner: *"I press the probe button on Terminal 2 and the parasitic updates to 1000 pH, but the
+schematic keeps rendering as 2000 pH."*
+
+### The tell is that the ladder was insensitive to the termination
+
+1 nH and 2 nH at termination 2 produced **element-for-element identical** networks. That is not stale
+rendering; it is the synthesis not looking at the termination at all.
+
+`Synthesize` takes `qAna = design.QAdjust > 0 ? design.QAdjust : qAnaActual` and **never checked that
+the adjustment is above the end's own Q.** The design carried `QAdjust = 2` — legitimate when that
+end's Q was lower — and the probe then wrote a 1 nH parallel L whose Q at band centre is 3.999. So:
+
+1. the end arm was built for Q = 2, which is a 1999 pH shunt inductor;
+2. `WithEndSplits` skips its split whenever `qSynth / qActual <= ExcessRatioThreshold`, and here the
+   ratio is *below* 1 — so the element kept the **synthesis's** value;
+3. …while still carrying `AbsorbedEnd = 2`, so the drawing labelled 1999 pH as supplied by a
+   termination that supplies 1000 pH, and the response was computed from an inductor the circuit does
+   not contain. The status strip called it matched at −37 dB.
+
+### The far end had this refusal all along; the analysis end never got its counterpart
+
+`FarEndNotAbsorbable` — *"the synthesis reaches Q_far = X against the termination's own Y"* — is the
+same statement about the other end. `AnalysisEndNotAbsorbable` is the missing half, checked
+immediately after `qAna` is chosen, before any prototype work (it depends on nothing the prototype
+produces, and a refusal is cheapest the moment it is knowable). **A parasitic cannot be subtracted**:
+if the end arm needs less reactance than the termination already provides there is no network, so this
+is a refusal rather than a clamp — §4.6's Q-adjust *inflates* an analysis end's Q by construction.
+
+Guard: `QAdjust > 0 && qAnaActual > 0 && QAdjust < qAnaActual * (1 - 1e-9)`, mirroring the far end's
+exact-comparison guard rather than `ExcessRatioThreshold`.
+
+`MatchSynthesis.AnalysisIsTerm1(design)` is public now. The Designer has to know which end a Q-adjust
+is about before it can tell whether the stored one is still legal, and re-deriving "highest" at a
+second site is how the two would come to disagree.
+
+### Measured, on the owner's own case
+
+50 Ω into 5 Ω ∥ 1 pF, 1.8-2.2 GHz, order 3, termination 2 = 50 Ω ∥ 1 nH (Q = 3.999):
+
+| QAdjust | result |
+|--------:|:-------|
+| 0       | absorbed L3 = **1000 pH**, exactly `Term2.Value` |
+| 2       | refused, `AnalysisEndNotAbsorbable` (was: silently drew 1999 pH) |
+| 6       | synthesises — a genuine inflation, which is what §4.6 means |
+
 ## Match round 3 — `Discover` promised a pair `Apply` refuses (2026-08-20)
 
 Owner-reported crash, straight out of the *+ add* menu with no dialog and no recovery:

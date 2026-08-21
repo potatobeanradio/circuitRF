@@ -124,20 +124,45 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         }
     }
 
-    /// <summary>The resistance field's unit.</summary>
+    /// <summary>
+    /// The resistance field's unit — <b>the Settings flyout's, until the user types a different
+    /// one</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"after a probe, the units in the R, L and C do not match
+    /// the units set in the Match Designer settings."</i>
+    ///
+    /// <para>They never did, and a probe is only where it shows: this field carried its OWN unit — a
+    /// hard-coded "Ω" here and <see cref="MatchValueFormat.AutoUnit"/> for the reactance — with no
+    /// connection to §9.9's per-dimension display units at all. As long as the user typed the values
+    /// the two agreed by accident, because a typed unit pins this one and the eye reads only this
+    /// field. A probe writes a MEASURED value nobody typed, Auto then picks the unit per value
+    /// (0.34 pF arrives as "340 fF"), and the disagreement with the pF the Settings flyout says is
+    /// suddenly visible.</para>
+    ///
+    /// <para>So the settings unit is the DEFAULT and the typed one is an override, rather than the
+    /// other way round: <see cref="ResetDisplayUnits"/> drops the override whenever a probe supplies
+    /// the value, which is precisely the case where there is no typed unit to respect.</para>
+    /// </remarks>
     public string ResistanceUnit
     {
-        get => _resistanceUnit;
+        get => _resistanceUnitOverride ?? Settings.ResistanceUnit;
         set
         {
-            if (value == _resistanceUnit) return;
-            _resistanceUnit = value;
+            // A unit that IS the settings unit leaves the field following settings rather than
+            // pinning a copy of it: the resistance field re-commits its unit on every edit, including
+            // the ones where the user typed no unit at all, so pinning unconditionally would freeze
+            // this field against the Settings flyout the first time anyone typed a number into it.
+            string? pin = string.Equals(value, Settings.ResistanceUnit, StringComparison.Ordinal)
+                ? null : value;
+            if (pin == _resistanceUnitOverride) return;
+            _resistanceUnitOverride = pin;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ResistanceText));
             OnPropertyChanged(nameof(ResistanceEntry));
         }
     }
-    private string _resistanceUnit = "Ω";
+    private string? _resistanceUnitOverride;
 
     /// <summary>The resistance as typed. A value that will not parse is held, not discarded.</summary>
     public string ResistanceText
@@ -232,21 +257,47 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         }
     }
 
-    /// <summary>The reactance field's unit. Follows the kind unless the user pins one.</summary>
+    /// <summary>
+    /// The reactance field's unit: the Settings flyout's unit for the current KIND, unless the user
+    /// has pinned one by typing it. See <see cref="ResistanceUnit"/> for why that order matters.
+    /// </summary>
     public string ReactanceUnit
     {
-        get => _reactanceUnit;
+        get => _reactanceUnitOverride ?? Settings.UnitFor(ReactanceQuantity);
         set
         {
-            if (value == _reactanceUnit) return;
-            _reactanceUnit = value;
+            string? pin = string.Equals(value, Settings.UnitFor(ReactanceQuantity), StringComparison.Ordinal)
+                ? null : value;
+            if (pin == _reactanceUnitOverride) return;
+            _reactanceUnitOverride = pin;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ReactanceText));
             OnPropertyChanged(nameof(ReactanceUnitShown));
             OnPropertyChanged(nameof(ReactanceEntry));
         }
     }
-    private string _reactanceUnit = MatchValueFormat.AutoUnit;
+    private string? _reactanceUnitOverride;
+
+    /// <summary>
+    /// Drops both pinned units, so the fields fall back to the Settings flyout's.
+    /// </summary>
+    /// <remarks>
+    /// Called on the two paths that write a value the user did not type — the probe's winning fit and
+    /// an explicitly-applied one. A unit pinned against a hand-typed number has nothing to say about a
+    /// measured one, and keeping it is what made a probed 0.34 pF read in fF while Settings said pF.
+    /// </remarks>
+    internal void ResetDisplayUnits()
+    {
+        if (_resistanceUnitOverride is null && _reactanceUnitOverride is null) return;
+        _resistanceUnitOverride = null;
+        _reactanceUnitOverride = null;
+        OnPropertyChanged(nameof(ResistanceUnit));
+        OnPropertyChanged(nameof(ReactanceUnit));
+        OnPropertyChanged(nameof(ReactanceUnitShown));
+        OnPropertyChanged(nameof(ResistanceText));
+        OnPropertyChanged(nameof(ReactanceText));
+        NotifyEntryText();
+    }
 
     /// <summary>The reactance as typed.</summary>
     public string ReactanceText
@@ -511,6 +562,7 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(row);
         if (!row.Fit.Physical) return;
         var chosen = row.Conjugate ? row.Fit.ConjugateAt(row.Omega0) : row.Fit;
+        ResetDisplayUnits();
         _owner.ApplyProbedTermination(End, chosen.ToTermination(DateTime.UtcNow));
     }
 
@@ -529,7 +581,10 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         OnPropertyChanged(nameof(HasProbeResult));
 
         if (result is { Ok: true, Termination: { } t })
+        {
+            ResetDisplayUnits();
             _owner.ApplyProbedTermination(End, t);
+        }
     }
 
     /// <summary>Re-raises the two properties the running/idle state drives.</summary>
@@ -582,6 +637,8 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         OnPropertyChanged(nameof(TopologyEnabled));
         OnPropertyChanged(nameof(TopologyTooltip));
         OnPropertyChanged(nameof(Resistance));
+        OnPropertyChanged(nameof(ResistanceUnit));
+        OnPropertyChanged(nameof(ReactanceUnit));
         OnPropertyChanged(nameof(ResistanceText));
         OnPropertyChanged(nameof(Kind));
         OnPropertyChanged(nameof(IsC));

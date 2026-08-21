@@ -452,9 +452,17 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
         Assert.Contains("Termination 2", d.RippleNote, StringComparison.Ordinal);
         Assert.Contains("reactance", d.RippleNote, StringComparison.OrdinalIgnoreCase);
 
+        // The note is ONE LINE since round 7 (owner: "there is not enough height space for the
+        // current amount of text") — it still names the end, and §6.6's paragraph, which is what it
+        // shed, is on the row's own tooltip. Both halves are asserted so neither can quietly go.
+        Assert.True(d.RippleNote.Length < 60, $"the note grew back: \"{d.RippleNote}\"");
+        Assert.Contains("6.6", d.RippleTooltip, StringComparison.Ordinal);
+        Assert.Contains("Termination 2", d.RippleTooltip, StringComparison.Ordinal);
+
         string xaml = Xaml();
         Assert.Contains("Selector=\"ctl|InlineEditText:disabled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding RippleNote}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding RippleTooltip}\"", xaml, StringComparison.Ordinal);
     }
 
     // ══ 6. The two pane expanders ════════════════════════════════════════════

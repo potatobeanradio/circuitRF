@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,8 +12,14 @@ namespace CircuitRF.Ui.Matching;
 /// <summary>What one background analysis pass produced. Plain data — no view-model, no collection.</summary>
 /// <param name="Options">One entry per response family, in <c>ResponseOptions</c> order.</param>
 /// <param name="Solutions">The solution search's own result.</param>
+/// <param name="OrdersThatReachIt">
+/// Orders OTHER than the current one at which the same response does return solutions — empty unless
+/// <paramref name="Solutions"/> refused. See <c>MatchDesignerViewModel.FindWaysOut</c>.
+/// </param>
+/// <param name="ResponsesThatReachIt">Response families that return solutions at the CURRENT order.</param>
 internal sealed record MatchAnalysis(
-    IReadOnlyList<MatchAnalysis.OptionVerdict> Options, MatchSolutionSet Solutions)
+    IReadOnlyList<MatchAnalysis.OptionVerdict> Options, MatchSolutionSet Solutions,
+    IReadOnlyList<int> OrdersThatReachIt, IReadOnlyList<ResponseShape> ResponsesThatReachIt)
 {
     /// <summary>Whether one response family can be synthesised here, and why not when it cannot.</summary>
     /// <param name="Shape">The family.</param>
@@ -199,7 +206,71 @@ public sealed partial class MatchDesignerViewModel
         }
 
         token.ThrowIfCancellationRequested();
-        return new MatchAnalysis(verdicts, MatchSolutionSearch.Search(design, offerQAdjust, qMin));
+        var solutions = MatchSolutionSearch.Search(design, offerQAdjust, qMin);
+
+        var (orders, responses) = solutions.Refusal is null
+            ? ([], (IReadOnlyList<ResponseShape>)[])
+            : FindWaysOut(design, verdicts, offerQAdjust, qMin, token);
+
+        return new MatchAnalysis(verdicts, solutions, orders, responses);
+    }
+
+    /// <summary>
+    /// When the rack cannot reach the required ratio, finds the settings that CAN — which other
+    /// permitted orders, and which other feasible response families.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"I find it hard to believe that the Match component
+    /// cannot match a 50 ohm termination to a parallel RC of 5 ohms // 1pF at 2 GHz. Am I doing
+    /// something wrong?"</i>
+    ///
+    /// <para><b>It can, and the refusal was right about the design in front of it.</b> Measured on
+    /// exactly that problem over 1.8-2.2 GHz: Chebyshev-Fano needs Π N² = 10 and at ORDER 3 the whole
+    /// rack reaches 1.016, so there is genuinely nothing to offer; at order 4 one transform reaches it
+    /// and the network comes out at −43.5 dB worst in-band return loss, at order 5 −48.1 dB.
+    /// Two-ended Chebyshev reaches it at order 3. So the user was one picker click away, and the
+    /// refusal — "Allow negative components, change the order, or change the response" — named the
+    /// right knob and left them to find which setting of it works by trying five.</para>
+    ///
+    /// <para><b>That is the failure mode this repository has a standing lesson about</b> (the MoM
+    /// ceiling refusal that named three knobs which were all inert): a remedy is only a remedy if it
+    /// BINDS. So the orders are tried here and the ones that work are named by number. It costs a
+    /// solution search per permitted order — the picker offers two or three, never a range
+    /// (<c>MatchOrders.ValidOrders</c>) — and it runs ONLY on a design that has already refused, on
+    /// the analysis worker, under the same cancellation. A design that has solutions pays nothing.</para>
+    ///
+    /// <para>Response families are probed only where the feasibility pass above already said the
+    /// family synthesises, so a Bessel that has no prototype at all is never searched for solutions it
+    /// cannot have.</para>
+    /// </remarks>
+    private static (IReadOnlyList<int> Orders, IReadOnlyList<ResponseShape> Responses) FindWaysOut(
+        MatchDesign design, IReadOnlyList<MatchAnalysis.OptionVerdict> verdicts,
+        bool offerQAdjust, double qMin, CancellationToken token)
+    {
+        var orders = new List<int>();
+        var responses = new List<ResponseShape>();
+
+        foreach (int order in MatchOrders.ValidOrders(design.Term1, design.Term2))
+        {
+            if (order == design.Order) continue;
+            token.ThrowIfCancellationRequested();
+            var probe = design.Clone();
+            probe.Order = order;
+            if (MatchSolutionSearch.Search(probe, offerQAdjust, qMin).Solutions.Count > 0)
+                orders.Add(order);
+        }
+
+        foreach (var verdict in verdicts)
+        {
+            if (verdict.Shape == design.Response || !verdict.Ok) continue;
+            token.ThrowIfCancellationRequested();
+            var probe = design.Clone();
+            probe.Response = verdict.Shape;
+            if (MatchSolutionSearch.Search(probe, offerQAdjust, qMin).Solutions.Count > 0)
+                responses.Add(verdict.Shape);
+        }
+
+        return (orders, responses);
     }
 
     private void ApplyAnalysis(MatchAnalysis analysis)
@@ -215,12 +286,15 @@ public sealed partial class MatchDesignerViewModel
             option.Tooltip = verdict.Ok ? option.Description : verdict.Refusal!.Message;
         }
         OnPropertyChanged(nameof(ResponseOptions));
+        // The closed combo's tooltip IS the selected option's, and this pass is what writes it.
+        OnPropertyChanged(nameof(ResponseTooltip));
 
-        ApplySolutions(analysis.Solutions);
+        ApplySolutions(analysis);
     }
 
-    private void ApplySolutions(MatchSolutionSet set)
+    private void ApplySolutions(MatchAnalysis analysis)
     {
+        var set = analysis.Solutions;
         Solutions.Clear();
 
         // The badges are decided HERE, against the design as it stands now — the search ran against a
@@ -238,6 +312,7 @@ public sealed partial class MatchDesignerViewModel
 
         SolutionsRefusal = set.Refusal is { } r
             ? $"No solutions available for order {_design.Order}. {r.Message}"
+              + WayOut(analysis.OrdersThatReachIt, analysis.ResponsesThatReachIt)
             : "";
 
         var applied = Solutions.FirstOrDefault(s => s.Badge == MatchSolutionBadge.Current);
@@ -248,6 +323,35 @@ public sealed partial class MatchDesignerViewModel
         SolutionsSummary = Solutions.Count == 0
             ? "no solutions"
             : $"{Solutions.Count} solution{(Solutions.Count == 1 ? "" : "s")} · {appliedText}";
+    }
+
+    /// <summary>
+    /// The sentence that turns "change the order or the response" into a setting the user can pick.
+    /// See <see cref="FindWaysOut"/> for why the search is run to be able to say this.
+    /// </summary>
+    private static string WayOut(IReadOnlyList<int> orders, IReadOnlyList<ResponseShape> responses)
+    {
+        var parts = new List<string>(2);
+        if (orders.Count > 0)
+            parts.Add($"order {Join(orders.Select(o => o.ToString(CultureInfo.InvariantCulture)))} "
+                      + $"do{(orders.Count == 1 ? "es" : "")} reach it with this response");
+        if (responses.Count > 0)
+            parts.Add($"{Join(responses.Select(ResponseShortName))} reach"
+                      + $"{(responses.Count == 1 ? "es" : "")} it at this order");
+
+        return parts.Count == 0
+            ? " Nothing this picker offers reaches it: the two terminations are too far apart for a "
+              + "network of any permitted order in this family."
+            : " " + char.ToUpperInvariant(parts[0][0]) + parts[0][1..]
+              + (parts.Count > 1 ? ", and " + parts[1] : "") + ".";
+
+        static string Join(IEnumerable<string> items)
+        {
+            var list = items.ToList();
+            return list.Count <= 1
+                ? list.FirstOrDefault() ?? ""
+                : string.Join(", ", list.Take(list.Count - 1)) + " and " + list[^1];
+        }
     }
 
     private static string ResponseShortName(ResponseShape shape) => shape switch

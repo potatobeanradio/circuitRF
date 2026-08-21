@@ -354,6 +354,30 @@ public static class TerminationProbe
                 return ProbeResult.Refuse(
                     $"The network beyond pin {pinIndex + 1} looks like an open circuit at " +
                     $"{freqs[i] / 1e9:G6} GHz (Γ = 1), so it has no finite impedance to fit.");
+
+            // ── …and the other degenerate end, which had no counterpart ──────
+            //
+            // Owner-reported, 2026-08-20: "with shunt L = 0, the Termination 2 does not probe
+            // correctly (can't find an impedance)."
+            //
+            // An ideal 0 H shunt inductor IS a short to ground, so the pin genuinely presents 0 Ω and
+            // there is nothing to match into — the probe was right to apply nothing. What it SAID was
+            // wrong, and misleadingly so: with no guard here the measurement fell through to the
+            // fitter, every one of the five models fitted it perfectly (residual exactly 0) with
+            // R = 0 or NaN, and every one was then rejected for a non-positive R. The user was told
+            // "none of the five models fits this network with a positive resistance… a negative
+            // element is not a termination anyone can build", which points at the fitter and at
+            // negative elements when the actual answer is that the pin is shorted.
+            //
+            // The open case above has always been caught HERE, before the fit, and said plainly. This
+            // is the same statement about Γ = -1, and it names the thing to go and look at.
+            if ((Complex.One + gamma).Magnitude < 1e-14)
+                return ProbeResult.Refuse(
+                    $"The network beyond pin {pinIndex + 1} is a short to ground at " +
+                    $"{freqs[i] / 1e9:G6} GHz (Γ = -1, Z = 0 Ω), so there is no impedance to match " +
+                    $"into. A zero-valued shunt element on net '{net}', or a wire from it straight to " +
+                    "ground, is the usual cause.");
+
             z[i] = ProbeZ0 * (Complex.One + gamma) / denom;
         }
 

@@ -373,13 +373,18 @@ public sealed class MatchRound3Tests(ITestOutputHelper output)
     {
         string xaml = Xaml();
 
-        Assert.Contains("{Binding ValueWithUnit}", xaml, StringComparison.Ordinal);
+        // ValueEntry, not ValueWithUnit — the column is an inline EDITOR since Round 7 (owner,
+        // 2026-08-20) and ValueEntry is the settable face of the same string. The claim this test is
+        // making is unchanged: one column carrying the value AND its unit, and no separate Unit or
+        // Note column.
+        Assert.Contains("{Binding ValueEntry, Mode=TwoWay}", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("{Binding Unit}", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("{Binding Note}", xaml, StringComparison.Ordinal);
 
         var (_, _, d) = Open();
         var row = d.Elements.First();
         Assert.Equal($"{row.ValueText} {row.Unit}", row.ValueWithUnit);
+        Assert.Equal(row.ValueWithUnit, row.ValueEntry);
         Assert.NotEmpty(row.Unit);            // the halves are still there underneath
         d.Dispose();
     }

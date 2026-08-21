@@ -77,7 +77,9 @@ public sealed partial class MatchProbeFitRowViewModel : ObservableObject
     /// <summary>Why this row cannot be applied, or empty.</summary>
     public string PhysicalNote => Fit.Physical
         ? ""
-        : Fit.R <= 0 ? "non-physical: R came out negative"
+        // "zero or negative", because zero is what a shorted pin produces and calling that negative
+        // sends the reader looking for a sign error that is not there.
+        : Fit.R <= 0 ? "non-physical: R came out zero or negative"
                      : "non-physical: the reactance came out negative or degenerate";
 
     /// <summary>What Apply would install — the conjugate when the toggle is on.</summary>

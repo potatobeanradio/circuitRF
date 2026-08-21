@@ -30,7 +30,7 @@ public class TerminationProbeTests(ITestOutputHelper output)
     private static string N(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 
     private static string MatchLine(string name = "MN1", string p1 = "p1", string p2 = "p2")
-        => $"Match:{name}  {p1} {p2}  Design={MatchEmbedding.Encode(MatchEmbedding.DefaultDesign())}";
+        => $"Match:{name}  {p1} {p2}  Design={MatchEmbedding.EncodeToken(MatchEmbedding.DefaultDesign())}";
 
     private static TestBench Bench(string cnl, out Library lib)
     {
@@ -583,4 +583,58 @@ public class TerminationProbeTests(ITestOutputHelper output)
         Assert.Equal(TerminationTopology.Series, right.Best!.Topology);
         Assert.Equal(1.25, right.Best.R, 0.002);
     }
+    // ══ A degenerate pin says what it is ═════════════════════════════════════
+
+    /// <summary>
+    /// <b>Owner-reported, 2026-08-20:</b> <i>"with shunt L = 0, the Termination 2 does not probe
+    /// correctly (can't find an impedance)."</i>
+    /// </summary>
+    /// <remarks>
+    /// An ideal 0 H shunt inductor IS a short to ground, so the pin genuinely presents 0 Ω and
+    /// applying nothing was right. The MESSAGE was wrong: with no guard the measurement fell through
+    /// to the fitter, where all five models fit it perfectly (residual exactly 0) with R = 0 or NaN
+    /// and were then each rejected for a non-positive R — so the user was told the fitter had failed
+    /// and that negative elements were involved, when the answer is that the pin is shorted.
+    ///
+    /// <para>The OPEN case has always been caught before the fit and said plainly; this is the same
+    /// statement about Γ = -1, which is the half that was missing.</para>
+    /// </remarks>
+    [Fact]
+    public void AShortedPin_IsReportedAsAShort_NotAsAFailureToFit()
+    {
+        var r = Run($"""
+            {MatchLine()}
+            Term:T1  p1 0  Num=1 Z=50
+            R:R2     p2 0  R=50
+            L:L1     p2 0  L=0
+            """, pinIndex: 1);
+
+        Report("shunt L = 0 on pin 2", r);
+        Assert.False(r.Ok);
+        Assert.NotNull(r.Refusal);
+        Assert.Contains("short to ground", r.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("Γ = -1", r.Refusal, StringComparison.Ordinal);
+        // It names the net to go and look at, not the fitter.
+        Assert.Contains("'p2'", r.Refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("None of the five models", r.Refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>...and a very small but non-zero shunt L is still an ordinary, fitted measurement.</summary>
+    [Fact]
+    public void ANearlyShortedPin_StillFits()
+    {
+        var r = Run($"""
+            {MatchLine()}
+            Term:T1  p1 0  Num=1 Z=50
+            R:R2     p2 0  R=50
+            L:L1     p2 0  L=1 pH
+            """, pinIndex: 1);
+
+        Report("shunt L = 1 pH on pin 2", r);
+        Assert.True(r.Ok, r.Refusal);
+        Assert.Equal(ReactanceKind.L, r.Best!.Kind);
+        Assert.Equal(TerminationTopology.Parallel, r.Best.Topology);
+        Assert.Equal(1e-12, r.Best.Value, 1e-15);
+    }
+
 }

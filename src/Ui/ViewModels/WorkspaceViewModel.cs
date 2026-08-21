@@ -2944,6 +2944,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
         vm.CellResolverProvider         = () => this;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
+        vm.DocumentName                 = title;   // no file yet; the tab's title is what it is called
         // filePath = null → scratch; IsScratch = true, IsDirty = false (starts clean), Title = "<title>"
         var doc   = new SchematicDocument(title, vm) { Messages = Messages, Hierarchy = this };
 
@@ -7007,6 +7008,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private SchematicViewModel RegisterSession(string absNormalizedPath, SchematicViewModel vm)
     {
+        // The one place every path-backed session learns what its file is called — a Save As
+        // re-registers, so the name follows the file. See SchematicViewModel.DocumentName.
+        vm.DocumentName = Path.GetFileName(absNormalizedPath);
         _registry.Register(absNormalizedPath, vm, UpdateCellDirtyForSession);
         return vm;
     }
@@ -10770,6 +10774,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.ComponentPlaced      += OnComponentPlaced;
                 vm.WorkspaceRootProvider = () => CurrentWorkspaceRoot;
                 vm.CellResolverProvider  = () => this;
+                vm.DocumentName          = name;
                 var doc = new SchematicDocument(name, vm) { Messages = Messages, Hierarchy = this };
                 _scratchDocs.Add(doc);
                 _factory.OpenDocument(doc);

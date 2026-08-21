@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -267,6 +268,30 @@ public static class CnlWriter
             && ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)
             && !IsQuoted(ov.Expression))
             return $"{ov.Name}=\"{ov.Expression}\"";
+
+        // An embedded JSON DESIGN payload is base64'd on its way into a .cnl, and only into a .cnl.
+        //
+        // Owner-reported, 2026-08-20: "the .csch is showing a Match component instance with Expression
+        // all crazy text. Recall that all circuitRF file formats are supposed to be human readable."
+        // It was base64 because ONE of the two formats a design has to survive cannot hold it any other
+        // way: this one. A .cnl is whitespace-delimited and its only string escape is a pair of quotes
+        // with no way to escape a quote inside one, so a JSON payload — which is all quotes — is not
+        // expressible as a token here. A .csch is JSON and has no such problem.
+        //
+        // So the constraint is discharged where it exists. MatchEmbedding.Encode now writes readable
+        // JSON, the .csch stores that, and this line turns it back into a bare token for the one
+        // format that needs one. Both spellings decode (MatchEmbedding.TryDecode / WBondEmbedding.
+        // TryDecode branch on a leading '{'), so a file written either way still loads and a
+        // hand-authored .cnl may still carry base64.
+        //
+        // Keyed on the PARAMETER NAME, not the component type: "Design" is the embedded-payload
+        // parameter for Match and for wBond alike (MatchEmbedding.DesignParameter ==
+        // WBondEmbedding.DesignParameter == "Design"), and Core cannot see the wBond assembly to ask
+        // it anything. Nothing else in the netlist writes a brace-leading expression — an expression
+        // language token never starts with '{'.
+        if (ov.Name.Equals(Matching.MatchEmbedding.DesignParameter, StringComparison.OrdinalIgnoreCase)
+            && ov.Expression.TrimStart().StartsWith('{'))
+            return $"{ov.Name}={Matching.MatchEmbedding.ToToken(ov.Expression)}";
 
         if (!string.IsNullOrEmpty(ov.Unit))
             return $"{ov.Name}={ov.Expression} {ov.Unit}";

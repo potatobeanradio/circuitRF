@@ -136,7 +136,7 @@ public class MatchFlattenPlanTests(ITestOutputHelper output)
         var component = Sweep($"""
             Term:T1  p1 0  Num=1 Z=50
             Term:T2  p2 0  Num=2 Z=50
-            Match:MN1  p1 p2  Design={MatchEmbedding.Encode(design)}
+            Match:MN1  p1 p2  Design={MatchEmbedding.EncodeToken(design)}
             """, Band);
 
         var flattened = Sweep($"""
