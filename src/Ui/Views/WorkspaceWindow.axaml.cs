@@ -45,6 +45,7 @@ public partial class WorkspaceWindow : Window
         // Dock's teardown); document tear-offs still close normally.
         MainDockControl.HostWindowFactory = () => new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow();
         AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
+        FitToScreen();
         // R-dock-14: bring the floating tool panels forward with the workspace. `Window` exposes no
         // OnActivated to override, so this is the event.
         Activated += (_, _) =>
@@ -54,6 +55,46 @@ public partial class WorkspaceWindow : Window
             // Activated simply rebuilds again, which is harmless.
             _vm?.RebuildWindowMenuItems();
         };
+    }
+
+    /// <summary>
+    /// Shrinks the declared 1200x800 opening size to whatever the display it opens on can actually
+    /// show, before the window is shown.
+    /// </summary>
+    /// <remarks>
+    /// The arithmetic — and why the window is centred at all — is
+    /// <see cref="WorkspaceWindowPlacement.Fit"/>'s, kept out of here so it can be asserted by test
+    /// against synthetic screens; placement is otherwise only checkable by opening the application on
+    /// each platform and looking, which is how this shipped wrong.
+    ///
+    /// <para><b>In the constructor, not <c>OnOpened</c>.</b> <c>CenterScreen</c> is applied by
+    /// <c>Show()</c> off the size the window has by then, so a resize afterwards centres the OLD size
+    /// and leaves the window visibly off-centre (and jumping). Setting it here means Avalonia centres
+    /// the fitted size the first time.</para>
+    ///
+    /// <para>Guarded because a headless test host has no real display: <c>Screens</c> can be null or
+    /// report nothing, and the declared size is then exactly what should be used.</para>
+    /// </remarks>
+    private void FitToScreen()
+    {
+        try
+        {
+            var screen = Screens?.ScreenFromWindow(this) ?? Screens?.Primary;
+            if (screen is null) return;
+
+            var (w, h) = WorkspaceWindowPlacement.Fit(
+                Width, Height,
+                screen.WorkingArea.Width, screen.WorkingArea.Height,
+                screen.Scaling,
+                MinWidth, MinHeight);
+
+            Width  = w;
+            Height = h;
+        }
+        catch
+        {
+            // No usable display information — open at the declared size, as before.
+        }
     }
 
     // While a placement is armed, R / Shift+R rotate the ghost regardless of which control has focus
