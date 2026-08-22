@@ -3,6 +3,8 @@
 //  (brief-iprobe-currents-scalars-table)
 //
 //  1. Scalar_OnTable_RendersValueCell
+//  1b. Scalar_MixedWithSweptTrace_KeepsBothColumns
+//  1c. Scalar_GridStopsAtLastColumn
 //  2. Scalar_PickerVisibleOnlyOnTable
 //  3. Scalar_OnRect_IsInvalid
 //  4. Scalar_AddTrace_OnTableOnly
@@ -16,6 +18,8 @@ using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.Renderers;
+using SkiaSharp;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using RfCore;
 using RfCore.Data;
@@ -91,18 +95,17 @@ public sealed class ScalarCubeTests
         plot.Traces.Add(t);
         var cols = TableRenderer.BuildColumns(plot);
 
-        // Should have exactly two columns: XAxis (scalar anchor) + TraceValue (PDC)
-        Assert.Equal(2, cols.Count);
+        // A rank-0 cube has no sweep axis, so there is NO X column: the table is exactly one
+        // column wide (header + one value row). The old blank, header-less anchor column is gone.
+        Assert.Single(cols);
 
-        var xCol  = cols[0];
-        var valCol = cols[1];
-
-        Assert.Equal(TableColKind.XAxis,      xCol.Kind);
+        var valCol = cols[0];
         Assert.Equal(TableColKind.TraceValue, valCol.Kind);
+        Assert.Equal("PDC", valCol.Header);
 
-        // Scalar XAxis column is flagged and blanked
-        Assert.True(xCol.IsScalar);
-        Assert.Equal("", TableRenderer.FormatColumnCell(xCol, 0, plot));
+        // Exactly one data row.
+        Assert.Equal(1, TableRenderer.RowCount(cols));
+        Assert.Equal("", TableRenderer.FormatColumnCell(valCol, 1, plot));
 
         // Value column renders the number, not "" or "NaN"
         string cellText = TableRenderer.FormatColumnCell(valCol, 0, plot);
@@ -110,9 +113,128 @@ public sealed class ScalarCubeTests
         Assert.NotEqual("NaN", cellText);
         Assert.Contains("0.04", cellText);   // contains the value digits
 
+        // The rendered grid is literally 1 column x 1 data row (2 rows counting the header).
+        var (headers, rows) = TableRenderer.BuildCopyGrid(plot, (400.0, 200.0));
+        Assert.Single(headers);
+        Assert.Single(rows);
+        Assert.Single(rows[0]);
+
         // Trace has no geometry (Table reads CubeXValues, not Points)
         Assert.Empty(t.Points);
         Assert.False(t.ScalarOnNonTableInvalid);
+    }
+
+    // ── 1b. Scalar_MixedWithSweptTrace_KeepsBothColumns ───────────────────────
+
+    /// <summary>
+    /// A scalar trace losing its (blank) X column must not disturb a swept trace sharing the table:
+    /// the swept trace still gets its own X + value pair, the table's row count comes from the
+    /// LONGEST column, and the scalar's single value sits on row 0 with blanks below it.
+    /// </summary>
+    [Fact]
+    public void Scalar_MixedWithSweptTrace_KeepsBothColumns()
+    {
+        var scalar = MakeTrace();
+        scalar.CubeName  = "PDC";
+        scalar.Slice     = Array.Empty<AxisSlice>();
+        scalar.Transform = CubeTransform.None;
+        scalar.SetScalarCubeData(complexValue: null, realValue: 0.042,
+                                 PlotType.Table, FreqUnit.GHz);
+
+        double[] xVals = { 0.0, 1.0, 2.0 };
+        double[] yVals = { 0.1, 0.2, 0.3 };
+        var swept = MakeTrace();
+        swept.CubeName  = "PAE";
+        swept.Slice     = new[] { new AxisSlice("Pin", AxisRole.KeepAsX, 0) };
+        swept.Transform = CubeTransform.None;
+        swept.SetCubeData(xVals, complexValues: null, yVals, "Pin", "dBm",
+                          PlotType.Table, FreqUnit.GHz);
+
+        var plot = new Plot(PlotType.Table, FreqUnit.GHz);
+        plot.Traces.Add(scalar);
+        plot.Traces.Add(swept);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        // PDC (value only), then Pin (X) + PAE (value).
+        Assert.Equal(3, cols.Count);
+        Assert.Equal(TableColKind.TraceValue, cols[0].Kind);
+        Assert.Equal(TableColKind.XAxis,      cols[1].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[2].Kind);
+        Assert.Equal("Pin (dBm)", cols[1].Header);
+        Assert.Equal(3, cols[1].XValues.Length);
+
+        // Row count follows the swept trace, not the scalar.
+        Assert.Equal(3, TableRenderer.RowCount(cols));
+
+        // The scalar's value is on row 0; rows below it are blank, not "NaN".
+        Assert.NotEqual("", TableRenderer.FormatColumnCell(cols[0], 0, plot));
+        Assert.Equal("",    TableRenderer.FormatColumnCell(cols[0], 1, plot));
+        Assert.Equal("",    TableRenderer.FormatColumnCell(cols[0], 2, plot));
+
+        // The swept trace still reads all three of its rows.
+        for (int r = 0; r < 3; r++)
+        {
+            Assert.NotEqual("",    TableRenderer.FormatColumnCell(cols[2], r, plot));
+            Assert.NotEqual("NaN", TableRenderer.FormatColumnCell(cols[2], r, plot));
+        }
+    }
+
+    // ── 1c. Scalar_GridStopsAtLastColumn ──────────────────────────────────────
+
+    /// <summary>
+    /// Pixel gate for the second half of the "blank column" report: the plot BOX is wider than the
+    /// single column, and the row shading / horizontal rules used to run to the canvas edge, drawing
+    /// an open, header-less cell to the right of the only column. Nothing may be painted past the
+    /// last column's right edge.
+    /// </summary>
+    [Fact]
+    public void Scalar_GridStopsAtLastColumn()
+    {
+        var prevTypeface = SkiaFonts.TestOverrideTypeface;
+        SkiaFonts.TestOverrideTypeface = SKTypeface.Default;
+        try
+        {
+            var t = MakeTrace();
+            t.CubeName    = "PDC";
+            t.Slice       = Array.Empty<AxisSlice>();
+            t.Transform   = CubeTransform.None;
+            t.ColumnWidth = 115;
+            t.SetScalarCubeData(complexValue: null, realValue: 0.042,
+                                PlotType.Table, FreqUnit.GHz);
+
+            var plot = new Plot(PlotType.Table, FreqUnit.GHz) { FontSize = 12, ColumnWidth = 115 };
+            plot.Traces.Add(t);
+
+            // Canvas deliberately wider (200) and taller (64) than the one 115-px column needs.
+            const int w = 200, h = 64;
+            using var surface = SKSurface.Create(new SKImageInfo(w, h));
+            TableRenderer.Draw(surface.Canvas, (w, h), plot, RenderTheme.Light);
+            using var img = surface.Snapshot();
+            using var bmp = SKBitmap.FromImage(img);
+
+            SKColor bg = RenderTheme.Light.BackgroundColor;
+            bool PaintedAt(int x)
+            {
+                for (int y = 0; y < h; y++)
+                {
+                    var px = bmp.GetPixel(x, y);
+                    if (px.Red != bg.Red || px.Green != bg.Green || px.Blue != bg.Blue) return true;
+                }
+                return false;
+            }
+
+            // Inside the column: header band, rules and the value are drawn.
+            Assert.True(PaintedAt(50), "expected the single column to be drawn at x = 50");
+
+            // Right of the column (115) and inside the canvas (200): nothing at all.
+            foreach (int x in new[] { 120, 150, 180, 199 })
+                Assert.False(PaintedAt(x), $"nothing may be painted right of the last column (x = {x})");
+        }
+        finally
+        {
+            SkiaFonts.TestOverrideTypeface = prevTypeface;
+        }
     }
 
     // ── 2. Scalar_PickerVisibleOnlyOnTable ────────────────────────────────────
@@ -248,12 +370,12 @@ public sealed class ScalarCubeTests
         Assert.False(t.ScalarOnNonTableInvalid);
         Assert.False(t.CubeIsScalar);
 
-        // BuildColumns for the Table case: XAxis is NOT flagged as scalar
+        // BuildColumns for the Table case: a swept trace still gets its own X column
         var plot = new Plot(PlotType.Table, FreqUnit.GHz);
         plot.Traces.Add(t);
         var cols = TableRenderer.BuildColumns(plot);
         var xCol = cols.First(c => c.Kind == TableColKind.XAxis);
-        Assert.False(xCol.IsScalar);
+        Assert.Equal(xVals.Length, xCol.XValues.Length);
 
         // FormatColumnCell returns real values for the value column (not "" or "NaN")
         var valCol = cols.First(c => c.Kind == TableColKind.TraceValue);

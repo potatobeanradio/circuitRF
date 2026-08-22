@@ -22,6 +22,12 @@
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Meta+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Delete"        Command="{Binding ViewModel.Window.DeleteSelectedCommand}"/>
+        <!-- Page Up/Down scroll the SELECTED table by a whole page (owner, 2026-08-21). Bound at the
+             document level like Delete, so the keystroke works wherever focus sits in the display. -->
+        <KeyBinding Gesture="PageUp"        Command="{Binding ViewModel.Window.ScrollTablePageUpCommand}"/>
+        <KeyBinding Gesture="PageDown"      Command="{Binding ViewModel.Window.ScrollTablePageDownCommand}"/>
+        <KeyBinding Gesture="Home"          Command="{Binding ViewModel.Window.ScrollTableToTopCommand}"/>
+        <KeyBinding Gesture="End"           Command="{Binding ViewModel.Window.ScrollTableToBottomCommand}"/>
         <KeyBinding Gesture="Ctrl+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
         <KeyBinding Gesture="Meta+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
         <KeyBinding Gesture="Ctrl+OemPlus"  Command="{Binding ViewModel.Window.ZoomInCommand}"/>

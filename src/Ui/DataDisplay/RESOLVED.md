@@ -5,6 +5,93 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## Table box sizing + keyboard scrolling (2026-08-21)
+
+Follow-ups to the 1x1 table work below.
+
+### One width floor caused BOTH resize symptoms
+
+*"the 1x1 Table width can't be resized using gripper to be the width of the 1 column header width.
+Also, double clicking on gripper doesn't resize the 1x1 to the right width."* Two gestures, one
+cause: `PlotContainerViewModel.ResizeTo` floored width at a flat **200** logical px for every plot
+type. The double-click path was never wrong — `PlotContainerView.OnResizeHandleDoubleTapped` already
+computed `min(TotalColumnWidth, viewable width)` = 115 and handed it over; `ResizeTo` clamped it
+straight back to 200. The drag path hit the same wall.
+
+A Table's width is set by its COLUMNS, so it now has its own floor (`MinLogicalWidth`):
+`max(MinColumnWidth, min(200, TotalColumnWidth))`. Two guards keep the change from reaching anything
+else: a table WIDER than 200 keeps the 200 floor (so a multi-column table can still be dragged
+narrower and clip, as before), and an **empty** table keeps it too — without that guard a
+trace-less table would have taken `natural = 0` and collapsed to the 40 px per-column minimum.
+
+### Page Up / Page Down / Home / End — the implementations already existed and nothing called them
+
+Both `DataDisplayViewModel.ScrollSelectedTable` and `PlotControl.ScrollTableRows` were written,
+documented ("Called from DisplayWindow for Page Up / Page Down key handling") and **dead**: no key
+binding, no command, no caller anywhere. `TableRenderer.RowPaddingFraction` was even made `public`
+"for PageUp/Down visible-row calc". The feature was wiring, not algorithm.
+
+Wired as document-level `KeyBindings` in `DataDisplayView.axaml` → `[RelayCommand]`s on
+`DisplayWindowViewModel` → the selection, the same route `Delete` already takes. Scoped to SELECTED
+Table plots (all of them, not the old "exactly one" rule, which silently did nothing with two
+tables selected).
+
+**Both dead copies re-derived the row geometry from `FontSize` themselves, and both were wrong the
+same way**: neither subtracted a summary table's reserved TITLE BAND, which `Draw` translates the
+grid down by. They now share `TableRenderer.ScrollMetrics(plot, canvasSize, zoom)`, which runs the
+real `BuildLayout` and returns `(PageRows, MaxScroll)`. `PageRows` counts WHOLE visible rows (a
+half-clipped last row does not count, so a page step never skips a row the user only partly saw)
+while `MaxScroll` uses the ceiling-based visible count `BuildLayout` clamps with — so **End lands
+exactly where a run of Page Downs stops**, which is a gate test.
+
+End is the last PAGE, not the last ROW: scrolling until the final row sits alone at the top of a
+blank table is not what "bottom" means.
+
+All four commands carry `CanExecute = HasSelectedTable`. Avalonia's `KeyBinding` asks `CanExecute`
+at press time and only then marks the event handled, so an ungated command would SWALLOW Page
+Up/Down and Home/End from everything else in the display whenever no table was selected.
+
+## A 1x1 cube on a Table drew as 2x2 — two independent causes (2026-08-21)
+
+*"if a Data Display plot is of type Table and it has a trace with 1x1 DataCube, the rendering shows
+the first column as empty (also with no header name)"* — then, after the first fix, *"I see an extra
+blank column to the right"*. Two separate defects, both visible only on a narrow table, which is why
+the report changed shape rather than going away.
+
+### 1. A rank-0 trace emitted a blank X column that existed only to carry a row
+
+`BuildColumns` gave every scalar trace an `XAxis` column with an empty header, a blank cell, and a
+synthetic `[0.0]` X — its only job was to give the table one row to draw. That column IS the empty,
+unnamed first column in the report. A scalar now contributes exactly one `TraceValue` column; the
+single-row anchor rides on the value column itself, since `Trace.SetScalarCubeData` already stores
+`CubeXValues = [0.0]` and `FormatCubeCellAt` matches on it. `TableColumn.IsScalar` and its blank-cell
+special case in `FormatColumnCell` are gone with it.
+
+**The load-bearing consequence: row count could no longer be measured from `XAxis` columns alone.**
+Three sites did exactly that (`BuildLayout`, `RequiredCanvasHeight`, `PlotContainerViewModel.
+RowCountLogical`), and a table of only scalars would have reported **zero** rows and drawn nothing.
+They now share `TableRenderer.RowCount(columns)`, which is the longest column of any kind.
+
+Mixed tables were the risk the change had to survive — a scalar losing its X column must not disturb
+a swept trace beside it. The dedup state is reset across a scalar (`prevAxisName`/`currentXArray`
+nulled) so the next trace still gets its own X column, and the scalar's value sits on row 0 with
+blanks — not `NaN` — below it.
+
+### 2. The grid painted past the last column, so the empty plot box read as another column
+
+The reason the fix looked like it had only moved the blank from left to right: **the table grid was
+drawn to the CANVAS width, not to the column extent.** Odd-row shading (`DrawRowBackgrounds`) and
+every horizontal row rule (`DrawCellBorders`) ran to `canvasSize.W`. The header band already stopped
+at the last column, so the mismatch was invisible on any table whose columns fill the box — and on
+the reported file it was not: `DCTest.cdd` has a plot 200 px wide holding one 115-px column, leaving
+85 px of horizontal rules with no cell under them. That reads as exactly one blank, header-less
+column. Both now stop at `GridRight(layout, canvasW)` = the last column's right edge, clamped to the
+canvas.
+
+Gated by a pixel probe (`ScalarCubeTests.Scalar_GridStopsAtLastColumn`) rather than a column-plan
+assertion, because the column plan was already correct — the defect was purely in what got painted.
+Verified to catch it: restoring either `canvasSize.W` turns the test red at x = 120.
+
 ## Who owns a left-drag inside a plot, and the Autoscale command (2026-08-21)
 
 Follow-ups to the panning work above, once panning actually worked.

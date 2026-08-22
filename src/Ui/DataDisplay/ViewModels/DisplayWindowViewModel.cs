@@ -476,6 +476,26 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private void DeleteSelected() => DataDisplay?.DeleteSelected();
     private bool CanDeleteSelected() => DataDisplay?.HasAnySelection ?? false;
 
+    /// <summary>Page Up — scroll the selected Table plot(s) up by one full page.</summary>
+    [RelayCommand(CanExecute = nameof(CanScrollTable))]
+    private void ScrollTablePageUp()   => DataDisplay?.ScrollSelectedTable(-1);
+
+    /// <summary>Page Down — scroll the selected Table plot(s) down by one full page.</summary>
+    [RelayCommand(CanExecute = nameof(CanScrollTable))]
+    private void ScrollTablePageDown() => DataDisplay?.ScrollSelectedTable(+1);
+
+    /// <summary>Home — jump the selected Table plot(s) to the first row.</summary>
+    [RelayCommand(CanExecute = nameof(CanScrollTable))]
+    private void ScrollTableToTop()    => DataDisplay?.ScrollSelectedTableToEdge(toEnd: false);
+
+    /// <summary>End — jump the selected Table plot(s) to the last page.</summary>
+    [RelayCommand(CanExecute = nameof(CanScrollTable))]
+    private void ScrollTableToBottom() => DataDisplay?.ScrollSelectedTableToEdge(toEnd: true);
+
+    /// <summary>Gates all four table-scroll keys on the selection actually holding a Table, so with
+    /// no table selected the keystroke stays unhandled and reaches whatever else wants it.</summary>
+    private bool CanScrollTable() => DataDisplay?.HasSelectedTable ?? false;
+
     [RelayCommand]
     private async Task OpenDataDisplay()
     {

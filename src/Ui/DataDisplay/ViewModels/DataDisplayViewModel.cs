@@ -1102,31 +1102,81 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
     // ---- Table scroll (Page Up / Page Down) -------------------------
 
+    /// <summary>True when at least one SELECTED plot is a Table — the gate for the Page Up/Down and
+    /// Home/End key commands. Without it those commands would report themselves executable with no
+    /// table selected, and the key binding would mark the keystroke handled for a scroll that never
+    /// happens, swallowing it from anything else in the display that wanted it.</summary>
+    public bool HasSelectedTable
+    {
+        get
+        {
+            foreach (var p in _plots)
+                if (p.IsSelected && p.PlotVM.Plot.PlotType == PlotType.Table) return true;
+            return false;
+        }
+    }
+
     /// <summary>
-    /// Scrolls the single selected Table plot by one full page in the given direction
-    /// (positive = down / later frequencies, negative = up / earlier frequencies).
-    /// Does nothing when the selection is not exactly one Table plot.
+    /// Page Up / Page Down: scrolls every SELECTED Table plot by one full page (positive = down /
+    /// later rows, negative = up). Non-table selections and unselected plots are untouched, so the
+    /// keystroke is a no-op unless a table is actually selected.
     /// </summary>
+    /// <remarks>
+    /// The row geometry comes from <see cref="TableRenderer.ScrollMetrics"/> so the step matches what
+    /// is drawn — a summary table reserves a title band above the grid, which a local FontSize-based
+    /// calculation does not know about. <c>ViewHeight</c> is the canvas the renderer gets: a Table is
+    /// not a complex plot type, so its top/bottom label extras are both zero and ViewHeight is exactly
+    /// Height * zoom.
+    /// </remarks>
     public void ScrollSelectedTable(int pageDirection)
     {
-        var tableContainers = _plots
-            .Where(p => p.IsSelected && p.PlotVM.Plot.PlotType == PlotType.Table)
-            .ToList();
-        if (tableContainers.Count != 1) return;
+        foreach (var container in _plots)
+        {
+            if (!container.IsSelected) continue;
+            var plot = container.PlotVM.Plot;
+            if (plot.PlotType != PlotType.Table) continue;
 
-        var container = tableContainers[0];
-        var plot      = container.PlotVM.Plot;
+            float zoom = (float)(container.ZoomLevel > 0 ? container.ZoomLevel : 1.0);
+            var (pageRows, maxScroll) = TableRenderer.ScrollMetrics(
+                plot, (container.ViewWidth, container.ViewHeight), zoom);
 
-        float zoom     = (float)(container.ZoomLevel > 0 ? container.ZoomLevel : 1.0);
-        float fs       = (float)(plot.FontSize * zoom);
-        float rowH     = fs * (1 + TableRenderer.RowPaddingFraction);
-        float headerH  = fs * (1 + TableRenderer.RowPaddingFraction * 2);
-        float canvasH  = (float)container.ViewHeight;   // screen pixels
-        float availH   = canvasH - headerH - TableRenderer.HeaderToDataRowPadding;
-        int   pageSize = Math.Max(1, availH > 0 ? (int)(availH / rowH) : 1);
+            int newScroll = Math.Clamp(
+                plot.TableViewScrollIndex + pageDirection * pageRows, 0, maxScroll);
+            if (newScroll == plot.TableViewScrollIndex) continue;
 
-        plot.TableViewScrollIndex = Math.Max(0, plot.TableViewScrollIndex + pageDirection * pageSize);
-        container.RequestPlotRedraw();
+            plot.TableViewScrollIndex = newScroll;
+            container.RequestPlotRedraw();
+        }
+    }
+
+    /// <summary>
+    /// Home / End: jumps every SELECTED Table plot to its first row (<paramref name="toEnd"/> false)
+    /// or its last page (true). Same selection rule as <see cref="ScrollSelectedTable"/>.
+    /// </summary>
+    /// <remarks>
+    /// "Bottom" is the LAST PAGE, not the last row — scrolling until the final row sits alone at the
+    /// top would leave the rest of the table blank. <c>MaxScroll</c> from
+    /// <see cref="TableRenderer.ScrollMetrics"/> is the same bound <c>BuildLayout</c> clamps to, so
+    /// End lands exactly where a Page Down run would stop.
+    /// </remarks>
+    public void ScrollSelectedTableToEdge(bool toEnd)
+    {
+        foreach (var container in _plots)
+        {
+            if (!container.IsSelected) continue;
+            var plot = container.PlotVM.Plot;
+            if (plot.PlotType != PlotType.Table) continue;
+
+            var (_, maxScroll) = TableRenderer.ScrollMetrics(
+                plot, (container.ViewWidth, container.ViewHeight), 
+                (float)(container.ZoomLevel > 0 ? container.ZoomLevel : 1.0));
+
+            int newScroll = toEnd ? maxScroll : 0;
+            if (newScroll == plot.TableViewScrollIndex) continue;
+
+            plot.TableViewScrollIndex = newScroll;
+            container.RequestPlotRedraw();
+        }
     }
 
     /// <summary>

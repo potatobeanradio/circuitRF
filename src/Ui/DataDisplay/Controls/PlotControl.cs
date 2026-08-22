@@ -2104,16 +2104,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         /// </summary>
         public void ScrollTableRows(int pageRows)
         {
-            if (_plot?.PlotType != PlotType.Table) return;
+            if (_plot is null || _plot.PlotType != PlotType.Table) return;
             float zoom = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
-            float fs        = (float)(_plot.FontSize * zoom);
-            float rowH      = fs * (1 + TableRenderer.RowPaddingFraction);
-            float headerH   = fs * (1 + TableRenderer.RowPaddingFraction * 2);
-            float availH    = (float)Bounds.Height - headerH - TableRenderer.HeaderToDataRowPadding;
-            int   pageSize  = Math.Max(1, availH > 0 ? (int)(availH / rowH) : 1);
+
+            var (pageSize, maxScroll) = TableRenderer.ScrollMetrics(
+                _plot, (Bounds.Width, Bounds.Height), zoom);
 
             int newScroll = _plot.TableViewScrollIndex + pageRows * pageSize;
-            _plot.TableViewScrollIndex = Math.Max(0, newScroll);
+            _plot.TableViewScrollIndex = Math.Clamp(newScroll, 0, maxScroll);
             InvalidateVisual();
             PlotChanged?.Invoke(this, EventArgs.Empty);
         }

@@ -340,7 +340,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// </summary>
     public void ResizeTo(double targetW, double targetH)
     {
-        double newW = Math.Max(200, targetW);
+        double newW = Math.Max(MinLogicalWidth(), targetW);
         double newH = Math.Max(MinLogicalHeight(), targetH);
 
         if (IsSquareAspect)
@@ -357,6 +357,29 @@ public partial class PlotContainerViewModel : ViewModelBase
             Width  = newW;
             Height = newH;
         }
+    }
+
+    /// <summary>
+    /// Minimum container width in LOGICAL (pre-zoom) units: 200 for every plot type EXCEPT a Table,
+    /// which is legitimately narrower than that whenever its columns are. A table's width is set by
+    /// its columns — a single-column scalar table is ~115 px — and the flat 200 floor made the box
+    /// unable to reach its own content: the gripper drag stopped short of the header width, and the
+    /// double-click auto-fit computed the right target (<c>TotalColumnWidth</c>) only to have
+    /// <see cref="ResizeTo"/> clamp it straight back up to 200. Both symptoms, one floor.
+    ///
+    /// <para>Wide tables are unaffected: the floor stays 200 for them, so a multi-column table can
+    /// still be dragged narrower than its columns and clip, exactly as before. Never below the
+    /// renderer's own per-column minimum.</para>
+    /// </summary>
+    private double MinLogicalWidth()
+    {
+        var plot = PlotVM.Plot;
+        if (plot.PlotType != PlotType.Table) return 200;
+        double natural = TableRenderer.TotalColumnWidth(plot);
+        // An empty Table has no columns to fit — keep the ordinary floor rather than letting a
+        // brand-new, trace-less table collapse to the per-column minimum.
+        if (natural <= 0) return 200;
+        return Math.Max(TableRenderer.MinColumnWidth, Math.Min(200, natural));
     }
 
     /// <summary>
@@ -388,15 +411,9 @@ public partial class PlotContainerViewModel : ViewModelBase
         return Math.Min(fullLogical, twoRowFloor);
     }
 
-    /// <summary>Number of data rows the table will render (longest XAxis group), ≥1.</summary>
+    /// <summary>Number of data rows the table will render (longest column), ≥1.</summary>
     private static int RowCountLogical(Plot plot)
-    {
-        int rows = 0;
-        foreach (var col in TableRenderer.BuildColumns(plot))
-            if (col.Kind == TableColKind.XAxis && col.XValues.Length > rows)
-                rows = col.XValues.Length;
-        return Math.Max(1, rows);
-    }
+        => Math.Max(1, TableRenderer.RowCount(TableRenderer.BuildColumns(plot)));
 
     /// <summary>Plot type as of the last <see cref="CoerceAspectForPlotType"/> call — lets that method
     /// tell an actual plot-type SWITCH apart from an ordinary structural change (trace add/remove)
@@ -449,7 +466,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     {
         var plot = PlotVM.Plot;
         if (plot.PlotType != PlotType.Table) return;
-        double newW = Math.Max(200, TableRenderer.TotalColumnWidth(plot));
+        double newW = Math.Max(MinLogicalWidth(), TableRenderer.TotalColumnWidth(plot));
         if (Math.Abs(Width - newW) > 0.5) Width = newW;
     }
 

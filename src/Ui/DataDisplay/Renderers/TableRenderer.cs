@@ -40,7 +40,6 @@ namespace CircuitRF.Ui.DataDisplay
         public string?      Unit;               // XAxis only
         public double[]     XValues = Array.Empty<double>();  // XAxis: sorted group X; TraceValue: same ref
         public bool         IsFreqUnit;         // XAxis only
-        public bool         IsScalar;           // XAxis only: true for scalar (rank-0) anchor column
         public bool         IsNodeAxis;         // XAxis only: true when axis name is "node" → render as integer
         public int          FamilyCurveIndex = -1; // TraceValue only: ≥0 = curve k of a family trace
 
@@ -207,6 +206,19 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         /// <summary>
+        /// Row count for a column plan: the longest column. This counts EVERY column, not only the
+        /// XAxis ones -- a rank-0 scalar trace has no X column at all (it is a lone one-row value
+        /// column), so an XAxis-only maximum would report 0 rows for a table made purely of scalars.
+        /// </summary>
+        public static int RowCount(IReadOnlyList<TableColumn> columns)
+        {
+            int rows = 0;
+            for (int i = 0; i < columns.Count; i++)
+                if (columns[i].XValues.Length > rows) rows = columns[i].XValues.Length;
+            return rows;
+        }
+
+        /// <summary>
         /// Total canvas-px height needed to show the WHOLE table at the given zoom: the summary title
         /// band (0 when there is no title) + the header row + the gap + every data row, ending exactly
         /// at the bottom border of the last row. Used by the resize-gripper double-click so the box
@@ -221,11 +233,7 @@ namespace CircuitRF.Ui.DataDisplay
             float rowH       = fs * (1 + RowPaddingFraction);
             float dataStartY = headerH + HeaderToDataRowPadding;
 
-            int rowCount = 0;
-            foreach (var col in BuildColumns(plot))
-                if (col.Kind == TableColKind.XAxis && col.XValues.Length > rowCount)
-                    rowCount = col.XValues.Length;
-            int rows = Math.Max(1, rowCount);   // never collapse below a single data row
+            int rows = Math.Max(1, RowCount(BuildColumns(plot)));   // never collapse below a single data row
 
             float bandH = SummaryTitleBandHeight(plot, zoomLevel);
             return bandH + dataStartY + rows * rowH;
@@ -238,6 +246,30 @@ namespace CircuitRF.Ui.DataDisplay
         /// over a tiny grid. Pure 16*zoom keeps the title proportional to the rows at every zoom level;
         /// SummaryTitleBandHeight uses this same value so the band shrinks in lockstep.</summary>
         private static float SummaryTitleFontSize(float zoomLevel) => 16f * zoomLevel;
+
+        /// <summary>
+        /// Page-scroll geometry for a Table: how many rows one Page Up / Page Down step moves, and the
+        /// largest legal scroll index for this canvas. Both callers (the keyboard command on the
+        /// selection and <c>PlotControl.ScrollTableRows</c>) read it from here rather than re-deriving
+        /// row height from <c>FontSize</c> themselves — the two copies that did drifted from the drawn
+        /// layout on a summary table, whose reserved title band neither subtracted.
+        ///
+        /// <para><c>PageRows</c> counts WHOLE visible rows (a partly-clipped last row does not count, so
+        /// a page step never skips a row the user only half saw); <c>MaxScroll</c> uses the same
+        /// ceiling-based visible count <see cref="BuildLayout"/> clamps with, so the two agree.</para>
+        /// </summary>
+        public static (int PageRows, int MaxScroll) ScrollMetrics(
+            Plot plot, (double W, double H) canvasSize, float zoomLevel = 1f)
+        {
+            float bandH     = SummaryTitleBandHeight(plot, zoomLevel);
+            var   tableSize = (canvasSize.W, canvasSize.H - bandH);
+            var   layout    = BuildLayout(plot, tableSize, zoomLevel);
+
+            float availH   = (float)tableSize.Item2 - layout.DataStartY;
+            int   pageRows = Math.Max(1, availH > 0 ? (int)(availH / layout.RowH) : 1);
+            int   maxScroll = Math.Max(0, layout.RowCount - layout.VisibleRowCount);
+            return (pageRows, maxScroll);
+        }
 
         /// <summary>Returns which table element is under canvas point (cx, cy).</summary>
         public static TableHitResult HitTest(
@@ -521,17 +553,36 @@ namespace CircuitRF.Ui.DataDisplay
                     continue;
                 }
 
+                // ── Rank-0 (1x1) cube: there is no sweep axis, so there is no X column to draw.
+                //    This used to emit a blank, header-less anchor column whose only job was to give
+                //    the table one row -- it rendered as an empty unnamed first column. The value
+                //    column carries the single-row anchor itself (Trace.SetScalarCubeData stores
+                //    CubeXValues = [0.0], which FormatCubeCellAt matches), so a scalar trace now
+                //    contributes exactly one column. Row 0 of it lines up with row 0 of any other
+                //    trace's columns; deeper rows read "" (FormatColumnCell's length guard).
+                if (trace.IsCubeBound && trace.CubeIsScalar)
+                {
+                    result.Add(new TableColumn
+                    {
+                        Kind            = TableColKind.TraceValue,
+                        FirstTraceIndex = ti,
+                        Header          = trace.CubeShorthand ?? trace.ShortDescription,
+                        XValues         = new[] { 0.0 },
+                    });
+
+                    // Reset the adjacent-dedup state: the next trace has no X column to share.
+                    prevAxisName = null; prevUnit = null; prevRaw = null;
+                    currentXArray = null; prevPairByIndex = false;
+                    continue;
+                }
+
                 // Determine X identity for this trace.
                 string   axisName;
                 string?  unit;
                 double[] raw;
                 bool     isFamilyPath = false;
 
-                if (trace.IsCubeBound && trace.CubeIsScalar)
-                {
-                    axisName = ""; unit = null; raw = new[] { 0.0 };   // single-row anchor, blank header
-                }
-                else if (trace.IsCubeBound && trace.IsFamily && trace.FamilyCurves.Count > 0
+                if (trace.IsCubeBound && trace.IsFamily && trace.FamilyCurves.Count > 0
                          && trace.CubeXValues is { } fxs)
                 {
                     axisName = trace.CubeXAxisName ?? "X";
@@ -599,7 +650,6 @@ namespace CircuitRF.Ui.DataDisplay
                         XValues         = sorted,
                         IsFreqUnit      = isFreq,
                         IsNodeAxis      = isNode,
-                        IsScalar        = trace.IsCubeBound && trace.CubeIsScalar,
                         PairByIndex     = pairByIndex,
                     });
                     currentXArray = sorted;
@@ -710,7 +760,6 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (col.Kind == TableColKind.XAxis)
             {
-                if (col.IsScalar) return "";        // scalar anchor column: no X value
                 if (col.IsNodeAxis)
                     return ((long)Math.Round(xVal)).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 string fmt = $"{plot.FormatString}{plot.MaximumFractionDigits}";
@@ -809,11 +858,8 @@ namespace CircuitRF.Ui.DataDisplay
             var   columns = BuildColumns(plot);
             bool  summary = IsSummaryTable(plot);
 
-            // Row count = longest XAxis group.
-            int rowCount = 0;
-            foreach (var col in columns)
-                if (col.Kind == TableColKind.XAxis && col.XValues.Length > rowCount)
-                    rowCount = col.XValues.Length;
+            // Row count = longest column (an XAxis group, or a lone scalar value column).
+            int rowCount = RowCount(columns);
 
             var layout = new TableLayout
             {
@@ -1178,6 +1224,20 @@ namespace CircuitRF.Ui.DataDisplay
         //  Draw helpers
         // ============================================================
 
+        /// <summary>
+        /// Right edge of the drawn grid in canvas pixels: the end of the LAST column, clamped to the
+        /// canvas. Row shading and the horizontal row borders stop here rather than running to the
+        /// canvas edge -- past the last column there is no cell, and a full-width rule reads as an
+        /// extra, header-less blank column whenever the columns are narrower than the plot box (most
+        /// visibly on a one-column scalar table). The header band already stopped at this same edge.
+        /// </summary>
+        private static float GridRight(TableLayout layout, double canvasW)
+        {
+            if (layout.ColCount <= 0) return 0f;
+            float totalColW = layout.ColX[layout.ColCount - 1] + layout.ColW[layout.ColCount - 1];
+            return Math.Min((float)canvasW, totalColW);
+        }
+
         private static void DrawRowBackgrounds(
             SKCanvas canvas, (double W, double H) canvasSize,
             TableLayout layout, RenderTheme theme)
@@ -1192,7 +1252,8 @@ namespace CircuitRF.Ui.DataDisplay
             // Fill entire canvas with even-row background
             canvas.DrawRect(0, 0, (float)canvasSize.W, (float)canvasSize.H, evenPaint);
 
-            float canvasH = (float)canvasSize.H;
+            float canvasH  = (float)canvasSize.H;
+            float gridRight = GridRight(layout, canvasSize.W);
 
             // Paint alternating odd rows, clamped to canvas height
             for (int r = 0; r < layout.VisibleRowCount; r++)
@@ -1204,7 +1265,7 @@ namespace CircuitRF.Ui.DataDisplay
                 float rowTop = layout.DataStartY + r * layout.RowH;
                 float rowH   = Math.Min(layout.RowH, canvasH - rowTop);
                 if (rowH <= 0) break;
-                canvas.DrawRect(0, rowTop, (float)canvasSize.W, rowH, oddPaint);
+                canvas.DrawRect(0, rowTop, gridRight, rowH, oddPaint);
             }
         }
 
@@ -1311,7 +1372,8 @@ namespace CircuitRF.Ui.DataDisplay
                 IsAntialias = false,
             };
 
-            float totalH = (float)canvasSize.H;
+            float totalH    = (float)canvasSize.H;
+            float gridRight = GridRight(layout, canvasSize.W);
 
             // Vertical column borders
             for (int c = 0; c < layout.ColCount; c++)
@@ -1327,7 +1389,7 @@ namespace CircuitRF.Ui.DataDisplay
                 if (absRow > layout.RowCount) break;
                 float y = layout.DataStartY + r * layout.RowH;
                 if (y > totalH) break;
-                canvas.DrawLine(0, y, (float)canvasSize.W, y, borderPaint);
+                canvas.DrawLine(0, y, gridRight, y, borderPaint);
             }
         }
 
