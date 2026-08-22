@@ -128,6 +128,49 @@ if (-not (Test-Path (Join-Path $publish $exeName))) {
     throw "Publish produced no $exeName in $publish - nothing to package."
 }
 
+# == The device worker =========================================================
+#
+# The program that evaluates a kit's compiled device models. It is built by the .csproj (which runs
+# tools\senior-worker\ensure-built.cmd) and published by its CrfPublishHelperPrograms target - but
+# that build step is warn-only BY DESIGN, because nobody should be unable to build circuitRF for
+# want of a C compiler.
+#
+# That is right for a build and wrong for a RELEASE. An installer missing this ships an application
+# that opens a kit, describes it correctly, and then refuses at Run naming a program the user never
+# installed and had no way to install. So packaging checks what building only warns about.
+#
+# Both files, not just the stub: on Windows a model imports its host callbacks from a NAMED MODULE,
+# so senior_worker.exe without crf-model-host.dll beside it loads nothing.
+#
+# Set CRF_ALLOW_NO_DEVICE_WORKER=1 to package without it on purpose.
+
+$workerFiles = @('senior_worker.exe', 'crf-model-host.dll')
+$missing = $workerFiles | Where-Object { -not (Test-Path (Join-Path $publish $_)) }
+
+if ($missing) {
+    $what = $missing -join ', '
+    if ($env:CRF_ALLOW_NO_DEVICE_WORKER -eq '1') {
+        Write-Host "WARNING: packaging without the device worker ($what). Compiled device models will not run."
+    } else {
+        Write-Host "Missing from the publish tree: $what"
+        throw @'
+The device worker is missing from the publish tree.
+
+circuitRF builds it during 'dotnet build', but only warns when no C compiler is present - so this
+machine has none that the build could use. Install one of these and run this script again:
+
+    zig      (winget install zig.zig)   - one download, no daemon; the preferred route
+    MSYS2/MinGW x86-64 gcc
+    Docker or Podman, plus a bash (Git for Windows ships one)
+
+The worker is built for x86-64 even on an ARM machine, deliberately: it exists to load vendor model
+libraries, those are x64, and a process holds one instruction set. Windows runs it translated.
+
+To package deliberately without it: set CRF_ALLOW_NO_DEVICE_WORKER=1
+'@
+    }
+}
+
 # == Harvest the publish tree ==================================================
 #
 # Everything except the .exe, which circuitRF.wxs names itself so the shortcuts and file

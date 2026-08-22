@@ -1100,6 +1100,11 @@ public static class PdkPartInstaller
                     ? $"can be simulated on this machine ({string.Join(", ", platforms)}) — its " +
                       $"{chosen.Platform} build, run here through this machine's compatibility layer"
                     : $"can be simulated on this machine ({string.Join(", ", platforms)})");
+
+            if (chosen is not null && MissingProgram(manifest, chosen) is { } absent)
+                found.Add($"but the program that does it ('{absent}') is not in circuitRF's tools " +
+                          $"folder or beside the kit, so it will have to be found on this system's " +
+                          $"program path at Run");
         }
 
         if (manifest.Variants.Count > 0)
@@ -1112,6 +1117,32 @@ public static class PdkPartInstaller
         return found.Count == 0
             ? "This kit's simulation settings declare nothing usable."
             : "Read this kit's simulation settings: " + string.Join("; ", found) + ".";
+    }
+
+    /// <summary>
+    /// The worker this machine's entry names, when it is not actually on this machine — or null when
+    /// there is nothing to report.
+    ///
+    /// <para><b>An entry is deliberately written for a platform whose worker is not here</b>, because
+    /// an import performed on one machine has to be able to describe another; a bare name is a promise
+    /// the running machine keeps. That is right for the other platforms and worth CHECKING for this
+    /// one, which is the only machine the check can be made on. Otherwise the import says a kit can
+    /// be simulated here, and the first thing that contradicts it is a failed Run.</para>
+    ///
+    /// <para>A command that resolved to a real path is not reported: that is the ordinary case, and
+    /// a path the resolver could not turn into a file has already been refused elsewhere.</para>
+    /// </summary>
+    private static string? MissingProgram(DeviceWorkerManifest manifest, DeviceWorkerLaunch launch)
+    {
+        string command;
+        try { command = manifest.Resolve(launch).Command; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+
+        bool resolved = Path.IsPathRooted(command)
+                     || command.Contains(Path.DirectorySeparatorChar)
+                     || command.Contains('/');
+
+        return resolved ? null : command;
     }
 
     /// <summary>

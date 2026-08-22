@@ -356,6 +356,41 @@
           StandardOutputImportance="high" />
   </Target>
 
+  <!--
+    ...and into the PUBLISHED tree, which is a separate question from landing beside the assemblies.
+
+    A file an Exec drops into $(OutDir) is not an MSBuild item, and `dotnet publish` copies ITEMS,
+    not the output folder - so every one of these helpers was left behind, and every packaged build
+    (.msi, .dmg, .deb, all of which package the publish tree) shipped without them. Measured, not
+    supposed: a publish of this project produced no worker at all while the build folder beside it
+    had one. The symptom is a kit that evaluates fine under `dotnet run` and refuses on an installed
+    copy, with a message about a program the user never installed and could not have.
+
+    Named files rather than a wildcard. The output folder is full of build products, and "everything
+    that is not an assembly" would sweep up whatever a future dependency leaves lying there.
+    Missing ones are skipped: each helper is optional and platform-specific, so on any one machine
+    most of this list does not exist and that is the normal case, not a failure.
+  -->
+  <Target Name="CrfPublishHelperPrograms" BeforeTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <!-- the device worker: the Linux/macOS build, and Windows' launcher stub + callback module -->
+      <_CrfHelperProgram Include="$(OutDir)senior_worker" />
+      <_CrfHelperProgram Include="$(OutDir)senior_worker.exe" />
+      <_CrfHelperProgram Include="$(OutDir)crf-model-host.dll" />
+      <!-- the OSDI worker -->
+      <_CrfHelperProgram Include="$(OutDir)osdi-worker" />
+      <!-- the macOS VM host, with the kernel and initramfs it looks for beside itself -->
+      <_CrfHelperProgram Include="$(OutDir)crf-vmhost" />
+      <_CrfHelperProgram Include="$(OutDir)crf-linux-kernel" />
+      <_CrfHelperProgram Include="$(OutDir)crf-linux-initramfs.cpio.gz" />
+
+      <ResolvedFileToPublish Include="@(_CrfHelperProgram)" Condition="Exists('%(FullPath)')">
+        <RelativePath>%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
   <PropertyGroup>
     <_CrfVmImageFlag Condition="'$(CrfBuildVmImage)' == 'true'">--with-image</_CrfVmImageFlag>
   </PropertyGroup>

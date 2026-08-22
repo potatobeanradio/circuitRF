@@ -138,6 +138,16 @@ if [ "$target" = windows ]; then
     fi
 
     if command -v gcc >/dev/null 2>&1 && [ "${OS:-}" = "Windows_NT" ]; then
+        # A host gcc is the one path here that cannot be told what to target, so what it targets is
+        # checked instead. On an ARM Windows machine a native gcc would build an arm64 worker, which
+        # starts and then cannot load a single model: the libraries it exists to load are x64, and a
+        # process holds one instruction set. Better to have no worker than one that cannot work.
+        case "$(gcc -dumpmachine 2>/dev/null)" in
+            aarch64*|arm64*)
+                say "the gcc on PATH builds for $(gcc -dumpmachine), and the worker must be x86-64"
+                say "to load a model library; install zig or an x86-64 mingw-w64 gcc."
+                exit 1 ;;
+        esac
         say "building with the host gcc (MSYS2/MinGW)"
         # shellcheck disable=SC2086
         gcc $WCFLAGS -DCRF_HOST_DLL -shared "$src" "$def" -o "$dll" -lm || exit 1

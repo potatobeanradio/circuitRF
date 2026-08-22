@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests;
@@ -24,6 +25,42 @@ public class PackagingScriptTests
 
     private static string RepoFile(params string[] parts) =>
         Path.Combine(new[] { RepoRoot().FullName }.Concat(parts).ToArray());
+
+    /// <summary>
+    /// <b>Every helper program a build produces must be listed for PUBLISH, not merely dropped into
+    /// the output folder.</b>
+    ///
+    /// <para>The device worker, the OSDI worker and the macOS VM host are built by scripts that copy
+    /// their products beside the assemblies — which is where circuitRF looks for them at run time, so
+    /// <c>dotnet run</c> works and the arrangement looks complete. It is not: a file an
+    /// <c>Exec</c> drops into the output folder is not an MSBuild item, and <c>dotnet publish</c>
+    /// copies items. Every packaged build (.msi, .dmg and .deb all package the publish tree) therefore
+    /// shipped without them, and the symptom appears an entire install later — a kit that evaluates
+    /// under <c>dotnet run</c> and refuses on the installed copy, naming a program the user never
+    /// installed and could not have.</para>
+    ///
+    /// <para>The names are read from the SCRIPT rather than written twice, so a product added there
+    /// and forgotten here fails this test instead of going missing from the installer.</para>
+    /// </summary>
+    [Fact]
+    public void EveryDeviceWorkerProduct_IsListedForPublish()
+    {
+        string script  = File.ReadAllText(RepoFile("tools", "senior-worker", "build.sh"));
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+
+        var products = Regex.Matches(script, @"\$out/([A-Za-z0-9._-]+)")
+                            .Select(m => m.Groups[1].Value)
+                            .Distinct()
+                            .ToList();
+
+        Assert.NotEmpty(products);
+        Assert.Contains("ResolvedFileToPublish", project, StringComparison.Ordinal);
+
+        foreach (string product in products)
+            Assert.True(project.Contains($"$(OutDir){product}\"", StringComparison.Ordinal),
+                        $"'{product}' is built beside the assemblies but never published, so no " +
+                        $"installer contains it. Add it to CrfPublishHelperPrograms.");
+    }
 
     /// <summary>
     /// <b>Every <c>.ps1</c> in <c>packaging/</c> must be pure ASCII.</b>

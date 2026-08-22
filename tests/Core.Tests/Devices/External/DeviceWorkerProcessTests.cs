@@ -28,6 +28,47 @@ public sealed class DeviceWorkerProcessTests
     private const string TypeId = "example_fet_v1";
 
     /// <summary>
+    /// A worker that is simply not on this machine says whose program it is and where it was looked
+    /// for, rather than passing on the operating system's own account.
+    ///
+    /// <para>That account names the file and the WORKING DIRECTORY and stops. The working directory
+    /// is a red herring — a bare name was never going to be looked for there — and what is left
+    /// reads as a kit that failed to ship something, when the missing program is circuitRF's own
+    /// optional component: it is built beside the application, and a build made where no C compiler
+    /// was present skips it, warns, and succeeds.</para>
+    /// </summary>
+    [Fact]
+    public void AWorkerThatIsNotOnThisMachine_SaysWhoseProgramItIsAndWhereItWasLookedFor()
+    {
+        var ex = Assert.Throws<ExternalDeviceException>(
+            () => ProcessDeviceWorkerTransport.Start("crf-no-such-worker-9d2f1a"));
+
+        Assert.Contains("tools folder", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("built alongside the application", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// ...and a failure that got FURTHER than "no such file" is left alone. A program that is there
+    /// but refused says nothing about where circuitRF looks, and advice to go and build one would
+    /// send the reader off to fix the wrong thing.
+    /// </summary>
+    [Fact]
+    public void AWorkerThatExistsButCannotRun_IsNotBlamedOnAMissingBuild()
+    {
+        string notAProgram = Path.Combine(Path.GetTempPath(), "crf-not-a-program-" + Guid.NewGuid().ToString("N")[..8]);
+        File.WriteAllText(notAProgram, "this is not an executable");
+
+        try
+        {
+            var ex = Assert.Throws<ExternalDeviceException>(
+                () => ProcessDeviceWorkerTransport.Start(notAProgram));
+
+            Assert.DoesNotContain("built alongside the application", ex.Message, StringComparison.Ordinal);
+        }
+        finally { try { File.Delete(notAProgram); } catch { /* best effort */ } }
+    }
+
+    /// <summary>
     /// Path to the reference worker, recorded by the build. Missing means it was not built, which
     /// is a broken test setup rather than a skip — silently passing would hide the loss of the only
     /// coverage of the process transport.

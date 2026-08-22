@@ -55,6 +55,65 @@ only need this command directly after changing the artwork.
 
 ---
 
+## Helper programs — the one prerequisite beyond the .NET SDK
+
+<a id="helper-programs"></a>
+
+circuitRF ships a few small programs beside its assemblies. It never loads a vendor's compiled
+device model itself: it starts a **device worker** that does, in its own process. On macOS that
+worker is a Linux binary run inside the small **VM host** circuitRF ships, with its own kernel and
+initramfs. All of them are **build products** — nothing binary is committed — built by
+`tools/senior-worker/`, `tools/osdi-worker/` and `tools/macos-vmhost/`, which `dotnet build` runs
+for you.
+
+**Those build steps only ever warn.** Nobody should be unable to build circuitRF for want of a C
+compiler, so a missing toolchain prints a line and the build succeeds. That is right for a build and
+wrong for a release, so **the packaging scripts refuse instead** — an installer missing the worker
+produces an application that reads a kit, describes it correctly, and refuses at Run naming a
+program the user never installed and had no way to install.
+
+So a C compiler must be on PATH when you package. **zig** is the cheapest — one archive, no
+installer, no daemon, and it cross-compiles the x86-64 Windows worker from an ARM machine:
+
+```powershell
+winget install zig.zig                      # Windows  (or: scoop install zig)
+```
+```bash
+brew install zig                            # macOS
+sudo snap install zig --classic --beta      # Linux    (or your package manager, or ziglang.org/download)
+```
+
+Then `dotnet build` picks it up by itself. To build the helpers without a full build:
+
+```bash
+tools/senior-worker/ensure-built.sh                       # macOS / Linux
+tools/macos-vmhost/ensure-built.sh --with-image           # macOS only — the ~330 MB, once
+```
+```powershell
+tools\senior-worker\ensure-built.cmd                      # Windows
+```
+
+zig is not the only route:
+
+| Platform | Alternatives to zig | Also needed |
+|---|---|---|
+| Windows | x86-64 MSYS2/MinGW `gcc`, or Docker/Podman plus a `bash` | |
+| macOS | Docker/Podman | Xcode command line tools, and a network for the VM image |
+| Linux | host `gcc` (x86-64), or Docker/Podman | |
+
+Two things worth knowing before they surprise you:
+
+- **The Windows worker is built for x86-64 even on an ARM machine, deliberately.** It exists to load
+  vendor model libraries, those ship as x64, and a process holds exactly one instruction set —
+  Windows runs the pair under its own translation. A native ARM worker would start and then fail to
+  load a single model, so a `gcc` that builds for arm64 is refused rather than used.
+- **There is no 64-bit ARM Linux build of the worker.** `build-deb.sh arm64` says so and packages
+  without it; everything else in that package is unaffected.
+
+To package deliberately without them, set `CRF_ALLOW_NO_DEVICE_WORKER=1`.
+
+---
+
 ## Windows — `.msi` (x64, arm64, x86)
 
 **One-time setup**, in PowerShell:
@@ -63,7 +122,7 @@ only need this command directly after changing the artwork.
 dotnet tool install --global wix
 ```
 
-That is the whole setup. **Do not add the `WixToolset.UI.wixext` extension by hand** — the build
+That is the whole WiX setup (see *Helper programs* above for the C toolchain). **Do not add the `WixToolset.UI.wixext` extension by hand** — the build
 script installs it, pinned to the `wix` actually on your PATH. The WiX extension cache is keyed by
 wix version, so an extension added once and a `dotnet tool update --global wix` later stop seeing
 each other, and the symptom is
@@ -101,7 +160,8 @@ signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 dist\circu
 
 ## macOS — `.dmg` (Apple Silicon)
 
-No setup beyond the .NET SDK — everything else ships with macOS.
+No setup beyond the .NET SDK and the toolchain in *Helper programs* above — everything else ships
+with macOS.
 
 ```bash
 ./packaging/macos/build-dmg.sh                # → dist/circuitRF-0.9.0-beta.1-arm64.dmg

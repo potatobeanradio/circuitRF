@@ -286,7 +286,36 @@ If you have your own loadpull measurements in either format, dropping them at th
 the same code. The parsers and the tests that read them are in the repository; only the data is not.
 
 
-### 4. Optional — package it as an app
+### 4. Optional — the device workers
+
+Needed only for kits whose device models ship as **compiled libraries**. `dotnet build` builds the
+workers itself *if a C compiler is on PATH* — with none, it warns and carries on, and such a kit
+refuses at Run.
+
+Install one, then rebuild:
+
+```powershell
+winget install zig.zig                      # Windows  (or: scoop install zig)
+```
+```bash
+brew install zig                            # macOS
+sudo snap install zig --classic --beta      # Linux    (or your package manager)
+```
+```bash
+dotnet build
+```
+
+macOS also runs those Linux models in a VM circuitRF ships — one extra ~330 MB download, once:
+
+```bash
+dotnet build src/Ui -p:CrfBuildVmImage=true
+```
+
+Alternatives to zig (MinGW `gcc`, Docker/Podman) and the rest:
+[BUILDING.md ▸ Helper programs](BUILDING.md#helper-programs).
+
+
+### 5. Optional — package it as an app
 
 [**BUILDING.md**](BUILDING.md) has step-by-step instructions for producing the installers users
 download: `.msi` (Windows x64/arm64/x86), `.dmg` (macOS Apple Silicon) and `.deb` (Linux x64/arm64).

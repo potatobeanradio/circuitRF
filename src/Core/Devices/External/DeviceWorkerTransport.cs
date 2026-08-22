@@ -148,11 +148,46 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
         }
         catch (Exception ex) when (ex is not ExternalDeviceException)
         {
-            throw new ExternalDeviceException(
-                $"The device worker '{executablePath}' could not be started: {ex.Message}", ex);
+            throw new ExternalDeviceException(WhyItDidNotStart(executablePath, ex), ex);
         }
 
         return new ProcessDeviceWorkerTransport(process, executablePath);
+    }
+
+    /// <summary>
+    /// Why a worker did not start, said in terms of what is actually missing.
+    ///
+    /// <para>The operating system's own message for a program that is not there names the file and
+    /// the working directory and stops — and the working directory is a red herring, because a bare
+    /// name was never going to be looked for there. What the reader needs instead is that this
+    /// particular program is <b>circuitRF's own optional component</b>, built beside the application
+    /// rather than shipped by the kit: a build made where no C compiler was present skips it, warns,
+    /// and succeeds. Nothing else in the run says so, and from the message alone the natural reading
+    /// is that the kit is broken — which it is not.</para>
+    ///
+    /// <para>Only ever added to a genuine "no such file", never to a failure that got further than
+    /// that. A permission or format error means the program IS there, and telling someone to go and
+    /// build one would send them off to fix the wrong thing.</para>
+    /// </summary>
+    private static string WhyItDidNotStart(string executablePath, Exception ex)
+    {
+        string plain = $"The device worker '{executablePath}' could not be started: {ex.Message}";
+
+        bool notFound = ex is System.ComponentModel.Win32Exception w
+                     && w.NativeErrorCode is 2 or 3;     // ENOENT / ERROR_FILE_NOT_FOUND / _PATH_
+        if (!notFound) return plain;
+
+        bool bareName = !Path.IsPathRooted(executablePath)
+                     && !executablePath.Contains(Path.DirectorySeparatorChar)
+                     && !executablePath.Contains('/');
+
+        return plain + (bareName
+            ? $" It is not in circuitRF's own tools folder ('{DeviceWorkerManifest.ToolsDirectory}') " +
+              "or anywhere on this system's program path. That program is circuitRF's own component " +
+              "and is built alongside the application, not shipped by the kit — a build made on a " +
+              "machine with no C compiler skips it with a warning and still succeeds, which is the " +
+              "state this message describes. A kit whose devices are compiled models needs it."
+            : " There is no file at that path.");
     }
 
     public Stream Requests => _process.StandardInput.BaseStream;

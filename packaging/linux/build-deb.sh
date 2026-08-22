@@ -40,6 +40,57 @@ PUBLISH="${ROOT}/publish/${RID}"
 rm -rf "$PUBLISH"
 dotnet publish "${ROOT}/src/Ui/CircuitRF.Ui.csproj" -c Release -r "$RID" --self-contained true -o "$PUBLISH"
 
+# ── The device worker ─────────────────────────────────────────────────────────
+#
+# The program that evaluates a kit's compiled device models. The .csproj builds it (via
+# tools/senior-worker/ensure-built.sh) and publishes it, but that build step is warn-only BY DESIGN
+# — nobody should be unable to build circuitRF for want of a C compiler.
+#
+# That is right for a build and wrong for a RELEASE: a package missing it installs an application
+# that reads a kit, describes it correctly, and then refuses at Run naming a program the user never
+# installed and had no way to install. So packaging checks what building only warns about.
+#
+# Set CRF_ALLOW_NO_DEVICE_WORKER=1 to package without it on purpose.
+WORKER="${PUBLISH}/senior_worker"
+
+if [ -f "$WORKER" ]; then
+    # ARCHITECTURE, from the ELF header rather than from where the file came from: bytes 18-19,
+    # little-endian, 0x3E = x86-64 and 0xB7 = aarch64. A worker of the wrong architecture is not a
+    # lesser version of a working one — it starts and then cannot load a single model — so it is
+    # dropped rather than shipped, and the run-time message about a missing worker is the accurate
+    # one to leave the user with.
+    machine="$(od -An -tx1 -j18 -N2 "$WORKER" | tr -d ' ')"
+    case "${RID}:${machine}" in
+        linux-x64:3e00|linux-arm64:b700) ;;
+        *) echo "⚠️  The device worker in the publish tree is not built for ${RID}; leaving it out."
+           rm -f "$WORKER" ;;
+    esac
+fi
+
+if [ ! -f "$WORKER" ]; then
+    if [ "$RID" = linux-arm64 ]; then
+        # Stated plainly rather than failed on: nothing in this repo cross-compiles the worker for
+        # 64-bit ARM Linux today, so there is no action this message could ask for.
+        echo "⚠️  Packaging without the device worker: no arm64 Linux build of it exists."
+        echo "    Everything else in this package is unaffected; kits whose devices are compiled"
+        echo "    models will say at Run that the worker is missing."
+    elif [ "${CRF_ALLOW_NO_DEVICE_WORKER:-}" = 1 ]; then
+        echo "⚠️  Packaging without the device worker on purpose. Compiled device models will not run."
+    else
+        echo "❌ The device worker is missing from ${PUBLISH}."
+        echo ""
+        echo "   circuitRF builds it during \`dotnet build\`, but only warns when no C compiler is"
+        echo "   present — so this machine has none the build could use. Install one and re-run:"
+        echo ""
+        echo "       zig            one download, no daemon; the preferred route"
+        echo "       gcc            the host compiler, on an x86-64 machine"
+        echo "       docker/podman  pulls a small gcc image the first time"
+        echo ""
+        echo "   To package deliberately without it: CRF_ALLOW_NO_DEVICE_WORKER=1 $0 $ARCH"
+        exit 1
+    fi
+fi
+
 DIST="${ROOT}/dist"
 DEB="${DIST}/circuitRF-${CRF_VERSION}-${ARCH}.deb"
 mkdir -p "$DIST"

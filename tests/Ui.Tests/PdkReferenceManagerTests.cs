@@ -463,6 +463,31 @@ public sealed class PdkReferenceManagerTests : IDisposable
     }
 
     [Fact]
+    public void AKitWhoseWorkerIsNotOnThisMachine_SaysSoAtImport_NotAtRun()
+    {
+        // An entry IS written for a platform whose worker is absent, deliberately: an import done on
+        // one machine has to be able to describe another, and a bare name is a promise the running
+        // machine keeps. This machine is the one where that promise can be checked — and if it is not
+        // checked, the import says the kit can be simulated here and the first thing to disagree is a
+        // failed Run.
+        Directory.CreateDirectory(Path.Combine(KitDir, "PART_A", "symbol"));
+        File.WriteAllText(Path.Combine(KitDir, "PART_A", "symbol", "PART_A.dsn"), SymbolFile);
+        File.WriteAllText(Path.Combine(KitDir, "device-provider.json"), $$"""
+            {
+              "provider": "SampleKit",
+              "workers":  [ { "platform": "{{DeviceWorkerManifest.CurrentRuntimeIdentifier()}}",
+                              "command":  "crf-no-such-worker-4b81c7" } ]
+            }
+            """);
+
+        var outcome = PdkPartInstaller.Install(PdkImporter.Import(KitDir));
+        string note = Assert.Single(outcome.Notes ?? [], n => n.Contains("simulation settings", StringComparison.Ordinal));
+
+        Assert.Contains("can be simulated on this machine", note, StringComparison.Ordinal);
+        Assert.Contains("crf-no-such-worker-4b81c7",        note, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CountsAreNotWrittenWithAParentheticalS()
     {
         // "1 model-selection parameter(s)" is a template showing through. Pluralised properly.
