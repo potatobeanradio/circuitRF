@@ -704,9 +704,22 @@ public static class PdkPartInstaller
             ["workers"]       = workers,
         };
 
+        // THE BUILD THIS MACHINE WILL ACTUALLY RUN, which is not necessarily the one `match` names.
+        //
+        // `match` is linux ?? windows — a preference for deciding whether the kit has a compiled
+        // model at all, not a statement about this machine. Reporting it verbatim told a Windows
+        // user the name and folder of the Linux build, which is a file that will never be opened
+        // there: the two builds are different binaries and can be different versions of the kit, so
+        // a model that misbehaves on one platform and not the other cannot even be asked the first
+        // question — whether it is the same build.
+        var here = DeviceWorkerManifest.CurrentOs() == "win" ? windows ?? match : linux ?? match;
+
         notes.Add($"Devices in this kit will be evaluated using " +
-                  $"'{Path.GetFileName(match.Path)}' ({string.Join(", ", match.Types)}), found at " +
-                  $"{Path.GetDirectoryName(match.Path)}.");
+                  $"'{Path.GetFileName(here.Path)}' ({string.Join(", ", here.Types)}), found at " +
+                  $"{Path.GetDirectoryName(here.Path)}." +
+                  (ReferenceEquals(here, match) || match is null
+                      ? ""
+                      : $" Its other platform's build is '{Path.GetFileName(match.Path)}'."));
 
         return manifest;
 

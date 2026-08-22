@@ -493,13 +493,65 @@ typedef int (*AnalyzeFn)(void*, double*);
 #ifdef _WIN32
 static jmp_buf     g_segv;
 static volatile LONG g_segv_armed = 0;
+
+/* WHERE THE FAULT WAS, not merely that there was one.
+ *
+ * "access violation caught" is true of every possible cause and useful for none of them: a model
+ * refusing a bias, a callback of ours writing through a pointer it should not, a function pointer
+ * that is null, and a model reading a file it could not open all read identically. The faulting
+ * ADDRESS separates them in one line -- which module it lands in says whose code faulted, and the
+ * address that was accessed says what kind of mistake it was (a small number is a null-pointer
+ * dereference; a plausible-looking one is a stale or wrongly-typed pointer).
+ *
+ * Recorded here and printed after the longjmp: a vectored handler runs with the faulting thread in
+ * an arbitrary state, so it copies three values and does nothing else. */
+static void*     volatile g_fault_at     = NULL;
+static ULONG_PTR volatile g_fault_op     = 0;   /* 0 read, 1 write, 8 execute (DEP) */
+static ULONG_PTR volatile g_fault_target = 0;
+
 static LONG CALLBACK crf_vectored_handler(EXCEPTION_POINTERS* ep) {
     if (g_segv_armed && ep && ep->ExceptionRecord &&
         ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
         g_segv_armed = 0;
+        g_fault_at = ep->ExceptionRecord->ExceptionAddress;
+        if (ep->ExceptionRecord->NumberParameters >= 2) {
+            g_fault_op     = ep->ExceptionRecord->ExceptionInformation[0];
+            g_fault_target = ep->ExceptionRecord->ExceptionInformation[1];
+        }
         longjmp(g_segv, 1);
     }
     return EXCEPTION_CONTINUE_SEARCH;
+}
+
+/* Capped: one faulting model faults on every point, and a diagnostic that fills the log it is meant
+ * to be read in is not one. The first few say everything the rest would. */
+static void report_fault(const char* family) {
+    static int logged = 0;
+
+    if (logged >= 4) return;
+    if (++logged == 4) {
+        LOGF("eval: access violation caught -- further ones will not be reported individually\n");
+        return;
+    }
+
+    char      mod[MAX_PATH] = "";
+    HMODULE   h   = NULL;
+    ULONG_PTR off = 0;
+
+    if (g_fault_at &&
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)g_fault_at, &h) && h) {
+        if (!GetModuleFileNameA(h, mod, sizeof(mod))) mod[0] = '\0';
+        off = (ULONG_PTR)g_fault_at - (ULONG_PTR)h;
+    }
+
+    LOGF("eval %s: access violation caught at %p (%s%s+0x%llx), %s address %p\n",
+         family ? family : "?", (void*)g_fault_at,
+         mod[0] ? mod : "unknown module", mod[0] ? " " : "",
+         (unsigned long long)off,
+         g_fault_op == 1 ? "writing" : g_fault_op == 8 ? "executing" : "reading",
+         (void*)g_fault_target);
 }
 #else
 static sigjmp_buf g_segv;
@@ -524,7 +576,7 @@ static int eval_one(Instance* in, const double* v, double* vout, const double* d
     if (setjmp(g_segv) == 0) {
         ok = ((AnalyzeFn)in->fam->analyze_nl)(in->inst, vbuf) != 0;
     } else {
-        LOGF("eval: access violation caught\n");
+        report_fault(in->fam ? in->fam->name : NULL);
         ok = 0;
     }
     g_segv_armed = 0;
@@ -1167,7 +1219,12 @@ int crf_worker_main(int argc, char** argv) {
     }
     if (argc > 2) load_alias_map(argv[2]);
 
-    LOGF("worker ready: %d families, base=0x%llx\n", g_nfam, (unsigned long long)g_base);
+    /* WHICH LIBRARY THIS IS. A kit ships one build per platform and often several per platform, and
+     * nothing else in a run says which of them was chosen -- so a model that behaves differently
+     * from the same kit on another machine offers no way to ask the first question, which is
+     * whether it is even the same build. One line, at the only place that knows. */
+    LOGF("worker ready: %d families, base=0x%llx, model=%s\n",
+         g_nfam, (unsigned long long)g_base, argv[1]);
 
     for (;;) {
         uint32_t hdr[2];
