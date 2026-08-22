@@ -257,19 +257,56 @@ int add_tr_lossy_inductor(void* i_, int i, int j, double l, double r) { (void)i_
 int add_tr_mutual_inductor(void* i_, int i, int j, int k, int l, double m) { (void)i_;(void)i;(void)j;(void)k;(void)l;(void)m; return 1; }
 int add_tr_resistor(void* i_, int i, int j, double r) { (void)i_;(void)i;(void)j;(void)r; return 1; }
 
-/* get_delay_v -- signature established:
- *     get_delay_v(UserInstDef*, int iPin, int jPin, double *out, double tau)
- * The result returns through the OUT-POINTER, not the return register. A stub that does not write
- * *out silently drives the model with a controlling voltage of zero at every bias -- that bug cost
- * this project the entire M1 "no drain current" symptom, so it is implemented properly here and
- * every (i, j, tau) triple is recorded so the descriptor can report the delay structure.
+/* CAN THIS ADDRESS BE WRITTEN? Asked of one pointer only: get_delay_v's out-parameter, the single
+ * value in this file that arrives from a caller whose declaration is inferred rather than published.
+ * Everything else written here was allocated here. One VirtualQuery, and it is what keeps a mistaken
+ * argument layout reportable -- a write through a value that is not a pointer is an access violation
+ * naming nothing, indistinguishable from the model refusing the bias. */
+static int crf_writable(const void* p) {
+#ifdef _WIN32
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!p || !VirtualQuery(p, &mbi, sizeof(mbi))) return 0;
+    if (mbi.State != MEM_COMMIT) return 0;
+    if (mbi.Protect & PAGE_GUARD) return 0;
+    return (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY |
+                           PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
+#else
+    return p != NULL;
+#endif
+}
+
+/* get_delay_v -- the delayed voltage across a pin pair, returned through an OUT-POINTER.
+ *
+ * THE SIGNATURE THIS WORKER IMPLEMENTS:
+ *
+ *     double get_delay_v(UserInstDef* inst, int iPin, int jPin, double tau, double* out)
+ *
+ * The result travels through `out`. The return value is a convenience and a model is free to ignore
+ * it, so the write is not optional: a host that skips it drives the model with a controlling voltage
+ * of zero at every bias, and the model then evaluates, converges, and reports no drain current.
+ *
+ * ARGUMENT ORDER IS PART OF THE CONTRACT, AND ONLY ONE PLATFORM ENFORCES IT. `tau` precedes `out`
+ * and the two may not be exchanged:
+ *
+ *   - SysV x86-64 (Linux, macOS) classifies arguments by TYPE into two independent register files:
+ *     integers and pointers take rdi, rsi, rdx, rcx, r8, r9 in their own order, doubles take
+ *     xmm0..7 in theirs. Either order puts `out` in rcx and `tau` in xmm0, so a host that has the
+ *     two the wrong way round is still correct here and no test on this platform can say otherwise.
+ *   - Windows x64 assigns registers BY POSITION across both classes: argument 4 is rcx or xmm3
+ *     according to its type, argument 5 is always on the stack. `tau` therefore arrives in xmm3 and
+ *     `out` at [rsp+0x28] on entry. A host with the two exchanged reads `out` from r9, which the
+ *     caller never set for this call, and writes a double through whatever it happens to hold.
+ *
+ * One declaration serves both platforms: it compiles to identical code under SysV and to the
+ * correct one on Windows.
  *
  * At DC delayed == instantaneous. In HB the caller supplies the per-harmonic delayed value
  * (v_delayed = V(i)-V(j) rotated by exp(-j*w*tau)) through the eval payload; when it does,
- * g_curdelay is non-NULL and is used verbatim. */
+ * g_curdelay is non-NULL and is used verbatim. Every (i, j, tau) triple is recorded so the
+ * descriptor can report the delay structure. */
 static int g_no_delay_write = 0;   /* SENIOR_NO_DELAY_WRITE=1 -- reproduces the old broken stub,
                                     * so the causal claim in §30.1 can be tested rather than asserted */
-double get_delay_v(void* inst, int i, int j, double* out, double tau) {
+double get_delay_v(void* inst, int i, int j, double tau, double* out) {
     (void)inst;
     if (g_no_delay_write) {
         if (g_delay_idx < MAX_DELAY) { g_delay[g_delay_idx].i = i; g_delay[g_delay_idx].j = j;
@@ -285,7 +322,23 @@ double get_delay_v(void* inst, int i, int j, double* out, double tau) {
         g_delay[g_delay_idx].i = i; g_delay[g_delay_idx].j = j; g_delay[g_delay_idx].tau = tau;
     }
     g_delay_idx++;
-    if (out) *out = dv;
+
+    /* Reported, not crashed. A model whose argument layout differs from the contract above hands
+     * this callback something that is not a pointer, and the one useful thing to do with it is to
+     * name the callback that received it. */
+    if (out) {
+        if (crf_writable(out)) {
+            *out = dv;
+        } else {
+            static int said = 0;
+            if (!said) {
+                said = 1;
+                LOGF("get_delay_v: out-pointer %p is not writable, so the delayed voltage is not "
+                     "being delivered -- this model's argument layout is not the one this build "
+                     "expects\n", (void*)out);
+            }
+        }
+    }
     return dv;
 }
 
