@@ -47,6 +47,26 @@ Whichever of these is present does the cross-compiling:
 **On macOS the Linux worker runs inside the Linux VM `crf-vmhost` supplies** — nothing on macOS can
 load a Linux ELF, and there is no macOS build of these libraries to load instead.
 
+## Seeing what the worker did — `CRF_WORKER_LOG`
+
+The worker writes an account of everything it MEASURES to its error stream: which nodes it found to
+be free unknowns, which pins carry a temperature, whether a model's own Jacobian agrees with its
+currents, which library and which data files it opened. circuitRF captures it, but only shows it
+where something threw — and the failures worth this log rarely throw. A model that faults on every
+evaluation, for instance, surfaces as a circuit that will not converge.
+
+```sh
+CRF_WORKER_LOG=1                 # into circuitRF's own Messages pane / the CLI's stderr
+CRF_WORKER_LOG=/tmp/worker.log   # every line, in order, into a file; nothing in the UI
+```
+
+The two differ on purpose. `1` is for reading while you work, so **identical lines are shown once**:
+a worker's account is per device instance, and a design placing the same part five times says the
+same thing five times. What differs between instances is what is worth reading, and that is exactly
+what survives. A file gets everything, uncapped and in order — the form to hand to somebody else.
+
+Unset, nothing is emitted and nothing is measured differently.
+
 ## Windows: two products, because a model imports its host by NAME
 
 The tempting assumption is that a Windows worker is a port — swap `dlopen` for `LoadLibrary`, walk

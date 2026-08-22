@@ -849,22 +849,43 @@ static void cmd_create(const char* js, size_t jl) {
      * EVERY parameter is reported, not only the file ones. The worker matches the request against
      * the family's OWN declared keywords, so a name the host spells differently is not an error
      * anywhere -- it simply never matches, the model keeps its default, and the only symptom is a
-     * device behaving as though a parameter it was given had not been given. Saying "supplied" or
-     * "NOT SUPPLIED" per declared keyword is what makes that visible instead of invisible. */
-    for (int p = 0; p < f->numPars; p++) {
-        if (f->paramDataType[p] == 3) {
-            const char* v = in->pdata[p].v.s;
-            if (!v) { LOGF("create %s: %s (file) NOT SUPPLIED\n", f->name, f->paramKeyword[p]); continue; }
-            FILE* probe = fopen(v, "rb");
-            LOGF("create %s: %s=%s (%s)\n", f->name, f->paramKeyword[p], v,
-                 probe ? "readable" : "NOT READABLE HERE");
-            if (probe) fclose(probe);
-        } else {
-            double d;
-            int supplied = pobj && json_num(pobj, plen, f->paramKeyword[p], &d);
-            LOGF("create %s: %s=%.6g (%s)\n", f->name, f->paramKeyword[p], in->pdata[p].v.d,
-                 supplied ? "supplied" : "NOT SUPPLIED, model default stands");
+     * device behaving as though a parameter it was given had not been given. Marking the ones that
+     * fell back to a default is what makes that visible instead of invisible.
+     *
+     * ONE LINE PER CREATE, WITH ONLY THE EXCEPTIONS MARKED. A family can declare sixty parameters
+     * and a design can place the same part many times, so a line each is hundreds of lines saying
+     * that everything is as expected. A value that arrived is printed bare; "(default)" and
+     * "(NOT READABLE HERE)" are what a reader is scanning for, and they stand out on one line far
+     * better than in a column of identical neighbours. */
+    {
+        char b[4096]; size_t o = 0; int truncated = 0;
+        o += (size_t)snprintf(b + o, sizeof(b) - o, "create %s:", f->name);
+
+        for (int p = 0; p < f->numPars; p++) {
+            char item[512];
+
+            if (f->paramDataType[p] == 3) {
+                const char* v = in->pdata[p].v.s;
+                if (!v) {
+                    snprintf(item, sizeof(item), " %s=(file NOT SUPPLIED)", f->paramKeyword[p]);
+                } else {
+                    FILE* probe = fopen(v, "rb");
+                    snprintf(item, sizeof(item), " %s=%s%s", f->paramKeyword[p], v,
+                             probe ? "" : "(NOT READABLE HERE)");
+                    if (probe) fclose(probe);
+                }
+            } else {
+                double d;
+                int supplied = pobj && json_num(pobj, plen, f->paramKeyword[p], &d);
+                snprintf(item, sizeof(item), " %s=%.6g%s", f->paramKeyword[p], in->pdata[p].v.d,
+                         supplied ? "" : "(default)");
+            }
+
+            if (o + strlen(item) + 8 >= sizeof(b)) { truncated = 1; break; }
+            o += (size_t)snprintf(b + o, sizeof(b) - o, "%s", item);
         }
+
+        LOGF("%s%s\n", b, truncated ? " ..." : "");
     }
 
     char tagbuf[64];

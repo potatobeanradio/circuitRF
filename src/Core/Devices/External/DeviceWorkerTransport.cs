@@ -76,7 +76,8 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     /// <summary>How many of a worker's lines to pass on when <see cref="MirrorErrorOutput"/> is on.
     /// A worker logs once per set-up step, so a real session is tens of lines — but a device refusing
     /// every point logs once per point, and a diagnostic that floods the thing it is meant to be read
-    /// in is not one.</summary>
+    /// in is not one. Does not apply to <see cref="ErrorOutputFile"/>: a file is where the whole
+    /// thing is wanted.</summary>
     private const int MirroredLineLimit = 500;
 
     private readonly Process       _process;
@@ -84,7 +85,12 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     private readonly Lock          _errorGate  = new();
     private readonly string        _provider;
 
-    private int _mirrored;
+    /// <summary>Lines already passed on for this worker, so a repeat is not passed on twice.</summary>
+    private readonly HashSet<string> _seenLines = new(StringComparer.Ordinal);
+    private readonly Lock            _mirrorGate = new();
+
+    private int  _mirrored;
+    private bool _saidRepeatsAreHidden;
 
     private ProcessDeviceWorkerTransport(Process process, string origin, string provider)
     {
@@ -119,10 +125,45 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     /// lines, but it is read only where something THREW — and this failure mode never throws, so the
     /// one description of what happened was unreachable in exactly the case that needs it.</para>
     ///
+    /// <para><b>REPEATS ARE SHOWN ONCE.</b> A worker's account is per DEVICE INSTANCE, and a design
+    /// placing the same part five times produces five identical accounts — the same node roles, the
+    /// same Jacobian comparison — which is five times the reading for none of the information. What
+    /// is worth seeing is what DIFFERS between instances, and that is exactly what survives showing
+    /// each distinct line once. Full fidelity, in order and with the repeats, is what
+    /// <see cref="ErrorOutputFile"/> is for.</para>
+    ///
     /// <para>Off by default because it is per-line and a worker under a failing solve is chatty.</para>
     /// </summary>
-    public static bool MirrorErrorOutput { get; set; } =
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CRF_WORKER_LOG"));
+    public static bool MirrorErrorOutput { get; set; } = ReadSwitch(out _);
+
+    /// <summary>
+    /// A file every line is written to verbatim — no de-duplication, no cap, and nothing shown in
+    /// the host — or null. Set <c>CRF_WORKER_LOG</c> to a PATH rather than to <c>1</c>.
+    ///
+    /// <para>This is the form to reach for when handing the log to somebody else: a complete
+    /// account, in order, of a run that may have produced thousands of lines, without any of it
+    /// landing in the window the user is trying to read.</para>
+    /// </summary>
+    public static string? ErrorOutputFile { get; set; } = ReadSwitchFile();
+
+    /// <summary>
+    /// Reads <c>CRF_WORKER_LOG</c>: <c>1</c>/<c>on</c>/<c>true</c>/<c>yes</c> asks for the host's own
+    /// log, anything else non-empty is taken as a file path.
+    /// </summary>
+    private static bool ReadSwitch(out string? file)
+    {
+        file = null;
+        string? v = Environment.GetEnvironmentVariable("CRF_WORKER_LOG")?.Trim();
+        if (string.IsNullOrEmpty(v)) return false;
+
+        if (v is "1" or "on" or "true" or "yes" or "ON" or "TRUE" or "YES" or "On" or "True" or "Yes")
+            return true;
+
+        file = v;
+        return false;
+    }
+
+    private static string? ReadSwitchFile() { ReadSwitch(out string? f); return f; }
 
     /// <summary>
     /// One line a worker wrote to its error stream, as it arrives. Only raised while
@@ -132,19 +173,61 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
 
     private void Mirror(string line)
     {
+        WriteToFile(line);
+
         if (!MirrorErrorOutput) return;
 
-        int n = Interlocked.Increment(ref _mirrored);
-        if (n > MirroredLineLimit) return;
-
-        string text = n == MirroredLineLimit
-            ? $"(further output from this worker is not being shown; {MirroredLineLimit} lines is the limit)"
-            : line;
+        // Each DISTINCT line once. What a worker says per instance is identical across instances of
+        // the same part, so the repeats carry nothing the first one did not; the lines that differ
+        // between them are the ones worth reading, and those all survive.
+        string text;
+        lock (_mirrorGate)
+        {
+            if (!_seenLines.Add(line))
+            {
+                if (_saidRepeatsAreHidden) return;
+                _saidRepeatsAreHidden = true;
+                text = "(this worker is repeating itself for each device instance; "
+                     + "identical lines are shown once. Set CRF_WORKER_LOG to a file path for all of them)";
+            }
+            else
+            {
+                int n = ++_mirrored;
+                if (n > MirroredLineLimit) return;
+                text = n == MirroredLineLimit
+                    ? $"(further output from this worker is not being shown; {MirroredLineLimit} lines is the limit)"
+                    : line;
+            }
+        }
 
         // A host's own reporting must never be the reason a worker fails — the same rule Starting
         // follows, and for the same reason: the failure would be attributed to the kit.
         try { Logged?.Invoke(new DeviceWorkerLogLine(_provider, Origin, text)); }
         catch { /* ignored */ }
+    }
+
+    private static readonly Lock FileGate = new();
+
+    /// <summary>
+    /// Appends one line to <see cref="ErrorOutputFile"/>, tagged with the worker it came from so two
+    /// workers writing one file stay separable. Silent on failure: a diagnostic that cannot be
+    /// written must not become the failure being diagnosed.
+    /// </summary>
+    private void WriteToFile(string line)
+    {
+        string? path = ErrorOutputFile;
+        if (string.IsNullOrEmpty(path)) return;
+
+        try
+        {
+            lock (FileGate)
+                File.AppendAllText(path,
+                    (string.IsNullOrWhiteSpace(_provider) ? "" : _provider + ": ") + line + Environment.NewLine);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            /* nothing to say that would not itself be noise */
+        }
     }
 
     /// <summary>

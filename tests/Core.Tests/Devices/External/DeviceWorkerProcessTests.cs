@@ -53,11 +53,7 @@ public sealed class DeviceWorkerProcessTests
             using var transport = ProcessDeviceWorkerTransport.Start(
                 WorkerPath, ["--fail-with", "measured node 6 as undriven"], forProvider: "AcmeKit");
 
-            for (int i = 0; i < 100; i++)
-            {
-                lock (seen) if (seen.Count > 0) break;
-                Thread.Sleep(20);
-            }
+            WaitForDelivery(transport, () => { lock (seen) return seen.Count > 0; });
 
             lock (seen) Assert.Contains("measured node 6 as undriven", seen);
         }
@@ -86,6 +82,114 @@ public sealed class DeviceWorkerProcessTests
 
         Assert.Contains("tools folder", ex.Message, StringComparison.Ordinal);
         Assert.Contains("built alongside the application", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A program that writes the given lines to its error stream, on any platform.</summary>
+    private static (string Command, string[] Args) Echoing(params string[] lines)
+    {
+        bool win = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        string script = string.Join(win ? " & " : "; ", lines.Select(l => $">&2 echo {l}"));
+
+        return win ? ("cmd.exe", ["/c", script]) : ("/bin/sh", ["-c", script]);
+    }
+
+    /// <summary>
+    /// Waits for a worker's error stream to have been DELIVERED, not for a number of milliseconds.
+    ///
+    /// <para><b>A timed poll is the wrong instrument here and was measured to be:</b> reading
+    /// <c>RecentErrorOutput</c> waits for the process to exit and its redirected readers to reach
+    /// end of stream, and every <c>Logged</c> event is raised from inside that same reader — so once
+    /// it returns, everything the worker said has arrived. A fixed budget instead races the machine,
+    /// and loses on a busy one: 3 failures in 8 runs of this file under a parallel Engine.Tests
+    /// run.</para>
+    ///
+    /// <para>The loop that follows is a backstop, not the mechanism — the flush itself is bounded,
+    /// so a machine slow enough to exhaust that bound still gets a fair chance.</para>
+    /// </summary>
+    private static void WaitForDelivery(ProcessDeviceWorkerTransport transport, Func<bool> done)
+    {
+        _ = transport.RecentErrorOutput;
+        for (int i = 0; i < 250 && !done(); i++) Thread.Sleep(20);
+    }
+
+    /// <summary>
+    /// A worker repeating itself says it once.
+    ///
+    /// <para><b>Why this and not everything.</b> A worker's account is per device INSTANCE — which
+    /// nodes are free unknowns, which pins are thermal, what its parameters resolved to — and a
+    /// design placing the same part five times produces five identical accounts. Showing all of
+    /// them is five times the reading for none of the information, and it buries the lines that
+    /// DIFFER between instances, which are the ones worth having. Those all survive: only an exact
+    /// repeat is held back.</para>
+    /// </summary>
+    [Fact]
+    public void AWorkerRepeatingItself_IsShownOnce()
+    {
+        var seen = new List<string>();
+        void Collect(DeviceWorkerLogLine l) { lock (seen) seen.Add(l.Line.Trim()); }
+
+        bool was = ProcessDeviceWorkerTransport.MirrorErrorOutput;
+        ProcessDeviceWorkerTransport.MirrorErrorOutput = true;
+        ProcessDeviceWorkerTransport.Logged += Collect;
+        try
+        {
+            var (command, args) = Echoing("alpha", "alpha", "beta");
+            using var transport = ProcessDeviceWorkerTransport.Start(command, args, forProvider: "AcmeKit");
+
+            WaitForDelivery(transport, () => { lock (seen) return seen.Contains("beta"); });
+
+            lock (seen)
+            {
+                Assert.Equal(1, seen.Count(l => l == "alpha"));   // the repeat is held back
+                Assert.Contains("beta", seen);                    // a line that DIFFERS still arrives
+                Assert.Contains(seen, l => l.Contains("shown once", StringComparison.Ordinal));
+            }
+        }
+        finally
+        {
+            ProcessDeviceWorkerTransport.Logged -= Collect;
+            ProcessDeviceWorkerTransport.MirrorErrorOutput = was;
+        }
+    }
+
+    /// <summary>
+    /// ...and the file form keeps every line, repeats included, so a complete account can be handed
+    /// to somebody else without any of it landing in the window the user is reading.
+    /// </summary>
+    [Fact]
+    public void TheFileForm_KeepsEveryLine_AndShowsNone()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "crf-worker-log-" + Guid.NewGuid().ToString("N")[..8] + ".txt");
+
+        var seen = new List<string>();
+        void Collect(DeviceWorkerLogLine l) { lock (seen) seen.Add(l.Line); }
+
+        bool   wasMirror = ProcessDeviceWorkerTransport.MirrorErrorOutput;
+        string? wasFile  = ProcessDeviceWorkerTransport.ErrorOutputFile;
+
+        ProcessDeviceWorkerTransport.MirrorErrorOutput = false;
+        ProcessDeviceWorkerTransport.ErrorOutputFile   = path;
+        ProcessDeviceWorkerTransport.Logged += Collect;
+        try
+        {
+            var (command, args) = Echoing("alpha", "alpha", "beta");
+            using var transport = ProcessDeviceWorkerTransport.Start(command, args, forProvider: "AcmeKit");
+
+            WaitForDelivery(transport,
+                () => File.Exists(path) && File.ReadAllText(path).Contains("beta", StringComparison.Ordinal));
+
+            string[] written = File.ReadAllLines(path);
+            Assert.Equal(2, written.Count(l => l.Contains("alpha", StringComparison.Ordinal)));
+            Assert.Contains(written, l => l.StartsWith("AcmeKit:", StringComparison.Ordinal));
+            lock (seen) Assert.Empty(seen);
+        }
+        finally
+        {
+            ProcessDeviceWorkerTransport.Logged -= Collect;
+            ProcessDeviceWorkerTransport.ErrorOutputFile   = wasFile;
+            ProcessDeviceWorkerTransport.MirrorErrorOutput = wasMirror;
+            try { File.Delete(path); } catch { /* best effort */ }
+        }
     }
 
     /// <summary>
