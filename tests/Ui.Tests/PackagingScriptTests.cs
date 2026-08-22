@@ -110,6 +110,39 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>IconGen must name a Linux native SkiaSharp itself.</b> SkiaSharp 4.148.0 - what Svg.Skia
+    /// 5.2.1 resolves to - declares <c>SkiaSharp.NativeAssets.Win32</c> and <c>.macOS</c> as
+    /// dependencies and no Linux equivalent, so on Linux nothing puts a <c>libSkiaSharp.so</c> in the
+    /// output and the tool dies at its first <c>SKSvg()</c> with a <c>DllNotFoundException</c>. Every
+    /// packaging script runs IconGen first, so this took out the whole of <c>build-deb.sh</c> at its
+    /// first step (owner-reported, 2026-08-21, Linux arm64 - and an x64 Linux box fails identically).
+    ///
+    /// <para>This is invisible from Windows and macOS, where the transitive native assets are present
+    /// and the tool works, which is exactly the class of failure this file exists for.</para>
+    ///
+    /// <para><b>.NoDependencies specifically.</b> The plain <c>SkiaSharp.NativeAssets.Linux</c> ships a
+    /// <c>.so</c> linked against <c>libfontconfig.so.1</c>, and on a machine without it the tool fails
+    /// one layer later with the same exception type. The artwork has no text in it, so no font is
+    /// needed; measured in a bare <c>dotnet/sdk:10.0</c> container, .NoDependencies renders all three
+    /// icon sets with no system packages installed at all.</para>
+    /// </summary>
+    [Fact]
+    public void IconGenNamesALinuxNativeSkiaSharp()
+    {
+        var project = File.ReadAllText(RepoFile("tools", "IconGen", "IconGen.csproj"));
+
+        Assert.True(project.Contains("SkiaSharp.NativeAssets.Linux.NoDependencies", StringComparison.Ordinal),
+            "tools/IconGen/IconGen.csproj no longer references SkiaSharp.NativeAssets.Linux.NoDependencies - "
+            + "IconGen, and therefore every packaging script's first step, cannot run on Linux without it.");
+
+        // Host-conditioned: the package is ~192 MB unpacked across 13 Linux RIDs, and this tool always
+        // rasterises for the machine it runs on. If the condition is ever dropped the reference still
+        // works - so this asserts the intent, not the mechanism.
+        Assert.True(project.Contains("IsOSPlatform('Linux')", StringComparison.Ordinal),
+            "the Linux native SkiaSharp reference is no longer conditioned on the host being Linux.");
+    }
+
+    /// <summary>
     /// The published executable is named after the APPLICATION (circuitRF / harmonicaRF / wBond),
     /// not after the assembly (CircuitRF.Ui). The assembly name cannot change — RfCore grants it
     /// <c>InternalsVisibleTo</c> — so <c>CircuitRF.Ui.csproj</c>'s <c>CrfRenameApphost</c> target

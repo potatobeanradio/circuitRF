@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
+using CircuitRF.Ui.Diagnostics;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
@@ -241,7 +242,11 @@ public static class SymbolClipboard
             using var stream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, pxW, pxH), stream))
                 RenderSymbol(canvas, primitives, pins, panX, panY, zoom, theme, useTransparentBackground);
-            return Encoding.UTF8.GetString(stream.DetachAsData().ToArray());
+            // Skia writes each text run's per-glyph x/y list with a trailing separator, which Firefox
+            // reads as invalid and drops - putting every run a line above its baseline, where the
+            // clip eats it. Correct in Illustrator, Inkscape, Chrome and Safari; unreadable in
+            // Firefox. See SvgFontNormalizer.RepairPositionLists.
+            return SvgFontNormalizer.RepairPositionLists(Encoding.UTF8.GetString(stream.DetachAsData().ToArray()));
         }
         catch { return null; }
     }

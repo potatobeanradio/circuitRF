@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
+using CircuitRF.Ui.Diagnostics;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Theming;
@@ -328,7 +329,12 @@ public static class LayoutClipboard
             using var stream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, pxW, pxH), stream))
                 LayoutRenderer.Draw(canvas, view, tech, vp, opts);
-            return (Encoding.UTF8.GetString(stream.DetachAsData().ToArray()), (float)pxW, (float)pxH);
+            // Skia writes each text run's per-glyph x/y list with a trailing separator, which Firefox
+            // reads as invalid and drops - putting every run a line above its baseline, where the
+            // clip eats it. Correct in Illustrator, Inkscape, Chrome and Safari; unreadable in
+            // Firefox. See SvgFontNormalizer.RepairPositionLists.
+            return (SvgFontNormalizer.RepairPositionLists(Encoding.UTF8.GetString(stream.DetachAsData().ToArray())),
+                    (float)pxW, (float)pxH);
         }
         catch { return null; }
     }

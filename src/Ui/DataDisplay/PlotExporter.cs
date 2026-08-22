@@ -34,6 +34,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using CircuitRF.Ui.Diagnostics;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -378,7 +379,12 @@ namespace CircuitRF.Ui.DataDisplay
             using var skStream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, PageW, PageH), skStream))
                 render(canvas);
-            return Encoding.UTF8.GetString(skStream.DetachAsData().ToArray());
+            // Skia writes each text run's per-glyph x/y list with a trailing separator, which Firefox
+            // reads as invalid and drops - putting every run a line above its baseline, where the
+            // clip eats it. Correct in Illustrator, Inkscape, Chrome and Safari; unreadable in
+            // Firefox. See SvgFontNormalizer.RepairPositionLists.
+            return SvgFontNormalizer.RepairPositionLists(
+                       Encoding.UTF8.GetString(skStream.DetachAsData().ToArray()));
         }
 
         // ---- Multi-plot renderer ------------------------------------
@@ -636,12 +642,13 @@ namespace CircuitRF.Ui.DataDisplay
             doc.Close();
         }
 
+        /// <remarks>
+        /// Built in memory and then written, rather than straight to the file: the document has to be
+        /// complete before <see cref="SvgFontNormalizer.RepairPositionLists"/> can run over it, and an
+        /// exported plot is a few hundred kilobytes at most.
+        /// </remarks>
         private static void WriteSvg(string path, Action<SKCanvas> render)
-        {
-            using var skStream = new SKFileWStream(path);
-            using var canvas   = SKSvgCanvas.Create(new SKRect(0, 0, PageW, PageH), skStream);
-            render(canvas);
-        }
+            => File.WriteAllText(path, BuildSvgString(render), new UTF8Encoding(false));
 
         // ---- Axis label strip (mirrors AxisLabelControl.LabelDrawOperation.Render) ----
 

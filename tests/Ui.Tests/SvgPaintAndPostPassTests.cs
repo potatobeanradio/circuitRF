@@ -166,7 +166,74 @@ public class SvgPaintAndPostPassTests
         Assert.Contains("font-weight=\"600\"", result, StringComparison.Ordinal);
         Assert.DoesNotContain("SemiBold", result, StringComparison.Ordinal);
         Assert.Contains(">R</text>", result, StringComparison.Ordinal);
-        Assert.Contains("x=\"0, \"", result, StringComparison.Ordinal);   // per-glyph positions untouched
+
+        // The per-glyph positions are KEPT, but without Skia's trailing separator — that comma is
+        // what made every figure's text unreadable in Firefox (see TrailingSeparator... below).
+        Assert.Contains("x=\"0\"", result, StringComparison.Ordinal);
+        Assert.Contains("y=\"12\"", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Owner-reported, 2026-08-21: figure text "missing or else really small" in Firefox on Ubuntu,
+    /// while macOS and Windows were perfect.</b> Skia writes a per-glyph position list with a
+    /// separator after the last entry, and an SVG <c>list-of-coordinates</c> may not end in one.
+    /// Gecko applies SVG's strict error handling and drops the whole attribute, so <c>x</c> and
+    /// <c>y</c> both fall back to 0 and every run is drawn at the element origin — one line above its
+    /// baseline — where the control's own clip removes all but a sliver of each glyph.
+    ///
+    /// <para>Proven by A/B render in a Linux Firefox 140 ESR container: the same figure on the same
+    /// page renders correctly the moment the trailing commas are stripped from the DOM, and
+    /// <c>getBBox().y</c> on the first run of <c>analyses-setup.svg</c> moves from -12.00 to +0.11.
+    /// Blink and WebKit accept the trailing comma, which is the whole reason this read as a Linux
+    /// problem: Edge and Safari are the defaults there, Firefox is the default on Ubuntu.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("x=\"0, 8.11, 15.52, \"", "x=\"0, 8.11, 15.52\"")]
+    [InlineData("y=\"12.11, \"",          "y=\"12.11\"")]
+    [InlineData("x=\"0,8.11,\"",          "x=\"0,8.11\"")]
+    [InlineData("y=\"9.69,   \"",         "y=\"9.69\"")]
+    public void TrailingSeparatorsAreStrippedFromPerGlyphPositionLists(string given, string expected)
+    {
+        string svg = $"""<svg><text font-family="Inter" {given}>Setup</text></svg>""";
+
+        var result = SvgFontNormalizer.Normalize(svg, out _);
+
+        Assert.Contains(expected, result, StringComparison.Ordinal);
+        Assert.DoesNotContain(", \"", result, StringComparison.Ordinal);
+        Assert.Contains(">Setup</text>", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An EMPTY list is as invalid as a trailing separator and means exactly what having no attribute
+    /// means, so it is removed rather than written back empty. Skia emits these for a run with no
+    /// glyphs; <c>analyses-setup.svg</c> as shipped has one.
+    /// </summary>
+    [Fact]
+    public void AnEmptyPositionListIsRemovedRatherThanLeftInvalid()
+    {
+        const string svg = """<svg><text font-family="Inter" x="" y="">x</text></svg>""";
+
+        var result = SvgFontNormalizer.Normalize(svg, out _);
+
+        Assert.DoesNotContain("x=\"\"", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("y=\"\"", result, StringComparison.Ordinal);
+        Assert.Contains(">x</text>", result, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The position lists are fixed on EVERY run, including one with no <c>font-family</c> for the
+    /// normaliser to rewrite — that early return used to skip such a run entirely, and the trailing
+    /// comma is Skia's, not the font's.
+    /// </summary>
+    [Fact]
+    public void ARunWithNoFontFamilyStillGetsItsPositionListsFixed()
+    {
+        const string svg = """<svg><text x="0, 7.1, " y="11.6, ">Hi</text></svg>""";
+
+        var result = SvgFontNormalizer.Normalize(svg, out _);
+
+        Assert.Contains("x=\"0, 7.1\"", result, StringComparison.Ordinal);
+        Assert.Contains("y=\"11.6\"", result, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -189,6 +256,25 @@ public class SvgPaintAndPostPassTests
         var result = SvgPostPass.Run(svg, "fixture", out var report);
         Assert.Contains("font-weight=\"600\"", result, StringComparison.Ordinal);
         Assert.Empty(report.FontSubstitutions);
+    }
+
+    /// <summary>
+    /// The trailing-separator repair must survive the WHOLE post-pass, not just the normaliser:
+    /// <c>RoundNumbers</c> rewrites <c>x</c>/<c>y</c> afterwards, so a repair it undid would be
+    /// invisible to the unit tests above and shipped anyway.
+    /// </summary>
+    [Fact]
+    public void ThePostPassShipsNoTrailingSeparatorInAPositionList()
+    {
+        const string svg = """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="50">
+            <text font-family="Inter" font-size="12" x="0, 8.114, 15.523, " y="12.113, ">Set</text></svg>
+            """;
+
+        var result = SvgPostPass.Run(svg, "fixture", out _);
+
+        Assert.DoesNotContain(", \"", result, StringComparison.Ordinal);
+        Assert.Contains("y=\"12.11\"", result, StringComparison.Ordinal);
     }
 
     // ── The post-pass ─────────────────────────────────────────────────────────

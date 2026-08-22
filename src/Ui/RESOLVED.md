@@ -7020,3 +7020,160 @@ that pass produces).
 Avalonia dispatcher in the application, and nothing under xUnit, whose `AsyncTestSyncContext` posts to
 the pool rather than requiring a pump. That is what lets `WaitForAnalysis()` block without
 deadlocking; it was verified with a throwaway test rather than assumed.
+
+---
+
+## New workspace window opens low and cut off on Windows (2026-08-21)
+
+**Reported:** "on Windows, when a new workspace is created, its window appears lower on the screen
+than macOS. On macOS, the placement is perfect. On Windows, the lower portion of the window is cutoff
+the screen." Follow-up: "could be different resolutions. Want new window to be in the center."
+
+**Two independent causes.** Fixing only the visible one leaves the window unusable on a small display.
+
+1. **Nothing asked for the window to be placed.** `WorkspaceWindow.axaml` declared no
+   `WindowStartupLocation`, so it took Avalonia's default — `Manual` with no `Position` — which hands
+   placement to the OS. macOS cascades within the visible frame and will not push a window past the
+   bottom of the screen; Win32's `CW_USEDEFAULT` cascades down-and-right from the top-left and does
+   not care whether the result fits, stepping further down for each window. Same code, different
+   placement. It now declares `WindowStartupLocation="CenterScreen"`.
+
+2. **1200x800 DIPs is bigger than a common Windows working area, and centring does not fix that** —
+   it splits the overflow between top and bottom instead of dumping it all at the bottom. A 1920x1080
+   display at 150% scaling is **1280x693 DIPs** of working area once the taskbar is gone, so the
+   declared 800-DIP height overflows by ~110 DIPs wherever it is placed. macOS never showed it because
+   its working area is reported in points and is far taller in DIPs. `WorkspaceWindow`'s constructor
+   now shrinks the declared size to fit (`WorkspaceWindowPlacement.Fit`, less a 48-DIP edge margin),
+   never below `MinWidth`/`MinHeight`, and leaves it alone when the platform can name no screen.
+
+**`Screen.Scaling`, never the window's `RenderScaling` — and it is measured, not assumed.** A screen's
+`WorkingArea` is in physical pixels on Windows and in points on macOS, so converting a DIP size with
+`RenderScaling` (2 on Retina) doubles it against an area that was never scaled — the bug that pinned
+the Match Designer to the screen corner (`MatchWindowPlacement`), and here it would have halved the
+window on every Retina Mac. A throwaway Avalonia 12.0.3 probe on the owner's own machine settled what
+macOS actually reports:
+
+```
+Bounds=0,0,1920,1080  WorkingArea=0,30,1920,996  Screen.Scaling=1  (window RenderScaling=2)
+CenterScreen on a 1200x800 window -> Position=360,128     # (1920-1200)/2 = 360
+```
+
+So `Screen.Scaling` is **1** on macOS even at `RenderScaling` 2, and it is the factor that maps DIPs
+into that screen's own units on both platforms. It is also the factor Avalonia's own `CenterScreen`
+uses to convert `ClientSize`, so the fit computed here and the centring Avalonia then performs agree
+by construction.
+
+**The fit runs in the constructor, not `OnOpened`.** `CenterScreen` is applied by `Show()` off the size
+the window has by then; resizing afterwards centres the *old* size and leaves the window visibly
+off-centre, and jumping.
+
+Gate: `tests/Ui.Tests/WorkspaceWindowPlacementTests.cs` — the arithmetic against synthetic screens
+(including the owner's measured macOS display, so the Windows fix is proven not to move the case that
+was already right), plus the three wiring facts (the window asks to be centred; the fit runs before
+`Show`; it reads `Screen.Scaling`).
+
+---
+
+## Doc figures' text unreadable in Firefox — a trailing comma (2026-08-21)
+
+**Reported:** "the user docs SVG text does not render correctly in Linux Ubuntu (tested using default
+Firefox). Seems like bad fonts. The text rendering is either missing or else really small." Follow-up:
+"it currently renders perfectly on macOS and Windows."
+
+**It is not a font problem, and it is not a Linux problem.** Both readings are wrong in a way that
+would have sent the fix to the wrong place:
+
+- **Not fonts.** Reproduced in a Debian/Firefox 140 ESR container with no Inter or IBM Plex installed:
+  on the same page, at the same moment, a `<p>` in Inter and a plain `<svg><text font-family="Inter">`
+  both render perfectly while the figure's text does not. The `@font-face` faces load
+  (`document.fonts.status: loaded`).
+- **Not Linux.** Gecko is strict where Blink and WebKit are lenient. macOS defaults to Safari
+  (WebKit) and Windows to Edge (Blink); Ubuntu defaults to Firefox. **The same figure is broken in
+  Firefox on macOS and Windows too** — the platform correlation is a browser-default correlation.
+
+**Cause: Skia writes an invalid list.** The SVG device emits a per-glyph position list with a
+separator after the *last* entry:
+
+```xml
+<text ... font-size="12.5" font-family="Inter" x="0, 8.11, 15.52, …, 87.37, " y="12.11, ">Setup Analyses</text>
+```
+
+An SVG `<list-of-coordinates>` may not end in a separator. Gecko applies SVG's strict error handling
+and treats the whole attribute as unspecified, so `x` **and** `y` fall back to 0: every run is drawn at
+the element's origin instead of on its baseline — one line too high — and the enclosing control's own
+clip then removes all but a sliver of each glyph. That is the "missing, or really small": what survives
+the clip is a 1-2 px shaving off the top of each letter.
+
+Measured on the first run of `analyses-setup.svg`, in Firefox, both states on the same page:
+
+| | `getBBox().y` | renders |
+|---|---|---|
+| as shipped (`y="12.11, "`) | **-12.00** | slivers |
+| trailing comma stripped in the DOM (`y="12.11"`) | **+0.11** | correctly |
+
+Everything else already measured correct — `getComputedTextLength` 105.83, `numberOfChars` 14, computed
+font-family `Inter`, computed font-size `12.5px`. Only the *painting* was wrong, which is why "bad
+fonts" was the natural first read.
+
+**Fix:** `SvgFontNormalizer.TrimCoordinateLists`, applied to every `<text>` in `SvgPostPass.Run` — so
+figures, symbols and inline glyphs all get it. It strips the trailing separator, and *removes* an
+`x=""`/`y=""` outright (an empty list is equally invalid and means what having no attribute means).
+`docs/user` regenerated: 370 files, 4,672 runs, and the whole diff is that one attribute pair.
+
+**Two traps inside the fix itself, both caught by a test rather than by review:**
+
+1. The trim runs **before** the `font-family` early-return. That return used to skip any run without a
+   `font-family` — and the trailing comma is Skia's, not the font's, so such a run would have kept it.
+2. `RemoveAttr` needs an attribute **boundary**. Without a leading `\s`, removing `y` matches the tail
+   of `font-famil|y="Inter"` and eats the font off the run — the empty-list test is what found it.
+
+**Noted, not changed:** the 76 symbol figures are referenced with `<img src=…>`, and an SVG loaded as
+an image cannot see the page's `@font-face` rules — the docs CSS says so in its own comment. Their
+captions are therefore set in whatever the reader happens to have installed, which on a stock Ubuntu is
+not IBM Plex Sans. That is cosmetic (the caption is one letter), pre-existing, and independent of this
+bug; inlining them like the figures, or converting their text to paths, would be the fix if it matters.
+
+Gates: `SvgPaintAndPostPassTests` (four normaliser cases + one that the repair survives the whole
+post-pass, since `RoundNumbers` rewrites `x`/`y` afterwards) and
+`DocsFactoryTests.NoShippedFigureCarriesATrailingSeparatorInAPositionList`, which is over the shipped
+artefacts because the failure that reaches a reader is a figure regenerated by an older build and
+committed — verified to flag the pre-fix file and pass the regenerated one.
+
+### Follow-up, same day: the app's own SVG exports had it too
+
+The documentation generator was only one of eight places in `src/Ui` that write SVG with Skia. The
+other five that emit text put files in front of a user — and a file that leaves the application is
+worse than a figure in our own docs, because we do not control what opens it:
+
+| seam | what it is |
+|---|---|
+| `PlotExporter.BuildSvgString` / `WriteSvg` | Data Display's Export SVG — axis labels, titles, contour labels |
+| `SchematicClipboard.TryRenderToSvg` | a schematic copied as SVG — refdes, values, net labels |
+| `SymbolClipboard.TryRenderToSvg` | a symbol copied as SVG |
+| `LayoutClipboard.TryRenderToSvg` | a layout copied as SVG — labels and ports |
+| `WBondClipboardWriter.TryRenderToSvg` | a wire-bond assembly copied as SVG |
+
+All five now pass their document through **`SvgFontNormalizer.RepairPositionLists`**, a new public
+entry point that fixes the invalid lists and does nothing else.
+
+**Deliberately not `Normalize`.** That one also rewrites family and weight, and it *throws* on a
+face-name word it cannot weigh — right for a docs build, where a silently mis-weighted caption must
+not ship, and wrong for an export: a copy-to-clipboard must not be able to fail because of a font's
+name. Rewriting the family is also less clearly desirable for a file the user opens in a vector
+editor, where Skia's full face name is what resolves to the exact face.
+
+`WriteSvg` now builds in memory and writes the result rather than streaming to `SKFileWStream` — the
+document has to be complete before it can be repaired, and an exported plot is a few hundred kB.
+
+Gates (`SvgExportPositionListTests`), and the first one is the one that matters:
+
+- **A vacuity guard.** Every other assertion in the file asserts an *absence*; a raw `SKSvgCanvas`
+  render is checked to still *contain* the trailing separator, so the day Skia fixes this upstream the
+  suite says so instead of quietly passing for the wrong reason.
+- The two seams a headless test can actually drive end to end — `PlotExporter.BuildSvgString` and
+  `LayoutClipboard.TryRenderToSvg` with a `LabelShape` — asserting on real Skia output, not on the
+  repair function.
+- **`EverySvgCanvasInTheUiRoutesThroughTheRepair`** — every `SKSvgCanvas.Create` in `src/Ui` must be
+  in a file that also calls `RepairPositionLists` or `SvgPostPass.Run`. This is what covers the three
+  writers that need a live document to render, and any export seam added later. Comments are stripped
+  first: `ContourRenderer` discusses `SKSvgCanvas` in its header without creating one.

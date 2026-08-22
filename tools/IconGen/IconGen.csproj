@@ -22,6 +22,31 @@
     <!-- SkiaSharp-based SVG renderer: same rendering stack the application itself uses, and the only
          reason this tool is cross-platform (no rsvg-convert / ImageMagick / iconutil required). -->
     <PackageReference Include="Svg.Skia" Version="5.2.1" />
+
+    <!--
+      LINUX NEEDS ITS NATIVE SkiaSharp NAMED OUTRIGHT; Windows and macOS do not.
+
+      SkiaSharp 4.148.0 (what Svg.Skia 5.2.1 resolves to) declares SkiaSharp.NativeAssets.Win32 and
+      .macOS as dependencies and NO Linux equivalent - read straight out of its own .nuspec, whose
+      net9.0/net6.0 dependency groups list exactly those two. So on Linux nothing ever puts a
+      libSkiaSharp.so in the output, and the tool dies at its first SKSvg() with a DllNotFoundException
+      listing every path it probed. That is not arm64-specific: an x64 Linux box fails identically,
+      only with linux-x64 in the paths. Reported by the owner from build-deb.sh on Linux arm64,
+      2026-08-21.
+
+      .NoDependencies, NOT the plain SkiaSharp.NativeAssets.Linux. The plain package's libSkiaSharp.so
+      links libfontconfig.so.1, so it needs a system fontconfig the machine may not have - measured, in
+      a bare dotnet/sdk:10.0 arm64 container: the plain package gets the .so into the output and then
+      fails with "libfontconfig.so.1: cannot open shared object file", while .NoDependencies renders
+      all three icon sets with no system packages installed at all. The artwork contains no <text>
+      element, so there is nothing here that needs a font at all.
+
+      Conditioned on the HOST being Linux because this tool always rasterises for the machine it runs
+      on (each packaging script runs it locally, right before its own publish), and the package is
+      192 MB unpacked across 13 Linux RIDs - not something to make a Windows or macOS restore pay for.
+    -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.148.0"
+                      Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
   </ItemGroup>
 
 </Project>

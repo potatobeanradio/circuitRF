@@ -88,9 +88,9 @@ public static class SvgFontNormalizer
 
         string result = TextTagRx.Replace(svg, m =>
         {
-            string attrs = m.Groups["attrs"].Value;
+            string attrs = TrimCoordinateLists(m.Groups["attrs"].Value);
             string family = Attr(attrs, "font-family");
-            if (family.Length == 0) return m.Value;
+            if (family.Length == 0) return $"<text{attrs}>{m.Groups["body"].Value}</text>";
 
             var (newFamily, weight, style, substituted) = Resolve(family);
             if (substituted is not null) found.Add(new Substitution(substituted, m.Groups["body"].Value));
@@ -108,6 +108,84 @@ public static class SvgFontNormalizer
         substitutions = found;
         return result;
     }
+
+    /// <summary>
+    /// Repairs every <c>&lt;text&gt;</c>'s per-glyph position lists in a whole SVG document, and does
+    /// nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <b>This is the entry point for SVG that LEAVES THE APPLICATION</b> — a Data Display plot
+    /// exported to <c>.svg</c>, a schematic, symbol, layout or wire-bond assembly copied to the
+    /// clipboard as SVG. They carry the same Skia defect the documentation figures did (see
+    /// <see cref="TrimCoordinateLists"/>): correct in Illustrator, Inkscape, Chrome and Safari,
+    /// mangled in Firefox.
+    ///
+    /// <para><b>Deliberately NOT <see cref="Normalize"/>.</b> That one also rewrites the font family
+    /// and weight, and it <i>throws</i> on a face-name word it cannot weigh — which is right for a
+    /// documentation build, where a silently mis-weighted caption must not be allowed to ship, and
+    /// wrong here: a copy-to-clipboard must not be able to fail because of a font's name. Rewriting
+    /// the family is also less obviously desirable for a file the user opens in a vector editor,
+    /// where Skia's full face name is what resolves to the exact face. This fixes only what is
+    /// invalid, and cannot throw.</para>
+    /// </remarks>
+    public static string RepairPositionLists(string svg)
+        => TextTagRx.Replace(svg, m =>
+        {
+            string attrs = TrimCoordinateLists(m.Groups["attrs"].Value);
+            return ReferenceEquals(attrs, m.Groups["attrs"].Value) || attrs == m.Groups["attrs"].Value
+                ? m.Value
+                : $"<text{attrs}>{m.Groups["body"].Value}</text>";
+        });
+
+    /// <summary>
+    /// Removes the trailing separator Skia leaves on a <c>&lt;text&gt;</c>'s per-glyph <c>x</c> and
+    /// <c>y</c> lists, and drops either attribute entirely when nothing is left.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-21: the figures' text was "missing or else really small" in Firefox
+    /// on Ubuntu, while macOS and Windows were perfect.</b> Reproduced in a Linux Firefox 140 ESR
+    /// container and proven by A/B render: the SAME figure, on the same page, in the same browser,
+    /// renders correctly the moment these trailing commas are stripped from the DOM.
+    ///
+    /// <para>Skia's SVG device writes a per-glyph position list with a separator after the LAST
+    /// entry:</para>
+    /// <code>
+    ///   &lt;text ... x="0, 8.11, 15.52, ..., 87.37, " y="12.11, "&gt;Setup Analyses&lt;/text&gt;
+    /// </code>
+    /// <para>An SVG <c>&lt;list-of-coordinates&gt;</c> may not end in a separator. Gecko applies SVG's
+    /// strict error handling and treats the whole attribute as unspecified, so <c>x</c> and <c>y</c>
+    /// both fall back to 0: every run is drawn at the element's origin instead of on its baseline —
+    /// one line too high — where the enclosing control's clip removes all but a sliver of each glyph.
+    /// Measured on the first run of <c>analyses-setup.svg</c>: <c>getBBox().y</c> is <b>-12.00</b> as
+    /// shipped and <b>+0.11</b> once trimmed. Blink and WebKit accept the trailing comma, which is the
+    /// whole of why this looked like a Linux problem — Edge and Safari are the defaults there, and
+    /// Firefox is the default on Ubuntu. <b>It reproduces in Firefox on every platform.</b></para>
+    ///
+    /// <para>Only <c>x</c> and <c>y</c> are affected; a scan of all 170 generated figures and symbols
+    /// found the trailing separator on those two attributes and no others.</para>
+    /// </remarks>
+    private static string TrimCoordinateLists(string attrs)
+    {
+        foreach (string name in CoordinateListAttributes)
+        {
+            var m = Regex.Match(attrs, $@"(?:^|\s){name}\s*=\s*""(?<v>[^""]*)""");
+            if (!m.Success) continue;
+
+            string trimmed = m.Groups["v"].Value.TrimEnd(' ', '\t', '\r', '\n', ',');
+
+            // An empty list is as invalid as a trailing separator, and means the same thing as having
+            // no attribute at all — so it is removed rather than written back empty. Checked BEFORE
+            // "did the trim change anything": an already-empty x="" changes nothing and still has to go.
+            if (trimmed.Length == 0) { attrs = RemoveAttr(attrs, name); continue; }
+            if (trimmed == m.Groups["v"].Value) continue;
+
+            attrs = SetAttr(attrs, name, trimmed);
+        }
+        return attrs;
+    }
+
+    /// <summary>The per-glyph position lists Skia writes with a trailing separator.</summary>
+    private static readonly string[] CoordinateListAttributes = ["x", "y"];
 
     /// <summary>
     /// Turn Skia's family list into (family, weight, style). A null weight or style means "Skia's own
@@ -174,6 +252,20 @@ public static class SvgFontNormalizer
         return rx.IsMatch(attrs)
             ? rx.Replace(attrs, m => m.Groups["lead"].Value + name + "=\"" + value + "\"", 1)
             : attrs + $" {name}=\"{value}\"";
+    }
+
+    /// <summary>
+    /// Deletes one attribute, matching only at an attribute BOUNDARY.
+    /// </summary>
+    /// <remarks>
+    /// The leading <c>\s</c> is not cosmetic and not optional: without it, removing <c>y</c> matches
+    /// the tail of <c>font-famil|y="Inter"</c> and eats the font off the run. Caught by the
+    /// empty-list test, which is the only caller that removes anything.
+    /// </remarks>
+    private static string RemoveAttr(string attrs, string name)
+    {
+        var rx = new Regex($@"(?<=^|\s)\s*{Regex.Escape(name)}\s*=\s*""[^""]*""");
+        return rx.Replace(attrs, "", 1);
     }
 
 }
