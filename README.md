@@ -78,6 +78,7 @@ Pre-built installers are available for Windows, macOS, and Linux.
 | Platform | Download |
 |---|---|
 | macOS Apple Silicon (M-series) | [circuitRF-1.0.0-beta.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.dmg) |
+| macOS Intel (x86-64) | [circuitRF-1.0.0-beta.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.dmg) |
 
 **Linux**
 | Platform | Download |
@@ -338,7 +339,7 @@ Alternatives to zig (MinGW `gcc`, Docker/Podman) and the rest:
 ### 5. Optional — package it as an app
 
 [**BUILDING.md**](BUILDING.md) has step-by-step instructions for producing the installers users
-download: `.msi` (Windows x64/arm64/x86), `.dmg` (macOS Apple Silicon) and `.deb` (Linux x64/arm64).
+download: `.msi` (Windows x64/arm64/x86), `.dmg` (macOS arm64/x64) and `.deb` (Linux x64/arm64).
 One script per platform, run from the repository root.
 
 

@@ -30,18 +30,37 @@ quietly, so the first time you need the image, ask for it explicitly — either 
 
 ```sh
 dotnet build src/Ui -p:CrfBuildVmImage=true        # allow the download as part of the build
-tools/macos-vmimage/build-image.sh --out tools/macos-vmhost/build   # or build it directly
+tools/macos-vmimage/build-image.sh --arch aarch64 --out tools/macos-vmhost/build/arm64   # or directly
 ```
 
 After that it is cached, and ordinary builds keep it current by themselves. Skip the whole thing
 with `-p:CrfSkipVmHost=true`; use `--strict` (CI, release) to make failures fatal instead of silent.
 
+### Two architectures
+
+Everything here is **per-architecture**, and lives under `build/<arch>/` — `build/arm64/` for Apple
+Silicon, `build/x86_64/` for Intel. `--arch` names the one you want and defaults to this machine's;
+`ensure-built.sh` gets it from the `.csproj`, which derives it from the RID being published, so
+`dotnet publish -r osx-x64` produces x86-64 helpers on an Apple Silicon machine without being asked.
+
+**Both cross-build from either kind of Mac.** `swift build --arch` targets both slices (and
+Virtualization.framework is in the SDK for both), while the Linux image is pure download-and-repack
+— no compiler is involved in producing either guest kernel. That is what lets one run of
+`packaging/macos/build-dmg.sh` produce both disk images. The Rosetta block in `main.swift` sits
+behind `#if arch(arm64)`, which is a **target** test, so the x86-64 build correctly contains no
+Rosetta code at all; on an Intel host the guest is x86-64 natively and none is wanted.
+
 ### If you would rather do it by hand
 
 ```sh
-tools/macos-vmhost/build.sh                                          # the host binary
-tools/macos-vmimage/build-image.sh --out tools/macos-vmhost/build    # the kernel + initramfs
+tools/macos-vmhost/build.sh --arch arm64                             # the host binary
+tools/macos-vmimage/build-image.sh --arch aarch64 \
+    --out tools/macos-vmhost/build/arm64                             # the kernel + initramfs
 ```
+
+(`--arch x86_64` / `--arch x86_64 --out .../build/x86_64` for the Intel pair. The guest architecture
+Alpine names — `aarch64` / `x86_64` — is what `build-image.sh` takes; `build.sh` takes the Mach-O
+spelling, `arm64` / `x86_64`. Both accept either.)
 
 Requires the Xcode command line tools (`xcode-select --install`) and nothing else.
 `crf-vmhost` looks for `crf-linux-kernel` and `crf-linux-initramfs.cpio.gz` beside itself, so a

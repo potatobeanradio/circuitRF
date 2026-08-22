@@ -319,7 +319,7 @@
   <Target Name="EnsureMacVmHost"
           AfterTargets="Build"
           Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(CrfSkipVmHost)' != 'true'">
-    <Exec Command="&quot;$(MSBuildProjectDirectory)/../../tools/macos-vmhost/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfVmImageFlag)"
+    <Exec Command="&quot;$(MSBuildProjectDirectory)/../../tools/macos-vmhost/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfHelperArchFlag) $(_CrfVmImageFlag)"
           ContinueOnError="WarnAndContinue"
           StandardOutputImportance="high" />
   </Target>
@@ -348,7 +348,7 @@
           StandardOutputImportance="high" />
     <!-- Same rule, same reason: keep the OSDI worker in step, and never fail the build over it. -->
     <Exec Condition="'$(OS)' != 'Windows_NT'"
-          Command="&quot;$(MSBuildProjectDirectory)/../../tools/osdi-worker/build.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot;"
+          Command="&quot;$(MSBuildProjectDirectory)/../../tools/osdi-worker/build.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfHelperArchFlag)"
           ContinueOnError="true" StandardOutputImportance="low" />
     <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
           Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\senior-worker\ensure-built.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;"
@@ -393,6 +393,23 @@
 
   <PropertyGroup>
     <_CrfVmImageFlag Condition="'$(CrfBuildVmImage)' == 'true'">--with-image</_CrfVmImageFlag>
+
+    <!--
+      THE HELPERS MUST MATCH THE RID BEING PUBLISHED, NOT THE MACHINE DOING THE PUBLISHING.
+
+      crf-vmhost and osdi-worker are native Mach-O programs and the Linux VM image carries a guest
+      kernel for a specific architecture, so `dotnet publish -r osx-x64` on an Apple Silicon machine
+      would otherwise assemble an x64 application around a set of arm64 helpers: it launches, reads
+      a kit, describes it correctly, and then cannot evaluate a single compiled device model.
+
+      Deriving the flag from $(RuntimeIdentifier) is what makes that impossible to get wrong, and it
+      is what lets ONE run of packaging/macos/build-dmg.sh produce both disk images. Empty for a
+      plain `dotnet build` (no RID), where each script falls back to this machine's own architecture
+      — so nothing about everyday building changes.
+    -->
+    <_CrfHelperArch Condition="'$(RuntimeIdentifier)' == 'osx-arm64'">arm64</_CrfHelperArch>
+    <_CrfHelperArch Condition="'$(RuntimeIdentifier)' == 'osx-x64'">x86_64</_CrfHelperArch>
+    <_CrfHelperArchFlag Condition="'$(_CrfHelperArch)' != ''">--arch $(_CrfHelperArch)</_CrfHelperArchFlag>
   </PropertyGroup>
 
 </Project>

@@ -13,7 +13,28 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../packaging/version.sh"
 VERSION="$CRF_VERSION"
 BUNDLE_ID="com.circuitRF.circuitRF"
 TARGET_FRAMEWORK="net10.0"
-RID="osx-arm64"                        # change to osx-x64 for Intel Macs
+# ── Which Mac this bundle is for ──────────────────────────────────────────────
+#
+# Apple Silicon (osx-arm64) or Intel (osx-x64). CRF_RID names it; the default is THE MACHINE DOING
+# THE BUILDING, and that default is a statement about what can work rather than a convenience.
+#
+# The .NET side of this bundle cross-publishes to either RID happily. Everything else in it does
+# not: the helper programs that land beside the assemblies (crf-vmhost, osdi-worker) are compiled
+# by their own native toolchains for the host's own architecture, and the Linux VM image is built
+# for the guest THIS host's Virtualization.framework can run — an aarch64 guest on Apple Silicon,
+# an x86-64 one on Intel. So a cross-architecture bundle is a working application with a set of
+# helpers that cannot load a single compiled device model. Build the Intel .dmg on an Intel Mac.
+#
+# packaging/macos/build-dmg.sh sets CRF_RID and checks the result; setting it by hand here is for
+# producing a .NET-only bundle deliberately.
+if [ -z "${CRF_RID:-}" ]; then
+    case "$(uname -m)" in
+        arm64)  CRF_RID="osx-arm64" ;;
+        x86_64) CRF_RID="osx-x64"   ;;
+        *) echo "❌ Unsupported macOS architecture: $(uname -m)"; exit 1 ;;
+    esac
+fi
+RID="$CRF_RID"
 CUSTOM_PLIST="./Assets/macOS/Info.plist"
 ENTITLEMENTS="./Assets/macOS/Entitlements.plist"
 
@@ -67,6 +88,35 @@ fi
 echo "🔐 Code signing (ad-hoc)..."
 codesign --force --deep --sign "-" --entitlements "$ENTITLEMENTS" --timestamp=none "$BUNDLE_DIR"
 if [ $? -ne 0 ]; then echo "❌ Code signing failed."; exit 1; fi
+
+# ── crf-vmhost's OWN entitlement, and why this runs AFTER the bundle is signed ────────────────
+#
+# `--deep` re-signs every nested executable with the entitlements given HERE, and circuitRF's are
+# not crf-vmhost's. So the deep pass silently replaced com.apple.security.virtualization with
+# com.apple.security.files.user-selected.read-write, and the packaged VM host — correctly signed by
+# tools/macos-vmhost/build.sh minutes earlier — arrived unable to create a virtual machine:
+#
+#     the virtual machine configuration was rejected: Invalid virtual machine configuration.
+#     The process doesn't have the "com.apple.security.virtualization" entitlement.
+#
+# Nothing about the build said so. It only shows in a bundle that has been through this script, and
+# only when a compiled device model is actually run — so `dotnet run` worked and every .dmg shipped
+# a VM host that could not start. (Measured 2026-08-22 with `codesign -d --entitlements`.)
+#
+# Inside-out is the fix, and the order is the whole of it: sign the nested binary with its own
+# entitlements, then RE-SEAL the bundle without `--deep` so the outer signature records the new
+# cdhash and does not touch the inner binary again.
+VMHOST="${MAC_OS_DIR}/crf-vmhost"
+VMHOST_ENTITLEMENTS="../../tools/macos-vmhost/crf-vmhost.entitlements"
+if [ -f "$VMHOST" ] && [ -f "$VMHOST_ENTITLEMENTS" ]; then
+    echo "🔐 Re-signing crf-vmhost with its virtualization entitlement..."
+    codesign --force --sign "-" --entitlements "$VMHOST_ENTITLEMENTS" \
+             --options runtime --timestamp=none "$VMHOST" || {
+        echo "❌ Could not sign crf-vmhost."; exit 1; }
+
+    codesign --force --sign "-" --entitlements "$ENTITLEMENTS" --timestamp=none "$BUNDLE_DIR" || {
+        echo "❌ Could not re-seal the bundle."; exit 1; }
+fi
 
 echo ""
 echo "✅ Bundle created: ${BUNDLE_DIR}"

@@ -274,7 +274,13 @@ var kernelArguments = [
 // Quiet by default so kernel chatter does not drown the guest program's own stderr, which is the
 // output a user actually needs when something fails.
 if options.quiet { kernelArguments.append(contentsOf: ["quiet", "loglevel=3"]) }
+// Apple Silicon only, and gated at the SAME compile-time condition as the Rosetta share itself
+// (below). On an Intel host the guest is x86-64 natively, no Rosetta device is ever attached, and
+// telling the guest to expect one only makes guest-init mount a share that is not there and log a
+// warning about it — noise in exactly the output someone reads when a model fails to run.
+#if arch(arm64)
 if options.rosetta { kernelArguments.append("crf.rosetta=1") }
+#endif
 for share in options.shares {
     guard let at = share.guestPath else {
         kernelArguments.append("crf.mount=\(share.tag)")

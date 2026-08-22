@@ -222,4 +222,116 @@ public class PackagingScriptTests
             "packaging/linux/postinst no longer checks for ICU at all — with no dependency declared, "
             + "that check is the only thing that tells a user with no ICU installed what to do.");
     }
+
+    /// <summary>
+    /// <b>No macOS bundle script may hard-code an architecture.</b> circuitRF ships for Apple
+    /// Silicon AND Intel, and the RID is derived — from <c>CRF_RID</c> when the packaging script
+    /// sets it, otherwise from <c>uname -m</c>. A literal is what was there before
+    /// (<c>RID="osx-arm64"</c>, with a comment saying to edit it for Intel), and editing a
+    /// checked-in script to change what it builds is exactly the step that gets forgotten — or
+    /// worse, committed, so the next release quietly ships one architecture's helpers inside the
+    /// other's bundle. Neither failure announces itself: the <c>.app</c> launches either way and
+    /// only the device worker stops working.
+    /// </summary>
+    [Theory]
+    [InlineData("src/Ui/bundleForMacOS.sh")]
+    [InlineData("src/Ui/bundleForHarmonicaMacOS.sh")]
+    [InlineData("src/Ui/bundleForWBondMacOS.sh")]
+    public void MacBundleScriptsDeriveTheRid_NeverHardCodeIt(string relativePath)
+    {
+        var lines = File.ReadAllLines(RepoFile(relativePath.Split('/')))
+                        .Where(l => !l.TrimStart().StartsWith("#", StringComparison.Ordinal))
+                        .ToList();
+
+        var hardCoded = lines.Where(l => Regex.IsMatch(l, @"^\s*RID=""?osx-")).ToList();
+        Assert.True(hardCoded.Count == 0,
+            $"{relativePath} assigns a literal RID: {string.Join(" | ", hardCoded.Select(l => l.Trim()))}. "
+            + "Derive it from CRF_RID / uname -m instead — a checked-in literal means the release for "
+            + "the other architecture is one forgotten edit away, and it fails silently.");
+
+        Assert.True(lines.Any(l => l.Contains("uname -m", StringComparison.Ordinal)),
+            $"{relativePath} no longer reads `uname -m`, so nothing in it falls back to the machine "
+            + "it is running on when CRF_RID is unset.");
+
+        Assert.True(lines.Any(l => l.Contains("CRF_RID", StringComparison.Ordinal)),
+            $"{relativePath} no longer honours CRF_RID, which is how packaging/macos/build-dmg.sh "
+            + "asks for the architecture it is currently building — without it that script's two "
+            + "passes would both produce the host's architecture, silently.");
+    }
+
+    /// <summary>
+    /// <b><c>build-dmg.sh</c> builds BOTH architectures when it is not told otherwise.</b> A release
+    /// needs an Apple Silicon disk image and an Intel one, and the failure mode of a one-at-a-time
+    /// default is silent in the worst way: whoever cuts the release ships whichever architecture
+    /// they happened to be sitting at, and the other one simply does not exist. Nothing errors, and
+    /// nobody finds out until an Intel user asks where their download is.
+    ///
+    /// <para>Both RIDs must appear too — this is the file that decides what "both" means, and there
+    /// is no other list of the architectures circuitRF ships for.</para>
+    /// </summary>
+    [Fact]
+    public void BuildDmg_DefaultsToBothArchitectures()
+    {
+        var lines = File.ReadAllLines(RepoFile("packaging", "macos", "build-dmg.sh"))
+                        .Where(l => !l.TrimStart().StartsWith("#", StringComparison.Ordinal))
+                        .ToList();
+        string script = string.Join("\n", lines);
+
+        Assert.True(Regex.IsMatch(script, @"\$\{2:-both\}"),
+            "packaging/macos/build-dmg.sh no longer defaults its architecture argument to `both`. "
+            + "A release that ships only the architecture of the machine it was cut on fails "
+            + "silently — the missing .dmg is simply absent, with nothing to notice.");
+
+        foreach (var rid in new[] { "osx-arm64", "osx-x64" })
+            Assert.True(script.Contains(rid, StringComparison.Ordinal),
+                $"packaging/macos/build-dmg.sh no longer names {rid}. It is the only list of the "
+                + "architectures circuitRF ships a macOS build for.");
+    }
+    /// <summary>
+    /// <b>Every macOS bundle script must re-sign <c>crf-vmhost</c> with its OWN entitlements after
+    /// the deep pass.</b> <c>codesign --deep</c> re-signs every nested executable with the
+    /// entitlements it was given, and circuitRF's are not crf-vmhost's — so the deep pass replaced
+    /// <c>com.apple.security.virtualization</c> with circuitRF's file-access entitlement and the
+    /// packaged VM host, correctly signed by <c>tools/macos-vmhost/build.sh</c> minutes earlier,
+    /// arrived unable to create a virtual machine at all.
+    ///
+    /// <para><b>Nothing about the build said so.</b> It shows only in a bundle that has been through
+    /// one of these scripts, and only when a compiled device model is actually run — so
+    /// <c>dotnet run</c> worked throughout and every <c>.dmg</c> shipped a VM host that could not
+    /// start. Measured 2026-08-22 with <c>codesign -d --entitlements</c>, then confirmed by booting
+    /// the packaged binary before and after.</para>
+    ///
+    /// <para>The re-seal that follows it matters just as much and is easy to drop as redundant: the
+    /// outer signature records each nested binary's cdhash, so re-signing crf-vmhost invalidates the
+    /// bundle unless the bundle is signed again — and that second pass must NOT be <c>--deep</c>, or
+    /// it strips the entitlement straight back off.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("src/Ui/bundleForMacOS.sh")]
+    [InlineData("src/Ui/bundleForHarmonicaMacOS.sh")]
+    [InlineData("src/Ui/bundleForWBondMacOS.sh")]
+    public void MacBundleScripts_ReSignTheVmHostWithItsOwnEntitlements(string relativePath)
+    {
+        var lines = File.ReadAllLines(RepoFile(relativePath.Split('/')))
+                        .Where(l => !l.TrimStart().StartsWith("#", StringComparison.Ordinal))
+                        .ToList();
+
+        Assert.True(lines.Any(l => l.Contains("crf-vmhost.entitlements", StringComparison.Ordinal)),
+            $"{relativePath} never names tools/macos-vmhost/crf-vmhost.entitlements. Without a "
+            + "re-sign after the `codesign --deep` pass, the bundled crf-vmhost carries circuitRF's "
+            + "entitlements instead of com.apple.security.virtualization and cannot start a VM — "
+            + "silently, and only in a packaged build.");
+
+        // The re-seal: a codesign of the bundle that is NOT --deep, after the vmhost line.
+        int vmhost = lines.FindIndex(l => l.Contains("crf-vmhost.entitlements", StringComparison.Ordinal));
+        bool resealed = lines.Skip(vmhost)
+                             .Any(l => l.Contains("codesign", StringComparison.Ordinal)
+                                    && l.Contains("BUNDLE_DIR", StringComparison.Ordinal)
+                                    && !l.Contains("--deep", StringComparison.Ordinal));
+        Assert.True(resealed,
+            $"{relativePath} re-signs crf-vmhost but never re-seals the bundle afterwards (with a "
+            + "codesign of $BUNDLE_DIR that is NOT --deep). The outer signature records the nested "
+            + "binary's cdhash, so without the re-seal the bundle fails validation; with --deep it "
+            + "strips the virtualization entitlement back off again.");
+    }
 }

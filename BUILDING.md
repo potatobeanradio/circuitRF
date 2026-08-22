@@ -9,6 +9,11 @@ Every script here is run **from the repository root** and writes its installer t
 > **Each platform's installer must be built on that platform.** Cross-publishing the binaries works,
 > but WiX only runs on Windows, `hdiutil`/`codesign` only on macOS, and the Windows executable only
 > gets its embedded icon when the publish itself happens on Windows.
+>
+> **Architectures are a different matter, and all three platforms cross-build across them.** On
+> macOS that includes the native helper programs and the Linux VM image, so one run of
+> `build-dmg.sh` produces both the Apple Silicon and the Intel disk image from either kind of Mac —
+> see *macOS ▸ `.dmg`* below for how, and for what is checked before either one is written.
 
 ---
 
@@ -88,6 +93,7 @@ Then `dotnet build` picks it up by itself. To build the helpers without a full b
 ```bash
 tools/senior-worker/ensure-built.sh                       # macOS / Linux
 tools/macos-vmhost/ensure-built.sh --with-image           # macOS only — the ~330 MB, once
+tools/macos-vmhost/ensure-built.sh --with-image --arch x86_64   # ...and the other architecture
 ```
 ```powershell
 tools\senior-worker\ensure-built.cmd                      # Windows
@@ -109,6 +115,13 @@ Two things worth knowing before they surprise you:
   load a single model, so a `gcc` that builds for arm64 is refused rather than used.
 - **There is no 64-bit ARM Linux build of the worker.** `build-deb.sh arm64` says so and packages
   without it; everything else in that package is unaffected.
+- **The macOS VM image is per-architecture and costs ~330 MB the first time for each.** Packaging
+  both disk images therefore downloads both guest images once — Alpine aarch64 and Alpine x86-64 —
+  plus a small x86-64 glibc runtime that **both** need: the guest userland is Alpine, which is musl,
+  while the worker and every vendor model library it loads are glibc-linked and name
+  `/lib64/ld-linux-x86-64.so.2` as their ELF interpreter. All of it is pinned by exact version and
+  SHA-256 in `tools/macos-vmimage/sources.lock`, and cached in `tools/macos-vmimage/.work/`
+  afterwards.
 
 To package deliberately without them, set `CRF_ALLOW_NO_DEVICE_WORKER=1`.
 
@@ -158,29 +171,71 @@ signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 dist\circu
 
 ---
 
-## macOS — `.dmg` (Apple Silicon)
+## macOS — `.dmg` (Apple Silicon and Intel)
 
 No setup beyond the .NET SDK and the toolchain in *Helper programs* above — everything else ships
 with macOS.
 
 ```bash
-./packaging/macos/build-dmg.sh                # → dist/circuitRF-0.9.0-beta.1-arm64.dmg
+./packaging/macos/build-dmg.sh                # BOTH: dist/circuitRF-0.9.0-beta.1-{arm64,x64}.dmg
+./packaging/macos/build-dmg.sh circuitrf arm64   # Apple Silicon only
+./packaging/macos/build-dmg.sh circuitrf x64     # Intel only
 ```
 
-The disk image contains `circuitRF.app` and a drop link to `/Applications`. The app is **ad-hoc
+**Both architectures build from whichever Mac you are on**, and the default with no architecture
+argument is both — a release needs the pair, and the failure mode of a one-at-a-time default is
+silent: you ship whichever architecture you were sitting at and the other one simply does not exist.
+Name one explicitly when you are iterating and do not want to pay for the other.
+
+This is the one place macOS is *easier* than the rule at the top of this file suggests. Every piece
+of the bundle cross-builds:
+
+| Piece | How |
+|---|---|
+| the .NET application | `dotnet publish -r osx-arm64` / `-r osx-x64`, either way round |
+| `crf-vmhost` | `swift build --arch` — Apple's toolchain targets both slices, and Virtualization.framework is in the SDK for both |
+| `osdi-worker` | `cc -arch` |
+| the Linux VM image | pure download-and-repack (`curl`, `tar`, `cpio`, `gzip`, `python3`) — no compiler produces either guest kernel |
+| `senior_worker` | one file for both: it is an **x86-64 Linux** binary either way, because that is what vendor model libraries are |
+
+The helper programs follow the RID rather than the machine, because `src/Ui/CircuitRF.Ui.csproj`
+derives `--arch` from `$(RuntimeIdentifier)` and hands it to each helper's build script — so
+`dotnet publish -r osx-x64` on an Apple Silicon machine gets x86-64 helpers on its own, with nothing
+to remember. They land under `tools/macos-vmhost/build/<arch>/` and `tools/osdi-worker/build/<arch>/`.
+
+**Nothing is trusted to have done that correctly.** Before writing each disk image the script reads
+the architecture back out of the built bundle: `lipo -archs` for the Mach-O programs, and the kernel
+image's own magic (`ARM\x64` at offset 56, `HdrS` at 0x202) for the Linux guest kernel, which `lipo`
+knows nothing about. A helper that quietly fell back to the host, or a stale `tools/*/build`
+directory, is caught rather than shipped — the failure it prevents is an application that launches,
+reads a kit, describes it correctly and then cannot evaluate a single compiled device model.
+
+Both architectures need macOS 13 (Ventura) or later, which is what .NET 10 requires; that rules out
+Intel Macs older than roughly 2017.
+
+Each disk image contains `circuitRF.app` and a drop link to `/Applications`. The app is **ad-hoc
 signed**, so the first launch needs right-click ▸ **Open** (or
 `xattr -dr com.apple.quarantine /Applications/circuitRF.app`).
 
 For public distribution, sign with a Developer ID certificate and notarise: replace the `"-"` in
-`src/Ui/bundleForMacOS.sh`'s `codesign` line with your identity, then
+`src/Ui/bundleForMacOS.sh`'s `codesign` line with your identity, then — **once per architecture**,
+since the ticket is stapled to a specific disk image:
 
 ```bash
-xcrun notarytool submit dist/circuitRF-0.9.0-beta.1-arm64.dmg --apple-id you@example.com \
-      --team-id TEAMID --password APP-SPECIFIC-PASSWORD --wait
-xcrun stapler staple dist/circuitRF-0.9.0-beta.1-arm64.dmg
+for arch in arm64 x64; do
+  xcrun notarytool submit dist/circuitRF-0.9.0-beta.1-$arch.dmg --apple-id you@example.com \
+        --team-id TEAMID --password APP-SPECIFIC-PASSWORD --wait
+  xcrun stapler staple dist/circuitRF-0.9.0-beta.1-$arch.dmg
+done
 ```
 
-*Intel Macs:* change `RID` to `osx-x64` in `src/Ui/bundleForMacOS.sh`.
+**A `.app` without a disk image** is what the bundle scripts alone produce. They take the RID from
+`CRF_RID` — which `build-dmg.sh` sets for each pass — and fall back to `uname -m`:
+
+```bash
+cd src/Ui && ./bundleForMacOS.sh                       # this machine's architecture
+cd src/Ui && CRF_RID=osx-x64 ./bundleForMacOS.sh       # → bin/Release/net10.0/osx-x64/circuitRF.app
+```
 
 ---
 
@@ -227,9 +282,12 @@ They are the same assembly with a different entry point (`-p:CrfApp=harmonica` /
 and today they ship as macOS bundles only:
 
 ```bash
-./packaging/macos/build-dmg.sh harmonica      # → dist/harmonicaRF-0.9.0-beta.1-arm64.dmg
-./packaging/macos/build-dmg.sh wbond          # → dist/wBond-0.9.0-beta.1-arm64.dmg
+./packaging/macos/build-dmg.sh harmonica      # both: harmonicaRF-0.9.0-beta.1-{arm64,x64}.dmg
+./packaging/macos/build-dmg.sh wbond          # both: wBond-0.9.0-beta.1-{arm64,x64}.dmg
+./packaging/macos/build-dmg.sh wbond x64      # Intel only
 ```
+
+The architecture argument works exactly as it does for circuitRF, and defaults to both the same way.
 
 For Windows or Linux they publish as plain self-contained binaries — no installer exists yet:
 

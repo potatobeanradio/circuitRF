@@ -18,15 +18,26 @@ ALPINE_NETBOOT_AARCH64_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/releases
 ALPINE_NETBOOT_AARCH64_SHA256="62684e64208c39e481d63c8f8b76af6028ae60d69d47f893c24f9081af472317"
 
 # x86_64 — for Intel Macs, where the guest is x86-64 natively and Rosetta is not involved at all.
-# Left EMPTY on purpose: this checksum has not been verified here, and an unverified hash is worse
-# than a missing one because it reads as though someone checked. build-image.sh refuses with an
-# explanation rather than downloading something unpinned.
+#
+# Verified 2026-08-22, the way the top of this file requires and not by pasting whatever downloaded:
+# the tarball's detached signature (…tar.gz.asc, from the same directory) checks out under Alpine's
+# release signing key 0482D840 22F52DF1 C4E7CD43 293ACD09 07D9495A (Natanael Copa
+# <ncopa@alpinelinux.org>), and the hash below then matches Alpine's own published .sha256. The key
+# itself is corroborated locally rather than trusted from a keyserver alone: the SAME key produces a
+# good signature over the aarch64 tarball above, whose hash was independently verified here on
+# 2026-07-31 — so a substituted key would have to have signed both.
 ALPINE_NETBOOT_X86_64_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-netboot-3.21.0-x86_64.tar.gz"
-ALPINE_NETBOOT_X86_64_SHA256=""
+ALPINE_NETBOOT_X86_64_SHA256="41010d3fd043b0f781c82067cd3ffe7cc6a014c9579f7a186f5176bf2e78f3cc"
 
-# x86-64 glibc runtime, carried into the guest so that DYNAMICALLY linked x86-64 programs can run
-# under Rosetta. Rosetta translates instructions; it does not supply libraries, and this guest's own
-# userland is musl on arm64 — so without this, a glibc-linked worker dies at the dynamic loader.
-# Only needed on Apple Silicon; an Intel host runs x86-64 natively against its own guest userland.
+# x86-64 glibc runtime, carried into the guest so that DYNAMICALLY linked x86-64 programs can run.
+# BOTH architectures need it: the guest userland is Alpine, which is MUSL, while senior_worker and
+# every vendor model library it loads are built against GLIBC and name /lib64/ld-linux-x86-64.so.2
+# as their ELF interpreter. Without this a glibc-linked worker dies at the dynamic loader.
+#
+# On Apple Silicon there is a second reason on top — Rosetta translates instructions and supplies no
+# libraries, and the native userland is arm64 besides. On Intel the program is native x86-64 and no
+# translation is involved, but musl is still not glibc. (This note used to say "only needed on
+# Apple Silicon"; that was wrong, and it is exactly what would have made the first Intel build
+# produce a worker that could not start.)
 UBUNTU_BASE_AMD64_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz"
 UBUNTU_BASE_AMD64_SHA256="c1e67ef7b17a6300e136118bd1dc04725009cb376c1aad10abcf8cd453628d58"
