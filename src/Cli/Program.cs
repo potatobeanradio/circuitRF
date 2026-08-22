@@ -26,6 +26,14 @@ args = TakeKitFolders(args, out var kitFolders);
 if (kitFolders.Count > 0)
     ExternalDeviceRegistry.AddResolver(new DeviceWorkerProviderResolver(kitFolders));
 
+// A worker's own log, when CRF_WORKER_LOG asks for it. What a worker MEASURES — which nodes are
+// free unknowns, which pins carry a temperature, whether the model's Jacobian matches its currents
+// — decides how its device is stamped, and a measurement that lands differently on two machines
+// produces no error on either: the device stamps cleanly, the numbers stay finite, and one machine
+// simply will not converge. On stderr, so it never contaminates piped results.
+ProcessDeviceWorkerTransport.Logged += log => Console.Error.WriteLine(
+    string.IsNullOrWhiteSpace(log.Provider) ? $"worker: {log.Line}" : $"worker '{log.Provider}': {log.Line}");
+
 return args[0].ToLowerInvariant() switch
 {
     "sparam" => RunSparam(args[1..]),

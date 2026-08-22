@@ -28,6 +28,47 @@ public sealed class DeviceWorkerProcessTests
     private const string TypeId = "example_fet_v1";
 
     /// <summary>
+    /// A worker's own log reaches the host as it arrives, when the host asks for it.
+    ///
+    /// <para><b>The gap this closes.</b> A worker MEASURES how a model's nodes behave — which are
+    /// free unknowns, which carry a temperature — and those measurements decide how the device is
+    /// stamped. A measurement that comes out differently on two machines throws on neither: the
+    /// device stamps cleanly, every number stays finite, and the only symptom is that one of them
+    /// does not converge. <c>RecentErrorOutput</c> holds the same lines but is read only where
+    /// something threw, so the one account of what happened was unreachable in exactly that case.</para>
+    /// </summary>
+    [Fact]
+    public void AWorkersOwnLog_ReachesTheHost_WhenItIsAskedFor()
+    {
+        var seen = new List<string>();
+        void Collect(DeviceWorkerLogLine l) { lock (seen) seen.Add(l.Line); }
+
+        bool was = ProcessDeviceWorkerTransport.MirrorErrorOutput;
+        ProcessDeviceWorkerTransport.MirrorErrorOutput = true;
+        ProcessDeviceWorkerTransport.Logged += Collect;
+        try
+        {
+            // The reference worker writes to its error stream when it is told to fail, which is the
+            // one thing every worker's stream is guaranteed to carry.
+            using var transport = ProcessDeviceWorkerTransport.Start(
+                WorkerPath, ["--fail-with", "measured node 6 as undriven"], forProvider: "AcmeKit");
+
+            for (int i = 0; i < 100; i++)
+            {
+                lock (seen) if (seen.Count > 0) break;
+                Thread.Sleep(20);
+            }
+
+            lock (seen) Assert.Contains("measured node 6 as undriven", seen);
+        }
+        finally
+        {
+            ProcessDeviceWorkerTransport.Logged -= Collect;
+            ProcessDeviceWorkerTransport.MirrorErrorOutput = was;
+        }
+    }
+
+    /// <summary>
     /// A worker that is simply not on this machine says whose program it is and where it was looked
     /// for, rather than passing on the operating system's own account.
     ///

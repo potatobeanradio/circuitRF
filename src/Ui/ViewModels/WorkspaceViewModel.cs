@@ -397,6 +397,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Same shape and the same reason: a process-lifetime static, subscribed once.
         ProcessDeviceWorkerTransport.Starting += OnDeviceWorkerStarting;
+        ProcessDeviceWorkerTransport.Logged   += OnDeviceWorkerLogged;
 
         Messages.Info("circuitRF ready.");
     }
@@ -428,6 +429,29 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         string text = $"Starting the worker that evaluates {forWhat} " +
                       $"({Path.GetFileName(start.Command)}). The first device waits for it to load " +
                       "its models; the rest of the run does not.";
+
+        if (Dispatcher.UIThread.CheckAccess()) Messages.Info(text);
+        else Dispatcher.UIThread.Post(() => Messages.Info(text));
+    }
+
+    /// <summary>
+    /// Passes a worker's own log through to the run log, when it has been asked for
+    /// (<c>CRF_WORKER_LOG</c> in the environment).
+    ///
+    /// <para><b>Why this is worth a switch.</b> A worker MEASURES things nobody declares — which of
+    /// a model's nodes are free unknowns, which pins carry a temperature, whether the model's own
+    /// Jacobian agrees with its own currents — and those measurements decide how the device is
+    /// stamped. A measurement that comes out differently on two machines produces no error on
+    /// either: the device stamps cleanly, every number stays finite, and the only symptom is that
+    /// one of them will not converge. The worker says exactly what it found, and until now nobody
+    /// could read it unless something threw.</para>
+    ///
+    /// <para>Off by default: it is per-line, and a worker under a failing solve has a lot to say.</para>
+    /// </summary>
+    private void OnDeviceWorkerLogged(DeviceWorkerLogLine log)
+    {
+        string who  = string.IsNullOrWhiteSpace(log.Provider) ? "worker" : $"worker '{log.Provider}'";
+        string text = $"{who}: {log.Line}";
 
         if (Dispatcher.UIThread.CheckAccess()) Messages.Info(text);
         else Dispatcher.UIThread.Post(() => Messages.Info(text));

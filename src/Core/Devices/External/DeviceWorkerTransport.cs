@@ -55,6 +55,12 @@ public interface IDeviceWorkerTransport : IDisposable
 public readonly record struct DeviceWorkerStart(string Provider, string Command);
 
 /// <summary>
+/// One line a worker wrote to its error stream, with the provider it serves and the program it is.
+/// See <see cref="ProcessDeviceWorkerTransport.Logged"/>.
+/// </summary>
+public readonly record struct DeviceWorkerLogLine(string Provider, string Command, string Line);
+
+/// <summary>
 /// A worker running as a local child process, spoken to over its standard input and output.
 ///
 /// <para><b>Why stderr is drained on a thread.</b> A worker logs to its error stream. Nobody
@@ -67,14 +73,24 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     /// <summary>How much of the worker's error output to keep for diagnostics.</summary>
     private const int RetainedErrorLines = 40;
 
+    /// <summary>How many of a worker's lines to pass on when <see cref="MirrorErrorOutput"/> is on.
+    /// A worker logs once per set-up step, so a real session is tens of lines — but a device refusing
+    /// every point logs once per point, and a diagnostic that floods the thing it is meant to be read
+    /// in is not one.</summary>
+    private const int MirroredLineLimit = 500;
+
     private readonly Process       _process;
     private readonly Queue<string> _errorLines = new();
     private readonly Lock          _errorGate  = new();
+    private readonly string        _provider;
 
-    private ProcessDeviceWorkerTransport(Process process, string origin)
+    private int _mirrored;
+
+    private ProcessDeviceWorkerTransport(Process process, string origin, string provider)
     {
-        _process = process;
-        Origin   = origin;
+        _process  = process;
+        Origin    = origin;
+        _provider = provider;
 
         _process.ErrorDataReceived += (_, e) =>
         {
@@ -84,8 +100,51 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
                 _errorLines.Enqueue(e.Data);
                 while (_errorLines.Count > RetainedErrorLines) _errorLines.Dequeue();
             }
+
+            Mirror(e.Data);
         };
         _process.BeginErrorReadLine();
+    }
+
+    /// <summary>
+    /// Whether to pass every line a worker writes to <see cref="Logged"/> as it arrives. Off unless
+    /// <c>CRF_WORKER_LOG</c> is set in the environment; settable so a host can offer its own switch.
+    ///
+    /// <para><b>What this is for, and why the existing capture is not enough.</b> A worker's log is
+    /// the only account of the things it MEASURES rather than is told — which nodes it found to be
+    /// free unknowns, which pins carry a temperature, whether the model's own Jacobian agrees with
+    /// its currents. Those measurements decide how the device is stamped, and a wrong one is
+    /// invisible from the host: the device stamps cleanly, every number is finite, and the only
+    /// symptom is a solve that will not converge. <see cref="RecentErrorOutput"/> holds the same
+    /// lines, but it is read only where something THREW — and this failure mode never throws, so the
+    /// one description of what happened was unreachable in exactly the case that needs it.</para>
+    ///
+    /// <para>Off by default because it is per-line and a worker under a failing solve is chatty.</para>
+    /// </summary>
+    public static bool MirrorErrorOutput { get; set; } =
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CRF_WORKER_LOG"));
+
+    /// <summary>
+    /// One line a worker wrote to its error stream, as it arrives. Only raised while
+    /// <see cref="MirrorErrorOutput"/> is on.
+    /// </summary>
+    public static event Action<DeviceWorkerLogLine>? Logged;
+
+    private void Mirror(string line)
+    {
+        if (!MirrorErrorOutput) return;
+
+        int n = Interlocked.Increment(ref _mirrored);
+        if (n > MirroredLineLimit) return;
+
+        string text = n == MirroredLineLimit
+            ? $"(further output from this worker is not being shown; {MirroredLineLimit} lines is the limit)"
+            : line;
+
+        // A host's own reporting must never be the reason a worker fails — the same rule Starting
+        // follows, and for the same reason: the failure would be attributed to the kit.
+        try { Logged?.Invoke(new DeviceWorkerLogLine(_provider, Origin, text)); }
+        catch { /* ignored */ }
     }
 
     /// <summary>
@@ -151,7 +210,7 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
             throw new ExternalDeviceException(WhyItDidNotStart(executablePath, ex), ex);
         }
 
-        return new ProcessDeviceWorkerTransport(process, executablePath);
+        return new ProcessDeviceWorkerTransport(process, executablePath, forProvider ?? "");
     }
 
     /// <summary>
