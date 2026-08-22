@@ -62,7 +62,41 @@ notice this from a macOS or Windows CI run.
 
 `Avalonia.Skia` 12.0.3 depends on the **plain** `SkiaSharp.NativeAssets.Linux`, so the shipped
 application's own `libSkiaSharp.so` does want `libfontconfig.so.1` at run time — and the app renders
-text, so it genuinely wants system fonts, unlike IconGen. `build-deb.sh`'s `--depends` names only the
-`libicu*` alternatives. A desktop that can run the app almost certainly has fontconfig already, so this
-has never been reported; adding `libfontconfig1` to `--depends` would make it explicit rather than
-lucky.
+text, so it genuinely wants system fonts, unlike IconGen. `build-deb.sh` now declares **no**
+`--depends` at all (see below). A desktop that can run the app almost certainly has fontconfig already,
+so this has never been reported; adding `libfontconfig1` to `--depends` would make it explicit rather
+than lucky.
+
+---
+
+## A versioned `libicu` dependency makes the .deb uninstallable on the next distribution (2026-08-21)
+
+`sudo apt install ./circuitRF-1.0.0-beta.1-arm64.deb` refused before unpacking anything:
+
+```
+ circuitrf : Depends: libicu76 but it is not installable or
+                      libicu74 but it is not installable or  … (down to libicu67)
+      but none of the choices are installable:
+      [no choices]
+```
+
+**`[no choices]` is not "ICU is missing" — it is "none of those package NAMES exists here."** ICU bumps
+its SONAME every release and the Debian package name follows it, so an alternatives list can only name
+the versions that existed the day it was written. A machine shipping `libicu77`/`libicu78` has perfectly
+good ICU and still matches nothing in the list, and dpkg alternatives have no wildcard or
+version-range form that could express "any libicu" — so the failure was scheduled, not accidental, and
+widening the list only moves the date.
+
+**The pin was never what made ICU work.** The package installs a **self-contained** publish, and .NET's
+globalization shim `dlopen()`s `libicuuc.so.<N>` across a wide range of N at start-up; it finds whatever
+the machine has, with no help from package metadata. So the dependency was removed outright rather than
+extended. What replaces it is a **soft check in `postinst`**: if `ldconfig -p` shows no `libicuuc.so.*`
+it prints what to install and names `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`, and the install still
+succeeds — a machine with no ICU gets an app that starts without culture data, which beats an app that
+cannot be installed.
+
+Gate: `tests/Ui.Tests/PackagingScriptTests.DebDeclaresNoVersionedIcuDependency` — it reads the `--depends`
+lines of `build-deb.sh` (ignoring comments, which discuss the old list on purpose) and fails on any
+`libicu<digits>`, and it requires `postinst` to keep the `libicuuc` check, since with no declared
+dependency that check is the only thing left that can tell a user what is wrong. Verified to fail on
+reintroduction, not just assumed.

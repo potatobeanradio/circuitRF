@@ -976,7 +976,7 @@ public sealed class WBondControllingParametersTests : IDisposable
 
         var vm = new SchematicViewModel(model);
 
-        Assert.Equal(4, vm.RenderModel.Components.Single().Ports.Count);   // G1.i/o, G2.i/o (RefPin off)
+        Assert.Equal(4, vm.RenderModel!.Components.Single().Ports.Count);   // G1.i/o, G2.i/o (RefPin off)
         Assert.Contains(vm.RenderModel.Components.Single().Labels, l => l.StartsWith("LoopHeight_G2"));
 
         // The user deleted G2 in the layout.
@@ -1305,7 +1305,7 @@ public sealed class WBondControllingParametersTests : IDisposable
             Assert.NotEmpty(onDisk.Arrays[^1].Wires);
 
             // The symbol grew with it, and every array's wires are real loops rather than chords.
-            Assert.Equal(round * 2, vm.RenderModel.Components.Single().Ports.Count);
+            Assert.Equal(round * 2, vm.RenderModel!.Components.Single().Ports.Count);
             foreach (var array in onDisk.Arrays)
                 foreach (var wire in array.Wires)
                 {

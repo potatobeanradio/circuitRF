@@ -561,7 +561,7 @@ public class WBondRound6Tests
 
         WorkspaceViewModel.ArrangeWBondPanels(live);
 
-        var profile = Assert.Single(live.Panels.Where(p => p.Id == DockPanelIds.WBondProfile));
+        var profile = Assert.Single(live.Panels, p => p.Id == DockPanelIds.WBondProfile);
         Assert.True(profile.Open);
         Assert.Equal(DockSide.Left, profile.Side);
         Assert.False(profile.Inboard);
@@ -573,16 +573,16 @@ public class WBondRound6Tests
         // Only ONE tab in a group can be in front, and leaving the old flag set is how a panel comes
         // back BEHIND the one that was there (the round-5 report, one surface over).
         Assert.False(live.Panels.First(p => p.Id == DockPanelIds.Properties).Active);
-        Assert.Single(live.Panels.Where(p => p.Side == DockSide.Left && !p.Inboard && p.Group == 1 && p.Active));
+        Assert.Single(live.Panels, p => p.Side == DockSide.Left && !p.Inboard && p.Group == 1 && p.Active);
 
-        var inductance = Assert.Single(live.Panels.Where(p => p.Id == DockPanelIds.WBondInductance));
+        var inductance = Assert.Single(live.Panels, p => p.Id == DockPanelIds.WBondInductance);
         Assert.True(inductance.Inboard);                // between the tool columns and the documents
         Assert.Equal(DockSide.Left, inductance.Side);
         Assert.True(inductance.Active);
 
         // The COLUMN's own width lives on the side entry, and it is the narrow strip the owner keeps —
         // never that file's 0.8, which is the container holding the column AND the documents.
-        var side = Assert.Single(live.Sides.Where(s => s.Side == DockSide.Left && s.Inboard));
+        var side = Assert.Single(live.Sides, s => s.Side == DockSide.Left && s.Inboard);
         Assert.InRange(side.Proportion, 0.15, 0.25);
 
         // Nothing else moved. The reference .cws described a project tree, a palette and a document
@@ -610,7 +610,7 @@ public class WBondRound6Tests
 
         WorkspaceViewModel.ArrangeWBondPanels(live);
 
-        var profile = Assert.Single(live.Panels.Where(p => p.Id == DockPanelIds.WBondProfile));
+        var profile = Assert.Single(live.Panels, p => p.Id == DockPanelIds.WBondProfile);
         Assert.True(profile.Open);                  // opened…
         Assert.Equal(DockSide.Bottom, profile.Side); // …and otherwise untouched
         Assert.Equal(3, profile.Group);
@@ -677,7 +677,7 @@ public class WBondRound6Tests
 
         // Wire Profile — tabbed into the left column's lower group, in front, exactly as the owner's
         // .cws has it (Left / outboard / with Properties / Active).
-        var profile = Assert.Single(live.Panels.Where(p => p.Id == DockPanelIds.WBondProfile));
+        var profile = Assert.Single(live.Panels, p => p.Id == DockPanelIds.WBondProfile);
         Assert.True(profile.Open);
         Assert.Equal(DockSide.Left, profile.Side);
         Assert.False(profile.Inboard);
@@ -686,7 +686,7 @@ public class WBondRound6Tests
         Assert.False(live.Panels.Single(p => p.Id == DockPanelIds.Properties).Active);   // …so it is the FRONT tab
 
         // Array Inductance — its own narrow column between the tools and the documents.
-        var inductance = Assert.Single(live.Panels.Where(p => p.Id == DockPanelIds.WBondInductance));
+        var inductance = Assert.Single(live.Panels, p => p.Id == DockPanelIds.WBondInductance);
         Assert.True(inductance.Open);
         Assert.Equal(DockSide.Left, inductance.Side);
         Assert.True(inductance.Inboard);

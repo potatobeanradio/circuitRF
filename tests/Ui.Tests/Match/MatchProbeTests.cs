@@ -302,9 +302,9 @@ public class MatchProbeTests(ITestOutputHelper output)
         // because without it a bare port resistance had no representable fit at all. It is ranked by
         // the same residual as the rest and listed like the rest.
         Assert.Equal(5, d.Term1.ProbeFits.Count);
-        Assert.Single(d.Term1.ProbeFits.Where(f => f.Fit.Kind == ReactanceKind.None));
+        Assert.Single(d.Term1.ProbeFits, f => f.Fit.Kind == ReactanceKind.None);
         Assert.True(d.Term1.HasProbeResult);
-        Assert.Single(d.Term1.ProbeFits.Where(f => f.IsBest));
+        Assert.Single(d.Term1.ProbeFits, f => f.IsBest);
         Assert.Contains(d.Term1.ProbeFits, f => !f.IsPhysical);   // shown, labelled, not applicable
         foreach (var f in d.Term1.ProbeFits)
         {

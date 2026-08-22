@@ -1972,9 +1972,9 @@ public class WBondRound5Tests
         // ONE restore, and one hide per kind of home — docked or floating. The floating branch is an
         // alternative way to reach the hidden state, not a fourth state: it returns rather than falling on
         // through, so no press can leave the panel half-hidden.
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(body, @"RestorePanelToItsHome\(panelId, tool\)").Count);
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(body, @"HideFloatingPanel\(panelId, tool, window\)").Count);
-        Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(body, @"DockPanelHiding\.Hide\(").Count);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(body, @"RestorePanelToItsHome\(panelId, tool\)"));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(body, @"HideFloatingPanel\(panelId, tool, window\)"));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(body, @"DockPanelHiding\.Hide\("));
     }
 
     /// <summary>

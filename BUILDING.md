@@ -211,6 +211,14 @@ sudo apt remove circuitrf
 
 Cross-building is fine — an `arm64` package builds on an x64 machine.
 
+**The package declares no dependencies, on purpose.** It used to declare
+`Depends: libicu76 | libicu74 | …`, and that is an install failure waiting for the next
+distribution — ICU's package name carries its SONAME, so on a machine shipping a newer ICU apt finds
+none of the listed names and refuses the package outright ("none of the choices are installable").
+The build is self-contained and .NET locates whatever `libicuuc.so.<N>` the system has, so the pin
+bought nothing; `postinst` prints a note — without failing — when the system has no ICU at all, and
+`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` runs the app without culture data on such a machine.
+
 ---
 
 ## harmonicaRF and wBond

@@ -192,7 +192,7 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
     [Fact]
     public void MatchIsInThePalette_UnderTheMatchingCategory()
     {
-        var item = Assert.Single(LibraryCatalog.AllItems.Where(i => i.Kind == SymbolKind.Match));
+        var item = Assert.Single(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.Match);
         Assert.Equal("Match", item.DisplayName);
         Assert.Equal(ComponentCategory.Matching, item.Category);
         Assert.True(item.IsCommon);

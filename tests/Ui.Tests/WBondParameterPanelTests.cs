@@ -192,7 +192,7 @@ public class WBondParameterPanelTests
 
         design!.Validate();   // would throw on an empty array
         Assert.Equal(2, design.Arrays.Count);
-        Assert.Equal(1, design.Arrays[1].Wires.Count);
+        Assert.Single(design.Arrays[1].Wires);
 
         // Four pins now — and the `Arrays` record moved with the design, so a later import compares
         // against what is actually there.

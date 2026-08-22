@@ -91,6 +91,23 @@ if [ ! -f "$WORKER" ]; then
     fi
 fi
 
+# ── Dependencies: deliberately none ───────────────────────────────────────────
+#
+# This package used to declare `Depends: libicu76 | libicu74 | ... | libicu67`, and that is an
+# install failure waiting for the next distribution. ICU bumps its SONAME every release, so the
+# package name changes with it (libicu77, libicu78, ...); an alternatives list can only name the
+# versions that existed on the day it was written, and apt refuses the package outright when none of
+# them is in the user's repositories — "none of the choices are installable: [no choices]", which is
+# what a current-distro arm64 install reported (2026-08-21). Widening the list only moves the date.
+#
+# Nothing is lost by dropping it, because the version pin was never what made ICU work: the app is
+# published SELF-CONTAINED, and .NET's globalization shim dlopen()s libicuuc.so.<N> across a wide
+# range of N at startup, so it finds whatever ICU the machine actually has. postinst warns (without
+# failing) when it finds none, and names the invariant-mode fall-back.
+#
+# fontconfig is a real run-time dependency of the shipped libSkiaSharp.so and is still not declared
+# here on purpose — see packaging/RESOLVED.md, "Noted in passing".
+
 DIST="${ROOT}/dist"
 DEB="${DIST}/circuitRF-${CRF_VERSION}-${ARCH}.deb"
 mkdir -p "$DIST"
@@ -103,7 +120,6 @@ fpm -s dir -t deb -n circuitrf -v "$CRF_DEB_VERSION" -a "$DEB_ARCH" \
     --license MIT \
     --maintainer "potatobeanradio" \
     --category "science" \
-    --depends "libicu76 | libicu74 | libicu72 | libicu71 | libicu70 | libicu67" \
     --after-install "${HERE}/postinst" \
     --after-remove  "${HERE}/postrm" \
     -p "$DEB" \

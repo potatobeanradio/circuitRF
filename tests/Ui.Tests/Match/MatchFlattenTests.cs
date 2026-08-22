@@ -100,7 +100,7 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
     private static Complex[,][] Sweep(SchematicEditModel model, double[] frequencies)
     {
         var extracted = NetExtractor.Extract(model, "tb", new DiskResolver());
-        Assert.Empty(extracted.Conflicts.Where(c => !c.Contains("MEAS", StringComparison.Ordinal)));
+        Assert.DoesNotContain(extracted.Conflicts, c => !c.Contains("MEAS", StringComparison.Ordinal));
 
         var netlist = new Elaborator(extracted.Library).Elaborate(extracted.TestBench);
         var ds = SParameterEngine.Run(netlist, frequencies);

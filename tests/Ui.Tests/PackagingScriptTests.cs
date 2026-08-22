@@ -186,4 +186,40 @@ public class PackagingScriptTests
         Assert.True(key >= 0 && key + 1 < lines.Length, $"{plist} has no CFBundleExecutable key.");
         Assert.Equal($"<string>{expected}</string>", lines[key + 1].Trim());
     }
+
+    /// <summary>
+    /// <b>The .deb must not name a versioned ICU package.</b> ICU bumps its SONAME every release and
+    /// the Debian package name follows it (<c>libicu76</c>, <c>libicu77</c>, …), so a
+    /// <c>Depends: libicu76 | libicu74 | …</c> lists only the versions that existed the day it was
+    /// written. On a distribution shipping a newer one, apt does not fall back — it refuses the whole
+    /// package ("none of the choices are installable: [no choices]"), which is how the 1.0.0-beta.1
+    /// arm64 build failed to install (2026-08-21).
+    ///
+    /// <para>Widening the list would only move the date. The pin was never what made ICU work: the
+    /// build is self-contained and .NET's globalization shim dlopen()s <c>libicuuc.so.&lt;N&gt;</c>
+    /// over a wide range of N, so it finds whatever the machine has. <c>postinst</c> warns — without
+    /// failing — when it finds none.</para>
+    /// </summary>
+    [Fact]
+    public void DebDeclaresNoVersionedIcuDependency()
+    {
+        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-deb.sh"));
+
+        // Comments explain the history; only the fpm invocation is the package's actual metadata.
+        var depends = script.Split('\n')
+                            .Where(l => !l.TrimStart().StartsWith("#", StringComparison.Ordinal))
+                            .Where(l => l.Contains("--depends", StringComparison.Ordinal))
+                            .ToList();
+
+        Assert.All(depends, line =>
+            Assert.False(Regex.IsMatch(line, @"libicu\d"),
+                "packaging/linux/build-deb.sh declares a versioned libicu dependency again — a .deb "
+                + "carrying one cannot be installed on any distribution shipping an ICU release newer "
+                + $"than the newest name in the list: {line.Trim()}"));
+
+        string postinst = File.ReadAllText(RepoFile("packaging", "linux", "postinst"));
+        Assert.True(postinst.Contains("libicuuc", StringComparison.Ordinal),
+            "packaging/linux/postinst no longer checks for ICU at all — with no dependency declared, "
+            + "that check is the only thing that tells a user with no ICU installed what to do.");
+    }
 }

@@ -885,7 +885,7 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
         string xaml = Xaml();
 
         // Exactly one thing keys off IsProbing, and it is in the footer.
-        Assert.Equal(1, Regex.Matches(xaml, @"IsVisible=""\{Binding IsProbing\}""").Count);
+        Assert.Single(Regex.Matches(xaml, @"IsVisible=""\{Binding IsProbing\}"""));
 
         int probing = xaml.IndexOf("IsVisible=\"{Binding IsProbing}\"", StringComparison.Ordinal);
         int footer  = xaml.IndexOf("<Grid Grid.Row=\"2\"", StringComparison.Ordinal);
@@ -1111,7 +1111,7 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
         // tooltip is where it went, so a blanket "the word 'add' is absent" would be the wrong claim.
         Assert.Contains("Text=\"+\"", addBlock, StringComparison.Ordinal);
         Assert.DoesNotContain("+ add", addBlock, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(1, Regex.Matches(addBlock, @"<TextBlock ").Count);
+        Assert.Single(Regex.Matches(addBlock, @"<TextBlock "));
 
         int link = xaml.IndexOf("IsChecked=\"{Binding LinkTransforms, Mode=TwoWay}\"",
                                 StringComparison.Ordinal);

@@ -6,6 +6,19 @@ ln -sf /opt/circuitrf/circuitRF /usr/bin/circuitrf
 
 chmod +x /opt/circuitrf/circuitRF || true
 
+# ICU, checked here rather than declared as a dependency. The package name carries ICU's SONAME
+# (libicu76, libicu77, ...), so a versioned `Depends:` names versions that do not exist on a newer
+# distribution and apt then refuses to install at all — see build-deb.sh. The application does not
+# need any PARTICULAR version: .NET dlopen()s libicuuc.so.<N> over a wide range of N. So the only
+# thing worth saying is when there is none at all, and it is worth saying without failing, because
+# the app still starts in invariant mode.
+if ! (ldconfig -p 2>/dev/null | grep -q 'libicuuc\.so'); then
+    echo "circuitRF: no ICU library (libicuuc.so.*) was found on this system."
+    echo "  Install your distribution's ICU runtime package (libicu76, libicu77, ... — whichever it"
+    echo "  ships), or start circuitRF with DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 to run without"
+    echo "  culture data. Everything else in this package is installed and ready."
+fi
+
 update-desktop-database -q 2>/dev/null || true
 update-mime-database /usr/share/mime 2>/dev/null || true
 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
