@@ -40,6 +40,11 @@ fi
 
 say() { echo "senior-worker: $*"; }
 
+# A zig that is not on PATH can be named outright -- an unpacked tarball, or one installed into a
+# shell that had already started. Without this, "installed but not on PATH" is indistinguishable
+# from "not installed", and the message the user gets is one they know to be false.
+ZIG=${CRF_ZIG:-zig}
+
 # No optimisation surprises: the worker is a transport, and the time goes inside the model library
 # it calls.
 CFLAGS='-O2 -std=gnu11 -Wall -Wextra -Wno-unused-parameter'
@@ -57,10 +62,10 @@ if [ "$target" = linux ]; then
     LDFLAGS='-rdynamic'
     LDLIBS='-ldl -lm'
 
-    if command -v zig >/dev/null 2>&1; then
+    if command -v "$ZIG" >/dev/null 2>&1; then
         say "building with zig cc (x86_64-linux-gnu)"
         # shellcheck disable=SC2086
-        exec zig cc -target x86_64-linux-gnu $CFLAGS $LDFLAGS "$src" -o "$bin" $LDLIBS
+        exec "$ZIG" cc -target x86_64-linux-gnu $CFLAGS $LDFLAGS "$src" -o "$bin" $LDLIBS
     fi
 
     for engine in docker podman; do
@@ -100,13 +105,13 @@ if [ "$target" = windows ]; then
     WCFLAGS="$CFLAGS"
     STUBLIBS='-lshell32'
 
-    if command -v zig >/dev/null 2>&1; then
+    if command -v "$ZIG" >/dev/null 2>&1; then
         say "building with zig cc (x86_64-windows-gnu)"
         # shellcheck disable=SC2086
-        zig cc -target x86_64-windows-gnu $WCFLAGS -DCRF_HOST_DLL -shared \
+        "$ZIG" cc -target x86_64-windows-gnu $WCFLAGS -DCRF_HOST_DLL -shared \
             "$src" "$def" -o "$dll" -lm || exit 1
         # shellcheck disable=SC2086
-        zig cc -target x86_64-windows-gnu $WCFLAGS -DCRF_HOST_STUB \
+        "$ZIG" cc -target x86_64-windows-gnu $WCFLAGS -DCRF_HOST_STUB \
             "$src" -o "$exe" $STUBLIBS || exit 1
         say "built $(basename "$dll") and $(basename "$exe")"
         exit 0
