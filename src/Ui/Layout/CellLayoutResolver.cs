@@ -166,6 +166,12 @@ public static class CellLayoutResolver
     public static void SetLive(string clayAbsPath, LayoutView view)
     {
         clayAbsPath = Path.GetFullPath(clayAbsPath);
+        // A live view is the ONE view mutated IN PLACE (a push-in session edits the same reference
+        // across every edit), so anything memoized on that reference is stale the moment this is
+        // called — and this is the moment it can be said once rather than at every consumer.
+        // <see cref="CellHierarchy.InvalidateShapesBbox"/> is what makes the spatial index and the
+        // renderer's LOD re-measure a grown sub-cell from generation alone, with no explicit reindex.
+        CellHierarchy.InvalidateShapesBbox(view);
         lock (_lock) { _live[clayAbsPath] = view; Generation++; }
         LiveViewChanged?.Invoke(clayAbsPath);
     }

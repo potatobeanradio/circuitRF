@@ -93,7 +93,18 @@ public sealed class LayoutSnapFeatureIndex
     /// <summary>Every feature within <paramref name="tolDbu"/> of (x,y) — a conservative near-cursor
     /// set (grid buckets, not an exact circle test until the caller applies its own tolerance), so
     /// this scales with what's near the cursor, never with how many features the whole cell holds.</summary>
-    public IReadOnlyList<IntrinsicSnapFeature> QueryNear(long x, long y, long tolDbu, ref SnapQueryCounters counters)
+    /// <param name="accept">Applied BEFORE a feature is admitted, so <paramref name="cap"/> can never
+    /// discard something a later filter would have kept. Null accepts everything.</param>
+    /// <param name="cap">At most this many features come back, the best by priority
+    /// <see cref="SnapFeatureKind"/> then distance — the same order the query above this one returns
+    /// in, applied here so a dense cell never MATERIALISES the rest. 0 means unbounded.
+    ///
+    /// <para>Unbounded is not a sane default for a caller that draws a marker: snap tolerance is a
+    /// fixed SCREEN distance in world units, so over a six-figure via field a cursor at full extent has
+    /// tens of thousands of features inside it — one list, grown and copied a dozen times, on every
+    /// pointer move, for a caller that reads the first entry.</para></param>
+    public IReadOnlyList<IntrinsicSnapFeature> QueryNear(long x, long y, long tolDbu, ref SnapQueryCounters counters,
+                                                        int cap = 0, Func<IntrinsicSnapFeature, bool>? accept = null)
     {
         if (_features.Count == 0) return [];
 
@@ -124,6 +135,10 @@ public sealed class LayoutSnapFeatureIndex
 
         long probed = 0;
 
+        bool saturated = false;
+        var worstKind = SnapFeatureKind.Pin;
+        double worstDistSq = 0;
+
         if (sweepIsWorthIt)
         {
             for (long kx = kx0; kx <= kx1; kx++)
@@ -141,15 +156,61 @@ public sealed class LayoutSnapFeatureIndex
 
         counters.FeaturesExamined += examined;
         counters.BucketsProbed += probed;
-        return (IReadOnlyList<IntrinsicSnapFeature>?)result ?? [];
+        if (result is null) return [];
+        if (cap > 0)
+        {
+            SortKept();
+            if (result.Count > cap) result.RemoveRange(cap, result.Count - cap);
+        }
+        return result;
 
         void Consider(int idx)
         {
             examined++;
             var f = _features[idx];
             double dx = f.X - x, dy = f.Y - y;
-            if (dx * dx + dy * dy > (double)r * r) return;
+            double distSq = dx * dx + dy * dy;
+            if (distSq > (double)r * r) return;
+            if (accept is not null && !accept(f)) return;
+
+            if (cap > 0)
+            {
+                // Rejected on arrival once the kept set is full and this is worse than its tail —
+                // nothing past the cap can reach the answer, so it is never stored.
+                if (saturated)
+                {
+                    int k = f.Kind.CompareTo(worstKind);
+                    if (k > 0 || (k == 0 && distSq >= worstDistSq)) return;
+                }
+                (result ??= []).Add(f);
+                // Trimming at twice the cap amortises the sort over the entries it admits.
+                if (result.Count >= cap * 2) Trim();
+                return;
+            }
             (result ??= []).Add(f);
+        }
+
+        void Trim()
+        {
+            SortKept();
+            result!.RemoveRange(cap, result.Count - cap);
+            var worst = result[^1];
+            worstKind = worst.Kind;
+            double wdx = worst.X - x, wdy = worst.Y - y;
+            worstDistSq = wdx * wdx + wdy * wdy;
+            saturated = true;
+        }
+
+        void SortKept()
+        {
+            long qx = x, qy = y;
+            result!.Sort((a, b) =>
+            {
+                int k = a.Kind.CompareTo(b.Kind);
+                if (k != 0) return k;
+                double ax = a.X - qx, ay = a.Y - qy, bx = b.X - qx, by = b.Y - qy;
+                return (ax * ax + ay * ay).CompareTo(bx * bx + by * by);
+            });
         }
     }
 

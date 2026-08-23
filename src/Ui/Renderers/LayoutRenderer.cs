@@ -54,6 +54,13 @@ public readonly struct LayoutRenderOptions
     /// See that constant for the measurement this exists because of.</summary>
     public double StrokeElisionPixelThreshold { get; init; }
 
+    /// <summary>Coverage at or above which a compiled instance chunk already on the stroke-elision
+    /// tier stops drawing its primitives and contributes ONE rect to a per-layer batch. 0 (the default)
+    /// means <see cref="LayoutRenderer.DefaultCoarseCoverageThreshold"/>; a NEGATIVE value disables the
+    /// tier outright, which is how a test pins the elided output the tier has to match. See that
+    /// constant for why the substitution is exact on a uniform field.</summary>
+    public double CoarseCoverageThreshold { get; init; }
+
     /// <summary>§2.3 R8b's "a preference forces merge permanently for anyone who prefers it" — when
     /// true, EVERY layer uses the batched-fill path regardless of shape count or size. The mechanism
     /// exists here; wiring an actual Settings toggle to it is a small follow-up, not required to close

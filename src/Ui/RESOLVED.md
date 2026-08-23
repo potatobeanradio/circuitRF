@@ -7683,3 +7683,174 @@ pixel distance in DBU, so zoomed out it sweeps a 3 µm radius and returns 162 ca
 UX, never mind as cost) against 0.04 ms zoomed in; and `EffectiveVisibleLabelHeightDbu` *boosts* any
 label under 8 device pixels UP to 8, so labels never get cheaper as you zoom out — 10,000 of them cost
 39 ms/frame piled into unreadable mush.
+
+## The same dense-PCell frame again, 30× further down — and the bigger half was never in the renderer (2026-08-23)
+
+The round above left Zoom-to-Fit "bounded by rasterizing 24,964 antialiased fills — the honest cost of
+drawing them all truthfully", and scoped out coverage-binning because "it changes how a dense field
+LOOKS when zoomed far out". A second design, one order of magnitude denser, showed both halves of that
+conclusion were too pessimistic: the cost was **not** honest, and the merge **need not** change how
+anything looks.
+
+The design: 26 shapes and **24 instances of one generated capacitor**, each holding a 396 × 396 field
+of 0.42 µm vias on a 1.26 µm pitch — **156,816 rects per placement, 3.76 million per frame**.
+
+Release, 1600 × 1000, median of 24 warmed frames, grid on:
+
+| view | before | after |
+|---|---|---|
+| Zoom-to-Fit | 247 ms | **8.0 ms** |
+| 2× in | 156 ms | **11.0 ms** |
+| 4× in | 74.8 ms | **11.2 ms** |
+| 16× in | 13.5 ms | 12.5 ms |
+| 64× in | 10.5 ms | 9.9 ms |
+
+Draw calls at Zoom-to-Fit: **15,170 → 194**.
+
+### Half the frame was a bbox scan, and it was not in the renderer at all
+
+`CellHierarchy.InstanceBbox` unions `LayoutGeometry.BboxOf(shape)` over every shape of the resolved
+sub-cell, and `DrawInstances` calls it **per placement, per frame** — it is what the instance-level LOD
+decision is taken against. 24 placements × 156,816 shapes is **3.76 million bbox unions every frame of
+every pan**, before a single pixel is drawn. It is also what the spatial index and Zoom-to-Fit measure
+with, so the same scan runs again on those paths.
+
+It cost ~20 ms of the post-chunking frame here and was invisible in the previous round for a plain
+arithmetic reason: 2 placements of a 24,964-shape cell is 50k unions, which rounds to nothing. The
+defect did not change; the design got 75× bigger.
+
+A view's own shapes' bbox is now memoized on the view REFERENCE
+(`CellHierarchy.ShapesBbox`), piggybacking on `CellLayoutResolver`'s (path, mtime) cache lifecycle
+exactly as the renderer's compiled-geometry cache already does — a file change produces a new
+`LayoutView` and therefore a natural miss, with no invalidation call to forget.
+
+- **Deliberately the shapes only, never the recursive result.** `CellBboxRecursive`'s answer depends on
+  the `visiting` set and the `depth` it was reached at, so the same sub-cell down two different chains
+  can legitimately have two different effective bboxes. Its own shapes depend on neither, and they are
+  where all the time was.
+- **The eviction belongs in `CellLayoutResolver.SetLive`, not at the workspace seam.** A live view is
+  the one view mutated IN PLACE, and `SetLive` is the single moment it is republished.
+  `LayoutHierarchyLiveRefreshTests.GrowingSubCellExtent_…` caught this immediately when the eviction was
+  hung off `InvalidateCompiledGeometry` instead — that test asserts a grown sub-cell's bbox self-heals
+  from `SetLive` **alone**, with no explicit reindex, which is a stricter contract than the compiled
+  geometry's and is the right one.
+
+### Coverage is what makes the merge free rather than lossy
+
+The previous round was right that collapsing sub-pixel clusters is a visual change *in general*. It is
+not one where it actually pays, and the condition is checkable.
+
+The elision tier grows every primitive by half the hairline stroke on each side. On a uniform pitch p
+with grown side s, the fraction of a chunk's bounds its primitives cover is exactly (s/p)² — so
+**coverage ≥ 1 is s ≥ p is "adjacent grown primitives touch", and their union IS the bounding box.**
+Zoom a via field out and the elided tier is already painting a solid block; it just gets there by
+tessellating and merging ~150 mutually overlapping rectangles per chunk, per placement, and throwing
+the overlap away.
+
+So the coarse tier (`BuildCoarse`) contributes ONE rect — the chunk's own grown bounds — for every
+chunk that is both on the elision tier and at coverage ≥ 1, and batches all of them into **one path per
+layer**. Coverage comes from three sums banked at compile time (Σ area, Σ (w+h), count), so
+coverage(g) = (ΣA + 2g·ΣS + 4g²N)/boundsArea is a few flops per chunk per zoom step.
+
+- **Both gates are functions of the grow amount ALONE**, which is why the split is cacheable for a whole
+  pan gesture. grow is `GeometryStrokeDevicePixels / 2` device pixels expressed in cell-local path
+  space, so it already carries the zoom *and* the placement's magnification; the elision test
+  `MaxExtent · placementScale · scaleUm < threshold` rewrites to `MaxExtent < threshold · 2g /
+  GeometryStrokeDevicePixels` with no second key needed.
+- **The size gate is not redundant with the coverage gate**, and a test has to be built specifically to
+  say so. Coverage is an AREA measure, so geometry that overlaps itself can sum past its own bounding
+  box while leaving a large part of that box empty — 40 overlapping 50 µm squares clumped at one end of
+  a 400 µm extent reach coverage 1.28 with a 250-px hole. Only the elision tier's few-device-pixel size
+  limit keeps that off the coarse tier. Mutation-checked both ways:
+  `CoarseTier_OnAFieldTooSparseForItsGrownPrimitivesToMeet_…` goes red when the coverage gate is
+  slackened, `CoarseTier_OnLargePrimitivesThatOverlapButLeaveAGap_…` when the size gate is removed, and
+  neither catches the other's mutation.
+- **The equivalence assertion is about WHERE two renders differ, not how much.** Inside the field both
+  tiers paint the same opaque colour over the same pixels and must agree EXACTLY; along the field's
+  outer edge they antialias one boundary two ways and land a fraction of a pixel apart (max channel
+  difference 35/255 on a handful of edge pixels). A whole-frame tolerance loose enough to admit that
+  would also admit a wrong interior — so the test partitions by position and demands zero interior
+  differences.
+- **The earlier fixture trap repeats one level up.** A field of RECTS cannot tell the coarse tier from
+  the elided one at any zoom, for the same reason it could not tell the elided tier from the exact one:
+  the substitution is exact for an opaque axis-aligned rect. The gate tests need the clumped/sparse
+  fixtures above, not a denser via field.
+
+### What the frame is now, and what is NOT worth doing
+
+At 8.0 ms, **the grid is 4.5 ms of it and the artwork 3.5 ms** (measured against an empty view: 4.5 ms
+with the grid, 0.1 ms without). The grid is ~25,000 antialiased round-cap dots at the 8-device-pixel
+minimum spacing, and the cost is Skia rasterizing them, **not** building them: restructuring
+`DrawGrid` to hoist the per-row work out of the per-point loop (25,000 64-bit modulos and world-to-screen
+transforms became a few hundred) and to fill exactly-sized arrays instead of growing two lists —
+~400 KB of allocation a frame — measured **no change at all**, and was reverted rather than kept as
+unmeasured complexity. Note also that this whole harness is CPU raster; the application leases a
+GPU-backed canvas, where 25k points is a different proposition from 3.7M tessellated rects.
+
+## Once the frame got fast, the pointer became the bottleneck — and it was never the renderer (2026-08-23)
+
+Reported after the round above: zooming painfully slow, the geometry-snap glyph slow to follow the
+mouse, marquee select slow, and zoom-then-select worst of all. Three of the four are one cause, and it
+is not in the renderer at all.
+
+**Measured first, on the same 24-placement / 156,816-via-per-placement design.** A frame is 5–16 ms at
+1600 x 1000 at EVERY zoom from full extent to 4096x — the render was not what any of these
+complaints were about. The one outlier was the snap query: **10.9 ms per pointer move, returning
+15,621 candidates.**
+
+### Why a snap query can return fifteen thousand candidates
+
+Snap tolerance is a fixed SCREEN distance converted to world units. How many features land inside it is
+therefore a property of how dense the geometry is on screen, and nothing the query controls: at full
+extent, eight device pixels is tens of microns, which over a 1.26 um via pitch is thousands of vias and
+~9 intrinsic features each. Every one was collected, and the whole list sorted, on every pointer move —
+for a caller that reads `[0]`. The only consumer that wants more is the click-cycle stack, and it cannot
+ask anyone to page through fifteen thousand indistinguishable vias either.
+
+### The cost was not where it looked
+
+Bounding the candidate list (`LayoutSnapCandidateSet`, cap 64, trimmed at twice that) took 10.9 ms to
+3.5 ms — so the list and its sort were real, but not the whole story. Pushing the visibility filter down
+into the feature index so the cap could not discard a survivor then made it **worse: 23.9 ms**. That is
+the measurement that found the actual defect.
+
+`LayoutSnapQuery.ResolveLayer` was a **linear scan of `Technology.Layers`**, and a real process stack
+here is ~380 layers. It was called once per snap FEATURE. Moving the filter earlier simply called it
+more often, which is why the "improvement" ran backwards and why the first bound looked like it had
+fixed more than it had. Replaced with a map built once per query (plus a one-entry memo in front of it,
+which answers nearly everything, because features arrive grouped by shape and a dense field is one
+layer): **0.9 ms.** The map is deliberately per-query rather than cached on the `Technology`, so no edit
+to a technology can leave it stale.
+
+- **First wins, not last.** The scan returned the first matching layer, so the map is built with
+  `TryAdd`. A technology with a duplicate key would otherwise silently resolve to the other one.
+- **The filter must run BEFORE the cap, and a test has to say so.** Applied the other way round, a
+  dense field on a HIDDEN layer fills the cap and the single visible feature — the only thing that
+  should come back — is discarded before it is ever tested.
+  `ADenseFieldOnAHiddenLayer_ContributesNothing_…` goes red on exactly that inversion.
+
+### The marquee was paying for a query it cannot use
+
+`UpdateSnapMarker` runs at the top of `HandleSelectMove`, before the drag-kind switch, so it ran on
+every move of a marquee drag — the one gesture that deliberately sweeps the cursor across as much
+geometry as possible. A marquee's rectangle is built from the RAW pointer position and its commit reads
+only `ComputeMarqueeSelection`; nothing consumes the snap answer. It is now skipped, alongside the
+existing scale-drag and out-of-scope-handle guards. `MarqueeDrag_RunsNoSnapQuery` holds it, with
+`TheSameMovesWithoutADrag_DoRunTheSnapQuery` as the control that stops the guard being deleted
+silently.
+
+### What remains, measured rather than assumed
+
+- **A slow zoom BAND, and it is honest.** At 3200 x 2000 a frame is 17–40 ms almost everywhere but
+  ~60 ms between roughly 5x and 22x of full-extent zoom. That is exactly the window where the coarse
+  tier has switched off (grown primitives no longer touch) and the elision tier has not yet
+  (primitives still under a few device pixels): the vias are individually resolvable, so ~180k
+  separate antialiased rects is what drawing them truthfully costs.
+- **Quantising the cache key to survive a zoom gesture was tested and refuted.** In the band, pan-only
+  frames and fresh-zoom-every-frame frames measure IDENTICALLY (66.5 vs 67.8 ms at 8x; 62.8 vs 62.7 at
+  22.6x), so the per-zoom-step rebuild of the elided/coarse paths costs nothing measurable and there is
+  nothing for a coarser cache key to save. The band is rasterisation.
+- **The first hover over a dense cell still costs ~120 ms**, building that cell's snap-feature index —
+  ~1.4 million features for a six-figure via field. One-time per cell per session, and unchanged here.
+- This harness is CPU raster; the application leases a GPU-backed canvas, where per-rect rasterisation
+  is a very different proposition. The snap and marquee costs above are CPU either way.

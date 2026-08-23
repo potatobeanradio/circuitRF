@@ -184,4 +184,34 @@ public sealed class LayoutHierarchyLiveRefreshTests : IDisposable
             parent.Shapes, parent.Instances, InstanceBboxOf, CellLayoutResolver.Generation, farQueryRect);
         Assert.Contains(hitsAfter, e => e.Kind == SpatialEntryKind.Instance && e.Index == 0);
     }
+
+    // ── The negative control for the test above, and the reason it needs one ───────────────────
+    //
+    // A sub-cell's own shapes are MEASURED once per resolved view and memoized on that view's
+    // reference (CellHierarchy.InvalidateShapesBbox is the eviction), because InstanceBbox is called
+    // per placement per FRAME to size, cull and LOD each one: a generated cell holding a six-figure
+    // via field, placed a couple of dozen times, was otherwise re-unioning millions of rectangles
+    // every frame of every pan.
+    //
+    // That memo is what SetLive above has to evict, and this is what proves the memo is really there:
+    // the identical in-place edit, with nothing published, leaves the measurement exactly as it was.
+    // Delete the eviction from SetLive and this test still passes while the one above goes red —
+    // which is the pair working as intended.
+
+    [Fact]
+    public void MutatingALiveSubCellWithoutPublishingIt_LeavesTheInstanceBboxAsItWas()
+    {
+        CreateCell("Leaf", v => v.Shapes.Add(new RectShape { Layer = LayerA, X1 = 0, Y1 = 0, X2 = 100, Y2 = 100 }));
+
+        var inst = new LayoutInstance { CellRef = "Leaf", X = 0, Y = 0, Mag = 1.0 };
+        var before = CellHierarchy.InstanceBbox(inst, _workspaceDir);
+        Assert.Equal(100, before.MaxX);
+
+        var liveView = CellLayoutResolver.Resolve("Leaf", _workspaceDir).View!;
+        ((RectShape)liveView.Shapes[0]).X2 = 300;
+        ((RectShape)liveView.Shapes[0]).Y2 = 300;
+        // Deliberately NOT calling CellLayoutResolver.SetLive here.
+
+        Assert.Equal(before, CellHierarchy.InstanceBbox(inst, _workspaceDir));
+    }
 }

@@ -158,9 +158,7 @@ public static class CellHierarchy
     /// and recursively for nested instances.</summary>
     private static Bbox CellBboxRecursive(LayoutView view, string viewBaseDir, HashSet<string> visiting, int depth)
     {
-        var bb = Bbox.Empty;
-        foreach (var shape in view.Shapes)
-            bb = bb.Union(LayoutGeometry.BboxOf(shape));
+        var bb = ShapesBbox(view);
 
         foreach (var nested in view.Instances)
         {
@@ -180,6 +178,42 @@ public static class CellHierarchy
             bb = bb.Union(ArrayExpand(nestedTransformed, nested));
         }
 
+        return bb;
+    }
+
+    /// <summary>A view's OWN shapes' bbox, memoized on the view REFERENCE — the same lifecycle the
+    /// renderer's compiled-geometry cache piggybacks on, for the same reason: a
+    /// <see cref="CellLayoutResolver"/> hit hands back the same <see cref="LayoutView"/> instance, and a
+    /// file change produces a new one, so the two caches go stale together for free with no
+    /// invalidation call to forget.
+    ///
+    /// <para><b>Deliberately the shapes only, never the recursive result.</b> The recursive walk's
+    /// answer depends on the <c>visiting</c> set and the <c>depth</c> it was reached at (see
+    /// <see cref="MaxDepth"/>), so the same sub-cell reached down two different chains can legitimately
+    /// have two different effective bboxes and must not share one cache entry. A view's own shapes
+    /// depend on neither, and they are where the time actually goes: a generated cell can hold a
+    /// six-figure via field, and <see cref="InstanceBbox"/> is called PER PLACEMENT, PER FRAME (the
+    /// renderer's LOD decision) — so a design placing that cell two dozen times was re-unioning
+    /// millions of rectangles every frame of every pan.</para></summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<LayoutView, StrongBoxBbox> _shapesBboxCache = new();
+
+    private sealed class StrongBoxBbox(Bbox value) { public readonly Bbox Value = value; }
+
+    /// <summary>Evicts <paramref name="view"/>'s memoized shapes bbox — the bbox half of
+    /// <c>LayoutRenderer.InvalidateCompiledGeometry</c>, which calls this, and which documents the
+    /// in-place-edited push-in session the eviction exists for. Safe on a view never measured (no-op).
+    /// </summary>
+    public static void InvalidateShapesBbox(LayoutView view) => _shapesBboxCache.Remove(view);
+
+    private static Bbox ShapesBbox(LayoutView view)
+    {
+        if (_shapesBboxCache.TryGetValue(view, out var hit)) return hit.Value;
+
+        var bb = Bbox.Empty;
+        foreach (var shape in view.Shapes)
+            bb = bb.Union(LayoutGeometry.BboxOf(shape));
+
+        _shapesBboxCache.AddOrUpdate(view, new StrongBoxBbox(bb));
         return bb;
     }
 

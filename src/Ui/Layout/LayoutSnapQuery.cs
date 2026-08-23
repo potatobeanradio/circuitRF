@@ -48,17 +48,22 @@ public static class LayoutSnapQuery
         long worldX, long worldY, long tolDbu, bool includeIntersections,
         IReadOnlySet<int>? excludeShapeIndices, IReadOnlySet<int>? excludeInstanceIndices, ref SnapQueryCounters counters)
     {
-        var result = new List<SnapCandidate>();
-        if (tolDbu <= 0) return result;
+        var result = new LayoutSnapCandidateSet(worldX, worldY);
+        if (tolDbu <= 0) return [];
+
+        var layerVisible = new LayerVisibility(tech);
 
         // ── Top-level intrinsic features (corner/midpoint/centroid/pin) — R-snp-12 ────────────────
+        // The two filters are handed to the index rather than applied to what it returns, so its own
+        // cap can only ever discard a feature that would have survived them — see QueryNear's `accept`.
+        bool AcceptTop(IntrinsicSnapFeature f) =>
+            (excludeShapeIndices is null || !excludeShapeIndices.Contains(f.OwnerShapeIndex))
+            && layerVisible[f.Layer];   // locked IS snappable — only Visible gates
+
         var topIndex = LayoutSnapFeatureIndex.Get(view, tech);
-        foreach (var f in topIndex.QueryNear(worldX, worldY, tolDbu, ref counters))
-        {
-            if (excludeShapeIndices is not null && excludeShapeIndices.Contains(f.OwnerShapeIndex)) continue;
-            if (!ResolveLayer(tech, f.Layer).Visible) continue; // locked IS snappable — only Visible gates
+        foreach (var f in topIndex.QueryNear(worldX, worldY, tolDbu, ref counters,
+                                             LayoutSnapCandidateSet.Cap, AcceptTop))
             result.Add(new SnapCandidate(f.Kind, f.X, f.Y, f.Layer, false, f.OwnerShapeIndex));
-        }
 
         // ── L2b spatial index — bounds instance discovery AND the near-shape set below (R-snp-14) ──
         var queryRect = new Bbox(worldX - tolDbu, worldY - tolDbu, worldX + tolDbu, worldY + tolDbu);
@@ -75,7 +80,7 @@ public static class LayoutSnapQuery
                 if (entry.Index < 0 || entry.Index >= view.Shapes.Count) continue;
                 // §2.5: hidden layers contribute nothing — Nearest/Intersection candidates must obey
                 // the same visibility gate the intrinsic-feature loop above already applies.
-                if (!ResolveLayer(tech, view.Shapes[entry.Index].Layer).Visible) continue;
+                if (!layerVisible[view.Shapes[entry.Index].Layer]) continue;
                 nearShapeIndices.Add(entry.Index);
             }
             else
@@ -84,30 +89,20 @@ public static class LayoutSnapQuery
                 if (excludeInstanceIndices is not null && excludeInstanceIndices.Contains(entry.Index)) continue;
                 // R-snp-13: transform the cursor into the instance's local frame, never the geometry.
                 RecurseInstance(view.Instances[entry.Index], baseDir, worldX, worldY, tolDbu, tech,
-                    result, entry.Index, depth: 0, ref counters);
+                    layerVisible, ref result, entry.Index, depth: 0, ref counters);
             }
         }
 
         // ── Intersections — relational, computed live over the bounded near-shape set, never indexed ──
         if (includeIntersections)
-            AddIntersectionCandidates(view, tech, nearShapeIndices, worldX, worldY, tolDbu, result, ref counters);
+            AddIntersectionCandidates(view, tech, nearShapeIndices, worldX, worldY, tolDbu, ref result, ref counters);
 
         // ── Nearest point on edge — lowest priority, same bounded near-shape set ──────────────────
-        AddNearestOnEdgeCandidates(view, tech, nearShapeIndices, worldX, worldY, tolDbu, result, ref counters);
+        AddNearestOnEdgeCandidates(view, tech, nearShapeIndices, worldX, worldY, tolDbu, ref result, ref counters);
 
-        double DistSq(SnapCandidate c)
-        {
-            double dx = c.X - worldX, dy = c.Y - worldY;
-            return dx * dx + dy * dy;
-        }
-        result.Sort((a, b) =>
-        {
-            int k = a.Kind.CompareTo(b.Kind);
-            return k != 0 ? k : DistSq(a).CompareTo(DistSq(b));
-        });
-
-        counters.CandidatesReturned = result.Count;
-        return result;
+        var sorted = result.ToSortedList();
+        counters.CandidatesReturned = sorted.Count;
+        return sorted;
     }
 
     /// <summary>
@@ -120,7 +115,8 @@ public static class LayoutSnapQuery
     /// </summary>
     private static void RecurseInstance(
         LayoutInstance inst, string baseDir, double callerCursorX, double callerCursorY, long tolDbu,
-        Technology? tech, List<SnapCandidate> result, int topLevelOwnerIndex, int depth, ref SnapQueryCounters counters)
+        Technology? tech, LayerVisibility layerVisible, ref LayoutSnapCandidateSet result,
+        int topLevelOwnerIndex, int depth, ref SnapQueryCounters counters)
     {
         if (depth >= CellHierarchy.MaxDepth) return;
         var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
@@ -128,6 +124,8 @@ public static class LayoutSnapQuery
 
         string subBaseDir = CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir!);
         int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
+
+        bool AcceptVisible(IntrinsicSnapFeature f) => layerVisible[f.Layer];
 
         for (int r = 0; r < rows; r++)
         for (int c = 0; c < cols; c++)
@@ -137,18 +135,21 @@ public static class LayoutSnapQuery
             long lxi = (long)Math.Round(lx), lyi = (long)Math.Round(ly);
 
             var idx = LayoutSnapFeatureIndex.Get(res.View!, tech);
-            foreach (var f in idx.QueryNear(lxi, lyi, localTol, ref counters))
+            foreach (var f in idx.QueryNear(lxi, lyi, localTol, ref counters,
+                                            LayoutSnapCandidateSet.Cap, AcceptVisible))
             {
-                if (!ResolveLayer(tech, f.Layer).Visible) continue;
                 var (wx, wy) = LayoutInstanceTransform.TransformPoint(f.X, f.Y, inst, r, c);
                 result.Add(new SnapCandidate(f.Kind, wx, wy, f.Layer, true, topLevelOwnerIndex));
             }
 
             foreach (var nested in res.View!.Instances)
             {
-                var nestedLocal = new List<SnapCandidate>();
-                RecurseInstance(nested, subBaseDir, lx, ly, localTol, tech, nestedLocal, topLevelOwnerIndex, depth + 1, ref counters);
-                foreach (var cand in nestedLocal)
+                // Bounded in the NESTED frame, which orders identically to the caller's: every
+                // placement transform here is a similarity, so it scales all distances by the same
+                // factor and cannot reorder two candidates.
+                var nestedLocal = new LayoutSnapCandidateSet((long)Math.Round(lx), (long)Math.Round(ly));
+                RecurseInstance(nested, subBaseDir, lx, ly, localTol, tech, layerVisible, ref nestedLocal, topLevelOwnerIndex, depth + 1, ref counters);
+                foreach (var cand in nestedLocal.ToSortedList())
                 {
                     var (wx, wy) = LayoutInstanceTransform.TransformPoint(cand.X, cand.Y, inst, r, c);
                     result.Add(cand with { X = wx, Y = wy });
@@ -161,7 +162,7 @@ public static class LayoutSnapQuery
 
     private static void AddIntersectionCandidates(
         LayoutView view, Technology? tech, List<int> nearShapeIndices,
-        long worldX, long worldY, long tolDbu, List<SnapCandidate> result, ref SnapQueryCounters counters)
+        long worldX, long worldY, long tolDbu, ref LayoutSnapCandidateSet result, ref SnapQueryCounters counters)
     {
         for (int a = 0; a < nearShapeIndices.Count; a++)
         for (int b = a + 1; b < nearShapeIndices.Count; b++)
@@ -186,7 +187,7 @@ public static class LayoutSnapQuery
 
     private static void AddNearestOnEdgeCandidates(
         LayoutView view, Technology? tech, List<int> nearShapeIndices,
-        long worldX, long worldY, long tolDbu, List<SnapCandidate> result, ref SnapQueryCounters counters)
+        long worldX, long worldY, long tolDbu, ref LayoutSnapCandidateSet result, ref SnapQueryCounters counters)
     {
         foreach (var i in nearShapeIndices)
         {
@@ -270,11 +271,43 @@ public static class LayoutSnapQuery
         return true;
     }
 
-    private static LayerDef ResolveLayer(Technology? tech, LayerKey key)
+    /// <summary>
+    /// Layer visibility, answered in constant time for the life of ONE query.
+    ///
+    /// <para>This replaced a linear scan of <c>Technology.Layers</c> per lookup, which is fine at a
+    /// handful of layers and is not what a real process stack looks like: at ~380 layers, asked once
+    /// per snap FEATURE, a cursor over a dense via field spent most of a pointer move walking that
+    /// list. The map costs one pass over the layer list per query and is thrown away with it, so no
+    /// edit to a technology can leave it stale — the reason it is not cached on the
+    /// <see cref="Technology"/> itself.</para>
+    ///
+    /// <para>The single-entry memo in front of the dictionary is not premature: intrinsic features
+    /// arrive grouped by shape and a dense cell's field is one layer, so it answers nearly every
+    /// lookup without hashing at all.</para>
+    /// </summary>
+    private sealed class LayerVisibility
     {
-        if (tech is { } t)
-            foreach (var l in t.Layers)
-                if (l.Key == key) return l;
-        return FallbackPalette.For(key);
+        private readonly Dictionary<LayerKey, bool> _byKey;
+        private LayerKey _lastKey;
+        private bool _lastValue, _hasLast;
+
+        public LayerVisibility(Technology? tech)
+        {
+            _byKey = new Dictionary<LayerKey, bool>(tech?.Layers.Count ?? 0);
+            if (tech is { } t)
+                foreach (var l in t.Layers)
+                    _byKey.TryAdd(l.Key, l.Visible);   // FIRST wins — the scan this replaced returned the first match
+        }
+
+        public bool this[LayerKey key]
+        {
+            get
+            {
+                if (_hasLast && _lastKey == key) return _lastValue;
+                if (!_byKey.TryGetValue(key, out bool visible)) visible = FallbackPalette.For(key).Visible;
+                _lastKey = key; _lastValue = visible; _hasLast = true;
+                return visible;
+            }
+        }
     }
 }

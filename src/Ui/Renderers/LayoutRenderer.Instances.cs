@@ -90,16 +90,55 @@ public static partial class LayoutRenderer
         /// loser's path is simply garbage — wasted work on a zoom step, never corruption.</para>
         /// </summary>
         public ElidedGeometry? Elided;
+
+        /// <summary>Sum of the primitives' own areas, of their (width + height), and their count —
+        /// the three coefficients that turn the elision tier's grow amount into the fraction of
+        /// <see cref="Bounds"/> the grown primitives cover, without touching
+        /// <see cref="PrimitiveBounds"/> again. See <see cref="CoverageAt"/>.</summary>
+        public double AreaSum, SemiPerimeterSum;
+
+        public double BoundsArea;
+
+        /// <summary>What fraction of <see cref="Bounds"/> this chunk's primitives cover once each is
+        /// grown by <paramref name="grow"/> on every side — the elision tier's own geometry, measured
+        /// rather than drawn. A grown rect of w x h has area (w+2g)(h+2g) = wh + 2g(w+h) + 4g^2, so the
+        /// whole chunk's grown area is a quadratic in g over the three sums above.
+        ///
+        /// <para><b>One or more means the grown geometry has at least as much area as the box holding
+        /// it</b>, which for a REGULAR field is exactly the condition for its union to BE that box: on a
+        /// uniform pitch p with grown side s, coverage is (s/p)^2, so coverage >= 1 is s >= p is
+        /// "neighbours touch". That equivalence is what
+        /// <see cref="DefaultCoarseCoverageThreshold"/> trades on.</para></summary>
+        public double CoverageAt(float grow) =>
+            BoundsArea <= 0 ? 0
+            : (AreaSum + 2.0 * grow * SemiPerimeterSum + 4.0 * (double)grow * grow * PrimitiveBounds.Length)
+              / BoundsArea;
     }
 
     /// <summary>One immutable (grow amount, path) pair — see <see cref="CompiledChunk.Elided"/> for why
     /// this is a record swapped wholesale rather than two mutable fields.</summary>
     private sealed record ElidedGeometry(float Grow, SKPath Path);
 
+    /// <summary>A layer's chunks split by the coarse tier at one grow amount (L2f) — the ones whose
+    /// grown geometry already fills its own bounds, batched into <see cref="Collapsed"/> as one rect
+    /// each, and <see cref="Rest"/>, which still draw individually through the elision/exact tiers.
+    /// Immutable and swapped wholesale for exactly the reason <see cref="CompiledChunk.Elided"/> is —
+    /// see that field for the off-UI-thread rendering this codebase does.</summary>
+    private sealed record CoarseGeometry(float Grow, SKPath? Collapsed, SKRect CollapsedBounds,
+                                         int CollapsedCount, CompiledChunk[] Rest);
+
     private sealed class CompiledLayerGeometry
     {
         public required LayerKey Key;
         public readonly List<CompiledChunk> Chunks = [];
+
+        /// <summary>The coarse-tier split at the last grow amount asked for. Keyed on grow ALONE and
+        /// that is sufficient, not a simplification: both gates the split applies — "is this chunk on
+        /// the elision tier" and "does its grown geometry fill its bounds" — are functions of the
+        /// per-primitive grow amount, because grow is itself
+        /// <c>GeometryStrokeDevicePixels / 2</c> device pixels expressed in cell-local path space and
+        /// therefore already carries the zoom AND the placement's own magnification.</summary>
+        public CoarseGeometry? Coarse;
     }
 
     /// <summary>One resolved cell's compiled geometry — every one of its own shapes AND every one of
@@ -153,6 +192,27 @@ public static partial class LayoutRenderer
     /// <summary>Cap on the chunk grid's per-side division count — bounds the per-chunk bookkeeping for
     /// a pathologically dense cell at 1,024 chunks.</summary>
     private const int MaxChunkGridSide = 32;
+
+    /// <summary>Default coverage (see <see cref="CompiledChunk.CoverageAt"/>) at or above which a chunk
+    /// on the stroke-elision tier stops drawing its primitives at all and contributes ONE rect — its own
+    /// bounds — to a per-layer batch (L2f).
+    ///
+    /// <para><b>One, because at one the substitution is not an approximation.</b> The elision tier draws
+    /// each primitive grown by half the hairline stroke on every side; on a uniform pitch p that grown
+    /// side is s and the coverage is exactly (s/p)^2, so coverage >= 1 means s >= p means adjacent grown
+    /// primitives TOUCH and their union is the bounding box the coarse tier substitutes for them. Zoom
+    /// out on a via field and this is what the elision tier is already painting — a solid block, arrived
+    /// at by tessellating and merging tens of thousands of mutually overlapping rectangles per chunk.</para>
+    ///
+    /// <para><b>What it costs where the field is not uniform:</b> coverage is an AREA measure, so a chunk
+    /// whose primitives clump — leaving an interior hole while still summing past its own bounds — fills
+    /// that hole. The bound on the error is the chunk, never more, because a chunk's stored bounds are
+    /// the union of the primitive boxes actually in it (an empty margin shrinks the bounds rather than
+    /// being painted), and a chunk is sized to hold
+    /// <see cref="TargetPrimitivesPerChunk"/> primitives — which, at the grow amounts this tier engages
+    /// at, is a few device pixels across. That is the same trade <see cref="AddMinimalRect"/> and the
+    /// elision tier itself already make one and two levels up.</para></summary>
+    internal const double DefaultCoarseCoverageThreshold = 1.0;
 
     /// <summary>One primitive queued for chunk assignment during a compile — either one of this cell's
     /// OWN shapes (built through <see cref="BuildShapePath"/> in the second pass, so the path is
@@ -321,8 +381,58 @@ public static partial class LayoutRenderer
 
             if (chunk.Geometry.IsEmpty) continue;
             chunk.PrimitiveBounds = prims.ToArray();
+            double areaSum = 0, semiSum = 0;
+            foreach (var pb in chunk.PrimitiveBounds)
+            {
+                double w = pb.Width, h = pb.Height;
+                areaSum += w * h;
+                semiSum += w + h;
+            }
+            chunk.AreaSum = areaSum;
+            chunk.SemiPerimeterSum = semiSum;
+            chunk.BoundsArea = (double)chunk.Bounds.Width * chunk.Bounds.Height;
             cl.Chunks.Add(chunk);
         }
+    }
+
+    /// <summary>Splits one compiled layer's chunks at <paramref name="grow"/> into the ones the coarse
+    /// tier collapses (batched into a single path of their own bounds) and the ones that still draw
+    /// individually. Both gates are functions of grow alone — see
+    /// <see cref="CompiledLayerGeometry.Coarse"/> for why that is exact and not a simplification — so the
+    /// result is cacheable for the whole of a pan gesture.</summary>
+    private static CoarseGeometry BuildCoarse(CompiledLayerGeometry layer, float grow,
+                                              double elisionThreshold, double coarseCoverage)
+    {
+        // grow is GeometryStrokeDevicePixels/2 device pixels in path space, so a chunk is on the
+        // elision tier when its largest primitive is under elisionThreshold DEVICE pixels — i.e. under
+        // that many multiples of (2 * grow / GeometryStrokeDevicePixels) in path space.
+        double pathSpacePerDevicePixel = 2.0 * grow / GeometryStrokeDevicePixels;
+        double elisionExtent = elisionThreshold * pathSpacePerDevicePixel;
+
+        SKPath? collapsed = null;
+        var collapsedBounds = SKRect.Empty;
+        int collapsedCount = 0;
+        List<CompiledChunk>? rest = null;
+
+        foreach (var chunk in layer.Chunks)
+        {
+            if (chunk.MaxExtent < elisionExtent && chunk.PrimitiveBounds.Length > 0
+                && chunk.CoverageAt(grow) >= coarseCoverage)
+            {
+                // Grown by the same half-stroke the elision tier grows its own rects by, so the
+                // collapsed block ends exactly where the elided one would have.
+                var b = new SKRect(chunk.Bounds.Left - grow, chunk.Bounds.Top - grow,
+                                   chunk.Bounds.Right + grow, chunk.Bounds.Bottom + grow);
+                (collapsed ??= new SKPath()).AddRect(b);
+                if (collapsedCount == 0) collapsedBounds = b; else collapsedBounds.Union(b);
+                collapsedCount++;
+                continue;
+            }
+            (rest ??= []).Add(chunk);
+        }
+
+        return new CoarseGeometry(grow, collapsed, collapsedBounds, collapsedCount,
+                                  rest is null ? [] : rest.ToArray());
     }
 
     /// <summary>Draws every candidate instance placement — R-L3a §4/§5/§8 (culling already applied by
@@ -336,6 +446,8 @@ public static partial class LayoutRenderer
         double lodThreshold = opts.LodPixelThreshold > 0 ? opts.LodPixelThreshold : DefaultLodPixelThreshold;
         double elisionThreshold = opts.StrokeElisionPixelThreshold != 0
             ? opts.StrokeElisionPixelThreshold : DefaultStrokeElisionDevicePixels;
+        double coarseCoverage = opts.CoarseCoverageThreshold != 0
+            ? opts.CoarseCoverageThreshold : DefaultCoarseCoverageThreshold;
         double devicePxPerDbu = scaleUm * ps.DbuToUm;
         var layerMap = tech?.Layers.ToDictionary(l => l.Key);
 
@@ -453,9 +565,34 @@ public static partial class LayoutRenderer
 
                     canvas.Save();
                     canvas.Concat(in m);
+                    float chunkGrow = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels) / 2f;
                     foreach (var (layer, fillPaint, strokePaint, elidedPaint) in layerVisuals)
                     {
-                        foreach (var chunk in layer.Chunks)
+                        // L2f — the coarse tier. Every chunk whose grown geometry already fills its own
+                        // bounds (see DefaultCoarseCoverageThreshold) is drawn as ONE rect, and all of
+                        // them together as ONE path per layer rather than one draw call per chunk: at
+                        // the zoom levels this engages at a whole 500um cell is a hundred device pixels
+                        // wide, so per-chunk culling has nothing left to save and per-chunk draw CALLS
+                        // become the cost that is left. The split is cached on the layer, keyed by the
+                        // same grow amount the elision tier's own per-chunk cache is keyed by, so a pan
+                        // — where this matters — never rebuilds it and a zoom step rebuilds it once.
+                        var coarse = layer.Coarse;
+                        if (coarseCoverage > 0 && (coarse is null || coarse.Grow != chunkGrow))
+                            layer.Coarse = coarse = BuildCoarse(layer, chunkGrow, elisionThreshold, coarseCoverage);
+
+                        IReadOnlyList<CompiledChunk> drawIndividually = layer.Chunks;
+                        if (coarseCoverage > 0 && coarse is not null)
+                        {
+                            drawIndividually = coarse.Rest;
+                            if (coarse.Collapsed is not null
+                                && (!culls || localVisible.IntersectsWith(coarse.CollapsedBounds)))
+                            {
+                                canvas.DrawPath(coarse.Collapsed, elidedPaint);
+                                counters.DrawCalls++;
+                            }
+                        }
+
+                        foreach (var chunk in drawIndividually)
                         {
                             if (culls && !localVisible.IntersectsWith(chunk.Bounds)) continue;
 

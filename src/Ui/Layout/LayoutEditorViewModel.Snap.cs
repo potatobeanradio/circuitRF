@@ -360,7 +360,14 @@ public sealed partial class LayoutEditorViewModel
 
         bool handleKindOutOfScope = _handleDragKind is HandleDragKind.Bulge or HandleDragKind.CubicControl
             or HandleDragKind.Radius or HandleDragKind.CornerRadius;
-        if (handleKindOutOfScope || _scaleDragKind != ScaleDragKind.None)
+
+        // A marquee has nothing to snap TO and nothing that could consume the answer: its rectangle is
+        // built from the raw pointer position (see the Marquee branch of HandleSelectMove), and the
+        // commit path reads only ComputeMarqueeSelection. Running the query anyway made every pointer
+        // move of a rubber-band drag pay for a snap search over whatever the cursor was sweeping
+        // across — which, over a dense cell, is the most expensive place it could possibly run.
+        if (handleKindOutOfScope || _scaleDragKind != ScaleDragKind.None
+            || _selectDragKind == SelectDragKind.Marquee)
         {
             _currentSnapCandidate = null;
             _snapCandidateIsRealTarget = false;
