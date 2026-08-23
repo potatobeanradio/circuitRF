@@ -47,6 +47,147 @@ public sealed partial class TechEditorViewModel : ObservableObject
     public ObservableCollection<StackupLayerRowViewModel> StackupLayers { get; } = [];
     public ObservableCollection<DrcRuleRowViewModel>      DrcRules      { get; } = [];
 
+    // ── Row filters (one per tab) ──────────────────────────────────────────────
+    // A real process carries several hundred layers (an imported PDK measured 377), so every one of
+    // these lists is virtualized and none of them is scannable by eye. Each tab therefore owns its
+    // OWN filter: the Layers and Interchange tabs list the same layers for different purposes, and
+    // narrowing one to "metal" while hunting a Gerber suffix on the other would be a surprise, not a
+    // convenience.
+    //
+    // The Filtered* collections — not Layers/StackupLayers/DrcRules — are what the view binds to.
+    // The unfiltered collections stay the authoritative projection of Working, rebuilt wholesale by
+    // RebuildAll after every committed edit (see ApplySnapshot); each rebuild re-applies the filters,
+    // so a filter survives an edit, an undo and a redo without the view having to know it exists.
+
+    public ObservableCollection<LayerRowViewModel>        FilteredLayers            { get; } = [];
+    public ObservableCollection<LayerRowViewModel>        FilteredInterchangeLayers { get; } = [];
+    public ObservableCollection<StackupLayerRowViewModel> FilteredStackupLayers     { get; } = [];
+    public ObservableCollection<DrcRuleRowViewModel>      FilteredDrcRules          { get; } = [];
+
+    [ObservableProperty] private string _layerFilter       = "";
+    [ObservableProperty] private string _interchangeFilter = "";
+    [ObservableProperty] private string _stackupFilter     = "";
+    [ObservableProperty] private string _drcFilter         = "";
+
+    partial void OnLayerFilterChanged(string value)       => ApplyLayerFilter();
+    partial void OnInterchangeFilterChanged(string value) => ApplyInterchangeFilter();
+    partial void OnStackupFilterChanged(string value)     => ApplyStackupFilter();
+    partial void OnDrcFilterChanged(string value)         => ApplyDrcFilter();
+
+    /// <summary>"37 of 377" while a filter is narrowing the list, the plain total otherwise — the
+    /// only cue that a filter is the reason a layer someone expects to see is not on screen.</summary>
+    public string LayerFilterSummary       => Summarize(FilteredLayers.Count,            Layers.Count);
+    public string InterchangeFilterSummary => Summarize(FilteredInterchangeLayers.Count, Layers.Count);
+    public string StackupFilterSummary     => Summarize(FilteredStackupLayers.Count,     StackupLayers.Count);
+    public string DrcFilterSummary         => Summarize(FilteredDrcRules.Count,          DrcRules.Count);
+
+    private static string Summarize(int shown, int total) =>
+        shown == total ? total.ToString() : $"{shown} of {total}";
+
+    /// <summary>Case-insensitive substring, against the COMMITTED name rather than the staged text a
+    /// row is displaying: filtering on the staged text would make a row vanish mid-rename (an empty
+    /// field matches nothing), which is exactly when the user most needs to still see it.</summary>
+    private static bool Matches(string name, string query) =>
+        query.Length == 0 || name.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private void ApplyFilters()
+    {
+        ApplyLayerFilter();
+        ApplyInterchangeFilter();
+        ApplyStackupFilter();
+        ApplyDrcFilter();
+    }
+
+    private void ApplyLayerFilter()
+    {
+        var q = LayerFilter.Trim();
+        FilteredLayers.Clear();
+        foreach (var r in Layers)
+            if (Matches(r.Layer.Name, q)) FilteredLayers.Add(r);
+        OnPropertyChanged(nameof(LayerFilterSummary));
+        NotifyBulkToggleState();
+    }
+
+    private void ApplyInterchangeFilter()
+    {
+        var q = InterchangeFilter.Trim();
+        FilteredInterchangeLayers.Clear();
+        foreach (var r in Layers)
+            if (Matches(r.Layer.Name, q)) FilteredInterchangeLayers.Add(r);
+        OnPropertyChanged(nameof(InterchangeFilterSummary));
+    }
+
+    private void ApplyStackupFilter()
+    {
+        var q = StackupFilter.Trim();
+        FilteredStackupLayers.Clear();
+        foreach (var r in StackupLayers)
+            if (Matches(r.Layer.Name, q)) FilteredStackupLayers.Add(r);
+        OnPropertyChanged(nameof(StackupFilterSummary));
+    }
+
+    private void ApplyDrcFilter()
+    {
+        var q = DrcFilter.Trim();
+        FilteredDrcRules.Clear();
+        foreach (var r in DrcRules)
+            if (Matches(r.Rule.Name, q)) FilteredDrcRules.Add(r);
+        OnPropertyChanged(nameof(DrcFilterSummary));
+    }
+
+    // ── Bulk Visible/Selectable, over the LISTED layers ────────────────────────
+    // Deliberately scoped to what the filter is currently showing, not to Working.Layers: the two
+    // coincide when no filter is set, and when one IS set "hide everything I am looking at" is the
+    // useful operation — "hide all 377 layers including the ones I filtered away" is not. The
+    // tooltips in the view say so, because the distinction is invisible otherwise.
+    //
+    // Setter-not-command so the ToggleButton's own checked state IS the answer to "is every listed
+    // layer visible?", with no second source of truth to keep in step.
+
+    public bool AllShownLayersVisible
+    {
+        get => FilteredLayers.Count > 0 && FilteredLayers.All(r => r.Layer.Visible);
+        set => SetAllShownLayerFlags(value, null);
+    }
+
+    public bool AllShownLayersSelectable
+    {
+        get => FilteredLayers.Count > 0 && FilteredLayers.All(r => r.Layer.Selectable);
+        set => SetAllShownLayerFlags(null, value);
+    }
+
+    private void NotifyBulkToggleState()
+    {
+        OnPropertyChanged(nameof(AllShownLayersVisible));
+        OnPropertyChanged(nameof(AllShownLayersSelectable));
+    }
+
+    /// <summary>One undo entry for the whole sweep, not one per layer — the coarse whole-technology
+    /// snapshot this editor already uses makes that free, and 377 undo steps to walk back out of one
+    /// click would be the alternative (the same reasoning <see cref="MergeFrom"/> records).</summary>
+    private void SetAllShownLayerFlags(bool? visible, bool? selectable)
+    {
+        var rows = FilteredLayers.ToList();
+        if (rows.Count == 0) { NotifyBulkToggleState(); return; }
+
+        var before = SnapshotJson();
+        foreach (var r in rows)
+        {
+            if (visible    is { } v) r.Layer.Visible    = v;
+            if (selectable is { } s) r.Layer.Selectable = s;
+        }
+
+        string what = rows.Count == Layers.Count ? "all layers" : $"{rows.Count} listed layers";
+        var description = visible is { } vv
+            ? (vv ? $"Show {what}"          : $"Hide {what}")
+            : (selectable is true ? $"Make {what} selectable" : $"Make {what} unselectable");
+
+        // A no-op commit rebuilds nothing (CommitEdit returns early), so the toggle's own state still
+        // has to be re-announced here or the button would stay where the click left it.
+        CommitEdit(before, description);
+        NotifyBulkToggleState();
+    }
+
     public static IReadOnlyList<BoundaryCondition> BoundaryConditions { get; } = Enum.GetValues<BoundaryCondition>();
     public static IReadOnlyList<DrcRuleKind>        DrcRuleKinds       { get; } = Enum.GetValues<DrcRuleKind>();
     public static IReadOnlyList<DrcSeverity>         DrcSeverities     { get; } = Enum.GetValues<DrcSeverity>();
@@ -190,6 +331,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         RebuildLayers();
         RebuildStackup();
         RebuildDrcRules();
+        ApplyFilters();   // every rebuild replaces the row VMs — the filtered views must follow
         Revalidate();
     }
 

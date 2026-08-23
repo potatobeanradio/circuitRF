@@ -31,6 +31,33 @@ namespace CircuitRF.Ui.Layout;
 
 public sealed class LayoutSpatialIndex
 {
+    /// <summary>
+    /// Every public entry point below is serialized on this — the index is read and WRITTEN from two
+    /// threads, and nothing else in this file would make that safe.
+    ///
+    /// <para><b>Owner-reported crash, 2026-08-22</b> (<c>IndexOutOfRangeException</c> inside
+    /// <c>Dictionary.TryInsert</c>, from <see cref="StrPackLeaves"/>, on a plain Delete): Avalonia
+    /// runs <c>LayoutCanvas</c>'s <c>ICustomDrawOperation.Render</c> on the RENDER thread, and
+    /// <c>LayoutRenderer.Draw</c>'s culling query goes straight through
+    /// <see cref="QueryIntersecting(IReadOnlyList{LayoutShape}, Bbox)"/> — which is not a read-only
+    /// operation: it self-heals a stale index by rebuilding it. A delete is precisely the case that
+    /// arms both sides at once — <c>Shapes.RemoveAt</c> makes the count disagree (so the next frame
+    /// rebuilds on the render thread) BEFORE <see cref="LayoutView.NotifyChanged"/> rebuilds it on
+    /// the UI thread. Two threads then write <see cref="_leafOf"/> at the same time, and a
+    /// half-resized Dictionary throws from an index its own bucket array no longer has.</para>
+    ///
+    /// <para>The lock is deliberately HERE rather than at the call sites: hit-test, marquee, snapping,
+    /// DRC and the renderer all query this index, and self-healing means every one of them is a
+    /// potential writer. A rule that every caller must remember to take a lock is a rule that gets one
+    /// call site wrong.</para>
+    ///
+    /// <para>Never call out to unknown code while holding it — see
+    /// <see cref="QueryIntersecting(IReadOnlyList{LayoutShape}, IReadOnlyList{LayoutInstance},
+    /// Func{LayoutInstance, Bbox}, long, Bbox)"/>, which resolves every instance bbox BEFORE taking
+    /// it, because that callback reaches the cell resolver and the file system.</para>
+    /// </summary>
+    private readonly object _gate = new();
+
     /// <summary>Max entries per leaf / max children per internal node.</summary>
     private const int MaxEntries = 16;
 
@@ -67,6 +94,11 @@ public sealed class LayoutSpatialIndex
     /// Never required for correctness (see the type doc comment), but is what keeps interactive editing
     /// at scale from paying a full rebuild on every frame.</summary>
     public void Apply(IReadOnlyList<LayoutShape> shapes, LayoutChangeInfo info)
+    {
+        lock (_gate) ApplyLocked(shapes, info);
+    }
+
+    private void ApplyLocked(IReadOnlyList<LayoutShape> shapes, LayoutChangeInfo info)
     {
         if (!IsBuilt || info.Kind == LayoutChangeKind.Full)
         {
@@ -112,7 +144,7 @@ public sealed class LayoutSpatialIndex
     /// <summary>Marks the instance portion of the index stale — call after any instance-list mutation
     /// (add/move/delete/array-edit/retarget/undo/redo). Cheap: the next query does an O(instances log n)
     /// refresh, never a full-tree rebuild.</summary>
-    public void MarkInstancesDirty() => _instancesDirty = true;
+    public void MarkInstancesDirty() { lock (_gate) _instancesDirty = true; }
 
     /// <summary>Shape-only query (every pre-L3a consumer, and every pre-L3a test) — behaviorally
     /// identical to the original L2b method: candidates are exactly the Shape-kind entries whose
@@ -121,13 +153,16 @@ public sealed class LayoutSpatialIndex
     /// here, never returned.</summary>
     public IReadOnlyList<int> QueryIntersecting(IReadOnlyList<LayoutShape> shapes, Bbox rect)
     {
-        if (!IsBuilt || _syncedCount != shapes.Count)
-            RebuildFullShapes(shapes);
+        lock (_gate)
+        {
+            if (!IsBuilt || _syncedCount != shapes.Count)
+                RebuildFullShapes(shapes);
 
-        var result = new List<int>();
-        if (_root is not null) QueryNode(_root, rect, SpatialEntryKind.Shape, result);
-        result.Sort();
-        return result;
+            var result = new List<int>();
+            if (_root is not null) QueryNode(_root, rect, SpatialEntryKind.Shape, result);
+            result.Sort();
+            return result;
+        }
     }
 
     /// <summary>The combined query (R-L3a-4) — every L3a-aware consumer (render culling, hit-test,
@@ -145,26 +180,69 @@ public sealed class LayoutSpatialIndex
         long resolutionVersion,
         Bbox rect)
     {
-        bool shapesStale = !IsBuilt || _syncedCount != shapes.Count;
-        if (shapesStale)
-        {
-            // A full shape rebuild replaces _root wholesale — any previously-tracked instance entries
-            // are discarded along with it, so they are unconditionally treated as stale too and
-            // refreshed right after, regardless of whether their own freshness signal actually fired.
-            RebuildFullShapes(shapes);
-            RefreshInstances(instances, instanceBboxOf, resolutionVersion);
-        }
-        else
-        {
-            bool instancesStale = instances.Count != _syncedInstanceCount || _instancesDirty
-                || resolutionVersion != _syncedResolutionVersion;
-            if (instancesStale) RefreshInstances(instances, instanceBboxOf, resolutionVersion);
-        }
+        // instanceBboxOf resolves the referenced cell and unions every shape in it (CellHierarchy.
+        // InstanceBbox — uncached by design), so it is both too expensive to run on a query that
+        // changes nothing AND far too heavy to run under _gate, where it would hold the index the
+        // render thread needs every frame across a file system walk and put the resolver's own locks
+        // underneath this one. Hence: check staleness, resolve OUTSIDE the lock only if that says so,
+        // then re-check under the lock — and if the answer changed in between, resolve and go round
+        // once more. At most two passes: the second always arrives holding resolved boxes.
+        Bbox[]? instanceBoxes = null;
 
-        var result = new List<LayoutSpatialEntry>();
-        if (_root is not null) QueryNodeAll(_root, rect, result);
-        result.Sort(static (a, b) => a.Index != b.Index ? a.Index.CompareTo(b.Index) : a.Kind.CompareTo(b.Kind));
-        return result;
+        while (true)
+        {
+            if (instanceBoxes is null && InstanceSideLooksStale(shapes, instances, resolutionVersion))
+                instanceBoxes = ResolveInstanceBoxes(instances, instanceBboxOf);
+
+            lock (_gate)
+            {
+                bool shapesStale = !IsBuilt || _syncedCount != shapes.Count;
+
+                // A full shape rebuild replaces _root wholesale — any previously-tracked instance
+                // entries are discarded along with it, so they are unconditionally treated as stale
+                // too, regardless of whether their own freshness signal actually fired.
+                bool instancesStale = shapesStale
+                    || instances.Count != _syncedInstanceCount || _instancesDirty
+                    || resolutionVersion != _syncedResolutionVersion;
+
+                if (!instancesStale || instanceBoxes is not null)
+                {
+                    if (shapesStale)    RebuildFullShapes(shapes);
+
+                    // The boxes were resolved outside the lock, so the instance list may have changed
+                    // length since. RefreshInstances records the length it actually indexed, which
+                    // makes the entries and the bookkeeping self-consistent and makes the NEXT query
+                    // see the mismatch and refresh again; both index consumers already skip an entry
+                    // whose index the live list no longer has.
+                    if (instancesStale) RefreshInstances(instanceBoxes!, resolutionVersion);
+
+                    var result = new List<LayoutSpatialEntry>();
+                    if (_root is not null) QueryNodeAll(_root, rect, result);
+                    result.Sort(static (a, b) => a.Index != b.Index ? a.Index.CompareTo(b.Index) : a.Kind.CompareTo(b.Kind));
+                    return result;
+                }
+            }
+
+            instanceBoxes = ResolveInstanceBoxes(instances, instanceBboxOf);
+        }
+    }
+
+    /// <summary>The same staleness question the locked section asks, read cheaply so the expensive
+    /// bbox resolution can be skipped entirely on the overwhelmingly common query that changes
+    /// nothing. Racy on purpose — it is re-asked under the lock, which is what decides.</summary>
+    private bool InstanceSideLooksStale(IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, long resolutionVersion)
+    {
+        lock (_gate)
+            return !IsBuilt || _syncedCount != shapes.Count
+                || instances.Count != _syncedInstanceCount || _instancesDirty
+                || resolutionVersion != _syncedResolutionVersion;
+    }
+
+    private static Bbox[] ResolveInstanceBoxes(IReadOnlyList<LayoutInstance> instances, Func<LayoutInstance, Bbox> instanceBboxOf)
+    {
+        var boxes = new Bbox[instances.Count];
+        for (int i = 0; i < boxes.Length; i++) boxes[i] = instanceBboxOf(instances[i]);
+        return boxes;
     }
 
     private static void QueryNode(Node node, Bbox rect, SpatialEntryKind kind, List<int> result)
@@ -199,15 +277,15 @@ public sealed class LayoutSpatialIndex
     /// <paramref name="instances"/> — never touches a Shape-kind entry or the shape side's own
     /// freshness bookkeeping. O(instances log n): correct and cheap given how rare instances are
     /// relative to shapes (see the type doc comment).</summary>
-    private void RefreshInstances(IReadOnlyList<LayoutInstance> instances, Func<LayoutInstance, Bbox> instanceBboxOf, long resolutionVersion)
+    private void RefreshInstances(Bbox[] instanceBoxes, long resolutionVersion)
     {
         var staleKeys = _leafOf.Keys.Where(k => k.Kind == SpatialEntryKind.Instance).ToList();
         foreach (var k in staleKeys) RemoveEntry(k.Kind, k.Index);
 
-        for (int i = 0; i < instances.Count; i++)
-            InsertEntry(SpatialEntryKind.Instance, i, instanceBboxOf(instances[i]));
+        for (int i = 0; i < instanceBoxes.Length; i++)
+            InsertEntry(SpatialEntryKind.Instance, i, instanceBoxes[i]);
 
-        _syncedInstanceCount = instances.Count;
+        _syncedInstanceCount = instanceBoxes.Length;
         _instancesDirty = false;
         _syncedResolutionVersion = resolutionVersion;
         InstanceRefreshCount++;

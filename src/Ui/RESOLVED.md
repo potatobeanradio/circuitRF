@@ -7177,3 +7177,170 @@ Gates (`SvgExportPositionListTests`), and the first one is the one that matters:
   in a file that also calls `RepairPositionLists` or `SvgPostPass.Run`. This is what covers the three
   writers that need a live document to render, and any export seam added later. Comments are stripped
   first: `ContourRenderer` discusses `SKSvgCanvas` in its header without creating one.
+
+## The layout model is read from two threads — a Delete could corrupt the spatial index (2026-08-22)
+
+Owner-reported crash, from a plain Delete of some geometry in the layout editor:
+
+```
+System.IndexOutOfRangeException: Index was outside the bounds of the array.
+   at System.Collections.Generic.Dictionary`2.TryInsert(TKey key, TValue value, InsertionBehavior behavior)
+   at CircuitRF.Ui.Layout.LayoutSpatialIndex.StrPackLeaves(List`1 entries)
+   at CircuitRF.Ui.Layout.LayoutSpatialIndex.RebuildFullShapes(IReadOnlyList`1 shapes)
+   at CircuitRF.Ui.Layout.LayoutSpatialIndex.Apply(IReadOnlyList`1 shapes, LayoutChangeInfo info)
+   at CircuitRF.Ui.Layout.LayoutView.NotifyChanged(LayoutChangeInfo info)
+   at CircuitRF.Ui.Commands.Layout.DeleteShapesCommand.Execute()
+```
+
+**Read the exception type, not the frame it points at.** `StrPackLeaves` is a plain loop over its own
+freshly-built list — it cannot index anything out of range, and `_leafOf[(kind, index)] = node` cannot
+either. An `IndexOutOfRangeException` raised *inside* `Dictionary.TryInsert` is a Dictionary being
+written by two threads at once: a half-resized instance throws from a bucket index its own array no
+longer has. So the question was never "what is wrong with the delete" — it was "who else is writing".
+
+### Who else was writing
+
+**Avalonia runs `LayoutCanvas`'s `ICustomDrawOperation.Render` on the RENDER thread**, not the UI
+thread, and that operation calls `LayoutRenderer.Draw` — whose first act is the L2b culling query,
+`view.SpatialIndex.QueryIntersecting(view.Shapes, viewportRect)`.
+
+**That query is not read-only.** The index self-heals: `if (!IsBuilt || _syncedCount != shapes.Count)
+RebuildFullShapes(shapes)`. It is documented as "always safe to read"; what that sentence never said
+is *from one thread*.
+
+A delete is the one edit that arms both sides at the same instant, and its ordering is why:
+
+1. `DeleteShapesCommand.Execute` calls `Shapes.RemoveAt(...)`. The list is now shorter, and the index's
+   `_syncedCount` disagrees with it — but nothing has been announced yet.
+2. Any frame that starts in that window queries a stale index, takes the self-heal branch, and starts
+   a full STR rebuild **on the render thread**.
+3. `NotifyChanged` then runs `SpatialIndex.Apply` → `RebuildFullShapes` **on the UI thread**.
+
+Both write `_leafOf`. The window is microseconds wide, which is why this survived so long and why it
+finally showed up on a design with a few thousand shapes, where a rebuild takes long enough to overlap.
+
+The same two threads reach a second piece of shared state with a worse failure mode: `LayoutPathCache`
+is filled by the render thread (`GetOrBuild`) and invalidated by the UI thread (`LayoutCanvas.
+OnModelChanged` → `Apply`), and invalidation **disposes native `SKPath` objects** — potentially the
+ones Skia is drawing from at that moment. That is a native crash with no managed stack at all, and it
+had never been reported only because the timing is narrower.
+
+### The fix, in three layers
+
+1. **`LayoutSpatialIndex` takes its own lock** (`_gate`) across all four public entry points. The lock
+   is in the index rather than at the call sites deliberately: hit-test, marquee, snapping, DRC and the
+   renderer all query it, and self-healing makes every one of them a potential writer — a rule that
+   every caller must remember to lock is a rule that gets one call site wrong. The combined query now
+   resolves every instance bbox **before** taking the lock, because `instanceBboxOf` reaches the cell
+   resolver and the file system; nothing unknown runs underneath `_gate`.
+2. **`LayoutView.RenderLock`**, held for a whole frame by `LayoutDrawOperation.Render` and for the whole
+   of `NotifyChanged` (including raising `Changed`, which is what makes a `LayoutPathCache` eviction wait
+   for the frame drawing those paths). The list-mutating commands — `DeleteShapesCommand`,
+   `AddShapeCommand`, `ReplaceShapesCommand`, `AddInstanceCommand`, `DeleteInstancesCommand` — and
+   `RegeneratePCell`'s whole-list swap take it across mutation *and* notification, so the two are one
+   step as far as a frame is concerned. `_onResult` stays outside the lock and **posts** rather than
+   invokes: a render thread that waited on the UI thread while holding this would deadlock.
+3. **`LayoutRenderer` bounds-checks the candidate indices** it gets from the index (`DrawLayers`'
+   `byLayer` grouping and `DrawBitmapShapes` were the only two of eight index-driven reads that did
+   not). This is the belt to the lock's braces: a stale candidate names a shape the list no longer has,
+   and skipping it costs one slightly-stale frame while indexing it throws on a thread with nothing to
+   catch it.
+
+### Gates — `LayoutRenderThreadSafetyTests`
+
+Every one was checked to FAIL with its own fix reverted, which is the only reason to trust a race test:
+
+- `QueryingWhileEditing_NeverCorruptsTheSpatialIndex` — the owner's crash, reproduced in **~14 ms**
+  before the fix (600 ms even after the commands started taking `RenderLock`, since the query side is
+  what was unguarded).
+- `CombinedQueryingWhileEditing_…` — the same for the instance path (`RefreshInstances`, plus a ticking
+  resolution version).
+- `RenderingWhileEditing_NeverThrowsOnAStaleCandidateIndex` — renders **without** `RenderLock` on
+  purpose, so it tests the layer underneath it. Fails in 149 ms with the bounds checks removed
+  (`ArgumentOutOfRangeException`).
+- `NotifyChanged_TakesTheRenderLock` / `ADeleteHoldsTheRenderLockAcrossItsListMutationAndItsNotification`
+  — the lock's own contract, asserted by blocking on it from another thread.
+
+### What this does NOT claim
+
+`RenderLock` does not make arbitrary reads of `Shapes` atomic. An in-place field edit
+(`SetShapeFieldCommand`, a drag preview) can still be observed half-applied by a frame already in
+flight; the result is one stale frame, never a crash. Serializing *that* would mean routing every
+mutation in `src/Ui` through the lock, and the 51 call sites include importers, generators and
+persistence working on views no renderer has ever seen.
+
+## Panning a dense PCell — the compiled cell was one path, so zooming in bought nothing (2026-08-23)
+
+Reported symptom: at Zoom-to-Fit a MIM capacitor's via array reads as one undifferentiated glob, and
+panning is slow.
+
+The layout itself is tiny — 22 shapes, 2 instances. One of the instances resolves to a generated cell
+holding a **24,964-rect via field**: 0.42 µm squares on a 1.26 µm pitch (158 × 158) filling a 201 µm
+square.
+
+### The measurement that pointed at the cause
+
+Release, 1600 × 1000, median of 15 warmed frames:
+
+| view | before | after |
+|---|---|---|
+| Zoom-to-Fit | 35 ms | **7 ms** |
+| 4× in | 23 ms | 12 ms |
+| 16× in | 18 ms | **2.4 ms** |
+| 256× in | 16 ms | **1.6 ms** |
+
+**The bottom row is the diagnosis, not the top one.** At 256× only ~640 of the 24,964 vias are on
+screen, and it still cost 16 ms — within 2× of the full-extent frame. Zooming in is supposed to be
+nearly free. A cost that refuses to fall as the visible geometry falls is missing culling, not too much
+geometry, and no amount of tuning the pan path would have found it.
+
+`CompileCell` flattened a whole sub-cell into ONE aggregate `SKPath` per layer. That makes path
+CONSTRUCTION a once-per-cell cost, which is what the compile cache is for and it works. But Skia
+rasterizes by walking every segment of the path it is handed, so RASTERIZATION stayed proportional to
+the cell's total geometry at every zoom. `LodPixelThreshold` did not help: it asks "is this whole
+INSTANCE under 2 device pixels", so a 1000-pixel instance full of 2-pixel vias sails through at full
+cost.
+
+### Two fixes
+
+**1. Chunking + culling.** Each layer compiles into a grid of chunks (~256 primitives each, capped at a
+32 × 32 grid), every chunk carrying its own bounds. `DrawInstances` inverts the placement matrix — every
+one of them is a similarity, so the inverse-mapped viewport is exact — and skips chunks that miss it.
+This is the same culling `LayoutSpatialIndex` already does one level up, finally applied one level down,
+and it is pixel-identical by construction because a chunk's bounds are the union of what it draws.
+
+**2. Stroke elision.** Fill and stroke were TWO passes over the same path — and the stroke was
+80–90 % of the frame (measured at Zoom-to-Fit: fill 20 ms, **stroke 82 ms**), because Skia tessellates
+an outline for every one of ~100k segments. On a via that is 2.1 device pixels wide, that outline *is*
+the entire visible shape. Below `DefaultStrokeElisionDevicePixels` (4) a chunk now draws one solid fill
+of its primitives' bounding rects, grown by half the stroke width it would have been given.
+
+### Traps worth keeping
+
+- **For an opaque axis-aligned rect the elided tier is EXACTLY the exact tier** — fill plus a centred
+  2-px outline covers precisely the bbox grown by 1 px, in the same colour. That is why a via field
+  loses nothing visually, and it is also why the first version of
+  `StrokeElision_DoesNotEngageOnceGeometryIsBigEnoughToSee` was worthless: built on a rect field, it
+  passed with the engagement threshold mutated **a thousandfold**. It needs L-shaped polygons on a
+  partially transparent layer to have anything to see.
+- **A raw pixel buffer's channel order is platform-dependent** (`Rgba8888` here) and the Light theme's
+  background is `#F6F6F4`, whose red and blue differ. Comparing `px[i]` against `bg.Blue` therefore
+  marked **every** background pixel as painted, and both assertions built on it — painted bbox and ink
+  count — were vacuous while green. Use `SKBitmap.Pixels` (normalized `SKColor`) for "is this pixel
+  painted"; raw bytes are only safe for comparing two renders against each other.
+- **The elided path's cache is published as an immutable record, deliberately.** Avalonia renders off
+  the UI thread and a compiled cell is shared by every placement on every canvas, so a rewind-in-place
+  cache would be two threads writing one `SKPath`. A miss builds a fresh path and swaps the whole
+  record in with one reference assignment; racing threads waste work, never corrupt.
+
+### What is NOT done
+
+The full-extent frame is now bounded by rasterizing 24,964 antialiased fills — the honest cost of
+drawing them all truthfully. Merging genuinely sub-pixel clusters into coverage bins measured
+24,964 rects → 6,889 (**98 ms → 0.66 ms**) and would remove that floor, but it changes how a dense field
+LOOKS when zoomed far out, so it was scoped out rather than slipped in. Two related cliffs stay open and
+were measured, not guessed: geometry snap costs **8.8 ms/query** at Zoom-to-Fit (tolerance is a fixed
+pixel distance in DBU, so zoomed out it sweeps a 3 µm radius and returns 162 candidates — unusable as
+UX, never mind as cost) against 0.04 ms zoomed in; and `EffectiveVisibleLabelHeightDbu` *boosts* any
+label under 8 device pixels UP to 8, so labels never get cheaper as you zoom out — 10,000 of them cost
+39 ms/frame piled into unreadable mush.

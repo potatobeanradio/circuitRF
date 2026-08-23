@@ -46,6 +46,14 @@ public readonly struct LayoutRenderOptions
     /// measurement behind the chosen value.</summary>
     public int MergeShapeCountThreshold { get; init; }
 
+    /// <summary>Stroke-elision engagement size, in device pixels — a compiled instance chunk whose
+    /// largest primitive is smaller than this on screen draws as one solid grown fill instead of a
+    /// fill pass plus a per-primitive outline pass. 0 (the default) means
+    /// <see cref="LayoutRenderer.DefaultStrokeElisionDevicePixels"/>; a NEGATIVE value disables the
+    /// tier outright, which is how a test pins the exact-geometry output the tier has to match.
+    /// See that constant for the measurement this exists because of.</summary>
+    public double StrokeElisionPixelThreshold { get; init; }
+
     /// <summary>§2.3 R8b's "a preference forces merge permanently for anyone who prefers it" — when
     /// true, EVERY layer uses the batched-fill path regardless of shape count or size. The mechanism
     /// exists here; wiring an actual Settings toggle to it is a small follow-up, not required to close
@@ -446,7 +454,18 @@ public static partial class LayoutRenderer
                 counters.InstancesExamined = instanceCandidates.Count(e => e.Kind == SpatialEntryKind.Instance);
                 var instanceDragOverrides = opts.Overlay?.InstanceDragOverrides ?? EmptyInstanceDragOverrides;
                 if (counters.InstancesExamined > 0)
-                    DrawInstances(canvas, view, tech, instanceCandidates, instanceDragOverrides, opts, ps, scaleUm, counters, missingCellRefs);
+                {
+                    // The same margin-expanded viewport the spatial-index query above used, in PATH
+                    // space — DrawInstances maps it back through each placement's own matrix to cull
+                    // inside a compiled cell. Computed here, from the one viewport already resolved
+                    // for this frame, rather than re-derived down there from a second copy of the rule
+                    // that decides what is on screen.
+                    var visiblePathRect = NormalizedRect(
+                        ps.X(vp.VisibleMinX - marginDbu), ps.Y(vp.VisibleMinY - marginDbu),
+                        ps.X(vp.VisibleMaxX + marginDbu), ps.Y(vp.VisibleMaxY + marginDbu));
+                    DrawInstances(canvas, view, tech, instanceCandidates, instanceDragOverrides, opts, ps,
+                                  scaleUm, visiblePathRect, counters, missingCellRefs);
+                }
 
                 // L8b D5 — the plan-view surface mesh. Drawn INSIDE the path-space transform (it is
                 // in the same (x, y) plane as the artwork, which is the whole reason this overlay can

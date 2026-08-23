@@ -35,16 +35,22 @@ internal sealed class AddShapeCommand : IUiCommand
 
     public void Execute()
     {
-        if (_index < 0) _index = _view.Shapes.Count;
-        _view.Shapes.Insert(_index, _shape);
-        // L2b: always a trailing append under LIFO undo/redo — see the type doc comment. Safe for the
-        // incremental spatial-index fast path.
-        _view.NotifyChanged(LayoutChangeInfo.Appended(_index, 1));
+        lock (_view.RenderLock)   // one step as far as the render thread is concerned — see DeleteShapesCommand
+        {
+            if (_index < 0) _index = _view.Shapes.Count;
+            _view.Shapes.Insert(_index, _shape);
+            // L2b: always a trailing append under LIFO undo/redo — see the type doc comment. Safe for the
+            // incremental spatial-index fast path.
+            _view.NotifyChanged(LayoutChangeInfo.Appended(_index, 1));
+        }
     }
 
     public void Undo()
     {
-        _view.Shapes.Remove(_shape);
-        _view.NotifyChanged(LayoutChangeInfo.RemovedTrailing(_index, 1));
+        lock (_view.RenderLock)
+        {
+            _view.Shapes.Remove(_shape);
+            _view.NotifyChanged(LayoutChangeInfo.RemovedTrailing(_index, 1));
+        }
     }
 }

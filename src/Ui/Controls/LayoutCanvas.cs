@@ -1364,17 +1364,37 @@ public sealed class LayoutCanvas : Control
         public Rect Bounds => _bounds;
         public bool HitTest(Point p) => _bounds.Contains(p);
 
+        // RUNS ON THE RENDER THREAD, not the UI thread — the reason for the lock below, and the
+        // reason this method must never call back into the UI thread synchronously (see _onResult).
         public void Render(ImmediateDrawingContext context)
         {
             var leaseFeature = context.TryGetFeature<ISkiaSharpApiLeaseFeature>();
             if (leaseFeature is null) return;
             using var lease = leaseFeature.Lease();
+
+            // The WHOLE frame under the model's RenderLock: an edit's NotifyChanged takes the same
+            // lock, so a repaint can never overlap a spatial-index rebuild or a LayoutPathCache
+            // eviction — the latter DISPOSES the very SKPath objects the draw calls below hand to
+            // Skia. Owner-reported crash, 2026-08-22: see LayoutView.RenderLock and
+            // LayoutSpatialIndex's own _gate for the two halves of that story.
+            //
+            // _onResult stays OUTSIDE the lock and posts rather than invokes, so the render thread
+            // never waits on the UI thread while holding it.
+            LayoutRenderResult result;
+            if (_view is null) result = DrawFrame(lease.SkCanvas);
+            else lock (_view.RenderLock) result = DrawFrame(lease.SkCanvas);
+
+            _onResult(result);
+        }
+
+        private LayoutRenderResult DrawFrame(SKCanvas canvas)
+        {
             var opts = _overlay is null ? _opts : _opts with { DeferSnapMarker = true };
-            var result = LayoutRenderer.Draw(lease.SkCanvas, _view, _tech, _vp, opts);
+            var result = LayoutRenderer.Draw(canvas, _view, _tech, _vp, opts);
 
             // After the layout, inside the same lease — the overlay draws ON the layout (WB23), and
             // its own pass never reaches LayoutRenderer's caches.
-            _overlay?.Draw(lease.SkCanvas, _vp, _opts.Theme);
+            _overlay?.Draw(canvas, _vp, _opts.Theme);
 
             // …and the geometry-snap glyph goes on last of all, above that overlay, which is the only
             // place it can be seen at high zoom: an overlay's wires and vertex dots scale with zoom
@@ -1383,9 +1403,9 @@ public sealed class LayoutCanvas : Control
             // IS an overlay — otherwise LayoutRenderer has already drawn it in the ordinary place and
             // nothing is painted over it. See LayoutRenderOptions.DeferSnapMarker.
             if (_overlay is not null)
-                LayoutRenderer.DrawSnapMarkerOnTop(lease.SkCanvas, _view, _tech, _vp, _opts);
+                LayoutRenderer.DrawSnapMarkerOnTop(canvas, _view, _tech, _vp, _opts);
 
-            _onResult(result);
+            return result;
         }
 
         public void Dispose() { }

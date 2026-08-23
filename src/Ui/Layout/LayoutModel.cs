@@ -435,6 +435,27 @@ public sealed class LayoutView
     /// direct list mutation and never once ran through <see cref="NotifyChanged"/>.</summary>
     public LayoutSpatialIndex SpatialIndex { get; } = new();
 
+    /// <summary>
+    /// Held for the duration of one rendered FRAME and for the duration of one
+    /// <see cref="NotifyChanged"/>, so a repaint and an edit-notification can never overlap.
+    ///
+    /// <para><b>Why a layout model has a lock at all:</b> Avalonia renders <c>LayoutCanvas</c> through
+    /// an <c>ICustomDrawOperation</c>, which runs on the RENDER thread while the UI thread keeps
+    /// editing this model. Two pieces of shared state made that a crash rather than a glitch: the
+    /// spatial index (which self-heals — i.e. WRITES — from a query, and now takes its own internal
+    /// lock for that reason), and <c>LayoutPathCache</c>, which <see cref="Changed"/> subscribers
+    /// invalidate by DISPOSING native <c>SKPath</c> objects the render thread may be drawing at that
+    /// instant. Raising <see cref="Changed"/> under this lock is what makes that invalidation wait for
+    /// the frame using those paths to finish.</para>
+    ///
+    /// <para>This does not make arbitrary reads of <see cref="Shapes"/> atomic — a frame that starts
+    /// while a command is midway through its own list mutation still sees a half-applied edit and
+    /// simply draws it, one frame before the notification arrives. That is a stale pixel, not a crash;
+    /// <c>LayoutRenderer</c> bounds-checks every index it takes from the spatial index so a list that
+    /// shrank underneath a candidate set cannot throw on the render thread.</para>
+    /// </summary>
+    public object RenderLock { get; } = new();
+
     /// <summary>Raised after any mutation of <see cref="Shapes"/>/<see cref="Instances"/> —
     /// <c>LayoutCanvas</c> subscribes to repaint (mirrors <c>EditableSymbol.Changed</c>). Commands
     /// under <c>src/Ui/Commands/Layout/</c> call <see cref="NotifyChanged"/> after every mutation,
@@ -453,17 +474,26 @@ public sealed class LayoutView
     public void NotifyChanged(LayoutChangeInfo? info = null)
     {
         info ??= LayoutChangeInfo.Full;
-        if (info.Kind == LayoutChangeKind.InstancesChanged)
+
+        // Under RenderLock so the index update AND every subscriber's own invalidation (notably
+        // LayoutCanvas disposing this model's cached SKPaths) are excluded from a frame in flight.
+        // Safe to hold across the event: the render thread never waits on the UI thread inside it
+        // (LayoutDrawOperation posts its frame result asynchronously, precisely so this cannot
+        // deadlock), and every subscriber here is a cheap, non-blocking invalidate.
+        lock (RenderLock)
         {
-            // L3a (R-L3a-4): an instances-only change never touches the shape side of the tree —
-            // Apply() would do needless (if harmless) shape bookkeeping otherwise.
-            SpatialIndex.MarkInstancesDirty();
+            if (info.Kind == LayoutChangeKind.InstancesChanged)
+            {
+                // L3a (R-L3a-4): an instances-only change never touches the shape side of the tree —
+                // Apply() would do needless (if harmless) shape bookkeeping otherwise.
+                SpatialIndex.MarkInstancesDirty();
+            }
+            else
+            {
+                SpatialIndex.Apply(Shapes, info);
+                if (info.Kind == LayoutChangeKind.Full) SpatialIndex.MarkInstancesDirty();
+            }
+            Changed?.Invoke(this, info);
         }
-        else
-        {
-            SpatialIndex.Apply(Shapes, info);
-            if (info.Kind == LayoutChangeKind.Full) SpatialIndex.MarkInstancesDirty();
-        }
-        Changed?.Invoke(this, info);
     }
 }

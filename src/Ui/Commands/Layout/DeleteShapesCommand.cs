@@ -32,16 +32,25 @@ internal sealed class DeleteShapesCommand : IUiCommand
 
     public void Execute()
     {
-        foreach (var (idx, _) in _items)
-            _view.Shapes.RemoveAt(idx);
-        _view.NotifyChanged();
+        // Under RenderLock so the list mutation and its announcement are ONE step as far as the
+        // render thread is concerned — a frame that caught this list mid-edit would otherwise draw
+        // from a spatial index describing shapes that no longer exist (LayoutView.RenderLock).
+        lock (_view.RenderLock)
+        {
+            foreach (var (idx, _) in _items)
+                _view.Shapes.RemoveAt(idx);
+            _view.NotifyChanged();
+        }
     }
 
     public void Undo()
     {
-        // Re-insert ascending so each index is valid at the moment of its own insertion.
-        foreach (var (idx, shape) in Enumerable.Reverse(_items))
-            _view.Shapes.Insert(idx, shape);
-        _view.NotifyChanged();
+        lock (_view.RenderLock)
+        {
+            // Re-insert ascending so each index is valid at the moment of its own insertion.
+            foreach (var (idx, shape) in Enumerable.Reverse(_items))
+                _view.Shapes.Insert(idx, shape);
+            _view.NotifyChanged();
+        }
     }
 }

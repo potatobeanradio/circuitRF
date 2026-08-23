@@ -3,8 +3,8 @@
 // large concern that deserves its own home (mirrors LayoutEditorViewModel's per-concern partial files).
 //
 // R-L3a-3 — the phase's headline requirement: "a sub-cell's geometry is built once and drawn once per
-// placement under a matrix." A resolved sub-cell is compiled EXACTLY ONCE into one aggregate fill path
-// and one aggregate stroke path PER LAYER (reusing BuildShapePath so PathsConstructed still counts real
+// placement under a matrix." A resolved sub-cell is compiled EXACTLY ONCE, per layer, into a GRID OF
+// CHUNKS each holding one aggregate path (reusing BuildShapePath so PathsConstructed still counts real
 // path construction), cached by the LayoutView INSTANCE CellLayoutResolver's own (path, mtime) cache
 // returns — a ConditionalWeakTable keyed on that reference means the compile cache and the resolver
 // cache invalidate TOGETHER for free (a file change produces a NEW LayoutView instance on the next
@@ -19,6 +19,23 @@
 // is the ONLY thing that varies frame to frame or placement to placement. Had L2c cached in path space
 // instead of shape-local space, this reuse would not be possible — the second time that decision has
 // paid off.
+//
+// The per-layer geometry was ONE path until L2e, and that is what made a dense PCell slow. The compile
+// cache does its job — a cell is built once — but Skia rasterizes by walking every segment of the path
+// it is handed, so cost stayed proportional to the cell's TOTAL geometry no matter how little of it was
+// on screen. On a real design whose MIM capacitor carries a 158x158 field of 0.42um vias, that
+// meant ~35 ms/frame at Zoom-to-Fit AND ~16 ms/frame zoomed 256x in with 640 vias visible — zooming in
+// bought almost nothing, which is the signature of missing culling rather than of too much geometry.
+// Two changes address it, and LayoutInstanceChunkCullingTests holds both:
+//
+//   1. CHUNKING — the layer is a grid of chunks, each with its own bounds, and DrawInstances maps the
+//      viewport back through each placement's matrix to skip the ones off screen. Pixel-identical by
+//      construction: a chunk's bounds are the union of what it draws.
+//   2. STROKE ELISION — a chunk whose largest primitive is under DefaultStrokeElisionDevicePixels draws
+//      as one solid grown fill instead of a fill pass plus an outline pass. Stroking was where the time
+//      actually went (82 ms of a 102 ms layer, tessellating outlines for ~100k segments) and at that
+//      size the outline IS the shape. For an opaque axis-aligned rect the substitution is EXACT, which
+//      is why a via field loses nothing; where it is not exact the geometry is too small to resolve.
 
 using System;
 using System.Collections.Generic;
@@ -33,11 +50,56 @@ namespace CircuitRF.Ui.Renderers;
 
 public static partial class LayoutRenderer
 {
+    /// <summary>One spatial chunk of one layer's compiled geometry (L2e stage 1). A compiled cell used
+    /// to be ONE aggregate path per layer, which made path CONSTRUCTION a once-per-cell cost (the point
+    /// of the compile cache) but left RASTERIZATION proportional to the cell's total geometry at every
+    /// zoom — Skia walks every segment of a path it is handed, so a 24,964-via MIM cap cost the same
+    /// 43 ms zoomed 256x in, with 640 vias on screen, as it did at full extent. Splitting the layer into
+    /// a grid of chunks, each carrying its own bounds, restores the culling that
+    /// <see cref="LayoutSpatialIndex"/> already performs one level up: the same idea, one level down.
+    ///
+    /// <para><see cref="PrimitiveBounds"/> is the per-primitive bbox list the stroke-elision tier draws
+    /// from (see <see cref="DefaultStrokeElisionDevicePixels"/>) — kept because at the few-device-pixel sizes
+    /// that tier engages at, a polygon and its bbox are indistinguishable, which is the same
+    /// equivalence <see cref="AddMinimalRect"/> already relies on one level up.</para>
+    /// </summary>
+    private sealed class CompiledChunk
+    {
+        public SKRect Bounds;
+        public readonly SKPath Geometry = new();
+        public SKRect[] PrimitiveBounds = [];
+        /// <summary>Largest single-primitive extent in this chunk, in cell-local path space (microns) —
+        /// what the stroke-elision decision is taken against, so one oversized primitive in an otherwise
+        /// tiny cluster keeps the whole chunk on the exact tier rather than silently coarsening it.</summary>
+        public float MaxExtent;
+
+        /// <summary>The stroke-elision tier's grown-bounds path, and the grow amount it was built at.
+        /// The grow amount is half a DEVICE pixel expressed in path space, so it is a function of zoom
+        /// ALONE — which is precisely why caching it is worth the memory: a pan holds zoom fixed, so
+        /// every frame of the gesture this whole change exists to make smooth is a hit, and only a zoom
+        /// step rebuilds.
+        ///
+        /// <para><b>Published as one immutable snapshot, never mutated in place, and that is
+        /// load-bearing.</b> Avalonia runs <c>ICustomDrawOperation.Render</c> OFF the UI thread (see
+        /// LayoutRenderThreadSafetyTests for the crash that taught this codebase so), and a compiled
+        /// cell is shared by every placement on every canvas — so a rewind-in-place cache here would be
+        /// two threads writing one <see cref="SKPath"/>. Instead a miss builds a fresh path and swaps
+        /// the whole record in with a single reference assignment, which is atomic: a reader sees
+        /// either the complete old snapshot or the complete new one, and the path it is drawing from
+        /// can never be rewritten under it. Two threads racing a miss both build, one wins, and the
+        /// loser's path is simply garbage — wasted work on a zoom step, never corruption.</para>
+        /// </summary>
+        public ElidedGeometry? Elided;
+    }
+
+    /// <summary>One immutable (grow amount, path) pair — see <see cref="CompiledChunk.Elided"/> for why
+    /// this is a record swapped wholesale rather than two mutable fields.</summary>
+    private sealed record ElidedGeometry(float Grow, SKPath Path);
+
     private sealed class CompiledLayerGeometry
     {
         public required LayerKey Key;
-        public readonly SKPath Fill = new();
-        public readonly SKPath Stroke = new();
+        public readonly List<CompiledChunk> Chunks = [];
     }
 
     /// <summary>One resolved cell's compiled geometry — every one of its own shapes AND every one of
@@ -72,6 +134,41 @@ public static partial class LayoutRenderer
     /// </summary>
     internal static void InvalidateCompiledGeometry(LayoutView view) => _cellCompileCache.Remove(view);
 
+    /// <summary>Target primitives per compiled chunk (L2e stage 1). Small enough that a zoomed-in
+    /// viewport lands on a handful of chunks rather than a slab of the cell; large enough that a
+    /// full-extent view issues tens-to-hundreds of draw calls, not thousands — Skia's per-call overhead
+    /// is a few microseconds, so ~100 chunks costs well under a millisecond against the ~100 ms the
+    /// unchunked path spent. Chosen by that arithmetic, not tuned: the win here is asymptotic (culling
+    /// that did not exist at all), so the exact constant is not a cliff.</summary>
+    private const int TargetPrimitivesPerChunk = 256;
+
+    /// <summary>Default on-screen size, in device pixels, at or under which a chunk drops its per-primitive
+    /// hairline outline and draws as one solid grown fill (L2e stage 2). Set where the outline stops
+    /// carrying information: the outline is <see cref="GeometryStrokeDevicePixels"/> wide, so at four
+    /// device pixels of total extent a primitive is already almost entirely outline and its fill
+    /// interior is sub-pixel — which is exactly why the two tiers look the same here and would NOT at,
+    /// say, twelve.</summary>
+    internal const double DefaultStrokeElisionDevicePixels = 4.0;
+
+    /// <summary>Cap on the chunk grid's per-side division count — bounds the per-chunk bookkeeping for
+    /// a pathologically dense cell at 1,024 chunks.</summary>
+    private const int MaxChunkGridSide = 32;
+
+    /// <summary>One primitive queued for chunk assignment during a compile — either one of this cell's
+    /// OWN shapes (built through <see cref="BuildShapePath"/> in the second pass, so the path is
+    /// constructed exactly once and <c>PathsConstructed</c> still counts real work) or one already-
+    /// compiled chunk of a NESTED cell, to be folded in under <see cref="Matrix"/>. Bounds are computed
+    /// in the first pass so the grid can be sized before any path exists — which is what keeps peak
+    /// memory at one path per chunk instead of one per primitive.</summary>
+    private readonly struct CompileItem
+    {
+        public required SKRect Bounds { get; init; }
+        public LayoutShape? Shape { get; init; }
+        public CompiledChunk? Child { get; init; }
+        public SKMatrix Matrix { get; init; }
+        public float MaxExtent { get; init; }
+    }
+
     private static CompiledCellGeometry CompileCell(LayoutView subView, Technology? tech, string subBaseDir,
         HashSet<string> visiting, int depth, LayoutFrameCounters? counters)
     {
@@ -81,14 +178,12 @@ public static partial class LayoutRenderer
         double dbuToUm = 1.0 / Math.Max(1, subView.DbuPerMicron);
         var localPs = new PathSpace(0, 0, dbuToUm);
 
-        var byLayer = new Dictionary<LayerKey, CompiledLayerGeometry>();
-        CompiledLayerGeometry LayerFor(LayerKey key)
+        // ── Pass 1 — collect every primitive's BOUNDS, per layer, without building any path ────────
+        var items = new Dictionary<LayerKey, List<CompileItem>>();
+        List<CompileItem> ItemsFor(LayerKey key)
         {
-            if (byLayer.TryGetValue(key, out var cl)) return cl;
-            cl = new CompiledLayerGeometry { Key = key };
-            byLayer[key] = cl;
-            compiled.Layers.Add(cl);
-            return cl;
+            if (items.TryGetValue(key, out var list)) return list;
+            return items[key] = [];
         }
 
         // Own shapes. Bitmaps (not geometry, R-bmp-3) and Labels (text, not baked into a reusable
@@ -97,11 +192,13 @@ public static partial class LayoutRenderer
         foreach (var shape in subView.Shapes)
         {
             if (shape is BitmapShape or LabelShape) continue;
-            using var path = BuildShapePath(shape, localPs, counters);
-            if (path is null || path.IsEmpty) continue;
-            var cl = LayerFor(shape.Layer);
-            cl.Fill.AddPath(path);
-            cl.Stroke.AddPath(path);
+            var bb = LayoutGeometry.BboxOf(shape);
+            if (bb.IsEmpty) continue;
+            var rect = NormalizedRect(localPs.X(bb.MinX), localPs.Y(bb.MinY), localPs.X(bb.MaxX), localPs.Y(bb.MaxY));
+            ItemsFor(shape.Layer).Add(new CompileItem
+            {
+                Bounds = rect, Shape = shape, MaxExtent = Math.Max(rect.Width, rect.Height),
+            });
         }
 
         // Own instances — recursively compiled and flattened into THIS cell's local space, so a
@@ -134,30 +231,111 @@ public static partial class LayoutRenderer
                     SkewY = (float)c, ScaleY = (float)d, TransY = localPs.Y(originY),
                     Persp2 = 1f,
                 };
+                float childScale = LinearScaleOf(m);
                 foreach (var childLayer in child.Layers)
-                {
-                    var cl = LayerFor(childLayer.Key);
-                    cl.Fill.AddPath(childLayer.Fill, in m);
-                    cl.Stroke.AddPath(childLayer.Stroke, in m);
-                }
+                foreach (var childChunk in childLayer.Chunks)
+                    ItemsFor(childLayer.Key).Add(new CompileItem
+                    {
+                        Bounds = m.MapRect(childChunk.Bounds),
+                        Child = childChunk,
+                        Matrix = m,
+                        MaxExtent = childChunk.MaxExtent * childScale,
+                    });
+
                 foreach (var rect in child.BrokenPlaceholders)
                     compiled.BrokenPlaceholders.Add(m.MapRect(rect));
             }
+        }
+
+        // ── Pass 2 — size a grid per layer, then build each chunk's path once ──────────────────────
+        foreach (var (key, list) in items)
+        {
+            var cl = new CompiledLayerGeometry { Key = key };
+            compiled.Layers.Add(cl);
+            BuildChunks(cl, list, localPs, counters);
         }
 
         _cellCompileCache.AddOrUpdate(subView, compiled);
         return compiled;
     }
 
+    /// <summary>The uniform linear scale factor of a placement matrix. Every placement transform this
+    /// renderer produces is a similarity (a multiple of 90 degrees, an optional mirror, and Mag), so
+    /// <c>sqrt(|det|)</c> is exact rather than an approximation — which is what lets a nested chunk's
+    /// own feature size be carried up into the parent cell as a single scalar.</summary>
+    private static float LinearScaleOf(in SKMatrix m) =>
+        (float)Math.Sqrt(Math.Abs((double)m.ScaleX * m.ScaleY - (double)m.SkewX * m.SkewY));
+
+    /// <summary>Buckets <paramref name="list"/> into a square grid of <see cref="CompiledChunk"/>s and
+    /// builds each one's aggregate path. A primitive is assigned by its bbox CENTER and then GROWS its
+    /// chunk's bounds to contain itself, so a chunk's stored bounds are always a true superset of what
+    /// it draws — culling against them can never drop visible geometry, which is what makes stage 1
+    /// pixel-identical to the unchunked path it replaces.</summary>
+    private static void BuildChunks(CompiledLayerGeometry cl, List<CompileItem> list, PathSpace localPs,
+                                    LayoutFrameCounters? counters)
+    {
+        if (list.Count == 0) return;
+
+        var layerBounds = list[0].Bounds;
+        foreach (var it in list) layerBounds.Union(it.Bounds);
+
+        int gridN = Math.Clamp(
+            (int)Math.Ceiling(Math.Sqrt(list.Count / (double)TargetPrimitivesPerChunk)), 1, MaxChunkGridSide);
+
+        double cw = Math.Max(layerBounds.Width  / gridN, 1e-12);
+        double ch = Math.Max(layerBounds.Height / gridN, 1e-12);
+
+        var buckets = new List<CompileItem>?[gridN * gridN];
+        foreach (var it in list)
+        {
+            int gx = Math.Clamp((int)(((it.Bounds.Left + it.Bounds.Right) / 2 - layerBounds.Left) / cw), 0, gridN - 1);
+            int gy = Math.Clamp((int)(((it.Bounds.Top + it.Bounds.Bottom) / 2 - layerBounds.Top) / ch), 0, gridN - 1);
+            (buckets[gy * gridN + gx] ??= []).Add(it);
+        }
+
+        foreach (var bucket in buckets)
+        {
+            if (bucket is null) continue;
+            var chunk = new CompiledChunk { Bounds = bucket[0].Bounds };
+            var prims = new List<SKRect>(bucket.Count);
+
+            foreach (var it in bucket)
+            {
+                chunk.Bounds.Union(it.Bounds);
+                if (it.MaxExtent > chunk.MaxExtent) chunk.MaxExtent = it.MaxExtent;
+
+                if (it.Shape is { } shape)
+                {
+                    using var path = BuildShapePath(shape, localPs, counters);
+                    if (path is null || path.IsEmpty) continue;
+                    chunk.Geometry.AddPath(path);
+                    prims.Add(it.Bounds);
+                }
+                else if (it.Child is { } child)
+                {
+                    var m = it.Matrix;
+                    chunk.Geometry.AddPath(child.Geometry, in m);
+                    foreach (var pb in child.PrimitiveBounds) prims.Add(m.MapRect(pb));
+                }
+            }
+
+            if (chunk.Geometry.IsEmpty) continue;
+            chunk.PrimitiveBounds = prims.ToArray();
+            cl.Chunks.Add(chunk);
+        }
+    }
+
     /// <summary>Draws every candidate instance placement — R-L3a §4/§5/§8 (culling already applied by
     /// the caller's spatial-index query; LOD and the missing/broken placeholder are decided here).</summary>
     private static void DrawInstances(SKCanvas canvas, LayoutView view, Technology? tech,
         IReadOnlyList<LayoutSpatialEntry> candidates, IReadOnlyDictionary<int, LayoutInstance> dragOverrides,
-        LayoutRenderOptions opts, PathSpace ps, double scaleUm, LayoutFrameCounters counters,
-        HashSet<string> missingCellRefs)
+        LayoutRenderOptions opts, PathSpace ps, double scaleUm, SKRect visiblePathRect,
+        LayoutFrameCounters counters, HashSet<string> missingCellRefs)
     {
         string baseDir = opts.BaseDir ?? "";
         double lodThreshold = opts.LodPixelThreshold > 0 ? opts.LodPixelThreshold : DefaultLodPixelThreshold;
+        double elisionThreshold = opts.StrokeElisionPixelThreshold != 0
+            ? opts.StrokeElisionPixelThreshold : DefaultStrokeElisionDevicePixels;
         double devicePxPerDbu = scaleUm * ps.DbuToUm;
         var layerMap = tech?.Layers.ToDictionary(l => l.Key);
 
@@ -207,13 +385,14 @@ public static partial class LayoutRenderer
 
             var (a, b, c, d) = LayoutInstanceTransform.PathSpaceLinearCoefficients(inst);
             int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
+            float placementScale = (float)Math.Sqrt(Math.Abs(a * d - b * c));
 
             // Resolved once per candidate instance, reused across every placement (R-L3a-3's "N matrix
             // draws" — not N paint allocations). Magnification is baked into the stroke width HERE
             // (gate 3): the compiled Stroke path is unscaled cell-local geometry, so the on-screen
             // width after this instance's own Mag (part of the placement matrix) must be pre-divided
             // by Mag to still land on GeometryStrokeDevicePixels device pixels.
-            var layerVisuals = new List<(CompiledLayerGeometry Layer, SKPaint FillPaint, SKPaint StrokePaint)>();
+            var layerVisuals = new List<(CompiledLayerGeometry Layer, SKPaint FillPaint, SKPaint StrokePaint, SKPaint ElidedPaint)>();
             double strokeScale = scaleUm * Math.Max(Math.Abs(inst.Mag), 1e-9);
             foreach (var layer in compiled.Layers)
             {
@@ -230,7 +409,12 @@ public static partial class LayoutRenderer
                         IsAntialias = true, Style = SKPaintStyle.Stroke,
                         StrokeWidth = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels),
                         Color = color.WithAlpha(255),
-                    }));
+                    },
+                    // The stroke-elision tier's paint — the STROKE's solid alpha, not the fill's. At the
+                    // few-device-pixel sizes it engages at, the outline is essentially the whole visible
+                    // shape and the fill interior is sub-pixel, so carrying the fill's own (often
+                    // partial) opacity across would visibly dim a dense field that today reads solid.
+                    new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(255) }));
             }
 
             using var brokenFillPaint = compiled.BrokenPlaceholders.Count > 0
@@ -252,12 +436,56 @@ public static partial class LayoutRenderer
                         Persp2 = 1f,
                     };
 
+                    // L2e stage 1 — the viewport, mapped back into this placement's own cell-local
+                    // path space, is what each chunk's bounds are tested against. Every placement
+                    // transform here is a similarity (90-degree multiples, an optional mirror, Mag), so
+                    // the inverse-mapped rect is EXACT, not a conservative envelope. A matrix that
+                    // cannot be inverted (a degenerate Mag of 0) draws nothing on screen anyway, so
+                    // falling back to "no culling" there would be work for an invisible result — but it
+                    // must not SKIP the placement either, since Mag is user-editable and a zero is a
+                    // transient state during a text edit; an un-invertible matrix simply keeps every
+                    // chunk, and Skia's own clip discards the result.
+                    bool culls = m.TryInvert(out var inverse);
+                    var localVisible = culls ? inverse.MapRect(visiblePathRect) : default;
+
                     canvas.Save();
                     canvas.Concat(in m);
-                    foreach (var (layer, fillPaint, strokePaint) in layerVisuals)
+                    foreach (var (layer, fillPaint, strokePaint, elidedPaint) in layerVisuals)
                     {
-                        if (!layer.Fill.IsEmpty) { canvas.DrawPath(layer.Fill, fillPaint); counters.DrawCalls++; }
-                        if (!layer.Stroke.IsEmpty) { canvas.DrawPath(layer.Stroke, strokePaint); counters.DrawCalls++; }
+                        foreach (var chunk in layer.Chunks)
+                        {
+                            if (culls && !localVisible.IntersectsWith(chunk.Bounds)) continue;
+
+                            // L2e stage 2 — a chunk whose largest primitive lands under a few device
+                            // pixels draws as ONE solid fill of its primitives' bounding rects, grown by
+                            // half the stroke width it would otherwise have been given, instead of a
+                            // fill pass plus a stroke pass over the real geometry. Stroking is where the
+                            // time actually went: tessellating an outline for ~100k segments measured
+                            // 82 ms against the fill's 20 ms on the 24,964-via MIM cap, for an outline
+                            // drawn on a 2.1-pixel square. The grown bbox covers the same pixels the
+                            // stroke would have, and at this size a primitive and its bbox are
+                            // indistinguishable — the same equivalence AddMinimalRect already trades on.
+                            if (chunk.MaxExtent * placementScale * scaleUm < elisionThreshold
+                                && chunk.PrimitiveBounds.Length > 0)
+                            {
+                                float grow = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels) / 2f;
+                                var elided = chunk.Elided;
+                                if (elided is null || elided.Grow != grow)
+                                {
+                                    var built = new SKPath();
+                                    foreach (var pb in chunk.PrimitiveBounds)
+                                        built.AddRect(new SKRect(pb.Left - grow, pb.Top - grow, pb.Right + grow, pb.Bottom + grow));
+                                    chunk.Elided = elided = new ElidedGeometry(grow, built);
+                                }
+                                canvas.DrawPath(elided.Path, elidedPaint);
+                                counters.DrawCalls++;
+                                continue;
+                            }
+
+                            canvas.DrawPath(chunk.Geometry, fillPaint);
+                            canvas.DrawPath(chunk.Geometry, strokePaint);
+                            counters.DrawCalls += 2;
+                        }
                     }
                     if (brokenFillPaint is not null && brokenStrokePaint is not null)
                         foreach (var rect in compiled.BrokenPlaceholders)
@@ -272,7 +500,7 @@ public static partial class LayoutRenderer
             }
             finally
             {
-                foreach (var (_, fp, sp) in layerVisuals) { fp.Dispose(); sp.Dispose(); }
+                foreach (var (_, fp, sp, ep) in layerVisuals) { fp.Dispose(); sp.Dispose(); ep.Dispose(); }
             }
 
             // brief-L5-followups-2.md §6 (R-L5g-13/14/15): a top-level resolved instance's pins are
@@ -523,9 +751,10 @@ public static partial class LayoutRenderer
             canvas.Save();
             canvas.Concat(in m);
             foreach (var layer in compiled.Layers)
+            foreach (var chunk in layer.Chunks)
             {
-                if (!layer.Fill.IsEmpty) canvas.DrawPath(layer.Fill, ghostFill);
-                if (!layer.Stroke.IsEmpty) canvas.DrawPath(layer.Stroke, ghostStroke);
+                canvas.DrawPath(chunk.Geometry, ghostFill);
+                canvas.DrawPath(chunk.Geometry, ghostStroke);
             }
             canvas.Restore();
         }
@@ -559,9 +788,10 @@ public static partial class LayoutRenderer
         canvas.Save();
         canvas.Translate(ps.X(pending.X), ps.Y(pending.Y));
         foreach (var layer in compiled.Layers)
+        foreach (var chunk in layer.Chunks)
         {
-            if (!layer.Fill.IsEmpty) canvas.DrawPath(layer.Fill, ghostFill);
-            if (!layer.Stroke.IsEmpty) canvas.DrawPath(layer.Stroke, ghostStroke);
+            canvas.DrawPath(chunk.Geometry, ghostFill);
+            canvas.DrawPath(chunk.Geometry, ghostStroke);
         }
         canvas.Restore();
     }

@@ -77,11 +77,16 @@ public sealed partial class LayoutEditorViewModel
         if (result.Diagnostics is { Count: > 0 })
             foreach (var d in result.Diagnostics) _messageSink?.Warning(d);
 
-        Model.Shapes.Clear();
-        Model.Shapes.AddRange(result.Shapes);
-        Model.PCellOrigin = origin with { Parameters = merged };
+        // Under RenderLock — this replaces the WHOLE shape list, so a frame catching it mid-swap
+        // would be looking at an empty document (see LayoutView.RenderLock and DeleteShapesCommand).
+        lock (Model.RenderLock)
+        {
+            Model.Shapes.Clear();
+            Model.Shapes.AddRange(result.Shapes);
+            Model.PCellOrigin = origin with { Parameters = merged };
+            Model.NotifyChanged();
+        }
         IsDirty = true;
-        Model.NotifyChanged();
         return true;
     }
 

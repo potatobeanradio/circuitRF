@@ -27,6 +27,32 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
+        <!-- ── The filter row (every tab) ───────────────────────────────────────
+             `filter` is the search box; `coltoggle` is a bulk toggle that sits in, and is
+             sized by, the narrow column it acts on (Vis and Sel are 30 px wide), so it has to
+             shed the theme's default button metrics entirely rather than merely shrink. -->
+        <Style Selector="TextBox.filter">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.filtercount">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="ToggleButton.coltoggle">
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
         <!-- ── The row lists ────────────────────────────────────────────────────
              A bare ItemsControl inside a ScrollViewer is NOT virtualized: Avalonia's
              ItemsControl defaults to a plain StackPanel and, given a ScrollViewer's
@@ -144,7 +170,7 @@
         </Border>
 
         <!-- ── Sections ─────────────────────────────────────────────────────── -->
-        <TabControl>
+        <TabControl x:Name="SectionTabs">
 
             <!-- TabControl's DEFAULT ItemsPanel is a WrapPanel (Avalonia.Controls.TabControl:
                  DefaultPanel = new FuncTemplate<Panel>(() => new WrapPanel())) — that is why the four
@@ -184,8 +210,57 @@
                          under the user every time scrolling realized a wider row. Every column here
                          except Name holds fixed-width content already (the widths below are the ones
                          its own control declares), so pinning them loses nothing. -->
-                    <Grid RowDefinitions="Auto,*">
+                    <Grid RowDefinitions="Auto,Auto,*">
+                        <!-- ── Filter + bulk toggles ─────────────────────────────────
+                             Same column list as the header and the rows below, so each control
+                             sits in the column it acts on: the search box in Name, and the two
+                             bulk toggles directly above the Vis and Sel checkbox columns they
+                             sweep. A row of buttons parked at the left, acting on a column 400 px
+                             away, is the version of this that has to be read twice. -->
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="44"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="82"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBox Grid.Column="0" Classes="filter" x:Name="LayerFilterBox"
+                                         Text="{Binding ViewModel.LayerFilter, Mode=TwoWay}"
+                                         PlaceholderText="Filter by layer name..."
+                                         ToolTip.Tip="Shows only layers whose name contains this text (case-insensitive). Clear it to show every layer again."/>
+                                <TextBlock Grid.Column="1" Classes="filtercount" Text="{Binding ViewModel.LayerFilterSummary}"/>
+                            </Grid>
+
+                            <ToggleButton Grid.Column="6" Classes="coltoggle"
+                                          IsChecked="{Binding ViewModel.AllShownLayersVisible, Mode=TwoWay}"
+                                          ToolTip.Tip="Show or hide every layer currently listed. With a filter active this applies to the filtered layers only, not to the ones it hid from view.">
+                                <Panel>
+                                    <mi:MaterialIcon Kind="Eye" Width="12" Height="12"
+                                                     IsVisible="{Binding ViewModel.AllShownLayersVisible}"/>
+                                    <mi:MaterialIcon Kind="EyeOff" Width="12" Height="12"
+                                                     IsVisible="{Binding !ViewModel.AllShownLayersVisible}"/>
+                                </Panel>
+                            </ToggleButton>
+                            <ToggleButton Grid.Column="7" Classes="coltoggle"
+                                          IsChecked="{Binding ViewModel.AllShownLayersSelectable, Mode=TwoWay}"
+                                          ToolTip.Tip="Make every layer currently listed selectable or unselectable. With a filter active this applies to the filtered layers only, not to the ones it hid from view.">
+                                <Panel>
+                                    <mi:MaterialIcon Kind="SelectAll" Width="12" Height="12"
+                                                     IsVisible="{Binding ViewModel.AllShownLayersSelectable}"/>
+                                    <mi:MaterialIcon Kind="SelectOff" Width="12" Height="12"
+                                                     IsVisible="{Binding !ViewModel.AllShownLayersSelectable}"/>
+                                </Panel>
+                            </ToggleButton>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" MinWidth="110"/>
                                 <ColumnDefinition Width="48"/>
@@ -209,7 +284,7 @@
                             <TextBlock Grid.Column="8" Classes="colhdr" Text="Purpose"   HorizontalAlignment="Center"/>
                         </Grid>
 
-                        <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding ViewModel.Layers}"
+                        <ListBox Grid.Row="2" Classes="rows" x:Name="LayersList" ItemsSource="{Binding ViewModel.FilteredLayers}"
                                  Margin="4,0,4,4" SelectionMode="Single">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="lay:LayerRowViewModel">
@@ -301,13 +376,24 @@
                                   SelectedItem="{Binding ViewModel.StackupBottom, Mode=TwoWay}"/>
                     </Grid>
 
+                    <!-- The stackup rows are cards, not a column grid, so the filter row has only
+                         the one control to align: the search box sits at the left edge the cards
+                         start at. -->
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="220,Auto" ColumnSpacing="6" Margin="6,0,6,4">
+                        <TextBox Grid.Column="0" Classes="filter" x:Name="StackupFilterBox"
+                                 Text="{Binding ViewModel.StackupFilter, Mode=TwoWay}"
+                                 PlaceholderText="Filter by stackup layer name..."
+                                 ToolTip.Tip="Shows only stackup entries whose name contains this text (case-insensitive)."/>
+                        <TextBlock Grid.Column="1" Classes="filtercount" Text="{Binding ViewModel.StackupFilterSummary}"/>
+                    </Grid>
+
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="4" Margin="6,4">
                         <Button Content="＋ Dielectric" Command="{Binding ViewModel.AddDielectricLayerCommand}" FontSize="11" Padding="8,3"/>
                         <Button Content="＋ Conductor" Command="{Binding ViewModel.AddConductorLayerCommand}" FontSize="11" Padding="8,3"/>
                         <Button Content="＋ Via" Command="{Binding ViewModel.AddViaLayerCommand}" FontSize="11" Padding="8,3"/>
                     </StackPanel>
 
-                    <ListBox Classes="rows" ItemsSource="{Binding ViewModel.StackupLayers}"
+                    <ListBox Classes="rows" x:Name="StackupList" ItemsSource="{Binding ViewModel.FilteredStackupLayers}"
                              Margin="6,0" SelectionMode="Single">
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="lay:StackupLayerRowViewModel">
@@ -471,8 +557,26 @@
                     <!-- Same fixed-column convention as the Layers tab, and for the same reason:
                          the list below is virtualized, and a SharedSizeGroup is the max over the
                          participants actually measured, so shared widths would shift while scrolling. -->
-                    <Grid RowDefinitions="Auto,*">
+                    <Grid RowDefinitions="Auto,Auto,*">
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="120"/>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="34"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <TextBox Grid.Column="0" Classes="filter" x:Name="DrcFilterBox"
+                                         Text="{Binding ViewModel.DrcFilter, Mode=TwoWay}"
+                                         PlaceholderText="Filter by rule name..."
+                                         ToolTip.Tip="Shows only rules whose name contains this text (case-insensitive)."/>
+                                <TextBlock Grid.Column="1" Classes="filtercount" Text="{Binding ViewModel.DrcFilterSummary}"/>
+                            </Grid>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" MinWidth="120"/>
                                 <ColumnDefinition Width="100"/>
@@ -488,7 +592,7 @@
                             <TextBlock Grid.Column="4" Classes="colhdr" Text="Severity" HorizontalAlignment="Center"/>
                         </Grid>
 
-                        <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding ViewModel.DrcRules}"
+                        <ListBox Grid.Row="2" Classes="rows" x:Name="DrcRulesList" ItemsSource="{Binding ViewModel.FilteredDrcRules}"
                                  Margin="4,0,4,4" SelectionMode="Single">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="lay:DrcRuleRowViewModel">
@@ -622,8 +726,29 @@
                                Foreground="{DynamicResource SystemBaseMediumColor}"
                                Text="How each layer is named in an exported file. GDSII layer/datatype alias — blank uses the layer's own Layer/Datatype above. DXF layer name — used on export, and matched on import so an incoming DXF layer lands here. Gerber suffix — the exported file is named &lt;cell&gt;.&lt;suffix&gt;; blank falls back to a synthetic one. Gerber X2 file function — written into the file and its .gbrjob so a fab can identify it. All four are live; a duplicate suffix or name is reported below."/>
 
-                    <Grid RowDefinitions="Auto,*" Margin="0,4,0,0">
+                    <Grid RowDefinitions="Auto,Auto,*" Margin="0,4,0,0">
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="110"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                <!-- Its own filter, not the Layers tab's: the two tabs list the same
+                                     layers for different jobs, and one narrowing the other silently
+                                     would be a surprise rather than a convenience. -->
+                                <TextBox Grid.Column="0" Classes="filter" x:Name="InterchangeFilterBox"
+                                         Text="{Binding ViewModel.InterchangeFilter, Mode=TwoWay}"
+                                         PlaceholderText="Filter by layer name..."
+                                         ToolTip.Tip="Shows only layers whose name contains this text (case-insensitive)."/>
+                                <TextBlock Grid.Column="1" Classes="filtercount" Text="{Binding ViewModel.InterchangeFilterSummary}"/>
+                            </Grid>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" MinWidth="110"/>
                                 <ColumnDefinition Width="48"/>
@@ -640,7 +765,7 @@
                             <TextBlock Grid.Column="5" Classes="colhdr" Text="Gerber X2 Function" HorizontalAlignment="Center"/>
                         </Grid>
 
-                        <ListBox Grid.Row="1" Classes="rows" ItemsSource="{Binding ViewModel.Layers}"
+                        <ListBox Grid.Row="2" Classes="rows" x:Name="InterchangeList" ItemsSource="{Binding ViewModel.FilteredInterchangeLayers}"
                                  Margin="4,0,4,4" SelectionMode="Single">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="lay:LayerRowViewModel">

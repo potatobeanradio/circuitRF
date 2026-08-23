@@ -54,30 +54,36 @@ internal sealed class ReplaceShapesCommand : IUiCommand
 
     public void Execute()
     {
-        int insertAt = InsertAt;
+        lock (_view.RenderLock)   // one step as far as the render thread is concerned — see DeleteShapesCommand
+        {
+            int insertAt = InsertAt;
 
-        // Remove highest-to-lowest so earlier removals never shift a later removal's index.
-        for (int i = _removed.Count - 1; i >= 0; i--)
-            _view.Shapes.RemoveAt(_removed[i].Index);
+            // Remove highest-to-lowest so earlier removals never shift a later removal's index.
+            for (int i = _removed.Count - 1; i >= 0; i--)
+                _view.Shapes.RemoveAt(_removed[i].Index);
 
-        insertAt = Math.Min(insertAt, _view.Shapes.Count);
-        for (int i = 0; i < _added.Count; i++)
-            _view.Shapes.Insert(insertAt + i, _added[i]);
+            insertAt = Math.Min(insertAt, _view.Shapes.Count);
+            for (int i = 0; i < _added.Count; i++)
+                _view.Shapes.Insert(insertAt + i, _added[i]);
 
-        _view.NotifyChanged(IsPureAppend ? LayoutChangeInfo.Appended(insertAt, _added.Count) : null);
+            _view.NotifyChanged(IsPureAppend ? LayoutChangeInfo.Appended(insertAt, _added.Count) : null);
+        }
     }
 
     public void Undo()
     {
-        int insertAt = Math.Min(InsertAt, Math.Max(0, _view.Shapes.Count - _added.Count));
-        _view.Shapes.RemoveRange(insertAt, _added.Count);
+        lock (_view.RenderLock)
+        {
+            int insertAt = Math.Min(InsertAt, Math.Max(0, _view.Shapes.Count - _added.Count));
+            _view.Shapes.RemoveRange(insertAt, _added.Count);
 
-        // Ascending order — each insertion at its original index is valid because every earlier
-        // (lower-index) original has already been reinserted, exactly like ReplaceShapeCommand's
-        // 1-index case generalizes.
-        foreach (var (index, before) in _removed)
-            _view.Shapes.Insert(index, before);
+            // Ascending order — each insertion at its original index is valid because every earlier
+            // (lower-index) original has already been reinserted, exactly like ReplaceShapeCommand's
+            // 1-index case generalizes.
+            foreach (var (index, before) in _removed)
+                _view.Shapes.Insert(index, before);
 
-        _view.NotifyChanged(IsPureAppend ? LayoutChangeInfo.RemovedTrailing(insertAt, _added.Count) : null);
+            _view.NotifyChanged(IsPureAppend ? LayoutChangeInfo.RemovedTrailing(insertAt, _added.Count) : null);
+        }
     }
 }

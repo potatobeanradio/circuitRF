@@ -24,15 +24,21 @@ internal sealed class DeleteInstancesCommand : IUiCommand
 
     public void Execute()
     {
-        foreach (var (idx, _) in _items)
-            _view.Instances.RemoveAt(idx);
-        _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        lock (_view.RenderLock)   // one step as far as the render thread is concerned — see DeleteShapesCommand
+        {
+            foreach (var (idx, _) in _items)
+                _view.Instances.RemoveAt(idx);
+            _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        }
     }
 
     public void Undo()
     {
-        foreach (var (idx, instance) in Enumerable.Reverse(_items))
-            _view.Instances.Insert(idx, instance);
-        _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        lock (_view.RenderLock)
+        {
+            foreach (var (idx, instance) in Enumerable.Reverse(_items))
+                _view.Instances.Insert(idx, instance);
+            _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        }
     }
 }

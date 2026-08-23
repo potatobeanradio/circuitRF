@@ -25,14 +25,20 @@ internal sealed class AddInstanceCommand : IUiCommand
 
     public void Execute()
     {
-        if (_index < 0) _index = _view.Instances.Count;
-        _view.Instances.Insert(_index, _instance);
-        _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        lock (_view.RenderLock)   // one step as far as the render thread is concerned — see DeleteShapesCommand
+        {
+            if (_index < 0) _index = _view.Instances.Count;
+            _view.Instances.Insert(_index, _instance);
+            _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        }
     }
 
     public void Undo()
     {
-        _view.Instances.Remove(_instance);
-        _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        lock (_view.RenderLock)
+        {
+            _view.Instances.Remove(_instance);
+            _view.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+        }
     }
 }
