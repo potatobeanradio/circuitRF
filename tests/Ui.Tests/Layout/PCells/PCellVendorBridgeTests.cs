@@ -290,6 +290,35 @@ public sealed class PCellVendorBridgeTests
             Path.Combine(PCellPythonPackage.RootDirectory!, "circuitrf_pcell", "__init__.py")));
     }
 
+    /// <summary>
+    /// <b>It finds it BESIDE THE EXECUTABLE — the branch a shipped build has, not the source-tree
+    /// walk-up.</b>
+    ///
+    /// <para>The test above passes either way, and that is exactly how this shipped broken: nothing
+    /// copied the package into the build output, the resolver's second branch walked up to
+    /// <c>tools/pcell-python</c>, and every development run worked. An installed
+    /// <c>circuitRF.app</c> has no repository above it, so importing a kit ended at
+    /// <c>ModuleNotFoundError: No module named 'circuitrf_pcell'</c> and every one of that kit's
+    /// cells drew as a placeholder.</para>
+    ///
+    /// <para>This asserts the resolved directory IS <c>AppContext.BaseDirectory/pcell-python</c>,
+    /// which can only be true when the copy actually happened. It is a real gate rather than a
+    /// reading of the .csproj: the package is copied to the output of anything referencing
+    /// <c>src/Ui</c>, this test project included.</para>
+    /// </summary>
+    [Fact]
+    public void ThePythonPackageIsShippedBesideTheExecutable_NotFoundBySourceTreeWalkUp()
+    {
+        string beside = Path.Combine(AppContext.BaseDirectory, "pcell-python");
+
+        Assert.Equal(beside, PCellPythonPackage.RootDirectory);
+
+        // Both packages, not just the marker the resolver checks: a kit's entry script imports
+        // circuitrf_pcell AND cni.bridge, so half a copy is still a ModuleNotFoundError.
+        Assert.True(File.Exists(Path.Combine(beside, "circuitrf_pcell", "__init__.py")));
+        Assert.True(File.Exists(Path.Combine(beside, "cni", "bridge.py")));
+    }
+
     // ── placeable ─────────────────────────────────────────────────────────────
 
     /// <summary>

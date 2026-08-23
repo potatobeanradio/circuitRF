@@ -435,3 +435,107 @@ never says so. The failure path now names that first, then the two runner-up cau
 app-specific password made on a *different* Apple ID; a mistyped or revoked one), and gives the
 standalone `store-credentials` command so credentials can be iterated on without paying for a build
 each time.
+
+---
+
+## An installed app rendered no PDK artwork: two independent defects (2026-08-22)
+
+**Symptom.** A signed, notarized, downloaded and installed `/Applications/circuitRF.app`: create a
+workspace, add a PDK (IHP `ihp-sg13g2`), and every one of the kit's 34 layout cells draws as a
+placeholder. The kit itself imported perfectly — 110 placeable parts, 110 symbols, "34 parametric
+layout cell(s)", technology read, 4 compiled models found. Only the artwork was missing. The same
+workspace under `dotnet run` is fine, which is the tell that this is a packaging-shaped bug and not a
+kit-shaped one.
+
+Two separate causes, either of which alone is fatal to generated artwork.
+
+### 1. circuitRF's own Python package was never shipped
+
+The Messages panel carried the whole answer:
+
+```
+The PCell generator '…/kit_entry.py': The PCell generator closed its output before sending a reply.
+--- generator output ---
+  File "…/kit_entry.py", line 7, in <module>
+    import circuitrf_pcell as crf
+ModuleNotFoundError: No module named 'circuitrf_pcell'
+```
+
+`PCellPythonPackage.Locate()` looks for the package **beside the executable** and, failing that,
+walks up for a `tools/pcell-python` source tree. Nothing ever copied it into the build output, so
+**only the second branch had ever run** — and it always succeeds in a development tree and can never
+succeed in an installed app. `find /Applications/circuitRF.app -iname '*pcell*'` returned one thing:
+a documentation page.
+
+This is the same class of bug as `CrfPublishHelperPrograms` in `src/Ui/CircuitRF.Ui.csproj`, whose
+own comment already describes it ("a kit that evaluates fine under `dotnet run` and refuses on an
+installed copy"), and it is fixed the same way: an item group that copies
+`tools/pcell-python/**/*.py` to `pcell-python/` in the output and the publish tree.
+
+Two details in that item are load-bearing:
+
+- **The glob is rooted at `pcell-python/`, not at each package.** `%(RecursiveDir)` begins *after*
+  the `**`, so a per-package `Include` flattens `circuitrf_pcell/__init__.py` to `__init__.py` — a
+  directory of loose modules, which is not an importable package and would fail identically.
+- **`*.py` only**, which is also what leaves `__pycache__` behind.
+
+**No packaging script needed changing, and this was checked rather than assumed** — all three
+packagers take the whole publish tree: `bundleForMacOS.sh` does `cp -R "${PUBLISH_DIR}/."`,
+`build-deb.sh` hands fpm `"${PUBLISH}/=/opt/circuitrf/"`, and `build-msi.ps1`'s `Add-Directory`
+harvester recurses subdirectories generically into `Files.wxs`.
+
+The gate is `PCellVendorBridgeTests.ThePythonPackageIsShippedBesideTheExecutable_NotFoundBySourceTreeWalkUp`,
+which asserts `PCellPythonPackage.RootDirectory` **equals** `AppContext.BaseDirectory/pcell-python`.
+The pre-existing test beside it (`CircuitRfFindsItsOwnPythonPackage`) passes under either branch,
+which is exactly how this shipped.
+
+### 2. A bundled macOS app resolves `python3` to Apple's frozen 3.9 stub
+
+Fixing (1) alone would have moved the failure, not removed it. `PythonInterpreterDiscovery` tries
+PATH first, documented as "it is what the user's own shell would run". **In an application launched
+from the Finder that premise is false**: the process inherits `/usr/bin:/bin:/usr/sbin:/sbin` and
+nothing of the login shell, so `python3` means `/usr/bin/python3` — Apple's Command Line Tools stub,
+frozen at 3.9.6 — and never the 3.13 the same machine has in `/usr/local/bin`. The log recorded the
+choice plainly: `Using Python 3.9.6 for generated artwork (found on PATH: python3)`.
+
+3.9 clears the discovery floor (which is what circuitRF's *own* package needs) and then cannot
+**parse** a kit that uses anything newer. Measured on sg13g2: its cells use `match`, so under 3.9.6
+registration returns `Could not import 'sg13g2_pycell_lib.ihp': invalid syntax (res_base_code.py,
+line 61)` and **zero** generators; under 3.13.1, **34** generators and one unrelated vendor-side
+problem (`inductors` has no `model` attribute).
+
+That message is also precisely the failure mode `MinimumMinor`'s own comment says the version floor
+exists to prevent — "refused by version rather than allowed to fail later on syntax, which reads as a
+broken kit". The floor was doing its job; the candidate ORDER was not.
+
+**Fix: the stub is demoted to last resort, and only when it is an IMPLICIT choice.**
+`IsImplicitlyAppleCommandLineToolsPython` is true only for a *bare name* that PATH resolves to
+`/usr/bin/python3`, so:
+
+- a kit manifest's `interpreter`, or a `.cws` recording the absolute path, is a deliberate statement
+  and is honoured;
+- a virtual environment is untouched — its `python3` is in the environment's own `bin`;
+- on a machine that has nothing else, `/usr/bin/python3` is still reached, as the last candidate.
+
+**The recorded choice is demoted by the same rule**, and that half matters as much as the candidate
+list: the `.cws` here already said `"PythonInterpreter": "python3"`, written by a session with a full
+PATH. Replaying a *name* is only sound while the name means the same thing, so a bare record that
+would now land on the stub is re-derived. Without this the workspace stays broken after the app is
+fixed.
+
+PATH is threaded through `Find`/`Candidates` as an optional `pathVariable` rather than read only from
+the environment — the Finder case is then testable without mutating the process environment out from
+under a parallel test run.
+
+### 3. A `SyntaxError` from a kit now names the interpreter that parsed it
+
+`cni/bridge.py`'s `_interpreter_note` appends the running version and `sys.executable` to a
+`SyntaxError` only. "invalid syntax (res_base_code.py, line 61)" reads as a broken kit and sends the
+reader to the vendor; the same line ending "parsed by Python 3.9.6
+(/Library/Developer/CommandLineTools/usr/bin/python3)" names the actual problem. Stated as a fact
+about which interpreter ran, not as a diagnosis — a genuine syntax error in a kit is still possible,
+and the version is the piece the reader cannot otherwise see.
+
+**Still true, and not a bug:** a machine whose only Python is Apple's 3.9 stub cannot generate this
+kit's artwork. circuitRF bundles no interpreter and installs no packages. What changed is that the
+message now says so.

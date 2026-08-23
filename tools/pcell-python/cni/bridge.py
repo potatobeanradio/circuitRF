@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
+import sys
 from typing import Any, Iterable
 
 import circuitrf_pcell as crf
@@ -134,6 +135,27 @@ def _make_generator(cls: type, defaults: dict[str, Any]):
     return generate
 
 
+def _interpreter_note(exc: BaseException) -> str:
+    """Names the interpreter that did the parsing, on a SyntaxError only.
+
+    A kit's own sources are not broken — they parse for the vendor. When they do not parse here it
+    is almost always that this interpreter is older than the syntax they use, and the bare message
+    ("invalid syntax (res_base_code.py, line 61)") reads instead as a broken kit and sends the
+    reader to the vendor. IHP's sg13g2 is the worked example: its cells use `match`, so every one of
+    them fails this way under Python 3.9 and none of them under 3.10.
+
+    Stated as a fact about which interpreter ran rather than as a diagnosis — a genuine syntax error
+    in a kit is still possible, and the version is the piece the reader cannot otherwise see.
+    """
+    if not isinstance(exc, SyntaxError):
+        return ""
+
+    v = sys.version_info
+    return (f" — parsed by Python {v.major}.{v.minor}.{v.micro} ({sys.executable}). If the kit needs"
+            f" a newer one, name it as \"interpreter\" in this generator's manifest, or as"
+            f" \"PythonInterpreter\" in the workspace's .cws.")
+
+
 def register_kit(package: str, registry: Any = None, prefix: str = "",
                  only: Iterable[str] | None = None) -> KitRegistration:
     """Register every parametric cell in ``package`` as a circuitRF generator.
@@ -159,7 +181,7 @@ def register_kit(package: str, registry: Any = None, prefix: str = "",
         install_host_module_for(package)
         root = importlib.import_module(package)
     except Exception as exc:                                # noqa: BLE001
-        return KitRegistration([], [f"Could not import '{package}': {exc}"])
+        return KitRegistration([], [f"Could not import '{package}': {exc}{_interpreter_note(exc)}"])
 
     kit_tech = Tech.get()
 
@@ -168,7 +190,7 @@ def register_kit(package: str, registry: Any = None, prefix: str = "",
         try:
             module = importlib.import_module(module_name)
         except Exception as exc:                            # noqa: BLE001
-            problems.append(f"{module_name}: {type(exc).__name__}: {exc}")
+            problems.append(f"{module_name}: {type(exc).__name__}: {exc}{_interpreter_note(exc)}")
             continue
 
         for cls in _cells_in(module):

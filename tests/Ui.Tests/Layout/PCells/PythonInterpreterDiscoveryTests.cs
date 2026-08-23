@@ -240,12 +240,120 @@ public sealed class PythonInterpreterDiscoveryTests : IDisposable
     [Fact]
     public void TheCandidateListIsSmallAndOrderedPathFirst()
     {
-        var candidates = PythonInterpreterDiscovery.Candidates().ToList();
+        // A PATH whose python3 is a real installation, so this measures the ordering rule rather than
+        // its one documented exception (see the macOS tests below). Bare directories that hold no
+        // python3 at all leave PATH's own entries in the list, which is the case being asserted.
+        var candidates = PythonInterpreterDiscovery.Candidates(pathVariable: _dir).ToList();
 
         Assert.NotEmpty(candidates);
         Assert.True(candidates.Count <= 12, $"{candidates.Count} candidates is a search, not a list.");
         Assert.Contains("PATH", candidates[0].How, StringComparison.Ordinal);
         Assert.All(candidates, c => Assert.False(string.IsNullOrWhiteSpace(c.How)));
+    }
+
+    // ── macOS: Apple's Command Line Tools stub is not "the user's python3" ─────
+
+    /// <summary>The Finder gives a bundled application this and nothing of the user's login shell,
+    /// which is what makes <c>python3</c> resolve somewhere the user never chose.</summary>
+    private const string FinderPath = "/usr/bin:/bin:/usr/sbin:/sbin";
+
+    private static bool HasARealMacPython
+        => OperatingSystem.IsMacOS()
+           && (File.Exists("/opt/homebrew/bin/python3") || File.Exists("/usr/local/bin/python3"));
+
+    /// <summary>
+    /// <b>A bundled app must not silently run Apple's frozen 3.9 stub as if it were the user's
+    /// python3.</b>
+    ///
+    /// <para>"PATH first" is right because it is what the user's own shell would run — but an
+    /// application launched from the Finder inherits <see cref="FinderPath"/> and none of the user's
+    /// environment, so the premise is false there and <c>python3</c> means
+    /// <c>/usr/bin/python3</c>: Apple's Command Line Tools stub, frozen at 3.9.6. It clears the 3.9
+    /// floor and then cannot PARSE a kit using anything newer — measured on IHP's sg13g2, whose
+    /// cells use <c>match</c> (3.10+) and came back as "invalid syntax", reading as a broken kit.</para>
+    /// </summary>
+    [Fact]
+    public void UnderTheFindersPath_ApplesStubIsNotOfferedAsPathsPython3()
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+
+        var candidates = PythonInterpreterDiscovery.Candidates(FinderPath).ToList();
+
+        // No BARE name that this PATH would resolve to the stub. (A bare name it resolves to nothing
+        // at all — 'python', which macOS has not shipped since 12.3 — is left alone: it costs one
+        // probe that fails and says so, and demoting a name for what it is NOT would be a guess.)
+        Assert.DoesNotContain(candidates, c => c.Command == "python3");
+        Assert.All(candidates, c => Assert.False(
+            PythonInterpreterDiscovery.IsImplicitlyAppleCommandLineToolsPython(c.Command, FinderPath),
+            $"'{c.Command}' resolves to Apple's stub and was still offered ahead of a real install."));
+
+        // Still REACHABLE, and last: on a machine that has only the stub it is the right answer.
+        Assert.Equal(PythonInterpreterDiscovery.AppleCommandLineToolsPython, candidates[^1].Command);
+    }
+
+    /// <summary>The end-to-end shape of the bug: same machine, same call, only the PATH differs.</summary>
+    [PythonFact]
+    public void UnderTheFindersPath_ARealInstallationIsChosenOverApplesStub()
+    {
+        if (!HasARealMacPython) return;
+
+        var found = PythonInterpreterDiscovery.Find(
+            declaredByKit: null, recorded: null, out _, pathVariable: FinderPath);
+
+        Assert.NotNull(found);
+        Assert.NotEqual(PythonInterpreterDiscovery.AppleCommandLineToolsPython, found!.Command);
+    }
+
+    /// <summary>
+    /// <b>A recorded bare name must not lock a workspace to the stub either.</b> The record is
+    /// written by whichever session first opened the workspace — a terminal launch, with the user's
+    /// full PATH — and replaying the NAME under a bundled app's PATH resolves it somewhere else
+    /// entirely. Replaying the name is only sound while the name means the same thing.
+    /// </summary>
+    [PythonFact]
+    public void ARecordedBareName_IsNotReplayedWhenItWouldLandOnApplesStub()
+    {
+        if (!HasARealMacPython) return;
+
+        var found = PythonInterpreterDiscovery.Find(
+            declaredByKit: null, recorded: "python3", out var rejected, pathVariable: FinderPath);
+
+        Assert.NotNull(found);
+        Assert.NotEqual(PythonInterpreterDiscovery.AppleCommandLineToolsPython, found!.Command);
+        Assert.Contains(rejected, r => r.Contains("Command Line Tools", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// <b>Naming it outright is a deliberate statement and is honoured.</b> Only the implicit choice
+    /// is demoted — a kit declaring <c>/usr/bin/python3</c>, or a workspace recording it as an
+    /// absolute path, gets exactly what it asked for.
+    /// </summary>
+    [Fact]
+    public void NamingApplesPythonExplicitly_IsNotDemoted()
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+
+        Assert.False(PythonInterpreterDiscovery.IsImplicitlyAppleCommandLineToolsPython(
+            PythonInterpreterDiscovery.AppleCommandLineToolsPython, FinderPath));
+
+        Assert.True(PythonInterpreterDiscovery.IsImplicitlyAppleCommandLineToolsPython(
+            "python3", FinderPath));
+    }
+
+    /// <summary>A virtual environment is untouched: its own <c>python3</c> is in the environment's
+    /// <c>bin</c>, never in <c>/usr/bin</c>, so "PATH first" still means what it says.</summary>
+    [Fact]
+    public void AVirtualEnvironmentOnPath_IsStillTakenFirst()
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+
+        string venvBin = Path.Combine(_dir, "venv", "bin");
+        Directory.CreateDirectory(venvBin);
+        File.WriteAllText(Path.Combine(venvBin, "python3"), "#!/bin/sh\n");
+
+        var candidates = PythonInterpreterDiscovery.Candidates(venvBin + ":" + FinderPath).ToList();
+
+        Assert.Equal("python3", candidates[0].Command);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

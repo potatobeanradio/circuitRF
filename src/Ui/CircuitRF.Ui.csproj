@@ -263,6 +263,39 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      circuitRF's OWN Python package (circuitrf_pcell + cni), beside the executable.
+
+      A kit's generator script starts with `import circuitrf_pcell`, and PCellPythonPackage puts the
+      directory holding it on the interpreter's path. That resolver looks BESIDE THE EXECUTABLE first
+      and only then walks up for a `tools/pcell-python` source tree - so in a development build the
+      walk-up found it and nothing here was missed, while every packaged build shipped without it.
+
+      Measured, not supposed: an installed /Applications/circuitRF.app contained no copy at all, and
+      importing a kit ended at
+
+          File ".../kit_entry.py", line 7, in <module>
+            import circuitrf_pcell as crf
+          ModuleNotFoundError: No module named 'circuitrf_pcell'
+
+      with every one of that kit's cells drawing as a placeholder. This is the same class of bug as
+      CrfPublishHelperPrograms below - a kit whose artwork generates fine under `dotnet run` and not
+      on an installed copy - and it is fixed the same way: ship the thing.
+
+      The glob is rooted at pcell-python/ rather than at each package, because %(RecursiveDir) begins
+      after the `**` and a per-package Include would flatten `circuitrf_pcell/__init__.py` to
+      `__init__.py` - a directory of loose modules that is not an importable package. Only `.py` is
+      taken, which is also what leaves `__pycache__` (`.pyc`) behind; the kit-author example and the
+      two conformance scripts are development tools and are excluded by name.
+    -->
+    <None Include="../../tools/pcell-python/**/*.py"
+          Exclude="../../tools/pcell-python/example/**/*.py;../../tools/pcell-python/verify.py;../../tools/pcell-python/vendor_conformance.py">
+      <Link>pcell-python/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Avalonia UI framework (match splotRF versions) -->
     <PackageReference Include="Avalonia" Version="12.0.3" />
     <PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.0.3" />

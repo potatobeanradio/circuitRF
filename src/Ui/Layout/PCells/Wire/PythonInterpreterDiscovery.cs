@@ -75,8 +75,12 @@ public static class PythonInterpreterDiscovery
     /// each, and the answer does not change between sessions).</param>
     /// <param name="rejected">Every candidate tried and why, in order. Non-empty on failure, so the
     /// message can say what was looked for rather than only that nothing was found.</param>
+    /// <param name="pathVariable">The PATH to resolve bare command names against. Defaults to this
+    /// process's own. Named explicitly so the case this exists for — a bundled application, whose
+    /// PATH is not the user's shell's — can be exercised without mutating the environment.</param>
     public static PythonInterpreter? Find(
-        string? declaredByKit, string? recorded, out IReadOnlyList<string> rejected)
+        string? declaredByKit, string? recorded, out IReadOnlyList<string> rejected,
+        string? pathVariable = null)
     {
         var notes = new List<string>();
         rejected = notes;
@@ -93,15 +97,21 @@ public static class PythonInterpreterDiscovery
 
         if (PythonInterpreter.ParseRecord(recorded) is { } replay)
         {
-            if (TryProbe(replay.Command, replay.Arguments, "recorded for this workspace", out var kept, out string? why))
+            // A recorded choice that no longer works — or that is a bare name landing on Apple's stub,
+            // for the same reason it is not offered as a candidate below — is re-derived rather than
+            // treated as fatal. An interpreter can be upgraded or removed between sessions, and the
+            // workspace should heal rather than need the user to know that is what happened.
+            string? why = AppleStubReason;
+            PythonInterpreter? kept = null;
+
+            if (!IsImplicitlyAppleCommandLineToolsPython(replay.Command, pathVariable)
+                && TryProbe(replay.Command, replay.Arguments, "recorded for this workspace", out kept, out why))
                 return kept;
-            // A recorded choice that no longer works is re-derived rather than treated as fatal —
-            // an interpreter can be upgraded or removed between sessions, and the workspace should
-            // heal rather than need the user to know that is what happened.
+
             notes.Add($"the interpreter recorded for this workspace ('{recorded}'): {why}");
         }
 
-        foreach (var (command, arguments, how) in Candidates())
+        foreach (var (command, arguments, how) in Candidates(pathVariable))
         {
             if (TryProbe(command, arguments, how, out var found, out string? why)) return found;
             notes.Add($"'{command}': {why}");
@@ -115,7 +125,9 @@ public static class PythonInterpreterDiscovery
     /// shell would run — matching that is the least surprising answer, and it is also what a virtual
     /// environment activates.
     /// </summary>
-    public static IEnumerable<(string Command, IReadOnlyList<string> Arguments, string How)> Candidates()
+    /// <param name="pathVariable">See <see cref="Find"/>.</param>
+    public static IEnumerable<(string Command, IReadOnlyList<string> Arguments, string How)> Candidates(
+        string? pathVariable = null)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -134,14 +146,66 @@ public static class PythonInterpreterDiscovery
             yield break;
         }
 
-        yield return ("python3", [], "found on PATH");
-        yield return ("python", [], "found on PATH");
+        // Skipped on macOS when the name resolves to Apple's Command Line Tools stub — it is still
+        // reachable, as the LAST entry of the list below. See IsImplicitlyAppleCommandLineToolsPython.
+        if (!IsImplicitlyAppleCommandLineToolsPython("python3", pathVariable)) yield return ("python3", [], "found on PATH");
+        if (!IsImplicitlyAppleCommandLineToolsPython("python", pathVariable)) yield return ("python", [], "found on PATH");
 
         // Only where an interpreter actually installs. A wider search costs a process launch per
         // candidate and would eventually match something that is not a system Python at all.
         foreach (string path in (string[])
-                 ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"])
+                 ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", AppleCommandLineToolsPython])
             if (File.Exists(path)) yield return (path, [], $"found at {path}");
+    }
+
+    /// <summary>macOS ships this, and it is a Command Line Tools STUB rather than a Python
+    /// installation: frozen at 3.9 and never updated.</summary>
+    public const string AppleCommandLineToolsPython = "/usr/bin/python3";
+
+    private const string AppleStubReason =
+        "it resolves to macOS's Command Line Tools Python, which is frozen at 3.9; "
+        + "a real installation is preferred where one exists";
+
+    /// <summary>
+    /// True when <paramref name="command"/> is a BARE NAME that PATH resolves to Apple's stub.
+    ///
+    /// <para><b>Why this exists.</b> The rule above is "PATH first, because that is what the user's
+    /// own shell would run". In an application launched from the Finder that premise is simply
+    /// false: a bundled app inherits <c>/usr/bin:/bin:/usr/sbin:/sbin</c> and nothing of the user's
+    /// login shell, so <c>python3</c> resolves to Apple's 3.9.6 stub — never to the 3.13 the same
+    /// machine has in <c>/usr/local/bin</c>, and never to what the user gets by typing python3. It
+    /// clears the 3.9 floor (which is what circuitRF's OWN package needs) and then fails to PARSE a
+    /// kit whose cells use anything newer. Measured on IHP's sg13g2: <c>match</c> statements,
+    /// 3.10+, so its 34 cells came back as "invalid syntax (res_base_code.py, line 61)" — a message
+    /// that reads as a broken kit and is nothing of the sort.</para>
+    ///
+    /// <para><b>BARE NAME, deliberately.</b> Naming <c>/usr/bin/python3</c> outright — in a kit's
+    /// manifest or in a workspace's own record — is a deliberate statement and is honoured. Only the
+    /// implicit choice is demoted. A virtual environment is likewise untouched: its <c>python3</c>
+    /// is in the environment's own <c>bin</c>, never in <c>/usr/bin</c>.</para>
+    /// </summary>
+    internal static bool IsImplicitlyAppleCommandLineToolsPython(string command, string? pathVariable = null)
+        => OperatingSystem.IsMacOS()
+           && !Path.IsPathRooted(command)
+           && string.Equals(ResolveOnPath(command, pathVariable), AppleCommandLineToolsPython,
+                            StringComparison.Ordinal);
+
+    /// <summary>The file PATH would run for a bare command name, or null when nothing on it matches.
+    /// Resolution only — it does not run anything, so it costs no process launch.</summary>
+    private static string? ResolveOnPath(string command, string? pathVariable)
+    {
+        string? path = pathVariable ?? Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(path)) return null;
+
+        foreach (string dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string candidate;
+            try { candidate = Path.Combine(dir.Trim(), command); }
+            catch (ArgumentException) { continue; }   // a malformed PATH entry is skipped, not fatal
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        return null;
     }
 
     /// <summary>Newest first, so a machine with several installs gets the most recent one.</summary>
