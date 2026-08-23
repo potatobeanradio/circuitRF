@@ -8,6 +8,8 @@
 //  SKTypeface.Default, which is typeface-independent for the pixel-presence checks used here.
 // ================================================================
 
+using System;
+using System.IO;
 using System.Numerics;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Renderers;
@@ -158,5 +160,133 @@ public sealed class MarkerGlyphContourTests
 
         Assert.True(lum >= 0.70f, $"fill luminance {lum:F3} must clear the 0.70 floor");
         Assert.NotEqual(SKColors.White, c);
+    }
+
+    // ── The two-character name fits inside the ring (2026-08-23) ────────────────
+    //
+    //  Measured against the SHIPPED typeface, loaded straight off disk rather than through the
+    //  class's SKTypeface.Default substitution: whether "m1" overflows is a property of the face,
+    //  and the substitute's does not overflow where IBM Plex Bold's does. The static font seam is
+    //  deliberately left alone — other test classes read it concurrently.
+
+    private static float PlexBoldHalfDiagonalPerEm(string name)
+    {
+        string path = Path.Combine(RepoRoot(), "src", "Ui", "Assets", "Fonts",
+            "IBM_Plex_Sans", "static", "IBMPlexSans-Bold.ttf");
+        using var face = SKTypeface.FromFile(path);
+        Assert.NotNull(face);
+
+        const float measureSize = 100f;
+        using var font = new SKFont(face, measureSize);
+        font.MeasureText(name, out SKRect ink);
+        return MathF.Sqrt(ink.Width * ink.Width + ink.Height * ink.Height) / 2f / measureSize;
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "circuitrf.slnx")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        return dir!.FullName;
+    }
+
+    /// <summary>
+    /// A two-character name drawn at the MXP/MXE letter size does not fit inside the disc — that is
+    /// the reported defect, asserted so the fit below is measured against a real overflow and not a
+    /// hypothetical one. That size is sized for ONE letter.
+    /// </summary>
+    [Theory]
+    [InlineData(200.0)]
+    [InlineData(400.0)]
+    [InlineData(1000.0)]
+    public void TwoCharacterName_AtTheOptimumLetterSize_OverflowsTheRing(double size)
+    {
+        float ts    = ContourRenderer.OptimumMarkerFontSize((size, size));
+        float clear = ContourRenderer.OptimumMarkerRadius((size, size))
+                    - ContourRenderer.OptimumMarkerRingWidth((size, size)) / 2f;
+
+        Assert.True(PlexBoldHalfDiagonalPerEm("m1") * ts > clear,
+            "the unfitted two-character name reaches past the ring's inner edge");
+    }
+
+    /// <summary>The fitted size clears the ring with margin, at every canvas size.</summary>
+    [Theory]
+    [InlineData(200.0)]
+    [InlineData(400.0)]
+    [InlineData(1000.0)]
+    public void FittedName_ClearsTheRingWithMargin(double size)
+    {
+        float r     = ContourRenderer.OptimumMarkerRadius((size, size));
+        float rw    = ContourRenderer.OptimumMarkerRingWidth((size, size));
+        float ts    = ContourRenderer.OptimumMarkerFontSize((size, size));
+        float clear = r - rw / 2f;
+        float perEm = PlexBoldHalfDiagonalPerEm("m1");
+
+        float fitted = MarkerRenderer.FitNameInsideDisc(perEm, ts, r, rw);
+
+        Assert.True(fitted < ts, "a two-character name must be shrunk");
+        Assert.True(perEm * fitted <= clear * 0.95f,
+            "the fitted name must leave a visible margin, not merely touch the ring");
+    }
+
+    /// <summary>
+    /// A ONE-character name is left at exactly the MXP/MXE letter size — the fit buys the margin
+    /// only where it is needed, so the three glyphs stay one family where they always were.
+    /// </summary>
+    [Theory]
+    [InlineData("m")]
+    [InlineData("P")]
+    [InlineData("E")]
+    public void SingleCharacterName_IsNotShrunk(string name)
+    {
+        var size = (1000.0, 1000.0);
+        float r  = ContourRenderer.OptimumMarkerRadius(size);
+        float rw = ContourRenderer.OptimumMarkerRingWidth(size);
+        float ts = ContourRenderer.OptimumMarkerFontSize(size);
+
+        Assert.Equal(ts, MarkerRenderer.FitNameInsideDisc(PlexBoldHalfDiagonalPerEm(name), ts, r, rw), 5);
+    }
+
+    /// <summary>
+    /// The DISC is untouched — this change is the name's size only. Both halves of that claim are
+    /// asserted: the radius still equals the MXP/MXE radius, and the fit can never enlarge a name.
+    /// </summary>
+    [Fact]
+    public void TheDiscIsUnchangedAndTheFitNeverGrowsTheName()
+    {
+        var size = (1000.0, 1000.0);
+        Assert.Equal(ContourRenderer.OptimumMarkerRadius(size),
+                     MarkerRenderer.ContourMarkerRadiusForTests(size), 5);
+
+        float r  = ContourRenderer.OptimumMarkerRadius(size);
+        float rw = ContourRenderer.OptimumMarkerRingWidth(size);
+        float ts = ContourRenderer.OptimumMarkerFontSize(size);
+
+        foreach (var name in new[] { "m", "P", "E", "m1", "m9" })
+            Assert.True(MarkerRenderer.FitNameInsideDisc(PlexBoldHalfDiagonalPerEm(name), ts, r, rw) <= ts);
+    }
+
+    /// <summary>
+    /// The shrink is a fixed RATIO of the letter size, so the marker keeps scaling with the canvas
+    /// exactly as the MXP/MXE glyphs do — the proportionality an earlier round established is not
+    /// spent to buy the margin. Measuring the fit at the DRAW size instead breaks this: text metrics
+    /// are not linear in font size at these sizes, which is why the renderer measures once at a
+    /// stable reference size.
+    /// </summary>
+    [Fact]
+    public void TheFittedNameStaysProportionalToTheCanvas()
+    {
+        float perEm = PlexBoldHalfDiagonalPerEm("m1");
+
+        float Ratio(double size)
+        {
+            float r  = ContourRenderer.OptimumMarkerRadius((size, size));
+            float rw = ContourRenderer.OptimumMarkerRingWidth((size, size));
+            float ts = ContourRenderer.OptimumMarkerFontSize((size, size));
+            return MarkerRenderer.FitNameInsideDisc(perEm, ts, r, rw) / ts;
+        }
+
+        Assert.Equal(Ratio(200.0), Ratio(1600.0), 4);
     }
 }

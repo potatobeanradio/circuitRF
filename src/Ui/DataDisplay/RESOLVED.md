@@ -5,6 +5,59 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## The live VSWR drag readout was hardcoded black (2026-08-23)
+
+**Reported:** the VSWR text drawn beside the pointer while a locus is dragged is unreadable in dark
+mode.
+
+It painted `SKColors.Black` outright. It now uses `theme.TextColor` — the same colour
+`MarkerInfoBox` draws its own lines in, which is what was asked for and what every other readout in
+this renderer already did. harmonicaRF's equivalent (`DrawVswrReadout`) was already theme-aware;
+only the Data Display copy was not.
+
+Worth keeping for the oracle rather than the fix: the gate is a **differential render** — the plot is
+drawn twice into a dark-theme surface, with and without the readout, and every differing pixel
+belongs to the readout by construction. "Is there light ink somewhere" cannot gate this, because the
+axis chrome is already drawn in that same colour. The readout's own colour is then the BRIGHTEST of
+the differing pixels, not the darkest: antialiased edges blend toward the background, and in a dark
+theme that direction is darker.
+
+## The interpolated loadpull marker's name overflowed its own ring (2026-08-23)
+
+**Reported:** the name inside a Mode-1 (interpolated, not snapped) contour marker renders slightly
+too large for a two-character name — it wants a small margin to the circle's stroke. The circle
+itself is the right size.
+
+The name's size is the MXP/MXE letter size, and so is the disc's radius — a deliberate earlier
+choice, so the three glyphs read as one family at every zoom. But **that size is sized for ONE
+letter**, which is all an MXP/MXE glyph ever draws. In line-width units the disc radius is 3.5, the
+ring stroke 0.75 (straddling the circle, so the clear interior radius is 3.125) and the letter size
+4.5. IBM Plex Bold's `m1` has an ink half-diagonal of 0.784 em → **3.53 at that letter size, past the
+3.125 clear radius**: the name's corners land *in* the ring stroke rather than beside it. Nothing
+about the canvas is involved — radius, ring and letter size are all the same multiple of the line
+width, so the overflow is identical at every zoom level and is purely a property of the string.
+
+**Fitted, not shrunk by a constant.** The name is scaled down only as far as it needs to clear the
+ring, leaving 6 % of the clear radius as margin: `m1` renders at 0.833 × the letter size, and a
+ONE-character name is not touched at all — so where the family property was actually true, it stays
+true. The disc, the ring and their sizes are untouched.
+
+### Two traps, both measured
+
+- **Text metrics are not linear in font size at these sizes.** The first version measured the ink box
+  at the size about to be drawn. The per-em half-diagonal that comes back differs by more than a
+  third between a 4.5 px and a 22.5 px draw size (the rasterizer rounds), so the fitted marker
+  overshot at one canvas size, undershot at another, and stopped scaling with the canvas — exactly
+  the proportionality defect an earlier round removed from this same glyph. The measurement is now
+  taken once at a fixed reference size and applied as a ratio.
+- **Whether a name overflows is a property of the TYPEFACE, and the headless test run does not have
+  the shipped one.** `SkiaFonts.PlexBold` cannot load without a live Avalonia asset system, so tests
+  substitute `SKTypeface.Default` — whose `m1` measures 0.680 em and *fits*, where Plex Bold's 0.784
+  does not. A test written through the substitute would have gated nothing while looking green. The
+  fit therefore takes the measurement as a parameter, and the gate loads the shipped `.ttf` straight
+  off disk to supply it — without touching the shared font seam, which other test classes read
+  concurrently.
+
 ## Table box sizing + keyboard scrolling (2026-08-21)
 
 Follow-ups to the 1x1 table work below.

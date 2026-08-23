@@ -740,4 +740,52 @@ public sealed class PanAndMarkerLabelTests
         var trace = NetworkTrace(DependentVarFormat.Db);
         Assert.Equal("dB(S(1,1))", trace.ShortDescription);
     }
+
+    // ================================================================
+    //  4 — the live VSWR drag readout is theme-coloured (2026-08-23)
+    // ================================================================
+
+    /// <summary>
+    /// The transient readout drawn beside the pointer while a VSWR locus is dragged used a hardcoded
+    /// black, which is unreadable on a dark-theme plot. It must use the SAME colour MarkerInfoBox
+    /// draws its own lines in — <c>RenderTheme.TextColor</c>.
+    ///
+    /// <para>Oracle is a DIFFERENTIAL render: the readout is the only thing that changes between the
+    /// two draws, so every differing pixel belongs to it. "Is there light ink somewhere" cannot
+    /// separate the readout from the axis chrome, which is already drawn in the same colour.</para>
+    /// </summary>
+    [Fact]
+    public void VswrDragReadout_IsDrawnInTheThemeTextColour_NotBlack()
+    {
+        var theme = RenderTheme.Dark;
+
+        SKBitmap RenderWith(VswrReadout? readout)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo((int)Canvas.W, (int)Canvas.H));
+            surface.Canvas.Clear(theme.BackgroundColor);
+            PlotRenderer.Draw(surface.Canvas, Canvas, TwoAxisPlot(), PlotDetail.Full, theme,
+                              watermarkOpacity: 0f, vswrReadout: readout);
+            return SKBitmap.FromImage(surface.Snapshot());
+        }
+
+        using var without = RenderWith(null);
+        using var with    = RenderWith(new VswrReadout("VSWR 2.35", new SKPoint(300f, 250f)));
+
+        var changed = new List<SKColor>();
+        for (int y = 0; y < with.Height; y++)
+        for (int x = 0; x < with.Width;  x++)
+            if (with.GetPixel(x, y) != without.GetPixel(x, y))
+                changed.Add(with.GetPixel(x, y));
+
+        Assert.NotEmpty(changed);
+
+        // The darkest pixel the readout paints is its own core colour; antialiased edges blend
+        // toward the background, which in this theme is DARKER, so take the brightest instead.
+        static int Lum(SKColor c) => (299 * c.Red + 587 * c.Green + 114 * c.Blue) / 1000;
+        var core = changed.MaxBy(Lum);
+
+        Assert.Equal(theme.TextColor, core);
+        Assert.True(Lum(core) > Lum(theme.BackgroundColor) + 60,
+            $"readout colour {core} is not legible against the dark background {theme.BackgroundColor}");
+    }
 }

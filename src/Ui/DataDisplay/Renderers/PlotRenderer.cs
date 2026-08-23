@@ -331,7 +331,9 @@ namespace CircuitRF.Ui.DataDisplay
                 {
                     using var font  = new SKFont(CircuitRF.Ui.Renderers.SkiaFonts.PlexRegular,
                                                  (float)(Math.Min(canvasSize.W, canvasSize.H) * 0.0224));
-                    using var paint = new SKPaint { Color = SKColors.Black, IsAntialias = true };
+                    // Theme text colour — the SAME one MarkerInfoBox draws its lines in. It was a
+                    // hardcoded black, which is invisible against a dark-theme plot background.
+                    using var paint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
                     canvas.DrawText(ro.Text, ro.PointerPx.X + 10f, ro.PointerPx.Y - 10f,
                                     SKTextAlign.Left, font, paint);
                 }

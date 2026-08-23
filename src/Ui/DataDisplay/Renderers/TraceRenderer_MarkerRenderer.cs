@@ -322,21 +322,26 @@ namespace CircuitRF.Ui.DataDisplay
                 };
                 canvas.DrawPath(glyphPath, ringPaint);
 
-                using var nameFont = new SKFont(SkiaFonts.PlexBold, ts);
-                float     tw       = nameFont.MeasureText(marker.Name);
                 if (marker.Name.Length <= 2)
                 {
                     // Short name: centred inside the disc, harmonicaRF's metrics — always black,
-                    // since the disc fill is deliberately light enough to keep it legible.
+                    // since the disc fill is deliberately light enough to keep it legible. The size
+                    // is shrunk only as far as the name needs to clear the ring (FitNameInsideDisc).
+                    float     nts       = FitNameInsideDisc(marker.Name, ts, r,
+                                              ContourRenderer.OptimumMarkerRingWidth(canvasSize));
+                    using var nameFont  = new SKFont(SkiaFonts.PlexBold, nts);
+                    float     tw        = nameFont.MeasureText(marker.Name);
                     using var namePaint = new SKPaint { Color = SKColors.Black, IsAntialias = true };
                     canvas.DrawText(
                         marker.Name,
                         dataPx.X - tw / 2f,
-                        dataPx.Y + ts * 0.36f,
+                        dataPx.Y + nts * 0.36f,
                         SKTextAlign.Left, nameFont, namePaint);
                 }
                 else
                 {
+                    using var nameFont = new SKFont(SkiaFonts.PlexBold, ts);
+                    float     tw       = nameFont.MeasureText(marker.Name);
                     // Longer name: keep today's behavior — centred above the glyph.
                     using var namePaint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
                     canvas.DrawText(
@@ -420,6 +425,80 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         private static float ContourMarkerRadius((double W, double H) canvasSize)
             => ContourRenderer.OptimumMarkerRadius(canvasSize);
+
+        /// <summary>
+        /// Shrinks a 1-2 character marker NAME until it sits wholly inside the disc, clear of the
+        /// black ring, and returns the font size to draw it at. Returns <paramref name="fontSize"/>
+        /// unchanged whenever the name already fits, so a one-letter name still renders at exactly
+        /// the MXP/MXE letter size and the three glyphs stay one family.
+        ///
+        /// <para><b>Why a fit and not a smaller constant.</b> The name's size is the MXP/MXE letter
+        /// size, which is sized for ONE letter: at that size a two-character name is wider than the
+        /// disc's clear interior, so its corners land in the ring stroke itself rather than beside
+        /// it. The overflow is a property of the string, not of the canvas — it is identical at every
+        /// zoom level, since name size, radius and ring width are all the same multiple of the line
+        /// width — so the correction has to be measured from the text, and a fit is the only form
+        /// that leaves a single letter alone.</para>
+        ///
+        /// <para>Measured on the text's INK bounds (not its advance width), from the glyph centre
+        /// outward: the name is drawn centred in the disc, so what has to clear the ring is the
+        /// half-diagonal of the ink box. The clear radius is the disc radius less half the ring
+        /// stroke (the stroke straddles the circle), and <see cref="NameClearance"/> of that is left
+        /// as visible margin. The disc, the ring and their sizes are untouched.</para>
+        /// </summary>
+        internal static float FitNameInsideDisc(string name, float fontSize, float radius, float ringWidth)
+            => FitNameInsideDisc(NameHalfDiagonalPerEm(name), fontSize, radius, ringWidth);
+
+        /// <summary>
+        /// <see cref="FitNameInsideDisc(string,float,float,float)"/> with the text measurement passed
+        /// in, so the geometry can be gated against the SHIPPED typeface's metrics. The headless test
+        /// run substitutes a different face for <see cref="SkiaFonts.PlexBold"/> (it cannot load one
+        /// through the asset system), and whether a name overflows is a property OF THE FACE — the
+        /// substitute's "m1" happens to fit where IBM Plex Bold's does not, so a test measuring
+        /// through the substitute would gate nothing.
+        /// </summary>
+        internal static float FitNameInsideDisc(
+            float halfDiagonalPerEm, float fontSize, float radius, float ringWidth)
+        {
+            if (fontSize <= 0f || halfDiagonalPerEm <= 0f) return fontSize;
+
+            float target = (radius - ringWidth / 2f) * (1f - NameClearance);
+            if (target <= 0f) return fontSize;
+
+            return Math.Min(fontSize, target / halfDiagonalPerEm);
+        }
+
+        /// <summary>
+        /// Half-diagonal of a name's ink box, per em of font size, measured once at
+        /// <see cref="NameMeasureSize"/> rather than at the size about to be drawn.
+        ///
+        /// <para><b>The reference size is the point, not an implementation detail.</b> Text metrics
+        /// are NOT linear in font size at the sizes this glyph uses — the rasterizer rounds, so the
+        /// same string measured at a 4.5 px draw size and at 45 px gives ink boxes whose per-em
+        /// half-diagonals differ by more than a third (measured, not assumed: a fit taken at the draw
+        /// size overshot at one canvas size and undershot at another, and the resulting marker stopped
+        /// scaling with the canvas). Measuring once at a stable size makes the shrink a fixed ratio of
+        /// the letter size, so the fitted name scales with the canvas exactly as the disc and the
+        /// MXP/MXE glyphs do.</para>
+        /// </summary>
+        internal static float NameHalfDiagonalPerEm(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return 0f;
+
+            using var probe = new SKFont(SkiaFonts.PlexBold, NameMeasureSize);
+            probe.MeasureText(name, out SKRect ink);
+
+            return MathF.Sqrt(ink.Width * ink.Width + ink.Height * ink.Height) / 2f / NameMeasureSize;
+        }
+
+        /// <summary>Font size the name's ink box is measured at — see <see cref="NameHalfDiagonalPerEm"/>.</summary>
+        private const float NameMeasureSize = 100f;
+
+        /// <summary>
+        /// Fraction of the disc's clear radius left as margin between a fitted marker name and the
+        /// ring. Small on purpose: the ask was a visible gap, not a smaller-looking marker.
+        /// </summary>
+        private const float NameClearance = 0.06f;
 
         /// <summary>
         /// <see cref="ContourMarkerRadius"/>, reachable from a test. The claim being gated is that the
