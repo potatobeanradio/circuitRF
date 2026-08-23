@@ -89,15 +89,17 @@
             <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
           </Extension>
           <!--
-            No ContentType here, on purpose: Windows' MIME database maps a content type to exactly
-            ONE extension, so declaring the same one twice makes WiX emit two registry rows with the
-            same generated identifier and the build fails with WIX0091 (it did, 2026-08-23). `crfw`
-            carries the content type; `.cws` still gets its own HKCR key, its ProgId association and
-            its Open verb, which is everything a double-click needs.
+            No Verb here, on purpose, and it must stay that way: a Verb is registered against the
+            PROGID, not against the extension. It writes HKCR\<ProgId>\shell\open and
+            HKCR\<ProgId>\shell\open\command — neither key mentions `crfw` or `cws` — so a second
+            copy under this same ProgId is two byte-identical registry rows, and wix build stops
+            with WIX0091 on the duplicate generated identifier (it did, 2026-08-23).
+
+            Nothing is lost. `.cws` still gets its own HKCR\.cws default value pointing at this
+            ProgId, and the ProgId's single open verb is what Explorer then runs. Both extensions
+            keep their own Content Type row, which IS per-extension and may safely repeat.
           -->
-          <Extension Id="cws">
-            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
-          </Extension>
+          <Extension Id="cws" ContentType="application/x-circuitrf-workspace" />
         </ProgId>
 
         <ProgId Id="circuitRF.Harmonica" Description="harmonicaRF Document" Icon="CircuitRfExe" Advertise="no">

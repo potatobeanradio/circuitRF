@@ -8,48 +8,67 @@ symptom first, because that is what the next person will have in front of them.
 ## `wix build` failed with WIX0091 "duplicate Registry" the moment `.cws` was added (2026-08-23)
 
 **Symptom:** `.\packaging\windows\build-msi.ps1` publishes and harvests fine, then stops with four
-errors — `WIX0091: Duplicate Registry with identifier 'regw.…'` and `'regFn.…'` at
-`circuitRF.wxs(89)`, pointing at line 92 as "the previous error". No .msi is produced, for any
-architecture: the single `.wxs` is compiled for x64, arm64 and x86 alike, so this was never
-arch-specific and there is no second script to fix.
+errors — `WIX0091: Duplicate Registry with identifier 'regw.…'` and `'regFn.…'` — pointing at the
+workspace ProgId's first `<Extension>` and, as "the previous error", at its second. No .msi is
+produced.
 
-**Cause:** the workspace ProgId declared **both** spellings with the *same* content type —
+**Not architecture-specific, and there is no second script to fix.** `build-msi.ps1` takes
+`-Arch x64|arm64|x86` and compiles the same single `circuitRF.wxs` for all three; the failure is in
+that file, so it failed identically on every architecture.
+
+**Cause: the `<Verb>` was declared twice under one ProgId.** The workspace ProgId claims both
+spellings, and each extension carried its own copy of the open verb:
 
 ```xml
-<Extension Id="crfw" ContentType="application/x-circuitrf-workspace">
-<Extension Id="cws"  ContentType="application/x-circuitrf-workspace">
+<ProgId Id="circuitRF.Workspace" ...>
+  <Extension Id="crfw" ...><Verb Id="open" Command="Open" .../></Extension>
+  <Extension Id="cws"  ...><Verb Id="open" Command="Open" .../></Extension>   <!-- the duplicate -->
+</ProgId>
 ```
 
-`ContentType` on an `Extension` makes WiX write the MIME-database rows
-(`HKCR\MIME\Database\Content Type\<type>`), and it derives their identifiers from the
-**content-type string alone** — the extension is not part of the key, because Windows' MIME database
-maps a content type to exactly **one** extension. Two extensions naming one type therefore emit two
-rows with the same generated id, and the toolset refuses them. The message is misleading in the usual
-way: it reports a `Registry` conflict for rows nobody wrote by hand.
+A `Verb` is registered against the **ProgId, not the extension it is nested in**. It writes
+`HKCR\<ProgId>\shell\open` (the friendly name, from `Command`) and
+`HKCR\<ProgId>\shell\open\command` — neither key mentions `crfw` or `cws`. Two verbs under one
+ProgId are therefore two *byte-identical* rows, and WiX generates a row's identifier from its
+root/key/name, so the ids collide. That is the whole of it, and it explains the count: exactly two
+duplicates, one of them prefixed `regFn` — the friendly-name row.
 
-This is not the same shape as the Linux declaration, which is why it did not show up there. In
-shared-mime-info a mime-type is a *container* of globs, so `*.crfw` and `*.cws` under one
-`<mime-type>` is the correct and only representation. The same fact — two spellings, one type — is
-legal there and illegal on Windows.
+**Verified against the real toolset, not reasoned about.** `wix` warns that it "only supports
+Windows", but the compile and link stages are managed and do run on macOS — enough to reproduce
+WIX0091 exactly, isolate the cause by bisecting the two candidate attributes, confirm the fix links
+clean, and dump the linked output's registry table. (`wix build -o out.wixipl` writes a zip
+containing `wix-ir.json`; the `Registry` symbols in it are the rows the .msi will carry. What blocks
+a full macOS run is only `Directory/@Name` validation, which mis-fires off-Windows.)
 
-**Fix:** drop `ContentType` from the `cws` extension and leave everything else alone. `.cws` keeps
-its own `HKCR\.cws` key, its ProgId association and its `Open` verb, which is all a double-click
-uses; only the duplicate MIME row goes away. Giving `.cws` a second content type of its own would
-also compile, but it would invent a type nothing else in the project — plist, mime xml, `.desktop` —
-knows about.
+**A first attempt blamed `ContentType` and was wrong.** Both extensions also named the same content
+type, which looks like the same kind of collision. It is not: `ContentType` writes
+`HKCR\.<ext>\Content Type`, which is keyed by the *extension*, so it may safely repeat. Removing it
+changed neither the reported identifiers nor their count — the tell that the diagnosis was wrong,
+since a fix that touches the cause always moves at least one of the two. The bisect above confirms
+it directly: duplicate content type + single verb links clean; single content type + duplicate verb
+fails.
 
-**Guard:** `PackagingScriptTests.WindowsInstallerDeclaresEachContentTypeOnlyOnce` fails if any two
-`Extension` elements in the `.wxs` share a `ContentType`. Verified by re-introducing the duplicate:
-the test goes red and names both extensions. It exists because `wix build` is the only other thing
-that notices, and it runs on Windows, with the WiX toolset installed, at release time — the furthest
+**Fix:** declare the verb under the first extension only —
+`<Extension Id="cws" ContentType="application/x-circuitrf-workspace" />`, self-closing. Nothing is
+lost, which the linked registry table shows: `.cws` still gets its own `HKCR\.cws` default value
+naming `circuitRF.Workspace`, and that ProgId's single `shell\open\command` is what Explorer runs.
+The dump also confirms the whole table is otherwise sound — all ten extensions registered, all nine
+ProgIds carrying an icon and an open verb, no duplicate row anywhere.
+
+**Guard:** `PackagingScriptTests.WindowsInstallerDeclaresEachProgIdVerbOnlyOnce` parses the `.wxs`
+and fails if any ProgId contains the same `Verb` id twice. Verified by re-introducing the duplicate:
+it goes red and names the ProgId. It exists because `wix build` is the only other thing that
+notices, and it runs on Windows, with the WiX toolset installed, at release time — the furthest
 possible point from the edit.
 
 **Linux and macOS were checked at the same time and are clean.** macOS packaged without complaint.
-On Linux the mime xml parses, no `<mime-type>` is repeated, no glob is claimed by two types, and the
-`.desktop`'s `MimeType=` list and the declared types are the same set of nine, in both directions;
-`build-deb.sh`, `postinst` and `postrm` pass `bash -n`.
-
----
+On Linux the shape that is illegal on Windows is the *correct and only* representation: a
+shared-mime-info `<mime-type>` is a container of globs, so `*.crfw` and `*.cws` under one type is
+how it is meant to be written, and there is no per-extension verb to duplicate — the `.desktop`
+entry carries one `Exec=` for all nine types. Checked rather than assumed: the mime xml parses, no
+`<mime-type>` element repeats, no glob is claimed by two types, the `.desktop`'s `MimeType=` list
+and the declared types are the same set of nine in both directions, and `build-deb.sh`, `postinst`
+and `postrm` pass `bash -n`.
 
 ## Opening a document by double-click: two things were already wrong before anything was added (2026-08-23)
 

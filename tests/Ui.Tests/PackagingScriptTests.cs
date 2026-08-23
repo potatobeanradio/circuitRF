@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests;
@@ -171,33 +172,51 @@ public class PackagingScriptTests
     }
 
     /// <summary>
-    /// <b>No two <c>Extension</c> elements in the .wxs may declare the same <c>ContentType</c>.</b>
-    /// Windows' MIME database maps a content type to exactly ONE extension, so WiX derives the
-    /// identifier of the registry rows it writes for a <c>ContentType</c> from the content-type
-    /// string alone. Two extensions sharing one type therefore emit two rows with the same
-    /// identifier, and <c>wix build</c> stops with WIX0091 — which is how the 1.0.0-beta.1 x64
-    /// installer failed to build (2026-08-23) after <c>.cws</c> was added beside <c>.crfw</c>.
+    /// <b>No <c>ProgId</c> in the .wxs may declare the same <c>Verb</c> twice.</b> A Verb is
+    /// registered against the PROGID, not against the extension it is nested in: WiX writes
+    /// <c>HKCR\&lt;ProgId&gt;\shell\open</c> and <c>HKCR\&lt;ProgId&gt;\shell\open\command</c>, and
+    /// neither key mentions the extension. So a ProgId claiming two extensions — the workspace
+    /// claims both <c>.crfw</c> and <c>.cws</c> — must carry the verb ONCE. Repeating it under the
+    /// second extension emits two byte-identical registry rows, and <c>wix build</c> stops with
+    /// WIX0091 on the duplicate generated identifier. That is exactly how the 1.0.0-beta.1
+    /// installer failed to build (2026-08-23).
     ///
-    /// <para>The extensions may still share a ProgId; only the content type has to be unique. The
-    /// failure is a build error rather than a bad install, but it surfaces only on Windows with the
-    /// WiX toolset present, which is nowhere in the ordinary test loop.</para>
+    /// <para>Reproduced and fixed against the real toolset, not reasoned about: with the verb
+    /// duplicated the linker reports two WIX0091s; with it removed the file links clean, and
+    /// <c>.cws</c> still gets its own <c>HKCR\.cws</c> default value naming the ProgId whose single
+    /// open verb Explorer then runs. A <c>ContentType</c> may safely repeat across extensions —
+    /// that row IS per-extension — which is why this checks verbs and not content types.</para>
+    ///
+    /// <para>Nothing else notices. <c>wix build</c> is the only other check, and it runs on Windows,
+    /// with the WiX toolset installed, at release time — the furthest possible point from the
+    /// edit.</para>
     /// </summary>
     [Fact]
-    public void WindowsInstallerDeclaresEachContentTypeOnlyOnce()
+    public void WindowsInstallerDeclaresEachProgIdVerbOnlyOnce()
     {
-        var text = File.ReadAllText(RepoFile("packaging", "windows", "circuitRF.wxs"));
-        var byType = Regex.Matches(text, "<Extension\\s+Id=\"(?<ext>[^\"]+)\"\\s+ContentType=\"(?<type>[^\"]+)\"")
-            .GroupBy(m => m.Groups["type"].Value)
-            .Where(g => g.Count() > 1)
-            .Select(g => $"{g.Key} (claimed by {string.Join(", ", g.Select(m => m.Groups["ext"].Value))})")
+        var wxs = XDocument.Load(RepoFile("packaging", "windows", "circuitRF.wxs"));
+        XNamespace w = "http://wixtoolset.org/schemas/v4/wxs";
+
+        var offenders = wxs.Descendants(w + "ProgId")
+            .Select(p => new
+            {
+                ProgId = (string?)p.Attribute("Id"),
+                Duplicated = p.Descendants(w + "Verb")
+                              .GroupBy(v => (string?)v.Attribute("Id") ?? "open")
+                              .Where(g => g.Count() > 1)
+                              .Select(g => g.Key)
+                              .ToList(),
+            })
+            .Where(x => x.Duplicated.Count > 0)
+            .Select(x => $"{x.ProgId} repeats verb(s) {string.Join(", ", x.Duplicated)}")
             .ToList();
 
-        Assert.True(byType.Count == 0,
-            "circuitRF.wxs declares a ContentType on more than one Extension: "
-            + string.Join("; ", byType)
-            + ". wix build fails with WIX0091 on the duplicate registry identifier — give the "
-            + "second extension its own content type, or drop ContentType from it and leave the "
-            + "ProgId association alone.");
+        Assert.True(offenders.Count == 0,
+            "circuitRF.wxs declares a Verb more than once under one ProgId: "
+            + string.Join("; ", offenders)
+            + ". A Verb registers against the ProgId, not the extension, so the second one is a "
+            + "duplicate registry row and wix build fails with WIX0091. Declare the verb under the "
+            + "first extension only — the others reach it through the shared ProgId.");
     }
 
     /// <summary>
