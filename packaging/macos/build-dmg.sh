@@ -75,6 +75,204 @@ dotnet run --project "${ROOT}/tools/IconGen" -- "$APP"
 # for.
 export CrfBuildVmImage=true
 
+# ── Signing identity, and what it decides for the people who download this ────
+#
+# THE DEFAULT IS TO SIGN IF THIS MACHINE CAN, AND TO BUILD UNSIGNED IF IT CANNOT. Nothing here ever
+# fails for want of a certificate: no certificate means an ad-hoc build, which is what circuitRF has
+# always shipped.
+#
+#   CRF_SIGN_IDENTITY   use this identity verbatim, ask nothing (CI, scripts)
+#   CRF_SIGN=never      force an ad-hoc build even on a machine that could sign
+#   CRF_NOTARY_PROFILE  the notarytool keychain profile to notarise with
+#   CRF_NOTARIZE=never  sign, but do not notarise
+#
+# WHY THIS MATTERS AT ALL: an ad-hoc signature has no identity behind it, so Gatekeeper cannot trust
+# it however well the bundle is formed. `spctl -a` rejects it, and since macOS 15 the Control-click
+# Open bypass is gone, leaving the user a trip through System Settings, Privacy & Security, Open
+# Anyway. Signing with a Developer ID certificate AND notarising is the only thing that removes it.
+SIGN_IDENTITY=""
+INTERACTIVE=0
+[ -t 0 ] && [ -t 1 ] && INTERACTIVE=1
+
+if [ "${CRF_SIGN:-}" = never ]; then
+    SIGN_IDENTITY="-"
+elif [ -n "${CRF_SIGN_IDENTITY:-}" ]; then
+    SIGN_IDENTITY="$CRF_SIGN_IDENTITY"
+else
+    # ONLY "Developer ID Application" WILL DO, and this is the one place a paid Apple account
+    # misleads people. A paid membership issues "Apple Development" certificates automatically, and
+    # they appear in exactly the same list — but they are for running builds on your own machines.
+    # Signing a release with one produces something WORSE than ad-hoc: it looks signed, Gatekeeper
+    # still refuses it, and the notary service rejects it outright. A Developer ID Application
+    # certificate has to be created deliberately (Xcode, Settings, Accounts, Manage Certificates, +).
+    # So the grep is for that exact prefix, and anything else is treated as no certificate at all.
+    IDS=$(security find-identity -v -p codesigning 2>/dev/null \
+          | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p')
+    COUNT=$(printf "%s" "$IDS" | grep -c . || true)
+
+    if [ "${COUNT:-0}" -eq 0 ]; then
+        SIGN_IDENTITY="-"
+    elif [ "${COUNT:-0}" -eq 1 ]; then
+        SIGN_IDENTITY="$IDS"
+    elif [ "$INTERACTIVE" = 1 ]; then
+        echo "More than one Developer ID Application certificate is installed:"
+        printf "%s\n" "$IDS" | nl -w4 -s') '
+        printf "Which one? [1-%s, or Enter for an unsigned build]: " "$COUNT"
+        read -r PICK
+        if [ -n "$PICK" ]; then
+            SIGN_IDENTITY=$(printf "%s\n" "$IDS" | sed -n "${PICK}p")
+            [ -n "$SIGN_IDENTITY" ] || { echo "No such choice."; exit 1; }
+        else
+            SIGN_IDENTITY="-"
+        fi
+    else
+        # Never guess between certificates in a script: the wrong one is a release signed by the
+        # wrong entity, which is not the sort of thing to decide by sort order.
+        echo "Several Developer ID Application certificates are installed and this is not an"
+        echo "interactive shell. Name one with CRF_SIGN_IDENTITY. Building unsigned."
+        SIGN_IDENTITY="-"
+    fi
+fi
+
+export CRF_SIGN_IDENTITY="$SIGN_IDENTITY"
+
+# ── What the notary service wants, and where to read it off this machine ──────
+#
+# THREE VALUES, AND TWO OF THEM ARE ROUTINELY GOT WRONG.
+#
+#   Apple ID   the email you sign in to the developer account with. Individual-account certificates
+#              carry it in their common name, so it can usually be read straight off the keychain.
+#
+#   Team ID    TEN CHARACTERS, AND IT IS THE CERTIFICATE'S "OU" FIELD -- NOT the value in brackets
+#              after the name. For a Developer ID certificate those two happen to be the same string,
+#              which is exactly why this bites: on an "Apple Development" certificate they are
+#              DIFFERENT, so anyone reading the Team ID off the identity list
+#              ("Apple Development: you (5K57RC984E)") takes a per-certificate id and calls it a Team
+#              ID. crf_apple_team_hints below prints the real ones, out of the certificates.
+#
+#   Password   AN APP-SPECIFIC PASSWORD, never the Apple ID password. Made at appleid.apple.com,
+#              Sign-In and Security, App-Specific Passwords; it looks like abcd-efgh-ijkl-mnop and
+#              requires two-factor authentication on the account. Using the real account password is
+#              the single most common cause of the 401 this returns, and the 401 wording does not
+#              make that obvious.
+#
+# Only valid, unexpired certificates are consulted -- an expired one names a team the account may no
+# longer be in, and suggesting it would be worse than suggesting nothing.
+crf_apple_team_hints() {
+    tmp=$(mktemp -d) || return 0
+    security find-certificate -a -c "Apple D" -p 2>/dev/null \
+      | awk -v d="$tmp" 'BEGIN{n=0} /BEGIN CERT/{n++} {print > (d "/c" n ".pem")}' 2>/dev/null
+    for f in "$tmp"/*.pem; do
+        [ -e "$f" ] || continue
+        openssl x509 -in "$f" -noout -checkend 0 >/dev/null 2>&1 || continue
+        openssl x509 -in "$f" -noout -subject 2>/dev/null
+    done | sed -E 's|.*OU[ ]?=[ ]?([A-Z0-9]{10}).*O[ ]?=[ ]?([^/,]*).*|    \1  \2|' | sort -u
+    rm -rf "$tmp"
+}
+
+crf_apple_id_hints() {
+    tmp=$(mktemp -d) || return 0
+    security find-certificate -a -c "Apple D" -p 2>/dev/null \
+      | awk -v d="$tmp" 'BEGIN{n=0} /BEGIN CERT/{n++} {print > (d "/c" n ".pem")}' 2>/dev/null
+    for f in "$tmp"/*.pem; do
+        [ -e "$f" ] || continue
+        openssl x509 -in "$f" -noout -checkend 0 >/dev/null 2>&1 || continue
+        openssl x509 -in "$f" -noout -subject 2>/dev/null
+    done | grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | sort -u | sed 's/^/    /'
+    rm -rf "$tmp"
+}
+
+# ── Notary credentials ────────────────────────────────────────────────────────
+#
+# Signing alone does NOT remove the Gatekeeper prompt — a Developer ID build that has not been
+# notarised is still refused on first launch. So the two are resolved together, and a signed build
+# that cannot be notarised says so loudly rather than reporting success.
+#
+# The credentials are an Apple ID plus an APP-SPECIFIC password (appleid.apple.com, Sign-In and
+# Security, App-Specific Passwords) — never the account password. They are stored once in the
+# keychain by `notarytool store-credentials`, which does its own secure prompting; this script never
+# reads, holds or echoes a password itself, and none of it reaches the shell history.
+NOTARY_PROFILE="${CRF_NOTARY_PROFILE:-circuitrf-notary}"
+NOTARISE=0
+
+if [ "$SIGN_IDENTITY" != "-" ] && [ "${CRF_NOTARIZE:-}" != never ]; then
+    if security find-generic-password -l "$NOTARY_PROFILE" >/dev/null 2>&1 \
+    || security find-generic-password -s "com.apple.gke.notary.tool" -a "$NOTARY_PROFILE" >/dev/null 2>&1; then
+        NOTARISE=1
+    elif [ "$INTERACTIVE" = 1 ]; then
+        echo ""
+        echo "Signing as: ${SIGN_IDENTITY}"
+        echo "No notary credentials are stored under the profile '${NOTARY_PROFILE}'."
+        echo "Without them the disk images are signed but NOT notarised, and macOS still refuses"
+        echo "them on first launch."
+        echo ""
+        echo "Storing them is a one-time step. Read off this machine's own certificates:"
+        echo ""
+        HINT_IDS=$(crf_apple_id_hints)
+        HINT_TEAMS=$(crf_apple_team_hints)
+        if [ -n "$HINT_IDS" ]; then
+            echo "  Apple ID (the developer account's sign-in email):"
+            printf "%s\n" "$HINT_IDS"
+        else
+            echo "  Apple ID: the email you sign in to the developer account with."
+        fi
+        echo ""
+        if [ -n "$HINT_TEAMS" ]; then
+            echo "  Team ID -- ten characters. THIS IS THE CERTIFICATE'S OU FIELD, NOT the value in"
+            echo "  brackets in the identity list; on an \"Apple Development\" certificate those two"
+            echo "  differ, which is the usual reason a Team ID is wrong:"
+            printf "%s\n" "$HINT_TEAMS"
+            echo ""
+            echo "  Use the team the Developer ID Application certificate belongs to."
+        else
+            echo "  Team ID: ten characters, from developer.apple.com ▸ Membership."
+        fi
+        echo ""
+        echo "  Password: an APP-SPECIFIC PASSWORD, not your Apple ID password. Make one at"
+        echo "  appleid.apple.com ▸ Sign-In and Security ▸ App-Specific Passwords; it looks like"
+        echo "  abcd-efgh-ijkl-mnop. notarytool prompts for it and never echoes it."
+        echo ""
+        echo "  (That page says app-specific passwords are for services \"not provided by Apple\"."
+        echo "  Use one anyway: notarytool's own man page tells you to. It is needed because your"
+        echo "  account has two-factor authentication and a command-line tool cannot show you a 2FA"
+        echo "  prompt - not because of who wrote the app.)"
+        echo ""
+        printf "Set them up now? [Y/n]: "
+        read -r ANSWER
+        case "$ANSWER" in
+            [Nn]*) echo "Continuing without notarisation." ;;
+            *)
+                if xcrun notarytool store-credentials "$NOTARY_PROFILE"; then
+                    NOTARISE=1
+                else
+                    # A 401 here says "Username or password is incorrect", which is true and unhelpful:
+                    # it is the same message whether the password was the wrong KIND, the Apple ID was
+                    # a different one from the account that owns the team, or it was simply mistyped.
+                    echo ""
+                    echo "Credentials were not stored. If that was a 401 (invalid credentials), it is"
+                    echo "almost always one of these, in order of how often it is the answer:"
+                    echo ""
+                    echo "  1. The password was your Apple ID password. It has to be an APP-SPECIFIC"
+                    echo "     password from appleid.apple.com ▸ Sign-In and Security. The account"
+                    echo "     needs two-factor authentication before that option appears."
+                    echo "  2. The app-specific password was generated on a DIFFERENT Apple ID from"
+                    echo "     the one entered here. They must be the same account."
+                    echo "  3. It was mistyped, or has been revoked. Generate a fresh one and paste"
+                    echo "     it exactly, hyphens included."
+                    echo ""
+                    echo "Try again on its own, without a build, until it takes:"
+                    echo "    xcrun notarytool store-credentials ${NOTARY_PROFILE} \\"
+                    echo "        --apple-id <your-apple-id> --team-id <TEAMID>"
+                    echo ""
+                    echo "Continuing without notarisation."
+                fi
+                ;;
+        esac
+    fi
+fi
+
+NOTARISED=0
+
 DIST="${ROOT}/dist"
 mkdir -p "$DIST"
 BUILT=""
@@ -199,6 +397,36 @@ KPY
     hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO -quiet "$DMG"
     rm -rf "$(dirname "$STAGE")"
 
+    # ── Sign and notarise the DISK IMAGE ──────────────────────────────────────
+    #
+    # The .app inside was signed by the bundle script; this is the container, and it is a separate
+    # signature. It matters because the STAPLE goes here: `stapler` attaches the notarisation ticket
+    # to the artefact the user downloads, and a ticket stapled to the .dmg means the very first
+    # launch works offline. Without a staple the Mac has to reach Apple to check, so a user on a
+    # flaky connection meets a Gatekeeper prompt for an app that is in fact notarised.
+    #
+    # Skipped entirely for an ad-hoc build: there is nothing to notarise, and saying so once at the
+    # end is more use than a failure here.
+    if [ "$SIGN_IDENTITY" != "-" ]; then
+        echo "🔐 Signing the disk image..."
+        codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG" || {
+            echo "❌ Could not sign ${DMG}."; exit 1; }
+
+        if [ "$NOTARISE" = 1 ]; then
+            echo "📤 Notarising (this waits on Apple; minutes, not seconds)..."
+            xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait || {
+                echo "❌ Notarisation failed. For the reasons:"
+                echo "     xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
+                exit 1; }
+
+            echo "📎 Stapling the ticket..."
+            xcrun stapler staple "$DMG" || { echo "❌ Could not staple ${DMG}."; exit 1; }
+            NOTARISED=1
+        else
+            echo "⚠️  Signed but NOT notarised. macOS still refuses this on first launch."
+        fi
+    fi
+
     BUILT="${BUILT}\n   ${DMG}"
 done
 
@@ -206,6 +434,36 @@ echo ""
 echo "✅ Built:"
 printf "%b\n" "$BUILT"
 echo ""
-echo "   Ad-hoc signed: a first launch needs right-click → Open, or"
-echo "   xattr -dr com.apple.quarantine /Applications/${NAME}.app"
-echo "   For public distribution, sign with a Developer ID certificate and notarise — see BUILDING.md."
+
+if [ "$NOTARISED" = 1 ]; then
+    echo "   Signed and notarised. These open with no prompt, on any Mac, offline."
+elif [ "$SIGN_IDENTITY" != "-" ]; then
+    echo "   Signed but NOT notarised — Gatekeeper still refuses these on first launch."
+    echo "   Set CRF_NOTARY_PROFILE and run again; see BUILDING.md."
+elif [ -n "$(security find-identity -v -p codesigning 2>/dev/null | grep -v "Developer ID Application")" ] \
+  && [ -z "$(security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application")" ]; then
+    echo "   AD-HOC SIGNED — no Developer ID Application certificate is installed."
+    echo ""
+    echo "   This machine DOES have signing certificates, but they are \"Apple Development\" ones."
+    echo "   A paid membership issues those automatically and they are for running builds on your"
+    echo "   own machines: signing a release with one is worse than ad-hoc, because it looks signed,"
+    echo "   Gatekeeper still refuses it, and the notary service rejects it outright."
+    echo ""
+    echo "   Create the right kind once — Xcode ▸ Settings ▸ Accounts ▸ (your Apple ID) ▸"
+    echo "   Manage Certificates ▸ + ▸ Developer ID Application — then run this again and it will"
+    echo "   be found and used automatically."
+    echo ""
+    echo "   Meanwhile, on the machine that downloaded these:"
+    echo "       xattr -dr com.apple.quarantine /Applications/${NAME}.app"
+else
+    echo "   AD-HOC SIGNED. Gatekeeper will refuse these on a machine that downloaded them, and"
+    echo "   since macOS 15 there is no Control-click → Open bypass: the user must go to"
+    echo "   System Settings → Privacy & Security → Open Anyway, after one blocked launch."
+    echo ""
+    echo "   Locally you can clear the quarantine flag instead:"
+    echo "       xattr -dr com.apple.quarantine /Applications/${NAME}.app"
+    echo ""
+    echo "   To ship something that simply opens, sign and notarise — see BUILDING.md:"
+    echo "       CRF_SIGN_IDENTITY=\"Developer ID Application: NAME (TEAMID)\" \\"
+    echo "       CRF_NOTARY_PROFILE=circuitrf-notary $0 $APP"
+fi

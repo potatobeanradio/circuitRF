@@ -146,16 +146,52 @@ else
     echo "⚠️  wBondIcon.icns not found — application will use the default icon."
 fi
 
-echo "🔐 Code signing (ad-hoc)..."
-codesign --force --deep --sign "-" --entitlements "$ENTITLEMENTS" --timestamp=none "$BUNDLE_DIR"
+# ── Who signs it, and what that decides ───────────────────────────────────────
+#
+# CRF_SIGN_IDENTITY names a Developer ID Application certificate; the default "-" is AD-HOC.
+#
+# THIS IS THE ONLY KNOB THAT DECIDES WHETHER USERS SEE A GATEKEEPER PROMPT. An ad-hoc signature has
+# no identity behind it, so Gatekeeper cannot trust it however it is built — `spctl -a` rejects an
+# ad-hoc bundle, measured, and since macOS 15 the old Control-click ▸ Open bypass is gone, leaving
+# the user a trip through System Settings ▸ Privacy & Security ▸ Open Anyway. No entitlement, plist
+# key or codesign flag changes that. Signing with a real identity AND notarising does, and nothing
+# else does.
+#
+# The two paths differ in more than the identity string, which is why they are computed here rather
+# than substituted into one command:
+#
+#   --options runtime   the hardened runtime, which notarisation REQUIRES. It is off for ad-hoc
+#                       because it buys nothing there and would impose the JIT/library-validation
+#                       restrictions on a developer build for no reason. The entitlements that make
+#                       .NET survive it are already in Entitlements.plist.
+#   --timestamp         a SECURE timestamp from Apple, which notarisation also requires and which
+#                       needs the network. An ad-hoc signature cannot carry one at all, hence
+#                       --timestamp=none there; leaving it out of a real signing is a notarisation
+#                       rejection ("The signature does not include a secure timestamp").
+SIGN_IDENTITY="${CRF_SIGN_IDENTITY:--}"
+
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    TIMESTAMP_FLAG="--timestamp=none"
+    RUNTIME_FLAG=""
+    echo "🔐 Code signing (ad-hoc)..."
+    echo "   Users will meet Gatekeeper. Set CRF_SIGN_IDENTITY to a Developer ID certificate and"
+    echo "   notarise to ship an app that just opens — see BUILDING.md."
+else
+    TIMESTAMP_FLAG="--timestamp"
+    RUNTIME_FLAG="--options runtime"
+    echo "🔐 Code signing as: ${SIGN_IDENTITY}"
+fi
+
+codesign --force --deep --sign "$SIGN_IDENTITY" --entitlements "$ENTITLEMENTS" \
+         $RUNTIME_FLAG $TIMESTAMP_FLAG "$BUNDLE_DIR"
 if [ $? -ne 0 ]; then echo "❌ Code signing failed."; exit 1; fi
 
 # ── crf-vmhost's OWN entitlement, and why this runs AFTER the bundle is signed ────────────────
 #
 # `--deep` re-signs every nested executable with the entitlements given HERE, and circuitRF's are
 # not crf-vmhost's. So the deep pass silently replaced com.apple.security.virtualization with
-# com.apple.security.files.user-selected.read-write, and the packaged VM host — correctly signed by
-# tools/macos-vmhost/build.sh minutes earlier — arrived unable to create a virtual machine:
+# circuitRF's own set, and the packaged VM host — correctly signed by tools/macos-vmhost/build.sh
+# minutes earlier — arrived unable to create a virtual machine:
 #
 #     the virtual machine configuration was rejected: Invalid virtual machine configuration.
 #     The process doesn't have the "com.apple.security.virtualization" entitlement.
@@ -171,14 +207,21 @@ VMHOST="${MAC_OS_DIR}/crf-vmhost"
 VMHOST_ENTITLEMENTS="../../tools/macos-vmhost/crf-vmhost.entitlements"
 if [ -f "$VMHOST" ] && [ -f "$VMHOST_ENTITLEMENTS" ]; then
     echo "🔐 Re-signing crf-vmhost with its virtualization entitlement..."
-    codesign --force --sign "-" --entitlements "$VMHOST_ENTITLEMENTS" \
-             --options runtime --timestamp=none "$VMHOST" || {
+    # --options runtime unconditionally here, matching tools/macos-vmhost/build.sh: this binary
+    # asks for a privileged entitlement, so it carries the hardened runtime even in a dev build.
+    codesign --force --sign "$SIGN_IDENTITY" --entitlements "$VMHOST_ENTITLEMENTS" \
+             --options runtime $TIMESTAMP_FLAG "$VMHOST" || {
         echo "❌ Could not sign crf-vmhost."; exit 1; }
 
-    codesign --force --sign "-" --entitlements "$ENTITLEMENTS" --timestamp=none "$BUNDLE_DIR" || {
+    codesign --force --sign "$SIGN_IDENTITY" --entitlements "$ENTITLEMENTS" \
+             $RUNTIME_FLAG $TIMESTAMP_FLAG "$BUNDLE_DIR" || {
         echo "❌ Could not re-seal the bundle."; exit 1; }
 fi
 
 echo ""
 echo "✅ Bundle created: ${BUNDLE_DIR}"
-echo "   To distribute: replace '-' with your Developer ID Application certificate."
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "   To distribute without a Gatekeeper prompt, sign and notarise:"
+    echo "     CRF_SIGN_IDENTITY=\"Developer ID Application: NAME (TEAMID)\" $0"
+    echo "   then notarise the disk image — packaging/macos/build-dmg.sh does it for you."
+fi

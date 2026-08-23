@@ -183,3 +183,45 @@ question above: **this path needs no VM on macOS.**
   takes it the rest of the way through elaboration. The reporting was, in fact, **dead**:
   `DeviceWorkerProvider.Create` never read the `collapsed` array, so a collapsed node was still
   given a free unknown. That is the bug this closed.
+
+---
+
+## A quarantined model library, on macOS
+
+A kit downloaded from a vendor carries macOS's `com.apple.quarantine` attribute, and `dlopen` then
+refuses it outright:
+
+```
+dlopen(…/model.osdi): code signature not valid for use in process:
+                      library load disallowed by system policy
+```
+
+**There is no prompt and nothing to allow.** Measured in the kernel log on macOS 26:
+
+```
+ASP: Library load (… -> …/model.osdi) rejected: library load disallowed by system policy
+```
+
+Unlike a blocked *application*, a blocked *library* produces no dialog and no System Settings entry,
+so a user who knows the "Open Anyway" routine has nowhere to apply it. Approving circuitRF itself
+does not help either — the kit is installed separately and carries its own attribute. The remedy is
+to clear it on the kit:
+
+```sh
+xattr -dr com.apple.quarantine <the kit's folder>
+```
+
+`WorkerOutputDiagnosis` (in `src/Core/Devices/External/`) recognises this in the worker's stderr and
+appends exactly that, with the kit's own path filled in, wherever worker output is shown — the
+exception paths and `Cli`'s end-of-run dump alike. It deliberately recognises almost nothing else: a
+worker that explains itself is left alone.
+
+**It is NOT the same as library validation**, which shares the "not valid for use in process" prefix
+and says `mapping process and mapped file (non-platform) have different Team IDs` instead. That one
+means the hardened runtime is on without
+`com.apple.security.cs.disable-library-validation` — a packaging fault, not something a user can
+clear, and clearing quarantine will not touch it. The two phrases are matched separately for that
+reason.
+
+**None of this applies to `senior-worker`.** Its models are Linux libraries loaded by a Linux process
+inside the VM, where macOS quarantine has no meaning at all.

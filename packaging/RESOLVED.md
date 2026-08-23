@@ -186,3 +186,252 @@ boot protocol that boot loader implements. The old single "does this look like a
 warned about missing arm64 magic on a perfectly good bzImage; it is per-architecture now
 (`ARM\x64` at offset 56, `HdrS` at 0x202), and `build-dmg.sh` re-checks the same magic in the
 finished bundle, because `lipo` knows nothing about a Linux kernel.
+
+---
+
+## "It never used to ask" — Gatekeeper, and what did and did not change (2026-08-22)
+
+**Reported:** after the Intel-packaging work, macOS blocks the app on first launch and the user has
+to go to System Settings to allow it. It is believed not to have done that before.
+
+**The signing change was NOT the cause, and that was measured rather than argued.** Two copies of
+the same bundle, one signed with the pre-change sequence (a single `codesign --deep` pass) and one
+with the new sequence, compared:
+
+```
+                    old.app                      new.app
+Format              app bundle, Mach-O (arm64)   app bundle, Mach-O (arm64)
+CodeDirectory       flags=0x2(adhoc)             flags=0x2(adhoc)
+Signature           adhoc                        adhoc
+TeamIdentifier      not set                      not set
+spctl --assess      rejected                     rejected
+```
+
+Identical in every respect Gatekeeper reads. Only the CDHash differs, as it must — the nested
+`crf-vmhost` changed.
+
+**What actually decides it.** An ad-hoc signature (`codesign --sign "-"`) has no identity behind it,
+so Gatekeeper cannot trust it *however the bundle is formed*. Every build this repository has ever
+produced is refused once the file carries `com.apple.quarantine`. The two things that plausibly
+changed for the reporter:
+
+1. **macOS 15 (Sequoia) removed the Control-click ▸ Open bypass.** The blocked-launch-then-System
+   Settings ▸ Privacy & Security ▸ Open Anyway flow is what replaced it. Everything in this repo
+   told users to Control-click, which had quietly become wrong.
+2. **Quarantine only attaches to a file that was downloaded.** An app run from `bin/` or copied by
+   hand has no quarantine attribute and is never assessed. The first install from a real `.dmg` is
+   the first time Gatekeeper is involved at all.
+
+**`LSFileQuarantineEnabled` has nothing to do with any of this**, though the comment beside it in all
+three `Info.plist`s claimed it "suppresses the quarantine 'damaged app' dialog for ad-hoc signed
+builds". It governs whether files the app *creates or downloads* are quarantined — the flag a browser
+opts into. The comment is corrected in place; believing it costs an afternoon.
+
+**The only fix is Developer ID + notarisation**, and it is now a no-edit path: `CRF_SIGN_IDENTITY`
+selects the certificate (default `-`, ad-hoc, unchanged), and `CRF_NOTARY_PROFILE` names a
+`notarytool store-credentials` keychain profile, at which point `build-dmg.sh` signs the disk image,
+notarises it and staples the ticket. Setting an identity also turns on the hardened runtime and a
+secure timestamp, both of which notarisation requires.
+
+**Two traps found while wiring that up:**
+
+- **A signed-but-unnotarised build is still refused.** The script says so explicitly rather than
+  reporting success, because "I signed it and it still asks" is the obvious next report.
+- **`--` is illegal inside an XML comment, `plutil -lint` accepts it anyway, and `codesign` does
+  not.** Writing `--options runtime` in a comment in `Entitlements.plist` produced
+  `Failed to parse entitlements: AMFIUnserializeXML: syntax error near line 19` — a line number and
+  no cause. The natural thing to write in a comment about signing is a codesign flag, so this is
+  easy to walk into; spell the flags out in prose.
+  `PackagingScriptTests.MacPlists_HaveNoDoubleHyphenInsideAComment` holds it. It immediately found
+  three dormant instances of the same thing in the `*-Info.plist`s, which survive only because
+  nothing hands those files to the strict parser.
+
+**Entitlements the hardened runtime forces.** `Assets/macOS/Entitlements.plist` now declares
+`allow-jit` and `allow-unsigned-executable-memory` (.NET's JIT writes and then executes memory),
+`disable-library-validation` (`osdi-worker` `dlopen()`s a vendor kit's compiled model, which carries
+nobody's signature but its author's) and `allow-dyld-environment-variables`. They are inert in an
+ad-hoc build. Declared now rather than at notarisation time because the failure they prevent —
+notarises cleanly, then dies at launch or at the first device model — costs a round trip through
+Apple's notary service to discover.
+
+**Verified 2026-08-22, once a Developer ID Application certificate existed** (the entitlement set
+above was written before one did, so this was the pass that could have found it wrong and did not):
+the bundle signs with `flags=0x10000(runtime)` and a secure timestamp, all four .NET entitlements
+survive into the signature, `crf-vmhost` keeps `com.apple.security.virtualization` through the
+re-sign and re-seal with a real identity, `codesign --verify --deep --strict` passes, the app
+launches (so the JIT entitlements are right), and the packaged `crf-vmhost` boots a guest to
+`CRF-GUEST-READY`. `spctl -a` then reports exactly the expected remaining gap:
+
+```
+rejected
+source=Unnotarized Developer ID
+```
+
+which is the plainest possible statement that signing alone does not remove the prompt.
+
+**Still not verified here:** the notary service round trip itself (submit / staple), which needs
+working credentials.
+
+---
+
+## Do the bundled helper programs need approving separately? No — but a KIT's model library does (2026-08-22)
+
+Asked while fixing the Gatekeeper story, and answered by measurement rather than reasoning, because
+every wrong answer here is silent.
+
+**What is actually in `Contents/MacOS/` that macOS could execute:**
+
+| File | Kind | Gatekeeper's involvement |
+|---|---|---|
+| `circuitRF` / `harmonicaRF` / `wBond` | Mach-O | the app itself |
+| `crf-vmhost`, `osdi-worker`, the `.dylib`s | Mach-O | executed/loaded by macOS |
+| `senior_worker` | **Linux ELF** | **none, ever** |
+
+`senior_worker` is worth stating plainly: macOS never executes it. It is copied into a directory
+shared into the Linux guest and run by Linux, so macOS code signing and quarantine are irrelevant to
+it. It carries a quarantine attribute after a download like everything else, and that attribute is
+inert.
+
+**A quarantined Mach-O helper is SIGKILLed, silently.** Not prompted, not refused with a message —
+exit 137 and nothing on stderr:
+
+```
+$ xattr -w com.apple.quarantine '0081;…' ./crf-vmhost && ./crf-vmhost --help
+$ echo $?
+137
+```
+
+**But the gate is the BUNDLE's own quarantine attribute, not each file's.** Measured on clean copies
+taken from a quarantined `.dmg`, with the exec order varied to rule out an assessment cache:
+
+| Bundle state | nested `crf-vmhost` |
+|---|---|
+| quarantined, unapproved | killed (137) |
+| bundle's own attribute deleted (what Open Anyway does) | **runs** |
+| bundle's attribute kept, `USER_APPROVED` bit (0x0040) set | **runs** |
+| `xattr -dr` over the whole bundle | **runs** |
+
+In the middle two cases every helper still carries its own quarantine attribute and runs anyway. So
+**one approval of circuitRF covers all of them** — there is no second dialog, and notarising removes
+even the first.
+
+**The one case approval does NOT cover: a vendor kit's own native model library.** It is not inside
+our bundle, so nothing about signing circuitRF reaches it. If the user downloaded the kit, its
+`.osdi` is quarantined and `dlopen` is refused outright:
+
+```
+dlopen(…/model.osdi): code signature not valid for use in process:
+                      library load disallowed by system policy
+```
+
+Two things worth knowing about that refusal:
+
+- **`com.apple.security.cs.disable-library-validation` does not help.** That entitlement relaxes the
+  *Team ID* check; this is the quarantine policy, which is separate. Demonstrated with a test binary
+  carrying neither the hardened runtime nor library validation — still refused.
+- **Both workers print the full `dlerror`**, so the reason does reach stderr rather than becoming a
+  bare "model would not load". The remedy is `xattr -dr com.apple.quarantine <kit dir>`, or a kit the
+  vendor notarised.
+
+---
+
+## Quarantine and the artwork generators; and the cache that makes this trap easy to mis-measure (2026-08-22)
+
+**Do the Python PCell/artwork generators need the same handling?** Partly, and the split is sharp:
+
+| What a kit ships | Quarantined, on macOS |
+|---|---|
+| a `.py` generator script | **runs fine** — a script is DATA the interpreter reads; macOS never assesses it |
+| a compiled Python extension the script imports | **blocked** — that import is a `dlopen`, and it hits the same wall a compiled device model does |
+
+So `WorkerOutputDiagnosis` is wired into `PCellWorkerProvider.Failed` as well. dyld's refusal arrives
+verbatim inside the Python traceback, so the same phrase match works with nothing new to teach it.
+
+**THE CACHING TRAP, which is why this was nearly recorded backwards.** A first measurement appeared
+to show that a properly signed loader (python.org's `python3`, Developer ID, notarised) could load a
+quarantined library while an ad-hoc one could not — a tidy result, and wrong. The policy decision is
+**cached per file**:
+
+```
+fresh library, CLEAN, first load      -> allowed
+same file, quarantine set afterwards  -> STILL allowed      <- the cache, not a rule about loaders
+fresh library, quarantined before use -> BLOCKED
+same file, Apple-signed python3       -> BLOCKED
+```
+
+The first experiment had loaded the library clean before quarantining it, so it was reading a cached
+allow. Re-run with a library quarantined *before its first load*, everything is blocked — ad-hoc
+loader, hardened-runtime loader, `disable-library-validation` loader and Apple's own `python3` alike.
+
+**Two lessons worth keeping.** The block is a property of the LIBRARY, not of who loads it: no amount
+of signing or notarising circuitRF will make a downloaded kit load, which is exactly why the message
+tells the user to clear the kit's attribute rather than implying a better-signed build would help.
+And any test of this must use a file that has never been loaded — `cp` on macOS preserves extended
+attributes, so "copy a clean one" does not give you a clean one either.
+
+---
+
+## Signing with a paid Apple account: the certificate a paid account does NOT give you (2026-08-22)
+
+`build-dmg.sh` now signs if the machine can and builds unsigned if it cannot, resolving the identity
+itself instead of requiring one to be typed. The interesting part is what it refuses.
+
+**A paid membership issues "Apple Development" certificates automatically. They are not the ones.**
+They appear in the same `security find-identity -v -p codesigning` list as the certificate you need,
+and signing a release with one is **worse than ad-hoc**: the bundle looks signed, Gatekeeper still
+refuses it, and the notary service rejects it outright. Only a **`Developer ID Application`**
+certificate distributes, and it has to be created deliberately (Xcode ▸ Settings ▸ Accounts ▸ Manage
+Certificates ▸ + ▸ Developer ID Application). The resolver greps for that exact prefix and treats
+anything else as no certificate at all — then says so, naming the trap, because "you have a paid
+account and two certificates and it still built unsigned" is otherwise a baffling result.
+
+Resolution order, all of it non-fatal: `CRF_SIGN=never` → ad-hoc; `CRF_SIGN_IDENTITY` → verbatim;
+otherwise one Developer ID certificate is used automatically, several are offered as a numbered
+choice when the shell is interactive, and **several with no TTY refuses to guess** — the wrong pick
+is a release signed by the wrong entity, which is not a thing to decide by sort order.
+
+Notary credentials are handled the same way: the profile (`circuitrf-notary` by default) is looked
+for in the keychain, and if it is missing an interactive run offers to create it by handing off to
+`xcrun notarytool store-credentials`, which does its own secure prompting. **This script never reads,
+holds or echoes a password**, and none of it reaches shell history. The credential is an
+APP-SPECIFIC password from appleid.apple.com, never the account password.
+
+---
+
+## notarytool's 401, and the Team ID that is not the Team ID (2026-08-22)
+
+**Reported:** `Error: HTTP status code: 401. Invalid credentials. Username or password is incorrect.
+Use the app-specific password generated at appleid.apple.com.` — with the operator unsure what the
+"Developer Apple ID" was and confident the Team ID was the easy part.
+
+**The Team ID was the least safe of the three.** `security find-identity -v -p codesigning` shows
+
+```
+Apple Development: someone@example.com (5K57RC984E)
+```
+
+and the bracketed value is **not** a Team ID on an *Apple Development* certificate — it is a
+per-certificate identifier. The Team ID is the certificate's **`OU`** field, which is a different
+string entirely:
+
+```
+/UID=PW66EES55M/CN=Apple Development: someone@example.com (5K57RC984E)/OU=74Y39278RS/O=Someone/C=US
+                                                          ^^^^^^^^^^ not this        ^^^^^^^^^^ this
+```
+
+On a **Developer ID Application** certificate the two ARE the same string, which is precisely why
+this is easy to get wrong and hard to doubt: every example anyone has seen agrees with the wrong rule.
+
+**All three values are now read off the machine and printed** at the point they are asked for
+(`crf_apple_team_hints` / `crf_apple_id_hints` in `build-dmg.sh`), filtered to unexpired certificates
+— an expired one names a team the account may no longer be in, so suggesting it would be worse than
+suggesting nothing. On this machine that resolves to two real teams (an individual and an LLC), which
+is itself worth seeing: with two teams, "the Team ID" is not even a single answer.
+
+**The 401 itself is almost always the password's KIND, not its content.** It must be an APP-SPECIFIC
+password from appleid.apple.com (Sign-In and Security), available only once the account has
+two-factor authentication; the Apple ID account password returns this 401 forever and the message
+never says so. The failure path now names that first, then the two runner-up causes (an
+app-specific password made on a *different* Apple ID; a mistyped or revoked one), and gives the
+standalone `store-credentials` command so credentials can be iterated on without paying for a build
+each time.

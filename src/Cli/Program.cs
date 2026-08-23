@@ -415,6 +415,16 @@ static void PrintWorkerOutput()
 
         Console.Error.WriteLine($"--- worker output ({name}) ---");
         Console.Error.WriteLine(log);
+
+        // A headless run reaches here without ever throwing, so the exception paths' explanation
+        // would never be printed. The one failure worth translating looks, in raw dyld text, exactly
+        // like a broken file — and it is not one.
+        string? diagnosis = WorkerOutputDiagnosis.Explain(log);
+        if (diagnosis is not null)
+        {
+            Console.Error.WriteLine();
+            Console.Error.WriteLine(diagnosis);
+        }
     }
 }
 

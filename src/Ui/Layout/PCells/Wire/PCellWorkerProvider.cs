@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CircuitRF.Core.Devices.External;
 
 namespace CircuitRF.Ui.Layout.PCells.Wire;
 
@@ -200,6 +201,16 @@ public sealed class PCellWorkerProvider : IDisposable
         string tail = _transport.RecentErrorOutput;
         string message = $"The PCell generator '{_transport.Origin}': {what}"
                        + (tail.Length > 0 ? $"{Environment.NewLine}--- generator output ---{Environment.NewLine}{tail}" : "");
+
+        // A generator is Python, and a quarantined .py runs perfectly well — a script is data the
+        // interpreter reads, never something macOS code-signs or assesses (measured). But a kit whose
+        // Python imports a COMPILED extension hits exactly the same wall a compiled device model
+        // does, because that import is a dlopen: the dyld refusal arrives verbatim inside the
+        // traceback, and it is no more actionable here than it is there.
+        string? diagnosis = WorkerOutputDiagnosis.Explain(tail);
+        if (diagnosis is not null)
+            message += Environment.NewLine + Environment.NewLine + diagnosis;
+
         return inner is null ? new PCellWireException(message) : new PCellWireException(message, inner);
     }
 

@@ -322,9 +322,12 @@ public class PackagingScriptTests
             + "entitlements instead of com.apple.security.virtualization and cannot start a VM — "
             + "silently, and only in a packaged build.");
 
-        // The re-seal: a codesign of the bundle that is NOT --deep, after the vmhost line.
+        // The re-seal: a codesign of the bundle that is NOT --deep, after the vmhost line. Matched
+        // over the joined text rather than line by line, because a codesign invocation here is
+        // wrapped across a backslash continuation and its $BUNDLE_DIR sits on the second line.
         int vmhost = lines.FindIndex(l => l.Contains("crf-vmhost.entitlements", StringComparison.Ordinal));
-        bool resealed = lines.Skip(vmhost)
+        string after = string.Join("\n", lines.Skip(vmhost)).Replace("\\\n", " ");
+        bool resealed = after.Split('\n')
                              .Any(l => l.Contains("codesign", StringComparison.Ordinal)
                                     && l.Contains("BUNDLE_DIR", StringComparison.Ordinal)
                                     && !l.Contains("--deep", StringComparison.Ordinal));
@@ -333,5 +336,39 @@ public class PackagingScriptTests
             + "codesign of $BUNDLE_DIR that is NOT --deep). The outer signature records the nested "
             + "binary's cdhash, so without the re-seal the bundle fails validation; with --deep it "
             + "strips the virtualization entitlement back off again.");
+    }
+    /// <summary>
+    /// <b>No <c>--</c> inside an XML comment in any macOS plist.</b> It is illegal XML, but
+    /// <c>plutil -lint</c> accepts it, so the file looks fine right up until <c>codesign</c> reads
+    /// the ENTITLEMENTS file with its own stricter parser and refuses the whole thing:
+    ///
+    /// <code>Failed to parse entitlements: AMFIUnserializeXML: syntax error near line 19</code>
+    ///
+    /// <para>which names a line and not a cause. It is easy to walk into because the natural thing
+    /// to write in a comment about signing is a codesign flag — <c>--options runtime</c>,
+    /// <c>--timestamp</c> — and that is exactly the forbidden sequence. Hit on 2026-08-22 while
+    /// documenting the hardened-runtime entitlements; spell the flags out in prose instead.</para>
+    ///
+    /// <para>Only the entitlements file is read by that strict parser, so the three
+    /// <c>*-Info.plist</c>s had carried an illegal <c>--entitlements</c> in a comment for a long
+    /// time without anything failing. They are covered here anyway: the sequence is invalid XML
+    /// wherever it sits, and a comment migrating from one plist to another is exactly how a dormant
+    /// one becomes fatal.</para>
+    /// </summary>
+    [Fact]
+    public void MacPlists_HaveNoDoubleHyphenInsideAComment()
+    {
+        foreach (var path in Directory.GetFiles(RepoFile("src", "Ui", "Assets", "macOS"), "*.plist"))
+        {
+            string text = File.ReadAllText(path);
+            foreach (System.Text.RegularExpressions.Match comment in Regex.Matches(text, @"<!--(.*?)-->", RegexOptions.Singleline))
+            {
+                string body = comment.Groups[1].Value;
+                Assert.False(body.Contains("--", StringComparison.Ordinal),
+                    $"{Path.GetFileName(path)} has a comment containing \"--\", which is illegal XML. "
+                    + "plutil -lint accepts it; codesign does not, and refuses the file with "
+                    + "\"AMFIUnserializeXML: syntax error near line N\". Write the flag out in words.");
+            }
+        }
     }
 }

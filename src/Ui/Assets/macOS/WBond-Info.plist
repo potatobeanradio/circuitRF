@@ -10,7 +10,7 @@
          database and in the login-item list, and the symptoms of that are all remote from the cause.
 
          THE THREE-PLACE TRAP: CFBundleIdentifier must match BUNDLE_ID in bundleForWBondMacOS.sh AND
-         the --entitlements argument to codesign. Nothing derives one from another. The bundle script
+         the entitlements argument to codesign. Nothing derives one from another. The bundle script
          reads the identifier back OUT of this file and checks it against its own, which is the one
          place the three can be compared — see its own note. -->
 
@@ -49,7 +49,16 @@
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
 
-    <!-- Suppress quarantine "damaged app" dialog for ad-hoc signed builds. -->
+    <!-- WHAT THIS KEY IS NOT: it has nothing to do with THIS app's own quarantine, and setting it
+         does not suppress any Gatekeeper dialog. It governs whether files the app CREATES OR
+         DOWNLOADS get the com.apple.quarantine attribute — the flag a browser or a download manager
+         opts into. circuitRF is not that kind of app, so it is explicitly false (which is also the
+         default).
+
+         The comment here used to claim it "suppresses the quarantine 'damaged app' dialog for
+         ad-hoc signed builds". It never did, and believing it costs real time: an ad-hoc signature
+         is one Gatekeeper cannot trust at all, and NO plist key changes that. Signing with a
+         Developer ID certificate and notarising is the only thing that does. -->
     <key>LSFileQuarantineEnabled</key>
     <false/>
 

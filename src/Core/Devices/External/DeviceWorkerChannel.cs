@@ -138,6 +138,13 @@ public sealed class DeviceWorkerChannel(IDeviceWorkerTransport transport) : IDis
         if (!string.IsNullOrWhiteSpace(errors))
             message.Append(Environment.NewLine).Append("Worker output:").Append(Environment.NewLine).Append(errors);
 
+        // BEFORE the raw output would be read, not after: the one failure this recognises buries its
+        // actual cause in the third clause of 400 characters of dyld search-path noise, and a reader
+        // who has already given up on that text will not come back for a footnote.
+        string? diagnosis = WorkerOutputDiagnosis.Explain(errors);
+        if (diagnosis is not null)
+            message.Append(Environment.NewLine).Append(Environment.NewLine).Append(diagnosis);
+
         return new ExternalDeviceException(message.ToString(), inner);
     }
 

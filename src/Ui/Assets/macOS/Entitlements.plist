@@ -15,5 +15,48 @@
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
 
+    <!--
+        THE HARDENED RUNTIME SET, BELOW, IS INERT UNTIL codesign IS PASSED the runtime option.
+        ─────────────────────────────────────────────────────────────────────────────────────
+        (Spelling it out rather than pasting the flag: a double hyphen is ILLEGAL inside an XML
+        comment, `plutil -lint` accepts it anyway, and codesign's own stricter parser then refuses
+        the whole file with "AMFIUnserializeXML: syntax error near line 19" — which names a line,
+        not a cause. Do not paste codesign flags into this file.)
+
+        The bundle scripts add that flag only when signing with a real Developer ID identity
+        (CRF_SIGN_IDENTITY), because notarisation REQUIRES the hardened runtime — and the hardened
+        runtime is what breaks a .NET application unless the four keys below are present. An ad-hoc
+        build is signed without it, so these keys change nothing there.
+
+        They are declared here rather than "when we get round to notarising" because the failure
+        they prevent is the expensive kind: the app notarises successfully, Gatekeeper is happy,
+        and it then dies at launch or the first time it loads a device model. That is a round trip
+        through Apple's notary service to discover.
+
+        allow-jit + allow-unsigned-executable-memory
+            .NET's JIT writes machine code into memory and then executes it. The hardened runtime
+            forbids exactly that by default. Microsoft documents both as part of the default set
+            for a .NET application.
+
+        disable-library-validation
+            Library validation refuses to load any library not signed by the same Team ID (or by
+            Apple). circuitRF loads plenty that are neither: SkiaSharp's and HarfBuzz's natives,
+            and — the one that matters — a vendor kit's own compiled device model, which
+            osdi-worker dlopen()s at run time and which nobody has signed with our certificate.
+            Without this key a kit reads correctly and refuses at Run, which is the exact failure
+            packaging/macos/build-dmg.sh's worker check exists to prevent, arriving by another road.
+
+        allow-dyld-environment-variables
+            .NET sets DYLD_ variables for its own library resolution in some configurations.
+    -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
 </dict>
 </plist>

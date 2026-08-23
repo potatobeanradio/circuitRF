@@ -213,21 +213,172 @@ reads a kit, describes it correctly and then cannot evaluate a single compiled d
 Both architectures need macOS 13 (Ventura) or later, which is what .NET 10 requires; that rules out
 Intel Macs older than roughly 2017.
 
-Each disk image contains `circuitRF.app` and a drop link to `/Applications`. The app is **ad-hoc
-signed**, so the first launch needs right-click ▸ **Open** (or
-`xattr -dr com.apple.quarantine /Applications/circuitRF.app`).
+Each disk image contains `circuitRF.app` and a drop link to `/Applications`.
 
-For public distribution, sign with a Developer ID certificate and notarise: replace the `"-"` in
-`src/Ui/bundleForMacOS.sh`'s `codesign` line with your identity, then — **once per architecture**,
-since the ticket is stapled to a specific disk image:
+### Gatekeeper: what users see, and how to stop them seeing it
+
+**By default the build is ad-hoc signed, and Gatekeeper refuses an ad-hoc signed app** — there is no
+identity behind the signature for it to trust, so `spctl --assess` rejects it however well the bundle
+is formed. **Since macOS 15 (Sequoia) the old Control-click ▸ Open bypass is gone**: the user gets a
+blocked launch, then has to go to **System Settings ▸ Privacy & Security** and press **Open Anyway**.
+
+No entitlement, `Info.plist` key or `codesign` flag changes this. In particular
+`LSFileQuarantineEnabled` does not — it governs files the app *creates*, not the app itself.
+
+Locally, clearing the quarantine attribute skips the whole thing:
 
 ```bash
-for arch in arm64 x64; do
-  xcrun notarytool submit dist/circuitRF-0.9.0-beta.1-$arch.dmg --apple-id you@example.com \
-        --team-id TEAMID --password APP-SPECIFIC-PASSWORD --wait
-  xcrun stapler staple dist/circuitRF-0.9.0-beta.1-$arch.dmg
-done
+xattr -dr com.apple.quarantine /Applications/circuitRF.app
 ```
+
+#### Signing with a paid Apple Developer account
+
+`build-dmg.sh` **signs if this machine can and builds unsigned if it cannot** — it never fails for
+want of a certificate, and it never signs silently without saying so.
+
+**You need a "Developer ID Application" certificate, and a paid membership does not give you one
+automatically.** What it does give you automatically is **"Apple Development"** certificates, which
+appear in the very same list and are for running your builds on your own machines. Signing a release
+with one is *worse* than ad-hoc: it looks signed, Gatekeeper still refuses it, and the notary service
+rejects it outright. The script therefore accepts nothing but a `Developer ID Application` identity
+and says so when it finds only the other kind.
+
+Create one, once:
+
+> **Xcode ▸ Settings ▸ Accounts ▸ (your Apple ID) ▸ Manage Certificates ▸ + ▸ Developer ID
+> Application** — or at [developer.apple.com/account/resources/certificates](https://developer.apple.com/account/resources/certificates).
+> You must be the Account Holder of the team. `security find-identity -v -p codesigning` lists what
+> you have.
+
+After that, **just run the build**. It finds the certificate, uses it, and — the first time — offers
+to store your notary credentials:
+
+```bash
+./packaging/macos/build-dmg.sh
+```
+
+It asks for your **Apple ID**, your **Team ID**, and an **app-specific password** — created at
+[appleid.apple.com](https://appleid.apple.com) ▸ Sign-In and Security ▸ App-Specific Passwords, and
+**not** your account password. `xcrun notarytool store-credentials` does that prompting itself and
+puts them in the keychain, so this script never reads, holds or echoes a password, and nothing lands
+in your shell history. It is a one-time step; later builds notarise without asking.
+
+##### The three values, and the two that go wrong
+
+`notarytool` asks for an Apple ID, a Team ID and a password, and returns the same unhelpful 401 —
+*"Invalid credentials. Username or password is incorrect"* — for several quite different mistakes.
+The build script prints the first two off your own certificates; these are what they mean.
+
+| Value | What it is | How it goes wrong |
+|---|---|---|
+| **Apple ID** | the email you sign in to the developer account with | a *different* Apple ID from the one that owns the team |
+| **Team ID** | ten characters — the certificate's **`OU`** field | reading the value in **brackets** in the identity list instead |
+| **Password** | an **app-specific password** | using the Apple ID account password |
+
+**The Team ID trap is worth spelling out.** In `security find-identity -v -p codesigning` you see
+something like `Apple Development: you@example.com (5K57RC984E)`. For a **Developer ID** certificate
+the bracketed value *is* the Team ID — but for an **Apple Development** certificate it is a
+per-certificate identifier and the Team ID is something else entirely. Read the real one out of the
+certificate:
+
+```bash
+security find-certificate -a -c "Apple D" -p | \
+  while openssl x509 -noout -subject 2>/dev/null; do :; done
+#   … /CN=Apple Development: you@example.com (5K57RC984E)/OU=74Y39278RS/O=Your Name/…
+#                                             ^^^^^^^^^^ not this   ^^^^^^^^^^ this
+```
+
+The build script prints them for you, filtered to unexpired certificates, when it offers to store
+credentials.
+
+**The password must be app-specific.** Make one at
+[appleid.apple.com](https://appleid.apple.com) ▸ Sign-In and Security ▸ App-Specific Passwords — it
+looks like `abcd-efgh-ijkl-mnop`, and the option only appears once the account has two-factor
+authentication. Your Apple ID password will always return a 401 here, and the message will not tell
+you that is why.
+
+**The name Apple asks you for when creating it is a label for you and nothing else** — it is never
+sent anywhere and is matched against nothing. Do not confuse it with the keychain profile name
+(`circuitrf-notary`), which is unrelated and *is* looked up. Name it after the **tool**, not the
+product: one app-specific password notarises everything you sign with that Apple ID, so
+`notarytool` ages better than `circuitRF`, which would imply you need a second one for wBond.
+
+> **"…to sign in to an app or service not provided by Apple." Yes, use it anyway.** That sentence on
+> appleid.apple.com is consumer-facing and predates `notarytool`; it is not a rule that excludes
+> Apple's own tools. `notarytool`'s man page says the opposite in as many words — create one *"by
+> following the instructions on 'Using app-specific passwords'"*, and *"any developer that has
+> accepted the relevant agreements can use app-specific passwords with the Apple notary Service."*
+>
+> The reason it is needed has nothing to do with who wrote the app. Your Apple ID has two-factor
+> authentication, and `notarytool` is a non-interactive command-line client that cannot show you a
+> 2FA prompt. An app-specific password is the credential that stands in for that flow. Your account
+> password would have to be paired with a 2FA code that nothing here can ask you for — which is why
+> it returns a 401 rather than a challenge.
+>
+> **The alternative, if the wording still grates:** an **App Store Connect API key**, which is a key
+> file rather than a password and is the better choice for CI (it does not break when the account
+> password changes, and it is revocable on its own). `store-credentials` takes it instead:
+>
+> ```bash
+> xcrun notarytool store-credentials circuitrf-notary \
+>       --key AuthKey_XXXXXXXXXX.p8 --key-id XXXXXXXXXX --issuer <issuer-uuid>
+> ```
+>
+> Create it in App Store Connect ▸ Users and Access ▸ Integrations ▸ Keys. Either credential produces
+> the same stored profile, and the build script does not care which you used.
+
+To iterate on credentials without running a build:
+
+```bash
+xcrun notarytool store-credentials circuitrf-notary \
+      --apple-id you@example.com --team-id 74Y39278RS
+```
+
+It prompts for the password, validates against Apple before saving, and only writes the keychain
+entry when the three agree. Once it succeeds, builds notarise without asking again.
+
+**Notarising is not optional if you want the prompt gone.** A Developer ID signature *without*
+notarisation is still refused on first launch, so a signed-but-unnotarised build reports that plainly
+rather than implying the job is done.
+
+Overrides, for CI and for when you want the other behaviour:
+
+| Variable | Effect |
+|---|---|
+| `CRF_SIGN_IDENTITY="Developer ID Application: NAME (TEAMID)"` | use this identity, ask nothing |
+| `CRF_SIGN=never` | ad-hoc build even on a machine that could sign |
+| `CRF_NOTARY_PROFILE=<name>` | use this notarytool keychain profile (default `circuitrf-notary`) |
+| `CRF_NOTARIZE=never` | sign, but skip notarisation |
+
+Nothing prompts unless the shell is interactive: a scripted run with several certificates installed
+and no `CRF_SIGN_IDENTITY` refuses to guess between them and builds unsigned instead.
+
+#### What changes when a real identity is used
+
+- **the hardened runtime** (`--options runtime`) goes on, because notarisation requires it. That in
+  turn is why `Assets/macOS/Entitlements.plist` declares `allow-jit`,
+  `allow-unsigned-executable-memory`, `disable-library-validation` and
+  `allow-dyld-environment-variables` — .NET's JIT does not run without the first two, and the third
+  is what lets `osdi-worker` `dlopen()` a vendor kit's compiled model, which nobody signed with your
+  certificate. Those keys are inert in an ad-hoc build.
+- **a secure timestamp** (`--timestamp`, which needs the network) replaces `--timestamp=none`.
+  Notarisation rejects a signature without one.
+- **the `.dmg` itself is signed**, then notarised, then **stapled**. The staple is what makes the
+  first launch work offline: without it the Mac must reach Apple to check, so a user on a poor
+  connection still meets a prompt for an app that is genuinely notarised.
+
+`crf-vmhost` is signed separately either way, with its own `com.apple.security.virtualization`
+entitlement — see `packaging/RESOLVED.md` for why that has to happen after the `--deep` pass and be
+followed by a re-seal.
+
+#### What signing does NOT fix: a downloaded kit
+
+Approving or notarising circuitRF covers everything inside its bundle — including `crf-vmhost` and
+`osdi-worker`, which need no separate approval of their own. It does **not** cover a PDK the user
+installed separately. A downloaded kit's compiled model library is quarantined, and `dlopen` refuses
+it with no prompt and no System Settings entry, on **every** loader — this is a property of the
+library, not of who is loading it. circuitRF recognises that refusal and prints the remedy
+(`xattr -dr com.apple.quarantine <kit folder>`); see `tools/osdi-worker/README.md`.
 
 **A `.app` without a disk image** is what the bundle scripts alone produce. They take the RID from
 `CRF_RID` — which `build-dmg.sh` sets for each pass — and fall back to `uname -m`:

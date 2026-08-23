@@ -109,9 +109,17 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
     {
         string errors = _channel.RecentErrorOutput;
 
-        return string.IsNullOrWhiteSpace(errors)
-            ? message
-            : message + Environment.NewLine + "Worker output:" + Environment.NewLine + errors;
+        if (string.IsNullOrWhiteSpace(errors)) return message;
+
+        string withOutput = message + Environment.NewLine + "Worker output:" + Environment.NewLine + errors;
+
+        // Same reason as DeviceWorkerChannel.Failed: a recognised failure gets its explanation
+        // appended, so the actionable sentence is the last thing read rather than something buried
+        // inside the worker's own text.
+        string? diagnosis = WorkerOutputDiagnosis.Explain(errors);
+        return diagnosis is null
+            ? withOutput
+            : withOutput + Environment.NewLine + Environment.NewLine + diagnosis;
     }
 
     private IReadOnlyList<ExternalDeviceEvaluation> Decode(DeviceWorkerReply reply, int count, int n)
