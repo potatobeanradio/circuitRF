@@ -67,6 +67,27 @@ public sealed class PCellWorkerProvider : IDisposable
         return defaults;
     }
 
+    /// <summary>
+    /// The full declaration for one of this script's generators (wire version 7), or null for an id
+    /// it does not offer — what the parameter editor reads to decide whether a parameter gets a
+    /// checkbox, a dropdown, a bounded number or plain text.
+    /// </summary>
+    public IReadOnlyList<PCellParameterInfo>? DeclaredParameters(string generatorId)
+    {
+        if (!EnsureDescribed().TryGetValue(generatorId, out var decl)) return null;
+
+        var declared = new List<PCellParameterInfo>(decl.Parameters.Count);
+        foreach (var p in decl.Parameters)
+        {
+            if (p.Name is not { Length: > 0 }) continue;
+            declared.Add(new PCellParameterInfo(
+                p.Name, p.Kind, p.Default, p.Label,
+                p.Choices is { Count: > 0 } ? p.Choices : null,
+                p.Minimum, p.Maximum, p.Computed));
+        }
+        return declared;
+    }
+
     public bool TryGetGenerator(string generatorId, out PCellGenerator generator)
     {
         var declared = EnsureDescribed();

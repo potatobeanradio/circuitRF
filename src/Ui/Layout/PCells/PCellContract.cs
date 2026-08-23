@@ -270,12 +270,83 @@ public sealed record PCellHandle(
 /// straight to deferred drag preview instead of paying one full regeneration for the host to work
 /// that out (R-pch-10). Defaulted to <see cref="PCellPreviewMode.Auto"/>, so it costs nothing to
 /// ignore.</para></summary>
+/// <para><paramref name="ComputedParameters"/> and <paramref name="ComputedValues"/> (additive) are
+/// how a generator says "I DERIVE this one, I never read it" — a MIM cap's capacitance, a resistor's
+/// resistance. Naming a parameter is what makes circuitRF stop offering an edit box for something
+/// typing into cannot change; supplying its value is what makes the parameter list track the
+/// artwork, because a derived value is by definition not the one stored with the design. Both null
+/// — every generator written before this — means "everything I declare is an input", which is what
+/// was assumed unconditionally before.</summary>
 public sealed record PCellResult(
     IReadOnlyList<LayoutShape> Shapes,
     IReadOnlyList<PCellPin> Pins,
     IReadOnlyList<string>? Diagnostics = null,
     IReadOnlyList<PCellHandle>? Handles = null,
-    PCellPreviewMode Preview = PCellPreviewMode.Auto);
+    PCellPreviewMode Preview = PCellPreviewMode.Auto,
+    IReadOnlyList<string>? ComputedParameters = null,
+    IReadOnlyDictionary<string, PCellValue>? ComputedValues = null);
+
+/// <summary>
+/// What a generator says about ONE of its parameters, beyond its name and its value — everything
+/// the parameter editor needs to put the right control on screen instead of the same free-text box
+/// for all of them.
+///
+/// <para><b>Declared by the generator, never guessed by the host.</b> circuitRF has no way to look
+/// at a string parameter and know whether it is a model name, a yes/no flag spelled "Yes", or a
+/// capacitance the cell derives and never reads. A vendor kit states all three, in its own
+/// declaration, and the answer to "can we infer it somehow" is that there is nothing to infer:
+/// it was already said, and the job is to carry it.</para>
+///
+/// <para>Every field past <paramref name="Kind"/> is optional and null means "nothing stated",
+/// which is what a generator written before any of this existed says — and it renders exactly as it
+/// always did.</para>
+/// </summary>
+public sealed record PCellParameterInfo(
+    string Name,
+    PCellValueKind Kind,
+    PCellValue? Default = null,
+    string? Label = null,
+    IReadOnlyList<PCellValue>? Choices = null,
+    double? Minimum = null,
+    double? Maximum = null,
+    bool Computed = false)
+{
+    /// <summary>What to show beside the field — the generator's own label when it gave one that says
+    /// more than the name already does, else the name.</summary>
+    public string DisplayLabel => string.IsNullOrWhiteSpace(Label) ? Name : Label!;
+
+    /// <summary>
+    /// True when this parameter's two choices read as a yes/no pair, so a CHECKBOX says the same
+    /// thing as a two-item dropdown in a fraction of the space and with no click to discover it.
+    ///
+    /// <para>Matched against a small vocabulary rather than assumed from the count: two choices can
+    /// perfectly well be "octagon"/"square", and a checkbox for that is a control whose unchecked
+    /// state has no name. The pairs recognised are the ones kits actually write — Yes/No, true/false,
+    /// on/off, and the t/nil some kits inherit from their scripting language.</para>
+    /// </summary>
+    public bool IsYesNoPair =>
+        Kind != PCellValueKind.Bool && Choices is { Count: 2 } &&
+        TruthOf(Choices[0]) is { } a && TruthOf(Choices[1]) is { } b && a != b;
+
+    /// <summary>The choice that means "checked" for a <see cref="IsYesNoPair"/> parameter.</summary>
+    public PCellValue? TrueChoice =>
+        IsYesNoPair ? (TruthOf(Choices![0]) == true ? Choices[0] : Choices[1]) : (PCellValue?)null;
+
+    /// <summary>The choice that means "unchecked" for a <see cref="IsYesNoPair"/> parameter.</summary>
+    public PCellValue? FalseChoice =>
+        IsYesNoPair ? (TruthOf(Choices![0]) == true ? Choices[1] : Choices[0]) : (PCellValue?)null;
+
+    /// <summary>Which side of a yes/no pair a choice is, or null when it is neither and the pair is
+    /// therefore not one.</summary>
+    internal static bool? TruthOf(PCellValue value)
+    {
+        if (value.Kind == PCellValueKind.Bool) return value.AsBool();
+        string t = value.AsText().Trim().ToLowerInvariant();
+        if (t is "yes" or "true" or "t" or "on" or "1") return true;
+        if (t is "no" or "false" or "f" or "nil" or "off" or "0") return false;
+        return null;
+    }
+}
 
 /// <summary>
 /// R9: layer selection (Signal Layer + Ground Reference) is per-instance overridable and is not a

@@ -32,6 +32,12 @@ public sealed partial class LayerRowViewModel : ObservableObject
     [ObservableProperty] private bool   _selectable;
     [ObservableProperty] private string _stagedPurpose = "";
 
+    /// <summary>The stipple this layer fills through, by name, or <see cref="NoFillPattern"/> for a
+    /// plain solid fill. A dropdown rather than a text field: the choices are exactly the technology's
+    /// own pattern table, and a typed name that matches nothing would silently repaint the layer
+    /// solid with nothing to say why.</summary>
+    [ObservableProperty] private string _selectedFillPattern = NoFillPattern;
+
     // Interchange mappings (docs/design/layout-view.md §2.4 R7a) — blank means "unset" (null field on
     // the InterchangeMapping record). Only the GDSII fields are functionally exercised by L4a; DXF/Gerber
     // are inert scaffolding for L4b/L4c.
@@ -78,12 +84,31 @@ public sealed partial class LayerRowViewModel : ObservableObject
         Visible            = Layer.Visible;
         Selectable         = Layer.Selectable;
         StagedPurpose      = Layer.Purpose ?? "";
+        SelectedFillPattern = Layer.FillPattern is { Length: > 0 } fp ? fp : NoFillPattern;
         StagedGdsiiLayer         = Layer.Interchange?.GdsiiLayer?.ToString() ?? "";
         StagedGdsiiDatatype      = Layer.Interchange?.GdsiiDatatype?.ToString() ?? "";
         StagedDxfLayerName       = Layer.Interchange?.DxfLayerName ?? "";
         StagedGerberSuffix       = Layer.Interchange?.GerberSuffix ?? "";
         StagedGerberFileFunction = Layer.Interchange?.GerberFileFunction ?? "";
         _isRefreshing = false;
+    }
+
+    /// <summary>What the dropdown shows for "no stipple". Not the empty string: a blank row in a
+    /// combo reads as a value that failed to load rather than as a deliberate choice.</summary>
+    public const string NoFillPattern = "(solid)";
+
+    /// <summary>Every stipple this technology offers, plus <see cref="NoFillPattern"/> first.</summary>
+    public IReadOnlyList<string> FillPatternChoices => _owner.FillPatternChoices;
+
+    partial void OnSelectedFillPatternChanged(string value)
+    {
+        if (_isRefreshing) return;
+        string? chosen = value == NoFillPattern || string.IsNullOrEmpty(value) ? null : value;
+        if (string.Equals(chosen, Layer.FillPattern, StringComparison.Ordinal)) return;
+
+        var before = _owner.SnapshotJson();
+        Layer.FillPattern = chosen;
+        _owner.CommitEdit(before, $"Set fill pattern of {Layer.Name}");
     }
 
     partial void OnVisibleChanged(bool value)

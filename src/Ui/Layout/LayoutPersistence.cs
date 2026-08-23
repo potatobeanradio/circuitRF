@@ -75,6 +75,21 @@ public sealed class ClayPCellOrigin
 {
     public string GeneratorId { get; set; } = "";
     public Dictionary<string, PCellValue> Parameters { get; set; } = new();
+
+    /// <summary>The parameters the generator DERIVED on the run that produced this cell, and what it
+    /// derived them to (the value is absent for one the generator names but cannot state).
+    ///
+    /// <para><b>Persisted with the generated cell, not cached in memory, and that is what makes it
+    /// worth anything.</b> A generated cell folder is reused on a plain existence check — nothing is
+    /// re-generated on a hit — so a derived value held only in RAM would be present for the cell you
+    /// just placed and absent for every cell already on disk, which is the same parameter list
+    /// behaving two different ways for no reason the user can see. These ride in the cell's own
+    /// <c>.clay</c> alongside the parameters that produced them, so a cache hit carries them too.
+    /// They are NOT inputs to the folder's content hash — <c>BuildCellName</c> hashes the parameters
+    /// it was given, and an output is a function of those, so hashing it would only add a second
+    /// spelling of the same thing.</para></summary>
+    public List<string>? ComputedParameters { get; set; }
+    public Dictionary<string, PCellValue>? ComputedValues { get; set; }
 }
 
 /// <summary>Reads and writes .clay files. Framework-free (no Avalonia / Skia).</summary>
@@ -153,7 +168,13 @@ public static class LayoutPersistence
         SnapDbu       = view.SnapDbu,
         AngleMode     = view.AngleMode,
         TechRef       = view.TechRef,
-        PCellOrigin   = view.PCellOrigin is { } o ? new ClayPCellOrigin { GeneratorId = o.GeneratorId, Parameters = new Dictionary<string, PCellValue>(o.Parameters) } : null,
+        PCellOrigin   = view.PCellOrigin is { } o ? new ClayPCellOrigin
+        {
+            GeneratorId        = o.GeneratorId,
+            Parameters         = new Dictionary<string, PCellValue>(o.Parameters),
+            ComputedParameters = o.ComputedParameters is { Count: > 0 } c ? [.. c] : null,
+            ComputedValues     = o.ComputedValues is { Count: > 0 } v ? new Dictionary<string, PCellValue>(v) : null,
+        } : null,
         SchematicPCellSnapshots = view.SchematicPCellSnapshots.Count > 0
             ? view.SchematicPCellSnapshots.ToDictionary(kv => kv.Key, kv => new Dictionary<string, PCellValue>(kv.Value))
             : null,
@@ -182,7 +203,7 @@ public static class LayoutPersistence
             SnapDbu      = file.SnapDbu,
             AngleMode    = file.AngleMode,
             TechRef      = file.TechRef,
-            PCellOrigin  = file.PCellOrigin is { } o ? new PCellOrigin(o.GeneratorId, o.Parameters) : null,
+            PCellOrigin  = file.PCellOrigin is { } o ? new PCellOrigin(o.GeneratorId, o.Parameters, o.ComputedParameters, o.ComputedValues) : null,
         };
 
         if (file.SchematicPCellSnapshots is not null)

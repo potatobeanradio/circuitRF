@@ -27,6 +27,8 @@
 
 using System.Collections.Generic;
 
+using System.Runtime.InteropServices;
+
 namespace CircuitRF.Ui.Layout;
 
 public sealed class LayoutSpatialIndex
@@ -329,15 +331,34 @@ public sealed class LayoutSpatialIndex
         foreach (var k in _leafOf.Keys.Where(k => k.Kind == SpatialEntryKind.Shape).ToList()) _leafOf.Remove(k);
         foreach (var k in _leafOf.Keys.Where(k => k.Kind == SpatialEntryKind.Instance).ToList()) _leafOf.Remove(k);
 
-        var entries = new List<LeafEntry>(shapes.Count);
-        for (int i = 0; i < shapes.Count; i++)
+        // ONE read of the caller's list, held for the whole rebuild.
+        //
+        // This runs on the RENDER thread as often as on the UI one — a stale index self-heals here,
+        // and the render thread is what notices first — while the UI thread may be deleting. Reading
+        // `shapes.Count` once per iteration and indexing after it is the very crash this type's own
+        // header describes from the other side: the count shrinks between the test and the read, and
+        // List<T> throws from a thread with nothing to catch it. Taking the backing span once fixes
+        // both the length and the storage this rebuild sees.
+        //
+        // The result may be a slightly stale tree, and that is the point: it is rebuilt again on the
+        // very next query, because _syncedCount records what was actually BUILT FROM rather than
+        // whatever the list happens to say afterwards — set it from the count read after the loop and
+        // a rebuild that raced a delete would look in sync and stay stale.
+        ReadOnlySpan<LayoutShape> snapshot =
+            shapes is List<LayoutShape> list ? CollectionsMarshal.AsSpan(list) : [.. shapes];
+
+        var entries = new List<LeafEntry>(snapshot.Length);
+        for (int i = 0; i < snapshot.Length; i++)
         {
-            var bb = ConservativeBboxOf(shapes[i]);
+            // Null-checked: List<T>.RemoveAt clears the vacated slot, so a span captured before a
+            // delete can hand back a null where a shape used to be.
+            if (snapshot[i] is not { } shape) continue;
+            var bb = ConservativeBboxOf(shape);
             if (!bb.IsEmpty) entries.Add(new LeafEntry(bb, SpatialEntryKind.Shape, i));
         }
 
         _root = entries.Count == 0 ? new Node { IsLeaf = true, Bounds = Bbox.Empty } : BuildStrTree(entries);
-        _syncedCount = shapes.Count;
+        _syncedCount = snapshot.Length;
         _churnSinceRebuild = 0;
         FullRebuildCount++;
 

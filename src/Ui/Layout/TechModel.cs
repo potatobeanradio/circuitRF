@@ -23,6 +23,56 @@ public sealed record InterchangeMapping(
     string? GerberSuffix,
     string? GerberFileFunction);
 
+/// <summary>
+/// A stipple: the repeating on/off mask a layer's fill is painted through.
+///
+/// <para><b>This is how a process makes its layers tellable apart, and colour alone does not do
+/// it.</b> A real layer table runs to hundreds of rows over a few dozen colours — one measured open
+/// vendor kit has 377 layers sharing 38 fill colours, so all but four of them collide with something
+/// — and what separates them on screen is the pattern, not the hue. Reading the colour and dropping
+/// the pattern renders a process's whole table as a few dozen indistinguishable washes.</para>
+///
+/// <para>Held on the <see cref="Technology"/> as a named table rather than inline on each layer,
+/// mirroring how process files state it: dozens of layers share one stipple, and a table keeps them
+/// sharing it through an edit instead of drifting apart.</para>
+/// </summary>
+public sealed class FillPattern
+{
+    /// <summary>What the process calls it. Also the key <see cref="LayerDef.FillPattern"/> names, so
+    /// it must be unique within a technology — the import makes it so.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The mask, one string per row, <c>*</c> set and anything else clear. Square, and at
+    /// most <see cref="MaxSize"/> on a side.</summary>
+    public List<string> Rows { get; set; } = [];
+
+    /// <summary>Above this a stipple stops reading as a texture and starts reading as geometry, and
+    /// the per-pattern bitmap stops being free. Process files in practice use 8, 16 or 32.</summary>
+    public const int MaxSize = 32;
+
+    /// <summary>The mask's side length, or 0 when it states nothing usable.</summary>
+    public int Size => Rows.Count is > 0 and <= MaxSize && Rows.Count == Rows[0].Length ? Rows.Count : 0;
+
+    /// <summary>True when row <paramref name="y"/>, column <paramref name="x"/> is painted.</summary>
+    public bool IsSet(int y, int x) => Rows[y][x] == '*';
+
+    /// <summary>True when NO texel is set — the mask paints nothing at all.
+    ///
+    /// <para>A process file states "outline only" this way as readily as by a hollow flag, and the
+    /// two must not be told apart by the renderer: painting a fill through an empty mask draws
+    /// nothing, which is already the right answer.</para></summary>
+    public bool IsBlank
+    {
+        get
+        {
+            foreach (var row in Rows)
+                foreach (char c in row)
+                    if (c == '*') return false;
+            return true;
+        }
+    }
+}
+
 public sealed class LayerDef
 {
     public LayerKey Key { get; set; }
@@ -40,6 +90,17 @@ public sealed class LayerDef
     public bool Selectable { get; set; } = true;
 
     public string? Purpose { get; set; }
+
+    /// <summary>
+    /// The <see cref="FillPattern.Name"/> this layer's fill is painted through, or null for a plain
+    /// solid fill — which is what every layer said before stipples existed, and still renders exactly
+    /// as it did.
+    ///
+    /// <para>A name rather than an index into <see cref="Technology.FillPatterns"/>: an index is
+    /// invalidated by reordering the table, silently and in a way that repaints layers rather than
+    /// failing. A name that resolves to nothing falls back to a solid fill.</para>
+    /// </summary>
+    public string? FillPattern { get; set; }
 
     /// <summary>Null = no interchange overrides declared (GDSII import/export falls back to
     /// <see cref="Key"/> directly). Additive, no <c>.ctech</c> <c>FormatVersion</c> bump.</summary>
@@ -312,6 +373,24 @@ public sealed class Technology
     public long DefaultViaDrillDbu { get; set; }
 
     public List<LayerDef> Layers { get; set; } = [];
+
+    /// <summary>The stipples <see cref="LayerDef.FillPattern"/> names, by <see cref="FillPattern.Name"/>.
+    /// Empty — every technology authored before stipples existed — means every layer fills solid.</summary>
+    public List<FillPattern> FillPatterns { get; set; } = [];
+
     public Stackup Stackup { get; set; } = new();
     public List<DrcRule> DrcRules { get; set; } = [];
+
+    /// <summary>The stipple <paramref name="name"/> resolves to, or null for none/unknown.
+    ///
+    /// <para>A name that resolves to nothing yields null rather than throwing: a layer referring to a
+    /// pattern the table no longer holds should draw as a solid fill, which is a visible, recoverable
+    /// state, not a technology that cannot be opened.</para></summary>
+    public FillPattern? FindFillPattern(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        foreach (var p in FillPatterns)
+            if (string.Equals(p.Name, name, StringComparison.Ordinal) && p.Size > 0) return p;
+        return null;
+    }
 }

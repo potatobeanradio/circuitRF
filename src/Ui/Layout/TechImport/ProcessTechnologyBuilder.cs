@@ -10,6 +10,8 @@
 
 using CircuitRF.Ui.Theming;
 
+using System.Globalization;
+
 namespace CircuitRF.Ui.Layout.TechImport;
 
 /// <summary>What a technology import produced, and everything it had to decide on the way.</summary>
@@ -41,7 +43,7 @@ public static class ProcessTechnologyBuilder
         notes.AddRange(stack.Notes);
         if (layerTable is not null) notes.AddRange(layerTable.Notes);
 
-        var layers  = BuildLayers(layerTable, notes);
+        var layers  = BuildLayers(layerTable, notes, out var fillPatterns);
         var byName  = IndexByBaseName(layerTable);
         var slabs   = BuildSlabs(stack, notes);
         var zByName = ComputeConductorSpans(slabs);
@@ -70,6 +72,7 @@ public static class ProcessTechnologyBuilder
             DefaultViaPadDbu      = ChooseViaSizeDbu(stack),
             DefaultViaDrillDbu    = ChooseViaSizeDbu(stack),
             Layers                = layers,
+            FillPatterns          = fillPatterns,
             Stackup               = stackup,
             DrcRules              = BuildDrcRules(stack, byName, ruleDeck, layerTable, notes),
         };
@@ -140,12 +143,102 @@ public static class ProcessTechnologyBuilder
 
     // ── the layer table ───────────────────────────────────────────────────────
 
-    private static List<LayerDef> BuildLayers(ProcessLayerTable? table, List<string> notes)
+    /// <summary>
+    /// The stipple a layer's own reference resolves to, and how the fill is drawn for it.
+    ///
+    /// <para><b>Two reference spellings, and only one of them is in the file.</b> A reference either
+    /// names one of the patterns the file defines for itself, or one of a small built-in set every
+    /// reader is assumed to have. Only two of the built-ins have a meaning worth honouring without
+    /// guessing at a bitmap nobody wrote down: index 0 is a solid fill and index 1 is hollow —
+    /// outline only, no fill at all. Any other built-in index falls back to solid and is counted,
+    /// because inventing a mask for it would put geometry on screen that the process never
+    /// specified.</para>
+    /// </summary>
+    private readonly record struct ResolvedFill(string? PatternName, double Opacity);
+
+    /// <summary>The default wash a solid layer fills at — soft enough that stacked layers show
+    /// through each other, which is the whole reason it is not opaque.</summary>
+    private const double SolidFillOpacity = 0.35;
+
+    private static List<FillPattern> BuildFillPatterns(
+        ProcessLayerTable? table, out Dictionary<int, string> byIndex, List<string> notes)
+    {
+        byIndex = [];
+        var patterns = new List<FillPattern>();
+        if (table?.FillPatterns is not { Count: > 0 } defined) return patterns;
+
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in defined)
+        {
+            // A pattern is addressed by NAME once it is in a technology (see LayerDef.FillPattern for
+            // why), so a file that names two patterns alike — or names none — still has to end up
+            // with one key each. The file's own index is the disambiguator because it is what the
+            // references use, so the suffixed name stays traceable to the row it came from.
+            string baseName = p.Name is { Length: > 0 } n ? n : $"pattern{p.Index}";
+            string name = baseName;
+            if (!used.Add(name))
+            {
+                name = $"{baseName}-{p.Index}";
+                for (int i = 2; !used.Add(name); i++) name = $"{baseName}-{p.Index}-{i}";
+            }
+
+            patterns.Add(new FillPattern { Name = name, Rows = [.. p.Rows] });
+            byIndex[p.Index] = name;
+        }
+
+        return patterns;
+    }
+
+    private static ResolvedFill ResolveFill(
+        string? fillRef, IReadOnlyDictionary<int, string> byIndex, ref int unknownBuiltIns)
+    {
+        // Nothing stated: a solid fill, exactly as every layer behaved before stipples were read.
+        if (fillRef is not { Length: > 1 }) return new ResolvedFill(null, SolidFillOpacity);
+
+        char kind = char.ToUpperInvariant(fillRef[0]);
+        if (!int.TryParse(fillRef.AsSpan(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int index))
+            return new ResolvedFill(null, SolidFillOpacity);
+
+        if (kind == 'C')
+            return byIndex.TryGetValue(index, out var name)
+                // Full opacity, and that is the point of a stipple rather than a regression of the
+                // soft wash above: the mask is ALREADY how the layer beneath shows through, and a
+                // sparse pattern at 35% is invisible. This is what the process drew.
+                ? new ResolvedFill(name, 1.0)
+                : new ResolvedFill(null, SolidFillOpacity);
+
+        if (kind != 'I') return new ResolvedFill(null, SolidFillOpacity);
+
+        return index switch
+        {
+            0 => new ResolvedFill(null, SolidFillOpacity),
+            // Hollow: outline only. Expressed as no fill rather than as an all-clear mask, because
+            // the model already says exactly this and a synthetic empty pattern would be one more
+            // table entry meaning what a zero already means.
+            1 => new ResolvedFill(null, 0.0),
+            _ => Unknown(ref unknownBuiltIns),
+        };
+
+        static ResolvedFill Unknown(ref int count)
+        {
+            count++;
+            return new ResolvedFill(null, SolidFillOpacity);
+        }
+    }
+
+    private static List<LayerDef> BuildLayers(
+        ProcessLayerTable? table, List<string> notes, out List<FillPattern> fillPatterns)
     {
         var layers = new List<LayerDef>();
+        fillPatterns = [];
         if (table is null) return layers;
 
+        fillPatterns = BuildFillPatterns(table, out var patternByIndex, notes);
+
         int generated = 0;
+        int unknownBuiltIns = 0;
+        int stippled = 0;
+        int hollow = 0;
         foreach (var e in table.Entries)
         {
             var key = new LayerKey(e.Layer, e.Datatype);
@@ -156,6 +249,10 @@ public static class ProcessTechnologyBuilder
             var colour = e.Color;
             if (colour is null) { colour = FallbackPalette.For(key).Color; generated++; }
 
+            var fill = ResolveFill(e.FillRef, patternByIndex, ref unknownBuiltIns);
+            if (fill.PatternName is not null) stippled++;
+            else if (fill.Opacity == 0.0) hollow++;
+
             layers.Add(new LayerDef
             {
                 Key         = key,
@@ -164,7 +261,8 @@ public static class ProcessTechnologyBuilder
                 // retargeting) keys on. The purpose is carried separately as well.
                 Name        = e.FullName,
                 Color       = colour.Value,
-                FillOpacity = 0.35,
+                FillOpacity = fill.Opacity,
+                FillPattern = fill.PatternName,
                 ZOrder      = e.Order,
                 Visible     = e.Visible,
                 Selectable  = true,
@@ -172,8 +270,28 @@ public static class ProcessTechnologyBuilder
             });
         }
 
+        // Pruned to what the layers actually name. A technology is what circuitRF draws with, and
+        // carrying pattern definitions nothing points at is the same class of thing as a cache with
+        // no invalidation — it survives edits, gets exported, and means nothing.
+        var referenced = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var l in layers)
+            if (l.FillPattern is { Length: > 0 } fp) referenced.Add(fp);
+        fillPatterns.RemoveAll(p => !referenced.Contains(p.Name));
+
         if (generated > 0)
             notes.Add($"{generated} layer(s) stated no display colour; each was given a generated one.");
+        if (stippled > 0)
+            notes.Add($"{stippled} layer(s) fill through a stipple pattern the file defines. A process " +
+                      "reuses its colours across far more layers than it has colours, so the pattern is " +
+                      "usually what tells two of them apart; each is painted at full opacity, because " +
+                      "the pattern is already what lets the layer beneath show through.");
+        if (hollow > 0)
+            notes.Add($"{hollow} layer(s) are drawn outline-only by the process and carry no fill.");
+        if (unknownBuiltIns > 0)
+            notes.Add($"{unknownBuiltIns} layer(s) name a built-in fill pattern this reader does not " +
+                      "know and fill solid instead. Only \"solid\" and \"hollow\" are assumed; any " +
+                      "other built-in mask is the writing tool's, and guessing at one would draw a " +
+                      "pattern the process never specified.");
 
         return layers;
     }

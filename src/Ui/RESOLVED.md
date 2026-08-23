@@ -6,6 +6,345 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## What a page-scroll in the .ctech editor actually costs (2026-08-23)
+
+Reported as Page Up/Down being "a little slow to respond" on a 377-layer technology, "even though
+only ~15 to 20 layers are actually viewed". **Measured under a headless Avalonia host** rather than
+reasoned about, and two of the three obvious explanations were wrong.
+
+### What it is not
+
+- **Not a virtualization failure.** The list realizes 22 containers out of 377. The `ListBox`
+  (rather than a bare `ItemsControl`) and the bounded `*` grid row are both doing their job.
+- **Not the key handler.** The keystroke path resolves its `ScrollViewer` with a
+  `GetVisualDescendants()` walk, which reads as the expensive thing and is **0.0003 ms** — the
+  scroller sits near the top of the list's own template, so a depth-first walk finds it immediately.
+  This was the first hypothesis and it was wrong by four orders of magnitude.
+- **Not the fill-pattern dropdown's items.** Measured at 54, 8 and 0 patterns: 176 / 165 / 176 ms. A
+  closed `ComboBox` does not realize its items.
+- **Not a Debug artifact.** Release measured the same.
+
+### What it is
+
+A page-scroll realizes a whole fresh page of rows, and **a row of this table was 199 visual nodes**.
+Not because it has eleven columns — because a stock `TextBox` is expensive to realize: its template
+carries a `ScrollViewer`, that scroller's **two `ScrollBar`s**, and a `DataValidationErrors` wrapper.
+Seven text cells per row produced **12 `ScrollBar`s in a row of single-line fields that can never
+scroll**. 22 rows x 199 nodes ~= 4,400 nodes per keystroke, at roughly 40 us each.
+
+**Setting the scroll-bar visibilities to `Disabled` does nothing** — measured, no change at all, in
+nodes or in time. The bars are built by the template whatever their visibility; only replacing the
+template removes them.
+
+So `TextBox.cell.compact` is a stripped template — a `Border` named `PART_BorderElement` (so the
+theme's focus and hover states still find it) around a `PART_TextPresenter`, and nothing else.
+Typing, selection, caret and Home/End were verified through the headless host, not assumed.
+
+| | nodes/row before → after | page-scroll before → after |
+|---|---|---|
+| Layers | 199 → 127 | ~185 ms → ~140 ms |
+| Stackup | 273 → 235 | ~67 ms → ~48 ms |
+| DRC Rules | 156 → 137 | ~140 ms → ~116 ms |
+| Interchange | 115 → 115 | unchanged — see below |
+
+### The rule that limits where it can be used, and the two things it costs
+
+**Only a FIXED-width field holding a short, bounded value.** What the stripped template drops is the
+`ScrollViewer`, and the `ScrollViewer` is what scrolls a long value sideways to keep the caret
+visible while it is being typed. Four digits in a 34 px box cannot outgrow it; a layer name in a
+stretch column very much can, and would clip silently with the caret off-screen. Every free-text
+column keeps the stock template.
+
+It also drops the watermark. That is why **Interchange gained nothing**: its only two bounded numeric
+cells put the layer's own number in `PlaceholderText` as the value the GDSII field falls back to when
+blank, which is real information, so both keep the stock template. A tab can be measured, found
+expensive, and still have nothing safe to give up.
+
+Both constraints are held by a test that scans every compact cell for an explicit `Width` and the
+absence of `PlaceholderText` — it caught three of the twelve on the first run, which is exactly the
+mistake it exists to catch.
+
+### Still open
+
+~140 ms is better, not instant. The floor is the remaining ~127 nodes x 22 rows, and the rest of that
+is the editable controls themselves — two checkboxes, a colour button, a dropdown and four command
+buttons per row. Getting materially below it means fewer controls per row (a display-only row that
+becomes editable on click), which is a product decision rather than an optimization, so it was not
+made here.
+
+## Page Up/Down dead in the .ctech editor until something was clicked (2026-08-23)
+
+Reported as "Page Up / Page Down are not recognized on the Layers tab when I first open the .ctech
+file". Clicking any field made the same keys start working, which is what made it read as an
+intermittent rather than as a missing line.
+
+**The editor's scroll handler tunnels from the view root**, deliberately — a `ListBox` handles those
+keys itself by moving the selection, and these lists are flattened so that selection is invisible, so
+the keystroke would appear to do nothing while quietly changing what was selected. Getting there
+first is what makes the key scroll the pane.
+
+The cost of tunnelling from the view is that the handler only ever sees a keystroke **already routing
+through that view** — something inside it has to hold focus. On first open nothing does: the document
+is activated before its view is bound, so focus is still wherever it was and the key routes somewhere
+else entirely.
+
+`TechDocument` already implements `IActivatableDocument` and the workspace already raises
+`RequestActivationFocus` on it. **`TechEditorView` was the only one of the four document views that
+never subscribed** — the schematic, symbol and layout views all take focus through this same hook,
+including the `ConsumeActivationFocus` half that catches the activation which fired before the view
+existed to hear it. That pending-flag read is the first-open case specifically; subscribing without
+it fixes every activation except the one that was reported.
+
+**Focus lands on the view root, not on the visible tab's list and not on a row's field.** Focusing the
+list would make the first thing the user sees a control with a selection, in lists whose rows are
+flattened precisely so selection stays invisible; focusing a field would put a caret in an editable
+process value nobody asked to edit. The root lands on `TargetScrollViewer`'s own already-written
+fallback — "the visible tab's row list" — which resolves correctly for whichever tab is showing and
+keeps working across tab changes. That fallback existing at all is a good sign it was the intended
+design; only the focus half was missing.
+
+The root needs `Focusable="True"` to be a focus target and `IsTabStop="False"` so a control that
+exists *only* as a programmatic target does not join the Tab cycle the user walks through.
+
+**Undocking is the same dead keyboard by a second route, and the activation hook does not cover it.**
+Floating the editor builds a NEW window around the view; a new window's activation is not the dock's,
+so no `IActivatableDocument` request fires and the subscription above never runs. Attaching to a
+visual tree is the one event both routes share, so focus is taken there as well — **but only when
+nothing else already holds it**. An attach also happens on an ordinary dock rearrangement, and taking
+focus unconditionally would pull the caret out of whatever panel the user was typing in. The check is
+made INSIDE the deferred action, not before it: on the undock path the view is still moving between
+windows when the attach fires, so a top level asked any earlier is the one being left rather than the
+one being entered.
+
+**Guarded by a source scan, not by an exercise** — there is no headless Avalonia host in this suite,
+which is the same reason `TechEditorScrollKeys` exists as a framework-free type beside its view. The
+test asserts, for every activatable document, that its view both subscribes AND consumes the pending
+flag; verified to fail on the unfixed file with the diagnosis in the message, so a fifth document view
+added later cannot repeat this silently.
+
+## Layer fill patterns — a process's stipples are read and rendered (2026-08-23)
+
+Layer display was colour and one opacity. A process layer table is not: it runs to hundreds of rows
+over a few dozen colours and separates them by a repeating **fill mask**, not by hue. Reading the
+colour and discarding the mask rendered a whole process as a few dozen indistinguishable washes.
+
+### The measurement that settles what was actually wrong
+
+The reported symptom was "every layer has the same alpha, we must be dropping the kit's
+transparency". The transparency half is false and worth recording so nobody re-chases it: one open
+vendor kit's layer table states an explicit transparency flag on **all 377 layers and it is `false`
+on every one**. There is no per-layer transparency in it to drop, and the importer's flat 0.35 was
+faithful on that axis.
+
+What the same file *does* vary:
+
+| | |
+|---|---|
+| layers | 377 |
+| distinct fill colours | 38 — **373 of the 377 share theirs with another layer** |
+| distinct fill masks | 54 |
+| distinct colour+mask appearances | 132 |
+
+So the collisions were real and the cause was the mask. Worst single colour: 43 layers on one hue,
+separated by 16 different masks. Frame colour differs from fill colour on only 21 rows and both
+brightness fields are 0 on all 377 — neither is a second axis worth reading.
+
+**After the change, that table imports as 132 distinguishable appearances instead of 38**, 291 layers
+stippled and 86 correctly drawn outline-only.
+
+### What is read, and the two references that are not in the file
+
+A mask reference is a letter and a number: one letter means "the pattern list this file defines for
+itself", the other means "a built-in every reader is assumed to have". Only the file's own list is in
+the file — the built-ins are the writing tool's, and the file states 108 pattern blocks for the first
+kind and nothing at all for the second.
+
+Only **two** built-ins are honoured: index 0 is solid, index 1 is hollow. Any other built-in index
+falls back to solid and is counted in the import notes. Inventing a bitmap for one would draw a
+pattern the process never specified, which is worse than a flat fill because it looks authoritative.
+
+A pattern's own stated position — not its position in the list — is what a reference names, so a file
+that numbers sparsely or out of order still resolves. Patterns are carried by NAME into the
+technology (an index is invalidated by a reordering edit, silently, in a way that repaints layers
+rather than failing), deduplicated on the way in, and pruned to what the layers actually reference.
+
+**Hollow is expressed as a zero opacity, not as a synthetic all-clear mask** — the model already says
+exactly that, and a synthetic entry would be one more table row meaning what a zero already means.
+The converse still has to work, because a process states "outline only" both ways: a mask with no set
+texel must paint nothing. It first fell through to the solid-fill branch and painted everything —
+the exact inverse of its one instruction — which a pixel test caught.
+
+**A stippled layer imports at full opacity, not at the 0.35 wash.** The mask is already what lets the
+layer beneath show through; a sparse pattern behind a 35% wash is invisible.
+
+### The stipple is a SCREEN-space texture
+
+A bitmap shader with an identity local matrix is in path space, so it would zoom with the geometry —
+a moiré field at low zoom, enormous stripes at high zoom, useless as an identifier at either end. The
+local matrix is a pure scale of one device pixel per texel, which keeps the density fixed through
+zoom while still letting the pattern travel with the geometry under a pan (a device-space anchor
+would make it swim across the artwork instead). Inside a placed instance the magnification is folded
+in the same way the stroke width already is, or one cell's metal reads as a different layer from
+another's.
+
+### It costs nothing, and the guard for that is a counter
+
+The intuition runs the other way — a shader per fill sounds expensive next to a flat colour — so it
+was measured on a dense via array at 25k, 100k and 500k shapes, at full extent and zoomed 8x.
+Stippled vs solid came out between **x0.88 and x1.29, and at 500k it was x0.99 / x0.97**; several
+configurations were *faster* stippled, because a sparse mask writes fewer pixels than a flat fill.
+
+The reason is structural: **the paint, and with it the shader, is built once per layer per frame**,
+the mask bitmap is cached across frames keyed by (mask, colour), and what changes per shape is only
+the inner pixel loop. Three call sites build a layer's fill paint (the per-layer draw, the placed
+instance, the drag/paste ghost) and they were three independent copies of the same two lines; that
+was harmless while a fill was a colour and an alpha and stops being harmless the moment it is also a
+mask at a zoom-compensated scale, so they now share `LayerFillPaint`.
+
+There is **no timing test** for any of this, deliberately. With no measurable margin there is nothing
+to defend, and a wall-clock assertion would measure the machine and flake. What is gated is the
+structural property, as a counter: `PaintsCreated` must not scale with shape count. Moving the
+construction inside the per-shape loop is the obvious refactor for anyone who later wants a per-shape
+colour, and on a 20,000-via array it turns one shader into 20,000 — invisible in a screenshot,
+invisible in a small scene, and visible only as a frame time on a file too big to bisect quickly.
+
+### Smaller things
+
+- The Tech Editor gets a **Pattern** column: a dropdown over the technology's own table, never a text
+  field (a typed name matching nothing repaints the layer solid with nothing to say why) and never a
+  circuitRF-invented palette (a stipple is process data; offering our own masks would let a layer be
+  given a fill its process never specified). Three grids in that view share one column layout — the
+  filter bar, the header and the row template — and all three have to grow together or the columns
+  stop lining up.
+- A name that resolves to nothing fills **solid**, not blank: a dangling reference should be visible
+  and recoverable, not a layer that silently disappears or a technology that will not open.
+- `.ctech` carries the table as an optional field, so every file written before this reads back with
+  no patterns and every layer solid — which is exactly what those files meant.
+
+## PCell parameters get the editor the kit already declared (2026-08-23)
+
+Every PCell parameter rendered as the same free-text box. A model name, a yes/no flag, a gate count
+and a capacitance the cell *derives from its own geometry* were visually identical and equally
+editable. Wire version 7 carries the metadata a kit was already publishing, and the parameter list
+renders four editors instead of one.
+
+### A kit does say all of this — it was being discarded at the bridge
+
+A vendor cell's `defineParamSpecs` takes a label and an optional constraint on every parameter, and
+`cni/bridge.py` read neither. Measured against one open vendor kit — 34 generators, 577 parameter
+rows:
+
+| | count |
+|---|---|
+| `ChoiceConstraint` | 127, of which 42 are two-valued yes/no pairs |
+| `RangeConstraint` | 9 |
+| declared Python `bool` | 14 |
+| declared `int` | 43 |
+
+After the change, **153 of those 577 rows (26%) render as a checkbox, a dropdown or read-only text.**
+The rest stay free text, correctly — nothing is declared about them.
+
+There is no side-car file, no `editable` flag anywhere in the kit. `defineParamSpecs` plus the cell's
+own code is the whole of what it states, which is why the inference below is measured rather than
+read off.
+
+### A solve-for selector is a real signal and its stated value can be the opposite of the truth
+
+Ten of that kit's cells declare a CDF-style selector — a choice list like `['C','w','l','w&l']` on a
+capacitor, `['R','w','l']` on a resistor, `['R,A','w,A','l,A',…]` on another. It is recognised
+**structurally**, not by the parameter being spelled "Calculate": a selector is any choice list whose
+entries, split on `&` and `,`, are all names of *other* parameters of the same cell. Nothing keys off
+the spelling, because the next kit spells it differently and a name list is a table to maintain.
+
+**Read literally it was wrong on every cell that has one.** The capacitor defaults its selector to
+`'w&l'`, which says w and l are the outputs and C is the input. The code does the reverse:
+`setupParams` reads only w and l, and C is never read at *any* setting of the selector. Generating
+the cell with C at its default and at two other values gives byte-identical geometry; changing w or l
+changes it. The vendor's own dialog is where the back-solve lived, and the layout port kept the
+declaration without the behaviour. A second capacitor cell in the same kit makes it explicit —
+`setupParams` *overwrites* its own C from w and l and throws away what it was sent.
+
+So the rule is the intersection of two things, and **each half alone gets a different case wrong**:
+
+- **Selector alone** → believes the declaration, locks w and l, leaves C editable. Exactly backwards.
+- **Reads alone** → the model name, the multiplier, the initial condition and the temperature rise
+  are never read either. They are netlist parameters that never touched the artwork and are still the
+  user's to type into. This would take the model name away.
+
+Reads are observed by handing the cell a `dict` subclass that records subscript access
+(`_TrackingValues`), so it is what the cell *did*, not what it declares.
+
+Where the two disagree the parameter stays **editable**, which is the failure direction that costs
+nothing: one resistor cell in that kit assigns its resistance parameter to an instance attribute and
+then never uses it, so it reads as an input and keeps its box.
+
+### Why a derived value could not simply be shown live
+
+An output is not read, so the value stored with the design is whatever it was stored with — it stops
+matching the geometry the moment a dimension moves, and the old text box displayed that stale number
+as though it were an input. Two things were tried before settling:
+
+- **Reading the value back off the cell instance after generation.** Refuted: a cell commonly does
+  `self.w = Numeric(params['w']) * 1e6`, so the attribute holds a micrometre number where the
+  parameter holds engineering-notation text — a different unit under the same name. An attribute that
+  happens to match a parameter name is not that parameter.
+- **Re-running `defineParamSpecs` to recompute the default.** It computes the derived value from
+  process constants rather than from the instance, and typically feeds the one value to both
+  dimensions. Only correct for a square device.
+
+Nothing in those cells computes the quantity for arbitrary geometry — the vendor's dialog callback
+did, and the kit's calculators are reachable only by name. So the wire says both things separately: a
+`computed` name list, and an optional `computedValues` map. A name with no value is the honest claim
+"this is derived, and I cannot tell you to what" — enough to stop offering an edit box, without
+inventing a number. A generator that *can* state the value gets a live-updating row for free, through
+`circuitrf_pcell.reports_computed`, which is how a kit's own calculators are wired back up from the
+kit's setup script without touching the vendor's files.
+
+**The ordering inside that hook is the part that is easy to get wrong.** The host learns a parameter
+is an output by MEASURING the cell, and records the name with no value; a calculator supplied beside
+the cell runs afterwards and must fill that in. A plain `setdefault` sees the name already present,
+keeps the empty claim, and drops every value silently — the readout looks wired up and never shows a
+number. `None` is treated as an absence, not as a value.
+
+A second trap in the same hook: the callback must be handed the parameters **with declared defaults
+applied**. The host sends the values it holds and no others, so a parameter left at its default may
+be absent entirely. A generator never notices, because it passes its own fallback to every accessor;
+a calculator standing outside the cell has no way to know what each parameter should fall back to and
+reads 0 for every one. `Parameters.with_defaults` exists for exactly this.
+
+### Where it is persisted, and why not in memory
+
+The derived facts ride in the generated cell's own `.clay`, on `PCellOrigin`. A generated cell folder
+is reused on a plain existence check — nothing regenerates on a hit — so a memory-only cache would be
+populated for the cell just placed and empty for every cell already on disk, and the same capacitor
+would offer an edit box for its C in one session and not the next. They are **not** inputs to the
+folder's content hash: an output is a function of the parameters that already are, so hashing it
+would only add a second spelling of the same thing.
+
+### Smaller things worth keeping
+
+- **A two-valued choice list is not automatically a checkbox.** A shape choice of two named shapes is
+  two choices with no unchecked state; it stays a dropdown. The pair is matched against a vocabulary
+  (yes/no, true/false, on/off, and SKILL's `t`/`nil`), never inferred from the count.
+- **Ticking a checkbox writes the kit's own word.** A flag a kit spells with words goes back in those
+  words, not as `false` — the kit has no case for a Bool there. A parameter genuinely declared `bool`
+  does get a Bool. The vocabulary follows the declaration, not the control.
+- **An out-of-list value is offered, not corrected.** A value from an older file that the generator
+  does not list is appended to the dropdown and selected. Snapping it to the nearest listed choice
+  would change artwork nobody asked to change, and rendering an empty box would make the first click
+  do that silently.
+- **A derived parameter is refused at the commit, not merely disabled in the view.** A write would
+  produce a new content hash, a new generated cell, and a value the generator overwrites on its next
+  run — an edit that appears to take, changes nothing visible, and orphans a cell.
+- **Choices cross in the parameter's own kind.** A choice list flattened to strings for an int-kinded
+  parameter never compares equal to that parameter's value: the dropdown shows the right items with
+  none of them selected.
+- **A label identical to the name is not sent.** It would say nothing and would suppress the name the
+  host shows in its place. Where a label *is* shown, the name stays reachable in the tooltip — it is
+  what every commit and every netlist still keys by.
+- `_declare`'s "nothing is converted, in either direction" rule is untouched. All of this is display
+  metadata; what a cell *receives* is unchanged.
+
 ## The project tree's dirty mark on FILE nodes — two reports, one shape (2026-08-21)
 
 Two owner reports a few minutes apart:

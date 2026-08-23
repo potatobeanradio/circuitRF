@@ -16,4 +16,29 @@
   <RunConfiguration>
     <TestCaseFilter>Category=Benchmark</TestCaseFilter>
   </RunConfiguration>
+
+  <!--
+    Every run leaves a machine-readable record of WHICH tests failed, at a fixed path
+    (tests/<Project>/TestResults/last-run.trx), overwritten each run.
+
+    This exists because "which tests failed?" was repeatedly costing a SECOND full run to answer. The
+    console logger does print failures, but a long run's output is routinely piped through a grep, or
+    scrolled past, or truncated by whatever captured it — and a 1h25m benchmark tier that reports only
+    "Failed: 5" with no names is an hour and a half thrown away. A .trx is written by the test host
+    itself, so no amount of downstream filtering can lose it.
+
+    Cost is negligible: one XML file written once at the end of the run (a few MB for the ~8,600-test
+    Ui suite), no per-test overhead. TestResults/ is already gitignored.
+
+    Read it with `tools/test-failures.sh` (no argument = the most recently written run).
+  -->
+  <LoggerRunSettings>
+    <Loggers>
+      <Logger friendlyName="trx">
+        <Configuration>
+          <LogFileName>last-run.trx</LogFileName>
+        </Configuration>
+      </Logger>
+    </Loggers>
+  </LoggerRunSettings>
 </RunSettings>

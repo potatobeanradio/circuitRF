@@ -18,6 +18,13 @@ from .values import Parameters, encode
 from .services import set_channel
 from .wire import read_frame, write_frame
 
+#: Wire version 7 added the EDITOR HINTS a parameter declaration may carry — ``label``, ``choices``,
+#: ``minimum``/``maximum``, ``computed`` — plus ``computed``/``computedValues`` on a generate reply.
+#: None of it changes what a generator receives; all of it changes what circuitRF's parameter dialog
+#: can put on screen. A vendor kit already states most of it (a CDF ``ChoiceConstraint`` is a
+#: dropdown, a two-valued Yes/No one is a checkbox) and circuitRF used to discard every bit of it,
+#: rendering fourteen distinct kinds of parameter as one identical free-text box.
+#:
 #: Wire version 6 (2026-08-06) added optional ``handles`` to the generate reply: draggable parameter
 #: grips, so a placed cell can be edited by dragging its artwork rather than only by typing numbers.
 #: Purely additive — a generator that declares none behaves exactly as before — but the bump is still
@@ -42,7 +49,7 @@ from .wire import read_frame, write_frame
 #: argument to every generator: a new parameter would be a CONTRACT change and would break every
 #: generator ever written, while an extra attribute breaks none. The two versions move independently
 #: for exactly this reason — see ``docs/design/pcell-wire-schema.md`` §7.
-WIRE_VERSION = 6
+WIRE_VERSION = 7
 CONTRACT_VERSION = 2
 
 #: Dimensions the wire understands. Deliberately three: length and angle are the only ones that
@@ -72,6 +79,32 @@ class Parameter:
     #: **A length default is stated in DATABASE UNITS**, like every other length on this wire — the
     #: host does not convert it, because there is nothing to convert from (schema §1: no metres).
     default: Any = None
+
+    #: What to CALL this parameter on screen, when its name is not what a human would call it. The
+    #: name stays the identifier; this is only ever displayed.
+    label: str | None = None
+
+    #: The values this parameter may take. States that the editor is a CHOICE — a dropdown, or a
+    #: checkbox when there are exactly two and they read as a yes/no pair. Empty/``None`` states
+    #: nothing and leaves the parameter free-form, which is what every generator written before
+    #: version 7 says by omission.
+    #:
+    #: **Advisory, not enforced.** The host offers these and nothing more, but a value that arrives
+    #: from an older design or a hand-edited file is still passed through — a generator that needs a
+    #: choice to be binding validates it itself, because it is the only side that knows what an
+    #: out-of-range value should do.
+    choices: tuple[Any, ...] | None = None
+
+    #: Bounds for a numeric parameter, either or both. Advisory in exactly the same sense.
+    minimum: float | None = None
+    maximum: float | None = None
+
+    #: This parameter is an OUTPUT: the generator derives it and never reads it. circuitRF renders
+    #: it as selectable text rather than an edit box, because typing into it cannot do anything.
+    #:
+    #: A generator that computes such a value should also report it per-run — see
+    #: :attr:`Result.computed` — otherwise the host can only show the last value it was given.
+    computed: bool = False
 
     @staticmethod
     def length(name: str, default: Any = None) -> "Parameter":
@@ -108,6 +141,19 @@ class Parameter:
             # Encoded exactly as any other value crosses (§3), so a default and an actual value are
             # the same bytes — a second encoding here could disagree with the one that matters.
             body["default"] = encode(self.default)
+        if self.label:
+            body["label"] = str(self.label)
+        if self.choices:
+            # Through the SAME encoder as a value, for the same reason the default is: a choice is
+            # compared against the parameter's current value, and two encodings that can disagree
+            # would make a legitimate choice fail to match the value it is identical to.
+            body["choices"] = [encode(c) for c in self.choices]
+        if self.minimum is not None:
+            body["minimum"] = float(self.minimum)
+        if self.maximum is not None:
+            body["maximum"] = float(self.maximum)
+        if self.computed:
+            body["computed"] = True
         return body
 
 
@@ -138,6 +184,27 @@ class Registry:
             for gid, (params, _) in self._generators.items()
         ]
 
+    def declared_defaults(self, generator_id: str) -> dict[str, Any]:
+        """What one generator's parameters fall back to when the host sends nothing for them."""
+        entry = self._generators.get(generator_id)
+        if entry is None:
+            return {}
+        return {p.name: p.default for p in entry[0] if p.default is not None}
+
+    def decorate(self, generator_id: str, wrap: Callable[[GeneratorFn], GeneratorFn]) -> None:
+        """Replace one registered generator with ``wrap(original)``, keeping its declaration.
+
+        For adding behaviour AROUND a generator somebody else registered — which is the situation a
+        vendor kit puts you in, since its cells are discovered from its own package and you never
+        write the registration call. See :func:`reports_computed`.
+        """
+        entry = self._generators.get(generator_id)
+        if entry is None:
+            known = ", ".join(sorted(self._generators)) or "(none)"
+            raise KeyError(f"No generator '{generator_id}' to decorate. Registered: {known}.")
+        params, fn = entry
+        self._generators[generator_id] = (params, wrap(fn))
+
     def invoke(self, generator_id: str, params: Parameters, tech: Technology) -> Result:
         entry = self._generators.get(generator_id)
         if entry is None:
@@ -148,6 +215,61 @@ class Registry:
 
 #: The registry :func:`generator` and :func:`run` use when none is supplied.
 default_registry = Registry()
+
+
+def reports_computed(generator_id: str,
+                     compute: Callable[[Parameters, Technology], dict[str, Any]],
+                     registry: "Registry | None" = None) -> None:
+    """Have an already-registered generator also report what it DERIVES — see :attr:`Result.computed`.
+
+    **Why this is a hook and not something the host can work out.** circuitRF can tell that a
+    parameter is an output — a generator says so, or a kit's cell demonstrably never reads it — and
+    that alone is enough to stop offering an edit box for it. What it cannot do is produce the
+    *number*. A derived value is a function only the cell knows, and where the cell does not compute
+    it either (a vendor library whose dialog callback did the arithmetic, leaving the layout code
+    reading only w and l) there is nothing anywhere to read. Reading an attribute back off the cell
+    is not a substitute: one open kit sets ``self.w`` to the micrometre value of a parameter whose own
+    text is ``'6.99u'``, so an attribute that matches a parameter's name need not hold its value.
+
+    ``compute`` is handed the same parameters the generator got and returns ``{name: value}``. It is
+    called AFTER the generator, and only its own failure is swallowed — a derived readout is worth
+    less than the geometry, and must never be what stops a cell being placed.
+
+    Nothing here declares the parameter to BE an output; that is a separate statement
+    (``Parameter.computed``, or the host measuring it). A value reported for a parameter nobody named
+    as derived is dropped by the host.
+    """
+    reg = registry or default_registry
+    # Captured at decoration time: the declaration does not change afterwards, and reading it per
+    # generate would put a dictionary rebuild on the hot path for a value that cannot have moved.
+    defaults = reg.declared_defaults(generator_id)
+
+    def wrap(fn: GeneratorFn) -> GeneratorFn:
+        def generate(params: Parameters, tech: Technology) -> Result:
+            result = fn(params, tech)
+            try:
+                # WITH the declared defaults applied. The generator itself passes a fallback to every
+                # accessor and so never sees the gap; a calculator standing outside the cell has no
+                # way to know what each parameter should fall back to, and would read 0 for every
+                # parameter the host happened to leave at its default.
+                derived = compute(params.with_defaults(defaults), tech)
+            except Exception as exc:  # noqa: BLE001 - see the docstring
+                print(f"{generator_id}: could not compute its derived values: {exc!r}",
+                      file=sys.stderr)
+                return result
+            for name, value in (derived or {}).items():
+                # A generator that already stated a VALUE knows more about it than a bolt-on
+                # calculator does and keeps it. A ``None`` is not a value — it is the claim "this is
+                # derived and I cannot tell you to what", which is exactly the gap this fills, so it
+                # is replaced. (Plain setdefault gets this wrong: the host measures a kit's outputs
+                # by running its cells, so every name this is called for is ALREADY present as None
+                # by the time the wrapper sees it, and every value would be silently dropped.)
+                if result.computed.get(str(name)) is None:
+                    result.computed[str(name)] = value
+            return result
+        return generate
+
+    reg.decorate(generator_id, wrap)
 
 
 def generator(generator_id: str, parameters: Sequence[Parameter] = (),
@@ -193,6 +315,16 @@ def _encode_result(result: Result) -> tuple[str, list[int]]:
         body["handles"] = [h.to_json(payload) for h in _as_handles(result.handles)]
     if result.preview != AUTO:
         body["preview"] = result.preview
+    if result.computed:
+        # The NAMES and the VALUES are separate on purpose. A generator may know that a parameter is
+        # derived without being able to state what it derived to (nothing in the cell computes it —
+        # only the vendor's dialog ever did), and that is still worth saying: circuitRF stops
+        # offering an edit box for something typing into cannot change. ``None`` is exactly that
+        # claim, so it names the parameter and contributes no value.
+        body["computed"] = [str(k) for k in result.computed]
+        values = {str(k): encode(v) for k, v in result.computed.items() if v is not None}
+        if values:
+            body["computedValues"] = values
     return json.dumps(body), payload
 
 

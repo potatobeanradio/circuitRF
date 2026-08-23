@@ -211,7 +211,12 @@ public readonly record struct LayoutRenderResult(
     /// <see cref="UnknownLayers"/>'s contract exactly: the caller (canvas/view-model) dedupes against
     /// what has already been warned about for this open document and posts to Messages "once per
     /// distinct CellRef per load" — this is a pure render call and never posts anything itself.</summary>
-    IReadOnlyList<string>? MissingInstanceCellRefs = null);
+    IReadOnlyList<string>? MissingInstanceCellRefs = null,
+    /// <summary>How many layer fill paints this frame built. One per VISIBLE LAYER, never one per
+    /// shape — see <see cref="LayerFillPaint"/>. Surfaced because the difference between those two is
+    /// invisible in the rendered image and shows up only as a frame time on a file too big to
+    /// bisect.</summary>
+    int FillPaintsBuilt = 0);
 
 /// <summary>Plain-field, no-dictionary per-frame work counters (L2a) — threaded through the private
 /// draw helpers below by reference. A class (not a struct) so passing it around never copies; fields
@@ -226,6 +231,7 @@ internal sealed class LayoutFrameCounters
     public int LayersVisited;
     public int InstancesExamined;
     public int InstancesDrawn;
+    public int FillPaintsBuilt;
 }
 
 /// <summary>
@@ -381,10 +387,31 @@ public static partial class LayoutRenderer
             // BitmapShape is excluded here — R-bmp-2: a bitmap's Layer governs visibility/
             // selectability only, never paint order, so it is never part of the per-layer,
             // ZOrder-sorted draw below. It is drawn separately, always first (see DrawBitmapShapes).
-            var byLayer = new Dictionary<LayerKey, List<(int Index, LayoutShape Shape)>>();
+            // ── Candidate indices → shapes, resolved ONCE and tolerantly ────────
+            //
+            // The spatial index hands out POSITIONS, and the list those positions name can shrink on
+            // the UI thread while this frame is being drawn on the render thread. A bounds CHECK does
+            // not close that window — the list can shrink between the check and the read, which is
+            // precisely the ArgumentOutOfRangeException that reaches a thread with nothing to catch
+            // it. Taking the backing span once fixes the length this frame reads against, so no index
+            // can throw: a position that has since gone yields either nothing or a stale shape for
+            // one frame, which is a frame of visual lag rather than a torn process.
+            //
+            // Resolved once and shared, rather than re-indexed here and again in DrawBitmapShapes —
+            // two independent reads of a list that is moving underneath is two chances to disagree,
+            // and it was the second one that actually crashed.
+            var shapesNow = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(view.Shapes);
+            var live = new List<(int Index, LayoutShape Shape)>(candidates.Count);
             foreach (var i in candidates)
             {
-                var shape = view.Shapes[i];
+                // Null-checked as well as bounds-checked: List<T>.RemoveAt clears the vacated slot,
+                // so a span captured before a delete can hand back a null where a shape used to be.
+                if ((uint)i < (uint)shapesNow.Length && shapesNow[i] is { } s) live.Add((i, s));
+            }
+
+            var byLayer = new Dictionary<LayerKey, List<(int Index, LayoutShape Shape)>>();
+            foreach (var (i, shape) in live)
+            {
                 if (shape is BitmapShape) continue;
                 if (!byLayer.TryGetValue(shape.Layer, out var list))
                     byLayer[shape.Layer] = list = [];
@@ -431,7 +458,7 @@ public static partial class LayoutRenderer
                 // R-bmp-2: bitmaps ALWAYS render first — beneath every layer, regardless of the
                 // layer's own ZOrder. This is the one deliberate exception to "Layer determines both
                 // visibility and paint order" every other shape follows.
-                DrawBitmapShapes(canvas, view, candidates, layerMap, unknownLayers, tech, dragOverrides, ps, theme, counters);
+                DrawBitmapShapes(canvas, live, layerMap, unknownLayers, tech, dragOverrides, ps, theme, counters);
 
                 // Built once per frame, not per port: an EM port's marker needs the conductor it sits
                 // on, and that conductor may be a placed INSTANCE's artwork rather than a top-level
@@ -442,7 +469,8 @@ public static partial class LayoutRenderer
                 {
                     if (!def.Visible) continue;
                     counters.LayersVisited++;
-                    DrawLayer(canvas, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, counters);
+                    DrawLayer(canvas, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, counters,
+                              tech?.FindFillPattern(def.FillPattern));
                 }
 
                 // L3a — instances (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md). Culled the
@@ -487,11 +515,11 @@ public static partial class LayoutRenderer
                 }
 
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
-                    DrawGhostShape(canvas, ghost, layerMap, conductorAt, ps, scaleUm, theme.Background);
+                    DrawGhostShape(canvas, ghost, layerMap, tech, conductorAt, ps, scaleUm, theme.Background);
 
                 if (opts.Overlay?.PastePreview is { Count: > 0 } pastePreview)
                     foreach (var previewShape in pastePreview)
-                        DrawGhostShape(canvas, previewShape, layerMap, conductorAt, ps, scaleUm, theme.Background);
+                        DrawGhostShape(canvas, previewShape, layerMap, tech, conductorAt, ps, scaleUm, theme.Background);
 
                 // The instance half of the paste ghost. Reuses the Instance tool's OWN ghost drawing
                 // (real resolved geometry at reduced opacity, with the labelled placeholder fallback
@@ -570,7 +598,8 @@ public static partial class LayoutRenderer
                 LayersVisited: counters.LayersVisited,
                 InstancesExamined: counters.InstancesExamined,
                 InstancesDrawn: counters.InstancesDrawn,
-                MissingInstanceCellRefs: missingCellRefs.Count == 0 ? [] : missingCellRefs.ToArray());
+                MissingInstanceCellRefs: missingCellRefs.Count == 0 ? [] : missingCellRefs.ToArray(),
+                FillPaintsBuilt: counters.FillPaintsBuilt);
         }
         finally
         {
@@ -643,16 +672,20 @@ public static partial class LayoutRenderer
     // bitmap's Layer governs visibility/selectability only; see the call site in Draw() and
     // BitmapShape's own doc comment for why.
 
+    /// <param name="live">This frame's candidates, already resolved to shapes by <see cref="Draw"/>.
+    /// Takes the resolved pairs rather than the indices and the view, so it cannot re-read a list that
+    /// is being edited on another thread — see the resolution in <c>Draw</c> for why that read is not
+    /// safe to repeat.</param>
     private static void DrawBitmapShapes(
-        SKCanvas canvas, LayoutView view, IReadOnlyList<int> candidates, Dictionary<LayerKey, LayerDef>? layerMap,
+        SKCanvas canvas, IReadOnlyList<(int Index, LayoutShape Shape)> live, Dictionary<LayerKey, LayerDef>? layerMap,
         HashSet<LayerKey> unknownLayers, Technology? tech,
         IReadOnlyDictionary<int, LayoutShape> dragOverrides, PathSpace ps, LayoutRenderTheme theme,
         LayoutFrameCounters counters)
     {
-        foreach (var i in candidates)
+        foreach (var (i, shape) in live)
         {
-            if (view.Shapes[i] is not BitmapShape) continue;
-            if ((dragOverrides.TryGetValue(i, out var ov) ? ov : view.Shapes[i]) is not BitmapShape bmp) continue;
+            if (shape is not BitmapShape) continue;
+            if ((dragOverrides.TryGetValue(i, out var ov) ? ov : shape) is not BitmapShape bmp) continue;
 
             LayerDef def;
             if (layerMap is not null && layerMap.TryGetValue(bmp.Layer, out var found))
@@ -728,6 +761,7 @@ public static partial class LayoutRenderer
     /// the dashed outline (unchanged) is what marks a ghost as provisional, so the fill does not need
     /// to be faint to carry that meaning.</summary>
     private static void DrawGhostShape(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap,
+        Technology? ghostTech,
         LayoutPortDirection.ConductorLookup? conductorAt, PathSpace ps, double scaleUm, SKColor background)
     {
         LayerDef def = layerMap is not null && layerMap.TryGetValue(ghost.Layer, out var found)
@@ -761,8 +795,7 @@ public static partial class LayoutRenderer
         using var shapePath = ghost is BitmapShape bmp ? BuildBitmapPlacementRectPath(bmp, ps) : BuildShapePath(ghost, ps);
         if (shapePath is null || shapePath.IsEmpty) return;
 
-        byte fillAlpha = (byte)System.Math.Clamp(System.Math.Round(def.FillOpacity * 255.0), 0, 255);
-        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(fillAlpha) };
+        using var fillPaint = LayerFillPaint.Create(def, ghostTech?.FindFillPattern(def.FillPattern), color, scaleUm);
         using var strokePaint = new SKPaint
         {
             IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 0, Color = color.WithAlpha(220),
@@ -834,12 +867,11 @@ public static partial class LayoutRenderer
     private static void DrawLayer(SKCanvas canvas, LayerDef def, List<(int Index, LayoutShape Shape)> shapes,
         LayoutPortDirection.ConductorLookup? conductorAt,
         PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm,
-        LayoutRenderOptions opts, LayoutFrameCounters counters)
+        LayoutRenderOptions opts, LayoutFrameCounters counters, FillPattern? fillPattern = null)
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
-        byte fillAlpha = (byte)System.Math.Clamp(System.Math.Round(def.FillOpacity * 255.0), 0, 255);
 
-        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(fillAlpha) };
+        using var fillPaint = LayerFillPaint.Create(def, fillPattern, color, scaleUm, counters);
         using var strokePaint = new SKPaint
         {
             IsAntialias = true, Style = SKPaintStyle.Stroke,

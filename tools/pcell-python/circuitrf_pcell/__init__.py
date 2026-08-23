@@ -62,6 +62,7 @@ from .host import (
     Registry,
     default_registry,
     generator,
+    reports_computed,
     run,
     serve_one,
 )
@@ -114,6 +115,7 @@ __all__ = [
     "default_registry",
     "generator",
     "read_frame",
+    "reports_computed",
     "run",
     "serve_one",
     "write_frame",

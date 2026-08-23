@@ -129,7 +129,8 @@ public static class GeneratedCellStore
             SnapDbu      = technology?.DefaultSnapDbu ?? 1000,
             AngleMode    = AngleMode.AnyAngle,
             TechRef      = null,
-            PCellOrigin  = new PCellOrigin(generatorId, parameters),
+            PCellOrigin  = new PCellOrigin(generatorId, parameters,
+                                           result.ComputedParameters, result.ComputedValues),
         };
         view.Shapes.AddRange(result.Shapes);
 

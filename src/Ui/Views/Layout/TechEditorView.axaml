@@ -5,6 +5,7 @@
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Layout.TechEditorView"
              x:DataType="lay:TechDocument"
+             Focusable="True" IsTabStop="False"
              Background="{DynamicResource SystemChromeLowColor}">
 
     <UserControl.Resources>
@@ -20,6 +21,52 @@
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Padding" Value="4,3"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- ── A cell that cannot overflow gets a stripped-down template ────────
+             A row of this table is realized whole every time the list scrolls a page, and a
+             stock TextBox is not a cheap thing to realize: its template carries a ScrollViewer,
+             that ScrollViewer's two ScrollBars, and a DataValidationErrors wrapper — about
+             twenty visual nodes each, for a single-line field a few characters wide. Measured on
+             a 377-layer technology: 199 visual nodes per row and ~180 ms to page-scroll, of which
+             the seven text cells were the largest single share.
+
+             Setting the scroll-bar visibilities to Disabled does NOT help — the bars are built by
+             the template whatever their visibility, which was measured too (no change at all).
+             Replacing the template is what removes them.
+
+             ONLY for fields of FIXED width holding short values — a layer number, a datatype, an
+             opacity, a Z order. The saving comes from dropping the ScrollViewer, and the
+             ScrollViewer is what scrolls a long value horizontally to keep the caret visible while
+             it is being typed. A free-text column (Name, Purpose) keeps the stock template for
+             exactly that reason; four digits in a 34 px box cannot outgrow it, and a layer name
+             very much can.
+
+             It also drops the watermark, so a field with PlaceholderText — the four filter boxes —
+             keeps the stock template too. Nothing in the compact set has one. -->
+        <Style Selector="TextBox.cell.compact">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="TextBox">
+                    <Border Name="PART_BorderElement"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            MinHeight="{TemplateBinding MinHeight}">
+                        <TextPresenter Name="PART_TextPresenter"
+                                       Margin="{TemplateBinding Padding}"
+                                       Text="{TemplateBinding Text, Mode=TwoWay}"
+                                       CaretIndex="{TemplateBinding CaretIndex}"
+                                       SelectionStart="{TemplateBinding SelectionStart}"
+                                       SelectionEnd="{TemplateBinding SelectionEnd}"
+                                       SelectionBrush="{TemplateBinding SelectionBrush}"
+                                       SelectionForegroundBrush="{TemplateBinding SelectionForegroundBrush}"
+                                       CaretBrush="{TemplateBinding CaretBrush}"
+                                       TextAlignment="{TemplateBinding TextAlignment}"
+                                       VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
         </Style>
         <Style Selector="ComboBox.cell">
             <Setter Property="FontSize" Value="11"/>
@@ -220,14 +267,15 @@
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="30"/>
                                 <ColumnDefinition Width="48"/>
-                                <ColumnDefinition Width="48"/>
-                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="104"/>
                                 <ColumnDefinition Width="44"/>
                                 <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="48"/>
                                 <ColumnDefinition Width="82"/>
                             </Grid.ColumnDefinitions>
                             <Grid Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
@@ -238,7 +286,7 @@
                                 <TextBlock Grid.Column="1" Classes="filtercount" Text="{Binding ViewModel.LayerFilterSummary}"/>
                             </Grid>
 
-                            <ToggleButton Grid.Column="6" Classes="coltoggle"
+                            <ToggleButton Grid.Column="1" Classes="coltoggle"
                                           IsChecked="{Binding ViewModel.AllShownLayersVisible, Mode=TwoWay}"
                                           ToolTip.Tip="Show or hide every layer currently listed. With a filter active this applies to the filtered layers only, not to the ones it hid from view.">
                                 <Panel>
@@ -248,7 +296,7 @@
                                                      IsVisible="{Binding !ViewModel.AllShownLayersVisible}"/>
                                 </Panel>
                             </ToggleButton>
-                            <ToggleButton Grid.Column="7" Classes="coltoggle"
+                            <ToggleButton Grid.Column="2" Classes="coltoggle"
                                           IsChecked="{Binding ViewModel.AllShownLayersSelectable, Mode=TwoWay}"
                                           ToolTip.Tip="Make every layer currently listed selectable or unselectable. With a filter active this applies to the filtered layers only, not to the ones it hid from view.">
                                 <Panel>
@@ -263,25 +311,27 @@
                         <Grid Grid.Row="1" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="30"/>
                                 <ColumnDefinition Width="48"/>
-                                <ColumnDefinition Width="48"/>
-                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="104"/>
                                 <ColumnDefinition Width="44"/>
                                 <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="48"/>
                                 <ColumnDefinition Width="82"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Name"/>
-                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Layer"     HorizontalAlignment="Center"/>
-                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Datatype"  HorizontalAlignment="Center"/>
-                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Color"     HorizontalAlignment="Center"/>
-                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Fill"      HorizontalAlignment="Center"/>
-                            <TextBlock Grid.Column="5" Classes="colhdr" Text="Z"         HorizontalAlignment="Center"/>
-                            <TextBlock Grid.Column="6" Classes="colhdr" Text="Vis"       HorizontalAlignment="Center"/>
-                            <TextBlock Grid.Column="7" Classes="colhdr" Text="Sel"       HorizontalAlignment="Center"/>
-                            <TextBlock Grid.Column="8" Classes="colhdr" Text="Purpose"   HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="0"  Classes="colhdr" Text="Name"/>
+                            <TextBlock Grid.Column="1"  Classes="colhdr" Text="Vis"       HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="2"  Classes="colhdr" Text="Sel"       HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="3"  Classes="colhdr" Text="Color"     HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="4"  Classes="colhdr" Text="Pattern"   HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="5"  Classes="colhdr" Text="Fill"      HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="6"  Classes="colhdr" Text="Z"         HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="7"  Classes="colhdr" Text="Purpose"   HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="8"  Classes="colhdr" Text="Layer"     HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="9"  Classes="colhdr" Text="Datatype"  HorizontalAlignment="Center"/>
                         </Grid>
 
                         <ListBox Grid.Row="2" Classes="rows" x:Name="LayersList" ItemsSource="{Binding ViewModel.FilteredLayers}"
@@ -292,14 +342,15 @@
                                             <Grid ColumnSpacing="4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" MinWidth="110"/>
+                                                    <ColumnDefinition Width="30"/>
+                                                    <ColumnDefinition Width="30"/>
                                                     <ColumnDefinition Width="48"/>
-                                                    <ColumnDefinition Width="48"/>
-                                                    <ColumnDefinition Width="60"/>
+                                                    <ColumnDefinition Width="104"/>
                                                     <ColumnDefinition Width="44"/>
                                                     <ColumnDefinition Width="70"/>
-                                                    <ColumnDefinition Width="30"/>
-                                                    <ColumnDefinition Width="30"/>
-                                                    <ColumnDefinition Width="140"/>
+                                                    <ColumnDefinition Width="110"/>
+                                                    <ColumnDefinition Width="48"/>
+                                                    <ColumnDefinition Width="48"/>
                                                     <ColumnDefinition Width="82"/>
                                                 </Grid.ColumnDefinitions>
 
@@ -307,50 +358,67 @@
                                                          HorizontalAlignment="Stretch"
                                                          Text="{Binding StagedName}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <!-- Layer and Datatype are small integers — 34 px holds three
-                                                     digits with room to spare and a rare four-digit value
-                                                     without clipping. Centred, because the column stays as
-                                                     wide as its own header text ("Datatype" is the widest
-                                                     thing in that column, not the field). The SAME 34 is
-                                                     used for the GDSII layer/datatype pair on the
-                                                     Interchange tab — same quantity, same size. -->
-                                                <TextBox Grid.Column="1" Classes="cell" Width="34" HorizontalAlignment="Center" Tag="LayerNumber"
-                                                         Text="{Binding StagedLayerNumber}"
-                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <TextBox Grid.Column="2" Classes="cell" Width="34" HorizontalAlignment="Center" Tag="Datatype"
-                                                         Text="{Binding StagedDatatype}"
-                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <Button Grid.Column="3" Width="60" Padding="2"
+                                                <CheckBox Grid.Column="1" HorizontalAlignment="Center" IsChecked="{Binding Visible}"/>
+                                                <CheckBox Grid.Column="2" HorizontalAlignment="Center" IsChecked="{Binding Selectable}"/>
+                                                <Button Grid.Column="3" Width="48" Padding="2"
                                                         Command="{Binding PickColorCommand}"
                                                         CommandParameter="{Binding $parent[Window]}">
-                                                    <Border Width="40" Height="14" CornerRadius="2"
+                                                    <Border Width="32" Height="14" CornerRadius="2"
                                                             BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
                                                         <Border.Background>
                                                             <SolidColorBrush Color="{Binding SwatchColor}"/>
                                                         </Border.Background>
                                                     </Border>
                                                 </Button>
-                                                <TextBox Grid.Column="4" Classes="cell" Width="44" Tag="FillOpacity"
+                                                <!-- The stipple this layer fills through, beside the colour because the two together are
+                                                     what identifies a layer: a process reuses its colours across far more layers than it
+                                                     has colours, so the pattern is usually the half that tells two of them apart.
+                                                     A dropdown over the technology's OWN pattern table, not a text field: a typed name
+                                                     matching nothing would silently repaint the layer solid with nothing anywhere to say
+                                                     why. Commits on selection, like the visibility checkboxes — a combo has no "finished
+                                                     editing" moment of its own to wait for. -->
+                                                <ComboBox Grid.Column="4" FontSize="11" Padding="4,2" MinHeight="0"
+                                                          HorizontalAlignment="Stretch"
+                                                          ItemsSource="{Binding FillPatternChoices}"
+                                                          SelectedItem="{Binding SelectedFillPattern, Mode=TwoWay}"
+                                                          ToolTip.Tip="Fill pattern (stipple). Layers a process gives the same colour are usually told apart by this."/>
+                                                <TextBox Grid.Column="5" Classes="cell compact" Width="44" Tag="FillOpacity"
                                                          Text="{Binding StagedFillOpacity}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <StackPanel Grid.Column="5" Orientation="Horizontal" Width="70" Spacing="2">
-                                                    <TextBox Classes="cell" Width="36" Tag="ZOrder"
+                                                <StackPanel Grid.Column="6" Orientation="Horizontal" Width="70" Spacing="2">
+                                                    <TextBox Classes="cell compact" Width="36" Tag="ZOrder"
                                                              Text="{Binding StagedZOrder}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                     <Button Content="↑" Padding="2,0" FontSize="10" Command="{Binding MoveUpCommand}"/>
                                                     <Button Content="↓" Padding="2,0" FontSize="10" Command="{Binding MoveDownCommand}"/>
                                                 </StackPanel>
-                                                <CheckBox Grid.Column="6" HorizontalAlignment="Center" IsChecked="{Binding Visible}"/>
-                                                <CheckBox Grid.Column="7" HorizontalAlignment="Center" IsChecked="{Binding Selectable}"/>
-                                                <TextBox Grid.Column="8" Classes="cell" Tag="Purpose"
+                                                <TextBox Grid.Column="7" Classes="cell" Tag="Purpose"
                                                          Text="{Binding StagedPurpose}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="3">
-                                                    <Button Content="Dup" FontSize="10" Padding="4,2"
-                                                            Command="{Binding DuplicateCommand}"/>
+                                                <!-- Layer and Datatype are small integers — 34 px holds three digits with room to spare
+                                                     and a rare four-digit value without clipping. Centred, because the column stays as
+                                                     wide as its own header text ("Datatype" is the widest thing in that column, not the
+                                                     field). The SAME 34 is used for the GDSII layer/datatype pair on the Interchange tab
+                                                     — same quantity, same size. -->
+                                                <TextBox Grid.Column="8" Classes="cell compact" Width="34" HorizontalAlignment="Center" Tag="LayerNumber"
+                                                         Text="{Binding StagedLayerNumber}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBox Grid.Column="9" Classes="cell compact" Width="34" HorizontalAlignment="Center" Tag="Datatype"
+                                                         Text="{Binding StagedDatatype}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <StackPanel Grid.Column="10" Orientation="Horizontal" Spacing="3">
+                                                    <!-- The same two glyphs the analyses toolbar uses for the
+                                                         same two actions, so one meaning has one icon across
+                                                         the app rather than a word here and a glyph there. -->
                                                     <Button FontSize="10" Padding="4,2"
+                                                            ToolTip.Tip="Copy layer"
+                                                            Command="{Binding DuplicateCommand}">
+                                                        <mi:MaterialIcon Kind="ContentCopy" Width="11" Height="11"/>
+                                                    </Button>
+                                                    <Button FontSize="10" Padding="4,2"
+                                                            ToolTip.Tip="Remove layer"
                                                             Command="{Binding RemoveCommand}">
-                                                        <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
+                                                        <mi:MaterialIcon Kind="Delete" Width="11" Height="11"/>
                                                     </Button>
                                                 </StackPanel>
                                             </Grid>
@@ -422,7 +490,7 @@
                                                  "Thickness:" and "σ (S/m):" are different lengths. -->
                                             <StackPanel Orientation="Horizontal" Spacing="4">
                                                 <TextBlock Text="Thickness:" Width="70" FontSize="11" VerticalAlignment="Center"/>
-                                                <TextBox Classes="cell" Width="60" Tag="Thickness"
+                                                <TextBox Classes="cell compact" Width="60" Tag="Thickness"
                                                          Text="{Binding StagedThicknessText}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <TextBlock Text="{Binding ThicknessUnitSuffix}" FontSize="10"
@@ -435,7 +503,7 @@
 
                                             <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsConductor}">
                                                 <TextBlock Text="σ (S/m):" Width="70" FontSize="11" VerticalAlignment="Center"/>
-                                                <TextBox Classes="cell" Width="60" Tag="Sigma"
+                                                <TextBox Classes="cell compact" Width="60" Tag="Sigma"
                                                          Text="{Binding StagedSigmaSm}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <CheckBox Content="Ground reference" FontSize="11" Margin="8,0,0,0"
@@ -446,17 +514,17 @@
                                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsDielectric}">
                                                 <StackPanel Orientation="Horizontal" Spacing="3">
                                                     <TextBlock Text="εr:" FontSize="11" VerticalAlignment="Center"/>
-                                                    <TextBox Classes="cell" Width="60" Tag="Epsr" Text="{Binding StagedEpsr}"
+                                                    <TextBox Classes="cell compact" Width="60" Tag="Epsr" Text="{Binding StagedEpsr}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="3">
                                                     <TextBlock Text="tanδ:" FontSize="11" VerticalAlignment="Center"/>
-                                                    <TextBox Classes="cell" Width="70" Tag="TanD" Text="{Binding StagedTanD}"
+                                                    <TextBox Classes="cell compact" Width="70" Tag="TanD" Text="{Binding StagedTanD}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="3">
                                                     <TextBlock Text="µr:" FontSize="11" VerticalAlignment="Center"/>
-                                                    <TextBox Classes="cell" Width="60" Tag="Mur" Text="{Binding StagedMur}"
+                                                    <TextBox Classes="cell compact" Width="60" Tag="Mur" Text="{Binding StagedMur}"
                                                              LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 </StackPanel>
                                             </StackPanel>
@@ -485,7 +553,7 @@
                                                           SelectedItem="{Binding SelectedFill, Mode=TwoWay}"/>
                                                 <TextBlock Text="Wall:" FontSize="11" VerticalAlignment="Center"
                                                            Margin="8,0,0,0" IsVisible="{Binding IsPlatedVia}"/>
-                                                <TextBox Classes="cell" Width="60" Tag="WallThickness"
+                                                <TextBox Classes="cell compact" Width="60" Tag="WallThickness"
                                                          IsVisible="{Binding IsPlatedVia}"
                                                          Text="{Binding StagedWallThickness}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
@@ -619,7 +687,7 @@
                                                       DisplayMemberBinding="{Binding Label}"
                                                       SelectionChanged="OnComboSelectionChanged"/>
                                             <StackPanel Grid.Column="3" Spacing="1" IsVisible="{Binding ShowValue}">
-                                                <TextBox Classes="cell" Width="90" Tag="Value"
+                                                <TextBox Classes="cell compact" Width="90" Tag="Value"
                                                          ToolTip.Tip="{Binding ValueLabel}"
                                                          Text="{Binding StagedValueText}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
@@ -685,7 +753,7 @@
                                         <StackPanel Orientation="Horizontal" Spacing="6"
                                                     IsVisible="{Binding ShowDensity}">
                                             <TextBlock Classes="label" Text="Window:" VerticalAlignment="Center"/>
-                                            <TextBox Classes="cell" Width="80" Tag="Window"
+                                            <TextBox Classes="cell compact" Width="80" Tag="Window"
                                                      Text="{Binding StagedWindowText}"
                                                      LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                             <TextBlock Classes="label" Text="Min:" VerticalAlignment="Center"/>
@@ -698,7 +766,7 @@
                                         <StackPanel Orientation="Horizontal" Spacing="6"
                                                     IsVisible="{Binding ShowMaxRatio}">
                                             <TextBlock Classes="label" Text="Max ratio:" VerticalAlignment="Center"/>
-                                            <TextBox Classes="cell" Width="70" Tag="MaxRatio"
+                                            <TextBox Classes="cell compact" Width="70" Tag="MaxRatio"
                                                      Text="{Binding StagedMaxRatioText}"
                                                      LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                         </StackPanel>

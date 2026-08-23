@@ -400,10 +400,13 @@ public static partial class LayoutRenderer
                     ? found : FallbackPalette.For(layer.Key);
                 if (!def.Visible) continue;
                 var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
-                byte fillAlpha = (byte)Math.Clamp(Math.Round(def.FillOpacity * 255.0), 0, 255);
                 layerVisuals.Add((
                     layer,
-                    new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(fillAlpha) },
+                    // The instance's own magnification is folded in, exactly as it is for the stroke
+                    // width just below: a stipple inside a 10x instance must stay the same size on
+                    // screen as the same layer's stipple outside it, or one cell's metal reads as a
+                    // different layer from another's.
+                    LayerFillPaint.Create(def, tech?.FindFillPattern(def.FillPattern), color, strokeScale, counters),
                     new SKPaint
                     {
                         IsAntialias = true, Style = SKPaintStyle.Stroke,

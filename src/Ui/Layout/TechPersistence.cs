@@ -20,6 +20,11 @@ public sealed class CtechFile
     public long DefaultViaPadDbu { get; set; }
     public long DefaultViaDrillDbu { get; set; }
     public List<LayerDef> Layers { get; set; } = [];
+
+    /// <summary>The stipple table layers name (rev 1, additive). Absent in every .ctech written
+    /// before stipples existed, which reads back as an empty table and a solid fill everywhere —
+    /// exactly what those files meant.</summary>
+    public List<FillPattern>? FillPatterns { get; set; }
     public Stackup Stackup { get; set; } = new();
     public List<DrcRule> DrcRules { get; set; } = [];
 }
@@ -76,6 +81,7 @@ public static class TechPersistence
         DefaultViaPadDbu     = tech.DefaultViaPadDbu,
         DefaultViaDrillDbu   = tech.DefaultViaDrillDbu,
         Layers               = [.. tech.Layers],
+        FillPatterns         = tech.FillPatterns.Count > 0 ? [.. tech.FillPatterns] : null,
         Stackup              = tech.Stackup,
         DrcRules             = [.. tech.DrcRules],
     };
@@ -90,6 +96,7 @@ public static class TechPersistence
         DefaultViaPadDbu     = file.DefaultViaPadDbu,
         DefaultViaDrillDbu   = file.DefaultViaDrillDbu,
         Layers               = [.. file.Layers],
+        FillPatterns         = file.FillPatterns is { Count: > 0 } fp ? [.. fp] : [],
         Stackup              = file.Stackup,
         DrcRules             = [.. file.DrcRules],
     };

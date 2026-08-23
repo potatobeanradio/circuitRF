@@ -1340,7 +1340,49 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             foreach (var dp in dps)
                 if (dp.Name == name) { unit = dp.Unit; break; }
         }
-        return new PCellParamRowViewModel(this, name, unit);
+
+        // What the GENERATOR says about this parameter, from its two independent sources: the
+        // declaration (labels, enumerations, bounds — asked of the script) and the run that produced
+        // this cell (which parameters it turned out to derive — recorded with the cell). Both are
+        // optional and both are absent for a built-in, which is why a built-in's rows are unchanged.
+        return new PCellParamRowViewModel(this, name, unit,
+                                          DeclaredParamInfo(name),
+                                          SelectedInstanceComputes(name));
+    }
+
+    /// <summary>The generator's declaration for one parameter of the selected instance's cell, or
+    /// null when nothing declares one.
+    ///
+    /// <para>The declaration list is fetched per row rather than once per rebuild because
+    /// <see cref="PCellRegistry.DeclaredParameters"/> is already a cached lookup on the provider's
+    /// own <c>describe</c> reply — asked once per script and held for its lifetime — so caching it
+    /// again here would only add a copy that can go stale when a kit is reloaded.</para></summary>
+    private PCellParameterInfo? DeclaredParamInfo(string name)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return null;
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin) return null;
+
+        IReadOnlyList<PCellParameterInfo>? declared;
+        // A kit whose interpreter will not start must not take the parameter list down with it — the
+        // rows still render, as plain text, exactly as they did before any of this existed.
+        try { declared = PCellRegistry.DeclaredParameters(origin.GeneratorId); }
+        catch { return null; }
+        if (declared is null) return null;
+
+        foreach (var d in declared)
+            if (string.Equals(d.Name, name, StringComparison.Ordinal)) return d;
+        return null;
+    }
+
+    /// <summary>Whether the generator DERIVED this parameter on the run that produced the selected
+    /// instance's cell — recorded in the cell itself, so it needs no running interpreter.</summary>
+    private bool SelectedInstanceComputes(string name)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return false;
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        return res is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
+               && origin.IsComputed(name);
     }
 
     private SymbolKind? ResolveSelectedInstancePCellComponentName()
@@ -1374,7 +1416,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (IsMklopfTarget && row.Name is "W1" or "W2" or "F3db")
         {
             if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
-            { row.ValueText = ""; row.Error = "No technology resolves — can't convert."; return; }
+            { row.ShowValue("", null); row.Error = "No technology resolves — can't convert."; return; }
             // The DERIVED entry-mode rows read through the same live source as the canonical ones, so
             // dragging MKlopf's far-end grip moves F3db (which is a function of L) in step with the
             // artwork rather than showing the value the drag started from.
@@ -1395,7 +1437,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
                 converted = MicrostripKlopfEntryConversion.LengthToF3db(z1, z2, gammaMax, l, h, t, er, reporter);
             }
             row.Error = null;
-            row.ValueText = FormatPCellParamValue(row.Unit, converted);
+            row.ShowValue(FormatPCellParamValue(row.Unit, converted), PCellValue.Real(converted));
             return;
         }
 
@@ -1404,9 +1446,48 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // Every parameter the drag is not touching still comes from the committed set, so a two-axis
         // grip moves exactly two rows and a one-axis grip exactly one.
         var source = ParametersForDisplay(origin.Parameters);
+
+        // A DERIVED parameter's stored value is whatever it was stored with — it is not read, so
+        // nothing has been keeping it in step with the geometry that determines it. Where the
+        // generator reported what it actually came out to, that is the only current number and it
+        // wins; where it reported none, the stored one is shown for want of anything better, which
+        // is exactly why the field is not editable.
+        if (origin.ComputedValues is { } derived && derived.TryGetValue(row.Name, out var computed))
+        {
+            row.Error = null;
+            row.ShowValue(FormatPCellParamValue(row.Unit, computed), computed);
+            return;
+        }
+
         if (!source.TryGetValue(row.Name, out var value)) return;
 
-        row.ValueText = FormatPCellParamValue(row.Unit, value);
+        row.ShowValue(FormatPCellParamValue(row.Unit, value), value);
+    }
+
+    /// <summary>Commits a checkbox row. Writes back in the parameter's OWN vocabulary — a Bool
+    /// parameter gets a Bool, and a parameter whose generator spells its two states "Yes"/"No" gets
+    /// that kit's own words back, never a <c>true</c> it has no case for.</summary>
+    internal void CommitPCellParamFlag(PCellParamRowViewModel row, bool value)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        var indices = _vm.SelectedInstanceIndices;
+        if (indices.Count != 1) return;
+
+        PCellValue written;
+        if (row.Info is { } info && info.IsYesNoPair)
+        {
+            var choice = value ? info.TrueChoice : info.FalseChoice;
+            if (choice is not { } c) return;
+            written = c;
+        }
+        else
+        {
+            written = PCellValue.Bool(value);
+        }
+
+        row.Error = null;
+        _vm.EditInstancePCellParameters(indices[0], new Dictionary<string, PCellValue> { [row.Name] = written });
+        RefreshFromVm();
     }
 
     /// <summary>
@@ -1540,6 +1621,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (DragBlocksEdits() || _vm is null) return;
         var indices = _vm.SelectedInstanceIndices;
         if (indices.Count != 1) return;
+
+        // A derived parameter is refused HERE as well as being rendered as text, because the view is
+        // not the only way in — the same commit is reachable from a test, and from any future host of
+        // this list. Writing one would produce a value the generator overwrites on its very next run,
+        // via a new content hash and a new generated cell: an edit that appears to take, changes
+        // nothing visible, and leaves an orphaned cell behind.
+        if (row.IsComputed) return;
 
         // IsMklopfTarget gate — the write half of the same defect. Editing an MTee's W1 used to run
         // MKlopf's width→impedance conversion and MERGE Z1/Z2 into that cell's parameter set

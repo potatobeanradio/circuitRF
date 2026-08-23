@@ -322,13 +322,18 @@ public class TechEditorFilterAndBulkToggleTests
         Assert.True(vis > 0 && sel > vis, "both bulk toggles must be declared, visibility first");
 
         // The ToggleButton opening tag each binding belongs to carries the column.
-        Assert.Contains("Grid.Column=\"6\"", axaml[axaml.LastIndexOf("<ToggleButton", vis, StringComparison.Ordinal)..vis]);
-        Assert.Contains("Grid.Column=\"7\"", axaml[axaml.LastIndexOf("<ToggleButton", sel, StringComparison.Ordinal)..sel]);
+        Assert.Contains("Grid.Column=\"1\"", axaml[axaml.LastIndexOf("<ToggleButton", vis, StringComparison.Ordinal)..vis]);
+        Assert.Contains("Grid.Column=\"2\"", axaml[axaml.LastIndexOf("<ToggleButton", sel, StringComparison.Ordinal)..sel]);
 
-        // …and the Vis/Sel column headers are columns 6 and 7 of that same list, which is what makes
-        // 6 and 7 the right answer rather than two numbers that happen to be there.
-        Assert.Contains("<TextBlock Grid.Column=\"6\" Classes=\"colhdr\" Text=\"Vis\"", axaml);
-        Assert.Contains("<TextBlock Grid.Column=\"7\" Classes=\"colhdr\" Text=\"Sel\"", axaml);
+        // …and the Vis/Sel column headers are columns 1 and 2 of that same list, which is what makes
+        // 1 and 2 the right answer rather than two numbers that happen to be there.
+        //
+        // These indices are spelled out twice on purpose but they are not the ORDERING's home: the
+        // Layers tab's full column order lives once, in TechEditorLayerColumnLayoutTests.Columns, and
+        // is what a reorder should be edited into. This test is about the toggles being ABOVE their
+        // columns rather than parked in a button bar, which is a separate claim worth its own failure.
+        Assert.Contains("<TextBlock Grid.Column=\"1\"  Classes=\"colhdr\" Text=\"Vis\"", axaml);
+        Assert.Contains("<TextBlock Grid.Column=\"2\"  Classes=\"colhdr\" Text=\"Sel\"", axaml);
     }
 
     [Fact]

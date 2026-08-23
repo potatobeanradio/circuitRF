@@ -117,6 +117,22 @@ public static class PCellRegistry
         return null;
     }
 
+    /// <summary>
+    /// Everything a script-backed generator declares about its parameters, or null when nothing
+    /// declares any. Same ownership rule as <see cref="DeclaredDefaults"/>: a built-in wins outright
+    /// and is never asked here, so the two can never describe one cell and generate another.
+    /// </summary>
+    public static IReadOnlyList<PCellParameterInfo>? DeclaredParameters(string generatorId)
+    {
+        if (string.IsNullOrEmpty(generatorId)) return null;
+        if (_generators.ContainsKey(generatorId)) return null;
+        lock (_resolverGate)
+            foreach (var resolver in _resolvers)
+                try { if (resolver.DeclaredParameters(generatorId) is { } d) return d; }
+                catch { /* a broken kit must not make the others unusable */ }
+        return null;
+    }
+
     public static bool TryGet(string generatorId, out PCellGenerator generator)
     {
         if (_generators.TryGetValue(generatorId, out generator!)) return true;

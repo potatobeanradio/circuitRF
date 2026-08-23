@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CircuitRF.Ui.Layout;
 
@@ -25,7 +26,82 @@ public partial class TechEditorView : UserControl
         // would appear to do nothing while quietly changing what is selected. Getting there first is
         // what makes the key scroll the pane instead.
         AddHandler(KeyDownEvent, OnScrollKeyDown, RoutingStrategies.Tunnel);
+
+        // The scroll handler above is TUNNELLING FROM THIS CONTROL, so it only ever sees a keystroke
+        // that is already routing through this view — which means something inside the view has to
+        // hold focus for Page Up/Down to work at all. On first open nothing does: the tab is
+        // activated before the view is bound, so focus is still wherever it was and the keystroke
+        // routes somewhere else entirely. The three other document views already take focus on
+        // activation through this same hook; this one never subscribed, which is the whole bug.
+        DataContextChanged += OnDataContextChanged;
     }
+
+    private TechDocument? _subscribedDoc;
+
+    private void OnDataContextChanged(object? sender, System.EventArgs e)
+    {
+        if (_subscribedDoc is not null) _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+        _subscribedDoc = DataContext as TechDocument;
+        if (_subscribedDoc is null) return;
+
+        _subscribedDoc.ActivationFocusRequested += OnActivationFocusRequested;
+        // Activated BEFORE the view bound — the first-open case — so the request is sitting pending.
+        if (_subscribedDoc.ConsumeActivationFocus()) FocusForScrollingDeferred();
+    }
+
+    private void OnActivationFocusRequested()
+    {
+        _subscribedDoc?.ConsumeActivationFocus();
+        FocusForScrollingDeferred();
+    }
+
+    /// <summary>
+    /// Takes keyboard focus for the editor as a whole, so Page Up/Down reach
+    /// <see cref="OnScrollKeyDown"/>.
+    ///
+    /// <para><b>The view itself, not the visible tab's list</b>, and not a field in a row. Focusing
+    /// the list would make the FIRST thing the user sees a control with a selection, in lists whose
+    /// rows are deliberately flattened so selection is invisible; focusing a row's text box would put
+    /// a caret in an editable process value nobody asked to edit. Focusing the view lands on
+    /// <see cref="TargetScrollViewer"/>'s own documented fallback — the visible tab's row list —
+    /// which already resolves correctly for whichever tab is showing, including after a tab change.</para>
+    ///
+    /// <para>Deferred to Background priority for the same reason every other view here defers it: on
+    /// first open the visual tree is still being realized and a synchronous Focus() lands on a
+    /// control that has not been attached yet. <c>IsTabStop="False"</c> keeps this out of the Tab
+    /// order — it is a programmatic focus target, never a stop the user cycles through.</para>
+    /// </summary>
+    /// <summary>
+    /// Undocking is the same dead keyboard by a different route.
+    ///
+    /// <para>Floating the editor builds a NEW window around this view, and a new window's activation
+    /// is not the dock's activation — no <c>IActivatableDocument</c> request fires, so the hook above
+    /// never runs, nothing inside the view holds focus, and Page Up/Down are dead again until
+    /// something is clicked. Attaching to a visual tree is the one event both routes share.</para>
+    /// </summary>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        FocusForScrollingDeferred(onlyIfUnclaimed: true);
+    }
+
+    /// <param name="onlyIfUnclaimed">Take focus only when nothing else already holds it. The
+    /// activation hook may pass false because an explicit activation IS the claim; an attach may
+    /// not, because a view can be re-attached by an ordinary dock rearrangement while the user is
+    /// typing somewhere else entirely, and yanking the caret out of another panel would be a worse
+    /// bug than the one being fixed.</param>
+    private void FocusForScrollingDeferred(bool onlyIfUnclaimed = false) =>
+        Dispatcher.UIThread.Post(() =>
+        {
+            // Evaluated inside the posted action, not before it: on the undock path the view is
+            // still moving between windows when the attach fires, so the top level asked any earlier
+            // is the one being left rather than the one being entered.
+            if (onlyIfUnclaimed && TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is { } held
+                && held is not TopLevel)
+                return;
+
+            Focus();
+        }, DispatcherPriority.Background);
 
     // ── Page Up / Page Down / Home / End over the row lists ────────────────────
 

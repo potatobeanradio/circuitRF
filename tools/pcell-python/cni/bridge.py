@@ -24,6 +24,7 @@ import importlib
 import inspect
 import pkgutil
 import sys
+from dataclasses import replace
 from typing import Any, Iterable
 
 import circuitrf_pcell as crf
@@ -61,7 +62,7 @@ def _cells_in(module) -> list[type]:
     ]
 
 
-def _declare(cls: type, kit_tech: Any) -> tuple[list[crf.Parameter], dict[str, Any]]:
+def _declare(cls: type, kit_tech: Any) -> tuple[list[crf.Parameter], dict[str, Any], list[dict[str, Any]]]:
     """One cell's parameters, and their defaults, IN THE KIT'S OWN TYPES.
 
     **A parameter crosses as whatever the kit says it is — a count stays a count, a string stays a
@@ -95,17 +96,85 @@ def _declare(cls: type, kit_tech: Any) -> tuple[list[crf.Parameter], dict[str, A
         # bool BEFORE int: in Python bool subclasses int, so the other order sends every flag as the
         # integer 1 — a bug that only surfaces where something compares against True.
         if isinstance(default, bool):
-            params.append(crf.Parameter.flag(name, default))
+            param = crf.Parameter.flag(name, default)
         elif isinstance(default, int):
-            params.append(crf.Parameter.integer(name, default))
+            param = crf.Parameter.integer(name, default)
         elif isinstance(default, float):
-            params.append(crf.Parameter.real(name, default))
+            param = crf.Parameter.real(name, default)
         elif default is None:
-            params.append(crf.Parameter.text(name))
+            param = crf.Parameter.text(name)
         else:
-            params.append(crf.Parameter.text(name, str(default)))
+            param = crf.Parameter.text(name, str(default))
 
-    return params, defaults
+        params.append(_with_editor_hints(param, spec))
+
+    return params, defaults, specs
+
+
+def _with_editor_hints(param: "crf.Parameter", spec: dict[str, Any]) -> "crf.Parameter":
+    """Carry the kit's own ``defineParamSpecs`` metadata onto the declaration circuitRF receives.
+
+    **The kit already states this and circuitRF used to throw all of it away.** A vendor cell writes
+    ``specs('Display', 'Selected', 'Display', ChoiceConstraint(['All', 'Selected']))`` — a label and
+    an enumeration, sitting right there in the declaration — and the parameter arrived as a bare
+    string with a free-text box under it. Across one open kit that is 127 enumerations and 9 ranges
+    discarded, 42 of the enumerations two-valued yes/no pairs that are checkboxes in any dialog ever
+    written.
+
+    Nothing here changes what the cell RECEIVES; ``_declare``'s type rule is untouched and remains
+    the correctness requirement it documents itself as. These are display facts only.
+    """
+    from .dlo import ChoiceConstraint, RangeConstraint
+
+    label = spec.get("label")
+    # A kit that passes no label gets the name echoed back as one (see _ParamSpecs.__call__). Sending
+    # that is a label that says nothing, and it would suppress the name the host would otherwise show.
+    if label and str(label) != param.name:
+        param = replace(param, label=str(label))
+
+    constraint = spec.get("constraint")
+    if isinstance(constraint, ChoiceConstraint) and constraint.choices:
+        # Choices cross in the parameter's OWN kind, not as text. A choice list that arrived as
+        # strings for an int-kinded parameter would never compare equal to that parameter's value,
+        # and the dropdown would show the right items with none of them selected.
+        param = replace(param, choices=tuple(_as_kind(c, param.kind) for c in constraint.choices))
+    elif isinstance(constraint, RangeConstraint):
+        low = _as_number(constraint.low)
+        high = _as_number(constraint.high)
+        if low is not None or high is not None:
+            param = replace(param, minimum=low, maximum=high)
+
+    return param
+
+
+#: What a kit spells "true" in a two-valued choice list. Yes/No is the overwhelmingly common one
+#: (42 parameters in one open kit); t/f and nil/t are the spellings kits inherit from their own
+#: scripting language and mix in alongside it.
+_TRUTHY = frozenset({"yes", "true", "t", "on", "1"})
+
+
+def _as_kind(value: Any, kind: str) -> Any:
+    """One choice, in the kind its parameter declared. Anything that will not convert is left as
+    text — a choice the host cannot represent is still better shown than dropped."""
+    try:
+        if kind == "bool":
+            return value if isinstance(value, bool) else str(value).strip().lower() in _TRUTHY
+        if kind == "int":
+            return int(value)
+        if kind == "real":
+            return float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return value if isinstance(value, str) else str(value)
+
+
+def _as_number(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _read(params: crf.Parameters, name: str, default: Any) -> Any:
@@ -121,16 +190,111 @@ def _read(params: crf.Parameters, name: str, default: Any) -> Any:
     return params.text(name, str(default))
 
 
-def _make_generator(cls: type, defaults: dict[str, Any]):
+class _TrackingValues(dict):
+    """The parameter mapping a kit's cell is handed, remembering which names it actually read.
+
+    A cell reads its parameters by subscript (``params['w']``), so this is where a read can be seen
+    at all — :class:`circuitrf_pcell.Parameters` is drained in full before the cell ever sees it.
+    """
+
+    def __init__(self, values: dict[str, Any]):
+        super().__init__(values)
+        self.read: set[str] = set()
+
+    def __getitem__(self, key):
+        self.read.add(key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        self.read.add(key)
+        return super().get(key, default)
+
+
+def _calculable_names(specs: list[dict[str, Any]]) -> set[str]:
+    """The parameters a cell's own CDF ``Calculate`` selector says are solved for.
+
+    A kit states this structurally and it is worth reading structurally. A selector is a parameter
+    whose ``ChoiceConstraint`` lists nothing but the names of OTHER parameters of the same cell,
+    optionally grouped — ``['C', 'w', 'l', 'w&l']`` on a MIM cap, ``['R', 'w', 'l']`` on a resistor,
+    ``['R,A', 'w,A', 'l,A', ...]`` on a poly resistor. That the choices resolve to declared parameter
+    names is the whole test; nothing keys off the selector being spelled "Calculate", because the
+    next kit will spell it differently and a name list is a table to maintain.
+
+    This alone does not say which of them is the output — see :func:`_computed_names`.
+    """
+    from .dlo import ChoiceConstraint
+
+    names = {str(s.get("name", "")) for s in specs}
+    names.discard("")
+    calculable: set[str] = set()
+    for spec in specs:
+        constraint = spec.get("constraint")
+        if not isinstance(constraint, ChoiceConstraint) or not constraint.choices:
+            continue
+        parts: set[str] = set()
+        for choice in constraint.choices:
+            for part in str(choice).replace("&", ",").split(","):
+                part = part.strip()
+                if part:
+                    parts.add(part)
+        # Every part must name a parameter. A choice list of layer names or model names has nothing
+        # to do with solving for a quantity, and this is what tells the two apart.
+        if parts and parts <= names and str(spec.get("name", "")) not in parts:
+            calculable |= parts
+    return calculable
+
+
+def _computed_names(calculable: set[str], read: set[str]) -> set[str]:
+    """Which of a cell's calculable quantities this run treated as an OUTPUT.
+
+    **Both halves are needed and each without the other is wrong.**
+
+    *The selector alone is not enough, and its stated value is not to be believed.* An open kit's MIM
+    cap declares ``Calculate`` defaulting to ``'w&l'`` — read literally, w and l are the outputs and
+    C is the input. The opposite is true of the code that actually runs: ``setupParams`` reads only w
+    and l, and C is never read at any setting of ``Calculate``. Measured, not argued: generating the
+    cell with C at its default, at 300 fF and at 1 pF yields byte-identical geometry, while changing
+    w or l changes it. The vendor's dialog is where the back-solve lived; the layout port kept the
+    declaration and not the behaviour.
+
+    *Reads alone are not enough either.* A cell reads none of ``model``, ``m``, ``ic``, ``trise`` —
+    they are netlist parameters that never had anything to do with the artwork, and they are still
+    the user's to type into. Locking every unread parameter would take the model name away.
+
+    The intersection is exactly the set the kit itself calls a solvable quantity and its own code
+    then declines to read. Where the two disagree the parameter stays editable, which is the failure
+    direction that costs nothing: one open kit has a resistor cell that assigns its resistance
+    parameter to an instance attribute and then never uses it, so it reads as an input and keeps its
+    edit box.
+    """
+    return calculable - read
+
+
+def _make_generator(cls: type, defaults: dict[str, Any], specs: list[dict[str, Any]]):
+    calculable = _calculable_names(specs)
+
     def generate(params: crf.Parameters, tech: crf.Technology) -> crf.Result:
         # Resolved fresh each call: the kit's registry is populated at import time and a technology
         # object is not ours to cache across generations.
         kit_tech = Tech.get()
-        values = {name: _read(params, name, default) for name, default in defaults.items()}
+        values = _TrackingValues({name: _read(params, name, default)
+                                  for name, default in defaults.items()})
         # Wire version 2 states the resolution; 1000 DBU per micrometre is circuitRF's own default and
         # the only sensible fallback for a host that predates it.
         dbu_per_micron = getattr(tech, "dbu_per_micron", None) or 1000
-        return cls.generate(kit_tech, values, tech, int(dbu_per_micron))
+        result = cls.generate(kit_tech, values, tech, int(dbu_per_micron))
+
+        # Reported per run rather than declared once, because the read set is only observable by
+        # running the cell — and a cell may legitimately read a parameter at one setting and not at
+        # another. The host takes the latest word.
+        computed = _computed_names(calculable, values.read)
+        if computed and isinstance(getattr(result, "computed", None), dict):
+            for name in computed:
+                # None: named as an output, with no value stated. Nothing in these cells computes the
+                # quantity — the vendor's own dialog callback did — so claiming a number here would
+                # be inventing one. See Result.computed.
+                result.computed.setdefault(name, None)
+        return result
 
     return generate
 
@@ -198,14 +362,14 @@ def register_kit(package: str, registry: Any = None, prefix: str = "",
             if wanted is not None and generator_id not in wanted:
                 continue
             try:
-                params, defaults = _declare(cls, kit_tech)
+                params, defaults, specs = _declare(cls, kit_tech)
             except Exception as exc:                        # noqa: BLE001
                 problems.append(f"{generator_id}: could not read its parameters: {exc}")
                 continue
 
             try:
                 (registry or crf.default_registry).add(
-                    generator_id, params, _make_generator(cls, defaults))
+                    generator_id, params, _make_generator(cls, defaults, specs))
             except ValueError as exc:
                 # Two cells under one id is not a preference this layer can resolve, and silently
                 # keeping either would make which cell you get depend on module order.

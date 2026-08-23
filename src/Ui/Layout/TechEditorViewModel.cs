@@ -344,9 +344,35 @@ public sealed partial class TechEditorViewModel : ObservableObject
 
     private void RebuildLayers()
     {
+        // Recomputed before the rows, because each row exposes it as its dropdown's item source and
+        // a row built against the previous technology's table would offer the wrong stipples.
+        _fillPatternChoices = null;
+
         Layers.Clear();
         foreach (var l in Working.Layers)
             Layers.Add(new LayerRowViewModel(l, this));
+    }
+
+    private IReadOnlyList<string>? _fillPatternChoices;
+
+    /// <summary>
+    /// The stipples a layer row may choose from — "(solid)" first, then the technology's own table
+    /// in its own order.
+    ///
+    /// <para>Only what this technology defines. There is no built-in palette to add: a stipple is
+    /// process data, arriving with the layer table that declares it, and offering circuitRF-invented
+    /// masks alongside would let a layer be given a fill its process never specified.</para>
+    /// </summary>
+    internal IReadOnlyList<string> FillPatternChoices
+    {
+        get
+        {
+            if (_fillPatternChoices is not null) return _fillPatternChoices;
+            var choices = new List<string>(Working.FillPatterns.Count + 1) { LayerRowViewModel.NoFillPattern };
+            foreach (var p in Working.FillPatterns)
+                if (p.Name is { Length: > 0 }) choices.Add(p.Name);
+            return _fillPatternChoices = choices;
+        }
     }
 
     /// <summary>Lowest layer number strictly greater than every existing layer's number, datatype 0 —

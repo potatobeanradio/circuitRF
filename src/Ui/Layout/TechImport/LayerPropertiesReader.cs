@@ -22,6 +22,10 @@ namespace CircuitRF.Ui.Layout.TechImport;
 /// <param name="Color">Display colour, or null when the file states none usable.</param>
 /// <param name="Visible">Whether the process shows this row by default.</param>
 /// <param name="Order">Position in the file. The file's order is the display order, so it is kept.</param>
+/// <param name="FillRef">The fill pattern this row names, exactly as the file spells it — a
+/// letter-and-number reference into either the file's own pattern list or the reader's built-in set.
+/// Null when the row states none. Resolved by the builder, not here: this reader states what the file
+/// says, and which stipple that becomes is a question about the whole file.</param>
 public sealed record ProcessLayerEntry(
     int     Layer,
     int     Datatype,
@@ -29,16 +33,24 @@ public sealed record ProcessLayerEntry(
     string? Purpose,
     Rgba?   Color,
     bool    Visible,
-    int     Order)
+    int     Order,
+    string? FillRef = null)
 {
     /// <summary>The full name as the file spelled it — base plus purpose.</summary>
     public string FullName => Purpose is { Length: > 0 } p ? $"{BaseName}.{p}" : BaseName;
 }
 
+/// <summary>One fill pattern the file defines for itself, at the position it defines it.</summary>
+/// <param name="Index">Its own stated position, which is what a layer's reference names.</param>
+/// <param name="Name">What the file calls it, or null when it says nothing.</param>
+/// <param name="Rows">The mask, one string per row.</param>
+public sealed record ProcessFillPattern(int Index, string? Name, IReadOnlyList<string> Rows);
+
 /// <summary>A whole layer-properties file, read.</summary>
 public sealed record ProcessLayerTable(
     IReadOnlyList<ProcessLayerEntry> Entries,
-    IReadOnlyList<string>            Notes);
+    IReadOnlyList<string>            Notes,
+    IReadOnlyList<ProcessFillPattern>? FillPatterns = null);
 
 /// <summary>Reads the layer-properties XML format. Framework-free (no Avalonia / Skia).</summary>
 public static class LayerPropertiesReader
@@ -137,7 +149,8 @@ public static class LayerPropertiesReader
                 layer, datatype, baseName, purpose,
                 Color:   ReadColor(Child(e, "fill-color")) ?? ReadColor(Child(e, "frame-color")),
                 Visible: ReadBool(Child(e, "visible"), fallback: true),
-                Order:   order++));
+                Order:   order++,
+                FillRef: Child(e, "dither-pattern")));
         }
 
         if (entries.Count == 0)
@@ -148,7 +161,56 @@ public static class LayerPropertiesReader
         if (duplicates > 3)
             notes.Add($"{duplicates} duplicate stream numbers in total.");
 
-        return new ProcessLayerTable(entries, notes);
+        var patterns = ReadFillPatterns(root, notes);
+
+        return new ProcessLayerTable(entries, notes, patterns);
+    }
+
+    // ── fill patterns ─────────────────────────────────────────────────────────
+
+    private const string PatternLocalName = "custom-dither-pattern";
+
+    /// <summary>
+    /// The stipples the file defines for itself, in file order.
+    ///
+    /// <para>Each states its own position, and that position — not the position in this list — is
+    /// what a layer's reference names, so it is carried rather than recomputed. A file that numbers
+    /// them sparsely, or out of order, still resolves correctly.</para>
+    /// </summary>
+    private static List<ProcessFillPattern>? ReadFillPatterns(XElement root, List<string> notes)
+    {
+        List<ProcessFillPattern>? patterns = null;
+        int malformed = 0;
+        int fallbackIndex = 0;
+
+        foreach (var e in root.Descendants().Where(x => x.Name.LocalName == PatternLocalName))
+        {
+            var rows = e.Elements().FirstOrDefault(c => c.Name.LocalName == "pattern")
+                       ?.Elements().Where(c => c.Name.LocalName == "line")
+                        .Select(c => c.Value.Trim()).ToList();
+
+            int index = int.TryParse(Child(e, "order"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int o)
+                ? o : fallbackIndex;
+            fallbackIndex = index + 1;
+
+            // Square and within the size cap, or it is not a mask this can paint through. Counted
+            // rather than named: a file with one bad row has many, and the layers that referred to it
+            // fall back to a solid fill, which is visible.
+            if (rows is not { Count: > 0 } || rows.Count > Layout.FillPattern.MaxSize
+                || rows.Exists(r => r.Length != rows.Count))
+            {
+                malformed++;
+                continue;
+            }
+
+            (patterns ??= []).Add(new ProcessFillPattern(index, Child(e, "name"), rows));
+        }
+
+        if (malformed > 0)
+            notes.Add($"{malformed} fill pattern(s) in the layer table were not a square mask and were " +
+                      "skipped; layers naming them fill solid.");
+
+        return patterns;
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

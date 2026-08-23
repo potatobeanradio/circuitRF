@@ -299,7 +299,18 @@ public sealed class LayoutInstance
 /// for the read-only/regeneration gates in this phase; L5's own schematic→layout work is what
 /// will attach this to a real placed instance's cell.
 /// </summary>
-public sealed record PCellOrigin(string GeneratorId, IReadOnlyDictionary<string, PCells.PCellValue> Parameters);
+public sealed record PCellOrigin(
+    string GeneratorId,
+    IReadOnlyDictionary<string, PCells.PCellValue> Parameters,
+    IReadOnlyList<string>? ComputedParameters = null,
+    IReadOnlyDictionary<string, PCells.PCellValue>? ComputedValues = null)
+{
+    /// <summary>Whether the generator DERIVES <paramref name="name"/> rather than reading it — a MIM
+    /// cap's capacitance from its own w and l, a resistor's resistance from its own geometry.
+    /// Editing such a parameter cannot change anything, so the parameter list shows it as text.</summary>
+    public bool IsComputed(string name)
+        => ComputedParameters is { } c && c.Contains(name, StringComparer.Ordinal);
+}
 
 /// <summary>
 /// brief-L5-followups-2.md §4.2/R-L5g-6: a per-generated-cell REGENERATION RECORD — the exact inputs

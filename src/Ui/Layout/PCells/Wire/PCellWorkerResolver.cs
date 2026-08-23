@@ -25,6 +25,16 @@ public interface IPCellGeneratorResolver
     IReadOnlyDictionary<string, PCellValue>? DeclaredDefaults(string generatorId) => null;
 
     /// <summary>
+    /// Everything <paramref name="generatorId"/> declares about its parameters — kinds, defaults,
+    /// labels, enumerations, bounds — or null for an id this resolver does not own.
+    ///
+    /// <para>A superset of <see cref="DeclaredDefaults"/>, which stays because it answers the
+    /// narrower question ("what do I place this with") that every caller but the parameter editor
+    /// asks, and answering it through this would make placement depend on display metadata.</para>
+    /// </summary>
+    IReadOnlyList<PCellParameterInfo>? DeclaredParameters(string generatorId) => null;
+
+    /// <summary>
     /// A string that changes whenever <paramref name="generatorId"/>'s own definition changes, folded
     /// into the key that names a generated cell. Null for an id this resolver does not own.
     ///
@@ -256,6 +266,14 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
     {
         foreach (var provider in EnsureStarted().Values.Distinct())
             if (provider.DeclaredDefaults(generatorId) is { } defaults) return defaults;
+        return null;
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<PCellParameterInfo>? DeclaredParameters(string generatorId)
+    {
+        foreach (var provider in EnsureStarted().Values.Distinct())
+            if (provider.DeclaredParameters(generatorId) is { } declared) return declared;
         return null;
     }
 

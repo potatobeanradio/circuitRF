@@ -364,9 +364,24 @@ public static class PCellWireCodec
         var preview = string.Equals(reply.Preview, PCellWirePreviewMode.Deferred, StringComparison.Ordinal)
             ? PCellPreviewMode.Deferred : PCellPreviewMode.Auto;
 
+        // Wire version 7. A value for a name the reply did not also list as computed is DROPPED
+        // rather than treated as an implicit declaration: a generator that states a derived value
+        // without stating that the parameter is derived is contradicting itself, and taking the
+        // value would silently lock a field the generator still reads.
+        var computedNames = reply.Computed is { Count: > 0 }
+            ? reply.Computed.Where(n => !string.IsNullOrEmpty(n)).Distinct(StringComparer.Ordinal).ToList()
+            : null;
+        Dictionary<string, PCellValue>? computedValues = null;
+        if (computedNames is not null && reply.ComputedValues is { Count: > 0 })
+        {
+            var named = new HashSet<string>(computedNames, StringComparer.Ordinal);
+            foreach (var (name, value) in reply.ComputedValues)
+                if (named.Contains(name)) (computedValues ??= new(StringComparer.Ordinal))[name] = value;
+        }
+
         return new PCellResult(shapes, pins,
             diagnostics is { Count: > 0 } ? diagnostics : null,
-            handles, preview);
+            handles, preview, computedNames, computedValues);
     }
 
     private static LayoutShape DecodeShape(PCellWireShape s, ReadOnlySpan<long> payload)

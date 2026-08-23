@@ -323,11 +323,57 @@ with `"ok": true` must not be treated as failure.
 - **Anything that would let a generator read the design around it.** R5's purity is a property of
   the *inputs*, so the way to keep it is to not offer the inputs.
 
+### 4.5 Editor hints (version 7)
+
+A parameter declaration may say more than its name, kind and default. All of it is optional, all of it
+is display-only, and a generator that says none of it renders exactly as it did before version 7.
+
+```jsonc
+{ "name": "shield", "kind": "string", "dimension": "none", "default": "Yes",
+  "label": "Shield ring", "choices": ["Yes", "No"] }
+{ "name": "ng", "kind": "int", "dimension": "none", "default": {"int": 1},
+  "label": "Number of Gates", "minimum": 1, "maximum": 64 }
+{ "name": "C", "kind": "string", "dimension": "none", "default": "74.6f", "computed": true }
+```
+
+- **`label`** — what to call it on screen. The **name** stays the identifier and is never replaced by
+  it; a label equal to the name should be omitted rather than sent.
+- **`choices`** — the parameter is an enumeration. Encoded in the parameter's **own kind**, through
+  the same encoder as a value, so a choice and the value it equals are the same bytes. Two choices
+  that read as a yes/no pair render as a checkbox; anything else, as a dropdown.
+- **`minimum` / `maximum`** — bounds for a numeric parameter.
+- **`computed`** — the generator *derives* this parameter and never reads it, so it renders as
+  selectable text rather than an edit box.
+
+**`choices` and the bounds are advisory and the host does not enforce them.** A value arriving from an
+older design or a hand-edited file is still shown and still sent; a generator that needs a choice to
+be binding validates it itself, being the only side that knows what an out-of-range value should do.
+Silently rewriting one to the nearest listed choice would change artwork nobody asked to change.
+
+The generate reply carries the same fact per run, because whether a generator *reads* a parameter is
+only observable by running it:
+
+```jsonc
+← { "ok": true, "shapes": [...], "pins": [...],
+    "computed": ["C"], "computedValues": { "C": "148f" } }
+```
+
+`computed` names the outputs; `computedValues` states what they came out to, for the ones the
+generator can say. **A name with no value is a deliberate, useful claim** — "this is derived, and I
+cannot tell you to what" — and is enough to stop the host offering an edit box without inventing a
+number. A value for a name not also listed in `computed` is dropped: a generator contradicting itself
+must not lock a field it still reads.
+
+The host takes the **union** of the declaration's `computed` and the reply's. The two exist separately
+because they answer for different generators: a script written against this wire declares its outputs
+up front, while a vendor kit's cells declare nothing and are only ever measured.
+
+
 ---
 
 ## 7. Versioning
 
-`wireVersion` is **6**. It is separate from `contractVersion` (still **2**) and both cross in both
+`wireVersion` is **7**. It is separate from `contractVersion` (still **2**) and both cross in both
 directions.
 
 | Version | Change |
@@ -338,6 +384,7 @@ directions.
 | 4 | A declared `default` per parameter, so a cell can be PLACED without being told its parameters. |
 | 5 | `offset` — grow/shrink, §8. |
 | 6 | Optional `handles` and `preview` on the generate reply (§4.3), including a handle's optional `crossParameter`. Additive in shape; the bump is required anyway because versions are compared for equality. |
+| 7 | Editor hints on a parameter declaration — `label`, `choices`, `minimum`/`maximum`, `computed` — plus `computed`/`computedValues` on the generate reply (§4.5). Nothing a generator *receives* changes. |
 
 They version different things and can move independently: the contract describes what a generator
 receives (kinded parameters, R5's guarantees), the wire describes how it crosses. A byte-layout
@@ -353,7 +400,7 @@ does not know it must refuse rather than silently drop it — see §4.4.
 
 **Adding an optional reply field is also a bump**, even though nothing already on the wire changes
 shape: versions are compared for *equality*, so a script that emits the new field must also be
-speaking the version that describes it. Version 6 is exactly that case.
+speaking the version that describes it. Versions 6 and 7 are both exactly that case.
 
 **A handle `kind` is the one thing that degrades per-item rather than refusing** (§4.3), and the
 distinction is worth keeping straight: an unknown *shape* kind means geometry the user would never

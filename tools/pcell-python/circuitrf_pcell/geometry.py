@@ -455,3 +455,15 @@ class Result:
     handles: list[Handle] = field(default_factory=list)
     #: ``AUTO`` or ``DEFERRED`` — see the module constants. Only meaningful alongside ``handles``.
     preview: str = AUTO
+
+    #: The parameters this run treated as OUTPUTS, mapped to what it derived them to — a capacitance
+    #: a cell works out from its own w and l, a resistance from its own geometry. A value of ``None``
+    #: names the parameter as an output WITHOUT stating a value, which is the honest answer when
+    #: nothing in the cell computes it.
+    #:
+    #: **A report here is the only way such a value can be current.** An output is not read, so
+    #: whatever the design has stored for it is whatever it was stored with; with no report the host
+    #: can only show that stale number, and it will keep showing it while the geometry that
+    #: determines it changes underneath. Naming the parameter at least stops circuitRF offering an
+    #: edit box that cannot do anything; naming it AND its value makes the list track the artwork.
+    computed: dict[str, Any] = field(default_factory=dict)

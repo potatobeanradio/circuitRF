@@ -37,18 +37,50 @@
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
             <ListBox.DataTemplates>
+                <!-- FOUR editors, one row template, chosen by what the GENERATOR declared — see
+                     PCellParamRowViewModel.Editor. Sibling controls under IsVisible rather than a
+                     per-editor DataTemplate: Avalonia has no template selector, and four one-line
+                     templates keyed off the same view model would put the row's two-column geometry
+                     (and its SharedSizeGroup, which is what lines every value box up with the others)
+                     in four places to keep in step. Exactly one is ever visible.
+
+                     The label column shows Label, not Name — a kit gives its parameters real names
+                     ("Number of Gates" for ng, "Cspec [F/sqm]" for Cspec) and used to have them
+                     discarded. The name is never lost: it is in the tooltip whenever a label stands
+                     in its place. -->
                 <DataTemplate DataType="vm:PCellParamRowViewModel">
                     <Grid Margin="0,1" ToolTip.Tip="{Binding Error}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition SharedSizeGroup="PCellParamName" Width="Auto" MinWidth="60"/>
                             <ColumnDefinition Width="*" MinWidth="60"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="11" VerticalAlignment="Center"
-                                   Margin="0,0,6,0"
+                        <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11" VerticalAlignment="Center"
+                                   Margin="0,0,6,0" ToolTip.Tip="{Binding Tip}"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                        <TextBox Grid.Column="1" Text="{Binding ValueText}" Tag="{Binding FieldKey}" FontSize="11" Padding="4,2"
-                                  Classes.error="{Binding HasError}"
-                                  GotFocus="OnPCellParamFieldGotFocus" LostFocus="OnPCellParamFieldLostFocus" KeyDown="OnPCellParamFieldKeyDown"/>
+
+                        <TextBox Grid.Column="1" IsVisible="{Binding IsText}"
+                                 Text="{Binding ValueText}" Tag="{Binding FieldKey}" FontSize="11" Padding="4,2"
+                                 Classes.error="{Binding HasError}" ToolTip.Tip="{Binding Tip}"
+                                 GotFocus="OnPCellParamFieldGotFocus" LostFocus="OnPCellParamFieldLostFocus" KeyDown="OnPCellParamFieldKeyDown"/>
+
+                        <CheckBox Grid.Column="1" IsVisible="{Binding IsCheck}"
+                                  IsChecked="{Binding IsChecked, Mode=TwoWay}" FontSize="11"
+                                  MinHeight="0" Padding="4,0" VerticalAlignment="Center"
+                                  ToolTip.Tip="{Binding Tip}"/>
+
+                        <ComboBox Grid.Column="1" IsVisible="{Binding IsChoice}"
+                                  ItemsSource="{Binding Choices}"
+                                  SelectedItem="{Binding SelectedChoice, Mode=TwoWay}"
+                                  FontSize="11" Padding="4,2" MinHeight="0" HorizontalAlignment="Stretch"
+                                  ToolTip.Tip="{Binding Tip}"/>
+
+                        <!-- Selectable, not editable: the value is worth copying out and is not worth
+                             offering a caret for, because the generator overwrites it on its next run. -->
+                        <SelectableTextBlock Grid.Column="1" IsVisible="{Binding IsComputed}"
+                                             Text="{Binding ValueText}" FontSize="11"
+                                             Padding="4,2" VerticalAlignment="Center"
+                                             ToolTip.Tip="{Binding Tip}"
+                                             Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     </Grid>
                 </DataTemplate>
             </ListBox.DataTemplates>

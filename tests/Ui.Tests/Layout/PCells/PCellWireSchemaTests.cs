@@ -439,11 +439,11 @@ public sealed class PCellWireSchemaTests
     }
 
     [Fact]
-    public void TheWireVersion_IsSix_AndTheContractVersionDidNotMove()
+    public void TheWireVersion_IsSeven_AndTheContractVersionDidNotMove()
     {
         // Adding an optional reply field is a bump because describe compares for EQUALITY and refuses
         // rather than negotiating. The contract number stays put: Generate's signature is unchanged.
-        Assert.Equal(6, PCellWireVersion.Current);
+        Assert.Equal(7, PCellWireVersion.Current);
         Assert.Equal(2, PCellContractVersion.Current);
     }
 
@@ -724,4 +724,91 @@ public sealed class PCellWireSchemaTests
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
+
+    // ── wire version 7: what a parameter's declaration may say about its editor ────────────────
+
+    /// <summary>A vendor kit states which of its parameters is an enumeration, which is a flag and
+    /// what each is called — in the same declaration that already carried the default. Every bit of
+    /// it used to be discarded at this boundary, so the dialog had nothing to render from and gave
+    /// all of them the same free-text box.</summary>
+    [Fact]
+    public void AParameterDeclaration_CarriesItsLabelChoicesAndBounds()
+    {
+        var frame = new PCellWireFrame("""
+            { "ok": true, "wireVersion": 7, "contractVersion": 2,
+              "generators": [ { "id": "kit.cap", "parameters": [
+                { "name": "ng", "kind": "int", "dimension": "none", "default": {"int": 1},
+                  "label": "Number of Gates", "minimum": 1, "maximum": 64 },
+                { "name": "shield", "kind": "string", "dimension": "none", "default": "Yes",
+                  "label": "Shield ring", "choices": ["Yes", "No"] },
+                { "name": "C", "kind": "string", "dimension": "none", "default": "74.6f",
+                  "computed": true } ] } ] }
+            """, Array.Empty<long>());
+
+        var reply = System.Text.Json.JsonSerializer.Deserialize<PCellWireDescribeReply>(
+            frame.Json, PCellWireJson.Options)!;
+        var declared = reply.Generators.Single().Parameters;
+
+        var ng = declared.Single(p => p.Name == "ng");
+        Assert.Equal("Number of Gates", ng.Label);
+        Assert.Equal(1, ng.Minimum);
+        Assert.Equal(64, ng.Maximum);
+
+        var ring = declared.Single(p => p.Name == "shield");
+        Assert.Equal(["Yes", "No"], ring.Choices!.Select(c => c.AsText()));
+
+        Assert.True(declared.Single(p => p.Name == "C").Computed);
+    }
+
+    /// <summary>Whether a generator READS a parameter is only observable by running it, so the run
+    /// says so — and says what the parameter came out to where it can, because a derived value is by
+    /// definition not the one the design has stored.</summary>
+    [Fact]
+    public void AGenerateReply_NamesTheParametersItDerived_AndTheirValues()
+    {
+        var frame = new PCellWireFrame("""
+            { "ok": true, "shapes": [], "pins": [],
+              "computed": ["C", "R"], "computedValues": { "C": "148f" } }
+            """, Array.Empty<long>());
+
+        var result = PCellWireCodec.DecodeGenerateReply(frame);
+
+        Assert.Equal(["C", "R"], result.ComputedParameters);
+
+        // R is named without a value: the generator knows it is an output and cannot state what it
+        // came to. That is worth saying on its own — it is what stops the field being editable.
+        Assert.Equal("148f", result.ComputedValues!["C"].AsText());
+        Assert.False(result.ComputedValues.ContainsKey("R"));
+    }
+
+    /// <summary>A value for a parameter the reply did not also NAME as derived is dropped. Taking it
+    /// would lock a field on the strength of a generator contradicting itself, and the parameter it
+    /// locked would be one the generator still reads.</summary>
+    [Fact]
+    public void AComputedValueWithoutItsName_IsDropped()
+    {
+        var frame = new PCellWireFrame("""
+            { "ok": true, "shapes": [], "pins": [],
+              "computed": ["C"], "computedValues": { "C": "148f", "w": "20u" } }
+            """, Array.Empty<long>());
+
+        var result = PCellWireCodec.DecodeGenerateReply(frame);
+
+        Assert.Equal(["C"], result.ComputedParameters);
+        Assert.False(result.ComputedValues!.ContainsKey("w"));
+    }
+
+    /// <summary>Everything above is optional, and a generator that says none of it is unchanged —
+    /// which is every generator written before wire version 7.</summary>
+    [Fact]
+    public void AReplyThatSaysNothingAboutDerivedParameters_HasNone()
+    {
+        var frame = new PCellWireFrame("""{ "ok": true, "shapes": [], "pins": [] }""", Array.Empty<long>());
+
+        var result = PCellWireCodec.DecodeGenerateReply(frame);
+
+        Assert.Null(result.ComputedParameters);
+        Assert.Null(result.ComputedValues);
+    }
+
 }

@@ -19,7 +19,19 @@ namespace CircuitRF.Ui.Layout.PCells.Wire;
 public static class PCellWireVersion
 {
     /// <summary>
-    /// Version 6 (2026-08-06) added <see cref="PCellWireGenerateReply.Handles"/> — the optional
+    /// Version 7 (2026-08-23) added the EDITOR HINTS a parameter declaration may carry —
+    /// <see cref="PCellWireParameterDecl.Label"/>, <see cref="PCellWireParameterDecl.Choices"/>,
+    /// <see cref="PCellWireParameterDecl.Minimum"/>/<see cref="PCellWireParameterDecl.Maximum"/>,
+    /// <see cref="PCellWireParameterDecl.Computed"/> — plus
+    /// <see cref="PCellWireGenerateReply.Computed"/>/<see cref="PCellWireGenerateReply.ComputedValues"/>.
+    ///
+    /// <para>None of it changes what a generator RECEIVES; all of it changes what circuitRF's
+    /// parameter dialog can put on screen. A vendor kit states most of it already and circuitRF
+    /// discarded every bit of it: across one open kit, 127 enumerations and 9 ranges thrown away,
+    /// 42 of the enumerations two-valued yes/no pairs, every one of them rendered as the same
+    /// free-text box as a model name and a derived capacitance.</para>
+    ///
+    /// <para>Version 6 (2026-08-06) added <see cref="PCellWireGenerateReply.Handles"/> — the optional
     /// draggable parameter grips of <c>docs/design/pcell-parameter-handles.md</c>.
     ///
     /// <para><b>The bump is required even though the field is purely additive</b>, and the reason is
@@ -48,7 +60,7 @@ public static class PCellWireVersion
     /// rather than one circuitRF passed in. Schema §1 records why version 1 deliberately withheld
     /// it.</para>
     /// </summary>
-    public const int Current = 6;
+    public const int Current = 7;
 }
 
 /// <summary>
@@ -174,6 +186,40 @@ public sealed class PCellWireParameterDecl
     /// perfectly.</para>
     /// </summary>
     public PCellValue? Default { get; set; }
+
+    /// <summary>What to CALL this parameter on screen, when its name is not what a human would call
+    /// it ("Cspec [F/sqm]" for <c>Cspec</c>, "Number of Gates" for <c>ng</c>). Null when the
+    /// generator states none, and then the NAME is what is shown — a label is an addition to the
+    /// identifier, never a replacement for it.</summary>
+    public string? Label { get; set; }
+
+    /// <summary>
+    /// The values this parameter may take — a generator stating that its editor is a CHOICE rather
+    /// than free text. Null or empty states nothing, which is what every generator written before
+    /// wire version 7 says by omission.
+    ///
+    /// <para><b>Advisory, and the host does not enforce it.</b> A value that arrives from an older
+    /// design or a hand-edited file is still shown and still sent: a generator that needs a choice
+    /// to be binding validates it itself, being the only side that knows what an out-of-range value
+    /// should do. Silently rewriting one to the nearest listed choice would change artwork nobody
+    /// asked to change.</para>
+    /// </summary>
+    public List<PCellValue>? Choices { get; set; }
+
+    /// <summary>Bounds for a numeric parameter, either or both, advisory in the same sense as
+    /// <see cref="Choices"/>.</summary>
+    public double? Minimum { get; set; }
+    public double? Maximum { get; set; }
+
+    /// <summary>
+    /// This parameter is an OUTPUT — the generator derives it and never reads it — so circuitRF
+    /// renders it as selectable text rather than an edit box.
+    ///
+    /// <para>A generator may also report it per run (<see cref="PCellWireGenerateReply.Computed"/>),
+    /// which is how a kit whose cells were never written to declare anything still ends up with its
+    /// derived quantities correctly locked. The host takes the union.</para>
+    /// </summary>
+    public bool Computed { get; set; }
 }
 
 public sealed class PCellWireGeneratorDecl
@@ -482,6 +528,29 @@ public sealed class PCellWireGenerateReply
     /// and refusing a generate over one would trade a working cell for a preference.</para>
     /// </summary>
     public string? Preview { get; set; }
+
+    /// <summary>
+    /// The parameters THIS run treated as outputs (wire version 7) — named per run because whether a
+    /// generator reads a parameter is only observable by running it, and a cell may legitimately read
+    /// one at one setting and not at another.
+    ///
+    /// <para>Union'd with the declaration's own <see cref="PCellWireParameterDecl.Computed"/>. The
+    /// two exist separately because they answer for different generators: a script written against
+    /// this wire declares its outputs up front, while a vendor kit's cells declare nothing and are
+    /// only ever measured.</para>
+    /// </summary>
+    public List<string>? Computed { get; set; }
+
+    /// <summary>
+    /// What those outputs came out AS, for the ones the generator can state (wire version 7). A name
+    /// in <see cref="Computed"/> with no entry here is an output whose value nothing in the generator
+    /// computes — named so it stops being editable, with no number claimed for it.
+    ///
+    /// <para><b>This is the only way such a value can be current.</b> An output is not read, so what
+    /// the design has stored for it is whatever it was stored with — and it stays that while the
+    /// geometry determining it changes underneath.</para>
+    /// </summary>
+    public Dictionary<string, PCellValue>? ComputedValues { get; set; }
 }
 
 /// <summary>The preview-mode vocabulary, in one place so the encoder and decoder cannot disagree.</summary>
