@@ -171,6 +171,36 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>No two <c>Extension</c> elements in the .wxs may declare the same <c>ContentType</c>.</b>
+    /// Windows' MIME database maps a content type to exactly ONE extension, so WiX derives the
+    /// identifier of the registry rows it writes for a <c>ContentType</c> from the content-type
+    /// string alone. Two extensions sharing one type therefore emit two rows with the same
+    /// identifier, and <c>wix build</c> stops with WIX0091 — which is how the 1.0.0-beta.1 x64
+    /// installer failed to build (2026-08-23) after <c>.cws</c> was added beside <c>.crfw</c>.
+    ///
+    /// <para>The extensions may still share a ProgId; only the content type has to be unique. The
+    /// failure is a build error rather than a bad install, but it surfaces only on Windows with the
+    /// WiX toolset present, which is nowhere in the ordinary test loop.</para>
+    /// </summary>
+    [Fact]
+    public void WindowsInstallerDeclaresEachContentTypeOnlyOnce()
+    {
+        var text = File.ReadAllText(RepoFile("packaging", "windows", "circuitRF.wxs"));
+        var byType = Regex.Matches(text, "<Extension\\s+Id=\"(?<ext>[^\"]+)\"\\s+ContentType=\"(?<type>[^\"]+)\"")
+            .GroupBy(m => m.Groups["type"].Value)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key} (claimed by {string.Join(", ", g.Select(m => m.Groups["ext"].Value))})")
+            .ToList();
+
+        Assert.True(byType.Count == 0,
+            "circuitRF.wxs declares a ContentType on more than one Extension: "
+            + string.Join("; ", byType)
+            + ". wix build fails with WIX0091 on the duplicate registry identifier — give the "
+            + "second extension its own content type, or drop ContentType from it and leave the "
+            + "ProgId association alone.");
+    }
+
+    /// <summary>
     /// Each macOS <c>CFBundleExecutable</c> must name the renamed host for ITS application. macOS
     /// refuses to launch a bundle whose CFBundleExecutable is not a file in Contents/MacOS/, and it
     /// says so only in the system log.

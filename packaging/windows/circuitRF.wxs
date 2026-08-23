@@ -88,7 +88,14 @@
           <Extension Id="crfw" ContentType="application/x-circuitrf-workspace">
             <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
           </Extension>
-          <Extension Id="cws" ContentType="application/x-circuitrf-workspace">
+          <!--
+            No ContentType here, on purpose: Windows' MIME database maps a content type to exactly
+            ONE extension, so declaring the same one twice makes WiX emit two registry rows with the
+            same generated identifier and the build fails with WIX0091 (it did, 2026-08-23). `crfw`
+            carries the content type; `.cws` still gets its own HKCR key, its ProgId association and
+            its Open verb, which is everything a double-click needs.
+          -->
+          <Extension Id="cws">
             <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
           </Extension>
         </ProgId>
