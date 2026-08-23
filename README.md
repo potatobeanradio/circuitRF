@@ -70,21 +70,21 @@ Pre-built installers are available for Windows, macOS, and Linux.
 **Windows**
 | Platform | Download |
 |---|---|
-| Windows 64-bit (Intel/AMD) | [circuitRF-1.0.0-beta.1-x64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.msi) |
-| Windows ARM64 | [circuitRF-1.0.0-beta.1-arm64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.msi) |
-| Windows 32-bit (Win32) | [circuitRF-1.0.0-beta.1-x86.msi](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-x86.msi) |
+| Windows 64-bit (Intel/AMD) | [circuitRF-1.0.0-beta.1-x64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.msi) |
+| Windows ARM64 | [circuitRF-1.0.0-beta.1-arm64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.msi) |
+| Windows 32-bit (Win32) | [circuitRF-1.0.0-beta.1-x86.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x86.msi) |
 
 **macOS**
 | Platform | Download |
 |---|---|
-| macOS Apple Silicon (M-series) | [circuitRF-1.0.0-beta.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.dmg) |
-| macOS Intel (x86-64) | [circuitRF-1.0.0-beta.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.dmg) |
+| macOS Apple Silicon (M-series) | [circuitRF-1.0.0-beta.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.dmg) |
+| macOS Intel (x86-64) | [circuitRF-1.0.0-beta.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.dmg) |
 
 **Linux**
 | Platform | Download |
 |---|---|
-| Linux 64-bit (Intel/AMD) | [circuitRF-1.0.0-beta.1-x64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.deb) |
-| Linux ARM64 | [circuitRF-1.0.0-beta.1-arm64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/v1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.deb) |
+| Linux 64-bit (Intel/AMD) | [circuitRF-1.0.0-beta.1-x64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.deb) |
+| Linux ARM64 | [circuitRF-1.0.0-beta.1-arm64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.deb) |
 
 
 Building them yourself: [BUILDING.md](BUILDING.md).
