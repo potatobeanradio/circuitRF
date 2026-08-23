@@ -8,10 +8,10 @@ namespace CircuitRF.Engine.Loadpull;
 /// loadpull_pursuit.md §5.
 ///
 /// Structure:
-///   box1 (VSWR1 around MXP) sampled VSWR1_res × VSWR1_res — focused
-///   box2 (VSWR1 around MXE) sampled VSWR1_res × VSWR1_res — focused
-///   box4 (VSWR2 around MXE, union with box1+box2) sampled VSWR2_res × VSWR2_res
-///       minus any point inside box1 or box2 — broad
+///   the VSWR1 DISC around MXP sampled VSWR1_res rings × VSWR1_res angles — focused
+///   the VSWR1 DISC around MXE sampled the same way — focused
+///   the VSWR2 DISC around MXE sampled VSWR2_res rings × VSWR2_res angles,
+///       minus any point already inside a focused disc — broad
 ///   MXP and MXE points themselves
 ///
 /// Non-convergent exclusion: drop any output point within nonconvergentVSWR of a
@@ -42,30 +42,24 @@ public static class GamWriter
     {
         var warnings = new List<string>();
 
-        // Step 2-3: VSWR1 boxes around MXP and MXE.
-        var (xmin1, xmax1, ymin1, ymax1) = VswrCircleBox(p.MxpZ, p.Vswr1);
-        var (xmin2, xmax2, ymin2, ymax2) = VswrCircleBox(p.MxeZ, p.Vswr1);
+        // Step 2-4: the focused sampling — the VSWR1 DISC around each optimum.
+        var focusedMxp = SampleVswrDisc(p.MxpZ, p.Vswr1, p.Vswr1Resolution);
+        var focusedMxe = SampleVswrDisc(p.MxeZ, p.Vswr1, p.Vswr1Resolution);
 
-        var box1Pts = SampleBox(xmin1, xmax1, ymin1, ymax1, p.Vswr1Resolution);
-        var box2Pts = SampleBox(xmin2, xmax2, ymin2, ymax2, p.Vswr1Resolution);
-
-        // Step 5-7: VSWR2 box around MXE → box3 → combined box4.
-        var (xmin3, xmax3, ymin3, ymax3) = VswrCircleBox(p.MxeZ, p.Vswr2);
-        double xmin4 = Math.Min(Math.Min(xmin1, xmin2), xmin3);
-        double xmax4 = Math.Max(Math.Max(xmax1, xmax2), xmax3);
-        double ymin4 = Math.Min(Math.Min(ymin1, ymin2), ymin3);
-        double ymax4 = Math.Max(Math.Max(ymax1, ymax2), ymax3);
-
-        var box4Pts = SampleBox(xmin4, xmax4, ymin4, ymax4, p.Vswr2Resolution)
-            .Where(z => !InsideBox(z, xmin1, xmax1, ymin1, ymax1)
-                     && !InsideBox(z, xmin2, xmax2, ymin2, ymax2))
+        // Step 5-7: the broad sampling — the VSWR2 DISC around MXE, minus whatever a focused disc
+        // already covers. The exclusion tests the DISC, not a bounding box: a broad point in what
+        // used to be a box corner is outside the VSWR1 circle, so the focused sampling never
+        // covered it and discarding it left a hole.
+        var broadPts = SampleVswrDisc(p.MxeZ, p.Vswr2, p.Vswr2Resolution)
+            .Where(z => RfHelpers.VswrFromZ(z, p.MxpZ) > p.Vswr1
+                     && RfHelpers.VswrFromZ(z, p.MxeZ) > p.Vswr1)
             .ToList();
 
         // Step 8: collect focused + broad + optima.
         var all = new List<Complex>();
-        all.AddRange(box1Pts);
-        all.AddRange(box2Pts);
-        all.AddRange(box4Pts);
+        all.AddRange(focusedMxp);
+        all.AddRange(focusedMxe);
+        all.AddRange(broadPts);
         all.Add(p.MxpZ);
         all.Add(p.MxeZ);
 
@@ -120,56 +114,72 @@ public static class GamWriter
             w.WriteLine($"{z.Real:G10}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:G10}j");
     }
 
-    // ── VSWR-circle box (§5.1, Z domain) ─────────────────────────────────────
-
-    /// <summary>
-    /// Returns the bounding box of the constant-VSWR circle around <paramref name="z"/>
-    /// in the Z plane.
-    ///
-    /// §5.1 formula:
-    ///   gamma   = (vswr − 1)/(vswr + 1)
-    ///   z_center = z.Real·(1+gamma²)/(1-gamma²) + j·z.Imag
-    ///   z_radius = z.Real·2·gamma/(1−gamma²)
-    ///   box: [z_center.Real ± z_radius, z_center.Imag ± z_radius]
-    ///
-    /// The circle is symmetric about the real axis only for z.Imag = 0.
-    /// The Im bounds are [z.Imag - z_radius, z.Imag + z_radius] by the formula.
-    /// </summary>
-    private static (double Xmin, double Xmax, double Ymin, double Ymax)
-        VswrCircleBox(Complex z, double vswr)
-    {
-        double r     = Math.Max(z.Real, 1e-3);   // guard against near-zero real part
-        double gamma = (vswr - 1.0) / (vswr + 1.0);
-        double g2    = gamma * gamma;
-        double denom = 1.0 - g2;
-        double zCR   = r * (1.0 + g2) / denom;   // center real
-        double zCI   = z.Imaginary;               // center imag (same as z.Imag per §5.1)
-        double zRad  = r * 2.0 * gamma / denom;   // radius
-
-        return (zCR - zRad, zCR + zRad, zCI - zRad, zCI + zRad);
-    }
-
     // ── Grid sampling ─────────────────────────────────────────────────────────
 
-    private static List<Complex> SampleBox(
-        double xmin, double xmax, double ymin, double ymax, int n)
+    /// <summary>
+    /// Samples the constant-VSWR DISC around <paramref name="centre"/> — <paramref name="n"/> rings ×
+    /// <paramref name="n"/> angles, laid out in the reflection plane referenced to the centre, and
+    /// returned as impedances.
+    ///
+    /// <para><b>Why this is not a box sample (2026-08-23).</b> The broad grid used to be
+    /// <c>VSWR2_res × VSWR2_res</c> equally-spaced points across the <i>bounding box</i> of this
+    /// circle. A constant-VSWR circle about R spans <c>R/v … R·v</c>, so at <c>VSWR2 = 20</c> about
+    /// 95 % of the box's width lies ABOVE the centre and 5 % below it: with a linear lattice, only
+    /// ONE of ten columns fell below the centre's resistance, and its rows were spaced so far apart
+    /// (the box is as tall as it is wide) that none of them landed near the centre's reactance. The
+    /// measured effect on a real run — MXE at 124.8 Ω, <c>VSWR2 = 20</c>, 10 × 10 — was that the
+    /// lowest-resistance termination anywhere within VSWR 20 of MXE was <b>40.2 Ω, a VSWR of 3.1</b>,
+    /// and it came from the VSWR1 box around MXP rather than from the broad sampling at all. The
+    /// low-impedance reach was set by VSWR1; VSWR2 bought nothing but Smith-chart rim (65 of 134
+    /// points at |Γ| &gt; 0.95, and 40 of them FURTHER than VSWR2 from MXE, since a box's corners
+    /// reach well past the circle they bound — one was at VSWR 2010).</para>
+    ///
+    /// <para>Sampling the circle instead makes the parameter mean what it says: the outermost ring is
+    /// at exactly VSWR2 from the centre in every direction, so the low-impedance extreme
+    /// <c>Re/VSWR2 + j·Im</c> is always a grid point. Rings are equally spaced in |Γ|, which is a
+    /// gentle geometric progression in VSWR (at VSWR2 = 20, n = 10: 1.2, 1.44, 1.77, 2.2, 2.75, 3.55,
+    /// 4.79, 6.99, 11.9, 20) — dense where the contours turn, sparse out at the rim, which is the
+    /// density a 2-D interpolator wants. Alternate rings are offset half an angular step so the
+    /// points do not line up into radial spokes.</para>
+    ///
+    /// <para>The centre itself is not emitted (rings start at k = 1); the caller adds MXP and MXE.</para>
+    /// </summary>
+    private static List<Complex> SampleVswrDisc(Complex centre, double vswr, int n)
     {
         var pts = new List<Complex>(n * n);
-        for (int ix = 0; ix < n; ix++)
-        for (int iy = 0; iy < n; iy++)
+        if (n < 1 || vswr <= 1.0) return pts;
+
+        double gMax = (vswr - 1.0) / (vswr + 1.0);
+
+        for (int k = 1; k <= n; k++)
         {
-            double x = n > 1 ? xmin + ix * (xmax - xmin) / (n - 1) : (xmin + xmax) / 2;
-            double y = n > 1 ? ymin + iy * (ymax - ymin) / (n - 1) : (ymin + ymax) / 2;
-            if (x > 1e-6)   // require positive real part (physical impedance)
-                pts.Add(new Complex(x, y));
+            double mag = gMax * k / n;
+            // Offset alternate rings by half a step, counting inward from the OUTER ring so the
+            // outermost one always keeps its cardinal points — the VSWR2 extremes are the whole
+            // reason the setting exists, and staggering them away would be a silent loss.
+            double offset = ((n - k) % 2) * Math.PI / n;
+
+            for (int j = 0; j < n; j++)
+            {
+                double theta = 2.0 * Math.PI * j / n + offset;
+                var    gamma = Complex.FromPolarCoordinates(mag, theta);
+                var    z     = ZFromGammaAbout(centre, gamma);
+
+                if (z.Real > 1e-6)   // require positive real part (physical impedance)
+                    pts.Add(z);
+            }
         }
         return pts;
     }
 
-    private static bool InsideBox(Complex z,
-        double xmin, double xmax, double ymin, double ymax)
-        => z.Real >= xmin && z.Real <= xmax
-        && z.Imaginary >= ymin && z.Imaginary <= ymax;
+    /// <summary>
+    /// Inverse of <see cref="RfHelpers.VswrFromZ"/>'s reflection coefficient: given
+    /// <c>gamma = (Z − centre)/(Z + conj(centre))</c>, returns Z. At <c>gamma = 0</c> this is the
+    /// centre, and at <c>gamma = −|g|</c> (real, negative) it is <c>Re(centre)/vswr + j·Im(centre)</c>
+    /// — the low-impedance extreme of the constant-VSWR circle.
+    /// </summary>
+    private static Complex ZFromGammaAbout(Complex centre, Complex gamma)
+        => (centre + gamma * Complex.Conjugate(centre)) / (Complex.One - gamma);
 
     // ── Deduplication ─────────────────────────────────────────────────────────
 

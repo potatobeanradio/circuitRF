@@ -4,6 +4,101 @@ Mirrors `src/Harmonica/RESOLVED.md`'s pattern: a completed brief's detail lands 
 per brief, sparingly — only for findings that are still true, still surprising, and would cost someone
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## The recommended grid sampled a BOX where the setting names a circle (2026-08-23)
+
+**Reported:** with `VSWR2 = 20` and a follow-on loadpull enabled, the recommended grid is missing the
+lower-impedance terminations — the low-Z side only reaches about a VSWR of 3 from MXE — while
+carrying a lot of very high impedances that are *outside* VSWR2 altogether. Both halves are real,
+and they are one defect.
+
+**The builder was doing exactly what it was specified to do**, and the spec's circle math is right —
+the defect was in the SAMPLING.
+Checked by re-deriving the whole grid from the run's own recorded optima and comparing against the
+134 terminations the follow-on actually simulated: **identical, point for point.** The constant-VSWR
+circle formula was also re-derived from `VswrFromZ`'s own definition of Γ and comes out as written —
+centre `(Re(z)·(1+g²)/(1−g²), Im(z))`, radius `Re(z)·2g/(1−g²)`. The imaginary centre really does
+stay at `Im(z)` (it is `Im(Z) − Im(z)` that appears in the algebra, not `Im(Z) + Im(z)`), so the
+apparent asymmetry there is not a bug.
+
+`VSWR2` is centred on **MXE**, and box4 was the union of the three boxes' extents.
+
+### What that costs, in a real run's own numbers
+
+MXP = 80.48 + j0.00 Ω, MXE = 124.77 − j6.17 Ω; `VSWR1 = 2` at 4×4, `VSWR2 = 20` at 10×10.
+
+| box | Re extent (Ω) | Im extent (Ω) |
+|---|---|---|
+| box1 (VSWR1 about MXP) | 40.2 … 161.0 | −60.4 … 60.4 |
+| box2 (VSWR1 about MXE) | 62.4 … 249.5 | −99.7 … 87.4 |
+| box3 = box4 (VSWR2 about MXE) | **6.2 … 2495.3** | −1250.7 … 1238.4 |
+
+A constant-VSWR circle about `R` spans `R/v … R·v`: the upper half is ×20 and the lower half is
+÷20, so **95 % of the box's width is above MXE and 5 % below it.** The broad grid then samples that
+box *linearly*, so its 10 columns are 6.2, 282.8, 559.4, … 2495.3 Ω — **one single column below
+280 Ω**, and the step (276.6 Ω) is wider than the entire region a loadpull is about. Everything
+between about 7 Ω and 280 Ω is covered only by the two small VSWR1 boxes around the optima. So the
+grid did get bigger; it grew almost entirely into the high-impedance corner.
+
+Three more consequences of the same geometry, all measured on that run:
+
+- **40 of the 134 points sit BEYOND VSWR2 from MXE** — one at a VSWR of **2010** (6.2 + j1238 Ω).
+  A box's corners reach far past the circle they bound, so the same sampling that under-reached on
+  the low-resistance side over-reached on the diagonals. That is where the very high impedances come
+  from, and they are not a separate problem.
+- **65 of the 134 points sit at |Γ| > 0.95, and 90 at |Γ| > 0.9** — bunched invisibly against the
+  Smith chart rim, where a 2-D interpolant gets nothing usable from them. Only 14 are inside
+  |Γ| < 0.5.
+- **The "discard any broad point inside box1 or box2" step did nothing**: at a 276.6 Ω spacing no
+  broad point can land in a 120 Ω-wide box. Dedup removed nothing either. 16 + 16 + 100 + 2 = 134.
+
+Raising `VSWR2` therefore trades resolution for reach at a very poor rate: at `VSWR2 = 3` the same
+10×10 covers 41.6 … 374.3 Ω with a 37 Ω step — a worse low-impedance floor but a usable grid; at 20
+the floor drops to 6.2 Ω and the mid-range resolution is gone.
+
+### The fix: sample the disc, not its bounding box
+
+`SampleVswrDisc` replaces the broad box sample. In the reflection plane referenced to MXE, `n` rings
+at `|Γ| = g·k/n` × `n` angles, alternate rings offset half a step, mapped back with
+`Z = (z + Γ·conj(z))/(1 − Γ)`. Equal |Γ| spacing is a gentle geometric progression in VSWR (1.2,
+1.44, 1.77, 2.2, 2.75, 3.55, 4.79, 6.99, 11.9, 20 at `VSWR2 = 20`, `n = 10`), and the outermost ring
+keeps its cardinal points so `Re(MXE)/VSWR2 + j·Im(MXE)` is always a grid point.
+
+Same run rebuilt: **93 points instead of 134**, lowest resistance **6.24 Ω at exactly VSWR 20.00**
+from MXE, **nothing beyond VSWR2**, 3 points at |Γ| > 0.95 instead of 65. The reach is monotone in
+the setting — 37 Ω within VSWR 4, 20 Ω within 8, 13 Ω within 12. Fewer points AND better coverage,
+because the discarded ones were the rim.
+
+### The focused VSWR1 regions had it too — milder in magnitude, worse in proportion
+
+Asked and measured rather than assumed. Of a `VSWR1 = 2` box's 16 points, **12 (75 %) lie outside the
+requested circle** — against 40 % for the VSWR2 box — but the worst corner reaches only **VSWR 3.32**,
+a 1.66× overshoot rather than 100×. The difference is the nonlinearity, not the geometry: a box corner
+sits at √2 × the radius in Z either way, and that maps to a small VSWR excess down at VSWR 2 and to an
+enormous one up near |Γ| = 1. Separately, at an even resolution no row lands on the optimum's own
+reactance, so the circle's low-impedance extreme is missed by 60 Ω on an 80 Ω optimum.
+
+Both focused regions now use the same ring sampler. On the run above, terminations **within VSWR1 of
+MXP go from 10 to 28 and of MXE from 17 to 28** (within VSWR 1.5 of either: 10 → 22) — the whole
+focused budget lands where it was asked to, where before most of it had spilled into the corners.
+Final grid: **99 points** vs the original 134.
+
+With both focused regions circular, step 7's exclusion tests the **disc** rather than a bounding box.
+That is a fix in its own right: a broad point in what used to be a box corner is outside the VSWR1
+circle, so the focused sampling never covered it and discarding it left a hole. At a small `VSWR2` the
+exclusion can still discard the broad disc's own low extreme, correctly — the whole broad disc then
+lies inside the focused ones, which sample that region more finely.
+
+`VswrCircleBox`, `SampleBox` and `InsideBox` are gone with the last caller; `git show f958cdf` has them
+if the box sampling is ever wanted back.
+
+### One trap in gating it
+
+The obvious assertion — "min Re equals `Re(MXE)/VSWR2`" — is false at small `VSWR2` and it is not the
+code's fault. At `VSWR2 = 3` the grid's lowest resistance is 40.24 Ω, which is the VSWR1 box around
+**MXP**, and the disc's own 41.59 Ω extreme is discarded for being inside that box. The claim that
+holds at every setting is *reaches at least as low as the circle does*, plus the exact extreme at a
+`VSWR2` large enough to escape the focused boxes.
+
 ## Round 11 — the drive-up continuity guard, lifted here from harmonicaRF (2026-08-15)
 
 harmonicaRF's own Pin ladder was found converging, at ‖F‖ ≈ 2e-9, onto roots of the harmonic-balance

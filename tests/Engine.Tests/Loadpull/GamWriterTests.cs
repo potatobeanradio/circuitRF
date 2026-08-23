@@ -110,32 +110,175 @@ public class GamWriterTests(ITestOutputHelper output)
             "KeepNonconverging=true should produce no removal warnings.");
     }
 
-    // ── 3. VSWR circle box geometry ──────────────────────────────────────────
+    // ── 3. Focused-disc geometry ─────────────────────────────────────────────
 
+    /// <summary>
+    /// Every focused point lies within VSWR1 of the optimum it belongs to. The focused sampling used
+    /// to fill the circle's BOUNDING BOX, which put 12 of its 16 points OUTSIDE the requested circle
+    /// — a `VSWR1 = 2` patch actually reached VSWR 3.32 — and left none of them at the circle's own
+    /// low-impedance extreme (the nearest was 60 Ω off in reactance).
+    /// </summary>
     [Theory]
     [InlineData(80,  10,  1.5)]
     [InlineData(50,   0,  2.0)]
     [InlineData(100, -30, 1.3)]
-    public void VswrCircleBox_AllBoxSamplesWithinVswr(double zR, double zI, double vswr)
+    public void FocusedPoints_LieWithinVswr1OfTheirOptimum(double zR, double zI, double vswr)
     {
-        // Use box extremes (corners) — these should be at approximately vswr from z.
         var z = new Complex(zR, zI);
+        // Both optima at the same place, so every point in the result is focused or the optimum.
+        var result = GamWriter.Build(new GamWriter.GamBuilderParams(z, z,
+            UnscorableZ: [], Vswr1: vswr, Vswr1Resolution: 4,
+            Vswr2: vswr, Vswr2Resolution: 2));
 
-        // Build with 4×4 in a VSWR1 focused region; check all points are ≤ VSWR * 1.1
-        // from the center (some corner points may exceed vswr due to box-vs-circle difference).
-        var result = GamWriter.Build(new GamWriter.GamBuilderParams(z, z + new Complex(5, 5),
-            UnscorableZ: [], Vswr1: vswr, Vswr1Resolution: 4, Vswr2: vswr * 2, Vswr2Resolution: 2));
-
-        // All focused box points should be within vswr * sqrt(2) of the center
-        // (the box diagonal extends to sqrt(2) times the radius).
-        double tolerance = vswr * 1.5;
-        foreach (var pt in result.Points.Where(pt => RfHelpers.VswrFromZ(pt, z) <= tolerance))
+        foreach (var pt in result.Points)
         {
-            // Just ensure positive real part (already checked elsewhere).
-            Assert.True(pt.Real > 0);
+            double v = RfHelpers.VswrFromZ(pt, z);
+            Assert.True(v <= vswr * 1.0001,
+                $"focused point {pt} is at VSWR {v:F2} from the optimum, past the requested {vswr}");
         }
-        output.WriteLine($"Z={z}  VSWR={vswr}  Points within {tolerance:F1}x: " +
-                         $"{result.Points.Count(pt => RfHelpers.VswrFromZ(pt, z) <= tolerance)}");
+        output.WriteLine($"Z={z}  VSWR1={vswr}  {result.Points.Count} points, all within it");
+    }
+
+    /// <summary>
+    /// The full focused budget lands NEAR the optimum. Under box sampling most of it did not: of the
+    /// 4×4 = 16 points per optimum, only 10 were within VSWR1 of MXP and 17 within VSWR1 of MXE
+    /// across the whole grid — the rest had spilled into the box corners, out past the circle.
+    /// </summary>
+    [Fact]
+    public void EachOptimumGetsItsWholeFocusedBudgetWithinVswr1()
+    {
+        const int res = 4;
+        var result = GamWriter.Build(new GamWriter.GamBuilderParams(FetMxpZ, FetMxeZ,
+            UnscorableZ: [], Vswr1: 2.0, Vswr1Resolution: res,
+            Vswr2: 20.0, Vswr2Resolution: 10));
+
+        foreach (var (name, opt) in new[] { ("MXP", FetMxpZ), ("MXE", FetMxeZ) })
+        {
+            int near = result.Points.Count(z => RfHelpers.VswrFromZ(z, opt) <= 2.0);
+            output.WriteLine($"within VSWR1 of {name}: {near}");
+            Assert.True(near >= res * res,
+                $"only {near} terminations within VSWR1 of {name}; the focused budget is {res * res}");
+        }
+    }
+
+    /// <summary>
+    /// And the focused disc reaches its own low-impedance extreme, at the optimum's OWN reactance —
+    /// the reading a box sample cannot produce at an even resolution, because no row lands there.
+    /// </summary>
+    [Fact]
+    public void FocusedDisc_ReachesTheLowImpedanceExtremeOfVswr1()
+    {
+        const double vswr1 = 2.0;
+        var result = GamWriter.Build(new GamWriter.GamBuilderParams(FetMxpZ, FetMxeZ,
+            UnscorableZ: [], Vswr1: vswr1, Vswr1Resolution: 4,
+            Vswr2: 20.0, Vswr2Resolution: 10));
+
+        foreach (var opt in new[] { FetMxpZ, FetMxeZ })
+        {
+            var extreme = new Complex(opt.Real / vswr1, opt.Imaginary);
+            Assert.Contains(result.Points, z => RfHelpers.VswrFromZ(z, extreme) < 1.001);
+        }
+    }
+
+    // ── 3b. The broad sampling actually reaches VSWR2 (2026-08-23) ───────────
+    //
+    //  Reported: with VSWR2 = 20 the follow-on grid's low-impedance terminations were only about a
+    //  VSWR of 3 from MXE. They were: the broad grid sampled the BOUNDING BOX of the VSWR2 circle
+    //  on a linear lattice, which puts ~95 % of its columns above the centre's resistance and lands
+    //  none of the remaining one near the centre's reactance. The lowest-resistance point within
+    //  VSWR2 of MXE came from the VSWR1 box around MXP instead — so the low-Z reach was set by
+    //  VSWR1, and VSWR2 bought only Smith-chart rim.
+
+    // A realistic pair of optima, from a measured run: MXE ≈ 125 Ω, MXP ≈ 80 Ω.
+    private static readonly Complex FetMxpZ = new(80.476, 0.001);
+    private static readonly Complex FetMxeZ = new(124.766, -6.172);
+
+    /// <summary>
+    /// The low-impedance extreme of the VSWR2 circle — <c>Re(MXE)/VSWR2 + j·Im(MXE)</c> — is a grid
+    /// point. This is the reading the setting promises, and it is what was missing.
+    /// </summary>
+    [Fact]
+    public void BroadGrid_ReachesTheLowImpedanceExtremeOfVswr2()
+    {
+        const double vswr2 = 20.0;
+        var result = GamWriter.Build(new GamWriter.GamBuilderParams(FetMxpZ, FetMxeZ,
+            UnscorableZ: [], Vswr1: 2.0, Vswr1Resolution: 4,
+            Vswr2: vswr2, Vswr2Resolution: 10));
+
+        var extreme = new Complex(FetMxeZ.Real / vswr2, FetMxeZ.Imaginary);
+        Assert.Contains(result.Points, z => RfHelpers.VswrFromZ(z, extreme) < 1.001);
+    }
+
+    /// <summary>
+    /// And the reach TRACKS the setting. Under the old box sampling it did not: both cases below were
+    /// floored at the same 40.24 Ω, which is the VSWR1 box around MXP — not the broad sampling at all.
+    ///
+    /// <para>At <c>VSWR2 = 3</c> that floor is still what wins, and legitimately so: the whole broad
+    /// disc then lies inside the focused boxes, whose own step 7 discards it (that region is already
+    /// sampled, at higher resolution). What must be true is that the grid reaches AT LEAST as low as
+    /// the VSWR2 circle does, and at VSWR2 = 20 it reaches exactly its extreme.</para>
+    /// </summary>
+    [Fact]
+    public void RaisingVswr2_LowersTheReachableResistance()
+    {
+        double MinRe(double vswr2) => GamWriter.Build(new GamWriter.GamBuilderParams(
+            FetMxpZ, FetMxeZ, UnscorableZ: [], Vswr1: 2.0, Vswr1Resolution: 4,
+            Vswr2: vswr2, Vswr2Resolution: 10)).Points.Min(z => z.Real);
+
+        double at3  = MinRe(3.0);
+        double at20 = MinRe(20.0);
+        output.WriteLine($"min Re: VSWR2=3 → {at3:F2} Ω   VSWR2=20 → {at20:F2} Ω");
+
+        Assert.True(at3 <= FetMxeZ.Real / 3.0 + 1e-6,
+            $"the grid must reach at least the VSWR2=3 extreme ({FetMxeZ.Real / 3.0:F2} Ω); got {at3:F2} Ω");
+        Assert.Equal(FetMxeZ.Real / 20.0, at20, 2);
+        Assert.True(at20 < at3, "raising VSWR2 must extend the low-impedance reach");
+    }
+
+    /// <summary>
+    /// Nothing OVERSHOOTS the requested circle either — the other half of the box-vs-circle defect.
+    /// A box's corners reach far past the circle they bound: on the measured run 40 of 134 points sat
+    /// beyond VSWR2 from MXE, one of them at a VSWR of 2010, wasting simulation on the Smith-chart
+    /// rim while the low-Z side went unsampled.
+    /// </summary>
+    [Fact]
+    public void NoGridPointLiesBeyondVswr2FromMxe()
+    {
+        const double vswr2 = 20.0;
+        var result = GamWriter.Build(new GamWriter.GamBuilderParams(FetMxpZ, FetMxeZ,
+            UnscorableZ: [], Vswr1: 2.0, Vswr1Resolution: 4,
+            Vswr2: vswr2, Vswr2Resolution: 10));
+
+        var worst = result.Points.MaxBy(z => RfHelpers.VswrFromZ(FetMxeZ, z));
+        double worstVswr = RfHelpers.VswrFromZ(FetMxeZ, worst);
+        output.WriteLine($"worst point {worst} at VSWR {worstVswr:F2} from MXE, of {result.Points.Count} points");
+
+        Assert.True(worstVswr <= vswr2 * 1.001,
+            $"a grid point sits at VSWR {worstVswr:F1} from MXE, past the requested {vswr2}");
+    }
+
+    /// <summary>
+    /// The broad rings span the whole range rather than bunching at one end: every decade of VSWR
+    /// between the focused region and VSWR2 has terminations in it. This is the property that makes
+    /// a contour interpolator usable, and the one a linear box sample destroys at large VSWR2.
+    /// </summary>
+    [Fact]
+    public void TheBroadRingsSpanTheWholeVswrRange()
+    {
+        var result = GamWriter.Build(new GamWriter.GamBuilderParams(FetMxpZ, FetMxeZ,
+            UnscorableZ: [], Vswr1: 2.0, Vswr1Resolution: 4,
+            Vswr2: 20.0, Vswr2Resolution: 10));
+
+        foreach (var (lo, hi) in new[] { (2.0, 4.0), (4.0, 8.0), (8.0, 14.0), (14.0, 20.0) })
+        {
+            int n = result.Points.Count(z =>
+            {
+                double v = RfHelpers.VswrFromZ(FetMxeZ, z);
+                return v > lo && v <= hi;
+            });
+            output.WriteLine($"VSWR {lo}–{hi} from MXE: {n} points");
+            Assert.True(n >= 4, $"only {n} terminations between VSWR {lo} and {hi} of MXE");
+        }
     }
 
     // ── 4. File write round-trip ──────────────────────────────────────────────

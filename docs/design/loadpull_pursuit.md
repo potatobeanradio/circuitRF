@@ -109,11 +109,11 @@ When `OutputGrid` is set, after finding MXP and MXE, build a `.gam` file designe
 
 1. Find MXP and MXE (the search, §1).
 2. Build a **`VSWR1` (focused, default 1.5) VSWR circle** around **each** of MXP and MXE (§5.1).
-3. In the grid domain, take each circle's min/max X and min/max Y → **box1** (around MXP) and **box2** (around MXE).
-4. Sample box1 and box2 each with **`VSWR1_resolution` × `VSWR1_resolution`** (default 4×4) equally-spaced points in X and Y — the **focused** (high-resolution) sampling.
-5. Build a **`VSWR2` (broad, default 3) VSWR circle** around MXE → **box3** (min/max X,Y).
-6. Combine box1, box2, box3 extents → **box4** (overall min/max X,Y).
-7. Sample box4 with **`VSWR2_resolution` × `VSWR2_resolution`** (default 4×4) equally-spaced points, but **discard any that fall inside box1 or box2** — the broad sampling is effectively coarser (same point count over a larger area).
+3. *(withdrawn — see §5.2. The focused sampling no longer goes through a bounding box either.)*
+4. Sample each of those two discs with **`VSWR1_resolution` rings × `VSWR1_resolution` angles** (default 4×4 = 16 points each) — the **focused** (high-resolution) sampling.
+5. Build a **`VSWR2` (broad, default 3) VSWR circle** around MXE — the **disc**, not its bounding box (§5.2).
+6. *(withdrawn — see §5.2. The broad sampling no longer goes through a combined bounding box.)*
+7. Sample that disc with **`VSWR2_resolution` rings × `VSWR2_resolution` angles** (default 4×4 = 16 points), but **discard any that fall within `VSWR1` of either optimum** — the broad sampling is coarser (same point count over a larger area), and the focused discs already cover what it drops.
 8. Write the focused points (step 4), the broad points (step 7), and the **MXP and MXE points themselves** to the `.gam` file.
 
 **Non-convergent exclusion** (unless `keepNonconvergingPoints`): drop any output point within `nonconvergentVSWR` (default 1.05) of a termination found non-converging during the search, and **warn the user** that points were removed.
@@ -143,6 +143,27 @@ z_radius = z.real·2·gamma/(1−gamma²)
 point(t) = (z_center.real + z_radius·cos t) + j·(z_center.imag + z_radius·sin t),  t ∈ [0, 2π)
 ```
 (The owner's reference implementation oversamples `t` with a VSWR-dependent step; circuitRF only needs the **min/max X and Y** of the circle for the box, so it can compute the extents directly from `z_center ± z_radius` rather than sampling `t`.)
+
+### 5.2 Why the broad sampling follows the circle and not its box (2026-08-23)
+
+Steps 5–7 used to sample a *bounding box*: the extents of the VSWR2 circle unioned with box1 and box2, filled with `VSWR2_resolution` × `VSWR2_resolution` equally-spaced points. That was a computational convenience, and at large `VSWR2` it stops delivering what the setting names.
+
+A constant-VSWR circle about `R` spans `R/v … R·v`. At `v = 20` that is **95 % of the width above the centre and 5 % below it**, so a linear lattice puts nine of ten columns above the centre's resistance and one below — and because the box is as tall as it is wide, that one column's rows are spaced so far apart that none lands anywhere near the centre's reactance. Measured on a real run (MXE = 124.77 − j6.17 Ω, `VSWR1 = 2` @ 4×4, `VSWR2 = 20` @ 10×10, 134 terminations):
+
+- The lowest-resistance termination anywhere within VSWR 20 of MXE was **40.2 Ω — a VSWR of 3.1** — and it came from the VSWR1 box around **MXP**. The low-impedance reach was set by `VSWR1`; `VSWR2` contributed nothing to it.
+- **65 of the 134 points sat at |Γ| > 0.95**, bunched invisibly against the Smith-chart rim where a 2-D interpolant gets nothing from them. Only 14 were inside |Γ| < 0.5.
+- **40 of the 134 lay *beyond* VSWR2 from MXE**, one of them at a VSWR of **2010** — a box's corners reach far past the circle they bound, so the same sampling that under-reached on the low side over-reached on the diagonals.
+- The step-7 "discard anything inside box1 or box2" filter removed **nothing**: at a 276.6 Ω lattice spacing no broad point can land in a 120 Ω-wide box.
+
+Sampling the disc directly fixes both halves. In the reflection plane referenced to MXE (`Γ = (Z − Z_MXE)/(Z + conj(Z_MXE))`, the same Γ `VswrFromZ` uses), place `n` rings at `|Γ| = g·k/n` for `k = 1…n` with `g = (VSWR2−1)/(VSWR2+1)`, `n` angles per ring, alternate rings offset half an angular step so the points do not line up into radial spokes, and map back with `Z = (Z_MXE + Γ·conj(Z_MXE))/(1 − Γ)`. Equal spacing in |Γ| is a gentle geometric progression in VSWR — at `VSWR2 = 20`, `n = 10`: 1.2, 1.44, 1.77, 2.2, 2.75, 3.55, 4.79, 6.99, 11.9, 20 — dense where the contours turn and sparse at the rim, which is the density a contour interpolator wants. The outermost ring keeps its cardinal points, so the low-impedance extreme `Re(Z_MXE)/VSWR2 + j·Im(Z_MXE)` is always a grid point.
+
+Same run, rebuilt: **93 points** instead of 134, lowest resistance **6.24 Ω at exactly VSWR 20.00** from MXE, **nothing** beyond VSWR2, and the rim crowding gone (3 points at |Γ| > 0.95 instead of 65). The reach is now monotone in the setting — within VSWR 4 of MXE the grid reaches 37 Ω, within 8 it reaches 20 Ω, within 12 it reaches 13 Ω.
+
+**The focused sampling has the same defect, and it was measured before being changed too.** It is milder in magnitude but worse in proportion: of a `VSWR1 = 2` box's 16 points, **12 (75 %) lie outside the requested circle**, the worst corner reaching **VSWR 3.32** — a 1.66× overshoot rather than the broad box's 100×, because a √2-in-Z box corner maps to a small VSWR excess down at VSWR 2 and to an enormous one up near |Γ| = 1. And at an even resolution no row lands on the optimum's own reactance, so the circle's low-impedance extreme is missed by 60 Ω on an 80 Ω optimum.
+
+Both focused regions are therefore sampled the same way — `VSWR1_resolution` rings × `VSWR1_resolution` angles over the VSWR1 disc. The effect on the run above: terminations **within VSWR1 of MXP rise from 10 to 28, and of MXE from 17 to 28**; within VSWR 1.5 of either optimum, from 10 to 22. The whole focused budget now lands where it was asked to.
+
+With the focused regions circular, step 7's exclusion tests the **disc**, not a bounding box — a broad point in what used to be a box corner is outside the VSWR1 circle, so the focused sampling never covered it and discarding it left a hole. The final grid for that run is **99 points** (vs 134), spanning 6.24 … 2495 Ω with nothing past VSWR2.
 
 ## 6. Auto-Zsource (conjugate match at backoff)
 
