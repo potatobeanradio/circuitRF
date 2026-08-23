@@ -90,6 +90,11 @@ public sealed class ClayPCellOrigin
     /// spelling of the same thing.</para></summary>
     public List<string>? ComputedParameters { get; set; }
     public Dictionary<string, PCellValue>? ComputedValues { get; set; }
+
+    /// <summary>The parameters the run that drew this cell never read — for the same reason as the
+    /// two above: a cache hit does not re-run the generator, so a measurement made at generation
+    /// time is only knowable later if it travels with the cell.</summary>
+    public List<string>? UnreadParameters { get; set; }
 }
 
 /// <summary>Reads and writes .clay files. Framework-free (no Avalonia / Skia).</summary>
@@ -174,6 +179,7 @@ public static class LayoutPersistence
             Parameters         = new Dictionary<string, PCellValue>(o.Parameters),
             ComputedParameters = o.ComputedParameters is { Count: > 0 } c ? [.. c] : null,
             ComputedValues     = o.ComputedValues is { Count: > 0 } v ? new Dictionary<string, PCellValue>(v) : null,
+            UnreadParameters   = o.UnreadParameters is { Count: > 0 } u ? [.. u] : null,
         } : null,
         SchematicPCellSnapshots = view.SchematicPCellSnapshots.Count > 0
             ? view.SchematicPCellSnapshots.ToDictionary(kv => kv.Key, kv => new Dictionary<string, PCellValue>(kv.Value))
@@ -203,7 +209,10 @@ public static class LayoutPersistence
             SnapDbu      = file.SnapDbu,
             AngleMode    = file.AngleMode,
             TechRef      = file.TechRef,
-            PCellOrigin  = file.PCellOrigin is { } o ? new PCellOrigin(o.GeneratorId, o.Parameters, o.ComputedParameters, o.ComputedValues) : null,
+            PCellOrigin  = file.PCellOrigin is { } o
+                ? new PCellOrigin(o.GeneratorId, o.Parameters, o.ComputedParameters, o.ComputedValues,
+                                  o.UnreadParameters)
+                : null,
         };
 
         if (file.SchematicPCellSnapshots is not null)

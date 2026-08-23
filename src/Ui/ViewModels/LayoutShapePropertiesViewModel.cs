@@ -1347,7 +1347,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // optional and both are absent for a built-in, which is why a built-in's rows are unchanged.
         return new PCellParamRowViewModel(this, name, unit,
                                           DeclaredParamInfo(name),
-                                          SelectedInstanceComputes(name));
+                                          SelectedInstanceComputes(name),
+                                          SelectedInstanceDoesNotRead(name));
     }
 
     /// <summary>The generator's declaration for one parameter of the selected instance's cell, or
@@ -1383,6 +1384,17 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
         return res is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
                && origin.IsComputed(name);
+    }
+
+    /// <summary>Whether the run that drew the selected instance's cell never READ this parameter —
+    /// recorded in the cell itself, like <see cref="SelectedInstanceComputes"/> and for the same
+    /// reason (a cache hit does not re-run the generator). Display only; nothing branches on it.</summary>
+    private bool SelectedInstanceDoesNotRead(string name)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return false;
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        return res is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
+               && origin.IsUnread(name);
     }
 
     private SymbolKind? ResolveSelectedInstancePCellComponentName()
@@ -1449,13 +1461,20 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
         // A DERIVED parameter's stored value is whatever it was stored with — it is not read, so
         // nothing has been keeping it in step with the geometry that determines it. Where the
-        // generator reported what it actually came out to, that is the only current number and it
-        // wins; where it reported none, the stored one is shown for want of anything better, which
-        // is exactly why the field is not editable.
-        if (origin.ComputedValues is { } derived && derived.TryGetValue(row.Name, out var computed))
+        // generator reported what it actually came out to, that is the only current number.
+        // row.IsComputed, not origin.IsComputed: a parameter the DECLARATION marks derived is just as
+        // unread as one the run reported, and its stored number is just as stale.
+        if (row.IsComputed)
         {
             row.Error = null;
-            row.ShowValue(FormatPCellParamValue(row.Unit, computed), computed);
+            if (origin.ComputedValues is { } derived && derived.TryGetValue(row.Name, out var computed))
+                row.ShowValue(FormatPCellParamValue(row.Unit, computed), computed);
+            else
+                // Nothing reported one. The stored number is NOT shown in its place: it is the value
+                // the design was saved with, it stopped being true the moment a dimension moved, and
+                // in a field the user cannot edit it reads as the generator's own answer. A blank
+                // says the one true thing — this is derived, and nobody here knows to what.
+                row.ShowValue(PCellParamRowViewModel.NoDerivedValue, null);
             return;
         }
 

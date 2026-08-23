@@ -6,6 +6,140 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## A PCell parameter that is neither an input nor an output (2026-08-23)
+
+**Asked:** is a maximum-capacitance parameter on a vendor MIM cap an input or an output? The dialog
+gives it a text box, which reads as an input.
+
+**Neither.** The cell copies it out of its own process data into its parameter list and never reads
+it. It is not derived either — it is not in the cell's solve-for selector, and nothing computes it
+from the geometry. Editing it changes no artwork; it only mints a second generated-cell folder whose
+geometry is identical to the first. The same is true of that cell's specific-capacitance, minimum
+width and minimum length rows.
+
+### circuitRF cannot tell these from the model name, and that was measured, not assumed
+
+The obvious rule is "its default came straight out of the process data". It fails hard: across one
+open kit, **258 of 577 declared rows carry a process value verbatim** — including `w` and `l`, the
+real inputs, whose defaults are `*_defW`/`*_defLW`. Adding "and the cell never reads it" removes `w`
+and `l` and still catches `model`, `m` and `ng`, which the previous entry's rule deliberately keeps
+editable ("locking every unread parameter would take the model name away").
+
+Two smaller traps in that measurement, both worth keeping:
+
+- **Value-identity matching is polluted by interning.** `'8'`, `1` and `'0'` matched unrelated
+  process keys, because a short string or a small int passed from a dict is the *same object* as one
+  elsewhere in it. Same trap the derived-value recorder documents; it bites anything that identifies
+  a value by identity across a large table.
+- **There is no editability flag anywhere in such a kit.** A cell's declaration is
+  `(name, default, label)` and a constraint at most; the vendor's own dialog held that knowledge and
+  it did not come across with the layout port. Checked directly, not assumed.
+
+### So state the measurement and classify nothing
+
+Wire version 8 adds `unread` to the generate reply: the parameters this run did not read, measured
+on the same read set the derived-output inference already uses. A parameter the generator never
+looked at cannot have shaped the geometry it just produced — that is the one honest thing available,
+and it is said on the row's tooltip: *"The generator did not read this on the run that drew the
+current artwork, so changing it will not change the geometry."*
+
+**Nothing branches on it.** No editor changes, no commit is refused, no field is locked. "Unread" and
+"not the user's to set" are different things and conflating them is the expensive direction — a
+netlist parameter is unread here and still belongs to the user. Where a parameter is also derived,
+the derived wording wins; it is the stronger statement.
+
+It travels in the cell's own `.clay` for the same reason `ComputedParameters` does: a generated cell
+folder is reused on an existence check, so a measurement made at generation time is only knowable
+later if it is written down with the cell.
+
+## A derived PCell parameter now shows the KIT's own number, or none (2026-08-23)
+
+**Reported:** in a workspace referencing a vendor kit, a MIM capacitor's `C` does not update when its
+`w` or `l` change in the PCell parameter dialog.
+
+It was not updating because nothing was computing it. The cell had already been correctly identified
+as *deriving* `C` — the row was locked, which is the visible half of the previous entry's work — but
+the generate reply named `C` with no value, so the row fell back to the number the design was stored
+with. Three generated cells of that capacitor, at 7 µm square, 500 µm square and 7 × 500, all carried
+`C = 74.6f`: the 7 µm square answer. The 500 µm square one is ~375 pF, five thousand times larger.
+
+Two things were wrong and they are separate.
+
+### 1. The stale number was shown as though it were the answer
+
+A parameter named as derived with no value now renders an **em dash**, never the stored value. That
+value is not read by anything, it stopped being true the moment a dimension moved, and — in a field
+deliberately made non-editable — it reads as the generator's own statement rather than as a leftover.
+The tooltip says which case the reader is looking at.
+
+This is `row.IsComputed`, not `origin.IsComputed`: a parameter the DECLARATION marks derived is just
+as unread as one the run reported, and its stored number is just as stale.
+
+### 2. The kit ships the calculator; it was never called
+
+`cni/bridge.py` used to record `C` as an output with value `None`, on the stated grounds that
+"nothing in these cells computes the quantity — the vendor's own dialog callback did". That is true
+of the *cell* and false of the *kit*. `defineParamSpecs` computes the parameter's DEFAULT, and it does
+so by calling the kit's own calculator:
+
+```python
+C = CapCalc('C', 0, Numeric(defLW), Numeric(defLW), 'mim')
+specs('C', eng_string(C), 'C')
+```
+
+The function is right there, reachable, and already proven to produce a value of the right kind — it
+produced the one the declaration ships. The only thing it was never given is *this instance's*
+geometry.
+
+So the bridge now **watches the declaration run** (`_DeclarationRecorder`, a `sys.settrace` filtered
+to the kit's own package, active once per cell at registration and never during generation) and
+records every module-level call the kit made, with the callee's own argument names and the value each
+argument received. From that it builds a **recipe** for any default that was computed rather than
+written down, and replays it per generate with the instance's values.
+
+**circuitRF performs none of the arithmetic and must not start.** It never models what a capacitance
+or a resistance is; it re-invokes the kit's function with different arguments. Where no route exists
+the parameter is still reported as derived with no value, and the dash stands.
+
+Three decisions carry the whole thing:
+
+- **An argument is substituted only when the callee NAMES it after a cell parameter AND the value it
+  received is exactly what that parameter declares as its default.** The name alone is a hint and
+  nothing more — plenty of functions take a width that is not this cell's. The value check is what
+  identifies it, and it is checkable rather than assumed. The parameter being derived is never
+  substituted into its own calculation: a solver takes the quantity as an argument when solving the
+  other way round, and feeding back the stale stored value is exactly what this exists to stop.
+- **Values are tracked between calls by IDENTITY, not equality.** `specs('C', eng_string(C), 'C')`
+  hands on the very float object the calculator returned, so identity is exact where it applies and
+  silent where it does not. Ints, bools and one-character strings are excluded outright *because*
+  Python interns them: two unrelated functions that both return `0` return the same object, and a
+  chain built on that coincidence reports a number from the wrong function.
+- **A recipe is verified before it is believed.** Replayed at the cell's own defaults it must return
+  the declared default — the one answer already known to be right, on the single case where a wrong
+  one is detectable. It cannot prove the argument POSITIONS on a cell whose defaults are all equal (a
+  square device tells w from l only by which one moved), but a symmetric formula does not care and an
+  asymmetric one is caught the moment either default differs. The synthetic kit's calculator is
+  asymmetric on purpose for that reason.
+
+Measured against one open vendor kit, 34 generators: **six now report a live derived value** where
+none did — a MIM capacitance, a diode area, two tap resistances and two resistor resistances — and in
+all six the replay at defaults reproduces the kit's own declared default exactly. One parameter on
+one of them still has no route and correctly stays valueless. Registration cost for the whole kit,
+tracing included: **50 ms**.
+
+A calculator supplied by hand through `reports_computed` still wins over one found this way
+(`Result.auto_computed` is how the two are told apart). Losing to an automatic one would be invisible
+while the automatic one is right and baffling the day it is not.
+
+### The cells already on disk would not have picked any of this up
+
+A generated cell folder is content-addressed and reused on a plain existence check, and the hash
+covered the kit's scripts but **not circuitRF's own `pcell-python` package** — which is the other
+half of what built the cell, and the half that decides which parameters are recorded as outputs and
+what they were derived to. So the fix would have appeared on a newly-placed part and not on the
+identical part already in the design. `PCellPythonPackage.ContentKey` now contributes to that hash;
+the existing regenerate-and-repoint pass on workspace open handles the one-time move and says so.
+
 ## Opening a workspace took 2.1 s, and four fifths of it was work already on disk (2026-08-23)
 
 **Reported:** a noticeable lag when opening a particular workspace, presumed to be the PDK it

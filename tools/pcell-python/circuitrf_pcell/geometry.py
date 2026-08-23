@@ -467,3 +467,21 @@ class Result:
     #: determines it changes underneath. Naming the parameter at least stops circuitRF offering an
     #: edit box that cannot do anything; naming it AND its value makes the list track the artwork.
     computed: dict[str, Any] = field(default_factory=dict)
+
+    #: The parameters this run did NOT read — a plain measurement, and only worth reporting where it
+    #: is one. A parameter the generator never looked at cannot have affected the geometry it just
+    #: produced, which is the one thing circuitRF can honestly say about a field whose edits appear
+    #: to do nothing. It is NOT a claim that the parameter is meaningless: a model name, a
+    #: multiplier or an initial condition is a netlist parameter that never touched the artwork and
+    #: is still the user's to set. So it changes no editor and locks nothing — it is said on hover.
+    #:
+    #: Left empty by a generator that does not measure it, which is every generator written against
+    #: this package: reads are recorded per accessor, and a generator that reads through a derived
+    #: copy of its parameters would otherwise report every one of them unread.
+    unread: list[str] = field(default_factory=list)
+
+    #: Which of :attr:`computed`'s values the HOST worked out on the generator's behalf, rather than
+    #: the generator stating them — today, by replaying the kit's own calculator (``cni.bridge``).
+    #: Only :func:`circuitrf_pcell.reports_computed` reads it, so that a calculator supplied by hand
+    #: still takes precedence over one found automatically; nothing crosses the wire.
+    auto_computed: set[str] = field(default_factory=set)

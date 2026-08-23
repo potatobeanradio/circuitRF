@@ -19,7 +19,19 @@ namespace CircuitRF.Ui.Layout.PCells.Wire;
 public static class PCellWireVersion
 {
     /// <summary>
-    /// Version 7 (2026-08-23) added the EDITOR HINTS a parameter declaration may carry —
+    /// Version 8 (2026-08-23) added <see cref="PCellWireGenerateReply.Unread"/> — the parameters a
+    /// run did NOT read. Optional, additive, and a bump for the reason §7 gives: versions are
+    /// compared for equality, so a script that emits a new field must speak the version describing it.
+    ///
+    /// <para>It answers a question nothing else on this wire can. A parameter can be neither an
+    /// input to the artwork nor an output of it — a process constant a kit copies out of its own
+    /// technology data into its parameter list, sitting in a text box that invites an edit doing
+    /// nothing. circuitRF cannot classify those: measured across one open kit, no structural signal
+    /// separates them from the model name and the multiplier, which must stay editable. What it can
+    /// do is state the measurement — this run did not read it, so it cannot have shaped the geometry
+    /// — and leave the decision to the reader.</para>
+    ///
+    /// <para>Version 7 (2026-08-23) added the EDITOR HINTS a parameter declaration may carry —
     /// <see cref="PCellWireParameterDecl.Label"/>, <see cref="PCellWireParameterDecl.Choices"/>,
     /// <see cref="PCellWireParameterDecl.Minimum"/>/<see cref="PCellWireParameterDecl.Maximum"/>,
     /// <see cref="PCellWireParameterDecl.Computed"/> — plus
@@ -60,7 +72,7 @@ public static class PCellWireVersion
     /// rather than one circuitRF passed in. Schema §1 records why version 1 deliberately withheld
     /// it.</para>
     /// </summary>
-    public const int Current = 7;
+    public const int Current = 8;
 }
 
 /// <summary>
@@ -551,6 +563,18 @@ public sealed class PCellWireGenerateReply
     /// geometry determining it changes underneath.</para>
     /// </summary>
     public Dictionary<string, PCellValue>? ComputedValues { get; set; }
+
+    /// <summary>
+    /// The parameters this run did NOT read (wire version 8) — a measurement, not a classification.
+    ///
+    /// <para>A parameter the generator never looked at cannot have affected the geometry it just
+    /// produced. That is worth saying and it is all that is said: it changes no editor and locks
+    /// nothing, because "unread" and "not the user's to set" are different things — a model name, a
+    /// multiplier and an initial condition are netlist parameters that never touched the artwork.
+    /// Locking every unread parameter would take the model name away, which is exactly the error
+    /// <see cref="Computed"/>'s own inference exists to avoid.</para>
+    /// </summary>
+    public List<string>? Unread { get; set; }
 }
 
 /// <summary>The preview-mode vocabulary, in one place so the encoder and decoder cannot disagree.</summary>

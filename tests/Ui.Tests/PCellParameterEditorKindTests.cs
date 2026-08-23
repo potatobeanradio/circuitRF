@@ -17,6 +17,11 @@ namespace CircuitRF.Ui.Tests;
 /// w or l moves. Rendered identically to the width beside it, it reads as an input, it invites an
 /// edit, and it silently ignores one.</para>
 /// </summary>
+/// <para>In <see cref="Layout.PCells.PCellResolverCollection"/> because it installs a resolver into
+/// the STATIC <see cref="PCellRegistry"/>: another class clearing resolvers mid-test leaves a
+/// generated cell that cannot be rebuilt, which reads here as a row showing the value from before
+/// the edit. Passes in isolation and fails under load, which is the only way that is ever seen.</para>
+[Collection(Layout.PCells.PCellResolverCollection.Name)]
 public sealed class PCellParameterEditorKindTests : IDisposable
 {
     private readonly string _root;
@@ -59,18 +64,25 @@ public sealed class PCellParameterEditorKindTests : IDisposable
     /// <summary>Stands in for a running kit worker: it answers the same two questions
     /// <see cref="PCellWorkerProvider"/> does — what do you declare, and here is your geometry — so
     /// the rows are built through the real registry lookup rather than around it.</summary>
-    private sealed class FakeKit : IPCellGeneratorResolver
+    private sealed class FakeKit(bool reportsTheDerivedValue = false) : IPCellGeneratorResolver
     {
         public PCellGenerator? Resolve(string generatorId) => generatorId == GenId
             ? (parameters, tech, layers) => new PCellResult(
                   [new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 }],
                   [],
-                  ComputedParameters: ["C"])
+                  ComputedParameters: ["C"],
+                  // What a kit that can state the number reports: derived FROM the parameters this
+                  // run was given, so it moves when they do.
+                  ComputedValues: reportsTheDerivedValue
+                      ? new Dictionary<string, PCellValue>
+                        { ["C"] = PCellValue.Text(parameters.TryGetValue("l", out var l) ? $"C({l.AsText()})" : "C(?)") }
+                      : null)
             : null;
 
         public IReadOnlyCollection<string> KnownGeneratorIds => [GenId];
         public string Describe() => "fake kit";
-        public string? ContentKeyFor(string generatorId) => generatorId == GenId ? "v1" : null;
+        public string? ContentKeyFor(string generatorId)
+            => generatorId == GenId ? (reportsTheDerivedValue ? "v2" : "v1") : null;
 
         public IReadOnlyList<PCellParameterInfo>? DeclaredParameters(string generatorId)
             => generatorId == GenId ? Declared : null;
@@ -81,10 +93,11 @@ public sealed class PCellParameterEditorKindTests : IDisposable
                 : null;
     }
 
-    private (LayoutEditorViewModel Vm, LayoutShapePropertiesViewModel Props) SelectOnePlacedCap()
+    private (LayoutEditorViewModel Vm, LayoutShapePropertiesViewModel Props) SelectOnePlacedCap(
+        bool reportsTheDerivedValue = false)
     {
         PCellRegistry.ClearResolvers();
-        PCellRegistry.AddResolver(new FakeKit());
+        PCellRegistry.AddResolver(new FakeKit(reportsTheDerivedValue));
 
         string clayPath = Path.Combine(_root, "Doc", "layout", "main.clay");
         var vm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 }, clayPath)
@@ -147,7 +160,46 @@ public sealed class PCellParameterEditorKindTests : IDisposable
         // content hash, a new generated cell, and a value the generator overwrites on its next run —
         // an edit that appears to take and changes nothing.
         Assert.Equal(beforeRef, vm.Model.Instances[0].CellRef);
-        Assert.Equal("74.6f", Row(props, "C").ValueText);
+        Assert.Equal(PCellParamRowViewModel.NoDerivedValue, Row(props, "C").ValueText);
+    }
+
+    /// <summary>
+    /// A derived parameter whose value nobody reported shows NO number — not the one the design was
+    /// stored with.
+    ///
+    /// <para>That stored number is the whole problem this closes. It is not read by anything, so it
+    /// stopped being true the moment w or l moved; and sitting in a field the user cannot type into,
+    /// it reads as the generator's own answer rather than as a leftover. The parameters here are
+    /// exactly the case: C stored as 74.6f, on a cell that derives it and reports nothing.</para>
+    /// </summary>
+    [Fact]
+    public void ADerivedValueNobodyReported_ShowsNoNumberRatherThanTheStoredOne()
+    {
+        var (vm, props) = SelectOnePlacedCap();
+
+        Assert.Equal("74.6f", ResolveOrigin(vm).Parameters["C"].AsText());   // still on disk, unread
+        Assert.Equal(PCellParamRowViewModel.NoDerivedValue, Row(props, "C").ValueText);
+
+        // And the row still says WHY there is nothing there, rather than looking broken.
+        Assert.Contains("Derived by the generator", Row(props, "C").Tip);
+    }
+
+    /// <summary>
+    /// A generator that DOES report its derived value has that value shown, and shown again when the
+    /// geometry it depends on changes — which is the whole reason the stored number is not worth
+    /// falling back to.
+    /// </summary>
+    [Fact]
+    public void AReportedDerivedValue_IsShown_AndFollowsTheGeometry()
+    {
+        var (_, props) = SelectOnePlacedCap(reportsTheDerivedValue: true);
+
+        Assert.Equal("C(6.99u)", Row(props, "C").ValueText);
+
+        Row(props, "l").Commit("20u");
+
+        // A new parameter set is a new generated cell, so the row is rebuilt against a fresh run.
+        Assert.Equal("C(20u)", Row(props, "C").ValueText);
     }
 
     [Fact]

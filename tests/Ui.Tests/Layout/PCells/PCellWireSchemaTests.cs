@@ -439,11 +439,11 @@ public sealed class PCellWireSchemaTests
     }
 
     [Fact]
-    public void TheWireVersion_IsSeven_AndTheContractVersionDidNotMove()
+    public void TheWireVersion_IsEight_AndTheContractVersionDidNotMove()
     {
         // Adding an optional reply field is a bump because describe compares for EQUALITY and refuses
         // rather than negotiating. The contract number stays put: Generate's signature is unchanged.
-        Assert.Equal(7, PCellWireVersion.Current);
+        Assert.Equal(8, PCellWireVersion.Current);
         Assert.Equal(2, PCellContractVersion.Current);
     }
 

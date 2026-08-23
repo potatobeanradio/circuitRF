@@ -69,6 +69,11 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
     public bool IsChoice   => Editor == PCellParamEditor.Choice;
     public bool IsComputed => Editor == PCellParamEditor.Computed;
 
+    /// <summary>What a derived parameter shows when nothing reported its current value — an em dash,
+    /// not the number the design was stored with. See <c>LayoutShapePropertiesViewModel.
+    /// PopulatePCellParamRow</c> for why a stale one is worse here than none.</summary>
+    public const string NoDerivedValue = "\u2014";
+
     /// <summary>Stable key for the focus-tracking guard (mirrors <c>VertexRowViewModel.FieldKeyX</c>) —
     /// computed once, not re-derived per refresh.</summary>
     public string FieldKey { get; }
@@ -117,7 +122,8 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
     private string? _selectedChoice;
 
     internal PCellParamRowViewModel(LayoutShapePropertiesViewModel owner, string name, string unit,
-                                    PCellParameterInfo? info = null, bool computed = false)
+                                    PCellParameterInfo? info = null, bool computed = false,
+                                    bool unread = false)
     {
         _owner   = owner;
         Name     = name;
@@ -142,7 +148,7 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
             ? [.. info!.Choices!.Select(FormatChoice)]
             : [];
 
-        Tip = BuildTip(info, Editor, name);
+        Tip = BuildTip(info, Editor, name, unread);
         RefreshFromInstance();
     }
 
@@ -157,13 +163,22 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
         _                     => choice.AsReal().ToString(System.Globalization.CultureInfo.InvariantCulture),
     };
 
-    private static string? BuildTip(PCellParameterInfo? info, PCellParamEditor editor, string name)
+    private static string? BuildTip(PCellParameterInfo? info, PCellParamEditor editor, string name,
+                                    bool unread)
     {
         var parts = new List<string>();
         if (info is { } i && !string.Equals(i.DisplayLabel, name, StringComparison.Ordinal))
             parts.Add(name);
         if (editor == PCellParamEditor.Computed)
-            parts.Add("Derived by the generator from the other parameters — not an input.");
+            parts.Add("Derived by the generator from the other parameters — not an input. " +
+                      "An em dash means this generator does not report what it came out to.");
+        // Said, not enforced. A parameter can be neither an input to the artwork nor an output of it
+        // — a process constant a kit copies out of its own technology data, or a netlist parameter
+        // that never touched the geometry — and there is no signal that separates the two, so the
+        // box stays. What can be stated is the measurement, which is what this is.
+        else if (unread)
+            parts.Add("The generator did not read this on the run that drew the current artwork, " +
+                      "so changing it will not change the geometry.");
         if (info is { Minimum: { } lo, Maximum: { } hi }) parts.Add($"{lo} to {hi}");
         else if (info is { Minimum: { } only }) parts.Add($"at least {only}");
         else if (info is { Maximum: { } cap }) parts.Add($"at most {cap}");

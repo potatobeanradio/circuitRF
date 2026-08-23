@@ -49,7 +49,7 @@ from .wire import read_frame, write_frame
 #: argument to every generator: a new parameter would be a CONTRACT change and would break every
 #: generator ever written, while an extra attribute breaks none. The two versions move independently
 #: for exactly this reason — see ``docs/design/pcell-wire-schema.md`` §7.
-WIRE_VERSION = 7
+WIRE_VERSION = 8
 CONTRACT_VERSION = 2
 
 #: Dimensions the wire understands. Deliberately three: length and angle are the only ones that
@@ -257,6 +257,7 @@ def reports_computed(generator_id: str,
                 print(f"{generator_id}: could not compute its derived values: {exc!r}",
                       file=sys.stderr)
                 return result
+            automatic = getattr(result, "auto_computed", ())
             for name, value in (derived or {}).items():
                 # A generator that already stated a VALUE knows more about it than a bolt-on
                 # calculator does and keeps it. A ``None`` is not a value — it is the claim "this is
@@ -264,7 +265,11 @@ def reports_computed(generator_id: str,
                 # is replaced. (Plain setdefault gets this wrong: the host measures a kit's outputs
                 # by running its cells, so every name this is called for is ALREADY present as None
                 # by the time the wrapper sees it, and every value would be silently dropped.)
-                if result.computed.get(str(name)) is None:
+                #
+                # A value the HOST derived on the generator's behalf is replaced too. Someone writing
+                # this hook is stating what the number should be, and losing to an automatic one that
+                # is already right is invisible while it is right and baffling the day it is not.
+                if result.computed.get(str(name)) is None or str(name) in automatic:
                     result.computed[str(name)] = value
             return result
         return generate
@@ -325,6 +330,8 @@ def _encode_result(result: Result) -> tuple[str, list[int]]:
         values = {str(k): encode(v) for k, v in result.computed.items() if v is not None}
         if values:
             body["computedValues"] = values
+    if result.unread:
+        body["unread"] = [str(n) for n in result.unread]
     return json.dumps(body), payload
 
 

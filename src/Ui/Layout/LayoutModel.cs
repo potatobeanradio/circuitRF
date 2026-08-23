@@ -303,13 +303,21 @@ public sealed record PCellOrigin(
     string GeneratorId,
     IReadOnlyDictionary<string, PCells.PCellValue> Parameters,
     IReadOnlyList<string>? ComputedParameters = null,
-    IReadOnlyDictionary<string, PCells.PCellValue>? ComputedValues = null)
+    IReadOnlyDictionary<string, PCells.PCellValue>? ComputedValues = null,
+    IReadOnlyList<string>? UnreadParameters = null)
 {
     /// <summary>Whether the generator DERIVES <paramref name="name"/> rather than reading it — a MIM
     /// cap's capacitance from its own w and l, a resistor's resistance from its own geometry.
     /// Editing such a parameter cannot change anything, so the parameter list shows it as text.</summary>
     public bool IsComputed(string name)
         => ComputedParameters is { } c && c.Contains(name, StringComparer.Ordinal);
+
+    /// <summary>Whether the run that drew this artwork never READ <paramref name="name"/> — so
+    /// nothing about the geometry depends on it. Not a claim that the parameter is inert or
+    /// read-only: a netlist parameter (a model name, a multiplier) is unread here and still the
+    /// user's to set. It is said on the row, and nothing branches on it.</summary>
+    public bool IsUnread(string name)
+        => UnreadParameters is { } u && u.Contains(name, StringComparer.Ordinal);
 }
 
 /// <summary>

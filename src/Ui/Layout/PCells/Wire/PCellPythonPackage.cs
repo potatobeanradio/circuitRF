@@ -53,4 +53,52 @@ public static class PCellPythonPackage
     /// <c>pcell-python</c> holding something else must not be adopted silently.</summary>
     private static bool IsPackageRoot(string directory)
         => File.Exists(Path.Combine(directory, PackageMarker, "__init__.py"));
+
+    /// <summary>
+    /// A content hash of this package, for a generated cell's identity.
+    ///
+    /// <para><b>Why a kit's own scripts are not the whole of what built its cells.</b> This package
+    /// is the other half: it is what turns a vendor cell into geometry, and it decides things that
+    /// end up recorded IN the cell — which parameters the run treated as outputs, and what it derived
+    /// them to. Change that and an on-disk cell built by the previous version is stale in exactly the
+    /// way <see cref="PCellGeneratorContentHash"/> exists to prevent, with none of the kit's own
+    /// files having moved. A derived value that appeared for a newly-placed part and not for the
+    /// identical part already in the design is how this was found.</para>
+    ///
+    /// <para>Empty when the package cannot be located or read — the caller then contributes nothing,
+    /// which is the behaviour every generated cell already had.</para>
+    /// </summary>
+    public static string ContentKey { get; } = ComputeContentKey();
+
+    private static string ComputeContentKey()
+    {
+        if (RootDirectory is not { } root) return "";
+        try
+        {
+            var files = Directory.EnumerateFiles(root, "*.py", SearchOption.AllDirectories)
+                                 .Where(f => !f.Contains("__pycache__", StringComparison.Ordinal))
+                                 .Select(f => (Relative: Path.GetRelativePath(root, f).Replace('\\', '/'), Absolute: f))
+                                 .OrderBy(e => e.Relative, StringComparer.Ordinal)
+                                 .ToList();
+            if (files.Count == 0) return "";
+
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var buffer = new byte[64 * 1024];
+            foreach (var (relative, absolute) in files)
+            {
+                byte[] name = System.Text.Encoding.UTF8.GetBytes(relative + "\n");
+                sha.TransformBlock(name, 0, name.Length, null, 0);
+                using var stream = File.OpenRead(absolute);
+                int read;
+                while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                    sha.TransformBlock(buffer, 0, read, null, 0);
+            }
+            sha.TransformFinalBlock([], 0, 0);
+            return Convert.ToHexString(sha.Hash!)[..12].ToLowerInvariant();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return "";
+        }
+    }
 }

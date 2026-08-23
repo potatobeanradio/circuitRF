@@ -343,6 +343,11 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
             key = "session-" + Guid.NewGuid().ToString("N")[..12];
         }
 
+        // circuitRF's own PCell package is part of what built the cell, not just the kit's scripts —
+        // see PCellPythonPackage.ContentKey. Appended only when there is one, so a build that cannot
+        // locate its own package produces exactly the keys it always did.
+        if (PCellPythonPackage.ContentKey is { Length: > 0 } host) key = $"{key}+{host}";
+
         _contentKeys[manifestDirectory] = key;
         return key;
     }

@@ -277,6 +277,11 @@ public sealed record PCellHandle(
 /// artwork, because a derived value is by definition not the one stored with the design. Both null
 /// — every generator written before this — means "everything I declare is an input", which is what
 /// was assumed unconditionally before.</summary>
+/// <para><paramref name="UnreadParameters"/> (additive) is a MEASUREMENT and not a classification:
+/// the parameters this run never looked at, and therefore the ones that cannot have shaped the
+/// geometry it produced. It changes no editor and locks nothing — "unread" and "not the user's to
+/// set" are different things, and a kit's model name, multiplier and initial condition are all
+/// unread. It exists so a field whose edits do nothing can say so instead of looking broken.</summary>
 public sealed record PCellResult(
     IReadOnlyList<LayoutShape> Shapes,
     IReadOnlyList<PCellPin> Pins,
@@ -284,7 +289,8 @@ public sealed record PCellResult(
     IReadOnlyList<PCellHandle>? Handles = null,
     PCellPreviewMode Preview = PCellPreviewMode.Auto,
     IReadOnlyList<string>? ComputedParameters = null,
-    IReadOnlyDictionary<string, PCellValue>? ComputedValues = null);
+    IReadOnlyDictionary<string, PCellValue>? ComputedValues = null,
+    IReadOnlyList<string>? UnreadParameters = null);
 
 /// <summary>
 /// What a generator says about ONE of its parameters, beyond its name and its value — everything

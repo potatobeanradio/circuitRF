@@ -76,6 +76,23 @@ no technology still generates geometry — so have a fallback.
 `diagnostics` is **not** an error channel. It is for a generator that *did* produce geometry and has
 a caveat about it. To refuse outright, raise.
 
+### Derived parameters
+
+A parameter your generator *computes* rather than reads — a capacitance from a plate's own w and l —
+goes in `Result.computed` as `{name: value}`. circuitRF renders it as read-only text and refuses an
+edit to it, and the value shown is the one from the run that drew the artwork on screen. Naming it
+with a value of `None` says "derived, and I cannot tell you to what": the field is still locked, and
+the readout shows an em dash rather than a number that has stopped being true.
+
+For a **vendor kit** driven through `cni.bridge`, both of these are worked out without the kit being
+touched: which parameters a cell derives is measured by running it, and the *value* comes from
+replaying the kit's own calculator — the function its `defineParamSpecs` called to produce that
+parameter's default — with the instance's values. Where a kit ships no such calculator, or the route
+cannot be verified against the declared default, the parameter is reported with no value. Nothing
+here computes a capacitance or a resistance on a kit's behalf. To state one yourself, or to override
+one found automatically, use `crf.reports_computed(generator_id, compute)` from the kit's own entry
+script.
+
 **`stdout` is the wire and must carry nothing else.** A stray `print()` lands in the middle of a
 frame and desynchronises the stream, which surfaces as circuitRF reporting a malformed reply nowhere
 near the print. Write to `sys.stderr`; circuitRF surfaces that.

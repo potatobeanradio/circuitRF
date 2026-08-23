@@ -130,7 +130,8 @@ public static class GeneratedCellStore
             AngleMode    = AngleMode.AnyAngle,
             TechRef      = null,
             PCellOrigin  = new PCellOrigin(generatorId, parameters,
-                                           result.ComputedParameters, result.ComputedValues),
+                                           result.ComputedParameters, result.ComputedValues,
+                                           result.UnreadParameters),
         };
         view.Shapes.AddRange(result.Shapes);
 

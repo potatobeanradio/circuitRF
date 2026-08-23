@@ -379,9 +379,15 @@ public static class PCellWireCodec
                 if (named.Contains(name)) (computedValues ??= new(StringComparer.Ordinal))[name] = value;
         }
 
+        // Wire version 8. Names only, and only the ones the generator actually declares — a name it
+        // never declared says nothing about a field the dialog shows.
+        var unread = reply.Unread is { Count: > 0 }
+            ? reply.Unread.Where(n => !string.IsNullOrEmpty(n)).Distinct(StringComparer.Ordinal).ToList()
+            : null;
+
         return new PCellResult(shapes, pins,
             diagnostics is { Count: > 0 } ? diagnostics : null,
-            handles, preview, computedNames, computedValues);
+            handles, preview, computedNames, computedValues, unread);
     }
 
     private static LayoutShape DecodeShape(PCellWireShape s, ReadOnlySpan<long> payload)

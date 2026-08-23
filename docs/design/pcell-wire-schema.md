@@ -368,12 +368,49 @@ The host takes the **union** of the declaration's `computed` and the reply's. Th
 because they answer for different generators: a script written against this wire declares its outputs
 up front, while a vendor kit's cells declare nothing and are only ever measured.
 
+A name with no value renders as an em dash, never as the value the design holds for it: that value is
+whatever the parameter was stored with, it stopped being true the moment the geometry moved, and in a
+field the user cannot edit it reads as the generator's own answer.
+
+### Neither an input nor an output
+
+A parameter need not be either. A kit's cell copies process constants — a specific capacitance, a
+minimum width, a maximum capacitance — out of its own technology data into its parameter list and
+then never reads them. They are not derived, so nothing locks them; they shape nothing, so a text box
+over them invites an edit that does nothing.
+
+**circuitRF does not classify these, and the reason is measured rather than cautious.** Across one
+open kit, 258 of 577 declared rows carry a value out of the process data verbatim — including `w` and
+`l`, the real inputs, whose defaults come from the same place. Intersecting that with "the cell never
+reads it" still catches the model name and the multiplier, which are netlist parameters that never
+touched the artwork and must stay the user's to set. There is no side-car file and no editability
+flag anywhere in such a kit; the declaration is `(name, default, label)` and nothing more.
+
+So the reply carries the measurement alone:
+
+```jsonc
+← { "ok": true, "shapes": [...], "pins": [...], "unread": ["model", "Cspec", "Wmin", "Cmax"] }
+```
+
+A parameter this run did not read cannot have shaped the geometry it produced. That is stated on the
+row, on hover, and **nothing branches on it** — no editor changes, no commit is refused. Where a
+parameter is *also* derived, the derived wording wins: it is the stronger statement.
+
+**Where a vendor kit's values come from without anybody wiring them up.** `cni.bridge` watches a
+cell's `defineParamSpecs` run and records the kit's own calls. A derived parameter whose *default*
+the kit computed names the function that computed it, and re-invoking that function with this
+instance's values is `computedValues` for that parameter. The route is verified before it is used —
+replayed at the cell's own defaults, it must return the declared default — and discarded otherwise,
+which puts the parameter back to a name with no value. circuitRF performs none of the arithmetic;
+where the kit ships no calculator there is still no number, and there is deliberately no fallback
+that computes a different one.
+
 
 ---
 
 ## 7. Versioning
 
-`wireVersion` is **7**. It is separate from `contractVersion` (still **2**) and both cross in both
+`wireVersion` is **8**. It is separate from `contractVersion` (still **2**) and both cross in both
 directions.
 
 | Version | Change |
@@ -385,6 +422,7 @@ directions.
 | 5 | `offset` — grow/shrink, §8. |
 | 6 | Optional `handles` and `preview` on the generate reply (§4.3), including a handle's optional `crossParameter`. Additive in shape; the bump is required anyway because versions are compared for equality. |
 | 7 | Editor hints on a parameter declaration — `label`, `choices`, `minimum`/`maximum`, `computed` — plus `computed`/`computedValues` on the generate reply (§4.5). Nothing a generator *receives* changes. |
+| 8 | `unread` on the generate reply (§4.5) — which parameters the run did not read. A measurement, not a classification: it changes no editor and locks nothing. |
 
 They version different things and can move independently: the contract describes what a generator
 receives (kinded parameters, R5's guarantees), the wire describes how it crosses. A byte-layout

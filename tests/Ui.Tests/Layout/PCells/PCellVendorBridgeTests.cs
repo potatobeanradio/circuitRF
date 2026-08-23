@@ -36,7 +36,11 @@ public sealed class PCellVendorBridgeTests
     /// Builds a throwaway kit — a device package plus the additions folder that names it — and returns
     /// the entry script and the directories that must go on <c>PYTHONPATH</c>.
     /// </summary>
-    private static (string Script, string[] PythonPath) WriteSyntheticKit()
+    /// <param name="overrideTheAutomaticCalculator">Adds an explicit <c>reports_computed</c> for the
+    /// cell whose derived value the bridge already works out on its own — the collision that decides
+    /// which of the two wins.</param>
+    private static (string Script, string[] PythonPath) WriteSyntheticKit(
+        bool overrideTheAutomaticCalculator = false)
     {
         string root = Path.Combine(Path.GetTempPath(), "crf-kit-" + Guid.NewGuid().ToString("N")[..8]);
         string pkg  = Path.Combine(root, "demo_kit", "devices");
@@ -147,6 +151,50 @@ public sealed class PCellVendorBridgeTests
                     Rect(Layer('M1'), Box(0, 0, self.w, self.l))
             """);
 
+        // A kit's own calculator, sitting in a module of its own exactly where a vendor kit keeps
+        // one: reachable, already correct, and never called with anything but the process defaults.
+        // ASYMMETRIC in l and w on purpose — a formula that treats them alike cannot tell a correct
+        // argument mapping from a swapped one.
+        File.WriteAllText(Path.Combine(pkg, "calc.py"), """
+            from cni.dlo import Numeric
+
+            _AREA = 1.5e-15      # F per square micrometre
+            _EDGE = 4.0e-17      # F per micrometre of the top plate's WIDTH alone
+
+            def cap_value(what, c, l, w, kind):
+                l = Numeric(l) * 1e6
+                w = Numeric(w) * 1e6
+                if what == 'C':
+                    return l * w * _AREA + w * _EDGE
+                raise ValueError(what)
+
+            def eng(farads):
+                return "%.4gf" % (farads * 1e15)
+            """);
+
+        // The case a vendor kit actually presents: the cell derives C, does not compute it, and the
+        // KIT's own calculator produced the default sitting in the declaration. Nothing is registered
+        // beside this cell — the whole point is that nobody has to.
+        File.WriteAllText(Path.Combine(pkg, "mim_code.py"), """
+            from cni.dlo import Box, ChoiceConstraint, DloGen, Layer, Numeric, Rect
+            from .calc import cap_value, eng
+
+            class mim(DloGen):
+                @classmethod
+                def defineParamSpecs(cls, specs):
+                    specs('Calculate', 'w&l', 'Calculate', ChoiceConstraint(['C', 'w', 'l', 'w&l']))
+                    specs('C', eng(cap_value('C', 0, Numeric('4u'), Numeric('6u'), 'mim')), 'C')
+                    specs('w', '6u', 'Width')
+                    specs('l', '4u', 'Length')
+
+                def setupParams(self, params):
+                    self.w = Numeric(params['w']) * 1e6
+                    self.l = Numeric(params['l']) * 1e6
+
+                def genLayout(self):
+                    Rect(Layer('M1'), Box(0, 0, self.w, self.l))
+            """);
+
         // The same shape again, and deliberately with NO calculator registered beside it — the
         // ordinary case for a vendor kit, where the arithmetic lived in the dialog and nobody has
         // put it back. Its output must still be identified as one.
@@ -195,9 +243,16 @@ public sealed class PCellVendorBridgeTests
                 return {"C": "%.1ff" % (area * 2.0)}
 
             crf.reports_computed("cap", _cap)
-
+            OVERRIDE
             crf.run()
             """);
+
+        // An explicit calculator for a cell the bridge already derives on its own. Deliberately a
+        // number nothing else would produce, so which one won is unambiguous.
+        File.WriteAllText(script, File.ReadAllText(script).Replace("OVERRIDE",
+            overrideTheAutomaticCalculator
+                ? "crf.reports_computed(\"mim\", lambda params, tech: {\"C\": \"1.0f\"})"
+                : ""));
 
         return (script, [PythonRunner.PackageRoot, root]);   // additions folder name == kit name
     }
@@ -217,7 +272,8 @@ public sealed class PCellVendorBridgeTests
         var (script, pythonPath) = WriteSyntheticKit();
         using var provider = StartProvider(script, pythonPath);
 
-        Assert.Equal(["cap", "moved", "pad", "res", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["cap", "mim", "moved", "pad", "res", "ring"],
+                     provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -301,7 +357,7 @@ public sealed class PCellVendorBridgeTests
 
         using var provider = StartProvider(script, pythonPath);
 
-        Assert.Equal(["cap", "moved", "pad", "res", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["cap", "mim", "moved", "pad", "res", "ring"], provider.GeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
         Assert.True(provider.TryGetGenerator("pad", out var generator));
         Assert.Single(generator(new Dictionary<string, PCellValue>(), Tech, NoLayers).Shapes);
     }
@@ -336,7 +392,7 @@ public sealed class PCellVendorBridgeTests
             report: problems.Add,
             trust: _ => PCellTrustDecision.Allowed);
 
-        Assert.Equal(["cap", "moved", "pad", "res", "ring"], resolver.KnownGeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
+        Assert.Equal(["cap", "mim", "moved", "pad", "res", "ring"], resolver.KnownGeneratorIds.OrderBy(x => x, StringComparer.Ordinal));
 
         var generator = resolver.Resolve("pad");
         Assert.NotNull(generator);
@@ -695,7 +751,7 @@ public sealed class PCellVendorBridgeTests
         Assert.Equal("DemoKit", byKit["moved"]);
         Assert.Equal("DemoKit", byKit["cap"]);
         Assert.Equal("DemoKit", byKit["res"]);
-        Assert.Equal(5, byKit.Count);
+        Assert.Equal(6, byKit.Count);
     }
 
     // ── wire version 7: the editor hints a kit already states ─────────────────
@@ -839,5 +895,143 @@ public sealed class PCellVendorBridgeTests
         Assert.Equal(["C"], result.ComputedParameters);
         Assert.NotNull(result.ComputedValues);
         Assert.Equal("72.0f", result.ComputedValues!["C"].AsText());
+    }
+
+    // ── the kit's own calculator, found and replayed ──────────────────────────
+
+    /// <summary>
+    /// A kit that computes a derived parameter's DEFAULT gets that parameter tracking the geometry,
+    /// with nothing registered beside the cell and nothing written down anywhere.
+    ///
+    /// <para><b>The arithmetic is the kit's and stays the kit's.</b> circuitRF never models what a
+    /// capacitance is; it watches the declaration run, sees which of the kit's own functions produced
+    /// the shipped default and with which arguments, and calls that same function again with this
+    /// instance's values. A vendor cell reads only w and l and derives C without computing it — the
+    /// dialog that did the arithmetic did not come across — but the function the dialog called is
+    /// still in the kit, and this is what reaches it.</para>
+    /// </summary>
+    [PythonFact]
+    public void TheKitsOwnCalculator_IsFoundFromTheDeclaration_AndTracksTheGeometry()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+        Assert.True(provider.TryGetGenerator("mim", out var generator));
+
+        // 6u wide x 4u long, and the value is the one the kit's own declaration ships.
+        var atDefaults = generator(new Dictionary<string, PCellValue>(), Tech, NoLayers);
+        Assert.Equal(["C"], atDefaults.ComputedParameters);
+        Assert.Equal("36.24f", atDefaults.ComputedValues!["C"].AsText());
+
+        var longer = generator(
+            new Dictionary<string, PCellValue> { ["l"] = PCellValue.Text("8u") }, Tech, NoLayers);
+        Assert.Equal("72.24f", longer.ComputedValues!["C"].AsText());
+    }
+
+    /// <summary>
+    /// The cell's parameters reach the calculator in the RIGHT PLACES. Its formula is asymmetric in
+    /// l and w, so doubling one is not the same as doubling the other — which is what makes a swapped
+    /// argument mapping detectable at all rather than invisibly right on square devices.
+    /// </summary>
+    [PythonFact]
+    public void TheParametersReachTheCalculatorInTheRightPlaces_NotMerelyInTheRightNumber()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+        Assert.True(provider.TryGetGenerator("mim", out var generator));
+
+        var longer = generator(
+            new Dictionary<string, PCellValue> { ["l"] = PCellValue.Text("8u") }, Tech, NoLayers);
+        var wider = generator(
+            new Dictionary<string, PCellValue> { ["w"] = PCellValue.Text("12u") }, Tech, NoLayers);
+
+        // Same area both ways; different capacitance, because the edge term is on w alone.
+        Assert.Equal("72.24f", longer.ComputedValues!["C"].AsText());
+        Assert.Equal("72.48f", wider.ComputedValues!["C"].AsText());
+    }
+
+    /// <summary>
+    /// A kit that states its derived default as a LITERAL still reports no value. There is nothing to
+    /// replay, and the honest answer is the one this always gave: named as an output, value unknown.
+    /// </summary>
+    [PythonFact]
+    public void ADefaultNobodyComputed_IsStillReportedWithoutAValue()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+        Assert.True(provider.TryGetGenerator("res", out var generator));
+
+        var result = generator(new Dictionary<string, PCellValue>(), Tech, NoLayers);
+
+        Assert.Equal(["R"], result.ComputedParameters);
+        Assert.Null(result.ComputedValues);
+    }
+
+    /// <summary>
+    /// A calculator supplied by hand beats one found automatically. Someone writing that hook is
+    /// stating what the number should be; losing to an automatic one is invisible while the automatic
+    /// one is right and baffling the day it is not.
+    /// </summary>
+    [PythonFact]
+    public void AnExplicitCalculatorWins_OverTheOneFoundFromTheDeclaration()
+    {
+        var (script, pythonPath) = WriteSyntheticKit(overrideTheAutomaticCalculator: true);
+        using var provider = StartProvider(script, pythonPath);
+        Assert.True(provider.TryGetGenerator("mim", out var generator));
+
+        var result = generator(new Dictionary<string, PCellValue>(), Tech, NoLayers);
+
+        Assert.Equal("1.0f", result.ComputedValues!["C"].AsText());
+    }
+
+    // ── neither an input nor an output ────────────────────────────────────────
+
+    /// <summary>
+    /// A parameter can be neither. A kit's cell copies process constants — a specific capacitance, a
+    /// minimum width, a maximum capacitance — out of its own technology data into its parameter list,
+    /// and then never reads them. They are not derived, so nothing locks them; they change no
+    /// artwork, so a text box over them invites an edit that does nothing.
+    ///
+    /// <para><b>circuitRF does not classify them, because measurement says it cannot.</b> Across one
+    /// open kit, 258 of 577 declared rows carry a process value verbatim — including w and l, the
+    /// real inputs, whose defaults come from the same data. Intersecting that with "never read" still
+    /// catches the model name and the multiplier, which the parameter list must keep editable. So
+    /// what crosses is the measurement alone: this run did not read these, and the row says so.</para>
+    /// </summary>
+    [PythonFact]
+    public void WhatTheRunDidNotRead_IsReported_ForParametersThatAreNeitherInputNorOutput()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+        Assert.True(provider.TryGetGenerator("cap", out var generator));
+
+        var result = generator(new Dictionary<string, PCellValue>(), Tech, NoLayers);
+
+        Assert.NotNull(result.UnreadParameters);
+
+        // The cell reads exactly these two, and everything else it declares it does not.
+        Assert.DoesNotContain("w", result.UnreadParameters!);
+        Assert.DoesNotContain("l", result.UnreadParameters!);
+        Assert.Contains("model", result.UnreadParameters!);      // unread AND still the user's to set
+        Assert.Contains("ng", result.UnreadParameters!);
+        Assert.Contains("C", result.UnreadParameters!);          // unread AND derived: both are said
+    }
+
+    /// <summary>
+    /// The measurement is per RUN, because that is the only thing it can honestly be — a cell may
+    /// read a parameter at one setting and not at another.
+    /// </summary>
+    [PythonFact]
+    public void WhatTheRunDidNotRead_IsMeasuredPerRun_NotDeclaredOnce()
+    {
+        var (script, pythonPath) = WriteSyntheticKit();
+        using var provider = StartProvider(script, pythonPath);
+        Assert.True(provider.TryGetGenerator("cap", out var generator));
+
+        // Reading a parameter is what takes it off the list, and passing a value is not reading it:
+        // the cell still reads only w and l whatever it is sent.
+        var result = generator(
+            new Dictionary<string, PCellValue> { ["model"] = PCellValue.Text("other") }, Tech, NoLayers);
+
+        Assert.Contains("model", result.UnreadParameters!);
     }
 }
