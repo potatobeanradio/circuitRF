@@ -26,8 +26,9 @@ public struct SnapQueryCounters
     /// from <see cref="FeaturesExamined"/> because the two came apart badly once: a cell whose
     /// features are all at one point buckets at 1 DBU, so a board-scale query radius asked for ~10^12
     /// empty probes while examining a single feature — a hang that no feature-count budget could see.
-    /// <see cref="LayoutSnapFeatureIndex.QueryNear"/> falls back to a linear scan rather than run a
-    /// sweep wider than the feature list, and this is what makes that bound assertable.</summary>
+    /// <see cref="LayoutSnapFeatureIndex.QueryNear"/> now clamps its sweep to the POPULATED bucket
+    /// range and walks it in rings outward from the cursor, so the probe count is a property of the
+    /// cell rather than of the query radius — and this is what makes that bound assertable.</summary>
     public long BucketsProbed;
 }
 

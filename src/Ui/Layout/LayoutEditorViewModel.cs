@@ -211,6 +211,86 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 LabelHeightText = LayoutUnits.Format(_labelHeightDbu, DisplayUnit, Model.DbuPerMicron);
             }
         }
+
+        PrewarmPlacedCellSnapIndices();
+    }
+
+    /// <summary>
+    /// Builds the snap feature index for every DISTINCT cell this layout places, off the UI thread,
+    /// so the FIRST pointer move over the document does not pay for it.
+    ///
+    /// <para>The index is otherwise built lazily, inside the snap query, on whichever pointer move
+    /// happens to arrive first — and for a generated cell carrying a six-figure via field that is a
+    /// visible hitch (~35 ms per distinct cell, measured; more before the build was rewritten to
+    /// count-then-fill). It is a per-cell cost paid once, so the only thing wrong with it is WHEN it
+    /// lands: on an input event, where it reads as the editor sticking.</para>
+    ///
+    /// <para>Hung off tech resolution rather than the constructor because the index bakes in the
+    /// cell's PINS, which <c>CellPins.Resolve</c> reads through the technology — warming it before
+    /// the technology is known would cache an index built against a different one. Every
+    /// <c>new LayoutEditorViewModel(...)</c> call site applies a resolution immediately afterwards,
+    /// so this still runs at open.</para>
+    ///
+    /// <para><b>Placed cells only, never <see cref="Model"/> itself.</b> A resolved sub-cell's
+    /// <see cref="LayoutView"/> is loaded from disk and not edited through this editor, so reading it
+    /// from another thread is safe. The top-level document is the one the user is actively editing:
+    /// its index is invalidated on every change (see the <c>Model.Changed</c> subscription), and a
+    /// background build racing an edit could publish a snapshot taken BEFORE the edit but stored
+    /// AFTER the invalidation — a silently stale snap index, which is a correctness bug traded for a
+    /// hitch that only a six-figure FLAT layout would ever notice.</para>
+    ///
+    /// <para>Fire-and-forget, and failure is genuinely nothing: every path here is one the snap query
+    /// itself would take moments later, so anything that goes wrong is simply re-encountered — and
+    /// re-reported — there, on the thread that can act on it.</para>
+    /// </summary>
+    /// <summary>The in-flight prewarm, exposed so a test can await it rather than poll for it — a
+    /// deadline is the one thing a test of a background task must not have.</summary>
+    internal System.Threading.Tasks.Task? SnapPrewarm { get; private set; }
+
+    private void PrewarmPlacedCellSnapIndices()
+    {
+        if (Model.Instances.Count == 0) return;
+
+        string baseDir = InstanceBaseDir;
+        if (baseDir.Length == 0) return;
+
+        var tech = Technology;
+        // Snapshotted here, on the UI thread: the list itself is the editor's own and must not be
+        // enumerated from the task.
+        var cellRefs = new List<string>();
+        foreach (var inst in Model.Instances)
+            if (!string.IsNullOrEmpty(inst.CellRef)) cellRefs.Add(inst.CellRef);
+        if (cellRefs.Count == 0) return;
+
+        SnapPrewarm = System.Threading.Tasks.Task.Run(() =>
+        {
+            try { WarmCells(cellRefs, baseDir, tech, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0); }
+            catch { /* see the doc comment: the snap query re-walks all of this itself */ }
+        });
+    }
+
+    /// <summary>Resolves each reference and warms its index, then descends — DISTINCT cells only
+    /// (a design placing one generated capacitor two dozen times has one index to build, not two
+    /// dozen), depth-capped by the same <see cref="CellHierarchy.MaxDepth"/> every other walk uses.</summary>
+    private static void WarmCells(IReadOnlyList<string> cellRefs, string baseDir, Technology? tech,
+                                  HashSet<string> seen, int depth)
+    {
+        if (depth >= CellHierarchy.MaxDepth) return;
+
+        foreach (var cellRef in cellRefs)
+        {
+            var res = CellLayoutResolver.Resolve(cellRef, baseDir);
+            if (res.State != CellLayoutState.Resolved || res.View is null || res.ResolvedCellDir is null) continue;
+            if (!seen.Add(res.ResolvedCellDir)) continue;
+
+            LayoutSnapFeatureIndex.Get(res.View, tech);
+
+            var nested = new List<string>();
+            foreach (var inst in res.View.Instances)
+                if (!string.IsNullOrEmpty(inst.CellRef)) nested.Add(inst.CellRef);
+            if (nested.Count > 0)
+                WarmCells(nested, CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir), tech, seen, depth + 1);
+        }
     }
 
     // ── Metadata bar (read-only, derived) ─────────────────────────────────────

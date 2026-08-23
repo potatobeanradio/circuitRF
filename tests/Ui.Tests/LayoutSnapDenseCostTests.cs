@@ -78,8 +78,15 @@ public sealed class LayoutSnapDenseCostTests : IDisposable
             model, null, _workspaceDir, 12_000, 12_000, 30_000,
             includeIntersections: false, null, null, ref counters);
 
-        Assert.True(counters.FeaturesExamined > 5_000,
-            $"only {counters.FeaturesExamined} features were examined — the fixture is not dense enough to bound anything.");
+        // The fixture's own density, asserted against the FIXTURE rather than against how much of it
+        // the query walked. It used to read FeaturesExamined, which was the same number back when a
+        // tolerance this wide scanned the whole cell; the index now answers a wide tolerance from the
+        // buckets nearest the cursor, so that reading fell to a few hundred and the check started
+        // failing on a query that had got strictly better. What it is actually there to establish is
+        // that thousands of features lie inside the tolerance, so the cap below is bounding something
+        // real — and that is a property of the geometry, which no future tightening can invalidate.
+        Assert.True(LayoutSnapFeatureIndex.Get(model, null).FeatureCount > 5_000,
+            "the fixture is not dense enough to bound anything.");
         Assert.True(result.Count <= LayoutSnapCandidateSet.Cap,
             $"{result.Count} candidates came back; the cap is {LayoutSnapCandidateSet.Cap}.");
 

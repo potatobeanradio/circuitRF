@@ -6,6 +6,144 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## The zoomed-far-out layout was slow to pan, zoom and hover — and it was never the renderer (2026-08-23)
+
+**Reported:** a hierarchical layout is still slow when zoomed out extremely far, and the slowness
+shows up on pan, on zoom, and on plain mouse movement "due to geometry snap".
+
+**The renderer was already fine and was never the problem.** Measured against a placed-cell design
+whose one generated sub-cell carries **156,821 rectangles**, placed 24 times (≈3.8 M rectangles
+reachable), on a 1600x1000 canvas, a ladder from Zoom-to-Fit out to 4096x further out:
+
+| zoomed out | render (ms) | snap query (ms) | features examined |
+|-----------:|------------:|----------------:|------------------:|
+| fit        | 8.9         | 188             |            47,178 |
+| 8x         | 7.2         | 238             |         3,550,297 |
+| 32x        | 4.9         | 1,488           |        33,169,871 |
+| 64x .. 4096x | 3-9       | ~1,500-1,770    |        33,873,203 |
+
+`LayoutRenderer.Draw` never crosses 9 ms at any zoom — the L2c/L2e/L2f chunking, stroke-elision and
+coarse tiers do their job. **Every millisecond of the reported slowness was one call to
+`LayoutSnapQuery.FindCandidates`**, which the canvas runs on every qualifying pointer move. 33.9
+million features distance-tested per mouse move is a frozen application, and it explains all three
+symptoms at once: hover runs it directly; a pan drag runs it on each move that is not a middle-drag;
+and a wheel zoom changes `snapTolDbu`, which is part of `UpdateSnapMarkerCore`'s own sub-device-pixel
+skip guard (`snapTolDbu == _snapQueryLastTolDbu`), so the first move after any zoom step is always a
+full query.
+
+### Why it degrades with zoom-out specifically
+
+Snap tolerance is a fixed SCREEN distance — `SnapHitTolerancePixels / zoom` — so it grows without
+bound as the user zooms out. Far enough out, the tolerance covers an entire placed cell: every
+feature in it qualifies, and a search bounded by the tolerance degenerates into a scan of the whole
+cell, per placement, per pointer move. `LayoutSnapFeatureIndex.QueryNear` had two regimes and **both
+were bounded by the cell's total feature count rather than by what is near the cursor** — a uniform
+bucket sweep allowed up to `_features.Count` bucket probes (20.2 M measured), and past that it fell
+back to a linear scan of every feature (33.9 M measured). The existing cap
+(`LayoutSnapCandidateSet.Cap`) bounded what was KEPT, never what was WALKED.
+
+Note the tolerance is not buying accuracy at that zoom either: all 33.9 M features project into a
+24x24-pixel box. The nearest handful is the whole answer.
+
+### The fix — ring search, per kind
+
+`QueryNear` now walks the grid in rings outward from the cursor's own bucket and stops as soon as the
+next ring cannot beat what is already kept, with the sweep clamped to the POPULATED bucket range.
+Both bounds are needed: the clamp alone still visits every bucket the cell has, and the ring
+termination alone still walks empty space out to the radius.
+
+**Per KIND, and that is the load-bearing part, not an implementation detail.** The query's order is
+priority-then-distance (R-snp-5), so a `Pin` anywhere inside the tolerance outranks a `Centroid` one
+DBU from the cursor — which means a single mixed grid can never stop searching outward, since a
+better-ranked feature might still be out there. Split per kind, the order collapses to distance
+alone, "the nearest `cap` of this kind" is settled the moment the ring passes the worst one kept, and
+merging the per-kind answers reproduces the mixed order exactly (the final answer can hold at most
+`cap` of any one kind, and within a kind those are its nearest).
+
+**Two bounds that look equivalent and are not**, each worth ~40x on its own:
+
+1. **The unswept-distance floor must be a true 2-D distance, not the smaller of two per-axis gaps.**
+   For a cursor level with the cell but well off to one side — i.e. 23 of the 24 placements in any
+   given frame — the rows just outside the swept band are one bucket away in Y and the whole standoff
+   distance away in X. Projected onto Y alone that reads as one bucket: a floor so weak it never
+   passes anything, so the sweep runs to the end of the range anyway. What is left after ring d is
+   the populated box minus the swept box, up to four rectangular slabs, and the bound is the nearest
+   of them measured as an honest point-to-rectangle distance (`UnsweptDistanceSq`). With the per-axis
+   version the numbers barely moved: 33.9 M -> 24.3 M examined.
+2. **The same test again per BUCKET, one level down.** A ring is a Chebyshev shell, a poor stand-in
+   for distance once the cursor is outside the cell: first contact then happens at a large radius and
+   that shell is hundreds of buckets long, while only the few nearest its closest point can
+   contribute. Four comparisons against a bucket's worth of distance arithmetic. 489 K -> 41 K.
+
+**Result, same fixture and ladder:** extreme zoom-out **1,768 ms -> 8 ms**, 33.9 M -> 41 K features
+examined; Zoom-to-Fit **188 ms -> 0.4 ms**. Rendering is untouched.
+
+### The one-time index build, moved off the pointer-move path
+
+Bounding the query left the per-cell index BUILD where it was: lazy, inside the snap query, on
+whichever pointer move arrived first. Measured in Release on that same generated cell (1,411,373
+features), that was **133 ms and 235 MB allocated** — a visible hitch on an input event. Two changes,
+and they address different halves:
+
+**Building it costs a fifth of what it did** — 133 ms -> ~35 ms, 235 MB -> 59 MB. Both numbers were
+overhead, not features: the build grew a `List<IntrinsicSnapFeature>` to a six-figure length (doubling
+its way there) and then copied it out again to split it by kind, and each grid bucket was a
+`List<int>` doing the same on a smaller scale. Now `FeatureSink` runs the ONE traversal twice — once
+counting, once writing into arrays that count sized — and the grid is a dense CSR table (`BucketStart`
++ `Entries`) filled by counting sort. The dense table is affordable because bucket size is the kind's
+own extent over 64, so the populated range can never exceed 65 buckets a side; a probe is now two
+array reads rather than a hash lookup, which speeds the query up as well.
+
+**And it no longer happens on a pointer move at all.**
+`LayoutEditorViewModel.PrewarmPlacedCellSnapIndices` warms every DISTINCT placed cell on a background
+task. Three things about it are deliberate:
+
+- **Hung off `ApplyTechResolution`, not the constructor.** The index bakes in the cell's pins, which
+  `CellPins.Resolve` reads through the technology, and `Get(view, tech)` caches by VIEW alone — warming
+  before the technology is known would cache an index built against a different one. Every
+  `new LayoutEditorViewModel(...)` call site applies a resolution immediately afterwards, so this still
+  runs at open.
+- **Placed cells only, never `Model` itself.** A resolved sub-cell's view is loaded from disk and not
+  edited through the editor, so reading it off-thread is safe. The top-level document is invalidated on
+  every change, so a background build racing an edit could publish a snapshot taken BEFORE the edit but
+  stored AFTER the invalidation — a silently stale snap index. It stays lazy, which costs one ~35 ms
+  build on a six-figure FLAT layout and nothing on any other.
+- **Distinct cells, deduped on the resolved cell directory.** A design placing one generated capacitor
+  two dozen times has one index to build, not two dozen.
+
+`SnapPrewarm` is exposed internally so `LayoutSnapPrewarmTests` can AWAIT it — a test of a background
+task must not have a deadline. Those four tests assert the mechanism (nested cells warmed, the edited
+document deliberately not, no task at all when nothing is placed, one index shared across placements)
+and never a duration.
+
+**End to end on that design, Release:** open costs 18 ms on the UI thread, the prewarm finishes in the
+background, and the first snap query is 20 ms — nearly all of it first-call JIT, since the second is
+0.3 ms.
+
+### What holds it
+
+Both new tests in `LayoutSnapFeaturesTests` are correctness/counter tests — no clock, deliberately.
+
+- `QueryNear_MatchesAnExhaustiveScan_AtEveryToleranceAndCursor` — the bounded sweep against an
+  independent brute-force scan over randomised layouts, at six tolerances (up to 9e8, far past the
+  geometry), twelve cursors (inside, on the edge, and well outside), and four caps including
+  unbounded. Compared as (kind, distance) rather than identity, because where several features tie on
+  both, which one lands on the cap boundary is arbitrary in either implementation and is never
+  observable — the marker is drawn at a position, not at an identity. **This is the test that matters:
+  an early termination that is one ring too eager silently returns a WRONG nearest feature, not a
+  slow one.**
+- `QueryNear_OverAWholeCellTolerance_ExaminesOnlyWhatIsNearTheCursor` — 10,000 rects (90,000
+  features), a tolerance ten times the field's own extent, four cursor positions; asserts
+  `FeaturesExamined` stays two orders below the feature count. A counter, so it is deterministic and
+  cannot flake on a loaded machine.
+
+**One existing assertion had to be re-pointed, and it is worth knowing why.**
+`LayoutSnapDenseCostTests.ADenseFieldInsideTolerance_…` asserted `FeaturesExamined > 5_000` to
+establish that its fixture was dense enough for the cap to be bounding something real. That was the
+same number back when a wide tolerance scanned the whole cell; it now reads a few hundred, so the
+check failed on a query that had got strictly better. It now asserts the FIXTURE's own
+`FeatureCount`, which is a property of the geometry that no future tightening can invalidate.
+
 ## Opening a document from the OS file system — what was already there, and the four things that were not (2026-08-23)
 
 **Asked for:** double-clicking a `.csch` / `.clay` / `.cdd` / `.csym` / `.ctech` (and, added on the

@@ -141,6 +141,163 @@ public class LayoutSnapFeaturesTests
         Assert.Equal(SnapFeatureKind.Centroid, only.Kind);
     }
 
+    // ── The bounded-sweep contract (see LayoutSnapFeatureIndex.QueryNear) ──────────────────────
+    //
+    // Snap tolerance is a fixed SCREEN distance converted to world units, so it grows without bound
+    // as the user zooms out: far enough out on a generated cell carrying a six-figure via field, the
+    // tolerance covers the whole cell and EVERY feature in it qualifies. The index answers that from
+    // what is near the cursor instead of from what the cell holds — the two tests below pin the two
+    // halves of that claim, which have to hold together or neither is worth anything: the first that
+    // the bounded answer is the SAME answer, the second that it is not paid for at full price.
+
+    /// <summary>A deliberately independent re-implementation: every feature, filtered by tolerance,
+    /// ordered by priority then distance, truncated. Nothing here consults the grid, the rings, or
+    /// any bound — that is the point.</summary>
+    private static (SnapFeatureKind Kind, double DistSq)[] BruteForce(
+        IEnumerable<IntrinsicSnapFeature> all, long x, long y, long tol, int cap)
+    {
+        double DistSq(IntrinsicSnapFeature f)
+        {
+            double dx = f.X - x, dy = f.Y - y;
+            return dx * dx + dy * dy;
+        }
+
+        var inRange = all.Where(f => DistSq(f) <= (double)tol * tol)
+                         .OrderBy(f => f.Kind).ThenBy(DistSq)
+                         .Select(f => (f.Kind, DistSq(f)));
+        return (cap > 0 ? inRange.Take(cap) : inRange).ToArray();
+    }
+
+    private static LayoutView RandomLayout(int seed, int shapes)
+    {
+        var rng = new System.Random(seed);
+        var model = FreshModel();
+        for (int i = 0; i < shapes; i++)
+        {
+            var layer = new LayerKey(1 + rng.Next(3), 0);
+            long x = rng.Next(-500_000, 500_000), y = rng.Next(-500_000, 500_000);
+            switch (rng.Next(5))
+            {
+                case 0:
+                    model.Shapes.Add(new RectShape { Layer = layer, X1 = x, Y1 = y, X2 = x + rng.Next(1, 40_000), Y2 = y + rng.Next(1, 40_000) });
+                    break;
+                case 1:
+                    model.Shapes.Add(new CircleShape { Layer = layer, Cx = x, Cy = y, R = rng.Next(1, 20_000) });
+                    break;
+                case 2:
+                    model.Shapes.Add(new ViaShape { Layer = layer, X = x, Y = y });
+                    break;
+                case 3:
+                    model.Shapes.Add(new PolygonShape
+                    {
+                        Layer = layer,
+                        Xy = [x, y, x + rng.Next(1, 30_000), y, x + rng.Next(1, 30_000), y + rng.Next(1, 30_000), x, y + rng.Next(1, 30_000)],
+                    });
+                    break;
+                default:
+                    model.Shapes.Add(new PathShape
+                    {
+                        Layer = layer, Width = 2000,
+                        Xy = [x, y, x + rng.Next(-40_000, 40_000), y + rng.Next(-40_000, 40_000)],
+                    });
+                    break;
+            }
+        }
+        return model;
+    }
+
+    /// <summary>The bounded sweep returns exactly what an exhaustive scan would — at every tolerance,
+    /// including ones many times the cell's own extent, and from cursors inside the geometry, on its
+    /// edge, and far outside it (which is where the ring bound is hardest and where a too-eager
+    /// termination would silently drop the right answer).</summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void QueryNear_MatchesAnExhaustiveScan_AtEveryToleranceAndCursor(int seed)
+    {
+        var model = RandomLayout(seed, 300);
+        var idx = LayoutSnapFeatureIndex.Get(model, null);
+
+        // The same feature list the index holds, gathered independently of it.
+        var all = new List<IntrinsicSnapFeature>();
+        var counters = new SnapQueryCounters();
+        all.AddRange(idx.QueryNear(0, 0, long.MaxValue / 8, ref counters));
+        Assert.Equal(idx.FeatureCount, all.Count);
+
+        var rng = new System.Random(seed * 7919);
+        long[] tolerances = [1, 1000, 25_000, 400_000, 5_000_000, 900_000_000];
+        foreach (long tol in tolerances)
+        for (int t = 0; t < 12; t++)
+        {
+            // A spread that reaches well past the geometry, so the cursor is sometimes nowhere near it.
+            long qx = rng.Next(-2_000_000, 2_000_000), qy = rng.Next(-2_000_000, 2_000_000);
+
+            foreach (int cap in new[] { 0, 1, 5, 64 })
+            {
+                var c = new SnapQueryCounters();
+                var got = idx.QueryNear(qx, qy, tol, ref c, cap);
+                var want = BruteForce(all, qx, qy, tol, cap);
+
+                if (cap > 0)
+                {
+                    // Compared as (kind, distance) rather than identity: where several features tie on
+                    // both, which one lands on the cap boundary is arbitrary in either implementation
+                    // and never observable — the marker is drawn at a position, not at an identity.
+                    Assert.Equal(
+                        want,
+                        got.Select(f => (f.Kind, (double)(f.X - qx) * (f.X - qx) + (double)(f.Y - qy) * (f.Y - qy))).ToArray());
+                }
+                else
+                {
+                    // Unbounded: order is unspecified, membership is not.
+                    Assert.Equal(want.Length, got.Count);
+                    Assert.Equal(
+                        want.OrderBy(e => e.Kind).ThenBy(e => e.DistSq).ToArray(),
+                        got.Select(f => (f.Kind, (double)(f.X - qx) * (f.X - qx) + (double)(f.Y - qy) * (f.Y - qy)))
+                           .OrderBy(e => e.Item1).ThenBy(e => e.Item2).ToArray());
+                }
+            }
+        }
+    }
+
+    /// <summary>A tolerance that swallows the whole cell still costs a cursor-sized query. This is the
+    /// regression gate for the zoomed-far-out pointer move, and it is a COUNTER rather than a clock:
+    /// the defect it catches is that the scan is proportional to the cell, which shows up as an
+    /// examined count in the hundreds of thousands whatever machine it runs on.</summary>
+    [Fact]
+    public void QueryNear_OverAWholeCellTolerance_ExaminesOnlyWhatIsNearTheCursor()
+    {
+        var model = FreshModel();
+        // A dense uniform field, the shape a generated capacitor's via array actually takes.
+        for (int i = 0; i < 100; i++)
+        for (int j = 0; j < 100; j++)
+            model.Shapes.Add(new RectShape
+            {
+                Layer = new LayerKey(1, 0),
+                X1 = i * 4000, Y1 = j * 4000, X2 = i * 4000 + 2000, Y2 = j * 4000 + 2000,
+            });
+
+        var idx = LayoutSnapFeatureIndex.Get(model, null);
+        Assert.Equal(90_000, idx.FeatureCount);   // 10,000 rects x (4 corners + 4 midpoints + centroid)
+
+        // Ten times the field's own extent — the cursor is inside it, and every one of the 90,000
+        // features is within tolerance.
+        long tol = 4_000_000;
+
+        foreach (var (qx, qy) in new[] { (200_000L, 200_000L), (0L, 0L), (399_000L, 1000L), (-3_000_000L, 200_000L) })
+        {
+            var counters = new SnapQueryCounters();
+            var got = idx.QueryNear(qx, qy, tol, ref counters, cap: 64);
+
+            Assert.Equal(64, got.Count);
+            // Two orders below the feature count. The unbounded scan this replaced examined all 90,000
+            // every time, and did so once per placement of the cell per pointer move.
+            Assert.True(counters.FeaturesExamined < 9_000,
+                $"examined {counters.FeaturesExamined} of {idx.FeatureCount} features at ({qx},{qy})");
+        }
+    }
+
     [Fact]
     public void QueryNear_OnlyExaminesNearbyFeatures_NotEveryShapeInTheView()
     {
