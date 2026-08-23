@@ -77,8 +77,18 @@
       <Component Id="CircuitRfExeComp">
         <File Id="CircuitRfExe" Source="$(var.PublishDir)\circuitRF.exe" KeyPath="yes" />
 
+        <!--
+          BOTH workspace spellings, and the second one is a fix rather than an addition: a workspace
+          saved into a folder is that folder's `.cws` and `.crfw` is the standalone spelling, and
+          App.OpenFiles has always opened both. Windows claimed only `crfw`, so every `.cws` on the
+          machine had no owner and double-clicking one did nothing at all — the macOS plist and the
+          Linux mime file had claimed both since R-h8-10.
+        -->
         <ProgId Id="circuitRF.Workspace" Description="circuitRF Workspace" Icon="CircuitRfExe" Advertise="no">
           <Extension Id="crfw" ContentType="application/x-circuitrf-workspace">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+          <Extension Id="cws" ContentType="application/x-circuitrf-workspace">
             <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
           </Extension>
         </ProgId>
@@ -94,6 +104,57 @@
             <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
           </Extension>
         </ProgId>
+
+        <!--
+          The document types a double-click in Explorer opens. circuitRF is the only application that
+          reads any of them, so each gets its own ProgId with the Open verb pointed straight at the
+          .exe: Explorer hands the path as argv, Program.cs's named pipe forwards it to an instance
+          that is already running, and App.OpenFiles dispatches on the extension.
+
+          A file that IS inside the currently open workspace opens as an ordinary document of that
+          workspace; one from anywhere else opens as an orphan, marked with its own source workspace.
+          Neither needs a distinction here — the marking is computed from the file's own ancestor
+          .cws at open time.
+
+          EveryDocumentTypeTheWindowsInstallerClaims_IsActuallyHandledByItsOpenFilesDispatcher fails
+          the build if a ProgId is added here without a case in App.OpenFiles.
+        -->
+        <ProgId Id="circuitRF.Schematic" Description="circuitRF Schematic" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="csch" ContentType="application/x-circuitrf-schematic">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.Layout" Description="circuitRF Layout" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="clay" ContentType="application/x-circuitrf-layout">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.Symbol" Description="circuitRF Symbol" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="csym" ContentType="application/x-circuitrf-symbol">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.DataDisplay" Description="circuitRF Data Display" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="cdd" ContentType="application/x-circuitrf-datadisplay">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.Technology" Description="circuitRF Technology" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="ctech" ContentType="application/x-circuitrf-technology">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
+        <ProgId Id="circuitRF.EmSetup" Description="circuitRF EM Setup" Icon="CircuitRfExe" Advertise="no">
+          <Extension Id="cem" ContentType="application/x-circuitrf-emsetup">
+            <Verb Id="open" Command="Open" TargetFile="CircuitRfExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+
       </Component>
     </ComponentGroup>
 

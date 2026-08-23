@@ -625,18 +625,142 @@ public class WBondStandaloneTests : IDisposable
     {
         string app = ReadRepoCode("src", "Ui", "App.axaml.cs");
 
-        // Extensions the plist claims, lower-cased the way the dispatcher compares them.
-        var claimed = DictsUnder(Plist("Info.plist"), "CFBundleDocumentTypes")
-            .SelectMany(d => d.Descendants("string").Select(s => s.Value))
-            .Where(v => v is "crfw" or "cws" or "charm" or "wBond" or "wbond")
-            .Select(v => v.ToLowerInvariant())
-            .Distinct();
+        // Every extension the plist claims, read from the CFBundleTypeExtensions arrays themselves
+        // rather than filtered out of all the <string>s by a hand-written list of the ones we expect.
+        // The whitelist was the bug this test exists to catch, wearing a different hat: a type added
+        // to the plist and forgotten in the list here was checked against nothing at all.
+        var claimed = ClaimedMacExtensions();
+
+        Assert.NotEmpty(claimed);
 
         foreach (string ext in claimed)
             Assert.True(app.Contains($"case \".{ext}\":", StringComparison.Ordinal),
                 $"Info.plist claims *.{ext} but App.OpenFiles has no case for it — double-clicking " +
                 "one would launch circuitRF and open nothing, which reads as a broken file.");
     }
+
+    /// <summary>Extensions circuitRF's <c>Info.plist</c> declares itself able to open, lower-cased the
+    /// way <c>App.OpenFiles</c> compares them.</summary>
+    private static string[] ClaimedMacExtensions() =>
+        DictsUnder(Plist("Info.plist"), "CFBundleDocumentTypes")
+            .SelectMany(d => d.Elements()
+                .SkipWhile(e => !(e.Name == "key" && e.Value == "CFBundleTypeExtensions"))
+                .Skip(1)
+                .TakeWhile(e => e.Name == "array")
+                .SelectMany(a => a.Elements("string").Select(x => x.Value)))
+            .Select(v => v.ToLowerInvariant())
+            .Distinct()
+            .ToArray();
+
+    /// <summary>
+    /// <b>The same obligation, on Windows.</b> The MSI is the only thing that tells Explorer which
+    /// files belong to circuitRF, and a <c>&lt;ProgId&gt;</c> whose <c>Open</c> verb runs the
+    /// executable with a path the dispatcher then ignores is exactly the macOS failure above with a
+    /// different registry behind it.
+    ///
+    /// <para>Windows had no such test until the desktop-open work, and it had drifted: the installer
+    /// registered <c>crfw</c> only, so every <c>.cws</c> — the spelling a workspace saved into a
+    /// folder actually uses — had no owner and double-clicking one did nothing.</para>
+    /// </summary>
+    [Fact]
+    public void EveryDocumentTypeTheWindowsInstallerClaims_IsActuallyHandledByItsOpenFilesDispatcher()
+    {
+        string app = ReadRepoCode("src", "Ui", "App.axaml.cs");
+
+        var claimed = ClaimedWindowsExtensions();
+
+        Assert.NotEmpty(claimed);
+
+        foreach (string ext in claimed)
+            Assert.True(app.Contains($"case \".{ext}\":", StringComparison.Ordinal),
+                $"circuitRF.wxs registers *.{ext} but App.OpenFiles has no case for it — " +
+                "double-clicking one in Explorer would launch circuitRF and open nothing.");
+    }
+
+    /// <summary>
+    /// <b>The dispatcher has two halves, and both have to know the type.</b>
+    /// <c>App.OpenFiles</c> sorts the incoming paths (a workspace is opened first, because a
+    /// workspace switch replaces the documents); <c>WorkspaceViewModel.OpenDocumentByPath</c> is what
+    /// actually opens each document. An extension listed in the first and forgotten in the second
+    /// falls out of a <c>default: return false</c> — the file is accepted, nothing happens, and no
+    /// error is raised anywhere. That is the "looks like a broken file" failure again, now reachable
+    /// from inside the application rather than from a packaging file.
+    /// </summary>
+    [Fact]
+    public void EveryDocumentTypeTheAppDispatcherAccepts_IsOpenedByTheWorkspaceViewModel()
+    {
+        string vm = ReadRepoCode("src", "Ui", "ViewModels", "WorkspaceViewModel.cs");
+
+        // The workspace spellings are handled by App itself (OpenWorkspacePathAsync), not by the
+        // document dispatcher, so they are the two the view model is not expected to carry.
+        var documentTypes = ClaimedMacExtensions()
+            .Where(e => e is not ("crfw" or "cws"))
+            .ToArray();
+
+        Assert.NotEmpty(documentTypes);
+
+        foreach (string ext in documentTypes)
+            Assert.True(vm.Contains($"case \".{ext}\":", StringComparison.Ordinal),
+                $"App.OpenFiles accepts *.{ext} but WorkspaceViewModel.OpenDocumentByPath has no case " +
+                "for it — the path is accepted and then silently dropped.");
+    }
+
+    /// <summary>
+    /// The three platforms must claim the SAME set of types. A type registered on one and not the
+    /// others is not a smaller feature, it is a file that opens on the reviewer's machine and not on
+    /// the user's — and nothing else in the build would say so.
+    /// </summary>
+    [Fact]
+    public void AllThreePlatformsClaimTheSameDocumentTypes()
+    {
+        var mac     = ClaimedMacExtensions().OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var windows = ClaimedWindowsExtensions().OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var linux   = ClaimedLinuxExtensions().OrderBy(x => x, StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(mac, windows);
+        Assert.Equal(mac, linux);
+    }
+
+    private static string[] ClaimedWindowsExtensions() =>
+        XDocument.Parse(ReadRepoFile("packaging", "windows", "circuitRF.wxs"))
+            .Descendants().Where(e => e.Name.LocalName == "Extension")
+            .Select(e => e.Attribute("Id")!.Value.ToLowerInvariant())
+            .Distinct()
+            .ToArray();
+
+    /// <summary>
+    /// <b>And on Linux.</b> Same obligation again, reached through <c>shared-mime-info</c>: a glob in
+    /// <c>circuitrf-mime.xml</c> is what makes a double-click hand the path to the <c>.desktop</c>
+    /// entry's <c>Exec=</c> line.
+    ///
+    /// <para>This reads <c>packaging/linux/</c>, which is what <c>build-deb.sh</c> actually installs.
+    /// It used to read a second, divergent copy under <c>src/Ui/linux/</c> that nothing shipped — so
+    /// the files under test and the files on the user's machine disagreed about the MIME type names
+    /// themselves. The unshipped copy is gone; see packaging/RESOLVED.md.</para>
+    /// </summary>
+    [Fact]
+    public void EveryDocumentTypeTheLinuxPackageClaims_IsActuallyHandledByItsOpenFilesDispatcher()
+    {
+        string app = ReadRepoCode("src", "Ui", "App.axaml.cs");
+
+        var claimed = ClaimedLinuxExtensions();
+
+        Assert.NotEmpty(claimed);
+
+        foreach (string ext in claimed)
+            Assert.True(app.Contains($"case \".{ext}\":", StringComparison.Ordinal),
+                $"circuitrf-mime.xml globs *.{ext} but App.OpenFiles has no case for it — " +
+                "double-clicking one would launch circuitRF and open nothing.");
+    }
+
+    private static string[] ClaimedLinuxExtensions() =>
+        XDocument.Parse(ReadRepoFile("packaging", "linux", "circuitrf-mime.xml"))
+            .Descendants().Where(e => e.Name.LocalName == "glob")
+            .Select(e => e.Attribute("pattern")!.Value)
+            .Where(v => v.StartsWith("*.", StringComparison.Ordinal))
+            .Select(v => v[2..].ToLowerInvariant())
+            .Distinct()
+            .ToArray();
 
     /// <summary>
     /// <b>Windows reads the application's identity out of the BINARY, not out of its file name.</b>
@@ -687,43 +811,59 @@ public class WBondStandaloneTests : IDisposable
     /// <summary>
     /// <b>Linux: an application is its <c>.desktop</c> file.</b> Without one it has no menu entry and
     /// its documents do not open by double-click — the Linux equivalent of shipping no plist.
-    /// Each entry claims only the type its own application can open.
+    ///
+    /// <para><b>One entry, not three, and that is the honest count.</b> This test used to assert a
+    /// <c>.desktop</c> for each of circuitRF / harmonicaRF / wBond — against files under
+    /// <c>src/Ui/linux/</c> that <c>build-deb.sh</c> never installed and that no <c>.deb</c> has ever
+    /// carried. The Linux package publishes ONE application (there is no <c>CrfApp</c> loop in
+    /// build-deb.sh), so a menu entry for the other two would launch a binary that is not in the
+    /// package. If the <c>.deb</c> ever ships all three, this is where the other two come back.</para>
     /// </summary>
-    [Theory]
-    [InlineData("circuitrf.desktop",   "circuitRF",   "application/x-circuitrf-workspace")]
-    [InlineData("harmonicarf.desktop", "harmonicaRF", "application/x-harmonicarf-document")]
-    [InlineData("wbond.desktop",       "wBond",       "application/x-wbond-design")]
-    public void EveryApplicationHasItsOwnLinuxDesktopEntry(string file, string name, string mime)
+    [Fact]
+    public void TheLinuxPackageShipsItsDesktopEntry()
     {
-        string desktop = ReadRepoFile("src", "Ui", "linux", file);
+        string desktop = ReadRepoFile("packaging", "linux", "circuitrf.desktop");
 
-        Assert.Contains($"Name={name}", desktop);
-        Assert.Contains(mime, desktop);
+        Assert.Contains("Name=circuitRF", desktop);
+        Assert.Contains("application/x-circuitrf-workspace", desktop);
         Assert.Contains("Type=Application", desktop);
 
-        // The three binaries are all called CircuitRF.Ui, so each Exec= must name a RENAMED one —
-        // three entries pointing at one path would make the menu three ways to launch one app.
-        Assert.Contains("Exec=/usr/bin/", desktop);
-        Assert.DoesNotContain("CircuitRF.Ui", desktop.Split("# NOTE")[0]);
+        // Exec= must name the RENAMED host, never the assembly: the published binary is called
+        // CircuitRF.Ui until CrfRenameApphost renames it, and a .desktop pointing at the old name
+        // installs a menu entry that cannot start.
+        Assert.Contains("Exec=/opt/circuitrf/circuitRF", desktop);
+        Assert.DoesNotContain("CircuitRF.Ui", desktop);
+
+        // What the build actually installs, so the test and the package cannot drift apart.
+        string script = ReadRepoFile("packaging", "linux", "build-deb.sh");
+        Assert.Contains("circuitrf.desktop=/usr/share/applications/circuitrf.desktop", script);
+        Assert.Contains("circuitrf-mime.xml=/usr/share/mime/packages/circuitrf.xml", script);
     }
 
     /// <summary>
-    /// The MIME types the three <c>.desktop</c> files claim are all actually DEFINED — a desktop entry
-    /// naming a type nothing declares associates with nothing at all, silently.
+    /// Every MIME type the <c>.desktop</c> file claims is actually DEFINED — a desktop entry naming a
+    /// type nothing declares associates with nothing at all, silently — and every type that IS defined
+    /// is claimed, so a mime entry cannot be added without the entry that makes it reachable.
     /// </summary>
     [Fact]
-    public void EveryMimeTypeADesktopEntryClaims_IsDefinedInTheMimeFile()
+    public void TheDesktopEntryAndTheMimeFileClaimExactlyTheSameTypes()
     {
-        string mimeXml = ReadRepoFile("src", "Ui", "linux", "circuitrf-mime.xml");
+        string mimeXml = ReadRepoFile("packaging", "linux", "circuitrf-mime.xml");
+        string desktop = ReadRepoFile("packaging", "linux", "circuitrf.desktop");
 
-        foreach (string file in new[] { "circuitrf.desktop", "harmonicarf.desktop", "wbond.desktop" })
-        {
-            string desktop = ReadRepoFile("src", "Ui", "linux", file);
-            string line = desktop.Split('\n').First(l => l.StartsWith("MimeType=", StringComparison.Ordinal));
+        string line = desktop.Split('\n').First(l => l.StartsWith("MimeType=", StringComparison.Ordinal));
+        var claimed = line["MimeType=".Length..]
+            .Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim())
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToArray();
 
-            foreach (string mime in line["MimeType=".Length..].Split(';', StringSplitOptions.RemoveEmptyEntries))
-                Assert.True(mimeXml.Contains($"type=\"{mime}\"", StringComparison.Ordinal),
-                    $"{file} claims {mime}, which circuitrf-mime.xml does not define.");
-        }
+        var defined = XDocument.Parse(mimeXml)
+            .Descendants().Where(e => e.Name.LocalName == "mime-type")
+            .Select(e => e.Attribute("type")!.Value)
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(defined, claimed);
     }
 }

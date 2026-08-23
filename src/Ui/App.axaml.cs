@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -153,13 +155,21 @@ public partial class App : Application
 
             if (startupPaths.Length > 0)
             {
-                // Startup file args take precedence over the launch action. Deferred to Background so
-                // the window is realised first — OpenFiles reaches the workspace view model, and a
-                // workspace switch rebuilds the dock layout the window is showing.
+                // Startup file args take precedence over the launch ACTION — but not over the window
+                // SHAPE. This branch used to skip ApplyLaunchSettings entirely, which threw away the
+                // Window Layout and Show-Dockers preferences along with the launch action, so a file
+                // opened by double-click got the default dock layout instead of the user's own. It
+                // was easy to miss while only .cws/.charm/.wBond opened that way; every document type
+                // does now.
+                //
+                // Ordered, not merely both-run: ApplyWindowLayout REBUILDS the dock, so it has to
+                // happen before a document is opened into it. Deferred to Background so the window is
+                // realised first — OpenFiles reaches the workspace view model, and a workspace switch
+                // rebuilds the dock layout the window is showing.
                 firstWindow.Show();
                 var startupVm = (WorkspaceViewModel)firstWindow.DataContext!;
                 Avalonia.Threading.Dispatcher.UIThread.Post(
-                    () => OpenFiles(startupVm, startupPaths),
+                    () => { ApplyLayoutPreferences(startupVm); OpenFiles(startupVm, startupPaths); },
                     Avalonia.Threading.DispatcherPriority.Background);
             }
             else if (OperatingSystem.IsMacOS())
@@ -199,11 +209,36 @@ public partial class App : Application
         catch { /* non-critical — fall back to default startup state */ }
     }
 
+    /// <summary>
+    /// The half of <see cref="ApplyLaunchSettings"/> that describes the SHAPE of the window rather
+    /// than what it should open. Used by the startup paths that already know what to open — a file
+    /// handed to us by the desktop — where the launch action must not run but the user's Window
+    /// Layout and Show-Dockers preferences still should.
+    ///
+    /// <para>Synchronous on purpose. <see cref="WorkspaceViewModel.ApplyWindowLayout"/> rebuilds the
+    /// dock, so it must complete before any document is opened into it, and an awaited version would
+    /// make that ordering something a caller has to remember.</para>
+    /// </summary>
+    private static void ApplyLayoutPreferences(WorkspaceViewModel vm)
+    {
+        try
+        {
+            var prefs = AppPreferencesIo.Load();
+            vm.ApplyWindowLayout(prefs.WindowLayout ?? WindowLayout.ProjectTreeAndLibrary);
+            vm.ApplyShowDockersOnLaunchPreference(prefs.ShowDockersOnLaunch ?? true);
+        }
+        catch { /* non-critical — fall back to default startup state */ }
+    }
+
     private void OnActivated(ActivatedEventArgs e, WorkspaceWindow firstWindow)
     {
         if (e.Kind != ActivationKind.File) return;
         if (e is not FileActivatedEventArgs fileArgs) return;
         // Startup file open suppresses the launch action (fires before Background priority runs).
+        // `isLaunch` distinguishes THAT case from a later Apple Event delivered to an app that is
+        // already up: only the launch case owes the window its shape, and re-applying the layout on a
+        // later open would rebuild the dock out from under the documents already in it.
+        bool isLaunch = !_launchHandled;
         _launchHandled = true;
         // Show the first window if not yet visible.
         if (!firstWindow.IsVisible)
@@ -216,7 +251,10 @@ public partial class App : Application
             .ToArray();
 
         if (paths.Length > 0 && firstWindow.DataContext is WorkspaceViewModel vm)
+        {
+            if (isLaunch) ApplyLayoutPreferences(vm);
             OpenFiles(vm, paths);
+        }
     }
 
     // Called by Program.cs named-pipe server (Windows second-instance forwarding).
@@ -228,6 +266,9 @@ public partial class App : Application
         var w = _desktop?.Windows.OfType<WorkspaceWindow>().FirstOrDefault()
                 ?? new WorkspaceWindow { DataContext = new WorkspaceViewModel() };
         if (!w.IsVisible) w.Show();
+        // The user double-clicked a file in a file manager, so the window they want is THIS one — a
+        // forwarded open that leaves circuitRF behind the file manager looks like nothing happened.
+        w.Activate();
         if (w.DataContext is WorkspaceViewModel vm) OpenFiles(vm, paths);
     }
 
@@ -247,7 +288,13 @@ public partial class App : Application
     /// </summary>
     private static void OpenFiles(WorkspaceViewModel vm, IReadOnlyList<string> paths)
     {
-        bool workspaceOpened = false;
+        // Sorted into workspace-vs-documents BEFORE anything opens, rather than acted on in arrival
+        // order. A workspace switch REPLACES the window's documents, so a document opened first and a
+        // .cws opened second would leave the user looking at a window that discarded what they
+        // double-clicked — the same "opened nothing" failure this dispatcher exists to have fixed,
+        // reached by multi-selecting a .cws alongside a .csch.
+        string? workspacePath = null;
+        var documents = new List<string>();
 
         foreach (string path in paths)
         {
@@ -255,30 +302,56 @@ public partial class App : Application
 
             switch (Path.GetExtension(path).ToLowerInvariant())
             {
+                // Only ONE workspace opens even if several are named: a workspace switch replaces the
+                // contents of the window, so opening a second would silently discard the first.
                 case ".crfw":
                 case ".cws":
-                    if (workspaceOpened) break;
-                    workspaceOpened = true;
-                    vm.OpenWorkspacePath(path);
+                    workspacePath ??= path;
                     break;
 
-                case ".charm":
-                    vm.OpenHarmonicaPath(path);
-                    break;
-
-                // R-wbe-7 — circuitRF's Info.plist declares it a VIEWER for .wBond, so it must
-                // actually open one. Declaring the document type without wiring the dispatcher is
-                // precisely the "launched circuitRF and opened nothing, which looked exactly like a
-                // broken file" failure this method's own note above exists to have fixed; adding a
-                // type here is not optional once a plist claims it.
+                // The document types. Every one of these is claimed by the plist, the .wxs and the
+                // Linux mime file, and three parity tests hold this list shut against all three — a
+                // type declared to the operating system without a case here launches circuitRF and
+                // opens nothing, which reads to the user as a broken file.
                 //
-                // Lower-cased above, so this catches the .wBond spelling the format actually uses as
-                // well as the .wbond one a filesystem may hand back.
+                // Lower-cased above, so `.wbond` catches the `.wBond` spelling the format actually
+                // uses as well as the one a filesystem may hand back.
+                case ".csch":
+                case ".clay":
+                case ".csym":
+                case ".cdd":
+                case ".ctech":
+                case ".cem":
+                case ".charm":
                 case ".wbond":
-                    vm.OpenWBondPath(path);
+                    documents.Add(path);
                     break;
             }
         }
+
+        if (workspacePath is null)
+        {
+            foreach (string doc in documents)
+                vm.OpenDocumentByPath(doc);
+            return;
+        }
+
+        _ = OpenWorkspaceThenDocumentsAsync(vm, workspacePath, documents);
+    }
+
+    /// <summary>
+    /// Opens a workspace and only THEN the documents named alongside it. Awaited rather than posted:
+    /// the switch is asynchronous (it can prompt to save first, and the user can cancel), and a
+    /// document opened into the outgoing workspace is one the switch throws away.
+    /// </summary>
+    private static async Task OpenWorkspaceThenDocumentsAsync(
+        WorkspaceViewModel vm, string cwsPath, IReadOnlyList<string> documents)
+    {
+        try   { await vm.OpenWorkspacePathAsync(cwsPath); }
+        catch { /* the workspace open reports its own failure through Messages */ }
+
+        foreach (string doc in documents)
+            vm.OpenDocumentByPath(doc);
     }
 
     // ---- macOS Dock icon -------------------------------------------------------

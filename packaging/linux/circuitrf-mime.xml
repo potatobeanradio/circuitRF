@@ -25,4 +25,46 @@
         <glob pattern="*.wbond"/>
     </mime-type>
 
+    <!-- The document types, so a double-click in the file manager opens one. circuitRF is the only
+         application that reads any of them; the .desktop entry claims all of them, and
+         App.axaml.cs OpenFiles has a case for each. All six are JSON, which is worth saying: without
+         the sub-class-of, shared-mime-info's content sniffing types them as text/plain and the
+         glob's answer can lose to it. -->
+
+    <mime-type type="application/x-circuitrf-schematic">
+        <comment>circuitRF Schematic</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.csch"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-layout">
+        <comment>circuitRF Layout</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.clay"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-symbol">
+        <comment>circuitRF Symbol</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.csym"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-datadisplay">
+        <comment>circuitRF Data Display</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.cdd"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-technology">
+        <comment>circuitRF Technology</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.ctech"/>
+    </mime-type>
+
+    <mime-type type="application/x-circuitrf-emsetup">
+        <comment>circuitRF EM Setup</comment>
+        <sub-class-of type="application/json"/>
+        <glob pattern="*.cem"/>
+    </mime-type>
+
 </mime-info>

@@ -155,8 +155,13 @@ which reads like a missing install and is really a version mismatch.
 ```
 
 The installer offers a license page, a changeable install directory, a Start Menu entry and an
-optional desktop shortcut, and registers `.crfw` / `.cws`, `.charm` and `.wBond` so double-clicking
-one opens circuitRF. The installed program is **`circuitRF.exe`** — see *The executable name* below.
+optional desktop shortcut, and registers every type circuitRF opens — the workspace (`.crfw` /
+`.cws`), the documents (`.csch`, `.clay`, `.csym`, `.cdd`, `.ctech`, `.cem`), and `.charm` /
+`.wBond` — so double-clicking one opens circuitRF. The same set is declared on macOS in
+`src/Ui/Assets/macOS/Info.plist` and on Linux in `packaging/linux/circuitrf-mime.xml`; the three must
+agree, and `tests/Ui.Tests/WBondStandaloneTests.cs` fails the build if they do not, or if a type is
+registered that `App.OpenFiles` has no case for. The installed program is **`circuitRF.exe`** — see
+*The executable name* below.
 
 > **PowerShell:** either `powershell.exe` (5.1, the Windows default) or `pwsh` (7.x) works, from the
 > repository root. If you edit a script under `packaging/`, keep it **pure ASCII** — the reason is in
@@ -476,7 +481,9 @@ there builds cleanly and ships a shortcut to a file that does not exist.
    three installers and their file names.
 3. Build all six installers on their respective platforms.
 4. Install each one on a clean machine; confirm the icon appears in the file manager, **Help ▸ About**
-   shows the version you set, and double-clicking a workspace (`.crfw` / `.cws`) opens it.
+   shows the version you set, and double-clicking a workspace (`.crfw` / `.cws`) opens it. Check a
+   document type too (a `.csch` is the quickest): it should open as an orphan tab, and with circuitRF
+   already running it should open in the RUNNING copy rather than starting a second one.
 5. Attach them to the GitHub release and update the download table in `README.md`.
 
 ---

@@ -127,6 +127,123 @@
                 </array>
             </dict>
         </dict>
+        <!-- The five document types a user actually double-clicks to inspect, plus the .cem that
+             goes with a layout. circuitRF is the ONLY application that opens any of them, so unlike
+             .charm and .wBond there is no exported/imported split to make and no Viewer role to
+             argue about: it exports the type and it is the type's editor.
+
+             Every one of these must have a matching `case` in App.OpenFiles — a declared type with
+             no dispatcher launches circuitRF and opens nothing, which reads as a broken file.
+             EveryDocumentTypeCircuitRfClaims_IsActuallyHandledByItsOpenFilesDispatcher holds that
+             shut. -->
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.csch</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF Schematic</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>csch</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.clay</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF Layout</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>clay</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.csym</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF Symbol</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>csym</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.cdd</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF Data Display</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cdd</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.ctech</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF Technology</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>ctech</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.cem</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF EM Setup</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.json</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>cem</string>
+                </array>
+            </dict>
+        </dict>
     </array>
 
     <!-- Document types this app can open. -->
@@ -181,6 +298,96 @@
             <array>
                 <string>wBond</string>
                 <string>wbond</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF Schematic</string>
+            <!-- Editor, not Viewer: circuitRF is the only application that opens one. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.csch</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>csch</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF Layout</string>
+            <!-- Editor, not Viewer: circuitRF is the only application that opens one. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.clay</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>clay</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF Symbol</string>
+            <!-- Editor, not Viewer: circuitRF is the only application that opens one. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.csym</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>csym</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF Data Display</string>
+            <!-- Editor, not Viewer: circuitRF is the only application that opens one. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.cdd</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>cdd</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF Technology</string>
+            <!-- Editor, not Viewer: circuitRF is the only application that opens one. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.ctech</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>ctech</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF EM Setup</string>
+            <!-- Editor, not Viewer: circuitRF is the only application that opens one. -->
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.cem</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>cem</string>
             </array>
         </dict>
     </array>

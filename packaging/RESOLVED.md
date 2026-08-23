@@ -5,6 +5,66 @@ symptom first, because that is what the next person will have in front of them.
 
 ---
 
+## Opening a document by double-click: two things were already wrong before anything was added (2026-08-23)
+
+**Asked for:** every document type (`.csch`, `.clay`, `.cdd`, `.csym`, `.ctech`, and `.cem`) should
+open from Finder / Explorer / a Linux file manager, the way `.cws`, `.charm` and `.wBond` already did.
+Adding them is three declaration files and a dispatcher case each. Looking at those three files first
+turned up two defects in what was already there.
+
+### 1. Windows never registered `.cws` — only `.crfw`
+
+`circuitRF.wxs` had one `<Extension Id="crfw">` for the workspace ProgId. The macOS plist and the
+Linux mime file had claimed **both** spellings since R-h8-10, and `App.OpenFiles` has always opened
+both, for the reason the plist's own comment gives: a workspace saved into a folder is that folder's
+`.cws`, and `.crfw` is the standalone spelling. So on Windows every `.cws` on the machine had no
+owner and double-clicking one did nothing at all.
+
+Nothing caught it because the "a declared type must be handled" parity test existed for the plist
+only. There are now three — one per platform — plus one asserting the three claim the **same set**,
+which is the check that would have caught this: a type registered on one platform and not the others
+is a file that opens on the developer's machine and not on the user's.
+
+### 2. `src/Ui/linux/` and `packaging/linux/` were two divergent copies, and the tests read the one that never shipped
+
+`build-deb.sh` installs `packaging/linux/circuitrf.desktop` and `packaging/linux/circuitrf-mime.xml`.
+`WBondStandaloneTests` read `src/Ui/linux/` — a second set that nothing referenced anywhere else. They
+disagreed on:
+
+| | `src/Ui/linux/` (tested) | `packaging/linux/` (shipped) |
+|---|---|---|
+| harmonicaRF MIME | `application/x-harmonicarf-document` | `application/x-circuitrf-harmonica` |
+| wBond MIME | `application/x-wbond-design` | `application/x-circuitrf-wbond` |
+| `Exec=` | `/usr/bin/circuitrf %U` | `/opt/circuitrf/circuitRF %F` |
+| `postinst` | `xdg-mime` / `xdg-desktop-menu`, three apps | `ln -sf` + `update-*-database`, one app |
+| entries | three (`circuitrf`, `harmonicarf`, `wbond`) | one |
+
+**`packaging/linux/` is now the only copy** and the tests read it. The `x-circuitrf-*` names win
+because they are the ones that have actually been installed on a machine, and they match the
+`ContentType` attributes in the `.wxs`.
+
+**The two extra `.desktop` entries are gone rather than moved, and that is the honest count**:
+`build-deb.sh` does one `dotnet publish` with no `CrfApp` loop, so the `.deb` ships **one**
+application. A menu entry for harmonicaRF or wBond would launch a binary that is not in the package.
+If the `.deb` ever ships all three, `TheLinuxPackageShipsItsDesktopEntry` is where they come back.
+
+### The declaration, in one place per platform
+
+| | file | what one type costs |
+|---|---|---|
+| macOS | `src/Ui/Assets/macOS/Info.plist` | one `UTExportedTypeDeclarations` dict + one `CFBundleDocumentTypes` dict |
+| Windows | `packaging/windows/circuitRF.wxs` | one `<ProgId>` with an `<Extension>` and an `open` `<Verb>` |
+| Linux | `packaging/linux/circuitrf-mime.xml` + `circuitrf.desktop` | one `<mime-type>` + one entry in `MimeType=` |
+
+**No build script, install layout or shipped-file set changed.** The six new types are `Editor` role
+on macOS, not `Viewer` — unlike `.charm` and `.wBond`, circuitRF is the only application that opens
+them, so there is no exported/imported split to make and no Launch Services arbitration to lose.
+
+All six are JSON, and the Linux entries say so with `<sub-class-of type="application/json"/>`: without
+it `shared-mime-info` content-sniffs them as `text/plain`, and the sniffed answer can beat the glob's.
+
+---
+
 ## `build-deb.sh` dies at its first step: no `libSkiaSharp.so` on Linux (2026-08-21)
 
 **Reported:** `./packaging/linux/build-deb.sh x64` on Linux arm64, at `🎨 Building icons...`:

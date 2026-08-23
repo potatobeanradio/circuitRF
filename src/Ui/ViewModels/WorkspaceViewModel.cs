@@ -6651,6 +6651,54 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         else                                    OpenOrActivateSymbol(path);
     }
 
+    /// <summary>
+    /// Opens (or activates) a document chosen by its FILE EXTENSION, wherever it lives on disk.
+    ///
+    /// <para>This is the by-path twin of <see cref="OpenNode"/>, which dispatches on
+    /// <see cref="NodeKind"/> because the project tree has already classified the file. The
+    /// operating system has not: a Finder / Explorer / file-manager double-click hands us nothing but
+    /// a path, so the extension is all there is to go on. Both funnel to the same
+    /// <c>OpenOrActivate*</c> methods, so a file opened from the desktop behaves exactly as the same
+    /// file opened from the tree — same session registry, same dedup, same dirty hooks.</para>
+    ///
+    /// <para><b>Nothing here is workspace-aware, and that is the point.</b> Every opener below is
+    /// happy with a path that is outside the open workspace, or with no workspace open at all, and
+    /// the ORPHAN/foreign marking is computed live from the file's own ancestor <c>.cws</c> against
+    /// <see cref="CurrentWorkspacePath"/> (brief-foreign-documents.md §4). So a file that IS part of
+    /// the currently open workspace is opened as an ordinary document of that workspace — no special
+    /// case is needed to get that, and adding one would be the way to get it wrong.</para>
+    ///
+    /// <para>Returns false for an extension circuitRF has no editor for, so a caller can say so
+    /// rather than appearing to have opened something.</para>
+    /// </summary>
+    public bool OpenDocumentByPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        string abs;
+        try   { abs = Path.GetFullPath(path); }
+        catch { return false; }
+
+        switch (Path.GetExtension(abs).ToLowerInvariant())
+        {
+            case ".csch":  OpenOrActivateSchematic(abs);   return true;
+            // WB40 — a wirebond cell's wires live in a `.wBond` beside its `.clay` and are attached by
+            // stem inside BuildLayoutSessionVm, the one funnel every layout open goes through. So the
+            // overlay arrives with the artwork here too, and there is nothing extra to do for it.
+            case ".clay":  OpenOrActivateLayout(abs);      return true;
+            case ".csym":  OpenOrActivateSymbol(abs);      return true;
+            // A `.cdd` may reference data sources relative to a workspace it is not being opened in.
+            // Deliberately not guarded against: the display opens and the traces it cannot resolve
+            // simply render nothing, which is the useful outcome for "let me look at this file".
+            case ".cdd":   OpenOrActivateDataDisplay(abs); return true;
+            case ".ctech": OpenOrActivateTech(abs);        return true;
+            case ".cem":   OpenOrActivateEmSetup(abs);     return true;
+            case ".charm": OpenHarmonicaPath(abs);         return true;
+            case ".wbond": OpenWBondPath(abs);             return true;
+            default:       return false;
+        }
+    }
+
     public void OpenNode(ProjectTreeNodeViewModel node)
     {
         switch (node.Kind)
@@ -8138,8 +8186,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <inheritdoc/>
-    public void OpenWorkspacePath(string cwsPath)
-        => _ = OpenRecentWorkspaceCommand.ExecuteAsync(cwsPath);
+    public void OpenWorkspacePath(string cwsPath) => _ = OpenWorkspacePathAsync(cwsPath);
+
+    /// <summary>
+    /// The awaitable form of <see cref="OpenWorkspacePath"/>, for the one caller that has to know
+    /// when the switch has finished: a desktop double-click can name a workspace AND documents at
+    /// once, and a document opened before the switch completes is one the switch discards. Routed
+    /// through the Recent command like every other workspace open, so the dirty-work prompt and the
+    /// missing-file pruning happen exactly once, in one place.
+    /// </summary>
+    public Task OpenWorkspacePathAsync(string cwsPath) => OpenRecentWorkspaceCommand.ExecuteAsync(cwsPath);
 
     /// <inheritdoc/>
     void ITreeActions.ClearRecentWorkspaces()

@@ -6,6 +6,106 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Opening a document from the OS file system — what was already there, and the four things that were not (2026-08-23)
+
+**Asked for:** double-clicking a `.csch` / `.clay` / `.cdd` / `.csym` / `.ctech` (and, added on the
+way, `.cem`) in Finder, Explorer or a Linux file manager should open it in circuitRF, as an ORPHAN
+when it is not part of the open workspace and as an ordinary document when it is; a `.cws` should
+open that workspace, prompting to save first.
+
+**Most of this was already built.** `App.OpenFiles` is the one dispatcher all three arrival routes
+funnel through — argv, the macOS Apple Event (`IActivatableLifetime.Activated`), and the Windows
+second-instance named pipe — and every by-path opener the new types need already existed and was
+already workspace-independent: `OpenOrActivateSchematic`, `…Layout`, `…Symbol`, `…DataDisplay`,
+`…Tech`, `…EmSetup`. They were `private`, which is the only reason `App` could not reach them.
+
+### `WorkspaceViewModel.OpenDocumentByPath` — dispatch on the EXTENSION, because that is all there is
+
+`OpenNode` dispatches on `NodeKind`, which the project tree has already worked out. The operating
+system hands over a path and nothing else, so the new public `OpenDocumentByPath` switches on the
+extension and lands on the same `OpenOrActivate*` methods — same session registry, same
+`_openDocsByPath` dedup, same dirty hooks. A file opened from the desktop is therefore
+indistinguishable from the same file opened from the tree.
+
+**No workspace-membership special case was written, and writing one would have been the way to get it
+wrong.** `IsForeign` / `SourceWorkspaceName` are computed live from the file's own ancestor `.cws`
+against `CurrentWorkspacePath` (brief-foreign-documents.md §4), and the dedup is keyed on the absolute
+path. So a double-clicked file that IS in the open workspace opens as an ordinary document of it — and
+activates the tab the tree would have opened, rather than a second copy — with no code saying so.
+
+### 1. A `.cws` named alongside documents discarded them
+
+`OpenFiles` acted on paths in arrival order. A workspace switch REPLACES the window's documents, so
+multi-selecting `Amp.csch` and `Proj.cws` opened the schematic and then threw it away — the same
+"launched circuitRF and opened nothing" failure the method's own doc comment exists to have fixed.
+
+Now sorted into workspace-vs-documents before anything opens, and the documents are opened **after
+awaiting** the switch (`OpenWorkspacePathAsync`, the awaitable form of `OpenWorkspacePath`; both still
+route through `OpenRecentWorkspaceCommand`, so the dirty-work prompt and the missing-file pruning stay
+in one place). Awaited, not posted: the switch can prompt to save and the user can cancel it.
+
+### 2. Linux had no second-instance forwarding
+
+macOS delivers an Apple Event to the running app; Windows forwards over a named pipe. Linux had
+neither, so every double-click `exec`s the `.desktop` entry's `Exec=` line and gets a **whole new
+copy** of circuitRF. That was survivable with three registered types and is not with nine: a user
+inspecting three files would get three applications, and the second copy's answer to "is this file
+part of the open workspace?" is no — because that copy has no workspace open.
+
+`Program.cs` now mirrors the Windows branch over a Unix domain socket in `XDG_RUNTIME_DIR`. **The
+lock file, not the socket, decides who is first** — two launches racing can both find no socket to
+connect to and would then both bind one; .NET implements `FileShare.None` on Unix with `flock()`, so
+an exclusive `FileStream` is real cross-process exclusion. A socket file outlives its process, so a
+stale one is unlinked before binding, which is safe **only** while holding that lock. When the lock is
+held by someone we then cannot reach (still starting, or wedged), the fallback is to start normally:
+the user asked to see a file, and a second window showing it beats no window at all.
+
+`HandleFilesInternal` also calls `Activate()` now. A forwarded open that leaves circuitRF behind the
+file manager looks exactly like nothing happened.
+
+### 3. A double-clicked file got the DEFAULT dock layout, not the user's
+
+`OnFrameworkInitializationCompleted`'s startup-file branch skipped `ApplyLaunchSettings` outright.
+That is right for the launch ACTION (the file the user picked owns the window, not Welcome or
+open-last-workspace) and wrong for the other two things that method does: `ApplyWindowLayout` and
+`ApplyShowDockersOnLaunchPreference` describe the SHAPE of the window and have nothing to do with what
+it opens. So a file opened from the desktop came up in the default layout with the user's own Window
+Layout preference ignored. The macOS Apple-Event path had it too, from the other direction —
+`OnActivated` sets `_launchHandled`, which suppresses the whole of `ApplyLaunchSettings`.
+
+Split out as `ApplyLayoutPreferences`, called by both file-open startup paths. **Synchronous on
+purpose**: `ApplyWindowLayout` calls `RebuildLayoutFrom`, so it has to finish before a document is
+opened into the dock, and an awaited version makes that ordering something each caller has to
+remember. `OnActivated` applies it only when the event IS the launch (`isLaunch = !_launchHandled`
+before the flag is set) — a later Apple Event, delivered to an app that is already up, would otherwise
+rebuild the dock out from under the documents already in it.
+
+### 4. The dispatcher has two halves and both can forget a type
+
+`App.OpenFiles` accepts the extension; `OpenDocumentByPath` opens it. A type listed in the first and
+missing from the second falls out of `default: return false` — accepted, silently dropped, no error
+anywhere. `EveryDocumentTypeTheAppDispatcherAccepts_IsOpenedByTheWorkspaceViewModel` holds that shut,
+alongside the three per-platform packaging parity tests (see `packaging/RESOLVED.md`).
+
+### The three worries that turned out to need nothing
+
+- **A `.clay` with a wBond overlay.** Nothing extra. `WBondCell.TryAttach` runs inside
+  `BuildLayoutSessionVm`, the single funnel both "open as a tab" and "push in" go through, and the
+  sidecar is found by STEM (`Amp.clay` ↔ `Amp.wBond`, WB40). A Finder-opened `.clay` gets its wires on
+  exactly the same terms as one opened from the tree.
+- **A `.cdd` with relative data-source references.** `OpenOrActivateDataDisplay` already catches and
+  reports through `Messages`; traces it cannot resolve render nothing. Deliberately not guarded
+  against — "let me look at this file" is the whole point of the feature.
+- **A `.cws` double-click with unsaved work.** Already prompts: `OpenRecentWorkspace` does
+  `HasAnyDirtyWork` → `PromptSaveBeforeClose` before `SwitchToWorkspace`.
+
+### Left as found, and worth knowing
+
+A **foreign** `.clay`'s wire DRC resolves its assembly rules from the CURRENTLY open workspace
+(`ResolveWorkspaceAssemblyRules` reads `CurrentWorkspacePath`), not from the layout's own ancestor
+`.cws` — unlike technology resolution, which does walk. Pre-existing; a foreign layout is now much
+easier to reach, so it is easier to hit.
+
 ## What a page-scroll in the .ctech editor actually costs (2026-08-23)
 
 Reported as Page Up/Down being "a little slow to respond" on a 377-layer technology, "even though
