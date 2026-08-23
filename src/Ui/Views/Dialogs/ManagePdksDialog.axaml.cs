@@ -181,8 +181,23 @@ public partial class ManagePdksDialog : Window
 
         if (folders.Count == 0 || folders[0].TryGetLocalPath() is not { Length: > 0 } path) return;
 
-        var outcome = PdkReferenceManager.AddOrRepair(
-            _ctx.WorkspaceRootDir, _ctx.Refs, path, out string? problem);
+        // Off the UI thread: adding a kit READS it, which on a real one is a few hundred
+        // milliseconds of file enumeration and netlist parsing, and this dialog is what the user is
+        // looking at while it happens. Awaited, so nothing else here touches _ctx.Refs meanwhile.
+        ShowBusy($"Reading '{Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}'…");
+        (PdkPartInstaller.InstallOutcome? outcome, string? problem) result;
+        try
+        {
+            result = await Task.Run(() =>
+            {
+                var o = PdkReferenceManager.AddOrRepair(
+                    _ctx.WorkspaceRootDir, _ctx.Refs, path, out string? p);
+                return (o, p);
+            });
+        }
+        finally { HideBusy(); }
+
+        var (outcome, problem) = result;
 
         if (outcome is null)
         {
@@ -265,13 +280,21 @@ public partial class ManagePdksDialog : Window
         _ctx.Reveal(s.ResolvedPath);
     }
 
-    private void OnValidateClick(object? sender, RoutedEventArgs e)
+    private async void OnValidateClick(object? sender, RoutedEventArgs e)
     {
         if (_ctx is null || SelectedRef() is not { } r) return;
 
-        var result = PdkReferenceManager.Validate(
-            _ctx.WorkspaceRootDir, r, _ctx.PlacedPartRefs,
-            PdkReferenceManager.LibraryRootsIn(_ctx.WorkspaceRootDir, _ctx.Refs));
+        // Same reason as Add: validating re-reads the whole kit from disk. The read is a pure
+        // function of what is on disk, so it belongs on a worker thread; everything below, which
+        // writes into this dialog, is back on the UI thread after the await.
+        var roots  = PdkReferenceManager.LibraryRootsIn(_ctx.WorkspaceRootDir, _ctx.Refs);
+        var placed = _ctx.PlacedPartRefs;
+        var root   = _ctx.WorkspaceRootDir;
+
+        ShowBusy($"Validating '{r.Provider}'…");
+        PdkReferenceManager.ValidationResult result;
+        try   { result = await Task.Run(() => PdkReferenceManager.Validate(root, r, placed, roots)); }
+        finally { HideBusy(); }
 
         // The summary says what was CHECKED, not merely whether it passed — a bare "no problems found"
         // cannot be told apart from a check that did nothing.
@@ -284,11 +307,28 @@ public partial class ManagePdksDialog : Window
     }
 
     /// <summary>
+    /// Says an action is running, in the panel its result will land in. Reuses that panel rather than
+    /// adding a second surface, so the row the user is already watching becomes the answer.
+    /// </summary>
+    private void ShowBusy(string headline)
+    {
+        ResultHeadline.Text = headline;
+        ResultHeadline.Classes.Set("problem", false);
+        ResultLines.IsVisible = false;
+        ResultLines.ItemsSource = null;
+        BusyBar.IsVisible = true;
+        ResultPanel.IsVisible = true;
+    }
+
+    private void HideBusy() => BusyBar.IsVisible = false;
+
+    /// <summary>
     /// Shows the outcome of an action in the dialog: a headline plus whatever detail it produced,
     /// tinted only as a SECOND cue behind the words — the state is always readable without colour.
     /// </summary>
     private void ShowResult(string headline, IReadOnlyList<string> lines, bool clean = true)
     {
+        BusyBar.IsVisible        = false;
         ResultHeadline.Text      = headline;
         ResultHeadline.Classes.Set("problem", !clean);
 

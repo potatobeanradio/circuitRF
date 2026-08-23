@@ -80,6 +80,14 @@
                            Classes="result"
                            FontSize="11"
                            TextWrapping="Wrap"/>
+                <!-- Adding or validating a kit READS it, which on a real one is a few hundred
+                     milliseconds of file enumeration and netlist parsing. Without this the dialog
+                     simply sat there. Indeterminate: the read has no honest denominator. -->
+                <ProgressBar x:Name="BusyBar"
+                             IsVisible="False"
+                             IsIndeterminate="True"
+                             Height="3"
+                             Margin="0,2,0,0"/>
                 <ItemsControl x:Name="ResultLines" IsVisible="False">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>

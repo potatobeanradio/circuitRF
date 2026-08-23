@@ -29,6 +29,67 @@ public static class GeneratedCellsLifecycle
     }
 
     /// <summary>
+    /// Whether the whole generated-cell folder is wiped on every workspace open and close — the
+    /// original R-L5g-7 policy — instead of being kept across sessions and pruned.
+    ///
+    /// <para><b>Off by default now, because the assumption underneath R-L5g-7 stopped holding.</b>
+    /// "Both are cheap once R-L5g-6 holds" was true while every generator was a built-in drawing
+    /// geometry in-process. A kit's own generators are SCRIPTS, and a script runs per cell: measured
+    /// on a real kit, ten cells cost 2-800 ms each and 1.65 s in total, paid in full on every single
+    /// open of that workspace. Nothing about that work is startup — it is per-cell geometry.</para>
+    ///
+    /// <para><b>What makes keeping the folder safe is the same property that made deleting it
+    /// safe.</b> The folder's NAME is a content hash of the generator's own content, the resolved
+    /// parameters, the layer selection and the technology's content (see
+    /// <see cref="GeneratedCellStore.GetOrCreate"/>), so a folder that is there is by construction
+    /// the right geometry — which is why <c>GetOrCreate</c> already returns a hit without
+    /// re-generating or re-verifying anything. Editing a generator or a technology produces a
+    /// DIFFERENT name, so the stale one is never read; it becomes garbage, and
+    /// <see cref="RegenerateAll"/>'s prune pass is what collects it.</para>
+    ///
+    /// <para>Kept as a switch rather than deleted: this reverses a deliberate policy decision, and
+    /// setting it back to true restores R-L5g-7 exactly — the wipe on open, the wipe on close, and
+    /// the full rebuild in between — with no other change anywhere. The prune pass turns itself off
+    /// while it is set, since a folder that is about to be wiped has nothing to collect.</para>
+    /// </summary>
+    public static bool WipeOnOpenAndClose { get; set; }
+
+    /// <summary>
+    /// Removes generated cell folders no live layout names any more.
+    ///
+    /// <para>This is what replaces the wipe. Without it the folder only ever grows — editing a
+    /// generator, a parameter or the technology renames a cell rather than replacing it, and the
+    /// old one would sit there for the life of the workspace (the brief's own "there is no garbage
+    /// collection for them by design", which the wipe was quietly doing).</para>
+    ///
+    /// <para><b>Refuses to run rather than guess.</b> Deleting a cell some layout still references
+    /// costs that layout its artwork, so the live set has to be COMPLETE to be actionable: if any
+    /// <c>.clay</c> could not be read, or the caller is holding layouts out of the walk
+    /// (<c>skipPaths</c>), nothing is pruned. An uncollected folder is harmless; a wrongly collected
+    /// one is not.</para>
+    /// </summary>
+    /// <returns>How many cell folders were removed.</returns>
+    private static int PruneUnreferenced(string workspaceRootDir, IReadOnlySet<string> liveCellNames)
+    {
+        var genRoot = Path.Combine(workspaceRootDir, GeneratedCellStore.ReservedFolderName);
+        if (!Directory.Exists(genRoot)) return 0;
+
+        int removed = 0;
+        IEnumerable<string> present;
+        try { present = Directory.EnumerateDirectories(genRoot); }
+        catch { return 0; }
+
+        foreach (var dir in present)
+        {
+            if (liveCellNames.Contains(Path.GetFileName(dir))) continue;
+            try { Directory.Delete(dir, recursive: true); removed++; }
+            catch { /* a locked folder stays; it is a cache entry, not a result */ }
+        }
+
+        return removed;
+    }
+
+    /// <summary>
     /// R-L5g-8: eagerly rebuilds every generated cell any <c>.clay</c> under
     /// <paramref name="workspaceRootDir"/> actually references, from each layout's own
     /// <see cref="LayoutView.PCellSnapshots"/> record — so every layout renders correctly the moment
@@ -60,6 +121,10 @@ public static class GeneratedCellsLifecycle
 
         int repointed = 0, rewritten = 0;
 
+        // What the prune pass is allowed to keep. Complete or nothing: see PruneUnreferenced.
+        var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool sawEverything = skipPaths is null || skipPaths.Count == 0;
+
         foreach (var clayPath in clayFiles)
         {
             // .generated-cells itself is the REGENERATION TARGET, never a source of further snapshots
@@ -71,10 +136,15 @@ public static class GeneratedCellsLifecycle
 
             LayoutView view;
             try { view = LayoutPersistence.LoadFromFile(clayPath); }
-            catch { continue; }
+            catch { sawEverything = false; continue; }
             if (view.PCellSnapshots.Count == 0) continue;
 
             int moved = Regenerate(workspaceRootDir, view, resolveTech, report);
+
+            // Read AFTER the rebuild, so a cell whose generator/technology changed contributes its
+            // NEW name — the old one is exactly what the prune is there to collect.
+            foreach (var name in view.PCellSnapshots.Keys) live.Add(name);
+
             if (moved == 0) continue;
 
             repointed += moved;
@@ -82,7 +152,11 @@ public static class GeneratedCellsLifecycle
             catch (Exception ex) { report?.Invoke($"'{clayPath}' could not be updated: {ex.Message}"); }
         }
 
-        return new RegenerateOutcome(repointed, rewritten);
+        int pruned = WipeOnOpenAndClose || !sawEverything
+            ? 0
+            : PruneUnreferenced(workspaceRootDir, live);
+
+        return new RegenerateOutcome(repointed, rewritten, pruned);
     }
 
     /// <summary>
@@ -168,4 +242,7 @@ public static class GeneratedCellsLifecycle
 
 /// <summary>What a regeneration pass actually changed. Zero of both is the ordinary case — nothing
 /// about the generators moved since last time.</summary>
-public readonly record struct RegenerateOutcome(int InstancesRepointed, int LayoutsRewritten);
+/// <param name="CellsPruned">Generated cell folders removed because no layout names them any more.
+/// Always 0 when the walk was incomplete or the wipe policy is on — see
+/// <see cref="GeneratedCellsLifecycle.WipeOnOpenAndClose"/>.</param>
+public readonly record struct RegenerateOutcome(int InstancesRepointed, int LayoutsRewritten, int CellsPruned);

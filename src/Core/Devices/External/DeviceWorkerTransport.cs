@@ -52,7 +52,18 @@ public interface IDeviceWorkerTransport : IDisposable
 /// <para>Structured rather than a formed sentence: how this is worded belongs to whoever shows it,
 /// and a headless host may want to log it in a different shape entirely.</para>
 /// </summary>
-public readonly record struct DeviceWorkerStart(string Provider, string Command);
+/// <param name="ForDiscovery">
+/// True when this worker exists only to be ASKED WHAT IT IMPLEMENTS and then shut down — the scan
+/// that reads a folder of compiled models, which starts one worker per artefact and disposes each
+/// immediately.
+///
+/// <para><b>Why the distinction has to reach the host.</b> The two kinds of start are indistinguishable
+/// from the outside — same program, same provider name — but only one of them is a run waiting on
+/// anything. A host that words the event as "the first device waits for it" says something false
+/// once per artefact scanned, during a workspace OPEN with no run in sight, and the repetition reads
+/// as the same worker starting twice. Reported against a kit shipping four compiled models.</para>
+/// </param>
+public readonly record struct DeviceWorkerStart(string Provider, string Command, bool ForDiscovery = false);
 
 /// <summary>
 /// One line a worker wrote to its error stream, with the provider it serves and the program it is.
@@ -257,11 +268,16 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     /// Which provider this worker will serve, for <see cref="Starting"/>. Empty when the caller has
     /// no name to give — a message can still be written, it just says less.
     /// </param>
+    /// <param name="forDiscovery">
+    /// True when this worker is started only to be asked what it implements and is then disposed —
+    /// see <see cref="DeviceWorkerStart.ForDiscovery"/> for why a host has to be able to tell.
+    /// </param>
     public static ProcessDeviceWorkerTransport Start(
         string               executablePath,
         IEnumerable<string>? arguments        = null,
         string?              workingDirectory = null,
-        string?              forProvider      = null)
+        string?              forProvider      = null,
+        bool                 forDiscovery     = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
 
@@ -278,7 +294,7 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
         foreach (string a in arguments ?? []) info.ArgumentList.Add(a);
         if (!string.IsNullOrEmpty(workingDirectory)) info.WorkingDirectory = workingDirectory;
 
-        try { Starting?.Invoke(new DeviceWorkerStart(forProvider ?? "", executablePath)); }
+        try { Starting?.Invoke(new DeviceWorkerStart(forProvider ?? "", executablePath, forDiscovery)); }
         catch { /* a host's own reporting must never stop a worker from starting */ }
 
         Process process;

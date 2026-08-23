@@ -54,9 +54,14 @@
             <TextBlock x:Name="RuleDeckLabel"
                        FontSize="11" Opacity="0.6" IsVisible="False" TextWrapping="Wrap"/>
 
+            <!-- On by default: a technology imported into a workspace that has none is the one it
+                 will use, and leaving the box clear meant every layout in that workspace opened on
+                 no technology until the user found the setting. Unticking is one click for the
+                 rarer case of importing a second process to compare against. -->
             <CheckBox x:Name="SetAsDefaultCheck"
                       Content="Set as workspace default"
                       FontSize="12"
+                      IsChecked="True"
                       Margin="0,4,0,0"/>
 
             <TextBlock x:Name="PreviewLabel"

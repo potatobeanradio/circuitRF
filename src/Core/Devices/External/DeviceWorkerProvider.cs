@@ -62,6 +62,21 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
         IEnumerable<string>? arguments = null)
         => new(name, ProcessDeviceWorkerTransport.Start(executablePath, arguments, forProvider: name));
 
+    /// <summary>
+    /// Starts a worker that exists only to be asked what it implements and then disposed.
+    ///
+    /// <para>A separate method rather than a defaulted parameter on <see cref="Launch"/>: that one's
+    /// signature IS the <c>DeviceWorkerProviderResolver.Launcher</c> delegate, and widening it breaks
+    /// the method-group conversion that lets a test substitute a launcher. Nothing about a scan
+    /// belongs in that seam anyway — see <see cref="DeviceWorkerStart.ForDiscovery"/>.</para>
+    /// </summary>
+    public static DeviceWorkerProvider LaunchForDiscovery(
+        string               name,
+        string               executablePath,
+        IEnumerable<string>? arguments = null)
+        => new(name, ProcessDeviceWorkerTransport.Start(
+                         executablePath, arguments, forProvider: name, forDiscovery: true));
+
     public string Name { get; }
 
     /// <summary>

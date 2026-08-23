@@ -222,6 +222,89 @@ public static class GeneratedCellStore
 
     // ── Content addressing ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// A stamp of what the technology at <paramref name="techIdentity"/> currently SAYS, or empty
+    /// when there is no readable file there.
+    ///
+    /// <para>Memoized on the file's own write time and length, so the ordinary hit path — including
+    /// a parameter-handle drag, which calls <see cref="GetOrCreate"/> per probe — costs a stat and a
+    /// dictionary lookup rather than a read. The digest itself is recomputed the moment either
+    /// changes, which is what makes an edit in the technology editor actually invalidate.</para>
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Ticks, long Length, string Key)>
+        _techContentKeys = new(StringComparer.OrdinalIgnoreCase);
+
+    private static string TechnologyContentKey(string? techIdentity)
+    {
+        if (string.IsNullOrEmpty(techIdentity)) return "";
+
+        try
+        {
+            var info = new FileInfo(techIdentity);
+            if (!info.Exists) return "";
+
+            long ticks = info.LastWriteTimeUtc.Ticks;
+            long length = info.Length;
+            if (_techContentKeys.TryGetValue(techIdentity, out var cached)
+                && cached.Ticks == ticks && cached.Length == length)
+                return cached.Key;
+
+            string key = StampOf(File.ReadAllText(techIdentity));
+            _techContentKeys[techIdentity] = (ticks, length, key);
+            return key;
+        }
+        catch
+        {
+            // An unreadable technology is not a reason to refuse to name a cell. Falling back to the
+            // pre-content-key name is the same answer this method gives for "no technology at all".
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Everything a technology says that could reach GEOMETRY, and nothing it says about how that
+    /// geometry is DRAWN.
+    ///
+    /// <para><b>Why the distinction is load-bearing rather than tidy.</b> This stamp is part of a
+    /// generated cell's name, so anything it includes is something that renames every cell in the
+    /// workspace when it changes — which regenerates them all and rewrites every layout that places
+    /// them. Layer visibility is toggled constantly, while looking at a design; a stamp over the raw
+    /// file would turn hiding a layer into a full rebuild. It cannot possibly change the artwork:
+    /// generated shapes carry layer KEYS, and colour, stipple, opacity, draw order, visibility and
+    /// selectability are all resolved live by the renderer from the technology as it stands.</para>
+    ///
+    /// <para><b>Written as an exclusion list on purpose.</b> A field added to a technology later is
+    /// included by default, so the failure mode of forgetting to update this is an unnecessary
+    /// regeneration — not artwork drawn against a process that has since changed. Add to this list
+    /// only what the renderer alone consumes.</para>
+    ///
+    /// <para>Re-serialised rather than hashed as text, so reformatting the file — which
+    /// <c>TechPersistence</c> may do on any save — is not mistaken for a change to it.</para>
+    /// </summary>
+    private static string StampOf(string ctechJson)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(ctechJson);
+        if (node is System.Text.Json.Nodes.JsonObject root)
+        {
+            // The stipple table itself: named by layers through FillPattern, and consumed only when
+            // filling one.
+            root.Remove("FillPatterns");
+
+            if (root["Layers"] is System.Text.Json.Nodes.JsonArray layers)
+                foreach (var layer in layers)
+                    if (layer is System.Text.Json.Nodes.JsonObject o)
+                        foreach (var presentational in _renderOnlyLayerFields)
+                            o.Remove(presentational);
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(node?.ToJsonString() ?? ctechJson)))[..12]
+                      .ToLowerInvariant();
+    }
+
+    /// <summary>What a <c>LayerDef</c> says about drawing, as opposed to about the process.</summary>
+    private static readonly string[] _renderOnlyLayerFields =
+        ["Visible", "Selectable", "Color", "FillOpacity", "FillPattern", "ZOrder"];
+
     private static string BuildCellName(
         string generatorId, IReadOnlyDictionary<string, PCellValue> parameters,
         string? techIdentity, PCellLayerSelection layerSelection)
@@ -245,6 +328,18 @@ public static class GeneratedCellStore
         // PCellRegistry.GeneratorContentKey. For a script-backed generator this is a hash of the
         // script itself, which is what makes editing one actually invalidate the cells it produced.
         sb.Append('|').Append(PCellRegistry.GeneratorContentKey(generatorId));
+        // And the technology's own CONTENT, for the same reason and on the same terms. techIdentity
+        // above is the .ctech PATH, which does not change when the file behind it is edited — and
+        // circuitRF ships the editor that edits it. That gap was invisible while the whole folder was
+        // wiped on every open; once generated cells survive a session
+        // (GeneratedCellsLifecycle.WipeOnOpenAndClose), an in-place edit to a technology would
+        // otherwise resolve straight back to artwork drawn against the old layers.
+        //
+        // Appended only when there is something to append, so every existing cell whose identity is
+        // not a readable file — which is every one in a test fixture, and any workspace with no
+        // technology — keeps the name it already has.
+        string techKey = TechnologyContentKey(techIdentity);
+        if (techKey.Length > 0) sb.Append('|').Append(techKey);
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         string hex  = Convert.ToHexString(hash)[..12].ToLowerInvariant();

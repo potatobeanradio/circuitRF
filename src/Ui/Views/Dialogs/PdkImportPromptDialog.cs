@@ -52,7 +52,9 @@ public static class PdkImportPromptDialog
                 new TextBlock
                 {
                     Text = "Choose the kit's top-level folder, or a .zip containing it. " +
-                           "circuitRF will report what it finds inside.",
+                           "An archive is unpacked into this workspace's kits folder first, so " +
+                           "the kit travels with the workspace. circuitRF will report what it " +
+                           "finds inside.",
                     TextWrapping = TextWrapping.Wrap,
                     Opacity = 0.8,
                 },

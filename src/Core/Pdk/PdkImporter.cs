@@ -171,7 +171,14 @@ public static class PdkImporter
 
         foreach (var e in files)
         {
-            string Peek() => e.Length > PeekLimitBytes ? "" : PeekText(e.Open);
+            // Memoized, and that is a cost fix rather than a tidy-up: every recogniser in the
+            // registry is offered the same file in turn, each one calls Peek, and an un-memoized
+            // closure re-OPENS and re-READS the file for every call. Measured on a real kit inside
+            // the application: 4,805 reads and ~83 MB for 1,266 files, where one read each — ~21 MB —
+            // is the whole of what is being asked for. The recognisers themselves are unchanged;
+            // nothing here decides which of them wins.
+            string? peeked = null;
+            string Peek() => peeked ??= e.Length > PeekLimitBytes ? "" : PeekText(e.Open);
 
             PdkAsset? asset = null;
             foreach (var r in recognizers)

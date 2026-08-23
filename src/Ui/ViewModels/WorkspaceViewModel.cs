@@ -422,6 +422,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void OnDeviceWorkerStarting(DeviceWorkerStart start)
     {
+        // A worker started only to be asked what it implements says nothing. It is not a run waiting
+        // on anything — it is started, described and shut down — and there is one per compiled model
+        // in the kit, so this line appeared several times during a workspace OPEN, each time
+        // promising that a run was about to wait on it. What the scan FOUND is already reported once,
+        // by the install that asked for it.
+        if (start.ForDiscovery) return;
+
         string forWhat = string.IsNullOrWhiteSpace(start.Provider)
             ? "an external device model"
             : $"'{start.Provider}'";
@@ -1585,9 +1592,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Best-effort: a locked/unremovable folder is reported, never left half-deleted in a way that
     /// blocks the close/open itself. Thin wrapper over the framework-free
     /// <see cref="GeneratedCellsLifecycle"/> (directly unit-tested there) — see that class's own doc
-    /// comment for the full policy story.</summary>
+    /// comment for the full policy story.
+    ///
+    /// <para><b>Every call site is now gated on
+    /// <see cref="GeneratedCellsLifecycle.WipeOnOpenAndClose"/>, which is off.</b> The gate lives
+    /// here, in the one wrapper the three of them share, so turning the original policy back on is a
+    /// single flag and nothing else. What the folder cost when it was wiped and rebuilt on every
+    /// open, and why that stopped being cheap, is on that property.</para></summary>
     private void DeleteGeneratedCellsFolder(string cwsPath)
     {
+        if (!GeneratedCellsLifecycle.WipeOnOpenAndClose) return;
+
         try { GeneratedCellsLifecycle.DeleteGeneratedCellsFolder(Path.GetDirectoryName(cwsPath)!); }
         catch (Exception ex) { Messages.Warning($"Could not clear the generated-cell cache: {ex.Message}"); }
     }
@@ -1620,6 +1635,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (outcome.InstancesRepointed > 0)
             Messages.Info($"{Plural(outcome.InstancesRepointed, "placed cell")} moved to newly generated " +
                           $"artwork after a generator change ({Plural(outcome.LayoutsRewritten, "layout")} updated).");
+
+        // Also silent on an ordinary open, because nothing has gone stale on one. Said when it does
+        // happen so that a generator or technology edit, which is what leaves the old cells behind,
+        // reads as one event rather than as artwork quietly changing.
+        if (outcome.CellsPruned > 0)
+            Messages.Info($"{Plural(outcome.CellsPruned, "generated cell")} no layout still uses " +
+                          $"{(outcome.CellsPruned == 1 ? "was" : "were")} removed from the cache.");
     }
 
     /// <summary>
@@ -2197,7 +2219,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _recentlyPlaced.RemoveAt(_recentlyPlaced.Count - 1);
 
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
-        RestoreInstalledPdks();
+        // The palette is REPUBLISHED, not reloaded. This used to call RestoreInstalledPdks, which
+        // re-reads every referenced kit from disk — so placing a single component re-imported the
+        // whole kit set (measured at ~400 ms per placement against a real one) purely to get the kit
+        // tiles back beside the freshly-reordered MRU. Nothing about a placement can change what a
+        // kit holds; only what is shown alongside it.
+        PublishKitPaletteItems();
 
         var list = _recentlyPlaced.Count > 0 ? _recentlyPlaced.Select(k => k.ToString()).ToList() : null;
         AppPreferencesIo.Update(p => p.RecentlyPlaced = list);
@@ -2451,7 +2478,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Layout = newLayout;
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
-        RestoreInstalledPdks();
+        // Same reason as the MRU push: CreateLayoutPreservingContent hands back a NEW PaletteTool, so
+        // the kit tiles have to be published into it again — but moving panels around cannot change
+        // what a kit holds, and re-reading every one of them from disk to rearrange a dock is the
+        // most expensive way to do the cheapest thing here.
+        PublishKitPaletteItems();
         SubscribeToFilterState();
         SubscribeToTreeSelection();
 
@@ -3588,6 +3619,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (string.IsNullOrEmpty(path)) return;
 
+        // An archive is UNPACKED, then imported as the folder it became. Reading it in place produced
+        // a kit with no artwork, no models, no settings and a recorded location that was the .zip —
+        // so the next workspace open reported the kit folder missing and every part placed from it
+        // went unresolved. See KitArchive for the full account.
+        if (KitArchive.IsArchive(path))
+        {
+            path = await UnpackKitArchiveAsync(window, path);
+            if (path is null) return;
+        }
+
+        // Everything slow about an import happens between the picker closing and the report opening,
+        // and until now none of it said anything: reading a real kit is hundreds of milliseconds of
+        // file enumeration and netlist parsing, installing it starts one worker per compiled model,
+        // and looking for process data walks the tree again. A live row is the one place a user can
+        // see that the application is working rather than stuck. Indeterminate throughout — none of
+        // the three stages has an honest denominator until it has already finished.
+        var live = Messages.BeginProgress($"Import PDK — reading {Path.GetFileName(path.TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}…");
+        live.Update("Import PDK — reading the kit…", indeterminate: true);
+
         PdkImportReport report;
         try
         {
@@ -3595,12 +3646,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         catch (Exception ex)
         {
-            Messages.Post(MessageLevel.Error, $"Import PDK failed: {ex.Message}");
+            live.Complete(MessageLevel.Error, $"Import PDK failed: {ex.Message}");
             return;
         }
 
         ImportedPdks.Add(report);
-        var outcome = InstallPdkIntoPalette(report);
+
+        live.Update($"Import PDK — {report.KitName}: installing its parts…", indeterminate: true);
+        var outcome = await InstallPdkIntoPaletteAsync(report);
+
+        // Looked for BEFORE the report dialog opens, not after it closes, and that ordering is the
+        // whole fix for what this felt like. The scan walks the kit again and can take a while; run
+        // after the dialog it left the user looking at a dismissed report and nothing happening,
+        // followed by a question arriving out of nowhere. Asked as the row's last stage, the answer
+        // is already in hand when the report closes and the offer follows it immediately.
+        live.Update($"Import PDK — {report.KitName}: looking for process data…", indeterminate: true);
+        var techScan = await ScanForKitTechnologyAsync(report);
 
         // A count of what was and was not recognised is a TALLY, not a verdict — a vendor kit
         // routinely carries far more than circuitRF reads, so a warning here fires on a completely
@@ -3609,7 +3670,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var level = report.Status is PdkImportStatus.NotRecognized or PdkImportStatus.Failed
             ? MessageLevel.Error
             : MessageLevel.Info;
-        Messages.Post(level,
+        live.Complete(level,
             $"Import PDK — {report.KitName}: " +
             $"{PdkPartInstaller.Plural(report.Parts.Count, "part", "parts")}, " +
             $"{PdkPartInstaller.Plural(report.Supported.Count(), "file", "files")} read, " +
@@ -3619,7 +3680,76 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ReportPdkPlaceability(report, outcome);
 
         await PdkImportReportDialog.ShowAsync(window, report);
-        await OfferTechnologyFromKitAsync(window, report);
+        await OfferTechnologyFromKitAsync(window, report, techScan);
+    }
+
+    /// <summary>
+    /// Unpacks a kit archive into the workspace and returns the kit's folder, or null when it could
+    /// not be unpacked or the user declined to replace what was already there.
+    /// </summary>
+    private async Task<string?> UnpackKitArchiveAsync(Window window, string archivePath)
+    {
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Error(
+                "Open or create a workspace before importing a kit archive — the kit is unpacked " +
+                $"into it, under '{KitArchive.KitsFolderName}/'.");
+            return null;
+        }
+
+        string workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        string destination  = KitArchive.DestinationFor(archivePath, workspaceDir);
+
+        // Asked, never assumed: an unpacked kit is ordinary files in the workspace, and someone may
+        // have edited them — a manifest written by hand is exactly the kind of thing that lives there.
+        bool overwrite = false;
+        if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any())
+        {
+            var answer = await new SaveChangesDialog(
+                $"'{Path.GetFileName(destination)}' is already unpacked in this workspace.\n\n" +
+                "Replace it with the contents of this archive? Anything edited in that folder is lost.",
+                saveLabel:     "Replace",
+                dontSaveLabel: null,
+                cancelLabel:   "Cancel",
+                title:         "Import PDK").ShowDialog<SaveChangesResult>(window);
+
+            if (answer != SaveChangesResult.Save) return null;
+            overwrite = true;
+        }
+
+        var live = Messages.BeginProgress($"Import PDK — unpacking {Path.GetFileName(archivePath)}…");
+        live.Update("Import PDK — unpacking the archive…", indeterminate: true);
+        try
+        {
+            string kitDir = await Task.Run(
+                () => KitArchive.ExtractInto(archivePath, workspaceDir, overwrite));
+            live.Complete(MessageLevel.Info,
+                $"Import PDK — unpacked '{Path.GetFileName(archivePath)}' into " +
+                $"{WorkspaceRefs.ToStoredRef(kitDir, workspaceDir)}.");
+            return kitDir;
+        }
+        catch (Exception ex)
+        {
+            live.Complete(MessageLevel.Error, $"Import PDK — the archive could not be unpacked: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The process data <paramref name="report"/>'s kit carries, or null when there is none to look
+    /// at — an archive, a kit whose import saw no layer data, or a scan that would not run.
+    ///
+    /// <para>Separated from the offer so the WALK can happen while a progress row is up and the
+    /// QUESTION can happen the moment the user is ready for it. They used to be one call, which is
+    /// why the question arrived after a silent pause.</para>
+    /// </summary>
+    private static async Task<TechnologyScanResult?> ScanForKitTechnologyAsync(PdkImportReport report)
+    {
+        if (report.LayerTechnology is null) return null;
+        if (string.IsNullOrEmpty(report.RootPath) || !Directory.Exists(report.RootPath)) return null;
+
+        try   { return await Task.Run(() => ProcessTechnologyImport.Scan(report.RootPath)); }
+        catch { return null; }   // the kit loaded; a failed look for something extra must not undo that
     }
 
     /// <summary>
@@ -3634,13 +3764,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <para>Asked rather than done: a technology is workspace-scoped configuration, may merge into
     /// one already there, and the user may be importing a kit purely for its schematic parts.</para>
     /// </summary>
-    private async Task OfferTechnologyFromKitAsync(Window window, PdkImportReport report)
+    /// <param name="alreadyScanned">
+    /// What <see cref="ScanForKitTechnologyAsync"/> already found, when the caller ran the scan under
+    /// its own progress row. Null means "look now" — the shape the Manage PDKs door still uses.
+    /// </param>
+    private async Task OfferTechnologyFromKitAsync(
+        Window window, PdkImportReport report, TechnologyScanResult? alreadyScanned = null)
     {
         // An archive has no folder to scan, and a kit whose import saw no layer data has nothing to
         // offer. This is a cheap pre-filter on a fact the IMPORT already established; the Manage PDKs
         // door has no report to consult and goes straight to the scan below, which is the real test.
         if (report.LayerTechnology is null) return;
-        await OfferTechnologyFromKitAsync(window, report.KitName, report.RootPath);
+        await OfferTechnologyFromKitAsync(window, report.KitName, report.RootPath, alreadyScanned);
     }
 
     /// <summary>
@@ -3649,7 +3784,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Add door offered only the parts, which left a repaired or newly-referenced kit with no
     /// technology and nothing to say one was available.
     /// </summary>
-    private async Task OfferTechnologyFromKitAsync(Window window, string kitName, string? rootPath)
+    private async Task OfferTechnologyFromKitAsync(
+        Window window, string kitName, string? rootPath, TechnologyScanResult? alreadyScanned = null)
     {
         if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath)) return;
 
@@ -3662,8 +3798,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         TechnologyScanResult scan;
-        try   { scan = await Task.Run(() => ProcessTechnologyImport.Scan(rootPath)); }
-        catch { return; }   // the kit loaded; a failed look for something extra must not undo that
+        if (alreadyScanned is { } done) scan = done;
+        else
+        {
+            try   { scan = await Task.Run(() => ProcessTechnologyImport.Scan(rootPath)); }
+            catch { return; }   // the kit loaded; a failed look for something extra must not undo that
+        }
 
         // Silent when there is nothing there at all. A kit with no process data is the ordinary case
         // on this door (a model-library package, for one), and a line about it on every Add would be
@@ -3693,7 +3833,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (answer != SaveChangesResult.Save) return;
 
-        await RunTechnologyImportAsync(window, rootPath);
+        // Handed on, so the technology dialog opens on the scan already in hand rather than repeating
+        // the walk the offer was made from. Three scans of the same tree used to run for one import.
+        await RunTechnologyImportAsync(window, rootPath, scan);
     }
 
     /// <summary>Kits imported this session, newest last. The component palette reads this.</summary>
@@ -3757,11 +3899,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     broken.Add(r.Provider);
                 }
 
-            foreach (var r in refs.Where(x => !x.IsLibraryOnly))
+            // READ on worker threads, APPLY here. Reading a kit is a few hundred milliseconds of
+            // file enumeration and netlist parsing (measured at ~390 ms on a real kit: ~120 ms
+            // scanning 1,266 files, ~170 ms discovering parts), and none of it needs the UI thread —
+            // it is a pure function of what is on disk. The apply half, which is everything that
+            // touches PdkKitRegistry, the palette and the workspace's own files, stays on this
+            // thread and in reference order, so nothing about WHAT is loaded or in what order
+            // changes.
+            //
+            // Started together rather than one after another: a workspace referencing several kits
+            // now reads them at once instead of paying for each in turn. With a single kit this
+            // moves the work off the UI thread's stack without shortening it.
+            var kits = refs.Where(x => !x.IsLibraryOnly).ToList();
+            var reads = kits
+                .Select(r => Task.Run(() => ReadReferencedKit(r, wsRoot, libraryRoots)))
+                .ToArray();
+
+            for (int i = 0; i < kits.Count; i++)
             {
+                var r = kits[i];
                 try
                 {
-                    if (LoadReferencedKit(r, wsRoot, libraryRoots) is not { } loaded) { broken.Add(r.Provider); continue; }
+                    // GetAwaiter().GetResult() rather than .Result so a kit that threw surfaces its
+                    // OWN exception to the catch below — the message goes in the load log, and
+                    // "one or more errors occurred" is not a message about anything.
+                    var read = reads[i].GetAwaiter().GetResult();
+                    if (ApplyReferencedKit(r, wsRoot, read) is not { } loaded) { broken.Add(r.Provider); continue; }
                     _pdkPaletteItems.AddRange(loaded);
                 }
                 catch (Exception ex)
@@ -4036,36 +4199,81 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
-    /// Re-reads one referenced kit into memory. Returns its palette entries, or null when the kit
-    /// itself cannot be reached.
+    /// What reading one referenced kit off disk produced, before any of it has been applied.
+    ///
+    /// <para><see cref="Refusal"/> non-null means the kit was found but not read, and says why in the
+    /// user's own terms; <see cref="Missing"/> means there was nothing there to read. Both are
+    /// carried as values rather than acted on inside the read, because the read runs on a worker
+    /// thread and reporting is the apply half's job.</para>
+    /// </summary>
+    private readonly record struct KitRead(
+        string KitPath,
+        PdkImportReport? Report,
+        PdkPartInstaller.InstallOutcome? Outcome,
+        string? Refusal,
+        bool Missing);
+
+    /// <summary>
+    /// Reads one referenced kit off disk. <b>Runs on a worker thread</b> — a few hundred milliseconds
+    /// of file enumeration and netlist parsing, and a pure function of what is on disk.
+    ///
+    /// <para>Touches no view-model, registry or palette state, posts no message and writes no file:
+    /// everything that does is <see cref="ApplyReferencedKit"/>, on the UI thread. <b>Keep it that
+    /// way</b> — it is the only reason reading several kits at once is safe.</para>
     ///
     /// <para>The recorded settings are handed back in, so the library discovery and variant choices
     /// are READ rather than re-derived — which is what keeps an open both fast and repeatable.</para>
     /// </summary>
-    private IReadOnlyList<PaletteItem>? LoadReferencedKit(
+    private static KitRead ReadReferencedKit(
         CwsPdkRef r, string workspaceRootDir, IReadOnlyList<string> libraryRoots)
     {
         string kitPath = WorkspaceRefs.Resolve(r.Path, workspaceRootDir);
         if (!Directory.Exists(kitPath))
+            return new KitRead(kitPath, null, null, null, Missing: true);
+
+        // A reader change moves pins, and wires attached to them silently disconnect. Refused and
+        // reported rather than applied — the upgrade is the user's to ask for.
+        if (r.TranslationVersion != 0 && r.TranslationVersion != DsnSymbolReader.TranslationVersion)
+            return new KitRead(kitPath, null, null,
+                $"'{r.Provider}' was translated by an older reader (version {r.TranslationVersion}; " +
+                $"this build uses {DsnSymbolReader.TranslationVersion}). It was NOT re-translated: " +
+                $"pin positions could move and disconnect wires. Re-import it from File ▸ Manage PDKs " +
+                $"when you are ready.",
+                Missing: false);
+
+        var report  = PdkImporter.Import(kitPath);
+        var outcome = PdkPartInstaller.Install(report, r.Settings, libraryRoots);
+        return new KitRead(kitPath, report, outcome, null, Missing: false);
+    }
+
+    /// <summary>
+    /// Applies what <see cref="ReadReferencedKit"/> read. Returns the kit's palette entries, or null
+    /// when it could not be reached or was refused.
+    ///
+    /// <para><b>UI thread.</b> This is the half that mutates the kit registry, records derived
+    /// settings back into <c>.cws</c>, declares the kit's own cell library and posts messages — and
+    /// it still runs one kit at a time, in reference order, exactly as it did while the read was
+    /// inline. Only WHERE the reading happens changed.</para>
+    /// </summary>
+    private IReadOnlyList<PaletteItem>? ApplyReferencedKit(
+        CwsPdkRef r, string workspaceRootDir, KitRead read)
+    {
+        string kitPath = read.KitPath;
+
+        if (read.Missing)
         {
             PdkLoadLog.Record(workspaceRootDir, r.Provider, $"the kit folder '{kitPath}' does not exist.");
             return null;
         }
 
-        // A reader change moves pins, and wires attached to them silently disconnect. Refused and
-        // reported rather than applied — the upgrade is the user's to ask for.
-        if (r.TranslationVersion != 0 && r.TranslationVersion != DsnSymbolReader.TranslationVersion)
+        if (read.Refusal is { } refusal)
         {
-            Messages.Warning(
-                $"'{r.Provider}' was translated by an older reader (version {r.TranslationVersion}; " +
-                $"this build uses {DsnSymbolReader.TranslationVersion}). It was NOT re-translated: " +
-                $"pin positions could move and disconnect wires. Re-import it from File ▸ Manage PDKs " +
-                $"when you are ready.");
+            Messages.Warning(refusal);
             return null;
         }
 
-        var report  = PdkImporter.Import(kitPath);
-        var outcome = PdkPartInstaller.Install(report, r.Settings, libraryRoots);
+        var report  = read.Report!;
+        var outcome = read.Outcome!;
 
         PdkKitRegistry.SetKit(r.Provider, outcome.Parts ?? [], outcome.OsdiModels);
 
@@ -4226,12 +4434,35 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <para>Re-importing a kit REPLACES its previous entries rather than adding a second copy —
     /// keyed on kit name, which is what a user re-importing after fixing something expects.</para>
     /// </summary>
+    /// <summary>
+    /// <see cref="InstallPdkIntoPalette"/> with the READ half on a worker thread.
+    ///
+    /// <para>Installing is not the cheap end of an import: it reads the kit's symbols, and it starts
+    /// one worker process per compiled model to ask what each implements. On the UI thread that is a
+    /// frozen window for as long as it takes, right after a file picker closed — which is the part of
+    /// an import that felt like nothing was happening. Everything that touches registries, the
+    /// palette or the workspace's files still runs here, after the await.</para>
+    /// </summary>
+    private async Task<PdkPartInstaller.InstallOutcome?> InstallPdkIntoPaletteAsync(PdkImportReport report)
+    {
+        var roots = WorkspaceLibraryRoots();
+
+        PdkPartInstaller.InstallOutcome outcome;
+        try
+        {
+            outcome = await Task.Run(() => PdkPartInstaller.Install(report, libraryRoots: roots));
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Import PDK — the palette could not be updated: {ex.Message}");
+            return null;
+        }
+
+        return ApplyInstalledPdk(report, outcome);
+    }
+
     private PdkPartInstaller.InstallOutcome? InstallPdkIntoPalette(PdkImportReport report)
     {
-        string? wsRoot = CurrentWorkspacePath is null
-            ? null
-            : Path.GetDirectoryName(CurrentWorkspacePath);
-
         PdkPartInstaller.InstallOutcome outcome;
         try
         {
@@ -4242,6 +4473,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Messages.Warning($"Import PDK — the palette could not be updated: {ex.Message}");
             return null;
         }
+
+        return ApplyInstalledPdk(report, outcome);
+    }
+
+    /// <summary>The UI-thread half of an install: registry, palette, and what the workspace records.</summary>
+    private PdkPartInstaller.InstallOutcome? ApplyInstalledPdk(
+        PdkImportReport report, PdkPartInstaller.InstallOutcome outcome)
+    {
+        string? wsRoot = CurrentWorkspacePath is null
+            ? null
+            : Path.GetDirectoryName(CurrentWorkspacePath);
 
         // Held in memory and referenced by the workspace — nothing is written into it. Re-importing
         // a kit REPLACES what was held for it rather than adding a second copy.
@@ -4592,7 +4834,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// same job reached from a different door — offering it there and building a second, slightly
     /// different flow is how the two would come to disagree about merging, defaults or reporting.</para>
     /// </summary>
-    private async Task RunTechnologyImportAsync(Window window, string root)
+    /// <param name="alreadyScanned">A scan the caller has already run, so one import does not walk
+    /// the same tree twice. Null means scan now — the shape File ▸ Import ▸ Technology uses.</param>
+    private async Task RunTechnologyImportAsync(
+        Window window, string root, TechnologyScanResult? alreadyScanned = null)
     {
         if (CurrentWorkspacePath is null)
         {
@@ -4601,14 +4846,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         TechnologyScanResult scan;
-        try
+        if (alreadyScanned is { } done) scan = done;
+        else
         {
-            scan = await Task.Run(() => ProcessTechnologyImport.Scan(root));
-        }
-        catch (Exception ex)
-        {
-            Messages.Error($"Import Technology failed while scanning: {ex.Message}");
-            return;
+            var scanning = Messages.BeginProgress($"Import Technology — scanning {Path.GetFileName(root.TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}…");
+            scanning.Update("Import Technology — scanning for process data…", indeterminate: true);
+            try
+            {
+                scan = await Task.Run(() => ProcessTechnologyImport.Scan(root));
+                scanning.Complete(MessageLevel.Info, "Import Technology — scan complete.");
+            }
+            catch (Exception ex)
+            {
+                scanning.Complete(MessageLevel.Error, $"Import Technology failed while scanning: {ex.Message}");
+                return;
+            }
         }
 
         if (!scan.HasStack)

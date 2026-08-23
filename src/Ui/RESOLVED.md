@@ -6,6 +6,164 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+## Opening a workspace took 2.1 s, and four fifths of it was work already on disk (2026-08-23)
+
+**Reported:** a noticeable lag when opening a particular workspace, presumed to be the PDK it
+references. The PDK was a fifth of it.
+
+Measured by timing each stage of `WorkspaceViewModel.SwitchToWorkspace` in the running application,
+against a workspace that references one large vendor kit (1,266 files) and places 10 generated cells
+from that kit's own script generators. Warm, second open in a session:
+
+| stage | before | after |
+|---|---:|---:|
+| `RestoreInstalledPdks` — read every referenced kit | 396 ms | 425 ms |
+| `RegenerateAllGeneratedCells` | **1650 ms** | **3 ms** |
+| dock rebuild, `.cws`, theme, tree state, dock layout, 3 documents | ~48 ms | ~23 ms |
+| **total UI-thread block** | **2094 ms** | **451 ms** |
+
+First open of a launch: 2643 ms → 717 ms.
+
+### The generated-cell rebuild was 79% of it, and none of the work was new
+
+`SwitchToWorkspace` deleted the whole `.generated-cells` folder and rebuilt every snapshot the
+layouts referenced — R-L5g-7, whose brief says "both are cheap once R-L5g-6 holds". That was true
+while every generator was a built-in drawing geometry in-process. **A kit's generators are scripts,
+and a script runs per cell:** the ten cells here cost 2-800 ms each. None of it is interpreter
+startup — it is per-cell geometry, paid in full on every open, for artwork that was already correct
+on disk.
+
+The folder is now kept across sessions and pruned instead. What makes that safe is the same property
+that made deleting it safe: **the folder's NAME is the content hash**, so a folder that is there is
+by construction the right geometry — which is why `GetOrCreate` already returned a hit without
+re-generating or re-verifying anything. `RegenerateAll` gained a prune pass; the wipe survives behind
+`GeneratedCellsLifecycle.WipeOnOpenAndClose` (off), gated in the one wrapper all three call sites
+share, and is still exercised by a test.
+
+**The prune refuses to run rather than guess.** Deleting a cell some layout still references costs
+that layout its artwork, so the live set has to be complete to be actionable: if any `.clay` failed
+to parse, or the caller held layouts out of the walk (`skipPaths`, which `ReloadPCellGenerators`
+does), nothing is collected. An uncollected folder is harmless; a wrongly collected one is not.
+
+### The wipe was silently covering a real staleness gap
+
+`BuildCellName` hashed the technology's **identity** — the resolved `.ctech` PATH — not its content.
+While the folder was wiped on every open that never showed: everything regenerated regardless. Keep
+the folder and an in-place technology edit resolves straight back to artwork drawn against the old
+layers, and circuitRF ships the editor that makes that edit. The stamp is now over what the file
+SAYS.
+
+**What the stamp deliberately leaves out is as load-bearing as what it includes.** The stamp is part
+of the cell's name, so anything in it renames every generated cell in the workspace when it changes —
+regenerating them all and rewriting every layout that places them. `Visible`, `Selectable`, `Color`,
+`FillOpacity`, `FillPattern` and `ZOrder` are toggled while looking at a design and cannot reach the
+artwork (a generated shape carries a layer KEY; the renderer resolves the rest live), so hiding a
+layer must not trigger a rebuild. It is written as an **exclusion** list, not an inclusion list, so a
+field added to `LayerDef` later is stamped by default — the cost of forgetting is an unnecessary
+regeneration, not artwork drawn against a process that has since changed. The stamp re-serialises the
+JSON rather than hashing the file's bytes, so a reformat on save is not mistaken for a change.
+
+One-time cost of the change: the first open renames every generated cell and rewrites the layouts
+that place them, through the repointing machinery that exists for exactly that.
+
+### Placing a component re-imported the whole kit
+
+`PushMruPlaced` — which runs on **every component placement** — called `RestoreInstalledPdks`, a full
+re-read of every referenced kit from disk, purely to get the kit tiles back beside the reordered MRU.
+So did `RebuildLayoutFrom`, i.e. any dock-layout reset or restore. Both need only
+`PublishKitPaletteItems()` (0 ms): the palette tool instance is new, but nothing about a placement or
+a panel move can change what a kit holds. This was also the third full kit read per launch that the
+open-path trace showed.
+
+### Reading a kit re-read every file it looked at
+
+`PdkImporter.ImportEntries` handed each recogniser a `Peek()` closure that re-OPENED and re-READ the
+file on every call. Measured in the application: **4,805 reads and ~83 MB for 1,266 files**, where
+one read each — ~21 MB — is the whole of what was being asked for. Memoized per file.
+
+### What is left, and why it is not smaller
+
+The kit read is now ~90% of the open (~400 ms: ~120 ms enumerating and recognising 1,266 files,
+~170 ms discovering parts, which SPICE-parses every netlist in the kit). It is split into
+`ReadReferencedKit` (pure, worker thread — several kits now read at once) and `ApplyReferencedKit`
+(UI thread, reference order, unchanged). `ManagePdksDialog`'s Add and Validate read on a worker too;
+File ▸ Import ▸ PDK already did.
+
+**With a single kit that moves the work off the UI thread's stack without shortening the open**, and
+the window still does not repaint during it. Making it actually repaint means making
+`SwitchToWorkspace` async, which leaves the shell interactive with the dock rebuilt and no documents
+open — a reentrancy hazard, not a free win. There is also nothing on the open path to overlap the
+read WITH: the kit read must finish before the PCell generators exist, which must exist before the
+generated cells rebuild, which must happen before the layouts open. It is a serial dependency chain.
+Shortening it further means making the read itself cheaper (a persisted per-kit digest), not moving
+it.
+
+## Import PDK: the archive door, the surprise dialog, and a worker message that said the wrong thing (2026-08-23)
+
+Three things reported while measuring the open above, all on the PDK import path.
+
+### The .zip door produced a kit that could not work, and a reference that broke on the next open
+
+`PdkImporter` reads entries straight out of an archive. That is enough to say what a kit CONTAINS
+and nothing more: everything downstream resolves paths against a directory, and `PdkPartInstaller`'s
+own `haveRoot` guard turns off when the root is not one. An archive import therefore produced **no
+symbol artwork and no palette icons, no netlist discovery, no compiled models, no simulation settings
+and no manifest** — and then recorded the `.zip` ITSELF as the kit's location, so the very next
+workspace open reported "the kit folder does not exist" and every part placed from it went
+unresolved. The door was offered in the picker and led there.
+
+An archive is now unpacked into the workspace under `kits/<name>/` — the same folder the
+archive/share path already uses for a kit it carries, so a kit handed over as a `.zip` travels with
+the workspace — and the folder it became is what gets imported. Replacing an already-unpacked kit is
+asked about, never assumed: those are ordinary files in the workspace and a hand-written manifest is
+exactly the kind of thing that lives there.
+
+**The unwrap rule is the trap in this.** A kit archive is nearly always packed as `<name>/…`, so
+extracting gives `kits/foo/foo/…` and the kit is one level down. The obvious test — "exactly one
+directory and no files" — also describes a kit whose whole top level is a single `cells/`, and
+descending into that returns something that is not the kit, with every path resolved from it wrong in
+a way nothing downstream can detect. The test is the folder's NAME matching the archive's, because
+that is what an archiving tool actually does. Not unwrapping is the safe failure: an extra level
+costs one path segment, which the importer already handles.
+
+### The technology offer arrived after a silent pause
+
+The scan that decides whether to offer a technology ran AFTER the import report dialog was dismissed
+— so the user closed the report, watched nothing happen for as long as the walk took, and was then
+asked a question out of nowhere. It now runs as the last stage of the import's own progress row, so
+the answer is in hand before the report opens and the offer follows it immediately. The scan result
+is threaded through the offer into `RunTechnologyImportAsync`: **one import used to walk the same
+tree three times.**
+
+The import as a whole now reports through `Messages.BeginProgress` (reading → installing → looking
+for process data, indeterminate — no stage has an honest denominator until it has finished), and
+`PdkPartInstaller.Install` runs on a worker thread. That last part matters more than it sounds:
+installing starts **one worker process per compiled model** to ask what each implements, and it was
+doing that on the UI thread immediately after a file picker closed.
+
+Manage PDKs ▸ Add and ▸ Validate read a kit the same way and froze the dialog while doing it; both
+now read off-thread behind an indeterminate bar in the result panel they already write into.
+
+### "Starting the worker…" printed once per compiled model, during an open, promising a run
+
+Both lines were true starts and neither was a run. `OsdiModelDiscovery.Find` starts one worker per
+`.osdi` artefact, asks what it implements, and disposes it — so the count follows how many the kit
+ships (four in the reported kit), and every one borrowed a sentence written for the worker a run
+actually waits on: "the first device waits for it to load its models."
+
+The two kinds of start are **indistinguishable from outside** — same program, same provider name — so
+the event now carries `ForDiscovery` and the workspace says nothing for a scan. What the scan found
+is already reported once, by the install that asked for it. `DeviceWorkerProvider.LaunchForDiscovery`
+is a separate method rather than a defaulted parameter on `Launch`, because that one's signature IS
+the `DeviceWorkerProviderResolver.Launcher` delegate and widening it breaks the method-group
+conversion a test substitutes through.
+
+### Set as workspace default is now ticked
+
+A technology imported into a workspace that has none is the one it will use. Leaving the box clear
+meant every layout in that workspace opened on no technology until the user found the setting;
+unticking is one click for the rarer case of importing a second process to compare against.
+
 ## The zoomed-far-out layout was slow to pan, zoom and hover — and it was never the renderer (2026-08-23)
 
 **Reported:** a hierarchical layout is still slow when zoomed out extremely far, and the slowness

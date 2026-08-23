@@ -85,7 +85,9 @@ public static class OsdiModelDiscovery
             DeviceWorkerProvider? provider = null;
             try
             {
-                provider = DeviceWorkerProvider.Launch("osdi", workerPath, [file]);
+                // forDiscovery: this worker is started, asked what it implements, and shut down in
+                // the finally below — one per artefact. It serves no run and nothing waits on it.
+                provider = DeviceWorkerProvider.LaunchForDiscovery("osdi", workerPath, [file]);
                 var modules = provider.Describe()
                                       .Where(d => !string.IsNullOrWhiteSpace(d.TypeId))
                                       .Select(d => new OsdiModule(
