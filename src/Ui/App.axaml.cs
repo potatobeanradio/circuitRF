@@ -140,6 +140,11 @@ public partial class App : Application
                 WireNativeMenuDispatcherBackstop();
             }
 
+            // AFTER the backstop, deliberately: subscription order is invocation order, so
+            // subscribing last is what lets the reporter read e.Handled and stay quiet about the one
+            // exception the backstop above deliberately swallows.
+            Diagnostics.CrashReporter.WireDispatcherLogging();
+
             var firstWindow = new WorkspaceWindow
             {
                 DataContext = new WorkspaceViewModel(),
@@ -188,6 +193,16 @@ public partial class App : Application
                     () => ApplyLaunchSettings(launchVm),
                     Avalonia.Threading.DispatcherPriority.Background);
             }
+
+            // "The last session crashed" is announced LAST, at ApplicationIdle. Everything above can
+            // still open a workspace, and a workspace open CLEARS the Messages region — announcing
+            // any earlier would post the notice and then wipe it. Idle is below every priority those
+            // paths post at, so it runs once they have settled. (The report itself is on disk either
+            // way; Help ▸ Crash Reports… finds it whatever happens to the message.)
+            var crashVm = (WorkspaceViewModel)firstWindow.DataContext!;
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                crashVm.AnnouncePendingCrashReports,
+                Avalonia.Threading.DispatcherPriority.ApplicationIdle);
 
             // Apple Events (macOS Finder double-click).
             if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)

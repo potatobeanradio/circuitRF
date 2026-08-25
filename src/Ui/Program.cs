@@ -19,6 +19,11 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // FIRST, before Avalonia: a crash while the toolkit is coming up is still a crash the user
+        // needs a report for. See Diagnostics/CrashReporter for why the session file, and not the
+        // exception handlers, is the part that catches a simulation death.
+        Diagnostics.CrashReporter.Install("circuitRF");
+
         // Dev tool: regenerate the User-Documentation component artwork from the live drawing engine,
         // then exit. No GUI window opens. Usage:
         //   dotnet run --project src/Ui -- --generate-symbols docs/user/assets/symbols

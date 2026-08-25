@@ -74,6 +74,11 @@ public partial class WBondApp : Application
         AppDomain.CurrentDomain.ProcessExit += (_, _) => ExternalDeviceRegistry.ResetResolved();
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Layout.PCells.PCellRegistry.ClearResolvers();
 
+        // An exception that reaches the dispatcher unhandled takes the process down, so it is a
+        // crash and gets a report. This app installs no dispatcher backstop of its own; the
+        // e.Handled check inside still makes the order-independent thing the right one.
+        Diagnostics.CrashReporter.WireDispatcherLogging();
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var shell = new WBondShellWindow();

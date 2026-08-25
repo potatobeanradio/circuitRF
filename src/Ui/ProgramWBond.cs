@@ -26,6 +26,8 @@ internal sealed class ProgramWBond
     [STAThread]
     public static void Main(string[] args)
     {
+        Diagnostics.CrashReporter.Install("wBond");
+
         // argv is the double-click route on Windows and Linux. macOS delivers the file as an Apple
         // Event instead, which WBondApp subscribes to; both land on the same shell method.
         WBondApp.StartupFiles = args.Where(a => !a.StartsWith('-') && File.Exists(a)).ToArray();

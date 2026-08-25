@@ -2572,6 +2572,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             foreach (var conflict in conflicts)
                 Messages.Warning($"Extraction: {conflict}");
             Messages.Success("Wrote netlist", netlistPath);
+            Diagnostics.CrashReporter.Note($"run: '{testBenchName}' netlist written to {netlistPath}");
         }
         catch (Exception ex)
         {
@@ -2607,6 +2608,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         foreach (var line in plan.Lines)
             Messages.Info(line);
+
+        Diagnostics.CrashReporter.Note(
+            $"run: '{testBenchName}' planned — {plan.Analyses.Count} analysis, {plan.TotalWorkUnits} work unit(s)");
+        foreach (var line in plan.Lines)
+            Diagnostics.CrashReporter.Note($"run:   {line}");
 
         // Step 3: run the engine on a background thread so the UI stays responsive — and so Stop has
         // a thread to interrupt.
@@ -2650,6 +2656,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 cancellation.Finish();
                 _runCancellation = null;
                 SetRunning(null);
+                Diagnostics.CrashReporter.Note($"run: '{testBenchName}' left the engine");
             }
         }
 
@@ -2736,7 +2743,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         100.0 * p.Completed / p.Total);
         else
             live.Update($"Running '{benchName}'…", indeterminate: true);
+
+        // A crash report's most useful line about a long sweep is HOW FAR IT GOT, and nothing else
+        // records that — the live row is in memory and dies with the process. Throttled hard: this
+        // fires per progress observation, which on a fast analysis is thousands of times a second.
+        if (_lastRunBreadcrumb.Elapsed >= TimeSpan.FromSeconds(10))
+        {
+            _lastRunBreadcrumb.Restart();
+            Diagnostics.CrashReporter.Note(
+                $"run: '{benchName}' at {p.Completed} / {p.Total}"
+                + (string.IsNullOrEmpty(p.Stage) ? "" : $" (stage '{p.Stage}')"));
+        }
     }
+
+    /// <summary>Throttle for the run-progress breadcrumb above. Static because the breadcrumb is a
+    /// per-process diagnostic, not per-workspace state.</summary>
+    private static readonly Stopwatch _lastRunBreadcrumb = Stopwatch.StartNew();
 
     /// <summary>
     /// "1,194 / 2,525" — the counter, formatted in the CURRENT culture (a German user reads "2.525").
@@ -12269,6 +12291,52 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         doc.RefreshForeignMarking(); // §4: IsForeign/SourceWorkspaceName may have changed with the path
 
         Messages.Success("Saved", pathAfter);
+    }
+
+    // ---- Crash reports -------------------------------------------------------
+
+    /// <summary>
+    /// Says so, once per launch, if the previous session did not exit cleanly — and links the report
+    /// so it is one click to attach to a bug report. Posted to Messages rather than raised as a
+    /// dialog: the user has just launched the application to get on with something, and a modal
+    /// about a crash they already lived through would be in the way of that. The one thing they
+    /// cannot do without help is FIND the file, which is exactly what the clickable path gives them.
+    /// </summary>
+    public void AnnouncePendingCrashReports()
+    {
+        var reports = Diagnostics.CrashReporter.TakePendingReports();
+        foreach (string report in reports)
+            Messages.Warning(
+                "circuitRF did not shut down cleanly last time. A crash report was saved — " +
+                "please send it with your bug report.", report);
+    }
+
+    /// <summary>Opens the folder crash reports are written to.</summary>
+    [RelayCommand]
+    private void OpenCrashReports()
+    {
+        try
+        {
+            string dir = Diagnostics.CrashReporter.Dir;
+            Directory.CreateDirectory(dir);         // it need not exist yet — a user who has never crashed
+
+            var reports = Diagnostics.CrashReporter.AllReports();
+            if (reports.Count == 0)
+            {
+                // Still open the folder. "There are none" is the answer, and showing them the empty
+                // folder is how they know WHERE none is, for the next time there is one.
+                Messages.Info("No crash reports have been recorded.", dir);
+                OpenPathExternal(dir);
+                return;
+            }
+
+            Messages.Info($"{reports.Count} crash report(s).", dir);
+            RevealPathInFileManager(reports[0]);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Could not open the crash report folder: {ex.Message}");
+        }
     }
 
     // ---- Quit ----------------------------------------------------------------

@@ -26,6 +26,8 @@ internal sealed class ProgramHarmonica
     [STAThread]
     public static void Main(string[] args)
     {
+        Diagnostics.CrashReporter.Install("harmonicaRF");
+
         // argv is the double-click route on Windows and Linux. macOS delivers the file as an Apple
         // Event instead, which HarmonicaApp subscribes to; both land on the same shell method.
         HarmonicaApp.StartupFiles = args.Where(a => !a.StartsWith('-') && File.Exists(a)).ToArray();

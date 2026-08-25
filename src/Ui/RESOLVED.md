@@ -1,5 +1,89 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Crash reports for the packaged app (user report, 2026-08-25)
+
+A user hit "a couple of crashes this afternoon while I was running the s-parameter simulation" and
+asked whether anything could be sent back. Nothing could: the application wrote no crash artifact at
+all, and a packaged build has nowhere for one to go by accident — a Finder-launched `.app` has no
+terminal behind it, and a `.msi`-installed `.exe` has no console at all, so **everything the runtime
+prints on the way down is discarded**. `Diagnostics/CrashReporter.cs` is the fix.
+
+### The exception handlers are the SECOND mechanism, not the first
+
+The obvious design — hook `AppDomain.UnhandledException`, write the stack — does not cover the
+crashes actually reported. A managed handler runs only when a managed exception goes unhandled, and
+**the three ways a desktop app most often dies during a long simulation are not that**:
+
+- `StackOverflowException` — the runtime kills the process without unwinding. No handler runs, by
+  design; it is not catchable.
+- The OS out-of-memory killer — the process receives a signal, not an exception.
+- A fault inside native code (SkiaSharp, a device worker's model library) — the process is gone
+  before any managed frame sees it.
+
+`SchematicRunService.Execute` already wraps **every** analysis in `catch (Exception)` and turns it
+into an `EngineError` result, and `WorkspaceViewModel` wraps the `Task.Run` around it as well. So a
+crash *during a run* is, by elimination, almost certainly one of the three above — which means a
+design resting on exception handlers would have produced an empty directory for exactly the bug that
+prompted it.
+
+**So the primary mechanism is a session file.** Every launch opens
+`<LocalApplicationData>/circuitRF/crash-reports/session-<stamp>-<pid>.running`, writes an environment
+header, appends breadcrumbs with autoflush, and **deletes the file on a clean exit**. A file still
+present at the next launch is, by construction, a session that did not exit cleanly — and it already
+carries the trail of what was running. **.NET does not raise `ProcessExit` after an unhandled
+exception**, which is what makes the asymmetry hold rather than merely being hoped for. The managed
+handlers (`AppDomain.UnhandledException`, `Dispatcher.UIThread.UnhandledException`,
+`TaskScheduler.UnobservedTaskException`) then add the stack trace *when there is one*, appending to
+that same file and promoting it to a report immediately by **rename** — so the report is complete the
+instant the handler returns, which matters when the process is seconds from death.
+
+### "Abandoned" is decided by a lock, never by a pid
+
+harmonicaRF and wBond legitimately run several copies at once (`R-wbe-4`), so "an old `.running`
+file exists" cannot mean "somebody crashed". The owner holds its own session file open with
+`FileShare.Read` for the life of the process; a sweep that can open a session file with
+`FileShare.None` has therefore proved nobody owns it. This is the same share-mode/`flock` exclusion
+`Program.Main` already uses for the Linux single-instance lock. **A pid check would be quietly wrong**
+— pids are recycled, and `Process.GetProcessById` would happily find a stranger. Both halves are
+gated (`ASessionSomebodyStillOwns_IsNotPromoted` and `OnceTheOwnerIsGone_TheSameFileIsPromoted`,
+same file, same launch path, only the holder differing) — without the second, "not promoted" would
+be indistinguishable from "promotion never works".
+
+### The breadcrumb that answers the actual question
+
+For a native or OOM death there is no stack, so the report is only worth as much as its trail. The
+run path leaves: netlist written → plan (analysis count, total work units, one line per planned
+analysis) → `begin`/`end` per analysis in `SchematicRunService.Execute` → and, from
+`ReportRunProgress`, a **10-second-throttled** "at 1,840 / 2,001" position. The throttle is not
+tidiness: that method is called per progress observation, which on a fast analysis is thousands of
+times a second. The position line is the one that turns "it crashed running S-params" into "it died
+at point 1,840 of a 2,001-point sweep of TB1".
+
+### Surfaces
+
+- **Messages**, once per launch, at `DispatcherPriority.ApplicationIdle` — deliberately last, because
+  opening a workspace calls `Messages.Clear()` and every launch path above it can open one.
+  `TakePendingReports()` clears as it reads, so one surface speaks however many windows follow.
+- **Help ▸ Crash Reports…** (native and classic menus) — reveals the newest report, or opens the
+  folder and says there are none. A user who never crashed still learns *where* none is.
+- No dialog. Someone who has just relaunched after a crash is trying to get back to work; the one
+  thing they cannot do unaided is find the file, which the clickable path gives them.
+
+### Known limits, recorded rather than papered over
+
+- **The runtime's own fatal text is still lost.** .NET writes "Stack overflow." and its
+  `Environment.FailFast` dump to fd 2 directly; capturing it needs `dup2`, i.e. a libc P/Invoke,
+  which `CLAUDE.md` §"Ask before" puts behind an explicit ask. The breadcrumb trail is the
+  substitute, and it is the part that names the analysis.
+- **`DOTNET_DbgEnableMiniDump` would give a real core dump** but is read by the runtime *before*
+  `Main`, so it cannot be set from inside the app — it would have to go in the macOS bundle's
+  `Info.plist` / the Windows launcher. Not done.
+- **harmonicaRF and wBond write reports but do not announce them** — neither has a Messages region.
+  Their reports land in the same folder and are found the same way.
+
+Gate: `tests/Ui.Tests/CrashReporterTests.cs` (14 tests).
+
+
 ## Properties Inspector stale after Push In, and the Project Tree with a board import in it (owner, 2026-08-25)
 
 Four owner items in one round: Page/Home/End scrolling for the Project Tree and Library palette; an

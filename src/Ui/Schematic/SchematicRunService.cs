@@ -294,6 +294,11 @@ public static class SchematicRunService
                 control?.ThrowIfCancellationRequested();
                 if (control is not null) control.Stage = pa.ResultName;
 
+                // Breadcrumb, not a message: this is the line a crash report carries when the process
+                // dies inside the engine with no exception to catch (see Diagnostics/CrashReporter).
+                Diagnostics.CrashReporter.Note(
+                    $"run: begin '{pa.ResultName}' ({pa.WorkUnits} work unit(s))");
+
                 // An engine that reports its own progress gets the real control; everything else gets
                 // a cancellation-only child so nothing inside it counts work units twice, and this
                 // level ticks the whole analysis once it is done.
@@ -305,6 +310,7 @@ public static class SchematicRunService
 
                 if (ds is not null) results.Add(new AnalysisResult(pa.ResultName, ds));
                 if (!pa.SelfTicks) control?.Tick(pa.WorkUnits);
+                Diagnostics.CrashReporter.Note($"run: end '{pa.ResultName}'");
             }
             catch (OperationCanceledException)
             {

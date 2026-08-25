@@ -222,6 +222,8 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="circuitRF Documentation" Command="{Binding OpenDocumentationCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Crash Reports…" Command="{Binding OpenCrashReportsCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -699,6 +701,10 @@
                 <MenuItem Header="circuitRF _Documentation"
                           Command="{Binding OpenDocumentationCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Crash Reports…"
+                          Command="{Binding OpenCrashReportsCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="BugCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="About circuitRF…"
