@@ -889,7 +889,7 @@ public sealed class DxfReader
         {
             X = ToDbu(x), Y = ToDbu(y),
             Text = text, Height = ToDbu(height),
-            Rotation = SnapRotation(rotDeg), IsPort = isPort,
+            RotationDegrees = rotDeg, IsPort = isPort,
         };
         return new DxfImportedShape(label, GetStr(body, 8, "0"));
     }
@@ -912,13 +912,13 @@ public sealed class DxfReader
         int cols = GetInt(body, 70, 1), rows = GetInt(body, 71, 1);
         double pitchX = GetDbl(body, 44, 0.0), pitchY = GetDbl(body, 45, 0.0);
 
-        var (mirrorX, rot, mag) = DxfTransformCodec.FromDxf(xscale, yscale, rotDeg, out _, out _);
+        var (mirrorX, rot, mag) = DxfTransformCodec.FromDxf(xscale, yscale, rotDeg, out _);
 
         return new LayoutInstance
         {
             CellRef = blockName,
             X = ToDbu(x), Y = ToDbu(y),
-            Rot = rot, MirrorX = mirrorX, Mag = mag,
+            RotationDegrees = rot, MirrorX = mirrorX, Mag = mag,
             Rows = Math.Max(1, rows), Cols = Math.Max(1, cols),
             PitchX = ToDbu(pitchX), PitchY = ToDbu(pitchY),
         };

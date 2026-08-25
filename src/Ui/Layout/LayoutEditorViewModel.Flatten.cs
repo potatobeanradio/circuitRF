@@ -218,6 +218,17 @@ public sealed partial class LayoutEditorViewModel
             : result.Instances.Count > 0
                 ? $"Flatten Hierarchy: replaced instance with {shapes.Count} shape(s) and {result.Instances.Count} nested instance(s)."
                 : $"Flatten Hierarchy: replaced instance with {shapes.Count} shape(s).");
+        ReportRotationNotes(result.Notes);
+    }
+
+    /// <summary>Surfaces what a non-cardinal placement angle cost the flatten (R-L3d-6). A Warning
+    /// rather than Info: every line is geometry that changed type or did not survive, which is
+    /// exactly the class of thing a user must see before building on the result. Silent for a
+    /// cardinal flatten, which loses nothing.</summary>
+    private void ReportRotationNotes(IReadOnlyList<string>? notes)
+    {
+        if (notes is null) return;
+        foreach (var note in notes) _messageSink?.Warning($"Flatten Hierarchy: {note}");
     }
 
     /// <summary>
@@ -266,5 +277,6 @@ public sealed partial class LayoutEditorViewModel
                 $"Flatten All Levels: {shapes.Count} shape(s) created; {result.SurvivingInstances.Count} unresolvable instance(s) left in place.");
         else
             _messageSink?.Success($"Flatten All Levels: replaced instance with {shapes.Count} shape(s).");
+        ReportRotationNotes(result.Notes);
     }
 }

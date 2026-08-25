@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
@@ -281,9 +282,13 @@ public class FileMenuRestructureTests
         // wBond carries its own wires, so a `.wBond` reaches a schematic by IMPORT rather than by
         // reference. The two are separate entries because they have different destinations — one
         // replaces a component's wires, the other unpacks the design's layout artwork as a new cell.
+        // "Board" (L4d) sits with the other geometry importers and has NO Export counterpart, by
+        // design — brief-L4d-kicad-pcb-import.md §1: writing a board file means authoring board-setup
+        // and design-rule state circuitRF has no opinion about, and Export DXF already serves the
+        // outward handoff. ExportSubmenu_* below is what holds that asymmetry shut.
         string[] expected =
         [
-            "Data", "GDSII", "DXF", "PDK", "Technology", "Into Open Technology",
+            "Data", "GDSII", "DXF", "Board", "PDK", "Technology", "Into Open Technology",
             "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
         ];
 
@@ -300,6 +305,100 @@ public class FileMenuRestructureTests
         }
     }
 
+    /// <summary>
+    /// <b>Every command gated on "a workspace is open" must be re-evaluated when that changes.</b>
+    ///
+    /// <para>A missing <c>NotifyCanExecuteChanged()</c> is invisible in every automated check that
+    /// exists: the command is declared, its predicate is correct, the menu entry binds to it, and the
+    /// XAML tests above all pass — the entry is simply greyed out forever, because
+    /// <c>CanExecute</c> was evaluated once at construction (when no workspace was open) and never
+    /// again. Caught by the owner clicking File → Import → Board on the day L4d landed; this test is
+    /// what makes the next one caught by the suite instead.</para>
+    ///
+    /// <para>Written as a scan over the source rather than against a live view model because
+    /// <c>WorkspaceViewModel</c> needs an Avalonia application to construct, which these tests
+    /// deliberately never do. Comments are stripped first — a command name mentioned only in prose is
+    /// not a notification (the H8 lesson).</para>
+    /// </summary>
+    [Fact]
+    public void EveryWorkspaceGatedCommand_IsRenotifiedWhenTheWorkspaceChanges()
+    {
+        var src = StripComments(ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs")));
+
+        // The body of OnCurrentWorkspacePathChanged — the one place these notifications live.
+        int start = src.IndexOf("partial void OnCurrentWorkspacePathChanged(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "OnCurrentWorkspacePathChanged not found");
+        int end = src.IndexOf("\n    }", start, StringComparison.Ordinal);
+        var handler = src[start..(end < 0 ? src.Length : end)];
+
+        // Predicates whose whole body is "a workspace is open".
+        var gated = Regex.Matches(src, @"private bool (\w+)\(\)\s*=>\s*CurrentWorkspacePath is not null;")
+            .Select(m => m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.NotEmpty(gated);
+
+        // Each [RelayCommand(CanExecute = nameof(PRED))] and the method it decorates.
+        var missing = new List<string>();
+        foreach (System.Text.RegularExpressions.Match m in Regex.Matches(src,
+            @"\[RelayCommand\(CanExecute = nameof\((\w+)\)\)\]\s*private\s+(?:async\s+)?[\w<>?.]+\s+(\w+)\("))
+        {
+            if (!gated.Contains(m.Groups[1].Value)) continue;
+            string command = m.Groups[2].Value + "Command";
+            if (!handler.Contains(command + ".NotifyCanExecuteChanged()", StringComparison.Ordinal))
+                missing.Add(command);
+        }
+
+        Assert.True(missing.Count == 0,
+            "These commands are gated on an open workspace but are never re-evaluated when one opens, " +
+            "so their menu entries stay greyed out forever: " + string.Join(", ", missing));
+    }
+
+    /// <summary>
+    /// The same class of bug as the test above, for the OTHER gate: a command gated on which DOCUMENT
+    /// is active must be re-notified from BOTH fan-outs.
+    ///
+    /// <para>The view model's own source calls this a "standing gotcha" in as many words, twice — and
+    /// it had bitten twice anyway: <c>ExportGerberCommand</c> was in neither fan-out since L4c, so
+    /// File → Export → Gerber had been greyed out permanently, and <c>ExportBoardCommand</c> would have
+    /// joined it. A comment warning about a trap is not a test; this is.</para>
+    /// </summary>
+    [Fact]
+    public void EveryDocumentGatedCommand_IsRenotifiedFromBothFanOuts()
+    {
+        var src = StripComments(ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs")));
+
+        // Predicates that ask which document is active. Deliberately only the layout one: the others
+        // (schematic, symbol) have their own smaller fan-outs and are not this test's subject.
+        const string predicate = "IsLayoutDocumentActive";
+
+        var commands = Regex.Matches(src,
+                @"\[RelayCommand\(CanExecute = nameof\(" + predicate + @"\)\)\]\s*private\s+(?:async\s+)?[\w<>?.]+\s+(\w+)\(")
+            .Select(m => m.Groups[1].Value + "Command")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        Assert.NotEmpty(commands);
+
+        var missing = commands
+            .Where(c => CountOccurrences(src, c + ".NotifyCanExecuteChanged()") < 2)
+            .ToList();
+
+        Assert.True(missing.Count == 0,
+            "These commands are gated on the active document but are not re-evaluated from both " +
+            "fan-outs, so their menu entries stay stuck at whatever they were on construction: " +
+            string.Join(", ", missing));
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        int count = 0, i = 0;
+        while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) >= 0) { count++; i += needle.Length; }
+        return count;
+    }
+
+    /// <summary>Line and block comments removed, so a scan sees code and not prose.</summary>
+    private static string StripComments(string src)
+        => Regex.Replace(Regex.Replace(src, @"/\*.*?\*/", "", RegexOptions.Singleline), @"//[^\n]*", "");
+
     [Fact]
     public void ExportSubmenu_ContainsGerber_SameGatingAsGdsiiAndDxf()
     {
@@ -308,6 +407,9 @@ public class FileMenuRestructureTests
         var src = ReadRepoFile(Path.Combine("src", "Ui", "Views", "WorkspaceWindow.axaml"));
         Assert.Contains("ExportGerberCommand", src);
         Assert.DoesNotContain("Gerber export is not yet implemented.", src);
+
+        // Board export (the L4d follow-up) sits alongside them under the same gate.
+        Assert.Contains("ExportBoardCommand", src);
     }
 
     // ── Gate 5 — ellipsis convention (R-menu-1) ───────────────────────────────────────────────────

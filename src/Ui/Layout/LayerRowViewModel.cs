@@ -187,13 +187,13 @@ public sealed partial class LayerRowViewModel : ObservableObject
     /// <summary>Current interchange record, or all-null defaults if none is set yet — the base every
     /// interchange-field commit method updates one field of (records are immutable).</summary>
     private InterchangeMapping CurrentInterchange =>
-        Layer.Interchange ?? new InterchangeMapping(null, null, null, null, null);
+        Layer.Interchange ?? new InterchangeMapping(null, null, null, null, null, null);
 
     /// <summary>Sets <see cref="LayerDef.Interchange"/> to null when every field of <paramref
     /// name="m"/> is unset, so a technology that never touches interchange mappings round-trips
     /// with a literal null rather than an all-blank record.</summary>
     private static InterchangeMapping? Normalize(InterchangeMapping m) =>
-        m is { GdsiiLayer: null, GdsiiDatatype: null, DxfLayerName: null, GerberSuffix: null, GerberFileFunction: null }
+        m is { GdsiiLayer: null, GdsiiDatatype: null, DxfLayerName: null, GerberSuffix: null, GerberFileFunction: null, PcbLayerName: null }
             ? null : m;
 
     public void CommitGdsiiLayer()

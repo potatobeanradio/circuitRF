@@ -279,6 +279,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ArchiveWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
+        ImportBoardCommand.NotifyCanExecuteChanged();
         ManagePdksCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
@@ -3392,6 +3393,150 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from DXF.");
     }
 
+    // ── Import Board (docs/sonnet-briefs/brief-L4d-kicad-pcb-import.md) ──────────────────────────
+    // PcbImport does the read/reconcile/CellFolder-creation work; this method is only file picking (UI
+    // firewall), workspace/technology context, and the layer-mapping dialog bridge — mirrors
+    // ImportDxfLibraryAsync exactly, minus the units prompt (this format's coordinates are always
+    // millimetres and never need one, R-L4d-2).
+    //
+    // IMPORT ONLY. There is deliberately no matching Export entry and none is planned (§1): emitting a
+    // board file means authoring board-setup and design-rule state circuitRF has no opinion about, in a
+    // file that is then the user's to fabricate from. Export DXF already serves the outward handoff.
+
+    [RelayCommand(CanExecute = nameof(CanImportBoard))]
+    private Task ImportBoard(Window? owner) => ImportBoardAsync(owner);
+    private bool CanImportBoard() => CurrentWorkspacePath is not null;
+
+    private async Task ImportBoardAsync(Window? owner)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Import Board",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Board") { Patterns = ["*.kicad_pcb"] },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0) return;
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techRes = ResolveTechFor(null, null); // the workspace's own default technology
+        var boardName = Path.GetFileNameWithoutExtension(files[0].Path.LocalPath);
+
+        CircuitRF.Ui.Layout.Interchange.PcbImport.ImportResult result;
+        try
+        {
+            result = await Task.Run(() =>
+            {
+                using var stream = File.OpenRead(files[0].Path.LocalPath);
+                return CircuitRF.Ui.Layout.Interchange.PcbImport.Import(
+                    stream, workspaceDir, boardName, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                    resolveLayerMapping: rows =>
+                    {
+                        var settled = Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .GetAwaiter().GetResult();
+                        return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
+                    });
+            });
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import Board: {ex.Message}");
+            return;
+        }
+
+        foreach (var msg in result.Messages) Messages.Info(msg);
+
+        if (result.Cancelled)
+        {
+            Messages.Info("Import Board cancelled — nothing was created.");
+            return;
+        }
+
+        ApplyBoardImportToTechnology(techRes, result);
+
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from the board file.");
+        if (result.BoardCellDir is { } boardDir) OpenPrimaryLayoutIfResolvable(boardDir);
+    }
+
+    /// <summary>
+    /// Installs the board's own layers and stackup on the resolved technology as a LIVE (unsaved)
+    /// override — the same <c>TechnologyCache.SetLive</c> seam a cross-technology paste's "Add to
+    /// technology" already uses (<c>LayoutEditorViewModel.ApplyFragmentReconciliation</c>).
+    ///
+    /// <para><b>Live rather than written, deliberately.</b> §4 is the reason this phase exists: a board
+    /// file's per-layer thickness, permittivity and loss tangent are most of a <c>.ctech</c> arriving for
+    /// free, and returning them in a record nobody applies would leave that value on the floor. But a
+    /// <c>.ctech</c> is a PROCESS file, possibly shared by every cell in the workspace, and rewriting it
+    /// as a side effect of opening a board is not something the user asked for. A live override is
+    /// visible immediately, is what every open layout resolves against, and survives only until the user
+    /// deliberately saves the technology.</para>
+    ///
+    /// <para>An existing stackup is never replaced — R-L4d-6's rule that nothing be silently overwritten
+    /// runs in this direction too. What was recovered is reported either way, so the user can compare.</para>
+    /// </summary>
+    private void ApplyBoardImportToTechnology(
+        TechResolution techRes, CircuitRF.Ui.Layout.Interchange.PcbImport.ImportResult result)
+    {
+        if (techRes.Tech is not { } tech || techRes.ResolvedPath is not { } techPath) return;
+        if (result.LayersToAdd.Count == 0 && result.Stackup is null) return;
+
+        var clone = TechPersistence.Deserialize(TechPersistence.Serialize(tech));
+
+        int added = 0;
+        foreach (var def in result.LayersToAdd)
+        {
+            if (clone.Layers.Any(l => l.Key == def.Key)) continue;
+            clone.Layers.Add(def);
+            added++;
+        }
+
+        bool stackupApplied = false;
+        if (result.Stackup is { } imported)
+        {
+            if (clone.Stackup.Layers.Count == 0)
+            {
+                clone.Stackup = imported;
+                stackupApplied = true;
+            }
+            else
+            {
+                Messages.Warning(
+                    $"\"{clone.Name}\" already declares a stackup of {clone.Stackup.Layers.Count} layer(s), " +
+                    $"so the board's own {imported.Layers.Count}-layer stackup was NOT applied. " +
+                    "Compare them in the technology editor and choose.");
+            }
+        }
+
+        if (added == 0 && !stackupApplied) return;
+
+        // The technology editor may already be open on this file. It holds its OWN working copy, so a
+        // bare SetLive would leave that copy — the one the user is looking at, and the one its Save
+        // writes — without the board's layers, and saving it would then overwrite the override with a
+        // technology that never had them. Route through the editor when there is one; it fires
+        // TechLiveChanged, which installs the override anyway, so the two paths converge.
+        if (_openDocsByPath.TryGetValue(Path.GetFullPath(techPath), out var open) is false)
+            _openDocsByPath.TryGetValue(techPath, out open);
+
+        if (open is TechDocument techDoc)
+            techDoc.ViewModel.ReplaceWorkingAsEdit(clone, "Layers and stackup recovered from a board import");
+        else
+            _techCache.SetLive(techPath, clone);
+
+        Messages.Info(
+            $"Technology \"{clone.Name}\" updated in this session: " +
+            $"{added} layer(s) added{(stackupApplied ? $", stackup replaced with the board's {clone.Stackup.Layers.Count} layer(s)" : "")}. " +
+            "Nothing was written to disk — open the technology and save it to keep this.");
+    }
+
     /// <summary>R-L4b-4's own prompt — shown only when the file's $INSUNITS cannot be trusted as-is.
     /// Returns the chosen $INSUNITS value, or null to abort the whole import.</summary>
     private async Task<int?> ResolveDxfUnitsAsync(Window owner)
@@ -5119,11 +5264,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _openDocsByPath[absolutePath] = doc;
             HookTechFileDirty(doc);
             Messages.Info("Opened", absolutePath);
+
+            // A live (unsaved) override — installed by Import Board's layer/stackup recovery, or by a
+            // cross-technology paste's "Add to technology" — is what every open LAYOUT is already
+            // resolving against. Opening the editor on the on-disk file instead would show the user a
+            // technology that nothing in the session is actually using, and would silently discard the
+            // recovered layers the moment they saved. It arrives as an ordinary undoable edit, so the
+            // tab is visibly dirty and Ctrl+Z backs it out.
+            ApplyLiveTechOverrideToEditor(vm, absolutePath);
         }
         catch (Exception ex)
         {
             Messages.Error($"Failed to open technology: {ex.Message}");
         }
+    }
+
+    /// <summary>Pushes the live (unsaved) technology override for <paramref name="absolutePath"/>, if
+    /// one is installed, into a freshly-opened editor as an undoable edit. No-op when there is none, or
+    /// when it already matches what the editor loaded.</summary>
+    private void ApplyLiveTechOverrideToEditor(TechEditorViewModel vm, string absolutePath)
+    {
+        if (!_techCache.HasLiveOverride(absolutePath)) return;
+        if (_techCache.Get(absolutePath) is not { } live) return;
+
+        vm.ReplaceWorkingAsEdit(live, "Unsaved technology changes from this session");
+        Messages.Info(
+            $"\"{live.Name}\" is showing unsaved changes made earlier in this session " +
+            "(a board import, or a paste that added layers). Save to keep them.");
     }
 
     /// <summary>
@@ -5959,6 +6126,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// the actual GerberExport.Analyze/Write calls all live in LayoutEditorView's own code-behind).</summary>
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private void ExportGerber() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGerber();
+
+    /// <summary>Board export — the outward half of L4d, and gated exactly like GDSII/DXF/Gerber. As
+    /// with those, this command only decides whether a layout document is active; the picker, the
+    /// fidelity report and the PcbExport.Analyze/Write calls live in the layout view's own
+    /// code-behind.</summary>
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void ExportBoard() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportBoard();
 
     [RelayCommand]
     private void NewDataDisplay()
@@ -10058,6 +10232,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ImportIntoTechnologyCommand.NotifyCanExecuteChanged();
         ExportTechnologySectionsCommand.NotifyCanExecuteChanged();
         ExportDxfCommand.NotifyCanExecuteChanged();
+        // Gerber was missing from BOTH fan-outs since L4c, so File > Export > Gerber has been greyed
+        // out permanently — the exact failure the comment above warns about, found while adding Board.
+        ExportGerberCommand.NotifyCanExecuteChanged();
+        ExportBoardCommand.NotifyCanExecuteChanged();
 
         // Save Schematic As… / Save Layout As… are each enabled only when their own document type
         // is the active dockable.
@@ -10286,6 +10464,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ImportIntoTechnologyCommand.NotifyCanExecuteChanged();
         ExportTechnologySectionsCommand.NotifyCanExecuteChanged();
         ExportDxfCommand.NotifyCanExecuteChanged();
+        // Gerber was missing from BOTH fan-outs since L4c, so File > Export > Gerber has been greyed
+        // out permanently — the exact failure the comment above warns about, found while adding Board.
+        ExportGerberCommand.NotifyCanExecuteChanged();
+        ExportBoardCommand.NotifyCanExecuteChanged();
         SaveLooseSchematicCommand.NotifyCanExecuteChanged();
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();

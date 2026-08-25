@@ -199,13 +199,14 @@ public sealed class GdsiiReader
                     // a documented, minor limitation; only the rotation angle carries through.
                     if (reflect)
                         _diagnostics.Add($"TEXT \"{text}\" reflection flag ignored (labels carry rotation only).");
-                    var (_, rot) = GdsiiTransformCodec.FromGdsii(false, angle, out var delta);
-                    if (delta > 1e-6)
-                        _diagnostics.Add($"TEXT \"{text}\" angle {angle:0.###}° snapped to nearest 90° (Δ={delta:0.###}°).");
+                    // A label's angle is carried exactly, like an instance's — LabelShape.RotationDegrees
+                    // was widened past the cardinals on 2026-08-25, so the snap this path used to apply
+                    // (and report) is gone along with the codec's own, R-L3d-8.
+                    var (_, textDeg) = GdsiiTransformCodec.FromGdsii(false, angle);
                     return new LabelShape
                     {
                         Layer = new LayerKey(layer, 0),
-                        X = x, Y = y, Text = text, Height = width, Rotation = rot, IsPort = textType == 1,
+                        X = x, Y = y, Text = text, Height = width, RotationDegrees = textDeg, IsPort = textType == 1,
                     };
             }
         }
@@ -233,10 +234,8 @@ public sealed class GdsiiReader
                     break;
                 case GdsiiRecordType.Xy: xy = ToLongPairs(rec.AsInt32Array()); break;
                 case GdsiiRecordType.EndEl:
-                    var (mirrorX, rot) = GdsiiTransformCodec.FromGdsii(reflect, angle, out var delta);
-                    if (delta > 1e-6)
-                        _diagnostics.Add(
-                            $"{(isArray ? "AREF" : "SREF")} \"{sname}\" angle {angle:0.###}° snapped to nearest 90° (Δ={delta:0.###}°).");
+                    // R-L3d-8: no snap, no loss report — an instance carries the file's own angle.
+                    var (mirrorX, rotDeg) = GdsiiTransformCodec.FromGdsii(reflect, angle);
 
                     long originX = xy[0], originY = xy[1];
                     long pitchX = 0, pitchY = 0;
@@ -265,7 +264,7 @@ public sealed class GdsiiReader
                     {
                         CellRef = sname, // resolved to a real relative path by GdsiiImport
                         X = originX, Y = originY,
-                        Rot = rot, MirrorX = mirrorX, Mag = mag,
+                        RotationDegrees = rotDeg, MirrorX = mirrorX, Mag = mag,
                         Rows = isArray ? rows : 1, Cols = isArray ? cols : 1,
                         PitchX = pitchX, PitchY = pitchY,
                     };

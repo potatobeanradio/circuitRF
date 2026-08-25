@@ -65,7 +65,7 @@ public sealed class LayoutInstancePropertiesPanelTests
 
         Assert.Equal(LayoutUnits.Format(10_000, model.DisplayUnit, model.DbuPerMicron), props.InstanceXText);
         Assert.Equal(LayoutUnits.Format(20_000, model.DisplayUnit, model.DbuPerMicron), props.InstanceYText);
-        Assert.Equal(LayoutRotation.R90, props.InstanceRotationValue);
+        Assert.Equal("90", props.InstanceRotationText);
         Assert.True(props.InstanceMirrorXValue);
         Assert.Equal("1.5", props.InstanceMagText);
         Assert.Equal("2", props.InstanceRowsText);
@@ -160,7 +160,7 @@ public sealed class LayoutInstancePropertiesPanelTests
     }
 
     [Fact]
-    public void InstanceRotationValue_Change_CommitsRotation()
+    public void InstanceRotationText_Commit_CommitsRotation()
     {
         var model = FreshModel();
         var inst = new LayoutInstance { CellRef = "../Leaf", X = 0, Y = 0, Mag = 1.0 };
@@ -168,9 +168,9 @@ public sealed class LayoutInstancePropertiesPanelTests
         var (vm, props) = Setup(model);
         ClickInstance(vm, inst);
 
-        props.InstanceRotationValue = LayoutRotation.R270;
+        props.CommitInstanceRotationText("270");
 
-        Assert.Equal(LayoutRotation.R270, model.Instances[0].Rot);
+        Assert.Equal(270.0, model.Instances[0].RotationDegrees, 9);
         Assert.True(vm.UndoRedo.CanUndo);
     }
 
@@ -277,7 +277,7 @@ public sealed class LayoutInstancePropertiesPanelTests
         Assert.False(props.IsSingleInstanceSelected);
         Assert.Equal("", props.InstanceCellRefText);
         Assert.Equal("", props.InstanceXText);
-        Assert.Null(props.InstanceRotationValue);
+        Assert.Equal("", props.InstanceRotationText);
     }
 
     [Fact]

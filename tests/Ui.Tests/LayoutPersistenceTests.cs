@@ -250,4 +250,34 @@ public class LayoutPersistenceTests
         Assert.Equal(5000, circle.R);
         Assert.Null(circle.FlattenTolDbu);
     }
+
+    // ── Label anchoring is additive (owner report, 2026-08-25) ──────────────────
+
+    /// <summary>
+    /// <see cref="LabelShape.HAlign"/>/<see cref="LabelShape.VAlign"/> must be invisible in a file that
+    /// does not use them — that is what makes every <c>.clay</c> written before they existed load and
+    /// render byte-for-byte as it did, with no <c>FormatVersion</c> bump.
+    /// </summary>
+    [Fact]
+    public void LabelAlignment_IsOmittedWhenUnset_AndRoundTripsWhenSet()
+    {
+        var plain = new LayoutView { DbuPerMicron = 1000 };
+        plain.Shapes.Add(new LabelShape { Layer = new LayerKey(1, 0), Text = "T", Height = 1000 });
+        var plainJson = LayoutPersistence.Serialize(plain);
+        Assert.DoesNotContain("HAlign", plainJson);
+        Assert.DoesNotContain("VAlign", plainJson);
+        Assert.Null(((LabelShape)LayoutPersistence.Deserialize(plainJson).Shapes[0]).HAlign);
+
+        var aligned = new LayoutView { DbuPerMicron = 1000 };
+        aligned.Shapes.Add(new LabelShape
+        {
+            Layer = new LayerKey(1, 0), Text = "T", Height = 1000,
+            HAlign = LabelHAlign.Right, VAlign = LabelVAlign.Top,
+        });
+        var alignedJson = LayoutPersistence.Serialize(aligned);
+        var restored = (LabelShape)LayoutPersistence.Deserialize(alignedJson).Shapes[0];
+        Assert.Equal(LabelHAlign.Right, restored.HAlign);
+        Assert.Equal(LabelVAlign.Top, restored.VAlign);
+        Assert.Equal(alignedJson, LayoutPersistence.Serialize(LayoutPersistence.Deserialize(alignedJson)));
+    }
 }

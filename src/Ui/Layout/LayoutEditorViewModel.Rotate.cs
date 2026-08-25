@@ -61,9 +61,16 @@ public partial class LayoutEditorViewModel
         => ApplyRigidBodyTransform(
             mapAboutOrigin: clockwise ? (x, y) => (y, -x) : (x, y) => (-y, x),
             flipsBulge:     false,                       // a rotation preserves handedness
-            instanceRot:    r => AdvanceRotation(r, clockwise),
+            // R-L3d-11: ADVANCE by 90 deg, never snap to a cardinal. Rotating a 30 deg placement three
+            // times gives 300 deg, not 270 deg — a snapping R key would make a non-cardinal placement
+            // un-nudgeable, which is the opposite of what arbitrary angles are for.
+            instanceRotDeg: d => d + (clockwise ? -90.0 : 90.0),
             togglesInstanceMirror: false,
-            labelRot:       r => AdvanceRotation(r, clockwise),
+            // A label's own angle advances by the same 90 deg, and for the same R-L3d-11 reason now
+            // that it can be non-cardinal: R on a 33 deg imported annotation must give 123 deg, not
+            // snap it to 90 and make it un-nudgeable.
+            labelRotDeg:    d => d + (clockwise ? -90.0 : 90.0),
+            portDirection:  r => AdvanceRotation(r, clockwise),
             description:    "Rotate");
 
     /// <summary>
@@ -83,30 +90,14 @@ public partial class LayoutEditorViewModel
             mapAboutOrigin: horizontal ? (x, y) => (-x, y) : (x, y) => (x, -y),
             flipsBulge:     true,                        // a reflection reverses arc handedness
             //  horizontal: Rot(-θ).   vertical: Rot(180-θ), i.e. a half turn on top of the negation.
-            instanceRot:    horizontal ? NegateRotation : r => HalfTurn(NegateRotation(r)),
+            instanceRotDeg: horizontal ? d => -d : d => 180.0 - d,
             togglesInstanceMirror: true,
             // A LabelShape has no mirror flag, so mirrored text is not representable — and reversed
             // text would be worse than none. The anchor moves with the geometry; the glyphs stay
             // readable at their existing rotation. Stated rather than silently dropped.
-            labelRot:       r => r,
+            labelRotDeg:    d => d,
+            portDirection:  r => r,
             description:    "Mirror");
-
-    /// <summary>θ → −θ for the 90° set: R90↔R270, R0 and R180 fixed.</summary>
-    private static LayoutRotation NegateRotation(LayoutRotation r) => r switch
-    {
-        LayoutRotation.R90  => LayoutRotation.R270,
-        LayoutRotation.R270 => LayoutRotation.R90,
-        _                   => r,
-    };
-
-    /// <summary>θ → θ + 180°.</summary>
-    private static LayoutRotation HalfTurn(LayoutRotation r) => r switch
-    {
-        LayoutRotation.R0   => LayoutRotation.R180,
-        LayoutRotation.R90  => LayoutRotation.R270,
-        LayoutRotation.R180 => LayoutRotation.R0,
-        _                   => LayoutRotation.R90,
-    };
 
     /// <summary>
     /// The one implementation both rotate and mirror run through: pivot on the selection's combined
@@ -116,9 +107,10 @@ public partial class LayoutEditorViewModel
     private void ApplyRigidBodyTransform(
         Func<long, long, (long X, long Y)> mapAboutOrigin,
         bool flipsBulge,
-        Func<LayoutRotation, LayoutRotation> instanceRot,
+        Func<double, double> instanceRotDeg,
         bool togglesInstanceMirror,
-        Func<LayoutRotation, LayoutRotation> labelRot,
+        Func<double, double> labelRotDeg,
+        Func<LayoutRotation, LayoutRotation> portDirection,
         string description)
     {
         var shapeIndices    = GeometricSelectedIndices;
@@ -176,11 +168,11 @@ public partial class LayoutEditorViewModel
                 var current = port.PortDirection
                               ?? LayoutPortDirection.Resolve(Model.Shapes, port)?.Direction
                               ?? LayoutRotation.R0;
-                port.PortDirection = labelRot(current);
+                port.PortDirection = portDirection(current);
             }
             else if (clone is LabelShape label)
             {
-                label.Rotation = labelRot(label.Rotation);
+                label.RotationDegrees = labelRotDeg(label.RotationDegrees);
             }
 
             removed.Add((i, Model.Shapes[i]));
@@ -195,7 +187,7 @@ public partial class LayoutEditorViewModel
             var (nx, ny) = transform.Point(before.X, before.Y);
             after.X   = nx;
             after.Y   = ny;
-            after.Rot = instanceRot(before.Rot);
+            after.RotationDegrees = instanceRotDeg(before.RotationDegrees);
             if (togglesInstanceMirror) after.MirrorX = !before.MirrorX;
             instanceCommands.Add(new Commands.Layout.ReplaceInstanceCommand(Model, i, before, after));
         }

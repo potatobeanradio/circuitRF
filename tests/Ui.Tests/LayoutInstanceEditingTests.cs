@@ -209,10 +209,10 @@ public sealed class LayoutInstanceEditingTests : IDisposable
         vm.OnPointerPressed(500, 500, KeyModifiers.None, hitTolDbu: 10);
         vm.OnPointerReleased(500, 500, KeyModifiers.None);
 
-        vm.SetSelectedInstanceRotation(LayoutRotation.R180);
+        vm.SetSelectedInstanceRotationDegrees(180.0);
         vm.SetSelectedInstanceMirrorX(true);
 
-        Assert.Equal(LayoutRotation.R180, vm.Model.Instances[0].Rot);
+        Assert.Equal(180.0, vm.Model.Instances[0].RotationDegrees, 9);
         Assert.True(vm.Model.Instances[0].MirrorX);
     }
 

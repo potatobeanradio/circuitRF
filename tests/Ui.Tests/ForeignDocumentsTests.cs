@@ -263,6 +263,39 @@ public sealed class ForeignDocumentTechResolutionTests : IDisposable
         Assert.Equal(Path.Combine(wsA, ".cws"), vm.SourceWorkspaceCwsPath);
     }
 
+    /// <summary>
+    /// The two sides of the comparison arrive by different routes, so the same directory can reach it
+    /// in shapes that are not string-equal. A near-miss must not read as foreign — that would put the
+    /// amber "belongs to another workspace" band across a document that belongs to the open one.
+    /// </summary>
+    [Theory]
+    [InlineData("trailing")]
+    [InlineData("dotsegment")]
+    public void IsForeign_SamePathSpelledDifferently_IsNotForeign(string variant)
+    {
+        var wsA = MakeWorkspace("workspaceA", StarterTechnologies.Pcb2Layer());
+        // A cell folder name with a '#' in it, because a board import mints those by the dozen and it
+        // is the first thing suspected when one of them reads as foreign.
+        var cellDir = Path.Combine(wsA, "Part_5x10mm#8", "layout");
+        Directory.CreateDirectory(cellDir);
+        var docPath = Path.Combine(cellDir, "Part_5x10mm#8.clay");
+
+        string spelled = variant switch
+        {
+            "trailing"   => wsA + Path.DirectorySeparatorChar,
+            "dotsegment" => Path.Combine(wsA, "."),
+            _            => wsA,
+        };
+
+        var vm = new LayoutEditorViewModel(MakeModel(), docPath)
+        {
+            CurrentWorkspaceRootDirProvider = () => spelled,
+        };
+
+        Assert.False(vm.IsForeign);
+        Assert.Equal("workspaceA", vm.SourceWorkspaceName);
+    }
+
     [Fact]
     public void IsForeign_MaterializedInDifferentWorkspaceThanCurrentlyOpen_IsForeign()
     {

@@ -31,8 +31,19 @@ namespace CircuitRF.Ui.Layout;
 /// </summary>
 public readonly record struct LayoutCoordinateTransform(
     Func<long, long, (long X, long Y)> Point,
-    Func<long, long> Magnitude)
+    Func<long, long> Magnitude,
+    bool RotatesAxes = false)
 {
+    /// <summary><b>Set by a caller whose <see cref="Point"/> does not map the X and Y axes onto axes —
+    /// i.e. a rotation that is not a multiple of 90 degrees</b> (brief-L3d-arbitrary-angle-instances.md
+    /// R-L3d-7). Shapes stored as two corners are axis-aligned BY TYPE, so under such a transform
+    /// <see cref="LayoutCoordinateWalk.Transform"/> REFUSES them rather than quietly emitting the
+    /// bounding box of the rotated shape; <see cref="LayoutRotationPromotion"/> is what the caller runs
+    /// first to get a shape that can carry the rotation. False for every axis-preserving caller — DBU
+    /// resolution change, paste rescale, Scale, and a flatten at a cardinal angle — all of which are
+    /// unaffected by any of this.</summary>
+    public bool RotatesAxes { get; init; } = RotatesAxes;
+
     /// <summary>A single scalar ratio applied identically to every axis and every magnitude — what
     /// DBU resolution change and paste rescale always use (both are inherently uniform; there is no
     /// such thing as a non-uniform DBU resolution or a non-uniform cross-workspace rescale).</summary>
@@ -57,6 +68,12 @@ public static class LayoutCoordinateWalk
     /// </summary>
     public static void Transform(LayoutShape shape, LayoutCoordinateTransform t)
     {
+        if (t.RotatesAxes && (LayoutRotationPromotion.NeedsPromotion(shape) || LayoutRotationPromotion.CannotRotate(shape)))
+            throw new InvalidOperationException(
+                $"{shape.GetType().Name} is axis-aligned by type and cannot be walked through a rotating " +
+                "transform — run LayoutRotationPromotion.Promote first (a bitmap has no promotion and must " +
+                "be skipped). See LayoutRotationPromotion's header (R-L3d-7).");
+
         switch (shape)
         {
             case RectShape r:
@@ -103,9 +120,10 @@ public static class LayoutCoordinateWalk
                 // W/H are derived from the transformed OPPOSITE corner, mirroring how Rect/RoundedRect
                 // implicitly handle non-uniform scale via their own X2/Y2 — a min-corner+size shape has
                 // no second corner field to transform directly, so this reconstructs the same effect.
-                // (A rotating transform — flatten — would invalidate a min-corner+size shape's own
-                // axis-aligned assumption; flatten never routes a BitmapShape through this branch with
-                // a non-axis-aligned rotation today, since bitmaps aren't resolved through instances.)
+                // A rotating transform would invalidate a min-corner+size shape's own axis-aligned
+                // assumption — which is no longer left to callers to remember: the RotatesAxes guard at
+                // the top of this method refuses a BitmapShape outright (R-L3d-7), since unlike a rect
+                // there is no promotion that would let one rotate.
                 var (x2, y2) = t.Point(bmp.X + bmp.W, bmp.Y + bmp.H);
                 (bmp.X, bmp.Y) = t.Point(bmp.X, bmp.Y);
                 bmp.W = x2 - bmp.X;

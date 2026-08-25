@@ -282,18 +282,37 @@ public static class LayoutHitTest
         }
     }
 
-    /// <summary>Approximate label footprint — framework-free, no font metrics available at this
-    /// layer, so a label's hit box is a monospace-ish estimate from its character count and text
-    /// height rather than an exact glyph measurement (that lives in the renderer, in Skia, at
-    /// display time). Anchor convention matches <c>LayoutRenderer.DrawLabelText</c>: (X,Y) is the
-    /// baseline-left origin, the box extends right and up before rotation — except for a PORT, whose
-    /// box is symmetric about the anchor (see the comment in the body).</summary>
+    /// <summary>Fallback label footprint, used only when real glyph metrics are unavailable — a
+    /// monospace-ish estimate from character count and text height. Anchor convention matches
+    /// <c>LayoutRenderer.DrawLabelText</c>'s historical default: (X,Y) is the baseline-left origin and
+    /// the box extends right and up before rotation.</summary>
     private const double LabelApproxCharWidthRatio = 0.62;
 
     private static Bbox LabelHitBbox(LabelShape label)
     {
         if (string.IsNullOrEmpty(label.Text))
             return new Bbox(label.X, label.Y, label.X, label.Y);
+
+        // ── ONE measurement, so what you can click and what lights up cannot disagree ────────────
+        //
+        // Owner report, 2026-08-25: "on one version of the code the hitbox did not match the highlight
+        // select box." They were two independently-derived regions — the highlight from real Skia glyph
+        // metrics, this from the character-count estimate below — and they could only ever agree by
+        // coincidence: 'W' and 'i' are the same width to an estimate that counts characters. Widening a
+        // label's anchor (HAlign/VAlign) and its angle past the cardinals made the gap structural rather
+        // than merely approximate, since only the renderer's version knew about either.
+        //
+        // The estimate stays as the fallback for the one case that has no glyphs to measure, and
+        // SkiaFonts already degrades to the platform typeface rather than throwing when there is no
+        // Avalonia host, so this is safe off the UI thread and in a headless test alike.
+        // Ports are NOT measured here: a port's pick region is its MARK (see PortPickBbox), which the
+        // caller resolves with the conductor lookup, and the no-conductor fallback below is a square on
+        // the anchor deliberately sized from the text rather than fitted to it. Two owner reports have
+        // already tuned that square; nothing here changes it.
+        if (label.IsPort) return AnchorSquare(label);
+
+        if (Renderers.LayoutRenderer.MeasureLabelWorldBbox(label) is { IsEmpty: false } measured)
+            return measured;
 
         long w = Math.Max(1, (long)Math.Round(label.Text.Length * label.Height * LabelApproxCharWidthRatio));
         long h = Math.Max(1, label.Height);
@@ -330,23 +349,21 @@ public static class LayoutHitTest
         // tolerance is added on top by the caller (see HitTestShape's Label case), so a port stays
         // grabbable from just outside its own text — which is the part of the 2026-08-09 report that
         // was really about reach, and it is unchanged.
-        // Ports are handled by the caller, which has the conductor lookup and the port kinds.
-        if (label.IsPort) return AnchorSquare(label);
-
-        // Owner report: the R90/R270 selection box rendered in the completely wrong spot — this table
-        // had the local "far corner" (the text's top-right in its own pre-rotation frame) landing on
-        // the WRONG SIDE of the anchor for a 90°-rotated label. Verified against the actual rendered
-        // transform (LayoutRenderer.DrawLabelText: translate to the anchor, THEN rotate, THEN draw at
-        // local (0,0) extending +X/-Y) via each rotation's real corner mapping — R0 and R180 were
-        // already correct; only R90/R270's X range was backwards.
-        return label.Rotation switch
+        // The fallback path's own rotation. It used to be a four-entry table, and an owner report had
+        // already caught R90/R270's X range being backwards in it; rotating all four corners reproduces
+        // every entry of the corrected table exactly and answers a non-cardinal angle too. The anchor
+        // convention here is the historical baseline-left one — HAlign/VAlign are honoured only by the
+        // measured path above, which is the path that runs whenever there are glyphs to measure.
+        double rad = label.RotationDegrees * Math.PI / 180.0;
+        double cos = Math.Cos(rad), sin = Math.Sin(rad);
+        var box = Bbox.Empty;
+        foreach (var (lx, ly) in new (double X, double Y)[] { (0, 0), (w, 0), (w, h), (0, h) })
         {
-            LayoutRotation.R0   => new Bbox(label.X, label.Y, label.X + w, label.Y + h),
-            LayoutRotation.R90  => new Bbox(label.X - h, label.Y, label.X, label.Y + w),
-            LayoutRotation.R180 => new Bbox(label.X - w, label.Y - h, label.X, label.Y),
-            LayoutRotation.R270 => new Bbox(label.X, label.Y - w, label.X + h, label.Y),
-            _                   => new Bbox(label.X, label.Y, label.X + w, label.Y + h),
-        };
+            long px = label.X + (long)Math.Round(lx * cos - ly * sin);
+            long py = label.Y + (long)Math.Round(lx * sin + ly * cos);
+            box = box.Union(new Bbox(px, py, px, py));
+        }
+        return box;
     }
 
     /// <summary>

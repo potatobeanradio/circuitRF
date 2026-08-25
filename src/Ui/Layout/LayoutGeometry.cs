@@ -228,7 +228,7 @@ public static class LayoutGeometry
         CurveShape curve   => new CurveShape { Layer = curve.Layer, Net = curve.Net, Xy = (long[])curve.Xy.Clone(), Edges = CloneEdges(curve.Edges), FlattenTolDbu = curve.FlattenTolDbu, Holes = CloneHoles(curve.Holes) },
         PathShape path     => new PathShape { Layer = path.Layer, Net = path.Net, Xy = (long[])path.Xy.Clone(), Edges = CloneEdges(path.Edges), Width = path.Width, End = path.End, FlattenTolDbu = path.FlattenTolDbu },
         ViaShape via       => new ViaShape { Layer = via.Layer, Net = via.Net, X = via.X, Y = via.Y, PadSize = via.PadSize, DrillSize = via.DrillSize, LandingLayer = via.LandingLayer },
-        LabelShape label   => new LabelShape { Layer = label.Layer, Net = label.Net, X = label.X, Y = label.Y, Text = label.Text, Height = label.Height, Rotation = label.Rotation, IsPort = label.IsPort, PortDirection = label.PortDirection, Style = label.Style },
+        LabelShape label   => new LabelShape { Layer = label.Layer, Net = label.Net, X = label.X, Y = label.Y, Text = label.Text, Height = label.Height, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort, PortDirection = label.PortDirection, Style = label.Style, HAlign = label.HAlign, VAlign = label.VAlign },
         BitmapShape bmp    => new BitmapShape { Layer = bmp.Layer, Net = bmp.Net, ImagePathRef = bmp.ImagePathRef, X = bmp.X, Y = bmp.Y, W = bmp.W, H = bmp.H, Opacity = bmp.Opacity, Locked = bmp.Locked },
         _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, null),
     };
@@ -240,7 +240,7 @@ public static class LayoutGeometry
     /// another.</summary>
     public static LayoutInstance Clone(LayoutInstance inst) => new()
     {
-        CellRef = inst.CellRef, X = inst.X, Y = inst.Y, Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+        CellRef = inst.CellRef, X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
         Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY, SchematicId = inst.SchematicId,
     };
 

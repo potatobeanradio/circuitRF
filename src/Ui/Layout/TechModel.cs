@@ -13,15 +13,21 @@ namespace CircuitRF.Ui.Layout;
 /// L4a is "that moment"). A null <see cref="GdsiiLayer"/>/<see cref="GdsiiDatatype"/> means "use
 /// <see cref="LayerDef.Key"/> directly" — GDSII identity already equals our own layer key by
 /// construction (§2.1 R7), so this alias only matters when a technology wants its GDSII-facing number
-/// to differ from its internal key. Only the GDSII fields are functionally exercised by L4a; DXF/Gerber
-/// fields are inert scaffolding for L4b/L4c.
+/// to differ from its internal key.
+///
+/// <para><see cref="PcbLayerName"/> (L4d, R-L4d-4) is the board-format counterpart of
+/// <see cref="DxfLayerName"/>: the canonical layer name a <c>.kicad_pcb</c> uses (<c>F.Cu</c>,
+/// <c>B.SilkS</c>). Declared LAST and with a default so every call site that predates it still
+/// compiles, and — like every field before it — additive and nullable, so every existing <c>.ctech</c>
+/// loads unchanged with no <c>FormatVersion</c> bump.</para>
 /// </summary>
 public sealed record InterchangeMapping(
     int? GdsiiLayer,
     int? GdsiiDatatype,
     string? DxfLayerName,
     string? GerberSuffix,
-    string? GerberFileFunction);
+    string? GerberFileFunction,
+    string? PcbLayerName = null);
 
 /// <summary>
 /// A stipple: the repeating on/off mask a layer's fill is painted through.

@@ -180,13 +180,61 @@ public sealed class ViaShape : LayoutShape
 /// (this file's header: "Layout borrows patterns from Schematic, not types") — same four options.</summary>
 public enum LabelFontStyle { Regular, Bold, Italic, Condensed }
 
+/// <summary>Which point of the text's own box <see cref="LabelShape.X"/> names, horizontally.</summary>
+public enum LabelHAlign { Left, Center, Right }
+
+/// <summary>Which point of the text's own box <see cref="LabelShape.Y"/> names, vertically.
+/// <c>Baseline</c> is circuitRF's own historical anchor and stays the default.</summary>
+public enum LabelVAlign { Baseline, Top, Middle, Bottom }
+
 public sealed class LabelShape : LayoutShape
 {
     public long X { get; set; }
     public long Y { get; set; }
     public string Text { get; set; } = "";
     public long Height { get; set; }
+
+    /// <summary>
+    /// <b>Serialization companion to <see cref="RotDeg"/> — never read this directly; read
+    /// <see cref="RotationDegrees"/>.</b> Exactly the pairing <see cref="LayoutInstance.Rot"/> /
+    /// <see cref="LayoutInstance.RotDeg"/> already uses, for the same reason and with the same
+    /// guarantees: the cardinal case (which is nearly all text anyone draws) still serializes as
+    /// <c>"Rotation": "R90"</c> with no <c>RotDeg</c> key and no <c>FormatVersion</c> bump, and a
+    /// non-cardinal angle degrades here to the NEAREST cardinal rather than to zero.
+    /// </summary>
     public LayoutRotation Rotation { get; set; } = LayoutRotation.R0;
+
+    /// <summary>
+    /// <b>Serialization companion to <see cref="Rotation"/> — never read this directly; read
+    /// <see cref="RotationDegrees"/>.</b> Non-null ONLY for a non-cardinal angle, omitted from the file
+    /// entirely when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? RotDeg { get; set; }
+
+    /// <summary>
+    /// <b>The text's angle — the ONE accessor anything outside persistence may use.</b> Degrees,
+    /// counter-clockwise, in the layout's Y-up DBU frame (<see cref="LayoutAngle"/> states the
+    /// convention once); normalized to <c>[0, 360)</c> on set.
+    ///
+    /// <para>Four-way until 2026-08-25, when an owner report of imported board text ("the angled labels
+    /// do not look right") made the cost visible: a real board's annotation is routinely at 45 deg, and
+    /// snapping it to the nearest 90 leaves the text plausibly drawn and in the wrong place. Every
+    /// format circuitRF reads — board, DXF, GDSII — carries an arbitrary text angle, so the snap was
+    /// ours alone.</para>
+    /// </summary>
+    [JsonIgnore]
+    public double RotationDegrees
+    {
+        get => RotDeg is { } d ? LayoutAngle.Normalize(d) : LayoutAngle.OfCardinal(Rotation);
+        set
+        {
+            double n = LayoutAngle.Normalize(value);
+            if (LayoutAngle.TryCardinal(n, out var cardinal)) { Rotation = cardinal; RotDeg = null; }
+            else { Rotation = LayoutAngle.NearestCardinal(n); RotDeg = n; }
+        }
+    }
+
     public bool IsPort { get; set; }
 
     /// <summary>
@@ -216,6 +264,26 @@ public sealed class LabelShape : LayoutShape
     /// <summary>Additive (no <c>.clay</c> <c>FormatVersion</c> bump) — a newly-placed label always
     /// defaults to Regular; edited via the Properties Inspector.</summary>
     public LabelFontStyle Style { get; set; } = LabelFontStyle.Regular;
+
+    /// <summary>
+    /// <b>Which point of the text <see cref="X"/>/<see cref="Y"/> actually names.</b> circuitRF's own
+    /// anchor has always been left-of-the-first-glyph, on the BASELINE, and that is what null means on
+    /// both — so every <c>.clay</c> written before these fields existed loads and renders identically,
+    /// and neither field is written when null (additive, no <c>FormatVersion</c> bump).
+    ///
+    /// <para>They exist because an imported format need not share that convention and usually does not:
+    /// a board file anchors its text at the CENTRE of the box by default and states any other choice as
+    /// its own justification token. Baking the difference into <see cref="X"/>/<see cref="Y"/> at import
+    /// time was the alternative and is worse twice over — it needs the rendering font to measure the
+    /// string (unavailable to a reader, which has no Avalonia host to load one through), and the offset
+    /// it bakes in goes stale the moment the text or its height is edited.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LabelHAlign? HAlign { get; set; }
+
+    /// <inheritdoc cref="HAlign"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LabelVAlign? VAlign { get; set; }
 }
 
 /// <summary>A reference image (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) — a
@@ -268,7 +336,55 @@ public sealed class LayoutInstance
 
     public long X { get; set; }
     public long Y { get; set; }
+
+    /// <summary>
+    /// <b>Serialization companion to <see cref="RotDeg"/> — never read this directly; read
+    /// <see cref="RotationDegrees"/></b> (brief-L3d-arbitrary-angle-instances.md R-L3d-5, held shut by
+    /// <c>LayoutInstanceRotationAccessorTests</c>).
+    ///
+    /// <para>Carries the placement angle for the overwhelmingly common cardinal case, exactly as every
+    /// <c>.clay</c> written before L3d already does, which is what makes an arbitrary angle an ADDITIVE
+    /// change: a design that only ever rotates by 90 deg still serializes as <c>"Rot": "R90"</c> with no
+    /// <c>RotDeg</c> key and no <c>FormatVersion</c> bump. For a non-cardinal angle this holds the
+    /// NEAREST cardinal, so the field degrades to something sane rather than to zero.</para>
+    /// </summary>
     public LayoutRotation Rot { get; set; }
+
+    /// <summary>
+    /// <b>Serialization companion to <see cref="Rot"/> — never read this directly; read
+    /// <see cref="RotationDegrees"/></b> (R-L3d-5).
+    ///
+    /// <para>Non-null ONLY for a non-cardinal placement angle, and omitted from the file entirely when
+    /// null — the same additive pattern <see cref="LabelShape.PortDirection"/> already established, and
+    /// for the same reason: every <c>.clay</c> written before this field existed loads and re-saves
+    /// byte-identically.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? RotDeg { get; set; }
+
+    /// <summary>
+    /// <b>The placement angle — the ONE accessor anything outside persistence may use</b> (R-L3d-5).
+    /// Degrees, counter-clockwise, in the layout's Y-up DBU frame (<see cref="LayoutAngle"/>'s header
+    /// states the convention once); normalized to <c>[0, 360)</c> on set.
+    ///
+    /// <para><b>Why an accessor rather than two fields anyone may touch.</b> Two fields with one meaning
+    /// drift — this repo has already paid for that once, with three copies of the version number
+    /// disagreeing (<c>VersionSingleSourceTests</c> is the scar). Setting this keeps
+    /// <see cref="Rot"/> and <see cref="RotDeg"/> consistent by construction: a cardinal angle writes
+    /// the enum and clears <see cref="RotDeg"/>; anything else writes both.</para>
+    /// </summary>
+    [JsonIgnore]
+    public double RotationDegrees
+    {
+        get => RotDeg is { } d ? LayoutAngle.Normalize(d) : LayoutAngle.OfCardinal(Rot);
+        set
+        {
+            double n = LayoutAngle.Normalize(value);
+            if (LayoutAngle.TryCardinal(n, out var cardinal)) { Rot = cardinal; RotDeg = null; }
+            else { Rot = LayoutAngle.NearestCardinal(n); RotDeg = n; }
+        }
+    }
+
     public bool MirrorX { get; set; }
     public double Mag { get; set; } = 1.0;
 

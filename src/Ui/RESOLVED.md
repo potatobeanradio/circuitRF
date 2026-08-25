@@ -1,5 +1,891 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## L4d follow-up — pad geometry, measured against the originating tool (owner report, 2026-08-25)
+
+
+The owner installed the originating tool and compared its rendering of the same board with circuitRF's.
+Two things looked wrong: "the boolean logic on some of the cells" and "the trapezoid renderings look
+different." Both were real. **Everything below was measured, not derived** — see the oracle note.
+
+### The oracle: plotted Gerber, and specifically the FLASH
+
+`kicad-cli pcb export gerbers` plots the board through the tool's own geometry code. Two properties make
+it an exact oracle for pad artwork:
+
+- **Gerber aperture coordinates are Y-UP**, which is circuitRF's own cell convention, so an aperture
+  outline is directly comparable to a cell-local shape with no frame conversion to get wrong.
+- An aperture macro is the pad's outline; a FLASH is that outline placed and rotated on the board.
+
+**Compare at the flash, never at the aperture list.** Matching an aperture to the pad that produced it
+is a guess, and a wrong guess is confident and plausible: the first fix in this round transcribed
+`Outline4P` coordinates onto the wrong `rect_delta` component, "verified" them against an aperture area
+that a shear and a taper share, and shipped a second wrong answer. Un-rotating an actual flash about a
+known footprint origin recovers the pad-local corners with nothing assumed. All 21 polygonal pad flashes
+on each copper layer now match corner-for-corner within 1 µm.
+
+### 1. A trapezoid tapers; it did not
+
+`(rect_delta DX DY)` is crossed — DX tapers along **Y**, DY along **X**. The roles were right; the SIGN
+on the near pair of corners was inverted, which slopes both ends the same way. That is a
+**parallelogram**: same area, same bounding box on one axis, same four side lengths. Nothing but the
+shape shows it, which is why it survived to a side-by-side rendering comparison.
+
+Worth stating because it reads as a bug and is not: a trapezoid pad legitimately reaches BEYOND its own
+`(size …)` on one side — the delta lengthens one edge and shortens the other.
+
+### 2. `(drill … (offset …))` moves the COPPER, not the hole
+
+Three trapezoids still missed after the sign fix, by exactly 1.905 mm along their own axis. The pad's
+`(at …)` is where the HOLE goes; the shape sits at `at + offset`, turned by the pad's orientation. This
+had been reported as "not expressible — the drill is placed at the pad centre", which had it backwards:
+circuitRF carries the hole and the copper as SEPARATE shapes, so an offset hole is the natural
+representation here. What was wrong was putting the copper on the hole. The degradation message is gone
+because there is no longer a degradation.
+
+### 3. An oval drill is a SLOT, and only one of its two diameters was ever read
+
+`(drill oval W H)` puts a WORD at atom 0, and `PcbNode.Num` counts every atom rather than only numeric
+ones — so `Num(0)` returned null for `"oval"` and `Num(1)` returned W. **H was never read.** The
+`Max(0, W)` that followed equalled W and looked correct.
+
+The slot is now drawn as the stadium it is (a two-point round-capped stroke on the drill layer), and the
+barrel is its NARROW dimension — the width the hole measures everywhere along its length, and the one a
+fab reads. It had been the LARGER, which is both the wrong shape and too wide across the slot. Owner
+report: "[the originating tool] renders an elongated hole, but circuitRF renders a simple circle."
+
+### 4. Chamfers, and rotated rounded rectangles
+
+`(chamfer …)` was reported as unimportable and the corners came in rounded; a rounded rectangle at a
+non-cardinal angle lost its corner radius ENTIRELY and became a plain rotated rectangle — a bigger pad
+than the file describes. Both now build the general boundary: straight runs, straight chamfers, and
+quarter-circle arc edges. Measured: chamfered rect 48.5000 mm² against the tool's own 48.5000, and the
+7 corner points identical.
+
+**The corner names resolve in the layout's own Y-up frame** (`top_left` is −x, +y), which is a fact about
+the plot rather than a coincidence, confirmed on two pads with disjoint chamfer sets.
+
+### 5. A custom pad is ONE region — and a filled primitive's own `(width …)` is part of it
+
+"Anchor UNION primitives" is the format's definition, and the tool plots exactly that: a single
+aperture outline with no internal edges. Handing the pieces through separately drew every internal edge,
+which is the "strange boolean" the owner saw. They are unioned now.
+
+The union alone still came out 2.6% small on every custom pad, with the deficit at exactly 0.1 mm on one
+bounding side — half of a `(width 0.2)` on a **filled** primitive. A filled primitive is drawn as fill
+PLUS a pen stroke along its boundary, so the copper reaches half a width past the outline. Expressed as
+the stroke it is — a closed `PathShape` on the primitive's own boundary, unioned with the rest — rather
+than as a second inflate implementation, so the joins are round for free. Areas after: 55.5127 against
+55.3927, and 59.4536 against 59.3594 (+0.2%, Clipper's polygonal joins against the tool's own arc
+approximation).
+
+### 6. A drilled pad's copper is an ANNULUS — and the hole had gone invisible
+
+Owner report, after the fixes above: "the TrapH renders as a large elongated hole in [the originating
+tool], but in
+circuitRF it doesn't look like a hole with missing metal."
+
+**It did not, and the cause was a regression from this round's own first fix.** circuitRF renders a
+`ViaShape` as an annulus — pad filled, barrel punched out with an opposite-winding inner circle
+(brief-via-primitive-and-stackup §4.1). Making a footprint drill BARREL-ONLY (`PadSize = DrillSize`,
+no `LandingLayer`) correctly stopped it inventing an oversized round landing disc over the real pad —
+and simultaneously made the two circles identical, so they cancel under the winding fill rule and the
+via draws NOTHING. The hole vanished.
+
+Restoring the disc would have restored a fault. The fix is the one that is also correct: **subtract the
+hole from the pad's own copper**, on every layer the pad occupies. That is what the board physically is
+(the drill really does remove that copper), what the originating tool draws, and what DRC and EM should
+see. The `ViaShape` stays as the barrel record — same size as its drill, drawing nothing, which is now
+fine because the hole is visible in the metal.
+
+An oval drill gets its slot outline on the drill layer as well, so a slot still reads as a slot where
+there is no copper for it to have been removed from.
+
+**The export had to learn this too**: `OuterRingWithHoles(…, outerOnly: drill is not null)`. A drilled
+pad's hole is written as `(drill …)` and re-punched by the reader, so carrying it in the outline as well
+cuts it twice and leaves a keyhole slit across the copper.
+
+### 7. The hole did not survive a round trip — three writer bugs behind it
+
+Owner report: the drill "seems fixed for the import, but it doesn't survive a round trip." Measured per
+PLACEMENT rather than in total, which is what localised it: 9 of 86 placements lost hole area.
+
+- **The pad's `at` was written as the COPPER's centre, with a bare `(drill …)`.** But this format's
+  `at` is the HOLE and the shape sits at `at + offset` (§2, in the other direction). So the hole landed
+  on the copper centre and the whole pad drifted by the offset on EVERY round trip. The displacement is
+  now written back as the drill's own `(offset …)`.
+- **`outerOnly` dropped every inner ring, not just the drill's.** A pad's other holes are real copper
+  features — a custom pad built from unfilled circle primitives is a pad full of annuli — and three of
+  them lost every hole they had. Now only the ring whose CENTROID sits on the drill is omitted (true of
+  a round hole and a slot alike, and of nothing else in a pad by accident); the rest are keyholed.
+- **A slot was written X-major unconditionally**, which turns every VERTICAL slot on its side.
+  `(drill oval W H)` states the slot's X and Y extents in the pad's own frame, so which of the two
+  carries the span depends on which way the slot runs. The reader can only run a slot along one of the
+  pad's axes, so a slot at any other angle is snapped and REPORTED rather than silently rotated.
+
+**Result: net copper area is conserved on every layer** — both inner layers and both soldermask layers
+to the last digit (758.159 and 130.285 unchanged), Top and Bottom Copper to six significant figures
+(3491.485 → 3491.462, 3041.823 → 3041.806). The three placements that still differ are the pinless
+cells the export FLATTENS by design (`CellsFlattenedForLackOfPins`); their copper survives as board
+geometry, which is why the whole-board figures balance and the per-placement one cannot see it.
+
+**Known limitation, stated rather than hidden:** a keyholed hole is a zero-width slit, and a slit does
+not survive the Clipper difference that re-punches the drill — so a drilled pad carrying a SECOND,
+non-drill hole loses that one. It is a limitation of stating a hole as a slit in a format whose graphics
+have no inner rings; before the omission rule, both holes were lost.
+
+### Also not a bug: the "metal gaps" at (115.5, −75.273)
+
+Same shape of answer as (109.5, −75.273) below. Two SEPARATE footprints sit there — an F.Cu trapezoid
+at y = −75.000 and a B.Cu trapezoid at y = −75.273 — so a 0.27 mm band at the top and another at the
+bottom is covered by ONE layer rather than both. Each pad also draws its own outline stroke. At 35 %
+layer fill opacity that reads as a gap; it is two real pads on two real layers, and their geometry is
+among the 21-of-21 that match the tool's own plot corner-for-corner.
+
+### Not a bug, twice over
+
+- **"It looks rendered outside its box"** — a trapezoid pad overhangs its `(size …)` by design (§1).
+- **"Strange boolean artifact on many cells in that area"**, at (109.5, −75.273): the board has an F.Cu
+  pad at y = −75.000 and a B.Cu pad at y = −75.273, deliberately 0.273 mm apart so both are visible.
+  Two real pads on two real layers, nearly coincident — not one pad rendered wrongly.
+
+
+## L4d follow-up — a label's ANGLE and ANCHOR, and board round-trip (owner reports, 2026-08-25)
+
+Second round on the same real board (the 86-placement pad torture test described in the entry below).
+
+### 5. `LabelShape.Rotation` was four-way, and a board's text is not
+
+Owner report: "the import of the angled labels does not look right." The reader snapped a `45` to the
+nearest 90 and said so; the label then rendered plausibly, at the wrong angle, in the wrong place.
+
+`LabelShape` now carries `Rotation` + `RotDeg` + a `RotationDegrees` accessor — **the same pairing, with
+the same R-L3d-5 discipline, that `LayoutInstance` already uses**, so a cardinal label still serializes
+as `"Rotation": "R90"` with no `RotDeg` key and no `FormatVersion` bump. `LayoutRotationAccessorTests`'
+source scan covers labels for free: nothing outside `LayoutModel.cs` reads either field.
+
+Every consumer was widened with it: the renderer and `MeasureLabelWorldBbox` and
+`LayoutTextOutline.BuildGlyphContours` (all three now just negate the angle for Y-down path space rather
+than switching on four cases), the hit test, Rotate (advances by 90 deg from wherever it is — R on a
+33 deg annotation gives 123, per R-L3d-11), Flatten (**no longer rounds, and no longer reports that it
+does**), and all three interchange paths. **The snap was ours alone** — board, DXF and GDSII all carry an
+arbitrary text angle, and `GdsiiReader` had been reporting its own loss since L3d.
+
+### 6. Which point of the text `X`/`Y` names — and mirrored text
+
+A board file anchors text at the CENTRE of its box by default and states anything else as
+`(effects (justify …))`. circuitRF has always anchored at the left end of the BASELINE. The reader
+ignored the token entirely, so every unjustified string landed half its own width off, and every
+`(justify left top)` one — which is what a generated stackup table is made of, 119 of them here — landed
+a full cap height above its own row.
+
+`LabelShape.HAlign`/`VAlign` (nullable; null = the historical left/baseline, so every existing `.clay` is
+byte-identical) with `LayoutRenderer.ResolveLabelAnchor` as the ONE place they become an `SKTextAlign`
+and a baseline offset. **Fixed in the model, not by baking an offset into the coordinates at import**:
+that needs the rendering font, which a reader cannot load (no Avalonia host), and goes stale the moment
+the text is edited.
+
+**The Y flip does not swap top and bottom.** `top` means "the text hangs below this point" in the
+source's Y-down frame; after the flip the anchor is still the text's own top edge. Only its COORDINATE
+moves, never which corner of the string it names.
+
+**`mirror` DOES swap left and right, and that is a placement fact, not a legibility one.** Owner report:
+a `(justify left mirror)` annotation at 225 deg "renders wrong". Back-side text is stored mirrored so it
+reads correctly with the board turned over; in the file's own front-view coordinates its glyphs run
+BACKWARD from the anchor. The glyphs come in forwards (reported), but the string must still occupy the
+side of the anchor the board put it on — so the horizontal half of the justification is reflected. The
+vertical half is not: a board flip is an X mirror.
+
+### 7. The pick box and the highlight box were two different derivations
+
+Owner report: "on one version of the code the hitbox did not match the highlight select box." The
+highlight came from `MeasureLabelWorldBbox` (real Skia glyph metrics); the pick region came from
+`LayoutHitTest`'s own `Text.Length * Height * 0.62` estimate. **Two derivations of one region can only
+agree by coincidence** — `W` and `i` are the same width to an estimate that counts characters — and
+widening the anchor and the angle made the gap structural, since only the renderer's version knew about
+either.
+
+`LabelHitBbox` now READS `MeasureLabelWorldBbox`, keeping the estimate only as the fallback for text
+with no glyphs to measure. Safe off the UI thread and headless: `SkiaFonts` already degrades to the
+platform typeface rather than throwing when there is no Avalonia host. **Ports are deliberately
+untouched** — a port is picked by its MARK (`PortPickBbox`), and two owner reports have already tuned
+that square.
+
+### 8. A custom pad is its ANCHOR unioned with EVERY primitive
+
+Owner report: "the CircnCustom has geometry extending outside the green rectangle", then "renders as
+some strange boolean, is it correct?" It is: that column's pad is a 5-piece art pad that genuinely
+reaches 7.9 mm out past a 2.75 mm courtyard. But the reader imported `primitives[0]` and nothing else,
+and dropped the `(options … (anchor circle|rect))` body outright — so what the owner first saw was ONE
+arc fragment, and the pad frequently had no copper under the pin naming it. All of it now comes in
+(verified piece by piece against the file: anchor disc, arc, two annuli, stroke, filled triangle).
+
+### 9. A pad with NO copper anywhere is its own aperture
+
+Owner report: "the ChamfnRRect and Circ cells are empty. Is there supposed to be something there?"
+There was — a solder-mask opening and a stencil aperture. The reader dropped every non-copper pad
+aperture on R-L4d-9's reasoning that a mask opening is the copper EXPANDED by an unstated margin. **That
+reasoning does not apply when there is no copper to expand from**: the pad IS the aperture and its own
+outline is exactly what the board carries. A pad that HAS copper keeps the old behaviour exactly.
+
+### 10. Does the reported file round-trip? Yes — after four export bugs
+
+Import → export → import, measured per layer as flattened copper AREA (tracks included at
+length x width) rather than shape counts, since representation legitimately changes:
+
+| | pass 1 | pass 2 |
+|---|---|---|
+| In1.Cu / In2.Cu | 775.750 mm² | **775.750 mm²** |
+| Top Copper | 3766.539 mm² | 3767.141 mm² (+0.016%) |
+| Bottom Copper | 3264.402 mm² | 3264.642 mm² (+0.007%) |
+| extent | identical | identical |
+| labels | 151 | 151, every anchor/angle/height identical |
+
+The residual is curve flattening (7 cubics, reported by the export). Getting there fixed four writer
+bugs, three of which put copper where the design had none:
+
+- **`ClaimArtworkFor` let a `ViaShape` compete on area.** A barrel is smaller than the pad it sits in,
+  so it won the smallest-area test: the pin exported as a plain circle of the BARREL's diameter and the
+  real outline was written again as footprint graphics — the same copper twice, in two shapes. Latent
+  until the import stopped inflating a footprint drill's `PadSize` (entry below), which had been keeping
+  the barrel's box the larger of the two by accident.
+- **A through-hole pad's congruent copies on other copper layers were written again as graphics.** One
+  pad on `*.Cu` here IS N congruent shapes in circuitRF's model; leaving them unclaimed duplicated the
+  pad on every inner and back layer.
+- **`(layers "*.Cu" …)` was written for every drilled pad**, regardless of which copper layers the pad
+  actually occupied — so a hole whose only copper was a front-side aperture came back with that artwork
+  repeated on both inner layers and the back. That is a short, not an artefact. The span is now measured
+  from the congruent copies the pad itself claimed.
+- **The mask side followed the PLACEMENT's mirror flag, not the pad's copper layer.** An imported
+  back-side footprint has that flag false (the flip is baked into its cell), so its B.Cu pad was paired
+  with `F.Mask` — a solder-mask opening on the wrong face of the board.
+
+Two more were silent substitutions rather than invented copper:
+
+- **A two-point round-capped stroke IS this format's `oval` pad.** It fell through to a plain circle of
+  the pin's declared width — 23 pads on the reported file, every oval one plus every custom pad whose
+  claimed primitive was a line. The `default:` fallback now COUNTS when it discards a real outline.
+- **Our own custom-pad export invented an anchor square** of the pin's width at the pad centre. Harmless
+  while the reader ignored anchors; real copper the moment it stopped. It is written at 1 µm now — the
+  format needs a size, the primitive is the shape.
+
+**Known and reported, not fixed:** 6 footprints whose pads carry no copper have no pins, so the export
+FLATTENS them into board geometry (`CellsFlattenedForLackOfPins`); dimensions, groups and targets are
+skipped by the reader; and `Chamf\nRRect`-style multi-line strings arrive as one line, because
+`LabelShape` has no line breaks.
+
+## L4d follow-up — board-import fixes from a real board (owner report, 2026-08-25)
+
+Four defects, found by importing a board that is deliberately a torture test: 86 placements of one
+footprint, each hand-edited to a different pad shape, type, angle and layer set, plus a generated
+stackup table and a set of text-justification samples. **86 content-distinct cells for 86 placements is
+CORRECT for that file** — the pads really are all different — and none of the four defects below is the
+dedup.
+
+### 1. Text: this format's default anchor is CENTRED, and silence is not neutral
+
+A `gr_text`/`fp_text` `(at x y)` names the CENTRE of the text box on both axes unless
+`(effects (justify …))` says otherwise. A `LabelShape` has always anchored at the left end of the
+BASELINE. The reader ignored `(justify …)` entirely, so:
+
+- every unjustified string landed half its own width to the right of where the board put it, and
+- every `(justify left top)` one — which is what a generated stackup table is made of, 119 of them in
+  the reported file — landed a full cap height ABOVE its own row.
+
+**Fixed in the model, not by baking an offset into the coordinates at import.** `LabelShape` gained
+`HAlign`/`VAlign` (nullable; null = the historical left/baseline, so every existing `.clay` is
+byte-identical and no `FormatVersion` bump). Baking the offset in was the alternative and is worse
+twice over: it needs the RENDERING font to measure the string, which a reader cannot load (no Avalonia
+host — `SkiaFonts.PlexRegular` throws headlessly, which is exactly why `LayoutTextOutline` carries a
+`TestOverrideTypeface` at all), and the offset it bakes goes stale the moment the text or its height is
+edited.
+
+`LayoutRenderer.ResolveLabelAnchor` is the one place the two enums become an `SKTextAlign` and a
+baseline offset; `DrawLabelText`, `MeasureLabelWorldBbox` (selection outline, hit test) and
+`LayoutTextOutline.BuildGlyphContours` (flatten-to-polygon) all read it, so drawn/measured/flattened
+can no longer disagree. The `centred:` parameter is still the PORT override and still wins outright.
+
+**The Y flip does not swap top and bottom.** `top` means "the text hangs below this point" in the
+source's Y-down frame; after the flip the point is still the text's own top edge. Only the anchor's
+coordinate moves, never which corner of the string it names.
+
+The writer emits `(justify …)` for the same reason: a label carrying circuitRF's own default anchor
+must SAY `left bottom`, or it comes back displaced. `Baseline` is not expressible and writes as
+`bottom` — one descender's difference on a string that usually has none.
+
+### 2. A footprint pad's drill was inventing a second, oversized, ROUND copper pad
+
+`ReadPad` emitted its `ViaShape` with `PadSize = max(sx, sy)` and the first copper layer as
+`LandingLayer`. But the pad's copper landing is ALREADY in the cell — the loop above it emits the pad's
+real outline once per copper layer the pad occupies. So every through-hole footprint got a filled circle
+of the pad's LONG dimension on top of its own pad: measured, a 10 mm disc centred on a 5 x 10 mm
+rounded-rect pad, overhanging by 2.5 mm on every side. On an `np_thru_hole`, which has no copper
+anywhere, it invented the copper outright.
+
+Not only cosmetic: `DrcRegions`, `GdsiiWriter` and `DxfWriter` all read PadSize-on-LandingLayer as a
+filled pad, so it was real copper in DRC and in every export.
+
+The pad's drill now contributes the BARREL and nothing else — `PadSize = DrillSize`, no `LandingLayer`.
+**Board-level vias are unchanged**: a `(via …)` has no pad artwork of its own, so its landing layer is
+the only thing that puts copper anywhere, and gate 9 still pins it.
+
+### 3. Nothing shipped declared a `PcbLayerName`, so every board layer minted a synthetic one
+
+`PcbLayerReconciliation` looks for a destination layer whose `Interchange.PcbLayerName` matches the
+source name, and mints a synthetic NEGATIVE key when it finds none. **No shipped technology declared a
+single alias** — not the three `resources/technologies/pcb-*.ctech` a new workspace copies in, not
+`StarterTechnologies.Pcb2Layer()` — so importing into a stock PCB workspace silently doubled the layer
+table: a second copper layer beside Top Copper, the board's tracks on the new one, and the technology's
+stackup, DRC rules and EM extraction all still pointing at the old.
+
+Both copies now declare the seven that have a counterpart (`F.Cu`, `B.Cu`, `F.Mask`, `B.Mask`,
+`F.SilkS`, `B.SilkS`, `Edge.Cuts`). Drill deliberately has none — `PcbReader.DrillLayerName` is
+literally `"Drill"`, so it already matches by name with nothing declared. Measured on the reported
+file: 5 genuinely-new layers added instead of 10, with all copper on the technology's own.
+
+**Two copies of one table is the trap**, and drift between them is invisible until someone imports a
+board into a workspace made the other way — `TechPersistenceTests` now holds them together.
+
+### 4. The recovered layers were unreachable — the `.ctech` editor read the file, not the override
+
+`ApplyBoardImportToTechnology` installs the board's layers and stackup as a live (unsaved)
+`TechnologyCache` override, deliberately: a `.ctech` is a process file possibly shared by every cell in
+the workspace, and rewriting it as a side effect of opening a board is not what the user asked for. Its
+own message says "open the technology and save it to keep this."
+
+**That was impossible.** `OpenOrActivateTech` called `TechPersistence.LoadFromFile`, so the editor
+showed the ON-DISK technology — without the recovered layers — and saving it would have overwritten the
+override with a technology that never had them. This is the owner's "I don't see any of the new layers
+in the .ctech viewer."
+
+Two halves:
+
+- Opening a `.ctech` that has a live override applies it through the new
+  `TechEditorViewModel.ReplaceWorkingAsEdit` — one undoable, dirtying edit, so the tab is visibly
+  unsaved, Save writes it and Ctrl+Z backs it out.
+- Import Board routes THROUGH an already-open editor when there is one, rather than calling `SetLive`
+  behind its back. The editor holds its own working copy; a bare `SetLive` would leave the copy the
+  user is looking at (and the one its Save writes) without the layers.
+
+### Also: `LayoutDocument.RaiseRetargetEvents` never re-raised the foreign-workspace band
+
+`IsForeign`/`SourceWorkspaceName`/`SourceWorkspaceCwsPath` are read off the ACTIVE frame, and a
+Push In / Pop Out changes which frame that is — but only `RefreshForeignMarking` (workspace change,
+Save As) ever raised them. Descending into a cell that lives in another workspace left the band showing
+the parent's answer, in either direction. Found while chasing an owner report of the band appearing on a
+cell whose workspace IS open; **that report is not explained by this** and is still open — the path
+shape is not the cause (a `#` in a cell folder name resolves correctly, verified directly).
+
+### What the reader now reports that it used to swallow
+
+- `(chamfer …)` on a `roundrect` pad — the corners come in ROUNDED, which is a real difference in the
+  artwork. 24 of them in the reported file, previously silent.
+- `(justify … mirror)` — mirrored text is a back-side rendering flag with no counterpart in layout.
+
+
+## Phase L4d follow-up — COMPLETE: `.kicad_pcb` board EXPORT (2026-08-25)
+
+L4d shipped import-only on the brief's §1 reasoning: "emitting a board file means authoring board-setup
+and design-rule state circuitRF has no opinion about". The owner asked whether a simple export was
+possible and whether the format actually demands that configuration. **It does not, and §1 was written
+against an epoch of the format that no longer exists.** New: `PcbWriter`, `PcbExport`,
+`PcbLayerNaming`; File → Export → Board in all three menus.
+
+### The measurement that changed the answer
+
+A real 20260206 board is 89,471 tokens. By share:
+
+| section | share |
+|---|---|
+| `zone` + `footprint` + `segment` + `via` + graphics | **99.5%** |
+| the WHOLE of `setup` | **0.3%** |
+| version / layers / general / title / paper | 0.2% |
+
+Of `setup`'s 244 tokens, 98 are the stackup (which L4d already maps in both directions) and 104 are
+`pcbplotparams` — plot/Gerber output defaults. **There are no design rules in it at all.**
+
+They left the board file at the 20211014 epoch, measured across all four:
+
+| epoch | rule entries in `(setup)` | top-level `net_class` |
+|---|---|---|
+| 20171130 | **29** (`trace_min`, `via_min_size`, `uvia_min_drill`, clearances…) | **2** |
+| 20211014 / 20221018 / 20260206 | **0** | **0** |
+
+Rules now live in sibling `.kicad_pro` / `.kicad_dru` files a writer simply does not produce. So the
+writer invents nothing: no rules, no net classes, no `pcbplotparams`, no `aux_axis_origin`, no tenting
+flags. It writes the stackup (or, when the technology has none, no stackup section at all — the export
+counterpart of R-L4d-6) and geometry.
+
+### Why no design rules are written even though circuitRF HAS a DRC model
+
+Not a gap — a disagreement in kind. `DrcRule` measures **per-layer/region process geometry**
+(`MinWidth`, `MinSpacing`, `MinSeparation`, `MinEnclosure`, `MinOverlap`, `MinNotch`, `MinArea`,
+`MinPerimeter`, `Density`, over boolean-derived regions). The format's rules are **per-net-class routing
+constraints**. Only `MinWidth` and `MinSpacing` have any counterpart, and **circuitRF has no net-class
+concept at all** — so every rule would collapse onto one synthesised `Default` class that reads as
+authoritative and is wrong for every net but the narrowest. The count of rules NOT written is reported
+instead, so the user is told rather than left to assume they carried.
+
+### One epoch, deliberately, and it is not the newest
+
+`PcbLayerNaming.TargetVersion` is **20221018**. Late enough to be free of rules and net classes; early
+enough that every later release still opens it, whereas the newest stamp would exclude every older
+reader for nothing. The reader must never branch on the version (files of every epoch arrive unbidden);
+a writer has the opposite problem and must pick one. Concretely: `(stroke (width W))`, three-point
+`(mid …)` arcs, `(fill yes|no)`, an ordinal net table, and the 0/31 copper ordinals — the ordinals are
+transcribed from a real file of that epoch, not remembered, because they are **not** stable (B.Cu moved
+to 2 at 20260206).
+
+### Building the writer found two real bugs in the L4d IMPORTER
+
+Neither was visible from the import side, and neither had a failing test until a real board was pushed
+through both directions.
+
+**1. A pad's NET was in the footprint cell's content key, which defeated R-L4d-15 outright.** A pad's
+net is a property of the PLACEMENT — R3 and R4 are the same resistor footprint touching different nets —
+so including it made every placement content-distinct. Measured: a real 63-part board produced **57
+"distinct" cells for 21 actual library parts**, which is precisely the 400-copies-of-geometry outcome
+R-L4d-15 exists to prevent. circuitRF's layout model has nowhere to put per-placement pad connectivity,
+so the pad now carries none and the drop is reported by count. **The information is not destroyed** —
+the tracks that reach each pad still carry their nets, which is what EM port setup and DRC's `NetScope`
+actually read.
+
+**2. Content-distinct cells sharing a library name silently overwrote each other on disk.**
+`DxfNaming.NameCellsForImport` maps original → unique and is therefore keyed by the ORIGINAL, so handing
+it duplicates collapses them. Measured: **58 cell folders created, only 22 distinct** — 36 cells wrote
+their `.clay` over an earlier one's. Names are now uniquified before mangling.
+
+After both fixes the round trip agrees end to end, on two real boards from different epochs:
+
+| | 20171130 board | 20260206 board |
+|---|---|---|
+| cells in → folders → defs written → cells back | 21 → 21 → 21 → **21** | 27 → 27 → 27 → **27** |
+| placements | 63 → **63** | 63 → **63** |
+| board shapes | 401 → **401** | 403 → **403** |
+| track segments written | **370** | **370** |
+
+### Two writer bugs the unit tests missed and only a real board exposed
+
+Both were silent, and both are the kind that produce a file that opens and is wrong.
+
+- **Every through-hole pad lost its drill.** A through-hole pad is TWO shapes at one coordinate in
+  circuitRF's model (the copper and the `ViaShape` barrel) and ONE pad in this format. The pin claimed
+  only the copper; the barrel then fell through a `case ViaShape: return;` that dropped it without a
+  count. 245 drills on the measured board. A pin now claims both, and an unclaimed barrel inside a cell
+  becomes an **unnamed** through-hole pad — mounting and thermal holes survive, reported by count.
+- **Pads were re-centred on the pin marker rather than on their own copper.** The pin names the
+  connection; the artwork is the geometry, and moving it moves real copper. The pad now sits at its
+  artwork's own centre.
+
+### An imported board must be re-exportable without hand-authoring 16 aliases
+
+The first round trip put every one of a real board's 16 layers on `Dwgs.User`, which turned **370 tracks
+into graphics** and collapsed the footprints. Two fixes, both narrow:
+
+- an imported layer now records the board layer name it came from in `InterchangeMapping.PcbLayerName`,
+  so it round-trips by construction. For copper the name is derived from the entry's **rank among the
+  file's own copper entries**, not from its name — because at the 20171130 epoch a renamed layer's user
+  name occupies the canonical slot outright, so a real file's copper is called `top_layer` with no
+  "F.Cu" anywhere in it. Ordinal order IS top-to-bottom order in this format;
+- a layer whose own NAME is already a board layer name (`F.SilkS`, `Edge.Cuts`) needs no alias at all.
+
+Anything still unmapped goes to a general-purpose drawing layer and is **named** in the report — never
+silently given a fabrication meaning it does not have.
+
+### Deliberate mappings worth knowing
+
+- **A copper region becomes a `zone`, not a copper graphic**, specifically so it carries its net: no
+  top-level graphic in any of the four measured real boards carries one. The cost is reported —
+  refilling zones on the receiving side re-derives the copper from the outline and its clearances, so
+  it will differ from what circuitRF drew.
+- **Holes are written as this format's own zero-width slit**, which L4d measured as its native
+  representation, so the construction is identical to what the originating tool produces itself.
+  (`GdsiiWriter` carries the same ~20-line bridge for GDSII's own constraint; kept separate rather than
+  widening that audited file's visibility, following `DxfNaming`'s stated precedent.)
+- **The back-side mirror is BAKED, not transformed** — negate every local Y, rewrite every child layer
+  to its back-side counterpart. Emitting our own `MirrorX` instead would flip a second time when the
+  receiving tool applies its own side convention. `LayoutFlatten.FlipBulgeSigns` owns the arc-sense rule
+  and is reused rather than re-derived.
+- **A pad's angle is written ABSOLUTE** (placement + local), which is how the format stores it.
+- **A cell with no pins has no pads**, and a footprint with no pads is one nothing can route to — so its
+  artwork is flattened onto the board instead, reported by count with what to do about it.
+- **No reference designators are invented.** circuitRF's layout model has no such field, and writing
+  `R1`/`C2` would put fabrication-facing identifiers in a file the user did not author.
+
+### The greyed-out menu bug was not one bug
+
+The owner hit File → Import → Board disabled. `ImportBoardCommand` was missing from
+`OnCurrentWorkspacePathChanged`'s notify list, so `CanExecute` was evaluated once at construction and
+never again. Adding Export exposed the same class on the OTHER gate: this view model has **two**
+fan-outs for document-gated commands and its own source calls that a "standing gotcha" twice — and
+`ExportGerberCommand` had been in **neither since L4c**, so File → Export → Gerber had been permanently
+greyed out too. Both fixed.
+
+**A comment warning about a trap is not a test.** Two scans now close the class:
+`EveryWorkspaceGatedCommand_IsRenotifiedWhenTheWorkspaceChanges` and
+`EveryDocumentGatedCommand_IsRenotifiedFromBothFanOuts` read the view model (comments stripped first —
+the H8 lesson), find every `[RelayCommand(CanExecute = …)]` on either gate, and fail naming any that is
+not re-notified. Verified by removing a notification and watching it fail with the command's name, not
+merely by writing it.
+
+### The verification caveat, stated plainly
+
+**No board tool is installed in this environment, so nothing here proves the originating tool ACCEPTS
+what is written.** L4a and L4b validated against independent third-party implementations; this cannot.
+What the 27 tests in `PcbExportTests` prove is self-consistency: every one re-reads the written file
+through `PcbReader`, which was built from four measured real files and is therefore not a mirror of the
+writer's assumptions — but is still this repo's code. **Open one exported board before trusting it for
+fabrication.** That is the single outstanding item on this work.
+
+## Phase L4d — COMPLETE: `.kicad_pcb` board import (2026-08-25)
+
+Board files import as real cell folders — the stackup, the nets, the tracks, vias and zone fills, and one
+cell per footprint definition with an instance per placement
+(`brief-L4d-kicad-pcb-import.md`). Import only, per §1 — **superseded the same day by the owner's own
+call: see "Phase L4d follow-up" above. A writer WAS built, and §1's objection turned out to be written
+against an epoch of the format that no longer carries design rules.** Nothing in `src/Core`,
+`src/Engine` or `RfCore` was touched. New: `PcbSexpr`, `PcbUnits`, `PcbBoard`, `PcbReader`, `PcbStackupMapping`,
+`PcbLayerReconciliation`, `PcbImport`; `InterchangeMapping` gained an additive `PcbLayerName`.
+
+### The spike measured four format epochs of one real board, and it is the reason nothing branches on the version
+
+§10's spike ran against the 20171130, 20211014, 20221018 and 20260206 renderings of the same
+642 KB board. Its findings ARE the reader's dispatch table, so they are recorded as measurements rather
+than as spec quotations:
+
+| | 20171130 | 20211014 | 20221018 | 20260206 |
+|---|---|---|---|---|
+| stroke width | `(width W)` | `(width W)` | `(stroke (width W) …)` | `(stroke (width W) …)` |
+| arc | `(angle A)`, centre form | `(mid x y)` | `(mid x y)` | `(mid x y)` |
+| fill flag | **absent** | `none`/`yes` | `none`/`yes` | `no`/`yes` |
+| net reference | `(net 7)` + a table | `(net 7)` + a table | `(net 7)` + a table | `(net "GND")`, **no table** |
+| `B.Cu` ordinal | 31 | 31 | 31 | **2** |
+| stackup section | **absent** | present | present | present |
+
+**The two spellings appear in ONE file.** At 20260206 every `fp_line` carries `(stroke …)` while
+`gr_poly` still carries a bare `(width …)`; the stroke spelling changed at one epoch and the arc
+spelling at a different one. A reader that switched on the version stamp would have to be right about
+which of four independent things each stamp implies. Dispatching on the token present is not merely
+more tolerant — it is the only formulation that is *correct*.
+
+**Two traps the table above understates.** At 20171130 a renamed layer's USER name occupies the
+CANONICAL name slot, so a real file's table reads `(0 top_layer signal)` and the string "F.Cu" does not
+occur anywhere in it. Combined with the ordinal move at 20260206, that leaves the table's TYPE word
+(`signal`/`power`/`mixed`/`jumper`) as the only stable way to answer "is this copper" — which is what
+`*.Cu` wildcard expansion runs on (`PcbReader.ExpandLayerSpec`, gate 13's own
+`WildcardCopperExpansion_UsesTheTablesTypeWord_NotANameSuffix`). And a via's `(drill …)` is OPTIONAL at
+20171130 — the 6 vias on the measured board state none, and the value lives once in
+`(setup (via_drill 0.6))`. Falling back to 0 would export vias with no hole in them.
+
+### R-L4d-14 — how a fill stores its holes, measured rather than designed around
+
+The brief called this "the one thing the published documentation does not fully pin down" and asked
+whether §6 needed re-sizing before being built. **It did not, and here is the measurement.**
+
+Every `filled_polygon` is ONE positively-oriented outline. A hole inside it is not a second ring: it is
+cut into that single outline by a **zero-width slit**, so the boundary runs into the hole, around it in
+the opposite sense, and back out along a coincident edge. On the modern board's ground pour the vertices
+that repeat bound sub-loops of **negative** signed area (−103.713 mm² and −14.559 mm², against a
+whole-outline area of **+10288.285 mm²**), and the vertex before a repeat's first occurrence equals the
+vertex after its second — the slit's doubled edge. Islands are separate `filled_polygon` nodes at
+20260206 (**3** of them, 49 / 436 / 9,750 points) and are merged into ONE node at every older epoch
+(a single **15,410**-point outline with **192** repeated vertices), by the same construction.
+
+**So the fill imports verbatim, one `PolygonShape` per node, with no holes and no matching.** The slit
+outline is exactly the copper the originating tool draws. `PolygonShape.Holes` is not used by this
+phase at all, and no per-polygon hole matching exists to go wrong.
+
+### Two of the brief's own premises were measured false
+
+**§7's mirror algebra does not exist to be done.** The brief expects a back-layer footprint to be "a
+mirror combined with that angle", to be reconciled against `LayoutInstanceTransform`'s convention.
+Comparing the board's one back-side placement against that same part's library original, **the flip is
+already baked into the stored child data**: every local Y is negated (X untouched) and every child layer
+is already the back-side one. The library's pad polygon reads
+`(1,0)(0.5,0.75)(−0.5,0.75)(−0.5,−0.75)(0.5,−0.75)` and the board's back instance reads
+`(1,0)(0.5,−0.75)(−0.5,−0.75)(−0.5,0.75)(0.5,0.75)` — y → −y, exactly, and `F.SilkS`→`B.SilkS`,
+`F.Cu`→`B.Cu`. Applying our own `MirrorX` on top would flip the whole board a second time, so
+`PcbImport` writes `MirrorX = false` unconditionally and says why at the point it does.
+
+**Gate 10's "one cell and four instances" is unachievable for the back-side placement, and should be.**
+Because the flip is baked into the artwork AND its layers, a back-side footprint is genuinely different
+artwork from its front-side twin — sharing one cell between them would put front-side copper on the back
+of the board. The gate's real subject, that the placement ANGLE must not multiply cells, is asserted in
+full: three placements at **0°, 90° and 37.5°** share exactly one cell, and the back-side one gets its
+own. That is 2 cells and 4 instances.
+
+**R-L4d-2's "wrong only for negative coordinates" is half the story**, found by writing the test rather
+than by reading the code. A truncating cast and a round differ exactly when the double product lands
+just SHORT of its integer, which is a property of the value's binary representation and not of its
+sign: `−132.742022 mm` multiplies to `−132742021.99999999` and `66.383011 mm` to `66383010.99999999`,
+and the cast loses a nanometre on each. The brief's own example value, `−12.3456`, multiplies EXACTLY
+and would not have caught the bug in either direction — so both are in the fixture and gate 3 asserts
+both signs.
+
+### The measured placement convention, and why a pad's angle is not a pad's angle
+
+**A positive placement angle rotates CLOCKWISE in the source's raw Y-down frame.** Measured, not
+assumed: every rotated footprint's pads were placed under both senses and checked against track
+endpoints of their own net — **31 hits vs 8**, and **28 vs 9** on a second file, once the 0°/180°
+placements that cannot distinguish the senses are excluded. Flipping Y turns that into a
+counter-clockwise rotation in a Y-up frame, which is circuitRF's own convention, so **the angle passes
+through unchanged** (`PcbUnits.Angle` is the identity, kept as a named method precisely so "we checked"
+is something a later reader can find).
+
+**The old-form arc angle sweeps the OTHER way**, which no amount of consistency reasoning would have
+produced. 17 arcs that appear in both the 20171130 and 20211014 renderings of one board were converted
+under each sign and checked against the newer file's own `(mid …)`: **13 agreed with counter-clockwise
+in the raw Y-down frame and 0 with clockwise.** So a placement angle and an arc angle in the same file
+have opposite senses, and both are pinned by `Gate13_TheOldArcSpelling_IsCentrePlusSweep_NotAChord`.
+(That fixture also pins the other half of the trap: in the centre form `(start)` is the CENTRE and
+`(end)` is the arc's first point. Reading it as a chord draws a straight line through the middle of
+every rounded silkscreen, silently.)
+
+**A pad's stored angle is ABSOLUTE, its position is not.** The same library part placed at 0° and at
+180° stores byte-identical child coordinates (checked across six parts and four distinct angles) but
+stores pad angles of 0 and 180. A cell keyed on the stored angle would mint a new cell per placement
+angle and defeat R-L4d-15 outright, so `PcbReader` subtracts the placement angle before hashing.
+
+### The via barrel/pad orientation, and how it was actually demonstrated
+
+**The format has no drill layer at all** — a via states only the copper span it connects. Putting the
+barrel on the span's own top copper would collapse `Layer` and `LandingLayer` onto one key and make
+R-L4d-10's distinction *unobservable*, which is precisely the failure `ViaShape`'s doc comment warns
+about. So the reader mints one synthetic source layer named `Drill` and lets it go through ordinary
+reconciliation like every other source layer — where it matches the shipped PCB starter technology's own
+drill layer by name with zero authoring (the import summary prints `Drill→Drill (name)`).
+
+Gate 9 proves the orientation the way §12 demands, **by exporting and comparing rather than reading the
+two fields back**: the imported board cell is written to GDSII and the exported geometry's own extent is
+measured per layer. The barrel layer must carry geometry and the pad layer's must be WIDER (0.4 mm drill
+against a 0.8 mm pad). Reading the fields back would only re-state whatever the reader wrote.
+
+### Stackup absent, and what an imported board still needs
+
+A 20171130-epoch board carries no stackup section at all. The geometry imports, the technology's stackup
+stays **empty**, and one message says so and names what is missing — including the one substrate fact
+such a file DOES carry (`(general (thickness 1.55))`). **No substrate is fabricated**, because an
+invented one is worse than none: nothing downstream would ever question it and it would be simulated.
+
+When a stackup IS present, `PcbImport` returns it and `WorkspaceViewModel.ApplyBoardImportToTechnology`
+installs it — together with the layers reconciliation added — as a **live (unsaved) override** through
+the same `TechnologyCache.SetLive` seam a cross-technology paste already uses. Live rather than written,
+deliberately: a `.ctech` is a process file possibly shared by every cell in the workspace, and rewriting
+it as a side effect of opening a board is not what the user asked for. An existing stackup is never
+replaced — what was recovered is reported so the user can compare. (`GdsiiImport`/`DxfImport` return
+`LayersToAdd` that **no caller applies**; that pre-existing gap is left alone per §11, but it is real and
+this is where it is written down.)
+
+**What an imported board still needs before it can be simulated**, beyond the stackup: a
+ground-reference designation (see below), and its tracks converted from centreline `PathShape`s to
+filled regions — `PlanarExtractor` ignores `PathShape` outright by design ("offset to an outline is an
+L1e boolean concern"), so a board's tracks are invisible to the planar kernel as imported. That is not a
+gap in this phase — §5's table specifies `segment → PathShape` and a track genuinely IS a parametric
+trace — but it is the next thing a user hits.
+
+### Stated limitations
+
+- **Blind and buried vias** — the model carries one landing layer. Placed on the top layer of their
+  span, reported by count **naming where they were put** (gate 9's second test).
+- **Oval drills and drill offsets** — not expressible. Imported at the larger diameter / at the pad
+  centre, reported by count saying so. Never silently rounded.
+- **`BoundaryCondition`** (the stackup's Top/Bottom open-or-ground) has no counterpart in the format.
+  Left at the technology's own defaults.
+- **Conductivity and `Mur`** are not carried by the format. Defaulted to copper (5.8e7 S/m) and 1.0, and
+  **not inferred from the `material` string** — that is a table of laminate trade names, out of scope,
+  and it would put third-party product names into this repo.
+- **`IsGroundReference`** is a fourth thing the format does not state, and it is the one that actually
+  blocks a run: with no ground-designated conductor the planar kernel has no ground plane. It is named
+  in the same note as the other three, which is R-L4d-8's "one honest paragraph" rule applied to a
+  quantity the brief did not list.
+- **Mask and paste apertures are not generated.** A pad's `layers` wildcard is expanded against the
+  file's own table (that is what it is for), but artwork is emitted on the COPPER layers only: a mask
+  aperture is the pad expanded by a margin this reader does not read, so copying the pad's own outline
+  onto `F.Mask` would invent artwork that is not on the board — the same class of error R-L4d-9 forbids
+  for a copper pour. Reported by count (247 on the measured board).
+- **Footprint text is skipped on purpose, and the reason is R-L4d-15.** An `fp_text` is the PLACEMENT's
+  reference designator and value, not the library part's artwork; importing it into the cell would bake
+  one placement's designator into the shared cell and mint a separate cell per placement — exactly the
+  400-copies-of-geometry outcome R-L4d-15 exists to prevent. Board-level `gr_text` imports normally.
+- **`LabelShape.Rotation` is still four-way**, so board text at a non-cardinal angle is snapped and
+  counted — the same limitation `GdsiiReader`'s TEXT path already carries.
+- One deliberate divergence from §5's table: an **unfilled circle** becomes a `PathShape` with a closed
+  two-arc circular centreline rather than a `CurveShape` annulus. A `Curve`'s `Holes` are by contract
+  flat vertex lists, so the table's spelling would have to FLATTEN the inner ring and would make the
+  unfilled circle the one outline in the table that is approximated. The unfilled rect and unfilled
+  polygon are both stroked paths; this keeps all three exact and the same kind of object.
+- **Skipped and degraded are reported under different headings.** `SkippedCounts` is "not imported at
+  all"; `DegradedCounts` is "imported, but not at full fidelity". One heading covering both forces a
+  sentence that says something FALSE about half of them — a keepout zone is not in the layout, an
+  outline whose fill flag the file never stated IS.
+
+### What a cropped region of an imported board costs to mesh and solve
+
+Measured end to end (import → crop → convert tracks to regions → ports → `EmRunService.Run` on the
+planar kernel, 1 GHz, shipping mesh settings), on the 20260206 board against the PCB starter technology
+carrying the board's own imported stackup:
+
+| cropped region | conductors | unknowns | outcome |
+|---|---|---|---|
+| one 45° track, 1505.7 × 1505.7 µm bbox | 1 | **12,796** | refused at the 5,000 ceiling, after **51 s** |
+| ±3 mm window, 2822 × 1623 µm of artwork | 2 | **12,628** | refused at setup, 0.04 s |
+| ±8 mm window, 7797 × 8938 µm of artwork | 7 | **67,811** | refused — 70,165 MB of dense matrix |
+
+**One number to size against: a SINGLE 2 mm length of real board track needs 12,796 unknowns, 2.6× the
+planar kernel's 5,000-unknown ceiling.** And the binding constraint is not frequency — the kernel's own
+refusal names it: the narrowest conductor run in the ±3 mm crop is 82.3 µm and forces a 20.6 µm pitch
+across the whole artwork, while the λ_g/20 cap is 7066 µm, **343× coarser**, so no mesh-frequency or
+cells-per-wavelength setting reduces the count. What drives the narrow end on a board is 45° routing
+against an axis-aligned tensor mesh, plus the slivers where segments meet.
+
+**The consequence for the next phase is that import is not the bottleneck and never was.** A cropped
+board region is not solvable today at anything past one straight track, and closing that is a mesher
+question (sliver suppression, non-axis-aligned or unstructured cells) or a solver question (matrix
+compression, which the refusal text notes is unbuilt) — not an interchange one.
+
+### A footprint-scoped writer: worth a brief, but narrower than it looks
+
+§13 asks for a recommendation on evidence. **Yes, worth one, and small** — the evidence is that this
+phase's reader already round-trips everything such a writer needs (every pad shape including `custom`
+primitives, drills, layer wildcards, and the pin list), and §1's whole objection to a board writer —
+that it means authoring board-setup and design-rule state circuitRF has no opinion about — does not
+apply at footprint scope, where a `.kicad_mod` is geometry plus pads and nothing invented.
+
+Two things the brief should size honestly, both learned here. First, **a footprint written from
+circuitRF artwork carries no pad NUMBERS unless the cell has `LayoutPin`s**, and only imported or
+PCell-generated cells do — a hand-drawn cell would export unnumbered pads, which is a footprint no board
+tool can connect. Second, **the back-side flip must be re-baked on the way out** (negate every local Y,
+rewrite every layer to its back-side counterpart) because that is how the format stores it, and a writer
+that emitted our own mirror transform instead would produce a footprint that flips twice.
+
+### The menu entry was greyed out forever, and no automated check could have seen it
+
+Caught by the owner clicking File → Import → Board on the day this landed. `ImportBoardCommand` was
+declared correctly, `CanImportBoard()` was correct, and both menus bound to it — but
+`OnCurrentWorkspacePathChanged` notifies each workspace-gated command by NAME, and the new one was not
+in the list. So `CanExecute` was evaluated once at construction, with no workspace open, and never
+again.
+
+Nothing existing could catch that: the XAML menu tests assert the entry EXISTS and the view model
+compiles either way. `FileMenuRestructureTests.EveryWorkspaceGatedCommand_IsRenotifiedWhenTheWorkspaceChanges`
+now closes the class rather than the instance — it scans the view model (comments stripped first, the H8
+lesson) for every `[RelayCommand(CanExecute = nameof(…))]` whose predicate body is
+`CurrentWorkspacePath is not null`, and fails naming any whose `NotifyCanExecuteChanged()` is absent
+from that handler. Verified by removing the line again and watching it fail with the command's name in
+the message, not merely by writing it.
+
+### Fixtures, and one naming caveat for the owner
+
+§10 asks for files this phase did not author. The eleven fixtures in `testdata/pcb-samples/` are
+hand-authored anyway, taking §10's own stated fallback, because **a redistributable real board could not
+be committed without also committing the component and library names printed all over it** — root
+`CLAUDE.md` §"Commercial Vendor References". The dialect knowledge they encode is not invented: every
+spelling in them was measured against the four real boards above, which were read in a scratch directory
+and never entered the repo.
+
+**One name could not be avoided and the owner should decide about it.** The originating tool is on the
+banned-vocabulary list, and this phase writes it nowhere — types are `Pcb*`, the menu entry is "Board",
+the prose says "the originating tool". But the FILE EXTENSION is `*.kicad_pcb`, and an importer that
+does not match it cannot open a file. It therefore appears in exactly three places, all load-bearing:
+the file-picker pattern and its tooltip in `WorkspaceViewModel`, the doc comment on
+`InterchangeMapping.PcbLayerName`, and the fixture filenames. The brief's own filename
+(`brief-L4d-kicad-pcb-import.md`, untracked) carries it too.
+
+## Phase L3d — COMPLETE: arbitrary-angle instances (2026-08-25)
+
+`LayoutInstance` placement stopped being a four-value enum and became a real angle
+(`brief-L3d-arbitrary-angle-instances.md`). Non-Manhattan GEOMETRY had been supported since L1
+(`AngleMode.AnyAngle`, and `PlanarCellRegion` measures its own non-Manhattan deviation); only
+PLACEMENT was quantized. Nothing in `src/Core`, `src/Engine` or `RfCore` was touched.
+
+**The cardinal-identity proof is the load-bearing test, and it needed one non-obvious thing to be
+true.** `Math.Cos(Math.PI / 2)` is 6.123e-17, not 0 — so a naive generalization would have shifted
+every existing cardinal placement in every existing design by a fraction of a DBU. `LayoutAngle.CosSin`
+returns exact literals at 0/90/180/270 for exactly that reason, and `L3dArbitraryAngleTests` pins the
+four cardinal results of `TransformPoint` and `PathSpaceLinearCoefficients` against the pre-L3d table
+**transcribed by hand**, never captured from the implementation. Every generalized formula reduces to
+that table term for term; the composition rule (`thetaC = mirrorOuter ? thetaO - thetaI : thetaO + thetaI`)
+is the pre-existing derivation with `e^(i·theta)` in place of `i^Rot`. The "dihedral group of order 8"
+paragraph in `LayoutInstanceTransform` was a CONSEQUENCE of the enum, never a requirement of the math,
+and has been rewritten rather than left to mislead.
+
+**What a non-cardinal flatten costs, and why the walk now throws.** `RectShape`, `RoundedRectShape` and
+`BitmapShape` are axis-aligned BY TYPE. Walking a rect's two corners through 37 degrees and
+re-normalizing yields the axis-aligned BOUNDING BOX of the rotated rect — right layer, roughly right
+place, no error anywhere. `LayoutCoordinateTransform.RotatesAxes` now makes that unrepresentable rather
+than merely avoided: `LayoutCoordinateWalk.Transform` REFUSES those three under a rotating transform,
+and `LayoutRotationPromotion` supplies the carrier (Rect → Polygon, RoundedRect → Curve of four lines
+and four quarter-arcs, sharing `LayoutFlattener.FlattenRoundedRect`'s traversal and corner clamp so the
+two describe the same outline). `Circle` and `Via` need no promotion — a circle is rotation-invariant and
+a via pad is drawn as a circle. A bitmap has no promotion at all and is skipped and counted. Every
+axis-preserving caller (DBU resolution change, paste rescale, Scale, and a cardinal flatten) is
+untouched: `RotatesAxes` defaults false.
+
+**Both interchange codecs got SMALLER.** GDSII `ANGLE` and DXF `INSERT` group 50 always carried an
+arbitrary angle; it was our model that could not, so both codecs had a `SnapToRotation` helper and a
+`snappedDeltaDegrees` out-parameter whose whole job was reporting what we discarded. Both are gone. Two
+existing tests asserted that snapping and were **rewritten to the new contract rather than deleted** —
+"a non-cardinal third-party angle arrives intact" is precisely the property that used to be violated.
+`LabelShape.Rotation` is still genuinely four-way, so `GdsiiReader`'s TEXT path kept its own snap and its
+own diagnostic; that limitation is real and stays visible.
+
+**Measured: flatten and instance rendering differ by sub-DBU rounding, and it is NOT an L3d effect.**
+Gate 4 could not be byte equality, and the reason is worth recording. Instance rendering draws a cached
+cell-local path under a matrix; a flattened shape has already been rounded to integer DBU. On the L3d
+fixture (640,000 bytes): **0 deg differs by ZERO bytes**, 90 deg 0.001%, 30 deg 0.009%, 137.5 deg
+0.076%, **180 deg 0.125%**, 212.25 deg mirrored 0.221%. The worst cases are cardinal or mirrored ones
+that predate this phase — so the test asserts a measured 0.5%/64-channel band with the cardinal rows
+included as the control, plus `TheOracleCanFail` (a flatten from a different angle must blow through
+both bounds) and an exact hand-computed four-corner check that does not involve a renderer at all. A
+rect collapsing to its bounding box is a 3x area change — tens of thousands of pixels — so the band has
+real power.
+
+**Two counter-test traps, both caught by the test failing rather than by inspection.** The
+`PathsConstructed` comparison first read 5 paths at 90 deg and **0** at 30 deg: the compiled
+instance-geometry cache is keyed by cell and survives between renders, so the second angle was measured
+warm. Each angle now builds its own leaf cell and both are measured cold (5 paths for 40 placements,
+either way — O(sub-cell shapes), not O(placements)). Separately the first viewport held only 4 of the 40
+placements, so the assertion had been passing on a quarter of the fixture.
+
+**R-L3d-5, and why it is a scan test.** `Rot` and `RotDeg` are two serialized fields with one meaning —
+the same shape as the three version-number copies that once drifted (`VersionSingleSourceTests`). Exactly
+one accessor, `LayoutInstance.RotationDegrees`, reconciles them; a comment-stripped source scan over
+`src/**/*.cs` allows `LayoutModel.cs` and nothing else. Persistence stayed additive: a cardinal placement
+still writes `"Rot": "R90"` with no `RotDeg` key, so every pre-L3d `.clay` loads and re-saves
+byte-identically.
+
+**Three things deliberately NOT done, each with its reason:**
+- **Port direction was not widened.** `LayoutPortDirection.TransformDirection` still returns a
+  `LayoutRotation`. What changed is that it composes in REAL angles and rounds once at the end, where
+  `FromPinOutward` used to collapse the pin's own (already `double`) `OutwardDeg` to four-way BEFORE the
+  instance rotation was applied — so a pin at 10 deg inside an instance at 80 deg used to land on R0 and
+  now lands on R90, which is the correct answer. **The residual is not reported**: this is a pure
+  geometric query with no Messages sink, and threading a diagnostics channel through hit-test to carry
+  it would cost more than it tells anyone. Whether an EM port on a non-Manhattan conductor is meaningful
+  is an L8/L9 extraction question.
+- **A rotated AREF's lattice was not "fixed"** (R-L3d-9). `GdsiiWriter` still writes the three reference
+  points literally in our own unrotated-pitch convention. Our round-trip is exact — the new end-to-end
+  test carries 30/137.5/212.25 deg through the real writer and reader — but a third-party reader that
+  rotates the lattice by ANGLE will now disagree VISIBLY where at cardinal angles the same disagreement
+  was invisible. **Still to do: open a 30-degree 3x3 array in an independent viewer and record what it
+  shows.**
+- **No rotate-drag handle** on the selection box. The properties panel takes a free angle in degrees with
+  the four cardinals on a presets flyout (routed through the same commit path a typed angle takes), and
+  R still ADVANCES by 90 deg rather than snapping — rotating a 30 deg placement three times gives 300 deg,
+  because a snapping R key would make a non-cardinal placement un-nudgeable.
+
+**One pre-existing inconsistency found and left alone, on purpose.** A flatten at a CARDINAL angle has
+never advanced a label's own `Rotation`, and still does not; only a non-cardinal flatten adds the
+placement angle and rounds (reporting the count). This is invisible today because **an instance's
+sub-cell labels and bitmaps are not rendered at all** — a documented L3a gap (`LayoutRenderer.Instances`
+skips both when compiling instance geometry) — so there is no on-screen mismatch either way. Changing
+the cardinal case would have altered existing flatten output for no observable benefit inside a phase
+whose whole point is that cardinal behaviour does not move.
+
+Gate: `dotnet test tests/Ui.Tests` **8,910 passed / 0 failed**; `tests/Firewall.Tests` 6/6;
+`dotnet build` clean at the root with `TreatWarningsAsErrors`. 56 of those tests are L3d's own
+(`L3dArbitraryAngleTests`, `L3dArbitraryAngleFlattenAndRenderTests`).
+
+
 ## File ▸ Close Window, and why the dynamic Close header had to go (2026-08-25)
 
 **Owner request:** a *Close Window* item above *Close Workspace*, on Ctrl+W / ⌘+W, working on macOS,

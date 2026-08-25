@@ -1,0 +1,18 @@
+(kicad_pcb
+  (version 20171130)
+  (generator "hand-authored fixture for circuitRF L4d")
+  (layers
+    (0 top_layer signal)
+    (31 bottom_layer signal)
+    (37 F.SilkS user)
+    (36 B.SilkS user)
+    (44 Edge.Cuts user)
+    (39 F.Mask user)
+    (38 B.Mask user)
+  )
+  (general (thickness 1.55))
+  (setup (via_drill 0.4))
+  (net 0 "")
+  (net 1 VDD)
+  (segment (start 1 1) (end 5 1) (width 0.25) (layer top_layer) (net 1))
+)

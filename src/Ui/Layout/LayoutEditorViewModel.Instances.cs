@@ -334,8 +334,11 @@ public sealed partial class LayoutEditorViewModel
         Execute(new ReplaceInstanceCommand(Model, index, before, after));
     }
 
-    public void SetSelectedInstanceRotation(LayoutRotation rot) =>
-        ReplaceSelectedInstance(src => { var c = LayoutGeometry.Clone(src); c.Rot = rot; return c; });
+    /// <summary>Sets the selected instance's placement angle in degrees (R-L3d-10). Any angle — the
+    /// properties panel's four cardinal presets are a convenience over the same entry point, not a
+    /// separate one.</summary>
+    public void SetSelectedInstanceRotationDegrees(double degrees) =>
+        ReplaceSelectedInstance(src => { var c = LayoutGeometry.Clone(src); c.RotationDegrees = degrees; return c; });
 
     public void SetSelectedInstanceMirrorX(bool mirror) =>
         ReplaceSelectedInstance(src => { var c = LayoutGeometry.Clone(src); c.MirrorX = mirror; return c; });

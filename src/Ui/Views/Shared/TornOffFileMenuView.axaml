@@ -140,6 +140,9 @@
                 <MenuItem Header="_DXF…"
                           Command="{Binding ImportDxfLibraryCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="_Board…"
+                          Command="{Binding ImportBoardCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
                 <MenuItem Header="_PDK…"
                           Command="{Binding ImportPdkCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
@@ -157,6 +160,9 @@
                           ToolTip.Tip="Requires an active layout document."/>
                 <MenuItem Header="_Gerber"
                           Command="{Binding ExportGerberCommand}"
+                          ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="_Board…"
+                          Command="{Binding ExportBoardCommand}"
                           ToolTip.Tip="Requires an active layout document."/>
             </MenuItem>
             <MenuItem Header="_Manage PDKs…"

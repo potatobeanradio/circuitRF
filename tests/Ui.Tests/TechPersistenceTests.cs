@@ -189,13 +189,85 @@ public class TechPersistenceTests
     public void HandStrippedCtech_MissingInterchangeField_StillLoads()
     {
         // A pre-L4a .ctech never had "Interchange" on a LayerDef at all — confirms the field is
-        // purely additive and does not require a FormatVersion bump.
-        var tech = StarterTechnologies.Pcb2Layer();
+        // purely additive and does not require a FormatVersion bump. Built here rather than taken from
+        // a starter technology: the shipped PCB starters DO declare one now (their PcbLayerName aliases
+        // are what land an imported board's copper on their own copper), and this gate is about the
+        // field's absence, not about which technology happens to leave it unset.
+        var tech = new Technology
+        {
+            Name = "T",
+            Layers = [new LayerDef { Key = new LayerKey(1, 0), Name = "Metal1" }],
+        };
         var json = TechPersistence.Serialize(tech);
         Assert.DoesNotContain("\"Interchange\"", json); // no layer has one set — omitted by WhenWritingNull
 
         var restored = TechPersistence.Deserialize(json);
         Assert.All(restored.Layers, l => Assert.Null(l.Interchange));
+    }
+
+    [Fact]
+    public void PcbStarter_DeclaresBoardLayerAliases_AndTheyRoundTrip()
+    {
+        // R-L4d-4: these aliases are the entire reason Import Board lands a board's F.Cu on this
+        // technology's own Top Copper instead of minting a synthetic layer beside it. A missing or
+        // misspelt one fails SILENTLY — the import still succeeds, it just quietly doubles the layer
+        // table and puts the copper somewhere nothing else in the technology refers to.
+        var restored = TechPersistence.Deserialize(TechPersistence.Serialize(StarterTechnologies.Pcb2Layer()));
+
+        string? AliasOf(string layerName) =>
+            restored.Layers.First(l => l.Name == layerName).Interchange?.PcbLayerName;
+
+        Assert.Equal("F.Cu",      AliasOf("Top Copper"));
+        Assert.Equal("B.Cu",      AliasOf("Bottom Copper"));
+        Assert.Equal("F.Mask",    AliasOf("Soldermask Top"));
+        Assert.Equal("B.Mask",    AliasOf("Soldermask Bottom"));
+        Assert.Equal("F.SilkS",   AliasOf("Silk Top"));
+        Assert.Equal("B.SilkS",   AliasOf("Silk Bottom"));
+        Assert.Equal("Edge.Cuts", AliasOf("Outline"));
+
+        // Drill deliberately has none — the reader's own synthetic drill layer is literally called
+        // "Drill", so it already matches this one by name with nothing declared.
+        Assert.Null(AliasOf("Drill"));
+
+        // Declaring a board alias must not disturb the other interchange fields, which stay unstated.
+        var topCopper = restored.Layers.First(l => l.Name == "Top Copper").Interchange!;
+        Assert.Null(topCopper.GdsiiLayer);
+        Assert.Null(topCopper.DxfLayerName);
+        Assert.Null(topCopper.GerberSuffix);
+    }
+
+    [Fact]
+    public void ShippedPcbTechnologyResources_DeclareTheSameBoardLayerAliasesAsTheCodeStarter()
+    {
+        // Two copies of one table: the .ctech files under resources/technologies are what a NEW
+        // workspace actually copies in, while StarterTechnologies is the in-code fallback. They drifting
+        // apart is invisible until someone imports a board into a workspace made the other way.
+        var expected = StarterTechnologies.Pcb2Layer().Layers
+            .Where(l => l.Interchange?.PcbLayerName is not null)
+            .ToDictionary(l => l.Name, l => l.Interchange!.PcbLayerName!);
+
+        var dir = Path.Combine(RepoRoot(), "src", "Ui", "resources", "technologies");
+        var files = Directory.GetFiles(dir, "pcb-*.ctech");
+        Assert.NotEmpty(files);
+
+        foreach (var file in files)
+        {
+            var tech = TechPersistence.Deserialize(File.ReadAllText(file));
+            foreach (var (layerName, alias) in expected)
+            {
+                var layer = tech.Layers.FirstOrDefault(l => l.Name == layerName);
+                Assert.True(layer is not null, $"{Path.GetFileName(file)} has no layer \"{layerName}\"");
+                Assert.Equal(alias, layer!.Interchange?.PcbLayerName);
+            }
+        }
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "circuitrf.slnx")))
+            dir = Path.GetDirectoryName(dir);
+        return dir ?? throw new InvalidOperationException("repo root not found");
     }
 
     // ── R-via-2/R-via-3 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): fill model, wall

@@ -109,6 +109,67 @@ public class LayoutLabelOwnerFollowUpFixesTests : IDisposable
         Assert.Null(LayoutRenderer.MeasureLabelWorldBbox(label));
     }
 
+    // ── HAlign/VAlign: which point of the text box X/Y actually names (owner report, 2026-08-25) ─────
+
+    /// <summary>A label that states no alignment must measure EXACTLY as it always did — right of the
+    /// anchor and above it. Every <c>.clay</c> written before those fields existed is this case.</summary>
+    [Fact]
+    public void LabelWithNoAlignment_KeepsTheHistoricalLeftOfBaselineAnchor()
+    {
+        var label = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "AB", Height = 20_000 };
+        var bb = LayoutRenderer.MeasureLabelWorldBbox(label)!.Value;
+
+        // "At the anchor", not "right of it": a glyph's left side bearing can ink a few hundred DBU
+        // left of the pen origin at this height, which is what the tolerance is for.
+        long width = bb.MaxX - bb.MinX;
+        long height = bb.MaxY - bb.MinY;
+        Assert.True(Math.Abs(bb.MinX) < width / 10, $"text should start at the anchor, got MinX={bb.MinX} of width {width}");
+        Assert.True(Math.Abs(bb.MinY) < height / 10, $"text should sit on the baseline, got MinY={bb.MinY} of height {height}");
+    }
+
+    [Fact]
+    public void HAlign_MovesTheTextRelativeToTheAnchor_LeftCentreRight()
+    {
+        Bbox Measure(LabelHAlign h) => LayoutRenderer.MeasureLabelWorldBbox(
+            new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "ABCD", Height = 20_000, HAlign = h })!.Value;
+
+        var left = Measure(LabelHAlign.Left);
+        var centre = Measure(LabelHAlign.Center);
+        var right = Measure(LabelHAlign.Right);
+        long width = left.MaxX - left.MinX;
+
+        // Each is a whole text-width apart from the next, in order — the property that actually
+        // distinguishes the three aligners, and one that side bearings cannot blur.
+        Assert.True(left.MinX > centre.MinX && centre.MinX > right.MinX, "Left → Centre → Right must move the text steadily leftward");
+        Assert.True(left.MaxX > width / 2, "Left: the text lies to the RIGHT of the anchor");
+        Assert.True(right.MinX < -width / 2, "Right: the text lies to the LEFT of the anchor");
+        Assert.True(centre.MinX < 0 && centre.MaxX > 0, "Center: straddles the anchor");
+
+        // Same string, same width, three different placements — not three different measurements.
+        Assert.Equal(left.MaxX - left.MinX, right.MaxX - right.MinX);
+        Assert.Equal(left.MaxX - left.MinX, centre.MaxX - centre.MinX);
+    }
+
+    /// <summary>
+    /// <c>Top</c> hangs the text BELOW the anchor and <c>Bottom</c> puts it above — the direction that
+    /// matters, because getting it backwards is exactly how an imported table's every row lands one
+    /// line out of place while still looking like plausible text.
+    /// </summary>
+    [Fact]
+    public void VAlign_PutsTheTextOnTheCorrectSideOfTheAnchor()
+    {
+        Bbox Measure(LabelVAlign v) => LayoutRenderer.MeasureLabelWorldBbox(
+            new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "ABCD", Height = 20_000, VAlign = v })!.Value;
+
+        var top = Measure(LabelVAlign.Top);
+        var bottom = Measure(LabelVAlign.Bottom);
+        var middle = Measure(LabelVAlign.Middle);
+
+        Assert.True(top.MaxY <= 0, $"Top: the anchor is the text's own top edge, got MaxY={top.MaxY}");
+        Assert.True(bottom.MinY >= 0, $"Bottom: the anchor is its bottom edge, got MinY={bottom.MinY}");
+        Assert.True(middle.MinY < 0 && middle.MaxY > 0, "Middle: straddles the anchor");
+    }
+
     [Fact]
     public void SelectionOutline_PixelOracle_R90Label_SurroundsGlyphPixels_NotTheOldWrongQuadrant()
     {
@@ -353,5 +414,121 @@ public class LayoutLabelOwnerFollowUpFixesTests : IDisposable
         Assert.True(props.ShowLabel);
         Assert.False(string.IsNullOrEmpty(props.LabelXText));
         Assert.False(string.IsNullOrEmpty(props.LabelYText));
+    }
+
+    // ── The pick box IS the highlight box (owner report, 2026-08-25) ─────────────────────────────
+
+    /// <summary>
+    /// <b>One measurement, or they disagree.</b> The selection highlight comes from
+    /// <see cref="LayoutRenderer.MeasureLabelWorldBbox"/> (real glyph metrics); the pick region used to
+    /// come from a separate character-count estimate. Two derivations of one region can only agree by
+    /// coincidence — <c>W</c> and <c>i</c> are the same width to an estimate that counts characters —
+    /// so this pins that hit-testing now reads the SAME box the highlight draws.
+    /// </summary>
+    [Theory]
+    [InlineData("W", 0.0)]
+    [InlineData("iiiii", 0.0)]
+    [InlineData("Wide Text", 45.0)]
+    [InlineData("Wide Text", 90.0)]
+    public void LabelPickRegion_IsExactlyTheHighlightBox(string text, double degrees)
+    {
+        var label = new LabelShape { Layer = Layer1, X = 100_000, Y = 200_000, Text = text, Height = 20_000 };
+        label.RotationDegrees = degrees;
+
+        var highlight = LayoutRenderer.MeasureLabelWorldBbox(label)!.Value;
+
+        // Every corner of the highlight box must hit, and a point a comfortable margin outside must not.
+        var model = FreshModel();
+        model.Shapes.Add(label);
+        long inset = Math.Max(1, (highlight.MaxX - highlight.MinX) / 20);
+        foreach (var (px, py) in new[]
+                 {
+                     (highlight.MinX + inset, highlight.MinY + inset),
+                     (highlight.MaxX - inset, highlight.MaxY - inset),
+                 })
+            Assert.NotEmpty(LayoutHitTest.HitStack(model, null, px, py, 0));
+
+        long far = (highlight.MaxX - highlight.MinX) + (highlight.MaxY - highlight.MinY);
+        Assert.Empty(LayoutHitTest.HitStack(model, null, highlight.MaxX + far, highlight.MaxY + far, 0));
+    }
+
+    /// <summary>The estimate the pick region used to use is width-blind; the box it now uses is not.
+    /// This is the property that makes "one measurement" observable rather than merely asserted.</summary>
+    [Fact]
+    public void LabelPickRegion_ReflectsRealGlyphWidths_NotACharacterCount()
+    {
+        Bbox Pick(string text)
+        {
+            var model = FreshModel();
+            var label = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = text, Height = 20_000 };
+            model.Shapes.Add(label);
+            return LayoutRenderer.MeasureLabelWorldBbox(label)!.Value;
+        }
+
+        long wide = Pick("WWW").MaxX - Pick("WWW").MinX;
+        long narrow = Pick("iii").MaxX - Pick("iii").MinX;
+        Assert.True(wide > narrow * 2, $"'WWW' ({wide}) should be much wider than 'iii' ({narrow})");
+    }
+
+    // ── Arbitrary text angle (owner report, 2026-08-25) ──────────────────────────────────────────
+
+    /// <summary>The four cardinals must keep serializing exactly as they always did — that is what
+    /// makes the widening additive.</summary>
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(90.0)]
+    [InlineData(180.0)]
+    [InlineData(270.0)]
+    public void CardinalLabelAngle_WritesNoRotDegKey(double degrees)
+    {
+        var view = new LayoutView { DbuPerMicron = 1000 };
+        var label = new LabelShape { Layer = Layer1, Text = "T", Height = 1000 };
+        label.RotationDegrees = degrees;
+        view.Shapes.Add(label);
+
+        var json = LayoutPersistence.Serialize(view);
+        Assert.DoesNotContain("RotDeg", json);
+        Assert.Equal(degrees, ((LabelShape)LayoutPersistence.Deserialize(json).Shapes[0]).RotationDegrees, 6);
+    }
+
+    [Fact]
+    public void NonCardinalLabelAngle_RoundTrips_AndDegradesToTheNearestCardinal()
+    {
+        var view = new LayoutView { DbuPerMicron = 1000 };
+        var label = new LabelShape { Layer = Layer1, Text = "T", Height = 1000 };
+        label.RotationDegrees = 45.0;
+        view.Shapes.Add(label);
+
+        // The enum companion holds a SANE value rather than zero, for anything that only knows about it.
+        Assert.True(label.Rotation is LayoutRotation.R0 or LayoutRotation.R90);
+
+        var json = LayoutPersistence.Serialize(view);
+        Assert.Contains("RotDeg", json);
+        var restored = (LabelShape)LayoutPersistence.Deserialize(json).Shapes[0];
+        Assert.Equal(45.0, restored.RotationDegrees, 6);
+        Assert.Equal(json, LayoutPersistence.Serialize(LayoutPersistence.Deserialize(json)));
+    }
+
+    /// <summary>A non-cardinal label's bbox must actually TRACK the angle — a stale four-way table
+    /// would give 0 and 45 the same answer, which is exactly how "the label does not look right"
+    /// survives a screenshot.</summary>
+    [Fact]
+    public void LabelBbox_TracksANonCardinalAngle()
+    {
+        Bbox At(double deg)
+        {
+            var l = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "ABCD", Height = 20_000 };
+            l.RotationDegrees = deg;
+            return LayoutRenderer.MeasureLabelWorldBbox(l)!.Value;
+        }
+
+        var flat = At(0);
+        var tilted = At(45);
+        Assert.NotEqual(flat, tilted);
+        // At 45 degrees a wide, short box becomes nearly square.
+        double flatAspect = (double)(flat.MaxX - flat.MinX) / (flat.MaxY - flat.MinY);
+        double tiltedAspect = (double)(tilted.MaxX - tilted.MinX) / (tilted.MaxY - tilted.MinY);
+        Assert.True(flatAspect > 2.0, $"flat aspect {flatAspect}");
+        Assert.True(tiltedAspect < flatAspect / 1.5, $"tilted aspect {tiltedAspect} vs flat {flatAspect}");
     }
 }

@@ -44,6 +44,13 @@ public partial class LayoutShapePropertiesView : UserControl
         else if (e.Key == Key.Escape) Vm?.RevertField(key);
     }
 
+    /// <summary>A cardinal-angle preset (R-L3d-10). Routes through the SAME commit path a typed angle
+    /// takes, so there is one place a placement angle is set and not two that can disagree.</summary>
+    private void OnInstanceRotationPresetClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string degrees }) Vm?.CommitInstanceRotationText(degrees);
+    }
+
     // ── Bitmap: Browse… (UI firewall — the file picker lives in code-behind, never the VM) ───────
 
     private async void OnBitmapBrowseClick(object? sender, RoutedEventArgs e)

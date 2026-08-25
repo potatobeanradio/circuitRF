@@ -157,7 +157,7 @@ public static class DxfImport
                 view.Instances.Add(new LayoutInstance
                 {
                     CellRef = cellRef,
-                    X = inst.X, Y = inst.Y, Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+                    X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
                     Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY,
                 });
             }
@@ -271,7 +271,7 @@ public static class DxfImport
     {
         CellRef = inst.CellRef,
         X = Scale(inst.X, ratio), Y = Scale(inst.Y, ratio),
-        Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+        RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
         Rows = inst.Rows, Cols = inst.Cols,
         PitchX = Scale(inst.PitchX, ratio), PitchY = Scale(inst.PitchY, ratio),
     };

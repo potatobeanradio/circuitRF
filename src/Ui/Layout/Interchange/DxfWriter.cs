@@ -1157,7 +1157,7 @@ public static class DxfWriter
         w.WriteCoord(20, label.Y, dbuToDrawingUnit);
         w.WriteDouble(40, label.Height * dbuToDrawingUnit);
         w.WriteEscapedString(1, label.Text);
-        w.WriteDouble(50, DegreesOf(label.Rotation));
+        w.WriteDouble(50, label.RotationDegrees);
         w.WriteInt(70, label.IsPort ? 1 : 0); // not a real DXF TEXT field — our own port marker, mirrors
                                               // GdsiiWriter's TEXTTYPE convention for the same purpose.
         w.WriteString(100, "AcDbText"); // TEXT's own spec quirk: the AcDbText subclass marker repeats
@@ -1180,7 +1180,7 @@ public static class DxfWriter
         DxfGroupWriter w, LayoutInstance inst, IReadOnlyDictionary<string, string> blockNames,
         double dbuToDrawingUnit, DxfHandles handles, string ownerHandle)
     {
-        var (xscale, yscale, rotationDeg) = DxfTransformCodec.ToDxf(inst.MirrorX, inst.Rot, inst.Mag);
+        var (xscale, yscale, rotationDeg) = DxfTransformCodec.ToDxf(inst.MirrorX, inst.RotationDegrees, inst.Mag);
         bool isArray = inst.Rows > 1 || inst.Cols > 1;
         string targetName = blockNames.TryGetValue(inst.CellRef, out var mangled) ? mangled : inst.CellRef;
 

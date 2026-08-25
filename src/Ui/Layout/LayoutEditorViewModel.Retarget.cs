@@ -103,8 +103,24 @@ public sealed partial class LayoutEditorViewModel
             var own = OwnAncestorWorkspaceRootDir;
             var current = CurrentWorkspaceRootDirProvider?.Invoke();
             if (own is null) return true; // a loose file — foreign to any/no currently-open workspace
-            return !string.Equals(own, current, StringComparison.OrdinalIgnoreCase);
+            return !string.Equals(NormalizeDir(own), NormalizeDir(current), StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    /// <summary>
+    /// The two sides of the <see cref="IsForeign"/> comparison reach it by different routes — one from
+    /// an ancestor-<c>.cws</c> walk, the other straight off whatever string opened the workspace (a file
+    /// picker, a restored session, a command line) — so they can name the same directory in shapes that
+    /// are not string-equal: a trailing separator, a <c>.</c> segment, a differently-cased drive letter.
+    /// Comparing raw strings makes an ordinary document read as foreign, which is not a subtle failure:
+    /// it puts an amber "this belongs to another workspace" band across a document that belongs to the
+    /// one that is open. Null passes through, since null and non-null are genuinely different answers.
+    /// </summary>
+    private static string? NormalizeDir(string? dir)
+    {
+        if (string.IsNullOrEmpty(dir)) return dir;
+        try { return Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir)); }
+        catch { return dir; }
     }
 
     /// <summary>The source workspace's name (its folder name) for marking (§4), or null when this

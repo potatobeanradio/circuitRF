@@ -303,6 +303,29 @@ public sealed partial class TechEditorViewModel : ObservableObject
         UndoRedo.Execute(new TechSnapshotCommand(this, beforeJson, afterJson, description));
     }
 
+    /// <summary>
+    /// Replaces <see cref="Working"/> with <paramref name="tech"/> as a single UNDOABLE, DIRTYING edit
+    /// — the seam for a change that was decided outside this editor and must still be visible in it and
+    /// savable from it.
+    ///
+    /// <para>Import Board is the case that needed it. It recovers a board's own layers and stackup and
+    /// installs them as a live (unsaved) <c>TechnologyCache</c> override, which every open layout
+    /// resolves against immediately — but the <c>.ctech</c> EDITOR read the file from disk, so the
+    /// recovered layers were invisible in the one place the import's own message told the user to go
+    /// and save them from. Routing through the undo stack (rather than assigning <see cref="Working"/>)
+    /// is what makes the editor show them, mark itself dirty, save them, and undo them.</para>
+    ///
+    /// <para>No-op when the content already matches, so re-applying the same override costs nothing and
+    /// cannot dirty a clean editor.</para>
+    /// </summary>
+    internal void ReplaceWorkingAsEdit(Technology tech, string description)
+    {
+        string beforeJson = SnapshotJson();
+        string afterJson  = TechPersistence.Serialize(tech);
+        if (afterJson == beforeJson) return;
+        UndoRedo.Execute(new TechSnapshotCommand(this, beforeJson, afterJson, description));
+    }
+
     /// <summary>Replaces <see cref="Working"/> wholesale and re-projects every row collection.
     /// Called by <see cref="TechSnapshotCommand"/> Execute/Undo — never call directly. This is the
     /// ONE choke point for both a fresh commit (<see cref="CommitEdit"/> pushes a

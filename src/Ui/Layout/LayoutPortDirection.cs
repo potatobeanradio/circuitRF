@@ -650,7 +650,10 @@ public static class LayoutPortDirection
             bestSq = d2;
             best = new PinFacts(wx, wy,
                                 ScaleWidth(pin.WidthDbu, inst.Mag),
-                                TransformDirection(FromPinOutward(pin.OutwardDeg), inst));
+                                // The pin's own outward angle, UNSNAPPED — TransformDirection composes
+                                // in real angles and rounds once at the end (R-L3d-12). Inward is
+                                // outward + 180, the same relation FromPinOutward states.
+                                TransformDirection(pin.OutwardDeg + 180.0, inst));
         }
 
         // A pin that states no width is a connection point with nothing to say about the metal's
@@ -665,26 +668,27 @@ public static class LayoutPortDirection
     }
 
     /// <summary>
-    /// Carries a cell-local direction into the parent's frame. Mirror-then-rotate, the SAME ordering
-    /// (and the same rotation table) as <see cref="LayoutInstanceTransform.TransformPoint"/> — a
-    /// direction that composed differently from the position it belongs to would put the arrow and
-    /// the plane bar on different sides of the same pin.
+    /// Carries a cell-local direction, as a REAL angle, into the parent's frame. Mirror-then-rotate,
+    /// the SAME ordering as <see cref="LayoutInstanceTransform.TransformPoint"/> — a direction that
+    /// composed differently from the position it belongs to would put the arrow and the plane bar on
+    /// different sides of the same pin. Mirroring negates local X, which reflects a direction about
+    /// the Y axis: <c>deg -> 180 - deg</c>.
+    ///
+    /// <para><b>R-L3d-12: this is the boundary that snaps, and it snaps ONCE.</b> A
+    /// <see cref="PinFacts.Direction"/> is a <see cref="LayoutRotation"/> because port extraction
+    /// downstream is side-based, and L3d deliberately did not widen that — whether an EM port on a
+    /// non-Manhattan conductor is meaningful is an L8/L9 question about extraction, not a placement
+    /// question. What changed here is that the composition now happens in real angles and rounds at
+    /// the end, where before <see cref="FromPinOutward"/> collapsed the pin's own (already
+    /// double-valued) <see cref="LayoutPin.OutwardDeg"/> to four-way BEFORE the instance rotation was
+    /// applied — so a pin at 10 deg inside an instance at 80 deg used to land on R0 and now lands on
+    /// R90, which is the correct answer. The residual is not reported: this is a pure geometric query
+    /// with no Messages sink to report into, and inventing one would thread a diagnostics channel
+    /// through hit-test. The limitation is stated here and in the L3d completion note.</para>
     /// </summary>
-    private static LayoutRotation TransformDirection(LayoutRotation local, LayoutInstance inst)
+    private static LayoutRotation TransformDirection(double localInwardDeg, LayoutInstance inst)
     {
-        var (ux, uy) = UnitVector(local);
-        if (inst.MirrorX) ux = -ux;
-
-        var (rx, ry) = inst.Rot switch
-        {
-            LayoutRotation.R90  => (-uy, ux),
-            LayoutRotation.R180 => (-ux, -uy),
-            LayoutRotation.R270 => (uy, -ux),
-            _                   => (ux, uy),
-        };
-
-        if (rx > 0) return LayoutRotation.R0;
-        if (rx < 0) return LayoutRotation.R180;
-        return ry >= 0 ? LayoutRotation.R90 : LayoutRotation.R270;
+        double deg = inst.MirrorX ? 180.0 - localInwardDeg : localInwardDeg;
+        return LayoutAngle.NearestCardinal(deg + inst.RotationDegrees);
     }
 }

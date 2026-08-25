@@ -48,9 +48,11 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     public event Action? ExportGdsiiRequested;
     public event Action? ExportDxfRequested;
     public event Action? ExportGerberRequested;
+    public event Action? ExportBoardRequested;
     public void RequestExportGdsii() => ExportGdsiiRequested?.Invoke();
     public void RequestExportDxf() => ExportDxfRequested?.Invoke();
     public void RequestExportGerber() => ExportGerberRequested?.Invoke();
+    public void RequestExportBoard() => ExportBoardRequested?.Invoke();
 
     // ── Zoom To Fit request (View->Zoom to Fit) — same shape as the export requests above: this VM
     // layer has no canvas reference, so it raises the request for the already-subscribed view to run.
@@ -245,6 +247,14 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
         OnPropertyChanged(nameof(CanPopOut));
         OnPropertyChanged(nameof(NavFrames));
         OnPropertyChanged(nameof(Breadcrumbs));
+        // The foreign-workspace band reads these off the ACTIVE frame, and a push-in/pop-out changes
+        // which frame that is — so they belong in this set. Without them, descending into a cell that
+        // lives in another workspace (an ordinary cross-workspace CellRef) leaves the band showing the
+        // PARENT's answer, in either direction: absent when it should name the sub-cell's workspace,
+        // or still naming a workspace after popping back out to a document that is not foreign at all.
+        OnPropertyChanged(nameof(IsForeign));
+        OnPropertyChanged(nameof(SourceWorkspaceName));
+        OnPropertyChanged(nameof(SourceWorkspaceCwsPath));
         ActiveViewModelChanged?.Invoke(this, EventArgs.Empty);
     }
 

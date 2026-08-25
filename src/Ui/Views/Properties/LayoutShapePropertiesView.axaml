@@ -351,17 +351,29 @@
                                           FontSize="11" Padding="4,2"/>
                             </Grid>
 
-                            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                            <!-- L3d: a free angle in degrees, not a four-value picker. The cardinals
+                                 stay one click away via the presets flyout, over the same commit path. -->
+                            <Grid ColumnDefinitions="56,*,Auto,56,Auto" ColumnSpacing="4">
                                 <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                                <ComboBox Grid.Column="1"
-                                          ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RotationOptions}"
-                                          SelectedItem="{Binding InstanceRotationValue, Mode=TwoWay}"
-                                          HorizontalAlignment="Stretch"
+                                <TextBox Grid.Column="1" Text="{Binding InstanceRotationText}" Tag="InstanceRotation"
+                                          Classes.error="{Binding HasInstanceRotationError}" ToolTip.Tip="{Binding InstanceRotationError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                           FontSize="11" Padding="4,2"/>
-                                <TextBlock Grid.Column="2" Text="Mirror X" VerticalAlignment="Center" FontSize="11"
+                                <Button Grid.Column="2" Content="&#x00B0;&#x25BE;" FontSize="11" Padding="5,2"
+                                        ToolTip.Tip="Degrees, counter-clockwise. Pick a cardinal angle.">
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="0&#x00B0;"   Tag="0"   Click="OnInstanceRotationPresetClick"/>
+                                            <MenuItem Header="90&#x00B0;"  Tag="90"  Click="OnInstanceRotationPresetClick"/>
+                                            <MenuItem Header="180&#x00B0;" Tag="180" Click="OnInstanceRotationPresetClick"/>
+                                            <MenuItem Header="270&#x00B0;" Tag="270" Click="OnInstanceRotationPresetClick"/>
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                                <TextBlock Grid.Column="3" Text="Mirror X" VerticalAlignment="Center" FontSize="11"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                                <CheckBox Grid.Column="3" IsChecked="{Binding InstanceMirrorXValue, Mode=TwoWay}"/>
+                                <CheckBox Grid.Column="4" IsChecked="{Binding InstanceMirrorXValue, Mode=TwoWay}"/>
                             </Grid>
 
                             <Grid ColumnDefinitions="56,*">

@@ -1,0 +1,45 @@
+(kicad_pcb
+  (version 20211014)
+  (generator "hand-authored fixture for circuitRF L4d")
+  (layers
+    (0 "F.Cu" signal)
+    (31 "B.Cu" signal)
+    (39 "F.Mask" user)
+  )
+  (general (thickness 1.6))
+  (net 0 "")
+
+  (footprint "fixture:TRAP_X"
+    (layer "F.Cu")
+    (at 0 0)
+    (pad "1" smd trapezoid (at 0 0) (size 5 10) (rect_delta 0.635 0) (layers "F.Cu" "F.Mask")))
+
+  (footprint "fixture:TRAP_Y"
+    (layer "F.Cu")
+    (at 20 0)
+    (pad "1" smd trapezoid (at 0 0) (size 5 10) (rect_delta 0 -0.635) (layers "F.Cu" "F.Mask")))
+
+  (footprint "fixture:CHAMF_RECT"
+    (layer "F.Cu")
+    (at 40 0)
+    (pad "1" smd roundrect (at 0 0) (size 5 10) (roundrect_rratio 0) (layers "F.Cu" "F.Mask")
+      (chamfer_ratio 0.2) (chamfer top_right bottom_left bottom_right)))
+
+  (footprint "fixture:ROUNDRECT_ROT"
+    (layer "F.Cu")
+    (at 60 0)
+    (pad "1" smd roundrect (at 0 0 33) (size 5 10) (roundrect_rratio 0.25) (layers "F.Cu" "F.Mask")))
+
+  (footprint "fixture:DRILL_OFFSET"
+    (layer "F.Cu")
+    (at 100 0)
+    (pad "1" thru_hole rect (at 0 0) (size 4 4) (drill 1 (offset 0 1.905)) (layers "F.Cu" "F.Mask")))
+
+  (footprint "fixture:CUSTOM_FILLED_WIDTH"
+    (layer "F.Cu")
+    (at 80 0)
+    (pad "1" smd custom (at 0 0) (size 1 1) (layers "F.Cu" "F.Mask")
+      (options (clearance outline) (anchor circle))
+      (primitives
+        (gr_poly (pts (xy 0 0) (xy 4 0) (xy 4 4)) (width 0.2) (fill yes)))))
+)

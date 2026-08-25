@@ -576,6 +576,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportGdsiiRequested       -= OnExportGdsiiRequestedFromMenu;
             _subscribedDoc.ExportDxfRequested         -= OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      -= OnExportGerberRequestedFromMenu;
+            _subscribedDoc.ExportBoardRequested       -= OnExportBoardRequestedFromMenu;
             _subscribedDoc.ZoomToFitRequested         -= OnZoomToFitRequestedFromMenu;
             _subscribedDoc.CutRequested                -= OnCutRequestedFromMenu;
             _subscribedDoc.CopyRequested                -= OnCopyRequestedFromMenu;
@@ -590,6 +591,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ExportGdsiiRequested       += OnExportGdsiiRequestedFromMenu;
             _subscribedDoc.ExportDxfRequested         += OnExportDxfRequestedFromMenu;
             _subscribedDoc.ExportGerberRequested      += OnExportGerberRequestedFromMenu;
+            _subscribedDoc.ExportBoardRequested       += OnExportBoardRequestedFromMenu;
             _subscribedDoc.ZoomToFitRequested         += OnZoomToFitRequestedFromMenu;
             _subscribedDoc.CutRequested                += OnCutRequestedFromMenu;
             _subscribedDoc.CopyRequested                += OnCopyRequestedFromMenu;
@@ -789,6 +791,60 @@ public partial class LayoutEditorView : UserControl
     private void OnExportGdsiiRequestedFromMenu() => _ = OnExportGdsiiAsync();
     private void OnExportDxfRequestedFromMenu() => _ = OnExportDxfAsync();
     private void OnExportGerberRequestedFromMenu() => _ = OnExportGerberAsync();
+    private void OnExportBoardRequestedFromMenu() => _ = OnExportBoardAsync();
+
+    /// <summary>
+    /// File → Export → Board. Mirrors the Gerber path: analyze, show what the format cannot carry,
+    /// pick a file, write.
+    ///
+    /// <para>There is deliberately no design-rule confirmation step here, unlike Gerber's — this format
+    /// carries no design rules at all (they left its board file at the 20211014 epoch), so the report
+    /// says what the technology holds that was NOT written instead of asking the user to confirm rules
+    /// that would then be silently dropped.</para>
+    /// </summary>
+    private async Task OnExportBoardAsync()
+    {
+        if (Vm is not { } vm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        if (vm.CurrentCellDir is not { Length: > 0 } cellDir)
+        {
+            vm.ReportError("Export Board: save this layout to a cell before exporting.");
+            return;
+        }
+
+        PcbExport.ExportPlan plan;
+        try { plan = PcbExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron, vm.Model); }
+        catch (Exception ex) { vm.ReportError($"Export Board: {ex.Message}"); return; }
+
+        if (!plan.CanWrite)
+        {
+            foreach (var line in PcbExport.Describe(plan)) vm.ReportError(line);
+            return;
+        }
+
+        var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export Board",
+            SuggestedFileName = cellName + ".kicad_pcb",
+            DefaultExtension = "kicad_pcb",
+            FileTypeChoices = [new FilePickerFileType("Board") { Patterns = ["*.kicad_pcb"] }],
+        });
+        if (file is null) return;
+
+        try
+        {
+            PcbExport.Write(file.Path.LocalPath, plan);
+            foreach (var line in PcbExport.Describe(plan)) vm.ReportMessage(line);
+            vm.ReportMessage("Exported Board", file.Path.LocalPath);
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export Board: {ex.Message}");
+        }
+    }
 
     // View->Zoom to Fit dispatches here from WorkspaceViewModel via LayoutDocument.RequestZoomToFit().
     private void OnZoomToFitRequestedFromMenu() => LayoutCanvasCtrl.ZoomToFit();

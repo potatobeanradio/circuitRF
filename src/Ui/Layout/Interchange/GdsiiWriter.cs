@@ -167,7 +167,7 @@ public static class GdsiiWriter
     private static void WriteText(GdsiiRecordWriter w, LabelShape label)
     {
         // Labels have no mirror field — reflect is always false for a LabelShape.
-        var (_, angle) = GdsiiTransformCodec.ToGdsii(false, label.Rotation);
+        var (_, angle) = GdsiiTransformCodec.ToGdsii(false, label.RotationDegrees);
 
         w.WriteNoData(GdsiiRecordType.Text);
         w.WriteInt16Array(GdsiiRecordType.Layer, [(short)label.Layer.Layer]);
@@ -214,7 +214,7 @@ public static class GdsiiWriter
 
     private static void WriteInstance(GdsiiRecordWriter w, LayoutInstance inst)
     {
-        var (reflect, angle) = GdsiiTransformCodec.ToGdsii(inst.MirrorX, inst.Rot);
+        var (reflect, angle) = GdsiiTransformCodec.ToGdsii(inst.MirrorX, inst.RotationDegrees);
         ushort stransBits = reflect ? (ushort)0x8000 : (ushort)0;
         bool isArray = inst.Rows > 1 || inst.Cols > 1;
 

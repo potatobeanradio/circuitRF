@@ -156,7 +156,7 @@ public static class GdsiiExport
                 return new LayoutInstance
                 {
                     CellRef = targetStructureName,
-                    X = inst.X, Y = inst.Y, Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+                    X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
                     Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY,
                 };
             }).ToList();

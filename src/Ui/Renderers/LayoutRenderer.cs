@@ -805,8 +805,9 @@ public static partial class LayoutRenderer
             LabelShape effective = effectiveHeight == label.Height ? label : new LabelShape
             {
                 Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
-                Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort,
+                Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
                 PortDirection = label.PortDirection, Style = label.Style,
+                HAlign = label.HAlign, VAlign = label.VAlign,
             };
             DrawLabelText(canvas, effective, ps, color, centred: label.IsPort);
             // A port ghost carries its own marker, so what the user is placing looks like what
@@ -941,8 +942,9 @@ public static partial class LayoutRenderer
                 LabelShape effective = effectiveHeight == label.Height ? label : new LabelShape
                 {
                     Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
-                    Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort,
+                    Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
                     PortDirection = label.PortDirection, Style = label.Style,
+                    HAlign = label.HAlign, VAlign = label.VAlign,
                 };
                 // ── THE KIND IS ASKED OF `original`, NEVER OF THE DRAG OVERRIDE ──────────
                 //
@@ -1135,22 +1137,22 @@ public static partial class LayoutRenderer
         float advance = font.MeasureText(label.Text, out SKRect bounds);
         if (bounds.Width <= 0 && bounds.Height <= 0) return null;
 
-        // DrawLabelText's own two centring offsets, in its own (pre-rotation, Y-down) local frame:
-        // SKTextAlign.Center shifts the origin left by half the ADVANCE width (not by half the tight
-        // bounds, which is only what the glyphs happen to ink), and the baseline is lifted by
-        // -0.5 * Ascent * 0.5.
-        if (centred) bounds.Offset(-advance / 2f, -0.5f * font.Metrics.Ascent * 0.5f);
+        // DrawLabelText's own anchor offsets, in its own (pre-rotation, Y-down) local frame, taken from
+        // the SAME resolver it draws with. A text aligner shifts the origin by a fraction of the ADVANCE
+        // width (not of the tight bounds, which is only what the glyphs happen to ink).
+        var (align, baselineDy) = ResolveLabelAnchor(label, font, centred);
+        float alignDx = align switch
+        {
+            SKTextAlign.Center => -advance / 2f,
+            SKTextAlign.Right  => -advance,
+            _                  => 0f,
+        };
+        if (alignDx != 0f || baselineDy != 0f) bounds.Offset(alignDx, baselineDy);
 
-        // Mirrors DrawLabelText's rotation table exactly (see that method's own Y-down-path-space
+        // Mirrors DrawLabelText's rotation exactly (see that method's own Y-down-path-space
         // rotation-sign comment) — all four corners, since a rotated rect's world-space bbox isn't
         // just its two "opposite" corners once rotation is involved.
-        float rotationDeg = label.Rotation switch
-        {
-            LayoutRotation.R90  => -90f,
-            LayoutRotation.R180 => 180f,
-            LayoutRotation.R270 => 90f,
-            _                   => 0f,
-        };
+        float rotationDeg = -(float)label.RotationDegrees;
         var m = SKMatrix.CreateRotationDegrees(rotationDeg);
         SKPoint[] corners =
         [
@@ -2363,19 +2365,49 @@ public static partial class LayoutRenderer
 
         canvas.Save();
         canvas.Translate(ps.X(label.X), ps.Y(label.Y));
-        float rotationDeg = label.Rotation switch
-        {
-            LayoutRotation.R90  => -90f,   // path space is Y-down — negate the DBU-space (Y-up) CCW rotation
-            LayoutRotation.R180 => 180f,
-            LayoutRotation.R270 => 90f,
-            _                   => 0f,
-        };
+        // Path space is Y-down — negate the DBU-space (Y-up) counter-clockwise angle.
+        float rotationDeg = -(float)label.RotationDegrees;
         if (rotationDeg != 0f) canvas.RotateDegrees(rotationDeg);
 
-        // Centred means centred on BOTH axes: horizontally by the text aligner, vertically by lifting
-        // the baseline half an x-height, since a baseline through the cut puts the glyph above it.
-        float dy = centred ? -0.5f * font.Metrics.Ascent * 0.5f : 0f;
-        canvas.DrawText(label.Text, 0, dy, centred ? SKTextAlign.Center : SKTextAlign.Left, font, paint);
+        var (align, dy) = ResolveLabelAnchor(label, font, centred);
+        canvas.DrawText(label.Text, 0, dy, align, font, paint);
         canvas.Restore();
+    }
+
+    /// <summary>
+    /// The ONE place a label's <see cref="LabelShape.HAlign"/>/<see cref="LabelShape.VAlign"/> become
+    /// a Skia text-aligner and a baseline offset, in the label's own pre-rotation, Y-DOWN local frame.
+    /// Shared by <see cref="DrawLabelText"/> and <see cref="MeasureLabelWorldBbox"/> so what is drawn
+    /// and what is measured (selection outline, hit test) can never disagree.
+    ///
+    /// <para><paramref name="centred"/> is the PORT override and still wins outright — a port's mark is
+    /// centred on its anchor regardless of what the label itself says, which is what every port in every
+    /// existing <c>.clay</c> already did.</para>
+    /// </summary>
+    internal static (SKTextAlign Align, float BaselineDy) ResolveLabelAnchor(
+        LabelShape label, SKFont font, bool centred)
+    {
+        var h = centred ? LabelHAlign.Center : label.HAlign ?? LabelHAlign.Left;
+        var v = centred ? LabelVAlign.Middle : label.VAlign ?? LabelVAlign.Baseline;
+
+        var align = h switch
+        {
+            LabelHAlign.Center => SKTextAlign.Center,
+            LabelHAlign.Right  => SKTextAlign.Right,
+            _                  => SKTextAlign.Left,
+        };
+
+        // Skia's Ascent is NEGATIVE (up from the baseline) and Descent positive, both in this Y-down
+        // frame — so "hang the text below the anchor" is a POSITIVE baseline shift of -Ascent.
+        float dy = v switch
+        {
+            LabelVAlign.Top    => -font.Metrics.Ascent,
+            LabelVAlign.Bottom => -font.Metrics.Descent,
+            // Half an x-height, not half the em box: a baseline through the anchor puts the whole
+            // glyph above it. This is the exact expression every port has always used.
+            LabelVAlign.Middle => -0.5f * font.Metrics.Ascent * 0.5f,
+            _                  => 0f,
+        };
+        return (align, dy);
     }
 }

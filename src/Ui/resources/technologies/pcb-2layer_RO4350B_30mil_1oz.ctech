@@ -24,7 +24,10 @@
       "ZOrder": 8,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Cu"
+      }
     },
     {
       "Key": {
@@ -42,7 +45,10 @@
       "ZOrder": 7,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Cu"
+      }
     },
     {
       "Key": {
@@ -60,7 +66,10 @@
       "ZOrder": 6,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Mask"
+      }
     },
     {
       "Key": {
@@ -78,7 +87,10 @@
       "ZOrder": 5,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Mask"
+      }
     },
     {
       "Key": {
@@ -96,7 +108,10 @@
       "ZOrder": 4,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.SilkS"
+      }
     },
     {
       "Key": {
@@ -114,7 +129,10 @@
       "ZOrder": 3,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.SilkS"
+      }
     },
     {
       "Key": {
@@ -150,7 +168,10 @@
       "ZOrder": 1,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "Edge.Cuts"
+      }
     }
   ],
   "Stackup": {

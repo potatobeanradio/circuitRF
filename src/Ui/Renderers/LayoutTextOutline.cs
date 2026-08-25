@@ -42,7 +42,7 @@ public static class LayoutTextOutline
     /// vs. a separate outer boundary) is NOT decided here — that is <c>LayoutTextFlatten</c>'s job, via
     /// Clipper2. Uses <see cref="SkiaFonts.PlexRegular"/>, the SAME typeface
     /// <c>LayoutRenderer.DrawLabelText</c> renders with, and mirrors that method's transform EXACTLY
-    /// (including its Y-down-path-space rotation-sign table) so the flattened result matches what the
+    /// (including its Y-down-path-space rotation-sign negation) so the flattened result matches what the
     /// user actually sees rather than a re-derived approximation. <paramref name="label"/>'s own DBU
     /// <c>Height</c> is used directly as the SkFont size — Skia doesn't care about units, so the
     /// returned glyph path is already in exact DBU-scale coordinates, needing no further scaling
@@ -59,17 +59,24 @@ public static class LayoutTextOutline
         if (string.IsNullOrEmpty(label.Text) || label.Height <= 0) return contours;
 
         using var font = new SKFont(typeface ?? ResolveTypeface(label.Style), label.Height);
-        using var glyphPath = font.GetTextPath(label.Text, new SKPoint(0, 0));
 
-        // Mirrors LayoutRenderer.DrawLabelText's rotation table exactly — path space is Y-down, so the
-        // DBU-space (Y-up) CCW rotation is negated for R90/R270.
-        float rotationDeg = label.Rotation switch
+        // The label's own anchor, from the SAME resolver DrawLabelText uses, so a flattened label lands
+        // exactly where the rendered one was. `centred: false` deliberately — the port override is a
+        // RENDER-time decision about a port's mark, and a label with no alignment of its own (every
+        // .clay written before those fields existed) resolves to left-of-baseline, i.e. offset (0, 0),
+        // which is precisely what this method did before.
+        var (align, baselineDy) = LayoutRenderer.ResolveLabelAnchor(label, font, centred: false);
+        float alignDx = align switch
         {
-            LayoutRotation.R90  => -90f,
-            LayoutRotation.R180 => 180f,
-            LayoutRotation.R270 => 90f,
-            _                   => 0f,
+            SKTextAlign.Center => -font.MeasureText(label.Text) / 2f,
+            SKTextAlign.Right  => -font.MeasureText(label.Text),
+            _                  => 0f,
         };
+        using var glyphPath = font.GetTextPath(label.Text, new SKPoint(alignDx, baselineDy));
+
+        // Mirrors LayoutRenderer.DrawLabelText exactly — path space is Y-down, so the DBU-space (Y-up)
+        // counter-clockwise angle is simply negated.
+        float rotationDeg = -(float)label.RotationDegrees;
         if (rotationDeg != 0f)
             glyphPath.Transform(SKMatrix.CreateRotationDegrees(rotationDeg));
 

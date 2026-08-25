@@ -17,10 +17,15 @@ public static class LayoutFlatten
     /// parent's frame via <see cref="LayoutInstanceTransform.ComposeInstances"/>, CellRef rebased —
     /// "the sub-cell's own instances still become instances of the parent").
     /// </summary>
+    /// <para><see cref="Notes"/> carries what a NON-CARDINAL placement angle cost, one line per kind
+    /// with a count (brief-L3d-arbitrary-angle-instances.md R-L3d-6) — a promoted rect or rounded
+    /// rect, a skipped bitmap, a label whose four-way rotation had to be rounded. Empty for a cardinal
+    /// flatten, which loses nothing and therefore says nothing.</para>
     public sealed record OneLevelResult(
         IReadOnlyList<LayoutShape> Shapes,
         IReadOnlyList<LayoutInstance> Instances,
-        bool WasArray);
+        bool WasArray,
+        IReadOnlyList<string>? Notes = null);
 
     /// <summary>
     /// Flattens <paramref name="inst"/> by exactly one level. <paramref name="parentBaseDir"/> is the
@@ -43,7 +48,7 @@ public static class LayoutFlatten
                 {
                     CellRef = inst.CellRef,
                     X = x, Y = y,
-                    Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+                    RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
                     Rows = 1, Cols = 1, PitchX = 0, PitchY = 0,
                 });
             }
@@ -56,18 +61,44 @@ public static class LayoutFlatten
         var subView = res.View!;
         var subBaseDir = CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir!);
 
+        // R-L3d-6/7. A cardinal placement maps axes onto axes and every shape survives as its own
+        // type, exactly as it did before L3d — `rotates` is false and nothing below changes. A
+        // non-cardinal one does not, so the shapes whose TYPE presumes axis alignment are promoted
+        // first (or, for a bitmap, skipped), and the walk itself refuses them if this is ever got
+        // wrong rather than emitting a bounding box that looks like artwork.
+        double instDeg = inst.RotationDegrees;
+        bool rotates = !LayoutAngle.TryCardinal(instDeg, out _);
+
         var shapes = new List<LayoutShape>(subView.Shapes.Count);
         var pointTransform = new LayoutCoordinateTransform(
             (x, y) => LayoutInstanceTransform.TransformPoint(x, y, inst, 0, 0),
-            m => (long)Math.Round(m * inst.Mag));
+            m => (long)Math.Round(m * inst.Mag),
+            RotatesAxes: rotates);
+
+        int promoted = 0, bitmapsSkipped = 0;
         foreach (var shape in subView.Shapes)
         {
             if (IsCellBoundaryMarker(shape)) continue;
+            if (rotates && LayoutRotationPromotion.CannotRotate(shape)) { bitmapsSkipped++; continue; }
+
             var clone = LayoutGeometry.Clone(shape);
+            if (rotates)
+            {
+                var carrier = LayoutRotationPromotion.Promote(clone);
+                if (!ReferenceEquals(carrier, clone)) { promoted++; clone = carrier; }
+            }
             LayoutCoordinateWalk.Transform(clone, pointTransform);
             if (inst.MirrorX) FlipBulgeSigns(clone);
+            // A label's own angle carries the placement's exactly — LabelShape.RotationDegrees was
+            // widened past the cardinals on 2026-08-25, so this no longer rounds and no longer needs
+            // to report that it did. (LayoutCoordinateWalk moves the anchor; the angle is not a
+            // coordinate, so it is composed here.)
+            if (rotates && clone is LabelShape lbl)
+                lbl.RotationDegrees += instDeg;
             shapes.Add(clone);
         }
+
+        var notes = RotationNotes(instDeg, promoted, bitmapsSkipped);
 
         var instances = new List<LayoutInstance>(subView.Instances.Count);
         foreach (var subInst in subView.Instances)
@@ -77,7 +108,21 @@ public static class LayoutFlatten
             instances.Add(composed);
         }
 
-        return new OneLevelResult(shapes, instances, WasArray: false);
+        return new OneLevelResult(shapes, instances, WasArray: false, notes);
+    }
+
+    /// <summary>One line per KIND with a count, never one line per shape — the same reporting shape
+    /// every interchange path in §8 already uses. Null when a cardinal flatten lost nothing.</summary>
+    private static IReadOnlyList<string>? RotationNotes(double deg, int promoted, int bitmapsSkipped)
+    {
+        if (promoted == 0 && bitmapsSkipped == 0) return null;
+        var notes = new List<string>(3);
+        string at = $"at {deg:0.###}°";
+        if (promoted > 0)
+            notes.Add($"{promoted} rectangle(s)/rounded rectangle(s) became polygons or curves {at} — a rotated rectangle is not a rectangle.");
+        if (bitmapsSkipped > 0)
+            notes.Add($"{bitmapsSkipped} reference image(s) skipped {at} — a bitmap cannot be rotated.");
+        return notes;
     }
 
     /// <summary>
@@ -136,7 +181,8 @@ public static class LayoutFlatten
     /// with a clear report beats an all-or-nothing failure on a large design (§3's own wording).</summary>
     public sealed record AllLevelsResult(
         IReadOnlyList<LayoutShape> Shapes,
-        IReadOnlyList<LayoutInstance> SurvivingInstances);
+        IReadOnlyList<LayoutInstance> SurvivingInstances,
+        IReadOnlyList<string>? Notes = null);
 
     /// <summary>
     /// R-L3c-4: computes the FULL resulting shape count before anything is mutated, honouring the
@@ -152,10 +198,16 @@ public static class LayoutFlatten
     public static long CountResultingShapes(LayoutInstance inst, string parentBaseDir, long ceiling = FlattenAllLevelsHardCeiling)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        return CountRecursive(inst, parentBaseDir, visiting, 0, ceiling);
+        return CountRecursive(inst, parentBaseDir, visiting, 0, ceiling, 0.0);
     }
 
-    private static long CountRecursive(LayoutInstance inst, string baseDir, HashSet<string> visiting, int depth, long ceiling)
+    /// <param name="accumulatedDeg">The composed placement angle of every level ABOVE this one. Only
+    /// its cardinality matters here (a bitmap survives a chain of cardinal placements and no other
+    /// kind), and mirroring only flips the sign of a summand — which cannot turn a cardinal sum into a
+    /// non-cardinal one — so this accumulates by plain addition rather than reproducing
+    /// <see cref="LayoutInstanceTransform.ComposeInstances"/>'s mirror-sensitive rule.</param>
+    private static long CountRecursive(LayoutInstance inst, string baseDir, HashSet<string> visiting, int depth, long ceiling,
+                                       double accumulatedDeg)
     {
         if (depth >= CellHierarchy.MaxDepth) return 0;   // depth-capped instance contributes no shapes, survives as-is
 
@@ -164,10 +216,10 @@ public static class LayoutFlatten
             long mult = (long)Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols);
             var oneCell = new LayoutInstance
             {
-                CellRef = inst.CellRef, Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+                CellRef = inst.CellRef, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
                 Rows = 1, Cols = 1,
             };
-            long perCell = CountRecursive(oneCell, baseDir, visiting, depth + 1, ceiling);
+            long perCell = CountRecursive(oneCell, baseDir, visiting, depth + 1, ceiling, accumulatedDeg);
             if (perCell < 0) return -1;
             if (perCell == 0) return 0;
             try
@@ -191,11 +243,18 @@ public static class LayoutFlatten
         string subBaseDir = CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir!);
         // Counted the same way FlattenOneLevel emits (below) — a preview that promised three shapes
         // and produced one would be a worse bug than the one being fixed.
+        double effectiveDeg = accumulatedDeg + inst.RotationDegrees;
+        bool rotates = !LayoutAngle.TryCardinal(effectiveDeg, out _);
         long count = 0;
-        foreach (var s in res.View!.Shapes) if (!IsCellBoundaryMarker(s)) count++;
+        foreach (var s in res.View!.Shapes)
+        {
+            if (IsCellBoundaryMarker(s)) continue;
+            if (rotates && LayoutRotationPromotion.CannotRotate(s)) continue;
+            count++;
+        }
         foreach (var subInst in res.View.Instances)
         {
-            long sub = CountRecursive(subInst, subBaseDir, visiting, depth + 1, ceiling);
+            long sub = CountRecursive(subInst, subBaseDir, visiting, depth + 1, ceiling, effectiveDeg);
             if (sub < 0) { visiting.Remove(res.ResolvedCellDir!); return -1; }
             count += sub;
             if (count > ceiling) { visiting.Remove(res.ResolvedCellDir!); return -1; }
@@ -248,8 +307,16 @@ public static class LayoutFlatten
         var res = CellLayoutResolver.Resolve(inst.CellRef, parentBaseDir);
         if (res.State != CellLayoutState.Resolved) return null;
 
+        // R-L3d-6: a non-cardinal placement drops bitmaps, so the PREVIEW must drop them too — the
+        // whole reason this method exists is that a preview promising N and emitting N-1 is its own bug.
+        bool rotates = !LayoutAngle.TryCardinal(inst.RotationDegrees, out _);
         long count = 0;
-        foreach (var shape in res.View!.Shapes) if (!IsCellBoundaryMarker(shape)) count++;
+        foreach (var shape in res.View!.Shapes)
+        {
+            if (IsCellBoundaryMarker(shape)) continue;
+            if (rotates && LayoutRotationPromotion.CannotRotate(shape)) continue;
+            count++;
+        }
         return count;
     }
 
@@ -274,12 +341,13 @@ public static class LayoutFlatten
         var shapes = new List<LayoutShape>();
         var surviving = new List<LayoutInstance>();
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        FlattenAllRecursive(inst, parentBaseDir, visiting, 0, shapes, surviving);
-        return new AllLevelsResult(shapes, surviving);
+        var notes = new List<string>();
+        FlattenAllRecursive(inst, parentBaseDir, visiting, 0, shapes, surviving, notes);
+        return new AllLevelsResult(shapes, surviving, notes.Count > 0 ? notes : null);
     }
 
     private static void FlattenAllRecursive(LayoutInstance inst, string baseDir, HashSet<string> visiting, int depth,
-        List<LayoutShape> shapes, List<LayoutInstance> surviving)
+        List<LayoutShape> shapes, List<LayoutInstance> surviving, List<string> notes)
     {
         if (depth >= CellHierarchy.MaxDepth) { surviving.Add(inst); return; }
 
@@ -302,8 +370,9 @@ public static class LayoutFlatten
         }
 
         shapes.AddRange(oneLevel.Shapes);
+        if (oneLevel.Notes is { } levelNotes) notes.AddRange(levelNotes);
         foreach (var subInst in oneLevel.Instances)
-            FlattenAllRecursive(subInst, baseDir, visiting, depth + 1, shapes, surviving);
+            FlattenAllRecursive(subInst, baseDir, visiting, depth + 1, shapes, surviving, notes);
 
         if (resolvedDir is not null) visiting.Remove(resolvedDir);
     }

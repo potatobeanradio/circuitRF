@@ -27,6 +27,10 @@ public static class StarterTechnologies
     private static long Mil(decimal v) => LayoutUnits.ToDbu(v, LayoutUnit.Mil, Dbu);
     private static long Nm(decimal v) => LayoutUnits.ToDbu(v, LayoutUnit.Nm, Dbu);
 
+    /// <summary>A layer's board-format alias and nothing else — every other interchange field stays
+    /// unstated, exactly as it is in the shipped <c>.ctech</c> files.</summary>
+    private static InterchangeMapping Pcb(string layerName) => new(null, null, null, null, null, layerName);
+
     public static Technology Pcb2Layer()
     {
         var topCopper    = new LayerKey(1, 0);
@@ -51,14 +55,22 @@ public static class StarterTechnologies
             DefaultViaDrillDbu = Mil(12),
             Layers =
             [
-                new LayerDef { Key = topCopper,       Name = "Top Copper",       Color = new Rgba(0xC8, 0x7A, 0x3E), ZOrder = 8, Purpose = "drawing" },
-                new LayerDef { Key = bottomCopper,    Name = "Bottom Copper",    Color = new Rgba(0x8A, 0x50, 0x28), ZOrder = 7, Purpose = "drawing" },
-                new LayerDef { Key = soldermaskTop,    Name = "Soldermask Top",    Color = new Rgba(0x1E, 0x6B, 0x3C), ZOrder = 6, Purpose = "drawing" },
-                new LayerDef { Key = soldermaskBottom, Name = "Soldermask Bottom", Color = new Rgba(0x15, 0x50, 0x2C), ZOrder = 5, Purpose = "drawing" },
-                new LayerDef { Key = silkTop,    Name = "Silk Top",    Color = new Rgba(0xF2, 0xF2, 0xF2), ZOrder = 4, Purpose = "drawing" },
-                new LayerDef { Key = silkBottom, Name = "Silk Bottom", Color = new Rgba(0xC8, 0xC8, 0xC8), ZOrder = 3, Purpose = "drawing" },
+                // The PcbLayerName aliases are what make Import Board land a board's copper on THIS
+                // technology's copper instead of minting eight new layers beside it (R-L4d-4 —
+                // PcbLayerReconciliation looks for exactly this and falls back to a synthetic key when
+                // it finds none). They are declared here, and identically in the shipped
+                // resources/technologies/pcb-*.ctech, because a board's own layer names are the only
+                // handle the format gives us: it has names and no numeric key circuitRF could adopt.
+                new LayerDef { Key = topCopper,       Name = "Top Copper",       Color = new Rgba(0xC8, 0x7A, 0x3E), ZOrder = 8, Purpose = "drawing", Interchange = Pcb("F.Cu") },
+                new LayerDef { Key = bottomCopper,    Name = "Bottom Copper",    Color = new Rgba(0x8A, 0x50, 0x28), ZOrder = 7, Purpose = "drawing", Interchange = Pcb("B.Cu") },
+                new LayerDef { Key = soldermaskTop,    Name = "Soldermask Top",    Color = new Rgba(0x1E, 0x6B, 0x3C), ZOrder = 6, Purpose = "drawing", Interchange = Pcb("F.Mask") },
+                new LayerDef { Key = soldermaskBottom, Name = "Soldermask Bottom", Color = new Rgba(0x15, 0x50, 0x2C), ZOrder = 5, Purpose = "drawing", Interchange = Pcb("B.Mask") },
+                new LayerDef { Key = silkTop,    Name = "Silk Top",    Color = new Rgba(0xF2, 0xF2, 0xF2), ZOrder = 4, Purpose = "drawing", Interchange = Pcb("F.SilkS") },
+                new LayerDef { Key = silkBottom, Name = "Silk Bottom", Color = new Rgba(0xC8, 0xC8, 0xC8), ZOrder = 3, Purpose = "drawing", Interchange = Pcb("B.SilkS") },
+                // No alias on Drill: the reader's own synthetic drill layer is literally called "Drill",
+                // so it already matches this layer by name with nothing declared.
                 new LayerDef { Key = drill,   Name = "Drill",   Color = new Rgba(0x20, 0x20, 0x20), ZOrder = 2, Purpose = "drawing" },
-                new LayerDef { Key = outline, Name = "Outline", Color = new Rgba(0xFF, 0xD5, 0x00), ZOrder = 1, Purpose = "drawing" },
+                new LayerDef { Key = outline, Name = "Outline", Color = new Rgba(0xFF, 0xD5, 0x00), ZOrder = 1, Purpose = "drawing", Interchange = Pcb("Edge.Cuts") },
             ],
             Stackup = new Stackup
             {

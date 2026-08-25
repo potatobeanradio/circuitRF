@@ -133,6 +133,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "InstanceCellRef": CommitInstanceCellRefText(text); break;
             case "InstanceX":       CommitInstanceXText(text); break;
             case "InstanceY":       CommitInstanceYText(text); break;
+            case "InstanceRotation": CommitInstanceRotationText(text); break;
             case "InstanceMag":     CommitInstanceMagText(text); break;
             case "InstanceRows":    CommitInstanceRowsText(text); break;
             case "InstanceCols":    CommitInstanceColsText(text); break;
@@ -173,6 +174,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "BitmapOpacity": BitmapOpacityError = null; break;
             case "InstanceX":       InstanceXError = null; break;
             case "InstanceY":       InstanceYError = null; break;
+            case "InstanceRotation": InstanceRotationError = null; break;
             case "InstanceMag":     InstanceMagError = null; break;
             case "InstanceRows":    InstanceRowsError = null; break;
             case "InstanceCols":    InstanceColsError = null; break;
@@ -586,8 +588,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     {
         if (_isRefreshing || newValue is null || oldValue == newValue) return;
         if (DragBlocksEdits()) return;
+        // Through RotationDegrees, never the enum: a label imported at 45 deg carries both Rotation
+        // (the nearest cardinal) and RotDeg, and assigning the enum alone would leave the non-cardinal
+        // RotDeg in place, so picking "R90" in the combo would change nothing on screen.
         ApplyToEach<LayoutRotation>("Rotation", s => ((LabelShape)s).Rotation,
-            (s, v) => ((LabelShape)s).Rotation = v, newValue.Value, s => s is LabelShape);
+            (s, v) => ((LabelShape)s).RotationDegrees = LayoutAngle.OfCardinal(v),
+            newValue.Value, s => s is LabelShape);
         RefreshFromVm();
     }
 
@@ -725,6 +731,10 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
+    /// <summary>Degrees, trimmed of trailing zeros — a cardinal placement reads "90", not "90.0000".</summary>
+    private static string FormatDegrees(double deg) =>
+        deg.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
     private static string FormatOpacityPercent(double opacity) =>
         System.Math.Round(opacity * 100.0, 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
@@ -734,7 +744,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     // tolerance) and gets its own selection list in the VM (LayoutEditorViewModel.SelectedInstanceIndices,
     // mutually exclusive with shape selection — see LayoutEditorViewModel.Instances.cs's own header).
     // Single-instance editing only, matching every existing VM-level instance-property method
-    // (SetSelectedInstanceRotation, CommitSelectedInstanceArray, …) — a multi-instance selection shows a
+    // (SetSelectedInstanceRotationDegrees, CommitSelectedInstanceArray, …) — a multi-instance selection shows a
     // summary only, mirroring the mixed-shape-type fallback elsewhere in this panel.
 
     [ObservableProperty] private bool _isInstanceContext;
@@ -764,7 +774,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     [ObservableProperty] private string? _instanceYError;
     public bool HasInstanceYError => InstanceYError is not null;
 
-    [ObservableProperty] private LayoutRotation? _instanceRotationValue;
+    /// <summary>The selected instance's placement angle in degrees (R-L3d-10). A free numeric field
+    /// rather than L3a's four-value picker, because a placement angle is now a real number; the four
+    /// cardinals survive as one-click presets in the view, over this same commit path.</summary>
+    [ObservableProperty] private string _instanceRotationText = "";
+    [ObservableProperty] private string? _instanceRotationError;
+    public bool HasInstanceRotationError => InstanceRotationError is not null;
+
     [ObservableProperty] private bool? _instanceMirrorXValue;
 
     [ObservableProperty] private string _instanceMagText = "";
@@ -829,10 +845,15 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
-    partial void OnInstanceRotationValueChanged(LayoutRotation? oldValue, LayoutRotation? newValue)
+    public void CommitInstanceRotationText(string text)
     {
-        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
-        _vm.SetSelectedInstanceRotation(newValue.Value);
+        if (_vm is null) return;
+        if (!double.TryParse(text.Trim().TrimEnd('\u00B0'), System.Globalization.NumberStyles.Float,
+                             System.Globalization.CultureInfo.InvariantCulture, out var deg)
+            || !double.IsFinite(deg))
+        { InstanceRotationError = "Rotation must be an angle in degrees"; return; }
+        InstanceRotationError = null;
+        _vm.SetSelectedInstanceRotationDegrees(deg);
         RefreshFromVm();
     }
 
@@ -934,7 +955,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             SetTextIfNotFocused("InstanceCellRef", inst.CellRef ?? "", () => InstanceCellRefText, v => InstanceCellRefText = v);
             SetTextIfNotFocused("InstanceX", LayoutUnits.Format(inst.X, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceXText, v => InstanceXText = v);
             SetTextIfNotFocused("InstanceY", LayoutUnits.Format(inst.Y, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceYText, v => InstanceYText = v);
-            InstanceRotationValue = inst.Rot;
+            SetTextIfNotFocused("InstanceRotation", FormatDegrees(inst.RotationDegrees), () => InstanceRotationText, v => InstanceRotationText = v);
             InstanceMirrorXValue = inst.MirrorX;
             SetTextIfNotFocused("InstanceMag", inst.Mag.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture), () => InstanceMagText, v => InstanceMagText = v);
             SetTextIfNotFocused("InstanceRows", inst.Rows.ToString(System.Globalization.CultureInfo.InvariantCulture), () => InstanceRowsText, v => InstanceRowsText = v);
@@ -958,7 +979,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             ToggleMklopfImpedanceEntryCommand.NotifyCanExecuteChanged();
             ToggleMklopfLengthEntryCommand.NotifyCanExecuteChanged();
             InstanceCellRefText = ""; InstanceXText = ""; InstanceYText = "";
-            InstanceRotationValue = null; InstanceMirrorXValue = null;
+            InstanceRotationText = ""; InstanceMirrorXValue = null;
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
             InstancePitchXText = ""; InstancePitchYText = ""; InstanceArrayCountText = "";
         }
@@ -1832,7 +1853,10 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             var texts = labels.Select(l => l.Text).Distinct().ToList();
             SetTextIfNotFocused("LabelText", texts.Count == 1 ? texts[0] : "", () => LabelText, v => LabelText = v);
             SetTextIfNotFocused("LabelHeight", FormatSharedDbu(labels.Select(l => (long?)l.Height)), () => LabelHeightText, v => LabelHeightText = v);
-            var rots = labels.Select(l => l.Rotation).Distinct().ToList();
+            // Blank for a non-cardinal angle rather than showing the nearest cardinal, which would
+            // read as an exact value the label does not have. The combo offers the four cardinals; a
+            // 45 deg imported annotation is edited by picking one, which snaps it deliberately.
+            var rots = labels.Select(l => LayoutAngle.TryCardinal(l.RotationDegrees, out var c) ? c : (LayoutRotation?)null).Distinct().ToList();
             LabelRotationValue = rots.Count == 1 ? rots[0] : null;
             var styles = labels.Select(l => l.Style).Distinct().ToList();
             LabelStyleValue = styles.Count == 1 ? styles[0] : null;
