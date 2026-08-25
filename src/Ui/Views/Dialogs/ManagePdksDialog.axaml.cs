@@ -50,7 +50,37 @@ public partial class ManagePdksDialog : Window
     private Context? _ctx;
     private IReadOnlyList<PdkReferenceManager.RefStatus> _rows = [];
 
+    /// <summary>Set only by <see cref="Body"/>, for a documentation figure. See its own note.</summary>
+    private IReadOnlyList<PdkReferenceManager.RefStatus>? _fixedRows;
+
     public ManagePdksDialog() => InitializeComponent();
+
+    /// <summary>
+    /// Build the dialog against <paramref name="context"/> and hand back its CONTENT, populated.
+    /// </summary>
+    /// <remarks>
+    /// For the user-docs factory. A Window cannot be hosted inside another Window, so the figure
+    /// takes the content out — the same lift the Setup Analyses figure makes, and for the same
+    /// reason: a fixture that rebuilt this layout would be photographing a second implementation that
+    /// drifts from the real one the moment either changes.
+    /// </remarks>
+    /// <param name="rows">
+    /// Pre-computed reference statuses, for a figure. Supplying them skips
+    /// <see cref="PdkReferenceManager.Describe"/> — which reads the FILESYSTEM, and would put the
+    /// generating machine's temp path in a committed figure and change it on every run. Everything
+    /// downstream (the row formatting, the detail note, the buttons, the layout) is still the
+    /// dialog's own. Null takes the ordinary path.
+    /// </param>
+    internal static Control Body(Context context,
+                                 IReadOnlyList<PdkReferenceManager.RefStatus>? rows = null)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var dlg = new ManagePdksDialog { _ctx = context, _fixedRows = rows };
+        dlg.Refresh(selectFirst: true);
+        var body = (Control)dlg.Content!;
+        dlg.Content = null;
+        return body;
+    }
 
     public static async Task ShowAsync(Window? owner, Context context)
     {
@@ -77,7 +107,7 @@ public partial class ManagePdksDialog : Window
 
         string? wasSelected = SelectedStatus()?.Provider;
 
-        _rows = PdkReferenceManager.Describe(_ctx.WorkspaceRootDir, _ctx.Refs);
+        _rows = _fixedRows ?? PdkReferenceManager.Describe(_ctx.WorkspaceRootDir, _ctx.Refs);
         RefList.ItemsSource   = _rows.Select(Describe).ToList();
         EmptyMessage.IsVisible = _rows.Count == 0;
 

@@ -57,8 +57,9 @@ not general 3D.
 
 ### Can
 
-- **Planar conductors on a layered substrate** — any number of dielectric layers, with real ε<sub>r</sub>
-  and tanδ, and conductor loss.
+- **Planar conductors on a layered substrate** — any number of dielectric layers, with real
+  ε<sub>r</sub> and tanδ. *(Dielectric loss, in both kernels. **Conductor** loss is the quasi-static
+  kernel only — see below.)*
 - **Arbitrary planar shapes**: lines, bends, tapers, stubs, spirals, pads, coupled sections.
 - **Multiple metal levels**, with **vias** carrying z-directed current between them.
 - **A ground plane** at the bottom of the stack, or an open boundary.
@@ -86,11 +87,20 @@ not general 3D.
   medium is stratified, so a dielectric is a slab spanning the whole plane or it is not representable.
 - **Magnetic materials beyond a scalar µ<sub>r</sub> per layer.** No ferrites, no anisotropy.
 - **Non-linearity of any kind.** This solves a linear problem and returns S-parameters.
+- **Conductor loss, in the full-wave kernel.** Its metal is a **perfect conductor**: the conductivity
+  and thickness you set in the stackup are carried but not used in the field solve. Dielectric loss
+  (tanδ) *is* modelled, and it dominates on ordinary substrates — measured on 1.6 mm FR-4, the missing
+  conductor term is **6.5% / 3.0% / 2.1%** of the total conducted loss at 2 / 10 / 20 GHz. So a
+  full-wave insertion loss reads slightly optimistic, by a known and shrinking amount. The
+  quasi-static kernel *does* model conductor loss, through Wheeler's incremental inductance rule over
+  every lossy surface including the ground plane — which is one reason the two kernels' loss numbers
+  do not agree exactly on a uniform line.
 
 There is also a **quasi-static kernel** for the special case of a uniform transmission-line
 cross-section, which is described below and which is far faster than the full-wave path where it
 applies. Its own limits are narrower: no discontinuities, no bends, no stubs, no spirals, no radiation,
-no resonance, and no coupling between non-parallel conductors.
+no resonance, and no coupling between non-parallel conductors. It **does** model conductor loss, which
+the full-wave kernel does not.
 
 ## For advanced users: how circuitRF implements MoM {#implementation}
 
@@ -163,8 +173,9 @@ Against an ε<sub>r</sub> = 1 reduction where the kernel is exact, the assembled
 **The solve.** Dense complex LU per frequency, or — optionally — an iterative solve against a
 grid-accelerated matrix–vector product. The accelerated path computes the same answer a different way,
 to its own accuracy gates; its win is **working-set memory**, roughly 4× less past about 900 unknowns,
-while the *time* crossover is much later, around 3,700 unknowns. Below that the dense path is faster. It
-does **not** raise the unknown ceiling.
+while the *time* crossover is much later, around 3,700 unknowns. Below that the dense path is faster.
+**It does raise the unknown ceiling — from 5,000 to 12,000 — but only on a single-metal-level structure
+with no vias**, which is the only case it can accelerate at all.
 
 **De-embedding.** A two-line calibration; see [De-embedding](#deembedding).
 
@@ -179,9 +190,12 @@ refusal is specific: *"this geometry has a bend at (x, y)"*, not a vague failure
 
 ### What a port is
 
-A port is where power enters or leaves the structure. In this engine it is placed on a **conductor edge**
-— you tell the solver "current enters the metal through this face" — and the solve excites one port at a
-time to build the S-matrix.
+A port is where power enters or leaves the structure. In this engine every port is the same thing: a
+**voltage source impressed across a cut in the metal**, driving the current that crosses that cut. The
+solve excites one port at a time to build the S-matrix.
+
+The two port types differ in **where the cut is** — at the end of a conductor, or in the middle of one
+— and everything else about them follows from that one difference.
 
 ### How you define one
 
@@ -191,26 +205,185 @@ port flag set, which is why a layout carrying ports is still just a layout.
 - **Numbering comes from the label's own text.** `1`, `P1`, `p2`, `#3`, `Port 4` all parse. A label that
   names no number is auto-numbered to the lowest free one rather than refused.
 - **Two labels naming the same number is a refusal by name**, not a silent win for one of them.
-- **The side is inferred from geometry, reported, and refused when ambiguous.** A label at the exact
-  corner of a conductor is equally close to two edges — and guessing reverses the direction of current
-  into the structure, which is a hard π in S₂₁: smooth, plausible, and completely invisible in a
-  magnitude plot. So it is named and refused: *"Port 1 is ambiguous… Move the label."* Every resolved
-  port reports the edge it landed on and which way current flows in. **Read that report.**
-- **The reference impedance lives in the EM setup**, per port, not on the shape. A layout is geometry.
+- **The direction is inferred from geometry where it can be, reported, and refused when it cannot.** A
+  label at the exact corner of a conductor is equally close to two edges — and guessing reverses the
+  direction of current into the structure, which is a hard π in S₂₁: smooth, plausible, and completely
+  invisible in a magnitude plot. So it is named and refused: *"Port 1 is ambiguous… Move the label."*
+  Every resolved port reports the cut it landed on and which way current flows in. **Read that report.**
+- **The type and the reference impedance live in the EM setup**, per port, not on the shape. A layout is
+  geometry; how you drive it is an analysis setting. The same artwork can be an edge-driven filter in
+  one setup and a structure with a gap in the middle in another, without editing the drawing.
 
-### Port types, and what each is for
+### The two port types
 
-| Type | What it is | Best suited to |
-|---|---|---|
-| **Edge port** | Excitation across a conductor's end face, referenced to the ground plane | **The default, and the right answer for almost everything**: any structure you would measure on a fixture or a probe station — a line, a bend, a filter, a matching network. Its reference plane is well defined and de-embedding is well posed. |
-| **Auto-generated feed extension** | Not a port you place: a uniform lead the solver grows outward from your port's own end face, so the calibration has uniform line to work with | Automatic; see below. You never place one, and it never changes where the answer is reported. |
-| **Internal delta-gap port** | Excitation across a gap in the middle of a conductor | Lumped elements embedded in metal, and active-device terminals in the middle of a structure. **Not yet available** — edge ports only in this release. |
+| Type | Where the cut is | Is it de-embedded? | Use it for |
+|---|---|---|---|
+| **Edge port** *(the default)* | One mesh cell in from a conductor's **end face**, referenced to the ground plane | **Yes** — the [two-line calibration](#deembedding) removes the port discontinuity, so what you get back is your structure's own response | Anything power flows **into or out of**: a line, a bend, a filter, a matching network, a coupler — every structure you would measure on a fixture or a probe station |
+| **Internal delta-gap port** | An **interior cut** of a conductor, with metal on both sides, at the mesh gridline nearest where you put the label | **No, and it cannot be** — there is no feed outside the cut to remove. Its S-parameters are reported at the gap, in the reference impedance you set | A **series** element embedded in the metal (a series R, L or C you will attach in the schematic), or a **device terminal in the middle of a structure** |
 
-**The decision rule is short because the choice is:** if power crosses a boundary of your drawn metal,
-use an edge port on that boundary. If you find yourself wanting to excite something in the middle of a
-conductor, that is the delta-gap case and it is not here yet.
+<div class="callout warn">
+<span class="label">There is no shunt-to-ground port, and that is a real limit</span>
+<p>Both types above put a port <strong>in line with the current</strong>. Neither gives you a port from
+a point on the metal <strong>down to the ground plane</strong> — the thing a <strong>shunt</strong> R, L
+or C needs, or a device terminal that returns to ground.</p>
+<p>Other planar tools have one, variously called a <em>via port</em> or an <em>internal port</em>.
+circuitRF does not. A shunt port is not a variation on an internal gap: it does not cut the trace, and
+it needs a vertical current path down to the plane, which is a different excitation.</p>
+<p><strong>What to do meanwhile:</strong> draw the shunt path in the artwork. Run a stub, a pad and a via
+to the ground plane as real metal, and put an <em>edge</em> port on the far end of that stub — then the
+EM run models the whole shunt path, including the via, and your component attaches at the stub's end
+where an edge port is well posed.</p>
+</div>
 
-### Auto-ports and the feed extension
+**The decision rule is one question: does the power cross the boundary of your drawn metal?**
+
+- **Yes** — it comes in from a connector, a probe, or the next block along — then it is an **edge port**,
+  on that boundary.
+- **No** — you want to break the conductor *here* and put something across the break — then it is an
+  **internal delta-gap port**.
+
+<p class="small">An edge port may grow a short uniform lead onto your metal before meshing, so its
+calibration has uniform line to measure against; the lead is removed exactly afterwards and the answer
+is still reported at your own drawn edge. It is automatic —
+see <a href="#feed">Auto-ports and the feed extension</a>.</p>
+
+### What each one looks like in the layout
+
+{{ui: ports-edge}}
+
+A Klopfenstein taper with an edge port on each end — the ordinary two-port setup, and what a correct
+one looks like. Each port draws **a bar across its own end face** (where current crosses into the
+structure) **and an arrow along the direction it flows in**. A dashed leader ties the label to the bar
+when the two are not in the same place, so the mark stays readable wherever you put the text.
+
+Three things worth reading off this picture:
+
+- **Each bar is the width of the metal at ITS OWN end**, not the width of the part. On a taper those
+  are very different numbers, and the bar is how you check the solver agrees with you about which face
+  you named.
+- **The labels sit at the centre of each end face**, not at a corner. A label at a corner is equally
+  close to two edges, and the run refuses it rather than guessing — because guessing reverses the
+  direction of current into the structure, which is a hard π in S₂₁ and invisible in a magnitude plot.
+- **Both arrows point inward**, at each other. Current flows *into* the structure through every port;
+  that is what a port's direction means, on both ends of a two-port.
+
+{{ui: ports-internal-gap}}
+
+A 50 Ω line with the same two edge ports on its ends and an **internal delta-gap port in the middle** —
+where a series component would go. Holding the width constant is what makes the comparison readable:
+the only thing that differs between port 3's mark and ports 1 and 2's is the mark itself.
+
+An internal delta-gap port is drawn as a **different mark on purpose**: two bracketed bars facing each
+other across a break in the metal, overhanging the conductor top and bottom, with the arrow running
+through the break. An edge port's mark says *a boundary, and which way in*; a gap's says *a break, and
+which way across*. At a glance they are not each other.
+
+The gap is drawn **where you placed the label**, because that is where the cut is. An edge port's bar
+is always snapped to the conductor's end face, however far from it you put the text.
+
+### How wide is the gap, really?
+
+**The gap is the mesh's, not the artwork's.** The cut is a mesh gridline, and the excitation drives the
+pair of cells either side of it — so the length of conductor the gap occupies is those two cells, set by
+*Cells per wavelength* and the rest of the mesh settings. **Nothing you can draw changes it.**
+
+The drawing follows that, and says which of the two things it is showing:
+
+- **Before you compute a mesh** there is nothing to measure, so the break is drawn at a fixed fraction
+  of the port's width — a legible glyph, not a dimension. Do not measure it.
+- **Once the mesh is computed** the break is drawn at **the real thing**: the two cells either side of
+  the cut, with the brackets on the mesh's own gridlines so you can read them against the overlay.
+
+{{ui: ports-gap-mesh-width}}
+
+The mark also moves to the cut. A gap can only fall on a gridline, so if your label sits between two,
+the brackets go to the gridline that was chosen and a dashed leader runs back to your label — **the
+snap, drawn**, rather than only reported in the notes.
+
+**If you edit the layout, the mesh is dropped and the break reverts to its glyph width.** That is
+deliberate: a stale width left on screen would look exactly like a live one.
+
+**Refine the mesh and the gap gets shorter**, which is what makes it a better approximation to a point
+discontinuity. There is no other lever.
+
+<div class="callout warn">
+<span class="label">Do not draw a slot in your metal for an internal port</span>
+<p>The conductor stays <strong>continuous</strong> and the port cuts it. Drawing a physical gap makes
+two separate conductors with two end faces — which is a pair of edge ports, and a different structure.</p>
+</div>
+
+### How to choose, in practice
+
+- **Two-port and multi-port passive structures** — everything from a bend to a Wilkinson — are **all
+  edge ports**. This is the overwhelmingly common case.
+- **A structure you will attach a component to in the middle** — a series capacitor breaking a line, a
+  resistor across a gap, a shunt element — gets an **internal delta-gap port** at the break, plus edge
+  ports wherever power actually enters. Simulate the metal in EM, connect the component in the
+  schematic, and the two meet at the gap.
+- **An active device embedded in your artwork** is the same pattern: an internal port at each terminal
+  you will attach the device model to.
+- **If power crosses your metal's boundary, use an edge port.** The two types report at different
+  planes and give different answers; which one is right is set by where the power actually goes, not
+  by which is cheaper to compute.
+
+<div class="callout note">
+<span class="label">What an internal port costs you, stated plainly</span>
+<p>An internal port's gap is <strong>one mesh cell wide</strong>, and the cut lands on the nearest mesh
+gridline to where you put the label — not exactly where you clicked. The run reports how far it moved,
+and refining the mesh there is what closes both gaps: it puts the cut closer to where you asked, and it
+makes the gap a better approximation to a point discontinuity. There is no calibration to fall back on
+here, so the mesh is the only lever.</p>
+</div>
+
+### Setting the type
+
+**EM Setup panel → Ports.** Each port gets a row with its reference impedance and a **type** dropdown —
+Edge or Internal delta gap. The rows come from the port labels in your layout, so the port *count* is
+the geometry's; the type and the impedance are yours.
+
+<div class="callout note">
+<span class="label">Two EM setups on one layout may disagree, and that is allowed</span>
+<p>Because the type belongs to the analysis, nothing stops two <code>.cem</code> files that reference
+the same layout from calling the same port different things — a gap in the middle of a trace in one, a
+pair of edge ports in the other. That is a legitimate thing to want.</p>
+<p>The layout can only draw one of them. It follows <strong>the setup you last worked in</strong>, and
+if that takes the marks off a different setup that disagreed, the Messages panel says so and names
+both. If the marks are not what you expect, that line tells you which setup they belong to.</p>
+</div>
+
+**The type only appears for a full-wave planar analysis.** Internal delta-gap ports are a full-wave
+feature, and the uniform-line (quasi-static) kernel has none — the row shows a reference impedance and
+nothing else there.
+
+That is a property of what the uniform-line kernel *is*, not a gap in it. It never meshes the plane at
+all: it solves a **cross-section** for per-unit-length RLGC and forms the network of a length-ℓ line in
+closed form, so its ports are the two ends of that line by construction. There is no gridline in the
+middle to cut, no pair of cells to drive across, and no mesh whose refinement could shrink a gap. (It is
+the same fact that makes de-embedding a no-op there: the reference planes are the line's ends exactly,
+so there is no port discontinuity to remove.)
+
+**If you need a gap in the middle of a uniform line, set Analysis to the full-wave planar kernel
+explicitly.** Do not leave it on Auto for this. A uniform line with a gap on it is still a uniform
+*cross-section* as far as the geometry is concerned, so Auto picks the cheaper uniform-line kernel —
+and that kernel has nowhere to put the port. **circuitRF refuses that combination by name rather than
+running it**, because the alternative is a complete, plausible two-port answer for a line without the
+gap you asked for. The refusal names the remedy: change the analysis, or change the port back to an
+edge port.
+
+Two rules the panel enforces:
+
+- **An internal port must sit on the metal**, not just near it. An edge port's label may sit slightly off
+  the end face it names; an internal one cuts the conductor, so it has to be on the conductor.
+- **An internal port must state its direction.** For an edge port the direction can be inferred from the
+  nearest conductor boundary. A label in the middle of a conductor is roughly equally far from all four
+  edges, so there is nothing to infer from — and the direction is what decides which way positive
+  current crosses the gap. Rotate the port to point the way current should flow across the cut.
+
+A gap in the middle of a conductor is a **series** source: it drives the two halves in antiphase, so a
+gap at the centre of a symmetric line gives S₁₃ = −S₂₃, not +. That sign is real physics, not a
+convention you can flip, and it is why the direction is required rather than guessed.
+
+### Auto-ports and the feed extension {#feed}
 
 **You do not have to add a feed line to your artwork.** Place a port on the part you drew and press
 Simulate.
@@ -239,11 +412,35 @@ Three properties of that are load-bearing:
 Default 50 Ω, editable per port in the EM Setup panel. It is a **renormalisation** applied to the
 result, not a property of the geometry — the solve does not change.
 
-### The ground reference
+### The ground reference — every port's negative terminal
 
-**Get this wrong and everything downstream is wrong.** For microstrip the reference is the stackup's
-ground plane; for coplanar waveguide it is the adjacent coplanar conductors. The EM Setup panel shows
-the ground reference it resolved, under the cross-section readback. Check it once per new stackup.
+**Get this wrong and everything downstream is wrong**, and there is no per-port control for it.
+
+**Every port in a full-wave run returns through the same plane: the stackup's ground.** That is the
+negative terminal of every edge port and of every internal delta gap, and it is not something you set
+on a port — it comes from the *technology*, by one rule:
+
+> the **top surface of the highest conductor marked as a ground reference that lies below the signal
+> level**. If no conductor is marked, the stackup's bottom boundary condition is used instead, and the
+> run says so.
+
+**On a stackup with several metal layers this matters and is worth checking.** Which levels take *part*
+in the analysis is yours to choose (the EM Setup panel's analysis-level checkboxes). Which one is
+*ground* is not a port setting — **to return through a different conductor, designate that conductor as
+the ground reference in the technology editor.** The run's notes name the plane it resolved, its height,
+and the signal level it sits below.
+
+Two consequences of it being the stackup's plane:
+
+- **It is modelled as laterally infinite.** A finite ground pour is not that, and a via to a
+  ground-designated conductor that is *not* the resolved reference is dropped by name rather than
+  treated as the plane.
+- **Any other reference is refused, not approximated** — a coplanar ground, a second signal conductor,
+  a differential pair, or a port driven between two levels at a via. Each is named in the refusal.
+
+Coplanar waveguide is the case people expect to work and it does not: its return is the adjacent
+coplanar conductors, which is a different port model rather than a different layer, and this kernel
+does not build one.
 
 ## De-embedding {#deembedding}
 
@@ -256,6 +453,15 @@ Reporting those S-parameters as the structure's response is simply wrong. De-emb
 circuitRF uses a **two-line calibration**: it simulates a short and a longer uniform reference line of
 the port's cross-section, extracts the port's own reflection and the line's propagation constant, and
 removes them.
+
+<div class="callout note">
+<span class="label">This is about edge ports. An internal delta-gap port is not de-embedded.</span>
+<p>A two-line calibration removes a <em>feed</em>. An interior cut has metal on both sides, so there is
+no feed outside it — nothing to calibrate against, nothing to remove, and no line impedance to
+reference the answer to. An internal port's S-parameters are reported <strong>at the gap itself, in the
+reference impedance you set for it</strong>, and the run's notes say so whenever one is present.
+Everything below in this section concerns edge ports.</p>
+</div>
 
 ### Where the reference plane sits
 
@@ -285,7 +491,7 @@ What limits the answer is **direct radiative and surface-wave coupling between t
 decays only algebraically, and there is no term for it in a "box + matched line + box" model. Measured
 on 1.6 mm FR-4, a section that *should* be perfectly matched reads:
 
-| Frequency | |S₁₁| of a section that should be zero |
+| Frequency | \|S₁₁\| of a section that should read zero |
 |---|---|
 | 2 GHz | 3.9 × 10<sup>-4</sup> |
 | 10 GHz | 6.0 × 10<sup>-3</sup> |
@@ -320,6 +526,8 @@ radiates cannot be cleanly de-embedded.**
   if you leave them alone.*
 - **Port the *end face*, not a corner.** A label at a corner is ambiguous and will be refused; a label
   on a clean straight end face resolves without a guess.
+- **None of this applies to an internal delta-gap port**, which is not de-embedded at all. Its accuracy
+  is set by the mesh at the cut, not by radiation between feeds.
 - **Watch the band, not just the centre.** Everything above degrades with frequency. If your structure
   is fine at 2 GHz and strange at 12 GHz, suspect the port before the geometry.
 
@@ -489,9 +697,14 @@ The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes.
 | 5,000 | 400 MB | The practical ceiling for a lightweight tool |
 | 10,000 | 1.6 GB | Out of scope |
 
-**There is a hard ceiling around 5,000 unknowns, the predicted N is shown before you solve, and a mesh
-above it is refused** with a message pointing at mesh coarsening. A tool that silently tried to allocate
-12 GB would not be lightweight.
+**There is a hard ceiling at 5,000 unknowns for the dense solve, the predicted N is shown before you
+solve, and a mesh above it is refused** with a message pointing at the remedies that actually bind. A
+tool that silently tried to allocate 12 GB would not be lightweight.
+
+**The [accelerated solve](#budget) raises that ceiling to 12,000** — on a single-metal-level structure
+with no vias, which is the only kind it can accelerate. A multi-level or via-bearing mesh is refused by
+name regardless, so the ceiling there is still 5,000, and the refusal names turning the accelerator on
+as the first remedy whenever doing so would let your mesh through.
 
 Two numbers that surprise people, both measured on 1.6 mm FR-4 at 10 GHz:
 
@@ -505,8 +718,19 @@ That is the arithmetic behind [adaptive sampling](#adaptive) being on by default
 up 4.4× and the number of points did not.
 
 The **accelerated solve** option changes the memory picture rather than the time one: roughly 4× less
-working set past about 900 unknowns, with the time crossover much later, around 3,700 unknowns. It does
-not raise the ceiling, and it is single-metal-level only, with no vias.
+working set past about 900 unknowns, with the time crossover much later, around 3,700 unknowns. It is
+**single-metal-level only, with no vias** — and within that, it raises the ceiling from 5,000 unknowns
+to 12,000.
+
+<div class="callout warn">
+<span class="label">One thing it does not reach, and it costs real minutes when it bites</span>
+<p>De-embedding's own reference-impedance step is a <strong>separate, always-dense</strong> computation
+on each calibration standard, and the accelerator does not touch it. A standard reproduces your port's
+own cross-section, so a <em>wide</em> port's standard can be as large as the whole structure — and such
+a run is refused up front, at setup time, even though the DUT's own accelerated solve would have
+succeeded. Turn de-embedding off to read the raw solve, knowing those S-parameters include the port
+discontinuity and are for diagnostics only.</p>
+</div>
 
 ## What the engine refuses, and why a refusal is better {#refusals}
 
@@ -522,6 +746,9 @@ The refusals you are most likely to meet:
 | **The predicted unknown count exceeds the ceiling** | Coarsen the mesh, or simulate less of the structure. See [the budget](#budget). |
 | **"Port n is ambiguous"** | Move the label off the corner onto a clean end face. |
 | **Two ports naming the same number** | Renumber one. |
+| **"Port n is an internal delta-gap port… not ON any conductor"** | An internal port cuts the metal, so it has to be placed on the metal. Move the label onto the conductor, or make it an edge port if you meant the end. |
+| **"…an internal delta-gap port with no direction on it"** | Rotate the port to point the way current should flow across the cut. There is no nearby conductor end to infer a direction from in the middle of a trace, and the sign is not guessed. |
+| **"…the conductor under it has no interior cut to gap"** | The conductor is only one cell long where you put the gap, so there is no pair of adjacent cells to break between. Raise Cells per wavelength, move the port into the middle of a longer run, or make it an edge port. |
 | **The DCIM fit is outside its validated range** | The structure is electrically larger than the fitted kernel covers at that frequency. Narrow the band. |
 | **A via separation the vertical kernel cannot resolve** | Turn on the **direct vertical (via) kernel**, which replaces the fitted Green's function with direct numerical integration for that one term, at 15–45% more per frequency point per via span. |
 | **No stackup** | An EM run refuses without a technology rather than inventing one — the one place a missing technology is not degraded gracefully. |
@@ -538,6 +765,44 @@ machinery.
    setup names.
 3. Drop an [SnP component](components.html#snp) into your test bench and point it at that file.
 4. Run harmonic balance with the real device model beside it.
+
+### Putting a component in the middle of the metal
+
+An [internal delta-gap port](#ports) is how a component gets *into* the metal rather than beside it. The
+workflow is the ordinary one with one extra port:
+
+1. Draw the conductor as **one continuous piece** — do not draw a slot where the component goes.
+2. Put edge ports where power enters and leaves, and an **internal delta-gap port** where the component
+   goes. Three ports, so the EM run writes an `.s3p`.
+3. Drop that `.s3p` into a schematic and **connect the component to the gap's port**.
+
+{{ui: em-series-gap-cosim}}
+
+Ports 1 and 2 are the line's ends. The 1.2 pF capacitor sits on **port 3** — the gap — and it is in
+**series** in the metal: everything that gets from port 1 to port 2 goes through it.
+
+<div class="callout note">
+<span class="label">It looks like a shunt element. It is not one.</span>
+<p>Port 3's two terminals are the two lips of the cut — neither of them is the ground plane. The
+schematic draws every port of an N-port against a shared ground because that is how an N-port is
+written down, not because one lip is grounded.</p>
+<p>What matters is the constraint, and it is the right one: terminating port 3 with an impedance
+imposes <em>V₃ = −Z·I₃</em> on the <strong>gap</strong> voltage and the current <strong>crossing the
+gap</strong>, which is exactly "put Z into the cut". Ground here is bookkeeping. If you want a
+<em>shunt</em> element — one that takes current from the trace down to the ground plane — an internal
+delta gap is the wrong port for it, and circuitRF has no port for it yet.</p>
+</div>
+
+Two practical notes:
+
+- **Leave port 3's reference impedance at 50 Ω** unless you have a reason. It is a reference the answer
+  is expressed in, not a property of the gap; the `.sNp` header records it and the schematic reads it
+  back, so the two cannot disagree.
+- **Use it for anything the gap can carry**: a series R, L or C, a measured 2-port of a real part, or a
+  device terminal. The EM run models the artwork; the schematic models the part. Neither approximates
+  the other, which is the whole point of splitting them.
+
+### Everything else about co-simulation
 
 Three consequences, all good ones:
 

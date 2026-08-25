@@ -543,12 +543,76 @@ public sealed class SchematicCanvas : Control
             case SchematicHitTest.HitKind.ComponentType:
             case SchematicHitTest.HitKind.ComponentName:
             case SchematicHitTest.HitKind.ComponentParam:
+                RaiseLabelDoubleTap(hit);
+                break;
+            case SchematicHitTest.HitKind.Component:
             {
+                var comp = _editContext.EditModel.FindComponent(hit.Id);
+                if (comp is not null)
+                    ComponentDoubleTapped?.Invoke(this, comp);
+                break;
+            }
+            case SchematicHitTest.HitKind.NetLabel:
+            {
+                var lbl = _editContext.EditModel.FindNetLabel(hit.Id);
+                if (lbl is null) break;
+                var (sx, sy) = WorldToScreen(lbl.X, lbl.Y);
+                WireDoubleTapped?.Invoke(this, new WireHitArgs("", lbl.X, lbl.Y, sx, sy));
+                break;
+            }
+            case SchematicHitTest.HitKind.Wire:
+            case SchematicHitTest.HitKind.WireSegment:
+            case SchematicHitTest.HitKind.WireEndpoint:
+            {
+                var wire = _editContext.EditModel.FindWire(hit.Id);
+                double labelWx = wx, labelWy = wy;
+                if (wire is { Points.Count: >= 2 })
+                {
+                    // Use the segment's exact coordinate (not click) as the base so the gap is
+                    // always exactly NetLabelGap* world units from the wire regardless of click precision.
+                    var (horizontal, baseCoord) = ClassifySegmentAt(wire, wx, wy);
+                    if (horizontal)
+                        labelWy = baseCoord - NetLabelGapAboveHorizontal;
+                    else
+                        labelWx = baseCoord + NetLabelGapBesideVertical;
+                }
+                // WorldX/Y = net-label world placement; ScreenX/Y = actual click position for TextBox centering
+                WireDoubleTapped?.Invoke(this, new WireHitArgs(hit.Id, labelWx, labelWy, pos.X, pos.Y));
+                break;
+            }
+        }
+    }
+
+
+    /// <summary>
+    /// Begin an inline label edit at a WORLD point, exactly as a double-tap on that point would.
+    ///
+    /// <para>Extracted from <see cref="OnDoubleTapped"/> so the documentation factory can photograph
+    /// the inline editor without synthesising a pointer gesture headlessly. It is the same code
+    /// raising the same event to the same handler on <c>SchematicView</c>, which is the point: a
+    /// figure of a re-creation of the inline editor would be a picture of something the application
+    /// does not do. Returns false when nothing editable is under the point.</para>
+    /// </summary>
+    internal bool BeginInlineLabelEditAtWorld(double wx, double wy)
+    {
+        if (_editContext is null || _model is null || _index is null) return false;
+        var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy, zoom: _zoom);
+        if (hit.Kind is not (SchematicHitTest.HitKind.ComponentType
+                          or SchematicHitTest.HitKind.ComponentName
+                          or SchematicHitTest.HitKind.ComponentParam)) return false;
+        return RaiseLabelDoubleTap(hit);
+    }
+
+    /// <summary>Position the edit box over the rendered label and raise the event the view listens to.</summary>
+    private bool RaiseLabelDoubleTap(SchematicHitTest.HitResult hit)
+    {
+        if (_editContext is null) return false;
+
                 // Mirror DrawLabels positioning exactly so the edit box overlays the rendered text.
                 // The hit result carries the geometric hitbox centre (for click detection), which
                 // differs from the actual text render position — do not use WorldToScreen(hit.LabelWorldX/Y).
                 var editComp = _editContext.EditModel.FindComponent(hit.Id);
-                if (editComp is null) break;
+                if (editComp is null) return false;
 
                 // SubIndex for ComponentParam is the full-list parameter index.
                 // The visual row is 2 + count of shown params that precede it.
@@ -589,46 +653,91 @@ public sealed class SchematicCanvas : Control
                         lx += mf.MeasureText(prefix);
                     }
                 }
+        TextLabelDoubleTapped?.Invoke(this, new TextLabelHitArgs(hit, lx, ly));
+        return true;
+    }
 
-                TextLabelDoubleTapped?.Invoke(this, new TextLabelHitArgs(hit, lx, ly));
-                break;
-            }
-            case SchematicHitTest.HitKind.Component:
+
+    /// <summary>
+    /// Open the inline editor on one component parameter, found the way a double-tap finds it — the
+    /// documentation factory's entry point for photographing the inline value editor.
+    ///
+    /// <para>The label's screen position is computed by the SAME arithmetic
+    /// <see cref="RaiseLabelDoubleTap"/> uses, then converted back to a world point and put through
+    /// the real <see cref="SchematicHitTest"/>. The result is VERIFIED to be the parameter that was
+    /// asked for before anything is opened: a figure captioned "editing R" that had quietly landed on
+    /// the instance name would be exactly the silently-wrong picture this pipeline exists to refuse.</para>
+    /// </summary>
+    internal void BeginInlineParamEdit(string instanceName, string paramName)
+    {
+        if (_editContext is null || _model is null || _index is null)
+            throw new InvalidOperationException("The schematic canvas has no model to edit a label on.");
+
+        var comp = _editContext.EditModel.Components
+                               .FirstOrDefault(c => c.InstanceName == instanceName)
+            ?? throw new InvalidOperationException(
+                $"No component named '{instanceName}' in this schematic. It holds: "
+              + string.Join(", ", _editContext.EditModel.Components.Select(c => c.InstanceName)) + ".");
+
+        int paramIndex = -1, shownBefore = 0;
+        for (int i = 0; i < comp.Parameters.Count; i++)
+        {
+            var pp = comp.Parameters[i];
+            if (pp.Name == paramName) { paramIndex = i; break; }
+            if (pp.ShowOnSchematic && !string.IsNullOrEmpty(pp.Expression)) shownBefore++;
+        }
+        if (paramIndex < 0)
+            throw new InvalidOperationException(
+                $"'{instanceName}' has no parameter '{paramName}'. It has: "
+              + string.Join(", ", comp.Parameters.Select(x => x.Name)) + ".");
+
+        // Where the row lands on screen is the renderer's business, and a hidden type label or a
+        // dragged label offset moves it. Rather than assume, sweep the rows the label could be on and
+        // accept only a probe the REAL hit test agrees is this parameter. A search that must end in an
+        // exact match is not a guess; one unverified point was, and it silently opened the editor on
+        // the instance name.
+        double textSize = Math.Max(_zoom * 70, 4.0);
+        var (cpx, cpy) = WorldToScreen(comp.X, comp.Y);
+
+        SchematicHitTest.HitResult? found = null;
+        double foundLx = 0, foundLy = 0;
+        var tried = new List<string>();
+
+        for (int probeRow = 0; probeRow <= 3 + shownBefore && found is null; probeRow++)
+        {
+            var (oDx, oDy) = comp.GetLabelOffset(probeRow);
+            double lx = cpx - _zoom * 155 + oDx * _zoom;
+            double ly = cpy + _zoom * 120 + textSize + probeRow * (textSize + 2) + oDy * _zoom;
+
+            foreach (double dy in (double[])[0.35, 0.15, 0.55])
             {
-                var comp = _editContext.EditModel.FindComponent(hit.Id);
-                if (comp is not null)
-                    ComponentDoubleTapped?.Invoke(this, comp);
-                break;
-            }
-            case SchematicHitTest.HitKind.NetLabel:
-            {
-                var lbl = _editContext.EditModel.FindNetLabel(hit.Id);
-                if (lbl is null) break;
-                var (sx, sy) = WorldToScreen(lbl.X, lbl.Y);
-                WireDoubleTapped?.Invoke(this, new WireHitArgs("", lbl.X, lbl.Y, sx, sy));
-                break;
-            }
-            case SchematicHitTest.HitKind.Wire:
-            case SchematicHitTest.HitKind.WireSegment:
-            case SchematicHitTest.HitKind.WireEndpoint:
-            {
-                var wire = _editContext.EditModel.FindWire(hit.Id);
-                double labelWx = wx, labelWy = wy;
-                if (wire is { Points.Count: >= 2 })
+                foreach (double dx in (double[])[0.5, 2.0, 4.0, 8.0])
                 {
-                    // Use the segment's exact coordinate (not click) as the base so the gap is
-                    // always exactly NetLabelGap* world units from the wire regardless of click precision.
-                    var (horizontal, baseCoord) = ClassifySegmentAt(wire, wx, wy);
-                    if (horizontal)
-                        labelWy = baseCoord - NetLabelGapAboveHorizontal;
-                    else
-                        labelWx = baseCoord + NetLabelGapBesideVertical;
+                    double px = ScreenToWorldX(lx + textSize * dx);
+                    double py = ScreenToWorldY(ly - textSize * dy);
+                    var probe = SchematicHitTest.Test(_editContext.EditModel, _model, _index,
+                                                      px, py, zoom: _zoom);
+                    if (probe.Kind == SchematicHitTest.HitKind.ComponentParam
+                        && probe.Id == comp.Id && probe.SubIndex == paramIndex)
+                    {
+                        found = probe; foundLx = lx; foundLy = ly;
+                        break;
+                    }
+                    tried.Add(probe.Kind.ToString());
                 }
-                // WorldX/Y = net-label world placement; ScreenX/Y = actual click position for TextBox centering
-                WireDoubleTapped?.Invoke(this, new WireHitArgs(hit.Id, labelWx, labelWy, pos.X, pos.Y));
-                break;
+                if (found is not null) break;
             }
         }
+
+        if (found is null)
+            throw new InvalidOperationException(
+                $"No probe over {instanceName}.{paramName}'s label rows came back as that parameter — "
+              + $"the hit test returned [{string.Join(", ", tried.Distinct())}]. The label arithmetic "
+              + "and the hit test have drifted apart, and the figure would have opened the editor on "
+              + "the wrong text.");
+
+        _ = (foundLx, foundLy);
+        RaiseLabelDoubleTap(found.Value);
     }
 
     // Returns (isHorizontal, baseCoord) where baseCoord is the segment's Y for horizontal

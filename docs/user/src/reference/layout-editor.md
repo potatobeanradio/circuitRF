@@ -294,9 +294,34 @@ concept at all: one file per layer, mapping declared at export.
 
 ## Design-rule checking {#drc}
 
-Minimum width and minimum spacing per layer, declared in the technology. Violations are reported to the
-Messages pane and marked on the canvas. Rules come from the technology, so a design retargeted to a
-different process is checked against that process's rules without anything being re-entered.
+**Design ▸ Check Design Rules**, or the **Check** button on the DRC panel. The rules come from the
+**technology**, not from the layout, so a design retargeted to a different process is checked against
+that process's rules without anything being re-entered.
+
+The rule kinds a technology can declare are minimum width, minimum spacing, minimum separation,
+minimum enclosure, minimum overlap and metal density; each names the layer (or the layer pair) it
+applies to and the value it requires. `.ctech` files carry them, so a kit's own rules arrive with the
+kit.
+
+{{ui: drc-violations}}
+
+Each violation says which rule it broke, between which shapes, and by how much — and clicking one
+zooms the canvas to it. Markers draw over the offending geometry and can be toggled off. The header
+always names the **technology that was checked against**: a clean result against the wrong process
+looks exactly like a clean result against the right one, which is why the panel never leaves it to be
+inferred.
+
+A violation can be **waived, with a reason**. A waived hit stays in the list, greyed and counted
+separately, rather than disappearing — a known exception you can still see is worth more than a clean
+report you cannot trust.
+
+<div class="callout note">
+<span class="label">DRC, not LVS</span>
+<p>circuitRF checks the <strong>geometry</strong> against the process rules. It does not compare the
+layout against the schematic: there is no layout-versus-schematic check, and the connectivity the DRC
+computes internally exists to tell one net's shapes from another's, not to verify a netlist. Two
+different nets overlapping is a short, and finding it is an LVS job circuitRF does not do.</p>
+</div>
 
 ## The toolbar {#toolbar}
 

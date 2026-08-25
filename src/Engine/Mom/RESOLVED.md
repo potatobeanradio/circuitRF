@@ -3,6 +3,53 @@
 Completed work's detail lands here instead of `CLAUDE.md`, which stays for durable, still-true
 conventions only. Same pattern as `src/Ui/DataDisplay/RESOLVED.md` and `src/Ui/Layout/Em/RESOLVED.md`.
 
+## The internal delta-gap port (2026-08-24)
+
+The second of §10.6's two v1 port types, listed as "later" in the design note from the first draft
+and as deliberately out of scope in this directory's own `CLAUDE.md` §7 until now. Both statements
+were removed rather than softened; the design note's own §10.6 carries the full write-up.
+
+**It cost almost nothing in the fill or the excitation, and that is the point.** D1 already defines a
+port as a delta gap across the shared edge of two adjacent cells driving the rooftop row that spans
+it — nothing in that says the cells have to be the two outermost ones. `PlanarPortKind` picks WHICH
+shared edge: `Edge` marches in from the named side as before, `InternalDeltaGap` scans the run's
+interior gridlines and takes the one nearest the placed point that has metal (and a rooftop) on both
+sides. Everything downstream — `PlanarExcitation`, `Y = BᵀZ⁻¹B`, the s-matrix — is untouched.
+
+**Three findings worth keeping.**
+
+**1. A delta gap is a SERIES source, and the first gate asserted the wrong identity.** A gap at the
+exact centre of a uniform line is mirror-symmetric about its own cut, so the obvious oracle is
+"it couples equally to both ends", S₁₃ = S₂₃. The solve returned S₁₃ = **−**S₂₃, equal and opposite
+**to sixteen digits**. That is correct and the oracle was wrong: a series gap pushes current one way
+along the conductor, into the line on one side of the cut and out of it on the other, so the two
+halves are driven in ANTIPHASE. A SHUNT port — current injected against the ground plane — would be
+symmetric. The difference is a hard π, invisible in a magnitude plot, and the test now asserts the
+antisymmetry at 1e-6 (it holds far tighter than that) precisely because a later change to the
+incidence sign would otherwise pass. `CLAUDE.md`'s low-frequency-floor note already said the port is
+"necessarily a **series** delta-gap"; this is the same fact arriving from the other direction.
+
+**2. `IndexOf` CLAMPS, so "is the port on the metal?" needs the grid extent as well.** The transverse
+index lookup returns the nearest cell for an out-of-range coordinate rather than a miss — right for an
+edge port, whose label may legitimately sit just off the end face it names and whose longitudinal
+coordinate is not read at all. For an internal port it is wrong in the worst way: a point metres from
+the artwork clamps onto the outermost row, finds metal there, and cuts a gap the user never asked
+for — a complete, plausible s-matrix for a structure nobody drew. The internal branch now tests both
+axes against the grid's own extent before asking about metal. *(The pre-existing "outside the meshed
+region entirely" refusal on the edge path is, for the same reason, effectively unreachable. Left
+alone: the Ui-side extractor refuses an off-metal label before the engine sees it, and widening the
+edge path's behaviour is a change to shipped port resolution that wants its own measurement.)*
+
+**3. De-embedding stays ONE code path, via an identity error box.** An internal port takes
+`PlanarSolve.IdentityBox` (a₁₁ = 0, a₂₂ = 0, a₂₁ = 1) and `Z_c = Z₀`, which makes
+`PlanarDeembed.Apply` and `Renormalise` the identity on its row and column. This is not "de-embedding
+an internal port": it is arithmetic that provably changes nothing, and it was chosen over partitioning
+the matrix because a unit a₂₁ also leaves a de-embedded NEIGHBOUR's mixed terms untouched — the
+partitioned alternative would have needed its own proof of exactly that. Gated by solving the same
+problem with `Deembed` on and off and requiring < 1e-12; tolerant rather than an equality only because
+the ON path still passes through an LU of the identity matrix, so asserting bit-identity would be
+asserting a property of NumFlat's LU.
+
 ## `brief-em-deembed-ceiling-closeout.md` — the de-embedded path's OWN dense ceiling (2026-08-14)
 
 Closes `brief-em-aim-ceiling.md`'s own §13 closing subsection ("The limitation this surfaced"): the

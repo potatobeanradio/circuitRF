@@ -7,6 +7,7 @@ using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.VisualTree;
 using CircuitRF.Harmonica;
+using CircuitRF.Ui.Diagnostics;
 using CircuitRF.Ui.Harmonica;
 using CircuitRF.Ui.Harmonica.Renderers;
 using CircuitRF.Ui.Renderers;
@@ -289,8 +290,18 @@ public sealed class HarmonicaCanvas : Control
         // draw operation in this codebase follows. brief-harmonicarf-r4 §4 — the two backdrop caches
         // are the LIVE canvas's own, attached here rather than by Snapshot.Of itself, so every other
         // caller of Snapshot.Of (Copy Plot, export, tests) stays uncached exactly as before.
+        //
+        // ... EXCEPT under documentation capture. The cache exists to amortise antialiased
+        // rasterisation across live frames; a figure is one frame, drawn into an SVG or a PDF page,
+        // and blitting a snapshotted SKImage into a vector device embeds a fixed-resolution PNG. The
+        // two Smith planes did exactly that — 460x501 rasters inside an otherwise all-vector figure,
+        // which scale down chunky the moment a slide shrinks them. Uncached is the SAME picture (that
+        // is what HarmonicaBackdropCacheTests assert), issued as geometry instead of pixels.
         private readonly HarmonicaCanvasRenderer.Snapshot _snap =
-            HarmonicaCanvasRenderer.Snapshot.Of(vm).WithBackdropCaches(powerBackdrop, efficiencyBackdrop, deviceScale);
+            UiArtworkGenerator.HeadlessCapture
+                ? HarmonicaCanvasRenderer.Snapshot.Of(vm)
+                : HarmonicaCanvasRenderer.Snapshot.Of(vm)
+                                         .WithBackdropCaches(powerBackdrop, efficiencyBackdrop, deviceScale);
         private readonly HarmonicaViewModel? _vm = vm;
 
         private CharmLayout          _layout => _snap.Layout;

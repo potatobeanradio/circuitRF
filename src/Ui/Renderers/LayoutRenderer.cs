@@ -127,6 +127,24 @@ public readonly struct LayoutRenderOptions
     public IReadOnlyList<PlanarPortResolution>? PlanarPorts { get; init; }
 
     /// <summary>
+    /// <b>Which port labels the active EM setup drives as INTERNAL DELTA GAPS</b>, by the label's own
+    /// DBU anchor. Null or empty means every port is an edge port, which is what every caller that
+    /// predates the second port type passes and what a layout with no EM setup open means.
+    ///
+    /// <para><b>The port TYPE is not on the shape, and must not be.</b> It lives in the <c>.cem</c>
+    /// (<c>EmSetup.PortKinds</c>) because a layout is geometry — the same artwork can be analysed with
+    /// a gap in the middle of a trace in one setup and driven from its ends in another. So the
+    /// renderer is TOLD, by the same channel that already hands it the mesh, the current-density map
+    /// and the reference planes, rather than reading it off the label.</para>
+    ///
+    /// <para><b>Matched on the anchor, which is an exact pair of longs</b>, rather than on a port
+    /// number: a label whose text names no number is auto-numbered in document order by
+    /// <c>EmPortExtraction</c>, and reproducing that ordering here would be a second copy of it —
+    /// free to drift, and silently wrong when it did.</para>
+    /// </summary>
+    public IReadOnlyList<(long X, long Y)>? InternalGapPorts { get; init; }
+
+    /// <summary>
     /// L5b export (owner request: "copy/paste the DRC markers, just like the mesh"). Copies
     /// <see cref="ShowPlanarMesh"/>'s own contract: false by default, so every export/one-shot render
     /// draws no markers unless a caller explicitly opts in. The interactive canvas never sets this —
@@ -477,7 +495,7 @@ public static partial class LayoutRenderer
                     if (!def.Visible) continue;
                     counters.LayersVisited++;
                     DrawLayer(canvas, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, counters,
-                              tech?.FindFillPattern(def.FillPattern));
+                              tech?.FindFillPattern(def.FillPattern), view.DbuPerMicron);
                 }
 
                 // L3a — instances (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md). Culled the
@@ -792,7 +810,8 @@ public static partial class LayoutRenderer
             // so the width bar spans the real metal and the arrow's length is clamped by the real
             // conductor — not the no-conductor stand-in a null lookup would fall back to.
             if (label.IsPort)
-                DrawPortMarker(canvas, effective, conductorAt, ps, scaleUm, color, background, new LayoutFrameCounters());
+                DrawPortMarker(canvas, effective, conductorAt, ps, scaleUm, color, background,
+                               new LayoutFrameCounters(), internalGap: false);
             return;
         }
 
@@ -874,7 +893,8 @@ public static partial class LayoutRenderer
     private static void DrawLayer(SKCanvas canvas, LayerDef def, List<(int Index, LayoutShape Shape)> shapes,
         LayoutPortDirection.ConductorLookup? conductorAt,
         PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm,
-        LayoutRenderOptions opts, LayoutFrameCounters counters, FillPattern? fillPattern = null)
+        LayoutRenderOptions opts, LayoutFrameCounters counters, FillPattern? fillPattern = null,
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
 
@@ -919,8 +939,13 @@ public static partial class LayoutRenderer
                     Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort,
                     PortDirection = label.PortDirection, Style = label.Style,
                 };
-                DrawLabelText(canvas, effective, ps, color);
-                if (label.IsPort) DrawPortMarker(canvas, effective, conductorAt, ps, scaleUm, color, opts.Theme.Background, counters);
+                DrawLabelText(canvas, effective, ps, color,
+                              centred: label.IsPort && IsInternalGap(opts.InternalGapPorts, label));
+                if (label.IsPort)
+                    DrawPortMarker(canvas, effective, conductorAt, ps, scaleUm, color,
+                                   opts.Theme.Background, counters,
+                                   IsInternalGap(opts.InternalGapPorts, label),
+                                   opts.PlanarMesh, dbuPerMicron);
                 continue;
             }
 
@@ -1595,18 +1620,28 @@ public static partial class LayoutRenderer
     /// port reads as an annotation rather than as more metal.</summary>
     internal const float PortMarkerStrokeDevicePixels = 2.0f;
 
-    /// <summary>How far the direction arrow reaches into the metal, as a fraction of the port's own
-    /// width — the arrow's PREFERRED length, before the conductor gets a say.</summary>
-    private const double PortArrowLengthOverWidth = 0.66;
+    /// <summary>
+    /// How long the direction arrow is, as a fraction of the port's own width — its PREFERRED length,
+    /// before the conductor gets a say.
+    ///
+    /// <para><b>Shorter than it was, because the arrow moved.</b> It used to run from the reference
+    /// plane INTO the metal, where two thirds of the port width was a proportion of the thing it was
+    /// lying on. It now approaches the plane from OUTSIDE and its head lands on the bar, so the same
+    /// fraction put a long tail out in the empty space beside the part — longest, in the way this
+    /// most shows, exactly where the port is widest.</para>
+    /// </summary>
+    private const double PortArrowLengthOverWidth = 0.35;
 
     /// <summary>
     /// The hard ceiling on the arrow's reach, as a fraction of the conductor's own extent ALONG the
     /// direction. Owner report, 2026-08-09: <i>"the arrow head can sometimes extend beyond the metal
     /// shape that the port is connected to... can the arrow never extend beyond the metal in the
-    /// direction it's pointing to?"</i> — it cannot, now: the reach is
-    /// <c>min(width-preferred, length × this)</c>, so a short line clamps the arrow instead of the
-    /// arrow overrunning the line. Under 1 so the tip stops visibly short of the far edge rather than
-    /// landing exactly on it, where it would read as part of the outline.
+    /// direction it's pointing to?"</i> — the reach is <c>min(width-preferred, length × this)</c>,
+    /// so a short conductor clamps the arrow rather than the arrow dwarfing the conductor.
+    ///
+    /// <para>The arrow now approaches the plane from outside rather than running into the metal, so
+    /// this no longer governs whether it OVERRUNS anything — it governs proportion: a small part does
+    /// not get a long tail, which is the same judgement applied to the mark's new position.</para>
     /// </summary>
     private const double PortArrowMaxLengthOverConductorLength = 0.7;
 
@@ -1678,11 +1713,295 @@ public static partial class LayoutRenderer
     /// it by name at run time. Drawing a guessed arrow there would be the one thing worse than
     /// drawing none.</para>
     /// </summary>
+    /// <summary>
+    /// Half-width of the internal gap's own break, as a fraction of the port width. The two bars sit
+    /// this far either side of the cut, so the break between them is <c>2 ×</c> this — wide enough to
+    /// read as a deliberate discontinuity at a glance and narrow enough that the pair still reads as
+    /// ONE mark rather than as two separate ports.
+    /// </summary>
+    private const double InternalGapHalfOverWidth = 0.11;
+
+    /// <summary>
+    /// How far the internal gap's bars are turned back along the conductor at each end, as a fraction
+    /// of the port width. The bracket shape — a bar with BOTH ends turned toward its own metal — is
+    /// what distinguishes a gap from an edge port's plane, whose single serif turns AWAY.
+    ///
+    /// <para><b>Sized by looking at it, not by taste.</b> At the edge port's own 0.12 the flanges were
+    /// invisible in a rendered figure and the pair read as two plain parallel lines — which is the
+    /// one thing this mark must not be, since two plain lines is what a reader would take for two
+    /// reference planes. Large enough that the brackets are the first thing seen.</para>
+    /// </summary>
+    private const double InternalGapFlangeOverWidth = 0.22;
+
+    /// <summary>
+    /// How far each bar runs PAST the conductor at both ends, as a fraction of the port width.
+    ///
+    /// <para><b>This is what makes the brackets visible at all, and it is a fix rather than a
+    /// flourish.</b> A gap's bars are drawn mid-conductor, so their ends sit exactly ON the metal's
+    /// own outline — and a flange turned along the conductor from a point on that outline is drawn
+    /// on top of the outline and cannot be seen. Measured, in a rendered figure: at zero overhang the
+    /// mark read as two plain parallel lines however long the flanges were made. An edge port has no
+    /// such problem, because its bar's ends are at the end of the structure with background around
+    /// them.</para>
+    /// </summary>
+    private const double InternalGapOverhangOverWidth = 0.10;
+
+    /// <summary>
+    /// <b>The half-width of the gap the SOLVER will actually use</b>, in DBU, or null when there is no
+    /// mesh to ask.
+    ///
+    /// <para>A delta gap is cut on a mesh GRIDLINE and drives the rooftop spanning the pair of cells
+    /// either side of it — so the length of conductor the excitation occupies is those two cells, and
+    /// it is set by the mesh settings rather than by anything drawn. Once a mesh exists, drawing the
+    /// break at the fixed fraction would be drawing a number that means nothing next to a number that
+    /// does, with the mesh's own gridlines visible underneath it.</para>
+    ///
+    /// <para><b>Half-width per SIDE, not one number for both</b>, because a graded mesh's two cells
+    /// need not be the same size — and at a gap near a conductor edge they routinely are not. Each
+    /// bracket lands on its own cell's outer gridline, so the mark is verifiable against the overlay
+    /// rather than merely proportional to it.</para>
+    ///
+    /// <para><b>This finds the nearest usable gridline the way the resolver does, and it is not the
+    /// resolver.</b> <c>PlanarPorts</c> additionally requires the pair to be paired into a ROOFTOP,
+    /// which depends on the conformal cut and is not reconstructible from a mesh report alone. Where
+    /// the two disagree the mark still sits on a real gridline and the run's own note remains the
+    /// authority on where the cut landed; it is a picture of the mesh, not a second resolution.</para>
+    /// </summary>
+    internal static (double Cut, double Back, double Fwd)? MeshGapHalfWidth(
+        PlanarMeshReport? report, LabelShape label, LayoutPortDirection.PortHint hint, int dbuPerMicron)
+    {
+        if (report?.Mesh is not { } mesh || mesh.Cells.Count == 0) return null;
+
+        // R-mom-2: the engine is in metres and the canvas in DBU, and PlanarExtractor neither
+        // translates nor centres — so the mapping is one scalar, exactly as the mesh overlay's own
+        // header states. Do not add a centring step to the extractor without revisiting both.
+        double toDbu = dbuPerMicron * 1e6;
+        bool alongX  = hint.Direction is LayoutRotation.R0 or LayoutRotation.R180;
+
+        var gLong = alongX ? mesh.GridX : mesh.GridY;
+        var gTran = alongX ? mesh.GridY : mesh.GridX;
+        if (gLong.Count < 3 || gTran.Count < 2) return null;
+
+        double lDbu = alongX ? label.X : label.Y;
+        double tDbu = alongX ? label.Y : label.X;
+
+        int t = IndexOfCoord(gTran, tDbu / toDbu);
+        if (t < 0) return null;
+
+        // The nearest INTERIOR gridline whose two flanking cells both carry metal on the port's own
+        // transverse line — an interior cut, which is what makes it a gap rather than an end.
+        var present = new bool[gLong.Count - 1];
+        foreach (var c in mesh.Cells)
+        {
+            int cl = alongX ? c.IX : c.IY, ct = alongX ? c.IY : c.IX;
+            if (ct == t && cl >= 0 && cl < present.Length) present[cl] = true;
+        }
+
+        int best = -1;
+        double bestD = double.MaxValue;
+        for (int i = 0; i + 1 < present.Length; i++)
+        {
+            if (!present[i] || !present[i + 1]) continue;
+            double d = System.Math.Abs(gLong[i + 1] * toDbu - lDbu);
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        if (best < 0) return null;
+
+        double cut   = gLong[best + 1] * toDbu;
+        double lower = cut - gLong[best] * toDbu;
+        double upper = gLong[best + 2] * toDbu - cut;
+
+        // Returned in the PORT's own frame — behind the cut along −û, ahead along +û — not in world
+        // order. R180 and R270 point down-coordinate, so their two extents swap. Getting this wrong
+        // is invisible on a uniform mesh (the two are equal) and shows up only on a graded one, which
+        // is exactly where the mark is worth drawing at all.
+        bool up = hint.Direction is LayoutRotation.R0 or LayoutRotation.R90;
+        return up ? (cut, lower, upper) : (cut, upper, lower);
+    }
+
+    /// <summary>Which cell of a gridline array a coordinate falls in; −1 when it is outside.</summary>
+    private static int IndexOfCoord(System.Collections.Generic.IReadOnlyList<double> grid, double v)
+    {
+        for (int i = 0; i + 1 < grid.Count; i++)
+            if (v >= grid[i] && v <= grid[i + 1]) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// An INTERNAL DELTA-GAP port's marker, and it is deliberately a different mark from an edge
+    /// port's rather than the same one moved.
+    ///
+    /// <para><b>Where.</b> At the label's own anchor, across the conductor — because for an internal
+    /// port the cut IS where the user put it. An edge port's bar is snapped to the conductor END
+    /// (that is what <c>PortHint.PlaneX/Y</c> is for); doing that here would draw the cut at the far
+    /// end of the trace and be actively misleading, which is why the two branches exist at all.</para>
+    ///
+    /// <para><b>What.</b> Two bars facing each other across a visible break, each with both ends
+    /// turned back toward its own side's metal — a conductor cut open, which is exactly what the port
+    /// is. The arrow runs THROUGH the break rather than starting at a plane and heading inward, so it
+    /// reads as "positive current crosses the gap this way" rather than "current enters here".</para>
+    ///
+    /// <para>An edge port's mark says <i>a boundary, and which way in</i>; this one says <i>a break,
+    /// and which way across</i>. At a glance, and at any zoom, they are not each other.</para>
+    /// </summary>
+    /// <summary>
+    /// The hint re-measured AT THE GAP.
+    ///
+    /// <para><see cref="LayoutPortDirection.Resolve"/> measures a port's width at the conductor's END
+    /// FACE, which is the right station for an edge port and the wrong one for an interior cut: on a
+    /// taper the two differ by the whole taper ratio, and the gap would draw bars sized to metal that
+    /// is nowhere near it. The direction, and everything else the hint carries, is unchanged — only
+    /// the station moves.</para>
+    ///
+    /// <para>Falls back to the hint as resolved when there is nothing to measure (a conductor that is
+    /// an instance, or a shape the flattener declines), which is the same fallback the width
+    /// measurement itself takes.</para>
+    /// </summary>
+    private static LayoutPortDirection.PortHint GapHint(
+        LayoutPortDirection.ConductorLookup? conductorAt, LabelShape label,
+        LayoutPortDirection.PortHint hint)
+    {
+        if (conductorAt?.Invoke(label.X, label.Y) is not { Shape: { } shape } info) return hint;
+
+        bool alongX = hint.Direction is LayoutRotation.R0 or LayoutRotation.R180;
+        var span = LayoutPortDirection.SpanAt(
+            shape, info.Box, hint.Direction,
+            acrossAt: alongX ? label.Y : label.X,
+            alongAt:  alongX ? label.X : label.Y);
+
+        return span is { } s ? hint with { WidthDbu = s.Width } : hint;
+    }
+
+    /// <param name="meshHalfWidth">
+    /// The gap the solver will actually use, per side, in DBU — from the computed mesh. Null falls
+    /// back to <see cref="InternalGapHalfOverWidth"/>, which is a legibility fraction and not a
+    /// dimension. <b>So the break is a real measurement whenever there is a mesh to measure, and
+    /// reverts to a glyph the moment the mesh is invalidated</b>, which is the honest behaviour in
+    /// both directions: an edit that changes the mesh must not leave a stale width on screen looking
+    /// like a live one.
+    /// </param>
+    private static void DrawInternalGapMarker(SKCanvas canvas, LabelShape label,
+        LayoutPortDirection.PortHint hint, PathSpace ps, double scaleUm,
+        SKColor layerColor, SKColor background, LayoutFrameCounters counters,
+        (double Cut, double Back, double Fwd)? meshHalfWidth = null)
+    {
+        var color = TintForContrast(layerColor, background, PortMarkerContrastTintAmount);
+
+        var (ux, uy) = LayoutPortDirection.UnitVector(hint.Direction);
+        var (px, py) = LayoutPortDirection.PerpendicularVector(hint.Direction);
+
+        double half   = hint.WidthDbu * (0.5 + InternalGapOverhangOverWidth);
+        double flange = hint.WidthDbu * InternalGapFlangeOverWidth;
+
+        // The break: the mesh's own cells when there is a mesh, a legibility fraction when there is
+        // not. Asymmetric in the first case, because a graded mesh's two cells need not match.
+        double gapBack = meshHalfWidth?.Back ?? hint.WidthDbu * InternalGapHalfOverWidth;
+        double gapFwd  = meshHalfWidth?.Fwd  ?? hint.WidthDbu * InternalGapHalfOverWidth;
+
+        // ── WHERE THE MARK GOES: the CUT, which is not always the label ──────────────────────
+        //
+        // The cut can only be a mesh gridline, and the label may sit up to half a cell from the
+        // nearest one. Without a mesh there is nothing to snap to and the label's own position is the
+        // best statement available. WITH one, the cut is known — so the mark goes there, which is
+        // both the honest position and the only one whose brackets can land on the gridlines drawn
+        // underneath them. The snap is then visible rather than only reported in the notes: a leader
+        // is drawn from the label to the cut when the two differ, the same idiom an edge port already
+        // uses for the same reason.
+        //
+        // Path space is Y-DOWN while DBU space is Y-up, so every world +y offset is subtracted — the
+        // same convention DrawPortMarker uses.
+        bool alongX = hint.Direction is LayoutRotation.R0 or LayoutRotation.R180;
+        double cutX = meshHalfWidth is { } mw && alongX  ? mw.Cut : label.X;
+        double cutY = meshHalfWidth is { } mh && !alongX ? mh.Cut : label.Y;
+
+        float cx = ps.X(cutX), cy = ps.Y(cutY);
+        float ax = ps.X(label.X), ay = ps.Y(label.Y);
+        float DX(double d) => ps.Len(d);
+
+        using var paint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, PortMarkerStrokeDevicePixels),
+            StrokeCap = SKStrokeCap.Round, StrokeJoin = SKStrokeJoin.Round,
+            Color = color.WithAlpha(255),
+        };
+        using var path = new SKPath();
+
+        // One bar per side of the break, each flanged back toward its own metal.
+        foreach (int side in new[] { -1, 1 })
+        {
+            double gap = side < 0 ? gapBack : gapFwd;
+            float ox = cx + DX(ux * gap * side), oy = cy - DX(uy * gap * side);
+
+            float b1x = ox + DX(px * half), b1y = oy - DX(py * half);
+            float b2x = ox - DX(px * half), b2y = oy + DX(py * half);
+            path.MoveTo(b1x, b1y);
+            path.LineTo(b2x, b2y);
+
+            // Both ends turned back ALONG the conductor, AWAY from the break — the bracket an edge
+            // port's outward-turned single serif is not. Drawn from the overhung ends, which is the
+            // only place they are against background rather than on the conductor's own outline.
+            path.MoveTo(b1x, b1y);
+            path.LineTo(b1x + DX(ux * flange * side), b1y - DX(uy * flange * side));
+            path.MoveTo(b2x, b2y);
+            path.LineTo(b2x + DX(ux * flange * side), b2y - DX(uy * flange * side));
+        }
+
+        // ── NO ARROW ON A GAP ────────────────────────────────────────────────────────────────
+        //
+        // The brackets are the whole mark. An arrowhead here pointed at nothing — an edge port's
+        // head lands on its reference plane, and a gap has no single plane for one to land on — and
+        // a headless shaft through the break is indistinguishable from a stray line. The port's
+        // polarity is a number rather than a picture: the run's own note names which way positive
+        // current crosses, and the EM Setup panel is where it is set.
+        canvas.DrawPath(path, paint);
+        counters.DrawCalls++;
+
+        // The snap, drawn: a leader from the label's own anchor to the cut the mesh put it on. Only
+        // when they genuinely differ, so a gap that landed where it was placed carries no extra ink.
+        float lx = ax - cx, ly = ay - cy;
+        if (lx * lx + ly * ly > 1e-6f)
+        {
+            using var leader = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke,
+                StrokeWidth = DevicePixelsToPathSpace(scaleUm, PortMarkerStrokeDevicePixels * 0.5f),
+                Color = color.WithAlpha(150),
+                PathEffect = SKPathEffect.CreateDash([DevicePixelsToPathSpace(scaleUm, 3f),
+                                                      DevicePixelsToPathSpace(scaleUm, 3f)], 0),
+            };
+            using var leaderPath = new SKPath();
+            leaderPath.MoveTo(ax, ay);
+            leaderPath.LineTo(cx, cy);
+            canvas.DrawPath(leaderPath, leader);
+            counters.DrawCalls++;
+        }
+    }
+
+    /// <summary>Is this label one the active EM setup drives as an internal delta gap? Exact
+    /// longs — see <see cref="LayoutRenderOptions.InternalGapPorts"/> for why not a port number.</summary>
+    private static bool IsInternalGap(IReadOnlyList<(long X, long Y)>? gaps, LabelShape label)
+    {
+        if (gaps is null) return false;
+        foreach (var (x, y) in gaps) if (x == label.X && y == label.Y) return true;
+        return false;
+    }
+
     private static void DrawPortMarker(SKCanvas canvas, LabelShape label,
         LayoutPortDirection.ConductorLookup? conductorAt,
-        PathSpace ps, double scaleUm, SKColor layerColor, SKColor background, LayoutFrameCounters counters)
+        PathSpace ps, double scaleUm, SKColor layerColor, SKColor background,
+        LayoutFrameCounters counters, bool internalGap,
+        PlanarMeshReport? mesh = null, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
     {
         if (LayoutPortDirection.Resolve(conductorAt, label) is not { } hint) return;
+
+        if (internalGap)
+        {
+            DrawInternalGapMarker(canvas, label, GapHint(conductorAt, label, hint),
+                                  ps, scaleUm, layerColor, background, counters,
+                                  MeshGapHalfWidth(mesh, label, hint, dbuPerMicron));
+            return;
+        }
 
         var color = TintForContrast(layerColor, background, PortMarkerContrastTintAmount);
 
@@ -1724,11 +2043,18 @@ public static partial class LayoutRenderer
         path.MoveTo(e2x, e2y);
         path.LineTo(e2x - DX(ux * serif), e2y + DX(uy * serif));
 
-        // The arrow: from the plane INTO the metal, with two barbs at the far end. Starting it at the
-        // plane rather than at the anchor is what makes the pair read as one statement — "current
-        // crosses HERE, flowing THAT way" — instead of two marks whose relationship is a guess.
-        float tipX = bx0 + DX(ux * reach), tipY = by0 - DX(uy * reach);
-        path.MoveTo(bx0, by0);
+        // ── The arrow ARRIVES AT the plane; it does not set off from it ──────────────────────
+        //
+        // The arrowhead lands exactly on the bar, with the shaft running back along the direction
+        // current comes from. The pair then reads as one statement — "current arrives HERE, flowing
+        // THAT way" — with the head pointing at the one line that is load-bearing, instead of an
+        // arrow laid across the metal whose tip means nothing in particular.
+        //
+        // It also stops the marker covering the conductor. An arrow drawn INTO the metal is longest
+        // exactly where the port is widest, so on a wide port it ran a third of the way across the
+        // part and sat on top of whatever else was there.
+        float tipX = bx0, tipY = by0;
+        path.MoveTo(bx0 - DX(ux * reach), by0 + DX(uy * reach));
         path.LineTo(tipX, tipY);
         foreach (int s in new[] { 1, -1 })
         {
@@ -1762,7 +2088,27 @@ public static partial class LayoutRenderer
         }
     }
 
-    private static void DrawLabelText(SKCanvas canvas, LabelShape label, PathSpace ps, SKColor color)
+    /// <summary>
+    /// A label's text.
+    /// </summary>
+    /// <param name="centred">
+    /// Centre the text ON the anchor instead of running it rightward from it.
+    ///
+    /// <para><b>True for an INTERNAL DELTA-GAP port only, and it is safe there for a specific reason
+    /// rather than a general one.</b> Every other label in a layout is left-anchored, and a label's
+    /// drawn position is not purely cosmetic in general — <c>Flatten to Polygon</c> turns text into
+    /// real geometry. A PORT label is the exception the exception rests on: it is excluded from
+    /// Flatten to Polygon and from every boolean (<c>LayoutEditorViewModel.Booleans</c> returns an
+    /// empty result for <c>IsPort</c>), so nothing downstream can disagree with where it was drawn.
+    /// </para>
+    ///
+    /// <para>It earns the special case because a gap's anchor IS the cut, and the two bars are
+    /// symmetric about it — so left-anchored text sits to one side of a mark that is centred, and
+    /// reads as belonging to whatever is on that side. An edge port's anchor is its end FACE, where
+    /// running the text inward is right.</para>
+    /// </param>
+    private static void DrawLabelText(SKCanvas canvas, LabelShape label, PathSpace ps, SKColor color,
+                                      bool centred = false)
     {
         if (string.IsNullOrEmpty(label.Text)) return;
 
@@ -1780,7 +2126,11 @@ public static partial class LayoutRenderer
             _                   => 0f,
         };
         if (rotationDeg != 0f) canvas.RotateDegrees(rotationDeg);
-        canvas.DrawText(label.Text, 0, 0, SKTextAlign.Left, font, paint);
+
+        // Centred means centred on BOTH axes: horizontally by the text aligner, vertically by lifting
+        // the baseline half an x-height, since a baseline through the cut puts the glyph above it.
+        float dy = centred ? -0.5f * font.Metrics.Ascent * 0.5f : 0f;
+        canvas.DrawText(label.Text, 0, dy, centred ? SKTextAlign.Center : SKTextAlign.Left, font, paint);
         canvas.Restore();
     }
 }

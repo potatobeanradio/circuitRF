@@ -5661,7 +5661,55 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // outside that case, which the renderer takes as "draw plain cell boundaries".
                 open.ViewModel.PlanarCurrentDensity  = vm.CurrentDensity;
                 open.ViewModel.PlanarReferencePlanes = vm.ReferencePlanes;
+                // The port TYPE lives in the .cem, so the layout cannot know it — this is the one
+                // channel that carries it, and without it an internal delta gap would draw as an
+                // edge port with its cut at the far end of the trace.
+                AdoptPortTypes(open, vm, source.AbsolutePath);
             }
+    }
+
+    /// <summary>
+    /// Hands a layout the port TYPES of the setup that just refreshed — and <b>says so when that
+    /// takes them off a DIFFERENT setup that disagreed</b>.
+    ///
+    /// <para><b>The conflict is real and is not a bug to be designed away.</b> More than one
+    /// <c>.cem</c> may analyse one <c>.clay</c>, and two of them may legitimately disagree about a
+    /// port: a gap in the middle of a trace in one, driven from its ends in another. That is exactly
+    /// why the type is an analysis setting rather than a property of the drawing. But there is only
+    /// ONE layout on screen and it can draw only one of the two answers.</para>
+    ///
+    /// <para>So the layout NAMES its current owner, and a takeover that actually changes the marks
+    /// is reported. Silence was the defect: the marks flipped when a user touched an unrelated field
+    /// in the other setup, and nothing on screen connected the two. A takeover that changes nothing —
+    /// the overwhelmingly common case, two setups that agree, or the same setup refreshing — says
+    /// nothing, because a message nobody can act on is one they learn to skip.</para>
+    /// </summary>
+    private void AdoptPortTypes(LayoutDocument open, EmSetupEditorViewModel vm, string layoutPath)
+    {
+        var next  = vm.InternalGapPortAnchors;
+        var owner = vm.Working.Name is { Length: > 0 } n ? n : Path.GetFileName(vm.FilePath);
+
+        var prev      = open.ViewModel.InternalGapPorts;
+        string before = open.ViewModel.InternalGapPortsOwner;
+        bool  differs = prev.Count != next.Count || !prev.All(next.Contains);
+
+        open.ViewModel.InternalGapPorts     = next;
+        open.ViewModel.InternalGapPortsOwner = owner;
+
+        if (!differs || before.Length == 0 || string.Equals(before, owner, StringComparison.Ordinal))
+            return;
+
+        Messages.Info(
+            $"Port marks on {Path.GetFileName(layoutPath)} now follow the EM setup '{owner}' " +
+            $"({Describe(next)}); they were following '{before}' ({Describe(prev)}). Two EM setups " +
+            "analyse this layout and disagree about a port's type — which is allowed, since a port " +
+            "type belongs to the analysis rather than to the drawing. The layout can only draw one " +
+            "of them.", layoutPath);
+
+        static string Describe(IReadOnlyList<(long X, long Y)> gaps)
+            => gaps.Count == 0 ? "no internal delta-gap ports"
+             : gaps.Count == 1 ? "1 internal delta-gap port"
+             : $"{gaps.Count} internal delta-gap ports";
     }
 
     /// <summary>Reflects a .cem editor's dirty state onto its own tree node's dirty dot — the exact

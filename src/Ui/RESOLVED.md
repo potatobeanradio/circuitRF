@@ -6,6 +6,271 @@ per brief, sparingly, only for findings that are still true, still surprising, a
 real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions only. Mirrors
 `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
+
+## An unescaped `|` inside a Markdown table cell (2026-08-24)
+
+Owner-reported: a table in `reference/mom-engine.html` rendered with "many extra empty cells".
+
+`| Frequency | |S₁₁| of a section that should be zero |` is not a two-column row. The bars around the
+magnitude are **column separators**, so the header parsed as four cells against a two-column separator
+and the renderer filled the difference with blanks.
+
+**It fails silently in both directions that matter.** The Markdown is valid, so nothing errors; and the
+prose reads correctly in the SOURCE, which is where an author checks it. Only the rendered page is
+wrong. The same page already writes `Σ\|S\|²` correctly elsewhere — the convention was known, one row
+missed it, and nothing said so. That is the whole argument for a gate rather than a fix.
+
+`tests/Ui.Tests/DocTableIntegrityTests.cs` walks every table in `docs/user/src/**/*.md` and asserts
+each row's cell count matches its separator, splitting on `|` that is not backslash-escaped — the same
+distinction the renderer makes, and therefore the only one worth reproducing. It reports file, line,
+the offending row and the remedy. **Verified by reverting the fix and watching it fail**, not by
+assuming; and it asserts it scanned more than twenty tables, because a detector that had drifted to
+finding none would otherwise pass for the wrong reason.
+
+## Verifying a generated figure: qlmanage lies about these SVGs (2026-08-24)
+
+Recorded because it cost real time and will cost it again. While building the port-placement figures,
+macOS `qlmanage -t` was used to eyeball the output and showed the artwork **cropped at the right edge**
+at four different part sizes. Four "fixes" followed — shorter artwork, a wider frame, dropping the
+editor chrome for a bare canvas, an explicitly computed viewport — and every one of them produced the
+identical cropped preview, which is itself the tell: **a change that provably alters the input and
+does not alter the output is not being read by the thing you are looking at.**
+
+The SVGs were correct the whole time. They carry per-element `transform="matrix(...)"` and qlmanage
+does not apply them faithfully.
+
+**Two ways to check a figure that do work**, both cheap:
+
+- **Numerically.** Parse each `<path>`'s own matrix, map its coordinates through it, and assert the
+  result lies inside the `width`/`height`. Catches exactly the failure a preview is being consulted
+  for, and needs nothing installed.
+- **With Svg.Skia**, which is already a dependency of `tools/IconGen` — a dozen lines renders an SVG
+  to PNG faithfully, transforms and all.
+
+**The general shape:** when a rendering "will not change", verify the artefact before changing the
+producer again. Everything after the first fix was work done against a broken instrument.
+
+## Four slide decks, light and dark, off the same content tree (2026-08-24)
+
+**Asked for:** more slides, more screenshots, four selectable decks (`overview`, `new-user`,
+`quick-start`, `reference`) and both colour variants, all driven from
+`dotnet run --project tools/DocGen -- --slides docs/slides`.
+
+The command now takes `--deck <id>[,<id>]` and `--theme light|dark|both`, both defaulting to
+everything; a deck source declares its id in front-matter (`deck: overview`), and the light/dark pair
+is named by the SAME `UiArtworkGenerator.FileStem` convention the figures use
+(`circuitrf-overview.pdf` / `circuitrf-overview-dark.pdf`). The four sources live at
+`docs/user/src/slides/*.md`. Findings below; the deck backend's own markup is documented on
+`SlideEmitter`.
+
+### A themed deck is not a background-colour swap — the CAPTURES have to follow
+
+`SlideEmitter` used to hard-code `ColorVariant.Light` at the point where it re-renders a
+`FigureCatalog` row onto the page. Rendering the page dark and leaving that line alone gives a dark
+deck holding light screenshots, which is the one failure mode a themed deck has and the one nobody
+reports until it is projected. The variant is now a parameter of `Render` and is threaded all the way
+to `UiArtworkGenerator.ApplyVariant` and to `WindowFrame.Wrap`. The palette itself is lifted
+value-for-value from the documentation stylesheet's `[VARS]`/`[VARS-DARK]` blocks, so a slide and the
+page it was written from are the same colour.
+
+### Splitting prose into words on spaces loses the one bit that says two runs touch
+
+Inline `**bold**` needs per-word font selection, which needs the text split into words — and
+`"**simulator**: DC"` then renders as `simulator : DC`, because the split cannot see that the colon
+was flush against the bold run. Each `Word` now carries a `Glue` flag meaning *no space before me*,
+set by comparing the RAW regex match (`**bold**`) rather than the captured group: a bold run's raw
+text starts with an asterisk, so the separating space always lives at the END of the previous raw
+segment, and both sides have to be tested. Two consequences that were not obvious:
+
+- **A glued word may not start a line.** The wrap happily broke before the comma in
+  `**test bench**, never to a cell`, leaving `, never to a cell` on its own line. The wrapper now
+  carries the whole glue chain down to the next line.
+- **A callout's label has to be IN the word stream, not painted over it.** Drawing
+  `Label —` as a first-line prefix consumed width the wrap knew nothing about, and the first line of
+  every labelled callout ran off the right edge of its own band. The label is now prepended as
+  `RunStyle.Label` words and wrapped like anything else.
+
+### IBM Plex Sans has no `▸`, and Skia's answer to a missing glyph in a PDF is a hollow box
+
+Documentation prose is full of menu paths (`File ▸ New Schematic`). Plex carries none of the
+geometric shapes, and unlike the SVG path — where `SvgFontNormalizer` catches a platform
+substitution and says so — a PDF just embeds a box. `FontSet.ForWord` now tests every rune against
+the primary face and falls back to **DejaVu Sans, which the application already ships**, for any word
+Plex cannot set. This is per-WORD, and measurement uses the same call as drawing; measuring with the
+primary face and drawing with the fallback is a silent wrap error.
+
+### The overflow error was right, and still needed an auto-fit ladder in front of it
+
+A deck built out of documentation prose does not arrive in equal-weight slides. Keeping
+"overflow is a generation error" as the floor but trying six body sizes (1.0 down to 0.70) first is
+what made four real decks author-able without rewriting every bullet to a fixed length. The error
+still fires, and still names the slide, when the smallest step does not fit.
+
+### A screenshot on a slide with bullets is a thumbnail — split the slide
+
+`{{ui: id | full}}` under four bullets left the workspace capture 292 pt wide on a 960 pt page: the
+box is what the bullets did not use, and height is what binds. The big captures are now on slides of
+their own with the message in the caption, which is an AUTHORING rule the backend cannot enforce —
+so it is written down here. `{{ui: id}}` on its own (right half, beside three or four bullets) is the
+other shape that works.
+
+### Two things the deck backend cannot fail on, so tests do
+
+`DocsFactoryTests` gained four gates, because **decks are built on demand and `docs/slides/` is
+git-ignored** — nothing in the routine suite would otherwise notice a deck that stopped building:
+every documented `--deck` id still has a source; deck ids are declared and unique; every `{{ui: …}}`
+resolves to a `FigureCatalog` row; and every `{{caption: …}}` sits on a slide that has a figure. The
+last one is the only truly silent failure of the four — a caption with no figure simply never draws.
+
+---
+
+### Review round 3: a symbol figure has to be the symbol, and a figure may not know the machine
+
+- **"Just show the symbols"** — the Pin/Port/Term figure began as three little schematics of one
+  network. Wrong thing shown: the reader's question is what the two symbols ARE, and a sheet of wires
+  around each is noise around the answer. It is now the two glyphs, and **Port is deliberately
+  absent** — it has no symbol, being the abstract idea a Pin realises inside a cell and a Term
+  realises on a test bench. The documentation page had it right all along.
+
+- **`PaletteGlyphControl` is documented as "glyph only (no pins, no labels)"**, which is correct for
+  a palette tile and wrong for this: without the unconnected-port squares a reader cannot see that a
+  Pin's line ENDS in a connection point, which is the whole thing the figure explains. The draw the
+  symbol SVGs use was extracted into `SymbolArtworkGenerator.DrawFitted` and a small
+  `DocSymbolGlyph` control calls it, so the slide and `assets/symbols/*.svg` are the same drawing by
+  construction.
+
+- **The Manage PDKs figure nearly baked this machine into a committed file.** The dialog's row shows
+  `RefStatus.ResolvedPath`, and `PdkReferenceManager.Describe` gets it by resolving against the
+  filesystem — so the first working fixture (a real temp kit folder plus a `PdkKitRegistry.SetKit`)
+  put `/var/folders/k7/…/circuitrf-docs-kit-21384/…` in the SVG, **different on every run and on
+  every machine**, which is exactly what the regenerate-and-diff check exists to catch. `Body` now
+  takes optional pre-computed rows; the fixture supplies one with an invented path. That also removed
+  the registry mutation, which would have left eight fictional parts in the Library Palette figure
+  captured later in the same process.
+
+### Ground on pin 2, and no nudging the labels
+
+The owner's rule for the worked examples, and the reasoning is worth keeping: **a ground symbol goes
+exactly on the component's second pin with no wire at all** — same grid point, so the grid rule
+connects them — which collapses the sheet to the parts themselves and leaves room to zoom in. Two
+consequences:
+
+- **The label block then sits under the ground glyph, and it stays that way.** Moving the labels was
+  tried and rejected: a figure exists to show what a reader gets by PLACING the part, and a new user
+  does not know how to nudge label text. A figure that is tidier than the tool is a figure that
+  cannot be reproduced.
+- **A rotation moves the pins, and a wire that no longer reaches one fails silently.** Rotating the
+  example's inductor 180° and moving it 100 units left left both pins unconnected: the schematic
+  still drew, the run still completed, and the plot came back a **flat −6000 dB** line. The tell is
+  the little red unconnected-pin squares — the same markers the symbol figure exists to show.
+
+### Review round 2: figures a reader is meant to REBUILD, and two claims that were wrong
+
+The owner reviewed the overview deck again and asked for six things. Two were factual corrections,
+four needed figures that did not exist. What the round cost, in the order the traps turned up:
+
+- **"No DRC" was wrong, and had been wrong in the deck since it was written.** circuitRF has a real
+  layout design-rule check — width, spacing, separation, enclosure, overlap and density rules
+  declared in the technology, a violations panel with click-to-zoom and markers, and per-violation
+  waivers with a reason. What it does NOT have is **LVS**, which `DrcConnectivity`'s own header says
+  in as many words: its connectivity exists to tell one net's shapes from another's, not to verify a
+  netlist. The slide now separates the two, and the reference page says so as well. Kit import was
+  the same kind of error in the same bullet.
+
+- **Six documentation schematics now exist, and they are files.** `src/Ui/resources/doc-schematics/`
+  holds real `.csch` documents read through the ordinary `SchematicPersistence` reader — the rule
+  `DocFixtures` already states, for its reason. **They are embedded with a distinct `LogicalName`
+  prefix**, because `ShippedSchematicTemplates.Discover` scans EVERY embedded `.csch` and would
+  otherwise have added teaching examples to the product's template picker as a side effect of a
+  documentation change. `DocsFactoryTests.DocumentationSchematicsAreNotOfferedAsTemplates` is the
+  gate; the filter is the only thing separating the two sets.
+
+- **Photographing the inline value editor needed a seam, not a synthetic gesture.** The editor opens
+  from `SchematicCanvas.OnDoubleTapped`, which needs a real pointer event. Rather than synthesise one
+  headlessly, the label-positioning half was extracted into `RaiseLabelDoubleTap` and a new
+  `BeginInlineParamEdit(instance, param)` drives it — so the same code raises the same event to the
+  same `SchematicView` handler. **It verifies before it opens**: an unverified single probe point
+  silently landed on the INSTANCE NAME, one row up, and would have produced a figure captioned
+  "editing R" showing the editor over "R1". It now sweeps the candidate rows and accepts only a hit
+  the real `SchematicHitTest` agrees is that parameter.
+
+- **Zoom to Fit is not "make the part big".** It frames a component's whole drawn extent — glyph,
+  name row, value row — and a one-component sheet is mostly label block, so fitting alone left the
+  resistor about a fifth of the window. Three wheel notches ON TOP of the fit, about a point BELOW
+  centre (the value row sits under the glyph and walks off the bottom otherwise), is what made the
+  part and the edit box readable.
+
+### A figure cannot be made bigger on a slide by capturing it smaller
+
+Tried, and it does nothing: the slide scales the capture to fill a fixed box, so halving the capture
+size doubles the scale and the window lands exactly as big as before. **What changes the answer is
+the fraction of the WINDOW the subject occupies** — fewer label rows, a tighter sheet, a shorter
+panel. The same arithmetic is why narrowing the EM Setup capture last round bought nothing.
+
+### Plot figures were sized for a documentation column, not for a slide
+
+`plot-rectangular-data` drew a 560×360 plot inside an 850×540 window — a third of the canvas empty
+around the curve. Beside body text that is fine; scaled down to half a slide it is a thin line in a
+large frame. Now 700×400. Worth remembering that the two outputs want different framing from the
+same fixture, and the fixture only gets to choose once.
+
+### Review round 1: five slides, and four of the fixes were not in the deck at all
+
+The owner reviewed the overview deck and named five slides. Only one wanted different words; the
+rest were figures that were wrong, and three of those were wrong in the DOCUMENTATION too.
+
+- **The slide backend never ran `FigureScene.AfterLayout`.** `UiArtworkGenerator.RenderScene` does;
+  `SlideEmitter.Figure` hosted its own window and did not. Zoom to Fit is a viewport operation, so
+  every fixture that asks for one — the symbol editor, both wBond views, the workspace — was drawn
+  fitted in the documentation and unfitted on a slide. **The same catalog row produced two different
+  pictures and nothing said which was right.** Popups are run now too, and a popup that takes a top
+  level of its own is refused by name rather than dropped.
+
+- **harmonicaRF's figures carried two 460x501 PNGs.** `HarmonicaBackdropCache` snapshots the Smith
+  chrome and frozen contours into an offscreen `SKSurface` and blits it — correct for a live canvas,
+  where it amortises antialiased rasterisation across frames, and exactly wrong for a one-shot vector
+  capture, where it bakes a fixed-resolution raster into an otherwise all-vector SVG or PDF. Sharp at
+  1:1 in the docs; visibly chunky the moment a slide scaled it to ~0.4. `UiArtworkGenerator.
+  HeadlessCapture` (set by `tools/DocGen` only) now makes `HarmonicaCanvas` take
+  `Snapshot.Of(vm)` without `WithBackdropCaches` — the path Copy Plot and export already used. The
+  figures went from 2 rasters to **0**, in the documentation as well as the deck.
+
+- **Every whole-document Data Display figure had its plot in the top-left corner, clipped.** The
+  application centres the first plot itself, but only when it can see the viewport — and at
+  fixture-construction time nothing has been arranged, so `ComputeNewPlotPosition` fell through to
+  the historical `30 + count*30` cascade. Centred from `AfterLayout` now, and centred on the
+  CONTAINER rather than on `Width`/`Height`: a plot's drawn extent is wider by its per-trace Y-axis
+  label strips and taller by the title and X-label clearances, and those extras are asymmetric, so
+  centring on the graph rect alone still leaves it visibly low and left. The correction is taken as a
+  delta from the view-space numbers the canvas itself binds to.
+
+### Width was not what was making the EM Setup panel small
+
+Asked to narrow the EM Setup window so its text would come out bigger. Measured: on a half-slide the
+fit is bound by HEIGHT at every sensible width up to about 700 px, so narrowing 640 to 520 changed
+the on-slide scale by **nothing at all** — and cost enough room that the panel's own toolbar row
+overlapped itself. The trim that pays is 790 -> 620 (1.26x), and 560 is as narrow as the toolbar lays
+out cleanly. `em-setup-compact` is a SECOND catalog row rather than a change to `em-setup-editor`,
+because the full-height panel is the right figure for the reference page and the short one is the
+right figure for a slide.
+
+### Two figures per slide, and the mode belongs to the slide
+
+A slide can now cite two figures — side by side across a full-width slide, stacked in the right-hand
+column — which is what "show the trace card that generates the plot" needs. Three is refused: it
+leaves each too small to read from the back of a room, which is a defect no reader reports and
+everyone notices. `| full` accumulates across the slide's figures rather than being read off the last
+one; written on the first of a pair and omitted on the second it used to reset the slide to the
+right-hand column and quietly shrink both to a quarter of the room they had asked for.
+
+Also: a slide that is nothing BUT its figure now gets a tighter frame — smaller title, narrower
+margins, no footer — and the figure band runs past the footer's line to the paper edge. The workspace
+capture gained 29% in width from that alone. **The authoring rule the backend cannot enforce**: a
+big screenshot belongs on a slide of its own with the message in its caption, because the figure box
+is whatever the bullets did not use and height is what binds.
+
+---
+
 ## A PCell parameter that is neither an input nor an output (2026-08-23)
 
 **Asked:** is a maximum-capacitance parameter on a vendor MIM cap an input or an output? The dialog

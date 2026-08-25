@@ -32,9 +32,22 @@ public sealed class DocGenRun
     /// <summary>The human-readable summary printed at the end and pasted into RESOLVED.md.</summary>
     public string Report { get; private set; } = "";
 
-    public void Run(bool slidesOnly = false, string? slidesOut = null)
+    /// <summary>Which decks to build, or null for every deck the sources declare.</summary>
+    private IReadOnlySet<string>? _decks;
+
+    /// <summary>Which colour variants the decks are rendered in. Both, unless narrowed.</summary>
+    private IReadOnlyList<ColorVariant> _variants = [ColorVariant.Light, ColorVariant.Dark];
+
+    /// <summary>Deck ids the sources actually offered, so an unknown --deck can name the real ones.</summary>
+    private readonly List<string> _decksOffered = [];
+
+    public void Run(bool slidesOnly = false, string? slidesOut = null,
+                    IReadOnlySet<string>? decks = null,
+                    IReadOnlyList<ColorVariant>? variants = null)
     {
         var clock = Stopwatch.StartNew();
+        _decks = decks;
+        if (variants is { Count: > 0 }) _variants = variants;
 
         string figures = Path.Combine(_docsRoot, "assets", "figures");
         string symbols = Path.Combine(_docsRoot, "assets", "symbols");
@@ -57,8 +70,19 @@ public sealed class DocGenRun
         }
         else
         {
+            if (_decks is not null)
+            {
+                var unknown = _decks.Where(d => !_decksOffered.Contains(d)).ToList();
+                if (unknown.Count > 0)
+                    throw new InvalidOperationException(
+                        $"No deck named {string.Join(", ", unknown.Select(u => "'" + u + "'"))}. "
+                      + $"The sources under docs/user/src/slides/ offer: {string.Join(", ", _decksOffered)}. "
+                      + "A misspelt deck id would otherwise report success having written nothing.");
+            }
+
             Report = _written.Count > 0
-                ? $"Slides regenerated in {clock.Elapsed.TotalSeconds:F1} s:\n  "
+                ? $"Slides regenerated in {clock.Elapsed.TotalSeconds:F1} s "
+                  + $"({string.Join(" + ", _variants)}):\n  "
                   + string.Join("\n  ", _written)
                 : "No slide decks were produced. A deck comes from a source page under docs/user/src/ "
                 + "whose front-matter says 'kind: slides'; there is none, or the docs root is wrong.";
@@ -232,9 +256,24 @@ public sealed class DocGenRun
                 // default to somewhere under docs/user: everything there is copied into the
                 // application bundle, and a PDF deck is not a runtime asset.
                 if (slidesOut is null) continue;
-                string deck = Path.Combine(slidesOut, Path.GetFileNameWithoutExtension(page.Slug) + ".pdf");
-                SlideEmitter.Render(page, Path.Combine(_docsRoot, "assets", "figures"), deck);
-                _written.Add(deck);
+
+                if (page.Deck.Length == 0)
+                    throw new InvalidOperationException(
+                        $"{page.SourcePath}: a 'kind: slides' page must declare 'deck: <id>' in its "
+                      + "front-matter. The id is what `--deck <id>` selects; without one the deck can only "
+                      + "ever be built as part of 'all', which is the state this option exists to fix.");
+
+                _decksOffered.Add(page.Deck);
+                if (_decks is not null && !_decks.Contains(page.Deck)) continue;
+
+                string stem = Path.GetFileNameWithoutExtension(page.Slug);
+                foreach (var variant in _variants)
+                {
+                    string deck = Path.Combine(slidesOut,
+                        UiArtworkGenerator.FileStem(stem, variant) + ".pdf");
+                    SlideEmitter.Render(page, Path.Combine(_docsRoot, "assets", "figures"), deck, variant);
+                    _written.Add(deck);
+                }
                 continue;
             }
 

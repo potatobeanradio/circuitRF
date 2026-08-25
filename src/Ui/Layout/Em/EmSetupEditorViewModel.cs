@@ -387,7 +387,23 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public string? BlockingReason =>
         SelectedKernel == EmAnalysisKind.Planar
             ? PlanarExtractionRefusal ?? KernelRefusal ?? PortRefusal ?? PlanarBudgetRefusal
-            : ExtractionRefusal ?? KernelRefusal;
+            : InternalGapOnTheWrongKernel ?? ExtractionRefusal ?? KernelRefusal;
+
+    /// <summary>
+    /// R-em-13, applied to the one refusal a user would otherwise meet only after pressing Simulate:
+    /// an internal delta-gap port on a setup that resolved to the uniform-line kernel.
+    ///
+    /// <para>The run refuses it (<see cref="EmRunService.InternalGapNeedsFullWave"/>, whose wording
+    /// this shares rather than paraphrases). Showing it live matters more here than for most, because
+    /// the user did not choose that kernel — <c>Auto</c> did, on the grounds that the geometry
+    /// reduces to a uniform cross-section, which a line with a gap on it does. Nothing on screen
+    /// would otherwise connect "I set port 3 to Internal delta gap" to "the answer has two ports".</para>
+    /// </summary>
+    public string? InternalGapOnTheWrongKernel =>
+        SelectedKernel == EmAnalysisKind.CrossSection && Working.DeclaresInternalGapPort()
+            ? EmRunService.InternalGapNeedsFullWave(SelectedKernelName is { Length: > 0 } n
+                                                        ? n : "uniform-line (quasi-static) kernel")
+            : null;
 
     public bool CanRun =>
         !IsBusy &&
@@ -731,6 +747,34 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>
+    /// Commits one row's port TYPE. Same shape as <see cref="CommitPortRow"/> above — pad the list
+    /// from the default so a change on port 4 cannot silently retype ports 1-3, no-change guard
+    /// before the undo entry, one undo entry per change.
+    ///
+    /// <para><b>It calls <see cref="InvalidateMesh"/> and every other per-port setting does not.</b>
+    /// The impedance beside it is a renormalisation applied to the answer; the type decides WHERE
+    /// the excitation is cut and therefore which rooftops are driven, so a mesh report computed
+    /// under the other type is about a different excitation and must not go on being shown.</para>
+    /// </summary>
+    public void CommitPortKind(int index)
+    {
+        if (_suppressCommit) return;
+        if (index < 0 || index >= PortRows.Count) return;
+
+        var kind = PortRows[index].Kind;
+        var list = Working.PortKinds;
+        while (list.Count <= index) list.Add(Working.ResolvePortKind(list.Count));
+        if (list[index] == kind) return;                    // no-change guard: no undo entry
+
+        var before = SnapshotJson();
+        list[index] = kind;
+        CommitEdit(before, $"Change port {PortRows[index].PortNumber} type");
+        InvalidateMesh();
+        OnPropertyChanged(nameof(InternalGapOnTheWrongKernel));
+        Refresh();
+    }
+
     /// <summary>Rebuilds <see cref="PortRows"/> from the extracted problem — the port count comes
     /// from the geometry, never from the user.</summary>
     private void RebuildPortRows(EmProblem? problem)
@@ -1070,6 +1114,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarExtractionRefusal = null;
         PortRefusal        = null;
         PlanarPorts        = [];
+        InternalGapPortAnchors = [];
         Notes              = [];
         StackupRows        = [];
         TechnologyName     = "";
@@ -1182,6 +1227,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         Notes         = [.. planar.Notes];
         PlanarPorts   = [];
+        InternalGapPortAnchors = [];
         DispersionDisabledReason =
             "The Kirschning–Jansen correction belongs to the cross-section analysis, where it is " +
             "applied on top of a quasi-static answer. A full-wave planar solve has dispersion in " +
@@ -1204,10 +1250,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0,
-            source.View.DisplayUnit);
+            source.View.DisplayUnit, Working.ResolvePortKind);
 
         PortRefusal = ports.Ok ? null : ports.Refusal;
         PlanarPorts = ports.Ports;
+
+        // The layout cannot know a port's type — it lives in this .cem — so the anchors of the
+        // internal ones are published for the renderer. SourceLabels is index-aligned with Ports
+        // precisely so this does not have to re-derive which label became which port.
+        var anchors = new List<(long X, long Y)>();
+        for (int i = 0; i < ports.Ports.Count && i < ports.SourceLabels.Count; i++)
+            if (ports.Ports[i].Kind == PlanarPortKind.InternalDeltaGap)
+                anchors.Add((ports.SourceLabels[i].X, ports.SourceLabels[i].Y));
+        InternalGapPortAnchors = anchors;
 
         var notes = new List<string>(_geometryNotes);
         notes.AddRange(planar.Notes);
@@ -1242,12 +1297,27 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         PortRows.Clear();
         for (int i = 0; i < ports.Count; i++)
-            PortRows.Add(new EmPortZ0Row
+        {
+            var kind = ports[i].Kind;
+            var row = new EmPortZ0Row
             {
                 PortNumber = ports[i].Number,
-                Label      = $"Port {ports[i].Number} — {SideLabel(ports[i].Side)} end",
+                // An internal gap has no "end" — it is a cut in the middle of the metal, and the
+                // side only says which way its current is positive. Labelling it as an end would be
+                // the panel contradicting the run's own notes.
+                Label      = kind == PlanarPortKind.InternalDeltaGap
+                                 ? $"Port {ports[i].Number} — gap, current {SideLabel(ports[i].Side)}"
+                                 : $"Port {ports[i].Number} — {SideLabel(ports[i].Side)} end",
                 Text       = FormatComplexOhms(Working.ResolvePortZ0(i)),
-            });
+                ShowKind   = true,
+                Kind       = kind,
+            };
+            // Wired AFTER construction: the initialiser above seeds Kind from what is already
+            // stored, and a seed must not commit an edit or push an undo entry.
+            int index = i;
+            row.KindChanged += _ => CommitPortKind(index);
+            PortRows.Add(row);
+        }
         OnPropertyChanged(nameof(ShowPortList));
     }
 
@@ -1261,7 +1331,21 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     private void RaiseState()
     {
-        if (Problem is null && PortRows.Count > 0) RebuildPortRows(null);
+        // ── THIS GUARD CLEARED THE PLANAR PORT LIST THE INSTANT IT WAS BUILT ──────────────────
+        //
+        // It exists to drop stale rows when an extraction fails, and it asked only about the
+        // CROSS-SECTION problem. A planar refresh leaves `Problem` null by construction — its
+        // problem is `PlanarProblem` — so `RebuildPlanarPortRows` filled the list, RaiseState ran
+        // one line later, and emptied it again. **The per-port reference-impedance list has
+        // therefore never once appeared for a full-wave setup**, from L8e until now: `ShowPortList`
+        // is true for a planar analysis, and there was nothing in it to show. Found while wiring the
+        // port-type control into the same rows, and it had no test because every existing PortRows
+        // test drives the cross-section kernel.
+        //
+        // Both problems have to be null for the rows to be stale — which is what "no extraction
+        // succeeded" actually means now that there are two extractors.
+        if (Problem is null && PlanarProblem is null && PortRows.Count > 0) RebuildPortRows(null);
+        OnPropertyChanged(nameof(InternalGapOnTheWrongKernel));
         OnPropertyChanged(nameof(BlockingReason));
         OnPropertyChanged(nameof(CanRun));
         SimulateCommand.NotifyCanExecuteChanged();
@@ -1559,6 +1643,18 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// (<c>PlanarPortResolution.ReferencePlaneM</c>), never one this layer derives.</summary>
     [ObservableProperty] private IReadOnlyList<PlanarPortResolution> _referencePlanes = [];
 
+    /// <summary>
+    /// The DBU anchors of the port labels this setup drives as INTERNAL DELTA GAPS — what the layout
+    /// editor needs in order to draw the right mark, since the type lives here and not on the shape.
+    ///
+    /// <para><b>Populated on every refresh, not only after a run</b>, unlike
+    /// <see cref="ReferencePlanes"/>: a reference plane is a location the ENGINE reports and does not
+    /// exist until something is solved, while a port's type is a decision the user has just made and
+    /// has to see immediately. Anchors rather than port numbers — see
+    /// <c>LayoutRenderOptions.InternalGapPorts</c> for why.</para>
+    /// </summary>
+    [ObservableProperty] private IReadOnlyList<(long X, long Y)> _internalGapPortAnchors = [];
+
     partial void OnCurrentDensityChanged(PlanarCurrentDensityMap? value)
         => OnPropertyChanged(nameof(CurrentDensityScale));
 
@@ -1754,10 +1850,35 @@ public sealed partial class EmPortZ0Row : CommunityToolkit.Mvvm.ComponentModel.O
     public int    PortNumber { get; init; }
     public string Label      { get; init; } = "";
 
+    /// <summary>
+    /// Whether this row offers a port TYPE at all. <b>Planar rows only</b> — the cross-section
+    /// kernel's ports are the two ends of a uniform line by construction, so there is nothing an
+    /// internal gap could mean there and offering the choice would be offering a setting that does
+    /// nothing.
+    /// </summary>
+    public bool ShowKind { get; init; }
+
+    /// <summary>The two port types, from the enum rather than hand-listed, so a third cannot
+    /// silently fail to appear in the panel — the same rule <c>BoundaryCellsChoices</c> follows.</summary>
+    public static IReadOnlyList<PlanarPortKind> KindChoices { get; } = Enum.GetValues<PlanarPortKind>();
+
     [ObservableProperty] private string  _text = "50";
     [ObservableProperty] private string? _error;
+
+    /// <summary>
+    /// Edge or internal delta gap. <b>Raised through <see cref="KindChanged"/> rather than committed
+    /// here</b>, because a row knows nothing about the document, the undo stack or which index it
+    /// is — the panel owns all three, exactly as it does for the impedance text beside it.
+    /// </summary>
+    [ObservableProperty] private PlanarPortKind _kind = PlanarPortKind.Edge;
+
+    /// <summary>Raised when the user picks a different type. Wired by the panel AFTER the row is
+    /// constructed, so seeding <see cref="Kind"/> from the stored setup raises nothing.</summary>
+    public event Action<EmPortZ0Row>? KindChanged;
 
     public bool HasError => Error is not null;
 
     partial void OnErrorChanged(string? value) => OnPropertyChanged(nameof(HasError));
+
+    partial void OnKindChanged(PlanarPortKind value) => KindChanged?.Invoke(this);
 }

@@ -183,10 +183,28 @@ public static class EmSnpProvenance
     {
         var sb = new StringBuilder();
         foreach (var p in ports)
+        {
             sb.Append(p.Number).Append(':').Append(p.Side).Append(':').Append(p.LayerIndex).Append(':')
               .Append(R(p.Location.X)).Append(',').Append(R(p.Location.Y)).Append(':')
               .Append(R(p.Z0.Real)).Append(',').Append(R(p.Z0.Imaginary)).Append(':')
-              .Append(p.Reference).Append('|');
+              .Append(p.Reference);
+
+            // ── THE PORT TYPE IS PART OF THE ANSWER, AND IT IS APPENDED ONLY WHEN IT IS NOT THE
+            //    DEFAULT — the same omit-at-default rule the `.cem` itself follows, for a reason
+            //    that is specific to a HASH rather than cosmetic.
+            //
+            // Changing an edge port into an internal delta gap moves the excitation and turns
+            // de-embedding off for it, so an `.snp` written under one type is emphatically not
+            // current for the other: leaving it out would be exactly the staleness failure R-em-20
+            // exists to prevent. But appending it unconditionally would change the hash of every
+            // all-edge port set, i.e. of every `.snp` this application has ever written — reporting
+            // a one-time false staleness on files nothing has actually invalidated. Appending it
+            // only when a port is internal makes the pre-existing case bit-identical and still moves
+            // the hash the moment any port's type does.
+            if (p.Kind != PlanarPortKind.Edge) sb.Append(":K=").Append(p.Kind);
+
+            sb.Append('|');
+        }
         return Sha(sb.ToString());
     }
 

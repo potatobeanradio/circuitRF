@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CircuitRF.DocGen.Pipeline;
@@ -14,6 +15,10 @@ namespace CircuitRF.DocGen;
 ///   dotnet run --project tools/DocGen -- --slides docs/slides     landscape PDF decks
 /// </code>
 ///
+/// <para>Decks are selectable (<c>--deck overview</c>) and themed (<c>--theme dark</c>); both
+/// default to everything, because the routine act is regenerating the set and a partial regeneration
+/// is the deliberate one.</para>
+///
 /// <para><b>Never wired into <c>dotnet build</c></b>, on purpose. It stays a deliberate command:
 /// it opens a headless application, drives real views and writes into the repository.</para>
 /// </summary>
@@ -26,16 +31,33 @@ public static class Program
           dotnet run --project tools/DocGen -- --slides <out-dir>      regenerate the landscape PDF decks
           dotnet run --project tools/DocGen -- --out <d> --slides <s>  both
 
+        Deck options (with --slides)
+          --deck <id>[,<id>]  build only these decks. Default: all of them.
+                                overview     Why adopt circuitRF - for an audience deciding whether to.
+                                new-user     From first principles, for someone new to circuit simulation.
+                                quick-start  The fast path, for an engineer who already uses simulators.
+                                reference    The Reference Guide in outline: every chapter, what is in it.
+          --theme <t>[,<t>]   light, dark, or both. Default: both.
+                              A light deck carries light screenshots and a dark deck dark ones, so
+                              this picks the CAPTURES as well as the page colour.
+
         Options
           --lint-diagnostic   write figures even when the dropped-paint lint fires, so the offending
                               file can be opened. Never use for a real regeneration: the lint is
                               blocking precisely because a wrong figure does not announce itself.
+
+        Examples
+          --slides docs/slides                          all four decks, light and dark  (8 PDFs)
+          --slides docs/slides --deck overview          the adoption deck, both themes
+          --slides docs/slides --deck overview,new-user --theme dark
         """;
 
     public static int Main(string[] args)
     {
         string? outDir = null, slidesDir = null;
         bool lintDiag = false;
+        HashSet<string>? decks = null;
+        List<CircuitRF.Ui.Theming.ColorVariant>? variants = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -43,6 +65,28 @@ public static class Program
             {
                 case "--out"    when i + 1 < args.Length: outDir    = args[++i]; break;
                 case "--slides" when i + 1 < args.Length: slidesDir = args[++i]; break;
+                case "--deck"   when i + 1 < args.Length:
+                    decks ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var d in Split(args[++i])) decks.Add(d);
+                    break;
+                case "--theme"  when i + 1 < args.Length:
+                    variants ??= [];
+                    foreach (var t in Split(args[++i]))
+                    {
+                        switch (t.ToLowerInvariant())
+                        {
+                            case "light": variants.Add(CircuitRF.Ui.Theming.ColorVariant.Light); break;
+                            case "dark":  variants.Add(CircuitRF.Ui.Theming.ColorVariant.Dark);  break;
+                            case "both":
+                                variants.Add(CircuitRF.Ui.Theming.ColorVariant.Light);
+                                variants.Add(CircuitRF.Ui.Theming.ColorVariant.Dark);
+                                break;
+                            default:
+                                Console.Error.WriteLine($"Unknown theme '{t}'. Known: light, dark, both.\n");
+                                return 2;
+                        }
+                    }
+                    break;
                 case "--lint-diagnostic": lintDiag = true; break;
                 case "-h" or "--help": Console.WriteLine(Usage); return 0;
                 default:
@@ -53,6 +97,17 @@ public static class Program
         }
 
         if (outDir is null && slidesDir is null) { Console.WriteLine(Usage); return 2; }
+
+        // --deck and --theme narrow a deck run. Accepting them on a run that builds no decks would
+        // silently do nothing, which is the failure this whole tool is built to refuse.
+        if (slidesDir is null && (decks is not null || variants is not null))
+        {
+            Console.Error.WriteLine("--deck and --theme only mean something with --slides <out-dir>.\n");
+            Console.Error.WriteLine(Usage);
+            return 2;
+        }
+
+        variants = variants?.Distinct().ToList();
 
         // A figure must not depend on whose machine generated it. WorkspaceViewModel's constructor
         // reads the real preferences file and restores the PDKs installed from it, so the workspace
@@ -68,11 +123,15 @@ public static class Program
         HeadlessHost.Start();
         CircuitRF.Ui.Diagnostics.UiArtworkGenerator.LintDiagnosticMode = lintDiag;
 
+        // Every capture in this process is a figure, so controls that rasterise for live-frame speed
+        // draw as geometry instead. See UiArtworkGenerator.HeadlessCapture.
+        CircuitRF.Ui.Diagnostics.UiArtworkGenerator.HeadlessCapture = true;
+
         try
         {
             string docs = outDir ?? DefaultDocsRoot();
             var run = new DocGenRun(docs);
-            run.Run(slidesOnly: outDir is null, slidesOut: slidesDir);
+            run.Run(slidesOnly: outDir is null, slidesOut: slidesDir, decks: decks, variants: variants);
             Console.WriteLine(run.Report);
             return 0;
         }
@@ -85,6 +144,10 @@ public static class Program
             return 1;
         }
     }
+
+    /// <summary>A comma- or space-separated list value, e.g. <c>--deck overview,new-user</c>.</summary>
+    private static IEnumerable<string> Split(string value)
+        => value.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     /// <summary>
     /// Slides-only runs still need the docs root — the Markdown sources and the captured figures both

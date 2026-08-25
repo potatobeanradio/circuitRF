@@ -56,7 +56,7 @@ Specifies **which published models** circuitRF's microstrip components implement
 their **validity ranges**, and their **published accuracy**. Written before the first implementation so that
 "the MLIN model" names one specific thing rather than whatever was convenient.
 
-**Reads with:** `pcell-contract.md` (the components' artwork side), `layout-view.md` §10.9 (validation
+**Reads with:** `pcell-contract.md` (the components' artwork side), `mom-engine.md` §10.9 (validation
 oracles), §10.4 (the stackup that supplies substrate parameters), `linear-engine.md` (the transmission-line
 stamp these models feed).
 

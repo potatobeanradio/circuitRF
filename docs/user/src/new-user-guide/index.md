@@ -138,6 +138,8 @@ circular definitions and tells you, so you can't tie yourself in knots.)
     the full parameter editor with every setting.)</p>
   </div>
 
+{{ui: inline-value-editor}}
+
 ## 7 · Pins, Ports, and Terms {#ppt}
 
 These three sound alike but do different jobs, and keeping them straight saves confusion later:
@@ -156,6 +158,8 @@ These three sound alike but do different jobs, and keeping them straight saves c
 how the simulator excites and measures. Use the wrong one and you'll either have no measurement
 port or an unintended source impedance. The [Reference Guide](../reference/pins-ports-terms.html)
 shows each with pictures.
+
+{{ui: pin-and-term}}
 
 ## 8 · The simulation types {#sims}
 
@@ -218,6 +222,8 @@ Because RF data comes in different flavors:
       sanity check that everything's wired right.)</li>
   </ol>
 
+{{ui: example-dc-schematic}}
+
 ### B. A first S-parameter simulation
 
 <ol class="steps">
@@ -228,6 +234,13 @@ Because RF data comes in different flavors:
       <code>dB20</code> transform to see insertion loss vs. frequency; on a <strong>Smith chart</strong>, add
       <code>S(1,1)</code> to see the input match.</li>
   </ol>
+
+<p class="small">Build the schematic below and you should get the response beside it — a series 2 nH
+and a shunt 0.8 pF between two 50 Ω Terms, swept 1–5 GHz.</p>
+
+{{ui: example-sparam-schematic}}
+
+{{ui: example-sparam-plot}}
 
 ## 11 · Loadpull, contours & Pursuit {#loadpull}
 

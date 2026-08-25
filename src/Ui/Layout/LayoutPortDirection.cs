@@ -72,7 +72,19 @@ public static class LayoutPortDirection
     /// the lookup simply had no way to say it. <b>A bbox is what you fall back to when there is no
     /// pin, not the thing you prefer.</b></para>
     /// </summary>
-    public readonly record struct ConductorInfo(Bbox Box, PinFacts? Pin);
+    /// <param name="Shape">
+    /// The top-level shape the point landed on, when there IS one — so the port's width can be
+    /// MEASURED at the end face instead of taken from the bounding box.
+    ///
+    /// <para><b>This is the same defect the paragraph above records, arriving by the other route.</b>
+    /// There it was an INSTANCE's array-expanded box and the cure was the cell's own pin. Here it is
+    /// a top-level polygon with no pin at all — a drawn taper, or an MKLOPF flattened into the
+    /// layout — and the box is just as wrong: a Klopfenstein taper's box is its WIDE end's width at
+    /// both ports, so the narrow end draws a bar several times the metal that is actually there, and
+    /// an arrow scaled to it. Null when the conductor is an instance (nothing to measure), which is
+    /// exactly when <paramref name="Pin"/> or the box is the best available answer.</para>
+    /// </param>
+    public readonly record struct ConductorInfo(Bbox Box, PinFacts? Pin, LayoutShape? Shape = null);
 
     /// <summary>
     /// Where a conductor is looked up from a point. A delegate rather than a shape list because the
@@ -138,11 +150,125 @@ public static class LayoutPortDirection
         };
     }
 
-    /// <summary>The conductor's extent ACROSS <paramref name="direction"/> — the port's width.</summary>
+    /// <summary>The conductor's extent ACROSS <paramref name="direction"/> — the port's width.
+    /// <b>The fallback</b>, for a conductor with neither a pin nor a measurable outline; prefer
+    /// <see cref="SpanAt"/>, which measures the metal that is actually at the end face.</summary>
     public static long WidthAcross(Bbox bb, LayoutRotation direction) =>
         direction is LayoutRotation.R0 or LayoutRotation.R180
             ? bb.MaxY - bb.MinY
             : bb.MaxX - bb.MinX;
+
+    /// <summary>
+    /// How far inside the end face the width is measured, as a fraction of the conductor's own length
+    /// along the port's axis. <b>Not zero, and that is arithmetic rather than caution:</b> a cut
+    /// exactly ON the end face lies along that face's own edge, where a scanline's crossings are
+    /// degenerate — the answer would be 0, 1 or the whole span depending on rounding. One part in a
+    /// thousand is far inside the numerical problem and far outside anything a taper's flank can
+    /// change: on a 10 mm taper it is 10 µm.
+    /// </summary>
+    private const double SpanInsetOverLength = 1e-3;
+
+    /// <summary>
+    /// <b>The metal actually present at a port's end face: its width, and the centre of it.</b>
+    /// A scanline across the shape's flattened outline, just inside the face, keeping the one run of
+    /// metal that contains the port's own transverse position.
+    ///
+    /// <para>Returns null when the shape cannot be flattened, or when the cut finds no metal at the
+    /// port's own position — both of which mean "there is nothing here to measure", and the caller
+    /// falls back to the bounding box rather than to a guess.</para>
+    ///
+    /// <para><b>The run CONTAINING the port, not the total.</b> A cut across a tee or a pair of
+    /// coupled lines crosses several separate pieces of metal, and the port is on exactly one of
+    /// them; summing them would report a width the port does not have. This mirrors what
+    /// <c>PlanarPorts</c> does on the mesh, where the run is the contiguous row of rooftops the
+    /// port's own cell is part of — a different mechanism answering the same question the same way.</para>
+    /// </summary>
+    /// <param name="acrossAt">The port's own TRANSVERSE position, which picks the run.</param>
+    /// <param name="alongAt">
+    /// Where along the conductor to cut. <b>Null — the default — means the END FACE</b>, which is
+    /// what an edge port's width is. An INTERNAL delta gap passes its own longitudinal position
+    /// instead: its cut is in the middle of the metal, and on anything that changes width along its
+    /// length the two are different numbers. Measuring a gap at the end face is the same class of
+    /// error as measuring an end at the bounding box.
+    /// </param>
+    public static (long Width, long Centre)? SpanAt(
+        LayoutShape shape, Bbox box, LayoutRotation direction, long acrossAt, long? alongAt = null)
+    {
+        var ring = OutlineOf(shape);
+        if (ring is null || ring.Length < 6) return null;
+
+        bool alongX = direction is LayoutRotation.R0 or LayoutRotation.R180;
+        bool fromLow = direction is LayoutRotation.R0 or LayoutRotation.R90;
+
+        long length = alongX ? box.MaxX - box.MinX : box.MaxY - box.MinY;
+        if (length <= 0) return null;
+
+        long inset = System.Math.Max(1, (long)(length * SpanInsetOverLength));
+        long face  = alongX ? (fromLow ? box.MinX : box.MaxX) : (fromLow ? box.MinY : box.MaxY);
+
+        // An interior station is used as given — it is already inside the metal, so the degeneracy
+        // the inset exists to avoid cannot arise there.
+        double cut = alongAt ?? (fromLow ? face + inset : face - inset);
+
+        // Crossings of the cut line with the outline, in the transverse coordinate.
+        var hits = new List<double>();
+        int n = ring.Length / 2;
+        for (int i = 0; i < n; i++)
+        {
+            int j = (i + 1) % n;
+            double a  = alongX ? ring[2 * i] : ring[2 * i + 1];
+            double b  = alongX ? ring[2 * j] : ring[2 * j + 1];
+            double ta = alongX ? ring[2 * i + 1] : ring[2 * i];
+            double tb = alongX ? ring[2 * j + 1] : ring[2 * j];
+
+            // Half-open in the along coordinate, so a vertex exactly on the cut is counted once.
+            if ((a <= cut && b > cut) || (b <= cut && a > cut))
+                hits.Add(ta + (cut - a) / (b - a) * (tb - ta));
+        }
+
+        if (hits.Count < 2) return null;
+        hits.Sort();
+
+        // Pairs of crossings bound the metal. Keep the pair the port itself is inside; if the port
+        // sits between two runs (a gap), take the nearest pair rather than nothing — the label is on
+        // the metal in every case that reaches here, and a rounding-width miss must not blank the
+        // marker.
+        double best = double.MaxValue;
+        double lo = 0, hi = 0;
+        for (int i = 0; i + 1 < hits.Count; i += 2)
+        {
+            double a = hits[i], b = hits[i + 1];
+            double d = acrossAt < a ? a - acrossAt : acrossAt > b ? acrossAt - b : 0;
+            if (d < best) { best = d; lo = a; hi = b; }
+        }
+
+        long width = (long)System.Math.Round(hi - lo);
+        return width > 0 ? (width, (long)System.Math.Round(0.5 * (lo + hi))) : null;
+    }
+
+    /// <summary>The shape's outer ring as a flat x,y array, or null when it has none to give.
+    /// A polygon answers directly; anything curved is flattened at a tolerance fine enough that the
+    /// span it yields is exact to the DBU.</summary>
+    private static long[]? OutlineOf(LayoutShape shape)
+    {
+        if (shape is PolygonShape p) return p.Xy;
+        if (shape is RectShape r)
+            return [System.Math.Min(r.X1, r.X2), System.Math.Min(r.Y1, r.Y2),
+                    System.Math.Max(r.X1, r.X2), System.Math.Min(r.Y1, r.Y2),
+                    System.Math.Max(r.X1, r.X2), System.Math.Max(r.Y1, r.Y2),
+                    System.Math.Min(r.X1, r.X2), System.Math.Max(r.Y1, r.Y2)];
+
+        try
+        {
+            return LayoutFlattenToPolygon.FlattenToPolygon(shape, tolDbu: 1) is PolygonShape f ? f.Xy : null;
+        }
+        catch (System.Exception ex) when (ex is System.ArgumentException or System.InvalidOperationException)
+        {
+            // A shape the flattener declines is one there is nothing to measure on. The bounding box
+            // is then the honest fallback, and the marker still draws.
+            return null;
+        }
+    }
 
     /// <summary>
     /// How much metal runs AHEAD of a pin — the same quantity <see cref="LengthAlong"/> reports for a
@@ -195,8 +321,13 @@ public static class LayoutPortDirection
     /// answer is refused rather than merely drawn.
     /// </summary>
     public static Bbox? ConductorUnder(IReadOnlyList<LayoutShape> shapes, long x, long y)
+        => ConductorUnderShape(shapes, x, y) is { } s ? LayoutGeometry.BboxOf(s) : null;
+
+    /// <summary>The same search, returning the SHAPE — which is what a width measurement needs and
+    /// what a bounding box has already thrown away.</summary>
+    public static LayoutShape? ConductorUnderShape(IReadOnlyList<LayoutShape> shapes, long x, long y)
     {
-        Bbox? best = null;
+        LayoutShape? best = null;
         double bestArea = double.MaxValue;
         foreach (var s in shapes)
         {
@@ -206,7 +337,7 @@ public static class LayoutPortDirection
             if (x < bb.MinX || x > bb.MaxX || y < bb.MinY || y > bb.MaxY) continue;
 
             double area = (double)(bb.MaxX - bb.MinX) * (bb.MaxY - bb.MinY);
-            if (area < bestArea) { bestArea = area; best = bb; }
+            if (area < bestArea) { bestArea = area; best = s; }
         }
         return best;
     }
@@ -261,9 +392,7 @@ public static class LayoutPortDirection
                 return new PortHint(stated, sp.WidthDbu, Inferred: false, sp.X, sp.Y,
                                     LengthAheadOf(si.Box, sp.X, sp.Y, stated));
 
-            var (spx, spy) = PlaneOf(si.Box, stated);
-            return new PortHint(stated, WidthAcross(si.Box, stated),
-                                Inferred: false, spx, spy, LengthAlong(si.Box, stated));
+            return Measured(si, stated, label, Inferred: false);
         }
 
         if (info is not { } inf) return null;
@@ -273,9 +402,34 @@ public static class LayoutPortDirection
                                 LengthAheadOf(inf.Box, pin.X, pin.Y, pin.Direction));
 
         var dir = FromBbox(inf.Box, label.X, label.Y);
-        var (px, py) = PlaneOf(inf.Box, dir);
-        return new PortHint(dir, WidthAcross(inf.Box, dir),
-                            Inferred: true, px, py, LengthAlong(inf.Box, dir));
+        return Measured(inf, dir, label, Inferred: true);
+    }
+
+    /// <summary>
+    /// A hint whose width and plane centre are MEASURED at the end face when the conductor is a shape
+    /// that can be measured, and taken from the bounding box when it is not.
+    ///
+    /// <para>Both callers used to take the box unconditionally. That is right for a straight run of
+    /// metal — the box IS the metal there, to the DBU — and wrong for anything that changes width
+    /// along its length, which is most of what an EM port is ever placed on.</para>
+    /// </summary>
+    private static PortHint Measured(ConductorInfo info, LayoutRotation dir, LabelShape label, bool Inferred)
+    {
+        var (px, py) = PlaneOf(info.Box, dir);
+        long width = WidthAcross(info.Box, dir);
+
+        bool alongX = dir is LayoutRotation.R0 or LayoutRotation.R180;
+        if (info.Shape is { } shape &&
+            SpanAt(shape, info.Box, dir, alongX ? label.Y : label.X) is { } span)
+        {
+            width = span.Width;
+            // The plane's own transverse centre moves with the metal: on an off-centre or curved run
+            // the face's midpoint is not the box's midpoint, and a bar centred on the box would sit
+            // beside the conductor rather than across it.
+            if (alongX) py = span.Centre; else px = span.Centre;
+        }
+
+        return new PortHint(dir, width, Inferred, px, py, LengthAlong(info.Box, dir));
     }
 
     /// <summary>
@@ -290,7 +444,9 @@ public static class LayoutPortDirection
 
     /// <summary>Top-level shapes only — the cheap form, and all a hand-drawn layout ever needs.</summary>
     public static ConductorLookup LookupFor(IReadOnlyList<LayoutShape> shapes) =>
-        (x, y) => ConductorUnder(shapes, x, y) is { } bb ? new ConductorInfo(bb, null) : null;
+        (x, y) => ConductorUnderShape(shapes, x, y) is { } s
+            ? new ConductorInfo(LayoutGeometry.BboxOf(s), null, s)
+            : null;
 
     /// <summary>
     /// The full form: top-level shapes FIRST (exact hit-testing, so a click on an edge counts and a
@@ -323,7 +479,9 @@ public static class LayoutPortDirection
             {
                 if (view.Shapes[i] is LabelShape or BitmapShape) continue;
                 var bb = LayoutGeometry.BboxOf(view.Shapes[i]);
-                if (!bb.IsEmpty) return new ConductorInfo(bb, null);
+                // The SHAPE, not only its box: a top-level conductor can be measured at the end face,
+                // and for anything that changes width along its length the box is the wrong number.
+                if (!bb.IsEmpty) return new ConductorInfo(bb, null, view.Shapes[i]);
             }
 
             foreach (int i in LayoutHitTest.HitInstanceStack(view, tech, baseDir, x, y, tolDbu))

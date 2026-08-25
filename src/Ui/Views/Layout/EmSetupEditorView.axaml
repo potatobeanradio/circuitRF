@@ -568,6 +568,24 @@
                                         <TextBox Classes="num" Tag="PortRow"
                                                  Text="{Binding Text}"
                                                  LostFocus="OnPortRowLostFocus" KeyDown="OnPortRowKeyDown"/>
+                                        <!-- The port TYPE, planar analysis only (ShowKind). The
+                                             SelectedItem stays bound to the enum; the items render
+                                             through the converter because "InternalDeltaGap" is our
+                                             spelling, not a user's. Committing is the row's
+                                             KindChanged event, wired by the VM, so this needs no
+                                             code-behind handler of its own. -->
+                                        <ComboBox FontSize="11" Margin="0,2,0,0"
+                                                  HorizontalAlignment="Left" MinWidth="150"
+                                                  IsVisible="{Binding ShowKind}"
+                                                  ItemsSource="{x:Static em:EmPortZ0Row.KindChoices}"
+                                                  SelectedItem="{Binding Kind}"
+                                                  ToolTip.Tip="Edge: the port is at a conductor's end face, fed from outside your artwork, and IS de-embedded — the two-line calibration removes the port discontinuity so the answer is your structure's own response. Internal delta gap: the port is a cut across the middle of a conductor, with metal on both sides, for a lumped element or a device terminal embedded in the metal; it is NOT de-embedded, because there is no feed outside the cut to remove, and its s-parameters are reported at the gap in the reference impedance set above.">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Converter={x:Static conv:PlanarPortKindNameConverter.Instance}}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
                                         <TextBlock FontSize="10"
                                                    Foreground="{DynamicResource CrfWarningBrush}"
                                                    Text="{Binding Error}"

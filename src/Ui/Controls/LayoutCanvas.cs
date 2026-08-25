@@ -349,6 +349,7 @@ public sealed class LayoutCanvas : Control
             ShowPlanarMesh = _viewModel?.ShowPlanarMesh ?? false, PlanarMesh = _viewModel?.PlanarMeshReport,
             PlanarCurrentDensity = _viewModel?.PlanarCurrentDensity,
             PlanarPorts = _viewModel?.PlanarReferencePlanes ?? [],
+            InternalGapPorts = _viewModel?.InternalGapPorts ?? [],
         };
 
         context.Custom(new LayoutDrawOperation(

@@ -241,6 +241,23 @@ public static class UiArtworkGenerator
     /// </summary>
     public static bool LintDiagnosticMode { get; set; }
 
+    /// <summary>
+    /// True while a figure is being captured, so a control that rasterises for SPEED can draw
+    /// directly instead.
+    ///
+    /// <para>A render cache that snapshots draw calls into an offscreen bitmap is right for a live
+    /// canvas — it amortises antialiased rasterisation across frames — and exactly wrong for a
+    /// one-shot vector capture, where it bakes a fixed-resolution PNG into an SVG or PDF that is
+    /// otherwise pure geometry. harmonicaRF's two Smith planes did this: the figure carried two
+    /// 460x501 rasters, which are sharp at 1:1 in the documentation and visibly chunky the moment a
+    /// slide scales them down (owner, 2026-08-24). Set for the whole run rather than per figure,
+    /// because the cache is owned by the control and the fixture never sees it.</para>
+    ///
+    /// <para>It must never be set by the application. <see cref="HeadlessCapture"/> is what a control
+    /// tests; nothing switches it on but the docs factory.</para>
+    /// </summary>
+    public static bool HeadlessCapture { get; set; }
+
     /// <summary>The size report from the most recent <see cref="RenderScene"/>, for the run total.</summary>
     public static SvgPostPass.Report LastReport { get; private set; }
 

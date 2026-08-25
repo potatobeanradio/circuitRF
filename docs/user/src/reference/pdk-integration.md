@@ -79,6 +79,21 @@ tiny and carry no geometry; they are the difference between a workspace that ope
 and one that quietly re-decides.</p>
 </div>
 
+### The import report
+
+Every import ends in a report, success included — because the interesting result is almost never
+all-or-nothing. A kit typically holds parts circuitRF can place, drawings it cannot yet read, and
+files it does not recognise at all, and the difference is what you need to see.
+
+{{ui: pdk-import-report}}
+
+The report groups what it found into **read**, **recognised but not yet supported**, and **not
+recognised**, and every finding carries the action that would close the gap. It is selectable text, so
+the whole thing can be pasted into a note or a bug report.
+
+<p class="small">The kit in that figure is invented for the documentation — real kits are licensed and
+none ships with circuitRF — but the report and the dialog rendering it are the application's own.</p>
+
 A vendor delivery is often several part kits beside one shared package holding the compiled models, and
 discovery finds that package by **adjacency**. Once you reference a kit from somewhere else — a
 workspace folder, most obviously — that adjacency is gone and nothing on disk can recover it. So
@@ -174,6 +189,9 @@ nothing errors, and the solve simply does not settle. That is the signature of a
 worth reporting with the kit's details rather than tuning tolerances against.
 
 ## Managing kits {#managing}
+
+{{ui: manage-pdks}}
+
 
 **File ▸ Manage PDKs…** (<kbd>Ctrl/⌘ P</kbd>) lists every referenced kit with its name, stored path,
 whether it resolved, its part count and its translation version.

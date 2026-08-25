@@ -50,7 +50,7 @@ Specifies the **PCell contract** — the interface between circuitRF and a cell 
 PDK** will depend on, which is why it is written down before the first PCell exists rather than inferred
 from one afterwards.
 
-**Reads with:** `layout-view.md` §3.1 (primitives), §9 (schematic→layout), §10.4 (stackup);
+**Reads with:** `layout-view.md` §3.1 (primitives), §9 (schematic→layout), `mom-engine.md` §10.4 (stackup);
 `workspace-and-project-tree.md` §2 (`.ccell` parameters), §5A.2 (technology resolution);
 `expressions.md` (the parameter expression engine); `data-model.md` §2.2 (parameter scope).
 

@@ -25,6 +25,27 @@ public static class ShippedSchematicTemplates
 {
     private const string ResourceSuffix = ".csch";
 
+    /// <summary>Logical-name prefix of the documentation-only schematics (see the .csproj).</summary>
+    internal const string DocSchematicPrefix = "CircuitRF.Ui.DocSchematics.";
+
+    /// <summary>
+    /// Read one documentation schematic by file stem, through the ordinary <c>.csch</c> reader.
+    /// Used only by <c>src/Ui/Diagnostics/Fixtures</c>; these are not offered as templates.
+    /// </summary>
+    public static SchematicEditModel LoadDocSchematic(string stem)
+    {
+        var asm  = typeof(ShippedSchematicTemplates).Assembly;
+        string n = DocSchematicPrefix + stem + ResourceSuffix;
+        using var stream = asm.GetManifestResourceStream(n)
+            ?? throw new InvalidOperationException(
+                $"No documentation schematic \"{stem}\" is embedded (looked for \"{n}\"). The figures "
+              + "that photograph a reader's own worked example are built from these, so a missing one "
+              + "is a missing figure, not a missing template.");
+        using var reader = new StreamReader(stream);
+        var (model, _, _) = SchematicPersistence.Deserialize(reader.ReadToEnd(), null);
+        return model;
+    }
+
     private static readonly Lazy<IReadOnlyList<ShippedSchematicTemplate>> _entries = new(Discover);
 
     /// <summary>Every shipped template, sorted by <see cref="ShippedSchematicTemplate.Id"/> for a
@@ -70,6 +91,11 @@ public static class ShippedSchematicTemplates
         foreach (var name in asm.GetManifestResourceNames())
         {
             if (!name.EndsWith(ResourceSuffix, StringComparison.Ordinal)) continue;
+
+            // Documentation schematics are embedded .csch files too, and they are NOT templates —
+            // they exist for a user-doc figure to photograph. Without this they would appear in the
+            // template picker, which is a product change made by accident.
+            if (name.StartsWith(DocSchematicPrefix, StringComparison.Ordinal)) continue;
 
             // MSBuild's default embedded-resource name is <RootNamespace>.<folder.path>.<FileName>:
             // folder separators become dots, but the filename itself is never split further. None of

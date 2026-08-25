@@ -1,11 +1,23 @@
 // L8d — the port: what one IS, how it resolves onto L8b's mesh, and the refusals.
 //
-// D2 — THE PORT CUT IS THE OUTERMOST ROOFTOP ROW OF THE FEED, AND NOTHING IS USER-POSITIONABLE.
-// A port names an end of a conductor; the reference plane is then the shared edge of the two
+// D2 — AN EDGE PORT'S CUT IS THE OUTERMOST ROOFTOP ROW OF THE FEED, AND NOTHING IS USER-POSITIONABLE.
+// An edge port names an end of a conductor; the reference plane is then the shared edge of the two
 // outermost cells there, one cell in from the drawn metal, and the half-cell beyond it is part of
 // the error box. There is no port-offset setting, no reference-plane coordinate and no de-embedding
 // distance to choose, because ALL of that is what the calibration removes (PlanarCalibration) — and
 // offering a knob for it would offer a way to get a different answer for the same structure.
+//
+// THE SECOND PORT TYPE — AN INTERNAL DELTA GAP — IS THE SAME OBJECT CUT SOMEWHERE ELSE.
+// PlanarPortKind.InternalDeltaGap names a POINT ON the metal rather than an end of it, and the gap
+// is the mesh gridline NEAREST that point with metal on both sides. Everything downstream of the
+// cut is unchanged: the same rooftop row, the same incidence matrix, the same Y = BᵀZ⁻¹B (D1).
+//
+// What DOES change is that there is nothing outside the gap. An edge port has a feed, so it has an
+// error box and the two-line calibration removes it; an internal port has metal on both sides, so
+// there is no feed to remove, no Z_c to reference to, and no calibration standard that could even
+// be built for it. Its s-parameters are therefore referenced to its own declared Z0 at the gap
+// itself. That is what an internal port IS — see PlanarSolve's IdentityBox for how the two kinds
+// share one de-embedding path without either pretending to be the other.
 //
 // D3 — THE GROUND REFERENCE IS THE STACKUP'S GROUND PLANE, ALWAYS. The return path is the ground
 // plane by construction and there is nothing for the user to declare. A port naming any other
@@ -39,6 +51,34 @@ public enum PlanarPortSide
 }
 
 /// <summary>
+/// <b>WHERE the delta gap is cut, which is the one thing that distinguishes the two port types this
+/// kernel builds.</b> Both are the same object — a delta gap across the shared edge of two adjacent
+/// cells, driving the rooftop row that spans it (D1) — and they differ only in which shared edge,
+/// and therefore in whether there is a feed outside the gap to calibrate against.
+/// </summary>
+public enum PlanarPortKind
+{
+    /// <summary>
+    /// The gap is one cell in from a conductor's own END FACE, so everything outside it is the port
+    /// discontinuity and the two-line calibration removes it (<see cref="PlanarDeembed"/>). This is
+    /// the port every measured or probed structure has.
+    /// </summary>
+    Edge,
+
+    /// <summary>
+    /// <b>The gap is an INTERIOR cut of a conductor</b> — metal on both sides, nothing outside it.
+    /// A lumped element embedded in metal, or a device terminal in the middle of a structure.
+    ///
+    /// <para>There is no feed beyond the cut, therefore no error box, therefore <b>no de-embedding
+    /// and no Z_c to reference to</b>: the reference plane IS the gap, and the published
+    /// s-parameters are referenced to the port's own declared Z₀ directly. That is a property of
+    /// what an internal port IS, not a missing feature — a two-line calibration removes a feed, and
+    /// there is no feed here to remove.</para>
+    /// </summary>
+    InternalDeltaGap,
+}
+
+/// <summary>
 /// D3 — the only ground reference v1 has. The enum exists so the refusal can be worded against a
 /// named alternative rather than against "not implemented", which is R-mom-17's whole point.
 /// </summary>
@@ -64,10 +104,16 @@ public enum PlanarPortReference
 /// Neutral in the R-mom-1 sense — metres and ohms, no DBU, no <c>.clay</c>, no layer table.
 /// </summary>
 /// <param name="Number">1-based, and the order the s-parameter matrix is indexed in.</param>
-/// <param name="Location">A point on (or just inside) the conductor at the port's end. Only its
-/// TRANSVERSE coordinate is used to pick the conductor run; the longitudinal one is not, because
-/// D2 fixes the cut at the outermost row.</param>
-/// <param name="Side">Which end of the conductor this is.</param>
+/// <param name="Location">A point on (or just inside) the conductor.
+/// <para>For an <see cref="PlanarPortKind.Edge"/> port only its TRANSVERSE coordinate is used to pick
+/// the conductor run; the longitudinal one is not, because D2 fixes the cut at the outermost row.
+/// For an <see cref="PlanarPortKind.InternalDeltaGap"/> port <b>both</b> coordinates are used — the
+/// transverse one picks the run and the longitudinal one picks the cut — and the resolution reports
+/// how far the chosen gridline landed from the point that was asked for.</para></param>
+/// <param name="Side">Which end of the conductor this is — and, for an
+/// <see cref="PlanarPortKind.InternalDeltaGap"/> port where there is no "end", which way positive
+/// port current flows across the cut. Either way it is the sign of
+/// <see cref="IncidenceSign"/> and getting it wrong is a hard π in the transmission phase.</param>
 /// <param name="Z0">Reference impedance. Complex is allowed because
 /// <c>RFNetwork.SToS</c> already handles it and refusing it here would be a gratuitous narrowing.</param>
 /// <param name="LayerIndex">
@@ -83,13 +129,20 @@ public enum PlanarPortReference
 /// <para>Every pre-L9d construction site passes nothing and every one-level mesh has exactly one
 /// candidate, so inference reproduces the old behaviour exactly.</para>
 /// </param>
+/// <param name="Kind">
+/// <b>Edge (the default) or an interior delta gap.</b> An edge port names an END of a conductor and
+/// its cut is fixed at the outermost cell pair (D2); an internal one names a POINT ON the metal and
+/// its cut is the mesh gridline nearest that point, with metal on both sides. Every construction
+/// site that predates this parameter passes nothing and gets exactly the port it always got.
+/// </param>
 public sealed record PlanarPort(
     int                 Number,
     EmPoint             Location,
     PlanarPortSide      Side,
     Complex             Z0,
     int?                LayerIndex = null,
-    PlanarPortReference Reference  = PlanarPortReference.GroundPlane)
+    PlanarPortReference Reference  = PlanarPortReference.GroundPlane,
+    PlanarPortKind      Kind       = PlanarPortKind.Edge)
 {
     /// <summary>The basis direction the port's rooftop row is drawn from.</summary>
     public PlanarBasisDirection Direction =>
@@ -136,6 +189,16 @@ public sealed record PlanarPort(
 /// <param name="GridWidthM">What the width WOULD have been on the grid — carried only so the report
 /// can state the deficit as a number instead of a caveat. Equal to <c>WidthM</c> when nothing is
 /// cut.</param>
+/// <param name="Kind">Which kind of cut this is. An <see cref="PlanarPortKind.Edge"/> resolution
+/// carries a feed outside the plane and is de-embedded; an <see cref="PlanarPortKind.InternalDeltaGap"/>
+/// one has metal on both sides, is not de-embedded, and reports its s-parameters at the gap in its
+/// own declared Z₀. Everything else in this record means the same thing for both.</param>
+/// <param name="GapOffsetM">Internal ports only: <b>how far the gap actually landed from the point
+/// that was asked for</b>, along the port's own axis. The cut can only be a mesh gridline, so a
+/// requested position between two gridlines snaps to the nearer — and the distance it moved is
+/// reported rather than left to be discovered, because it is bounded by half a cell and half a cell
+/// is a quantity the user sets. Zero for an edge port, whose cut is fixed by D2 and is not asked
+/// for at all.</param>
 /// <param name="UndrivenMetalM">Metal on the reference plane, adjacent to the port's own run, that
 /// carries NO rooftop and is therefore not driven — R-cut-4 declining the outermost cell pair of a
 /// conformal feed. Zero under the staircase and on any Manhattan feed. It is reported rather than
@@ -156,9 +219,19 @@ public sealed record PlanarPortResolution(
     int                    LayerIndex     = 0,
     int                    CutCellCount   = 0,
     double                 GridWidthM     = 0,
-    double                 UndrivenMetalM = 0)
+    double                 UndrivenMetalM = 0,
+    PlanarPortKind         Kind           = PlanarPortKind.Edge,
+    double                 GapOffsetM     = 0)
 {
     public int BasisCount => BasisIndices.Count;
+
+    /// <summary>
+    /// <b>Whether the two-line calibration means anything for this port.</b> An edge port has a feed
+    /// outside its cut, so it has an error box and a Z_c; an internal delta gap has metal on both
+    /// sides and neither. Asked in exactly one place (<c>PlanarSolve</c>) so the two kinds cannot
+    /// drift apart, and named rather than written as an enum comparison at each site.
+    /// </summary>
+    public bool IsDeembeddable => Kind == PlanarPortKind.Edge;
 
     /// <summary>The bulk (largest) cell along the port's axis, which is what D4 fills a standard's
     /// middle with so the standard's line and the DUT's feed are discretised identically.</summary>
@@ -174,11 +247,33 @@ public sealed record PlanarPortResolution(
 
     /// <summary>R-prt-2's one-line summary, for the notes.</summary>
     public string Describe() =>
+        (Kind == PlanarPortKind.InternalDeltaGap ? DescribeInternal() : DescribeEdge()) +
+        (CutCellCount == 0 && UndrivenMetalM <= 0 ? "" : ConformalNote());
+
+    private string DescribeEdge() =>
         $"Port {Number} resolved to {BasisCount} basis function(s) across " +
         $"{SurfaceMesher.Eng(WidthM)}m of conductor; reference plane at " +
         $"{(Direction == PlanarBasisDirection.X ? "x" : "y")} = {SurfaceMesher.Eng(ReferencePlaneM)}m, " +
-        $"one cell in from the metal edge at {SurfaceMesher.Eng(OuterEdgeM)}m." +
-        (CutCellCount == 0 && UndrivenMetalM <= 0 ? "" : ConformalNote());
+        $"one cell in from the metal edge at {SurfaceMesher.Eng(OuterEdgeM)}m.";
+
+    /// <summary>
+    /// The internal port's own report. It says three things an edge port's does not, and every one
+    /// of them is something a user would otherwise have to infer: that this is an interior cut with
+    /// metal on both sides, WHERE the cut landed against where it was asked for, and that nothing is
+    /// de-embedded here because there is no feed to remove.
+    /// </summary>
+    private string DescribeInternal() =>
+        $"Port {Number} is an internal delta gap across {BasisCount} basis function(s) spanning " +
+        $"{SurfaceMesher.Eng(WidthM)}m of conductor; the gap is the interior cut at " +
+        $"{(Direction == PlanarBasisDirection.X ? "x" : "y")} = {SurfaceMesher.Eng(ReferencePlaneM)}m, " +
+        $"with metal on both sides" +
+        (GapOffsetM > 0
+            ? $" — {SurfaceMesher.Eng(GapOffsetM)}m from where it was placed, because a gap can only " +
+              "be a mesh gridline and this was the nearest one. Refine the mesh there to move it closer."
+            : ", exactly where it was placed.") +
+        " It is NOT de-embedded: there is no feed outside an interior cut, so there is no port " +
+        "discontinuity to remove and no line impedance to reference to. Its s-parameters are " +
+        "reported at the gap itself, in the reference impedance you declared for it.";
 
     /// <summary>
     /// <b>What a CONFORMAL boundary cell at a port does and does not cost, as a number.</b>
@@ -388,36 +483,12 @@ public static class PlanarPorts
             return false;
         }
 
-        // ── March in from the named side until metal appears: that column IS the outer one (D2) ──
-        bool fromLow = port.Side is PlanarPortSide.MinX or PlanarPortSide.MinY;
-        int  outer   = -1;
-        for (int k = 0; k < nLong; k++)
-        {
-            int i = fromLow ? k : nLong - 1 - k;
-            if (CellAt(i, seedT) >= 0) { outer = i; break; }
-        }
-
-        if (outer < 0)
-        {
-            refusal = $"Port {port.Number} at ({SurfaceMesher.Eng(port.Location.X)}m, " +
-                      $"{SurfaceMesher.Eng(port.Location.Y)}m) does not lie on any conductor on layer " +
-                      $"{layerIndex}{LayerName(mesh, layerIndex)} — nothing was meshed along that " +
-                      "line. Move the port onto the " +
-                      "metal, or check that the conductor survived meshing at this cell size.";
-            return false;
-        }
-
-        int inner = fromLow ? outer + 1 : outer - 1;
-        if (inner < 0 || inner >= nLong || CellAt(inner, seedT) < 0)
-        {
-            refusal = $"Port {port.Number}'s conductor is only one cell long in the direction current " +
-                      "would flow, so there is no rooftop basis function to drive — a port needs a pair " +
-                      "of adjacent cells. Lengthen the feed line, or raise Cells per wavelength so the " +
-                      "feed is meshed into more than one cell.";
-            return false;
-        }
-
         // ── Basis lookup. Built by ONE forward pass over Bases; queried, never iterated. ─────────
+        //
+        // Hoisted above the column search (it used to sit below it) because an INTERNAL port's cut is
+        // chosen by asking which candidate gridlines actually carry a rooftop — the search needs the
+        // lookup, not the other way round. An edge port's search is unchanged and reaches exactly the
+        // same columns it always did.
         var byPair = new Dictionary<(int A, int B, PlanarBasisDirection D), int>(mesh.Bases.Count);
         for (int b = 0; b < mesh.Bases.Count; b++)
         {
@@ -425,7 +496,119 @@ public static class PlanarPorts
             byPair[(bs.CellA, bs.CellB, bs.Direction)] = b;
         }
 
-        int lowCol = Math.Min(outer, inner), highCol = Math.Max(outer, inner);
+        // Is the cell pair (lowC, lowC+1) at transverse index t paired into a rooftop?
+        bool PairAt(int lowC, int t)
+        {
+            if (lowC < 0 || lowC + 1 >= nLong) return false;
+            int a = CellAt(lowC, t), b = CellAt(lowC + 1, t);
+            return a >= 0 && b >= 0 && byPair.ContainsKey((a, b, port.Direction));
+        }
+
+        bool fromLow = port.Side is PlanarPortSide.MinX or PlanarPortSide.MinY;
+        bool internalGap = port.Kind == PlanarPortKind.InternalDeltaGap;
+
+        int lowCol, highCol, outer;
+        double gapOffset = 0;
+
+        if (!internalGap)
+        {
+            // ── March in from the named side until metal appears: that column IS the outer one (D2)
+            outer = -1;
+            for (int k = 0; k < nLong; k++)
+            {
+                int i = fromLow ? k : nLong - 1 - k;
+                if (CellAt(i, seedT) >= 0) { outer = i; break; }
+            }
+
+            if (outer < 0)
+            {
+                refusal = $"Port {port.Number} at ({SurfaceMesher.Eng(port.Location.X)}m, " +
+                          $"{SurfaceMesher.Eng(port.Location.Y)}m) does not lie on any conductor on layer " +
+                          $"{layerIndex}{LayerName(mesh, layerIndex)} — nothing was meshed along that " +
+                          "line. Move the port onto the " +
+                          "metal, or check that the conductor survived meshing at this cell size.";
+                return false;
+            }
+
+            int inner = fromLow ? outer + 1 : outer - 1;
+            if (inner < 0 || inner >= nLong || CellAt(inner, seedT) < 0)
+            {
+                refusal = $"Port {port.Number}'s conductor is only one cell long in the direction current " +
+                          "would flow, so there is no rooftop basis function to drive — a port needs a pair " +
+                          "of adjacent cells. Lengthen the feed line, or raise Cells per wavelength so the " +
+                          "feed is meshed into more than one cell.";
+                return false;
+            }
+
+            lowCol  = Math.Min(outer, inner);
+            highCol = Math.Max(outer, inner);
+        }
+        else
+        {
+            // ── AN INTERNAL DELTA GAP: THE CUT IS THE GRIDLINE NEAREST THE PLACED POINT ──────────
+            //
+            // Both of the label's coordinates matter here, which is the one place this port differs
+            // from an edge port before the solve. The transverse one picks the conductor run exactly
+            // as it always did; the LONGITUDINAL one picks which of that run's interior gridlines the
+            // gap is cut on — and the only cuts on offer are the mesh's own, so the nearest usable
+            // one wins and how far it moved is reported (GapOffsetM). Snapping silently would hide a
+            // displacement bounded by half a cell, and half a cell is a quantity the user sets.
+            //
+            // "Usable" means the pair either side is metal AND is paired into a rooftop, which is
+            // what makes this an INTERIOR cut rather than an end: at a conductor's end face one side
+            // is empty, so that gridline is never a candidate and the refusal below can say so
+            // truthfully rather than guessing at the user's intent.
+            double lCoord = alongX ? port.Location.X : port.Location.Y;
+
+            // ── THE INDEX LOOKUP CLAMPS, SO "IS IT ON THE METAL?" NEEDS THE EXTENT TOO ──────────
+            //
+            // IndexOf returns the nearest cell for a coordinate outside the grid rather than a
+            // miss, which is right for an EDGE port (its label may legitimately sit just off the end
+            // face it names, and the transverse coordinate is all that is read). For an internal
+            // port it is not: a point metres away from the artwork would clamp onto the outermost
+            // row, find metal there, and cut a gap the user never asked for — a complete, plausible
+            // answer for a structure nobody drew. Asked of both axes, because a gap is placed by
+            // both of its coordinates.
+            bool inside = tCoord >= gTran[0] - 1e-15 && tCoord <= gTran[^1] + 1e-15
+                       && lCoord >= gLong[0] - 1e-15 && lCoord <= gLong[^1] + 1e-15;
+
+            if (!inside || CellAt(IndexOf(gLong, lCoord), seedT) < 0)
+            {
+                refusal = $"Port {port.Number} at ({SurfaceMesher.Eng(port.Location.X)}m, " +
+                          $"{SurfaceMesher.Eng(port.Location.Y)}m) is an internal delta-gap port, and " +
+                          $"it is not ON any conductor on layer {layerIndex}{LayerName(mesh, layerIndex)}. " +
+                          "An internal port cuts a gap in metal, so it has to be placed on the metal it " +
+                          "cuts — unlike an edge port, whose label may sit just off the end face it names.";
+                return false;
+            }
+
+            int best = -1;
+            double bestD = double.PositiveInfinity;
+            for (int c = 0; c < nLong - 1; c++)          // the cut between cells c and c+1
+            {
+                if (!PairAt(c, seedT)) continue;
+                double d = Math.Abs(gLong[c + 1] - lCoord);
+                if (d < bestD) { bestD = d; best = c; }
+            }
+
+            if (best < 0)
+            {
+                refusal = $"Port {port.Number} is an internal delta-gap port, and the conductor under it " +
+                          "has no interior cut to gap: along the direction its current flows, no two " +
+                          "adjacent cells there are both metal and paired into a rooftop. An internal " +
+                          "gap needs metal on BOTH sides — at a conductor's END there is metal on one " +
+                          "side only, and that is an edge port, not this. Move the port into the middle " +
+                          "of the conductor, raise Cells per wavelength so the run is meshed into more " +
+                          "than one cell, or change this port to an edge port if the end is what you meant.";
+                return false;
+            }
+
+            lowCol    = best;
+            highCol   = best + 1;
+            outer     = best;                 // no metal is outside an interior cut; see below
+            gapOffset = bestD;
+        }
+
         double sharedCoord = gLong[highCol];
 
         // ── §4 — A PORT ON A CUT CELL: THE RUN IS THE ROOFTOPS THAT EXIST, NOT THE METAL ─────────
@@ -514,9 +697,16 @@ public static class PlanarPorts
             indices.Add(byPair[(CellAt(lowCol, t), CellAt(highCol, t), port.Direction)]);
 
         // ── The geometry the report and the calibration both need ────────────────────────────────
+        //
+        // For an INTERNAL gap the plane IS the cut and there is no metal outside it, so the "outer
+        // edge" is the plane itself. That is not a placeholder: OuterEdgeM means "where the metal
+        // this port drives stops", and for an interior cut it stops at the cut. Every consumer of it
+        // — the feed-clearance scan, the automatic lead, the peel — is an edge-port path and asks
+        // only about edge ports (PlanarSolve gates on IsDeembeddable), so reporting the honest number
+        // here cannot be mistaken for a feed of length zero.
         double gridWidth = gTran[hi + 1] - gTran[lo];
-        double plane     = fromLow ? gLong[outer + 1] : gLong[outer];
-        double edge      = fromLow ? gLong[outer]     : gLong[outer + 1];
+        double plane     = internalGap ? sharedCoord : fromLow ? gLong[outer + 1] : gLong[outer];
+        double edge      = internalGap ? sharedCoord : fromLow ? gLong[outer]     : gLong[outer + 1];
 
         // ── The width, and the MEASUREMENT that says the two branches below are not both live ────
         //
@@ -555,12 +745,25 @@ public static class PlanarPorts
             for (int k = 0; k < metal.Length; k++) tLines[k + 1] = tLines[k] + metal[k];
         }
 
+        // The cells the port's own current marches through, outermost first. For an edge port that
+        // is the feed, and D4 copies the first K of them into the calibration standard. An internal
+        // gap has no feed and no standard: the two cells its rooftop spans are the whole of it, given
+        // upstream-first so BulkCellM still means "the cell this port's gap is discretised at".
         var run = new List<double>();
-        for (int k = 0; ; k++)
+        if (internalGap)
         {
-            int i = fromLow ? outer + k : outer - k;
-            if (i < 0 || i >= nLong || CellAt(i, seedT) < 0) break;
-            run.Add(gLong[i + 1] - gLong[i]);
+            int up = fromLow ? lowCol : highCol, down = fromLow ? highCol : lowCol;
+            run.Add(gLong[up   + 1] - gLong[up]);
+            run.Add(gLong[down + 1] - gLong[down]);
+        }
+        else
+        {
+            for (int k = 0; ; k++)
+            {
+                int i = fromLow ? outer + k : outer - k;
+                if (i < 0 || i >= nLong || CellAt(i, seedT) < 0) break;
+                run.Add(gLong[i + 1] - gLong[i]);
+            }
         }
 
         resolution = new PlanarPortResolution(
@@ -578,7 +781,9 @@ public static class PlanarPorts
             LayerIndex:        layerIndex,
             CutCellCount:      cutCells,
             GridWidthM:        gridWidth,
-            UndrivenMetalM:    undriven);
+            UndrivenMetalM:    undriven,
+            Kind:              port.Kind,
+            GapOffsetM:        gapOffset);
 
         refusal = null;
         return true;
@@ -595,6 +800,11 @@ public static class PlanarPorts
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(port);
         if (!(requiredM > 0)) return null;
+
+        // An internal delta gap has no feed and no calibration standard, so there is no length of
+        // line this warning could be about. Saying nothing is the answer; warning about a neighbour
+        // that is not being replaced by anything would be noise the user cannot act on.
+        if (!port.IsDeembeddable) return null;
 
         bool alongX = port.Direction == PlanarBasisDirection.X;
         bool fromLow = port.Side is PlanarPortSide.MinX or PlanarPortSide.MinY;

@@ -85,6 +85,15 @@ public sealed class CemFile
     public List<double>? PortZ0s { get; set; }
 
     /// <summary>
+    /// Optional per-port TYPE (edge / internal delta gap) in extractor order, written as enum names
+    /// by the shared <c>JsonStringEnumConverter</c>. <b>Null when every port is an edge port</b>,
+    /// which is the normal case and what every <c>.cem</c> written before internal ports existed
+    /// means — so such a file loads and re-serialises byte-identically, exactly as
+    /// <see cref="PortZ0s"/> does.
+    /// </summary>
+    public List<PlanarPortKind>? PortKinds { get; set; }
+
+    /// <summary>
     /// L9d/D5: which conductor stackup entries the planar analysis includes, bottom-to-top.
     /// <b>Null when unused</b> (WhenWritingNull) — a <c>.cem</c> that never named its levels writes
     /// no field and re-serialises byte-identically, exactly as <see cref="PortZ0s"/> does.
@@ -197,6 +206,7 @@ public static class EmSetupPersistence
         Port2Z0Real = s.Port2Z0.Real,
         Port2Z0Imag = s.Port2Z0.Imaginary,
         PortZ0s     = FlattenPortZ0s(s.PortZ0s),
+        PortKinds   = FlattenPortKinds(s.PortKinds),
         AnalysisLevelNames = s.AnalysisLevelNames.Count > 0 ? [.. s.AnalysisLevelNames] : null,
         Mesh = new CemMesh
         {
@@ -234,6 +244,7 @@ public static class EmSetupPersistence
         Port1Z0                = new Complex(f.Port1Z0Real, f.Port1Z0Imag),
         Port2Z0                = new Complex(f.Port2Z0Real, f.Port2Z0Imag),
         PortZ0s                = UnflattenPortZ0s(f.PortZ0s),
+        PortKinds              = f.PortKinds is { } pk ? [.. pk] : [],
         AnalysisLevelNames     = f.AnalysisLevelNames is { } lv ? [.. lv] : [],
         Mesh = new EmMeshSettings(
             f.Mesh.MinCellsAcrossWidth,
@@ -262,6 +273,19 @@ public static class EmSetupPersistence
         var flat = new List<double>(z.Count * 2);
         foreach (var c in z) { flat.Add(c.Real); flat.Add(c.Imaginary); }
         return flat;
+    }
+
+    /// <summary>
+    /// Null when the list is empty <b>or is all-Edge</b>, so the field is omitted entirely rather
+    /// than written as a run of the default. The second half matters: the panel materialises one row
+    /// per port and a naive write would put <c>["Edge","Edge"]</c> into every <c>.cem</c> that has
+    /// ever been opened, which is exactly the byte-identity the omit-at-default rule protects.
+    /// </summary>
+    private static List<PlanarPortKind>? FlattenPortKinds(List<PlanarPortKind> kinds)
+    {
+        foreach (var k in kinds)
+            if (k != PlanarPortKind.Edge) return [.. kinds];
+        return null;
     }
 
     /// <summary>A trailing half-pair is dropped rather than throwing — a hand-edited .cem must

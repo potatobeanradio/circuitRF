@@ -445,7 +445,7 @@ and LOD rendering for large designs, **GDSII / DXF / Gerber+Excellon interchange
 **Done: electromagnetic simulation using MoM.** A **2.5D method-of-moments** solver that analyses layout
 geometry against its technology stackup and returns S-parameters:
 quasi-static per-unit-length and full-wave over a general layered stack
-with vias and z-directed current. See [`docs/design/layout-view.md`](docs/design/layout-view.md) §10.
+with vias and z-directed current. See [`docs/design/mom-engine.md`](docs/design/mom-engine.md).
 
 **Done: harmonicaRF.** A waveform engineering solver with convenient UI that shows you what the current generator is actually doing, and what it costs in power and efficiency. It mimics what an active loadpull measurement system does.  View loadpull contours, time-domain waveforms and loadline simultaneously in a realtime envrionment. See [`docs/design/harmonicarf.md`](docs/design/harmonicarf.md).
 
@@ -487,6 +487,20 @@ the same reason. There are no screenshots in this documentation and there are no
 `tools/DocGen/check-docs-current.sh` regenerates and diffs, and fails if the committed output is not
 what the generator produces. Run it after a UI change that moves a figure. The design note is
 [`docs/design/user-docs-factory.md`](docs/design/user-docs-factory.md).
+
+### Slide decks
+
+The same sources also produce four landscape PDF decks into `docs/slides/` (git-ignored, a build
+product). Both options default to everything:
+
+```bash
+dotnet run --project tools/DocGen -- --slides docs/slides                                # all 4, light + dark
+dotnet run --project tools/DocGen -- --slides docs/slides --deck overview --theme dark
+```
+
+- `--deck overview | new-user | quick-start | reference` — why adopt it; first principles; the fast
+  path for engineers who already use simulators; the Reference Guide in outline. Comma-separated.
+- `--theme light | dark | both` — picks the **screenshots** as well as the page colour.
 
 ---
 

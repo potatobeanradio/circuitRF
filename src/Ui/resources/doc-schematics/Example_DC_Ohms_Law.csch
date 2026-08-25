@@ -1,0 +1,98 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Example_DC_Ohms_Law",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "V1",
+      "Symbol": "Vdc",
+      "X": -600,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "10",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
+      "X": 400,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "100",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -600,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 400,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -600,
+          -200
+        ],
+        [
+          400,
+          -200
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "dc",
+      "Name": "DC1",
+      "Enabled": true
+    }
+  ]
+}

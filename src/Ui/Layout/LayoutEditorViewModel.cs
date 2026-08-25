@@ -145,6 +145,31 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// there is nothing here to compute and nothing for a user to move.</summary>
     [ObservableProperty] private IReadOnlyList<Engine.Mom.PlanarPortResolution> _planarReferencePlanes = [];
 
+    /// <summary>
+    /// Which port labels the active <c>.cem</c> drives as INTERNAL DELTA GAPS, by the label's own DBU
+    /// anchor — pushed here by that editor, exactly as the mesh and the reference planes are.
+    ///
+    /// <para><b>The port type is not on the shape and must not be</b> (a layout is geometry; the same
+    /// artwork can be gapped in one setup and edge-driven in another), so this is how the renderer
+    /// gets to draw the right mark. Empty — a layout with no EM setup open — means every port draws
+    /// as an edge port, which is what it always did.</para>
+    /// </summary>
+    [ObservableProperty] private IReadOnlyList<(long X, long Y)> _internalGapPorts = [];
+
+    /// <summary>
+    /// <b>Which EM setup's interpretation <see cref="InternalGapPorts"/> currently is.</b>
+    ///
+    /// <para>A layout can be analysed by more than one <c>.cem</c>, and two of them may legitimately
+    /// disagree about a port — a gap in the middle of a trace in one, driven from the ends in
+    /// another. That is the whole reason the type is an analysis setting rather than a property of
+    /// the drawing. But there is only ONE layout on screen, so it can only draw one of the two
+    /// answers, and without this it drew whichever setup last refreshed with nothing saying which.</para>
+    ///
+    /// <para>Empty when no setup has claimed it. See <c>WorkspaceViewModel.PushEmMeshToLayout</c>
+    /// for the takeover notice.</para>
+    /// </summary>
+    [ObservableProperty] private string _internalGapPortsOwner = "";
+
     // ── Technology (L0c) ───────────────────────────────────────────────────────
 
     /// <summary>The resolved technology, or null when unresolved (missing/corrupt/no default) —
@@ -451,6 +476,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             PlanarMeshReport = null;
             PlanarCurrentDensity  = null;
             PlanarReferencePlanes = [];
+            InternalGapPorts      = [];
+            InternalGapPortsOwner  = "";
 
             // Any model mutation (draw, move, delete, undo, redo — every one of them calls
             // NotifyChanged) invalidates the overlap-cycling cache (R-L1c-2). Selected indices may

@@ -1,0 +1,38 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Inline_Value_Editor",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
+      "X": 0,
+      "Y": 0,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "ShowTypeLabel": false
+    }
+  ],
+  "Wires": [],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": []
+}

@@ -1,0 +1,252 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Example_EM_SeriesGap",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "Term1",
+      "Symbol": "Term",
+      "X": -1200,
+      "Y": -400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ],
+      "ShowTypeLabel": false
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -1200,
+      "Y": -200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "S1",
+      "Symbol": "SnP",
+      "X": 0,
+      "Y": -600,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "NumPorts",
+          "Expression": "3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "File",
+          "Expression": "taper_gap.s3p",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "RefNode",
+          "Expression": "false",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PinConfig",
+          "Expression": "Standard",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pitch",
+          "Expression": "Loose",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "InterpMode",
+          "Expression": "CubicSpline",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "InterpDomain",
+          "Expression": "MA",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "ExtrapMode",
+          "Expression": "NearestEdge",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ],
+      "ShowTypeLabel": false
+    },
+    {
+      "InstanceName": "Term2",
+      "Symbol": "Term",
+      "X": 1200,
+      "Y": -400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ],
+      "ShowTypeLabel": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 1200,
+      "Y": -200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 900,
+      "Y": -1100,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "1.2",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "ShowTypeLabel": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 1100,
+      "Y": -1100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -1200,
+          -600
+        ],
+        [
+          -200,
+          -600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          200,
+          -600
+        ],
+        [
+          1200,
+          -600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          -800
+        ],
+        [
+          0,
+          -1100
+        ],
+        [
+          700,
+          -1100
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "1",
+          "StopExpr": "20",
+          "NumPoints": 201,
+          "Mode": "PointCount",
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz"
+        }
+      ]
+    }
+  ]
+}

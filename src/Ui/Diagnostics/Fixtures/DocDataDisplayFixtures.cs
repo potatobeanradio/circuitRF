@@ -2,6 +2,8 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Views.DataDisplay;
@@ -49,7 +51,8 @@ public static class DocDataDisplayFixtures
     /// trace, and hand back both the document and the plot.
     /// </summary>
     private static (DataDisplayDocumentViewModel Doc, PlotContainerViewModel Plot) Plotted(
-        string logicalId, PlotType type, bool contour = false, int traces = 1)
+        string logicalId, PlotType type, bool contour = false, int traces = 1,
+        (double W, double H)? size = null)
     {
         var vm = Sourced(logicalId);
         var display = vm.Window.DataDisplay
@@ -63,11 +66,13 @@ public static class DocDataDisplayFixtures
         // polar plot is square, a rectangular one is wide, and a table is neither — it is as wide as
         // its columns and no wider, which is what lets the table figure be captured in a window half
         // the width of the others instead of half-empty.
-        (plot.Width, plot.Height) = type switch
+        (plot.Width, plot.Height) = size ?? type switch
         {
             PlotType.Smith or PlotType.Polar => (460.0, 460.0),
             PlotType.Table                   => (620.0, 400.0),
-            _                                => (560.0, 360.0),
+            // Was 560x360 in an 850x540 window, which left a third of the canvas empty around the
+            // curve — fine beside body text, thin once a slide scales the whole window down.
+            _                                => (700.0, 400.0),
         };
 
         var command = contour ? plot.Inspector.AddContourTraceCommand : plot.Inspector.AddTraceCommand;
@@ -86,6 +91,43 @@ public static class DocDataDisplayFixtures
         return (vm, plot);
     }
 
+
+    /// <summary>
+    /// Put the plot in the MIDDLE of the Data Display's canvas, once the canvas has a size.
+    ///
+    /// <para>The application centres the first plot itself
+    /// (<c>DataDisplayViewModel.ComputeNewPlotPosition</c>, case 1), but only when it can see the
+    /// viewport — and it cannot at fixture-construction time, because nothing has been arranged yet.
+    /// It therefore fell back to the historical <c>30 + count*30</c> cascade, which is why every
+    /// whole-document plot figure sat up against the top-left corner with the chart clipped on the
+    /// right and a band of empty canvas below it (owner, 2026-08-24). The canvas is asked for its real
+    /// bounds here and the plot is centred in them; <see cref="FigureScene.AfterLayout"/> is the one
+    /// callback that runs late enough for that to be a real number.</para>
+    /// </summary>
+    private static Action<Control> Centred(PlotContainerViewModel plot) => root =>
+    {
+        var canvas = root.GetVisualDescendants().OfType<ItemsControl>()
+                         .FirstOrDefault(c => c.Name == "PlotCanvas")
+            ?? throw new InvalidOperationException(
+                "The Data Display view no longer has a control named 'PlotCanvas'. Every whole-document "
+              + "plot figure centres its plot in that control's bounds, so a rename makes them all "
+              + "silently off-centre again rather than failing.");
+
+        double w = canvas.Bounds.Width, h = canvas.Bounds.Height;
+        if (w <= 0 || h <= 0)
+            throw new InvalidOperationException(
+                $"The Data Display canvas arranged to {w}x{h}, so the plot cannot be centred in it.");
+
+        // Centre the CONTAINER, not the graph rect. A plot's drawn extent is wider than Width by its
+        // per-trace Y-axis label strips and taller than Height by the title and X-label clearances,
+        // and those extras are asymmetric — centring on Width/Height alone leaves the picture visibly
+        // low and left. The view-space numbers the canvas itself binds to already account for all of
+        // it, so the correction is taken as a delta from them rather than re-derived here.
+        double zoom = plot.ZoomLevel > 0 ? plot.ZoomLevel : 1.0;
+        plot.Left += Math.Round(((w - plot.ViewTotalWidth) / 2.0 - plot.ViewContainerLeft) / zoom);
+        plot.Top  += Math.Round(((h - plot.ViewHeight)     / 2.0 - plot.ViewTop)           / zoom);
+    };
+
     // ── Whole-document figures ────────────────────────────────────────────────
 
     /// <summary>
@@ -101,7 +143,8 @@ public static class DocDataDisplayFixtures
     {
         var (vm, plot) = Plotted(DocRunData.SParameters(), PlotType.Rect);
         PickSignal(plot.Inspector.Traces[0], "S(2,1)");
-        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") });
+        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") })
+            { AfterLayout = Centred(plot) };
     }
 
     /// <summary>
@@ -136,7 +179,8 @@ public static class DocDataDisplayFixtures
             trace.Z0OverrideEnabled = true;
             trace.Z0String = DocRunData.LoadpullGridZ0.ToString("0.###", CultureInfo.InvariantCulture);
         }
-        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "Load-pull") });
+        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "Load-pull") })
+            { AfterLayout = Centred(plot) };
     }
 
     /// <summary>A Smith chart with a real swept reflection coefficient on it — the FET's own S(1,1).</summary>
@@ -144,7 +188,8 @@ public static class DocDataDisplayFixtures
     {
         var (vm, plot) = Plotted(DocRunData.SParameters(), PlotType.Smith);
         PickSignal(plot.Inspector.Traces[0], "S(1,1)");
-        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") });
+        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") })
+            { AfterLayout = Centred(plot) };
     }
 
     /// <summary>The same data on a polar plot — magnitude and angle, without the impedance grid.</summary>
@@ -152,7 +197,8 @@ public static class DocDataDisplayFixtures
     {
         var (vm, plot) = Plotted(DocRunData.SParameters(), PlotType.Polar);
         PickSignal(plot.Inspector.Traces[0], "S(2,1)");
-        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") });
+        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") })
+            { AfterLayout = Centred(plot) };
     }
 
     /// <summary>A table of the same run: a complex column and a scalar one side by side.</summary>
@@ -161,7 +207,25 @@ public static class DocDataDisplayFixtures
         var (vm, plot) = Plotted(DocRunData.SParameters(), PlotType.Table, traces: 2);
         PickSignal(plot.Inspector.Traces[0], "S(2,1)");
         PickSignal(plot.Inspector.Traces[^1], "S(1,1)");
-        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") });
+        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "S-Parameters") })
+            { AfterLayout = Centred(plot) };
+    }
+
+    /// <summary>
+    /// The New User's Guide's second worked example, plotted: <c>S(2,1)</c> in dB against frequency,
+    /// filling a square window the same size as the schematic figure it sits beside.
+    ///
+    /// <para>The plot is sized explicitly rather than taking the house default for a rectangular
+    /// plot: the pair exists so a reader can check their own result against it, and a small chart
+    /// adrift in a large empty window is a worse check (owner, 2026-08-24).</para>
+    /// </summary>
+    public static FigureScene ExampleLowPassResponse()
+    {
+        var (vm, plot) = Plotted(DocRunData.ExampleSParam(), PlotType.Rect,
+                                 size: (DocExampleFixtures.Square - 60, DocExampleFixtures.Square - 155));
+        PickSignal(plot.Inspector.Traces[0], "S(2,1)");
+        return new FigureScene(new DataDisplayView { DataContext = Document(vm, "Example_SParam_LC") })
+            { AfterLayout = Centred(plot) };
     }
 
     // ── Plot Inspector figures ────────────────────────────────────────────────
@@ -171,6 +235,20 @@ public static class DocDataDisplayFixtures
     {
         var (_, plot) = Plotted(DocRunData.SParameters(), PlotType.Rect);
         PickSignal(plot.Inspector.Traces[0], "S(2,1)");
+        return new FigureScene(new PlotInspectorView { DataContext = plot.Inspector });
+    }
+
+    /// <summary>
+    /// The Plot Inspector for the SAME trace the Smith figure draws — S(1,1) on a Smith chart.
+    ///
+    /// <para>Deliberately not <see cref="InspectorTraceCard"/>, which reads S(2,1) on a rectangular
+    /// plot: shown beside the Smith figure, a card configured for a different plot and a different
+    /// signal is a picture of the wrong thing, and it is the kind of wrong nobody checks.</para>
+    /// </summary>
+    public static FigureScene InspectorSmith()
+    {
+        var (_, plot) = Plotted(DocRunData.SParameters(), PlotType.Smith);
+        PickSignal(plot.Inspector.Traces[0], "S(1,1)");
         return new FigureScene(new PlotInspectorView { DataContext = plot.Inspector });
     }
 

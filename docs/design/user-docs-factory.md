@@ -278,6 +278,29 @@ Reject it.
 Caveat: text *flow* on a slide is on us (no browser to reflow). Keep slide templates simple and fixed —
 title, bullets, one figure — and let overflow be a generation error rather than a silent clip.
 
+> **Extended 2026-08-24.** Four decks now exist, each selectable and each rendered in both colour
+> variants; overflow is still a generation error, but an auto-fit ladder of body sizes runs in front
+> of it. What that cost, and the four traps in it, are in `src/Ui/RESOLVED.md` § *Four slide decks,
+> light and dark, off the same content tree*. The decks and their markup:
+>
+> | `--deck` | Source | Audience |
+> |---|---|---|
+> | `overview` | `docs/user/src/slides/circuitrf-overview.md` | Deciding whether to adopt circuitRF at all |
+> | `new-user` | `…/circuitrf-new-user.md` | New to circuit simulation, from first principles |
+> | `quick-start` | `…/circuitrf-quick-start.md` | Already uses simulators; wants the differences |
+> | `reference` | `…/circuitrf-reference.md` | The Reference Guide in outline, chapter by chapter |
+>
+> A slides source declares its id in front-matter (`deck: overview`) rather than having it derived
+> from the file name: the file name is the PDF a reader sees, the id is what a script types, and the
+> two want to change independently. The light/dark pair is named by the same
+> `UiArtworkGenerator.FileStem` convention the figures use — `circuitrf-overview.pdf` and
+> `circuitrf-overview-dark.pdf`.
+>
+> Beyond `##` per slide, the backend understands `#` (a full-bleed section divider), `###` (a
+> sub-head), indented `-` (a sub-bullet), `> **Label** text` (a callout band), a ``` fence (a command
+> band), `{{ui: id}}` / `{{ui: id | full}}`, `{{caption: …}}` and `{{stats: 4::analyses | …}}`, plus
+> inline `**bold**` and `` `code` ``. `SlideEmitter`'s own summary is the reference.
+
 ---
 
 ## 7. Where the code lives, and how it is gated
@@ -300,7 +323,9 @@ Note this is a *build tool*, like `IconGen` — not one of the deliberately-inde
 
 ```
 dotnet run --project tools/DocGen -- --out docs/user            # HTML + figures + fonts
-dotnet run --project tools/DocGen -- --slides docs/slides       # landscape PDF decks
+dotnet run --project tools/DocGen -- --slides docs/slides       # every deck, light and dark
+dotnet run --project tools/DocGen -- --slides docs/slides --deck overview            # one deck
+dotnet run --project tools/DocGen -- --slides docs/slides --deck overview --theme dark
 ```
 
 **Gates.** Generated output must be regenerable and checked, or it drifts the other way — someone

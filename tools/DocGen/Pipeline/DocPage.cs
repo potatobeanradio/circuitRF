@@ -26,6 +26,18 @@ public sealed class DocPage
     /// <summary>"page" (HTML) or "slides" (a landscape PDF deck).</summary>
     public string Kind { get; init; } = "page";
 
+    /// <summary>
+    /// A <c>kind: slides</c> page's deck id — what <c>--deck &lt;id&gt;</c> selects on the command
+    /// line (<c>overview</c>, <c>new-user</c>, <c>quick-start</c>, <c>reference</c>).
+    ///
+    /// <para>Deliberately NOT derived from the file name. The file name is the PDF's name and a
+    /// reader sees it; the id is what a build script types, and the two want to change independently
+    /// (<c>circuitrf-new-user.pdf</c> is the right file for <c>--deck new-user</c>). An empty id on a
+    /// slides page is an error, raised where the deck is selected rather than here, so a non-slides
+    /// page is not made to carry one.</para>
+    /// </summary>
+    public string Deck { get; init; } = "";
+
     /// <summary>The breadcrumb trail, as "Docs &gt; Reference &gt; Components" segments.</summary>
     public IReadOnlyList<string> Breadcrumb { get; init; } = [];
 
@@ -45,7 +57,7 @@ public sealed class DocPage
     public required string SourcePath { get; init; }
 
     private static readonly string[] KnownKeys =
-        ["title", "kind", "breadcrumb", "slug", "doc-kind", "lede"];
+        ["title", "kind", "deck", "breadcrumb", "slug", "doc-kind", "lede"];
 
     /// <summary>Read and parse one <c>.md</c> source page.</summary>
     public static DocPage Load(string path)
@@ -88,6 +100,7 @@ public sealed class DocPage
         {
             Title      = Get("title"),
             Kind       = Get("kind", "page"),
+            Deck       = Get("deck"),
             Slug       = Get("slug"),
             DocKind    = Get("doc-kind"),
             Lede       = Get("lede"),

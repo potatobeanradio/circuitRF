@@ -251,6 +251,26 @@ public static class PlanarExtractor
         if (groundBand is not null)
         {
             groundTopM = groundBand.TopM;
+
+            // ── SAY WHICH CONDUCTOR THE RETURN PATH IS ──────────────────────────────────────────
+            //
+            // R-em-4's rule is a 2%-scale trap (this file's own header records it costing the Tier A
+            // oracle when the boundary condition was taken literally instead of the designated
+            // conductor), and on a stackup with several metal layers "the highest ground-designated
+            // conductor BELOW the signal" is not something a user can read off the panel — every
+            // port's negative terminal is this one plane and there is no per-port control for it.
+            //
+            // It was reported only in the FALLBACK case below, which is the case where the answer is
+            // least likely to be what anyone wanted. The normal case said nothing at all: the
+            // panel's own "Ground reference" row is bound to the CROSS-SECTION readback, which a
+            // full-wave run does not produce.
+            notes.Add(
+                $"Every port returns through '{groundBand.Layer.Name}', the ground-designated " +
+                $"conductor at {groundBand.TopM * 1e6:G4} µm — the highest one below the " +
+                $"signal level at {signal.BottomM * 1e6:G4} µm. That plane is the negative " +
+                "terminal of every port in this run and is not selectable per port; it is modelled " +
+                "as laterally infinite. To return through a different conductor, designate that one " +
+                "as the ground reference in the technology editor.");
         }
         else if (tech.Stackup.Bottom == BoundaryCondition.Ground)
         {

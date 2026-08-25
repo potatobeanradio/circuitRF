@@ -1,8 +1,10 @@
 # `src/Engine/Mom` — the EM kernels (quasi-static **A** and planar full-wave **B**)
 
 Standing instructions for both MoM kernels. Read with the root `CLAUDE.md` and
-`src/Engine/CLAUDE.md`. Design note `docs/design/layout-view.md` §10; the Ui half is
-`src/Ui/Layout/Em/CLAUDE.md`.
+`src/Engine/CLAUDE.md`. Design note **`docs/design/mom-engine.md`** (this was `layout-view.md` §10
+until 2026-08-24; the section numbers are unchanged, so every "§10.x" pointer still resolves — only
+the file moved). The Ui half is `src/Ui/Layout/Em/CLAUDE.md`; the user-facing page is
+`docs/user/src/reference/mom-engine.md` and must not contradict either.
 
 **This is the engine half only.** No UI, no `.clay` reading, no `.snp` on disk, no dialog.
 
@@ -339,6 +341,16 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   the drawn metal; the half-cell beyond is error box. **Nothing user-positionable.** Ground reference
   is always the slab's ground plane. `PlanarPort.LayerIndex` is `int?` — null infers **one** candidate
   or refuses by name.
+- **`PlanarPortKind` — TWO port types, the same object cut in two places.** `Edge` is the above.
+  `InternalDeltaGap` cuts an INTERIOR gridline of a conductor (metal both sides), nearest the placed
+  point, and reports `GapOffsetM` — how far the snap moved it, bounded by half a cell. Same basis,
+  same incidence matrix, same `Y = BᵀZ⁻¹B`. **An internal port is NOT de-embedded and cannot be**:
+  there is no feed outside an interior cut, so no error box, no standard and no `Z_c` — it takes
+  `PlanarSolve.IdentityBox` and `Z_c = Z₀`, which is arithmetic that provably changes nothing (gated
+  at < 1e-12 against `Deembed = false`). It grows no feed lead and raises no clearance warning, and
+  its DIRECTION is required rather than inferred (a label mid-conductor is equidistant from all four
+  edges). **A delta gap is a SERIES source: a centred gap gives S₁₃ = −S₂₃, measured to 16 digits.**
+  `PlanarPortResolution.IsDeembeddable` is the one place the two kinds are distinguished downstream.
 - **R-fed-1. The solver grows its own calibration feed** (`PlanarFeedExtension`, 2026-08-12), before
   meshing, by extruding each port's own polygon outward from its drawn end face by whatever uniform
   line the calibration is short of. **The user never adds a feed line to their artwork** — §10.6 now
@@ -682,7 +694,7 @@ s-parameter measurement.
 frequency-dependent modal matrices; inhomogeneous-medium modal theory beyond quasi-TEM; surface
 roughness (absent from the model rather than accepted and ignored); a sloped or vertical dielectric
 boundary (outside the 2.5D premise — "layered" means N **horizontal** layers); triangles/RWG and a
-Delaunay triangulator; coplanar or differential ground reference; internal delta-gap ports;
+Delaunay triangulator; coplanar or differential ground reference;
 differential/multi-mode ports; a via with more than one degree of freedom in z (subdivide across
 intermediate levels instead).
 

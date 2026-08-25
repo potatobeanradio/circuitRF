@@ -211,6 +211,15 @@
        a loose folder beside the executable would not survive `dotnet publish`. -->
   <ItemGroup>
     <EmbeddedResource Include="resources\schematic-templates\*.csch" />
+
+    <!-- Documentation schematics. Real, authored .csch files read through the SAME reader as
+         everything else, but NOT offered in the template picker: they exist so a user-doc figure can
+         show a two-component circuit a reader is about to build, and a template list padded with
+         teaching examples is a different product decision from a documentation one. The distinct
+         LogicalName prefix is what ShippedSchematicTemplates.Discover filters on — the default
+         resource name would differ only by a folder segment, which is too easy to match by accident. -->
+    <EmbeddedResource Include="resources\doc-schematics\*.csch"
+                      LogicalName="CircuitRF.Ui.DocSchematics.%(Filename).csch" />
   </ItemGroup>
 
   <!-- Strip .pdb files from publish output -->

@@ -3,7 +3,8 @@
 Standing instructions for the Ui half of phases **L6/L7**. Read with `src/Ui/CLAUDE.md` and — before
 touching anything about the physics — **`src/Engine/Mom/CLAUDE.md`**, which owns the kernel, its 17
 requirements, its sign conventions, and two findings about the closed-form oracles themselves.
-Design note: `docs/design/layout-view.md` §10. Brief: `docs/sonnet-briefs/brief-L6-L7-em-ui.md`.
+Design note: **`docs/design/mom-engine.md`** (was `layout-view.md` §10 until 2026-08-24; section
+numbers unchanged). Brief: `docs/sonnet-briefs/brief-L6-L7-em-ui.md`.
 
 **This half adds no physics.** Its whole job is: produce a valid `EmProblem` from real layout
 geometry, show the mesh, run it, and land the result. If you find yourself computing a capacitance,

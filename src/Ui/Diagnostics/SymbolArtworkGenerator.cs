@@ -184,8 +184,18 @@ public static class SymbolArtworkGenerator
         return BuiltInSymbols.Primitives(kind, ports);
     }
 
-    private static string RenderOne(
-        SymbolKind kind, Symbol symbol, string caption, string path, SchematicRenderTheme theme)
+
+    /// <summary>
+    /// Draw one symbol — glyph, variadic port leads and the UNCONNECTED port markers — fitted and
+    /// centred in a <paramref name="w"/> x <paramref name="h"/> box on <paramref name="canvas"/>.
+    ///
+    /// <para>Shared so the emitted <c>assets/symbols/*.svg</c> and any on-screen documentation figure
+    /// of the same symbol are the same drawing. The markers matter: they are how a reader recognises
+    /// a pin as a CONNECTION POINT rather than as a line ending, and a glyph-only rendering that
+    /// leaves them out is a different picture of the same part (owner, 2026-08-24).</para>
+    /// </summary>
+    internal static void DrawFitted(SKCanvas canvas, SymbolKind kind, Symbol symbol,
+                                    float w, float h, float pad, SchematicRenderTheme theme)
     {
         var prims = symbol.Primitives;
         var pins  = symbol.Pins;
@@ -204,43 +214,49 @@ public static class SymbolArtworkGenerator
         double bw = Math.Max(maxX - minX, 1.0);
         double bh = Math.Max(maxY - minY, 1.0);
 
-        // Fit the glyph bbox into the glyph box with padding; map its center to the box center.
-        double zoom = Math.Min((GlyphW - 2 * Pad) / bw, (GlyphH - 2 * Pad) / bh);
+        double zoom = Math.Min((w - 2 * pad) / bw, (h - 2 * pad) / bh);
         if (double.IsInfinity(zoom) || double.IsNaN(zoom) || zoom <= 0) zoom = 1.0;
         double worldCx = (minX + maxX) / 2.0, worldCy = (minY + maxY) / 2.0;
-        double panX = worldCx - (GlyphW / 2.0) / zoom;
-        double panY = worldCy - (GlyphH / 2.0) / zoom;
+        double panX = worldCx - (w / 2.0) / zoom;
+        double panY = worldCy - (h / 2.0) / zoom;
+
+        SchematicRenderer.DrawSymbol(
+            canvas, prims, compX: 0, compY: 0,
+            SymbolRotation.R0, mirrorX: false, panX, panY, zoom, theme);
+
+        // SDD/ZPort carry their port stubs in the render loop, not in the primitive list — the same
+        // call the schematic makes, so the figure cannot disagree with the canvas.
+        using (var leadPaint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = (float)Math.Max(1.0, zoom * 6), Color = theme.SymbolLine,
+        })
+            SchematicRenderer.DrawVariadicPortLeads(
+                canvas, kind, pins.Select(x => (x.LocalX, x.LocalY)).ToList(),
+                compX: 0, compY: 0, SymbolRotation.R0, mirrorX: false, panX, panY, zoom, leadPaint);
+
+        using (var unconnPaint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = (float)Math.Max(1.0, zoom * 2), Color = theme.UnconnectedPort,
+        })
+            foreach (var pin in pins)
+                SchematicRenderer.DrawUnconnectedPortMarker(
+                    canvas, pin.LocalX, pin.LocalY, compX: 0, compY: 0,
+                    SymbolRotation.R0, mirrorX: false, panX, panY, zoom, unconnPaint);
+    }
+
+    private static string RenderOne(
+        SymbolKind kind, Symbol symbol, string caption, string path, SchematicRenderTheme theme)
+    {
+        var prims = symbol.Primitives;
+        var pins  = symbol.Pins;
 
         // Transparent background (the doc figure frame supplies the surface color per theme).
         using var stream = new SKDynamicMemoryWStream();
         using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, GlyphW, GlyphH + CapH), stream))
         {
-            SchematicRenderer.DrawSymbol(
-                canvas, prims, compX: 0, compY: 0,
-                SymbolRotation.R0, mirrorX: false,
-                panX, panY, zoom, theme);
-
-            // SDD/ZPort carry their port stubs in the render loop, not in the primitive list — the
-            // same call the schematic makes, so the figure cannot disagree with the canvas.
-            using (var leadPaint = new SKPaint
-            {
-                IsAntialias = true, Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)Math.Max(1.0, zoom * 6), Color = theme.SymbolLine,
-            })
-                SchematicRenderer.DrawVariadicPortLeads(
-                    canvas, kind, pins.Select(p => (p.LocalX, p.LocalY)).ToList(),
-                    compX: 0, compY: 0, SymbolRotation.R0, mirrorX: false,
-                    panX, panY, zoom, leadPaint);
-
-            using (var unconnPaint = new SKPaint
-            {
-                IsAntialias = true, Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)Math.Max(1.0, zoom * 2), Color = theme.UnconnectedPort,
-            })
-                foreach (var pin in pins)
-                    SchematicRenderer.DrawUnconnectedPortMarker(
-                        canvas, pin.LocalX, pin.LocalY, compX: 0, compY: 0,
-                        SymbolRotation.R0, mirrorX: false, panX, panY, zoom, unconnPaint);
+            DrawFitted(canvas, kind, symbol, GlyphW, GlyphH, Pad, theme);
 
             using var font  = new SKFont(CaptionTypeface, CaptionPt);
             using var paint = new SKPaint { Color = theme.ComponentNameText, IsAntialias = true };

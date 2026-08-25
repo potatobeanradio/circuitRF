@@ -94,17 +94,31 @@ public static class DocRunData
         });
     }, template: "FET_Loadpull_Pursuit");
 
+    /// <summary>
+    /// The New User's Guide's second worked example, run for real: a series 2 nH and a shunt 0.8 pF
+    /// between two 50 Ω Terms, swept 1-5 GHz.
+    ///
+    /// <para>The point of the figure it feeds is that a reader can build the schematic beside it and
+    /// compare their own curve, so the curve has to come from that exact schematic — which is why the
+    /// example is an authored <c>.csch</c> rather than a few lines of view-model.</para>
+    /// </summary>
+    public static string ExampleSParam()
+        => Run("ExampleSParam", tb => { }, template: "Example_SParam_LC", docSchematic: true);
+
     // ── The run ───────────────────────────────────────────────────────────────
 
     private static string Run(string key, Action<TestBench> shape,
-                              string template = DocFixtures.SchematicTemplateId)
+                              string template = DocFixtures.SchematicTemplateId,
+                              bool docSchematic = false)
     {
         if (_cache.TryGetValue(key, out var cached)) return cached;
 
         string dir = Path.Combine(Scratch.Value, key);
         Directory.CreateDirectory(dir);
 
-        var model = ShippedSchematicTemplates.Load(template, dir);
+        var model = docSchematic
+            ? ShippedSchematicTemplates.LoadDocSchematic(template)
+            : ShippedSchematicTemplates.Load(template, dir);
         var extracted = NetExtractor.Extract(model, key);
         shape(extracted.TestBench);
 

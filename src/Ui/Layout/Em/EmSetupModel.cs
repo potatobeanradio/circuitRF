@@ -116,6 +116,44 @@ public sealed class EmSetup
             ? PortZ0s[index]
             : (index % 2 == 0 ? Port1Z0 : Port2Z0);
 
+    /// <summary>
+    /// <b>Per-port TYPE, for the full-wave planar kernel: an edge port or an internal delta gap.</b>
+    /// One entry per port in the extractor's own port order, and <b>empty is the normal case</b> —
+    /// every port is an edge port unless something here says otherwise, so a <c>.cem</c> written
+    /// before this existed loads and re-serialises byte-identically, exactly as
+    /// <see cref="PortZ0s"/> and <see cref="AnalysisLevelNames"/> do.
+    ///
+    /// <para>It is here rather than on the port LABEL for the same reason the reference impedance is:
+    /// a layout is geometry. The same artwork can be analysed with a gap in the middle of a trace in
+    /// one setup and driven from its ends in another, and neither should edit the drawing.</para>
+    ///
+    /// <para>The cross-section (quasi-static) kernel has no use for it — its ports are the ends of a
+    /// uniform line by construction — so the panel offers it only for a planar analysis.</para>
+    /// </summary>
+    public List<PlanarPortKind> PortKinds { get; set; } = [];
+
+    /// <summary>
+    /// The type of port <paramref name="index"/> (0-based, in extractor order): the stored value
+    /// when there is one, else <see cref="PlanarPortKind.Edge"/>.
+    /// </summary>
+    public PlanarPortKind ResolvePortKind(int index)
+        => index >= 0 && index < PortKinds.Count ? PortKinds[index] : PlanarPortKind.Edge;
+
+    /// <summary>
+    /// Does this setup declare any port the uniform-line kernel cannot represent?
+    ///
+    /// <para><b>The one question that has to be asked BEFORE the kernel is chosen.</b> A uniform line
+    /// with an internal delta-gap port on it is, geometrically, a uniform cross-section — so the
+    /// cross-section extractor accepts it and <c>Auto</c> prefers that kernel, which has no interior
+    /// cut, no mesh to cut it on, and no way to say so. The port would simply not be there, and the
+    /// run would return a complete, plausible answer for a structure without it.</para>
+    /// </summary>
+    public bool DeclaresInternalGapPort()
+    {
+        foreach (var k in PortKinds) if (k == PlanarPortKind.InternalDeltaGap) return true;
+        return false;
+    }
+
     /// <summary>All six <see cref="EmMeshSettings"/> fields, each defaulting to
     /// <see cref="EmMeshSettings.Default"/>. R18's 30-second target is reachable because the
     /// defaults are already right, not because the dialogs are fast.</summary>
@@ -210,6 +248,7 @@ public sealed class EmSetup
         Port1Z0                = Port1Z0,
         Port2Z0                = Port2Z0,
         PortZ0s                = [.. PortZ0s],   // a fresh list: Complex is immutable, the list is not
+        PortKinds              = [.. PortKinds], // likewise: the enum is a value, the list is not
         Mesh                   = Mesh,           // record, immutable
         DispersionCorrection   = DispersionCorrection,
         AdaptiveSampling       = AdaptiveSampling,

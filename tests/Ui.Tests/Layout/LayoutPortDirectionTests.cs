@@ -392,12 +392,18 @@ public class LayoutPortDirectionTests
     }
 
     [Fact]
-    public void APortWithADirection_PaintsAMarkerReachingIntoTheMetal()
+    public void APortWithADirection_PaintsAMarkerThatARRIVESAtTheReferencePlane()
     {
-        // The arrow points INTO the conductor (+x̂ from the low-x end). Probe a point along it that
-        // is clear of both the label glyph and the conductor's own outline stroke, and compare
-        // against the same probe with the port removed — a differential oracle, so the conductor's
-        // own fill cannot make this pass for the wrong reason.
+        // UPDATED, not loosened (2026-08-24). This asserted that the marker reached INTO the metal,
+        // which is where the arrow used to run — from the reference plane, forward along the
+        // direction, lying on the conductor. The arrow now APPROACHES the plane from outside and its
+        // head lands ON the bar, so "into the metal" is no longer what it does and a test asserting
+        // it would be pinning behaviour that was deliberately changed.
+        //
+        // What is still true, and is what this was really for: a port with a direction paints a
+        // substantial mark, and it paints it near its own reference plane. Differential against the
+        // same layout with the port removed, so the conductor's own fill cannot make it pass for the
+        // wrong reason.
         var (withPort, vp, bg) = RenderPort(LayoutRotation.R0);
 
         var view = new LayoutView { DbuPerMicron = Dbu };
@@ -406,15 +412,38 @@ public class LayoutPortDirectionTests
         LayoutRenderer.Draw(withoutPort.Canvas, view, StarterTechnologies.Pcb2Layer(), vp,
             new LayoutRenderOptions { Theme = LayoutRenderTheme.Light, ShowGrid = false });
 
-        int differing = 0;
+        int differing = 0, leftOfPlane = 0, rightOfPlane = 0;
+        int planeX = (int)Math.Round(vp.WorldToScreenX(0));   // the port sits at x = 0
+
         using (var a = SKBitmap.FromImage(withPort.Snapshot()))
         using (var b = SKBitmap.FromImage(withoutPort.Snapshot()))
             for (int x = 0; x < 400; x++)
                 for (int y = 0; y < 400; y++)
-                    if (a.GetPixel(x, y) != b.GetPixel(x, y)) differing++;
+                    if (a.GetPixel(x, y) != b.GetPixel(x, y))
+                    {
+                        differing++;
+                        if (x < planeX - 2) leftOfPlane++;
+                        else if (x > planeX + 2) rightOfPlane++;
+                    }
 
         withPort.Dispose();
-        Assert.True(differing > 200, $"a port marker plus its label should paint a substantial number of pixels; got {differing}");
+
+        // 100, not the 200 this asked for before the arrow moved. The shaft is genuinely shorter now
+        // — it approaches the plane from outside rather than running the width of the port into the
+        // metal, and PortArrowLengthOverWidth came down from 0.66 to 0.35 with it — so the mark
+        // paints fewer pixels BY DESIGN (155 at this viewport, measured). The count was always the
+        // weakest thing this test asserts; the two directional checks below are its content.
+        Assert.True(differing > 100,
+            $"a port marker plus its label should paint a substantial number of pixels; got {differing}");
+
+        // The shaft and head are on the APPROACH side — outside the metal, at x < 0 for a port whose
+        // current flows +x̂. This is the half that would have to be rewritten if the arrow were ever
+        // turned back around, which is the point of asserting it rather than only the total.
+        Assert.True(leftOfPlane > 40,
+            $"the arrow should approach the plane from outside the metal; only {leftOfPlane} pixels differ there");
+
+        // …and something is still drawn on the metal side, because the label's own glyph is there.
+        Assert.True(rightOfPlane > 0, "the label should still paint on the conductor side");
     }
 
     [Fact]

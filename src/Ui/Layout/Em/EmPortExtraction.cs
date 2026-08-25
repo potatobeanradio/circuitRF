@@ -28,15 +28,23 @@ namespace CircuitRF.Ui.Layout.Em;
 
 /// <summary>Ports resolved from a layout's port labels, or a refusal that names the offending
 /// label — the same R-mom-17 shape every other refusal in this area uses.</summary>
+/// <param name="SourceLabels">
+/// The label each port came from, <b>index-aligned with <paramref name="Ports"/></b>. Carried because
+/// a port's identity in the LAYOUT is its label's own anchor, and nothing else here can say which
+/// label became port 3 — a label whose text names no number is auto-numbered in document order, so
+/// re-deriving the mapping anywhere else would be a second copy of that ordering, free to drift.
+/// The renderer uses it to know which ports to draw as internal delta gaps.
+/// </param>
 public sealed record EmPortExtractionResult(
     IReadOnlyList<PlanarPort> Ports,
     string?                   Refusal,
-    IReadOnlyList<string>     Notes)
+    IReadOnlyList<string>     Notes,
+    IReadOnlyList<LabelShape> SourceLabels)
 {
     public bool Ok => Refusal is null && Ports.Count > 0;
 
     public static EmPortExtractionResult No(string refusal, IEnumerable<string>? notes = null)
-        => new([], refusal, notes is null ? [] : [.. notes]);
+        => new([], refusal, notes is null ? [] : [.. notes], []);
 }
 
 public static class EmPortExtraction
@@ -74,12 +82,17 @@ public static class EmPortExtraction
     /// <param name="displayUnit">The LAYOUT's own display unit, used for every coordinate this file
     /// prints. Defaults to microns so a headless caller that has no layout to ask keeps the previous
     /// wording exactly.</param>
+    /// <param name="kindFor">The port TYPE at a given 0-based index in the final ordered list —
+    /// edge, or an internal delta gap. <b>Lives in the <c>.cem</c> (<c>EmSetup.PortKinds</c>) beside
+    /// the impedance, for the same reason: a layout is geometry.</b> Null means every port is an edge
+    /// port, which is what every caller predating internal ports gets.</param>
     public static EmPortExtractionResult Extract(
         IReadOnlyList<LayoutShape> shapes,
         PlanarProblem              problem,
         int                        dbuPerMicron,
         Func<int, Complex>?        z0For = null,
-        LayoutUnit                 displayUnit = LayoutUnit.Um)
+        LayoutUnit                 displayUnit = LayoutUnit.Um,
+        Func<int, PlanarPortKind>? kindFor = null)
     {
         ArgumentNullException.ThrowIfNull(shapes);
         ArgumentNullException.ThrowIfNull(problem);
@@ -134,8 +147,9 @@ public static class EmPortExtraction
         numbered.Sort((a, b) => a.Number.CompareTo(b.Number));
 
         // ── Side inference, per label ─────────────────────────────────────────────────────────
-        var notes = new List<string>();
-        var ports = new List<PlanarPort>(numbered.Count);
+        var notes  = new List<string>();
+        var ports  = new List<PlanarPort>(numbered.Count);
+        var owners = new List<LabelShape>(numbered.Count);
 
         for (int i = 0; i < numbered.Count; i++)
         {
@@ -165,8 +179,31 @@ public static class EmPortExtraction
             // then the user's to rotate); a null one is every .clay written before that field
             // existed, and still means "infer it from the geometry" — the R-res-5 path below,
             // unchanged, ambiguity refusal included.
+            var kind = kindFor?.Invoke(i) ?? PlanarPortKind.Edge;
+
+            // ── WHICH END vs WHICH WAY ────────────────────────────────────────────────────────
+            //
+            // For an EDGE port, PlanarPortSide names the end of the conductor the port is on, and
+            // inferring it from the nearest boundary is right because that IS what the label is
+            // near. For an INTERNAL delta gap the label sits in the middle of the metal, so "nearest
+            // boundary" measures nothing about the port — the quantity that matters is only which
+            // way positive current crosses the cut, and the label's own direction is the sole
+            // honest source of it. A port at the centre of a conductor is equidistant from all four
+            // edges, so the corner-ambiguity refusal below would fire on a correctly placed internal
+            // port every time; the refusal it gets instead names what is actually missing.
             PlanarPortSide side;
             bool stated = label.PortDirection is not null;
+            if (kind == PlanarPortKind.InternalDeltaGap && !stated)
+            {
+                return EmPortExtractionResult.No(
+                    $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} " +
+                    "is an internal delta-gap port with no direction on it. An internal port cuts a " +
+                    "gap in the middle of a conductor, so — unlike an edge port — there is no nearby " +
+                    "conductor end to infer a direction from, and the direction is what decides which " +
+                    "way positive port current crosses the gap. Getting it wrong reverses the sign of " +
+                    "everything through this port. Rotate the port to point the way current should " +
+                    "flow across the cut.", notes);
+            }
             if (stated)
             {
                 side = SideFromDirection(label.PortDirection!.Value);
@@ -183,20 +220,28 @@ public static class EmPortExtraction
 
             var z0 = z0For?.Invoke(i) ?? new Complex(50, 0);
             ports.Add(new PlanarPort(number, new EmPoint(x, y), side, z0,
-                                     problem.Layers.Count > 1 ? level : null));
+                                     problem.Layers.Count > 1 ? level : null,
+                                     Kind: kind));
+            owners.Add(label);
 
-            notes.Add(
-                $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} was " +
-                $"taken to be on the conductor's {SideName(side)} end " +
-                (stated ? "(the port's own direction)" : "(inferred from the nearest conductor boundary)") +
-                (problem.Layers.Count > 1 ? $" of level {level} ('{problem.Layers[level].Name}')" : "") +
-                $", driving current {CurrentDirection(side)}, at {FormatOhms(z0)}.");
+            notes.Add(kind == PlanarPortKind.InternalDeltaGap
+                ? $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} is " +
+                  "an INTERNAL delta gap — a cut across the conductor at that point, with metal on " +
+                  "both sides" +
+                  (problem.Layers.Count > 1 ? $", on level {level} ('{problem.Layers[level].Name}')" : "") +
+                  $" — driving current {CurrentDirection(side)} (the port's own direction), at " +
+                  $"{FormatOhms(z0)}. It is not de-embedded; the run's own notes say where the gap landed."
+                : $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} was " +
+                  $"taken to be on the conductor's {SideName(side)} end " +
+                  (stated ? "(the port's own direction)" : "(inferred from the nearest conductor boundary)") +
+                  (problem.Layers.Count > 1 ? $" of level {level} ('{problem.Layers[level].Name}')" : "") +
+                  $", driving current {CurrentDirection(side)}, at {FormatOhms(z0)}.");
             // The de-embedding reference plane's position used to be restated on EVERY port note.
             // Dropped (owner request, 2026-08-11): it is a property of the method rather than
             // anything about this port, it never varies, and it belongs in the documentation.
         }
 
-        return new EmPortExtractionResult(ports, null, notes);
+        return new EmPortExtractionResult(ports, null, notes, owners);
     }
 
     // ── Numbering ─────────────────────────────────────────────────────────────────────────────

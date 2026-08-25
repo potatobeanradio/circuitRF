@@ -2,7 +2,7 @@
 
 **Status:** Proposal — rev 1 · **Date:** 2026-08-04 · **Phase:** 10 (extension)
 
-Companion to [`layout-view.md`](layout-view.md) §10, which defines the 2.5D planar MoM arc
+Companion to [`mom-engine.md`](mom-engine.md) §10 (formerly `layout-view.md` §10), which defines the 2.5D planar MoM arc
 (kernels A → B → C, phases L6–L9). This document specifies a **fourth kernel, W**, for 3D
 wirebond geometry, sharing §10's `IEmKernel` boundary, stackup model, port model, mesh viewer,
 results plumbing, and validation harness.
@@ -27,7 +27,7 @@ promised.
 
 ## 1. Correcting §10.1
 
-`layout-view.md` §10.1 currently states:
+`mom-engine.md` §10.1 currently states:
 
 > This is the commercial 2.5D planar-MoM class of tool. It is *not* FEM and not general 3D — a
 > wirebond arcing through air is out of scope by construction.

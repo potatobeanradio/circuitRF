@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Avalonia.Controls;
 using CircuitRF.Core.Design;
@@ -23,6 +24,9 @@ public static class DocSchematicFixtures
 {
     /// <summary>The shipped template the analyses figures are configured from.</summary>
     public const string AnalysesTemplateId = "FET_Harmonic_Balance_Sweep";
+
+    /// <summary>The shipped bench that HAS tuners — the only one a loadpull row can honestly cite.</summary>
+    public const string LoadpullTemplateId = "FET_Loadpull_Pursuit";
 
     // ── Library Palette ───────────────────────────────────────────────────────
 
@@ -57,6 +61,57 @@ public static class DocSchematicFixtures
         dialog.Content = null;
         body.DataContext = vm;
         return new FigureScene(body);
+    }
+
+
+    /// <summary>
+    /// The Analyses panel carrying <b>one of every analysis type</b>, including a parametric sweep
+    /// wrapping the harmonic-balance run.
+    ///
+    /// <para><b>The panel, not the Setup Analyses dialog.</b> They share this exact view — the dialog
+    /// is <c>AnalysesListView</c> plus a Close button — so capturing the view on its own is the same
+    /// picture with the modal furniture removed, and it is the denser of the two, which is what makes
+    /// a six-row list legible when a slide scales it down (owner, 2026-08-24).</para>
+    ///
+    /// <para><b>Built on the shipped loadpull-pursuit bench, not the HB one.</b> A loadpull and a
+    /// pursuit name the tuners they sweep, and that test bench is the one that HAS them
+    /// (<c>LoadTuner1</c>/<c>SourceTuner1</c>) — configured against the other bench the two rows would
+    /// read plausibly and reference instances that are not in the circuit, which is a figure of a
+    /// setup that cannot run.</para>
+    /// </summary>
+    public static FigureScene AllAnalysisTypes()
+    {
+        var model = ShippedSchematicTemplates.Load(LoadpullTemplateId);
+
+        var pursuit = model.Analyses.OfType<LoadpullPursuitAnalysis>().FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"The shipped '{LoadpullTemplateId}' bench no longer carries a loadpull-pursuit "
+              + "analysis, so this figure can no longer show one from a real document.");
+
+        var hb = new HarmonicBalanceAnalysis("HB1")
+        {
+            ToneExpr = "RFfreq", ToneUnit = "GHz", MaxHarmonicExpr = "5",
+        };
+
+        model.Analyses.Clear();
+        model.Analyses.Add(new DcAnalysis("DC1"));
+        model.Analyses.Add(new SParameterAnalysis("SP1",
+            new FrequencySpec("1", "10", "0.05", SweepKind.Linear, "GHz", "GHz", "GHz")));
+        model.Analyses.Add(hb);
+        model.Analyses.Add(new ParametricSweepAnalysis(
+            "PinSweep", "Pin", new SweepSpec(-10, 34, 1, SweepAxisMode.StepSize), hb.Name));
+        model.Analyses.Add(new LoadpullAnalysis("LP1")
+        {
+            ToneExpr = "RFfreq", ToneUnit = "GHz",
+            LoadTunerName = pursuit.LoadTunerName, SourceTunerName = pursuit.SourceTunerName,
+            GridPath = "dense61.gam", CompressionExpr = "3",
+        });
+        model.Analyses.Add(pursuit);
+
+        var schematicVm = new SchematicViewModel(model);
+        var vm = new AnalysesListViewModel();
+        vm.SetActiveSchematic(schematicVm, LoadpullTemplateId);
+        return new FigureScene(new AnalysesListView { DataContext = vm });
     }
 
     /// <summary>

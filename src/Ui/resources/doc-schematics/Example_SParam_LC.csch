@@ -1,0 +1,209 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Example_SParam_LC",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "Term1",
+      "Symbol": "Term",
+      "X": -1000,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ],
+      "ShowTypeLabel": false
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -1000,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "L1",
+      "Symbol": "Inductor",
+      "X": -400,
+      "Y": -400,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "2",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 0,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "0.8",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "Term2",
+      "Symbol": "Term",
+      "X": 700,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "\u03a9",
+          "ShowOnSchematic": false,
+          "Dimension": "Resistance"
+        }
+      ],
+      "ShowTypeLabel": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 700,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -1000,
+          -200
+        ],
+        [
+          -1000,
+          -400
+        ],
+        [
+          -600,
+          -400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -200,
+          -400
+        ],
+        [
+          0,
+          -400
+        ],
+        [
+          0,
+          -200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          -400
+        ],
+        [
+          700,
+          -400
+        ],
+        [
+          700,
+          -200
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "1",
+          "StopExpr": "5",
+          "NumPoints": 201,
+          "Mode": "PointCount",
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz"
+        }
+      ]
+    }
+  ]
+}

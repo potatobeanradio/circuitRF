@@ -82,6 +82,62 @@ public static class FigureCatalog
           + "order, and the parametric sweep that wraps it. The dialog sizes to its content up to "
           + "650 px and scrolls past that, which is why the sweep rows run off the bottom."),
 
+        // The panel form of the same view the Setup Analyses dialog hosts, carrying one row of every
+        // type. Sized to the dock column an Analyses panel actually gets, not to a dialog.
+        new("analyses-all-types", DocSchematicFixtures.AllAnalysisTypes, 430, 330, null,
+            "The Analyses panel with one of every analysis type on the shipped loadpull bench: a DC "
+          + "operating point, an S-parameter sweep, a harmonic-balance run, the Pin sweep that wraps "
+          + "it, a loadpull over a termination grid, and a loadpull pursuit."),
+
+        // ── The figures a reader is meant to REBUILD ──────────────────────────────
+        // Square, and all the same square, so a schematic and the plot it produces read as one
+        // instruction when they are shown side by side.
+
+        // Smaller than the worked-example square on purpose: the same slide box then scales it up,
+        // which is the only lever a figure has on how big its content lands in a deck.
+        new("inline-value-editor", DocExampleFixtures.InlineValueEditor, 460, 460,
+            WindowFrame.Titled("circuitRF - Schematic"),
+            "Double-clicking a value label edits it in place: a 50 ohm resistor with the inline "
+          + "editor open on R."),
+
+        new("example-dc-schematic", DocExampleFixtures.DcExampleSchematic,
+            DocExampleFixtures.Square, DocExampleFixtures.Square,
+            WindowFrame.Titled("circuitRF - Example_DC_Ohms_Law"),
+            "The New User's Guide's first worked example: 10 V across 100 ohms, with a DC analysis."),
+
+        new("example-sparam-schematic", DocExampleFixtures.SParamExampleSchematic,
+            DocExampleFixtures.Square, DocExampleFixtures.Square,
+            WindowFrame.Titled("circuitRF - Example_SParam_LC"),
+            "The second worked example: a series 2 nH and a shunt 0.8 pF between two 50 ohm Terms."),
+
+        new("example-sparam-plot", DocExampleFixtures.SParamExamplePlot,
+            DocExampleFixtures.Square, DocExampleFixtures.Square,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "What that schematic produces: S(2,1) in dB against frequency, 1-5 GHz."),
+
+        // Port is deliberately absent: it has no symbol. It is the abstract idea a Pin realises
+        // inside a cell and a Term realises on a test bench, and the prose beside this says so.
+        new("pin-and-term", DocExampleFixtures.PinAndTerm, 700, 300, null,
+            "The two symbols that realise a port: Pin, a cell's connectivity-only interface "
+          + "terminal, and Term, a numbered S-parameter port termination."),
+
+        // ── Checking ──────────────────────────────────────────────────────────────
+
+        new("drc-violations", DocVerifyFixtures.DrcViolations, 1100, 620, null,
+            "A design-rule check on the MMIC starter process: a 2 um neck breaking minimum width and "
+          + "a 2 um gap breaking minimum spacing, listed in the DRC panel and marked on the artwork."),
+
+        new("manage-pdks", DocVerifyFixtures.ManagePdks, 640, 440,
+            WindowFrame.Titled("Manage PDKs"),
+            "Manage PDKs: the workspace's kit references, what each one resolved to, how many parts "
+          + "it loaded, and the Add / Remove / Reveal / Validate actions."),
+
+        new("pdk-import-report", DocVerifyFixtures.PdkImportReport, 660, 460,
+            WindowFrame.Titled("Import PDK - AcmeRF GaAs-150"),
+            "The report an import writes: what was read, what it holds, and the notes that go with "
+          + "it. The kit is invented - real kits are licensed and none is in this repository - but "
+          + "the report and the dialog rendering it are the application's own."),
+
         new("symbol-editor", DocFixtures.SymbolEditor, 1100, 700,
             WindowFrame.Titled("circuitRF — Symbol editor"),
             "The symbol editor, showing the SDD's variadic body and its pins."),
@@ -89,6 +145,31 @@ public static class FigureCatalog
         new("layout-editor", DocLayoutFixtures.LayoutEditorWithArtwork, 1100, 700,
             WindowFrame.Titled("circuitRF - Layout editor"),
             "The layout editor: a microstrip run with a mitred bend, a crossing stub and a ground via."),
+
+        // The two port types, drawn by the real renderer on real MKLOPF artwork. Landscape and the
+        // same size as each other on purpose: they are read as a PAIR — the whole point is that the
+        // two marks are not each other, and a reader can only see that if nothing else differs.
+        new("ports-edge", DocLayoutFixtures.EdgePortsOnATaper, 562, 422, null,
+            "Edge ports at both ends of a Klopfenstein taper: the bar across each end face is where "
+          + "current crosses into the structure, and the arrow is which way it flows in."),
+
+        new("ports-internal-gap", DocLayoutFixtures.InternalGapPortOnATaper, 882, 302, null,
+            "A 50 ohm line with edge ports at both ends and an internal delta-gap port in the "
+          + "middle - where a series component would go. The gap's mark is two bracketed bars facing "
+          + "each other across a break in the metal, with the arrow running through the break: a cut "
+          + "in the conductor, not a boundary of it."),
+
+        // How an EM result with an internal gap port is actually used. Photographed rather than
+        // described because the connection LOOKS like a shunt element and is not one.
+        new("em-series-gap-cosim", DocExampleFixtures.EmSeriesGapCoSimulation, 720, 480,
+            WindowFrame.Titled("circuitRF - Example_EM_SeriesGap"),
+            "The EM result used in a schematic: the .s3p's ports 1 and 2 are the line's ends, and "
+          + "the series capacitor sits on port 3 - the gap - where it acts in series in the metal."),
+
+        new("ports-gap-mesh-width", DocLayoutFixtures.InternalGapPortAtMeshWidth, 882, 302, null,
+            "The same gap once the mesh has been computed: the break is drawn at the width the solve "
+          + "will actually use - the two mesh cells either side of the cut - so it can be read "
+          + "against the gridlines under it. Without a mesh it reverts to a fixed legible width."),
 
         new("snap-glyphs", DocLayoutFixtures.SnapGlyphs, 1010, 190, null,
             "The six geometry-snap glyphs, each drawn by the editor's own renderer from a real query."),
@@ -100,6 +181,19 @@ public static class FigureCatalog
         new("em-setup-editor", DocFixtures.EmSetup, 640, 790,
             WindowFrame.Titled("EM Setup"),
             "The EM Setup editor: stackup, ports and the frequency sweep."),
+
+        // The same editor in a narrower, shorter window, for a slide.
+        //
+        // The width is NOT what was making it small: on a half-slide the fit is bound by HEIGHT on
+        // every sensible width up to ~700, so trimming 640 to 520 bought nothing in scale and cost
+        // enough room that the panel's own toolbar row began to overlap itself. The 790 -> 620 trim is
+        // the part that pays — 1.26x the on-slide scale — and 560 is as narrow as the toolbar lays out
+        // cleanly. Analysis, conductors, the frequency sweep and the ports are above the fold; the
+        // mesh section is below it, which is what a short window of this panel genuinely looks like.
+        new("em-setup-compact", DocFixtures.EmSetup, 560, 620,
+            WindowFrame.Titled("EM Setup"),
+            "The EM Setup editor at the width of a docked panel: analysis, conductors, the frequency "
+          + "sweep and the ports, with the mesh section below the fold."),
 
         new("em-setup-loaded", DocLayoutFixtures.EmSetupWithLayout, 520, 1430,
             WindowFrame.Titled("EM Setup - bend"),
@@ -192,6 +286,10 @@ public static class FigureCatalog
         new("plot-inspector-trace-card", DocDataDisplayFixtures.InspectorTraceCard, 440, 376,
             null,
             "The Plot Inspector: a trace card reading S(2,1) from a swept S-parameter run."),
+
+        new("plot-inspector-smith", DocDataDisplayFixtures.InspectorSmith, 440, 376,
+            null,
+            "The trace card behind the Smith figure: the same run, the same S(1,1), on a Smith chart."),
 
         new("plot-inspector-hb", DocDataDisplayFixtures.InspectorHb, 440, 350,
             null,

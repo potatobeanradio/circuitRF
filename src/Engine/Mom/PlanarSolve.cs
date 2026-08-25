@@ -609,6 +609,16 @@ public sealed record PlanarSolveSettings(
 public static class PlanarSolve
 {
     /// <summary>
+    /// <b>The error box of a port that has no error box</b> — a₁₁ = 0, a₂₂ = 0, a₂₁ = 1, i.e. a
+    /// through. An internal delta gap takes this, which makes <see cref="PlanarDeembed.Apply"/>'s
+    /// algebra the identity on that port's row and column while every de-embedded port beside it is
+    /// peeled exactly as before. The residuals are zero because nothing was fitted: no standard was
+    /// solved, no sign was chosen, and there is nothing for a consistency check to be about.
+    /// </summary>
+    private static readonly PlanarErrorBox IdentityBox =
+        new(Complex.Zero, Complex.Zero, Complex.One, 0, 0);
+
+    /// <summary>
     /// L8d's own entry point, unchanged: a single conductor level on one grounded slab. Delegates to
     /// the problem-taking overload with the one-level problem this describes, so both paths share
     /// one implementation and the one-level one still fits through <see cref="PlanarKernelPair"/>.
@@ -798,6 +808,18 @@ public static class PlanarSolve
             var owners = new List<PlanarPortResolution>();
             for (int i = 0; i < ports.Count; i++)
             {
+                // ── AN INTERNAL DELTA GAP OWNS NO CALIBRATION, AND THAT IS WHAT IT IS ────────────
+                //
+                // The two-line calibration measures a FEED and removes it. An interior cut has metal
+                // on both sides and no feed, so there is no error box to solve for, no uniform line
+                // that could serve as its standard, and no Z_c to reference the answer to. It takes
+                // the identity box below and keeps its own declared Z0 — see IdentityBox.
+                //
+                // This is not "de-embedding skipped for now": building a standard here would mean
+                // inventing a feed the structure does not have and then removing it, which changes
+                // the answer by whatever was invented.
+                if (!ports[i].IsDeembeddable) { byPort[i] = -1; continue; }
+
                 int k = PlanarCalibration.EndRunCellsFor(ports[i], slab, st.Calibration);
                 int found = -1;
                 for (int j = 0; j < owners.Count; j++)
@@ -816,6 +838,10 @@ public static class PlanarSolve
                     // depths and the whole series change. The de-embedded S is REFERENCED to Z_c, so
                     // a wrong C_pul is not a diagnostic inaccuracy: it renormalises every published
                     // s-parameter. Refused by name rather than reported.
+                    // (An internal delta gap never reaches here — it took the IsDeembeddable
+                    // continue above — and that is right: this refusal is about C_pul deciding the
+                    // Z_c the answer is REFERENCED to, and an internal port is referenced to its own
+                    // declared Z0 instead. A buried internal port is therefore not refused by it.)
                     if (general && !problem.LevelIsOnSlabTop(ports[i].LayerIndex))
                         throw new InvalidOperationException(
                             $"Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at " +
@@ -885,13 +911,34 @@ public static class PlanarSolve
                         $"needs are N = {string.Join(" / ", sizes)}.");
                 }
 
-            notes.Add($"De-embedding costs {calibrators.Count} calibration(s) over {ports.Count} port(s), " +
+            int deembedded = 0;
+            var internalPorts = new List<int>();
+            for (int i = 0; i < ports.Count; i++)
+                if (ports[i].IsDeembeddable) deembedded++; else internalPorts.Add(ports[i].Number);
+
+            if (internalPorts.Count > 0)
+                notes.Add(
+                    $"Port(s) {string.Join(", ", internalPorts)} are internal delta gaps and are NOT " +
+                    "de-embedded: an interior cut has metal on both sides, so there is no port " +
+                    "discontinuity outside it to remove and no line impedance to reference to. Their " +
+                    "s-parameters are reported at the gap itself, in the reference impedance declared " +
+                    "for each — which is exactly what an internal port means, not a step that was " +
+                    "skipped. The gap is one mesh cell wide, so refining the mesh there is what makes " +
+                    "it a better approximation to a point discontinuity." +
+                    (deembedded > 0
+                        ? " The remaining port(s) are de-embedded normally; the two kinds share one " +
+                          "s-matrix and each keeps its own reference."
+                        : " No port in this run is de-embedded, so nothing here is calibrated against " +
+                          "a uniform line at all."));
+
+            if (calibrators.Count > 0)
+            notes.Add($"De-embedding costs {calibrators.Count} calibration(s) over {deembedded} de-embedded port(s), " +
                       $"{standards} standard mesh(es) of N = {string.Join(" / ", sizes)} against the DUT's " +
                       $"N = {mesh.Bases.Count} — {(double)totalN / Math.Max(mesh.Bases.Count, 1):F2}× the " +
                       "DUT's unknowns, solved at every frequency alongside it.");
 
-            if (calibrators.Count < ports.Count)
-                notes.Add($"{ports.Count} port(s) share {calibrators.Count} calibration(s), because their " +
+            if (calibrators.Count < deembedded)
+                notes.Add($"{deembedded} port(s) share {calibrators.Count} calibration(s), because their " +
                           "cross-sections and port cells are identical — the standards are solved once each.");
 
             // M2 — the user set a core count in the panel and it is a machine setting, not part of the
@@ -899,7 +946,7 @@ public static class PlanarSolve
             // infer it from a stopwatch. It names the SOLVES because that is the number the cap acts
             // on; it deliberately does not promise a speed-up, which depends on how unbalanced the
             // standards are (on the brief's own §0 design two of five solves are 96% of the work).
-            if (parallelBudget is not null)
+            if (parallelBudget is not null && standards > 0)
                 notes.Add($"The DUT and its {standards} calibration standard(s) are solved concurrently at " +
                           $"each frequency — {1 + standards} independent solves, across at most " +
                           $"{parallelBudget.Cap} core(s)" +
@@ -907,7 +954,8 @@ public static class PlanarSolve
                           ". The core count is a machine setting and changes no answer: the same sweep at " +
                           "any cap produces bit-identical s-parameters.");
 
-            if (general) notes.Add(GeneralStackCalibrationNote(problem, ports, fmt));
+            if (general && calibrators.Count > 0)
+                notes.Add(GeneralStackCalibrationNote(problem, owners, fmt));
         }
         else notes.Add("De-embedding is OFF: these s-parameters include the port discontinuity and are " +
                        "NOT the structure's response. This path exists for diagnostics only.");
@@ -1057,6 +1105,26 @@ public static class PlanarSolve
                 var gam   = new Complex[ports.Count];
                 for (int i = 0; i < ports.Count; i++)
                 {
+                    // ── AN INTERNAL DELTA GAP PASSES THROUGH, EXACTLY ───────────────────────────
+                    //
+                    // The identity error box (a₁₁ = 0, a₂₂ = 0, a₂₁ = 1) makes PlanarDeembed.Apply's
+                    // algebra the identity on this port's row and column — y[i,j] divides by
+                    // a₂₁(i)·a₂₁(j), so a unit a₂₁ leaves the mixed terms of a de-embedded neighbour
+                    // untouched too, which is what lets the two kinds share one s-matrix. Zc = the
+                    // port's own Z0 makes Renormalise the identity for it as well.
+                    //
+                    // This is arithmetic that provably changes nothing, NOT a de-embedding of an
+                    // internal port. Writing it this way rather than partitioning the matrix keeps
+                    // one code path for both kinds; the partitioned alternative would need its own
+                    // proof that the off-diagonal terms come out the same.
+                    if (!ports[i].IsDeembeddable)
+                    {
+                        boxes[i] = IdentityBox;
+                        zc[i]    = z0[i];
+                        gam[i]   = Complex.Zero;
+                        continue;
+                    }
+
                     var c = perCal[byPort[i]];
                     cals.Add(c with { PortNumber = ports[i].Number });
                     boxes[i] = c.Box;

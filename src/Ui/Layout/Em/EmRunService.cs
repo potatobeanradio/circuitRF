@@ -143,6 +143,22 @@ public static class EmRunService
     /// through to the kernel: a full-wave sweep is the longest thing this application does, so it
     /// reports the point count AND what the current point is doing (see <see cref="RunControl"/>'s
     /// own note on why one counter is not enough here).</param>
+    /// <summary>
+    /// The refusal a setup gets when it declares an internal delta-gap port and the chosen analysis
+    /// is the uniform-line kernel. Shared by the run and by the panel's live blocking reason, so the
+    /// two cannot word it differently.
+    /// </summary>
+    internal static string InternalGapNeedsFullWave(string kernelName) =>
+        $"This EM setup declares an internal delta-gap port, and the analysis it resolved to is the " +
+        $"{kernelName}. An internal delta gap is a cut across a conductor at a mesh gridline, driven " +
+        "across the pair of cells either side of it — and the uniform-line kernel never meshes the " +
+        "plane at all: it solves a cross-section for per-unit-length RLGC and forms the network of a " +
+        "length-L line in closed form, so its only ports are the two ends of that line, by " +
+        "construction. There is nowhere for the gap to be. Running anyway would publish a complete " +
+        "and plausible answer for your line WITHOUT the port you asked for, which is why this is " +
+        "refused rather than reported. Set Analysis to the full-wave planar kernel, or change the " +
+        "port back to an edge port.";
+
     public static EmRunResult Run(
         EmSetup            setup,
         EmLayoutSource?    source,
@@ -230,6 +246,21 @@ public static class EmRunService
             setup.AnalysisKind,
             crossSection.Ok ? EmExtractorVerdict.Yes : EmExtractorVerdict.No(crossSection.Refusal ?? ""),
             planar.Ok       ? EmExtractorVerdict.Yes : EmExtractorVerdict.No(planar.Refusal ?? ""));
+
+        // ── AN INTERNAL DELTA GAP IS A FULL-WAVE PORT, AND Auto WOULD SILENTLY DROP IT ───────────
+        //
+        // A uniform line carrying an interior gap is still a uniform CROSS-SECTION, so kernel A
+        // accepts it and Auto prefers A whenever A accepts. Kernel A never meshes the plane — its two
+        // ports are the ends of the extracted line by construction — so there is nowhere for the gap
+        // to be and nothing that would report its absence: the run would publish a complete,
+        // plausible s-matrix for the line WITHOUT the port the user asked for.
+        //
+        // Refused by name rather than silently re-routed to the planar kernel. Re-routing would be a
+        // guess at intent that costs minutes of solve time, and the remedy is one dropdown.
+        if (choice.Ok && choice.Kind == EmAnalysisKind.CrossSection && setup.DeclaresInternalGapPort())
+            return new EmRunResult(EmRunStatus.Refused, null, crossSection.Readback, null, null, null,
+                InternalGapNeedsFullWave(choice.KernelName), warnings, Notes: notes, Errors: errors,
+                Kind: choice.Kind, KernelName: choice.KernelName);
 
         notes.Add(choice.Reason);
 
@@ -337,7 +368,7 @@ public static class EmRunService
         // by name rather than guessed (R-res-5).
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
-            source.View.DisplayUnit);
+            source.View.DisplayUnit, setup.ResolvePortKind);
 
         notes.AddRange(ports.Notes);
         if (!ports.Ok)

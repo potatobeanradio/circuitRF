@@ -160,6 +160,8 @@ becomes an external interface versus an excitation/measurement point:
     </tbody>
   </table>
 
+{{ui: pin-and-term}}
+
 <p class="small">The Reference Guide has a fuller treatment with diagrams; for Quick Start: use
   <strong>Term</strong> to define S-parameter ports on a test bench, and <strong>Pin</strong> to expose a
   reusable cell's connections.</p>

@@ -160,7 +160,7 @@ Hover the **Ports** header for the explanation that matches the chosen kernel, b
 "where is the port?" completely differently:
 
 - **Full-wave.** Each port is a **port label in the layout** — place them with the layout editor's Port
-  tool. Which end of a conductor a label names is inferred from the geometry and reported in the notes;
+  tool. Which cut of a conductor a label names is inferred from the geometry and reported in the notes;
   an ambiguous one is refused rather than guessed.
 - **Cross-section.** There is no meshed port at all. The ports *are* the ends of the extracted
   conductors by construction: port 2k−1 is conductor k's near end and port 2k its far end, so two
@@ -168,12 +168,29 @@ Hover the **Ports** header for the explanation that matches the chosen kernel, b
 
 **Port Z₀.** Two fields for the near-end and far-end defaults, both 50 Ω. A **complex** reference
 impedance is accepted — type it as an expression, and a value that will not parse is reported under the
-field rather than silently ignored. Once a setup resolves to more than two ports the panel shows a
-**per-port list** instead, one row per port in the engine's own order, each independently overridable.
-Ports may sit on different conductors; that is what a coupled or multi-port structure is.
+field rather than silently ignored. Beyond that, the panel shows a **per-port list** — one row per port
+in the engine's own order, each independently overridable. The list appears for **every full-wave
+setup**, and for a cross-section setup once it resolves to more than two ports. Ports may sit on
+different conductors; that is what a coupled or multi-port structure is.
 
-Port *types* and how to choose one, auto-ports, and how the reference impedance interacts with
-de-embedding are in the engine chapter: [Ports](mom-engine.html#ports).
+**Port type** *(full-wave only)*. Each row in the per-port list carries a type as well as an impedance:
+
+- **Edge** *(the default)* — the port is at a conductor's end face, and it **is** de-embedded. This is
+  the right answer for anything power flows into or out of.
+- **Internal delta gap** — the port is a cut across the middle of a conductor, with metal on both sides,
+  for a lumped element or a device terminal embedded in the metal. It is **not** de-embedded, because
+  there is no feed outside the cut to remove; its S-parameters are reported at the gap in the reference
+  impedance set beside it.
+
+Changing a type **clears the mesh report**, because it changes which cells the excitation drives — the
+old report is about a different excitation. Changing an impedance does not; that is a renormalisation
+applied to the answer.
+
+The cross-section kernel offers no type. Its ports are the two ends of a uniform line by construction,
+so an interior gap would mean nothing there.
+
+Which type to use, what an internal port costs you, auto-ports, and how the reference impedance
+interacts with de-embedding are in the engine chapter: [Ports](mom-engine.html#ports).
 
 ## Mesh — the uniform-line kernel {#mesh}
 
@@ -274,7 +291,8 @@ The usual causes, in the order the panel checks them:
 - the layout has no technology;
 - the extractor refused the geometry for the requested kernel;
 - the chosen kernel refused the extracted problem;
-- a port label is ambiguous, or a port could not be resolved;
+- a port label is ambiguous, or a port could not be resolved (including an internal delta-gap port that
+  is not on the metal, or has no direction on it);
 - the mesh exceeds the run budget.
 
 **A refusal is a result.** The engine declines geometry it cannot solve correctly rather than returning a

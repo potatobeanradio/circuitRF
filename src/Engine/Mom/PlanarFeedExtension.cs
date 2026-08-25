@@ -135,6 +135,12 @@ public static class PlanarFeedExtension
             IReadOnlyList<PlanarPolygon> PolysOn(int level) =>
                 edited[level] is { } e ? e : problem.Layers[level].Polygons;
 
+            // An internal delta gap is not fed from outside the metal, so there is nothing to extend
+            // and nothing that would be calibrated if there were. Growing a lead at the conductor's
+            // end because this port happens to name a DIRECTION along that axis would move metal the
+            // user drew, for a port whose answer does not pass through a calibration at all.
+            if (port.Kind == PlanarPortKind.InternalDeltaGap) continue;
+
             if (!TryLevelOf(problem, port, out int layer)) continue;
 
             var polys = PolysOn(layer);
