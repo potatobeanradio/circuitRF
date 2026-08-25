@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.Views.Layout;
@@ -111,19 +112,13 @@ public partial class TechEditorView : UserControl
         // it is not what the user is looking at.
         if (e.Source is ComboBox { IsDropDownOpen: true }) return;
 
-        var action = TechEditorScrollKeys.ActionFor(e.Key, e.Source is TextBox);
+        var action = PanelScrollKeys.ActionFor(e.Key, e.Source is TextBox);
         if (action is null) return;
 
         var scroll = TargetScrollViewer(e.Source);
         if (scroll is null) return;
 
-        switch (action)
-        {
-            case TechScrollAction.PageUp:   scroll.PageUp();      break;
-            case TechScrollAction.PageDown: scroll.PageDown();    break;
-            case TechScrollAction.Home:     scroll.ScrollToHome(); break;
-            case TechScrollAction.End:      scroll.ScrollToEnd();  break;
-        }
+        PanelScrollKeys.Apply(action.Value, scroll);
         e.Handled = true;
     }
 

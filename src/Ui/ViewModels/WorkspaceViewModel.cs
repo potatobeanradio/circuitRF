@@ -274,6 +274,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ResetPCellGenerators(dir);
 
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
+        NewFolderInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
         ArchiveWorkspaceCommand.NotifyCanExecuteChanged();
@@ -3429,6 +3430,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var techRes = ResolveTechFor(null, null); // the workspace's own default technology
         var boardName = Path.GetFileNameWithoutExtension(files[0].Path.LocalPath);
 
+        // Owner, 2026-08-25: one board file can produce dozens of cells, and dropped at the workspace
+        // root they bury everything the user actually authored. They go in a folder named after the
+        // file instead — a real directory, not a synthetic tree group, because a cell in a sub-folder
+        // already works everywhere (the scanner recurses, the picker recurses, and a CellRef is a
+        // relative path) and PcbImport already took its parent directory as a parameter.
+        // ImportFolder.UniqueName is what stops a second import of the same board merging into the
+        // first one's folder.
+        var importDir = CircuitRF.Ui.Layout.Interchange.ImportFolder.Create(workspaceDir, boardName);
+
         CircuitRF.Ui.Layout.Interchange.PcbImport.ImportResult result;
         try
         {
@@ -3436,7 +3446,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 using var stream = File.OpenRead(files[0].Path.LocalPath);
                 return CircuitRF.Ui.Layout.Interchange.PcbImport.Import(
-                    stream, workspaceDir, boardName, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                    stream, importDir, boardName, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
                     resolveLayerMapping: rows =>
                     {
                         var settled = Dispatcher.UIThread
@@ -3448,6 +3458,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         catch (Exception ex)
         {
+            // "nothing was created" has to stay literally true, so the folder made for this import
+            // goes with it — RemoveIfEmpty declines if the import got far enough to write into it.
+            CircuitRF.Ui.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
             Messages.Error($"Import Board: {ex.Message}");
             return;
         }
@@ -3456,6 +3469,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (result.Cancelled)
         {
+            CircuitRF.Ui.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
             Messages.Info("Import Board cancelled — nothing was created.");
             return;
         }
@@ -3463,7 +3477,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ApplyBoardImportToTechnology(techRes, result);
 
         _factory.ProjectTreeTool?.Refresh();
-        Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from the board file.");
+        Messages.Success(
+            $"Imported {result.CreatedCellDirs.Count} cell(s) from the board file into "
+            + $"'{Path.GetFileName(importDir)}'.");
         if (result.BoardCellDir is { } boardDir) OpenPrimaryLayoutIfResolvable(boardDir);
     }
 
@@ -8475,6 +8491,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     private void ActivateLayoutDocumentForProperties(LayoutDocument doc)
     {
+        WatchLayoutFrameProperties(doc);
         WatchWirebondCellProperties(doc);
         RefreshLayoutPropertiesContext(doc);
         // L5b: the violations panel follows the same active-layout signal — a DRC result belongs to
@@ -8512,6 +8529,62 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (vm.WireEditor is { } wires && !wires.Selection.IsEmpty) panel.SetActiveWire(wires);
         else panel.SetActiveLayout(vm);
+    }
+
+    /// <summary>
+    /// Follows the active layout document's NAVIGATION FRAME, so Push In / Pop Out re-route every panel
+    /// that reads off <c>ActiveViewModel</c>.
+    ///
+    /// <para><b>Owner report, 2026-08-25: "sometimes the Properties Inspector does not update to the
+    /// object I selected in the Layout Editor… clicking on canvas and then clicking back on the object
+    /// still does not update."</b> The panel is pointed at ONE <see cref="LayoutEditorViewModel"/> by
+    /// <see cref="PropertiesTool.SetActiveLayout"/>, and it follows that instance's <c>Overlay</c>
+    /// notifications and nothing else. A push-in swaps which instance the canvas is editing without the
+    /// document ever leaving <c>DocumentDock.ActiveDockable</c> — so the panel went on listening to the
+    /// PARENT frame, and every selection made in the sub-cell was invisible to it.</para>
+    ///
+    /// <para><b>Why clicking away and back could not clear it, which is what makes this the reported
+    /// bug rather than a near miss.</b> The one repair path — <see cref="OnLayoutCanvasInteracted"/> —
+    /// is raised from the canvas's <c>GotFocus</c>, and GotFocus does not re-fire when focus is already
+    /// on the canvas. Push-in's own gesture is a double-click ON the canvas, so focus never leaves it:
+    /// the panel is stuck for the rest of the session in that frame. Pushing in from the TOOLBAR button
+    /// moves focus to the button, so the next canvas click does repair it — which is exactly why the
+    /// symptom is intermittent.</para>
+    ///
+    /// <para>Re-running <see cref="ActivateLayoutDocumentForProperties"/> (rather than just re-pointing
+    /// the Properties panel) is deliberate: the DRC panel and the two wBond panels are pointed at
+    /// <c>ActiveViewModel</c> in that same method and had the identical gap — a pushed-in frame's
+    /// violations and wires were the parent's.</para>
+    /// </summary>
+    private void WatchLayoutFrameProperties(LayoutDocument doc)
+    {
+        if (ReferenceEquals(_layoutFramePropertiesDoc, doc)) return;
+
+        if (_layoutFramePropertiesDoc is { } previous)
+            previous.ActiveViewModelChanged -= OnLayoutFrameChangedForProperties;
+
+        _layoutFramePropertiesDoc = doc;
+        doc.ActiveViewModelChanged += OnLayoutFrameChangedForProperties;
+    }
+
+    /// <summary>Drops it — called the moment a non-layout document becomes active, on the same "no
+    /// document type can leave another's context on screen" principle as the DRC panel.</summary>
+    private void StopWatchingLayoutFrameProperties()
+    {
+        if (_layoutFramePropertiesDoc is { } doc)
+            doc.ActiveViewModelChanged -= OnLayoutFrameChangedForProperties;
+
+        _layoutFramePropertiesDoc = null;
+    }
+
+    private LayoutDocument? _layoutFramePropertiesDoc;
+
+    // Re-entry is not possible: ActivateLayoutDocumentForProperties calls WatchLayoutFrameProperties
+    // with the SAME document, which returns immediately, and nothing on this path raises
+    // ActiveViewModelChanged.
+    private void OnLayoutFrameChangedForProperties(object? sender, EventArgs e)
+    {
+        if (_layoutFramePropertiesDoc is { } doc) ActivateLayoutDocumentForProperties(doc);
     }
 
     /// <summary>
@@ -9226,6 +9299,71 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // R-cc-1: the cell already exists at this point regardless of what happens next — a failure
         // here is reported by CreateAndOpenSchematicFileAsync itself and never rolls the cell back.
         await CreateAndOpenSchematicFileAsync(newCellDir, name, name, dialog.SelectedTemplate);
+    }
+
+    // ── New Folder (tree context menu + tree-header button) ─────────────────────
+    //
+    // Cells in a sub-folder are not a new capability — WorkspaceScanner.BuildUserFolderNode already
+    // recurses, InstanceCellChoices.Collect already finds them and shows their relative path, and a
+    // CellRef is a relative path that resolves from anywhere. What was missing was any way to make a
+    // folder without leaving the application, which is what turned "organise a 50-cell board import"
+    // into a file-manager task.
+    //
+    // Deliberately create-only: MOVING an existing cell into a folder would have to rewrite every
+    // CellRef pointing at it, and CellUsageScanner.RewriteCellReferences today matches and rewrites
+    // the last path SEGMENT (it was built for Rename), not a path prefix. Moving is therefore done in
+    // the file manager for now, where the tree's existing broken-reference warning is what reports a
+    // ref that no longer resolves — rather than an in-app move that rewrites references silently.
+
+    /// <inheritdoc/>
+    public Task NewFolderAsync(ProjectTreeNodeViewModel parentNode)
+        => CreateFolderAsync(parentNode.AbsolutePath);
+
+    /// <inheritdoc/>
+    public Task NewFolderInWorkspaceAsync()
+        => CurrentWorkspacePath is null
+            ? Task.CompletedTask
+            : CreateFolderAsync(Path.GetDirectoryName(CurrentWorkspacePath)!);
+
+    [RelayCommand(CanExecute = nameof(CanNewFolderInWorkspace))]
+    private Task NewFolderInWorkspace() => NewFolderInWorkspaceAsync();
+    private bool CanNewFolderInWorkspace() => CurrentWorkspacePath is not null;
+
+    private async Task CreateFolderAsync(string parentDir)
+    {
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        var dialog = new InputNameDialog("New Folder", "Folder name:");
+        var name   = await dialog.ShowDialog<string?>(mainWindow);
+        if (name is null) return;
+
+        // The same validator a cell name goes through: a folder here IS a workspace path segment,
+        // and the characters that break one break the other.
+        var reason = NameValidator.Validate(name);
+        if (reason is not null)
+        {
+            Messages.Error($"Invalid folder name: {reason}");
+            return;
+        }
+
+        string newDir = Path.Combine(parentDir, name);
+        if (Directory.Exists(newDir))
+        {
+            Messages.Error($"A folder named '{name}' already exists here.");
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(newDir);
+            _factory.ProjectTreeTool?.Refresh();
+            Messages.Success("Created", newDir);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to create folder: {ex.Message}");
+        }
     }
 
     // ── New Cell in workspace root (File menu + tree-header button) ──────────────
@@ -10144,6 +10282,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // the active one, or its own selection changes would go on flipping the Properties panel while
         // the user is looking at something else.
         if (activeDockable is not LayoutDocument) StopWatchingWirebondCellProperties();
+
+        // And the same for its navigation FRAME: a push-in in a background tab must not re-route the
+        // panels away from whatever the user is actually looking at.
+        if (activeDockable is not LayoutDocument) StopWatchingLayoutFrameProperties();
 
         // Properties panel — route to data display, schematic, symbol-editor, or cell inspector.
         if (activeDockable is DataDisplayDocument ddDoc)

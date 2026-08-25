@@ -122,6 +122,18 @@ A header bar at the top of the Palette:
   selecting a category narrows; state the final interaction at build).
 - Empty result → a quiet "No matching components."
 
+### 5.1 Keyboard scrolling *(added 2026-08-25)*
+**Page Up / Page Down / Home / End scroll the tile grid** — the single most useful thing to have when a
+category or a kit runs to hundreds of tiles. The rule is shared verbatim with the Project Tree and the
+`.ctech` editor's row lists (`PanelScrollKeys`), so the three panels cannot drift:
+- **Page Up/Down work from inside the search box too** — type a query, page through what it matched, without
+  having to leave the field first. Home/End do NOT, because there they are caret motion.
+- An open category dropdown owns all four keys; the grid behind it is not what the user is looking at.
+- **The tile area is focusable and takes focus on click.** This is load-bearing rather than incidental: a
+  `PaletteTile` is a plain `UserControl` with `Focusable=false` **by design** (a nested focusable eats its
+  own drag gesture, §7), so without a focusable container a click into the grid leaves keyboard focus
+  wherever it was and the panel never receives a key at all.
+
 ---
 
 ## 6. The placement state machine (the core — owned by the schematic/app, not the Palette)

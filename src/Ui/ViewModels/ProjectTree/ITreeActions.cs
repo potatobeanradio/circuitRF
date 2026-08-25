@@ -30,6 +30,15 @@ public interface ITreeActions
     /// <summary>New Cell in the workspace root — no parent node; used by File menu and tree-header button.</summary>
     Task NewCellInWorkspaceAsync();
 
+    /// <summary>New Folder on a workspace / library / user-folder node — prompts for a name, creates
+    /// the directory, Refresh. Cells inside a sub-folder already work everywhere (a CellRef is a
+    /// RELATIVE path, and the workspace scanner recurses), so this is the missing way to make one
+    /// without leaving the app.</summary>
+    Task NewFolderAsync(ProjectTreeNodeViewModel parentNode);
+
+    /// <summary>New Folder in the workspace root — no parent node; the tree-header button.</summary>
+    Task NewFolderInWorkspaceAsync();
+
     /// <summary>New Symbol on cell node — prompts for name, creates .csym, opens editor, Refresh.</summary>
     Task NewSymbolAsync(ProjectTreeNodeViewModel cellNode);
 

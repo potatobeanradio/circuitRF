@@ -67,7 +67,14 @@
                  columns = max(1, floor(availableWidth / tileWidth)) arises naturally from WrapPanel
                  with fixed-width tiles (60px tile + 2px margin = 62px per slot).
                  Vertical scroll only; horizontal scroll disabled so WrapPanel measures correctly. -->
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+            <!-- Focusable so the tile area can HOLD keyboard focus: a PaletteTile is a plain
+                 UserControl (Focusable=false by design — a nested focusable would eat its own drag
+                 gesture), so without this a click into the grid leaves focus wherever it was and the
+                 Page/Home/End keys never reach this panel at all. The code-behind focuses it on
+                 pointer press; the search box keeps focus when the user is typing there. -->
+            <ScrollViewer x:Name="TileScroll"
+                          Focusable="True" IsTabStop="False"
+                          HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto"
                           IsVisible="{Binding !HasNoItems}">
                 <ItemsControl ItemsSource="{Binding DisplayedItems}">

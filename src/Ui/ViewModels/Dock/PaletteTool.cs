@@ -109,8 +109,35 @@ internal enum PaletteCategoryKind { All, AllAlphabetical, Common, RecentlyUsed, 
 /// Carries category-filter and search-query state; exposes <see cref="DisplayedItems"/> computed
 /// via <see cref="LibraryCatalog"/>.  Placement arming lives here (steps 4+).
 /// </summary>
-public sealed partial class PaletteTool : Tool
+public sealed partial class PaletteTool : Tool, IActivatableTool
 {
+
+    // ── Activation focus (owner, 2026-08-25) ──────────────────────────────────
+    //
+    //  Clicking this panel's TAB leaves keyboard focus on the tab — Dock's chrome, outside this
+    //  panel's view — so the view's key handler is not on the event's route and Page Up/Down never
+    //  arrive. The view listens here and focuses its own content instead. Same mechanism document
+    //  tabs have had all along (IActivatableDocument); tools were never given it.
+
+    private readonly ActivationFocusRelay _activationFocus = new();
+
+    public event Action? ActivationFocusRequested
+    {
+        add    => _activationFocus.Requested += value;
+        remove => _activationFocus.Requested -= value;
+    }
+
+    public void RequestActivationFocus() => _activationFocus.Request();
+
+    public bool ConsumeActivationFocus() => _activationFocus.Consume();
+
+    /// <summary>Dock's own "this tab was chosen" hook.</summary>
+    public override void OnSelected()
+    {
+        base.OnSelected();
+        RequestActivationFocus();
+    }
+
     // ── Placement service (injected by WorkspaceViewModel) ────────────────────
 
     private PlacementService? _svc;
@@ -395,5 +422,6 @@ public sealed partial class PaletteTool : Tool
         Id    = "Palette";
         Title = "Library";
         SelectedCategory = Categories[0];   // triggers RebuildDisplayedItems via partial callback
+        _activationFocus.Follow(this);
     }
 }

@@ -28,17 +28,41 @@ A **workspace is a filesystem folder**. The **root folder name is the workspace 
 - one **sub-folder per cell** (each a cell folder, §1.2).
 - **arbitrary user folders** holding any `.cdd`, `.ccolor`, or other files the user organizes however they
   like. The tree surfaces these by extension (§3).
+- **A user folder may also hold cell folders, at any depth** *(stated explicitly 2026-08-25; it was always
+  true and always scanned, but was never written down)*. Nesting costs nothing anywhere else because a
+  `CellRef` is a **relative path** (§4) — a cell resolves from any depth — and both the scanner and the
+  instance cell-picker recurse. **Cells do not nest inside cells**: a folder carrying a `.ccell` is a cell,
+  and its sub-folders are its views, never further cells.
 
 ```
 MyWorkspace/                     ← workspace name = folder name
    .cws                          ← Dock layout, library refs, known files, color scheme
    AmpStage/                     ← a cell folder (§1.2)
    Bias/                         ← a cell folder
+   eval_board/                   ← a user folder holding cells (§1.1a)
+       eval_board/               ← the board's own cell
+       R0402/                    ← a footprint cell
+       C0603/
    displays/                     ← arbitrary user folder
        sweep.cdd
    themes/
        midnight.ccolor
 ```
+
+#### 1.1a Where an import's cells land *(added 2026-08-25)*
+A board import can create **dozens** of cells in one action — one per distinct footprint definition plus the
+board's own — and dropped at the workspace root they bury everything the user authored. **An import therefore
+creates a folder named after the source file (minus its extension) and puts every generated cell inside it.**
+
+- The name goes through the **same sanitize-then-suffix rule the imported cells themselves use**
+  (`DxfNaming.NameCellsForImport`'s predicate): a file name is not a safe path component in general.
+- **A name already taken becomes `name_2`, `name_3`, …** — importing the same board twice must never merge
+  two boards into one folder, because that would silently overwrite by cell name.
+- **A cancelled or failed import leaves nothing behind**: the folder is removed if it is still empty.
+- This is a **real directory, not a synthetic tree group.** A synthetic group was considered and rejected —
+  the filesystem already expresses this, `Libraries`/`Known Files` are synthetic only because they are *not*
+  filesystem members, and a second grouping mechanism would need its own persistence, its own refresh rule
+  and its own answer for every consumer that walks the workspace.
 
 ### 1.2 Cell
 A **cell is a filesystem folder**. The **folder name is the cell name**. It contains:
@@ -166,10 +190,22 @@ Reads the workspace folder structure and renders it as a disclosure tree. **Refr
 v1 (re-scan when the tree regains focus or via a Refresh command). *(A `FileSystemWatcher` for live updates
 is planned for a future version — documented now, not built in v1.)*
 
+**A rescan that finds nothing changed does nothing** *(added 2026-08-25)*. The on-focus rescan fires on open,
+on every alt-tab back and on every dialog close, and a rebuild replaces every node VM and hands the TreeView
+a new collection — so it tore down and rebuilt every row each time, which is what the user saw as a flash.
+The scan result is hashed (shape, order, path, kind, name, primacy, test-bench flag, warning text) and the
+rebuild is skipped when it matches. The **on-focus** rescan also runs **off the UI thread** — `WorkspaceScanner`
+is framework-free and touches only the filesystem. The explicit `Refresh` stays synchronous, because its
+callers expect a finished tree on return.
+
+*Not yet off-thread: the workspace OPEN itself* — see §9.
+
 ### 3.1 Structure shown
 - The **workspace** root, its **cells** (each disclosing `schematic/`/`symbol/`/`layout/` → their view files),
   its **arbitrary user folders** and the `.cdd`/`.ccolor`/other files within (surfaced by extension),
   **referenced libraries** (each its own sub-tree of cells), and **Known Files** (§5).
+- **User folders render recursively, and a cell inside one renders as an ordinary cell node** (§1.1) — the
+  same icon, the same context menu, the same double-click. Depth is not a special case anywhere in the tree.
 - **Empty view sub-folders show no disclosure triangle** (a cell with no symbols yet shows no `symbol/`
   expander). Don't render empty expanders.
 - **Attachments (§1.2.1) render as children of the view file they attach to**, not as siblings of it —
@@ -180,6 +216,11 @@ is planned for a future version — documented now, not built in v1.)*
   amp_v1.clay — its wires are not attached to any layout."*). This is the §1.2.1 rule that keeps a
   Finder rename from quietly removing wires from a simulation, so it is not optional.
 - **Ordering is customizable** (user-arrangeable) **and the tree is filterable** (§3.3).
+- **The tree scrolls HORIZONTALLY** *(added 2026-08-25)*. Not a default worth inheriting: a `ScrollViewer`'s
+  default `HorizontalScrollBarVisibility` is `Disabled`, and `Disabled` does not mean "no scrollbar" — it
+  constrains the content to the viewport width, so a long cell or file name was clipped with no way to reach
+  the rest of it. It also squeezed the columns beside a long row, which is what made the disclosure triangle
+  hard to pick out. The full name is also always available in the node's tooltip (§3.2).
 
 ### 3.2 Visual states (color + weight)
 - **Primary view files** (the resolved primary `.csch`/`.csym`/`.clay`) render **bold** when their sub-folder
@@ -201,10 +242,68 @@ Workspace File-System (arbitrary folders/files under the workspace)**.
 - "Only Cells" = Cells on, rest off. "Cells + Libraries" = those two on. "Only TestBench" = Cells filtered to
   `IsTestBench`. "All" = everything on. The owner's enumerated cases are all expressible as category subsets.
 
+#### 3.3a Name search *(added 2026-08-25)*
+A **free-text name search**, the direct answer to "I can't find my own cells among fifty imported footprints",
+and one that does not depend on how the workspace happens to be organised.
+
+**It lives behind a magnifier toggle in the toolbar**, to the right of the category filter. Clicking it reveals
+the field **in the workspace name's place** — so the toolbar stays one row, every button stays where it was,
+and the field gets the full width without overlaying controls it would then have to hit-test around. Closing
+it puts the name back. A permanently-present field would spend every session eating the width the name and
+the buttons need, for a control most sessions never touch.
+- **Opening it focuses the field** — revealing a box the user then has to click is two gestures for one intent.
+- **Exactly two things collapse the field: Escape, and the X inside it.** Both are explicit. **Emptying the
+  text does NOT** — clearing the query and putting the field away are different intentions, and backspacing to
+  the start of a re-typed query is the common one. (An earlier round closed on empty; it was reversed for that
+  reason.) The consequence for the X is that it must do *both* halves itself — a clear that only cleared the
+  text would leave the box sitting open.
+- **Closing always clears the query.** A filter still applied with nothing on screen to explain it is the worst
+  state this panel can be in: the tree silently hides cells and the one affordance that would say why has just
+  been put away.
+- **Closing hands focus back to the tree.** Otherwise the caret stays in a control that is no longer on screen,
+  which swallows keystrokes *and* makes §3.3b's Home/End yield to a text field the user cannot see.
+- **Empty or whitespace means no filter**, never "match nothing".
+- A node survives when **its own name matches, an ancestor's did, or a descendant's did.** The ancestor rule
+  is what keeps the folders on the path to a match visible; the *descendant* rule is what keeps a matched
+  cell **openable** — a cell's children are named for their views (`schematic`, `symbol`, `layout`), never for
+  the cell, so filtering them by the same text would show the row and then empty it.
+- **The workspace ROOT is excluded from text matching**, and this is not a detail — without it, typing the
+  workspace's own name matched the root, whose subtree is *everything*, so the filter appeared to do nothing
+  (owner report, 2026-08-25). The root is also the one node that is **never rendered** (§3.1: the panel header
+  names the workspace and the tree binds to the root's children), so there is not even a matched row on screen
+  to explain the result. Excluding it loses no visible row.
+  **A visible folder still passes its contents through** — typing an import folder's name to see what is in it
+  is the intended use (§1.1a). The root is special because it is invisible *and* universal, not because
+  subtree pass-through is wrong.
+- **The text filter and the category toggles are ANDed.** Clearing a checkbox while a search runs must still
+  hide that category, or the checkbox appears to stop working the moment anything is typed.
+- A live search **force-expands the path down to each match and restores the previous expansion when the box
+  is cleared** — a match six levels down is invisible behind a collapsed folder, and a search should not leave
+  the whole workspace hanging open behind the user.
+
+#### 3.3b Keyboard scrolling *(added 2026-08-25)*
+**Page Up / Page Down / Home / End scroll the listing** when the tree has focus — and the Library palette's
+tile grid behaves identically, from one shared rule (`PanelScrollKeys`, which the `.ctech` editor's row lists
+already used). They **scroll; they never move the selection** — paging past a long listing must not change
+what is selected on the way. Home/End yield to a text field (there they are caret motion); Page Up/Down do
+not, so the palette user can type a search and page through its results without leaving the box.
+
+**A panel claims keyboard focus when it is activated**, and that is what makes the above work at all: a key
+handler only fires when the focused element is on the event's route, and clicking a panel's TAB leaves focus
+on Dock's chrome, outside the panel's view. Tool panels now do what document tabs have always done
+(`IActivatableDocument` → `IActivatableTool`). Both the tree's scroller and the palette's tile area declare
+`Focusable="True"` explicitly — `TreeView` and `ScrollViewer` are both non-focusable by default, so without it
+the focus call silently does nothing.
+
 ### 3.4 Context menus
-- **On the workspace or a library node:** **New Cell** (creates a sibling cell folder + `.ccell` + the three
-  empty view sub-folders, then opens it for authoring). *(New Cell is a workspace/library-level action — it
-  creates a cell, so it lives on the container node, not on a cell.)*
+- **On any CONTAINER node — the workspace, a library, or a user folder:** **New Cell** (creates a cell folder
+  + `.ccell` + the three empty view sub-folders, then opens it for authoring), **New Folder…**, and
+  **New Technology…**. *(These are container-level actions — they create something *inside* — so they live on
+  the container node, never on a cell.)* **A user folder was added to this set on 2026-08-25**: it had always
+  been scanned and rendered, and a cell inside one had always resolved, but nothing could be created in one —
+  which made folders look unsupported when only the affordance was missing. All three verbs share ONE gate
+  (`CanCreateInside`) so they cannot drift apart.
+- **New Folder** is offered on the tree header too, beside New Cell.
 - **On a cell node:** **New Schematic**, **New Symbol**, **New Layout** (each creates a new view file in the
   appropriate sub-folder and opens a document tab to author it). **New Layout is disabled/greyed until layout
   ships (v2).** Also **Edit Parameters** (opens the cell-parameter editor, §7).
@@ -260,6 +359,21 @@ primary `.csch`/`.csym`/`.clay` to match, updates the `.ccell`'s primaries — *
 attached to that `.clay`, repointing the schematics linked to it.** The wirebond half is not tidiness:
 attachment is by shared stem (§1.2.1), so renaming the artwork alone detaches the wires. Finder-edits
 remain at-risk by design; the tree operation is the one that is not.
+
+**MOVING a cell between folders has no tree operation and is deliberately still a Finder-level, at-your-own-
+risk action** *(decided 2026-08-25, with folders)*. Rename's repair does **not** extend to it, and the reason
+is specific rather than a matter of effort: `CellUsageScanner.RewriteCellReferences` matches and rewrites the
+**last path segment** of a stored `CellRef` — the cell NAME — because that is what a rename changes. A move
+changes the path **prefix** and leaves the name alone, which that rewriter cannot express. Two further things
+a move would have to settle first, both of which folders make reachable for the first time:
+- **Same-named cells in two folders.** A name-keyed rewriter cannot tell `parts/R0402` from `board/R0402`.
+- **What else points at a cell** beyond `.csch`/`.clay` `CellRef`s — `.cws` entries, `.cdd` datasets, wBond
+  links — each of which the rename path handles separately today.
+
+So: an in-tree move is a real feature with a real design, and until it is built, a moved cell reports itself
+the way any other Finder edit does — the referencing view shows "Not Found" until it is re-pointed (§4.2),
+which is exactly the visible failure §4.1 already promises. **An import's own cells never hit this**: their
+`CellRef`s are written at import time, relative to wherever the import folder is (§1.1a).
 
 ### 4.2 The three missing-symbol states (keep distinct — do NOT collapse into one path)
 
@@ -557,6 +671,16 @@ cell-driven open (the deferred 4c-later items); 6–7 complete authoring + works
 ---
 
 ## 9. Open / deferred
+- **Moving the workspace OPEN off the UI thread** *(raised 2026-08-25; the on-focus RESCAN already is,
+  see §3)*. `SetWorkspace` costs ~92 ms of filesystem scan plus ~68 ms of VM-tree construction for a
+  600-cell workspace, both on the UI thread, and it scales with the workspace. **The naive async version is
+  not obviously better**: it trades a freeze for an empty tree of the same duration, which is a flash of a
+  different kind — the very complaint that prompted the work. It becomes clearly right at a size where the
+  freeze is long enough to need a "Scanning…" state to explain itself, and that state is the actual design
+  question, not the threading. The two halves also differ in difficulty: **the scan is trivially safe
+  off-thread** (`WorkspaceScanner` is framework-free), while **the VM build is not** — node VMs create
+  `ObservableCollection`s and the root subscribes to `ProjectTreeFilterState`, so moving it needs the
+  subscription split out and performed on the UI thread after the tree lands.
 - **`FileSystemWatcher`** live tree refresh (v1 is manual + on-focus).
 - **Layout view** (`.clay`, `layout/`, New Layout) — folder exists, command greyed; v2.
 - **Rename-surviving cell references** / rename-fixes-references-from-tree — v1 is rename-at-risk (§4.1).

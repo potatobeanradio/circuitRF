@@ -120,4 +120,84 @@ public sealed class LayoutCanvasActivationTests
         Assert.True(propsTool.IsLayoutActive);
         Assert.Same(doc.ActiveViewModel, propsTool.LayoutInspectorVm.EditorVm);
     }
+
+    // ── Push In / Pop Out re-route the Properties panel (owner, 2026-08-25) ──────────────────────
+    //
+    //  "Sometimes the Properties Inspector does not update to the object I selected in the Layout
+    //  Editor. Clicking on canvas and then clicking back on the object still does not update."
+    //
+    //  The panel follows ONE LayoutEditorViewModel — whichever SetActiveLayout was last handed — and
+    //  a push-in swaps which VM the canvas is editing without the document ever leaving
+    //  DocumentDock.ActiveDockable. So the panel stayed on the parent frame and every selection made
+    //  in the sub-cell was invisible to it.
+    //
+    //  Clicking away and back could not clear it, which is what makes this the reported bug and not
+    //  a near miss: the one repair path (CanvasInteracted) is raised from the canvas's GotFocus, and
+    //  GotFocus does not re-fire when focus is ALREADY on the canvas — which it is, because push-in's
+    //  own gesture is a double-click on that same canvas. Pushing in from the TOOLBAR button moves
+    //  focus to the button, so the next canvas click does repair it: hence "sometimes".
+
+    /// <summary>The bug itself, with no frame subscription in place.</summary>
+    [Fact]
+    public void PushIn_WithoutFollowingTheFrame_LeavesThePanelOnTheParentsViewModel()
+    {
+        var baseVm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 });
+        var subVm  = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 });
+        var doc    = new LayoutDocument("Test", baseVm);
+        var propsTool = new PropertiesTool();
+
+        propsTool.SetActiveLayout(doc.ActiveViewModel);   // tab activated at the base frame
+        doc.PushIn(subVm, "sub");                         // user double-clicks an instance
+
+        Assert.Same(subVm, doc.ActiveViewModel);                          // the canvas moved…
+        Assert.Same(baseVm, propsTool.LayoutInspectorVm.EditorVm);        // …the panel did not
+    }
+
+    /// <summary>The fix: WorkspaceViewModel.WatchLayoutFrameProperties follows
+    /// <c>ActiveViewModelChanged</c> and re-runs the whole activation routine, so every panel that
+    /// reads off <c>ActiveViewModel</c> lands on the frame now on screen.</summary>
+    [Fact]
+    public void SimulatedWorkspaceWiring_FrameChange_RepointsThePanelAtTheFrameNowOnScreen()
+    {
+        var baseVm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 });
+        var subVm  = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 });
+        var doc    = new LayoutDocument("Test", baseVm);
+        var propsTool = new PropertiesTool();
+
+        // Mirrors WorkspaceViewModel.WatchLayoutFrameProperties' subscription.
+        doc.ActiveViewModelChanged += (_, _) => propsTool.SetActiveLayout(doc.ActiveViewModel);
+
+        propsTool.SetActiveLayout(doc.ActiveViewModel);
+        Assert.Same(baseVm, propsTool.LayoutInspectorVm.EditorVm);
+
+        doc.PushIn(subVm, "sub");
+        Assert.True(propsTool.IsLayoutActive);
+        Assert.Same(subVm, propsTool.LayoutInspectorVm.EditorVm);
+
+        // …and back out again — a pop is the same event and must route the same way.
+        doc.PopOut();
+        Assert.Same(baseVm, propsTool.LayoutInspectorVm.EditorVm);
+    }
+
+    /// <summary>The whole point of re-pointing: a selection made in the sub-cell has to reach the
+    /// panel. Pinned against the real refresh path (Overlay notifications), not just the reference.</summary>
+    [Fact]
+    public void AfterAFrameChange_ASelectionInTheSubCellReachesThePanel()
+    {
+        var baseVm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 });
+        var subView = new LayoutView { DbuPerMicron = 1000 };
+        subView.Shapes.Add(new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 });
+        var subVm = new LayoutEditorViewModel(subView);
+
+        var doc = new LayoutDocument("Test", baseVm);
+        var propsTool = new PropertiesTool();
+        doc.ActiveViewModelChanged += (_, _) => propsTool.SetActiveLayout(doc.ActiveViewModel);
+
+        propsTool.SetActiveLayout(doc.ActiveViewModel);
+        doc.PushIn(subVm, "sub");
+
+        subVm.SelectAllCommand.Execute(null);
+
+        Assert.False(propsTool.LayoutInspectorVm.IsEmptyState);
+    }
 }

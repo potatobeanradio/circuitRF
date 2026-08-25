@@ -946,8 +946,13 @@ public sealed class MatchRound7Tests(ITestOutputHelper output)
         Assert.Contains("_actions.IsNodeDirty(node)", restore, StringComparison.Ordinal);
         Assert.Contains("foreach (var child in node.Children)", restore, StringComparison.Ordinal);
 
-        // Refresh() is the path a window Activated takes, and it goes through the rebuild.
+        // Refresh() is the path a window Activated takes, and it still reaches the rebuild — via
+        // ApplyScan since 2026-08-25, which skips the rebuild entirely when the rescan finds the tree
+        // unchanged. The skip cannot lose a mark: with no rebuild there is nothing to restore, and the
+        // marks live on node VMs that were never replaced. When something DID change, the rebuild runs
+        // and RestoreDirtyFlags with it, which is what the two assertions above pin.
+        Assert.Contains("ApplyScan(", Between(src, "public void Refresh()"), StringComparison.Ordinal);
         Assert.Contains("RebuildVmTree(expandedPaths);",
-                        Between(src, "public void Refresh()"), StringComparison.Ordinal);
+                        Between(src, "private void ApplyScan(ProjectTreeNode scanned)"), StringComparison.Ordinal);
     }
 }

@@ -16,11 +16,16 @@
 
     <Grid RowDefinitions="Auto,*">
 
-        <!-- Toolbar: title + refresh + filter -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="4,4,4,2">
+        <!-- Toolbar: title + refresh + new cell + new folder + filter + search.
+             The search FIELD lives in column 0, taking the workspace name's place while a search is
+             open (owner, 2026-08-25) — so the toolbar stays one row, every button stays where it was,
+             and the field gets the whole width without overlaying anything it would then have to
+             hit-test around. Closing the search puts the name back. -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" Margin="4,4,4,2">
 
             <!-- Workspace name — right-click to reveal (Item 3) -->
             <TextBlock Grid.Column="0"
+                       IsVisible="{Binding !IsSearchOpen}"
                        Text="{Binding WorkspaceName}"
                        FontWeight="SemiBold" FontSize="12"
                        VerticalAlignment="Center"
@@ -76,8 +81,31 @@
                                  Foreground="{DynamicResource SystemBaseMediumColor}"/>
             </Button>
 
-            <!-- Filter toggle (Layer 3 — category-toggle filter §3.3) -->
+            <!-- New Folder button — a board import can add dozens of cells at once, and this is what
+                 lets the user put them somewhere. Same visibility rule as New Cell. -->
             <Button Grid.Column="3"
+                    Command="{Binding NewFolderInWorkspaceCommand}"
+                    ToolTip.Tip="New Folder in workspace"
+                    IsVisible="{Binding HasWorkspace}"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,2,0">
+                <mi:MaterialIcon Kind="FolderPlusOutline" Width="14" Height="14"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+
+            <!-- Search toggle — the magnifier is the affordance, and the field only exists while it
+                 is on. A always-present field would spend the whole session eating the width the
+                 workspace name needs, for a control most sessions never touch. -->
+            <Button Grid.Column="5"
+                    Command="{Binding ToggleSearchCommand}"
+                    ToolTip.Tip="Search by name"
+                    IsVisible="{Binding HasWorkspace}"
+                    Padding="3,2" Background="Transparent" BorderThickness="0">
+                <mi:MaterialIcon Kind="Magnify" Width="14" Height="14"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+
+            <!-- Filter toggle (Layer 3 — category-toggle filter §3.3) -->
+            <Button Grid.Column="4"
                     ToolTip.Tip="Filter categories"
                     Padding="3,2" Background="Transparent" BorderThickness="0">
                 <mi:MaterialIcon Kind="Filter" Width="14" Height="14"
@@ -97,6 +125,27 @@
                     </Flyout>
                 </Button.Flyout>
             </Button>
+
+            <!-- The field itself — column 0, in the workspace name's place, only while open.
+                 Clear-button overlay mirrors the Library palette's field. -->
+            <Grid Grid.Column="0" IsVisible="{Binding IsSearchOpen}" Margin="0,0,4,0">
+                <TextBox x:Name="SearchBox"
+                         Text="{Binding SearchText, Mode=TwoWay}"
+                         PlaceholderText="Search…"
+                         FontSize="12"
+                         Padding="6,2,22,2"
+                         MinHeight="0"
+                         VerticalContentAlignment="Center"/>
+                <Button HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Margin="2" Padding="2"
+                        Background="Transparent" BorderThickness="0"
+                        IsVisible="{Binding HasSearchText}"
+                        Command="{Binding ClearSearchCommand}"
+                        ToolTip.Tip="Clear search">
+                    <mi:MaterialIcon Kind="Close" Width="10" Height="10"
+                                     Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+            </Grid>
 
         </Grid>
 
@@ -148,7 +197,19 @@
             </StackPanel>
 
             <!-- Tree (Layer 2 — disclosure, bold primaries, warning styling) -->
-            <ScrollViewer IsVisible="{Binding HasWorkspace}">
+            <!-- HorizontalScrollBarVisibility is Auto because a ScrollViewer's DEFAULT is Disabled,
+                 and Disabled does not mean "no scrollbar" — it constrains the content to the viewport
+                 width, so a long cell or file name was clipped with no way to reach the rest of it
+                 (owner, 2026-08-25). Auto also stops a long row squeezing the columns beside it, which
+                 is what made the disclosure triangle hard to pick out. -->
+            <!-- Focusable so activating the PANEL can put focus in here: TreeView and ScrollViewer are
+                 BOTH Focusable=false by default (probed), so without this the activation-focus fix
+                 would be a silent no-op and Page Up/Down would still need a click inside first.
+                 IsTabStop=false keeps it out of the tab order — same pairing TechEditorView uses. -->
+            <ScrollViewer x:Name="TreeScroll"
+                          Focusable="True" IsTabStop="False"
+                          HorizontalScrollBarVisibility="Auto"
+                          IsVisible="{Binding HasWorkspace}">
                 <TreeView x:Name="TheTreeView"
                           ItemsSource="{Binding TopLevelItems}"
                           SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
@@ -337,18 +398,23 @@
                                         </MenuItem>
 
                                         <!-- Separator before creation actions -->
-                                        <Separator IsVisible="{Binding IsWorkspaceOrLibrary}"/>
+                                        <Separator IsVisible="{Binding CanCreateInside}"/>
                                         <Separator IsVisible="{Binding IsCell}"/>
 
-                                        <!-- Workspace / Library node actions -->
+                                        <!-- Workspace / Library / user-folder node actions -->
                                         <MenuItem Header="New Cell"
                                                   Command="{Binding NewCellCommand}"
-                                                  IsVisible="{Binding IsWorkspaceOrLibrary}">
+                                                  IsVisible="{Binding CanCreateInside}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="New Folder…"
+                                                  Command="{Binding NewFolderCommand}"
+                                                  IsVisible="{Binding CanCreateInside}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlusOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
                                         <MenuItem Header="New Technology…"
                                                   Command="{Binding NewTechnologyCommand}"
-                                                  IsVisible="{Binding IsWorkspaceOrLibrary}">
+                                                  IsVisible="{Binding CanCreateInside}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 

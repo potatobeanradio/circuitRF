@@ -5,8 +5,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels.Dock;
@@ -42,6 +44,157 @@ public partial class ProjectTreeView : UserControl
         TheTreeView.AddHandler(PointerPressedEvent,  OnTreePointerPressed,  handledEventsToo: true);
         TheTreeView.AddHandler(PointerMovedEvent,    OnTreePointerMoved,    handledEventsToo: false);
         TheTreeView.AddHandler(PointerReleasedEvent, OnTreePointerReleased, handledEventsToo: true);
+
+        // Selecting a row must not drag the HORIZONTAL scroll (owner, 2026-08-25). Subscribed on the
+        // TreeView rather than on this control because RequestBringIntoView only BUBBLES (probed —
+        // it has no tunnel route), and the TreeView sits below TreeScroll, so a handler here runs
+        // before the ScrollViewer's own.
+        TheTreeView.AddHandler(RequestBringIntoViewEvent, OnTreeBringIntoView);
+
+        // Page Up / Page Down / Home / End scroll the listing. Tunnelled, for the same reason the
+        // .ctech editor's own handler is: the focused TreeViewItem would otherwise move the SELECTION
+        // on Home/End first and swallow the key, and a moved selection is not what was asked for here
+        // — a workspace with a board import in it is long, and paging through it must not change what
+        // is selected on the way past.
+        AddHandler(KeyDownEvent, OnScrollKeyDown, RoutingStrategies.Tunnel);
+
+        // Opening the search has to put the caret in the field — a magnifier button that reveals a
+        // box you then have to click is two gestures for one intent.
+        DataContextChanged += OnDataContextChangedForSearch;
+
+        // …and activating the PANEL has to put focus somewhere inside it, or the scroll keys below
+        // never reach this control at all. See OnActivationFocusRequested.
+        DataContextChanged += OnDataContextChangedForActivation;
+
+        // Escape closes the search (which clears it, so the tree comes back).
+        //
+        // handledEventsToo: true is REQUIRED, not defensive, and leaving it off is why Escape did
+        // nothing at first (owner, 2026-08-25). WorkspaceWindow.axaml binds Escape to
+        // DisarmPlacementCommand, and Window.KeyBindings are processed before visual-tree routing and
+        // always mark the event Handled — so a handler that skips handled events never sees Escape at
+        // all. SchematicView, SymbolEditorView and LayoutEditorView all carry the identical argument
+        // on their own Escape handlers; this panel is the fourth to need it.
+        AddHandler(KeyDownEvent, OnSearchKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    // ── Activation focus (owner, 2026-08-25) ──────────────────────────────────
+
+    private IActivatableTool? _activationTool;
+
+    private void OnDataContextChangedForActivation(object? sender, EventArgs e)
+    {
+        if (_activationTool is not null) _activationTool.ActivationFocusRequested -= OnActivationFocusRequested;
+        _activationTool = DataContext as IActivatableTool;
+        if (_activationTool is null) return;
+
+        _activationTool.ActivationFocusRequested += OnActivationFocusRequested;
+
+        // The panel can be activated BEFORE this view exists — first layout, or a restored dock
+        // arrangement. The request is held until a view turns up to consume it, exactly as
+        // IActivatableDocument does for document tabs.
+        if (_activationTool.ConsumeActivationFocus()) OnActivationFocusRequested();
+    }
+
+    /// <summary>
+    /// Puts keyboard focus inside this panel when it is activated.
+    ///
+    /// <para><b>Owner:</b> <i>"if I click on the title bar of a window (like Project, or Library) …
+    /// I am forced to click somewhere inside the window before the keystrokes will register."</i>
+    /// Clicking a tool's tab leaves focus on the TAB, which is Dock's chrome and lives outside this
+    /// control — so a key event's route never passes through here and
+    /// <see cref="OnScrollKeyDown"/> is never called.</para>
+    ///
+    /// <para>The TreeView is preferred over the scroller because it takes the arrow keys too, so an
+    /// activated panel is fully navigable; the scroller is the fallback for the states where the tree
+    /// cannot take focus (no workspace open, so it is not even visible).</para>
+    /// </summary>
+    private void OnActivationFocusRequested() =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (!TheTreeView.Focus()) TreeScroll.Focus();
+        }, Avalonia.Threading.DispatcherPriority.Input);
+
+    // ── Bring-into-view: vertical only ────────────────────────────────────────
+
+    /// <summary>
+    /// Clicking a row focuses it, and Avalonia's focus handling asks the nearest scroller to bring it
+    /// into view — on BOTH axes. With horizontal scrolling enabled (§3.1) a row wider than the panel is
+    /// never fully "in view", so simply selecting a long cell name nudged the horizontal scrollbar
+    /// (owner, 2026-08-25). Vertical bring-into-view is wanted and keeps working: arrow-key navigation
+    /// still scrolls the selected row into sight.
+    ///
+    /// <para><c>ScrollViewer.BringIntoViewOnFocusChange="False"</c> would have been the one-liner and is
+    /// the wrong tool — it kills both axes, taking keyboard navigation with it.</para>
+    ///
+    /// <para>The rect arrives in the TARGET's coordinate space, and the transform from a tree row to the
+    /// scroller is a pure translation, so placing a zero-width rect at <c>-tx</c> maps it to x = 0 in the
+    /// scroller's space — the left edge of the viewport, which is by definition already visible. Nothing
+    /// to scroll to horizontally; Y and Height are passed through untouched.</para>
+    /// </summary>
+    private void OnTreeBringIntoView(object? sender, RequestBringIntoViewEventArgs e)
+    {
+        if (e.TargetObject is not Visual target) return;
+        if (target.TransformToVisual(TreeScroll) is not { } toScroll) return;
+
+        double tx = toScroll.Transform(new Point(0, 0)).X;
+        e.TargetRect = new Rect(-tx, e.TargetRect.Y, 0, e.TargetRect.Height);
+    }
+
+    // ── Search field focus + Escape ───────────────────────────────────────────
+
+    private ProjectTreeTool? _searchTool;
+
+    private void OnDataContextChangedForSearch(object? sender, EventArgs e)
+    {
+        if (_searchTool is not null) _searchTool.PropertyChanged -= OnToolPropertyChangedForSearch;
+        _searchTool = DataContext as ProjectTreeTool;
+        if (_searchTool is not null) _searchTool.PropertyChanged += OnToolPropertyChangedForSearch;
+    }
+
+    private void OnToolPropertyChangedForSearch(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ProjectTreeTool.IsSearchOpen)) return;
+        if (_searchTool is not { } tool) return;
+
+        if (tool.IsSearchOpen)
+        {
+            // Posted: the box is only just becoming visible, and a control that has not been laid out
+            // yet cannot take focus.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => SearchBox.Focus(), Avalonia.Threading.DispatcherPriority.Input);
+            return;
+        }
+
+        // Closing leaves the caret inside a control that is no longer on screen — which both swallows
+        // subsequent keystrokes and makes OnScrollKeyDown read `e.Source is TextBox` as true, so
+        // Home/End would go on yielding to a field the user cannot see. Hand focus back to the tree,
+        // which is where the keys are meant to land once the search is put away.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => TheTreeView.Focus(), Avalonia.Threading.DispatcherPriority.Input);
+    }
+
+    private void OnSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        if (DataContext is not ProjectTreeTool { IsSearchOpen: true } tool) return;
+
+        tool.IsSearchOpen = false;   // clears the query on its way (see OnIsSearchOpenChanged)
+        e.Handled = true;
+    }
+
+    // ── Page Up / Page Down / Home / End over the tree ────────────────────────
+
+    private void OnScrollKeyDown(object? sender, KeyEventArgs e)
+    {
+        // An open dropdown owns all four keys — it is navigating its own items, and the list behind
+        // it is not what the user is looking at.
+        if (e.Source is ComboBox { IsDropDownOpen: true }) return;
+
+        var action = PanelScrollKeys.ActionFor(e.Key, e.Source is TextBox);
+        if (action is null) return;
+
+        PanelScrollKeys.Apply(action.Value, TreeScroll);
+        e.Handled = true;
     }
 
     // ── Cell drag SOURCE ─────────────────────────────────────────────────────
@@ -266,6 +419,12 @@ public partial class ProjectTreeView : UserControl
     }
 
     // Debounced re-scan on window focus: guards against rapid consecutive Activated events.
+    //
+    // RefreshAsync, not Refresh: this is the FREQUENT path — it fires on open, on every alt-tab back
+    // and on every dialog close — and nothing waits on its result, so the filesystem walk (~92 ms on a
+    // 600-cell workspace, measured) belongs off the UI thread. It also does nothing at all when the
+    // scan finds the same tree that is already rendered, which is what stopped the tree flashing on
+    // every window activation (owner, 2026-08-25).
     private void OnWindowActivated(object? sender, System.EventArgs e)
     {
         if (_refreshPending) return;
@@ -274,7 +433,7 @@ public partial class ProjectTreeView : UserControl
         {
             _refreshPending = false;
             if (DataContext is ProjectTreeTool tool)
-                tool.Refresh();
+                _ = tool.RefreshAsync();
         }, Avalonia.Threading.DispatcherPriority.ApplicationIdle);
     }
 

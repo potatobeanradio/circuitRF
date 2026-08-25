@@ -15,8 +15,35 @@ namespace CircuitRF.Ui.ViewModels.Dock;
 /// Dock Tool for the Project Tree region.  Owns the scanned VM tree and the
 /// category-toggle filter (§3.3).  Refresh = re-scan; no FileSystemWatcher (deferred §9).
 /// </summary>
-public partial class ProjectTreeTool : Tool
+public partial class ProjectTreeTool : Tool, IActivatableTool
 {
+
+    // ── Activation focus (owner, 2026-08-25) ──────────────────────────────────
+    //
+    //  Clicking this panel's TAB leaves keyboard focus on the tab — Dock's chrome, outside this
+    //  panel's view — so the view's key handler is not on the event's route and Page Up/Down never
+    //  arrive. The view listens here and focuses its own content instead. Same mechanism document
+    //  tabs have had all along (IActivatableDocument); tools were never given it.
+
+    private readonly ActivationFocusRelay _activationFocus = new();
+
+    public event Action? ActivationFocusRequested
+    {
+        add    => _activationFocus.Requested += value;
+        remove => _activationFocus.Requested -= value;
+    }
+
+    public void RequestActivationFocus() => _activationFocus.Request();
+
+    public bool ConsumeActivationFocus() => _activationFocus.Consume();
+
+    /// <summary>Dock's own "this tab was chosen" hook.</summary>
+    public override void OnSelected()
+    {
+        base.OnSelected();
+        RequestActivationFocus();
+    }
+
     private WorkspaceModel? _workspaceModel;
     private ITreeActions?   _actions;
 
@@ -157,6 +184,7 @@ public partial class ProjectTreeTool : Tool
     {
         Id    = "ProjectTree";
         Title = "Project";   // static — never updated per workspace
+        _activationFocus.Follow(this);
     }
 
     // ── Actions wiring ────────────────────────────────────────────────────────
@@ -174,6 +202,90 @@ public partial class ProjectTreeTool : Tool
     /// <summary>New Cell in the workspace root — bound to the tree-header button.</summary>
     [RelayCommand]
     private Task NewCellInWorkspace() => _actions?.NewCellInWorkspaceAsync() ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task NewFolderInWorkspace() => _actions?.NewFolderInWorkspaceAsync() ?? Task.CompletedTask;
+
+    // ── Name search (owner, 2026-08-25) ───────────────────────────────────────
+    //
+    //  TWO properties, on purpose. SearchText is what the TextBox is bound to, so the box itself is
+    //  never waiting on anything. FilterState.SearchQuery is what the whole tree re-filters on, and
+    //  it is written from a COALESCED callback — a burst of keystrokes costs one filter pass, not one
+    //  per character.
+    //
+    //  Coalesced at Background priority rather than debounced on a timer: input is dispatched at a
+    //  higher priority, so the keystroke always renders first and the filter runs in whatever gap
+    //  follows — no arbitrary delay to tune, and no lag added when the user types a single character
+    //  and stops. This is the same idiom ProjectTreeView already uses to coalesce its on-focus
+    //  rescan.
+
+    /// <summary>
+    /// Whether the search FIELD is showing. Off by default: the magnifier button is the affordance,
+    /// and a field that is always present spends the whole session eating the width the workspace
+    /// name and the toolbar buttons need, for a control most sessions never touch (owner, 2026-08-25).
+    /// </summary>
+    [ObservableProperty] private bool _isSearchOpen;
+
+    [RelayCommand]
+    private void ToggleSearch() => IsSearchOpen = !IsSearchOpen;
+
+    partial void OnIsSearchOpenChanged(bool value)
+    {
+        // Closing the field CLEARS the query, always. A filter that is still applied with nothing on
+        // screen to say so is the worst state this panel can be in — the tree silently hides cells and
+        // the only affordance that would explain it has just been put away.
+        if (!value) SearchText = "";
+    }
+
+    /// <summary>What the user has typed, updated on every keystroke. Bound directly by the view.</summary>
+    [ObservableProperty] private string _searchText = "";
+
+    /// <summary>Drives the clear button's visibility off the TYPED text, so the X appears and
+    /// disappears with the caret rather than with the filter pass behind it.</summary>
+    public bool HasSearchText => !string.IsNullOrWhiteSpace(SearchText);
+
+    partial void OnSearchTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasSearchText));
+        ScheduleFilterApply();
+
+        // Emptying the field deliberately does NOT close it (owner, 2026-08-25, revising an earlier
+        // round that did): clearing the text and putting the field away are two different intentions,
+        // and backspacing to the start of a re-typed query is the common one. There are exactly two
+        // ways to collapse the field — Escape, and the X inside it — and both are explicit.
+    }
+
+    /// <summary>
+    /// How a coalesced filter pass gets scheduled. Overridable so a headless test can run it inline —
+    /// there is no dispatcher loop in the test host, and a posted callback would simply never fire.
+    /// </summary>
+    internal Action<Action> FilterScheduler { get; set; } =
+        a => Avalonia.Threading.Dispatcher.UIThread.Post(a, Avalonia.Threading.DispatcherPriority.Background);
+
+    private bool _filterApplyPending;
+
+    private void ScheduleFilterApply()
+    {
+        if (_filterApplyPending) return;
+        _filterApplyPending = true;
+        FilterScheduler(() =>
+        {
+            _filterApplyPending = false;
+            // Read SearchText HERE, not when the pass was scheduled — that is what makes several
+            // keystrokes collapse into one pass against the latest text.
+            FilterState.SearchQuery = SearchText;
+        });
+    }
+
+    /// <summary>The X inside the field — one of the two ways to collapse it (Escape, handled by the
+    /// view, is the other). Clears AND closes: emptying the text on its own leaves the field open, so
+    /// both halves have to be spelled out here or the X would only do half its job.</summary>
+    [RelayCommand]
+    private void ClearSearch()
+    {
+        SearchText   = "";
+        IsSearchOpen = false;
+    }
 
     /// <summary>
     /// Register a file or directory path as a Known File in the workspace .cws.
@@ -193,6 +305,7 @@ public partial class ProjectTreeTool : Tool
         var name = Path.GetFileName(rootDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         WorkspaceName = name;   // header shows the workspace name; Title stays "Project"
         RebuildVmTree(expandedPaths: []);
+        _renderedSignature = SignatureOf(_workspaceModel.RootNode);
         OnPropertyChanged(nameof(HasWorkspace));
     }
 
@@ -200,6 +313,7 @@ public partial class ProjectTreeTool : Tool
     public void ClearWorkspace()
     {
         _workspaceModel = null;
+        _renderedSignature = 0;
         WorkspaceName = "No workspace open";
         TopLevelItems = null;
         RootItems.Clear();
@@ -222,9 +336,127 @@ public partial class ProjectTreeTool : Tool
     public void Refresh()
     {
         if (_workspaceModel is null) return;
+        ApplyScan(_workspaceModel.ScanDetached());
+    }
+
+    /// <summary>
+    /// The same refresh with the SCAN off the UI thread. Used by the on-focus re-entry, which is the
+    /// frequent one and the one nothing waits on — an explicit Refresh keeps the synchronous
+    /// <see cref="Refresh"/> so its many callers still see a finished tree when it returns.
+    /// </summary>
+    public async Task RefreshAsync()
+    {
+        if (_workspaceModel is not { } model) return;
+        if (_scanInFlight) return;      // a focus storm must not queue N scans of the same folder
+
+        _scanInFlight = true;
+        try
+        {
+            var scanned = await Task.Run(model.ScanDetached).ConfigureAwait(true);
+
+            // The workspace can be closed or swapped while a scan is in flight; a result for a folder
+            // nobody is looking at any more must not be installed over the one that is.
+            if (!ReferenceEquals(_workspaceModel, model)) return;
+
+            ApplyScan(scanned);
+        }
+        catch (Exception)
+        {
+            // A rescan is best-effort and unattended — a folder that vanished mid-walk is not worth an
+            // error box on a window activation. The tree simply keeps what it had.
+        }
+        finally
+        {
+            _scanInFlight = false;
+        }
+    }
+
+    private bool _scanInFlight;
+
+    /// <summary>
+    /// Signature of the node tree currently rendered — see <see cref="SignatureOf"/> for why this
+    /// exists at all.
+    /// </summary>
+    private ulong _renderedSignature;
+
+    /// <summary>
+    /// Installs a scan result, and — the whole point — <b>does nothing at all when it describes the
+    /// same tree that is already on screen.</b>
+    ///
+    /// <para><b>Owner, 2026-08-25: "when I open a large workspace, I can see the workspace flash a
+    /// little bit."</b> <see cref="RebuildVmTree"/> throws every node VM away and assigns a NEW
+    /// collection to <see cref="TopLevelItems"/>, so the TreeView tears down and rebuilds every
+    /// realized container — and Avalonia's TreeView does not virtualize, so that is every row.
+    /// <c>ProjectTreeView</c> runs this on the workspace window's <c>Activated</c>, which fires on
+    /// open, on every alt-tab back, and on every dialog close. The overwhelming majority of those
+    /// found nothing changed on disk and rebuilt the whole tree anyway.</para>
+    ///
+    /// <para>Expansion and dirty marks survive a rebuild anyway — <see cref="CollectExpandedPaths"/>
+    /// and <see cref="RestoreDirtyFlags"/> exist precisely to reinstate them. The SELECTION does not:
+    /// a rebuild replaces every node VM, so the selected one is no longer in the tree and the choice
+    /// is dropped. Skipping keeps it.</para>
+    /// </summary>
+    private void ApplyScan(ProjectTreeNode scanned)
+    {
+        if (_workspaceModel is null) return;
+
+        ulong signature = SignatureOf(scanned);
+        if (signature == _renderedSignature && RootItems.Count > 0)
+        {
+            // Adopt the fresh nodes anyway so later reads see current objects; nothing rendered
+            // differs, so nothing is rebuilt and nothing flashes.
+            _workspaceModel.Adopt(scanned);
+            return;
+        }
+
         var expandedPaths = CollectExpandedPaths();
-        _workspaceModel.Rescan();
+        _workspaceModel.Adopt(scanned);
         RebuildVmTree(expandedPaths);
+        _renderedSignature = signature;
+    }
+
+    /// <summary>
+    /// A 64-bit FNV-1a over everything about the scanned tree that can change what is RENDERED —
+    /// shape, order, path, kind, name, primacy, test-bench flag and warning text.
+    ///
+    /// <para>64-bit rather than <c>HashCode</c>'s 32: the cost of a collision here is a real change on
+    /// disk that never appears in the tree until an unrelated one comes along, and 32 bits is not a
+    /// margin worth taking for that. A full string comparison would be exact and allocates a copy of
+    /// the whole tree's text on every window activation, which is the thing being avoided.</para>
+    ///
+    /// <para>Everything the node VM derives at build time (a cell's openable views) derives from files
+    /// that ARE nodes here, so a change to any of it moves this number.</para>
+    /// </summary>
+    private static ulong SignatureOf(ProjectTreeNode root)
+    {
+        ulong h = 14695981039346656037UL;   // FNV-1a 64 offset basis
+        Fold(root, ref h);
+        return h;
+
+        static void Fold(ProjectTreeNode n, ref ulong h)
+        {
+            Mix(n.RelativePath, ref h);
+            Mix(n.Name, ref h);
+            Mix(((int)n.Kind).ToString(), ref h);
+            Mix(n.IsPrimary ? "P" : "-", ref h);
+            Mix(n.IsTestBench ? "T" : "-", ref h);
+            Mix(n.IsDirectory ? "D" : "-", ref h);
+            Mix(n.WarningReason ?? "", ref h);
+            Mix("(", ref h);                 // shape delimiters: two flat lists must not collide
+            foreach (var c in n.Children) Fold(c, ref h);
+            Mix(")", ref h);
+        }
+
+        static void Mix(string s, ref ulong h)
+        {
+            foreach (char c in s)
+            {
+                h ^= c;
+                h *= 1099511628211UL;        // FNV-1a 64 prime
+            }
+            h ^= 0xFF;
+            h *= 1099511628211UL;            // field separator — "ab"+"c" must not equal "a"+"bc"
+        }
     }
 
     // ── Dirty-cell notifications ──────────────────────────────────────────────

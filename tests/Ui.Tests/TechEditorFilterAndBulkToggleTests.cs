@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using Avalonia.Input;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Theming;
 using Xunit;
@@ -243,8 +244,8 @@ public class TechEditorFilterAndBulkToggleTests
     [Fact]
     public void PageKeys_AlwaysScroll_EvenFromInsideAnEditableCell()
     {
-        Assert.Equal(TechScrollAction.PageUp,   TechEditorScrollKeys.ActionFor(Key.PageUp,   sourceIsTextInput: true));
-        Assert.Equal(TechScrollAction.PageDown, TechEditorScrollKeys.ActionFor(Key.PageDown, sourceIsTextInput: true));
+        Assert.Equal(PanelScrollAction.PageUp,   PanelScrollKeys.ActionFor(Key.PageUp,   sourceIsTextInput: true));
+        Assert.Equal(PanelScrollAction.PageDown, PanelScrollKeys.ActionFor(Key.PageDown, sourceIsTextInput: true));
     }
 
     // Every row here is built out of TextBoxes, where Home/End are caret motion. Taking them would
@@ -252,11 +253,11 @@ public class TechEditorFilterAndBulkToggleTests
     [Fact]
     public void HomeAndEnd_ScrollOnlyWhenTheKeystrokeIsNotComingFromATextField()
     {
-        Assert.Equal(TechScrollAction.Home, TechEditorScrollKeys.ActionFor(Key.Home, sourceIsTextInput: false));
-        Assert.Equal(TechScrollAction.End,  TechEditorScrollKeys.ActionFor(Key.End,  sourceIsTextInput: false));
+        Assert.Equal(PanelScrollAction.Home, PanelScrollKeys.ActionFor(Key.Home, sourceIsTextInput: false));
+        Assert.Equal(PanelScrollAction.End,  PanelScrollKeys.ActionFor(Key.End,  sourceIsTextInput: false));
 
-        Assert.Null(TechEditorScrollKeys.ActionFor(Key.Home, sourceIsTextInput: true));
-        Assert.Null(TechEditorScrollKeys.ActionFor(Key.End,  sourceIsTextInput: true));
+        Assert.Null(PanelScrollKeys.ActionFor(Key.Home, sourceIsTextInput: true));
+        Assert.Null(PanelScrollKeys.ActionFor(Key.End,  sourceIsTextInput: true));
     }
 
     [Fact]
@@ -264,8 +265,8 @@ public class TechEditorFilterAndBulkToggleTests
     {
         foreach (var k in new[] { Key.Up, Key.Down, Key.Enter, Key.A, Key.Space })
         {
-            Assert.Null(TechEditorScrollKeys.ActionFor(k, sourceIsTextInput: false));
-            Assert.Null(TechEditorScrollKeys.ActionFor(k, sourceIsTextInput: true));
+            Assert.Null(PanelScrollKeys.ActionFor(k, sourceIsTextInput: false));
+            Assert.Null(PanelScrollKeys.ActionFor(k, sourceIsTextInput: true));
         }
     }
 
@@ -357,6 +358,6 @@ public class TechEditorFilterAndBulkToggleTests
     {
         var cs = CodeBehind();
         Assert.Contains("AddHandler(KeyDownEvent, OnScrollKeyDown, RoutingStrategies.Tunnel)", cs);
-        Assert.Contains("TechEditorScrollKeys.ActionFor", cs);
+        Assert.Contains("PanelScrollKeys.ActionFor", cs);
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -27,6 +28,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 {
     private readonly ProjectTreeNode        _node;
     private readonly ProjectTreeFilterState _filter;
+
+    /// <summary>The node that built this one; null on the workspace root. Only the root subscribes to
+    /// filter changes — see the constructor for why.</summary>
+    private readonly ProjectTreeNodeViewModel? _parent;
     private readonly ITreeActions?          _actions;
 
     // ── Identity / model data (read from the node — never re-derived here) ────
@@ -94,6 +99,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsCell               => Kind == NodeKind.Cell;
     public bool IsKnownFile          => Kind == NodeKind.KnownFile;
     public bool IsWorkspaceOrLibrary => Kind is NodeKind.Workspace or NodeKind.Library;
+
+    /// <summary>
+    /// Where a new cell, technology or folder may be created. A USER FOLDER belongs here and was
+    /// simply never added: the workspace scanner has always recursed into one and a CellRef is a
+    /// relative path, so a cell inside a folder already worked in every consumer — there was just no
+    /// way to put one there from the tree, which made the folder look unsupported when it was not.
+    /// </summary>
+    public bool CanCreateInside => Kind is NodeKind.Workspace or NodeKind.Library or NodeKind.UserFolder;
 
     /// <summary>True for .cdd Data Display files — drives "Remove Data Display" context item.</summary>
     public bool IsDataDisplayFile => Kind == NodeKind.DataDisplayFile;
@@ -192,6 +205,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>New Cell on workspace/library nodes.</summary>
     public IAsyncRelayCommand NewCellCommand { get; }
+
+    /// <summary>New Folder — offered on anything a cell can be created in.</summary>
+    public IAsyncRelayCommand NewFolderCommand { get; }
 
     /// <summary>New Technology… on workspace/library nodes.</summary>
     public IAsyncRelayCommand NewTechnologyCommand { get; }
@@ -298,11 +314,13 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         ProjectTreeNode         node,
         ProjectTreeFilterState  filter,
         HashSet<string>?        expandedPaths = null,
-        ITreeActions?           actions       = null)
+        ITreeActions?           actions       = null,
+        ProjectTreeNodeViewModel? parent      = null)
     {
         _node    = node;
         _filter  = filter;
         _actions = actions;
+        _parent  = parent;
 
         // Workspace root is always expanded initially; other nodes restore from saved paths.
         _isExpanded = node.Kind == NodeKind.Workspace
@@ -321,10 +339,26 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         // Build child VMs recursively; each child applies the same filter state.
         Children = new ObservableCollection<ProjectTreeNodeViewModel>(
-            node.Children.Select(c => new ProjectTreeNodeViewModel(c, filter, expandedPaths, actions)));
+            node.Children.Select(c => new ProjectTreeNodeViewModel(c, filter, expandedPaths, actions, parent: this)));
 
-        // React to filter-toggle changes.
-        _filter.PropertyChanged += (_, _) => ApplyFilter();
+        // React to filter-state changes — ONLY at the root. ApplyFilter is already a full recursive
+        // pass, and it has to be: the text filter (§3.3a) hands each node whether an ANCESTOR matched,
+        // which a node re-filtering itself in isolation cannot know. Every node subscribing would run
+        // n redundant passes and leave correctness resting on handler ORDER (children subscribe during
+        // their own construction, so the root happens to run last and overwrite them) — true today,
+        // and silently broken by any future change to when children are built.
+        if (_parent is null)
+            _filter.PropertyChanged += (_, e) =>
+            {
+                // HasSearchQuery is DERIVED from SearchQuery and is raised alongside it, so reacting
+                // to both ran the entire filter TWICE for every keystroke — measured at 2 x 4,221
+                // node passes and 16,882 collection notifications on a 600-cell workspace. Nothing
+                // derived belongs in this set; only a real filter input does.
+                if (e.PropertyName is nameof(ProjectTreeFilterState.HasSearchQuery)
+                                   or nameof(ProjectTreeFilterState.IsSearching)
+                                   or nameof(ProjectTreeFilterState.SearchTerm)) return;
+                ApplyFilter();
+            };
 
         ApplyFilter();
 
@@ -342,11 +376,15 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         NewCellCommand = new AsyncRelayCommand(
             () => _actions?.NewCellAsync(this) ?? Task.CompletedTask,
-            () => _actions is not null && IsWorkspaceOrLibrary);
+            () => _actions is not null && CanCreateInside);
+
+        NewFolderCommand = new AsyncRelayCommand(
+            () => _actions?.NewFolderAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && CanCreateInside);
 
         NewTechnologyCommand = new AsyncRelayCommand(
             () => _actions?.NewTechnologyAsync(this) ?? Task.CompletedTask,
-            () => _actions is not null && IsWorkspaceOrLibrary);
+            () => _actions is not null && CanCreateInside);
 
         NewSymbolCommand = new AsyncRelayCommand(
             () => _actions?.NewSymbolAsync(this) ?? Task.CompletedTask,
@@ -437,19 +475,156 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     // ── Filter ─────────────────────────────────────────────────────────────────
 
-    internal void ApplyFilter()
+    /// <param name="ancestorMatchedSearch">True when this node's own name did not have to match
+    /// because an ANCESTOR's did. Without this, searching for a cell would show the cell row and
+    /// then hide everything inside it (its schematic/symbol/layout are named for their views, not
+    /// for the cell), so the one row you were looking for could not be opened into.</param>
+    internal void ApplyFilter(bool ancestorMatchedSearch = false)
     {
+        _ownNameMatched  = _filter.IsSearching && MatchesSearchText();
+        _searchSatisfied = ancestorMatchedSearch || MatchesSearchText();
+
         // Bottom-up: children must be filtered before we check ancestor-preservation.
         foreach (var child in Children)
-            child.ApplyFilter();
+            child.ApplyFilter(_searchSatisfied);
 
-        FilteredChildren.Clear();
+        // Is there a real match somewhere below? This is what the auto-expand reads — NOT "do I have
+        // visible children", which is true of everything a match passes through.
+        _matchBelow = false;
         foreach (var child in Children)
-        {
+            if (child._ownNameMatched || child._matchBelow) { _matchBelow = true; break; }
+
+        if (SyncFilteredChildren())
+            OnPropertyChanged(nameof(FilteredChildren));
+
+        ApplySearchExpansion();
+    }
+
+    /// <summary>
+    /// Brings <see cref="FilteredChildren"/> in line with what the filters now allow, touching it ONLY
+    /// where it actually differs. Returns true when anything changed.
+    ///
+    /// <para><b>This used to be <c>Clear()</c> followed by re-adding every visible child</b>, and that
+    /// is what made typing in the search box feel slow (owner, 2026-08-25). The matching itself is
+    /// cheap — 1.5 ms for a 4,221-node tree — but each of those notifications is work Avalonia must do
+    /// on the UI thread: a Reset tears down every realized container for that node, and each Add
+    /// builds one back. <c>ObservableCollection.Clear()</c> raises its Reset <b>even when the
+    /// collection is empty</b>, so every LEAF in the tree announced a teardown on every keystroke while
+    /// its (zero) children could not possibly have changed. Measured: ~16,882 notifications per
+    /// keystroke, against a few dozen that describe a real change.</para>
+    ///
+    /// <para>Both lists are subsequences of <see cref="Children"/> in the same order, which is what
+    /// makes the walk below a single pass rather than a general diff.</para>
+    /// </summary>
+    private bool SyncFilteredChildren()
+    {
+        _desired.Clear();
+        foreach (var child in Children)
             if (child.IsVisibleUnderFilter())
-                FilteredChildren.Add(child);
+                _desired.Add(child);
+
+        // The overwhelmingly common case on a keystroke: this node's visible set is exactly what it
+        // already was. Say nothing at all.
+        if (_desired.Count == FilteredChildren.Count)
+        {
+            bool same = true;
+            for (int i = 0; i < _desired.Count; i++)
+                if (!ReferenceEquals(_desired[i], FilteredChildren[i])) { same = false; break; }
+            if (same) return false;
         }
-        OnPropertyChanged(nameof(FilteredChildren));
+
+        int at = 0;
+        foreach (var want in _desired)
+        {
+            if (at < FilteredChildren.Count && ReferenceEquals(FilteredChildren[at], want)) { at++; continue; }
+
+            // Still present further along? Then everything between was filtered out — remove exactly
+            // those, rather than removing `want` too and adding it straight back.
+            int found = -1;
+            for (int i = at + 1; i < FilteredChildren.Count; i++)
+                if (ReferenceEquals(FilteredChildren[i], want)) { found = i; break; }
+
+            if (found >= 0)
+                for (int i = found - 1; i >= at; i--) FilteredChildren.RemoveAt(i);
+            else
+                FilteredChildren.Insert(at, want);   // newly visible
+
+            at++;
+        }
+
+        while (FilteredChildren.Count > at) FilteredChildren.RemoveAt(FilteredChildren.Count - 1);
+        return true;
+    }
+
+    /// <summary>Scratch buffer for <see cref="SyncFilteredChildren"/> — per node rather than per call,
+    /// so a full-tree pass allocates nothing.</summary>
+    private readonly List<ProjectTreeNodeViewModel> _desired = [];
+
+    /// <summary>True when this node is on a path the text filter kept — either its own name matched
+    /// or an ancestor's did. Always true when no text filter is active.</summary>
+    private bool _searchSatisfied = true;
+
+    /// <summary>True when THIS node's own name matched the live query — not "was kept by the filter",
+    /// which is also true of everything a matched ancestor passes through.</summary>
+    private bool _ownNameMatched;
+
+    /// <summary>True when some descendant's own name matched. Together with
+    /// <see cref="_ownNameMatched"/> this is the auto-expand rule — see
+    /// <see cref="ApplySearchExpansion"/>.</summary>
+    private bool _matchBelow;
+
+    /// <summary>This node's expansion state before the current search forced it open, or null when
+    /// no search has forced it. Restored the moment the search box is cleared, so browsing a large
+    /// workspace does not leave every folder hanging open behind the user.</summary>
+    private bool? _expandedBeforeSearch;
+
+    private bool MatchesSearchText()
+    {
+        if (!_filter.HasSearchQuery) return true;
+
+        // The workspace ROOT never matches on its own name (owner, 2026-08-25: "if I enter the
+        // project name into the filter search, all the files show up"). Its Name IS the workspace
+        // name, and a node whose name matches passes its ENTIRE subtree through — which is the right
+        // rule for a folder the user can see and clicked toward, and catastrophic here, because the
+        // root is the ancestor of everything. Typing the workspace's own name therefore granted the
+        // whole tree a free pass and the filter appeared to do nothing.
+        //
+        // It is also the one node that is never RENDERED: the panel header already names the
+        // workspace and the TreeView binds to this node's children, so there is not even a matched
+        // row on screen to explain the result. Excluding it costs nothing — no visible row is lost.
+        if (Kind == NodeKind.Workspace) return false;
+
+        return Name.Contains(_filter.SearchTerm, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A match six levels down is invisible behind a collapsed folder, so a live search opens the
+    /// path to it — and puts it back the way it was when the box is cleared.
+    ///
+    /// <para><b>It opens the path to a match and the match itself, and nothing else.</b> The rule was
+    /// originally "expand anything with visible children", which is true of every node a match passes
+    /// its subtree through — so typing a single character expanded the ENTIRE tree and the TreeView
+    /// had to realize a container for all 4,220 nodes of a 600-cell workspace (measured). That is a
+    /// search REVEALING its matches vs. a search flinging every folder open, and the difference is
+    /// most of what "search feels slow" was: the deepest and most numerous level — a matched cell's
+    /// <c>schematic</c>/<c>symbol</c>/<c>layout</c> folders and their files — is exactly the part
+    /// nobody searched for.</para>
+    ///
+    /// <para>A matched node is still expanded itself, so typing an import folder's name does show what
+    /// is inside it (§1.1a) — one level, not its whole subtree.</para>
+    /// </summary>
+    private void ApplySearchExpansion()
+    {
+        if (_filter.IsSearching)
+        {
+            _expandedBeforeSearch ??= IsExpanded;
+            if (_matchBelow || _ownNameMatched) IsExpanded = true;
+        }
+        else if (_expandedBeforeSearch is { } saved)
+        {
+            IsExpanded = saved;
+            _expandedBeforeSearch = null;
+        }
     }
 
     private bool IsVisibleUnderFilter()
@@ -481,7 +656,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             _                        => true,
         };
 
-        // Ancestor-preservation: visible if own category matches OR any descendant is visible.
-        return ownMatch || FilteredChildren.Count > 0;
+        // Ancestor-preservation: visible if this node survives BOTH filters on its own merits, OR
+        // any descendant is visible. The two filters are ANDed — a category toggle that hides a kind
+        // must go on hiding it while a search is running, or clearing a checkbox would appear to do
+        // nothing the moment the user typed anything.
+        return (ownMatch && _searchSatisfied) || FilteredChildren.Count > 0;
     }
 }

@@ -29,4 +29,17 @@ public sealed class WorkspaceModel
         RootNode = WorkspaceScanner.Scan(WorkspaceRootDir);
         return RootNode;
     }
+
+    /// <summary>
+    /// The same scan, WITHOUT installing the result — so it can run on a background thread and the
+    /// caller can decide, back on the UI thread, whether the result is worth adopting.
+    ///
+    /// <para><see cref="WorkspaceScanner"/> is framework-free and touches nothing but the filesystem,
+    /// which is what makes this safe off-thread. Measured at ~92 ms for a 600-cell workspace, and it
+    /// was being run synchronously on the UI thread on every window activation.</para>
+    /// </summary>
+    public ProjectTreeNode ScanDetached() => WorkspaceScanner.Scan(WorkspaceRootDir);
+
+    /// <summary>Installs a node tree produced by <see cref="ScanDetached"/>. UI thread.</summary>
+    public void Adopt(ProjectTreeNode scanned) => RootNode = scanned;
 }

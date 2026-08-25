@@ -1,5 +1,269 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Properties Inspector stale after Push In, and the Project Tree with a board import in it (owner, 2026-08-25)
+
+Four owner items in one round: Page/Home/End scrolling for the Project Tree and Library palette; an
+intermittently stale Properties Inspector in the Layout Editor; and how to keep dozens of board-imported
+cells from burying the user's own.
+
+### The Properties Inspector's staleness is Push In, and the "sometimes" is explainable
+
+**The panel follows exactly ONE `LayoutEditorViewModel`** — whichever `PropertiesTool.SetActiveLayout` was
+last handed — and it refreshes off *that instance's* `Overlay` notifications. `LayoutDocument.ActiveViewModel`
+changes on **Push In / Pop Out** without the document ever leaving `DocumentDock.ActiveDockable`, and nothing
+re-routed the panel. So after pushing into a sub-cell the panel went on listening to the **parent** frame, and
+every selection made in the sub-cell was invisible to it.
+
+**Why clicking away and back could not clear it** — which is what makes this the reported bug rather than a
+near miss. The one repair path, `OnLayoutCanvasInteracted`, is raised from the canvas's **`GotFocus`**, and
+GotFocus does not re-fire when focus is *already* on the canvas. Push-in's own gesture is a double-click on
+that same canvas, so focus never leaves it and the panel is stuck for the rest of the session.
+
+**Why "sometimes"** — pushing in from the **toolbar** button moves focus to the button, so the next canvas
+click *does* repair it. Same bug, two gestures, opposite outcomes.
+
+The fix (`WorkspaceViewModel.WatchLayoutFrameProperties`) follows `ActiveViewModelChanged` and re-runs
+`ActivateLayoutDocumentForProperties`. Re-running the **whole** activation routine rather than only
+re-pointing Properties was deliberate: the **DRC panel and both wBond panels are pointed at `ActiveViewModel`
+in that same method and had the identical gap** — a pushed-in frame was showing the parent's violations and
+the parent's wires. `LayoutEditorView.axaml.cs` already carries the general lesson in a comment on its own
+ruler/DRC-zoom re-binds ("a code-behind subscription on the ACTIVE frame's own view model, and a push-in
+swaps that instance"); this was one more such subscription, one layer up, that the list had missed.
+
+### Cells in sub-folders needed no new capability — only affordances
+
+The expensive-looking half of the board-import request turned out to be nearly free. Already true before any
+of this work:
+
+- `WorkspaceScanner.BuildUserFolderNode` **recurses**, so nested folders holding cells already rendered.
+- A `CellRef` is a **relative path**, so a cell resolves from any depth.
+- `InstanceCellChoices.Collect` already recursed and already displayed the relative path as the cell's name.
+- `PcbImport.Import` already took its **parent directory as a parameter**.
+
+What was missing was purely tree-side: no way to make a folder, and `New Cell`/`New Technology` gated on
+`IsWorkspaceOrLibrary` so nothing could be created in a folder — which made folders *look* unsupported when
+only the affordance was. Now one shared `CanCreateInside` gate covers workspace, library and user folder.
+
+**Moving an existing cell is the part that is genuinely expensive, and it was deliberately NOT built.**
+`CellUsageScanner.RewriteCellReferences` matches and rewrites the **last path segment** of a stored `CellRef`
+— the cell *name* — because that is what Rename changes. A move changes the **prefix** and leaves the name
+alone, which that rewriter cannot express, and folders newly make `parts/R0402` vs `board/R0402` reachable,
+which a name-keyed rewriter cannot tell apart. Moving stays a Finder operation under §4.1's existing
+at-your-own-risk rule; an import's own cells never hit it, since their refs are written relative to wherever
+the import folder is.
+
+### Small things worth not re-deriving
+
+- **A `PaletteTile` is `Focusable=false` by design** (a nested focusable eats its own drag gesture), so the
+  palette had no way to hold keyboard focus at all — the tile-area `ScrollViewer` is now focusable and takes
+  focus on click, without which the new keys would have been dead on arrival.
+- **The Project Tree's `TreeView` sits inside an EXPLICIT `ScrollViewer`.** That is the one that scrolls (the
+  TreeView's own template scroller measures against infinite height in that arrangement and never does), so
+  the key handler names it rather than hunting for "the first ScrollViewer". *An earlier note here guessed
+  that this arrangement "defeats virtualization" — see the correction in the search-performance section
+  below: there is no virtualization to defeat.*
+- **The scroll-key handlers tunnel.** Bubbling would let the focused `TreeViewItem` take Home/End to move the
+  **selection** and swallow the key; paging past a long listing must not change what is selected.
+- The text search and the category toggles are **ANDed**, and a match's own subtree passes through
+  unfiltered — a cell's children are named `schematic`/`symbol`/`layout`, never for the cell, so filtering
+  them by the same text would show the searched-for row and then empty it.
+
+### Follow-up, same day: the workspace name matched everything
+
+*"If I enter the project name into the filter search, all the files show up."* The subtree pass-through
+above is the mechanism, fired at the worst possible node: **the root's `Name` IS the workspace name**, and
+the root's subtree is the entire tree — so typing it granted every node a free pass and the filter looked
+broken. Any substring of the workspace name did the same.
+
+The root is now excluded from text matching. It costs nothing, because **the root is the one node that is
+never rendered** — the panel header already names the workspace and the `TreeView` binds to
+`root.FilteredChildren` — so there was not even a matched row on screen to explain the result.
+
+**A visible folder still passes its contents through**, deliberately: typing an import folder's name to see
+what is inside it is the intended use. The root is excluded because it is invisible *and* universal, not
+because pass-through is wrong. The two tests that pin this were confirmed to fail with the guard removed
+and pass with it, rather than assumed to cover it.
+
+### Follow-up: "search is a little slow" — and it was never the matching
+
+Measured before changing anything, on a synthetic 600-cell / 4,221-node workspace. **The match pass costs
+~1.5 ms.** Everything that made typing feel slow was work handed to the UI thread afterwards, in three
+separate defects:
+
+| per keystroke | before | after |
+|---|---|---|
+| filter passes over the whole tree | **2** | 1 |
+| collection notifications, visible set unchanged | **16,882** | **0** |
+| collection notifications, `Part1` (a real change) | 16,882 | 2,660 |
+| rows realized, matching a folder name | 211 | **31** |
+
+1. **The whole tree filtered TWICE per keystroke.** `HasSearchQuery` is derived from `SearchQuery` and is
+   raised alongside it, and the root's subscription ignored the property name. The subscription now ignores
+   every derived notification. Exactly halved everything below.
+
+2. **Every node did `Clear()` + re-`Add()` unconditionally** — and **`ObservableCollection.Clear()` raises its
+   Reset even when the collection is empty**, so all ~2,400 *leaf* nodes announced a container teardown on
+   every keystroke while their zero children could not possibly have changed. A Reset makes an `ItemsControl`
+   tear down every realized container for that node and each `Add` builds one back. `SyncFilteredChildren`
+   now compares first and says nothing when the visible set is unchanged (the common case while typing a
+   prefix), and otherwise applies minimal edits. Both lists are subsequences of `Children` in the same order,
+   which is what makes that a single pass rather than a general diff.
+
+3. **The auto-expand flung the whole tree open.** The rule was "expand anything with visible children" — true
+   of every node a match passes its subtree through — so one character expanded all 4,220 nodes. It now
+   expands only nodes **on the path to a match, plus the match itself**: reveal, don't open wide. A/B'd, and
+   worth stating honestly: this changes nothing for a query whose descendants genuinely match (`Part12` also
+   matches `Part12.csch`), and is a **7x** cut for the case that motivated the whole round — matching an
+   import folder's name (211 rows → 31).
+
+**Correction to this round's own earlier note:** the claim that the explicit `ScrollViewer` around the
+`TreeView` "defeats virtualization" was wrong about the cause. Probed directly —
+`TreeView.ItemsPanel` builds a plain **`StackPanel`**; `ListBox.ItemsPanel` builds a
+`VirtualizingStackPanel`. **Avalonia's `TreeView` does not virtualize at all**, so there is nothing for the
+outer `ScrollViewer` to defeat and removing it would buy nothing. Every revealed row builds a real control,
+always — which is precisely why defect 3 above mattered so much, and why the expansion rule is the lever
+rather than the scroller.
+
+### "Can it be moved off the UI thread?" — no, and it would be slower
+
+`FilteredChildren` is an `ObservableCollection` bound to the `TreeView`; Avalonia requires those mutations on
+the UI thread, and container realization is UI-thread work by definition. The only part that *could* move is
+the matching — the ~1 ms that was never the cost. Marshalling 16,882 notifications back from a worker would
+be strictly worse than not raising them.
+
+What actually delivers "the interface stays responsive" is **coalescing**: `ProjectTreeTool.SearchText` is
+what the TextBox binds to (so the box never waits on anything), and a single Background-priority callback
+copies it into `FilterState.SearchQuery`. Input dispatches at a higher priority, so the keystroke always
+renders first and the filter runs in the gap after — a burst of characters costs one pass, with no arbitrary
+debounce delay to tune and no lag added when someone types one character and stops. Same idiom
+`ProjectTreeView` already used to coalesce its on-focus rescan. `FilterScheduler` is the seam that lets a
+headless test run it inline, since there is no dispatcher loop in the test host.
+
+**All of it is pinned with COUNTERS, not wall-clock** (per the standing rule): notifications per keystroke,
+filter passes per keystroke, and which nodes end up expanded.
+
+### And the field moved into the toolbar, behind a magnifier toggle
+
+Same round, owner's own second proposal and the better one: the search field is revealed by a magnifier
+**button** right of the Filter button, and takes the **workspace name's place** in column 0 while open — so
+the toolbar stays one row, every button stays where it was, and the field gets the full width without
+overlaying controls it would then have to hit-test around. Opening it focuses the field (revealing a box the
+user then has to click is two gestures for one intent), and Escape closes it.
+
+**Closing always clears the query**, and that is the load-bearing part rather than tidiness: a filter still
+applied with nothing on screen to explain it is the worst state this panel can be in — the tree silently
+hides cells and the one affordance that would say why has just been put away.
+
+**Exactly two things collapse the field: Escape, and the X inside it.** Both explicit; **emptying the text does
+not.** This went back and forth in one session and the settled rule is worth stating rather than re-deriving:
+the first pass left the X clearing text without closing (reported as a bug), the fix closed on *any* empty
+field, and the owner then reversed that — clearing the query and putting the field away are different
+intentions, and backspacing to the start of a re-typed query is the common one. The consequence to remember is
+that **`ClearSearch` must do both halves itself**: with no close-on-empty behind it, an X that only cleared the
+text would leave the box sitting open, which is the original bug again.
+
+**Closing hands focus back to the tree**, and that is not cosmetic: the caret otherwise stays in a control
+that is no longer on screen, which swallows keystrokes *and* makes `OnScrollKeyDown` read
+`e.Source is TextBox` as true — so Home/End would go on yielding to a field the user cannot see.
+
+### A panel's scroll keys needed a click inside it first — tools never got documents' activation focus
+
+Owner: *"if I click on the title bar of a window (like Project, or Library) … I cannot use &lt;page up&gt;,
+&lt;page down&gt;. I am forced to click somewhere inside the window before the keystrokes will register"* —
+and then, correctly generalising it: *"this should be true for any window that uses this page up page
+down."*
+
+**A key handler only fires when the focused element is on the event's ROUTE.** Clicking a tool's tab leaves
+keyboard focus on the tab, which is Dock's chrome and lives OUTSIDE the panel's own view — so the route never
+passes through `ProjectTreeView`/`PaletteToolView` and their tunnel handlers were never called at all.
+
+This is the exact problem `IActivatableDocument` has solved for DOCUMENT tabs since it was written ("so
+keyboard shortcuts work immediately, without a preliminary click on the canvas"). **Tools were simply never
+given the same treatment.** `IActivatableTool` + `ActivationFocusRelay` mirror it, including the pending-flag
+half — a panel can be activated before its view is built, and the view consumes the request when it binds.
+
+**Two signals, and they are different events rather than belt-and-braces:** `OnSelected` is "this tab was
+chosen"; `IsActive` is "this dockable is now the active one". Focus moving into a pinned or floating panel
+makes it active with no tab selected, which `OnSelected` misses; a tab re-selected in an already-active dock
+is missed by `IsActive`. Requesting twice is harmless.
+
+**The trap that would have made the whole fix a silent no-op:** `TreeView.Focusable` and
+`ScrollViewer.Focusable` are **both `false` by default** (probed directly). `Focus()` on either just returns
+false and focuses nothing — the panel would have gone on needing a click, with correct-looking wiring in
+place. Both scrollers now carry `Focusable="True" IsTabStop="False"`, the pairing `TechEditorView` already
+used.
+
+**The `.ctech` editor was already covered** and needed no change: it is a `Document`, so `IActivatableDocument`
+already focuses it on tab activation, and its root already declares `Focusable="True"`. A test now enumerates
+every view that references `PanelScrollKeys.ActionFor` and asserts each one claims activation focus and
+consumes a pending request — so the rule holds for the next scrollable panel rather than being re-learned.
+
+### Escape did nothing, for the fourth time — `handledEventsToo: true`
+
+Owner: *"pressing &lt;esc&gt; while the search textedit box is in focus does not close it."*
+
+**`WorkspaceWindow.axaml` binds `Escape` to `DisarmPlacementCommand`, and `Window.KeyBindings` are
+processed before visual-tree routing and always mark the event Handled.** A tunnel handler registered
+with the default `handledEventsToo: false` therefore never sees Escape at all. The fix is one argument.
+
+This is worth writing down because **the failure is completely silent** — the handler compiles, is
+registered on a route the event genuinely supports (`KeyDownEvent` is `Tunnel | Bubble`, probed), and
+simply never runs — and because **three other views already carried the identical fix and comment**:
+`SchematicView`, `SymbolEditorView` and `LayoutEditorView`. It was not found by reasoning about routing;
+it was found by reading `LayoutEditorView`'s own comment, which states it exactly. Anything in this app
+that wants Escape must claim it with `handledEventsToo: true`.
+
+`Escape` is the **only unmodified key** bound at the window (every other `KeyBinding` there carries
+Ctrl/Meta), so the Page/Home/End handler beside it needs no such argument.
+
+### The tree flashed on every window activation, and the rescan was on the UI thread
+
+Owner: *"when I open a large workspace, I can see the workspace flash a little bit. Also is opening a
+workspace off the UI thread?"*
+
+`ProjectTreeView` re-scans on the workspace window's **`Activated`** — which fires on open, on every
+alt-tab back, and on **every dialog close**. Each of those ran `WorkspaceScanner.Scan` synchronously
+(**~92 ms** measured for a 600-cell workspace) and then `RebuildVmTree` (**~68 ms**), which throws every
+node VM away and assigns a **new collection** to `TopLevelItems` — so the TreeView tears down and rebuilds
+every realized container, and (see above) its `ItemsPanel` is a plain `StackPanel`, so that is every row.
+The overwhelming majority of those activations found nothing changed on disk and rebuilt the whole tree
+anyway.
+
+Two fixes:
+
+- **A rescan that finds the same tree now does nothing at all.** `SignatureOf` folds a 64-bit FNV-1a over
+  everything about the scanned nodes that can change what is rendered — shape, order, relative path, kind,
+  name, primacy, test-bench flag, directory-ness, warning text — with explicit field and child-list
+  delimiters so `"ab"+"c"` cannot hash as `"a"+"bc"` and two differently-shaped trees cannot collide on a
+  flat concatenation. 64-bit rather than `HashCode`'s 32 because the cost of a collision is a real on-disk
+  change that never appears until an unrelated one comes along; a full string compare would be exact and
+  allocates the whole tree's text on every activation, which is the thing being avoided.
+- **The on-focus rescan runs off the UI thread** (`RefreshAsync`). `WorkspaceScanner` is framework-free and
+  touches nothing but the filesystem, which is what makes that safe. Guarded against a focus storm queueing
+  N scans, against a result arriving for a workspace that has since been closed or swapped, and against the
+  folder vanishing mid-walk (a rescan is unattended — it must not raise an error box on an alt-tab). The
+  synchronous `Refresh` is kept for its many explicit callers, which do expect a finished tree on return.
+
+**What the skip does and does not save, measured rather than assumed.** Expansion and dirty marks survive a
+rebuild anyway — `CollectExpandedPaths` and `RestoreDirtyFlags` exist to reinstate them, and a test written
+to claim otherwise passed with the fix disabled, which is how that was caught. The state a rebuild genuinely
+loses is the **selection**: every node VM is replaced, so the selected one is no longer in the tree. That
+was being dropped on every alt-tab.
+
+**Still on the UI thread: the workspace OPEN itself** (`SetWorkspace`) — ~92 ms scan + ~68 ms VM build. Not
+changed here because the obvious async version trades a freeze for a blank tree of the same duration, which
+is a flash of a different kind; see the open question recorded with this round.
+
+### The tree had no horizontal scroll, and `Disabled` is why
+
+Owner: long cell/file names were unreachable and the disclosure triangle was hard to pick out. **A
+`ScrollViewer`'s default `HorizontalScrollBarVisibility` is `Disabled`** (probed, not assumed), and `Disabled`
+does not mean "no scrollbar" — it **constrains the content to the viewport width**, so a long name was clipped
+with nothing to scroll to, and long rows squeezed the columns beside them. `Auto` on the tree's scroller fixes
+both. Note the honest trade-off it brings: scrolling right to read a long name takes the triangle off the left
+edge, which is inherent to horizontal scrolling — the full name is also in the node's tooltip, which needs no
+scrolling at all.
+
 ## L4d follow-up — pad geometry, measured against the originating tool (owner report, 2026-08-25)
 
 
