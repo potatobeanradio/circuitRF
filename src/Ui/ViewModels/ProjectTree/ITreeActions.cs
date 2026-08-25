@@ -91,7 +91,7 @@ public interface ITreeActions
     /// <summary>
     /// Close the whole workspace — the tree header's own context item. Deliberately the whole
     /// workspace and never "close this window": the header names the workspace, so that is what the
-    /// item on it has to mean (see <c>WorkspaceViewModel.CloseWorkspaceOrWindow</c>'s own note).
+    /// item on it has to mean (see <c>WorkspaceViewModel.CloseWindow</c>'s own note).
     /// </summary>
     Task CloseWorkspaceFromTreeAsync();
 

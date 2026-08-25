@@ -276,7 +276,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
-        CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
         ArchiveWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
@@ -1976,47 +1975,35 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private bool CanCloseWorkspace() => CurrentWorkspacePath is not null;
 
     /// <summary>
-    /// File → "Close Workspace" / "Close Window" (brief-file-menu-restructure.md R-menu-3/§4A.1/
-    /// R-menu-4). While the shell has focus this is the whole-workspace teardown above
-    /// (<see cref="CloseWorkspace"/>, unchanged). While a torn-off document window has focus
-    /// (<see cref="_focusedWindowDocument"/> is non-null) this instead closes ONLY that window's own
-    /// document, through the SAME <c>CircuitRfDockFactory.CloseDockable</c>/<see cref="ConfirmCloseDockable"/>
-    /// path a docked tab's own close already uses — never a second prompt path. One command, one menu
-    /// item, read by both the main shell's menu and a tear-off window's own menu; never the tree's own
-    /// context-menu "Close Workspace" item, which always means the whole workspace and is intentionally
-    /// left bound to <see cref="CloseWorkspaceCommand"/> directly.
+    /// File → <b>Close Window</b> (Ctrl+W / Cmd+W; owner request, 2026-08-25). Closes THE ACTIVE
+    /// DOCUMENT of whichever window is in front — the shell's own active tab while the shell has
+    /// focus, a torn-off document window's own document while IT has focus — through the SAME
+    /// <c>CircuitRfDockFactory.CloseDockable</c>/<see cref="ConfirmCloseDockable"/> path a docked
+    /// tab's own close button already uses, so an unsaved document gets exactly one prompt, from the
+    /// one place that asks.
+    ///
+    /// <para>This supersedes the earlier single dynamic-header item (brief-file-menu-restructure.md
+    /// R-menu-3's <c>CloseWorkspaceOrWindow</c>, which read "Close Window" only while a torn-off
+    /// document had focus and "Close Workspace" otherwise): with a dedicated item of its own, that
+    /// item's Window branch would render TWICE in a torn-off window's File menu. The Close Workspace
+    /// item below it is now unconditionally the whole-workspace teardown, on every surface — which is
+    /// also what the project tree's own "Close Workspace" context item has always meant.</para>
+    ///
+    /// <para><b>Disabled when there is no window to close</b> (owner, same request): no active
+    /// document at all, or a floating TOOL panel has focus. The tool-panel exclusion is R-dock-13's
+    /// rule, unchanged — a tool panel belongs to the workspace, not to a document, and it
+    /// deliberately does NOT clear <see cref="_focusedWindowDocument"/>, so Save/Save-As stay enabled
+    /// and keep acting on the last active DOCUMENT; what it governs is only this Close item.</para>
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanCloseWorkspaceOrWindow))]
-    private async Task CloseWorkspaceOrWindow()
+    [RelayCommand(CanExecute = nameof(CanCloseWindow))]
+    private void CloseWindow()
     {
-        if (ClosesASingleDocumentWindow)
-        {
-            _factory.CloseDockable(_focusedWindowDocument!);
-            return;
-        }
-        await CloseWorkspace();
+        if (ResolveActiveDocumentForCommands() is not { } doc) return;
+        _factory.CloseDockable(doc);
     }
 
-    private bool CanCloseWorkspaceOrWindow() => ClosesASingleDocumentWindow || CanCloseWorkspace();
-
-    /// <summary>
-    /// True only when this command means "close the one torn-off DOCUMENT in front of me".
-    ///
-    /// <para>A floating TOOL window is excluded on the owner's own call: a tool panel is associated
-    /// with the workspace, not with a document, so its File menu reads <b>Close Workspace</b>. Note
-    /// this deliberately does NOT clear <see cref="_focusedWindowDocument"/> — R-dock-13 keeps "the
-    /// active document" meaning the last active DOCUMENT, so Save and Save-As stay enabled and act on
-    /// it while a tool panel has focus.</para>
-    /// </summary>
-    private bool ClosesASingleDocumentWindow =>
-        !_focusedWindowIsToolOnly && _focusedWindowDocument is not null;
-
-    /// <summary>The File menu's trailing item label — "Close Window" while a torn-off DOCUMENT window
-    /// has focus, "Close Workspace" otherwise (including while a floating tool panel has focus).
-    /// Refreshed alongside every other R-menu-4 enablement signal in
-    /// <see cref="RaiseFileMenuEnablementChanged"/>.</summary>
-    public string CloseWorkspaceOrWindowHeader
-        => ClosesASingleDocumentWindow ? "Close Window" : "Close Workspace";
+    private bool CanCloseWindow()
+        => !_focusedWindowIsToolOnly && ResolveActiveDocumentForCommands() is not null;
 
     /// <summary>
     /// Reverts to the no-workspace state (blank Dock layout, no open documents).
@@ -10079,6 +10066,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
 
+        // File ▸ Close Window is enabled only when there IS an active document to close, so it rides
+        // BOTH fan-outs (this one for the shell's own tab changes, RaiseFileMenuEnablementChanged for
+        // a torn-off window taking focus) — the standing gotcha noted just above.
+        CloseWindowCommand.NotifyCanExecuteChanged();
+
         // Design menu (L5): each is enabled only when its own document type is the active dockable —
         // same rule, same fan-out, as the Save-As commands just above.
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
@@ -10298,11 +10290,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
-        CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
+        CloseWindowCommand.NotifyCanExecuteChanged();
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
-        OnPropertyChanged(nameof(CloseWorkspaceOrWindowHeader));
     }
 
     // ---- Dock float — per-window undo wiring --------------------------------
@@ -10392,6 +10383,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Control | KeyModifiers.Shift),  Command = redoCmd });
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta    | KeyModifiers.Shift),  Command = redoCmd });
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Y, KeyModifiers.Control),                       Command = redoCmd });
+
+        // Ctrl+W / Cmd+W closes THIS torn-off window's own document. A MenuItem's InputGesture is
+        // display-only in Avalonia, so the TornOffFileMenuView copy of the File menu shows the
+        // accelerator but cannot execute it — a KeyBinding on the window is what makes the key work
+        // on Windows/Linux (macOS's app-global NativeMenu already carries the real Cmd+W). The command
+        // resolves the target through the SAME per-window focus tracking the menu item uses, so it
+        // acts on this window's document and never on the shell's.
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.W, KeyModifiers.Control),                       Command = CloseWindowCommand });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.W, KeyModifiers.Meta),                          Command = CloseWindowCommand });
 
         window.Closed += (_, _) =>
         {

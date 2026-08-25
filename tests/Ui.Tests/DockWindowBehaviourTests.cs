@@ -322,21 +322,22 @@ public sealed class DockWindowBehaviourTests
 
     /// <summary>
     /// Owner's call: a tool panel is associated with the WORKSPACE, not with a document of its own, so
-    /// its File menu reads "Close Workspace".
+    /// File ▸ Close Window is DISABLED while one has focus (it used to be the same flag making that
+    /// item read "Close Workspace"; since the 2026-08-25 split into two literal items it gates
+    /// CanCloseWindow instead — same rule, same reason).
     ///
     /// <para>R-dock-13 still holds and is the reason this is a separate flag rather than clearing the
     /// active document: Save and Save-As must stay enabled and keep acting on the last active DOCUMENT
     /// while a tool panel has focus.</para>
     /// </summary>
     [Fact]
-    public void AFocusedToolWindow_ReadsCloseWorkspace_WithoutLosingTheActiveDocument()
+    public void AFocusedToolWindow_DisablesCloseWindow_WithoutLosingTheActiveDocument()
     {
         var src = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs");
 
         Assert.Contains(
-            "ClosesASingleDocumentWindow =>\n        !_focusedWindowIsToolOnly && _focusedWindowDocument is not null;",
+            "private bool CanCloseWindow()\n        => !_focusedWindowIsToolOnly && ResolveActiveDocumentForCommands() is not null;",
             src.Replace("\r\n", "\n"));
-        Assert.Contains("=> ClosesASingleDocumentWindow ? \"Close Window\" : \"Close Workspace\";", src);
 
         // The tool-only branch must set the flag and leave _focusedWindowDocument alone.
         var i = src.IndexOf("else if (WindowFloatsATool(window))");

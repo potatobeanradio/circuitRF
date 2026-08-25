@@ -706,8 +706,9 @@ public partial class WorkspaceViewModel
 
         // Per-window wiring — the active-document override, per-window undo key bindings and the macOS
         // menu attach — normally rides on OnDocumentDockPropertyChanged, which a PROGRAMMATIC float
-        // does not go through. Without this nudge the new window shows "Close Workspace" instead of
-        // "Close Window" and, on macOS, no menu bar at all. Same two posts
+        // does not go through. Without this nudge the new window's File menu targets the SHELL's active
+        // document rather than its own (Save, Save-As, Close Window), Ctrl+W is unbound there, and on
+        // macOS there is no menu bar at all. Same two posts
         // RestoreFloatingDocumentWindows makes, for the same reason.
         Avalonia.Threading.Dispatcher.UIThread.Post(
             TryWireHostWindowsUndo, Avalonia.Threading.DispatcherPriority.Background);
@@ -1236,8 +1237,9 @@ public partial class WorkspaceViewModel
         // Per-window wiring — the active-document override, per-window undo key bindings and the
         // macOS menu attach — is installed by the deferred scans below. They normally run off
         // OnDocumentDockPropertyChanged; a programmatic float does not go through that hook, so
-        // without this nudge a restored torn-off window would show "Close Workspace" instead of
-        // "Close Window" and, on macOS, no menu bar at all.
+        // without this nudge a restored torn-off window's File menu would target the SHELL's active
+        // document rather than its own, Ctrl+W would be unbound there, and on macOS there would be no
+        // menu bar at all.
         if (floatedAny)
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(

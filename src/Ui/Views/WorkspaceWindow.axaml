@@ -108,7 +108,8 @@
                         </NativeMenuItem>
                         <NativeMenuItem Header="Manage PDKs…" Command="{Binding ManagePdksCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+P"/>
                         <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="{Binding CloseWorkspaceOrWindowHeader}" Command="{Binding CloseWorkspaceOrWindowCommand}"/>
+                        <NativeMenuItem Header="Close Window"    Command="{Binding CloseWindowCommand}" Gesture="Meta+W"/>
+                        <NativeMenuItem Header="Close Workspace" Command="{Binding CloseWorkspaceCommand}"/>
                         <!-- Settings is in the app menu on macOS; omit here to avoid duplication -->
                     </NativeMenu>
                 </NativeMenuItem.Menu>
@@ -235,6 +236,8 @@
         <KeyBinding Gesture="Meta+Shift+D"  Command="{Binding NewDataDisplayCommand}"/>
         <KeyBinding Gesture="Ctrl+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Meta+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Ctrl+W"        Command="{Binding CloseWindowCommand}"/>
+        <KeyBinding Gesture="Meta+W"        Command="{Binding CloseWindowCommand}"/>
         <KeyBinding Gesture="Ctrl+P"        Command="{Binding ManagePdksCommand}"     CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Meta+P"        Command="{Binding ManagePdksCommand}"     CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+S"        Command="{Binding SaveAllDocumentsCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -474,8 +477,15 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="PackageVariant" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
-                <MenuItem Header="{Binding CloseWorkspaceOrWindowHeader}"
-                          Command="{Binding CloseWorkspaceOrWindowCommand}">
+                <MenuItem Header="Close _Window"
+                          Command="{Binding CloseWindowCommand}"
+                          InputGesture="Ctrl+W"
+                          ToolTip.Tip="No open document to close.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="WindowClose" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Close Wor_kspace"
+                          Command="{Binding CloseWorkspaceCommand}"
+                          ToolTip.Tip="Requires an open workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>

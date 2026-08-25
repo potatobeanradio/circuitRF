@@ -167,8 +167,15 @@
                 <MenuItem.Icon><mi:MaterialIcon Kind="PackageVariant" Width="16" Height="16"/></MenuItem.Icon>
             </MenuItem>
             <Separator/>
-            <MenuItem Header="{Binding CloseWorkspaceOrWindowHeader}"
-                      Command="{Binding CloseWorkspaceOrWindowCommand}">
+            <MenuItem Header="Close _Window"
+                      Command="{Binding CloseWindowCommand}"
+                      InputGesture="Ctrl+W"
+                      ToolTip.Tip="No open document to close.">
+                <MenuItem.Icon><mi:MaterialIcon Kind="WindowClose" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Close Wor_kspace"
+                      Command="{Binding CloseWorkspaceCommand}"
+                      ToolTip.Tip="Requires an open workspace.">
                 <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="16" Height="16"/></MenuItem.Icon>
             </MenuItem>
         </MenuItem>

@@ -1,5 +1,43 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## File ▸ Close Window, and why the dynamic Close header had to go (2026-08-25)
+
+**Owner request:** a *Close Window* item above *Close Workspace*, on Ctrl+W / ⌘+W, working on macOS,
+Windows and Linux, and **greyed out when there is no window to close**.
+
+**The item that was already there could not simply be joined.** `CloseWorkspaceOrWindowCommand` was
+ONE item with a computed header (brief-file-menu-restructure.md R-menu-3): "Close Window" while a
+torn-off DOCUMENT window had focus, "Close Workspace" otherwise — which is exactly the behaviour the
+owner described independently ("Close Workspace can sometimes change to Close Window for some undocked
+documents"). Adding a dedicated Close Window beside it renders **"Close Window" twice** in a torn-off
+window's File menu. So the dynamic branch is gone: `CloseWindowCommand` closes the active document,
+and the item under it is unconditionally `CloseWorkspaceCommand` on every surface — the same thing the
+project tree's own "Close Workspace" context item has always meant. Consequence worth knowing: a
+torn-off window's File menu can now close the whole workspace, which it previously could not.
+
+**What "the active document" means is unchanged** — `ResolveActiveDocumentForCommands()`, the shell's
+own active tab or a torn-off window's own document, so one command serves all three menu surfaces
+without a second resolution path. Closing goes through `CircuitRfDockFactory.CloseDockable`, so a dirty
+document gets exactly one prompt, from the one place that asks.
+
+**Three traps, all silent:**
+- **A `MenuItem`'s `InputGesture` is display-only in Avalonia.** An item carrying only that string
+  looks bound and does nothing. Ctrl+W and Meta+W are registered as real `Window.KeyBindings` in
+  `WorkspaceWindow.axaml`; macOS's app-global `NativeMenu` item carries the working `Gesture="Meta+W"`.
+- **A torn-off window is a separate TopLevel with no share of the shell's KeyBindings**, so
+  `TornOffFileMenuView`'s Ctrl+W would have been dead on Windows/Linux. `WireWindowUndo` — which
+  already injects the per-window undo keys — now injects Ctrl+W / Cmd+W too.
+- **A `[RelayCommand(CanExecute=…)]` gated on the active document is not re-evaluated on its own.**
+  `CanCloseWindow` had to be added to BOTH fan-outs (`OnDocumentDockPropertyChanged` for the shell's
+  own tab changes, `RaiseFileMenuEnablementChanged` for a torn-off window taking focus), or the item
+  stays stuck at its construction-time enablement — the standing gotcha this file's own L5 note names.
+
+`_focusedWindowIsToolOnly` keeps its old job under a new name of the same rule: a floating TOOL panel
+belongs to the workspace, not to a document, so Close Window is DISABLED while one has focus — and it
+still does not clear `_focusedWindowDocument`, so Save/Save-As stay enabled on the last active document
+(R-dock-13).
+
+
 ## Figure churn: why every docs run rewrote every SVG (2026-08-25)
 
 **Owner report:** *"we did not change any of the UI, but now all the unrelated .svg assets are showing

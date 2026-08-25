@@ -117,7 +117,7 @@ public class FileMenuRestructureTests
         // save: it writes one portable file, not the workspace itself.
         "_Archive Workspace…", "_Unarchive Workspace…", "---",
         "_Import", "_Export", "_Manage PDKs…", "---",
-        "{Binding CloseWorkspaceOrWindowHeader}", "---",
+        "Close _Window", "Close Wor_kspace", "---",
         "_Settings…", "---",
         "_Quit circuitRF",
     ];
@@ -129,7 +129,7 @@ public class FileMenuRestructureTests
         "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Workspace As…", "---",
         "Archive Workspace…", "Unarchive Workspace…", "---",
         "Import", "Export", "Manage PDKs…", "---",
-        "{Binding CloseWorkspaceOrWindowHeader}",
+        "Close Window", "Close Workspace",
     ];
 
     [Fact]
@@ -350,9 +350,10 @@ public class FileMenuRestructureTests
         Assert.Equal(expectEllipsis, found!.Header.EndsWith('…'));
     }
 
-    /// <summary>`Save` (SaveMenuHeader) and `Close Workspace`/`Close Window` (CloseWorkspaceOrWindowHeader)
-    /// are computed bindings, not literal XAML text, so the ellipsis rule is checked directly against
-    /// their C# source instead of the parsed tree.</summary>
+    /// <summary>`Save` (SaveMenuHeader) is a computed binding, not literal XAML text, so the ellipsis
+    /// rule is checked directly against its C# source instead of the parsed tree. (`Close Window` and
+    /// `Close Workspace` used to be a second such binding; since 2026-08-25 they are two literal items
+    /// and are covered by the parsed-tree cases above.)</summary>
     [Fact]
     public void SaveMenuHeader_NeitherBranchHasEllipsis()
     {
@@ -360,18 +361,21 @@ public class FileMenuRestructureTests
         Assert.Contains("public string SaveMenuHeader => ActiveSaveScope == SaveScope.SingleDoc ? \"Save\" : \"Save All\";", src);
     }
 
-    [Fact]
-    public void CloseWorkspaceOrWindowHeader_NeitherBranchHasEllipsis()
+    /// <summary>
+    /// R-menu-1: both Close items act directly (the unsaved-changes prompt is a consequence of dirty
+    /// state, not an input the command needs), so neither takes an ellipsis. Owner request 2026-08-25
+    /// split the former single dynamic-header item into two literal ones — `Close Window` (Ctrl+W /
+    /// Cmd+W, closes the active DOCUMENT) above `Close Workspace` (unconditionally the whole-workspace
+    /// teardown) — which is why this is now a header check on the parsed tree rather than on C# source.
+    /// </summary>
+    [Theory]
+    [InlineData("Close _Window")]
+    [InlineData("Close Wor_kspace")]
+    public void CloseItems_TakeNoEllipsis(string header)
     {
-        // R-menu-1: this item acts directly (the unsaved-changes prompt is a consequence of dirty
-        // state, not an input the command needs), so neither branch takes an ellipsis.
-        //
-        // The CONDITION moved from `_focusedWindowDocument is not null` to `ClosesASingleDocumentWindow`
-        // when a focused floating TOOL window was made to read "Close Workspace" (a tool panel belongs
-        // to the workspace, not to a document) — see DockWindowBehaviourTests. The two LABELS, which
-        // are what this test is actually about, are unchanged.
-        var src = ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs"));
-        Assert.Contains("=> ClosesASingleDocumentWindow ? \"Close Window\" : \"Close Workspace\";", src);
+        var found = FindNodeByHeader(InWindowFileChildren(), header);
+        Assert.True(found is not null, $"Menu item with header '{header}' was not found.");
+        Assert.False(found!.Header.EndsWith('…'));
     }
 
     private static MenuNode? FindNodeByHeader(IReadOnlyList<MenuNode> nodes, string header)
@@ -457,6 +461,49 @@ public class FileMenuRestructureTests
         Assert.Contains("Gesture=\"Ctrl+P\"", src);         // ...and actually bound
         Assert.Contains("Gesture=\"Meta+P\"", src);         // macOS: native menu item + key binding
         Assert.Contains("InputGesture=\"Ctrl+P\"", torn);
+    }
+
+    /// <summary>
+    /// Owner request, 2026-08-25: <b>Close Window</b> sits directly above <b>Close Workspace</b> and
+    /// carries Ctrl+W / ⌘+W, on all three platforms.
+    ///
+    /// <para>The same in-window trap the Manage PDKs gate above exists for: a <c>MenuItem</c>'s
+    /// <c>InputGesture</c> is DISPLAY ONLY in Avalonia — an item carrying just that string looks bound
+    /// and is not — so the window-level <c>KeyBinding</c> is pinned beside it. Windows/Linux read the
+    /// in-window Menu (and, in a torn-off document window, TornOffFileMenuView, whose live key comes
+    /// from the KeyBinding <c>WireWindowUndo</c> injects); macOS reads the app-global NativeMenu, whose
+    /// item's own <c>Gesture</c> is the real accelerator there.</para>
+    /// </summary>
+    [Fact]
+    public void CloseWindow_IsBoundToCtrlW_OnEverySurface_AndSitsAboveCloseWorkspace()
+    {
+        var src  = ReadRepoFile(Path.Combine("src", "Ui", "Views", "WorkspaceWindow.axaml"));
+        var torn = ReadRepoFile(Path.Combine("src", "Ui", "Views", "Shared", "TornOffFileMenuView.axaml"));
+        var vm   = ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs"));
+
+        Assert.Contains("InputGesture=\"Ctrl+W\"", src);     // shown in the in-window menu
+        Assert.Contains("Gesture=\"Ctrl+W\"", src);          // ...and actually bound
+        Assert.Contains("Gesture=\"Meta+W\"", src);          // macOS: native menu item + key binding
+        Assert.Contains("InputGesture=\"Ctrl+W\"", torn);
+
+        // A torn-off document window is a separate TopLevel with no share of the shell's KeyBindings,
+        // so Windows/Linux need the key injected there too (macOS's NativeMenu is app-global).
+        Assert.Contains("new KeyGesture(Key.W, KeyModifiers.Control)", vm);
+        Assert.Contains("new KeyGesture(Key.W, KeyModifiers.Meta)", vm);
+
+        foreach (var (children, window, workspace) in new[]
+                 {
+                     (InWindowFileChildren(), "Close _Window", "Close Wor_kspace"),
+                     (NativeFileChildren(),   "Close Window",  "Close Workspace"),
+                 })
+        {
+            var list = children.ToList();
+            var wIdx = list.FindIndex(n => n.Header == window);
+            var kIdx = list.FindIndex(n => n.Header == workspace);
+            Assert.True(wIdx >= 0, $"'{window}' not found.");
+            Assert.True(kIdx >= 0, $"'{workspace}' not found.");
+            Assert.Equal(wIdx + 1, kIdx);
+        }
     }
 
     // ── §1's own separator ambiguity — resolved as TWO groups (Save, then Import/Export), per the
