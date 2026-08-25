@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
+using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Layout;
 using CircuitRF.Ui.Messages;
@@ -154,10 +155,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// gets to draw the right mark. Empty — a layout with no EM setup open — means every port draws
     /// as an edge port, which is what it always did.</para>
     /// </summary>
-    [ObservableProperty] private IReadOnlyList<(long X, long Y)> _internalGapPorts = [];
+    [ObservableProperty] private IReadOnlyList<(long X, long Y, PlanarPortKind Kind)> _internalPortMarks = [];
 
     /// <summary>
-    /// <b>Which EM setup's interpretation <see cref="InternalGapPorts"/> currently is.</b>
+    /// <b>Which EM setup's interpretation <see cref="InternalPortMarks"/> currently is.</b>
     ///
     /// <para>A layout can be analysed by more than one <c>.cem</c>, and two of them may legitimately
     /// disagree about a port — a gap in the middle of a trace in one, driven from the ends in
@@ -168,7 +169,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <para>Empty when no setup has claimed it. See <c>WorkspaceViewModel.PushEmMeshToLayout</c>
     /// for the takeover notice.</para>
     /// </summary>
-    [ObservableProperty] private string _internalGapPortsOwner = "";
+    [ObservableProperty] private string _internalPortMarksOwner = "";
 
     // ── Technology (L0c) ───────────────────────────────────────────────────────
 
@@ -461,7 +462,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // they need an explicit INPC nudge here — nothing else raises it for them. Without this the
         // placeholder Border (drawn on top of LayoutCanvas) never hides after the first shape is
         // drawn, even though the shape really is in the model and really is being rendered underneath.
-        Model.Changed += (_, _) =>
+        Model.Changed += (_, info) =>
         {
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(ShapeCountText));
@@ -476,8 +477,30 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             PlanarMeshReport = null;
             PlanarCurrentDensity  = null;
             PlanarReferencePlanes = [];
-            InternalGapPorts      = [];
-            InternalGapPortsOwner  = "";
+
+            // ── THE PORT MARKS ARE NOT MESH, AND A MOVE DOES NOT INVALIDATE THEM ─────────────
+            //
+            // Owner report, 2026-08-25: "after drag of the port, the port rendering glitches
+            // momentarily on the mouse up." Everything above is derived from the GEOMETRY, so an
+            // edit genuinely invalidates it — that is R-em-17. A port's TYPE is not: it lives in
+            // the .cem, and moving a label cannot retype it. Clearing the marks here meant every
+            // internal port in the drawing snapped to an edge port's bar-and-arrow the instant a
+            // drag committed, and stayed that way until the .cem's own refresh caught up — which is
+            // posted at Background priority, i.e. one or more visible frames later. That is the
+            // flash.
+            //
+            // Kind is what separates the two cases. An Updated change moves shapes that already
+            // existed and leaves the shape list's ORDER alone, so the .cem's per-port rows still
+            // address the same labels; the marks only need their anchors carried along, which
+            // CommitMoveDrag does. Anything else — an add, a delete, a full rebuild, an undo — can
+            // renumber the ports, so which .cem row means which label is no longer knowable here
+            // and the marks really are stale.
+            if (info.Kind != LayoutChangeKind.Updated)
+            {
+                InternalPortMarks      = [];
+                InternalPortMarksOwner  = "";
+            }
+            else PruneInternalPortMarksToLivePorts();
 
             // Any model mutation (draw, move, delete, undo, redo — every one of them calls
             // NotifyChanged) invalidates the overlap-cycling cache (R-L1c-2). Selected indices may
@@ -1038,7 +1061,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
-        var stack = LayoutHitTest.HitStack(Model, Technology, px, py, tolDbu);
+        var stack = LayoutHitTest.HitStack(Model, Technology, px, py, tolDbu, PortMarkerRegion);
         if (stack.Count == 0)
         {
             _cycleCache.Clear();
@@ -1519,6 +1542,26 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// is the same rule with nothing left for it to protect.</para></summary>
     private bool _pointSnapDragActive;
 
+    /// <summary>
+    /// A port's pick region for THIS document — the mark it draws, plus padding.
+    ///
+    /// <para><b>Why the view model owns this rather than the hit test.</b> The region needs two
+    /// things the hit test cannot reach on its own: the conductor beneath the label (which needs the
+    /// resolved technology and, for an instance, the base directory) and the port's TYPE, which lives
+    /// in the <c>.cem</c> and arrives here as <see cref="InternalPortMarks"/>. This is the one place
+    /// both are in hand, and it is the same pair the RENDERER is handed for the selection outline —
+    /// so what is highlighted and what responds to a click are the same rectangle by construction.</para>
+    /// </summary>
+    private Bbox PortMarkerRegion(LabelShape label)
+    {
+        var conductorAt = LayoutPortDirection.LookupFor(Model, Technology, InstanceBaseDir);
+        bool internalMark = false;
+        foreach (var (mx, my, kind) in InternalPortMarks)
+            if (mx == label.X && my == label.Y) { internalMark = kind != PlanarPortKind.Edge; break; }
+
+        return LayoutHitTest.PortPickBbox(label, LayoutPortDirection.Resolve(conductorAt, label), atAnchor: internalMark);
+    }
+
     private void BeginMoveDrag(long px, long py)
     {
         if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return;
@@ -1898,11 +1941,87 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 IUiCommand instCmd = new Commands.Layout.MoveInstancesCommand(Model, _selectedInstanceIndices, _moveLiveDx, _moveLiveDy);
                 combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
             }
-            if (combined is not null) Execute(combined);
+            if (combined is not null)
+            {
+                // Captured BEFORE the move, because a mark is keyed by the label's anchor and Execute
+                // is what changes it. See the Model.Changed note above for why the marks travel with
+                // the shapes rather than being dropped and rebuilt.
+                // Shifted BEFORE Execute, not after, and the ORDER is what makes undo self-heal.
+                // Execute raises Model.Changed synchronously, and that handler prunes any mark whose
+                // anchor no longer has a port label on it. Shifting first means the marks already
+                // point at where the ports are about to land, so the prune keeps them; an UNDO of
+                // this move — which raises the same Updated change with no shift beside it — leaves
+                // the marks behind the ports, and the prune drops them rather than leaving a mark
+                // sitting on empty space.
+                ShiftInternalPortMarks(PortAnchorsOf(shapeIndices), _moveLiveDx, _moveLiveDy);
+                Execute(combined);
+            }
         }
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         _snapDragActive = false;
         _pointSnapDragActive = false;
+    }
+
+    /// <summary>The DBU anchors of every port label among <paramref name="indices"/>, as they are
+    /// RIGHT NOW. Call before the move; <see cref="ShiftInternalPortMarks"/> consumes it after.</summary>
+    private HashSet<(long X, long Y)> PortAnchorsOf(IReadOnlyList<int> indices)
+    {
+        var anchors = new HashSet<(long, long)>();
+        if (InternalPortMarks.Count == 0) return anchors;
+
+        foreach (int i in indices)
+            if (i >= 0 && i < Model.Shapes.Count && Model.Shapes[i] is LabelShape { IsPort: true } port)
+                anchors.Add((port.X, port.Y));
+        return anchors;
+    }
+
+    /// <summary>
+    /// Moves the .cem's port-type marks along with the port labels they name.
+    ///
+    /// <para>The mark list is keyed by anchor (see <c>LayoutRenderOptions.InternalPortMarks</c> for
+    /// why not a port number), so a moved port whose mark stayed behind reads as an edge port until
+    /// the owning <c>.cem</c> re-extracts and republishes. That republish is real and correct — it is
+    /// just a frame or two later, which is exactly long enough to see.</para>
+    ///
+    /// <para>A no-op when nothing moved, when no marks are published, or when none of the moved
+    /// shapes was a port — which is the overwhelmingly common case and costs one count check.</para>
+    /// </summary>
+    private void ShiftInternalPortMarks(HashSet<(long X, long Y)> movedAnchors, long dx, long dy)
+    {
+        if (movedAnchors.Count == 0 || (dx == 0 && dy == 0)) return;
+
+        var shifted = new List<(long X, long Y, PlanarPortKind Kind)>(InternalPortMarks.Count);
+        foreach (var (x, y, kind) in InternalPortMarks)
+            shifted.Add(movedAnchors.Contains((x, y)) ? (x + dx, y + dy, kind) : (x, y, kind));
+        InternalPortMarks = shifted;
+    }
+
+    /// <summary>
+    /// Drops any port-type mark whose anchor no longer has a port label on it.
+    ///
+    /// <para><b>This is what keeps "an Updated change does not clear the marks" honest.</b> A move
+    /// carries its marks along (<see cref="ShiftInternalPortMarks"/>), but an UNDO of that move is
+    /// the same <see cref="LayoutChangeKind.Updated"/> change with nothing beside it — the ports go
+    /// back and the marks would stay where they were, sitting on empty space, and could in principle
+    /// land on some other port and give it a type it was never assigned. Pruning is the cheap,
+    /// direction-agnostic answer: a mark with no port under it means nothing, so it goes.</para>
+    ///
+    /// <para>The owning <c>.cem</c> republishes a correct set moments later either way; this only has
+    /// to make the interval honest.</para>
+    /// </summary>
+    private void PruneInternalPortMarksToLivePorts()
+    {
+        if (InternalPortMarks.Count == 0) return;
+
+        var live = new HashSet<(long, long)>();
+        foreach (var shape in Model.Shapes)
+            if (shape is LabelShape { IsPort: true } port) live.Add((port.X, port.Y));
+
+        var kept = new List<(long X, long Y, PlanarPortKind Kind)>(InternalPortMarks.Count);
+        foreach (var m in InternalPortMarks)
+            if (live.Contains((m.X, m.Y))) kept.Add(m);
+
+        if (kept.Count != InternalPortMarks.Count) InternalPortMarks = kept;
     }
 
     /// <summary>R-L1i-1, extended by R-fix-3: commit is just "settle on whatever the shared compute
@@ -2398,6 +2517,36 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 ClearWireSelection();
                 _cycleCache.Clear();
             }
+            return;
+        }
+
+        // ── R ROTATES WHAT YOU ARE CARRYING, MID-DRAG ───────────────────────────────────────
+        //
+        // Owner request, 2026-08-25: "allow user to press 'R' to rotate port in the middle of a live
+        // drag (it currently rotates if not during a drag)", then "can this work for any object?" —
+        // yes, and it is written that way: RotateSelection already handles shapes, instances and
+        // wires, so nothing here is port-specific. Aiming a port while carrying it is just the case
+        // that makes the gap obvious, because a port's whole job is which way it faces.
+        //
+        // The block below is gated on NO drag being in progress, which is what swallowed the key —
+        // measured before this: R mid-drag left the port's direction untouched. This runs first, and
+        // only for the MOVE drag: a handle or scale drag is reshaping ONE shape against a grabbed
+        // point, and rotating the thing under that point mid-gesture has no coherent meaning.
+        //
+        // The preview follows immediately because Overlay.DragOverrides is rebuilt from
+        // Model.Shapes + the live delta on every rebuild — the rotation lands in the model, and the
+        // next rebuild carries it. It rotates about the selection's ORIGINAL centre (the model has
+        // not moved yet; only the preview has), which is the same result as rotating after the drop.
+        //
+        // TWO UNDO ENTRIES, deliberately: the rotate commits when pressed and the move commits at
+        // release. That also means Escape — which cancels the MOVE — leaves the rotation applied,
+        // because the rotation was a completed edit and not part of the drag.
+        if (ActiveTool == Tool.Select && _selectDragKind == SelectDragKind.Move
+            && (mods & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) == 0
+            && key == Key.R)
+        {
+            RotateSelection(clockwise: mods.HasFlag(KeyModifiers.Shift));
+            RebuildOverlay();
             return;
         }
 

@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Dock.Avalonia.Controls;
@@ -44,6 +45,117 @@ public class CrfHostWindow : HostWindow
         // (owner, 2026-08-17). This is a second TopLevel, so it needs its own registration; the shortcut
         // itself, and why it is not solved by keeping focus in the shell, is in Views.WirePanelKeys.
         Views.WirePanelKeys.Attach(this, Views.WirePanelKeys.ResolveWorkspace);
+    }
+
+    /// <summary>
+    /// <b>How wide a floating window holding an EM setup is allowed to be.</b> Owner request,
+    /// 2026-08-25 — 1600, then 800, then 700. (The first was a no-op: the window measured 1600
+    /// already, so capping it there changed nothing, which is why it still read as too wide.)
+    ///
+    /// <para>The EM Setup panel is one narrow scrolling column of labelled fields, and almost
+    /// nothing in it reflows into extra width: every numeric box is <c>TextBox.num</c>, a fixed
+    /// 86 units wide; the analysis combo caps at 200; the frequency group is three 150-wide blocks.
+    /// A tear-off that inherits the shell's size — which is what Dock's drag hands it, and on a
+    /// maximized shell that is the whole screen — is mostly empty chrome beside a column of
+    /// controls.</para>
+    ///
+    /// <para><b>The stackup table is what sets the floor, and 700 is close to it.</b> Its row is
+    /// <c>76,*,90,190,*</c> plus spacing — about 380 units of FIXED columns — so at 700 the two
+    /// stretching columns (conductor name and drawing layers) get roughly 150 each. Both already
+    /// carry <c>TextTrimming="CharacterEllipsis"</c>, so a long conductor name trims rather than
+    /// overflowing; that is the visible cost of this number, and it is the owner's chosen trade. A
+    /// cap much below the fixed columns' own ~380 would squeeze them to nothing.</para>
+    ///
+    /// <para><b>Logical units, not device pixels.</b> Avalonia's <c>Window.Width</c> is in logical
+    /// units, so on a 2× Retina display this window is 1600 device pixels across. That is the same
+    /// convention every other window size in this codebase uses — see
+    /// <c>ScreenPlacement.DeviceToLogical</c>, which exists because mixing the two is invisible on
+    /// an unscaled display.</para>
+    /// </summary>
+    internal const double EmSetupFloatMaxWidth = 700;
+
+    /// <summary>
+    /// Applies <see cref="EmSetupFloatMaxWidth"/> once the window is actually on screen.
+    ///
+    /// <para><b>Here rather than in <c>CircuitRfDockFactory.CreateWindowFrom</c>, and the ordering is
+    /// the reason.</b> A width set during window creation is not final: <c>DockWindowOptions.ApplyTo</c>
+    /// assigns geometry unconditionally, which is the same overwrite the <c>OwnerMode</c> override
+    /// beside it already has to work around, and Dock's drag tear-off supplies the dragged tab's own
+    /// bounds through exactly that path. This is the last point in the sequence that this codebase
+    /// owns, so it is the only one that cannot be silently undone.</para>
+    ///
+    /// <para><b>It is a CAP, not an initial size</b> — a narrower window is left alone, and the user
+    /// can still widen this one by hand for as long as it is open. Re-floating it applies the cap
+    /// again, because the cap is about what the panel's content can use rather than about what was
+    /// last done to the window.</para>
+    ///
+    /// <para><b>The height bonus rides INSIDE the narrowing, and that is what stops it ratcheting.</b>
+    /// Written as an unconditional <c>Height += 200</c> it would compound across launches: this
+    /// window's geometry is captured into the <c>.cws</c>, so next launch would restore 200 taller,
+    /// add 200 again, and keep going. Gating it on the width cap actually firing makes it
+    /// idempotent — a restored float is already within the cap, so it is left exactly as the user
+    /// last sized it, while a fresh tear-off (which arrives at the shell's full width) is narrowed
+    /// and given the height back in the same breath.</para>
+    /// </summary>
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+
+        if (Width <= EmSetupFloatMaxWidth || !FloatsAnyEmSetup()) return;
+
+        Width  = EmSetupFloatMaxWidth;
+        Height = Math.Min(Height + EmSetupFloatExtraHeight, AvailableHeight());
+    }
+
+    /// <summary>
+    /// <b>What the window gains in height when it is narrowed</b> (owner request, 2026-08-25: "add
+    /// 200 pixels to the window's height"). The panel is one long scrolling column, so height it
+    /// does not have is height the user pays for in scrolling — and taking width away makes several
+    /// of its groups (the two-column Analysis grid, the Frequency wrap panel) taller still.
+    /// </summary>
+    internal const double EmSetupFloatExtraHeight = 200;
+
+    /// <summary>
+    /// The working height of the screen this window is on, so the bonus cannot push the window's
+    /// bottom off it. Falls back to <see cref="double.PositiveInfinity"/> — i.e. no limit — when
+    /// there is no screen to ask, which is the headless case and every case where
+    /// <c>ScreenPlacement</c> is the backstop anyway.
+    /// </summary>
+    private double AvailableHeight()
+    {
+        var screen = Screens?.ScreenFromWindow(this);
+        if (screen is null) return double.PositiveInfinity;
+
+        // WorkingArea is DEVICE pixels while Height is logical — mixing them is the bug
+        // AvaloniaScreenSource exists to prevent, and it is invisible on an unscaled display.
+        double scaling = screen.Scaling > 0 ? screen.Scaling : 1.0;
+        return screen.WorkingArea.Height / scaling;
+    }
+
+    /// <summary>True when the floated layout contains at least one EM setup document. Same walk, and
+    /// the same null-guarding against a partially torn-down tree, as
+    /// <see cref="FloatsAnyTool"/>.</summary>
+    internal bool FloatsAnyEmSetup()
+    {
+        var layout = Window?.Layout;
+        return layout is not null && ContainsEmSetup(layout);
+    }
+
+    private static bool ContainsEmSetup(IDockable dockable)
+    {
+        if (dockable is Layout.Em.EmSetupDocument)
+            return true;
+
+        if (dockable is IDock { VisibleDockables: { } children })
+        {
+            foreach (var child in children)
+            {
+                if (child is not null && ContainsEmSetup(child))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     protected override void OnClosing(WindowClosingEventArgs e)

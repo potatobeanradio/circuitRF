@@ -146,6 +146,14 @@ public static class FigureCatalog
             WindowFrame.Titled("circuitRF - Layout editor"),
             "The layout editor: a microstrip run with a mitred bend, a crossing stub and a ground via."),
 
+        // The stackup in cross-section, drawn from the shipped MMIC technology rather than from a
+        // hand-written list of bands — so the picture cannot outlive the thing it is a picture of.
+        new("stackup-mmic", DocStackupFixtures.MmicCrossSection, 862, 290, null,
+            "An MMIC stackup in cross-section: two signal metals over a GaAs substrate, a backside "
+          + "ground plane, and the two vias that connect them. The heavy edge marks the "
+          + "ground-designated conductor - the negative terminal of every port in an EM run. "
+          + "Thicknesses are printed rather than drawn to scale."),
+
         // The two port types, drawn by the real renderer on real MKLOPF artwork. Landscape and the
         // same size as each other on purpose: they are read as a PAIR — the whole point is that the
         // two marks are not each other, and a reader can only see that if nothing else differs.
@@ -165,6 +173,14 @@ public static class FigureCatalog
             WindowFrame.Titled("circuitRF - Example_EM_SeriesGap"),
             "The EM result used in a schematic: the .s3p's ports 1 and 2 are the line's ends, and "
           + "the series capacitor sits on port 3 - the gap - where it acts in series in the metal."),
+
+        new("ports-internal", DocLayoutFixtures.InternalPortOnALine, 882, 302, null,
+            "The same 50 ohm line with an internal port at its centre - where a component that "
+          + "returns to ground would attach. Its mark is a ring round the point with a ground "
+          + "symbol on it: the port's other terminal is the ground plane, so its current leaves the "
+          + "metal downward rather than crossing a plane in the layout, and the mark claims no "
+          + "direction in the plane. A via is drawn here too, which the port then drives; without "
+          + "one the solver builds that path itself."),
 
         new("ports-gap-mesh-width", DocLayoutFixtures.InternalGapPortAtMeshWidth, 882, 302, null,
             "The same gap once the mesh has been computed: the break is drawn at the width the solve "

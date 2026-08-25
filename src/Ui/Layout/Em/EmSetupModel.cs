@@ -117,7 +117,8 @@ public sealed class EmSetup
             : (index % 2 == 0 ? Port1Z0 : Port2Z0);
 
     /// <summary>
-    /// <b>Per-port TYPE, for the full-wave planar kernel: an edge port or an internal delta gap.</b>
+    /// <b>Per-port TYPE, for the full-wave planar kernel: an edge port, an internal delta gap, or
+    /// an internal port to the ground plane.</b>
     /// One entry per port in the extractor's own port order, and <b>empty is the normal case</b> —
     /// every port is an edge port unless something here says otherwise, so a <c>.cem</c> written
     /// before this existed loads and re-serialises byte-identically, exactly as
@@ -140,17 +141,18 @@ public sealed class EmSetup
         => index >= 0 && index < PortKinds.Count ? PortKinds[index] : PlanarPortKind.Edge;
 
     /// <summary>
-    /// Does this setup declare any port the uniform-line kernel cannot represent?
+    /// Does this setup declare any port the uniform-line kernel cannot represent — an internal delta
+    /// gap or an internal port?
     ///
     /// <para><b>The one question that has to be asked BEFORE the kernel is chosen.</b> A uniform line
-    /// with an internal delta-gap port on it is, geometrically, a uniform cross-section — so the
+    /// with an internal port on it is, geometrically, still a uniform cross-section — so the
     /// cross-section extractor accepts it and <c>Auto</c> prefers that kernel, which has no interior
-    /// cut, no mesh to cut it on, and no way to say so. The port would simply not be there, and the
-    /// run would return a complete, plausible answer for a structure without it.</para>
+    /// cut, no via, no mesh to put either on, and no way to say so. The port would simply not be
+    /// there, and the run would return a complete, plausible answer for a structure without it.</para>
     /// </summary>
-    public bool DeclaresInternalGapPort()
+    public bool DeclaresInternalPort()
     {
-        foreach (var k in PortKinds) if (k == PlanarPortKind.InternalDeltaGap) return true;
+        foreach (var k in PortKinds) if (k != PlanarPortKind.Edge) return true;
         return false;
     }
 

@@ -10,6 +10,20 @@
 //
 // That asymmetry is CORRECT for an annotation and wrong for a port: a port is a marker, and what the
 // user aims at is the plane bar and arrow drawn about the conductor end, not the text.
+//
+// ── SUPERSEDED IN PART, 2026-08-25 ──────────────────────────────────────────────────────────────
+//
+// "The farther distance is working good right now for UX" was a parenthetical about which of the two
+// former reaches to keep, and it was implemented as `half = Max(w, h)` — but w and h are FULL
+// extents, so making the region symmetric also DOUBLED it in every direction (four times the area).
+// The owner reported the consequence: "the hitbox for the ports now seems too big — I am always
+// selecting ports almost everywhere I click in the layout." On three two-character labels at a
+// 1.016 mm height that is a 2.52 mm square each, over a 3.5 x 2.2 mm structure.
+//
+// The reach is now HALF the larger extent, so the square circumscribes the glyph rather than using
+// the glyph as its radius. **SYMMETRY — which is what the 2026-08-09 report actually asked for — is
+// unchanged and is still asserted below**; only the absolute size moved, and the click tolerance the
+// caller adds on top is unchanged.
 
 using Avalonia.Input;
 using CircuitRF.Ui.Layout;
@@ -52,7 +66,7 @@ public class LayoutPortPickSymmetryTests
     }
 
     [Fact]
-    public void APortsPickRegionIsSymmetric_AndKeepsTheLargerReach()
+    public void APortsPickRegionIsSymmetric_AtHalfTheLargerExtent()
     {
         Fixture(LayoutRotation.R0, out var view);
 
@@ -65,9 +79,10 @@ public class LayoutPortPickSymmetryTests
         Assert.Equal(plusX, plusY);
         Assert.Equal(plusX, minusY);
 
-        // "The farther distance is working good right now" — the symmetric reach is the LARGER of the
-        // two former ones (the text extent, 2 chars x H x 0.62 = 1.24 H), not the smaller.
-        Assert.Equal((long)Math.Round(2 * H * 0.62), plusX);
+        // The symmetric reach is HALF the larger of the two extents — the text extent is
+        // 2 chars x H x 0.62 = 1.24 H, so the reach is 0.62 H and the square is 1.24 H across, i.e.
+        // exactly the glyph's own footprint. See this file's header for why this is half what it was.
+        Assert.Equal((long)Math.Round(2 * H * 0.62) / 2, plusX);
     }
 
     [Theory]
@@ -107,16 +122,45 @@ public class LayoutPortPickSymmetryTests
             "an ordinary label's box must still follow its text");
     }
 
+    /// <summary>
+    /// <b>SUPERSEDED AGAIN, 2026-08-25.</b> A port's pick region is now the MARK it draws (owner:
+    /// "make the hitbox/highlight the arrow boundary box for edge and internal ports and make it the
+    /// gap boundary rendering for the gap port"), and an EDGE port's mark is at the conductor END —
+    /// so the region is not about the anchor at all, and cannot be symmetric about it.
+    ///
+    /// <para>The reaches asserted equal by the tests above are the FALLBACK square, which is what a
+    /// caller with no conductor lookup still gets and is still symmetric. What the 2026-08-09 report
+    /// was really about — a port being grabbable from behind rather than only from in front — is now
+    /// answered differently: you grab a port at its arrow, from any side of it.</para>
+    /// </summary>
     [Fact]
-    public void ThePortIsGrabbableFromBehind_ThroughTheRealPressPath()
+    public void ThePortIsGrabbedAtItsArrow_FromEitherSideOfIt()
     {
-        // The end-to-end shape of the report: press BEHIND the port (opposite the arrow) and it must
-        // select. Before the fix this point was outside the box entirely.
+        // R0 means current flows +x, so the port names the LOW-x end and its plane is at x = 0.
+        foreach (long dx in new long[] { -H / 8, 0, H / 8 })
+        {
+            Fixture(LayoutRotation.R0, out var v);
+            var vm = new LayoutEditorViewModel(v) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+            vm.ApplyTechResolution(new TechResolution(
+                StarterTechnologies.Pcb2Layer(), null, TechResolutionSource.WorkspaceDefault, []));
+
+            vm.OnPointerPressed(dx, 1_450 * Dbu, KeyModifiers.None, 1, 0);
+            Assert.Contains(1, vm.SelectedIndices);
+        }
+    }
+
+    /// <summary>And NOT at its label, which is the deliberate consequence — stated so a later reader
+    /// does not mistake it for a regression.</summary>
+    [Fact]
+    public void ThePortIsNotGrabbedAtItsLabel()
+    {
         Fixture(LayoutRotation.R0, out var view);
         var vm = new LayoutEditorViewModel(view) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        vm.ApplyTechResolution(new TechResolution(
+            StarterTechnologies.Pcb2Layer(), null, TechResolutionSource.WorkspaceDefault, []));
 
-        vm.OnPointerPressed(Anchor - H, 1_450 * Dbu, KeyModifiers.None, 1, 0);
+        vm.OnPointerPressed(Anchor, 1_450 * Dbu, KeyModifiers.None, 1, 0);
 
-        Assert.Contains(1, vm.SelectedIndices);
+        Assert.DoesNotContain(1, vm.SelectedIndices);
     }
 }

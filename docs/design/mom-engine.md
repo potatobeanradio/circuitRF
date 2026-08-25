@@ -335,9 +335,9 @@ existing rendering work — it is how the user develops trust that the mesh is s
 This is where EM simulators are won or lost, and where naive implementations produce plausible-looking
 but wrong numbers.
 
-- **Port types v1:** edge ports on a conductor boundary (the microstrip case) and internal delta-gap
-  ports. *(Both are built — see the 2026-08-24 note at the end of this section for what the second
-  one is and, more importantly, what it is not.)*
+- **Port types v1:** edge ports on a conductor boundary (the microstrip case), internal delta-gap
+  ports, and internal (ground-referenced) ports. *(All three are built — see the notes at the end of this section for
+  what each of the two internal ones is and, more importantly, what it is not.)*
 - **Placement UX:** a Port tool that snaps to a conductor edge; click an edge, get P1. Auto-number,
   default 50 Ω, editable reference impedance.
 - **De-embedding is mandatory, not optional.** A raw port excitation includes the port discontinuity;
@@ -450,12 +450,9 @@ but wrong numbers.
 > now (it scanned to the far end of the board, so it fired on every part wider than its port and could
 > never be cleared).
 
-> ### **BUILT 2026-08-24 — the INTERNAL DELTA-GAP PORT, the second of the two v1 port types.**
+> ### **BUILT 2026-08-24 — the INTERNAL DELTA-GAP PORT.**
 >
-> The bullet list at the top of this section has said "and, later, internal delta-gap ports" since the
-> first draft, and `src/Engine/Mom/CLAUDE.md` §7 listed them as deliberately out of scope. Both are now
-> out of date: `PlanarPortKind` is `Edge` or `InternalDeltaGap`, and the panel offers the choice per
-> port.
+> `PlanarPortKind.InternalDeltaGap`, offered per port in the panel.
 >
 > **It is the SAME OBJECT, cut somewhere else.** D1 already makes a port "a delta gap across the shared
 > edge of two adjacent cells, driving the rooftop row that spans it" — nothing about that says the cells
@@ -496,53 +493,110 @@ but wrong numbers.
 > **A delta gap is a SERIES source, and the measurement is what says so.** A gap at the exact centre of
 > a uniform line came back with **S₁₃ = −S₂₃ to sixteen digits** (and S₁₁ = S₂₂ likewise): the
 > excitation pushes current one way along the conductor, into the line on one side of the cut and out
-> of it on the other, so the two halves are driven in ANTIPHASE. A shunt port — current injected against
-> the ground plane — would be symmetric. The gate for this feature originally asserted the symmetric
+> of it on the other, so the two halves are driven in ANTIPHASE. An internal VIA port — current
+> injected against the ground plane — is symmetric instead, and measures that way (below). The gate for this feature originally asserted the symmetric
 > identity and the solve corrected it; that is worth recording, because the difference is a hard π and
 > a magnitude plot would never show it.
 >
-> **What is still refused, unchanged:** a port on a via (§0.2's own argument — a vertical basis has no
-> end in the layout plane and no cell beyond the cut), a coplanar or differential ground reference, and
-> multi-mode ports.
+> **What is still refused, unchanged:** a port driven ALONG a via between two levels (§0.2's own
+> argument — a vertical basis has no end in the layout plane and no cell beyond the cut; a port from a
+> level to the GROUND PLANE is a different object and is the next note), a coplanar or differential
+> ground reference, and multi-mode ports.
 >
-> ### **The THIRD port type this does not build: an internal SHUNT (via) port.**
+> ### **THE INTERNAL PORT — the third port type, and the one whose current leaves the plane.**
 >
-> Raised as a question and worth writing down with the right name, because "another internal port" makes
-> it sound like a variation on the one above and it is a different object.
+> `PlanarPortKind.Internal`. The gap is at the foot of a via, between the metal and the ground
+> plane, and the port drives that via's ground-attachment bases. It is what a component returning to
+> ground, or a device terminal that returns to ground, attaches to.
 >
-> **The distinction is the RETURN PATH, not the position.** An internal delta gap is a **series** port:
-> it cuts the trace, its two terminals are the two lips, and a component on it carries the whole current
-> from one side to the other. What is missing is the **shunt** case — a port from a point on the metal
-> **down to the ground plane**, which does *not* cut the trace, and which is what a shunt R/L/C or a
-> ground-referenced device terminal needs. The planar-EM class of tool calls it a **via port** or an
-> **internal port**, and the 3-D field-solver analogue is a lumped port on a sheet between the trace
-> and ground. "Internal lumped port" is a fair name for it as long as *lumped* is not read as "series".
+> **The distinction from the delta gap is the RETURN PATH, not the position.** An internal delta gap
+> is a **series** port: it cuts the trace, its two terminals are the two lips, and a component on it
+> carries the whole current from one side to the other. An internal port does *not* cut the trace
+> — its second terminal is the ground plane, and the current it drives leaves the conductor
+> vertically. The planar-EM class of tool calls the same object a **via port** or an **internal
+> port**; the 3-D field-solver analogue is a lumped port on a sheet between the trace and ground.
 >
 > **It is not a one-cell in-plane object, which is the natural first guess.** A single horizontal cell
-> has no second terminal — there is nothing in the plane for a port to be *across*. A shunt port is
-> necessarily a **vertical** current path from that cell to the ground plane, i.e. a via, and its port is
-> the gap at one end of that via.
+> has no second terminal — there is nothing in the plane for a port to be *across*. The current path
+> is necessarily **vertical**, from that cell to the ground plane, i.e. a via; the port is the gap at
+> that via's grounded foot.
 >
-> **What building it would actually take,** so the cost is not underestimated:
+> **But that via is the SOLVER's to build, not the user's to draw** (owner, 2026-08-25: *"I want to
+> use this type of port simply inside a metal area (no vias anywhere)… why make the distinction with
+> the user?"*). The port is placed on the METAL and means "here, referenced to ground"; whether the
+> artwork happens to have a via under it is a question about the drawing, not about the port. So
+> there is ONE port type, and `PlanarGroundPath` — run before meshing, beside R-fed-1's feed
+> extension and by the same three rules — resolves it: **a drawn via always wins**, a missing one is
+> **built**, and **what was built is reported by port and by size**, because the path is real metal
+> whose inductance the port's own answer carries.
 >
-> - The **ground-attachment basis already exists** (`PlanarVia.GroundTerminal`, from the ground-via
->   work), so the vertical current path is not new machinery. This is the encouraging half.
-> - **The excitation is new, and is not a copy of D1's.** L8c normalises a horizontal rooftop to unit
->   current across its shared edge, which is what makes `⟨f_m, E^imp⟩ = v` exact with no gap width in it.
->   An attachment basis has a different normalisation — `src/Engine/Mom/CLAUDE.md` records its
->   `NetCharge` as exactly −1, balanced by the image, and L9c's `∫∇·f dS = 0` explicitly does not hold
->   for it. The incidence matrix and the reaction integral both need their own derivation.
-> - **`PlanarPorts.ViaPortRefusal` is the refusal that would be lifted**, and its argument is sound as
->   far as it goes: it refuses a port driven *along* a via between two levels. A shunt port to the
->   **ground plane** is the case its own closing sentence points at, and it would need its own gate —
->   an oracle for a known shunt discontinuity, not merely "it runs".
-> - **It is uncalibrated, like the gap**, for the same reason: nothing outside the cut to remove.
+> **How big, and why not a mesh cell.** A square of the technology's own default via drill, centred
+> on the label — 0.305 mm on the shipped PCB starter, 60 µm on the MMIC one; failing both defaults,
+> a quarter of the substrate height, stated in the notes as the rule of thumb it is. **A mesh cell
+> was the obvious candidate and is the wrong one:** the path's inductance is part of the answer, so
+> sizing it from the mesh would make the answer a function of *Cells per wavelength* — refining the
+> mesh, the one thing a user does to converge a result, would move it for a reason that has nothing
+> to do with convergence. A process dimension does not move. (It typically MESHES to about one cell,
+> since its four edges are hard gridlines; that is a consequence, not the definition.)
 >
-> Not started, not scheduled, and deliberately not sketched further than this — the excitation
-> derivation is the part that decides whether it is a phase or an afternoon, and it has not been done.
+> **The stackup's own `Via` entries are not consulted**, and cannot be: they carry a fill, a wall
+> thickness and a span, never a diameter. "This technology declares no via" is therefore not a reason
+> to refuse the port. What IS required is a ground plane to be the second terminal — and a stackup
+> with none already refuses every port in the run, by name, before this question arises.
 >
-> **Where it is set:** `EmSetup.PortKinds`, per port, in the `.cem` beside `PortZ0s` — never on the port
-> label. A layout is geometry: the same artwork can be analysed with a gap in the middle of a trace in
+> **The excitation turned out to be D1's after all, and the reason is the normalisation.** The
+> ground-attachment basis carries **unit total current across the connection it spans**, just as a
+> horizontal rooftop carries unit current across its shared edge — the ramp degenerates to a uniform
+> 1/Area over the footprint, but the normalisation is the same one. A delta gap of *v* volts in
+> series with that path therefore has reaction `⟨f_m, E^imp⟩ = v` **exactly**, with no gap width, no
+> footprint area and no quadrature in it. So the port is one more ±1 row of the same incidence matrix
+> and one more column of the same `Y = BᵀZ⁻¹B`: **no new basis function, no new excitation, no new
+> algebra** — the same sentence the delta gap earned. `NetCharge = −1` and the failure of
+> `∫∇·f dS = 0` for an attachment (L9c's D5) are properties of the FILL, which was already built and
+> gated; neither enters a reaction with an impressed field, which is an integral against the CURRENT.
+>
+> **What is specific to it, and every one of these is gated:**
+>
+> - **It drives the WHOLE footprint, not the cell under the label.** A via's footprint is one
+>   conductor at one potential, exactly as a wide feed's transverse row is. Driving one cell of it
+>   would leave the remaining cells shorting the trace straight to the plane beside the port — a
+>   complete and plausible answer for a structure with a short across it. The footprint is walked by
+>   4-connectivity from the label's own cell, and `PlanarPortResolution.FootprintAreaM2` reports the
+>   area the mesh actually resolved, which is the quantity a coarse mesh silently shrinks.
+> - **The POLARITY is fixed and is never asked for.** An internal delta gap's two lips are both
+>   metal, so which is + has to be stated; here one terminal IS the ground reference, so + is the
+>   metal and − is the plane. The label's own direction is not read.
+> - **The sign of that convention is a MEASUREMENT, not a derivation.** It is `IncidenceSign = +1`,
+>   the same "current flows into the structure" convention every other port uses. The first
+>   implementation took −1, from a written derivation of which lip of the gap is "+", and produced an
+>   s-matrix with every term through the port turned by π and nothing else changed — |S₁₃| right to
+>   two figures at the wrong sign. What settles it is a structure whose answer is known
+>   independently: a short line with a via to ground at its centre is three 50 Ω ports meeting at one
+>   node above the plane, S_ii = −1/3 and S_ij = **+2/3**, and that is what a correctly-signed port
+>   returns. **A port's sign is unobservable through any termination** — every reduction carries
+>   `S_i3·S_3j` and both factors flip — so no amount of terminating the port could have caught it.
+> - **A centred internal port gives S₁₃ = +S₂₃**, where a centred delta gap gives S₁₃ = −S₂₃. That pair is
+>   the difference between a ground-returning port and a series one, stated as the measurement that
+>   distinguishes them rather than as an intention.
+> - **It is uncalibrated, like the gap**, for the same reason and by the same mechanism: nothing
+>   outside the cut to remove, so `PlanarSolve.IdentityBox` and `Z_c = Z₀`, gated at < 1e-12 against
+>   `Deembed = false`.
+> - **Shorting it reproduces the plain board.** A port is a gap with a source in it, so terminating
+>   that gap in a short is the same structure with no port on it at all: reducing the 3-port with
+>   Γ₃ = −1 reproduces the ordinary 2-port solve of the same artwork to < 1e-9. That is the
+>   end-to-end oracle for everything between the incidence row and the published matrix, and it needs
+>   no external data.
+>
+> **`PlanarPorts.ViaPortRefusal` is unchanged and is a different question.** It refuses a port driven
+> *along* a via, BETWEEN two levels — §0.2 item 2's option (b) — which has no cell beyond the cut to
+> reference against. An internal port is driven between a level and the **ground plane**, which
+> the Green's function terminates on analytically, and that is what makes it well posed.
+>
+> **What is still refused, unchanged:** a coplanar or differential ground reference, multi-mode
+> ports, and a port between two meshed levels.
+>
+> **Where every port's type is set:** `EmSetup.PortKinds`, per port, in the `.cem` beside `PortZ0s` —
+> never on the port label. A layout is geometry: the same artwork can be analysed with a gap in the middle of a trace in
 > one setup and driven from its ends in another, and neither should edit the drawing. The list is
 > **omitted from the file when every port is an edge port**, so a `.cem` written before this gains no
 > byte. **`EmSnpProvenance.PortHash` includes the type** — changing it moves the excitation and turns

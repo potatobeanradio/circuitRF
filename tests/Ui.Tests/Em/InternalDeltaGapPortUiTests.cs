@@ -347,8 +347,9 @@ public class InternalDeltaGapPortUiTests
         };
         vm.Refresh();
 
-        Assert.NotNull(vm.InternalGapOnTheWrongKernel);
-        Assert.Contains("internal delta-gap port", vm.BlockingReason!);
+        Assert.NotNull(vm.InternalPortOnTheWrongKernel);
+        Assert.Contains("internal port", vm.BlockingReason!);
+        Assert.Contains("internal delta gap", vm.BlockingReason!);
         Assert.Contains("full-wave planar", vm.BlockingReason!);
         Assert.False(vm.CanRun);
     }
@@ -371,7 +372,7 @@ public class InternalDeltaGapPortUiTests
         };
         vm.Refresh();
 
-        Assert.Null(vm.InternalGapOnTheWrongKernel);
+        Assert.Null(vm.InternalPortOnTheWrongKernel);
     }
 
     [Fact]
@@ -390,7 +391,7 @@ public class InternalDeltaGapPortUiTests
         };
         vm.Refresh();
 
-        Assert.Null(vm.InternalGapOnTheWrongKernel);
+        Assert.Null(vm.InternalPortOnTheWrongKernel);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -406,19 +407,19 @@ public class InternalDeltaGapPortUiTests
         // the two answers, and it has to be able to say which.
         var vm = new LayoutEditorViewModel(PortedLine());
 
-        Assert.Equal("", vm.InternalGapPortsOwner);
+        Assert.Equal("", vm.InternalPortMarksOwner);
 
-        vm.InternalGapPorts      = [(Mm(10), Mm(1.45))];
-        vm.InternalGapPortsOwner = "lna_gap";
-        Assert.Single(vm.InternalGapPorts);
+        vm.InternalPortMarks      = [(Mm(10), Mm(1.45), PlanarPortKind.InternalDeltaGap)];
+        vm.InternalPortMarksOwner = "lna_gap";
+        Assert.Single(vm.InternalPortMarks);
 
         // R-em-17's rule, applied to this overlay too: an edited layout drops what an EM setup told
         // it about itself rather than going on drawing marks against moved artwork.
         vm.Model.Shapes.Add(new RectShape { Layer = TopCopper, X1 = 0, Y1 = 0, X2 = Mm(1), Y2 = Mm(1) });
         vm.Model.NotifyChanged();
 
-        Assert.Empty(vm.InternalGapPorts);
-        Assert.Equal("", vm.InternalGapPortsOwner);
+        Assert.Empty(vm.InternalPortMarks);
+        Assert.Equal("", vm.InternalPortMarksOwner);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

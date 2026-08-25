@@ -1,0 +1,59 @@
+<!-- GENERATED FILE - do not edit. Regenerate every figure and page with:
+     dotnet run ––project tools/DocGen –– ––out docs/user
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/UiArtworkGenerator.cs + tools/DocGen. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="862" height="290" viewBox="0 0 862 290"><rect fill="#010101" width="862" height="290" /><rect fill="#15222D" width="862" height="290" /><rect fill="#C08020" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mmic-dark_cl_0"><rect x="35" y="51" width="44" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_0)"><text fill="#19191E" transform="translate(35 51)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal2
+				</text></g><clipPath id="stackup-mmic-dark_cl_1"><rect x="503" y="51" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_1)"><text fill="white" transform="translate(503 51)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 51)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="white" transform="translate(602.71 51)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="45" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="45" /><clipPath id="stackup-mmic-dark_cl_2"><rect x="35" y="87" width="18" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_2)"><text fill="#19191E" transform="translate(35 87)" font-size="13" font-weight="600" font-family="Inter" x="0, 9.45, 12.84" y="12.59">
+						Air
+				</text></g><clipPath id="stackup-mmic-dark_cl_3"><rect x="503" y="87" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_3)"><text fill="white" transform="translate(503 87)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 87)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="white" transform="translate(573.16 87)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 23.18, 26.4, 29.63, 33.81, 40.3" y="11.14">
+						r = 1, tan
+				</text><text fill="white" transform="translate(620.19 87)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26" y="11.14">
+						δ = 0
+				</text></g><rect fill="#E0B040" transform="translate(25 119)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 119)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mmic-dark_cl_4"><rect x="35" y="123" width="42" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_4)"><text fill="#19191E" transform="translate(35 123)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal1
+				</text></g><clipPath id="stackup-mmic-dark_cl_5"><rect x="503" y="123" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_5)"><text fill="white" transform="translate(503 123)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 123)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="white" transform="translate(602.71 123)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 145)" x="0.5" y="0.5" width="459" height="82" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 145)" x="0.5" y="0.5" width="459" height="82" /><clipPath id="stackup-mmic-dark_cl_6"><rect x="35" y="177" width="34" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_6)"><text fill="#19191E" transform="translate(35 177)" font-size="13" font-weight="600" font-family="Inter" x="0, 9.81, 17.28, 26.58" y="12.59">
+						GaAs
+				</text></g><clipPath id="stackup-mmic-dark_cl_7"><rect x="503" y="177" width="206" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_7)"><text fill="white" transform="translate(503 177)" font-size="11.5" font-family="Inter" x="0, 5.34, 12.53, 19.72, 22.95, 30.11, 40.1, 43.34, 47.65, 54.45, 57.17, 63.59, 69.85, 73.07" y="11.14">
+						100 µm thick, 
+				</text><text fill="white" transform="translate(579.3 177)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="white" transform="translate(585.56 177)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 23.67, 30.63, 33.72, 40.59, 43.81, 47.05, 51.23, 57.71" y="11.14">
+						r = 12.9, tan
+				</text><text fill="white" transform="translate(650 177)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26, 27.15, 30.02, 37.21, 44.4, 51.59" y="11.14">
+						δ = 0.0006
+				</text></g><rect fill="#BE965A" transform="translate(25 227)" x="1" y="1" width="458" height="24" /><rect fill="none" stroke="#1E82C8" stroke-width="2" stroke-miterlimit="10" transform="translate(25 227)" x="1" y="1" width="458" height="24" /><clipPath id="stackup-mmic-dark_cl_8"><rect x="35" y="231" width="96" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_8)"><text fill="#19191E" transform="translate(35 231)" font-size="13" font-weight="600" font-family="Inter" x="0, 8.55, 16.01, 23.52, 30.92, 38.05, 41.44, 49.64, 57.34, 60.57, 72.35, 80.05, 84.99, 92.46" y="12.59">
+						Backside Metal
+				</text></g><clipPath id="stackup-mmic-dark_cl_9"><rect x="503" y="231" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_9)"><text fill="white" transform="translate(503 231)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 231)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="white" transform="translate(602.71 231)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><clipPath id="stackup-mmic-dark_cl_10"><rect x="503" y="246" width="237" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_10)"><text fill="#1E82C8" transform="translate(503 246)" font-size="11.5" font-family="Inter" x="0, 10.52, 13.75, 20.76, 24.85, 31.71, 38.39, 45.12, 52.26, 55.49, 59.57, 66.27, 70.16, 76.86, 80.94, 87.64, 94.37, 100.79, 107.49, 110.65, 113.89, 120.39, 126.57, 133.26, 137.74, 144.14, 147.38, 154.38, 161.25, 165.92, 170.1, 172.65, 178.66, 181.89, 189.47, 192.71, 196.82, 203.52, 207.8, 217.8, 220.53, 227.26, 233.74" y="11.14">
+						◀ ground reference: every port's − terminal
+				</text></g><clipPath id="stackup-mmic-dark_cl_11"><rect x="25" y="23" width="192" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_11)"><text fill="white" transform="translate(25 23)" font-size="13" font-weight="600" font-family="Inter" x="0, 7.54, 15.45, 23.57, 27.34, 30.57, 40.64, 48.76, 56.47, 64.4, 67.62, 80.62, 83.85, 88.75, 93.61, 101.32, 109.02, 112.25, 119.39, 127.51, 134.98, 142.48, 150.19, 153.41, 160.88, 169.08, 176.74, 183.98" y="12.59">
+						Top: Open — free space above
+				</text></g><clipPath id="stackup-mmic-dark_cl_12"><rect x="25" y="261" width="100" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_12)"><text fill="white" transform="translate(25 261)" font-size="13" font-weight="600" font-family="Inter" x="0, 8.55, 16.45, 21.39, 26.25, 34.16, 45.83, 49.6, 52.83, 62.65, 67.51, 75.41, 83.32, 91.24" y="12.59">
+						Bottom: Ground
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(310 119)" x="0.5" y="0.5" width="15" height="134" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(310 119)" x="0.5" y="0.5" width="15" height="134" /><clipPath id="stackup-mmic-dark_cl_13"><rect x="332" y="178" width="70" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_13)"><text fill="white" transform="translate(332 178)" font-size="11.5" font-family="Inter" x="0, 7.48, 13.97, 20.39, 26.64, 32.65, 35.38, 42.52, 49.22, 52.45, 60.23, 62.96" y="11.14">
+						Backside Via
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(172 47)" x="0.5" y="0.5" width="15" height="97" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(172 47)" x="0.5" y="0.5" width="15" height="97" /><clipPath id="stackup-mmic-dark_cl_14"><rect x="194" y="88" width="106" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_14)"><text fill="white" transform="translate(194 88)" font-size="11.5" font-family="Inter" x="0, 10.23, 16.92, 21.11, 27.59, 30.32, 35.66, 40.95, 51.18, 57.88, 62.06, 68.54, 71.27, 78.23, 81.46, 88.7, 95.56, 101.57" y="11.14">
+						Metal1-Metal2 Post
+				</text></g></svg>

@@ -330,11 +330,13 @@ public static class SvgPostPass
         string prefix = Regex.Replace(scope, @"[^A-Za-z0-9_-]", "-") + "_";
 
         var renamed = new Dictionary<string, string>(StringComparer.Ordinal);
+        var counters = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var el in root.DescendantsAndSelf())
             if (el.Attribute("id") is { } id && !id.Value.StartsWith(prefix, StringComparison.Ordinal))
             {
-                renamed[id.Value] = prefix + id.Value;
-                id.Value = prefix + id.Value;
+                string canonical = Canonicalise(id.Value, counters);
+                renamed[id.Value] = prefix + canonical;
+                id.Value = prefix + canonical;
             }
 
         if (renamed.Count == 0) return;
@@ -354,6 +356,40 @@ public static class SvgPostPass
                              ? $"url(#{mapped})" : m.Value);
             }
     }
+
+    /// <summary>
+    /// <b>Skia's own generated ids are a PROCESS-WIDE counter, and left alone they make every figure
+    /// churn whenever any other figure changes.</b>
+    ///
+    /// <para>Its SVG device names each generated element <c>&lt;kind&gt;_&lt;hex&gt;</c> —
+    /// <c>cl_1965</c> for a clip — where the hex is a counter shared by everything the process has
+    /// emitted so far. One DocGen run writes every figure, so ADDING ONE FIGURE shifts that counter
+    /// for every figure rendered after it: 277 files came back modified, with nothing in any of them
+    /// different but the digits in their clip ids. That is a diff nobody can review and a repository
+    /// that grows by a megabyte per docs edit (owner report, 2026-08-25).</para>
+    ///
+    /// <para>So an id of that shape is renumbered <b>per file, in document order</b>: the first clip
+    /// is <c>cl_0</c> whatever the process did before it. Ids of any other shape are left exactly as
+    /// they are — in particular the <c>d0</c>, <c>d1</c>… this file's own dedupe pass mints, which
+    /// are already deterministic and are referenced by the <c>&lt;use&gt;</c> elements it wrote.</para>
+    ///
+    /// <para>Renaming is safe because it happens BEFORE the reference rewrite below and through the
+    /// same map, so <c>url(#…)</c> and <c>href="#…"</c> follow.</para>
+    /// </summary>
+    private static string Canonicalise(string id, Dictionary<string, int> counters)
+    {
+        var m = GeneratedId.Match(id);
+        if (!m.Success) return id;
+
+        string kind = m.Groups["kind"].Value;
+        counters.TryGetValue(kind, out int n);
+        counters[kind] = n + 1;
+        return $"{kind}_{n}";
+    }
+
+    /// <summary>Skia's <c>&lt;kind&gt;_&lt;hex counter&gt;</c> shape, and nothing else.</summary>
+    private static readonly Regex GeneratedId =
+        new(@"^(?<kind>[A-Za-z]+)_[0-9a-fA-F]+$", RegexOptions.Compiled);
 
     // ── Pass 5: the viewBox ───────────────────────────────────────────────────
 

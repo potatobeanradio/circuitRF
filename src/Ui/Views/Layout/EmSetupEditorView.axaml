@@ -535,7 +535,12 @@
                      differently. -->
                 <TextBlock Classes="grouphdr" Text="Ports"
                            ToolTip.Tip="{Binding ViewModel.PortsHelpText}"/>
-                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="3">
+                <!-- The near/far DEFAULT pair, shown only when the per-port list below is not
+                     (ShowNearFarPortZ0). Owner report, 2026-08-25: "I don't see a Port 3 Z0 option"
+                     — with both drawn, this captioned pair reads as the port list and stops at two.
+                     They are also one value: a row falls back to this pair until it is overridden. -->
+                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="3"
+                      IsVisible="{Binding ViewModel.ShowNearFarPortZ0}">
                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Port 1 Z₀ (Ω)"
                                VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="Port1Z0"
@@ -561,36 +566,70 @@
                     <ItemsControl ItemsSource="{Binding ViewModel.PortRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="em:EmPortZ0Row">
-                                <Grid ColumnDefinitions="190,*" ColumnSpacing="6" Margin="0,2,0,0">
-                                    <TextBlock Grid.Column="0" Classes="colhdr" Text="{Binding Label}"
+                                <!-- Owner request, 2026-08-25: the port's NAME sits on the same row as
+                                     its reference impedance, and the box carries a unit.
+
+                                     This was a two-column grid whose second column held a StackPanel of
+                                     [impedance, type, error]. The name was centred against that WHOLE
+                                     stack, so on a planar row (which always shows the type combo) it
+                                     came to rest between the two controls and read as labelling
+                                     neither — and the impedance box, alone among the numeric fields in
+                                     this panel, had no unit beside it, so "50" beside a port name read
+                                     as a port number more readily than as ohms. Rows now place each
+                                     control explicitly instead of stacking them. -->
+                                <!-- COLUMN 1 IS Auto, NOT *, AND THE CONTROLS BELOW SPAN PAST IT.
+                                     Owner report, 2026-08-25: "ohms is aligned right — it needs to be
+                                     aligned left (with padding to the text edit box)." With a
+                                     stretching middle column the 86-wide TextBox sat at its left edge
+                                     while the unit was pushed to the far right of the panel, so the Ω
+                                     had drifted a whole panel-width from the number it belongs to.
+                                     Sizing column 1 to the box puts them together, and ColumnSpacing
+                                     is the padding between them. The type combo and the two warning
+                                     lines SPAN columns 1-2 so their own widths cannot push column 1
+                                     back open and re-separate the pair. -->
+                                <Grid ColumnDefinitions="190,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                                      ColumnSpacing="6" Margin="0,2,0,0">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="{Binding Label}"
                                                VerticalAlignment="Center"/>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBox Classes="num" Tag="PortRow"
-                                                 Text="{Binding Text}"
-                                                 LostFocus="OnPortRowLostFocus" KeyDown="OnPortRowKeyDown"/>
-                                        <!-- The port TYPE, planar analysis only (ShowKind). The
-                                             SelectedItem stays bound to the enum; the items render
-                                             through the converter because "InternalDeltaGap" is our
-                                             spelling, not a user's. Committing is the row's
-                                             KindChanged event, wired by the VM, so this needs no
-                                             code-behind handler of its own. -->
-                                        <ComboBox FontSize="11" Margin="0,2,0,0"
-                                                  HorizontalAlignment="Left" MinWidth="150"
-                                                  IsVisible="{Binding ShowKind}"
-                                                  ItemsSource="{x:Static em:EmPortZ0Row.KindChoices}"
-                                                  SelectedItem="{Binding Kind}"
-                                                  ToolTip.Tip="Edge: the port is at a conductor's end face, fed from outside your artwork, and IS de-embedded — the two-line calibration removes the port discontinuity so the answer is your structure's own response. Internal delta gap: the port is a cut across the middle of a conductor, with metal on both sides, for a lumped element or a device terminal embedded in the metal; it is NOT de-embedded, because there is no feed outside the cut to remove, and its s-parameters are reported at the gap in the reference impedance set above.">
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding Converter={x:Static conv:PlanarPortKindNameConverter.Instance}}"/>
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
-                                        <TextBlock FontSize="10"
-                                                   Foreground="{DynamicResource CrfWarningBrush}"
-                                                   Text="{Binding Error}"
-                                                   IsVisible="{Binding HasError}"/>
-                                    </StackPanel>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Classes="num" Tag="PortRow"
+                                             Text="{Binding Text}"
+                                             LostFocus="OnPortRowLostFocus" KeyDown="OnPortRowKeyDown"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Classes="colhdr" Text="Ω"
+                                               VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                                    <!-- The port TYPE, planar analysis only (ShowKind). The
+                                         SelectedItem stays bound to the enum; the items render
+                                         through the converter because "InternalDeltaGap" is our
+                                         spelling, not a user's. Committing is the row's
+                                         KindChanged event, wired by the VM, so this needs no
+                                         code-behind handler of its own. -->
+                                    <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                              FontSize="11" Margin="0,2,0,0"
+                                              HorizontalAlignment="Left" MinWidth="150"
+                                              IsVisible="{Binding ShowKind}"
+                                              ItemsSource="{x:Static em:EmPortZ0Row.KindChoices}"
+                                              SelectedItem="{Binding Kind}"
+                                              ToolTip.Tip="Edge: the port is at a conductor's end face, fed from outside your artwork, and IS de-embedded — the two-line calibration removes the port discontinuity so the answer is your structure's own response. Internal delta gap: the port is a cut across the middle of a conductor, with metal on both sides, for a lumped element or a device terminal embedded in the metal; it is NOT de-embedded, because there is no feed outside the cut to remove, and its s-parameters are reported at the gap in the reference impedance set above.">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Converter={x:Static conv:PlanarPortKindNameConverter.Instance}}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" FontSize="10"
+                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                               Text="{Binding Error}"
+                                               IsVisible="{Binding HasError}"/>
+                                    <!-- Why this port did not resolve from the geometry. A row is
+                                         listed even when its label is off the metal (owner request,
+                                         2026-08-25) — listing it without saying why would be worse
+                                         than not listing it. Spans all three columns and wraps: these
+                                         are the extractor's own sentences, which name the port, its
+                                         coordinate and the remedy. -->
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3"
+                                               FontSize="10" TextWrapping="Wrap" Margin="0,2,0,4"
+                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                               Text="{Binding Problem}"
+                                               IsVisible="{Binding HasProblem}"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

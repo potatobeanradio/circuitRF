@@ -74,7 +74,11 @@ public class LayoutPortDragSnapTests
         // pressing somewhere NEAR it. The thing that must land on the target is the port.
         var (vm, _, port) = Fixture();
 
-        long pressOffset = 400 * Dbu;   // inside the pick region, well away from the anchor
+        // Inside the pick region, well away from the anchor. The region is half the label's larger
+        // extent — 310 DBU here (2 chars x 500 um x 0.62, halved), see LayoutHitTest.LabelHitBbox —
+        // so this is comfortably inside it and still nowhere near the anchor, which is the property
+        // under test. It was 400 until the region was halved on 2026-08-25.
+        long pressOffset = 200 * Dbu;
         Drag(vm, port.X + pressOffset, port.Y + pressOffset, -100 * Dbu, -120 * Dbu);
 
         Assert.Equal(0, port.X);

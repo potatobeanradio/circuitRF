@@ -268,3 +268,290 @@ instead, since neither of those runs off-thread relative to `source`.
 Gate: `tests/Ui.Tests/Em/EmLengthFormatTests.cs` (3 tests) — the mil round trip, a mil-displayed
 layout's mesh note actually reading in mil, and the default-display-unit case matching a
 formatter-supplied direct kernel call (not the bare 2-arg one — see the note above).
+
+---
+
+## An open `.cem` never re-read its layout — the port list was a snapshot from open time (2026-08-25)
+
+Owner report: *"placed 3 ports in my .clay drawing, but only 2 ports show up in the .cem for the
+file."*
+
+**Nothing downstream was wrong, and that is the part worth remembering.** Driven directly against the
+owner's own `NewPortTest.clay`, `EmPortExtraction.Extract` resolved all three ports, with correct
+sides and notes; `EmSetupEditorViewModel.Refresh()` over the same live view built three `PortRows`;
+and a Simulate would have run all three, because `EmRunService.RunPlanar` re-extracts from
+`source.View.Shapes` at run time. Time spent auditing the extractor — the numbering, the
+duplicate-name refusal, the multi-level refusal, the ambiguity threshold — found nothing, because
+`Extract` is all-or-nothing by construction: **every path in its per-label loop either appends a port
+or returns a refusal, so it cannot return a short list.** A short port list is therefore never an
+extractor bug, and the next report of one should start where this one ended.
+
+**What was actually wrong: `Refresh()` was called at exactly three moments** — when the `.cem`
+document was opened, when a setting inside the panel was committed, and when Mesh was pressed. **No
+call existed anywhere for "the referenced `.clay` changed".** Add a port with the panel already open
+and it went on showing the port list, mesh summary and blocking reason from before. The port COUNT is
+derived from the geometry precisely so a user never types it, which is exactly what makes a silently
+stale one indistinguishable from the extractor having missed a port.
+
+**`InvalidateMesh` had documented itself as "Called by the workspace when the referenced `.clay`
+changes" since R-em-17, and no such call had ever existed.** A doc comment naming a caller is not
+evidence the caller exists; this one had been wrong for as long as it had been written.
+
+**The fix is one subscription, in `WorkspaceViewModel`:**
+- `vm.Model.Changed += (_, _) => NotifyEmSetupsLayoutChanged(vm.CurrentLayoutPath);` at **both**
+  `LayoutEditorViewModel` construction sites (`BuildLayoutSessionVm` and the scratch-layout one) —
+  **not** in `RegisterLayoutSession`, which runs again for the same VM on Save-As and would
+  double-subscribe. `CurrentLayoutPath` is read **live** for that same reason: a Save-As moves the
+  session, and the `.cem` that cares is the one pointed at wherever it now lives.
+- `NotifyEmSetupsLayoutChanged` **posts** at `DispatcherPriority.Background` and never works inline.
+  `LayoutModel.NotifyChanged` raises `Changed` **while holding `RenderLock`**, and its own contract
+  says every subscriber there is a cheap non-blocking invalidate — a flatten plus two extractions is
+  neither. Posting also collapses a burst (a paste, a multi-shape delete) into one refresh, via a
+  pending-path set keyed by absolute path.
+- Both halves run: `InvalidateMesh()` (drop a report describing artwork that has since changed) then
+  `Refresh()` (re-extract to replace it).
+- `ResolveEmLayoutPath` was split out of `ResolveEmLayout` so "does this `.cem` point at THAT layout?"
+  can be asked without loading geometry, and so the two cannot drift about what a `LayoutRef` means.
+
+No feedback loop: `PushEmMeshToLayout`/`AdoptPortTypes` write layout *view-model* properties only and
+never call `Model.NotifyChanged`.
+
+Gate: `tests/Ui.Tests/Em/EmSetupLayoutStalenessTests.cs` (3) — a port added after the panel opened
+appearing on the next `Refresh` (the mechanism the subscription relies on, and the half that was
+already correct), `InvalidateMesh` dropping a stale report, and a comment-stripped source scan for the
+subscription itself, since `WorkspaceViewModel` cannot be constructed headlessly.
+
+### The same session's four follow-ups, all in the port surfaces
+
+**A port off the metal was refused by a BOUNDING-BOX distance, which for a concave shape is
+unbounded.** Owner report: *"if I move Port 1 or Port 3 off the metal, I get no live update for bad
+port (but I do get a warning for port 2)."* `NearestPolygon`'s off-metal test measured the distance
+to the polygon's bounding box and compared it against half that box's smaller side. **A tee's box
+spans its own empty notch, so a port dragged into the notch measured exactly ZERO** and was accepted
+however far it was from any copper — measured on the reporter's own file, a label 1.2 mm from the
+nearest metal resolved silently. That is the asymmetry in the report: port 2 sat at the far end,
+where moving it leaves the box at once, while ports 1 and 3 flank the notch and could never leave
+it. Both halves are now local to the conductor — a true point-to-BOUNDARY distance, and a reach of
+`Area / Perimeter`, which for a strip of width `w` and length `L ≫ w` is `w/2`. **"Within half a
+trace width of the metal" is a sentence about the conductor; "within half the smaller side of
+everything this polygon spans" was a sentence about the drawing** — the same class of mistake
+`AmbiguityFraction`'s own note records having already made once.
+
+**The panel drew TWO port controls and a reader only ever saw one.** Owner report: *"I don't see a
+Port 3 Z₀ option in the .cem editor."* The Ports group showed a fixed grid captioned *Port 1 Z₀* and
+*Port 2 Z₀* **and**, beneath it, a row per port. The captioned pair reads as the port list, stops at
+two, and gives no reason to take the unlabelled rows below it as the same thing continued. They are
+also one value: a row renders `ResolvePortZ0`, which falls back to that pair until overridden.
+`ShowPortList`'s own note already said the two must never appear together — that held while the list
+was cross-section-only and needed three ports to appear, and **the planar kernel shows the list
+unconditionally, which the rule was never extended to cover**. `ShowNearFarPortZ0` is now its exact
+negation and the XAML binds to it.
+
+**An internal port reverted to edge rendering for the whole of a drag, and its selection box sat in
+the wrong place.** Two symptoms, one root: the renderer asked the shape it was about to DRAW.
+`MarkKindOf` matches a label's exact DBU anchor, and a live move drag renders a translated CLONE
+while the model stays untouched until commit (R-L1c-3) — so from the first pixel no mark matched and
+every internal port fell through to `Edge`. It now asks `original`, which is the shape the `.cem`'s
+marks were computed from; **moving a port cannot retype it, so this is the correct question rather
+than a workaround for the coordinate key.** Separately, `MeasureLabelWorldBbox` mirrored
+`DrawLabelText`'s ROTATION table and nothing else, so once an internal port's text began being drawn
+CENTRED the outline went on being measured from a left-anchored baseline — out by half the advance
+width and by the baseline lift. It takes a `centred` flag now and applies both of that method's own
+offsets. **The two must move together; this is the second time a box drawn from a re-derived idea of
+where the text is has drifted from where it actually is.**
+
+**A floated `.cem` window is capped at 700 logical units wide and given 200 units of extra height**
+(`CrfHostWindow.EmSetupFloatMaxWidth` / `EmSetupFloatExtraHeight`), applied in `OnOpened`. **Not in `CircuitRfDockFactory.CreateWindowFrom`, and the ordering is the
+reason**: a width set during window creation is not final — `DockWindowOptions.ApplyTo` assigns
+geometry unconditionally, the same overwrite the `OwnerMode` override beside it already documents
+having to work around, and Dock's drag tear-off supplies the dragged tab's bounds through exactly
+that path. `OnOpened` is the last point in the sequence this codebase owns. It is a CAP, not an
+assignment — a narrower float is left alone. **The height bonus rides inside that same guard, and
+that is what stops it ratcheting**: a floating window's geometry is captured into the `.cws`, so an
+unconditional `Height += 200` would restore 200 taller each launch and add 200 again, without bound;
+gating it on the width cap actually firing leaves a restored float exactly as the user last sized it
+and adjusts a fresh tear-off exactly once. It is clamped to the screen's working height, converted
+from device pixels by the screen's own scaling. The panel's own floor is the stackup row
+(`76,*,90,190,*`, ~380 units of FIXED columns), so at 700 its two stretching columns get ~150 each
+and trim longer conductor names, which is the accepted trade.
+
+**Also this session, from the same reports:** each port row's name moved onto the same grid row as
+its impedance (it had been vertically centred against a StackPanel of *[impedance, type, error]*, so
+on a planar row it came to rest between two controls and labelled neither), and the impedance box
+gained a `Ω` beside it — it was the only numeric field in the panel with no unit, so "50" beside a
+port name read as a port number more readily than as ohms.
+
+Gates: the off-metal and panel-duplication halves are in
+`tests/Ui.Tests/Em/EmSetupLayoutStalenessTests.cs` (14 tests total with the staleness ones above);
+the drag/selection halves are `tests/Ui.Tests/Em/InternalPortDragRenderTests.cs` (5), whose oracle is
+a **differential render** — a port dragged to 12 mm must produce the same frame as one stored at
+12 mm — plus a companion asserting the gap mark and an edge port's mark are not the same picture, so
+the first test cannot pass on a renderer that draws the same thing either way. The window cap is
+`tests/Ui.Tests/EmSetupFloatWidthTests.cs` (6), source-scanned because `CrfHostWindow` is an Avalonia
+`Window` and cannot be constructed headlessly.
+
+### One bad port no longer erases the others — and three more from the same afternoon
+
+**`EmPortExtraction` now reports EVERY numbered label, resolved or not** (`EmPortExtractionResult
+.Rows`, one `EmPortRow` per label). Owner request: *"if any ports aren't touching metal, the .cem
+editor will not list the ports. I'd like to still see them listed, even if they are not on a
+conductor (and the .cem gives a warning)."* The panel built its rows from `.Ports`, which is empty on
+any refusal — so **one bad label emptied the list at exactly the moment the user was trying to find
+the bad label.** The per-label loop records each problem and carries on instead of returning at the
+first; `firstProblem` becomes the refusal, so **every existing refusal-wording gate still reads the
+same sentence**. **`.Ports` is still all-or-nothing and the run is still blocked** — a port that is
+not on metal has no location the mesher could honestly place it at, and a solve over the ports that
+happened to resolve is a complete, plausible answer for a structure nobody drew. `EmPortZ0Row` gained
+`Problem`, kept **separate from `Error`** because the two have different lifetimes: a successful
+impedance commit clears `Error`, and must not thereby erase "this port is not on any conductor".
+
+**A refusal was also silently retyping every internal port in the drawing.** Owner report: *"P3
+renders as edge port (even though it is a gap port) when P2 is not on a conductor."* Same cause —
+`InternalPortMarkAnchors` was built from `.Ports`. It comes from `.Rows` now, with the KIND read from
+the `.cem` (`ResolvePortKind`) rather than from the resolved port, because that is where it lives and
+an unresolved row has no port to ask. For a resolved row the two are the same value by construction.
+
+**The mouse-up flash.** Owner report: *"after drag of the port, the port rendering glitches
+momentarily on the mouse up."* Two causes, either sufficient. `LayoutEditorViewModel`'s
+`Model.Changed` handler cleared `InternalPortMarks` on **every** mutation — right for the mesh
+overlay beside it, which is derived from the geometry, and **wrong for a port TYPE, which lives in
+the `.cem` and cannot be changed by moving a label**. And the marks are keyed by ANCHOR, which the
+move had just changed, so even an uncleared list stopped matching. The window stayed open until the
+`.cem` republished — a Background-priority refresh, i.e. one or more visible frames. Now: the clear
+is gated on `info.Kind != Updated` (an add or delete can renumber the ports, so those really are
+stale); `CommitMoveDrag` shifts the marks by the move delta **before** `Execute`; and the `Updated`
+branch **prunes** any mark with no port label under it, which is what makes an UNDO — the same
+`Updated` change with no shift beside it — drop the stranded mark instead of leaving it on empty
+space.
+
+**Two ports 0.381 mm apart could not both be picked.** Owner report: *"the port2 hitbox is
+interfering with the port3, so I currently can't drag select p3, even though port 2 is far from port
+3."* A port's pick square is deliberately generous — 2.52 mm across for a two-character label at the
+1.016 mm height in that file, because a user aims at the marker's bar and arrow rather than at a
+glyph — so each anchor sat deep inside the other's box. **`LayoutHitTest.HitStack`'s
+smaller-area-wins term cannot separate two labels, because `LayoutGeometry.BboxOf` of a label is a
+zero-area POINT**; both scored 0 and the sort fell through to ascending list index, so the port
+written earlier in the `.clay` won every overlapping pick and the later one was unreachable. A
+distance term now sits between area and index, **recorded only for zero-area shapes** so ordering
+between real geometry is untouched — two overlapping equal-area rectangles still tie-break by index,
+which is asserted rather than assumed.
+
+**And the pick square itself was twice the size it was meant to be.** Follow-up report minutes later:
+*"the hitbox for the ports now seems too big — I am always selecting ports almost everywhere I click
+in the layout."* `LabelHitBbox` read `half = Max(w, h)`, and **w/h are FULL extents** — an ordinary
+label of the same text occupies w × h — so the 2026-08-09 change that made a port's region SYMMETRIC
+had also doubled it in each direction, four times the area. On the reporter's file that is a 2.52 mm
+square per port over a 3.5 × 2.2 mm structure, and since a label's bbox is zero-area, `HitStack`
+ranks it ahead of any real geometry on the same layer — so the metal underneath was unreachable
+rather than merely second. It is `Max(w, h) / 2` now: the square circumscribes the glyph instead of
+using the glyph as its radius, which is what "symmetric about the anchor" should have meant. **The
+click tolerance the caller adds on top is untouched**, which is the part of the 2026-08-09 report that
+was really about reach.
+
+**`LayoutPortPickSymmetryTests` was UPDATED, not loosened, and its header now records the
+supersession.** That file encodes an owner decision — *"the farther distance is working good right
+now for UX"* — which was a parenthetical about WHICH of two reaches to keep, not a request to double
+it. The symmetry half (what the report actually asked for) is unchanged and still asserted; the size
+assertion moved and says why; and `ThePortIsGrabbableFromBehind` now probes at a FRACTION of the
+measured reach so it tests the property rather than re-pinning the size. One case in
+`LayoutPortDragSnapTests` pressed 400 DBU off a port whose region is now 310, and its offset moved
+with a note — the property it gates (the ANCHOR lands on the target, not the press point) is
+unchanged.
+
+**And the highlight was a different rectangle from the hitbox entirely.** Owner report: *"the hitbox
+of the port does not match with the select highlight rendering."* Measured on a two-character port at
+a 1.016 mm height: the highlight ran **x 63,500..1,217,414 / y −15,875..746,125** — the tight GLYPH
+box from `MeasureLabelWorldBbox`'s real font metrics, up and to the right of the anchor — while the
+pick region is the square **−629,920..+629,920** on both axes. **They share one corner.** So a click
+below-left of the text selected the port and drew a box over the text, up and right of where the
+click landed. `LayoutHitTest.PortPickBbox` is now the single source and the renderer calls it;
+`BuildOutlinePathForSelection` gained a `LabelShape { IsPort: true }` case ahead of the general label
+one, and `MeasureLabelWorldBbox` keeps the glyph measurement for ordinary labels, which is what an
+annotation's outline should be.
+
+**This SUBSUMES the `centred` flag added earlier the same day** for "the internal port highlight
+select box is rendered in the wrong spot" — that plumbed `DrawLabelText`'s centring offsets into the
+glyph measurement so an internal port's box would follow its centred text. Taking the outline from
+the pick region removes the question instead of answering it: **the pick region is centred on the
+anchor for every port, whatever its type**, so the outline no longer depends on the port's type at
+all. The parameter, its thread through `DrawSelectionOutlines`, and that method's `InternalPortMarks`
+argument were all removed rather than left as dead plumbing.
+
+**The deliberate consequence, stated because it is visible:** an EDGE port's highlight no longer wraps
+its text. The glyphs run inward from the anchor while the region is centred on it, so the box marks
+the port and the name sits beside it. A region that both stayed centred (the 2026-08-09 report) and
+enclosed off-centre glyphs would need to be twice this size — which is exactly the "too big" it was
+halved from hours earlier. Centring every port's text would satisfy all three and is the open
+alternative; it was not done because an edge port's text running inward is itself a documented choice.
+
+Gates: the port-listing half is in `EmSetupLayoutStalenessTests` (19 tests now); the drag, mouse-up,
+undo and outline halves in `InternalPortDragRenderTests` (9) — the outline one asserts IDENTITY
+against `PortPickBbox` rather than comparing two computed rectangles, because two rectangles that
+happen to agree today are precisely what produced this bug; the pick order in
+`tests/Ui.Tests/Em/PortPickNearestAnchorTests.cs` (4), whose fixture is the reporter's own
+coordinates and label height; the pick SIZE in `LayoutPortPickSymmetryTests` as above.
+
+### The port's hitbox and highlight are now the MARK, and nothing else
+
+Four owner reports in a row, each rejecting the previous answer, ending at: *"Make the
+hitbox/highlight the arrow boundary box for edge and internal ports and make it the gap boundary
+rendering for the gap port. Keep it simple."* The intermediate attempts are recorded because each was
+refuted by measurement rather than by taste:
+
+1. *"the hitbox does not match the select highlight"* — they were two independently-derived
+   rectangles sharing one corner (measured: highlight x 63,500..1,217,414 from real font metrics;
+   pick square −629,920..+629,920). Unified on the anchor square.
+2. *"the highlight box is not placed over the port text name"* — an edge port's glyphs run out of a
+   centred square. Centring every port's name put them back inside it.
+3. *"I want the hitbox+highlight to be only over the port text"* — then, on seeing it, the request
+   above.
+
+**The region is `LayoutPortDirection.MarkerBbox` and there is one of it.** An EDGE port's box is its
+plane bar and arrow, **at the conductor end** — so a port is grabbed and highlighted at its arrow and
+**deliberately NOT at its name**, which is the visible cost of the request and is asserted as a
+negative so a later reader does not read it as a regression. A GAP port's is its break, and an
+INTERNAL-to-ground port's is its ring; **both of those are drawn at the label's anchor, so the ring
+goes with the gap rather than with the arrow** — contrary to the request's wording, and following
+what `DrawInternalPortMarker` actually centres on (`label.X/Y`, or the meshed via footprint).
+
+**`LayoutSpatialIndex` stops culling port labels, and that is load-bearing.** `ConservativeBboxOf`
+bounded a label by `(chars+1) × height` about its ANCHOR, and an edge port's mark is an **unbounded**
+distance away — knowable only from the technology and the artwork, neither of which that
+framework-free file has. Measured before the change: a press directly on a port's arrow selected the
+trace underneath, because the port was pruned before its exact test ran. Over-inclusion is the safe
+direction by that method's own contract, and the cost is bounded by construction — a port is one EM
+port, so a layout has a handful. It also fixes a rarer bug the other way: a port whose anchor was
+off-screen while its plane was on-screen had its marker culled and not drawn.
+
+**Two live limitations, recorded rather than papered over:**
+- **Two edge ports naming the SAME conductor end share one plane and therefore one region**, and no
+  distance rule can separate them; overlap cycling is what reaches the second. The reporter's own
+  P2/P3 were exactly this pair, which is why `PortPickNearestAnchorTests`' fixture had to move to
+  ports with no conductor at all — the nearest-anchor ordering rule still decides there, and that is
+  the case it now gates.
+- The port marker's geometry constants and `ArrowGeometry` moved from `LayoutRenderer` into
+  `LayoutPortDirection` so the framework-free hit test can reach them; the renderer's own constants
+  are now aliases of those, so **there is exactly one literal per number** and the drawing is
+  untouched. Two copies of a marker's size, one in the renderer and one in the hit test, is precisely
+  the drift that produced report 1.
+
+Three earlier gates were UPDATED, not loosened, each carrying its own supersession note:
+`LayoutPortPickSymmetryTests` (its symmetry claim is now about the no-conductor FALLBACK square only),
+`PortPickNearestAnchorTests` (fixture moved as above), and `InternalPortDragRenderTests`.
+
+### Related, and NOT a bug: an edge port's marker is drawn at the conductor END, not at its label
+
+Same session, owner report: *"I can't place an internal port on the metal… the port always snaps to
+an edge in the layout."* **Nothing snaps.** `LayoutSnapQuery.FindCandidates` returns **zero**
+candidates at the centre of the owner's tee, even at a 254 µm tolerance (100× the real 8-device-pixel
+one), so a port drags to mid-metal freely. What moves back is the *marker*: `DrawPortMarker` draws the
+reference-plane bar and arrow at `hint.PlaneX/PlaneY` — the conductor end — with a leader line from
+the label's anchor, which is deliberate (R-res-5: "where is the reference plane" had no readable
+answer when the bar was drawn wherever the user clicked). Measured on the owner's file: dragging P3
+from the stub end to the middle of the stub leaves its plane at `(-63500, -1701800)` either way.
+
+An edge port's marker belongs at the end **because it is an edge port**; the port TYPE lives in the
+`.cem` (`ThePortTypeComesFromTheCem_NotFromTheLabel`), so mid-metal artwork cannot and must not
+retype it. The two reports compound: before the staleness fix above, a port added in the layout had
+**no row in the panel to set its type on**, so the type could not be changed and the marker could
+never stop being an edge one.

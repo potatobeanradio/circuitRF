@@ -177,7 +177,11 @@ public static class LayoutClipboard
 
             if (s is not LabelShape label) continue;
 
-            if (LayoutRenderer.MeasureLabelWorldBbox(label) is { } textBb) bbox = bbox.Union(textBb);
+            // centred: label.IsPort — a port's name is PAINTED centred on its anchor (2026-08-25),
+            // and this pass is about what will be painted. Measuring it left-anchored puts the box
+            // half a text-width off, which is how ports got cropped off the page before.
+            if (LayoutRenderer.MeasureLabelWorldBbox(label, label.IsPort) is { } textBb)
+                bbox = bbox.Union(textBb);
 
             if (LayoutPortDirection.Resolve(conductorAt, label) is { } hint)
             {

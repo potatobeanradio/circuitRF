@@ -181,6 +181,12 @@ different conductors; that is what a coupled or multi-port structure is.
   for a lumped element or a device terminal embedded in the metal. It is **not** de-embedded, because
   there is no feed outside the cut to remove; its S-parameters are reported at the gap in the reference
   impedance set beside it.
+- **Internal** — the port is between the metal and the **ground plane**, at the point you put the
+  label, for a component or a device terminal that returns to ground. It does not cut the trace, it is
+  **not** de-embedded for the same reason, and its polarity is not yours to set: + is the metal, − is
+  the plane. You do not have to draw the via down to the plane — the solver builds that path and
+  reports its size, and uses a via you drew when there is one. Which conductor the plane actually is
+  comes from [The stackup](stackup.html).
 
 Changing a type **clears the mesh report**, because it changes which cells the excitation drives — the
 old report is about a different excitation. Changing an impedance does not; that is a renormalisation

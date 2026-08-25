@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — The Stackup</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/stackup.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Stackup</p>
+
+  <h1>The Stackup</h1>
+  <p class="lede">The layers your board is actually made of — and, because it decides the ground plane, where the negative terminal of every EM port is.</p>
+
+<p>Your layout is a set of flat shapes. The <strong>stackup</strong> is what turns those shapes into a physical
+structure: what each conductor is made of, how thick it is, what dielectric separates it from the
+next one, and — the part that catches people — <strong>which conductor is ground</strong>.</p>
+<p>That last one is not a detail. An EM port has two terminals, and only one of them is anywhere near
+your artwork: the other is the ground plane. <strong>You do not set it per port. The stackup does, for
+every port in the run at once.</strong></p>
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#where">Where the stackup lives</a></li>
+<li><a href="#anatomy">Anatomy of a stackup</a></li>
+<li><a href="#ground">Where your port's negative terminal is</a></li>
+<li><a href="#levels">Which conductors get simulated</a></li>
+<li><a href="#slab">The slab, and what makes one solvable</a></li>
+<li><a href="#vias">Vias</a></li>
+<li><a href="#ignored">What the EM engine does not read</a></li>
+<li><a href="#check">Checking what it resolved to</a></li>
+</ol>
+</nav>
+<h2 id="where">Where the stackup lives</h2>
+<p>The stackup is part of a <strong>technology</strong> — a <code>.ctech</code> file in the workspace's <code>tech/</code> folder, edited
+in the technology editor's <strong>Stackup</strong> tab. It belongs to the technology rather than to a layout,
+because it describes a <em>process</em>: every board built on that process has the same layers, whatever is
+drawn on them.</p>
+<p>A layout names a technology (or leaves the name blank to mean the workspace default). Everything
+else — the layer table, the DRC rules, the default display unit — lives in the same file. See
+<a href="layout-editor.html#technology">The Layout Editor</a> for the rest of it.</p>
+<p><strong>A missing technology does not block drawing, but it does block an EM run.</strong> Layers fall back to a
+generated palette and editing carries on; the EM run refuses rather than inventing a stackup, because
+there is no honest default for &quot;how far above the ground plane is this trace&quot;.</p>
+<h2 id="anatomy">Anatomy of a stackup</h2>
+<p>A stackup is an ordered list, <strong>top to bottom</strong>, of three kinds of entry, plus two boundary
+conditions for what is above and below the whole sandwich.</p>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="862" height="290" viewBox="0 0 862 290"><rect fill="white" width="862" height="290" /><rect fill="#F6F8FA" width="862" height="290" /><rect fill="#C08020" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mmic_cl_0"><rect x="35" y="51" width="44" height="16" /></clipPath><g clip-path="url(#stackup-mmic_cl_0)"><text fill="#19191E" transform="translate(35 51)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal2
+				</text></g><clipPath id="stackup-mmic_cl_1"><rect x="503" y="51" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_1)"><text fill="#010101" transform="translate(503 51)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="#010101" transform="translate(566.9 51)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="#010101" transform="translate(602.71 51)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="45" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="45" /><clipPath id="stackup-mmic_cl_2"><rect x="35" y="87" width="18" height="16" /></clipPath><g clip-path="url(#stackup-mmic_cl_2)"><text fill="#19191E" transform="translate(35 87)" font-size="13" font-weight="600" font-family="Inter" x="0, 9.45, 12.84" y="12.59">
+						Air
+				</text></g><clipPath id="stackup-mmic_cl_3"><rect x="503" y="87" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_3)"><text fill="#010101" transform="translate(503 87)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="#010101" transform="translate(566.9 87)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="#010101" transform="translate(573.16 87)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 23.18, 26.4, 29.63, 33.81, 40.3" y="11.14">
+						r = 1, tan
+				</text><text fill="#010101" transform="translate(620.19 87)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26" y="11.14">
+						δ = 0
+				</text></g><rect fill="#E0B040" transform="translate(25 119)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 119)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mmic_cl_4"><rect x="35" y="123" width="42" height="16" /></clipPath><g clip-path="url(#stackup-mmic_cl_4)"><text fill="#19191E" transform="translate(35 123)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal1
+				</text></g><clipPath id="stackup-mmic_cl_5"><rect x="503" y="123" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_5)"><text fill="#010101" transform="translate(503 123)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="#010101" transform="translate(566.9 123)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="#010101" transform="translate(602.71 123)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 145)" x="0.5" y="0.5" width="459" height="82" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 145)" x="0.5" y="0.5" width="459" height="82" /><clipPath id="stackup-mmic_cl_6"><rect x="35" y="177" width="34" height="16" /></clipPath><g clip-path="url(#stackup-mmic_cl_6)"><text fill="#19191E" transform="translate(35 177)" font-size="13" font-weight="600" font-family="Inter" x="0, 9.81, 17.28, 26.58" y="12.59">
+						GaAs
+				</text></g><clipPath id="stackup-mmic_cl_7"><rect x="503" y="177" width="206" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_7)"><text fill="#010101" transform="translate(503 177)" font-size="11.5" font-family="Inter" x="0, 5.34, 12.53, 19.72, 22.95, 30.11, 40.1, 43.34, 47.65, 54.45, 57.17, 63.59, 69.85, 73.07" y="11.14">
+						100 µm thick, 
+				</text><text fill="#010101" transform="translate(579.3 177)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="#010101" transform="translate(585.56 177)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 23.67, 30.63, 33.72, 40.59, 43.81, 47.05, 51.23, 57.71" y="11.14">
+						r = 12.9, tan
+				</text><text fill="#010101" transform="translate(650 177)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26, 27.15, 30.02, 37.21, 44.4, 51.59" y="11.14">
+						δ = 0.0006
+				</text></g><rect fill="#BE965A" transform="translate(25 227)" x="1" y="1" width="458" height="24" /><rect fill="none" stroke="#1E82C8" stroke-width="2" stroke-miterlimit="10" transform="translate(25 227)" x="1" y="1" width="458" height="24" /><clipPath id="stackup-mmic_cl_8"><rect x="35" y="231" width="96" height="16" /></clipPath><g clip-path="url(#stackup-mmic_cl_8)"><text fill="#19191E" transform="translate(35 231)" font-size="13" font-weight="600" font-family="Inter" x="0, 8.55, 16.01, 23.52, 30.92, 38.05, 41.44, 49.64, 57.34, 60.57, 72.35, 80.05, 84.99, 92.46" y="12.59">
+						Backside Metal
+				</text></g><clipPath id="stackup-mmic_cl_9"><rect x="503" y="231" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_9)"><text fill="#010101" transform="translate(503 231)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="#010101" transform="translate(566.9 231)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="#010101" transform="translate(602.71 231)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><clipPath id="stackup-mmic_cl_10"><rect x="503" y="246" width="237" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_10)"><text fill="#1E82C8" transform="translate(503 246)" font-size="11.5" font-family="Inter" x="0, 10.52, 13.75, 20.76, 24.85, 31.71, 38.39, 45.12, 52.26, 55.49, 59.57, 66.27, 70.16, 76.86, 80.94, 87.64, 94.37, 100.79, 107.49, 110.65, 113.89, 120.39, 126.57, 133.26, 137.74, 144.14, 147.38, 154.38, 161.25, 165.92, 170.1, 172.65, 178.66, 181.89, 189.47, 192.71, 196.82, 203.52, 207.8, 217.8, 220.53, 227.26, 233.74" y="11.14">
+						◀ ground reference: every port's − terminal
+				</text></g><clipPath id="stackup-mmic_cl_11"><rect x="25" y="23" width="192" height="16" /></clipPath><g clip-path="url(#stackup-mmic_cl_11)"><text fill="#010101" transform="translate(25 23)" font-size="13" font-weight="600" font-family="Inter" x="0, 7.54, 15.45, 23.57, 27.34, 30.57, 40.64, 48.76, 56.47, 64.4, 67.62, 80.62, 83.85, 88.75, 93.61, 101.32, 109.02, 112.25, 119.39, 127.51, 134.98, 142.48, 150.19, 153.41, 160.88, 169.08, 176.74, 183.98" y="12.59">
+						Top: Open — free space above
+				</text></g><clipPath id="stackup-mmic_cl_12"><rect x="25" y="261" width="100" height="16" /></clipPath><g clip-path="url(#stackup-mmic_cl_12)"><text fill="#010101" transform="translate(25 261)" font-size="13" font-weight="600" font-family="Inter" x="0, 8.55, 16.45, 21.39, 26.25, 34.16, 45.83, 49.6, 52.83, 62.65, 67.51, 75.41, 83.32, 91.24" y="12.59">
+						Bottom: Ground
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(310 119)" x="0.5" y="0.5" width="15" height="134" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(310 119)" x="0.5" y="0.5" width="15" height="134" /><clipPath id="stackup-mmic_cl_13"><rect x="332" y="178" width="70" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_13)"><text fill="#010101" transform="translate(332 178)" font-size="11.5" font-family="Inter" x="0, 7.48, 13.97, 20.39, 26.64, 32.65, 35.38, 42.52, 49.22, 52.45, 60.23, 62.96" y="11.14">
+						Backside Via
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(172 47)" x="0.5" y="0.5" width="15" height="97" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(172 47)" x="0.5" y="0.5" width="15" height="97" /><clipPath id="stackup-mmic_cl_14"><rect x="194" y="88" width="106" height="14" /></clipPath><g clip-path="url(#stackup-mmic_cl_14)"><text fill="#010101" transform="translate(194 88)" font-size="11.5" font-family="Inter" x="0, 10.23, 16.92, 21.11, 27.59, 30.32, 35.66, 40.95, 51.18, 57.88, 62.06, 68.54, 71.27, 78.23, 81.46, 88.7, 95.56, 101.57" y="11.14">
+						Metal1-Metal2 Post
+				</text></g></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="862" height="290" viewBox="0 0 862 290"><rect fill="#010101" width="862" height="290" /><rect fill="#15222D" width="862" height="290" /><rect fill="#C08020" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mmic-dark_cl_0"><rect x="35" y="51" width="44" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_0)"><text fill="#19191E" transform="translate(35 51)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal2
+				</text></g><clipPath id="stackup-mmic-dark_cl_1"><rect x="503" y="51" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_1)"><text fill="white" transform="translate(503 51)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 51)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="white" transform="translate(602.71 51)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="45" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="45" /><clipPath id="stackup-mmic-dark_cl_2"><rect x="35" y="87" width="18" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_2)"><text fill="#19191E" transform="translate(35 87)" font-size="13" font-weight="600" font-family="Inter" x="0, 9.45, 12.84" y="12.59">
+						Air
+				</text></g><clipPath id="stackup-mmic-dark_cl_3"><rect x="503" y="87" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_3)"><text fill="white" transform="translate(503 87)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 87)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="white" transform="translate(573.16 87)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 23.18, 26.4, 29.63, 33.81, 40.3" y="11.14">
+						r = 1, tan
+				</text><text fill="white" transform="translate(620.19 87)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26" y="11.14">
+						δ = 0
+				</text></g><rect fill="#E0B040" transform="translate(25 119)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 119)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mmic-dark_cl_4"><rect x="35" y="123" width="42" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_4)"><text fill="#19191E" transform="translate(35 123)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal1
+				</text></g><clipPath id="stackup-mmic-dark_cl_5"><rect x="503" y="123" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_5)"><text fill="white" transform="translate(503 123)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 123)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="white" transform="translate(602.71 123)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 145)" x="0.5" y="0.5" width="459" height="82" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 145)" x="0.5" y="0.5" width="459" height="82" /><clipPath id="stackup-mmic-dark_cl_6"><rect x="35" y="177" width="34" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_6)"><text fill="#19191E" transform="translate(35 177)" font-size="13" font-weight="600" font-family="Inter" x="0, 9.81, 17.28, 26.58" y="12.59">
+						GaAs
+				</text></g><clipPath id="stackup-mmic-dark_cl_7"><rect x="503" y="177" width="206" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_7)"><text fill="white" transform="translate(503 177)" font-size="11.5" font-family="Inter" x="0, 5.34, 12.53, 19.72, 22.95, 30.11, 40.1, 43.34, 47.65, 54.45, 57.17, 63.59, 69.85, 73.07" y="11.14">
+						100 µm thick, 
+				</text><text fill="white" transform="translate(579.3 177)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="white" transform="translate(585.56 177)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 23.67, 30.63, 33.72, 40.59, 43.81, 47.05, 51.23, 57.71" y="11.14">
+						r = 12.9, tan
+				</text><text fill="white" transform="translate(650 177)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26, 27.15, 30.02, 37.21, 44.4, 51.59" y="11.14">
+						δ = 0.0006
+				</text></g><rect fill="#BE965A" transform="translate(25 227)" x="1" y="1" width="458" height="24" /><rect fill="none" stroke="#1E82C8" stroke-width="2" stroke-miterlimit="10" transform="translate(25 227)" x="1" y="1" width="458" height="24" /><clipPath id="stackup-mmic-dark_cl_8"><rect x="35" y="231" width="96" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_8)"><text fill="#19191E" transform="translate(35 231)" font-size="13" font-weight="600" font-family="Inter" x="0, 8.55, 16.01, 23.52, 30.92, 38.05, 41.44, 49.64, 57.34, 60.57, 72.35, 80.05, 84.99, 92.46" y="12.59">
+						Backside Metal
+				</text></g><clipPath id="stackup-mmic-dark_cl_9"><rect x="503" y="231" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_9)"><text fill="white" transform="translate(503 231)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="white" transform="translate(566.9 231)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="white" transform="translate(602.71 231)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><clipPath id="stackup-mmic-dark_cl_10"><rect x="503" y="246" width="237" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_10)"><text fill="#1E82C8" transform="translate(503 246)" font-size="11.5" font-family="Inter" x="0, 10.52, 13.75, 20.76, 24.85, 31.71, 38.39, 45.12, 52.26, 55.49, 59.57, 66.27, 70.16, 76.86, 80.94, 87.64, 94.37, 100.79, 107.49, 110.65, 113.89, 120.39, 126.57, 133.26, 137.74, 144.14, 147.38, 154.38, 161.25, 165.92, 170.1, 172.65, 178.66, 181.89, 189.47, 192.71, 196.82, 203.52, 207.8, 217.8, 220.53, 227.26, 233.74" y="11.14">
+						◀ ground reference: every port's − terminal
+				</text></g><clipPath id="stackup-mmic-dark_cl_11"><rect x="25" y="23" width="192" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_11)"><text fill="white" transform="translate(25 23)" font-size="13" font-weight="600" font-family="Inter" x="0, 7.54, 15.45, 23.57, 27.34, 30.57, 40.64, 48.76, 56.47, 64.4, 67.62, 80.62, 83.85, 88.75, 93.61, 101.32, 109.02, 112.25, 119.39, 127.51, 134.98, 142.48, 150.19, 153.41, 160.88, 169.08, 176.74, 183.98" y="12.59">
+						Top: Open — free space above
+				</text></g><clipPath id="stackup-mmic-dark_cl_12"><rect x="25" y="261" width="100" height="16" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_12)"><text fill="white" transform="translate(25 261)" font-size="13" font-weight="600" font-family="Inter" x="0, 8.55, 16.45, 21.39, 26.25, 34.16, 45.83, 49.6, 52.83, 62.65, 67.51, 75.41, 83.32, 91.24" y="12.59">
+						Bottom: Ground
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(310 119)" x="0.5" y="0.5" width="15" height="134" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(310 119)" x="0.5" y="0.5" width="15" height="134" /><clipPath id="stackup-mmic-dark_cl_13"><rect x="332" y="178" width="70" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_13)"><text fill="white" transform="translate(332 178)" font-size="11.5" font-family="Inter" x="0, 7.48, 13.97, 20.39, 26.64, 32.65, 35.38, 42.52, 49.22, 52.45, 60.23, 62.96" y="11.14">
+						Backside Via
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(172 47)" x="0.5" y="0.5" width="15" height="97" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(172 47)" x="0.5" y="0.5" width="15" height="97" /><clipPath id="stackup-mmic-dark_cl_14"><rect x="194" y="88" width="106" height="14" /></clipPath><g clip-path="url(#stackup-mmic-dark_cl_14)"><text fill="white" transform="translate(194 88)" font-size="11.5" font-family="Inter" x="0, 10.23, 16.92, 21.11, 27.59, 30.32, 35.66, 40.95, 51.18, 57.88, 62.06, 68.54, 71.27, 78.23, 81.46, 88.7, 95.56, 101.57" y="11.14">
+						Metal1-Metal2 Post
+				</text></g></svg></span>
+</span><figcaption>An MMIC stackup in cross-section: two signal metals over a GaAs substrate, a backside ground plane, and the two vias that connect them. The heavy edge marks the ground-designated conductor - the negative terminal of every port in an EM run. Thicknesses are printed rather than drawn to scale.</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th>Entry kind</th>
+<th>What it is</th>
+<th>What it carries</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Conductor</strong></td>
+<td>A metal layer</td>
+<td>Thickness, conductivity σ, the <strong>drawing layers</strong> that map onto it, and whether it is the <strong>ground reference</strong></td>
+</tr>
+<tr>
+<td><strong>Dielectric</strong></td>
+<td>The material between two conductors</td>
+<td>Thickness, ε<sub>r</sub>, tanδ, µ<sub>r</sub></td>
+</tr>
+<tr>
+<td><strong>Via</strong></td>
+<td>A connection <em>between</em> two conductors — not a layer of the sandwich</td>
+<td>The drawing layer via shapes are drawn on, the two conductors it <strong>spans by name</strong>, and its fill (plated or solid) with a wall thickness</td>
+</tr>
+</tbody>
+</table>
+<p>The two boundary conditions are properties of the stack as a whole:</p>
+<ul>
+<li><strong>Top</strong> — <code>Open</code> (free space above, the usual case) or <code>Ground</code>.</li>
+<li><strong>Bottom</strong> — <code>Ground</code> (the usual case) or <code>Open</code>.</li>
+</ul>
+<div class="callout note">
+<span class="label">A drawing layer is not a conductor</span>
+<p>What you draw on is a <em>drawing layer</em> — a GDSII layer/datatype pair with a name and a
+colour. What gets simulated is a <em>stackup conductor</em>. The link between them is the conductor
+entry's <strong>drawing layers</strong> list, and a shape on a layer that is bound to nothing is
+simply not part of the EM problem. If a run tells you it found "nothing on a layer bound to a signal
+conductor", that binding is what is missing — not the artwork.</p>
+</div>
+<h2 id="ground">Where your port's negative terminal is</h2>
+<p><strong>Every port in an EM run returns through one plane, and the stackup picks it.</strong> Not the panel, not
+the port label, not per port.</p>
+<p>The rule, in order:</p>
+<ol>
+<li><strong>The ground-designated conductor.</strong> Mark a conductor entry as the <strong>ground reference</strong> in the
+technology editor. The plane is the <strong>top surface of the highest ground-designated conductor that
+lies below the signal level being simulated</strong>.</li>
+<li><strong>Failing that, the stack's bottom.</strong> If no conductor is marked and <strong>Bottom = Ground</strong>, the plane
+is taken at the bottom of the stack. The run says so in its notes, and asks you to mark one
+instead — this fallback places the plane by boundary condition rather than by a real conductor's
+surface, which is a different height by the thickness of whatever is down there.</li>
+<li><strong>Failing both, the run is refused.</strong> No ground reference and no grounded bottom means no second
+terminal for any port, and there is nothing to solve.</li>
+</ol>
+<p>Three consequences worth having in mind:</p>
+<ul>
+<li><strong>The plane is modelled as laterally infinite.</strong> It is the boundary condition the Green's function
+handles analytically, not a meshed pour — so a ground <em>pour</em> drawn as artwork is not it, and a
+finite plane's edges are not modelled. A conductor marked as the ground reference is not meshed and
+cannot also be an analysis level; naming one as a level is refused.</li>
+<li><strong>An intervening metal layer does not become ground just by being underneath.</strong> The rule keys on
+the <em>designation</em>, not on stack position, precisely so that an MMIC's second metal level is not
+mistaken for a plane. Mark what you mean.</li>
+<li><strong>This is the port's negative terminal for every port type</strong> — an edge port at a conductor end, an
+<a href="mom-engine.html#ports">internal delta gap</a>, or an <a href="mom-engine.html#ports">internal port</a> whose
+whole purpose is to reach it. It is why an internal port needs a path down to the plane at all.</li>
+</ul>
+<div class="callout warn">
+<span class="label">If the answer looks wrong by a constant factor, check this first</span>
+<p>The height between the signal conductor and the ground plane is the single number a microstrip's
+impedance depends on most. A ground reference marked one entry too low — on the far side of a
+dielectric you forgot was there — changes every impedance in the run while leaving the result looking
+completely plausible. The run's own notes name the conductor it used and its height; read them.</p>
+</div>
+<h2 id="levels">Which conductors get simulated</h2>
+<p>A conductor entry that is <strong>not</strong> the ground reference is a <em>signal</em> conductor, and a signal
+conductor with artwork on it is an <strong>analysis level</strong>.</p>
+<ul>
+<li>With one signal conductor, that is the level. Nothing to choose.</li>
+<li>With more than one, the EM setup can name the levels it wants (the analysis-level list); with none
+named, every signal conductor that actually carries artwork is included.</li>
+<li>Levels are ordered <strong>bottom to top</strong>, and the lowest one sits on the slab's top surface.</li>
+</ul>
+<h2 id="slab">The slab, and what makes one solvable</h2>
+<p>The solver works on the <strong>dielectric between the ground plane and the lowest analysis level</strong>. Two
+stackup mistakes are refused by name rather than solved around:</p>
+<ul>
+<li><strong>The signal conductor sits at or below the ground plane.</strong> There is no slab between them. Almost
+always a stackup written in the wrong order — the list runs top to bottom.</li>
+<li><strong>There is no dielectric entry between the plane and the conductor.</strong> A conductor floating directly
+on a plane with nothing in between has no substrate to be a microstrip over.</li>
+</ul>
+<p>Dielectric entries between the two are combined into the substrate the kernel solves on, with their
+own ε<sub>r</sub> and tanδ. Layers <em>above</em> the top conductor are not part of that slab: the top
+boundary is what is above, and it is <code>Open</code> unless you say otherwise.</p>
+<h2 id="vias">Vias</h2>
+<p>A via entry is not a layer — it is a <strong>connection between two conductor entries, named by name</strong> in
+its <code>Span from</code> / <code>Span to</code> fields. Draw a via shape on the drawing layer the entry is bound to, and
+the EM extractor turns it into a real vertical current path.</p>
+<p>Three rules the extractor applies, each reported when it bites:</p>
+<ul>
+<li><strong>The two conductors must be adjacent in the stack.</strong> A via that skips a level is not built, because
+there is nothing to connect it to in between.</li>
+<li><strong>A via may terminate on the ground plane</strong>, and that is the common backside/through-hole case: the
+named conductor is the ground-designated one, so the via runs from a signal level down to the plane.
+A via naming some <em>other</em> non-analysis conductor is ignored with a note — it would otherwise silently
+model a structure you did not draw.</li>
+<li><strong>The footprint is squared.</strong> A round barrel staircased onto the mesh grid would cost a gridline per
+facet for no physics, so it is replaced by the <strong>equal-area square</strong>, which preserves the conducting
+cross-section. The run reports that it did.</li>
+</ul>
+<div class="callout note">
+<span class="label">An internal port does not need you to draw one</span>
+<p>An <a href="mom-engine.html#ports">internal port</a> is placed on the metal and returns to the
+ground plane, so it needs a path down there. If you drew a via, it drives yours. If you did not, the
+solver builds one — a square of <strong>the technology's default via drill</strong> (or, if the
+technology declares none, a quarter of the substrate height), reported by size in the run's notes.
+That path is real metal and its inductance is in the answer, which is why you can override it simply
+by drawing the via you want.</p>
+</div>
+<h2 id="ignored">What the EM engine does not read</h2>
+<p>Stated plainly, because a field that is carried but unused is worse than one that is absent:</p>
+<ul>
+<li><strong>Conductor σ is not used by the full-wave planar kernel.</strong> It models metal as a perfect conductor;
+conductor loss is not in the answer. The <strong>cross-section (uniform-line) kernel</strong> does use it, for
+its Wheeler-incremental-inductance surface resistance.</li>
+<li><strong>Conductor thickness is not modelled by the full-wave kernel either</strong> — it solves a zero-thickness
+sheet. It is used by the cross-section kernel and by interchange.</li>
+<li><strong>A via's fill and wall thickness are carried for thermal work</strong>, not read by the RF solve: a plated
+wall a few µm thick is many skin depths at RF, so plated and solid behave the same.</li>
+</ul>
+<h2 id="check">Checking what it resolved to</h2>
+<p><strong>Every EM run says which conductor it used as ground, and at what height</strong>, in its notes — along with
+the level list, the slab it built, and any via it ignored or built for you. That report is the
+authoritative answer to &quot;where is my port's negative terminal&quot;, and it is written by the code that
+actually did it rather than re-derived for display.</p>
+<p>If you are chasing a result that looks plausible but wrong, read those notes before anything else:
+almost every stackup mistake produces a complete, believable answer for a structure you did not draw.</p>
+<p><strong>See also:</strong> <a href="mom-engine.html">The MoM engine</a> for the ports themselves, <a href="em-setup.html">EM Setup</a>
+for the panel that runs them, and <a href="layout-editor.html#technology">The Layout Editor</a> for the rest of
+the technology file.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="pdk-authoring.html"><span class="dir">Previous</span><span class="name">PDK Authoring</span></a>
+  <a class="next" href="mom-engine.html"><span class="dir">Next</span><span class="name">The MoM Engine</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+</body>
+</html>

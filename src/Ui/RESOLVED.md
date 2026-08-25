@@ -1,5 +1,44 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Figure churn: why every docs run rewrote every SVG (2026-08-25)
+
+**Owner report:** *"we did not change any of the UI, but now all the unrelated .svg assets are showing
+a diff… I don't want to commit all new .svg files every time we make a small change to the user
+docs."* Measured: **305 of 308 modified figures differed by exactly one thing** — an element id.
+
+**Cause: Skia's SVG device names generated elements from a PROCESS-WIDE counter.** A clip is
+`cl_<hex>`, and the hex counts everything the process has emitted so far. DocGen writes every figure
+in one process, so adding a single figure renumbers the clips of every figure rendered after it.
+Nothing about the drawing changes; the diff is unreviewable and the repository grows for nothing.
+
+**Fix: `SvgPostPass.Canonicalise` renumbers ids of that shape per FILE, in document order** — the
+first clip in a file is `cl_0` whatever the process did before it. Ids of any other shape are left
+alone, in particular the `d0`, `d1`… that the file's own path-dedupe pass mints. Renaming happens
+before the reference rewrite and through the same map, so `url(#…)` and `href="#…"` follow.
+**Verified by construction**: with a throwaway figure added to the catalog, the number of other
+figures that changed went from 277 to 0.
+
+**One-time cost, and it has NOT been taken.** The committed figures still carry the old ids, so the
+first full docs run after this rewrites ~305 files, one line each. Those regenerated files were
+deliberately left OUT of the working tree here (`git checkout -- docs/user/assets/figures/`) at the
+owner's instruction; whoever regenerates next takes the churn once, and it does not recur.
+
+### Two figures still churn, and it is a different cause
+
+`analysis-editor-hb` and `em-setup-loaded` (4 files with their dark variants) come back with a
+slightly different rotation matrix on **every** run — `matrix(-0.9469 0.3214 …)` against
+`matrix(-0.9441 0.3296 …)`. Both contain an **Expander**, and its chevron is turned by a KEYFRAME
+animation declared in the control theme: the capture photographs it part way through, at whatever
+angle the machine reached.
+
+**Three fixes were tried and all measured to change nothing:** clearing `Transitions` on every
+`Animatable` in the tree (a keyframe animation is not a transition), an application-level style
+setting `Transitions` to null (a control theme's setters outrank `Application.Styles`), and waiting
+450 ms per capture for the animation to finish (it did not converge — the animation clock does not
+advance on dispatcher pumping alone). The transition-clearing walk is kept because it is correct for
+transitions; the Expander case is **open**. A fix probably means giving the capture a controllable
+animation clock rather than the global one. Until then those four files are reverted by hand.
+
 `src/Ui/CLAUDE.md` reached 21,417 lines as an append-only phase log and had to be archived to
 `src/Ui/HISTORY.md`. Going forward, a completed brief's detail lands here instead — one `##` section
 per brief, sparingly, only for findings that are still true, still surprising, and would cost someone
@@ -8649,3 +8688,50 @@ silently.
   ~1.4 million features for a six-figure via field. One-time per cell per session, and unchanged here.
 - This harness is CPU raster; the application leases a GPU-backed canvas, where per-rect rasterisation
   is a very different proposition. The snap and marquee costs above are CPU either way.
+
+---
+
+## R rotates what you are carrying, mid-drag (2026-08-25)
+
+Owner request: *"allow user to press 'R' to rotate port in the middle of a live drag (it currently
+rotates if not during a drag)"*, then *"can this work for any object?"*
+
+**It can, and it is written that way.** `RotateSelection` already handles shapes, instances and
+wires — nothing about it is port-specific — so this is a general gesture, not a port special case. A
+port is simply the case that makes the gap obvious, because a port's whole job is which way it faces.
+
+**What swallowed the key was a guard, not a missing feature.** The entire selection-editing key block
+in `LayoutEditorViewModel.OnKeyDown` is gated on
+
+```csharp
+ActiveTool == Tool.Select && _selectDragKind == SelectDragKind.None && _handleDragKind == HandleDragKind.None
+```
+
+so mid-drag the `R` case was never reached at all. Measured before the fix, through the real pointer
+path: press → move → `R` left `PortDirection` untouched. A new branch runs **ahead of** that block.
+
+- **MOVE drags only.** A handle or scale drag reshapes ONE shape against a grabbed vertex or edge,
+  and rotating the thing under that grip mid-gesture has no coherent meaning. Gated, and asserted.
+- **The live preview follows for free.** `Overlay.DragOverrides` is rebuilt from `Model.Shapes` plus
+  the live delta on every rebuild, so the rotation lands in the model and the next rebuild carries
+  it. Seeing the new direction before releasing is what makes the gesture usable, so it is gated
+  rather than assumed.
+- **It rotates about the selection's ORIGINAL centre**, because during a drag the model has not moved
+  — only the preview has. Same result as rotating after the drop.
+- **Ctrl/Cmd+R is not stolen**, mid-drag as anywhere else. One condition, easy to drop, so it has its
+  own test.
+
+**Two undo entries per gesture, deliberately:** the rotate commits when pressed, the move at release.
+The consequence worth knowing is that **Escape — which cancels the MOVE — leaves the rotation
+applied**, because the rotation was a completed edit rather than part of the drag. Folding both into
+one composite at release would need the rotation to live in the drag preview instead of the model,
+which is a much larger change than the request.
+
+**A trap for anyone writing a test here:** `RotateSelection` goes through `ReplaceShapesCommand`, so
+it swaps in a NEW shape object. A test holding a reference captured before the press reads the stale
+one and sees no rotation — which is exactly how the first probe of this looked like a failure. Re-read
+`view.Shapes[i]`.
+
+Gate: `tests/Ui.Tests/Layout/RotateDuringDragTests.cs` (6 tests) — the rotate and its live preview,
+the drop still landing, `Shift+R` the other way, an ordinary rectangle (the "any object" half, driven
+by its bbox swapping 8x2 to 2x8), the handle-drag exclusion, and the Ctrl+R guard.

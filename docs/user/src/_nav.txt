@@ -51,6 +51,7 @@ reference/layout-editor.html   | The layout view: technology, drawing, snapping,
 reference/pcells.html          | Parameterised cells — placing one, driving it, and its parameter handles.
 reference/pdk-integration.html | Importing a kit and simulating the parts it supplies.
 reference/pdk-authoring.html   | Authoring a kit: the OpenPDK layout, Python PCells, models and artwork.
+reference/stackup.html         | The layers your board is made of - and which conductor is ground.
 reference/mom-engine.html      | The planar method-of-moments solver: what it does, what it will not do, and how.
 reference/em-setup.html        | The EM Setup panel, control by control, and where the results land.
 

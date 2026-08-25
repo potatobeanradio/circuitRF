@@ -260,8 +260,15 @@ public sealed class PlanarKernel
         // afterwards, so the user's reference planes stay on the user's own drawn edges — and a feed
         // that is already uniform grows nothing, which is what keeps every recorded number
         // reproducible. See PlanarFeedExtension's header.
+        // ── And the path an INTERNAL port needs, by the same rule ───────────────────────────
+        //
+        // A port to ground needs a conductor to ground; where the artwork has none, one cell of via
+        // is built for it and reported. A board that draws its own vias reaches the mesher by
+        // reference, exactly as an already-uniform feed does. See PlanarGroundPath's header.
+        var (grounded, _, groundNotes) = PlanarGroundPath.Extend(problem, ports);
+
         var (meshed, leads, feedNotes) =
-            PlanarFeedExtension.Extend(problem, ports, st.Calibration, lengthFormat);
+            PlanarFeedExtension.Extend(grounded, ports, st.Calibration, lengthFormat);
 
         // Meshing is fast next to the sweep but is not instant, and it is the first thing that
         // happens after the user presses Simulate — so it gets its own named stage rather than
@@ -291,6 +298,7 @@ public sealed class PlanarKernel
                                     lengthFormat);
 
         var notes = new List<string>(report.Notes);
+        notes.AddRange(groundNotes);
         notes.AddRange(feedNotes);
         notes.AddRange(sweep.Notes);
         notes.Add(QuasiStaticNote);
@@ -334,7 +342,8 @@ public sealed class PlanarKernel
         // different structure than the sweep beside it: Solve() meshes the extended problem, so a
         // recomputed map that meshed the drawn one would disagree with the currents the sweep kept,
         // cell for cell, for no visible reason.
-        var meshed = PlanarFeedExtension.Extend(problem, ports, st0.Calibration, lengthFormat).Problem;
+        var meshed = PlanarFeedExtension.Extend(
+            PlanarGroundPath.Extend(problem, ports).Problem, ports, st0.Calibration, lengthFormat).Problem;
 
         var report   = Mesh(meshed, meshSettings, accelerated: st0.Fill?.Aim is not null,
                             lengthFormat: lengthFormat);

@@ -309,10 +309,32 @@ public sealed class LayoutSpatialIndex
     /// font-agnostic square pad — <c>(charCount+1) × height</c> in all four directions — safely bounds
     /// both of those narrower notions without needing to duplicate either one here.
     /// </summary>
+    /// <summary>A box that intersects every query — big enough to never prune, small enough that
+    /// its own width arithmetic stays far from overflow (1e15 nm is 10^6 km).</summary>
+    private static readonly Bbox Everywhere = new(-1_000_000_000_000_000L, -1_000_000_000_000_000L,
+                                                   1_000_000_000_000_000L,  1_000_000_000_000_000L);
+
     internal static Bbox ConservativeBboxOf(LayoutShape shape)
     {
         if (shape is LabelShape label)
         {
+            // ── A PORT IS NEVER CULLED, AND THAT IS INSIDE THIS METHOD'S OWN CONTRACT ─────────
+            //
+            // A port's hit region and selection highlight are the MARK it draws (2026-08-25), and an
+            // EDGE port's bar and arrow are drawn at the CONDUCTOR END — an unbounded distance from
+            // the label's anchor, and knowable only from the technology and the artwork, neither of
+            // which this framework-free file has. Any finite pad about the anchor is therefore
+            // sometimes too small, and a too-small conservative box is the one failure this method
+            // must never have: the port would be pruned before its exact test ran, so it would be
+            // pickable from one direction and invisible to the query from another. Measured, before
+            // this: a press directly on a port's arrow selected the trace underneath it.
+            //
+            // Over-inclusion is the safe direction (see this method's summary), and the cost is
+            // bounded by construction — a port is one EM port, so a layout has a handful, not
+            // thousands. It also fixes a rarer bug in the other direction: a port whose anchor is
+            // off-screen while its plane is on-screen used to have its marker culled and not drawn.
+            if (label.IsPort) return Everywhere;
+
             if (string.IsNullOrEmpty(label.Text) || label.Height <= 0)
                 return new Bbox(label.X, label.Y, label.X, label.Y);
             long pad = (label.Text.Length + 1) * label.Height;

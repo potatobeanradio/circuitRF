@@ -324,7 +324,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <see cref="EmAnalysisKind.Auto"/>, which is a request rather than an outcome.</summary>
     [ObservableProperty] private EmAnalysisKind _selectedKernel = EmAnalysisKind.CrossSection;
 
-    partial void OnSelectedKernelChanged(EmAnalysisKind value) => OnPropertyChanged(nameof(PortsHelpText));
+    partial void OnSelectedKernelChanged(EmAnalysisKind value)
+    {
+        OnPropertyChanged(nameof(PortsHelpText));
+        // ShowPortList and ShowNearFarPortZ0 both read SelectedKernel, and a setup that switches
+        // kernels without its port COUNT changing would otherwise leave the wrong one of the two
+        // port controls on screen — RebuildPortRows is the only other place they are published.
+        OnPropertyChanged(nameof(ShowPortList));
+        OnPropertyChanged(nameof(ShowNearFarPortZ0));
+    }
 
     [ObservableProperty] private string _selectedKernelName = "";
 
@@ -387,21 +395,22 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public string? BlockingReason =>
         SelectedKernel == EmAnalysisKind.Planar
             ? PlanarExtractionRefusal ?? KernelRefusal ?? PortRefusal ?? PlanarBudgetRefusal
-            : InternalGapOnTheWrongKernel ?? ExtractionRefusal ?? KernelRefusal;
+            : InternalPortOnTheWrongKernel ?? ExtractionRefusal ?? KernelRefusal;
 
     /// <summary>
     /// R-em-13, applied to the one refusal a user would otherwise meet only after pressing Simulate:
     /// an internal delta-gap port on a setup that resolved to the uniform-line kernel.
     ///
-    /// <para>The run refuses it (<see cref="EmRunService.InternalGapNeedsFullWave"/>, whose wording
+    /// <para>The run refuses it (<see cref="EmRunService.InternalPortNeedsFullWave"/>, whose wording
     /// this shares rather than paraphrases). Showing it live matters more here than for most, because
     /// the user did not choose that kernel — <c>Auto</c> did, on the grounds that the geometry
     /// reduces to a uniform cross-section, which a line with a gap on it does. Nothing on screen
-    /// would otherwise connect "I set port 3 to Internal delta gap" to "the answer has two ports".</para>
+    /// would otherwise connect "I set port 3 to Internal delta gap" to "the answer has two ports".
+    /// The same applies to an internal port, whose via the cross-section kernel does not model either.</para>
     /// </summary>
-    public string? InternalGapOnTheWrongKernel =>
-        SelectedKernel == EmAnalysisKind.CrossSection && Working.DeclaresInternalGapPort()
-            ? EmRunService.InternalGapNeedsFullWave(SelectedKernelName is { Length: > 0 } n
+    public string? InternalPortOnTheWrongKernel =>
+        SelectedKernel == EmAnalysisKind.CrossSection && Working.DeclaresInternalPort()
+            ? EmRunService.InternalPortNeedsFullWave(SelectedKernelName is { Length: > 0 } n
                                                         ? n : "uniform-line (quasi-static) kernel")
             : null;
 
@@ -435,6 +444,26 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     /// <summary>True once the cross-section resolves to more than a single line's two ports.</summary>
     public bool ShowPortList => PortRows.Count > 2 || SelectedKernel == EmAnalysisKind.Planar;
+
+    /// <summary>
+    /// <b>The fixed "Port 1 Z₀ / Port 2 Z₀" pair, shown only when the per-port list is NOT.</b>
+    ///
+    /// <para>Owner report, 2026-08-25: "I don't see a Port 3 Z₀ option in the .cem editor." The panel
+    /// was drawing BOTH — a grid captioned <i>Port 1</i> and <i>Port 2</i>, and beneath it a list
+    /// with a row for every port including those same two. A user reads the captioned pair as the
+    /// port list, finds it stops at two, and has no reason to read the unlabelled rows below it as
+    /// the same thing continued. Worse, the two really are one value: a row shows
+    /// <see cref="EmSetup.ResolvePortZ0"/>, which falls back to exactly this pair until the row is
+    /// overridden, so editing the caption changed the row and editing the row then shadowed the
+    /// caption.</para>
+    ///
+    /// <para><see cref="ShowPortList"/>'s own note already said this pair and the list must never
+    /// appear together — "putting a two-row list beside those same two fields would be two controls
+    /// for one value". That held while the list was cross-section-only and needed three ports to
+    /// appear; the planar kernel shows the list unconditionally, and the rule was never extended to
+    /// match.</para>
+    /// </summary>
+    public bool ShowNearFarPortZ0 => !ShowPortList;
 
     /// <summary>
     /// The Ports group's own explanation, shown as the header's tooltip rather than as two paragraphs
@@ -771,7 +800,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         list[index] = kind;
         CommitEdit(before, $"Change port {PortRows[index].PortNumber} type");
         InvalidateMesh();
-        OnPropertyChanged(nameof(InternalGapOnTheWrongKernel));
+        OnPropertyChanged(nameof(InternalPortOnTheWrongKernel));
         Refresh();
     }
 
@@ -797,6 +826,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             }
         }
         OnPropertyChanged(nameof(ShowPortList));
+        OnPropertyChanged(nameof(ShowNearFarPortZ0));
     }
 
     public void CommitMeshField(string field)
@@ -1114,7 +1144,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarExtractionRefusal = null;
         PortRefusal        = null;
         PlanarPorts        = [];
-        InternalGapPortAnchors = [];
+        InternalPortMarkAnchors = [];
         Notes              = [];
         StackupRows        = [];
         TechnologyName     = "";
@@ -1227,7 +1257,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         Notes         = [.. planar.Notes];
         PlanarPorts   = [];
-        InternalGapPortAnchors = [];
+        InternalPortMarkAnchors = [];
         DispersionDisabledReason =
             "The Kirschning–Jansen correction belongs to the cross-section analysis, where it is " +
             "applied on top of a quasi-static answer. A full-wave planar solve has dispersion in " +
@@ -1250,26 +1280,40 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         var ports = EmPortExtraction.Extract(
             source.View.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0,
-            source.View.DisplayUnit, Working.ResolvePortKind);
+            source.View.DisplayUnit, Working.ResolvePortKind,
+            EmPortExtraction.DefaultGroundPathWidthM(source.Technology));
 
         PortRefusal = ports.Ok ? null : ports.Refusal;
         PlanarPorts = ports.Ports;
 
-        // The layout cannot know a port's type — it lives in this .cem — so the anchors of the
-        // internal ones are published for the renderer. SourceLabels is index-aligned with Ports
-        // precisely so this does not have to re-derive which label became which port.
-        var anchors = new List<(long X, long Y)>();
-        for (int i = 0; i < ports.Ports.Count && i < ports.SourceLabels.Count; i++)
-            if (ports.Ports[i].Kind == PlanarPortKind.InternalDeltaGap)
-                anchors.Add((ports.SourceLabels[i].X, ports.SourceLabels[i].Y));
-        InternalGapPortAnchors = anchors;
+        // ── THE MARKS AND THE ROWS COME FROM `Rows`, WHICH SURVIVES A REFUSAL ────────────────
+        //
+        // Owner reports, 2026-08-25: "if any ports aren't touching metal, the .cem editor will not
+        // list the ports", and "P3 renders as edge port (even though it is a gap port) when P2 is
+        // not on a conductor." One cause: both of these read `ports.Ports`, which is empty on any
+        // refusal — so ONE bad label emptied the panel's port list AND silently retyped every
+        // internal port in the layout back to an edge port, neither of which is true of the ports
+        // the user actually drew. `Rows` reports every numbered label whether it resolved or not.
+        //
+        // The KIND comes from the .cem (`ResolvePortKind`) rather than from the resolved port,
+        // because that is where it lives and because an unresolved row has no port to ask. For a
+        // resolved row the two are the same value by construction — `kindFor` above IS this
+        // function — so this is not a second opinion, it is the only one.
+        var anchors = new List<(long X, long Y, PlanarPortKind Kind)>();
+        for (int i = 0; i < ports.Rows.Count; i++)
+        {
+            var kind = Working.ResolvePortKind(i);
+            if (kind != PlanarPortKind.Edge)
+                anchors.Add((ports.Rows[i].Label.X, ports.Rows[i].Label.Y, kind));
+        }
+        InternalPortMarkAnchors = anchors;
 
         var notes = new List<string>(_geometryNotes);
         notes.AddRange(planar.Notes);
         notes.AddRange(ports.Notes);
         Notes = [.. notes];
 
-        RebuildPlanarPortRows(ports.Ports);
+        RebuildPlanarPortRows(ports.Rows);
         RaiseState();
     }
 
@@ -1293,24 +1337,40 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <summary>The per-port Z₀ list for a planar setup. The port COUNT comes from the layout's own
     /// port labels — the geometry, not something the user types here (R-cpl-6's own rule, applied to
     /// kernel B's ports).</summary>
-    private void RebuildPlanarPortRows(IReadOnlyList<PlanarPort> ports)
+    private void RebuildPlanarPortRows(IReadOnlyList<EmPortRow> ports)
     {
         PortRows.Clear();
         for (int i = 0; i < ports.Count; i++)
         {
-            var kind = ports[i].Kind;
+            var kind = Working.ResolvePortKind(i);
+            var port = ports[i].Port;
             var row = new EmPortZ0Row
             {
                 PortNumber = ports[i].Number,
                 // An internal gap has no "end" — it is a cut in the middle of the metal, and the
-                // side only says which way its current is positive. Labelling it as an end would be
-                // the panel contradicting the run's own notes.
-                Label      = kind == PlanarPortKind.InternalDeltaGap
-                                 ? $"Port {ports[i].Number} — gap, current {SideLabel(ports[i].Side)}"
-                                 : $"Port {ports[i].Number} — {SideLabel(ports[i].Side)} end",
+                // side only says which way its current is positive. An internal port has neither: its
+                // terminals are the metal and the ground plane, so naming a direction at all would
+                // be the panel inventing one. Labelling either as an end would be the panel
+                // contradicting the run's own notes.
+                //
+                // An UNRESOLVED port names no side at all: the side is inferred from the conductor,
+                // and there isn't one. It says what it is instead, with the reason carried in
+                // `Problem` below — a row captioned "low-x end" for a label sitting on bare
+                // dielectric would be the panel asserting the very thing the refusal denies.
+                Label      = port is null
+                    ? $"Port {ports[i].Number} — not resolved"
+                    : kind switch
+                    {
+                        PlanarPortKind.InternalDeltaGap =>
+                            $"Port {ports[i].Number} — gap, current {SideLabel(port.Side)}",
+                        PlanarPortKind.Internal =>
+                            $"Port {ports[i].Number} — internal, to ground",
+                        _ => $"Port {ports[i].Number} — {SideLabel(port.Side)} end",
+                    },
                 Text       = FormatComplexOhms(Working.ResolvePortZ0(i)),
                 ShowKind   = true,
                 Kind       = kind,
+                Problem    = ports[i].Problem,
             };
             // Wired AFTER construction: the initialiser above seeds Kind from what is already
             // stored, and a seed must not commit an edit or push an undo entry.
@@ -1319,6 +1379,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             PortRows.Add(row);
         }
         OnPropertyChanged(nameof(ShowPortList));
+        OnPropertyChanged(nameof(ShowNearFarPortZ0));
     }
 
     private static string SideLabel(PlanarPortSide s) => s switch
@@ -1345,7 +1406,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // Both problems have to be null for the rows to be stale — which is what "no extraction
         // succeeded" actually means now that there are two extractors.
         if (Problem is null && PlanarProblem is null && PortRows.Count > 0) RebuildPortRows(null);
-        OnPropertyChanged(nameof(InternalGapOnTheWrongKernel));
+        OnPropertyChanged(nameof(InternalPortOnTheWrongKernel));
         OnPropertyChanged(nameof(BlockingReason));
         OnPropertyChanged(nameof(CanRun));
         SimulateCommand.NotifyCanExecuteChanged();
@@ -1477,7 +1538,16 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // Held so AdoptPlanarMeshReport can prepend them to the mesher's own — the notes are built in
         // two places and must read in one order.
         _pendingPlanarNotes = [.. meshGeometry.Notes, .. extraction.Notes];
-        return extraction.Problem;
+        // ── The mesh PREVIEW is of the problem that will be SOLVED, vias included ───────────────
+        //
+        // An internal port with no via drawn under it grows its own path to the plane before meshing
+        // (PlanarGroundPath), so a preview of the bare extraction would be a picture of a structure
+        // the run does not solve — and, worse, the port's own mark would have no footprint to
+        // measure and would silently stay at its glyph size. The ports here are the ones the last
+        // refresh resolved; with none, this is exactly the old behaviour.
+        return PlanarPorts.Count > 0
+            ? PlanarGroundPath.Extend(extraction.Problem!, PlanarPorts).Problem
+            : extraction.Problem;
     }
 
     private IReadOnlyList<string> _pendingPlanarNotes = [];
@@ -1651,9 +1721,9 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <see cref="ReferencePlanes"/>: a reference plane is a location the ENGINE reports and does not
     /// exist until something is solved, while a port's type is a decision the user has just made and
     /// has to see immediately. Anchors rather than port numbers — see
-    /// <c>LayoutRenderOptions.InternalGapPorts</c> for why.</para>
+    /// <c>LayoutRenderOptions.InternalPortMarks</c> for why.</para>
     /// </summary>
-    [ObservableProperty] private IReadOnlyList<(long X, long Y)> _internalGapPortAnchors = [];
+    [ObservableProperty] private IReadOnlyList<(long X, long Y, PlanarPortKind Kind)> _internalPortMarkAnchors = [];
 
     partial void OnCurrentDensityChanged(PlanarCurrentDensityMap? value)
         => OnPropertyChanged(nameof(CurrentDensityScale));
@@ -1864,6 +1934,18 @@ public sealed partial class EmPortZ0Row : CommunityToolkit.Mvvm.ComponentModel.O
 
     [ObservableProperty] private string  _text = "50";
     [ObservableProperty] private string? _error;
+
+    /// <summary>
+    /// Why this port could not be resolved from the geometry, or null when it was. <b>Separate from
+    /// <see cref="Error"/>, which is about the TEXT in the impedance box</b> — the two have
+    /// different lifetimes and would otherwise clobber each other: a successful impedance commit
+    /// clears <c>Error</c>, and it must not thereby erase "this port is not on any conductor",
+    /// which is still true and is not the user's typing.
+    /// </summary>
+    public string? Problem { get; init; }
+
+    /// <summary>True when this row has anything to warn about, from either source.</summary>
+    public bool HasProblem => Problem is not null;
 
     /// <summary>
     /// Edge or internal delta gap. <b>Raised through <see cref="KindChanged"/> rather than committed

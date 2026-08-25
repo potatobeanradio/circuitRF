@@ -14,16 +14,40 @@ public static class LayoutHitTest
     /// <summary>
     /// Returns shape indices under (x,y) within <paramref name="tolDbu"/>, ordered per §6.2:
     /// <c>ZOrder</c> descending, then ascending bbox area (so a small shape sitting on a large one on
-    /// the SAME layer is reachable), then ascending list index as a deterministic tie-break.
+    /// the SAME layer is reachable), <b>then — between POINT-LIKE shapes only — ascending distance
+    /// from the query point to the anchor</b>, then ascending list index as a deterministic tie-break.
+    ///
+    /// <para><b>Why the distance term exists.</b> Owner report, 2026-08-25: "the port 2 hitbox is
+    /// interfering with port 3, so I can't drag-select P3, even though port 2 is far from port 3."
+    /// Measured on that file: the two anchors are 0.381 mm apart while each port's pick square — a
+    /// deliberately generous one, see <see cref="LabelHitBbox"/> — is 2.52 mm across, so each anchor
+    /// sits deep inside the other's box. <b>The area term cannot separate them, because
+    /// <c>LayoutGeometry.BboxOf</c> of a label is a zero-area POINT</b>; both scored 0, and the sort
+    /// fell straight through to ascending list index, so the port written earlier in the <c>.clay</c>
+    /// won every overlapping pick and the later one could not be grabbed at all.</para>
+    ///
+    /// <para>The pick square is generous on purpose and must stay so — a port is a MARKER, and a
+    /// user aims at its bar and arrow, not at a glyph. What was missing is that between two markers,
+    /// <b>the one you are nearest is the one you meant</b>. The term is scoped to zero-area shapes so
+    /// that ordering between real geometry is untouched: two overlapping rectangles of equal area
+    /// still tie-break by index exactly as before.</para>
     /// Skips shapes on layers whose resolved <see cref="LayerDef"/> is <c>Visible == false</c> or
     /// <c>Selectable == false</c>; unknown layers resolve through <see cref="FallbackPalette"/> and
     /// are always selectable.
     /// </summary>
-    public static IReadOnlyList<int> HitStack(LayoutView view, Technology? tech, long x, long y, long tolDbu)
+    /// <param name="portMarkerRegion">
+    /// A port label's pick region, when the caller can supply one. <b>Ports are picked by their MARK
+    /// rather than by their anchor</b> (2026-08-25), and the mark's position depends on the port's
+    /// TYPE — which lives in the <c>.cem</c>, not in the layout — and on the conductor beneath it. A
+    /// caller that knows both passes this; one that does not gets the anchor square, which is what
+    /// every caller predating the change gets and is a strictly usable pick region.
+    /// </param>
+    public static IReadOnlyList<int> HitStack(LayoutView view, Technology? tech, long x, long y, long tolDbu,
+                                              Func<LabelShape, Bbox>? portMarkerRegion = null)
     {
         tolDbu = Math.Max(tolDbu, 0);
         var layerMap = tech?.Layers.ToDictionary(l => l.Key);
-        var candidates = new List<(int ZOrder, double Area, int Index)>();
+        var candidates = new List<(int ZOrder, double Area, double Distance, int Index)>();
 
         // L2b: the tolerance is still computed per query from the live viewport by the caller and
         // expands the QUERY rect here — it is never cached or index-derived (docs/sonnet-briefs/
@@ -39,11 +63,33 @@ public static class LayoutHitTest
                 : FallbackPalette.For(shape.Layer);
             if (!def.Visible || !def.Selectable) continue;
 
-            if (!HitTestShape(shape, x, y, tolDbu, tech)) continue;
+            if (shape is LabelShape { IsPort: true } portLabel && portMarkerRegion is not null)
+            {
+                var region = portMarkerRegion(portLabel);
+                var grownPort = new Bbox(region.MinX - tolDbu, region.MinY - tolDbu,
+                                         region.MaxX + tolDbu, region.MaxY + tolDbu);
+                if (!grownPort.Contains(x, y)) continue;
+            }
+            else if (!HitTestShape(shape, x, y, tolDbu, tech)) continue;
 
-            var bb = LayoutGeometry.BboxOf(shape);
+            var bb = shape is LabelShape { IsPort: true } pl && portMarkerRegion is not null
+                ? portMarkerRegion(pl)                       // rank a port by its MARK, as it is picked
+                : LayoutGeometry.BboxOf(shape);
             double area = bb.IsEmpty ? 0.0 : (double)(bb.MaxX - bb.MinX) * (bb.MaxY - bb.MinY);
-            candidates.Add((def.ZOrder, area, i));
+            if (shape is LabelShape { IsPort: true }) area = 0.0;   // still point-like for ordering
+
+            // Recorded only for a point-like shape, and left at 0 for everything else, so this term
+            // can only ever reorder shapes the area term already declared equal AND zero — see the
+            // method note. Squared distance: the ordering is the same and there is no square root.
+            double distance = 0.0;
+            if (area == 0.0 && !bb.IsEmpty)
+            {
+                double cx = (bb.MinX + bb.MaxX) / 2.0 - x;
+                double cy = (bb.MinY + bb.MaxY) / 2.0 - y;
+                distance = cx * cx + cy * cy;
+            }
+
+            candidates.Add((def.ZOrder, area, distance, i));
         }
 
         candidates.Sort(static (a, b) =>
@@ -51,6 +97,8 @@ public static class LayoutHitTest
             int c = b.ZOrder.CompareTo(a.ZOrder);   // ZOrder descending
             if (c != 0) return c;
             c = a.Area.CompareTo(b.Area);            // ascending area
+            if (c != 0) return c;
+            c = a.Distance.CompareTo(b.Distance);    // ascending distance — point-like shapes only
             if (c != 0) return c;
             return a.Index.CompareTo(b.Index);       // ascending index — deterministic tie-break
         });
@@ -262,13 +310,28 @@ public static class LayoutHitTest
         // The asymmetry is CORRECT for an annotation, whose text genuinely runs one way from its
         // baseline-left origin. It is wrong for a port, because a port is a MARKER: what the user sees
         // and aims at is the plane bar and arrow, drawn about the conductor end, not the text. So a
-        // port gets a square centred on the anchor at the LARGER of the two reaches — the owner's own
-        // "the farther distance is working good right now for UX", made uniform rather than reduced.
-        if (label.IsPort)
-        {
-            long half = Math.Max(w, h);
-            return new Bbox(label.X - half, label.Y - half, label.X + half, label.Y + half);
-        }
+        // port gets a square centred on the anchor at the LARGER of the two reaches.
+        //
+        // ── HALF THE LARGER REACH, NOT THE WHOLE OF IT ──────────────────────────────────────
+        //
+        // Owner report, 2026-08-25: "the hitbox for the ports now seems too big — I am always
+        // selecting ports almost everywhere I click in the layout." This read `half = Max(w, h)`,
+        // and w/h are FULL extents: an ordinary label of the same text occupies w by h, so making
+        // the region symmetric had also DOUBLED it in each direction — four times the area, for a
+        // change that was only ever meant to centre it. On the reporter's file (three
+        // two-character labels at a 1.016 mm height) that is a 2.52 mm square per port on a
+        // 3.5 x 2.2 mm structure, so the three of them covered nearly the whole drawing and a click
+        // anywhere landed on a port. Ports also carry a ZERO-AREA bbox, which HitStack's
+        // smaller-area-wins rule ranks ahead of any real geometry on the same layer, so the metal
+        // underneath was unreachable rather than merely second.
+        //
+        // Halving makes the square circumscribe the glyph instead of using the glyph as its radius,
+        // which is what "symmetric about the anchor" should have meant all along. The click
+        // tolerance is added on top by the caller (see HitTestShape's Label case), so a port stays
+        // grabbable from just outside its own text — which is the part of the 2026-08-09 report that
+        // was really about reach, and it is unchanged.
+        // Ports are handled by the caller, which has the conductor lookup and the port kinds.
+        if (label.IsPort) return AnchorSquare(label);
 
         // Owner report: the R90/R270 selection box rendered in the completely wrong spot — this table
         // had the local "far corner" (the text's top-right in its own pre-rotation frame) landing on
@@ -284,6 +347,52 @@ public static class LayoutHitTest
             LayoutRotation.R270 => new Bbox(label.X, label.Y - w, label.X + h, label.Y),
             _                   => new Bbox(label.X, label.Y, label.X + w, label.Y + h),
         };
+    }
+
+    /// <summary>
+    /// <b>A port's pick region — and what the selection highlight draws.</b> The MARK the port
+    /// actually draws, plus a little padding.
+    ///
+    /// <para>Owner report, 2026-08-25: "the hitbox of the port does not match with the select
+    /// highlight rendering", then "make the hitbox/highlight the anchor arrow area + padding". They
+    /// were two independently-derived regions and they disagreed almost completely — measured on a
+    /// two-character port at a 1.016 mm height, the highlight ran x 63,500..1,217,414 (the tight
+    /// GLYPH box, up and right of the anchor) while the pick region was the square
+    /// -629,920..+629,920. They shared one corner.</para>
+    ///
+    /// <para><b>WHERE it sits follows the KIND, because the marks do</b> — see
+    /// <see cref="LayoutPortDirection.MarkerBbox"/>. A gap or internal port draws at the anchor; an
+    /// EDGE port draws its bar and arrow at the conductor END, so its box goes there, which can be
+    /// some distance from the label. That is the deliberate consequence of picking the mark rather
+    /// than the text: you grab a port by its arrow.</para>
+    ///
+    /// <para><b>Falls back to a square about the anchor</b> when the conductor cannot be resolved —
+    /// a port on bare dielectric, or a caller with no technology. There is no marker to measure
+    /// there (the renderer draws none either), and a port that could not be picked at all would be a
+    /// port that could not be moved back onto the metal.</para>
+    /// </summary>
+    internal static Bbox PortPickBbox(LabelShape label, LayoutPortDirection.PortHint? hint,
+                                      bool atAnchor = false)
+    {
+        long padding = Math.Max(1, label.Height / 4);
+
+        if (hint is not { } h) return AnchorSquare(label);
+
+        var bb = LayoutPortDirection.MarkerBbox(label, h, atAnchor, padding);
+        return bb.IsEmpty ? AnchorSquare(label) : bb;
+    }
+
+    /// <summary>The no-conductor fallback: a small square on the anchor, sized from the label's own
+    /// text so it scales with what is drawn there.</summary>
+    private static Bbox AnchorSquare(LabelShape label)
+    {
+        if (string.IsNullOrEmpty(label.Text))
+            return new Bbox(label.X, label.Y, label.X, label.Y);
+
+        long w = Math.Max(1, (long)Math.Round(label.Text.Length * label.Height * LabelApproxCharWidthRatio));
+        long h = Math.Max(1, label.Height);
+        long half = Math.Max(1, Math.Max(w, h) / 2);
+        return new Bbox(label.X - half, label.Y - half, label.X + half, label.Y + half);
     }
 
     // ── Geometry primitives ───────────────────────────────────────────────────

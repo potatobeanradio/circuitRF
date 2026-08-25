@@ -7,6 +7,14 @@
 // distance to choose, because ALL of that is what the calibration removes (PlanarCalibration) — and
 // offering a knob for it would offer a way to get a different answer for the same structure.
 //
+// THE OTHER TWO PORT TYPES ARE THE SAME OBJECT CUT SOMEWHERE ELSE.
+//
+// PlanarPortKind.Internal cuts at the foot of a via instead, between the metal and the ground
+// plane, and drives that via's ground-attachment bases. It is the port a grounded component or a
+// ground-returning device terminal needs, and it is the same incidence matrix and the same
+// Y = BᵀZ⁻¹B one dimension over — a delta gap across the shared FOOTPRINT rather than a shared
+// edge. Its polarity is not asked for: + is the metal and − is the plane, because one of its two
+// terminals IS the ground reference.
 // THE SECOND PORT TYPE — AN INTERNAL DELTA GAP — IS THE SAME OBJECT CUT SOMEWHERE ELSE.
 // PlanarPortKind.InternalDeltaGap names a POINT ON the metal rather than an end of it, and the gap
 // is the mesh gridline NEAREST that point with metal on both sides. Everything downstream of the
@@ -76,6 +84,24 @@ public enum PlanarPortKind
     /// there is no feed here to remove.</para>
     /// </summary>
     InternalDeltaGap,
+
+    /// <summary>
+    /// <b>The gap is at the foot of a via, between the metal and the GROUND PLANE.</b> It does not
+    /// cut the trace: the current it drives leaves the conductor vertically, down the via and into
+    /// the plane, which is the path a grounded R, L or C — or a device terminal that returns to
+    /// ground — needs.
+    ///
+    /// <para>Its + terminal is the metal and its − terminal is the ground plane — the only reading
+    /// of a port whose second terminal is the ground reference. That polarity is fixed by what the
+    /// port IS and is never asked for, unlike an <see cref="InternalDeltaGap"/>, whose two lips are
+    /// both metal and whose direction therefore has to be stated.</para>
+    ///
+    /// <para>It drives the ground-attachment bases of the via under it — every cell of that via's
+    /// footprint, since they are one conductor at one potential — and, like an
+    /// <see cref="InternalDeltaGap"/>, <b>it is not de-embedded</b>: there is nothing outside the cut
+    /// to remove, so its s-parameters are reported at the foot of the via in its own declared Z₀.</para>
+    /// </summary>
+    Internal,
 }
 
 /// <summary>
@@ -129,6 +155,24 @@ public enum PlanarPortReference
 /// <para>Every pre-L9d construction site passes nothing and every one-level mesh has exactly one
 /// candidate, so inference reproduces the old behaviour exactly.</para>
 /// </param>
+/// <param name="GroundPathWidthM">
+/// <b><see cref="PlanarPortKind.Internal"/> ports only: the side of the square path down to the
+/// ground plane this port may GROW for itself, when the artwork has no via under it.</b> Metres;
+/// null means grow nothing and refuse instead.
+///
+/// <para>A port to ground needs a conductor to ground: the current it drives has to leave the metal
+/// somehow, and in this kernel only a via basis carries vertical current. Requiring the user to draw
+/// one is honest but is a chore for what is, geometrically, one cell — so the solver grows it
+/// (<see cref="PlanarGroundPath"/>), by the same rule R-fed-1's calibration feed follows: created
+/// before meshing, REPORTED by name, and never at the expense of metal the user drew. A drawn via
+/// always wins; this only fills in where there is none.</para>
+///
+/// <para><b>It is a real conductor and its inductance is in the answer</b>, which is why the width is
+/// stated rather than assumed: the caller passes the technology's own default via size, so what gets
+/// built is the via that board would actually have. Null keeps the strict behaviour — a port with no
+/// via under it is refused by name — which is what a headless caller that has no technology to ask
+/// gets.</para>
+/// </param>
 /// <param name="Kind">
 /// <b>Edge (the default) or an interior delta gap.</b> An edge port names an END of a conductor and
 /// its cut is fixed at the outermost cell pair (D2); an internal one names a POINT ON the metal and
@@ -142,11 +186,16 @@ public sealed record PlanarPort(
     Complex             Z0,
     int?                LayerIndex = null,
     PlanarPortReference Reference  = PlanarPortReference.GroundPlane,
-    PlanarPortKind      Kind       = PlanarPortKind.Edge)
+    PlanarPortKind      Kind       = PlanarPortKind.Edge,
+    double?             GroundPathWidthM = null)
 {
-    /// <summary>The basis direction the port's rooftop row is drawn from.</summary>
+    /// <summary>The basis direction the port's row is drawn from. <b>Z for an
+    /// <see cref="PlanarPortKind.Internal"/> port</b>, whose current leaves the plane down a
+    /// via rather than running along the metal — which is why <see cref="Side"/> means nothing to
+    /// one and is not read.</summary>
     public PlanarBasisDirection Direction =>
-        Side is PlanarPortSide.MinX or PlanarPortSide.MaxX
+        Kind == PlanarPortKind.Internal ? PlanarBasisDirection.Z
+        : Side is PlanarPortSide.MinX or PlanarPortSide.MaxX
             ? PlanarBasisDirection.X
             : PlanarBasisDirection.Y;
 
@@ -156,8 +205,22 @@ public sealed record PlanarPort(
     /// reading the current back — that is what makes <c>Y = BᵀZ⁻¹B</c> the actual admittance matrix
     /// rather than a sign-scrambled relative of one.
     /// </summary>
+    /// <para><b>An internal port's sign is +1 and is not the user's to set</b> — it is the same "current
+    /// flows INTO the structure" convention every other port here uses, one dimension over. Every
+    /// vertical basis's current flows +z, from the plane up to the metal (see
+    /// <c>PlanarBasisFunctions</c>' header), so a positive port current enters the metal from the
+    /// plane, which puts + on the METAL and − on the ground plane.</para>
+    ///
+    /// <para><b>Measured rather than reasoned into place.</b> A short line with a via to ground at
+    /// its centre is three 50 Ω ports meeting at one node above the plane, whose s-matrix is
+    /// S_ii = −1/3, S_ij = +2/3 — and it comes back that way at +1. The other sign turns every term
+    /// through this port by π and changes nothing else, which is a complete and plausible s-matrix
+    /// that no magnitude plot would question; the derivation of which lip is "+" is exactly the step
+    /// that is easy to write down backwards, so it is gated
+    /// (<c>InternalPortTests.ASmallStructureAtLowFrequencyIsATHREEWAYNODE…</c>).</para>
     public double IncidenceSign =>
-        Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? +1.0 : -1.0;
+        Kind == PlanarPortKind.Internal ? +1.0
+        : Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? +1.0 : -1.0;
 }
 
 /// <summary>
@@ -199,6 +262,13 @@ public sealed record PlanarPort(
 /// reported rather than left to be discovered, because it is bounded by half a cell and half a cell
 /// is a quantity the user sets. Zero for an edge port, whose cut is fixed by D2 and is not asked
 /// for at all.</param>
+/// <param name="FootprintAreaM2"><b>Internal ports only: the meshed area of the via this port drives.</b>
+/// An internal port's transverse dimension is an AREA rather than a width — its current crosses the via's
+/// footprint, not a line across the metal — so <see cref="WidthM"/>, <see cref="ReferencePlaneM"/>
+/// and <see cref="OuterEdgeM"/>, which are all in-plane lengths along a port's own axis, mean nothing
+/// for one and are zero. This is the number that says how much via the port actually got: it is the
+/// sum of the cell areas that carry a ground-attachment basis, so a footprint the mesh resolved into
+/// fewer cells than the artwork drew reports the smaller number rather than the drawn one.</param>
 /// <param name="UndrivenMetalM">Metal on the reference plane, adjacent to the port's own run, that
 /// carries NO rooftop and is therefore not driven — R-cut-4 declining the outermost cell pair of a
 /// conformal feed. Zero under the staircase and on any Manhattan feed. It is reported rather than
@@ -221,7 +291,8 @@ public sealed record PlanarPortResolution(
     double                 GridWidthM     = 0,
     double                 UndrivenMetalM = 0,
     PlanarPortKind         Kind           = PlanarPortKind.Edge,
-    double                 GapOffsetM     = 0)
+    double                 GapOffsetM     = 0,
+    double                 FootprintAreaM2 = 0)
 {
     public int BasisCount => BasisIndices.Count;
 
@@ -247,8 +318,30 @@ public sealed record PlanarPortResolution(
 
     /// <summary>R-prt-2's one-line summary, for the notes.</summary>
     public string Describe() =>
-        (Kind == PlanarPortKind.InternalDeltaGap ? DescribeInternal() : DescribeEdge()) +
+        (Kind switch
+        {
+            PlanarPortKind.InternalDeltaGap => DescribeDeltaGap(),
+            PlanarPortKind.Internal    => DescribeInternal(),
+            _                               => DescribeEdge(),
+        }) +
         (CutCellCount == 0 && UndrivenMetalM <= 0 ? "" : ConformalNote());
+
+    /// <summary>
+    /// The internal port's own report. Like the gap's it has to say that nothing is de-embedded here
+    /// and why, but the two facts specific to THIS port are that its current leaves the metal
+    /// vertically — so the answer is at the foot of a via and not at a plane across the trace — and
+    /// how much of the via's footprint the mesh actually resolved, which is the quantity a coarse
+    /// mesh silently shrinks.
+    /// </summary>
+    private string DescribeInternal() =>
+        $"Port {Number} is an internal port: a gap at the foot of the via under it, between " +
+        $"the metal and the ground plane. It drives {BasisCount} ground-attachment basis " +
+        $"function(s) over {FootprintAreaM2 * 1e6:0.###} mm² of via footprint. Its + terminal is the " +
+        "metal and its − terminal is the plane, so positive port current flows UP the via into the " +
+        "conductor, the same way into the structure as every other port here. It is NOT de-embedded: the " +
+        "gap has the ground plane on one side and the via on the other, so there is no feed line " +
+        "outside it to remove and no line impedance to reference to. Its s-parameters are reported " +
+        "at the foot of the via, in the reference impedance you declared for it.";
 
     private string DescribeEdge() =>
         $"Port {Number} resolved to {BasisCount} basis function(s) across " +
@@ -262,7 +355,7 @@ public sealed record PlanarPortResolution(
     /// metal on both sides, WHERE the cut landed against where it was asked for, and that nothing is
     /// de-embedded here because there is no feed to remove.
     /// </summary>
-    private string DescribeInternal() =>
+    private string DescribeDeltaGap() =>
         $"Port {Number} is an internal delta gap across {BasisCount} basis function(s) spanning " +
         $"{SurfaceMesher.Eng(WidthM)}m of conductor; the gap is the interior cut at " +
         $"{(Direction == PlanarBasisDirection.X ? "x" : "y")} = {SurfaceMesher.Eng(ReferencePlaneM)}m, " +
@@ -444,10 +537,140 @@ public static class PlanarPorts
         "and is not substituted silently. A port truly between two levels is an internal " +
         "(co-simulation) port; §10.6 lists those as later work, and nothing in this repository provides one.";
 
+    /// <summary>
+    /// <b>AN INTERNAL VIA PORT: the gap is at the foot of the via under the label, not anywhere in the
+    /// plane.</b> Everything the two in-plane kinds share — a transverse run of rooftops, a
+    /// longitudinal cut, a reference plane coordinate — is about current that runs ALONG the metal,
+    /// and none of it applies to current that leaves it. What this resolves to instead is the
+    /// ground-attachment bases of one via footprint (<c>PlanarBasisFunctions</c>' header), which is
+    /// the same incidence row and the same <c>Y = BᵀZ⁻¹B</c> one dimension over.
+    ///
+    /// <para><b>Every attachment cell of that via is driven, not just the one under the label.</b>
+    /// A via's footprint is one conductor at one potential, exactly as a wide feed's transverse row
+    /// is: driving a single cell of it would leave the rest of the footprint shorting the trace
+    /// straight to the plane beside the port, which is a complete and plausible answer for a
+    /// structure with a short across it. The footprint is walked by 4-connectivity from the cell the
+    /// label is in, over cells that carry an attachment basis on this level.</para>
+    /// </summary>
+    private static bool TryResolveInternal(PlanarMesh mesh, PlanarPort port, int layerIndex,
+                                        out PlanarPortResolution? resolution, out string? refusal)
+    {
+        resolution = null;
+
+        int nx = mesh.GridX.Count - 1, ny = mesh.GridY.Count - 1;
+        if (nx < 1 || ny < 1)
+        {
+            refusal = $"Port {port.Number} cannot be placed: the mesh has no cells to place it on.";
+            return false;
+        }
+
+        // The attachment bases of THIS level, indexed by their one meshed foot cell. One forward
+        // pass over Bases, queried and never iterated — R-msh-2 as everywhere else in this file.
+        var attachAt = new int[nx * ny];
+        Array.Fill(attachAt, -1);
+        int attachments = 0;
+        for (int b = 0; b < mesh.Bases.Count; b++)
+        {
+            var bs = mesh.Bases[b];
+            if (!bs.AttachesToGround || bs.LayerIndex != layerIndex) continue;
+            var cell = mesh.Cells[bs.CellB];
+            attachAt[cell.IY * nx + cell.IX] = b;
+            attachments++;
+        }
+
+        // ── IS THE LABEL ON THE ARTWORK AT ALL? ──────────────────────────────────────────────────
+        //
+        // Asked of both axes and of the grid's own extent, for the reason the internal gap asks it:
+        // IndexOf CLAMPS, so a point metres away from the board would land on the outermost cell and
+        // find whatever is there. An edge port may legitimately sit just off the end face it names;
+        // an internal port names a via it is standing on.
+        bool inside = port.Location.X >= mesh.GridX[0] - 1e-15 && port.Location.X <= mesh.GridX[^1] + 1e-15
+                   && port.Location.Y >= mesh.GridY[0] - 1e-15 && port.Location.Y <= mesh.GridY[^1] + 1e-15;
+        int ix = IndexOf(mesh.GridX, port.Location.X), iy = IndexOf(mesh.GridY, port.Location.Y);
+
+        if (!inside || ix < 0 || iy < 0 || attachAt[iy * nx + ix] < 0)
+        {
+            // The two ways this fails are genuinely different and a user can act on only one of
+            // them at a time, so they are worded apart: nothing on this level goes to ground at
+            // all, versus a via that is there but is not under the label.
+            refusal = attachments == 0
+                ? $"Port {port.Number} at ({SurfaceMesher.Eng(port.Location.X)}m, " +
+                  $"{SurfaceMesher.Eng(port.Location.Y)}m) is an internal port, and nothing on layer " +
+                  $"{layerIndex}{LayerName(mesh, layerIndex)} connects to the ground plane. An internal " +
+                  "internal port drives the current that leaves the metal DOWNWARD, so its path is a via to " +
+                  "the plane and the port is the gap at that via's foot — with no via there is no " +
+                  "path and nothing to drive. Draw a via to the ground plane where the grounded element " +
+                  "attaches and put the port on it, or make this an edge or internal delta-gap port, " +
+                  "which drive current along the metal instead."
+                : $"Port {port.Number} at ({SurfaceMesher.Eng(port.Location.X)}m, " +
+                  $"{SurfaceMesher.Eng(port.Location.Y)}m) is an internal port and there is no via to the " +
+                  $"ground plane under it. This level does carry {attachments} meshed via cell(s), so " +
+                  "the port is beside its via rather than on it — an internal port drives the via it " +
+                  "stands on, and moving it to the nearest one silently would drive a path the user " +
+                  "did not point at. Move the label onto the via's own footprint, or raise Cells per " +
+                  "wavelength if the footprint is too small to have survived meshing where you placed it.";
+            return false;
+        }
+
+        // ── The whole footprint, by 4-connectivity ───────────────────────────────────────────────
+        var stack   = new Stack<(int X, int Y)>();
+        var claimed = new bool[nx * ny];
+        stack.Push((ix, iy));
+        claimed[iy * nx + ix] = true;
+
+        var indices = new List<int>();
+        double area = 0;
+        while (stack.Count > 0)
+        {
+            var (cx, cy) = stack.Pop();
+            int bi = attachAt[cy * nx + cx];
+            indices.Add(bi);
+            area += mesh.Cells[mesh.Bases[bi].CellB].Area;
+
+            foreach (var (dx, dy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+            {
+                int qx = cx + dx, qy = cy + dy;
+                if (qx < 0 || qx >= nx || qy < 0 || qy >= ny) continue;
+                if (claimed[qy * nx + qx] || attachAt[qy * nx + qx] < 0) continue;
+                claimed[qy * nx + qx] = true;
+                stack.Push((qx, qy));
+            }
+        }
+
+        // Ascending basis order, so the row is the mesh's own order regardless of which cell the
+        // label happened to land in — the same determinism an edge port gets from marching its run.
+        indices.Sort();
+
+        resolution = new PlanarPortResolution(
+            Number:            port.Number,
+            Side:              port.Side,
+            Direction:         PlanarBasisDirection.Z,
+            Z0:                port.Z0,
+            BasisIndices:      indices,
+            IncidenceSign:     port.IncidenceSign,
+            // An internal port has no in-plane width, reference plane or outer edge: its current crosses
+            // the via's FOOTPRINT rather than a line across the metal, and the area that replaces
+            // them is reported in its own field rather than smuggled into a length.
+            WidthM:            0,
+            ReferencePlaneM:   0,
+            OuterEdgeM:        0,
+            TransverseLines:   [],
+            LongitudinalRunM:  [],
+            LayerIndex:        layerIndex,
+            Kind:              PlanarPortKind.Internal,
+            FootprintAreaM2:   area);
+
+        refusal = null;
+        return true;
+    }
+
     private static bool TryResolveOnLayer(PlanarMesh mesh, PlanarPort port, int layerIndex,
                                           out PlanarPortResolution? resolution, out string? refusal)
     {
         resolution = null;
+        if (port.Kind == PlanarPortKind.Internal)
+            return TryResolveInternal(mesh, port, layerIndex, out resolution, out refusal);
+
 
         bool alongX = port.Direction == PlanarBasisDirection.X;
         var  gLong  = alongX ? mesh.GridX : mesh.GridY;   // along the current

@@ -3,6 +3,96 @@
 Completed work's detail lands here instead of `CLAUDE.md`, which stays for durable, still-true
 conventions only. Same pattern as `src/Ui/DataDisplay/RESOLVED.md` and `src/Ui/Layout/Em/RESOLVED.md`.
 
+## The internal port — a port from the metal to the ground plane (2026-08-25)
+
+The third of §10.6's port types, and the one the design note had written down as *not* built with a
+costing attached. That costing was wrong in the encouraging direction, and the reasons are worth
+keeping.
+
+**`PlanarPortKind.Internal`.** The port is placed on the metal and means "here, referenced to
+ground"; its + terminal is the metal, its − terminal is the stackup's ground plane. It drives the
+ground-attachment bases of the via under it — every cell of that footprint, since they are one
+conductor at one potential.
+
+**Findings.**
+
+1. **The excitation is D1's after all, and the design note's stated reason for doubting that was
+   about the wrong integral.** §10.6 recorded that an attachment basis "has a different
+   normalisation… `NetCharge` is exactly −1, and L9c's `∫∇·f dS = 0` explicitly does not hold for
+   it. The incidence matrix and the reaction integral both need their own derivation." The charge
+   facts are true and are properties of the FILL, which was already built and gated; a delta gap's
+   reaction is an integral against the CURRENT, and the attachment basis carries unit total current
+   across the connection it spans exactly as a rooftop does across its shared edge. So
+   `⟨f_m, E^imp⟩ = v` holds exactly, with no footprint area and no quadrature in it, and the port is
+   one more ±1 row of the same incidence matrix. **No new basis, no new excitation, no new algebra.**
+
+2. **THE SIGN WAS DERIVED WRONG AND THE MEASUREMENT CAUGHT IT.** The first implementation took
+   `IncidenceSign = −1`, from a written derivation of which lip of the gap is the + terminal (the
+   impressed field points from + to −, so the + lip is the one on the −f side, so a downward-flowing
+   positive current puts + on the metal…). It produced a complete, plausible s-matrix with |S₁₃|
+   right to two figures and **every term through the port turned by π**. The convention is `+1` —
+   the same "current flows into the structure" rule every other port here uses.
+   **A port's sign is unobservable through any termination**: every reduction carries `S_i3·S_3j`
+   and both factors flip together, so no amount of loading the port could have shown it. What shows
+   it is a structure whose answer is known independently — a short line with a via to ground at its
+   centre is three 50 Ω ports meeting at one node above the plane, S_ii = −1/3 and S_ij = **+2/3**.
+   That gate exists (`InternalPortTests.ASmallStructureAtLowFrequency…`) and it is the reason the
+   released sign is right.
+
+3. **A centred internal port measures S₁₃ = +S₂₃**, against the centred delta gap's S₁₃ = −S₂₃.
+   The two gates sit beside each other on purpose: it is the measurement that distinguishes a
+   ground-returning port from a series one, and a magnitude plot never would.
+
+4. **Shorting the port reproduces the plain board**, to < 1e-9 — reducing the 3-port with Γ₃ = −1
+   against an ordinary 2-port solve of the same artwork. A port is a gap with a source in it, so
+   terminating that gap in a short is the structure with no port on it: an end-to-end oracle for
+   everything between the incidence row and the published matrix, needing no external data.
+
+**The via is the SOLVER's to build (owner, same day).** Requiring the user to draw a via first was
+the original build and was wrong for the workflow: the port is placed on the metal, and whether the
+drawing happens to have a via there is a question about the drawing. `PlanarGroundPath` runs before
+meshing, beside R-fed-1's feed extension and by the same three rules — a drawn via wins, a missing
+one is built, and what was built is reported by port and by size. The problem reaches the mesher **by
+reference** when nothing was added, so a board that draws its own vias is bit-identical.
+
+**Its size is a PROCESS dimension, not a mesh cell**, and that choice is load-bearing: the built
+via's inductance is part of the port's answer, so sizing it from the mesh would make the answer a
+function of *Cells per wavelength* — refining the mesh, the one thing a user does to converge a
+result, would move it for a reason unrelated to convergence. The order is the technology's default
+via drill, then its default pad, then (Ui-side, reported as the rule of thumb it is) a quarter of the
+substrate height. The stackup's own `Via` entries carry a fill, a wall and a span but **never a
+diameter**, so "this technology declares no via" is not a reason to refuse the port.
+
+**Cost of the four physics gates: they are `Category=Benchmark`** (5.5–11.5 s each, measured). Not
+because they measure time — they assert physics — but because a via-bearing fill costs seconds per
+frequency whatever the mesh: the DCIM fit count for a problem carrying vertical current is a fixed
+per-frequency cost, so shrinking the board does not shrink it. The default gate keeps the resolution,
+the refusals and a solve-free incidence-row wiring test, which is where a change to this area breaks
+first.
+
+**`src/Engine/Mom/CLAUDE.md` §3.4 still says "`PlanarPortKind` — TWO port types" and lists the
+kinds; that sentence is superseded by this entry.** It was left alone deliberately (this repository's
+standing instruction is that findings go here, never into a `CLAUDE.md`).
+
+### What changed, for a reader who only wants the code
+
+- `src/Engine/Mom/PlanarPort.cs` — the third enum value, `Direction`/`IncidenceSign` for it,
+  `PlanarPortResolution.FootprintAreaM2`, `TryResolveInternal` (footprint walk by 4-connectivity,
+  two refusals), and its own `Describe`.
+- `src/Engine/Mom/PlanarGroundPath.cs` — new: the path the port grows for itself.
+- `src/Engine/Mom/PlanarKernel.cs` — one call, before the feed extension, on both mesh paths.
+- `src/Engine/Mom/PlanarFeedExtension.cs` — gated on `Kind != Edge` rather than on the gap alone.
+- `src/Engine/Mom/PlanarSolve.cs` — the not-de-embedded note now lists the two internal kinds apart.
+- Ui: `EmPortExtraction` (kind, the built path and its width, notes and refusals),
+  `EmSetupModel.DeclaresInternalPort`, `EmRunService.InternalPortNeedsFullWave`, the panel row and
+  its type list, `PlanarPortKindNameConverter`, and the layout mark
+  (`LayoutRenderer.DrawInternalPortMarker` — a ring with a ground symbol; the mark channel now
+  carries the port KIND rather than only an anchor).
+- Tests: `tests/Engine.Tests/Mom/InternalPortTests.cs`, `tests/Ui.Tests/Em/InternalPortUiTests.cs`.
+- Docs: `docs/design/mom-engine.md` §10.6, the user chapters `mom-engine.md` / `em-setup.md`, and a
+  new one — `docs/user/src/reference/stackup.md`, which is where "what is my port's negative
+  terminal" is now answered, with a cross-section figure generated from the shipped technology.
+
 ## The internal delta-gap port (2026-08-24)
 
 The second of §10.6's two v1 port types, listed as "later" in the design note from the first draft

@@ -4,12 +4,14 @@ using System.IO;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Animation;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Skia.Helpers;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.Theming;
 using SkiaSharp;
 
@@ -114,6 +116,10 @@ public static class UiArtworkGenerator
                 window.Arrange(new Rect(0, 0, totalW, totalH));
                 Pump();
             }
+
+            // Templates have been applied and every transition that is going to start has started,
+            // so this is the point at which cancelling them lands each property on its target.
+            SettleAnimations(window);
 
             if (scene.Popups is { } open)
             {
@@ -232,6 +238,28 @@ public static class UiArtworkGenerator
         if (Application.Current is { } app)
             app.RequestedThemeVariant = variant == ColorVariant.Dark ? ThemeVariant.Dark : ThemeVariant.Light;
         ThemeService.CurrentVariant = variant;
+    }
+
+    /// <summary>
+    /// <b>Cancels every TRANSITION in the tree before the capture reads it</b>, so a property that
+    /// was easing toward a value is photographed at that value rather than part way to it.
+    ///
+    /// <para><b>What this does NOT fix, stated because it is a live churn source:</b> an Expander's
+    /// chevron is turned by a KEYFRAME animation declared in the control theme, which a transition
+    /// cannot be cleared out of and which samples wall-clock — so <c>analysis-editor-hb</c> and
+    /// <c>em-setup-loaded</c> come back with a slightly different rotation matrix on every run
+    /// (<c>matrix(-0.9469 0.3214 …)</c> against <c>matrix(-0.9441 0.3296 …)</c>) whatever this does.
+    /// Clearing transitions, an application-level style setting <c>Transitions</c> to null, and
+    /// waiting 450 ms for the animation to finish were all tried and all measured to change nothing.
+    /// Four files, and they are the only ones left: see <c>src/Ui/RESOLVED.md</c>.</para>
+    /// </summary>
+    private static void SettleAnimations(Visual root)
+    {
+        foreach (var v in root.GetSelfAndVisualDescendants())
+            if (v is Animatable { Transitions.Count: > 0 } a)
+                a.Transitions = null;
+
+        Pump();
     }
 
     /// <summary>

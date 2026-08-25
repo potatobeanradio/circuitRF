@@ -240,7 +240,7 @@ public class InternalDeltaGapPortTests(ITestOutputHelper output)
         Assert.True((a - b).Magnitude < 1e-12, $"de-embedding moved an internal port by {(a - b).Magnitude:E3}");
 
         // And it says so, rather than leaving the user to notice that no calibration was reported.
-        Assert.Contains(on.Notes, n => n.Contains("internal delta gaps and are NOT"));
+        Assert.Contains(on.Notes, n => n.Contains("are internal delta gaps") && n.Contains("NOT de-embedded"));
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public class InternalDeltaGapPortTests(ITestOutputHelper output)
         //
         // **A DELTA GAP IS A SERIES SOURCE, SO S₁₃ = −S₂₃, NOT +.** The excitation pushes current in
         // one direction along the conductor — into the line on one side of the cut and out of it on
-        // the other — so the two halves are driven in ANTIPHASE. A shunt port (a current injected
+        // the other — so the two halves are driven in ANTIPHASE. An internal port (a current injected
         // against the ground plane) would be symmetric; this one is not, and the difference is a
         // hard π. Asserting the symmetric identity here would have been asserting the wrong port
         // model, and the measurement is what says which: the two numbers came back equal and

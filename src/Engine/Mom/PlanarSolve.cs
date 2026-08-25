@@ -912,19 +912,41 @@ public static class PlanarSolve
                 }
 
             int deembedded = 0;
-            var internalPorts = new List<int>();
+            var uncalibrated = new List<int>();
+            var gapPorts     = new List<int>();
+            var groundPorts  = new List<int>();
             for (int i = 0; i < ports.Count; i++)
-                if (ports[i].IsDeembeddable) deembedded++; else internalPorts.Add(ports[i].Number);
+            {
+                if (ports[i].IsDeembeddable) { deembedded++; continue; }
+                uncalibrated.Add(ports[i].Number);
+                (ports[i].Kind == PlanarPortKind.Internal ? groundPorts : gapPorts)
+                    .Add(ports[i].Number);
+            }
 
-            if (internalPorts.Count > 0)
+            // The two internal kinds share the sentence that matters — nothing outside the cut, so
+            // nothing to remove — and differ in what the cut IS, which is the half a user has to
+            // read differently: a delta gap is one mesh cell of trace, an internal port is the path
+            // down to the plane. Listed apart rather than under one name, because "internal delta
+            // gaps" said of a ground-referenced port is a statement about the wrong geometry.
+            if (uncalibrated.Count > 0)
                 notes.Add(
-                    $"Port(s) {string.Join(", ", internalPorts)} are internal delta gaps and are NOT " +
-                    "de-embedded: an interior cut has metal on both sides, so there is no port " +
-                    "discontinuity outside it to remove and no line impedance to reference to. Their " +
-                    "s-parameters are reported at the gap itself, in the reference impedance declared " +
+                    (gapPorts.Count > 0
+                        ? $"Port(s) {string.Join(", ", gapPorts)} are internal delta gaps — interior " +
+                          "cuts with metal on both sides. "
+                        : "") +
+                    (groundPorts.Count > 0
+                        ? $"Port(s) {string.Join(", ", groundPorts)} are internal ports — between the " +
+                          "metal and the ground plane, at the foot of the via that gets there. "
+                        : "") +
+                    $"They are NOT de-embedded: there is no port " +
+                    "discontinuity outside such a cut to remove and no line impedance to reference to. Their " +
+                    "s-parameters are reported at the cut itself, in the reference impedance declared " +
                     "for each — which is exactly what an internal port means, not a step that was " +
-                    "skipped. The gap is one mesh cell wide, so refining the mesh there is what makes " +
-                    "it a better approximation to a point discontinuity." +
+                    "skipped." +
+                    (gapPorts.Count > 0
+                        ? " A gap is one mesh cell wide, so refining the mesh there is what makes " +
+                          "it a better approximation to a point discontinuity."
+                        : "") +
                     (deembedded > 0
                         ? " The remaining port(s) are de-embedded normally; the two kinds share one " +
                           "s-matrix and each keeps its own reference."

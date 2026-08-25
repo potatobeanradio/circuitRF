@@ -6,8 +6,8 @@ using CircuitRF.Engine.Mom;
 namespace CircuitRF.Ui.Converters;
 
 /// <summary>
-/// Displays a <see cref="PlanarPortKind"/> as the name the USER knows it by — "Edge" and
-/// "Internal delta gap" rather than the enum's own <c>InternalDeltaGap</c>.
+/// Displays a <see cref="PlanarPortKind"/> as the name the USER knows it by — "Edge",
+/// "Internal delta gap" and "Internal" rather than the enum's own spellings.
 ///
 /// <para>Same shape and same reason as <see cref="EmAnalysisKindNameConverter"/> beside it: the
 /// ComboBox's <c>SelectedItem</c> stays bound to the enum, so nothing here can affect what is
@@ -21,6 +21,7 @@ public sealed class PlanarPortKindNameConverter : IValueConverter
     public static string Label(PlanarPortKind kind) => kind switch
     {
         PlanarPortKind.InternalDeltaGap => "Internal delta gap",
+        PlanarPortKind.Internal         => "Internal",
         _                               => "Edge",
     };
 

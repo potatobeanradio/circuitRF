@@ -214,38 +214,51 @@ port flag set, which is why a layout carrying ports is still just a layout.
   geometry; how you drive it is an analysis setting. The same artwork can be an edge-driven filter in
   one setup and a structure with a gap in the middle in another, without editing the drawing.
 
-### The two port types
+### The three port types
 
 | Type | Where the cut is | Is it de-embedded? | Use it for |
 |---|---|---|---|
 | **Edge port** *(the default)* | One mesh cell in from a conductor's **end face**, referenced to the ground plane | **Yes** — the [two-line calibration](#deembedding) removes the port discontinuity, so what you get back is your structure's own response | Anything power flows **into or out of**: a line, a bend, a filter, a matching network, a coupler — every structure you would measure on a fixture or a probe station |
 | **Internal delta-gap port** | An **interior cut** of a conductor, with metal on both sides, at the mesh gridline nearest where you put the label | **No, and it cannot be** — there is no feed outside the cut to remove. Its S-parameters are reported at the gap, in the reference impedance you set | A **series** element embedded in the metal (a series R, L or C you will attach in the schematic), or a **device terminal in the middle of a structure** |
+| **Internal port** | Between the metal **and the ground plane**, at the point you put the label. It does not cut the trace | **No, and it cannot be**, for the same reason. Its S-parameters are reported there, in the reference impedance you set | Anything that returns to **ground**: a bypass capacitor, a grounded resistor, a device terminal that returns to ground |
 
-<div class="callout warn">
-<span class="label">There is no shunt-to-ground port, and that is a real limit</span>
-<p>Both types above put a port <strong>in line with the current</strong>. Neither gives you a port from
-a point on the metal <strong>down to the ground plane</strong> — the thing a <strong>shunt</strong> R, L
-or C needs, or a device terminal that returns to ground.</p>
-<p>Other planar tools have one, variously called a <em>via port</em> or an <em>internal port</em>.
-circuitRF does not. A shunt port is not a variation on an internal gap: it does not cut the trace, and
-it needs a vertical current path down to the plane, which is a different excitation.</p>
-<p><strong>What to do meanwhile:</strong> draw the shunt path in the artwork. Run a stub, a pad and a via
-to the ground plane as real metal, and put an <em>edge</em> port on the far end of that stub — then the
-EM run models the whole shunt path, including the via, and your component attaches at the stub's end
-where an edge port is well posed.</p>
+**The decision rule is two questions.**
+
+1. **Does the power cross the boundary of your drawn metal?** If it comes in from a connector, a probe,
+   or the next block along — it is an **edge port**, on that boundary.
+2. **If not: does your component go IN LINE with the trace, or DOWN TO GROUND?** In line means breaking
+   the conductor and putting something across the break — an **internal delta-gap port**. Down to
+   ground means an **internal port**, placed on the metal at the point that goes to ground.
+
+<div class="callout note">
+<span class="label">You do not have to draw the via</span>
+<p>An internal port's second terminal is the ground plane, so its current has to <em>get</em> there —
+and in a planar solver the only thing that carries current downward is a via. <strong>That via is the
+solver's job, not yours.</strong> Put the port on the metal at the point you want referenced to
+ground:</p>
+<ul>
+<li><strong>If you drew a via there, the port drives your via</strong>, at the size and shape you drew
+it.</li>
+<li><strong>If you did not, one is built for you</strong> before meshing, and the run's notes say so
+and give its size.</li>
+</ul>
+<p><strong>How big is the built one?</strong> A square of <strong>your technology's default via
+drill</strong> — 0.305 mm on the PCB starter, 60 µm on the MMIC one. If the technology declares no
+default via size, a quarter of the substrate height is used instead and the notes say that is what
+happened. <em>It is deliberately not a mesh cell</em>: that path is real metal and its inductance is
+part of what the port sees, so sizing it from the mesh would make your answer move when you refine
+the mesh — which is the one thing refining a mesh must never do.</p>
+<p>Either way the path is <strong>in the answer</strong>. If its size matters to you, draw the via and
+the solver will use yours.</p>
 </div>
 
-**The decision rule is one question: does the power cross the boundary of your drawn metal?**
-
-- **Yes** — it comes in from a connector, a probe, or the next block along — then it is an **edge port**,
-  on that boundary.
-- **No** — you want to break the conductor *here* and put something across the break — then it is an
-  **internal delta-gap port**.
-
-<p class="small">An edge port may grow a short uniform lead onto your metal before meshing, so its
-calibration has uniform line to measure against; the lead is removed exactly afterwards and the answer
-is still reported at your own drawn edge. It is automatic —
-see <a href="#feed">Auto-ports and the feed extension</a>.</p>
+<div class="callout note">
+<span class="label">Where the negative terminal actually is</span>
+<p>The ground plane an internal port returns to is <strong>not</strong> chosen per port: it is the
+ground-designated conductor in your technology's stackup, and it is the negative terminal of
+<em>every</em> port in the run — edge ports included. Which conductor that is, and how to change it,
+is <a href="stackup.html">The stackup</a>.</p>
+</div>
 
 ### What each one looks like in the layout
 
@@ -280,6 +293,30 @@ which way across*. At a glance they are not each other.
 
 The gap is drawn **where you placed the label**, because that is where the cut is. An edge port's bar
 is always snapped to the conductor's end face, however far from it you put the text.
+
+{{ui: ports-internal}}
+
+The same line with an **internal port** at its centre — where a bypass capacitor or a grounded
+resistor would attach. (A via is drawn here as well, to show the case where you have one; the port
+does not need it.) Its mark is deliberately unlike the other two: **a ring round the point, with a
+ground symbol on it.**
+
+The reason is that the other two marks are statements about a plane the current crosses *in the
+layout* — an edge port's bar across an end face, a gap's brackets either side of a break — and both are
+oriented by the direction current flows. **An internal port has no such direction**: its current
+leaves the metal downward, out of the plane the layout draws. The ring says *the port is here*; the
+ground symbol says *its other terminal is the plane*; and neither claims a direction the port does not
+have.
+
+Its **polarity is fixed and you do not set it**: the + terminal is the metal and the − terminal is the
+ground plane. Rotating the label does nothing, because there is nothing for a direction to mean.
+
+**Like the gap's break, the ring is drawn at the real thing once a mesh exists.** Before you compute
+one it is a fixed fraction of the conductor's width — a legible glyph, not a dimension, so do not
+measure it. After, it is drawn round the **actual footprint the mesh resolved**: the cells the port
+drives, centred on them, with a dashed leader back to your label when the two are not in the same
+place. That is how you see a via that meshed smaller than you drew it, or the size of the path the
+solver built for you. Editing the layout drops the mesh and the ring reverts to its glyph size.
 
 ### How wide is the gap, really?
 
@@ -317,28 +354,35 @@ two separate conductors with two end faces — which is a pair of edge ports, an
 - **Two-port and multi-port passive structures** — everything from a bend to a Wilkinson — are **all
   edge ports**. This is the overwhelmingly common case.
 - **A structure you will attach a component to in the middle** — a series capacitor breaking a line, a
-  resistor across a gap, a shunt element — gets an **internal delta-gap port** at the break, plus edge
-  ports wherever power actually enters. Simulate the metal in EM, connect the component in the
-  schematic, and the two meet at the gap.
+  resistor across a gap — gets an **internal delta-gap port** at the break, plus edge ports wherever
+  power actually enters. Simulate the metal in EM, connect the component in the schematic, and the two
+  meet at the gap.
+- **A component that returns to ground** — a bypass capacitor, a grounded resistor — gets an **internal
+  port** at the point it attaches, plus edge ports wherever power enters. Drawing the via is optional;
+  the solver builds one if you have not.
 - **An active device embedded in your artwork** is the same pattern: an internal port at each terminal
-  you will attach the device model to.
+  you will attach the device model to — a delta gap where the terminal sits in the trace, an internal
+  port where it returns to ground.
 - **If power crosses your metal's boundary, use an edge port.** The two types report at different
   planes and give different answers; which one is right is set by where the power actually goes, not
   by which is cheaper to compute.
 
 <div class="callout note">
 <span class="label">What an internal port costs you, stated plainly</span>
-<p>An internal port's gap is <strong>one mesh cell wide</strong>, and the cut lands on the nearest mesh
-gridline to where you put the label — not exactly where you clicked. The run reports how far it moved,
-and refining the mesh there is what closes both gaps: it puts the cut closer to where you asked, and it
-makes the gap a better approximation to a point discontinuity. There is no calibration to fall back on
-here, so the mesh is the only lever.</p>
+<p>A delta gap is <strong>one mesh cell wide</strong>, and the cut lands on the nearest mesh gridline
+to where you put the label — not exactly where you clicked. The run reports how far it moved, and
+refining the mesh there is what closes both gaps: it puts the cut closer to where you asked, and it
+makes the gap a better approximation to a point discontinuity.</p>
+<p>An internal port's cost is the same in a different currency: it drives the cells of the via
+footprint that the mesh resolved, so a coarse mesh drives a smaller via than the one that is there.
+The run reports the area it got.</p>
+<p>Neither has a calibration to fall back on, so the mesh is the only lever for both.</p>
 </div>
 
 ### Setting the type
 
 **EM Setup panel → Ports.** Each port gets a row with its reference impedance and a **type** dropdown —
-Edge or Internal delta gap. The rows come from the port labels in your layout, so the port *count* is
+Edge, Internal delta gap or Internal. The rows come from the port labels in your layout, so the port *count* is
 the geometry's; the type and the impedance are yours.
 
 <div class="callout note">
@@ -351,9 +395,9 @@ if that takes the marks off a different setup that disagreed, the Messages panel
 both. If the marks are not what you expect, that line tells you which setup they belong to.</p>
 </div>
 
-**The type only appears for a full-wave planar analysis.** Internal delta-gap ports are a full-wave
-feature, and the uniform-line (quasi-static) kernel has none — the row shows a reference impedance and
-nothing else there.
+**The type only appears for a full-wave planar analysis.** Both internal port types are full-wave
+features, and the uniform-line (quasi-static) kernel has neither — the row shows a reference impedance
+and nothing else there.
 
 That is a property of what the uniform-line kernel *is*, not a gap in it. It never meshes the plane at
 all: it solves a **cross-section** for per-unit-length RLGC and forms the network of a length-ℓ line in
@@ -362,22 +406,25 @@ middle to cut, no pair of cells to drive across, and no mesh whose refinement co
 the same fact that makes de-embedding a no-op there: the reference planes are the line's ends exactly,
 so there is no port discontinuity to remove.)
 
-**If you need a gap in the middle of a uniform line, set Analysis to the full-wave planar kernel
-explicitly.** Do not leave it on Auto for this. A uniform line with a gap on it is still a uniform
-*cross-section* as far as the geometry is concerned, so Auto picks the cheaper uniform-line kernel —
-and that kernel has nowhere to put the port. **circuitRF refuses that combination by name rather than
+**If you need an internal port on a uniform line, set Analysis to the full-wave planar kernel
+explicitly.** Do not leave it on Auto for this. A uniform line with a gap or a via on it is still a
+uniform *cross-section* as far as the geometry is concerned, so Auto picks the cheaper uniform-line
+kernel — and that kernel has nowhere to put the port. **circuitRF refuses that combination by name rather than
 running it**, because the alternative is a complete, plausible two-port answer for a line without the
 gap you asked for. The refusal names the remedy: change the analysis, or change the port back to an
 edge port.
 
-Two rules the panel enforces:
+Three rules the panel enforces:
 
 - **An internal port must sit on the metal**, not just near it. An edge port's label may sit slightly off
   the end face it names; an internal one cuts the conductor, so it has to be on the conductor.
-- **An internal port must state its direction.** For an edge port the direction can be inferred from the
+- **A delta-gap port must state its direction.** For an edge port the direction can be inferred from the
   nearest conductor boundary. A label in the middle of a conductor is roughly equally far from all four
   edges, so there is nothing to infer from — and the direction is what decides which way positive
   current crosses the gap. Rotate the port to point the way current should flow across the cut.
+- **An internal port states no direction at all**: its terminals are the metal and the ground plane,
+  so the polarity is decided by what the port is — + is the metal, − is the plane. Rotating the label
+  does nothing. It does need to be **on the metal**, because that is where its + terminal is.
 
 A gap in the middle of a conductor is a **series** source: it drives the two halves in antiphase, so a
 gap at the centre of a symmetric line gives S₁₃ = −S₂₃, not +. That sign is real physics, not a
@@ -748,6 +795,9 @@ The refusals you are most likely to meet:
 | **Two ports naming the same number** | Renumber one. |
 | **"Port n is an internal delta-gap port… not ON any conductor"** | An internal port cuts the metal, so it has to be placed on the metal. Move the label onto the conductor, or make it an edge port if you meant the end. |
 | **"…an internal delta-gap port with no direction on it"** | Rotate the port to point the way current should flow across the cut. There is no nearby conductor end to infer a direction from in the middle of a trace, and the sign is not guessed. |
+| **"Port n is an internal port… not ON any conductor"** | An internal port's + terminal is the metal, so it has to be on the metal. Move the label onto the conductor. |
+| **"…there is nothing to build its path to the ground plane from"** | The rare case: no via drawn, no default via size in the technology, and no substrate height to fall back on. Draw a via, or give the technology a default via size. |
+| **This run has no ground plane** | Every port's negative terminal is the stackup's ground-designated conductor, so a stackup without one cannot be solved at all. See [The stackup](stackup.html). |
 | **"…the conductor under it has no interior cut to gap"** | The conductor is only one cell long where you put the gap, so there is no pair of adjacent cells to break between. Raise Cells per wavelength, move the port into the middle of a longer run, or make it an edge port. |
 | **The DCIM fit is outside its validated range** | The structure is electrically larger than the fitted kernel covers at that frequency. Narrow the band. |
 | **A via separation the vertical kernel cannot resolve** | Turn on the **direct vertical (via) kernel**, which replaces the fitted Green's function with direct numerical integration for that one term, at 15–45% more per frequency point per via span. |
@@ -782,18 +832,35 @@ Ports 1 and 2 are the line's ends. The 1.2 pF capacitor sits on **port 3** — t
 **series** in the metal: everything that gets from port 1 to port 2 goes through it.
 
 <div class="callout note">
-<span class="label">It looks like a shunt element. It is not one.</span>
+<span class="label">It looks like it goes to ground. It does not.</span>
 <p>Port 3's two terminals are the two lips of the cut — neither of them is the ground plane. The
 schematic draws every port of an N-port against a shared ground because that is how an N-port is
 written down, not because one lip is grounded.</p>
 <p>What matters is the constraint, and it is the right one: terminating port 3 with an impedance
 imposes <em>V₃ = −Z·I₃</em> on the <strong>gap</strong> voltage and the current <strong>crossing the
-gap</strong>, which is exactly "put Z into the cut". Ground here is bookkeeping. If you want a
-<em>shunt</em> element — one that takes current from the trace down to the ground plane — an internal
-delta gap is the wrong port for it, and circuitRF has no port for it yet.</p>
+gap</strong>, which is exactly "put Z into the cut". Ground here is bookkeeping.</p>
+<p>For a component that genuinely does return to ground — one that takes current from the trace down
+to the ground plane — the port you want is an <strong>internal port</strong>, placed on the metal
+where it attaches. Same schematic step, different port: there, port 3's − terminal really is the
+plane.</p>
 </div>
 
-Two practical notes:
+### Putting a component from the metal down to ground
+
+Same three steps, one port type further:
+
+1. Draw the conductor. (You may draw the via to ground where the component attaches, and the port will
+   use it — but you do not have to; the solver builds that path if it is not there.)
+2. Put edge ports where power enters and leaves, and an **internal port** where the component attaches.
+   Three ports again, so the run writes an `.s3p`.
+3. Connect the component between that port and ground in the schematic.
+
+Port 3's + terminal is the metal and its − terminal is the ground plane, so the connection in the
+schematic means what it looks like this time. The EM run models the whole path down to the plane,
+**including its inductance**; your component model is only the component. Which conductor the plane is
+comes from [the stackup](stackup.html).
+
+Two practical notes, for either kind of internal port:
 
 - **Leave port 3's reference impedance at 50 Ω** unless you have a reason. It is a reference the answer
   is expressed in, not a property of the gap; the `.sNp` header records it and the schematic reads it

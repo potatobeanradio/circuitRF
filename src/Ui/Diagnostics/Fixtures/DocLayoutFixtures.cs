@@ -387,7 +387,7 @@ public static class DocLayoutFixtures
     /// bars facing each other across a break in the middle.</para>
     ///
     /// <para><b>The gap's own mark only appears because this fixture sets
-    /// <c>InternalGapPorts</c>.</b> The port type lives in the <c>.cem</c>, never on the label, so a
+    /// <c>InternalPortMarks</c>.</b> The port type lives in the <c>.cem</c>, never on the label, so a
     /// layout on its own cannot know it — the EM Setup editor publishes the anchors and the renderer
     /// is told. That is the same path the live application takes, which is why this figure is a
     /// picture of the real thing rather than of a fixture-only drawing mode.</para>
@@ -411,9 +411,41 @@ public static class DocLayoutFixtures
         // rather than a thing anyone does.
         var (view, xc, yc) = SeriesGapLine();
         var vm = EditorVm(view);
-        vm.InternalGapPorts = [(xc, yc)];
+        vm.InternalPortMarks = [(xc, yc, PlanarPortKind.InternalDeltaGap)];
 
         return Framed(new LayoutDocument("Series gap", vm), 880, 300);
+    }
+
+    /// <summary>
+    /// <b>An internal SHUNT port on a ground via at the middle of the same line</b>, with the two
+    /// edge ports still on its ends — the third mark, drawn beside the two it has to be told apart
+    /// from.
+    ///
+    /// <para>A via is drawn under it, which is the case where the user has one: the port drives that
+    /// via rather than a built one. The port does NOT require it — placed on bare metal the solver
+    /// builds the path itself — but a figure of one is the better picture of the two, because the
+    /// via is the thing a reader has to be told the port is standing on when it is there. It is the
+    /// same line the gap figures use, for the same reason those two share theirs: hold everything
+    /// constant except the mark being read.</para>
+    ///
+    /// <para><b>The mark is deliberately not oriented by the trace</b>, and the figure is where that
+    /// is easiest to see: an edge port's bar and a gap's brackets both say which way current
+    /// crosses a plane IN the layout, while an internal port's current leaves the plane altogether. A
+    /// ring and a ground symbol say that without claiming a direction the port does not have.</para>
+    /// </summary>
+    public static FigureScene InternalPortOnALine()
+    {
+        var tech  = StarterTechnologies.Pcb2Layer();
+        var drill = Layer(tech, "Drill");
+
+        var (view, xc, yc) = SeriesGapLine();
+        view.Shapes.Insert(1, new ViaShape { Layer = drill, X = xc, Y = yc,
+                                             PadSize = Um(700), DrillSize = Um(360) });
+
+        var vm = EditorVm(view);
+        vm.InternalPortMarks = [(xc, yc, PlanarPortKind.Internal)];
+
+        return Framed(new LayoutDocument("Internal via", vm), 880, 300);
     }
 
     /// <summary>
@@ -461,7 +493,7 @@ public static class DocLayoutFixtures
     {
         var (view, xc, yc) = SeriesGapLine();
         var vm = EditorVm(view);
-        vm.InternalGapPorts = [(xc, yc)];
+        vm.InternalPortMarks = [(xc, yc, PlanarPortKind.InternalDeltaGap)];
 
         var tech    = StarterTechnologies.Pcb2Layer();
         var planar  = PlanarExtractor.Extract(view.Shapes, tech, Dbu, 20e9);

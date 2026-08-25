@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using CircuitRF.Engine;
+using CircuitRF.Engine.Mom;
 using Avalonia.Controls;
 using CircuitRF.Core.Pdk;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -3107,6 +3108,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var vm = new LayoutEditorViewModel(model, messageSink: Messages);
         vm.ApplyTechResolution(resolution);
         vm.SaveError += OnLayoutSaveError;
+        // A scratch layout has no path yet, so no .cem can reference it — but it gets one the moment
+        // it is saved, and CurrentLayoutPath is read live, so the same one line covers both.
+        vm.Model.Changed += (_, _) => NotifyEmSetupsLayoutChanged(vm.CurrentLayoutPath);
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
         WireRetargetSeam(vm);
@@ -5213,15 +5217,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         return rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel) ? full : rel;
     }
 
-    private EmLayoutSource? ResolveEmLayout(string cemPath, string layoutRef)
+    /// <summary>
+    /// The absolute <c>.clay</c> path an <see cref="EmSetup.LayoutRef"/> names, or null when it names
+    /// nothing. Split out of <see cref="ResolveEmLayout"/> so <see cref="NotifyEmSetupsLayoutChanged"/>
+    /// can ask "does this .cem point at THAT layout?" without loading the geometry — the two must
+    /// agree about what a reference resolves to, and one method is how that is guaranteed.
+    /// </summary>
+    private string? ResolveEmLayoutPath(string cemPath, string layoutRef)
     {
         if (layoutRef.Length == 0) return null;
 
-        string abs = Path.IsPathRooted(layoutRef)
-            ? layoutRef
+        return Path.IsPathRooted(layoutRef)
+            ? Path.GetFullPath(layoutRef)
             : Path.GetFullPath(Path.Combine(
                 CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(cemPath)!,
                 layoutRef));
+    }
+
+    private EmLayoutSource? ResolveEmLayout(string cemPath, string layoutRef)
+    {
+        if (ResolveEmLayoutPath(cemPath, layoutRef) is not { } abs) return null;
 
         LayoutView? view = null;
         foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
@@ -5238,6 +5253,67 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         var tech = ResolveTechFor(view.TechRef, abs);
         return new EmLayoutSource(abs, view, tech.Tech, view.DbuPerMicron);
+    }
+
+    /// <summary>
+    /// Coalesces a burst of layout edits into one refresh per <c>.clay</c>. Keyed by absolute path,
+    /// and touched from <see cref="LayoutModel.Changed"/> — see
+    /// <see cref="NotifyEmSetupsLayoutChanged"/> for why that cannot do the work inline.
+    /// </summary>
+    private readonly HashSet<string> _emLayoutRefreshPending = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// <b>An open EM setup re-reads its layout when that layout is edited.</b> Owner report,
+    /// 2026-08-25: "placed 3 ports in my .clay drawing, but only 2 ports show up in the .cem."
+    ///
+    /// <para>Everything downstream was correct — the extractor resolved all three, and a Simulate
+    /// would have run all three, because <c>EmRunService</c> re-extracts from the live
+    /// <c>LayoutView</c> at run time. What was wrong is that <b>nothing ever re-ran
+    /// <see cref="EmSetupEditorViewModel.Refresh"/> after the <c>.cem</c> was opened</b>: the panel's
+    /// port list, mesh summary and blocking reason were a snapshot taken at open time and refreshed
+    /// only when a setting inside the panel was committed or Mesh was pressed. Add a port with the
+    /// panel already open and it went on showing the port list from before. The port count is
+    /// derived from the geometry precisely so a user never types it, which makes a silently stale
+    /// one indistinguishable from the extractor having missed a port.</para>
+    ///
+    /// <para><b><see cref="EmSetupEditorViewModel.InvalidateMesh"/> already documented itself as
+    /// "called by the workspace when the referenced .clay changes" — and no such call existed.</b>
+    /// This is that call. Both halves are needed: Invalidate drops a mesh report that describes
+    /// artwork that has since changed, and Refresh re-extracts to replace it.</para>
+    ///
+    /// <para><b>Posted, never inline.</b> <see cref="LayoutModel.NotifyChanged"/> raises
+    /// <c>Changed</c> while holding <c>RenderLock</c>, and every subscriber there is required to be a
+    /// cheap non-blocking invalidate — a flatten plus two extractions is neither. Posting at
+    /// Background priority also collapses a burst of edits (a paste, a multi-shape delete) into one
+    /// refresh instead of one per command.</para>
+    /// </summary>
+    private void NotifyEmSetupsLayoutChanged(string? absClayPath)
+    {
+        if (string.IsNullOrWhiteSpace(absClayPath)) return;
+
+        string key;
+        try { key = Path.GetFullPath(absClayPath); }
+        catch (ArgumentException) { return; }
+        catch (NotSupportedException) { return; }
+
+        lock (_emLayoutRefreshPending)
+            if (!_emLayoutRefreshPending.Add(key)) return;   // one already queued for this layout
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (_emLayoutRefreshPending) _emLayoutRefreshPending.Remove(key);
+
+            foreach (var doc in _openDocsByPath.Values.OfType<EmSetupDocument>().ToList())
+            {
+                var vm = doc.ViewModel;
+                if (ResolveEmLayoutPath(vm.FilePath, vm.Working.LayoutRef) is not { } target ||
+                    !string.Equals(target, key, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                vm.InvalidateMesh();
+                vm.Refresh();
+            }
+        }, DispatcherPriority.Background);
     }
 
     /// <summary>
@@ -5686,15 +5762,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void AdoptPortTypes(LayoutDocument open, EmSetupEditorViewModel vm, string layoutPath)
     {
-        var next  = vm.InternalGapPortAnchors;
+        var next  = vm.InternalPortMarkAnchors;
         var owner = vm.Working.Name is { Length: > 0 } n ? n : Path.GetFileName(vm.FilePath);
 
-        var prev      = open.ViewModel.InternalGapPorts;
-        string before = open.ViewModel.InternalGapPortsOwner;
+        var prev      = open.ViewModel.InternalPortMarks;
+        string before = open.ViewModel.InternalPortMarksOwner;
         bool  differs = prev.Count != next.Count || !prev.All(next.Contains);
 
-        open.ViewModel.InternalGapPorts     = next;
-        open.ViewModel.InternalGapPortsOwner = owner;
+        open.ViewModel.InternalPortMarks     = next;
+        open.ViewModel.InternalPortMarksOwner = owner;
 
         if (!differs || before.Length == 0 || string.Equals(before, owner, StringComparison.Ordinal))
             return;
@@ -5706,10 +5782,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             "type belongs to the analysis rather than to the drawing. The layout can only draw one " +
             "of them.", layoutPath);
 
-        static string Describe(IReadOnlyList<(long X, long Y)> gaps)
-            => gaps.Count == 0 ? "no internal delta-gap ports"
-             : gaps.Count == 1 ? "1 internal delta-gap port"
-             : $"{gaps.Count} internal delta-gap ports";
+        // Counted BY KIND, because "2 internal ports" said of one delta gap and one internal port
+        // describes neither of the two marks that just changed on screen.
+        static string Describe(IReadOnlyList<(long X, long Y, PlanarPortKind Kind)> marks)
+        {
+            if (marks.Count == 0) return "no internal ports";
+
+            int gaps = 0, vias = 0;
+            foreach (var m in marks)
+                if (m.Kind == PlanarPortKind.Internal) vias++; else gaps++;
+
+            var parts = new List<string>(2);
+            if (gaps   > 0) parts.Add(gaps   == 1 ? "1 internal delta-gap port" : $"{gaps} internal delta-gap ports");
+            if (vias   > 0) parts.Add(vias   == 1 ? "1 internal port"     : $"{vias} internal ports");
+            return string.Join(" and ", parts);
+        }
     }
 
     /// <summary>Reflects a .cem editor's dirty state onto its own tree node's dirty dot — the exact
@@ -7505,6 +7592,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var vm = new LayoutEditorViewModel(model, absClayPath, messageSink: Messages);
         vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absClayPath));
         vm.SaveError += OnLayoutSaveError;
+        // R-em-17 — an open .cem re-reads this layout whenever it is edited. Subscribed HERE, at the
+        // one place a path-backed session VM is built, rather than in RegisterLayoutSession, which
+        // runs again for the same VM on Save-As and would double-subscribe. CurrentLayoutPath is
+        // read live for that same reason: a Save-As moves the session, and the .cem that cares is
+        // the one pointed at wherever it now lives.
+        vm.Model.Changed += (_, _) => NotifyEmSetupsLayoutChanged(vm.CurrentLayoutPath);
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         vm.WireSidecarRemoved += OnWireSidecarRemoved;
         WireRetargetSeam(vm);

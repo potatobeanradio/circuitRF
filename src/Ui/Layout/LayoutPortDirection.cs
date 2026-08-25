@@ -43,6 +43,128 @@ public static class LayoutPortDirection
     public readonly record struct PortHint(
         LayoutRotation Direction, long WidthDbu, bool Inferred, long PlaneX, long PlaneY, long LengthDbu);
 
+    // ── THE MARKER'S OWN EXTENT ───────────────────────────────────────────────────────────────
+    //
+    // Owner request, 2026-08-25: "make the hitbox/highlight the anchor arrow area + padding."
+    //
+    // These fractions and PortArrowGeometry were private to LayoutRenderer, which is fine while the
+    // only thing that needs to know how big a port marker is the code that DRAWS it. A pick region
+    // measured from the marker needs the same numbers, and LayoutHitTest is framework-free and
+    // cannot reach into a Skia file for them — so they live here, with PortHint, and the renderer
+    // reads them from here. **Two copies of a marker's size, one in the renderer and one in the hit
+    // test, is precisely the drift that produced the mismatch this replaces.**
+
+    /// <summary>The arrow's preferred reach, as a fraction of the port width.</summary>
+    public const double ArrowLengthOverWidth = 0.35;
+
+    /// <summary>The hard ceiling on that reach, as a fraction of the conductor's extent ALONG the
+    /// direction, so a short conductor clamps the arrow rather than the arrow dwarfing it.</summary>
+    public const double ArrowMaxLengthOverConductorLength = 0.7;
+
+    /// <summary>The arrowhead's barbs, as a fraction of the arrow's FINAL reach.</summary>
+    public const double ArrowBarbOverReach = 0.35;
+
+    /// <summary>A cap on the barbs, as a fraction of the port width.</summary>
+    public const double ArrowMaxBarbOverWidth = 0.22;
+
+    /// <summary>The edge port's plane serif, as a fraction of the port width.</summary>
+    public const double PlaneSerifOverWidth = 0.12;
+
+    /// <summary>Half the internal gap's break, as a fraction of the port width.</summary>
+    public const double GapHalfOverWidth = 0.11;
+
+    /// <summary>The internal gap's turned-back flanges, as a fraction of the port width.</summary>
+    public const double GapFlangeOverWidth = 0.22;
+
+    /// <summary>How far a gap's bars run PAST the conductor at each end, over the port width.</summary>
+    public const double GapOverhangOverWidth = 0.10;
+
+    /// <summary>The internal (to-ground) port's ring, as a fraction of the conductor width.</summary>
+    public const double RingOverWidth = 0.55;
+
+    /// <summary>
+    /// How long the direction arrow is, and how long its barbs are, in DBU.
+    ///
+    /// <para><b>The arrow is bounded by the metal it points into, never by its own preferred
+    /// size</b> — <c>reach = min(width-preferred, length × the ceiling)</c> — and the barbs are tied
+    /// to that final reach rather than to the width, so the whole arrow shrinks together when a short
+    /// conductor clamps it instead of leaving a stub with an enormous head on it.</para>
+    /// </summary>
+    public static (double Reach, double BarbLen) ArrowGeometry(PortHint hint)
+    {
+        double preferred = hint.WidthDbu * ArrowLengthOverWidth;
+        double available = hint.LengthDbu > 0
+            ? hint.LengthDbu * ArrowMaxLengthOverConductorLength
+            : preferred;
+        double reach = System.Math.Min(preferred, available);
+
+        double barb = System.Math.Min(reach * ArrowBarbOverReach, hint.WidthDbu * ArrowMaxBarbOverWidth);
+        return (reach, barb);
+    }
+
+    /// <summary>
+    /// <b>The bounding box of the mark a port DRAWS, plus <paramref name="padding"/>.</b> One
+    /// function, so the hit test and the selection highlight cannot disagree about where a port is —
+    /// which is the whole reason it exists (owner, 2026-08-25: "the hitbox of the port does not match
+    /// with the select highlight rendering", then "make the hitbox/highlight the arrow boundary box
+    /// for edge and internal ports and make it the gap boundary rendering for the gap port").
+    ///
+    /// <para><b>The port's TEXT is not part of it.</b> A port is picked and highlighted by its mark;
+    /// the name is a label beside it. Two earlier attempts sized this from the glyphs and both were
+    /// rejected — the box was either far from the mark or far bigger than it.</para>
+    ///
+    /// <para><b>The split is EDGE versus the two internal kinds, and it follows what is drawn rather
+    /// than the request's wording.</b> Only an edge port has an arrow: its plane bar and arrowhead
+    /// are drawn about <see cref="PortHint.PlaneX"/>/<see cref="PortHint.PlaneY"/>, the conductor
+    /// end. An internal-to-ground port draws a RING at the label's own anchor
+    /// (<c>LayoutRenderer.DrawInternalPortMarker</c> centres on <c>label.X/Y</c>, or on the meshed via
+    /// footprint), and a gap port draws its break there too. So the ring goes with the gap, not with
+    /// the arrow — boxing it at the plane would put its highlight where nothing is drawn.</para>
+    ///
+    /// <para>An edge port's box being at the conductor end is why
+    /// <c>LayoutSpatialIndex.ConservativeBboxOf</c> stops culling ports: the anchor-to-plane distance
+    /// is unbounded, so any finite pad about the anchor would sometimes prune a port before its exact
+    /// test ran.</para>
+    /// </summary>
+    /// <param name="atAnchor">
+    /// True for the two INTERNAL kinds (gap and to-ground), whose marks are drawn at the label's own
+    /// anchor; false for an edge port, whose mark is at the conductor end.
+    /// </param>
+    public static Bbox MarkerBbox(LabelShape label, PortHint hint, bool atAnchor, long padding)
+    {
+        bool alongX = hint.Direction is LayoutRotation.R0 or LayoutRotation.R180;
+
+        double across, along;
+        long cx, cy;
+
+        if (atAnchor)
+        {
+            // The gap's break — two bracketed bars either side of the cut, overhanging the metal at
+            // both ends and turned back by their flanges — or the internal port's ring, whichever is
+            // larger. Both are drawn at the anchor.
+            across = System.Math.Max(hint.WidthDbu * (0.5 + GapOverhangOverWidth),
+                                     hint.WidthDbu * RingOverWidth);
+            along  = System.Math.Max(hint.WidthDbu * (GapHalfOverWidth + GapFlangeOverWidth),
+                                     hint.WidthDbu * RingOverWidth);
+            cx = label.X; cy = label.Y;
+        }
+        else
+        {
+            // The plane bar and the arrow, about the conductor end: across, half the conductor width
+            // plus the serif's turn; along, the arrow's own reach.
+            var (reach, _) = ArrowGeometry(hint);
+            across = hint.WidthDbu * (0.5 + PlaneSerifOverWidth);
+            along  = reach;
+            cx = hint.PlaneX; cy = hint.PlaneY;
+        }
+
+        long halfX = (long)System.Math.Round(alongX ? along : across) + padding;
+        long halfY = (long)System.Math.Round(alongX ? across : along) + padding;
+
+        return new Bbox(cx - halfX, cy - halfY, cx + halfX, cy + halfY);
+    }
+
+
     /// <summary>
     /// A cell PIN's own exact statement about the conductor end at a point: where the edge is, how
     /// wide it is, and which way current flows into the metal from it.

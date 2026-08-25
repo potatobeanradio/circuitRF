@@ -90,6 +90,40 @@ files never CLAUDE.md. This helps keep the CLAUDE.md files small.
   copies had already drifted (About said 0.9.0, the plists 0.1.0, the assembly the 1.0.0 default),
   which is what `tests/Ui.Tests/VersionSingleSourceTests.cs` now holds shut.
 
+### Run the test suite ONCE. Read the TRX for failures — never re-run to find out what broke
+
+**Owner instruction, given three times (2026-08-25).** A full `dotnet test` is ~7 minutes of wall
+clock. Running it a second time because the first run's console tail scrolled past the failure is
+pure waste, and it is never necessary: **every project writes
+`tests/<Project>.Tests/TestResults/last-run.trx` on every run**, and that file holds each test's
+name, outcome, duration, failure message, stack trace and captured stdout.
+
+- **`dotnet test`'s console tail only shows the LAST project to finish.** With seven test projects
+  running concurrently, a failure in an early-finishing one (`Core.Tests` is 1 s; `Engine.Tests` is
+  5+ min) is scrolled off. That is what makes the "just run it again" reflex so tempting — and the
+  console is simply the wrong place to look.
+- **Get the per-project verdicts in the same run** with `dotnet test 2>&1 | grep -E "^Passed!|^Failed!"`,
+  which prints one line per project.
+- **Get the failure detail from the TRX**, after the fact, for free:
+
+  ```bash
+  python3 - <<'EOF'
+  import re, glob
+  for f in glob.glob('tests/*/TestResults/last-run.trx'):
+      x = open(f, encoding='utf-8', errors='replace').read()
+      for m in re.finditer(r'testName="([^"]+)"[^>]*outcome="Failed"', x):
+          print(f, m.group(1))
+      for m in re.finditer(r'outcome="Failed".*?<Message>(.*?)</Message>', x, re.S):
+          print(m.group(1)[:500])
+  EOF
+  ```
+
+- The same file carries `<StdOut>`, so **a diagnostic `ITestOutputHelper` line is readable without
+  re-running** — which is the cheap way to probe a failure, rather than adding a print and running
+  the suite again.
+- Corollary: **scope the run before starting it**, per the section below — `dotnet test tests/Ui.Tests`
+  for layout/UI work is ~40 s against ~7 min for the full solution.
+
 ### `dotnet test` is fast by default (brief-test-default-fast.md, 2026-07-28)
 
 **Plain `dotnet test`, with no flags, is the routine gate — it is fast by construction, not by
@@ -278,18 +312,6 @@ node, collapsible internal nodes, terminal current, and charge-based capacitance
 `dq/dv`). The external-device path exercises all four today (`ExternalDeviceModel`, `VerilogA`);
 `FetModelBase` does not carry a thermal node of its own.
 
-**Nonlinear devices that exist today: five native large-signal FETs (`FET_Angelov`, `FET_Curtice`,
-`FET_CurticeCubic`, `FET_Materka`, `FET_Statz`, all on `FetModelBase` in `src/Core/Devices/Fet/`,
-with selectable gate charge via `CapModel` — 0 none, 1 constant Cgs/Cgd, 2 junction), plus `SDD`,
-`NonlinearC`, `Diode`, and any externally-supplied model through `ExtDevice`/`VerilogA`.**
-
-> **Corrected 2026-08-06** (brief-harmonicarf-h0-h3 §0.3 item 1 / M6). This paragraph used to say
-> that `FetModel` "is a plan, not code" and that a FET in a schematic is an SDD carrying FET
-> equations. That has been stale since the FET family landed on 2026-08-02 — the models are
-> placeable, have analytic derivatives, their own parameter sets, and 23 gate tests of their own.
-> `BjtModel` genuinely does not exist and is deliberately not planned: the bipolar path stays on the
-> compiled/external route, because a native implementation is permanent maintenance of someone
-> else's physics (see `src/Core/CLAUDE.md`).
 
 ## Validation expectations
 Numerical changes require a `testdata/` regression test within the tolerance in the PRD.
@@ -303,6 +325,14 @@ suite on Windows, macOS, and Linux.
 - Adding native (non-managed) dependencies (cross-platform risk).
 - Anything marked out-of-scope for v1 in `docs/PRD.md` (transient, full Verilog-A/ASM-HEMT,
   a third-party cell database, layout view).
+
+## Commit expectations
+- Never commit unless given an explicit instruction by owner
+
+## Commercial Vendor References
+- Do not allow references to commercial vendors or their products to leak into the circuitRF repo - not even as a glossery of names to filter out
+- This includes the names of any specific PDK that does not come built into circtuiRF
+- Before any commit, always grep search for these names that could pollute the repo.  Remove them, and indicate what was removed via chat.
 
 ## Licensing
 Core is **MIT**. Never ingest GPL code (some third-party simulators are GPL — learn from, never copy).
