@@ -5,6 +5,96 @@ symptom first, because that is what the next person will have in front of them.
 
 ---
 
+## A Windows release shipped 5 of 9 artifacts: the launcher stub "could not be built" for arm64 and x86 (2026-08-25)
+
+**Symptom:** `.\packaging\windows\build-windows.ps1` on a Windows-on-ARM machine builds the x64
+stub, then reports for arm64 and for x86 that no C toolchain could build the launcher stub. The
+per-user `.msi` and the `.zip` update payload are skipped for both, and the run ends
+`INCOMPLETE: no launcher stub for arm64, x86.` — five artifacts where a release needs nine, with no
+self-updating channel on two of the three architectures.
+
+**Two unrelated causes that look identical in the log.** They have to be separated before either can
+be fixed, and the log line that separates them is the one that is *absent*.
+
+### x86: nothing was wrong with the compiler. PowerShell threw away a successful build.
+
+The only output was one line:
+
+```
+'-macrofusio' is not a recognized feature for this target (ignoring feature)
+```
+
+That is an LLVM **warning**, on stderr, which says in its own text that it is ignoring the feature
+and carrying on. zig exited 0. The stub compiled.
+
+`build-stub.ps1` captured the compiler's output the obvious way:
+
+```powershell
+$ErrorActionPreference = 'Stop'          # at the top of the script
+...
+$log = & zig cc ... 2>&1
+if ($LASTEXITCODE -ne 0) { ... }
+```
+
+**Under Windows PowerShell 5.1 that is not a capture, it is a trap.** Merging a *native* command's
+stderr into the success stream while the preference is `'Stop'` turns the first stderr line into a
+`NativeCommandError` and **throws**. `$LASTEXITCODE` is never read. The exit code is irrelevant — it
+can be 0. So **any warning at all fails the build**, and the more warnings a toolchain emits the
+more likely it is to be declared broken.
+
+**How to tell this apart from a real compiler failure, from the log alone:** the script prints its
+own line on the exit-code path (`zig cc failed with exit N`). For arm64 that line is present. For
+x86 it is **absent** — the single line in the log is the caught exception's `.Message`, because a
+`NativeCommandError`'s message *is* the stderr text it objected to. An absent line is the evidence.
+
+**It does not reproduce on a developer's machine.** pwsh 7.3+ dropped this behaviour, so the same
+script and the same warning succeed under `pwsh` on macOS or Linux and fail only under the
+`powershell.exe` that cuts the release. Verified both ways.
+
+**Fix:** `Invoke-Compiler` in `build-stub.ps1` sets the preference to `'Continue'` for exactly the
+duration of the call, then decides from the exit code and the artifact.
+`tests/Ui.Tests/PackagingScriptTests.cs`'s `PowerShellScripts_CaptureNativeStderr_OnlyWithErrorActionContinue`
+holds it shut — it tracks the preference down each script rather than guessing by line distance, and
+it found **four more instances of the same bug** in `build-windows.ps1`'s WiX extension check, where
+one incidental line from `wix` would have ended the entire Windows release at its first step.
+
+### arm64: zig crashed, and the reason is that the target was the *host*
+
+zig exited `-1073741819` (0xC0000005, an access violation) having printed nothing at all — a crash,
+not a refusal, so neither the stub source nor the flags were implicated. The machine was running the
+correct **native** `zig-aarch64-windows-0.16.0`, so the usual "you are running the x86_64 zig under
+emulation" answer did not apply.
+
+**What separates aarch64 from the x86_64 target that built fine on the same machine, in the same
+run, seconds earlier: `-target aarch64-windows-gnu` on a Windows-on-ARM host is not a cross build.**
+With no explicit `-mcpu`, zig resolves the CPU natively whenever the target's architecture and OS
+match the host's — a different code path, with a CPU model and feature set that vary per machine.
+Every other architecture takes the cross path.
+
+**Fix:** always pass `-mcpu=baseline`. That is also correct independently of the crash — the stub is
+shipped to other people's machines, so building it for whichever CPU happened to cut the release is
+wrong even when it works.
+
+`build-stub.ps1` now tries a ladder and takes the first route that produces a *usable* binary:
+`-mcpu=baseline`, then the same with `-O0`, then the same with a private zig cache
+(`ZIG_GLOBAL_CACHE_DIR` pointed at a scratch directory — a half-written entry in the shared cache
+fails one target while every other one still builds, which is the same shape, and this tests it
+without deleting anything the operator has), then the old native-CPU invocation, then `cl.exe` on
+PATH, then **`cl.exe` located with `vswhere` and set up with `vcvarsall.bat <host>_<target>`**. That
+last route is what makes "open a Developer PowerShell instead" stop being something the operator has
+to know.
+
+### Also found: `build-stub.sh` had drifted and could not produce a working stub at all
+
+The cross-platform route was left behind when the app name moved to a bare token (2026-08-25). It
+still passed `-DCRF_APP_NAME="\"$app\""`, so the name arrived **including the quotes** and the stub
+went looking for a file literally called `"circuitRF".exe`. It also still used `-mwindows`, which is
+a no-op under `zig cc` and yields a CONSOLE stub. Neither shows up on the machine that cuts a
+release, because a release is cut on Windows with the `.ps1`. Both fixed, and it now reads the
+machine and subsystem back out of the PE exactly as the `.ps1` does.
+
+---
+
 ## `wix build` failed with WIX0091 "duplicate Registry" the moment `.cws` was added (2026-08-23)
 
 **Symptom:** `.\packaging\windows\build-windows.ps1` publishes and harvests fine, then stops with four

@@ -111,6 +111,76 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>A packaging <c>.ps1</c> may only capture a native command's stderr with <c>2&gt;&amp;1</c>
+    /// while <c>$ErrorActionPreference</c> is <c>'Continue'</c>.</b>
+    ///
+    /// <para>Under Windows PowerShell 5.1, merging a NATIVE command's stderr into the success stream
+    /// while the preference is <c>'Stop'</c> does not capture that stderr — it turns the first line
+    /// of it into a TERMINATING error. PowerShell wraps the line in a <c>NativeCommandError</c>,
+    /// throws, and <c>$LASTEXITCODE</c> is never read. The command's exit code is irrelevant; it can
+    /// be 0.</para>
+    ///
+    /// <para><b>So any warning at all becomes a build failure</b>, which is what makes this worth a
+    /// test. It cost a release the whole x86 per-user channel (owner-reported, 2026-08-25): zig
+    /// printed one line — <c>'-macrofusio' is not a recognized feature for this target (ignoring
+    /// feature)</c>, an LLVM warning that says in its own text that it is carrying on — the compile
+    /// SUCCEEDED, and the launcher stub was reported as unbuildable. The .msi and the .zip update
+    /// payload were then skipped for that architecture, so nobody on it would have been offered the
+    /// next version.</para>
+    ///
+    /// <para>The tell is that nothing the script itself prints appeared: the one line in the log was
+    /// the caught exception's own Message, because a NativeCommandError's message IS the stderr text
+    /// it objected to.</para>
+    ///
+    /// <para>The rule is checkable, so it is checked rather than remembered: every <c>2&gt;&amp;1</c>
+    /// must sit inside a block that has just set the preference to <c>'Continue'</c>. It is a real
+    /// constraint on new code — the natural way to write this capture is the broken way, and it
+    /// works perfectly under the pwsh 7 on a developer's machine, which dropped the behaviour.</para>
+    /// </summary>
+    [Fact]
+    public void PowerShellScripts_CaptureNativeStderr_OnlyWithErrorActionContinue()
+    {
+        var scripts = Directory.GetFiles(RepoFile("packaging"), "*.ps1", SearchOption.AllDirectories);
+        Assert.NotEmpty(scripts);
+
+        // The preference is TRACKED down the file rather than looked for within some window of lines
+        // above the capture: a window is a proxy for "inside the relaxed block", and it gets the
+        // answer wrong in both directions once the block is longer than the guess. Restoring it from
+        // a saved variable counts as back to 'Stop', which is the conservative reading and the one
+        // every one of these scripts actually means.
+        var offences = new List<string>();
+        foreach (var path in scripts)
+        {
+            var lines = File.ReadAllLines(path);
+            bool relaxed = false;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                bool comment = line.TrimStart().StartsWith("#", StringComparison.Ordinal);
+
+                if (!comment)
+                {
+                    var set = Regex.Match(line, @"\$ErrorActionPreference\s*=\s*(.+)$");
+                    if (set.Success)
+                        relaxed = set.Groups[1].Value.TrimStart().StartsWith("'Continue'", StringComparison.Ordinal);
+                }
+
+                if (comment || !line.Contains("2>&1", StringComparison.Ordinal)) continue;
+
+                if (!relaxed)
+                    offences.Add($"{Path.GetFileName(path)}:{i + 1}: {line.Trim()}");
+            }
+        }
+
+        Assert.True(offences.Count == 0,
+            "A native command's stderr is captured with 2>&1 while $ErrorActionPreference is 'Stop'. "
+            + "Under Windows PowerShell 5.1 that makes the first WARNING a terminating error and the "
+            + "exit code is never read, so a compiler that succeeded is reported as having failed:\n  "
+            + string.Join("\n  ", offences));
+    }
+
+    /// <summary>
     /// <b>IconGen must name a Linux native SkiaSharp itself.</b> SkiaSharp 4.148.0 - what Svg.Skia
     /// 5.2.1 resolves to - declares <c>SkiaSharp.NativeAssets.Win32</c> and <c>.macOS</c> as
     /// dependencies and no Linux equivalent, so on Linux nothing puts a <c>libSkiaSharp.so</c> in the

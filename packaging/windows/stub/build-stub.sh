@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ── Build the circuitRF per-user launcher stub ────────────────────────────────────────────────
+# -- Build the circuitRF per-user launcher stub ------------------------------------------------
 #
 #   build-stub.sh [x64|arm64|x86] [app-name]
 #
@@ -7,7 +7,9 @@
 # preferred route because it cross-compiles a Windows PE from any host with one download and no
 # daemon, which is what lets this stub be built and checked on a machine that is not Windows.
 #
-# The Windows-native route is build-stub.ps1, which build-windows.ps1 calls.
+# The Windows-native route is build-stub.ps1, which build-windows.ps1 calls. THE TWO MUST AGREE:
+# this script drifted from it once and produced a stub that could not work at all (see the app-name
+# and subsystem notes below), which nothing detected because a release is cut on Windows.
 set -eu
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,9 +19,9 @@ out="$here/build"
 mkdir -p "$out"
 
 case "$arch" in
-    x64)   target=x86_64-windows-gnu  ;;
-    arm64) target=aarch64-windows-gnu ;;
-    x86)   target=x86-windows-gnu     ;;
+    x64)   target=x86_64-windows-gnu  ; machine=8664 ;;
+    arm64) target=aarch64-windows-gnu ; machine=aa64 ;;
+    x86)   target=x86-windows-gnu     ; machine=014c ;;
     *) echo "unknown architecture '$arch' (expected x64, arm64 or x86)" >&2; exit 2 ;;
 esac
 
@@ -31,11 +33,46 @@ if ! command -v "$ZIG" >/dev/null 2>&1; then
 fi
 
 exe="$out/$app-stub-$arch.exe"
+rm -f "$exe"
 
-# -mwindows: a GUI subsystem binary, so launching from a shortcut opens no console window. The stub
-# still writes to stderr for anyone who runs it from a terminal.
-"$ZIG" cc -target "$target" -O2 -municode -mwindows \
-    -DCRF_APP_NAME="\"$app\"" \
+# -Wl,--subsystem,windows and NOT -mwindows. Both are meant to ask for the GUI subsystem so that
+# launching the app opens no console window - and with zig cc, -mwindows silently does not. Measured
+# by reading the subsystem field back out of the built PE (zig 0.13.0):
+#
+#     -mwindows                 -> 3 (CONSOLE)   wrong, and no warning
+#     -Wl,--subsystem,windows   -> 2 (GUI)       correct
+#     both together             -> 3 (CONSOLE)   -mwindows wins and undoes it
+#
+# -municode: wWinMain is the Unicode entry point; without it the mingw CRT looks for WinMain.
+#
+# -mcpu=baseline: without it zig resolves the CPU natively whenever the target's architecture and OS
+# match the host's, so the same command is a cross build on one machine and a native one on another.
+# The stub ships to other people's machines, so it must not be built for whichever CPU cut it - and
+# on Windows on ARM the native path is also where zig crashes outright.
+#
+# THE APP NAME IS A BARE TOKEN and the stub stringifies it itself. Passing it pre-quoted is what this
+# script used to do, and after build-stub.ps1 moved to a bare token this one was left behind: the
+# name arrived as "circuitRF" INCLUDING the quotes, so the stub went looking for a file literally
+# called "circuitRF".exe. See the note in circuitrf-stub.c.
+"$ZIG" cc -target "$target" -mcpu=baseline -O2 -municode -Wl,--subsystem,windows \
+    "-DCRF_APP_NAME=$app" \
     "$here/circuitrf-stub.c" -o "$exe" -luser32
+
+# Read back what was actually built, exactly as build-stub.ps1 does: never trust a toolchain to have
+# done what it was asked. Both fields ship silently wrong otherwise.
+read_le16() { od -An -tx1 -j "$1" -N2 "$exe" | tr -d ' \n' | sed 's/\(..\)\(..\)/\2\1/'; }
+pe=$(( $(od -An -tu4 -j 60 -N4 "$exe" | tr -d ' ') ))
+[ "$(od -An -c -j "$pe" -N2 "$exe" | tr -d ' \n')" = "PE" ] || { echo "not a PE: $exe" >&2; exit 1; }
+
+got_machine=$(read_le16 $(( pe + 4 )))
+got_subsys=$(read_le16 $(( pe + 24 + 68 )))
+if [ "$got_machine" != "$machine" ]; then
+    echo "built the wrong architecture: machine 0x$got_machine, expected 0x$machine for $arch" >&2
+    rm -f "$exe"; exit 1
+fi
+if [ "$got_subsys" != "0002" ]; then
+    echo "subsystem is 0x$got_subsys, not 2 (GUI): a console window would open on every launch" >&2
+    rm -f "$exe"; exit 1
+fi
 
 echo "built $exe"

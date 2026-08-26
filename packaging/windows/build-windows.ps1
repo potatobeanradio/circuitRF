@@ -116,6 +116,19 @@ Write-Host 'Checking the WiX UI extension...'
 # people ran once, followed by any `dotnet tool update --global wix`, leaves an extension the new wix
 # cannot see. Resolving the reference here, against the wix actually on PATH, is what stops it.
 
+# EVERY ONE OF THESE CALLS CAPTURES STDERR, and doing that with the preference on 'Stop' is a trap
+# rather than a capture: under Windows PowerShell 5.1, merging a NATIVE command's stderr into the
+# success stream while $ErrorActionPreference is 'Stop' turns the first stderr line into a
+# TERMINATING error. It never reaches $LASTEXITCODE, and the exit code can be 0. So one incidental
+# line from wix - a NuGet notice, a first-run message - would end the entire Windows release at its
+# first step, blaming a tool check. The same trap took out the x86 launcher stub for real
+# (owner-reported, 2026-08-25; see build-stub.ps1's Invoke-Compiler and
+# tests/Ui.Tests/PackagingScriptTests.cs, which now holds this shut).
+#
+# 'Continue' for the duration of the block, and decide from the EXIT CODE, which is what it is for.
+$previousEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+
 $wixVersion = $null
 $versionText = (& wix --version 2>&1) -join ' '
 if ($versionText -match '(\d+\.\d+\.\d+)') { $wixVersion = $Matches[1] }
@@ -133,15 +146,24 @@ elseif ($wixVersion) {
     if ($LASTEXITCODE -ne 0) { $extensionRef = $null }          # e.g. a preview wix with no matching package
 }
 
+$wixInstallFailed = $false
 if (-not $extensionRef) {
     $extensionRef = 'WixToolset.UI.wixext'
     if ($installed -notmatch 'WixToolset\.UI\.wixext') {
         Write-Host "  installing $extensionRef ..."
         & wix extension add --global $extensionRef 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "Could not install the WiX UI extension. Run it by hand: wix extension add --global $extensionRef"
-        }
+        if ($LASTEXITCODE -ne 0) { $wixInstallFailed = $true }
     }
+}
+
+# Put it back before anything else runs. The rest of this script relies on 'Stop' - a failed publish
+# or a failed wix build must end the run rather than be carried past - so the relaxation has to be
+# exactly as wide as the block that needs it. The throw is deferred to here for the same reason:
+# thrown above, it would escape while the preference was still relaxed.
+$ErrorActionPreference = $previousEap
+
+if ($wixInstallFailed) {
+    throw "Could not install the WiX UI extension. Run it by hand: wix extension add --global $extensionRef"
 }
 
 # == Icons =====================================================================
@@ -212,7 +234,10 @@ foreach ($Arch in $arches) {
             & (Join-Path $PSScriptRoot 'stub\build-stub.ps1') -Arch $Arch -AppName 'circuitRF'
         }
         catch {
-            Write-Host "  $($_.Exception.Message)"
+            # Indent EVERY line. The stub script reports one line per toolchain route it tried, and
+            # a message that indents only its first line reads as though the rest is this script's
+            # own output rather than the reason the stub is missing.
+            $_.Exception.Message -split "`r?`n" | ForEach-Object { Write-Host "  $_" }
         }
 
         if (-not (Test-Path $stubExe)) {
