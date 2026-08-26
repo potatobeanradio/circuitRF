@@ -124,6 +124,22 @@ function Invoke-Compiler {
 # "the compiler on PATH targets the wrong architecture" is a reason to go and find the right one,
 # which is exactly what the vswhere route below does.
 
+# POWERSHELL'S [uint32] CAST IS CHECKED, NOT A REINTERPRET. `[uint32]-1073741819` does not give
+# 0xC0000005 - it THROWS "Value was either too large or too small for a UInt32", and under
+# $ErrorActionPreference = 'Stop' that ends the script. Masking to 32 bits through a LONG first is
+# what actually reinterprets the sign bit.
+#
+# This was live here and survived only by luck: 0xC0000005 is matched by an -eq test one line above,
+# so the cast was never reached for the one code this machine happens to produce. A stack overflow
+# (0xC00000FD) or heap corruption (0xC0000374) would have thrown inside the error path itself and
+# taken the architecture down while REPORTING a crash. It was found because the identical expression
+# in diagnose-zig.ps1 had no such lucky branch and died on the first crash (owner-reported,
+# 2026-08-25). A dry run cannot catch this: a machine where nothing crashes never executes the line.
+function ToNtStatus {
+    param([int]$Code)
+    return [uint32]($Code -band 0xFFFFFFFFL)
+}
+
 function Test-StubBinary {
     param([string]$Path, [string]$WantArch)
 
@@ -252,7 +268,7 @@ function Complete-Route {
         $why = if ($script:lastWasCrash) {
             $script:crashes++
             if ($Result.ExitCode -eq -1073741819) { 'crashed (access violation)' }
-            elseif ($Result.ExitCode -lt 0)       { ('crashed (0x{0:X8})' -f [uint32]$Result.ExitCode) }
+            elseif ($Result.ExitCode -lt 0)       { ('crashed (0x{0:X8})' -f (ToNtStatus $Result.ExitCode)) }
             else                                  { "exit $($Result.ExitCode), no output" }
         }
         else { "exit $($Result.ExitCode)" }

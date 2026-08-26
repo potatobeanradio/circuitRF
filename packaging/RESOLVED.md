@@ -116,6 +116,43 @@ a half-written entry, and this machine is producing crashes.
 `vswhere` route below is the way off zig entirely, and it now reports why it was skipped rather than
 not appearing in the log at all.
 
+### Confirmed: retrying works, and the real rate is about one in twelve
+
+The next run built **all 9 artifacts**. x64 succeeded on attempt 1; arm64 on **attempt 13** (12
+crashes before it) and x86 on **attempt 11** (10 crashes). So the rate is worse than the one in
+seven estimated from the earlier runs, and the 40-attempt budget was the right size — twenty would
+have been marginal for arm64 and the release would have been short again.
+
+### `[uint32]` on a negative exit code THROWS, and it hid in the error path
+
+```powershell
+'0x{0:X8}' -f [uint32]$Code        # Cannot convert value "-1073741819" to type "System.UInt32"
+'0x{0:X8}' -f [uint32]($Code -band 0xFFFFFFFFL)    # 0xC0000005
+```
+
+**PowerShell's `[uint32]` cast is checked, not a reinterpret.** With `$ErrorActionPreference =
+'Stop'` it ends the script. `diagnose-zig.ps1` died on it at the first crash it existed to measure,
+before writing any report at all.
+
+**The identical expression was live in `build-stub.ps1` and survived only by luck:** 0xC0000005 is
+matched by an `-eq` test one line above, so the cast was never reached for the one code this machine
+happens to produce. A stack overflow (0xC00000FD) or heap corruption (0xC0000374) would have thrown
+*inside the error path* and taken the architecture down while reporting a crash.
+
+**A dry run cannot catch this class.** The machine it was rehearsed on never crashed, so the line
+never executed — a diagnostic's error path only runs when the fault it exists for occurs. The same
+reasoning applies to the report file: it was assembled in memory and saved as the last statement, so
+a failure part way through left *no file at all* and everything sections A and B had established was
+lost. It is now written line by line as it goes.
+
+### Leading hypothesis, untested: memory
+
+The release box has **8 GB total and was showing 3.5 GB free**. An allocation that fails and is not
+checked becomes a null dereference, and a null dereference on Windows is **0xC0000005 exactly** —
+silent, random, and specific to a machine under pressure. `diagnose-zig.ps1` now samples free memory
+before every invocation and compares the attempts that crashed with the ones that did not, which
+settles it either way.
+
 ### Also found: `build-stub.sh` had drifted and could not produce a working stub at all
 
 The cross-platform route was left behind when the app name moved to a bare token (2026-08-25). It

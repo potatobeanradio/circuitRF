@@ -46,8 +46,19 @@ $scratch = Join-Path $out 'diag'
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 $report = Join-Path $out 'zig-diagnostic.txt'
 
+# THE REPORT IS WRITTEN AS IT GOES, not assembled and saved at the end. The first real run of this
+# file died part way through section C, and because the save was the last statement it left NO FILE
+# AT ALL - so everything sections A and B had already established was lost and the run had to be
+# repeated (owner-reported, 2026-08-25). A diagnostic is the one kind of program that must assume it
+# will not reach its own last line.
 $lines = New-Object System.Collections.Generic.List[string]
-function Say { param([string]$Text = '') ; Write-Host $Text ; $script:lines.Add($Text) }
+New-Item -ItemType File -Force -Path $report | Out-Null
+function Say {
+    param([string]$Text = '')
+    Write-Host $Text
+    $script:lines.Add($Text)
+    Add-Content -Path $script:report -Value $Text -Encoding Ascii
+}
 function Head { param([string]$Text)
     Say ''
     Say ("== $Text " + ('=' * [Math]::Max(0, 74 - $Text.Length)))
@@ -87,11 +98,24 @@ function Run {
     }
 }
 
+# POWERSHELL'S [uint32] CAST IS CHECKED, NOT A REINTERPRET. `[uint32]-1073741819` THROWS
+# "Value was either too large or too small for a UInt32" rather than giving 0xC0000005, and under
+# $ErrorActionPreference = 'Stop' that ends the script - which is exactly what happened on the first
+# real run of this file, at the first crash it was written to measure (owner-reported, 2026-08-25).
+# Masking to 32 bits through a LONG first is what actually reinterprets the sign bit.
+#
+# Note what a dry run could NOT catch here: the machine it was rehearsed on never crashed, so this
+# line never executed. A diagnostic's error path only runs when the fault it exists for occurs.
+function ToNtStatus {
+    param([int]$Code)
+    return [uint32]($Code -band 0xFFFFFFFFL)
+}
+
 function CodeName {
     param([int]$Code)
     if ($Code -eq 0)    { return 'ok' }
     if ($Code -eq -999) { return 'could not start' }
-    if ($Code -lt 0)    { return ('CRASH 0x{0:X8}' -f [uint32]$Code) }
+    if ($Code -lt 0)    { return ('CRASH 0x{0:X8}' -f (ToNtStatus $Code)) }
     return "exit $Code"
 }
 
@@ -102,10 +126,15 @@ function Probe {
           [int]$Times = $Repeat, [switch]$FreshOut)
 
     $ok = 0; $codes = @{}; $ms = @(); $sample = @()
+    $freeOk = @(); $freeBad = @()
     for ($i = 1; $i -le $Times; $i++) {
         if ($FreshOut) { Get-ChildItem $scratch -Filter 'probe*' -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue }
+        $freeBefore = FreeMb
         $r = Run -Exe $Exe -Arguments $Arguments -Environment $Environment
         $n = CodeName $r.ExitCode
+        if ($null -ne $freeBefore) {
+            if ($r.ExitCode -eq 0) { $freeOk += $freeBefore } else { $freeBad += $freeBefore }
+        }
         if ($r.ExitCode -eq 0) { $ok++ }
         if (-not $codes.ContainsKey($n)) { $codes[$n] = 0 }
         $codes[$n]++
@@ -123,8 +152,30 @@ function Probe {
     # is the entire question this file exists to answer.
     $crashed = 0
     foreach ($k in $codes.Keys) { if ($k -like 'CRASH*') { $crashed += $codes[$k] } }
+
+    $mOk = $null; $mBad = $null
+    if ($freeOk.Count  -gt 0) { $mOk  = [int](($freeOk  | Measure-Object -Average).Average) }
+    if ($freeBad.Count -gt 0) { $mBad = [int](($freeBad | Measure-Object -Average).Average) }
+    if ($null -ne $mOk -and $null -ne $mBad) {
+        Say ("      free MB before: {0} when it worked, {1} when it did not" -f $mOk, $mBad)
+    }
     return [pscustomobject]@{ Label = $Label; Ok = $ok; Times = $Times; Codes = $codes
-                              AvgMs = $avg; Crashed = $crashed }
+                              AvgMs = $avg; Crashed = $crashed
+                              FreeOk = $freeOk; FreeBad = $freeBad }
+}
+
+# FREE MEMORY, SAMPLED BEFORE EVERY SINGLE INVOCATION.
+#
+# The release box has 8 GB total and was showing 3.5 GB free. An allocation that fails and is not
+# checked becomes a null dereference, and a null dereference on Windows is 0xC0000005 - the exact
+# code seen, silent, at random, on a machine under memory pressure and not on one with room. That
+# makes memory the leading hypothesis, and it is testable for free: record what was available before
+# each attempt and compare the attempts that crashed with the ones that did not.
+$script:memWorks = $true
+function FreeMb {
+    if (-not $script:memWorks) { return $null }
+    try { return [int]((Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).FreePhysicalMemory / 1KB) }
+    catch { $script:memWorks = $false; return $null }
 }
 
 function Get-PeMachine {
@@ -366,6 +417,26 @@ Say ("  cache: shared {0}/{1}, private {2}/{3}" -f $fShared.Ok, $fShared.Times, 
 
 Say ''
 $total = ($cResults + @($dCompile,$dLink,$dZig) + $eResults + @($fShared,$fPrivate))
+
+# The memory verdict, over EVERY attempt in the run rather than per section, because per section the
+# sample is far too small to mean anything.
+$allOk  = @(); $allBad = @()
+foreach ($r in $total) { $allOk += $r.FreeOk; $allBad += $r.FreeBad }
+if ($allOk.Count -gt 0 -and $allBad.Count -gt 0) {
+    $avgOk  = [int](($allOk  | Measure-Object -Average).Average)
+    $avgBad = [int](($allBad | Measure-Object -Average).Average)
+    $minAny = [int]((($allOk + $allBad) | Measure-Object -Minimum).Minimum)
+    Say ("  memory: {0} MB free on average before an attempt that worked, {1} MB before one that" -f $avgOk, $avgBad)
+    Say ("          did not; lowest seen {2} MB. ({0} good samples, {1} bad.)" -f $allOk.Count, $allBad.Count, $minAny)
+    if ($avgBad -lt ($avgOk * 0.8)) {
+        Say '    -> failures happened with materially LESS memory free. Memory pressure is then the'
+        Say '       best available explanation: an allocation that fails and is not checked becomes a'
+        Say '       null dereference, and that is 0xC0000005 exactly. Worth re-running with more free.'
+    } else {
+        Say '    -> no memory difference between the attempts that worked and those that did not,'
+        Say '       so memory pressure does not explain it.'
+    }
+}
 $tOk = ($total | Measure-Object Ok -Sum).Sum
 $tAll = ($total | Measure-Object Times -Sum).Sum
 $tCrash = ($total | Measure-Object Crashed -Sum).Sum
