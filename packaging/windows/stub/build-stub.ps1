@@ -31,6 +31,10 @@ $out = Join-Path $PSScriptRoot 'build'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $exe = Join-Path $out "$AppName-stub-$Arch.exe"
 
+# Removed before anything runs: every guard below is `-not (Test-Path $exe)`, so a stub left by an
+# earlier run would skip both compilers and be packaged as though it had just been built.
+if (Test-Path $exe) { Remove-Item $exe -Force }
+
 $zigTarget = @{ 'x64' = 'x86_64-windows-gnu'; 'arm64' = 'aarch64-windows-gnu'; 'x86' = 'x86-windows-gnu' }[$Arch]
 
 # NO QUOTES AROUND THE APP NAME, on either branch, and that is the fix rather than the shortcut.
@@ -45,7 +49,14 @@ $zigTarget = @{ 'x64' = 'x86_64-windows-gnu'; 'arm64' = 'aarch64-windows-gnu'; '
 # says only "zig cc failed", which is a sentence with no information in it - and this script runs on
 # whichever machine cuts the Windows release, where a round trip to diagnose is expensive.
 
-if (Get-Command zig -ErrorAction SilentlyContinue) {
+# BOTH toolchains are TRIED, not just the first one present. zig failing is not the same thing as
+# zig being absent, and treating them the same is what turned a crashing zig into "no per-user
+# channel" on a machine that also had MSVC (owner-reported, 2026-08-25: zig cc exited with
+# -1073741819, an access violation - zig itself fell over, having reported nothing).
+
+$tried = @()
+
+if (-not (Test-Path $exe) -and (Get-Command zig -ErrorAction SilentlyContinue)) {
     Write-Host "Building the launcher stub with zig cc ($zigTarget) ..."
     # -mwindows: GUI subsystem, so a shortcut opens no console window.
     # -municode: wWinMain is the Unicode entry point; without it the mingw CRT looks for WinMain.
@@ -53,10 +64,22 @@ if (Get-Command zig -ErrorAction SilentlyContinue) {
                     $src -o $exe -luser32 2>&1
     if ($LASTEXITCODE -ne 0) {
         $log | ForEach-Object { Write-Host "  $_" }
-        throw "zig cc failed building the launcher stub (exit $LASTEXITCODE). Its output is above."
+        # -1073741819 is 0xC0000005, an access violation: the compiler crashed rather than refusing
+        # the code, so nothing about the source or the flags is implicated.
+        $why = if ($LASTEXITCODE -eq -1073741819) {
+            'zig cc CRASHED (access violation). That is zig falling over, not a problem with the ' +
+            'stub source. Clearing its cache (%LOCALAPPDATA%\zig, %APPDATA%\zig) and reinstalling ' +
+            'is the usual cure.'
+        } else {
+            "zig cc failed with exit $LASTEXITCODE; its output is above."
+        }
+        Write-Host "  $why"
+        $tried += "zig cc: $why"
+        if (Test-Path $exe) { Remove-Item $exe -Force -ErrorAction SilentlyContinue }
     }
 }
-elseif (Get-Command cl -ErrorAction SilentlyContinue) {
+
+if (-not (Test-Path $exe) -and (Get-Command cl -ErrorAction SilentlyContinue)) {
     Write-Host 'Building the launcher stub with cl.exe ...'
     Push-Location $out
     try {
@@ -64,13 +87,23 @@ elseif (Get-Command cl -ErrorAction SilentlyContinue) {
                     /link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup user32.lib "/OUT:$exe" 2>&1
         if ($LASTEXITCODE -ne 0) {
             $log | ForEach-Object { Write-Host "  $_" }
-            throw "cl.exe failed building the launcher stub (exit $LASTEXITCODE). Its output is above."
+            $tried += "cl.exe: exit $LASTEXITCODE"
+            if (Test-Path $exe) { Remove-Item $exe -Force -ErrorAction SilentlyContinue }
         }
     }
     finally { Pop-Location }
 }
-else {
-    throw @'
+
+if (Test-Path $exe) {
+    Write-Host "OK  $exe"
+    return
+}
+
+if ($tried.Count -gt 0) {
+    throw ("No C toolchain could build the launcher stub. Tried:`n  " + ($tried -join "`n  "))
+}
+
+throw @'
 No C compiler was found for the launcher stub.
 
 Install one of these and run this script again:
@@ -82,6 +115,3 @@ The stub is the one file in a per-user install that never changes: shortcuts and
 associations point at it, and it starts the version named in `current`. Without it there is no
 per-user install channel and therefore no automatic updates on Windows.
 '@
-}
-
-Write-Host "OK  $exe"

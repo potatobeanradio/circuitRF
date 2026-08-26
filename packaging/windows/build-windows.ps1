@@ -96,6 +96,7 @@ $scopes = if ($Scope -eq 'all') { @('perMachine', 'perUser') } else { @($Scope) 
 $exeName = 'circuitRF.exe'
 
 $built = @()
+$stubFailures = @()
 
 # == Tool checks ===============================================================
 #
@@ -194,11 +195,40 @@ foreach ($Arch in $arches) {
     # The one file in a per-user install that never changes. Built here rather than committed, for the
     # same reason the app icons are: a binary in the repository is a binary nobody can review.
 
+    # A STUB FAILURE SKIPS THE PER-USER SCOPE - it does not abandon the whole run. It used to throw,
+    # so a broken C toolchain produced ZERO artifacts from a build that could have produced the three
+    # machine-wide .msi files (owner-reported, 2026-08-25: zig cc crashed with an access violation and
+    # took the entire Windows release with it).
+    #
+    # Skipping quietly would be worse than throwing, though, because a release that is silently short
+    # of the self-updating channel is the exact failure this script was rewritten to prevent. So it is
+    # LOUD here, LOUD in the summary, and the script exits non-zero at the end.
+
+    $archScopes = $scopes
+
     if ($scopes -contains 'perUser') {
-        & (Join-Path $PSScriptRoot 'stub\build-stub.ps1') -Arch $Arch -AppName 'circuitRF'
-        if ($LASTEXITCODE -ne 0 -and -not (Test-Path (Join-Path $PSScriptRoot "stub\build\circuitRF-stub-$Arch.exe"))) {
-            throw 'The launcher stub could not be built; a per-user install cannot be packaged without it.'
+        $stubExe = Join-Path $PSScriptRoot "stub\build\circuitRF-stub-$Arch.exe"
+        try {
+            & (Join-Path $PSScriptRoot 'stub\build-stub.ps1') -Arch $Arch -AppName 'circuitRF'
         }
+        catch {
+            Write-Host "  $($_.Exception.Message)"
+        }
+
+        if (-not (Test-Path $stubExe)) {
+            Write-Host ''
+            Write-Host "WARNING: the launcher stub for $Arch could not be built, so the PER-USER"
+            Write-Host "         installer and the .zip update payload are being SKIPPED for $Arch."
+            Write-Host '         The machine-wide .msi is unaffected and is still being built.'
+            Write-Host ''
+            $stubFailures += $Arch
+            $archScopes = $scopes | Where-Object { $_ -ne 'perUser' }
+        }
+    }
+
+    if (-not $archScopes) {
+        Write-Host "Nothing left to package for $Arch; moving on."
+        continue
     }
 
 
@@ -261,7 +291,7 @@ To package deliberately without it: set CRF_ALLOW_NO_DEVICE_WORKER=1
     }
 
 
-    foreach ($Scope in $scopes) {
+    foreach ($Scope in $archScopes) {
 
         $perUser = ($Scope -eq 'perUser')
 
@@ -380,4 +410,29 @@ foreach ($f in $built) { Write-Host "    $(Split-Path -Leaf $f)" }
 if ($Arch -eq 'all' -and $Scope -eq 'all' -and $built.Count -ne 9) {
     Write-Host ''
     Write-Host "WARNING: expected 9 artifacts for a full run, got $($built.Count)."
+}
+
+# Non-zero exit, so this cannot be mistaken for a complete release by a human OR by a script.
+if ($stubFailures.Count -gt 0) {
+    Write-Host ''
+    Write-Host '=============================================================================='
+    Write-Host "INCOMPLETE: no launcher stub for $($stubFailures -join ', ')."
+    Write-Host ''
+    Write-Host '  The per-user installer and the .zip update payload were NOT built for those'
+    Write-Host '  architectures. Windows users on a machine-wide install would not be offered the'
+    Write-Host '  next version - and would not be told about it either. Do not publish this as a'
+    Write-Host '  release.'
+    Write-Host ''
+    Write-Host '  The stub needs a C toolchain. Check that yours works at all:'
+    Write-Host ''
+    Write-Host '      zig version'
+    Write-Host '      "int main(void){return 0;}" | Out-File -Encoding ascii t.c'
+    Write-Host '      zig cc t.c -o t.exe'
+    Write-Host ''
+    Write-Host '  An access violation (exit -1073741819) from that means zig itself is broken on'
+    Write-Host '  this machine rather than anything to do with circuitRF: clear its cache'
+    Write-Host '  (%LOCALAPPDATA%\zig and %APPDATA%\zig) and reinstall, or use an MSVC Developer'
+    Write-Host '  PowerShell instead so the build falls through to cl.exe.'
+    Write-Host '=============================================================================='
+    exit 1
 }
