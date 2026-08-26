@@ -32,6 +32,10 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
 
     // ── Own undo/redo stack ───────────────────────────────────────────────────
 
+    /// <summary>Absolute path of the cell's own <c>.ccell</c> — what this editor edits, and what
+    /// the document tab's "Reveal in …" item shows. Read-only passthrough to the edit model.</summary>
+    public string CcellPath => _editModel.CcellPath;
+
     public UndoRedoStack UndoRedo { get; } = new();
 
     public IRelayCommand UndoCommand { get; }

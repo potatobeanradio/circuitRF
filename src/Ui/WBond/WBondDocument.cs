@@ -454,7 +454,7 @@ public sealed partial class WBondDocumentViewModel : ObservableObject
 /// <see cref="FilePath"/>, dirty mirrored FROM the view-model (the VM is the source of truth; the
 /// document reflects it, never the reverse), and a bullet in the tab title while dirty.</para>
 /// </summary>
-public sealed class WBondDocument : Document
+public sealed class WBondDocument : Document, CircuitRF.Ui.Commands.IFileBackedDocument
 {
     private string _baseTitle;
     private bool _isDirty;

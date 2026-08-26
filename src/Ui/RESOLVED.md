@@ -1,5 +1,74 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Document tab context menu — "Reveal in Finder/Explorer" (2026-08-26)
+
+Owner request: a Reveal entry on the tabbed document's own header menu, at the top, with a separator
+below it, and **a switch to go back to Dock's native menu**.
+
+**The hook is `DocumentTabStripItem.DocumentContextMenu`** — a `StyledProperty<ContextMenu>` that
+Dock.Avalonia.Themes.Fluent 12.0.0.2 sets with
+`{DynamicResource DocumentTabStripItemContextMenu}` (`Controls/DocumentTabStripItem.axaml` line 326)
+and template-binds onto the tab border. Defining that key in the application-scope dictionary
+overrides it, because an `Application.Resources` key wins over a `StyleInclude`'s resources for a
+`DynamicResource` lookup — the same mechanism `CircuitRfResources.axaml` already uses to replace
+Dock's hardcoded VS-blue accent.
+
+**It is a single property, not a collection — there is no "append one item" form.** Adding Reveal
+therefore restates Dock's entire menu: Float / Float all / Close / Close other tabs / Close all tabs
+/ Close tabs left|right|above|below / New Horizontal|Vertical Document Dock / Tab Layout / Layout
+Mode, with the `CanFloat`/`CanClose`/`CanCloseLastDockable` MultiBindings and the
+tabs-layout-dependent visibility each carries. `Styles/DocumentTabContextMenu.axaml` copies that
+block **verbatim**, headers included — still `{DynamicResource DocumentTabStripItem…String}`,
+resolved from Dock's own `Controls/ControlStrings.axaml`, so the text follows the theme instead of
+forking into our English. **Re-copy the block wholesale on a Dock upgrade**; hand-merging those
+MultiBindings is how the capability rules start disagreeing with Dock's.
+
+**Both halves of that fail silently**, which is what `tests/Ui.Tests/DocumentTabContextMenuTests.cs`
+(31 tests) exists for: a misspelled key is an override of nothing — the `DynamicResource` just
+resolves to Dock's menu and the entry never appears — and a partial copy does not error either, it
+drops entries from every document tab.
+
+**The switch is one line**: the `<ResourceInclude>` for `Styles/DocumentTabContextMenu.axaml` in
+`Styles/CircuitRfResources.axaml`. Comment it out and the lookup falls through to Dock's own
+dictionary unchanged; nothing else refers to the file. A test asserts it is present and armed, so
+flipping it is a deliberate, visible act rather than a quiet change of menu.
+
+**The command is static and takes the dockable itself** (`DocumentTabCommands.Reveal`), not a
+`$parent[DockControl].DataContext` route: the menu is one shared instance whose DataContext is
+whichever `IDockable` was right-clicked, and a torn-off document lives in a floating host window
+whose DataContext is **not** the `WorkspaceViewModel` — so the routed form would work in the main
+window and silently do nothing in a floating one.
+
+**The first version shipped with the item missing from most tabs** (owner: "I don't see it in the
+menu"). The menu itself was fine — a headless probe resolved the app-scope override to 18 items with
+Reveal first, visible, and every Dock header resolving from the theme's own strings. The defect was
+`IFileBackedDocument` coverage: **there are ten `Document` subclasses and the interface went on
+four.** `SymbolEditorDocument`, `TechDocument`, `EmSetupDocument` and `HarmonicaDocument` all declare
+a `FilePath` and were missed, so the converter saw a plain `IDockable` and the entry hid — silently,
+and only on those tabs. The test that replaced the hand-written list **derives** it: every
+`class X : Document` under `src/Ui` that declares a `FilePath` property must declare the interface,
+with a second test guarding against the regex matching nothing. Verified by removing the interface
+from one type and watching it go red.
+
+**A `.ccell` tab was missed a second time, and by the guard itself** (owner, same day).
+`CellParameterEditorDocument` declared **no `FilePath` at all** — the derived test can only police
+documents that already have one, so there was nothing for it to notice. It now exposes the cell's
+own `.ccell` (`CellParameterEditorViewModel.CcellPath`, a passthrough to
+`CellParameterEditModel.CcellPath`) and is the one file-backed document that is **never scratch**: a
+parameter editor is only ever opened on an existing cell. The hole is closed from the other side by
+a test that requires **every** `Document` subclass to be file-backed or be named on a short list —
+`StubDocument`, the Welcome tab — so an eleventh document type forces the decision instead of
+defaulting to "no Reveal on that tab".
+
+`IFileBackedDocument` (`FilePath`) is new only as a *statement* of a shape those documents
+already had independently; `FileBackedDocumentConverter` hides the item (never disables it) for a
+scratch document, and hides the separator with it so no stray rule is left at the top of the menu.
+`FileReveal` is the reveal implementation stated once — §4 above is what a second, subtly-different
+copy of those per-platform argument forms cost — and `MessagesTool`'s byte-identical copy now routes
+through it. `WorkspaceViewModel.RevealPathInFileManager` and
+`ParameterEditorView.RevealFileAsync` are still separate copies; they differ in behaviour
+(directory handling, error reporting) and were left alone rather than folded in blind.
+
 ## Security audit — third round (2026-08-25)
 
 A whole-repository pass, not only the updater. Five defects fixed here (the fifth on the owner's

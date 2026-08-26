@@ -18,7 +18,7 @@ namespace CircuitRF.Ui.Schematic;
 /// A document holds a navigation stack of frames; the view renders the active (top) frame's
 /// session VM.  Push In / Pop Out change which frame is active without opening a new tab.
 /// </summary>
-public sealed class SchematicDocument : Document, IUndoableDocument, IActivatableDocument
+public sealed class SchematicDocument : Document, IUndoableDocument, IActivatableDocument, IFileBackedDocument
 {
     // ── Activation focus — view grabs keyboard focus on tab-switch (Select All etc. without a click) ──
     private bool _activationFocusPending;

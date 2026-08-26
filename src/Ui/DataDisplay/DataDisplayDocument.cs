@@ -8,7 +8,7 @@ namespace CircuitRF.Ui.DataDisplay;
 /// <summary>
 /// Dock Document representing an open Data Display.
 /// </summary>
-public sealed class DataDisplayDocument : Document, IActivatableDocument
+public sealed class DataDisplayDocument : Document, IActivatableDocument, IFileBackedDocument
 {
     // ── Activation focus — view grabs keyboard focus on tab-switch (Select All etc. without a click) ──
     private bool _activationFocusPending;

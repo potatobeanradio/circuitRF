@@ -10,7 +10,7 @@ namespace CircuitRF.Ui.Layout.Em;
 /// setup for a layout that already exists on disk, so <see cref="FilePath"/> is set once at
 /// construction and never becomes null; there is no materialize/offer-a-save-target path to build.
 /// </summary>
-public sealed class EmSetupDocument : Document, IUndoableDocument, IActivatableDocument
+public sealed class EmSetupDocument : Document, IUndoableDocument, IActivatableDocument, IFileBackedDocument
 {
     private bool _activationFocusPending;
     public event Action? ActivationFocusRequested;

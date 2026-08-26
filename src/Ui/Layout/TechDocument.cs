@@ -13,7 +13,7 @@ namespace CircuitRF.Ui.Layout;
 /// <see cref="IUndoableDocument"/> (mirrors <c>SymbolEditorDocument</c>) so Ctrl/Cmd+Z routes to
 /// this document's own <see cref="TechEditorViewModel.UndoRedo"/> while it is active.
 /// </summary>
-public sealed class TechDocument : Document, IUndoableDocument, IActivatableDocument
+public sealed class TechDocument : Document, IUndoableDocument, IActivatableDocument, IFileBackedDocument
 {
     // ── Activation focus — view grabs keyboard focus on tab-switch ────────────
     private bool _activationFocusPending;

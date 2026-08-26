@@ -77,7 +77,7 @@ public sealed partial class HarmonicaDocumentViewModel : ObservableObject
 /// <see cref="IActivatableDocument"/> so the view takes keyboard focus on tab activation without a
 /// click.</para>
 /// </summary>
-public sealed class HarmonicaDocument : Document, IActivatableDocument
+public sealed class HarmonicaDocument : Document, IActivatableDocument, IFileBackedDocument
 {
     private bool _activationFocusPending;
     public event Action? ActivationFocusRequested;

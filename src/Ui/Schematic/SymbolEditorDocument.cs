@@ -11,7 +11,7 @@ namespace CircuitRF.Ui.Schematic;
 /// dirty from creation, and invisible to the project tree.
 /// A materialized document has a real on-disk path (set at save time).
 /// </summary>
-public sealed class SymbolEditorDocument : Document, IUndoableDocument, IActivatableDocument
+public sealed class SymbolEditorDocument : Document, IUndoableDocument, IActivatableDocument, IFileBackedDocument
 {
     // ── Activation focus — view grabs keyboard focus on tab-switch (Select All etc. without a click) ──
     private bool _activationFocusPending;

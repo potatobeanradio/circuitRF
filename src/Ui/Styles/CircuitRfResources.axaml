@@ -102,6 +102,17 @@
              see the file's own header for why it is not two. -->
         <ResourceDictionary.MergedDictionaries>
             <ResourceInclude Source="avares://CircuitRF.Ui/Styles/SegmentedSelect.axaml"/>
+
+            <!-- ══ THE DOCUMENT TAB CONTEXT MENU SWITCH ═════════════════════════════════════
+                 COMMENT OUT THE ONE LINE BELOW to go back to Dock's own (native) document tab
+                 context menu. Nothing else needs changing: Dock's Fluent theme binds the tab's
+                 menu with {DynamicResource DocumentTabStripItemContextMenu}, an
+                 Application.Resources key wins over a StyleInclude's resources for a
+                 DynamicResource lookup (the same mechanism the accent overrides above rely on),
+                 and with our key absent the lookup falls through to Dock's dictionary unchanged.
+                 The file's own header says what it replaces and why the whole menu is copied.
+                 tests/Ui.Tests/DocumentTabContextMenuTests.cs pins both halves. -->
+            <ResourceInclude Source="avares://CircuitRF.Ui/Styles/DocumentTabContextMenu.axaml"/>
         </ResourceDictionary.MergedDictionaries>
 
 </ResourceDictionary>

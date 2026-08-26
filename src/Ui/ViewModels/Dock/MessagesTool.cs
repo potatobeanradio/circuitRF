@@ -1,6 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.IO;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Mvvm.Controls;
@@ -70,53 +68,14 @@ public partial class MessagesTool : Tool, IMessageSink
             Dispatcher.UIThread.Post(Messages.Clear);
     }
 
-    // ---- "Reveal in file manager" -- OS-specific file reveal -------------------
+    // ---- "Reveal in file manager" ---------------------------------------------
+    // The per-platform argument forms live in FileReveal, stated once — see RESOLVED.md §4 for
+    // what a second, subtly-different copy of them cost.
 
     // Generates ClearMessagesCommand — bound in MessagesView.axaml as ClearMessagesCommand
     [RelayCommand]
     private void ClearMessages() => ((IMessageSink)this).Clear();
 
     [RelayCommand]
-    private static void RevealFile(string? filePath)
-    {
-        if (string.IsNullOrWhiteSpace(filePath)) return;
-
-        bool isDir  = Directory.Exists(filePath);
-        bool isFile = !isDir && File.Exists(filePath);
-        if (!isDir && !isFile) return;
-
-        try
-        {
-            if (OperatingSystem.IsMacOS())
-            {
-                // -R selects a file; bare open opens a directory.
-                //
-                // ArgumentList, never the single-string overload: on Unix .NET PARSES that string
-                // into argv itself, honouring quotes, so a file whose NAME contains a double quote
-                // closes ours and everything after it becomes further arguments to `open` — and
-                // `open` takes `-a <application>` (security review, 2026-08-25). The path arrives
-                // from a message-panel entry, i.e. from whatever a workspace or a kit put on disk.
-                var psi = new ProcessStartInfo("open") { UseShellExecute = false };
-                if (isFile) psi.ArgumentList.Add("-R");
-                psi.ArgumentList.Add(filePath);
-                Process.Start(psi);
-            }
-            else if (OperatingSystem.IsWindows())
-            {
-                // /select highlights a file; bare path opens a directory. Explorer wants
-                // `/select,<path>` as ONE argument, which is why this is not two.
-                var psi = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
-                psi.ArgumentList.Add(isFile ? $"/select,{filePath}" : filePath);
-                Process.Start(psi);
-            }
-            else
-            {
-                // Linux: xdg-open on the directory (or containing directory for files).
-                var target = isDir ? filePath : Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(target))
-                    Process.Start("xdg-open", target);
-            }
-        }
-        catch { /* Non-critical: ignore if the reveal fails. */ }
-    }
+    private static void RevealFile(string? filePath) => FileReveal.Reveal(filePath);
 }

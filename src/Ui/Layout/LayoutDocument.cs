@@ -19,7 +19,7 @@ namespace CircuitRF.Ui.Layout;
 /// active without opening a new tab. Mirrors <c>CircuitRF.Ui.Schematic.SchematicDocument</c> exactly,
 /// retargeted from <c>SchematicViewModel</c> to <see cref="LayoutEditorViewModel"/>.
 /// </summary>
-public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDocument
+public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDocument, IFileBackedDocument
 {
     // ── Activation focus — view grabs keyboard focus on tab-switch ────────────
     private bool _activationFocusPending;
