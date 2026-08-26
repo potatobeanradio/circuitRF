@@ -33,19 +33,39 @@ $exe = Join-Path $out "$AppName-stub-$Arch.exe"
 
 $zigTarget = @{ 'x64' = 'x86_64-windows-gnu'; 'arm64' = 'aarch64-windows-gnu'; 'x86' = 'x86-windows-gnu' }[$Arch]
 
+# NO QUOTES AROUND THE APP NAME, on either branch, and that is the fix rather than the shortcut.
+# Windows PowerShell 5.1 strips a bare " when it builds a native command line, so the zig branch's
+# -DCRF_APP_NAME="circuitRF" arrived as -DCRF_APP_NAME=circuitRF, L##circuitRF pasted into the
+# undeclared identifier LcircuitRF, and the build failed at the first architecture
+# (owner-reported, 2026-08-25). The cl.exe branch escaped it as \" and this one did not. The stub
+# now takes a BARE TOKEN and stringifies it itself, so there is nothing here to escape and nothing
+# for a future branch to get wrong. See the note in circuitrf-stub.c.
+
+# The compiler's own output is CAPTURED and re-thrown with the failure. Without it a broken build
+# says only "zig cc failed", which is a sentence with no information in it - and this script runs on
+# whichever machine cuts the Windows release, where a round trip to diagnose is expensive.
+
 if (Get-Command zig -ErrorAction SilentlyContinue) {
     Write-Host "Building the launcher stub with zig cc ($zigTarget) ..."
     # -mwindows: GUI subsystem, so a shortcut opens no console window.
-    & zig cc -target $zigTarget -O2 -municode -mwindows "-DCRF_APP_NAME=`"$AppName`"" $src -o $exe -luser32
-    if ($LASTEXITCODE -ne 0) { throw 'zig cc failed building the launcher stub.' }
+    # -municode: wWinMain is the Unicode entry point; without it the mingw CRT looks for WinMain.
+    $log = & zig cc -target $zigTarget -O2 -municode -mwindows "-DCRF_APP_NAME=$AppName" `
+                    $src -o $exe -luser32 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $log | ForEach-Object { Write-Host "  $_" }
+        throw "zig cc failed building the launcher stub (exit $LASTEXITCODE). Its output is above."
+    }
 }
 elseif (Get-Command cl -ErrorAction SilentlyContinue) {
     Write-Host 'Building the launcher stub with cl.exe ...'
     Push-Location $out
     try {
-        & cl /nologo /O2 /W3 /DUNICODE /D_UNICODE "/DCRF_APP_NAME=\`"$AppName\`"" $src `
-            /link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup user32.lib "/OUT:$exe"
-        if ($LASTEXITCODE -ne 0) { throw 'cl.exe failed building the launcher stub.' }
+        $log = & cl /nologo /O2 /W3 /DUNICODE /D_UNICODE "/DCRF_APP_NAME=$AppName" $src `
+                    /link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup user32.lib "/OUT:$exe" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $log | ForEach-Object { Write-Host "  $_" }
+            throw "cl.exe failed building the launcher stub (exit $LASTEXITCODE). Its output is above."
+        }
     }
     finally { Pop-Location }
 }

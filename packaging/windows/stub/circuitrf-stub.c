@@ -38,19 +38,32 @@
 #include <string.h>
 
 /*
- * ONE stub source, three applications. The build scripts pass -DCRF_APP_NAME="circuitRF" (or
- * "harmonicaRF", or "wBond"), for the same reason src/Ui/CircuitRF.Ui.csproj derives everything
- * from CrfApp: three applications are the same code with a different name, and a second copy of
- * this file would be a second place to fix a bug in it.
+ * ONE stub source, three applications. The build scripts pass -DCRF_APP_NAME=circuitRF (or
+ * harmonicaRF, or wBond), for the same reason src/Ui/CircuitRF.Ui.csproj derives everything from
+ * CrfApp: three applications are the same code with a different name, and a second copy of this
+ * file would be a second place to fix a bug in it.
+ *
+ * THE NAME ARRIVES AS A BARE TOKEN AND IS STRINGIFIED HERE, and that is deliberate rather than
+ * tidy. It used to arrive already quoted, which meant every build script had to get a literal "
+ * through PowerShell's native-argument handling intact - and one of them did not. Windows
+ * PowerShell 5.1 strips a bare " when it builds a native command line, so zig cc received
+ * -DCRF_APP_NAME=circuitRF, L##circuitRF pasted into the undeclared identifier LcircuitRF, and the
+ * build failed at the first architecture (owner-reported, 2026-08-25). The cl.exe branch escaped
+ * it as \" and the zig branch did not, which is exactly the kind of disagreement that survives
+ * review. A bare token has nothing to escape, so the class of bug is gone rather than fixed.
+ *
+ * All three application names are valid C identifiers, which is what makes this work.
  */
 #ifndef CRF_APP_NAME
-#define CRF_APP_NAME "circuitRF"
+#define CRF_APP_NAME circuitRF
 #endif
+#define CRF_STR_(x)   #x
+#define CRF_STR(x)    CRF_STR_(x)
 #define CRF_WIDEN_(x) L##x
 #define CRF_WIDEN(x)  CRF_WIDEN_(x)
 
-#define CRF_APP_TITLE CRF_WIDEN(CRF_APP_NAME)
-#define CRF_APP_EXE   CRF_WIDEN(CRF_APP_NAME) L".exe"
+#define CRF_APP_TITLE CRF_WIDEN(CRF_STR(CRF_APP_NAME))
+#define CRF_APP_EXE   CRF_APP_TITLE L".exe"
 #define CRF_POINTER   L"current"
 #define CRF_MAX       32768
 
