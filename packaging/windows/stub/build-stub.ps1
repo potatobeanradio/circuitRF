@@ -302,12 +302,40 @@ function Complete-Route {
     return $true
 }
 
-if (Get-Command zig -ErrorAction SilentlyContinue) {
+# CRF_ZIG NAMES A SPECIFIC ZIG, for when the one on PATH is itself the problem - which on this
+# project is not hypothetical. build-stub.sh has had this since it was written; the .ps1 had not,
+# so the one platform where a bad zig was actually diagnosed was the one with no way to substitute
+# another without uninstalling. Accepts a full path or a command name.
+# AN UNRESOLVABLE CRF_ZIG IS A HARD ERROR, NOT A FALL-BACK TO PATH. Setting it means "use THIS
+# compiler", and the reason anyone sets it here is to find out whether a DIFFERENT zig version still
+# crashes. Quietly building with the zig on PATH instead would answer that question with the wrong
+# compiler and report OK - the operator would conclude the replacement works when it was never run.
+# Caught in testing, where a deliberately bogus path produced a clean green build.
+$zigExe = $null
+if ($env:CRF_ZIG) {
+    if (Test-Path $env:CRF_ZIG) { $zigExe = $env:CRF_ZIG }
+    else {
+        $c = Get-Command $env:CRF_ZIG -ErrorAction SilentlyContinue
+        if ($c) { $zigExe = $c.Source }
+        else {
+            throw ("CRF_ZIG is set to '$($env:CRF_ZIG)', which is neither a file nor a command on " +
+                   "PATH. Refusing to fall back to the zig on PATH: you asked for a specific " +
+                   "compiler, and building with a different one would answer the wrong question.")
+        }
+    }
+}
+else {
+    $c = Get-Command zig -ErrorAction SilentlyContinue
+    if ($c) { $zigExe = $c.Source }
+}
+
+if ($zigExe) {
     Write-Host "Building the launcher stub with zig cc ($zigTarget) ..."
+    if ($env:CRF_ZIG) { Write-Host "  using CRF_ZIG: $zigExe" }
     foreach ($route in $zigRoutes) {
         for ($try = 1; $try -le $route.Retries; $try++) {
             $attempts++
-            $r = Invoke-Compiler -Exe zig -Environment $route.Env -Arguments (
+            $r = Invoke-Compiler -Exe $zigExe -Environment $route.Env -Arguments (
                      @('cc', '-target', $zigTarget) + $route.Flags +
                      @('-municode', '-Wl,--subsystem,windows', $appDefine,
                        $src, '-o', $exe, '-luser32'))

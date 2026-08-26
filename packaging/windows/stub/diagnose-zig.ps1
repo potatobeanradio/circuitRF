@@ -209,7 +209,15 @@ try {
     Say ("  memory free / total    : {0:N0} MB / {1:N0} MB" -f ($os.FreePhysicalMemory/1KB), ($os.TotalVisibleMemorySize/1KB))
 } catch { Say '  memory                 : unavailable' }
 
-$zigs = @(Get-Command zig -All -ErrorAction SilentlyContinue)
+# CRF_ZIG first, so this can measure a REPLACEMENT zig rather than only the broken one - which is
+# the whole point of having found that the fault is in zig itself.
+$zigs = @()
+if ($env:CRF_ZIG) {
+    if (Test-Path $env:CRF_ZIG) { $zigs = @(Get-Item $env:CRF_ZIG) }
+    else { $zigs = @(Get-Command $env:CRF_ZIG -ErrorAction SilentlyContinue) }
+    Say "  CRF_ZIG                : $($env:CRF_ZIG)"
+}
+if ($zigs.Count -eq 0) { $zigs = @(Get-Command zig -All -ErrorAction SilentlyContinue) }
 if ($zigs.Count -eq 0) {
     Say '  zig                    : NOT ON PATH - nothing further can be measured.'
     Set-Content -Path $report -Value $lines -Encoding Ascii
@@ -217,6 +225,10 @@ if ($zigs.Count -eq 0) {
 }
 Say "  zig on PATH            : $($zigs.Count) found"
 foreach ($z in $zigs) {
+    # Get-Command yields .Source, Get-Item yields .FullName; take whichever is present.
+    if (-not $z.PSObject.Properties['Source'] -or -not $z.Source) {
+        $z | Add-Member -NotePropertyName Source -NotePropertyValue $z.FullName -Force
+    }
     # ZIG'S OWN ARCHITECTURE, read out of the PE rather than taken from `zig env`. An x86_64 zig on
     # an ARM64 host runs under emulation, which is a known way to get exactly this crash - and it is
     # the one thing `zig env`'s self-reported target does not distinguish from a native build.

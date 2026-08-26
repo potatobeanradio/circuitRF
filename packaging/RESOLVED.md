@@ -153,6 +153,59 @@ silent, random, and specific to a machine under pressure. `diagnose-zig.ps1` now
 before every invocation and compares the attempts that crashed with the ones that did not, which
 settles it either way.
 
+### DIAGNOSED: zig 0.16.0's own aarch64-windows build has a memory-safety fault
+
+`diagnose-zig.ps1`, 102 invocations on the release box. **49 succeeded, 50 crashed.**
+
+**Windows named the faulting module, and it is `zig.exe` itself — not a DLL loaded into it.** That
+alone removes anti-malware or EDR injection, which was the other external explanation and the one
+no zig version would have fixed.
+
+**Every crash is at essentially one code offset.** Fault offsets `0x910f34`, `0x910f34`, `0x910f34`,
+`0x910f2c` — an 8-byte spread — and a **single fault bucket** (1323229458579051044) across all of
+them. Scattered corruption produces scattered faults; one site means one instruction dereferencing a
+pointer that is intermittently bad.
+
+**Three different exception codes at that one site:**
+
+| code | count | meaning |
+|---|---|---|
+| `0xC0000005` | 46 | access violation |
+| `0xC00000FD` | 2 | **stack overflow** |
+| `0xC0000374` | 2 | **heap corruption** |
+
+Heap corruption is detected long after it is caused, and stack overflow at the same site as an
+access violation is what stack exhaustion looks like when the guard page is sometimes hit cleanly
+and sometimes not. That mixture at a single offset is a memory-safety fault inside the compiler.
+
+**What the sections ruled out, each by measurement rather than argument:**
+
+| ruled out | evidence |
+|---|---|
+| start-up | `zig version` 10/10, `zig env` 10/10 |
+| **memory pressure** | 2169 MB free before a success, 2190 MB before a failure (49 vs 53 samples) — 1%, and the *wrong way round*. This had been the leading hypothesis; it is dead |
+| AV / EDR injection | faulting module is `zig.exe`, not an injected DLL |
+| the clang front end | `zig build-exe` crashes 6/10 with no C and no clang involved |
+| the link stage / mingw / libc | `-c` alone crashes 5/10, before any linking |
+| our source, and every flag | no flag correlates; `-Wl,--subsystem,windows` read 0/6 while `-luser32`, which includes it, read 5/6 |
+| the shared cache | a private cache crashed 6/6 |
+| one bad target | all three crash; x86's 2/10 in section C read 4/10 and 6/10 minutes later in section D |
+
+**The control row did its job.** "bare, must refuse" returned 3 refusals *and* 3 crashes, which is
+how we know the harness distinguishes a compiler that rejected the code from one that fell over — if
+it had reported those refusals as crashes, nothing else in the report would have been trustworthy.
+
+**Nothing here is fixable in this repository.** `CRF_ZIG` now names a specific zig, as
+`build-stub.sh` has always allowed, so a different version can be tried without uninstalling
+anything — an older build is the first thing to reach for. Setting it to something unresolvable is a
+**hard error**, deliberately: falling back to the zig on PATH would build with the compiler you were
+trying to replace and report OK, answering the wrong question. That was caught in testing, where a
+bogus path produced a clean green build.
+
+The guidance printed on failure has also been corrected: it used to say that Windows on ARM needs
+the windows-aarch64 zig and that the x86_64 one runs emulated and crashes. This machine **is**
+running the native windows-aarch64 build, and it crashes anyway.
+
 ### Also found: `build-stub.sh` had drifted and could not produce a working stub at all
 
 The cross-platform route was left behind when the app name moved to a bare token (2026-08-25). It

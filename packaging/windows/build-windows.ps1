@@ -439,10 +439,19 @@ if ($stubFailures.Count -gt 0) {
     Write-Host "Incomplete: no launcher stub for $($stubFailures -join ', '), so those"
     Write-Host '  architectures have no self-updating installer. Do not publish this build.'
     Write-Host ''
+    # THIS TEXT USED TO SAY "on Windows on ARM you need the windows-aarch64 build; the x86_64 one
+    # runs emulated and crashes". That was measured to be wrong: the release box IS running the
+    # native windows-aarch64 zig and it crashes anyway, inside zig.exe, at one code offset, roughly
+    # eleven times in twelve. Advice that sends the operator to re-install what they already have
+    # costs a round trip and teaches them to distrust the message.
     Write-Host '  The stub needs a working C compiler. Either:'
-    Write-Host '    - open a Developer PowerShell for VS, so cl.exe is used instead; or'
-    Write-Host '    - install the zig build that matches this machine, from'
-    Write-Host '      https://ziglang.org/download/ (on Windows on ARM you need the'
-    Write-Host '      windows-aarch64 build; the x86_64 one runs emulated and crashes).'
+    Write-Host '    - point CRF_ZIG at a DIFFERENT zig version and run again, e.g.'
+    Write-Host '        $env:CRF_ZIG = "C:\zig-0.15.1\zig.exe"'
+    Write-Host '      zig 0.16.0 on Windows on ARM has a memory-safety fault of its own'
+    Write-Host '      (see packaging/RESOLVED.md); an older build is the first thing to try; or'
+    Write-Host '    - install Visual Studio with the C++ workload, which this script then finds'
+    Write-Host '      by itself - no Developer PowerShell needed.'
+    Write-Host ''
+    Write-Host '  packaging\windows\stub\diagnose-zig.ps1 measures which of those is happening.'
     exit 1
 }
