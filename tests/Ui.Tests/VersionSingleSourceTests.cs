@@ -56,6 +56,72 @@ public class VersionSingleSourceTests
         Assert.Equal(VersionFile, CircuitRF.Ui.AppVersion.Display);
     }
 
+    /// <summary>
+    /// <b>Every download link in <c>README.md</c> must name the version in the <c>VERSION</c> file.</b>
+    ///
+    /// <para>The README's download table hard-codes the release tag and the asset file name in each
+    /// URL, because a GitHub release asset URL contains both and there is no "latest" spelling that
+    /// avoids it — the file name itself carries the version. So the table goes stale on every
+    /// release, and it goes stale <em>silently</em>: the links keep working, because the previous
+    /// release still exists, and they quietly hand every new visitor the old build.</para>
+    ///
+    /// <para>That is the same shape as the packaging and version bugs this file already guards —
+    /// nothing errors, nothing is missing, and the wrong thing ships. It was caught for
+    /// 1.0.0-beta.2 only because the owner thought to ask, which is not a mechanism.</para>
+    ///
+    /// <para>Checked against <c>VERSION</c> rather than against a literal, so bumping the one file
+    /// is still the only edit a release needs — and this test then names the README as the next
+    /// thing to update rather than letting it drift.</para>
+    /// </summary>
+    [Fact]
+    public void EveryReadmeDownloadLinkNamesTheVersionFilesVersion()
+    {
+        string readme  = ReadRepoFile("README.md");
+        string version = VersionFile;
+
+        var links = Regex.Matches(readme, @"https://github\.com/[^)\s]+/releases/download/([^/]+)/([^)\s]+)")
+                         .Select(m => (Tag: m.Groups[1].Value, Asset: m.Groups[2].Value))
+                         .ToList();
+
+        Assert.True(links.Count > 0,
+                    "README.md has no release download links at all. If the download table moved, "
+                    + "point this test at wherever it went rather than deleting it.");
+
+        var stale = links.Where(l => l.Tag != version || !l.Asset.Contains(version, StringComparison.Ordinal))
+                         .Select(l => $"{l.Tag}/{l.Asset}")
+                         .ToList();
+
+        Assert.True(stale.Count == 0,
+            $"README.md still links to a release other than VERSION's {version}. These links WORK — "
+            + "they serve the previous release — so nothing will fail except the user, who gets the "
+            + $"wrong build:\n  {string.Join("\n  ", stale)}");
+    }
+
+    /// <summary>
+    /// <b>The Linux unpack example must name the same version too.</b> It is a copy-paste recipe —
+    /// <c>tar xzf …</c> followed by <c>./circuitRF-&lt;version&gt;/install.sh</c> — so a stale
+    /// version there does not serve an old build, it simply fails with "No such file or directory"
+    /// for anyone who pastes it.
+    /// </summary>
+    [Fact]
+    public void TheReadmeLinuxUnpackExampleNamesTheVersionFilesVersion()
+    {
+        string readme  = ReadRepoFile("README.md");
+        string version = VersionFile;
+
+        var named = Regex.Matches(readme, @"circuitRF-(\d+\.\d+\.\d+[^/\s`)\]]*)(?:/install\.sh|-linux-)")
+                         .Select(m => m.Groups[1].Value.TrimEnd('-'))
+                         .Distinct()
+                         .ToList();
+
+        Assert.True(named.Count > 0, "README.md no longer shows a Linux unpack example to check.");
+
+        foreach (string v in named)
+            Assert.True(v.StartsWith(version, StringComparison.Ordinal),
+                        $"README.md's Linux example names circuitRF-{v}, but VERSION says {version}. "
+                        + "Pasted as-is it fails with 'No such file or directory'.");
+    }
+
     [Fact]
     public void TheVersionFileIsOneLineAndParseable()
     {
