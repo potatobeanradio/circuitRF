@@ -762,7 +762,18 @@ public partial class DisplayWindowViewModel : ViewModelBase
         }
 
         string json = JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
-        await File.WriteAllTextAsync(path, json);
+
+        // Owner-reported, 2026-08-26 ("somehow i managed to get the data display to get corrupted …
+        // i had to make a new workspace"): the `.cdd` was the ONE document type circuitRF wrote
+        // non-atomically — every other one (`.csch`, `.csym`, `.ccell`, `.clay`, `.ctech`, `.cem`,
+        // `.wasm`, `.cws`) already goes through AtomicFile. A plain WriteAllText TRUNCATES the target
+        // first, so anything that interrupts the write — a crash, a kill, a network/removable volume
+        // going away mid-save, two saves racing — leaves a half-written file on disk in place of a
+        // display that was fine a moment ago. Serialize-to-sibling-temp-then-rename cannot: the old
+        // file survives intact until the new one is complete. Synchronous on purpose — a `.cdd` is a
+        // few kilobytes, and this is the same call every other persistence path in the app makes;
+        // Task.Run only keeps the write off the UI thread, matching what WriteAllTextAsync did here.
+        await Task.Run(() => Schematic.AtomicFile.WriteAllText(path, json));
 
         // Update baseline so HasUnsavedChanges() returns false right after saving.
         CaptureBaseline();
@@ -800,10 +811,26 @@ public partial class DisplayWindowViewModel : ViewModelBase
             if (!File.Exists(path)) return;
             json = await File.ReadAllTextAsync(path);
         }
+        // A `.cdd` that will not parse must FAIL LOUDLY, and the reason is data loss, not tidiness.
+        // This used to be `catch { return; }`: a damaged file opened as a perfectly ordinary, CLEAN,
+        // materialized document showing one empty plot — no message, no mark, nothing to distinguish
+        // it from a display the user had simply not authored yet. The next save then wrote that blank
+        // over the file, destroying whatever the damaged copy still held. Both callers already handle
+        // InvalidDataException (WorkspaceViewModel.OpenOrActivateDataDisplay → Messages.Error;
+        // DataDisplayView.DoOpenDisplayAsync → "Cannot open display: …"), which is the same treatment
+        // the format_version mismatch below has always had — so the file is left untouched on disk and
+        // is still recoverable. Owner-reported, 2026-08-26.
         DataDisplayConfig? config;
         try { config = JsonSerializer.Deserialize<DataDisplayConfig>(json, DataDisplayViewModel.JsonOpts); }
-        catch { return; }
-        if (config is null) return;
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' is not readable as a Data Display — {ex.Message} " +
+                "The file has been left unchanged.", ex);
+        }
+        if (config is null)
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' contains no Data Display. The file has been left unchanged.");
 
         if (config.FormatVersion != DataDisplayConfig.CurrentFormatVersion)
             throw new InvalidDataException(

@@ -5,6 +5,62 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## A damaged `.cdd` opened blank, silently, and then overwrote itself (2026-08-26)
+
+**Reported:** *"somehow i managed to get the data display to get corrupted .. i had to make a new
+workspace to make a fresh one working again. (simple display of a s1p s parameter file, modifying the
+frequency range for one of the 2 plots, saving and closing the file then trying to reopen the data
+display)"*
+
+The two `.cdd` files sent with the report are both **healthy** — they parse, they load, both plots
+and their 601-point traces come back, and each round-trips through load→save byte-for-byte. So the
+report is not about a file circuitRF cannot read; it is about what circuitRF DOES with one it cannot,
+and about how such a file gets made in the first place. Two defects, one on each side of that:
+
+- **The `.cdd` was the only document type written non-atomically.** `.csch`, `.csym`, `.ccell`,
+  `.clay`, `.ctech`, `.cem`, `.wasm` and `.cws` all go through `AtomicFile.WriteAllText`
+  (serialize to a sibling temp, rename over the target); `DisplayWindowViewModel.SaveAllAsync` alone
+  called `File.WriteAllTextAsync`, which **truncates the target first**. Anything that interrupts the
+  write — a crash, a kill, a removable/network volume going away mid-save, two saves racing — leaves
+  a half-written file where a display that was fine a moment earlier used to be. Now atomic, like
+  everything else.
+
+- **A `.cdd` that would not parse was swallowed.** `LoadAllAsync` had `catch { return; }` around the
+  deserialize. The document then materialized at that path as a perfectly ordinary, **clean**,
+  one-empty-plot display — no message, no dirty mark, nothing distinguishing it from a display the
+  user simply had not authored yet. **The next save wrote that blank over the file**, so a damaged
+  copy that still held most of the user's plots became an empty one that held none. Measured, not
+  inferred: truncating a good `.cdd` to half its length gave `tabs=1 plots=1 dirty=False`, and the
+  save that followed produced a 1,577-byte file with no trace of the display in it. It now throws
+  `InvalidDataException` naming the file — the same treatment the `format_version` mismatch has always
+  had, and both callers already report it (`WorkspaceViewModel.OpenOrActivateDataDisplay` →
+  `Messages.Error`, `DataDisplayView.DoOpenDisplayAsync` → "Cannot open display: …").
+
+- **And a failed open left the wreckage docked.** `OpenOrActivateDataDisplayCoreAsync` registers the
+  document in `_openDocsByPath` and opens the tab BEFORE loading, so a throwing load left a blank
+  document sitting at that path, materialized, contradicting the error message the caller had just
+  posted — and a Ctrl+S or a close-prompt "Save" on it destroyed the file the load had refused to
+  read. This was already reachable before this brief via the `format_version` guard. The load is now
+  wrapped: on failure the registration is removed and the tab force-closed, so the workspace is
+  exactly where it was and the file on disk is still recoverable.
+
+**Not the cause, checked and cleared:** the axis-limits edit the report describes round-trips
+correctly for every range tried (inside the data, entirely outside it, reversed, and the exact
+0–3 GHz of the reported sweep) — `AutoscaleX` goes false, the window persists, and the reload matches.
+The saved files' `NaN`/`Infinity` risk is not real either; no edit path produced one.
+
+**Gates** (`tests/Ui.Tests/DataDisplayFileIntegrityTests.cs`, 3 tests, all verified red against the
+pre-fix code): a truncated `.cdd` throws and the file is byte-identical afterwards; a save whose temp
+write is blocked leaves the previous file intact (forced deterministically by putting a *directory*
+where the sibling temp has to go — the old code had no temp to collide with and would have
+"succeeded" straight over the target); and a healthy `.cdd` still round-trips byte-for-byte with no
+temp left behind.
+
+**What is still unexplained.** Nothing here says what damaged the user's file, and the copies he sent
+are not damaged, so the mechanism above is the one that fits the symptom, not one caught in the act.
+The `.cws` (a dotfile — literally named `.cws`, hence invisible in Explorer, which is likely why it
+was not sent) would say whether the workspace also lost track of the display.
+
 ## The live VSWR drag readout was hardcoded black (2026-08-23)
 
 **Reported:** the VSWR text drawn beside the pointer while a locus is dragged is unreadable in dark

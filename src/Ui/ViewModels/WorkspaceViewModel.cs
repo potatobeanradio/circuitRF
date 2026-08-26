@@ -6244,8 +6244,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         WireDataDisplayTreeDirty(newDoc);
         _factory.OpenDocument(newDoc);
 
-        // format_version check throws InvalidDataException on mismatch.
-        await newVm.Window.LoadAllAsync(absPath, stream);
+        // format_version check — and, since 2026-08-26, unparseable JSON — throw InvalidDataException.
+        // A load that fails must leave NOTHING behind: without this the tab stayed open, registered in
+        // _openDocsByPath, materialized at the same path and showing one empty plot, so the error
+        // message the caller posted was contradicted by a document that looked ready to use — and
+        // saving it (or a close-prompt "Save") overwrote the file the load had just refused to read.
+        // Closing here puts the workspace back exactly where it was before the open was attempted, so
+        // the file on disk stays recoverable. ForceCloseDockable bypasses the dirty-save prompt, which
+        // is correct: a document that never loaded has nothing of the user's in it.
+        try
+        {
+            await newVm.Window.LoadAllAsync(absPath, stream);
+        }
+        catch
+        {
+            _openDocsByPath.Remove(absPath);
+            _factory.ForceCloseDockable(newDoc);
+            throw;
+        }
         newDoc.Materialize(absPath);
     }
 
