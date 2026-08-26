@@ -46,7 +46,7 @@ Silicon, `build/x86_64/` for Intel. `--arch` names the one you want and defaults
 **Both cross-build from either kind of Mac.** `swift build --arch` targets both slices (and
 Virtualization.framework is in the SDK for both), while the Linux image is pure download-and-repack
 — no compiler is involved in producing either guest kernel. That is what lets one run of
-`packaging/macos/build-dmg.sh` produce both disk images. The Rosetta block in `main.swift` sits
+`packaging/macos/build-macos.sh` produce both disk images. The Rosetta block in `main.swift` sits
 behind `#if arch(arm64)`, which is a **target** test, so the x86-64 build correctly contains no
 Rosetta code at all; on an Intel host the guest is x86-64 natively and none is wanted.
 

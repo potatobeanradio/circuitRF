@@ -58,13 +58,13 @@ public class UpdateAssetNamingConventionTests
     [InlineData("wBond",       "x64")]
     public void TheDmgNameTheMacScriptBuilds_IsWhatTheUpdaterMatches(string app, string arch)
     {
-        string script = Read("packaging", "macos", "build-dmg.sh");
+        string script = Read("packaging", "macos", "build-macos.sh");
 
         // The one expression the script interpolates:  ${NAME}-${VERSION}-${ARCH}.dmg, where NAME is
         // the application (all three are built from this script) and VERSION is CRF_VERSION.
         System.Text.RegularExpressions.Match m =
             Regex.Match(script, @"\$\{NAME\}-\$\{VERSION\}-\$\{ARCH\}\.dmg");
-        Assert.True(m.Success, "build-dmg.sh no longer constructs a name of the documented shape.");
+        Assert.True(m.Success, "build-macos.sh no longer constructs a name of the documented shape.");
         Assert.Contains("VERSION=\"$CRF_VERSION\"", script);   // and VERSION really is the one source
 
         Assert.Equal(
@@ -80,11 +80,11 @@ public class UpdateAssetNamingConventionTests
     [InlineData("x86")]
     public void TheZipNameTheWindowsScriptBuilds_IsWhatTheUpdaterMatches(string arch)
     {
-        string script = Read("packaging", "windows", "build-msi.ps1");
+        string script = Read("packaging", "windows", "build-windows.ps1");
 
         System.Text.RegularExpressions.Match m = Regex.Match(script, @"circuitRF-\$CrfVersion-win-\$Arch\.zip");
         Assert.True(m.Success,
-            "build-msi.ps1 no longer constructs the update payload name the updater matches.");
+            "build-windows.ps1 no longer constructs the update payload name the updater matches.");
 
         Assert.Equal(
             UpdateAssetNames.Expected("circuitRF", Version, UpdatePlatform.Windows, arch),
@@ -98,10 +98,10 @@ public class UpdateAssetNamingConventionTests
     [InlineData("arm64")]
     public void TheTarballNameTheLinuxScriptBuilds_IsWhatTheUpdaterMatches(string arch)
     {
-        string script = Read("packaging", "linux", "build-tarball.sh");
+        string script = Read("packaging", "linux", "build-linux.sh");
 
         System.Text.RegularExpressions.Match m = Regex.Match(script, @"circuitRF-\$\{CRF_VERSION\}-linux-\$\{ARCH\}\.tar\.gz");
-        Assert.True(m.Success, "build-tarball.sh no longer constructs the documented tarball name.");
+        Assert.True(m.Success, "build-linux.sh no longer constructs the documented tarball name.");
 
         Assert.Equal(
             UpdateAssetNames.Expected("circuitRF", Version, UpdatePlatform.Linux, arch),
@@ -196,9 +196,9 @@ public class UpdateAssetNamingConventionTests
     [Fact]
     public void TheTwoUserLocalChannelsExist()
     {
-        Assert.Contains("perUser", Read("packaging", "windows", "build-msi.ps1"));
-        Assert.Contains("Scope=$Scope", Read("packaging", "windows", "build-msi.ps1"));
-        Assert.True(File.Exists(Path.Combine(RepoRoot().FullName, "packaging", "linux", "build-tarball.sh")));
+        Assert.Contains("perUser", Read("packaging", "windows", "build-windows.ps1"));
+        Assert.Contains("Scope=$Scope", Read("packaging", "windows", "build-windows.ps1"));
+        Assert.True(File.Exists(Path.Combine(RepoRoot().FullName, "packaging", "linux", "build-linux.sh")));
         Assert.True(File.Exists(Path.Combine(RepoRoot().FullName, "packaging", "linux", "install.sh")));
         Assert.True(File.Exists(Path.Combine(RepoRoot().FullName, "packaging", "windows", "stub", "circuitrf-stub.c")));
     }
@@ -212,13 +212,13 @@ public class UpdateAssetNamingConventionTests
     {
         foreach (string rel in new[]
                  {
-                     Path.Combine("packaging", "windows", "build-msi.ps1"),
+                     Path.Combine("packaging", "windows", "build-windows.ps1"),
                      Path.Combine("packaging", "windows", "stub", "build-stub.ps1"),
                  })
         {
             byte[] bytes = File.ReadAllBytes(Path.Combine(RepoRoot().FullName, rel));
             int bad = bytes.Count(b => b > 0x7F);
-            Assert.True(bad == 0, $"{rel} contains {bad} non-ASCII byte(s); see build-msi.ps1's own header.");
+            Assert.True(bad == 0, $"{rel} contains {bad} non-ASCII byte(s); see build-windows.ps1's own header.");
         }
     }
 

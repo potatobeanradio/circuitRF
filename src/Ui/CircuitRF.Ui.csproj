@@ -111,7 +111,7 @@
     every test, script and tool that launches the build output is untouched.
 
     Four consumers depend on the names below; change one and change all four:
-      packaging/windows/circuitRF.wxs + build-msi.ps1  ($exeName)
+      packaging/windows/circuitRF.wxs + build-windows.ps1  ($exeName)
       packaging/linux/postinst + circuitrf.desktop
       src/Ui/bundleFor*MacOS.sh                        (EXECUTABLE_NAME)
       src/Ui/Assets/macOS/*.plist                      (CFBundleExecutable)
@@ -445,7 +445,7 @@
       a kit, describes it correctly, and then cannot evaluate a single compiled device model.
 
       Deriving the flag from $(RuntimeIdentifier) is what makes that impossible to get wrong, and it
-      is what lets ONE run of packaging/macos/build-dmg.sh produce both disk images. Empty for a
+      is what lets ONE run of packaging/macos/build-macos.sh produce both disk images. Empty for a
       plain `dotnet build` (no RID), where each script falls back to this machine's own architecture
       — so nothing about everyday building changes.
     -->

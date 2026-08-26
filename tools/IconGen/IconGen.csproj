@@ -31,7 +31,7 @@
       net9.0/net6.0 dependency groups list exactly those two. So on Linux nothing ever puts a
       libSkiaSharp.so in the output, and the tool dies at its first SKSvg() with a DllNotFoundException
       listing every path it probed. That is not arm64-specific: an x64 Linux box fails identically,
-      only with linux-x64 in the paths. Reported by the owner from build-deb.sh on Linux arm64,
+      only with linux-x64 in the paths. Reported by the owner from build-linux.sh on Linux arm64,
       2026-08-21.
 
       .NoDependencies, NOT the plain SkiaSharp.NativeAssets.Linux. The plain package's libSkiaSharp.so

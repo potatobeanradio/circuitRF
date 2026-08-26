@@ -733,7 +733,7 @@ public class WBondStandaloneTests : IDisposable
     /// <c>circuitrf-mime.xml</c> is what makes a double-click hand the path to the <c>.desktop</c>
     /// entry's <c>Exec=</c> line.
     ///
-    /// <para>This reads <c>packaging/linux/</c>, which is what <c>build-deb.sh</c> actually installs.
+    /// <para>This reads <c>packaging/linux/</c>, which is what <c>build-linux.sh</c> actually installs.
     /// It used to read a second, divergent copy under <c>src/Ui/linux/</c> that nothing shipped — so
     /// the files under test and the files on the user's machine disagreed about the MIME type names
     /// themselves. The unshipped copy is gone; see packaging/RESOLVED.md.</para>
@@ -814,9 +814,9 @@ public class WBondStandaloneTests : IDisposable
     ///
     /// <para><b>One entry, not three, and that is the honest count.</b> This test used to assert a
     /// <c>.desktop</c> for each of circuitRF / harmonicaRF / wBond — against files under
-    /// <c>src/Ui/linux/</c> that <c>build-deb.sh</c> never installed and that no <c>.deb</c> has ever
+    /// <c>src/Ui/linux/</c> that <c>build-linux.sh</c> never installed and that no <c>.deb</c> has ever
     /// carried. The Linux package publishes ONE application (there is no <c>CrfApp</c> loop in
-    /// build-deb.sh), so a menu entry for the other two would launch a binary that is not in the
+    /// build-linux.sh), so a menu entry for the other two would launch a binary that is not in the
     /// package. If the <c>.deb</c> ever ships all three, this is where the other two come back.</para>
     /// </summary>
     [Fact]
@@ -835,7 +835,7 @@ public class WBondStandaloneTests : IDisposable
         Assert.DoesNotContain("CircuitRF.Ui", desktop);
 
         // What the build actually installs, so the test and the package cannot drift apart.
-        string script = ReadRepoFile("packaging", "linux", "build-deb.sh");
+        string script = ReadRepoFile("packaging", "linux", "build-linux.sh");
         Assert.Contains("circuitrf.desktop=/usr/share/applications/circuitrf.desktop", script);
         Assert.Contains("circuitrf-mime.xml=/usr/share/mime/packages/circuitrf.xml", script);
     }

@@ -12,7 +12,7 @@ Every script here is run **from the repository root** and writes its installer t
 >
 > **Architectures are a different matter, and all three platforms cross-build across them.** On
 > macOS that includes the native helper programs and the Linux VM image, so one run of
-> `build-dmg.sh` produces both the Apple Silicon and the Intel disk image from either kind of Mac —
+> `build-macos.sh` produces both the Apple Silicon and the Intel disk image from either kind of Mac —
 > see *macOS ▸ `.dmg`* below for how, and for what is checked before either one is written.
 
 ---
@@ -20,7 +20,7 @@ Every script here is run **from the repository root** and writes its installer t
 ## The version number
 
 **`VERSION` at the repository root is the only place circuitRF's version is written** — one line,
-e.g. `0.9.0-beta.1`, `1.0` or `1.0.1`:
+e.g. `1.0.0-beta.2`, `1.0` or `1.0.1`:
 
 ```bash
 echo "1.0.0" > VERSION       # that is the whole procedure
@@ -35,8 +35,8 @@ packaging file to update:
 | `packaging/version.sh` | the macOS bundle scripts (stamped into the `.app`'s `Info.plist`) and the `.dmg` / `.deb` names |
 | `packaging/version.ps1` | the `.msi`'s ProductVersion and file name |
 
-Two derived forms exist because some fields must be purely numeric: `0.9.0-beta.1` becomes **`0.9.0`**
-for `AssemblyVersion`, `CFBundleVersion` and the MSI ProductVersion, and **`0.9.0~beta.1`** for the
+Two derived forms exist because some fields must be purely numeric: `1.0.0-beta.2` becomes **`1.0.0`**
+for `AssemblyVersion`, `CFBundleVersion` and the MSI ProductVersion, and **`1.0.0~beta.2`** for the
 Debian package (dpkg sorts `~beta` *before* the release, while a plain `-beta` sorts *after* it).
 
 The version strings inside `src/Ui/Assets/macOS/*.plist` are placeholders — the bundle scripts
@@ -113,7 +113,7 @@ Two things worth knowing before they surprise you:
   vendor model libraries, those ship as x64, and a process holds exactly one instruction set —
   Windows runs the pair under its own translation. A native ARM worker would start and then fail to
   load a single model, so a `gcc` that builds for arm64 is refused rather than used.
-- **There is no 64-bit ARM Linux build of the worker.** `build-deb.sh arm64` says so and packages
+- **There is no 64-bit ARM Linux build of the worker.** `build-linux.sh arm64` says so and packages
   without it; everything else in that package is unaffected.
 - **The macOS VM image is per-architecture and costs ~330 MB the first time for each.** Packaging
   both disk images therefore downloads both guest images once — Alpine aarch64 and Alpine x86-64 —
@@ -127,7 +127,7 @@ To package deliberately without them, set `CRF_ALLOW_NO_DEVICE_WORKER=1`.
 
 ---
 
-## Windows — `.msi` (x64, arm64, x86)
+## Windows — `.msi`, `-user.msi` and the update `.zip` (x64, arm64, x86)
 
 **One-time setup**, in PowerShell:
 
@@ -149,9 +149,16 @@ which reads like a missing install and is really a version mismatch.
 **Build** (run each line for the architecture you want):
 
 ```powershell
-.\packaging\windows\build-msi.ps1                    # → dist\circuitRF-0.9.0-beta.1-x64.msi
-.\packaging\windows\build-msi.ps1 -Arch arm64        # → dist\circuitRF-0.9.0-beta.1-arm64.msi
-.\packaging\windows\build-msi.ps1 -Arch x86          # → dist\circuitRF-0.9.0-beta.1-x86.msi
+.\packaging\windows\build-windows.ps1        # everything Windows ships: 9 files
+```
+
+That is all three architectures in both install scopes, plus the `.zip` the updater fetches. Narrow
+it only when you mean to:
+
+```powershell
+.\packaging\windows\build-windows.ps1 -Arch x64
+.\packaging\windows\build-windows.ps1 -Scope perUser
+.\packaging\windows\build-windows.ps1 -Arch arm64 -Scope perMachine
 ```
 
 The installer offers a license page, a changeable install directory, a Start Menu entry and an
@@ -165,13 +172,13 @@ registered that `App.OpenFiles` has no case for. The installed program is **`cir
 
 > **PowerShell:** either `powershell.exe` (5.1, the Windows default) or `pwsh` (7.x) works, from the
 > repository root. If you edit a script under `packaging/`, keep it **pure ASCII** — the reason is in
-> the header of `build-msi.ps1`, and `tests/Ui.Tests/PackagingScriptTests.cs` enforces it.
+> the header of `build-windows.ps1`, and `tests/Ui.Tests/PackagingScriptTests.cs` enforces it.
 
 The MSI is unsigned, so SmartScreen warns on first run. To sign it you need a code-signing
 certificate:
 
 ```powershell
-signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 dist\circuitRF-0.9.0-beta.1-x64.msi
+signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 dist\circuitRF-1.0.0-beta.2-x64.msi
 ```
 
 ---
@@ -182,9 +189,9 @@ No setup beyond the .NET SDK and the toolchain in *Helper programs* above — ev
 with macOS.
 
 ```bash
-./packaging/macos/build-dmg.sh                # BOTH: dist/circuitRF-0.9.0-beta.1-{arm64,x64}.dmg
-./packaging/macos/build-dmg.sh circuitrf arm64   # Apple Silicon only
-./packaging/macos/build-dmg.sh circuitrf x64     # Intel only
+./packaging/macos/build-macos.sh                # BOTH: dist/circuitRF-1.0.0-beta.2-{arm64,x64}.dmg
+./packaging/macos/build-macos.sh circuitrf arm64   # Apple Silicon only
+./packaging/macos/build-macos.sh circuitrf x64     # Intel only
 ```
 
 **Both architectures build from whichever Mac you are on**, and the default with no architecture
@@ -238,7 +245,7 @@ xattr -dr com.apple.quarantine /Applications/circuitRF.app
 
 #### Signing with a paid Apple Developer account
 
-`build-dmg.sh` **signs if this machine can and builds unsigned if it cannot** — it never fails for
+`build-macos.sh` **signs if this machine can and builds unsigned if it cannot** — it never fails for
 want of a certificate, and it never signs silently without saying so.
 
 **You need a "Developer ID Application" certificate, and a paid membership does not give you one
@@ -259,7 +266,7 @@ After that, **just run the build**. It finds the certificate, uses it, and — t
 to store your notary credentials:
 
 ```bash
-./packaging/macos/build-dmg.sh
+./packaging/macos/build-macos.sh
 ```
 
 It asks for your **Apple ID**, your **Team ID**, and an **app-specific password** — created at
@@ -386,7 +393,7 @@ library, not of who is loading it. circuitRF recognises that refusal and prints 
 (`xattr -dr com.apple.quarantine <kit folder>`); see `tools/osdi-worker/README.md`.
 
 **A `.app` without a disk image** is what the bundle scripts alone produce. They take the RID from
-`CRF_RID` — which `build-dmg.sh` sets for each pass — and fall back to `uname -m`:
+`CRF_RID` — which `build-macos.sh` sets for each pass — and fall back to `uname -m`:
 
 ```bash
 cd src/Ui && ./bundleForMacOS.sh                       # this machine's architecture
@@ -395,7 +402,7 @@ cd src/Ui && CRF_RID=osx-x64 ./bundleForMacOS.sh       # → bin/Release/net10.0
 
 ---
 
-## Linux — `.deb` (x64, arm64)
+## Linux — `.deb` and `.tar.gz` (x64, arm64)
 
 **One-time setup** — [fpm](https://fpm.readthedocs.io) (the `dotnet-deb` tool targets .NET 9 and
 does not work here):
@@ -408,15 +415,23 @@ sudo gem install fpm
 **Build:**
 
 ```bash
-./packaging/linux/build-deb.sh x64            # → dist/circuitRF-0.9.0-beta.1-x64.deb
-./packaging/linux/build-deb.sh arm64          # → dist/circuitRF-0.9.0-beta.1-arm64.deb
+./packaging/linux/build-linux.sh                # everything Linux ships: 4 files
+```
+
+That is both architectures as a `.deb` **and** as a `.tar.gz`. Narrow it only when you mean to —
+`fpm` is needed only for the `.deb`, so a tarball-only run works without it:
+
+```bash
+./packaging/linux/build-linux.sh x64            # both kinds, x64 only
+./packaging/linux/build-linux.sh both tarball   # both architectures, no .deb
+./packaging/linux/build-linux.sh arm64 deb
 ```
 
 The package installs to `/opt/circuitrf/`, puts `circuitrf` on `PATH`, and registers the icon, the
 application-menu entry and the `.crfw` / `.cws`, `.charm` and `.wBond` file types.
 
 ```bash
-sudo apt install ./dist/circuitRF-0.9.0-beta.1-x64.deb
+sudo apt install ./dist/circuitRF-1.0.0-beta.2-x64.deb
 sudo apt remove circuitrf
 ```
 
@@ -438,9 +453,9 @@ They are the same assembly with a different entry point (`-p:CrfApp=harmonica` /
 and today they ship as macOS bundles only:
 
 ```bash
-./packaging/macos/build-dmg.sh harmonica      # both: harmonicaRF-0.9.0-beta.1-{arm64,x64}.dmg
-./packaging/macos/build-dmg.sh wbond          # both: wBond-0.9.0-beta.1-{arm64,x64}.dmg
-./packaging/macos/build-dmg.sh wbond x64      # Intel only
+./packaging/macos/build-macos.sh harmonica      # both: harmonicaRF-1.0.0-beta.2-{arm64,x64}.dmg
+./packaging/macos/build-macos.sh wbond          # both: wBond-1.0.0-beta.2-{arm64,x64}.dmg
+./packaging/macos/build-macos.sh wbond x64      # Intel only
 ```
 
 The architecture argument works exactly as it does for circuitRF, and defaults to both the same way.
@@ -479,17 +494,19 @@ there builds cleanly and ships a shortcut to a file that does not exist.
 circuitRF, harmonicaRF and wBond check GitHub for a newer release, download it in the background and
 swap it in at the next launch. **A silent update requires an install location the running user can
 write**, which `%ProgramFiles%` and `/opt` are not — so the machine-wide `.msi` and the `.deb` are
-notify-only, and two additional artifacts exist for the installs that do update themselves. The full
-reasoning is in `docs/design/auto-update.md`; what a release has to produce is here.
+notify-only, and two additional artifacts exist for the installs that do update themselves. **One run
+of each platform's script produces every row below**; the flags in the sections that follow only
+narrow it. The full reasoning is in `docs/design/auto-update.md`; what a release has to produce is
+here.
 
 | Artifact | Built by | Installs to | Updates itself |
 |---|---|---|---|
-| `circuitRF-<ver>-<arch>.msi` | `build-msi.ps1` | `%ProgramFiles%\circuitRF` | notify only |
-| `circuitRF-<ver>-win-<arch>-user.msi` | `build-msi.ps1 -Scope perUser` | `%LOCALAPPDATA%\Programs\circuitRF` | **yes** |
-| `circuitRF-<ver>-win-<arch>.zip` | `build-msi.ps1 -Scope perUser` | — (the update payload) | — |
-| `circuitRF-<ver>-<arch>.dmg` | `build-dmg.sh` | `/Applications` | **yes**, for an admin user |
-| `circuitRF-<ver>-<arch>.deb` | `build-deb.sh` | `/opt/circuitrf` | notify only |
-| `circuitRF-<ver>-linux-<arch>.tar.gz` | `build-tarball.sh` | `~/.local/share/circuitRF` | **yes** |
+| `circuitRF-<ver>-<arch>.msi` | `build-windows.ps1` | `%ProgramFiles%\circuitRF` | notify only |
+| `circuitRF-<ver>-win-<arch>-user.msi` | `build-windows.ps1` | `%LOCALAPPDATA%\Programs\circuitRF` | **yes** |
+| `circuitRF-<ver>-win-<arch>.zip` | `build-windows.ps1` | — (the update payload) | — |
+| `circuitRF-<ver>-<arch>.dmg` | `build-macos.sh` | `/Applications` | **yes**, for an admin user |
+| `circuitRF-<ver>-<arch>.deb` | `build-linux.sh` | `/opt/circuitrf` | notify only |
+| `circuitRF-<ver>-linux-<arch>.tar.gz` | `build-linux.sh` | `~/.local/share/circuitRF` | **yes** |
 
 **These names are a contract, not a convention.** `src/Ui/Updates/UpdateAssetNames.cs` parses exactly
 these spellings. Rename an artifact and updates stop — with no error anywhere, no log line and no user
@@ -498,9 +515,7 @@ report, because a user who is not being offered an update has nothing to notice.
 
 ### Windows, per-user
 
-```powershell
-.\packaging\windows\build-msi.ps1 -Scope perUser -Arch x64
-```
+Built by the ordinary run above; `-Scope perUser` narrows to just this channel.
 
 It builds a small native **launcher stub** first (`packaging\windows\stub\build-stub.ps1`, needing
 `zig` or MSVC's `cl.exe`), then publishes, then emits both the `-user.msi` and the `.zip`. The stub is
@@ -523,9 +538,7 @@ updates stop. Design §9.1.
 
 ### Linux, user-local
 
-```bash
-packaging/linux/build-tarball.sh x64
-```
+Built by the ordinary run above; `both tarball` narrows to just this channel.
 
 No `fpm` and no root. The archive contains `app-<version>/` plus an `install.sh` that lays down
 `~/.local/share/circuitRF/current -> app-<version>`, a launcher at `~/.local/bin/circuitrf` and the
@@ -548,7 +561,7 @@ Measured on macOS 26.5.2, 2026-08-25:
 - the same app modifying a different vendor's bundle — **denied**, `EPERM`;
 - the identical app re-signed **ad-hoc** — **denied on both**.
 
-`build-dmg.sh` now notarizes and staples the `.app` as well as the `.dmg`, in that order. A staple is
+`build-macos.sh` now notarizes and staples the `.app` as well as the `.dmg`, in that order. A staple is
 attached to one artifact and does not travel with a bundle copied out of a stapled image (verified:
 `stapler validate` on an extracted bundle reports no ticket), so without the extra pass the installed
 application has no ticket and every Gatekeeper assessment of it has to reach Apple.
@@ -577,7 +590,7 @@ Two-factor on the account, no long-lived release tokens, and the same care over 
 over who holds the Developer ID certificate. Design §9.1 has the full table.
 
 How to drive one without waiting for a real release: install the previous version, publish the new one
-as a GitHub prerelease, tick **Settings ▸ General ▸ Updates ▸ Include beta releases**, then
+as a GitHub prerelease, tick **Settings ▸ Security & Permissions ▸ Include beta releases**, then
 **Help ▸ Check for Updates…** (which ignores the 24-hour throttle). The Message Panel says when it has
 staged. Quit and relaunch — that relaunch is what the matrix is actually testing.
 
@@ -588,9 +601,17 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
 1. `dotnet test` is green (see the root `CLAUDE.md` for what the default test gate covers).
 2. Bump the repo-root `VERSION` file — that is the only place, and it feeds the About box, every
    installer and all their file names.
-3. Build every artifact on its own platform: the three per-machine `.msi`s **and** the three
-   `-user.msi` + `.zip` pairs (Windows), both `.dmg`s (macOS), both `.deb`s **and** both `.tar.gz`s
-   (Linux).
+3. Run **one script on each platform**, with no arguments — each builds everything that platform
+   ships, and 1.0.0-beta.2 is what happens when they do not:
+
+   ```
+   Windows   .\packaging\windows\build-windows.ps1     9 files
+   macOS     ./packaging/macos/build-macos.sh           2 files
+   Linux     ./packaging/linux/build-linux.sh           4 files
+   ```
+
+   Each prints what it produced and warns if the count is short. Fifteen files in `dist/` is a
+   complete release; anything less ships a platform that cannot update itself.
 4. Install each one on a clean machine; confirm the icon appears in the file manager, **Help ▸ About**
    shows the version you set, and double-clicking a workspace (`.crfw` / `.cws`) opens it. Check a
    document type too (a `.csch` is the quickest): it should open as an orphan tab, and with circuitRF

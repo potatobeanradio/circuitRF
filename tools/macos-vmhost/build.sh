@@ -17,7 +17,7 @@ identity=${IDENTITY:--}
 # slices from either kind of Mac, and Virtualization.framework is in the SDK for both. The Rosetta
 # block in main.swift is behind `#if arch(arm64)`, which is a TARGET test — so an x86_64 build
 # correctly contains no Rosetta code at all (verified with `nm -u`, not assumed). That is what lets
-# one run of packaging/macos/build-dmg.sh produce both disk images.
+# one run of packaging/macos/build-macos.sh produce both disk images.
 #
 # Each architecture gets its own build/ subdirectory. Two binaries of the same name that differ only
 # in a way no `ls` shows is exactly the sort of thing that ships wrong once and is never noticed.

@@ -1,6 +1,6 @@
 # == The version, read from the one place it is written ========================
 #
-# Dot-sourced by build-msi.ps1:   . "$PSScriptRoot\..\version.ps1"
+# Dot-sourced by build-windows.ps1:   . "$PSScriptRoot\..\version.ps1"
 #
 # Sets:
 #   $CrfVersion      the full string from the repo-root VERSION file, e.g. 0.9.0-beta.1

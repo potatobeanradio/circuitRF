@@ -3,12 +3,12 @@ set -euo pipefail
 
 # ── circuitRF macOS .dmg builder ──────────────────────────────────────────────
 #
-#   packaging/macos/build-dmg.sh                 → BOTH disk images, for circuitRF
-#   packaging/macos/build-dmg.sh harmonica       → both, for harmonicaRF
-#   packaging/macos/build-dmg.sh wbond           → both, for wBond
+#   packaging/macos/build-macos.sh                 → BOTH disk images, for circuitRF
+#   packaging/macos/build-macos.sh harmonica       → both, for harmonicaRF
+#   packaging/macos/build-macos.sh wbond           → both, for wBond
 #
-#   packaging/macos/build-dmg.sh circuitrf arm64 → Apple Silicon only
-#   packaging/macos/build-dmg.sh circuitrf x64   → Intel only
+#   packaging/macos/build-macos.sh circuitrf arm64 → Apple Silicon only
+#   packaging/macos/build-macos.sh circuitrf x64   → Intel only
 #
 # → dist/circuitRF-<version>-arm64.dmg  and  dist/circuitRF-<version>-x64.dmg
 #
@@ -336,13 +336,13 @@ for ARCH in $ARCHES; do
 
     # ── Architecture, measured rather than assumed ────────────────────────────
     #
-    # Mirrors what build-deb.sh does with the worker's ELF header, and for the same reason: a binary
+    # Mirrors what build-linux.sh does with the worker's ELF header, and for the same reason: a binary
     # of the wrong architecture is not a lesser version of a working one. The app host, crf-vmhost
     # and osdi-worker are Mach-O, so `lipo -archs` reads it straight out; a wrong one here means a
     # bundle that either will not launch at all or cannot evaluate a compiled device model.
     #
     # senior_worker is deliberately NOT checked here — it is a Linux ELF, always x86-64 on purpose,
-    # and lipo knows nothing about it. build-deb.sh's ELF check is the one that covers that file.
+    # and lipo knows nothing about it. build-linux.sh's ELF check is the one that covers that file.
     BAD=""
     for f in "${NAME}" crf-vmhost osdi-worker; do
         path="${APP_BUNDLE}/Contents/MacOS/${f}"

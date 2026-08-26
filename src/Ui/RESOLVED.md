@@ -216,7 +216,7 @@ path.
 ### 4. Windows self-update is inert unless the shipped `.exe` is signed, and nothing said so
 
 `RunningBuildCanAcceptUpdatesAsync` answers `PublisherOf(exe) is not null` on Windows, and
-`build-msi.ps1` still ends with *"Unsigned: SmartScreen will warn on first run"* — so a stock per-user
+`build-windows.ps1` still ends with *"Unsigned: SmartScreen will warn on first run"* — so a stock per-user
 build is notify-only on every check. `BUILDING.md` made Developer ID a hard prerequisite for macOS and
 said nothing equivalent for Windows, while its own acceptance matrix asked for a per-user install that
 updates. **Not a code defect — a prerequisite that existed in the code and in neither document.** Both
@@ -265,8 +265,8 @@ implementation's model rather than the requirement, which is the recurring shape
 
 ### 1. Linux updates could never stage — a shape mismatch, not a name mismatch
 
-`build-msi.ps1` runs `Compress-Archive -Path publish\*`, so the `.zip` holds the publish tree at its
-**root**. `build-tarball.sh` packs `circuitRF-<ver>/` holding `install.sh`, an icon, a `current` seed
+`build-windows.ps1` runs `Compress-Archive -Path publish\*`, so the `.zip` holds the publish tree at its
+**root**. `build-linux.sh` packs `circuitRF-<ver>/` holding `install.sh`, an icon, a `current` seed
 **and** `app-<ver>/` — because that archive is also the first-install payload and its shape *is* the
 installed shape. `StageArchiveAsync` untarred with a fixed `--strip-components=1` and then looked for
 the executable at the top of the extraction, which on the real tarball is `install.sh` and a
@@ -432,7 +432,7 @@ spawned helper tool, because a helper inherits the responsibility of whatever la
    `find /Applications/circuitRF.app -name __pycache__ -type d -exec rm -rf {} +` restores the seal.
 2. **The `.app` inside the `.dmg` was never stapled.** `xcrun stapler validate` on a bundle extracted
    from the stapled disk image reports *"does not have a ticket stapled to it"*: a staple attaches to
-   one artifact and does not travel with a bundle copied out of it. `build-dmg.sh` now notarizes and
+   one artifact and does not travel with a bundle copied out of it. `build-macos.sh` now notarizes and
    staples the `.app` before building the image, which is the order R-AU-51 requires and which costs
    one extra notarization round-trip per architecture.
 
@@ -10599,7 +10599,7 @@ somewhere upstream of it. Full statement in `docs/design/auto-update.md` §9.1 a
   a payload could carry a genuine, correctly-signed apphost copied verbatim from a real release beside
   anything at all. Now `VerifyWindowsTree`, over every `.exe`/`.dll` in the staged tree.
 - **The `.dmg` was mounted before anything looked at it.** `hdiutil attach` hands attacker-supplied
-  bytes to the kernel's HFS+/APFS parsers; the bundle's seal was only examined afterwards. `build-dmg.sh`
+  bytes to the kernel's HFS+/APFS parsers; the bundle's seal was only examined afterwards. `build-macos.sh`
   already signs the image with the same Developer ID as the bundle, so verifying the container first
   costs one `codesign` call. Also `-noautoopen -owners off`.
 - **Payload URLs were not constrained at all.** `UpdateManifest` allow-listed the URL it supplied; the

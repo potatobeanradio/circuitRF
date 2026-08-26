@@ -7,12 +7,12 @@ symptom first, because that is what the next person will have in front of them.
 
 ## `wix build` failed with WIX0091 "duplicate Registry" the moment `.cws` was added (2026-08-23)
 
-**Symptom:** `.\packaging\windows\build-msi.ps1` publishes and harvests fine, then stops with four
+**Symptom:** `.\packaging\windows\build-windows.ps1` publishes and harvests fine, then stops with four
 errors — `WIX0091: Duplicate Registry with identifier 'regw.…'` and `'regFn.…'` — pointing at the
 workspace ProgId's first `<Extension>` and, as "the previous error", at its second. No .msi is
 produced.
 
-**Not architecture-specific, and there is no second script to fix.** `build-msi.ps1` takes
+**Not architecture-specific, and there is no second script to fix.** `build-windows.ps1` takes
 `-Arch x64|arm64|x86` and compiles the same single `circuitRF.wxs` for all three; the failure is in
 that file, so it failed identically on every architecture.
 
@@ -67,7 +67,7 @@ shared-mime-info `<mime-type>` is a container of globs, so `*.crfw` and `*.cws` 
 how it is meant to be written, and there is no per-extension verb to duplicate — the `.desktop`
 entry carries one `Exec=` for all nine types. Checked rather than assumed: the mime xml parses, no
 `<mime-type>` element repeats, no glob is claimed by two types, the `.desktop`'s `MimeType=` list
-and the declared types are the same set of nine in both directions, and `build-deb.sh`, `postinst`
+and the declared types are the same set of nine in both directions, and `build-linux.sh`, `postinst`
 and `postrm` pass `bash -n`.
 
 ## Opening a document by double-click: two things were already wrong before anything was added (2026-08-23)
@@ -92,7 +92,7 @@ is a file that opens on the developer's machine and not on the user's.
 
 ### 2. `src/Ui/linux/` and `packaging/linux/` were two divergent copies, and the tests read the one that never shipped
 
-`build-deb.sh` installs `packaging/linux/circuitrf.desktop` and `packaging/linux/circuitrf-mime.xml`.
+`build-linux.sh` installs `packaging/linux/circuitrf.desktop` and `packaging/linux/circuitrf-mime.xml`.
 `WBondStandaloneTests` read `src/Ui/linux/` — a second set that nothing referenced anywhere else. They
 disagreed on:
 
@@ -109,7 +109,7 @@ because they are the ones that have actually been installed on a machine, and th
 `ContentType` attributes in the `.wxs`.
 
 **The two extra `.desktop` entries are gone rather than moved, and that is the honest count**:
-`build-deb.sh` does one `dotnet publish` with no `CrfApp` loop, so the `.deb` ships **one**
+`build-linux.sh` does one `dotnet publish` with no `CrfApp` loop, so the `.deb` ships **one**
 application. A menu entry for harmonicaRF or wBond would launch a binary that is not in the package.
 If the `.deb` ever ships all three, `TheLinuxPackageShipsItsDesktopEntry` is where they come back.
 
@@ -130,9 +130,9 @@ it `shared-mime-info` content-sniffs them as `text/plain`, and the sniffed answe
 
 ---
 
-## `build-deb.sh` dies at its first step: no `libSkiaSharp.so` on Linux (2026-08-21)
+## `build-linux.sh` dies at its first step: no `libSkiaSharp.so` on Linux (2026-08-21)
 
-**Reported:** `./packaging/linux/build-deb.sh x64` on Linux arm64, at `🎨 Building icons...`:
+**Reported:** `./packaging/linux/build-linux.sh x64` on Linux arm64, at `🎨 Building icons...`:
 
 ```
 System.DllNotFoundException: Unable to load shared library 'libSkiaSharp' or one of its dependencies.
@@ -187,7 +187,7 @@ notice this from a macOS or Windows CI run.
 
 `Avalonia.Skia` 12.0.3 depends on the **plain** `SkiaSharp.NativeAssets.Linux`, so the shipped
 application's own `libSkiaSharp.so` does want `libfontconfig.so.1` at run time — and the app renders
-text, so it genuinely wants system fonts, unlike IconGen. `build-deb.sh` now declares **no**
+text, so it genuinely wants system fonts, unlike IconGen. `build-linux.sh` now declares **no**
 `--depends` at all (see below). A desktop that can run the app almost certainly has fontconfig already,
 so this has never been reported; adding `libfontconfig1` to `--depends` would make it explicit rather
 than lucky.
@@ -221,7 +221,7 @@ succeeds — a machine with no ICU gets an app that starts without culture data,
 cannot be installed.
 
 Gate: `tests/Ui.Tests/PackagingScriptTests.DebDeclaresNoVersionedIcuDependency` — it reads the `--depends`
-lines of `build-deb.sh` (ignoring comments, which discuss the old list on purpose) and fails on any
+lines of `build-linux.sh` (ignoring comments, which discuss the old list on purpose) and fails on any
 `libicu<digits>`, and it requires `postinst` to keep the `libicuuc` check, since with no declared
 dependency that check is the only thing left that can tell a user what is wrong. Verified to fail on
 reintroduction, not just assumed.
@@ -309,7 +309,7 @@ an Intel machine look cached when it was one download short.
 x86-64 `bzImage` is handed over **unchanged**, because its self-decompressing stub is part of the x86
 boot protocol that boot loader implements. The old single "does this look like a kernel" check
 warned about missing arm64 magic on a perfectly good bzImage; it is per-architecture now
-(`ARM\x64` at offset 56, `HdrS` at 0x202), and `build-dmg.sh` re-checks the same magic in the
+(`ARM\x64` at offset 56, `HdrS` at 0x202), and `build-macos.sh` re-checks the same magic in the
 finished bundle, because `lipo` knows nothing about a Linux kernel.
 
 ---
@@ -354,7 +354,7 @@ opts into. The comment is corrected in place; believing it costs an afternoon.
 
 **The only fix is Developer ID + notarisation**, and it is now a no-edit path: `CRF_SIGN_IDENTITY`
 selects the certificate (default `-`, ad-hoc, unchanged), and `CRF_NOTARY_PROFILE` names a
-`notarytool store-credentials` keychain profile, at which point `build-dmg.sh` signs the disk image,
+`notarytool store-credentials` keychain profile, at which point `build-macos.sh` signs the disk image,
 notarises it and staples the ticket. Setting an identity also turns on the hardened runtime and a
 secure timestamp, both of which notarisation requires.
 
@@ -498,7 +498,7 @@ attributes, so "copy a clean one" does not give you a clean one either.
 
 ## Signing with a paid Apple account: the certificate a paid account does NOT give you (2026-08-22)
 
-`build-dmg.sh` now signs if the machine can and builds unsigned if it cannot, resolving the identity
+`build-macos.sh` now signs if the machine can and builds unsigned if it cannot, resolving the identity
 itself instead of requiring one to be typed. The interesting part is what it refuses.
 
 **A paid membership issues "Apple Development" certificates automatically. They are not the ones.**
@@ -548,7 +548,7 @@ On a **Developer ID Application** certificate the two ARE the same string, which
 this is easy to get wrong and hard to doubt: every example anyone has seen agrees with the wrong rule.
 
 **All three values are now read off the machine and printed** at the point they are asked for
-(`crf_apple_team_hints` / `crf_apple_id_hints` in `build-dmg.sh`), filtered to unexpired certificates
+(`crf_apple_team_hints` / `crf_apple_id_hints` in `build-macos.sh`), filtered to unexpired certificates
 — an expired one names a team the account may no longer be in, so suggesting it would be worse than
 suggesting nothing. On this machine that resolves to two real teams (an individual and an LLC), which
 is itself worth seeing: with two teams, "the Team ID" is not even a single answer.
@@ -606,7 +606,7 @@ Two details in that item are load-bearing:
 
 **No packaging script needed changing, and this was checked rather than assumed** — all three
 packagers take the whole publish tree: `bundleForMacOS.sh` does `cp -R "${PUBLISH_DIR}/."`,
-`build-deb.sh` hands fpm `"${PUBLISH}/=/opt/circuitrf/"`, and `build-msi.ps1`'s `Add-Directory`
+`build-linux.sh` hands fpm `"${PUBLISH}/=/opt/circuitrf/"`, and `build-windows.ps1`'s `Add-Directory`
 harvester recurses subdirectories generically into `Files.wxs`.
 
 The gate is `PCellVendorBridgeTests.ThePythonPackageIsShippedBesideTheExecutable_NotFoundBySourceTreeWalkUp`,

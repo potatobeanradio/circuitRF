@@ -211,7 +211,7 @@ signing from a nice-to-have to a hard prerequisite:
 > **Releases must be Developer ID signed and notarized. Automatic updates on macOS do not work on an
 > ad-hoc build, and the failure mode is a TCC prompt, not an error.**
 
-`packaging/macos/build-dmg.sh` already resolves a `Developer ID Application` identity, refuses to be
+`packaging/macos/build-macos.sh` already resolves a `Developer ID Application` identity, refuses to be
 fooled by an `Apple Development` certificate, and notarizes through `notarytool` — so the prerequisite is
 already met by the existing pipeline. Staple as well (`xcrun stapler staple` on the `.app`, *then* zip;
 you cannot staple an archive): stapling costs nothing and it is what lets Gatekeeper validate a manually
@@ -454,7 +454,7 @@ from being wrong.
 | **A transfer** | Stops at the advertised size, or at 2 GB when the feed publishes none | With no size the read loop had no stop condition, so a server that never closes writes until the volume is down to the 1 GB reserve — §13's own failure, arriving from the network rather than the arithmetic. |
 | **A feed document** | 8 MB, enforced by the client | Both the release list and a manifest are read with `ReadAsStringAsync`, which buffers the whole body. |
 | **An archive member** | No symlink whose target leaves the extraction tree | `tar` refuses a member *named* with `..`, but a link whose *target* escapes is an ordinary valid member — and the tree is about to be renamed into the live install root and executed from. |
-| **A disk image** | Verified and Team-ID matched *before* `hdiutil attach`; mounted `-nobrowse -readonly -noautoopen -owners off` | Mounting hands attacker-supplied bytes to a kernel filesystem parser. `build-dmg.sh` already signs the image, so this costs nothing. |
+| **A disk image** | Verified and Team-ID matched *before* `hdiutil attach`; mounted `-nobrowse -readonly -noautoopen -owners off` | Mounting hands attacker-supplied bytes to a kernel filesystem parser. `build-macos.sh` already signs the image, so this costs nothing. |
 | **`state.json`'s directory names** | `app-` plus version characters, and nothing else — checked at `WriteCurrent`, not only at its callers | Those strings become path components and the contents of the launch pointer. The state file is ordinary JSON in the user's application-data directory. |
 | **`current`, read by the stub** | No separator, no drive letter, no `.`/`..` | Following one would turn a corrupt file into an arbitrary program launch. The stub's own comment claimed `..` was rejected; it was not. |
 | **`current`, read by `install.sh`** | `app-` plus version characters | It is interpolated into an `rm -rf`. A `current` holding `../..` deletes `~/.local`. |
@@ -974,7 +974,7 @@ The UI firewall applies unchanged: none of this may create a dependency from `sr
   covers the abort-midway atomicity tests and the small-filesystem ENOSPC run.
 
 **The test that prevents silent, permanent failure:** the naming convention in §8.1 is parsed by the client
-and produced by `build-dmg.sh`, `build-msi.ps1` and `build-deb.sh`. Rename an artifact and updates stop —
+and produced by `build-macos.sh`, `build-windows.ps1` and `build-linux.sh`. Rename an artifact and updates stop —
 with no error, no log line, and no user report, because a user who is not being offered an update has
 nothing to report. So `tests/Ui.Tests/` gains an assertion that the file names those scripts construct match
 the exact patterns the updater matches. This is the same class of guard as the pure-ASCII `.ps1` rule and

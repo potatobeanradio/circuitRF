@@ -129,17 +129,17 @@ public class VersionSingleSourceTests
     [Fact]
     public void ThePackagingScriptsTakeTheirVersionFromTheSharedHelper()
     {
-        string deb = WithoutComments(ReadRepoFile("packaging", "linux", "build-deb.sh"));
+        string deb = WithoutComments(ReadRepoFile("packaging", "linux", "build-linux.sh"));
         Assert.Contains("packaging/version.sh", deb);
         Assert.Contains("$CRF_DEB_VERSION", deb);        // dpkg's ~ spelling, not the raw string
         Assert.DoesNotMatch(@"VERSION=""?\d", deb);
 
-        string msi = WithoutComments(ReadRepoFile("packaging", "windows", "build-msi.ps1"));
+        string msi = WithoutComments(ReadRepoFile("packaging", "windows", "build-windows.ps1"));
         Assert.Contains("version.ps1", msi);
         Assert.Contains("$CrfMsiVersion", msi);
         Assert.DoesNotMatch(@"\$Version\s*=\s*'\d", msi);
 
-        string dmg = WithoutComments(ReadRepoFile("packaging", "macos", "build-dmg.sh"));
+        string dmg = WithoutComments(ReadRepoFile("packaging", "macos", "build-macos.sh"));
         Assert.Contains("packaging/version.sh", dmg);
         Assert.Contains("$CRF_VERSION", dmg);
     }

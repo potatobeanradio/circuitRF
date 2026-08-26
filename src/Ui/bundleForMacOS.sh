@@ -25,7 +25,7 @@ TARGET_FRAMEWORK="net10.0"
 # an x86-64 one on Intel. So a cross-architecture bundle is a working application with a set of
 # helpers that cannot load a single compiled device model. Build the Intel .dmg on an Intel Mac.
 #
-# packaging/macos/build-dmg.sh sets CRF_RID and checks the result; setting it by hand here is for
+# packaging/macos/build-macos.sh sets CRF_RID and checks the result; setting it by hand here is for
 # producing a .NET-only bundle deliberately.
 if [ -z "${CRF_RID:-}" ]; then
     case "$(uname -m)" in
@@ -162,5 +162,5 @@ echo "✅ Bundle created: ${BUNDLE_DIR}"
 if [ "$SIGN_IDENTITY" = "-" ]; then
     echo "   To distribute without a Gatekeeper prompt, sign and notarise:"
     echo "     CRF_SIGN_IDENTITY=\"Developer ID Application: NAME (TEAMID)\" $0"
-    echo "   then notarise the disk image — packaging/macos/build-dmg.sh does it for you."
+    echo "   then notarise the disk image — packaging/macos/build-macos.sh does it for you."
 fi

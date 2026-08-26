@@ -3,14 +3,14 @@
 
     .\packaging\windows\stub\build-stub.ps1 -Arch x64
 
-  Writes build\<AppName>-stub-<Arch>.exe. Called by build-msi.ps1 when -Scope perUser.
+  Writes build\<AppName>-stub-<Arch>.exe. Called by build-windows.ps1 when -Scope perUser.
 
   Two toolchains are tried, in order: zig cc (one download, no daemon, cross-compiles every
   architecture from any host) and then the MSVC cl.exe on PATH inside a Developer prompt. The
   stub is ~150 lines of plain Win32, so either produces the same thing.
 
   ------------------------------------------------------------------------------
-  THIS FILE MUST STAY PURE ASCII - see the note at the top of build-msi.ps1. Windows PowerShell
+  THIS FILE MUST STAY PURE ASCII - see the note at the top of build-windows.ps1. Windows PowerShell
   5.1 reads a BOM-less .ps1 as cp1252, and a UTF-8 emoji decodes to the curly-quote bytes
   0x93/0x94, which PowerShell honours as string delimiters. Nothing errors; the block is PRINTED
   instead of run. tests/Ui.Tests/PackagingScriptTests.cs holds this shut.

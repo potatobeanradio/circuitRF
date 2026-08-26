@@ -8,8 +8,8 @@ namespace CircuitRF.Ui.Updates;
 public enum UpdatePlatform { MacOS, Windows, Linux }
 
 /// <summary>
-/// The release-asset naming convention — produced by <c>build-dmg.sh</c>, <c>build-msi.ps1</c> and
-/// <c>build-deb.sh</c>, parsed here.
+/// The release-asset naming convention — produced by <c>build-macos.sh</c>, <c>build-windows.ps1</c> and
+/// <c>build-linux.sh</c>, parsed here.
 ///
 /// <code>
 ///   circuitRF-&lt;version&gt;-&lt;arch&gt;.dmg            arch in { arm64, x64 }

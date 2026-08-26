@@ -53,9 +53,15 @@ files never CLAUDE.md. This helps keep the CLAUDE.md files small.
   It evaluates the TestBench's `measure` lines exactly as the GUI does, so a `.cnl` that works
   headless works when opened. `--set var=expr` overrides a global before elaboration;
   `-o out.{mat,npy,txt}` exports.
-- Package: one script per platform, all writing to `dist/` — `packaging/windows/build-msi.ps1`
-  (.msi, x64/arm64/x86), `packaging/macos/build-dmg.sh` (.dmg, Apple Silicon; wraps the existing
-  `src/Ui/bundleFor*MacOS.sh`), `packaging/linux/build-deb.sh` (.deb, x64/arm64, needs `fpm`).
+- Package: **exactly one script per platform, and each builds everything that platform ships** —
+  `packaging/windows/build-windows.ps1` (9 files: `.msi` x64/arm64/x86 in both install scopes, plus
+  the `.zip` the updater fetches), `packaging/macos/build-macos.sh` (2 `.dmg`s, both architectures;
+  wraps the existing `src/Ui/bundleFor*MacOS.sh`), `packaging/linux/build-linux.sh` (4 files: `.deb`
+  and `.tar.gz` for x64/arm64; `fpm` is needed only for the `.deb`). All write to `dist/`. Flags
+  narrow a run; **the no-argument form is the release form**, because 1.0.0-beta.2 shipped 7 of its
+  15 artifacts when Windows defaulted to one architecture in one scope and Linux was two scripts —
+  silently, since a missing update payload stops updates with no error. Held by
+  `tests/Ui.Tests/PackagingScriptTests.cs`.
   **Each must run ON its own platform** (WiX is Windows-only, `codesign`/`hdiutil` macOS-only, and
   the Windows PE icon is only embedded when the publish happens on Windows). Step-by-step
   instructions live in `BUILDING.md`, which `README.md` links to; keep the two in step.
@@ -78,7 +84,7 @@ files never CLAUDE.md. This helps keep the CLAUDE.md files small.
     `InternalsVisibleTo` — WB40), and .NET names the published host after the assembly with no
     property to separate them, so `src/Ui/CircuitRF.Ui.csproj`'s `CrfRenameApphost` target renames it
     **after publish only** — a plain `dotnet build`/`dotnet run` is untouched. Five packaging files
-    repeat that name as a literal and must be changed together (the `.wxs` + `build-msi.ps1`, the
+    repeat that name as a literal and must be changed together (the `.wxs` + `build-windows.ps1`, the
     Debian `postinst` + `.desktop`, the three `bundleFor*MacOS.sh` + their `Info.plist`s).
 - **The version number is written in exactly one place: the repo-root `VERSION` file** (one line,
   e.g. `0.9.0-beta.1`). `Directory.Build.props` reads it into every assembly's

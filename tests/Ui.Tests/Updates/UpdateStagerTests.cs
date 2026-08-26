@@ -264,8 +264,8 @@ public sealed class UpdateStagerTests : IDisposable
     /// <summary>
     /// The bug that broke Linux updates completely and silently (found in review, 2026-08-25).
     ///
-    /// <para><c>build-msi.ps1</c> runs <c>Compress-Archive -Path publish\*</c>, so the <c>.zip</c>
-    /// holds the publish tree at its ROOT. <c>build-tarball.sh</c> packs
+    /// <para><c>build-windows.ps1</c> runs <c>Compress-Archive -Path publish\*</c>, so the <c>.zip</c>
+    /// holds the publish tree at its ROOT. <c>build-linux.sh</c> packs
     /// <c>circuitRF-&lt;ver&gt;/</c> holding <c>install.sh</c>, an icon, a <c>current</c> seed AND
     /// <c>app-&lt;ver&gt;/</c> — because that archive is also the first-install payload and its shape
     /// IS the installed shape. A fixed <c>--strip-components</c> count cannot serve both, and getting
@@ -308,7 +308,7 @@ public sealed class UpdateStagerTests : IDisposable
 
     /// <summary>
     /// The whole Linux path, end to end, against a tarball with the shape
-    /// <c>build-tarball.sh</c> actually produces. The promoted directory must BE the app tree — the
+    /// <c>build-linux.sh</c> actually produces. The promoted directory must BE the app tree — the
     /// first-install scaffolding beside it is not something the updater has any use for.
     /// </summary>
     [Fact]

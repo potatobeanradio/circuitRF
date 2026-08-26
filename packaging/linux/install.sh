@@ -43,11 +43,11 @@ fi
 
 # ── install ───────────────────────────────────────────────────────────────────
 
-VERSION_DIR="$(cat "${HERE}/current")"          # e.g. app-1.0.0-beta.1, written by build-tarball.sh
+VERSION_DIR="$(cat "${HERE}/current")"          # e.g. app-1.0.0-beta.1, written by build-linux.sh
 
 # This string comes out of the ARCHIVE and is about to be interpolated into an `rm -rf`. A `current`
 # holding `../..` would delete ~/.local, and the person who ran this script would have no idea why.
-# So it is checked against the one shape build-tarball.sh ever writes, before it is used for
+# So it is checked against the one shape build-linux.sh ever writes, before it is used for
 # anything (security review, 2026-08-25). Same rule the updater applies to a release tag and the
 # Windows stub applies to the same file.
 case "$VERSION_DIR" in

@@ -226,7 +226,7 @@ if the owner prefers it, design §13.2 must be re-argued first.
 machine-wide story and nothing about them regresses.
 
 **R-AU-21. Add the naming-convention test — this is the one that prevents silent, permanent failure.**
-`build-dmg.sh`, `build-msi.ps1` and `build-deb.sh` construct the names R-AU-10 parses. Rename an artifact
+`build-macos.sh`, `build-windows.ps1` and `build-linux.sh` construct the names R-AU-10 parses. Rename an artifact
 and updates stop with **no error anywhere and no user report**, because a user who is not being offered an
 update has nothing to notice. `tests/Ui.Tests/PackagingScriptTests.cs` is the existing home for exactly
 this class of guard (its two rules exist for the same reason); add the assertion there.
@@ -468,7 +468,7 @@ line per 30 days** when insufficient space is the sole reason updates are not ha
 
 **R-AU-51. Developer ID signing and notarization become a release prerequisite on macOS**, because an
 ad-hoc build has no Team ID and therefore cannot satisfy design §4.2's App Management exemption — it fails
-as a TCC prompt, not an error. `packaging/macos/build-dmg.sh` already does the work; M6 makes it required
+as a TCC prompt, not an error. `packaging/macos/build-macos.sh` already does the work; M6 makes it required
 rather than optional for a release, and M0(5) is the evidence.
 
 Staple as well: `xcrun stapler staple` on the `.app`, **then** zip. An archive cannot be stapled.

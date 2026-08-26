@@ -86,7 +86,7 @@ public sealed class PayloadVerifier
     /// security review, 2026-08-25). A disk image is the one payload format where "unpack it and
     /// then look at it" runs privileged code on the attacker's data first.</para>
     ///
-    /// <para>It costs nothing to close because <c>build-dmg.sh</c> already signs the image with the
+    /// <para>It costs nothing to close because <c>build-macos.sh</c> already signs the image with the
     /// same Developer ID identity as the bundle inside it and staples the notarisation ticket to it
     /// — so the container carries exactly the identity the bundle does, and an image that does not
     /// is not one of ours whatever it contains. The bundle check still runs afterwards: this proves

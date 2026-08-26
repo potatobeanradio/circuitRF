@@ -115,7 +115,7 @@ public class PackagingScriptTests
     /// 5.2.1 resolves to - declares <c>SkiaSharp.NativeAssets.Win32</c> and <c>.macOS</c> as
     /// dependencies and no Linux equivalent, so on Linux nothing puts a <c>libSkiaSharp.so</c> in the
     /// output and the tool dies at its first <c>SKSvg()</c> with a <c>DllNotFoundException</c>. Every
-    /// packaging script runs IconGen first, so this took out the whole of <c>build-deb.sh</c> at its
+    /// packaging script runs IconGen first, so this took out the whole of <c>build-linux.sh</c> at its
     /// first step (owner-reported, 2026-08-21, Linux arm64 - and an x64 Linux box fails identically).
     ///
     /// <para>This is invisible from Windows and macOS, where the transitive native assets are present
@@ -157,7 +157,7 @@ public class PackagingScriptTests
     [InlineData("src/Ui/CircuitRF.Ui.csproj", "<CrfExeName Condition=\"'$(CrfApp)' == 'circuitrf'\">circuitRF</CrfExeName>")]
     [InlineData("packaging/windows/circuitRF.wxs", "Source=\"$(var.PublishDir)\\circuitRF.exe\"")]
     [InlineData("packaging/windows/circuitRF.wxs", "Target=\"[INSTALLFOLDER]circuitRF.exe\"")]
-    [InlineData("packaging/windows/build-msi.ps1", "$exeName = 'circuitRF.exe'")]
+    [InlineData("packaging/windows/build-windows.ps1", "$exeName = 'circuitRF.exe'")]
     [InlineData("packaging/linux/postinst", "ln -sf /opt/circuitrf/circuitRF /usr/bin/circuitrf")]
     [InlineData("packaging/linux/circuitrf.desktop", "Exec=/opt/circuitrf/circuitRF %F")]
     [InlineData("src/Ui/bundleForMacOS.sh", "EXECUTABLE_NAME=\"circuitRF\"")]
@@ -252,7 +252,7 @@ public class PackagingScriptTests
     [Fact]
     public void DebDeclaresNoVersionedIcuDependency()
     {
-        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-deb.sh"));
+        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
 
         // Comments explain the history; only the fpm invocation is the package's actual metadata.
         var depends = script.Split('\n')
@@ -262,7 +262,7 @@ public class PackagingScriptTests
 
         Assert.All(depends, line =>
             Assert.False(Regex.IsMatch(line, @"libicu\d"),
-                "packaging/linux/build-deb.sh declares a versioned libicu dependency again — a .deb "
+                "packaging/linux/build-linux.sh declares a versioned libicu dependency again — a .deb "
                 + "carrying one cannot be installed on any distribution shipping an ICU release newer "
                 + $"than the newest name in the list: {line.Trim()}"));
 
@@ -303,13 +303,13 @@ public class PackagingScriptTests
             + "it is running on when CRF_RID is unset.");
 
         Assert.True(lines.Any(l => l.Contains("CRF_RID", StringComparison.Ordinal)),
-            $"{relativePath} no longer honours CRF_RID, which is how packaging/macos/build-dmg.sh "
+            $"{relativePath} no longer honours CRF_RID, which is how packaging/macos/build-macos.sh "
             + "asks for the architecture it is currently building — without it that script's two "
             + "passes would both produce the host's architecture, silently.");
     }
 
     /// <summary>
-    /// <b><c>build-dmg.sh</c> builds BOTH architectures when it is not told otherwise.</b> A release
+    /// <b><c>build-macos.sh</c> builds BOTH architectures when it is not told otherwise.</b> A release
     /// needs an Apple Silicon disk image and an Intel one, and the failure mode of a one-at-a-time
     /// default is silent in the worst way: whoever cuts the release ships whichever architecture
     /// they happened to be sitting at, and the other one simply does not exist. Nothing errors, and
@@ -321,21 +321,103 @@ public class PackagingScriptTests
     [Fact]
     public void BuildDmg_DefaultsToBothArchitectures()
     {
-        var lines = File.ReadAllLines(RepoFile("packaging", "macos", "build-dmg.sh"))
+        var lines = File.ReadAllLines(RepoFile("packaging", "macos", "build-macos.sh"))
                         .Where(l => !l.TrimStart().StartsWith("#", StringComparison.Ordinal))
                         .ToList();
         string script = string.Join("\n", lines);
 
         Assert.True(Regex.IsMatch(script, @"\$\{2:-both\}"),
-            "packaging/macos/build-dmg.sh no longer defaults its architecture argument to `both`. "
+            "packaging/macos/build-macos.sh no longer defaults its architecture argument to `both`. "
             + "A release that ships only the architecture of the machine it was cut on fails "
             + "silently — the missing .dmg is simply absent, with nothing to notice.");
 
         foreach (var rid in new[] { "osx-arm64", "osx-x64" })
             Assert.True(script.Contains(rid, StringComparison.Ordinal),
-                $"packaging/macos/build-dmg.sh no longer names {rid}. It is the only list of the "
+                $"packaging/macos/build-macos.sh no longer names {rid}. It is the only list of the "
                 + "architectures circuitRF ships a macOS build for.");
     }
+    /// <summary>
+    /// <b>ONE script per platform, and each builds EVERYTHING that platform ships.</b> This is the
+    /// same rule <see cref="BuildDmg_DefaultsToBothArchitectures"/> holds for macOS, applied to the
+    /// two platforms that did not have it — and it is written down because the absence of it cost a
+    /// release.
+    ///
+    /// <para>1.0.0-beta.2 shipped with seven of its fifteen artifacts. Windows defaulted to ONE
+    /// architecture in ONE install scope, so a complete Windows release was six invocations and
+    /// looked like three; Linux was two scripts each defaulting to one architecture. Whoever cut the
+    /// release ran the obvious form of each and got the notify-only <c>.msi</c> and <c>.deb</c>
+    /// files, with the <c>.zip</c> and <c>.tar.gz</c> the updater fetches simply absent. Nothing
+    /// errored. Nobody on Windows or Linux would have been offered the next version — or, because
+    /// <c>UpdateSelector</c> needs a matching asset before it will even post the notify-only line,
+    /// TOLD about it.</para>
+    ///
+    /// <para>A release script whose obvious invocation produces an incomplete release is the
+    /// script's bug, not the operator's.</para>
+    /// </summary>
+    [Fact]
+    public void EachPlatformScript_BuildsEverythingByDefault()
+    {
+        string windows = File.ReadAllText(RepoFile("packaging", "windows", "build-windows.ps1"));
+
+        Assert.True(Regex.IsMatch(windows, @"\$Arch\s*=\s*'all'"),
+            "packaging/windows/build-windows.ps1 no longer defaults -Arch to 'all'. A release cut "
+            + "with the default would ship one architecture and silently omit the other two.");
+
+        Assert.True(Regex.IsMatch(windows, @"\$Scope\s*=\s*'all'"),
+            "packaging/windows/build-windows.ps1 no longer defaults -Scope to 'all'. A release cut "
+            + "with the default would ship the notify-only .msi files and omit BOTH the per-user "
+            + "installer and the .zip the updater fetches — which stops Windows updates silently.");
+
+        string linux = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
+
+        Assert.True(linux.Contains("${1:-both}", StringComparison.Ordinal),
+            "packaging/linux/build-linux.sh no longer defaults its architecture argument to `both`.");
+
+        Assert.True(linux.Contains("${2:-both}", StringComparison.Ordinal),
+            "packaging/linux/build-linux.sh no longer defaults its package-kind argument to `both`. "
+            + "The tarball is the only self-updating Linux install AND the update payload; a release "
+            + "without it stops Linux updates with no error anywhere.");
+    }
+
+    /// <summary>
+    /// <b>Exactly three build scripts, one per platform.</b> The count is the point: a fourth is a
+    /// second thing to remember to run, which is precisely how 1.0.0-beta.2 shipped incomplete.
+    /// The retired names are asserted gone rather than merely unreferenced, so a re-added copy fails
+    /// here instead of quietly becoming the one somebody runs.
+    /// </summary>
+    [Fact]
+    public void ThereAreExactlyThreeBuildScripts_OnePerPlatform()
+    {
+        foreach (var (dir, name) in new[]
+                 {
+                     ("windows", "build-windows.ps1"),
+                     ("linux",   "build-linux.sh"),
+                     ("macos",   "build-macos.sh"),
+                 })
+            Assert.True(File.Exists(RepoFile("packaging", dir, name)),
+                        $"packaging/{dir}/{name} is missing.");
+
+        foreach (var (dir, name) in new[]
+                 {
+                     ("windows", "build-msi.ps1"),
+                     ("linux",   "build-deb.sh"),
+                     ("linux",   "build-tarball.sh"),
+                     ("macos",   "build-dmg.sh"),
+                 })
+            Assert.False(File.Exists(RepoFile("packaging", dir, name)),
+                         $"packaging/{dir}/{name} is back. There is one build script per platform; "
+                         + "a second one is a second thing to remember to run.");
+
+        var found = Directory
+            .GetFiles(Path.Combine(RepoRoot().FullName, "packaging"), "build-*", SearchOption.AllDirectories)
+            .Select(Path.GetFileName)
+            .Where(n => n is not null && !n.StartsWith("build-stub", StringComparison.Ordinal))
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(new[] { "build-linux.sh", "build-macos.sh", "build-windows.ps1" }, found);
+    }
+
     /// <summary>
     /// <b>Every macOS bundle script must re-sign <c>crf-vmhost</c> with its OWN entitlements after
     /// the deep pass.</b> <c>codesign --deep</c> re-signs every nested executable with the

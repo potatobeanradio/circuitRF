@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 # workers' ensure-built scripts, which is where this convention comes from.
 #
 # --arch <arm64|x86_64>: build for a Mac other than this one. Apple's clang targets both slices from
-# either kind of Mac, so one run of packaging/macos/build-dmg.sh can produce both disk images; the
+# either kind of Mac, so one run of packaging/macos/build-macos.sh can produce both disk images; the
 # .csproj derives this from the RuntimeIdentifier, so `dotnet publish -r osx-x64` gets it right on
 # its own. Ignored off macOS, where -arch means nothing and there is only ever one target.
 DEST=""

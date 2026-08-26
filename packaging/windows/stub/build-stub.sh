@@ -7,7 +7,7 @@
 # preferred route because it cross-compiles a Windows PE from any host with one download and no
 # daemon, which is what lets this stub be built and checked on a machine that is not Windows.
 #
-# The Windows-native route is build-stub.ps1, which build-msi.ps1 calls.
+# The Windows-native route is build-stub.ps1, which build-windows.ps1 calls.
 set -eu
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

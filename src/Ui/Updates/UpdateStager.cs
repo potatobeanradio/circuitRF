@@ -147,9 +147,9 @@ public sealed class UpdateStager
     /// without one.</para>
     ///
     /// <para><b>The two archives do not have the same shape, and assuming they did broke Linux
-    /// updates completely and silently</b> (found in review, 2026-08-25). <c>build-msi.ps1</c> runs
+    /// updates completely and silently</b> (found in review, 2026-08-25). <c>build-windows.ps1</c> runs
     /// <c>Compress-Archive -Path publish\*</c>, so the <c>.zip</c> holds the publish tree at its
-    /// root. <c>build-tarball.sh</c> packs <c>circuitRF-&lt;ver&gt;/</c> holding <c>install.sh</c>,
+    /// root. <c>build-linux.sh</c> packs <c>circuitRF-&lt;ver&gt;/</c> holding <c>install.sh</c>,
     /// an icon, a <c>current</c> seed <b>and</c> <c>app-&lt;ver&gt;/</c> — because that archive is
     /// also the first-install payload and its shape IS the installed shape. A fixed
     /// <c>--strip-components</c> count cannot serve both, and getting it wrong produces

@@ -29,7 +29,7 @@ keep_work=0
 # It is nonetheless a real option rather than a fixed fact, because building the image is pure
 # download-and-repack — curl, tar, cpio, gzip and python3, not a compiler — so either architecture's
 # image can be produced from either kind of Mac. That is what lets one run of
-# packaging/macos/build-dmg.sh produce both disk images.
+# packaging/macos/build-macos.sh produce both disk images.
 arch=""
 
 while [ $# -gt 0 ]; do

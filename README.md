@@ -65,59 +65,38 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 ## Download
 
-Pre-built installers are available for Windows, macOS, and Linux.
+These install for you alone, need no administrator rights, and update themselves in the background.
 
-**Which one updates itself.** circuitRF checks for new versions, downloads them in the background and
-installs them at the next relaunch — but only where it can write its own installation without asking
-for administrator rights. The per-user Windows installer and the Linux tarball can; the machine-wide
-`.msi` and the `.deb` deliberately cannot, and instead tell you when a new version is out. Automatic
-updates can be turned off in **Settings ▸ General ▸ Updates** (one setting, shared by circuitRF,
-harmonicaRF and wBond).
+| Platform | Download |
+|---|---|
+| Windows, Intel/AMD | [circuitRF-1.0.0-beta.1-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.0-beta.1-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.0-beta.1-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-x86-user.msi) |
+| macOS, Apple Silicon | [circuitRF-1.0.0-beta.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.0-beta.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.dmg) |
+| Linux, Intel/AMD | [circuitRF-1.0.0-beta.1-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.0-beta.1-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-linux-arm64.tar.gz) |
 
-**Windows**
-| Platform | Download | Updates itself |
-|---|---|---|
-| Windows 64-bit (Intel/AMD) — recommended | [circuitRF-1.0.0-beta.1-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-x64-user.msi) | yes |
-| Windows ARM64 — recommended | [circuitRF-1.0.0-beta.1-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-arm64-user.msi) | yes |
-| Windows 32-bit (Win32) — recommended | [circuitRF-1.0.0-beta.1-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-x86-user.msi) | yes |
-| Windows 64-bit, all users | [circuitRF-1.0.0-beta.1-x64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.msi) | notify only |
-| Windows ARM64, all users | [circuitRF-1.0.0-beta.1-arm64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.msi) | notify only |
-| Windows 32-bit, all users | [circuitRF-1.0.0-beta.1-x86.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x86.msi) | notify only |
+**Not sure which?** Windows: Settings ▸ System ▸ About ▸ *System type*. macOS: Apple menu ▸ About This Mac — an
+*Apple M-series chip* is Apple Silicon. Linux: `uname -m` — `x86_64` or `aarch64`.
 
-The **-user** installers go into `%LOCALAPPDATA%\Programs\circuitRF` and raise no UAC prompt. The
-all-users installers go into `%ProgramFiles%` and need administrator rights, which is why they cannot
-update themselves silently — that would mean a UAC prompt at every update or a permanently-installed
-service that downloads and runs code, and neither is worth it.
+**macOS** — drag to Applications, or to `~/Applications` if you are not an administrator.
 
-**macOS**
-| Platform | Download | Updates itself |
-|---|---|---|
-| macOS Apple Silicon (M-series) | [circuitRF-1.0.0-beta.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.dmg) | yes, for an admin user |
-| macOS Intel (x86-64) | [circuitRF-1.0.0-beta.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.dmg) | yes, for an admin user |
-
-Drag to `/Applications` as usual. A standard (non-administrator) user cannot write `/Applications`, so
-that install is notify-only; dragging to `~/Applications` instead gives an installation that does
-update itself.
-
-**Linux**
-| Platform | Download | Updates itself |
-|---|---|---|
-| Linux 64-bit (Intel/AMD) — recommended | [circuitRF-1.0.0-beta.1-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-linux-x64.tar.gz) | yes |
-| Linux ARM64 — recommended | [circuitRF-1.0.0-beta.1-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-linux-arm64.tar.gz) | yes |
-| Linux 64-bit, system-wide | [circuitRF-1.0.0-beta.1-x64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.deb) | notify only |
-| Linux ARM64, system-wide | [circuitRF-1.0.0-beta.1-arm64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.deb) | notify only |
-
-The tarball installs into `~/.local` with no root at any point:
+**Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
+and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
 tar xzf circuitRF-1.0.0-beta.1-linux-x64.tar.gz
 ./circuitRF-1.0.0-beta.1/install.sh
 ```
 
-It puts `circuitrf` on your PATH and registers the menu entry and file types. `./install.sh
---uninstall` removes it and leaves your workspaces and preferences alone.
+**Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
+files, are on the [releases page](https://github.com/potatobeanradio/circuitRF/releases). They need
+administrator rights, so they cannot update themselves — they tell you when a new version is out
+instead.
 
-Building them yourself: [BUILDING.md](BUILDING.md).
+Automatic updates can be turned off in **Settings ▸ Security & Permissions**. Building the installers
+yourself: [BUILDING.md](BUILDING.md).
 
 ---
 
