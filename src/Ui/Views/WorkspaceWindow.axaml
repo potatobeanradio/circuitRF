@@ -224,6 +224,11 @@
                         <NativeMenuItem Header="circuitRF Documentation" Command="{Binding OpenDocumentationCommand}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Crash Reports…" Command="{Binding OpenCrashReportsCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <!-- Reports through the Message Panel, never a dialog. Disabled when
+                             automatic updates are off (a manual check is still a network call) and
+                             when the install site is read-only. -->
+                        <NativeMenuItem Header="Check for Updates…" Command="{Binding CheckForUpdatesCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -705,6 +710,10 @@
                 <MenuItem Header="_Crash Reports…"
                           Command="{Binding OpenCrashReportsCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="BugCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Check for _Updates…"
+                          Command="{Binding CheckForUpdatesCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="CloudDownloadOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="About circuitRF…"

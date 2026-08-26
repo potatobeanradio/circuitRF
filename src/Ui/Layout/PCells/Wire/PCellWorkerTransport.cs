@@ -101,6 +101,26 @@ public sealed class ProcessPCellWorkerTransport : IPCellWorkerTransport
         foreach (string a in interpreterArguments ?? []) info.ArgumentList.Add(a);
         info.ArgumentList.Add(scriptPath);
 
+        // ── Keep Python's bytecode cache OUT of the application bundle ────────────────────────
+        //
+        // On macOS the generator scripts we ship live at
+        // <app>.app/Contents/MacOS/pcell-python/, INSIDE the signed bundle. Python's default is to
+        // write __pycache__/*.pyc beside every module it imports — so the first workspace that runs
+        // a PCell generator adds 14 files to a sealed bundle and BREAKS ITS CODE SIGNATURE.
+        // Measured on a real Developer ID install, 2026-08-25: `codesign --verify --deep --strict
+        // /Applications/circuitRF.app` then reports "a sealed resource is missing or invalid".
+        //
+        // Nothing visibly failed, which is why it went unnoticed: the app carries no quarantine
+        // attribute once it is installed, so Gatekeeper never assesses it and it launches fine. But
+        // `spctl` refuses it, and anything that ever does verify the installed bundle would refuse
+        // it too. (The updater deliberately does not — PayloadVerifier READS the running app's Team
+        // ID rather than verifying its seal, and verifies the STAGED bundle instead, precisely so
+        // this cannot disable updates on every machine that has opened a kit.)
+        //
+        // PYTHONPYCACHEPREFIX rather than PYTHONDONTWRITEBYTECODE: the cache is a real startup
+        // saving on a kit with dozens of modules, so it is REDIRECTED rather than turned off.
+        info.Environment["PYTHONPYCACHEPREFIX"] = AppDataRoot.SubDir("pcell-cache");
+
         if (pythonPath is { Count: > 0 })
         {
             // Prepended to whatever the user already has rather than replacing it — a developer with

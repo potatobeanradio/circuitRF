@@ -113,6 +113,7 @@ public partial class SettingsView : Window
             WireClearanceUpDown.Value = (decimal)WBondWireClearance.Mil;
 
             UpdatePCellTrustStatus(prefs.PCellTrust?.Count ?? 0);
+
         }
         finally { _updatingGeneral = false; }
     }

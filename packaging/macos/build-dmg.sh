@@ -385,6 +385,46 @@ if got != want:
 KPY
     fi
 
+    # ── Notarise and STAPLE THE .app, before it goes into the image ───────────
+    #
+    # WHY THIS EXISTS AS A SEPARATE PASS, given that the .dmg is notarised and stapled below.
+    #
+    # A staple is attached to one artifact. The .dmg's ticket covers the .dmg; it does NOT travel
+    # with the .app when the .app is copied out of it — measured, not assumed: `xcrun stapler
+    # validate` on a bundle extracted from a stapled circuitRF .dmg reports "does not have a ticket
+    # stapled to it" (2026-08-25). So without this pass the INSTALLED application has no ticket, and
+    # every Gatekeeper assessment of it has to reach Apple over the network.
+    #
+    # It matters twice. For a hand-installed copy it is the difference between launching offline and
+    # meeting a prompt on a flaky connection. For an AUTOMATIC UPDATE it is the belt to the braces:
+    # the swapped-in bundle carries no com.apple.quarantine (the updater fetched it with HttpClient,
+    # which does not set the attribute), so no assessment runs at all and the app launches either
+    # way — but a stapled bundle is one that survives the day some other mechanism does trigger one.
+    #
+    # ORDER IS NOT NEGOTIABLE: notarise, then staple the .app, THEN build the image. You cannot
+    # staple an archive, and you cannot staple a bundle sealed inside a read-only disk image.
+    if [ "$SIGN_IDENTITY" != "-" ] && [ "$NOTARISE" = 1 ]; then
+        echo "📤 Notarising ${NAME}.app (this waits on Apple; minutes, not seconds)..."
+
+        APPZIP="$(mktemp -d)/${NAME}.zip"
+        # ditto, never `zip`: it is the only tool that preserves the Unix mode bits and the
+        # Frameworks symlinks a bundle's code signature is computed over. A bundle missing its
+        # executable bit has a BROKEN signature, and the failure arrives as a refusal at launch.
+        ditto -c -k --keepParent --sequesterRsrc "$APP_BUNDLE" "$APPZIP" || {
+            echo "❌ Could not archive ${NAME}.app for notarisation."; exit 1; }
+
+        xcrun notarytool submit "$APPZIP" --keychain-profile "$NOTARY_PROFILE" --wait || {
+            echo "❌ Notarisation of ${NAME}.app failed. For the reasons:"
+            echo "     xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
+            exit 1; }
+
+        echo "📎 Stapling the ticket to ${NAME}.app..."
+        xcrun stapler staple "$APP_BUNDLE" || {
+            echo "❌ Could not staple ${NAME}.app."; exit 1; }
+
+        rm -rf "$(dirname "$APPZIP")"
+    fi
+
     DMG="${DIST}/${NAME}-${VERSION}-${ARCH}.dmg"
     STAGE="$(mktemp -d)/${NAME}"
     mkdir -p "$STAGE"

@@ -22,6 +22,27 @@
       <TabItem Header="Advanced">
         <dlg:HarmonicaAdvancedSettingsView x:Name="AdvancedTab"/>
       </TabItem>
+
+      <!--
+        R-AU-42. harmonicaRF does not use SettingsView, so without this tab a user who has only
+        harmonicaRF installed could never turn automatic updates off — nor, since 2026-08-25, refuse
+        a kit its external device worker, which harmonicaRF resolves through HarmonicaDutCatalog just
+        as circuitRF does. Both controls are the SAME ones circuitRF and wBond host, reading and
+        writing the same AppPreferences properties. Neither dialog owns them.
+
+        The tab is named for what it holds rather than for updates alone, matching SettingsView: a
+        user auditing what this binary may RUN or FETCH should find both answers in one place, in
+        whichever of the three applications they happen to have. Section headers are shown here
+        because the tab now carries two sections and its title can no longer name either.
+      -->
+      <TabItem Header="Security &amp; Permissions">
+        <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="4" Spacing="0">
+            <dlg:ExternalWorkerSettingsView x:Name="WorkersTab"/>
+            <dlg:UpdateSettingsView x:Name="UpdatesTab" Margin="0,24,0,0"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
 
     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Right">

@@ -474,17 +474,212 @@ there builds cleanly and ships a shortcut to a file that does not exist.
 
 ---
 
+## Automatic updates — the two user-local channels
+
+circuitRF, harmonicaRF and wBond check GitHub for a newer release, download it in the background and
+swap it in at the next launch. **A silent update requires an install location the running user can
+write**, which `%ProgramFiles%` and `/opt` are not — so the machine-wide `.msi` and the `.deb` are
+notify-only, and two additional artifacts exist for the installs that do update themselves. The full
+reasoning is in `docs/design/auto-update.md`; what a release has to produce is here.
+
+| Artifact | Built by | Installs to | Updates itself |
+|---|---|---|---|
+| `circuitRF-<ver>-<arch>.msi` | `build-msi.ps1` | `%ProgramFiles%\circuitRF` | notify only |
+| `circuitRF-<ver>-win-<arch>-user.msi` | `build-msi.ps1 -Scope perUser` | `%LOCALAPPDATA%\Programs\circuitRF` | **yes** |
+| `circuitRF-<ver>-win-<arch>.zip` | `build-msi.ps1 -Scope perUser` | — (the update payload) | — |
+| `circuitRF-<ver>-<arch>.dmg` | `build-dmg.sh` | `/Applications` | **yes**, for an admin user |
+| `circuitRF-<ver>-<arch>.deb` | `build-deb.sh` | `/opt/circuitrf` | notify only |
+| `circuitRF-<ver>-linux-<arch>.tar.gz` | `build-tarball.sh` | `~/.local/share/circuitRF` | **yes** |
+
+**These names are a contract, not a convention.** `src/Ui/Updates/UpdateAssetNames.cs` parses exactly
+these spellings. Rename an artifact and updates stop — with no error anywhere, no log line and no user
+report, because a user who is not being offered an update has nothing to notice.
+`tests/Ui.Tests/Updates/UpdateAssetNamingConventionTests.cs` asserts the scripts still construct them.
+
+### Windows, per-user
+
+```powershell
+.\packaging\windows\build-msi.ps1 -Scope perUser -Arch x64
+```
+
+It builds a small native **launcher stub** first (`packaging\windows\stub\build-stub.ps1`, needing
+`zig` or MSVC's `cl.exe`), then publishes, then emits both the `-user.msi` and the `.zip`. The stub is
+the one file that never changes: shortcuts and file associations point at it, and it starts whatever
+version the `current` file names. That is what makes an update a pointer flip rather than an overwrite
+of a file that is currently in use — which matters, because you cannot overwrite a running `.exe`.
+
+**Authenticode signing is a prerequisite for the per-user channel, exactly as Developer ID is on
+macOS.** R-AU-25's third step compares the staged payload's publisher against the **running**
+application's, and an unsigned build has no publisher to compare against — so `PayloadVerifier`
+refuses, and the install falls back to notify-only. The symptom is not an error: a writable per-user
+install simply says a new version is available and declines to install it. Sign the published
+`circuitRF.exe` with `signtool` before packaging, or the `.msi` and the `.zip` will ship an
+installation that can never update itself.
+
+The updater verifies **every** `.exe` and `.dll` in the staged tree, not just the apphost — a payload can
+otherwise carry a genuine signed `circuitRF.exe` beside anything at all. `PublishSingleFile` makes that
+one file today; if it is ever turned off, every third-party assembly in the tree needs signing too or
+updates stop. Design §9.1.
+
+### Linux, user-local
+
+```bash
+packaging/linux/build-tarball.sh x64
+```
+
+No `fpm` and no root. The archive contains `app-<version>/` plus an `install.sh` that lays down
+`~/.local/share/circuitRF/current -> app-<version>`, a launcher at `~/.local/bin/circuitrf` and the
+`.desktop` entry — both pointing at the stable `current/` path, so an update re-registers nothing.
+
+### macOS
+
+**No additional artifact.** The updater consumes the existing `.dmg` (`hdiutil attach`, `ditto` the
+`.app` out, `hdiutil detach`), so the mac release gains nothing that could drift out of step with what
+users download by hand.
+
+**Developer ID signing and notarization are a hard prerequisite, not a nicety.** Since Ventura, a
+process that modifies another application's bundle needs "App Management" permission unless it is
+signed with the **same Team ID** as the bundle it is modifying. An ad-hoc build has no Team ID, so it
+cannot silently self-update even in principle — and the failure mode is a TCC prompt, not an error.
+Measured on macOS 26.5.2, 2026-08-25:
+
+- a Developer ID-signed app with Team `L6234MFQ5Z` modifying `/Applications/circuitRF.app`
+  (same team) — **allowed, no prompt**;
+- the same app modifying a different vendor's bundle — **denied**, `EPERM`;
+- the identical app re-signed **ad-hoc** — **denied on both**.
+
+`build-dmg.sh` now notarizes and staples the `.app` as well as the `.dmg`, in that order. A staple is
+attached to one artifact and does not travel with a bundle copied out of a stapled image (verified:
+`stapler validate` on an extracted bundle reports no ticket), so without the extra pass the installed
+application has no ticket and every Gatekeeper assessment of it has to reach Apple.
+
+---
+
+## The manual acceptance matrix
+
+**Run this at every release that changes signing, packaging layout, or the updater.** No test can cover
+any of it — the outcomes are dialogs that either appear or do not.
+
+| Platform | Check | Result |
+|---|---|---|
+| macOS | An updated build launches with **no** Gatekeeper dialog and **no** App Management prompt | |
+| macOS | The released `.dmg` itself is signed and stapled — the updater verifies the **image** before it mounts it, so an unsigned image is refused and the update never happens (design §9.2) | |
+| Windows | The published `circuitRF.exe` is Authenticode-signed — an unsigned one is notify-only, silently | |
+| Windows | `PublishSingleFile` is still on, so "every PE in the payload" and "the whole application" are the same set (design §9.1) | |
+| Windows | A per-user install updates with **no** UAC prompt and **no** SmartScreen warning | |
+| Linux | A `~/.local` install updates and the `.desktop` entry still launches afterwards | |
+| All | A read-only install (`.msi` / `.deb` / standard-user macOS) is notify-only and writes nothing | |
+
+**And one thing that is not a build step.** Until design §15.5's signed manifest exists, **the GitHub
+release is a signing key on two of the three platforms** — whoever can publish a release gets code
+execution on Linux, and on Windows through the `pcell-python/**` payload that Authenticode cannot cover.
+Two-factor on the account, no long-lived release tokens, and the same care over who can push a tag as
+over who holds the Developer ID certificate. Design §9.1 has the full table.
+
+How to drive one without waiting for a real release: install the previous version, publish the new one
+as a GitHub prerelease, tick **Settings ▸ General ▸ Updates ▸ Include beta releases**, then
+**Help ▸ Check for Updates…** (which ignores the 24-hour throttle). The Message Panel says when it has
+staged. Quit and relaunch — that relaunch is what the matrix is actually testing.
+
+---
+
 ## Release checklist
 
 1. `dotnet test` is green (see the root `CLAUDE.md` for what the default test gate covers).
-2. Bump the repo-root `VERSION` file — that is the only place, and it feeds the About box, all
-   three installers and their file names.
-3. Build all six installers on their respective platforms.
+2. Bump the repo-root `VERSION` file — that is the only place, and it feeds the About box, every
+   installer and all their file names.
+3. Build every artifact on its own platform: the three per-machine `.msi`s **and** the three
+   `-user.msi` + `.zip` pairs (Windows), both `.dmg`s (macOS), both `.deb`s **and** both `.tar.gz`s
+   (Linux).
 4. Install each one on a clean machine; confirm the icon appears in the file manager, **Help ▸ About**
    shows the version you set, and double-clicking a workspace (`.crfw` / `.cws`) opens it. Check a
    document type too (a `.csch` is the quickest): it should open as an orphan tab, and with circuitRF
    already running it should open in the RUNNING copy rather than starting a second one.
-5. Attach them to the GitHub release and update the download table in `README.md`.
+5. **Run the manual acceptance matrix above** if this release touched signing, packaging or the
+   updater.
+6. **If a release key is compiled in** (`src/Ui/Updates/ReleaseKeys.cs` — see below), build and sign the
+   manifest, and attach **both** files to the release under exactly those names:
+
+   ```bash
+   dotnet run --project tools/ReleaseSigner -- manifest dist \
+       --base-url https://github.com/potatobeanradio/circuitRF/releases/download/v<version>
+   dotnet run --project tools/ReleaseSigner -- sign dist/update-manifest.json ~/keys/release-key.pem
+   dotnet run --project tools/ReleaseSigner -- verify \
+       dist/update-manifest.json dist/update-manifest.json.sig "<the public key from ReleaseKeys.cs>"
+   ```
+
+   Forgetting this on a keyed build means **no client is offered the release at all**, silently — which
+   is the intended failure direction and is exactly why the `verify` step is in the list.
+7. Attach them to the GitHub release and update the download table in `README.md`.
+8. Publish it — see **Publishing the GitHub release** below for the tag and the flag, which are what
+   decide who is offered it.
+
+---
+
+## The release signing key (design §15.5)
+
+**This is not a build step. It is a one-time decision, and it is one-way.**
+
+Until a key exists, an update's integrity rests on the platform's own code signing: everything on macOS,
+only the PEs on Windows — so **not** `pcell-python/**/*.py`, which circuitRF executes — and nothing at
+all on Linux. Whoever can publish a release to the repository therefore gets code execution on two of
+the three platforms. A release key removes that: a release is accepted only when a manifest signed by a
+key that is on no host names the payload and its SHA-256.
+
+```bash
+dotnet run --project tools/ReleaseSigner -- keygen ~/keys/circuitrf-release.pem
+```
+
+It prints the public half. Paste that into `ReleaseKeys.PublicKeySpkiBase64` and commit it — a *public*
+key belongs in version control, because it is the thing being trusted and should be reviewable, diffable
+and attributable to the commit that introduced it.
+
+**What changes the moment you do:**
+
+- The build carrying the key, and every build after it, **refuses any release without a validly signed
+  manifest**. Clients older than it are unaffected and keep updating normally, so this is a forward
+  migration rather than a flag day — but there is no going back for a client that has the key.
+- Every release from then on must carry `update-manifest.json` and `update-manifest.json.sig`. Step 6 of
+  the checklist above.
+- A signed manifest may name the payload on **any** `https` host, so the compiled-in host allow-list
+  stops constraining a keyed build. That is what makes moving off GitHub, or mirroring, possible for
+  clients already in the field (design §15.4, §15.6).
+
+**The private key.** Off this repository, off the build machine if you can manage it, owner-read-only
+(`keygen` sets that), and **backed up somewhere you will still have in five years**. Losing it strands
+every installed copy that carries the matching public key: they will refuse every release you publish
+after that, silently, and the only way back is a hand reinstall by every user. Treat it exactly as you
+treat the Developer ID certificate — it is the same kind of object and, on Linux, a more powerful one.
+
+---
+
+## Publishing the GitHub release
+
+Four things on the release page decide who gets the update. Nothing else does.
+
+| | |
+|---|---|
+| **Tag** | `v<version>`, matching the repo-root `VERSION` file exactly — `v1.1.0`, `v1.1.0-beta.1`. |
+| **Pre-release** | Ticked for a beta, clear for a stable release. This is the whole channel mechanism. |
+| **Draft** | Never. A draft is offered on neither channel. |
+| **Assets** | Straight from `dist/`, names unchanged. |
+
+**A beta needs the suffix in the tag as well as the flag.** The flag alone keeps it off the stable
+channel today, but it burns the version: tag a beta `v1.1.0` and your testers are running `1.1.0`, so
+when the real 1.1.0 ships it is not *greater* than what they have and they are never offered it. They
+sit on a beta that calls itself the release until you ship 1.1.1.
+
+**Number betas `beta.1`, `beta.2`, `beta.10`** — dot-separated, so they compare numerically. Written
+`beta1`/`beta2`/`beta10` they compare as text, `beta10` sorts before `beta2`, and a tester on beta.2 is
+never offered beta.10.
+
+**Do not rename an asset.** Matching is by exact name against the tag's spelling
+(`circuitRF-1.1.0-beta.1-arm64.dmg`), and a mismatch means the release is silently never offered — a
+user who is not offered an update has nothing to notice.
+
+**The "Latest" badge is ignored.** circuitRF reads the release list and orders it by SemVer itself, so
+*Set as the latest release* cannot hold users on a version or roll them back. To withhold a bad release,
+draft it or delete it and ship the next one.
 
 ---
 

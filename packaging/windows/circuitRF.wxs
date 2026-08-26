@@ -3,18 +3,56 @@
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
   <!--
-    WiX v4 definition of the circuitRF .msi. One file for all three architectures: build-msi.ps1
-    passes the architecture, the version and the publish directory in, so nothing here is per-arch.
+    WiX v4 definition of the circuitRF .msi. One file for all three architectures AND both install
+    scopes: build-msi.ps1 passes the architecture, the version, the publish directory and the scope
+    in, so nothing here is per-arch or per-scope except what the two <?if ?> blocks below select.
 
     Do not run wix by hand — packaging\windows\build-msi.ps1 publishes, harvests the file list into
     Files.wxs and invokes wix with the right arguments. See BUILDING.md.
+
+    ═══ THE TWO SCOPES, AND WHY THERE ARE TWO ═════════════════════════════════════════════════
+
+    perMachine (the default, unchanged) installs to %ProgramFiles%\circuitRF, which only a
+    privileged process can modify — so it is the managed, machine-wide story and it is
+    NOTIFY-ONLY: circuitRF checks for updates, posts one Message Panel line with a link, and
+    writes nothing. That is not a limitation to work around. The only ways to update a Program
+    Files install silently are a UAC prompt every time or a permanently-installed SYSTEM service
+    that downloads and executes code from the internet, and the second is a genuine
+    privilege-escalation surface.
+
+    perUser installs to %LOCALAPPDATA%\Programs\circuitRF and raises no UAC prompt, which is what
+    makes a silent background update possible at all (docs/design/auto-update.md §1). Its layout is
+    versioned directories behind a stub launcher:
+
+        circuitRF.exe        <- the stub. NEVER changes; shortcuts and file associations point here
+        current              <- one line of text naming the directory to run
+        app-<version>\       <- the publish tree
+        staging\             <- the updater's partial downloads; never executed from
+
+    so an update is a POINTER FLIP and never an overwrite of a file that is currently in use —
+    which matters because you cannot overwrite a running .exe or a loaded .dll on Windows.
+
+    Considered and rejected: silently re-running a per-user .msi with `msiexec /qn`, as some
+    applications do. It is less new machinery, but it abandons the rename-only swap that the
+    disk-space safety of design §13 rests on, and a half-applied MSI on a full disk is a much
+    larger thing to reason about than a pointer file that was never truncated.
+
+    KNOWN LIMITATION: uninstalling a perUser install removes the app-<version> directory the MSI
+    itself laid down, and leaves behind any LATER one the updater created — MSI can only remove
+    files it knows about. The user-visible residue is one directory under %LOCALAPPDATA%.
   -->
+
+  <?if $(var.Scope) = "perUser" ?>
+    <?define UpgradeGuid = "1E4F8D22-6C0B-4A57-9E3D-0B71C4A8F015" ?>
+  <?else?>
+    <?define UpgradeGuid = "70CB9791-A58B-444F-8153-63DB32CE7235" ?>
+  <?endif?>
 
   <Package Name="circuitRF"
            Manufacturer="potatobeanradio"
            Version="$(var.Version)"
-           UpgradeCode="70CB9791-A58B-444F-8153-63DB32CE7235"
-           Scope="perMachine">
+           UpgradeCode="$(var.UpgradeGuid)"
+           Scope="$(var.Scope)">
 
     <MediaTemplate EmbedCab="yes" />
 
@@ -32,9 +70,26 @@
 
     <!-- ═══ DIRECTORIES ═══════════════════════════════════════════════════════ -->
 
-    <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="circuitRF" />
-    </StandardDirectory>
+    <?if $(var.Scope) = "perUser" ?>
+      <!--
+        %LOCALAPPDATA%\Programs\circuitRF — the same place VS Code's User Installer and other
+        silently-updating applications live, and for the same reason: the running user can write it.
+        INSTALLFOLDER holds the stub and `current`; APPFOLDER is app-<version>, and Files.wxs is
+        harvested into it rather than into INSTALLFOLDER.
+      -->
+      <StandardDirectory Id="LocalAppDataFolder">
+        <Directory Id="ProgramsFolder" Name="Programs">
+          <Directory Id="INSTALLFOLDER" Name="circuitRF">
+            <Directory Id="APPFOLDER" Name="app-$(var.VersionText)" />
+            <Directory Id="STAGINGFOLDER" Name="staging" />
+          </Directory>
+        </Directory>
+      </StandardDirectory>
+    <?else?>
+      <StandardDirectory Id="ProgramFiles6432Folder">
+        <Directory Id="INSTALLFOLDER" Name="circuitRF" />
+      </StandardDirectory>
+    <?endif?>
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="AppStartMenuFolder" Name="circuitRF">
@@ -73,9 +128,38 @@
       The registered types are exactly the ones App.axaml.cs opens when Windows hands it a path.
       Registering one the app ignores would look to the user like a broken file.
     -->
+    <?if $(var.Scope) = "perUser" ?>
+      <!--
+        The `current` pointer and the staging directory the updater owns. `current` is laid down by
+        the installer naming the version it just installed; from then on the updater rewrites it —
+        always by writing current.tmp and renaming over it, never by truncation, because a
+        truncating write that fails with ENOSPC would leave the stub with nothing to run and the
+        user with an application that will not start (design §13.2).
+      -->
+      <ComponentGroup Id="PointerAndStaging">
+        <Component Id="CurrentPointerComp" Directory="INSTALLFOLDER">
+          <File Id="CurrentPointer" Name="current" Source="$(var.CurrentFile)" KeyPath="yes" />
+        </Component>
+        <Component Id="StagingFolderComp" Directory="STAGINGFOLDER" Guid="A2D5F3C1-8B47-4E62-9C10-5F7E2A9D4B33">
+          <CreateFolder />
+          <RemoveFolder Id="RemoveStagingFolder" Directory="STAGINGFOLDER" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
+                         Name="StagingFolderCreated" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </ComponentGroup>
+    <?endif?>
+
     <ComponentGroup Id="MainExecutable" Directory="INSTALLFOLDER">
       <Component Id="CircuitRfExeComp">
-        <File Id="CircuitRfExe" Source="$(var.PublishDir)\circuitRF.exe" KeyPath="yes" />
+        <?if $(var.Scope) = "perUser" ?>
+          <!--
+            The STUB, not the application. It is what never changes, so shortcuts, the Start Menu
+            entry and every file association below keep pointing at one path across every update.
+          -->
+          <File Id="CircuitRfExe" Name="circuitRF.exe" Source="$(var.StubFile)" KeyPath="yes" />
+        <?else?>
+          <File Id="CircuitRfExe" Source="$(var.PublishDir)\circuitRF.exe" KeyPath="yes" />
+        <?endif?>
 
         <!--
           BOTH workspace spellings, and the second one is a fix rather than an addition: a workspace
@@ -173,6 +257,9 @@
       <ComponentGroupRef Id="MainExecutable" />
       <ComponentGroupRef Id="PublishedFiles" />
       <ComponentRef Id="StartMenuShortcutComp" />
+      <?if $(var.Scope) = "perUser" ?>
+        <ComponentGroupRef Id="PointerAndStaging" />
+      <?endif?>
 
       <Feature Id="DesktopShortcutFeature"
                Title="Desktop Shortcut"

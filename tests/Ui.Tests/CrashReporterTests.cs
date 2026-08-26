@@ -15,7 +15,7 @@ namespace CircuitRF.Ui.Tests;
 /// <see cref="CrashReporter"/> are both process-global: a parallel test redirecting the state
 /// directory underneath another one would make every assertion here nondeterministic.</para>
 /// </summary>
-[Collection(CrashReporterCollection.Name)]
+[Collection(AppDataRootCollection.Name)]
 public sealed class CrashReporterTests : IDisposable
 {
     private readonly string _root;
@@ -267,8 +267,15 @@ public sealed class CrashReporterTests : IDisposable
     }
 }
 
+/// <summary>
+/// Every test that redirects <see cref="AppDataRoot"/> shares THIS collection — not one collection
+/// each. <c>DisableParallelization</c> only serializes tests WITHIN a collection, so two collections
+/// that both redirect a process-global directory still run concurrently and still clobber each
+/// other. That failed once, under full-solution load only (the crash-report tests and the update
+/// tests, 2026-08-25), and it is exactly the shape isolated repetition never reproduces.
+/// </summary>
 [CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class CrashReporterCollection
+public sealed class AppDataRootCollection
 {
-    public const string Name = "CrashReporter";
+    public const string Name = "AppDataRoot";
 }

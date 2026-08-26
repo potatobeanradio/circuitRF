@@ -80,6 +80,15 @@ public static class OsdiModelDiscovery
             return found;
         }
 
+        // Asked ONCE, before the loop. ProcessDeviceWorkerTransport.Start refuses on its own — that
+        // is where the gate lives — but reaching it per artefact would report the same sentence once
+        // per .osdi file in the kit, which is a wall of identical text rather than an answer.
+        if (DeviceWorkerPolicy.RefusalReason("osdi") is { } refused)
+        {
+            problems?.Add(refused + " No compiled model could be identified.");
+            return found;
+        }
+
         foreach (string file in Candidates(roots, maxFiles, seen))
         {
             DeviceWorkerProvider? provider = null;

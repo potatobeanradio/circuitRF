@@ -85,6 +85,14 @@ public partial class WBondApp : Application
             desktop.MainWindow = shell;
             shell.Show();
 
+            // Automatic updates. The sink is null here on purpose: MessagesTool is a docking tool of
+            // circuitRF's workspace and this shell has none, so a staged update is silent in this
+            // application. The check, the staging and the launch-time swap are identical; only the
+            // one Message Panel line has nowhere to go. Recorded in src/Ui/RESOLVED.md.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => Updates.UpdateStartup.AfterFirstWindow(null),
+                Avalonia.Threading.DispatcherPriority.ApplicationIdle);
+
             // The double-click route: a .wBond named on the command line (Windows/Linux argv) or
             // delivered by the Finder (macOS Apple Event). Both land in one place — and several
             // files open as several WINDOWS (R-wbe-4), the first reusing the shell that just opened

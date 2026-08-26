@@ -24,6 +24,19 @@ sealed class Program
         // exception handlers, is the part that catches a simulation death.
         Diagnostics.CrashReporter.Install("circuitRF");
 
+        // BEFORE Avalonia, and before anything opens a file: reclaim update debris, revert a
+        // version that has failed to start twice, and apply a staged update. On macOS an applied
+        // update execv()s the new executable and this call does not return; on Windows and Linux
+        // the pointer is flipped before the stub has started anything, so there is nothing to
+        // re-exec. Never mid-session, for the reasons in docs/design/auto-update.md §3.
+        Updates.UpdateStartup.RunBeforeUi(args);
+
+        // The consent gate for external device workers, installed BEFORE anything can resolve a
+        // device. src/Core cannot read AppPreferences — that is the UI firewall — so the policy is
+        // a hook, and a build that never installs one runs workers, which is this setting's stated
+        // default. Installed in all three entry points; ExternalWorkerConsentTests pins that.
+        Security.ExternalWorkerPolicy.Install();
+
         // Dev tool: regenerate the User-Documentation component artwork from the live drawing engine,
         // then exit. No GUI window opens. Usage:
         //   dotnet run --project src/Ui -- --generate-symbols docs/user/assets/symbols

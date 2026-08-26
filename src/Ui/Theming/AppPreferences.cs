@@ -204,6 +204,71 @@ public sealed class AppPreferences
     [JsonPropertyName("harmonica_tickle_dbm")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? HarmonicaTickleDbm { get; set; }
+
+    /// <summary>
+    /// Whether circuitRF downloads new versions in the background and installs them at the next
+    /// relaunch. Null means the default, which is <b>ON</b>.
+    ///
+    /// <para><b>The nullable idiom is what delivers the default, and it has to.</b> A machine with no
+    /// preferences.json at all — the fresh-install case — reads <c>AutomaticUpdates ?? true</c> and
+    /// gets automatic updates on without a single line of first-run seeding. Never write a default
+    /// value into the file: absence IS the default, and a seeded file would make the two
+    /// indistinguishable.</para>
+    ///
+    /// <para><b>Per USER, and therefore shared by all three applications</b>, because
+    /// <see cref="AppDataRoot"/> is one directory: the toggle set in circuitRF governs harmonicaRF
+    /// and wBond as well. That is intended — "should this machine update itself" is a property of the
+    /// user, not of which binary they happened to open — and the settings help text says so, because
+    /// the scope of a checkbox should not be a surprise.</para>
+    ///
+    /// <para>Read it through <c>Updates.UpdatePolicy.Current</c> and nowhere else: a policy file
+    /// beside the install and <c>CRF_NO_UPDATE_CHECK=1</c> both override it, and an override that is
+    /// honoured in one place and forgotten in another is an override that does not exist.</para>
+    /// </summary>
+    [JsonPropertyName("automatic_updates")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AutomaticUpdates { get; set; }
+
+    /// <summary>
+    /// Whether prerelease versions are offered. Null means the default, which is <b>OFF</b> — the
+    /// opposite default to the one above, and deliberately: the users on the fastest-moving channel
+    /// should be the ones who opted into it.
+    ///
+    /// <para>A sub-item of <see cref="AutomaticUpdates"/> in the UI, and disabled while that is off.
+    /// Turning it off DISCARDS a staged prerelease, and leaves a staged stable version alone — a user
+    /// who unchecks the box and is then moved onto a beta at the next relaunch has been lied to by
+    /// the checkbox.</para>
+    /// </summary>
+    [JsonPropertyName("include_beta_updates")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IncludeBetaUpdates { get; set; }
+
+    /// <summary>
+    /// Whether a kit may run its own EXTERNAL DEVICE WORKER — the separate process circuitRF starts
+    /// to evaluate a vendor device model. Null means the default, which is <b>ON</b>.
+    ///
+    /// <para><b>The companion to <see cref="PCellTrust"/>, and it exists because that one had no
+    /// companion.</b> A kit declares two kinds of program: generator scripts in
+    /// <c>pcell-generators.json</c>, which have been gated behind an explicit prompt since B6, and a
+    /// worker in <c>device-provider.json</c>, whose <c>command</c> resolves against the kit's own
+    /// folder — so a kit can ship an executable and circuitRF starts it. Until this key existed, only
+    /// one of the two asked (security review, 2026-08-25).</para>
+    ///
+    /// <para><b>Why this is a switch and not per-kit consent like <see cref="PCellTrust"/>.</b> Every
+    /// kit installed before it existed evaluates its devices through a worker, so a per-kit prompt
+    /// defaulting to "not yet asked" would put a dialog in front of workspaces that have always just
+    /// run — and a prompt everyone meets on their existing work is a prompt they learn to dismiss.
+    /// One switch, on by default, is the honest version of what this buys: somewhere to say no, and
+    /// something an administrator can hold shut.</para>
+    ///
+    /// <para>Read it through <c>Security.ExternalWorkerPolicy.Current</c> and nowhere else: a
+    /// <c>no-device-workers</c> file beside the install and <c>CRF_NO_DEVICE_WORKERS=1</c> both
+    /// override it, and an override that is honoured in one place and forgotten in another is an
+    /// override that does not exist.</para>
+    /// </summary>
+    [JsonPropertyName("external_device_workers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ExternalDeviceWorkers { get; set; }
 }
 
 public static class AppPreferencesIo

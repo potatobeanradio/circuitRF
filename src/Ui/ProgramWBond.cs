@@ -28,6 +28,19 @@ internal sealed class ProgramWBond
     {
         Diagnostics.CrashReporter.Install("wBond");
 
+        // BEFORE Avalonia, and before anything opens a file: reclaim update debris, revert a
+        // version that has failed to start twice, and apply a staged update. On macOS an applied
+        // update execv()s the new executable and this call does not return; on Windows and Linux
+        // the pointer is flipped before the stub has started anything, so there is nothing to
+        // re-exec. Never mid-session, for the reasons in docs/design/auto-update.md §3.
+        Updates.UpdateStartup.RunBeforeUi(args);
+
+        // The consent gate for external device workers, installed BEFORE anything can resolve a
+        // device. src/Core cannot read AppPreferences — that is the UI firewall — so the policy is
+        // a hook, and a build that never installs one runs workers, which is this setting's stated
+        // default. Installed in all three entry points; ExternalWorkerConsentTests pins that.
+        Security.ExternalWorkerPolicy.Install();
+
         // argv is the double-click route on Windows and Linux. macOS delivers the file as an Apple
         // Event instead, which WBondApp subscribes to; both land on the same shell method.
         WBondApp.StartupFiles = args.Where(a => !a.StartsWith('-') && File.Exists(a)).ToArray();

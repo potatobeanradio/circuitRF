@@ -281,6 +281,15 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
 
+        // THE CONSENT GATE, and it is here rather than at the callers because this is the line that
+        // starts a process. A kit's device-provider.json names a command that resolves against the
+        // kit's own folder, so this is where somebody else's executable becomes a running one — and
+        // the three paths that reach it (a simulation resolving a kit provider, a PDK import
+        // describing a compiled model, and src/Cli) must not each carry their own copy of the check.
+        // Default is ALLOWED: DeviceWorkerPolicy has no opinion until an application installs one.
+        if (DeviceWorkerPolicy.RefusalReason(forProvider ?? "") is { } refused)
+            throw new ExternalDeviceException(refused);
+
         var info = new ProcessStartInfo
         {
             FileName               = executablePath,

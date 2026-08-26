@@ -90,12 +90,24 @@ public partial class MessagesTool : Tool, IMessageSink
             if (OperatingSystem.IsMacOS())
             {
                 // -R selects a file; bare open opens a directory.
-                Process.Start("open", isFile ? $"-R \"{filePath}\"" : $"\"{filePath}\"");
+                //
+                // ArgumentList, never the single-string overload: on Unix .NET PARSES that string
+                // into argv itself, honouring quotes, so a file whose NAME contains a double quote
+                // closes ours and everything after it becomes further arguments to `open` — and
+                // `open` takes `-a <application>` (security review, 2026-08-25). The path arrives
+                // from a message-panel entry, i.e. from whatever a workspace or a kit put on disk.
+                var psi = new ProcessStartInfo("open") { UseShellExecute = false };
+                if (isFile) psi.ArgumentList.Add("-R");
+                psi.ArgumentList.Add(filePath);
+                Process.Start(psi);
             }
             else if (OperatingSystem.IsWindows())
             {
-                // /select highlights a file; bare path opens a directory.
-                Process.Start("explorer.exe", isFile ? $"/select,\"{filePath}\"" : $"\"{filePath}\"");
+                // /select highlights a file; bare path opens a directory. Explorer wants
+                // `/select,<path>` as ONE argument, which is why this is not two.
+                var psi = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+                psi.ArgumentList.Add(isFile ? $"/select,{filePath}" : filePath);
+                Process.Start(psi);
             }
             else
             {

@@ -67,25 +67,55 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 Pre-built installers are available for Windows, macOS, and Linux.
 
+**Which one updates itself.** circuitRF checks for new versions, downloads them in the background and
+installs them at the next relaunch — but only where it can write its own installation without asking
+for administrator rights. The per-user Windows installer and the Linux tarball can; the machine-wide
+`.msi` and the `.deb` deliberately cannot, and instead tell you when a new version is out. Automatic
+updates can be turned off in **Settings ▸ General ▸ Updates** (one setting, shared by circuitRF,
+harmonicaRF and wBond).
+
 **Windows**
-| Platform | Download |
-|---|---|
-| Windows 64-bit (Intel/AMD) | [circuitRF-1.0.0-beta.1-x64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.msi) |
-| Windows ARM64 | [circuitRF-1.0.0-beta.1-arm64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.msi) |
-| Windows 32-bit (Win32) | [circuitRF-1.0.0-beta.1-x86.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x86.msi) |
+| Platform | Download | Updates itself |
+|---|---|---|
+| Windows 64-bit (Intel/AMD) — recommended | [circuitRF-1.0.0-beta.1-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-x64-user.msi) | yes |
+| Windows ARM64 — recommended | [circuitRF-1.0.0-beta.1-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-arm64-user.msi) | yes |
+| Windows 32-bit (Win32) — recommended | [circuitRF-1.0.0-beta.1-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-win-x86-user.msi) | yes |
+| Windows 64-bit, all users | [circuitRF-1.0.0-beta.1-x64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.msi) | notify only |
+| Windows ARM64, all users | [circuitRF-1.0.0-beta.1-arm64.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.msi) | notify only |
+| Windows 32-bit, all users | [circuitRF-1.0.0-beta.1-x86.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x86.msi) | notify only |
+
+The **-user** installers go into `%LOCALAPPDATA%\Programs\circuitRF` and raise no UAC prompt. The
+all-users installers go into `%ProgramFiles%` and need administrator rights, which is why they cannot
+update themselves silently — that would mean a UAC prompt at every update or a permanently-installed
+service that downloads and runs code, and neither is worth it.
 
 **macOS**
-| Platform | Download |
-|---|---|
-| macOS Apple Silicon (M-series) | [circuitRF-1.0.0-beta.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.dmg) |
-| macOS Intel (x86-64) | [circuitRF-1.0.0-beta.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.dmg) |
+| Platform | Download | Updates itself |
+|---|---|---|
+| macOS Apple Silicon (M-series) | [circuitRF-1.0.0-beta.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.dmg) | yes, for an admin user |
+| macOS Intel (x86-64) | [circuitRF-1.0.0-beta.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.dmg) | yes, for an admin user |
+
+Drag to `/Applications` as usual. A standard (non-administrator) user cannot write `/Applications`, so
+that install is notify-only; dragging to `~/Applications` instead gives an installation that does
+update itself.
 
 **Linux**
-| Platform | Download |
-|---|---|
-| Linux 64-bit (Intel/AMD) | [circuitRF-1.0.0-beta.1-x64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.deb) |
-| Linux ARM64 | [circuitRF-1.0.0-beta.1-arm64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.deb) |
+| Platform | Download | Updates itself |
+|---|---|---|
+| Linux 64-bit (Intel/AMD) — recommended | [circuitRF-1.0.0-beta.1-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-linux-x64.tar.gz) | yes |
+| Linux ARM64 — recommended | [circuitRF-1.0.0-beta.1-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-linux-arm64.tar.gz) | yes |
+| Linux 64-bit, system-wide | [circuitRF-1.0.0-beta.1-x64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-x64.deb) | notify only |
+| Linux ARM64, system-wide | [circuitRF-1.0.0-beta.1-arm64.deb](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.1/circuitRF-1.0.0-beta.1-arm64.deb) | notify only |
 
+The tarball installs into `~/.local` with no root at any point:
+
+```sh
+tar xzf circuitRF-1.0.0-beta.1-linux-x64.tar.gz
+./circuitRF-1.0.0-beta.1/install.sh
+```
+
+It puts `circuitrf` on your PATH and registers the menu entry and file types. `./install.sh
+--uninstall` removes it and leaves your workspaces and preferences alone.
 
 Building them yourself: [BUILDING.md](BUILDING.md).
 
@@ -339,8 +369,9 @@ Alternatives to zig (MinGW `gcc`, Docker/Podman) and the rest:
 ### 5. Optional — package it as an app
 
 [**BUILDING.md**](BUILDING.md) has step-by-step instructions for producing the installers users
-download: `.msi` (Windows x64/arm64/x86), `.dmg` (macOS arm64/x64) and `.deb` (Linux x64/arm64).
-One script per platform, run from the repository root.
+download: `.msi` (Windows x64/arm64/x86, per-machine and per-user), `.zip` (the Windows update
+payload), `.dmg` (macOS arm64/x64), `.deb` (Linux x64/arm64) and `.tar.gz` (the Linux user-local
+channel). One script per platform, run from the repository root.
 
 
 ---

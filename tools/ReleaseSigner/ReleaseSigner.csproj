@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    NOT in circuitrf.slnx, deliberately, and it references no other project in this repository.
+
+    It is the release-signing half of docs/design/auto-update.md §15.5, and it runs on the machine
+    that cuts a release rather than on any user's. Keeping it out of the solution keeps the private
+    key out of the application's build graph: nothing a `dotnet build` produces can read it, and
+    nothing in src/Ui has any code path that could.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CircuitRF.Tools.ReleaseSigner</RootNamespace>
+    <AssemblyName>ReleaseSigner</AssemblyName>
+  </PropertyGroup>
+
+</Project>

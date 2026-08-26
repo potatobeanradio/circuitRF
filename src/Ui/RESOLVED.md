@@ -1,5 +1,567 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Security audit — third round (2026-08-25)
+
+A whole-repository pass, not only the updater. Five defects fixed here (the fifth on the owner's
+instruction, same day); one exposure reported and deliberately not changed. **The shape of all four fixes is the same and it is the one the two entries
+below already state as a rule: the check lives at the line that CONSUMES the value.** Each of these was
+a place where a guard existed somewhere in the pipeline and the consuming line trusted it — which is
+exactly the arrangement that survives until the first refactor and no longer.
+
+### 1. `state.json` was an arbitrary recursive delete, reachable from a settings checkbox
+
+`UpdateStager.Discard` took a path and ran `Directory.Delete(recursive: true)` on it. Its callers take
+that path from `staged_path` in `state.json` — ordinary JSON in the user's application-data directory,
+so its contents are whatever is in the file rather than whatever the updater last wrote. Unchecking
+**Automatic updates** goes straight there (`UpdatePreferenceChange.Apply`), so a `staged_path` of
+`/Users/<user>/Documents` deleted the user's documents on a checkbox click.
+
+`UpdateReclaimer` had held this line for its own sweep since it was written (`IsOurs`), and design §13
+rule 6 states it outright — *never delete anything outside `<AppData>/updates/` and the install root's
+own `app-*` directories*. Every other deleting path simply did not ask. The predicate is now
+`UpdatePaths.IsOurs(path, installRoot)`, `Discard` takes the install root and refuses anything else,
+and both callers pass it.
+
+### 2. macOS: `state.json` could nominate any directory to become the installed application
+
+`UpdateSwap.SwapBundle` read the same field and handed it to `AtomicFile.SwapDirectories` against
+`site.Root` — the `.app` bundle. On a shared Mac that is `/Applications/circuitRF.app`, which is what
+**every account on the machine** launches, so one per-user JSON write promoted an arbitrary directory to
+a machine-wide executable. The versioned (Windows/Linux) half of the same method has validated its own
+pointer through `IsSafeVersionDirectoryName` since the first review; the bundle half had no equivalent.
+It now requires the staged bundle to be under `updates/staged/`, checked at the swap rather than at
+whoever wrote the field.
+
+### 3. A release tag's own spelling reached a path without a charset check
+
+`ReleaseInfo.VersionText` is the tag's spelling and has to be — the packaging scripts interpolate the
+`VERSION` file verbatim, so a `1.0` tag names a `circuitRF-1.0-arm64.dmg` that a normalised `1.0.0`
+would never match. The first review made `SemanticVersion` enforce SemVer's identifier charset so that
+tag could not carry a separator. But **`TryParse` `Trim()`s before it validates**, so a tag written with
+leading or trailing whitespace parses while `VersionText` keeps the whitespace — and that string is
+joined to the install root (`app-<ver>`) and to `updates/staged/<ver>/`. Nothing traversed; what it
+produced was a junk directory in the live install root and an update that could never be applied,
+silently, because `FlipPointer` then refused the name. `UpdateInstallSite.IsSafeVersionText` is the
+segment rule stated once, `IsSafeVersionDirectoryName` is now `app-` plus it, and
+`UpdateSelector.SelectRelease` drops a release whose tag fails it — at the selection, before a byte is
+fetched.
+
+### 4. Three "Reveal in Finder" call sites parsed a file name as a command line
+
+`Process.Start("open", $"-R \"{path}\"")` uses the single-STRING overload, and on Unix .NET parses that
+string into `argv` itself, honouring quotes. A file whose **name** contains a double quote therefore
+closes ours and everything after it becomes further arguments — and `open` takes `-a <application>`. The
+path arrives from a message-panel entry or a Data Display source, i.e. from whatever a workspace or a kit
+put on disk. `WorkspaceViewModel.RevealPathInFileManager` already used the correct `ArgumentList` form
+two files over; `MessagesTool.RevealFile` and `DataSourceEntryViewModel` did not. All three now do, and
+the Windows spelling is `/select,<path>` added as ONE argument rather than assembled into a command line.
+
+### 5. External device workers had no consent gate, and PCell scripts did (owner, same day)
+
+`PCellTrustStore` gates every PCell generator script behind an explicit prompt, and
+`PCellWorkerResolver` refuses to launch on `Unknown` as well as on `Denied`. **`device-provider.json`
+had no equivalent.** Its `command` resolves against the kit's own folder
+(`DeviceWorkerManifest.ResolveCommand`), so a kit can ship an executable and circuitRF starts it —
+lazily, when a design uses one of that kit's parts, with no prompt anywhere. Both files are
+declarations beside an imported kit and both name a program to run; only one asked.
+
+**Settings ▸ Security & Permissions ▸ External Device Workers**, `AppPreferences.ExternalDeviceWorkers`,
+**default ON**.
+
+*Why a switch and not per-kit consent like the PCell store.* Every kit installed before this existed
+evaluates its devices through a worker. A per-kit prompt defaulting to "not yet asked" would put a
+dialog in front of workspaces that have always just run — and a prompt everyone meets on their existing
+work is the prompt they learn to dismiss without reading, which is the failure `PCellTrustStore`'s own
+note is written to avoid. One switch is the honest statement of what this buys: somewhere to say no, and
+something an administrator can hold shut. On by default is a compatibility decision, not a security one.
+
+*Where the gate lives, and why not at the call sites.* `DeviceWorkerProviderResolver`'s `Launcher`
+delegate was the obvious seam and it is the wrong one: there are three launch paths today — a
+simulation resolving a kit provider, a PDK import describing a compiled model
+(`OsdiModelDiscovery.Find`), and `src/Cli` — and a check written at each is a check the fourth will not
+have. `DeviceWorkerPolicy` is consulted inside `ProcessDeviceWorkerTransport.Start`, the line that
+actually starts a process. Same reasoning as `UpdateStager.Promote`'s live-pointer refusal.
+
+*How Core asks a UI question.* `src/Core` cannot read `AppPreferences` and the firewall is not
+negotiable, so `DeviceWorkerPolicy.Gate` is a `Func<string, string?>` — given the provider name, null to
+allow or **the sentence to refuse with**, so the reason travels with the refusal rather than being
+reconstructed by whoever catches it. `ExternalWorkerPolicy.Install()` wires it from all three
+`Program*.cs`. **An entry point that forgets the call runs workers**, which is the stated default rather
+than a hole — but it is exactly the omission a new entry point makes silently, so a source scan pins all
+three, the same shape as `PCellTrustGateTests`. A gate that *throws* also allows, deliberately: this is a
+preference, not a trust anchor, and a bug in the policy must not become a simulation that cannot run.
+
+*Two things beyond the checkbox*, matching `UpdatePolicy` exactly rather than inventing a second
+precedence rule for the same tab: `CRF_NO_DEVICE_WORKERS=1`, and a `no-device-workers` file beside the
+install that **overrides the preference** so an administrator can deploy an installation the user cannot
+re-enable. Under either the checkbox renders disabled with the reason. The two-location "beside the
+install" lookup is now `Security.InstallPolicyFile.PresentBeside`, shared with the updater — the second
+copy is always the one that forgets that a marker put INSIDE a macOS `.app` breaks its code signature.
+
+*Unchecking the box also ends workers already running* (`ExternalDeviceRegistry.ResetResolved`). A
+worker started before the box was unchecked is still answering, so the change would appear not to take
+effect until the workspace was reopened — and the user would have every reason to believe it had. Same
+rule as automatic updates discarding a staged version: a settings change that only mutates JSON is
+incomplete.
+
+*Discovery refuses once.* `OsdiModelDiscovery.Find` starts one worker per `.osdi` artefact and would
+otherwise report the same sentence once per file. It asks the gate before its loop.
+
+harmonicaRF's own settings dialog hosts the same control — it resolves kit providers through
+`HarmonicaDutCatalog` just as circuitRF does — and its **Updates** tab is now **Security &
+Permissions**, holding both, so the "one place to audit what this binary may run or fetch" rule holds in
+whichever of the three applications a user has.
+
+Gate: `tests/Core.Tests/Devices/External/DeviceWorkerPolicyTests.cs` (9) and
+`tests/Ui.Tests/Security/ExternalWorkerConsentTests.cs` (19).
+
+### Reported, not changed: consent is keyed by PATH, so a path can be re-populated
+
+`PCellTrustStore` keys a decision on the kit's absolute directory, deliberately — hashing the scripts
+would re-ask on every save while somebody is authoring a generator, training exactly the reflexive
+"Allow" the prompt exists to prevent. The residual is that **consent outlives the contents**: a kit
+directory the user allowed once runs whatever scripts later appear at that path. The reachable version
+is workspace archives, which unpack kits to `<workspace>/kits/<name>` — extract a second archive over
+the same workspace and its scripts inherit the first one's answer. The trade-off is the one the design
+made on purpose; it is recorded here so the choice is visible rather than rediscovered.
+
+Two smaller notes from the same pass, neither worth a change on its own:
+
+- **`PCellTrustDialog` says "circuitRF runs them with Python"**, and a manifest's `interpreter` field
+  names the program. `PythonInterpreterDiscovery.TryProbe` runs the candidate with
+  `-c "import sys; print(...)"` and rejects anything that does not answer with a version, so a
+  non-Python binary cannot be *used* — but it is executed once, during the probe, after consent. Within
+  the scope the user granted (the script is arbitrary code either way), so this is disclosure wording
+  rather than a hole.
+- **`ProcessRunner.Resolve` falls back to the bare tool name** when none of its absolute candidates
+  exists, which re-opens the `PATH` question the first review closed for the case where `/usr/bin/tar`
+  and `/bin/tar` are both absent. Degradation rather than a hole (the alternative there is no update at
+  all), and it is already stated in that method's own note.
+
+Gate for 1-4: `tests/Ui.Tests/Updates/UpdateStatePathGuardTests.cs` (14), all of which go red against
+the code as it stood.
+
+
+## Automatic Updates — second review round (2026-08-25)
+
+Five more defects, found reviewing the two entries below. **Three of them were again encoded in the
+suite rather than missed by it** — `AReadOnlyInstall_IsNotifyOnly_AndWritesNothing` used a
+`ForbiddenUpdateFeed` that failed if the feed was touched at all, which is the exact opposite of what
+R-AU-1 requires; `AManifestWins_OverNameMatching` pinned an arbitrary payload host as *correct*; and
+the menu-gating test asserted the `CanSelfUpdate` clause that was the bug. Each replacement was run
+against the code as it stood and goes red.
+
+### 1. A version already swapped in was re-fetched, over the tree `current` names
+
+`UpdateStartup.RecordSwap` clears `StagedVersion` when it flips the pointer, so a version that is
+swapped in and waiting to prove it starts is recorded **only** in `PendingVersion` — and `CheckAsync`
+guarded on the blacklist and on `StagedVersion`, never on that. The pointer flip is made by the *old*
+version for the *next* launch, so the running version is still lower and every remaining guard
+answers "fetch it".
+
+Reachable from **Help ▸ Check for Updates…**, which deliberately ignores the 24-hour throttle: the
+whole fetch re-ran with `destinationDir = <root>/app-<version>`, and `UpdateStager.Promote`
+**deletes an existing destination before renaming into it**. A failure or a crash between those two
+steps leaves the stub with a pointer to a directory that is not there and an application that will
+not start — the same bricking class R-AU-31 was written to make impossible, arriving through the
+staging path instead of the pointer write. Even the happy path re-downloaded ~160 MB in silence,
+because `Announce` had already spent that version's one line.
+
+Fixed at both levels, deliberately: `CheckAsync` returns early on `PendingVersion` (the cheap half),
+and `UpdateStager.Promote` refuses to delete a directory a sibling `current` names — the half no
+future caller can route around, which is the shape `UpdateReclaimer`'s running-directory refusal
+already took for the same reason. **An unreadable pointer counts as "live"**: unknown must not
+authorise a delete.
+
+### 2. Notify-only never notified
+
+R-AU-1 and design §1.1 both say a read-only install *"checks, and posts a Message Panel line with a
+link, but never writes"*. `CheckAsync` returned `NotifyOnly` **before the feed was contacted**, so
+the mode was indistinguishable from the feature being off: every per-machine `.msi`, every `.deb` and
+every standard-user macOS install was silently never told a new version existed.
+
+`CanCheckForUpdates` compounded it by requiring `CanSelfUpdate`, which disabled Help ▸ Check for
+Updates… on exactly those installs — and made `CheckForUpdatesAsync`'s own `NotifyOnly` branch
+unreachable for the installs it was written for. There was no path at all by which such a user could
+learn anything.
+
+The check now runs and the write does not: the reclaim is skipped, nothing is staged, and
+`AnnounceNotifyOnly` posts one line with the releases URL — once per version in the background,
+**every time on a manual check**, the same asymmetry `ReportSpace` already uses and for the same
+reason. Still no button (R-AU-48).
+
+**And the two notify-only reasons are now different sentences.** A writable per-user install whose
+binary is unsigned is notify-only too, and telling that user their installation is in the wrong place
+would send them to re-install something that is exactly where it should be.
+
+### 3. A manifest's asset `url` and `name` were unvalidated, while `feedUrl` was
+
+R-AU-13 constrains `feedUrl` to a compiled-in host list because *"a field that lets a release point
+the updater at an arbitrary host is a field that lets a compromised release point it at an arbitrary
+host"*. That reasoning applies to `assets[].url` **more** strongly, not less: `feedUrl` redirects
+where we ask next; this one redirects where the **payload** comes from. `UpdateManifest.Select`
+passed it through untouched, plain `http` included, and `UpdateManifestTests` pinned
+`https://elsewhere.example/payload.bin` as the expected behaviour.
+
+On macOS and Windows the publisher-identity check would still refuse a substituted binary. **On Linux
+`VerifyStagedAsync` answers `NotApplicable`** — there is no signing infrastructure to ask — so on that
+platform the URL was the whole of the trust chain. Both fields now go through `FeedUrlAllowList`.
+
+Separately, `asset.Name` became a path (`Path.Combine(stagingDirectory, asset.Name)`) with no check,
+so `../../x` wrote outside the only directory the updater owns. `UpdateAssetNames.IsSafeAssetFileName`
+is now applied in the manifest **and** at the line that builds the path — deliberately the same rule
+the Windows launcher stub already applies to `current`, in the two places a supplied name becomes a
+path.
+
+### 4. Windows self-update is inert unless the shipped `.exe` is signed, and nothing said so
+
+`RunningBuildCanAcceptUpdatesAsync` answers `PublisherOf(exe) is not null` on Windows, and
+`build-msi.ps1` still ends with *"Unsigned: SmartScreen will warn on first run"* — so a stock per-user
+build is notify-only on every check. `BUILDING.md` made Developer ID a hard prerequisite for macOS and
+said nothing equivalent for Windows, while its own acceptance matrix asked for a per-user install that
+updates. **Not a code defect — a prerequisite that existed in the code and in neither document.** Both
+now say it, and the build script says it at the point it emits the payload.
+
+### 5. The Help item's enablement was frozen at view-model construction
+
+`CheckForUpdatesCommand.NotifyCanExecuteChanged()` was never called, in a file that calls it for ten
+other commands, so turning automatic updates off in Settings left a live menu item behind.
+`ShowSettings` now refreshes on the dialog's `Closed`.
+
+### Still open, deliberately
+
+- **After a rollback the failed `app-<ver>` tree and the stale `PreviousVersion`/`PreviousPath` are
+  never cleaned up** — `ReleasePreviousVersion` only runs when a *pending* version confirms, so the
+  failed tree lingers until a space-pressure reclaim. Against "steady-state footprint is zero", but
+  bounded to one generation and harmless.
+- **On macOS a failed `execv` destroys the rollback insurance.** `LaunchBelongsToPending` is
+  unconditionally true there, so a session that swapped the bundle and then failed to re-exec clears
+  the counter at its first window and releases `updates/previous` — with the untested bundle live.
+  Narrow (execv failing after a successful directory exchange), and the fix is a state flag that
+  wants its own think.
+- **`UpdateService` passes `previousVersionReleasable: (state.LaunchAttempts ?? 0) == 0`** — the
+  counter rather than `PendingVersion is null`, so the reclaimer's comment describes a gate the code
+  does not implement. On Windows/Linux it is saved only by `Remove`'s running-directory refusal, i.e.
+  by accident.
+- **The stub accepts `..` as a `current` value.** No separator, so `read_pointer`'s rule lets it
+  through and the launch resolves one directory up. Only reachable from a corrupt pointer, but that
+  rule was written to make the class impossible.
+- **`Program.cs` runs `RunBeforeUi` before the `--generate-symbols` branch**, so a headless doc-gen
+  run does the launch-time reclaim and drops a writability probe into the bin tree.
+- **Space is measured on the staging volume, not the install volume** — `StageArchiveAsync` extracts
+  into `site.Root`. The same volume in all three shipped layouts, so not a bug today; nothing asserts
+  it.
+- **The per-user MSI upgrade path is untested.** `current` is an MSI-installed file that the updater
+  rewrites; MSI's non-versioned-file rules may decline to overwrite a modified one while the major
+  upgrade removes the directory it names. Belongs beside "compile the stub" as day-one Windows work.
+
+
+## Automatic Updates — post-review fixes (2026-08-25)
+
+Eleven defects found reviewing the phase above, all fixed, `Ui.Tests` 9,318 pass and
+`Firewall.Tests` 6 pass. Three of them sat inside gate items the brief itself marked as mattering
+most, and **all three were invisible to the test suite as written** — the tests encoded the
+implementation's model rather than the requirement, which is the recurring shape here.
+
+### 1. Linux updates could never stage — a shape mismatch, not a name mismatch
+
+`build-msi.ps1` runs `Compress-Archive -Path publish\*`, so the `.zip` holds the publish tree at its
+**root**. `build-tarball.sh` packs `circuitRF-<ver>/` holding `install.sh`, an icon, a `current` seed
+**and** `app-<ver>/` — because that archive is also the first-install payload and its shape *is* the
+installed shape. `StageArchiveAsync` untarred with a fixed `--strip-components=1` and then looked for
+the executable at the top of the extraction, which on the real tarball is `install.sh` and a
+directory. **Every Linux update failed, was blacklisted, and said nothing.** Reproduced against a
+real tarball before changing anything.
+
+This is exactly the silent-permanent-failure class R-AU-21 exists to prevent, and **R-AU-21's own
+test could not catch it**: the artifact *name* was right; the *contents* were the wrong shape. A
+naming-convention guard is not a payload guard. The tree is now **located** after extraction
+(`UpdateStager.FindPayloadRoot`, bounded to two levels) rather than assumed from a strip count, and
+the nested case is lifted so the promoted directory *is* the app tree. Pinned end-to-end against a
+tarball built with the script's own layout.
+
+### 2. Rollback (R-AU-34) was inert on all three platforms
+
+Gate item 16, and the brief's "only insurance a user has against a bad release".
+
+**The root cause is one conflation: `StagedVersion` was doing the work of two different states.** On
+Windows and Linux the swap is a pointer flip performed by the **old** version, for the **next**
+launch — the stub read `current` before the process started. The counter was therefore raised and
+then cleared *by the version that was not being tested*, minutes apart in the same session, so the
+new version's real first launch carried no counter at all and a crash before its first window could
+never reach `MaxFailedStartups`. On macOS the counter stuck at 1 forever, because the re-entered
+process found the staged bundle already moved and never incremented again.
+
+`UpdateState` now separates **staged** (downloaded, inert) from **pending** (swapped in, proving it
+starts), and `UpdateSwap.LaunchBelongsToPending` decides whose attempt a launch is. The two shapes
+answer differently and that asymmetry *is* the fix: on macOS the swap and the new version's first run
+are one launch (`execv`), so once something is pending every launch is the pending version's; in the
+versioned layout the flipping session must not count.
+
+**A second, separate defect in the same area: macOS `Revert` did nothing at all** and still returned
+`RolledBack`, so the application told the user its previous version had been restored when it had
+not. It now exchanges `updates/previous/<app>.app` back into the launch path and `execv`s it.
+
+**And the rollback notice is now persisted** (`UpdateState.PendingNotice`) rather than held in
+memory. The only thing that ever writes one is a version crashing before it has a Message Panel — an
+in-memory notice from a build that cannot start is a notice nobody reads.
+
+### 3. The reclaimer deleted the tree the running process was executing from
+
+The most destructive available failure, and it was reachable on an ordinary successful update. The
+session that flips `current` to `app-2.0.0` keeps running out of `app-1.0.0`; `ReleasePreviousVersion`
+built its keep-list from the **pointer** alone, so `app-1.0.0` was classified as abandoned and removed
+when the first window appeared. On Windows the file locks mostly hide it (leaving a half-deleted
+tree); on Linux the unlinks succeed and every not-yet-loaded assembly and lazily-resolved resource is
+gone. It also destroyed the one tree a rollback would need.
+
+`UpdateReclaimer`'s own doc comment already claimed "never the one currently running" — **nothing
+implemented it.** It now takes the running directory name (from `AppContext.BaseDirectory`), refuses
+it at two levels so no caller can route around the guard, and holds the previous version back from
+the abandoned sweep so **R-AU-17's fixed order is real rather than decorative** — it was being taken
+one step early, whatever `previousVersionReleasable` said.
+
+### 4. `HttpClient.Timeout` was a 30-second budget for a 160 MB payload
+
+`Timeout` bounds the *entire* operation including the response body; `ResponseHeadersRead` does not
+exempt it. So the shipping configuration failed every download on a connection slower than ~5.5 MB/s
+— and because a background failure is silent and retries only at the next 24-hour window, a slow
+connection could never converge on a complete file. The payload now has its **own** client with
+`Timeout.InfiniteTimeSpan`, and progress is policed by a per-read idle timeout
+(`UpdateDownloader.StallTimeout`, 60 s, re-armed on every chunk). The right question of a large
+transfer is not "has it finished" but "is it still arriving". The feed keeps its 30 s, where a
+whole-operation timeout is correct.
+
+### 5. `DriveFreeSpaceProbe` measured the wrong filesystem on Unix
+
+`Path.GetPathRoot` answers `"/"` for every path there is, so the probe reported the **root**
+filesystem regardless of which volume was about to be written — and a separate `/home` is an ordinary
+Linux install. The class's entire argument, that the updater must never be the reason a user cannot
+save their work, was being made about a different disk. Now resolved by longest mount-point match,
+compared a component at a time so `/homework` is not read as living under `/home`.
+
+### 6. Smaller
+
+- **A manual check that ran out of space mid-download reported as a background one.** `manual` was
+  never threaded into `FetchVerifyStageAsync`, so Help ▸ Check for Updates… was silently swallowed by
+  the 30-day throttle *and* consumed that slot. R-AU-50 says the manual check reports with figures.
+- **Verification ran after the promotion to a real name** on Windows and Linux — the one place
+  R-AU-27's naming rule was relaxed. It now runs against the `.partial` tree, via a hook on both
+  staging paths.
+- **A developer build fetched and discarded the whole payload on a timer.** A bundled dev `.app` is a
+  writable `MacOsBundle`, so `CanSelfUpdate` was true and only the *final* identity check refused it —
+  after ~160 MB. Worse, the refusal was recorded in the blacklist, and `AppDataRoot` is **one
+  directory shared by all three applications and every build of them**, so a dev build permanently
+  withheld a perfectly good release from the real installation on the same machine.
+  `PayloadVerifier.RunningBuildCanAcceptUpdatesAsync` now asks before the feed. (A `bin/` tree was
+  never at risk: it detects as `Flat` and is notify-only.)
+- **`UpdateInstallSite.Detect()` is cached per process.** Detection *writes* — writability is probed
+  by creating and deleting a file — and `UpdatePolicy.Current` calls it on every read, which is every
+  settings-dialog load and every checkbox click. That was putting a probe file into `/Applications`
+  or `%ProgramFiles%` on each one. None of its answers can change within a session.
+- **The scheduler's jitter was not stable across runs.** `string.GetHashCode` is randomised per
+  process in .NET, so the offset was re-rolled every launch — the comment claimed a property the code
+  did not have, and a per-launch offset wanders back into lockstep. FNV-1a now.
+- **`Blacklist` and `Announced` were unbounded** in a file read on every launch; capped at 64, oldest
+  first. Both are caches of a decision, not a record.
+
+### What this says about the tests
+
+The three serious defects were all **encoded** in the suite, not missed by it. `TwoFailedStartups_…`
+asserted the broken model faithfully; `ThePreviousVersionSurvivesUntil…` asserted the flag rather
+than the outcome; R-AU-21's naming test asserted the half of the payload contract that was never
+wrong. The replacements assert the property instead — that the flipping session is *not* the new
+version's attempt, that the running directory survives a reclaim, that a real-shaped tarball produces
+a runnable tree — and each one fails against the code as it stood.
+
+## Automatic Updates — COMPLETE (brief-auto-update, 2026-08-25)
+
+circuitRF, harmonicaRF and wBond check GitHub for a newer release, download it in the background and
+swap it in at the next launch. `src/Ui/Updates/` (18 files), two new packaging channels, and 267
+tests in `tests/Ui.Tests/Updates/`. Build green with `TreatWarningsAsErrors`; `Ui.Tests` 9,285 pass;
+`Firewall.Tests` 6 pass.
+
+### 1. M0's five observations, as measurements
+
+Run on macOS **26.5.2** against the real signed `dist/circuitRF-1.0.0-beta.1-arm64.dmg` and the
+Developer ID identity `L6234MFQ5Z`. **Design §4's two load-bearing claims are both TRUE**, and the
+second one only after the first attempt at measuring it produced a wrong answer.
+
+| | Claim | Result |
+|---|---|---|
+| 1 | A `.dmg` fetched by `HttpClient` carries no `com.apple.quarantine` | **CONFIRMED.** `xattr -p` finds nothing. The only attribute present is `com.apple.provenance`, which is a macOS 14+ writer record and triggers no assessment. |
+| 2 | A bundle extracted from that image passes `codesign --verify --deep --strict` and `spctl` | **CONFIRMED.** `spctl -a -vv -t exec` answers `accepted, source=Notarized Developer ID`. Expanded size **334 MB**, against design §13.1's 335. |
+| 3 | The App Management exemption holds for a same-Team-ID process | **CONFIRMED, with a control.** A Developer ID `.app` (Team `L6234MFQ5Z`) modifying `/Applications/circuitRF.app` — **ALLOWED, no prompt**. The same app modifying a different vendor's bundle — **DENIED, `EPERM`**. The control is what makes the first result mean anything. |
+| 4 | The replaced application launches with no Gatekeeper dialog | **NOT MEASURED HERE — needs a human.** Both halves of the mechanism are confirmed (1 and 2), and no quarantine attribute means no first-launch assessment runs at all. But "no dialog appeared" is not observable from a script. It is item 1 of the manual matrix in `BUILDING.md`. |
+| 5 | An **ad-hoc** build cannot do (3) | **CONFIRMED.** The identical `.app`, re-signed ad-hoc (`TeamIdentifier=not set`), is **DENIED on the very bundle the Developer ID build was allowed to modify**. Signing is a hard prerequisite, exactly as design §4.2 says. |
+
+**The trap in measuring (3), which cost the first two attempts.** TCC attributes a request to the
+**responsible process**, not to the binary making the call.
+
+- A signed CLI tool run from a terminal is attributed to the *terminal* (here `ClaudeCode.app`,
+  Team ≠ ours), so it was **DENIED even with the correct Developer ID signature** — a false negative
+  that reads exactly like the exemption not existing.
+- A freshly-`ditto`d copy of the bundle placed in `/Applications` is **not protected at all** (it has
+  no `com.apple.macl`, and the copying process owns its provenance), so an *ad-hoc* tool swapped it
+  successfully — a false positive that reads exactly like App Management not being enforced.
+
+Only a properly-bundled `.app`, signed Developer ID and launched through `open` so LaunchServices
+makes it its own responsible process, against the **genuinely installed** bundle, measures the right
+thing. **The implementation consequence is real and is why this is written down: the swap must be
+performed by the application's own executable** — which it is, in `Program.Main` — and never by a
+spawned helper tool, because a helper inherits the responsibility of whatever launched it.
+
+**Two findings that were not asked for:**
+
+1. **The installed circuitRF breaks its own code signature.** Running a PCell generator writes
+   `__pycache__/*.pyc` into `Contents/MacOS/pcell-python/`, inside the sealed bundle, so
+   `codesign --verify --deep --strict /Applications/circuitRF.app` fails with *"a sealed resource is
+   missing or invalid"* on any install that has ever opened a kit. It does not break launching (no
+   quarantine ⇒ no assessment), and it does not break updating — `PayloadVerifier` **reads** the
+   running application's Team ID with `codesign -dv` rather than verifying it, deliberately, and
+   verifies the *staged* bundle, which is fresh from the image. Had it verified the running one,
+   updates would have been disabled on every machine that had opened a kit.
+
+   **FIXED in this phase** (owner asked whether a crash log could do the same — it cannot; crash
+   reports go to `AppDataRoot.SubDir("crash-reports")`, outside the bundle, and `__pycache__` was the
+   only writer inside it). `PCellWorkerTransport` now sets `PYTHONPYCACHEPREFIX` to
+   `AppDataRoot.SubDir("pcell-cache")`, redirecting the cache rather than turning it off with
+   `-B`/`PYTHONDONTWRITEBYTECODE`, because on a kit with dozens of modules the cache is a real
+   startup saving. Pinned by `BundleIntegrityTests`.
+   **An already-installed copy keeps its 14 stale `.pyc` files** until they are deleted by hand:
+   `find /Applications/circuitRF.app -name __pycache__ -type d -exec rm -rf {} +` restores the seal.
+2. **The `.app` inside the `.dmg` was never stapled.** `xcrun stapler validate` on a bundle extracted
+   from the stapled disk image reports *"does not have a ticket stapled to it"*: a staple attaches to
+   one artifact and does not travel with a bundle copied out of it. `build-dmg.sh` now notarizes and
+   staples the `.app` before building the image, which is the order R-AU-51 requires and which costs
+   one extra notarization round-trip per architecture.
+
+### 2. Measured peak disk requirement
+
+Design §13.1's arm64 figures hold: **160 MB download, 334 MB expanded** (measured, vs 335 in the
+table), so **494 MB peak** and ~1.5 GB required with the 1 GB reserve. The table is pinned by
+`UpdateSpaceTests.RequiredSpaceIsDownloadPlusExpandedPlusOneGigabyte`, so a future change that stops
+deleting the download or starts retaining two previous versions fails a test rather than a disk.
+The Windows and Linux rows are still projections — no `.zip` or `.tar.gz` has been built yet, because
+neither platform was available (see §5).
+
+### 3. Was the Windows stub needed as designed?
+
+**Yes, and nothing simpler survives contact.** You cannot overwrite a running `.exe` or a loaded
+`.dll` on Windows, so the update has to go into a *new* directory and the launch path has to be
+stable across versions — which is a pointer plus something that reads it. It is ~150 lines of plain
+Win32 (`packaging/windows/stub/circuitrf-stub.c`), one source for all three applications via
+`-DCRF_APP_NAME`, following `tools/senior-worker`'s existing launcher-stub pattern rather than
+inventing a second one.
+
+**It could not be compiled here** — no `zig`, no mingw, and Docker not running on this machine. It is
+**syntax-checked** against a shim `windows.h` (clean under `-Wall -Wextra`) and no more than that.
+**Compiling and running it is the first thing to do on a Windows machine.**
+
+Two details that will matter when it is: it refuses a `current` containing a path separator or a
+drive letter, so a corrupt pointer cannot become an arbitrary program launch; and it **waits** for
+the child rather than exiting, so the exit code is the application's and a shortcut, a shell
+"open with" and a debugger all attach to something that outlives the launch.
+
+### 4. What the manual acceptance matrix cost
+
+**Unknown, and that is the honest answer** — it has not been run, because it needs a Windows machine,
+a Linux machine and a second Mac, and this phase had one Mac. The matrix is in `BUILDING.md` with a
+recipe for driving it without waiting for a real release (publish a prerelease, tick Include Betas,
+Help ▸ Check for Updates…, quit, relaunch). The macOS half of item 1 is already half-answered by M0.
+
+### 5. Where a platform branch leaked into policy
+
+**Nowhere, and it is asserted rather than believed.**
+`UpdateInstallSiteTests.DetectionDoesNotSwitchOnTheOperatingSystem` scans the detector's source and
+fails on `OperatingSystem.Is`, `RuntimeInformation.IsOSPlatform` or `OSPlatform.`. The shape is read
+off the filesystem — an ancestor ending `.app` with a `Contents/`, or an `app-*` directory whose
+parent holds `current` — and writability is **probed by writing**, because `/Applications` is
+writable for an admin and not for a standard user and no path inspection reveals which.
+
+Platform branches exist only in the byte-movers, which is where they belong: `AtomicFile`
+(`renamex_np`, `rename`), `NativeExec` (`execv`), `WinTrust` (`WinVerifyTrust`), `UpdateStager`
+(`hdiutil`/`ditto` vs `ZipFile` vs `tar`) and `PayloadVerifier`.
+
+**One known exception, and it is deliberate:** `InstallSite.CanSelfUpdate` refuses `InstallShape.Flat`
+even when the directory is writable. That is not a platform branch — it is that a flat install has
+nowhere to put a second version — but it does mean writability alone is not the predicate, and
+`FlatInstall_IsNeverSelfUpdating_EvenWhenItHappensToBeWritable` pins it.
+
+### 6. Is the manifest hook carrying its weight?
+
+**Yes, and it should probably have been the primary path.** It cost about 90 lines
+(`UpdateManifest.cs` + `FeedUrlAllowList.cs`) and it is the only reason design §15's migration can
+reach the installed base at all: a shipped client that does not understand `feedUrl` can never be
+told to look elsewhere, so turning GitHub off would strand every older copy silently and forever.
+
+The argument for making it primary is that name-convention matching has a failure mode the manifest
+does not: it is a **contract spread across three packaging scripts in two shell languages**, and
+breaking it produces no error anywhere. `UpdateAssetNamingConventionTests` exists precisely because
+that failure is invisible — and a single published manifest would make the whole class of failure
+impossible, at the cost of one more file per release. Worth reconsidering before the first release
+that changes an artifact name.
+
+Two things the implementation learned that the design did not anticipate:
+
+- **The artifact name carries `VERSION` verbatim, not the normalised SemVer.** `packaging/version.sh`
+  interpolates `CRF_VERSION` as written, so a `VERSION` of `1.0` produces `circuitRF-1.0-arm64.dmg`
+  while `SemanticVersion` normalises the tag to `1.0.0`. Matching on the normalised form alone looks
+  right and finds nothing. `ReleaseInfo.VersionText` is the tag's own spelling and is tried first.
+- **`minimumUpgradableFrom` is a refusal, not a fallback.** A release that says a client may not jump
+  to it directly means it, and quietly name-matching around that would defeat the only reason the
+  field exists. An *unparseable* one is treated as absent, because a typo in a manifest must not
+  brick the update path for everyone.
+
+### 7. Two gaps, stated rather than worked around
+
+**harmonicaRF and wBond standalone have no Message Panel.** `MessagesTool` is a docking tool of
+circuitRF's workspace; neither shell has one, and neither has a status bar or any other message
+surface. So R-AU-47's one line has nowhere to go in those two applications: the check, the staging,
+the verification and the launch-time swap are identical, and a staged update is simply silent there.
+`UpdateStartup.AfterFirstWindow(null)` is what those two pass. Inventing a toast for them would be a
+second notification mechanism in a phase whose R-AU-48 is emphatic about not growing UI, so it is
+recorded instead. **They do get the settings**, via R-AU-42's shared control.
+
+**Real ENOSPC has not been run.** The atomicity properties are covered without a full disk
+(`UpdateSwapTests`: an aborted `current` write, an aborted unpack, the atomic exchange), which is
+where the protection actually lives. The 600 MB scratch filesystem of design §13.7 remains a manual
+step.
+
+### 8. Things worth knowing that are not in either document
+
+- **`File.Move` refuses a symlink whose target is a directory.** It gates on `File.Exists(source)`,
+  which answers false for one — and `current` on Linux is exactly that. It throws
+  `FileNotFoundException` naming a file that is plainly there. `AtomicFile.WriteSymlinkAtomic` uses
+  `rename(2)` directly, which is what design §13.2 names for this case anyway. Caught by a test, not
+  by reading.
+- **`File.ResolveLinkTarget` throws on a path that does not exist**, rather than returning null, so
+  every caller needs a guard. `AtomicFile.IsSymlink` / `ExistsIncludingLink` are that guard, in one
+  place, because three call sites had it wrong independently.
+- **A dangling `current` symlink is still a pointer.** `File.Exists` answers false for one, which
+  would silently demote a working Linux install to notify-only.
+- **`codesign` writes its description to stderr, not stdout.** Reading only stdout gives a silent
+  "no Team ID" rather than an error — which would fail the identity check on a correctly signed
+  bundle.
+- **Authenticode validity is not the same question as "is a certificate embedded".** A tampered
+  payload keeps its certificate and fails only the hash sealed inside it, so `PayloadVerifier` calls
+  `WinVerifyTrust` before reading the subject. Reading the subject alone would accept exactly the
+  file the check exists to reject. `X509Certificate.CreateFromSignedFile` is `SYSLIB0057`-obsolete
+  with no replacement for reading a signed PE, so the suppression is narrowed to that one call.
+- **`LibraryImport` requires `AllowUnsafeBlocks`.** Turning unsafe code on for the whole UI project
+  to reach one libc entry point is a much larger change than the call is worth, so the three
+  P/Invokes use `DllImport` with `SYSLIB1054` suppressed locally.
+- **Two test classes that both redirect `AppDataRoot` are NOT serialized by having a
+  `DisableParallelization` collection each** — that only serializes tests *within* a collection. The
+  crash-report tests and the update tests each had their own, and the full-solution run failed once
+  on it while `dotnet test tests/Ui.Tests` passed 9,300/9,300 in isolation. Both now share
+  `AppDataRootCollection`. This is the shape isolated repetition never reproduces, so the only
+  verification that means anything is a full-solution run.
+- **The download re-check interval is `init`-settable.** Only so a test can drive the loop with a
+  300 KB payload instead of 32 MB; nothing in the application changes it, and the test asserts the
+  shipping default is still 16 MB. A counter, never a duration.
+
+
 ## Crash reports for the packaged app (user report, 2026-08-25)
 
 A user hit "a couple of crashes this afternoon while I was running the s-parameter simulation" and
@@ -10007,3 +10569,155 @@ one and sees no rotation — which is exactly how the first probe of this looked
 Gate: `tests/Ui.Tests/Layout/RotateDuringDragTests.cs` (6 tests) — the rotate and its live preview,
 the drop still landing, `Shift+R` the other way, an ordinary rectangle (the "any object" half, driven
 by its bbox swapping 8x2 to 2x8), the handle-drag exclusion, and the Ctrl+R guard.
+
+---
+
+## Automatic updates — security review round 3 (2026-08-25)
+
+Ten findings against the shipped auto-update subsystem, after two functional review rounds. **None was
+reachable end to end.** That is the finding worth recording: in every case one guard somewhere else in
+the pipeline happened to stand in the way, and a pipeline whose safety rests on one guard per class is
+one refactor from being wrong. The fixes put the check at the line that *consumes* the value rather than
+somewhere upstream of it. Full statement in `docs/design/auto-update.md` §9.1 and §9.2.
+
+**The two that are not fixable in code, and are now written down as exposures rather than preferences:**
+
+- **An attacker who can publish a release to the GitHub repository gets code execution on Linux and on
+  Windows.** macOS is covered — the bundle seal covers every file in it, `pcell-python/**` included, and
+  they would need the Developer ID key. Linux has no platform signing at all. Windows has Authenticode,
+  which covers PEs and therefore *not* `pcell-python/**/*.py`, which circuitRF executes. Design §15.5's
+  signed manifest is the only thing that closes either, and it stays deferred — but §17 now says what it
+  is being deferred *against*, and `BUILDING.md` says to defend the GitHub account as a signing key.
+- **`PublishSingleFile` is load-bearing for the Windows check.** It is what makes "every PE in the
+  payload" and "the whole application" the same set. Turning it off makes `VerifyWindowsTree` refuse
+  every payload (third-party assemblies are not signed by us) — which fails loudly in the log rather
+  than silently, but it is a decision, not a detail.
+
+**The eight that were fixed.** Each is one line to a few dozen:
+
+- **The Windows identity check proved one file.** `VerifyWindowsExecutable` on `circuitRF.exe` only, so
+  a payload could carry a genuine, correctly-signed apphost copied verbatim from a real release beside
+  anything at all. Now `VerifyWindowsTree`, over every `.exe`/`.dll` in the staged tree.
+- **The `.dmg` was mounted before anything looked at it.** `hdiutil attach` hands attacker-supplied
+  bytes to the kernel's HFS+/APFS parsers; the bundle's seal was only examined afterwards. `build-dmg.sh`
+  already signs the image with the same Developer ID as the bundle, so verifying the container first
+  costs one `codesign` call. Also `-noautoopen -owners off`.
+- **Payload URLs were not constrained at all.** `UpdateManifest` allow-listed the URL it supplied; the
+  feed's own asset URLs went straight into `HttpRequestMessage` — any scheme, any host. `http://` is
+  precisely what an on-path attacker would substitute, and on Linux an unconstrained URL is the whole
+  trust chain.
+- **Nothing bounded a response.** The release list and a manifest are read with `ReadAsStringAsync`,
+  which buffers the whole body (now 8 MB, client-enforced); and when a feed publishes **no** size the
+  download loop had no stop condition, so its only bound was the free-space re-check — i.e. the volume,
+  down to the 1 GB reserve. Design §13's own failure, arriving from the network rather than the
+  arithmetic. Now a 2 GB cap on both the advertised size and the transfer.
+- **`SemanticVersion` accepted any character in a prerelease or build identifier**, so `1.0.0+../../evil`
+  parsed — and `ReleaseInfo.VersionText` is the tag's own spelling and becomes `<install root>/app-<ver>`
+  and `updates/staged/<ver>/`. The asset-name check downstream was the only thing in the way. SemVer's
+  own `[0-9A-Za-z-]` rule removes the class instead of guarding it.
+- **Helper tools were started by bare name**, so `tar`, `codesign`, `hdiutil` and `ditto` resolved
+  through `PATH` — and the Linux user-local install puts its own launcher in `~/.local/bin`, which most
+  distributions place ahead of `/usr/bin`. A `codesign` dropped there *is* the verification step. Now
+  absolute paths, with the bare name only as a last resort.
+- **A `.tar.gz` could write outside its own tree via a symlink.** GNU tar refuses a member *named* with
+  `..`, but a link whose *target* escapes is an ordinary valid member — and that tree is about to be
+  renamed into the live install root and executed from. `UpdateStager.FirstEscapingLink` walks it once
+  before anything else does.
+- **A transient unpack failure blacklisted the version permanently.** `Reject` fired for
+  `UnpackFailed` as well as `VerificationFailed`, and the blacklist is permanent *and* shared —
+  `AppDataRoot` is one directory for all three applications and every build of them. No `tar` on the
+  box, or one locked file, stranded the user on their current version forever, silently, with a log
+  line as the only evidence anywhere. Now only verification blacklists.
+
+**And three smaller ones in the same shape**, where a value from a file became a path:
+`state.json`'s directory names are validated at `UpdateSwap.WriteCurrent` itself (not only at its
+callers); the Windows stub's `read_pointer` now actually rejects `.` and `..`, which its own comment had
+claimed for it since it was written; and `install.sh` validates the `current` it reads out of the archive
+before interpolating it into an `rm -rf` — a `current` holding `../..` deleted `~/.local`.
+
+**One unrelated flake fixed while here:** `UpdateSpaceTests.TheProbeResolvesTheVolumeThatActuallyHoldsThePath`
+compared two *live* `AvailableFreeSpace` readings for exact equality and failed on a 40 KB drift. What it
+is asserting is that the same volume was chosen, and a different one differs by gigabytes; it now uses a
+64 MB tolerance.
+
+Gate: `tests/Ui.Tests/Updates/UpdateSecurityHardeningTests.cs` (17 tests) plus four new refusal cases in
+`UpdateDownloaderTests`. Three of the seventeen are source scans rather than behaviour — the disk image
+being verified before it is mounted, the mount flags, and the Windows check being against the tree —
+because the behaviour needs a signed artifact and a real platform, and a source scan is better than no
+test at all there.
+
+---
+
+## Automatic updates — §15.5 signed manifest, and the settings move (2026-08-25)
+
+Two owner requests after the security round above: build design §15.5, and put the update settings on
+the tab that now holds everything security-related.
+
+### The signed manifest
+
+**It is built and it ships inert.** `ReleaseKeys.PublicKeySpkiBase64` is empty, so this build behaves
+exactly as before; the moment a key is pasted in, an unsigned release stops being a candidate at all.
+That is the only shape that adds the mechanism without stranding the installed base — a client demanding
+a signature nobody is producing yet is a client that never updates again.
+
+**The three decisions worth keeping:**
+
+- **ECDSA P-256 / SHA-256, not the Ed25519 the design note named.** .NET has no managed Ed25519, and a
+  native dependency would trip the root `CLAUDE.md`'s *ask before* — for a change of algorithm, not of
+  security level. P-256 is in the BCL at the same 128-bit level. **The curve is pinned in the verifier
+  rather than read out of the key**, so a key naming a weaker one is refused even though it is the key
+  we compiled in; the point of compiling a key in is that its properties are decided at build time.
+- **The signature is DETACHED** — `update-manifest.json.sig`, over the manifest's bytes as served — and
+  the manifest's own reserved `signature` field is *not* used. A signature inside the document it signs
+  needs a canonicalisation rule, and a canonicalisation rule is a second specification that two programs
+  written years apart both have to get exactly right. The field stays parsed so a manifest written
+  against the earlier note is not rejected as malformed; nothing reads it. This is also why
+  `IUpdateFeed.GetTextAssetAsync` became `GetAssetBytesAsync`: decoding to a string and re-encoding is a
+  round trip a BOM or any non-UTF-8 byte does not survive, and verifying a re-encoding of the input is
+  not verifying what was served.
+- **The demand is unconditional, never "verify if present."** That is a downgrade attack with extra
+  steps: whoever can publish a release can publish one with no manifest, and an updater reading the
+  absence of a signature as *nothing to check* has learned nothing from checking. So a keyed build
+  requires the manifest, a valid signature, **and** a well-formed SHA-256 for the chosen asset — the
+  hash being the only thing that carries the signature's proof through to the payload's bytes.
+
+**A key deliberately RELAXES the host allow-list**, and that is not a weakening. `FeedUrlAllowList`
+exists because, with nothing but TLS behind a manifest, the host *is* the trust anchor. A keyed build's
+anchor is a key on no host, so constraining the hostname stops adding anything and starts preventing the
+two things the signature was for — §15.4's migration off GitHub and §15.6's mirroring, neither of which a
+shipped client can otherwise be told about. `https` is still required, for confidentiality rather than
+integrity. One predicate, `FeedUrlAllowList.IsAcceptable`, states the whole rule; every fetch site calls
+it.
+
+**`ReleaseTrust` is a value, not a global.** The obvious shape was a mutable `ReleaseKeys.PublicKey` a
+test could assign — and a trust anchor with a setter is a trust anchor with a way to remove it. The key
+is passed into `UpdateSelector.SelectAsync` instead, defaulting to `ReleaseTrust.Compiled`. The
+application constructs nothing; tests construct their own; neither leaves state for the other.
+
+**`tools/ReleaseSigner`** (keygen / manifest / sign / verify) is what makes any of it usable, and it
+**references nothing else in this repository**, per the root `CLAUDE.md`'s rule for `tools/` — it
+implements the format the client reads rather than sharing code with it. `SignedManifestTests` verifies a
+fixture the *tool* produced, which is the half a self-signing test could never prove; the manifest is
+embedded as **base64 of its bytes**, not as a string literal, because a multi-line literal is whatever
+line endings the checkout used and would verify on the machine that wrote it and fail on a Windows clone.
+
+**What it still does not cover:** a compromise of the signing key itself. macOS and Windows keep the
+platform code signature as a second independent anchor and both checks run, so the key alone is not
+enough there. On Linux it is — which is why the private key's handling is a release-process matter, and
+why `BUILDING.md` now says to treat it exactly as the Developer ID certificate is treated.
+
+### The settings move
+
+Settings ▸ **Permissions** is now **Security & Permissions**, and the two update checkboxes moved there
+from General. The tab is the single place for anything deciding what circuitRF may *run* or *fetch* — the
+external-PDK generator trust store and automatic updates together. A checkbox governing whether the
+application downloads and installs code from the internet is a security setting first.
+
+`UpdateSettingsView` itself is untouched: it is one control with two hosts (`SettingsView` for circuitRF
+and wBond, `HarmonicaSettingsDialog` for harmonicaRF, which does not use `SettingsView` at all), so the
+move is one line of XAML in one host. The Message Panel line now names the tab, and a test brackets the
+control between the two `TabItem`s — a control moves back to whichever tab someone is editing at the
+time, and nothing else in the build would notice.
+
+Gate: `tests/Ui.Tests/Updates/SignedManifestTests.cs` (18) and two new cases in
+`UpdateSettingsWiringTests`.

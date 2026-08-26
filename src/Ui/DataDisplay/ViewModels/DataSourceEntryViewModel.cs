@@ -229,12 +229,17 @@ public partial class DataSourceEntryViewModel : ViewModelBase
             if (_filePath is not string path || IsBroken) return;
             try
             {
+                // ArgumentList, never the single-string overload: on Unix .NET parses that string
+                // into argv itself, so a Touchstone file whose NAME contains a double quote closes
+                // ours and the rest becomes further arguments to `open` — which takes
+                // `-a <application>` (security review, 2026-08-25).
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                    Process.Start(new ProcessStartInfo("open", $"-R \"{path}\"")
+                    Process.Start(new ProcessStartInfo("open", ["-R", path])
                         { UseShellExecute = false });
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
-                        { UseShellExecute = true });
+                    // Explorer wants `/select,<path>` as ONE argument.
+                    Process.Start(new ProcessStartInfo("explorer.exe", [$"/select,{path}"])
+                        { UseShellExecute = false });
                 else
                     Process.Start(new ProcessStartInfo("xdg-open",
                         Path.GetDirectoryName(path) ?? "")

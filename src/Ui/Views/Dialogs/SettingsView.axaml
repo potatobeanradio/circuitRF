@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
         xmlns:dialogs="clr-namespace:CircuitRF.Ui.Views.Dialogs"
         x:Class="CircuitRF.Ui.Views.Dialogs.SettingsView"
         Title="circuitRF Settings"
@@ -89,97 +90,14 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ── Wirebonds tab ──────────────────────────────────────────── -->
-            <TabItem Header="Wirebonds">
-                <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="0">
-
-                        <!-- wbond.md §6.4's creation defaults. Per USER, not per design: they
-                             describe how one shop's bonder is set up, and a .wBond arriving from
-                             someone else must not change what the next wire you draw looks like. -->
-                        <TextBlock Text="Wirebonds" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,0,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto,6,Auto,6,Auto,Auto">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Points per wire:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <NumericUpDown Grid.Row="0" Grid.Column="1" Name="WBondPointsUpDown"
-                                           Minimum="3" Maximum="101" Increment="1" FormatString="0"
-                                           Width="110" HorizontalAlignment="Left" FontSize="12"
-                                           ValueChanged="OnWBondPointsChanged"/>
-
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Wire diameter:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                <NumericUpDown Name="WBondDiameterUpDown" Minimum="0.05" Maximum="20"
-                                               Increment="0.1" FormatString="0.###"
-                                               Width="110" FontSize="12"
-                                               ValueChanged="OnWBondDiameterChanged"/>
-                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
-                            </StackPanel>
-
-                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Wire material:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox Grid.Row="4" Grid.Column="1" Name="WBondMaterialCombo"
-                                      Width="150" HorizontalAlignment="Left" FontSize="12"
-                                      SelectionChanged="OnWBondMaterialChanged"/>
-
-                            <!-- Wire z-height (owner, 2026-08-17). Minimum is deliberately NEGATIVE and
-                                 zero is a real value: a foot at z=0 lands on the reference plane and a
-                                 negative one sits in a cavity below it. Both are geometry someone bonds,
-                                 which is why this preference alone treats "absent" and "zero" as
-                                 different things. -->
-                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Wire z-height:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                <NumericUpDown Name="WBondFootZUpDown" Minimum="-100" Maximum="1000"
-                                               Increment="1" FormatString="0.###"
-                                               Width="110" FontSize="12"
-                                               ValueChanged="OnWBondFootZChanged"/>
-                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
-                            </StackPanel>
-
-                            <TextBlock Grid.Row="8" Grid.Column="0" Text="Paste pitch:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                <NumericUpDown Name="WBondPastePitchUpDown" Minimum="0.1" Maximum="1000"
-                                               Increment="1" FormatString="0.###"
-                                               Width="110" FontSize="12"
-                                               ValueChanged="OnWBondPastePitchChanged"/>
-                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
-                            </StackPanel>
-
-                            <TextBlock Grid.Row="9" Grid.Column="1" FontSize="11" Opacity="0.6"
-                                       TextWrapping="Wrap" Margin="0,6,0,0"
-                                       Text="Applies to newly drawn wires. Existing wires keep whatever they were drawn with. Nudge steps stay 1 mil / 5 mil — those are bonder-process quantities, not display settings.&#10;Wire z-height is where BOTH feet of a new wire land — a wire drawn in the layout view, and the wire a new wBond component is created with. The profile view is unaffected: there you click the height you want.&#10;Paste pitch places a pasted wire clear of what is already there, stepping in +y until it lands free. It never re-spaces the wires on the clipboard."/>
-                        </Grid>
-
-                        <!-- The built-in assembly rule set's one number. It lives on the WIREBONDS tab
-                             rather than beside "Check design rules before exporting" because what a
-                             user is looking for here is a wire dimension, and it sits next to the
-                             other four. -->
-                        <TextBlock Text="Design Rules" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Wire clearance:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                <NumericUpDown Name="WireClearanceUpDown" Minimum="0" Maximum="100"
-                                               Increment="0.1" FormatString="0.###"
-                                               Width="110" FontSize="12"
-                                               ValueChanged="OnWireClearanceChanged"/>
-                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
-                            </StackPanel>
-                            <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Opacity="0.6"
-                                       TextWrapping="Wrap" Margin="0,6,0,0"
-                                       Text="circuitRF's built-in assembly rule: how close two wires may pass, measured surface to surface between their outer edges. Reported as an error by a design-rule check, whether or not a .wasm assembly rule file is referenced — a house's rule file is not what makes overlapping metal invalid. Zero reports only wires that actually touch or overlap. A .wasm's own spacing rules are checked as well as this one, never instead of it."/>
-                        </Grid>
-
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-
-            <!-- ── Permissions tab ──────────────────────────────────── -->
-            <TabItem Header="Permissions">
+            <!-- ── Security & Permissions tab ─────────────────────────────────
+                 Everything that decides what circuitRF is allowed to RUN or to FETCH lives here,
+                 rather than being spread across the tab a feature happened to arrive in. Automatic
+                 updates moved out of General for that reason (owner, 2026-08-25): the checkbox that
+                 governs whether the application downloads and installs code from the internet is a
+                 security setting first and a convenience second, and a user auditing what this
+                 binary is permitted to do should find it in one place. -->
+            <TabItem Header="Security &amp; Permissions">
                 <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Spacing="0">
 
@@ -200,6 +118,18 @@
                                        TextWrapping="Wrap" Margin="0,4,0,0"
                                        Text="Forgets which kits are allowed to run their own artwork scripts, so circuitRF asks about each one again."/>
                         </Grid>
+
+                        <!-- External device workers. The OTHER kind of program a kit can make
+                             circuitRF run: pcell-generators.json ships scripts, device-provider.json
+                             ships a worker, and until 2026-08-25 only the first of the two asked.
+                             Same one-control-two-hosts arrangement as the Updates section below. -->
+                        <dlg:ExternalWorkerSettingsView Margin="0,24,0,0"/>
+
+                        <!-- Updates. The controls and their handlers live in UpdateSettingsView so
+                             that harmonicaRF's own dialog — which does not use SettingsView at all —
+                             hosts the SAME implementation rather than a second copy of it. Both read
+                             and write the same two AppPreferences properties; neither owns them. -->
+                        <dlg:UpdateSettingsView Margin="0,24,0,0"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -327,6 +257,95 @@
                     </Grid>
 
                 </Grid>
+            </TabItem>
+
+            <!-- ── Wirebonds tab ──────────────────────────────────────────── -->
+            <TabItem Header="Wirebonds">
+                <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="0">
+
+                        <!-- wbond.md §6.4's creation defaults. Per USER, not per design: they
+                             describe how one shop's bonder is set up, and a .wBond arriving from
+                             someone else must not change what the next wire you draw looks like. -->
+                        <TextBlock Text="Wirebonds" FontSize="11" FontWeight="SemiBold"
+                                   Opacity="0.55" Margin="0,0,0,6"/>
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto,6,Auto,6,Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Points per wire:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <NumericUpDown Grid.Row="0" Grid.Column="1" Name="WBondPointsUpDown"
+                                           Minimum="3" Maximum="101" Increment="1" FormatString="0"
+                                           Width="110" HorizontalAlignment="Left" FontSize="12"
+                                           ValueChanged="OnWBondPointsChanged"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Wire diameter:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <NumericUpDown Name="WBondDiameterUpDown" Minimum="0.05" Maximum="20"
+                                               Increment="0.1" FormatString="0.###"
+                                               Width="110" FontSize="12"
+                                               ValueChanged="OnWBondDiameterChanged"/>
+                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Wire material:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox Grid.Row="4" Grid.Column="1" Name="WBondMaterialCombo"
+                                      Width="150" HorizontalAlignment="Left" FontSize="12"
+                                      SelectionChanged="OnWBondMaterialChanged"/>
+
+                            <!-- Wire z-height (owner, 2026-08-17). Minimum is deliberately NEGATIVE and
+                                 zero is a real value: a foot at z=0 lands on the reference plane and a
+                                 negative one sits in a cavity below it. Both are geometry someone bonds,
+                                 which is why this preference alone treats "absent" and "zero" as
+                                 different things. -->
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Wire z-height:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <NumericUpDown Name="WBondFootZUpDown" Minimum="-100" Maximum="1000"
+                                               Increment="1" FormatString="0.###"
+                                               Width="110" FontSize="12"
+                                               ValueChanged="OnWBondFootZChanged"/>
+                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="8" Grid.Column="0" Text="Paste pitch:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <NumericUpDown Name="WBondPastePitchUpDown" Minimum="0.1" Maximum="1000"
+                                               Increment="1" FormatString="0.###"
+                                               Width="110" FontSize="12"
+                                               ValueChanged="OnWBondPastePitchChanged"/>
+                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="9" Grid.Column="1" FontSize="11" Opacity="0.6"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Text="Applies to newly drawn wires. Existing wires keep whatever they were drawn with. Nudge steps stay 1 mil / 5 mil — those are bonder-process quantities, not display settings.&#10;Wire z-height is where BOTH feet of a new wire land — a wire drawn in the layout view, and the wire a new wBond component is created with. The profile view is unaffected: there you click the height you want.&#10;Paste pitch places a pasted wire clear of what is already there, stepping in +y until it lands free. It never re-spaces the wires on the clipboard."/>
+                        </Grid>
+
+                        <!-- The built-in assembly rule set's one number. It lives on the WIREBONDS tab
+                             rather than beside "Check design rules before exporting" because what a
+                             user is looking for here is a wire dimension, and it sits next to the
+                             other four. -->
+                        <TextBlock Text="Design Rules" FontSize="11" FontWeight="SemiBold"
+                                   Opacity="0.55" Margin="0,20,0,6"/>
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Wire clearance:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                <NumericUpDown Name="WireClearanceUpDown" Minimum="0" Maximum="100"
+                                               Increment="0.1" FormatString="0.###"
+                                               Width="110" FontSize="12"
+                                               ValueChanged="OnWireClearanceChanged"/>
+                                <TextBlock Text="mil" VerticalAlignment="Center" FontSize="12" Opacity="0.7"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="1" Grid.Column="1" FontSize="11" Opacity="0.6"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Text="circuitRF's built-in assembly rule: how close two wires may pass, measured surface to surface between their outer edges. Reported as an error by a design-rule check, whether or not a .wasm assembly rule file is referenced — a house's rule file is not what makes overlapping metal invalid. Zero reports only wires that actually touch or overlap. A .wasm's own spacing rules are checked as well as this one, never instead of it."/>
+                        </Grid>
+
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
         </TabControl>

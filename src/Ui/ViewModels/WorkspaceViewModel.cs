@@ -2992,6 +2992,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? Path.GetDirectoryName(CurrentWorkspacePath)
             : null;
         var w = new Views.Dialogs.SettingsView(workspaceDir);
+
+        // Help > Check for Updates... is disabled while automatic updates are off, and this dialog is
+        // where that gets turned on and off. CanExecute is only re-evaluated when the command says
+        // so, so without this the menu item kept whatever state it had when this view-model was
+        // constructed.
+        w.Closed += (_, _) => RefreshUpdateCommandState();
+
         w.Show(resolved);
         await Task.CompletedTask;
     }
@@ -8923,8 +8930,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                // /select, highlights the file in Explorer; works for both files and folders
-                Process.Start(new ProcessStartInfo("explorer", $"/select,\"{path}\"")
+                // /select, highlights the file in Explorer; works for both files and folders.
+                // ArgumentList form, matching every other launch site — `/select,<path>` is ONE
+                // argument, so it is added as one rather than assembled into a command line here.
+                Process.Start(new ProcessStartInfo("explorer", [$"/select,{path}"])
                     { UseShellExecute = false });
             }
             else
@@ -12336,6 +12345,94 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex)
         {
             Messages.Error($"Could not open the crash report folder: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Help ▸ Check for Updates… — the same check the background scheduler runs, ignoring the
+    /// 24-hour throttle, and reporting through the <b>Message Panel rather than a dialog</b>.
+    ///
+    /// <para>This is the one place a network failure is allowed to be visible, because here the user
+    /// explicitly asked. Everywhere else an unreachable feed is silent: an offline machine is the
+    /// normal state for a large fraction of this application's users, and a recurring "couldn't
+    /// check for updates" line would be a defect rather than a feature.</para>
+    ///
+    /// <para>The item is <b>disabled</b> when automatic updates are off — a manual check is still a
+    /// network call, and "never checks for updates" has to mean what it says — and when the install
+    /// site is read-only, where the notify-only path serves instead. <see cref="CanCheckForUpdates"/>
+    /// is what the menu binds its enablement to.</para>
+    ///
+    /// <para><b>No "Relaunch" button appears here or anywhere else.</b> The application can be
+    /// holding unsaved workspaces; a one-click relaunch invites data loss to save a keystroke.</para>
+    /// </summary>
+    /// <summary>
+    /// <b>Not gated on <c>CanSelfUpdate</c>.</b> A notify-only install still checks and still posts a
+    /// line with a link (R-AU-1), so disabling the item there left those users with no way at all to
+    /// learn a new version existed — and made this method's own NotifyOnly branch unreachable on
+    /// exactly the installs it was written for (found in a second review, 2026-08-25). Automatic
+    /// updates being off is the one thing that does disable it, because a manual check is still a
+    /// network call and "never checks" has to mean what it says.
+    /// </summary>
+    public bool CanCheckForUpdates => Updates.UpdatePolicy.Current.AutomaticUpdates;
+
+    /// <summary>
+    /// Re-asks <see cref="CanCheckForUpdates"/>. <c>CanExecute</c> is only re-evaluated when the
+    /// command says so, so without this the Help item's enablement was whatever it was when this
+    /// view-model was constructed and a Settings change never reached it.
+    /// </summary>
+    public void RefreshUpdateCommandState() => CheckForUpdatesCommand.NotifyCanExecuteChanged();
+
+    [RelayCommand(CanExecute = nameof(CanCheckForUpdates))]
+    private async Task CheckForUpdatesAsync()
+    {
+        Messages.Info($"Checking for {Updates.UpdateApp.Name} updates...");
+
+        Updates.CheckResult result;
+        try   { result = await Updates.UpdateScheduler.CheckNowAsync(Messages); }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not reach the update server: {ex.Message}");
+            return;
+        }
+
+        switch (result.Outcome)
+        {
+            case Updates.CheckOutcome.UpToDate:
+                Messages.Info($"{Updates.UpdateApp.Name} {AppVersion.Display} is up to date.");
+                break;
+
+            case Updates.CheckOutcome.Staged:
+                // A check that STAGED just now already posted the "updated ... in the background"
+                // line, and saying it twice would be worse than saying it once. A check that found
+                // the version already downloaded posted nothing — the announcement fired on an
+                // earlier check — so the user who just asked would otherwise get silence.
+                if (result.Detail == Updates.UpdateService.AlreadyStagedDetail)
+                    Messages.Info(
+                        $"{Updates.UpdateApp.Name} {result.Version} has already been downloaded and "
+                        + $"will be used the next time {Updates.UpdateApp.Name} is relaunched.");
+                break;
+
+            case Updates.CheckOutcome.InsufficientSpace:
+                // Reported by CheckAsync with the figures, because the user asked.
+                break;
+
+            case Updates.CheckOutcome.NotifyOnly:
+                // CheckAsync posts the "<version> is available" line itself, once per version, and it
+                // carries the REASON — which is not always the install location: a writable per-user
+                // install whose binary is unsigned is notify-only too, and telling that user their
+                // installation is in the wrong place would send them to re-install something that is
+                // exactly where it should be.
+                break;
+
+            case Updates.CheckOutcome.Disabled:
+                Messages.Info(result.Detail.Length > 0
+                    ? result.Detail
+                    : "Automatic updates are turned off in Settings, so no check was made.");
+                break;
+
+            default:
+                Messages.Warning("Could not reach the update server. Nothing was changed.");
+                break;
         }
     }
 

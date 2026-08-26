@@ -204,6 +204,15 @@ public partial class App : Application
                 crashVm.AnnouncePendingCrashReports,
                 Avalonia.Threading.DispatcherPriority.ApplicationIdle);
 
+            // Automatic updates, at the same idle priority and for the same reason: the window is
+            // provably up, so the launch counter can be cleared and the retained previous version
+            // released. The check itself is scheduled from here and does not run for at least a
+            // minute, so it never competes with startup and never appears in a cold-start
+            // measurement. With automatic updates off, no timer is even created.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => Updates.UpdateStartup.AfterFirstWindow(crashVm.Messages),
+                Avalonia.Threading.DispatcherPriority.ApplicationIdle);
+
             // Apple Events (macOS Finder double-click).
             if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
                 activatable.Activated += (_, e) => OnActivated(e, firstWindow);
