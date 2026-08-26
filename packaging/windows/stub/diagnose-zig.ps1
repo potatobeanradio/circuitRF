@@ -34,7 +34,13 @@ param(
     [int]$Repeat = 10,
 
     # A shorter pass, for when you only want to confirm something changed.
-    [switch]$Quick
+    [switch]$Quick,
+
+    # Just list every zig on this machine, with its version, and stop. This exists because CRF_ZIG
+    # takes a PATH and nothing told anyone what to put in it - "install a different zig and point
+    # CRF_ZIG at it" is not an instruction anyone can follow without first knowing where the
+    # installer put it, and winget buries it several directories deep under a mangled package name.
+    [switch]$ListZig
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,13 +57,27 @@ $report = Join-Path $out 'zig-diagnostic.txt'
 # AT ALL - so everything sections A and B had already established was lost and the run had to be
 # repeated (owner-reported, 2026-08-25). A diagnostic is the one kind of program that must assume it
 # will not reach its own last line.
+# ONE OPEN HANDLE, FLUSHED AFTER EVERY LINE - not Add-Content per line.
+#
+# Add-Content opens and closes the file on each call, and on Windows a few hundred of those in quick
+# succession eventually collide with whatever else has the file open for an instant (a scanner, the
+# previous handle not yet released). It then throws "the process cannot access the file ... because
+# it is being used by another process", and because that throw happened INSIDE section G's try, the
+# diagnostic reported "could not read the Application log" - which was false, the log had been read
+# perfectly - and lost the rest of the crash records (owner-reported, 2026-08-25).
+#
+# A StreamWriter with AutoFlush keeps the survives-a-crash property (every line is on disk when Say
+# returns) with one handle instead of hundreds. And a failure to LOG must never end the run: a
+# diagnostic that dies because its own logging failed destroys the evidence it exists to collect,
+# which is precisely what happened.
 $lines = New-Object System.Collections.Generic.List[string]
-New-Item -ItemType File -Force -Path $report | Out-Null
+$script:writer = New-Object System.IO.StreamWriter($report, $false, ([System.Text.Encoding]::ASCII))
+$script:writer.AutoFlush = $true
 function Say {
     param([string]$Text = '')
     Write-Host $Text
     $script:lines.Add($Text)
-    Add-Content -Path $script:report -Value $Text -Encoding Ascii
+    try { $script:writer.WriteLine($Text) } catch { }
 }
 function Head { param([string]$Text)
     Say ''
@@ -178,6 +198,70 @@ function FreeMb {
     catch { $script:memWorks = $false; return $null }
 }
 
+# EVERY ZIG ON THIS MACHINE, not just the one on PATH. The whole point of CRF_ZIG is to run a
+# DIFFERENT zig than the broken one, so the report has to name the candidates - and after a
+# `winget install --version`, which zig is on PATH is exactly the thing you cannot assume.
+#
+# The search is bounded on purpose: the known install roots in full, and anything called zig* near
+# the top of C:\ or the home directory. Scanning a whole disk for zig.exe would take longer than the
+# rest of this file put together.
+function Find-AllZig {
+    $found = New-Object System.Collections.Generic.List[string]
+
+    # Join-Path THROWS on a null base, so each root is built only if its variable is set. That is
+    # not defensive noise: it is what lets this file be exercised anywhere, and an untested search
+    # is how you end up shipping one that silently finds nothing.
+    $deepRoots = @()
+    if ($env:LOCALAPPDATA) { $deepRoots += (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') }
+    if ($env:USERPROFILE)  { $deepRoots += (Join-Path $env:USERPROFILE  'scoop\apps\zig') }
+    if ($env:ProgramData)  { $deepRoots += (Join-Path $env:ProgramData  'chocolatey\lib\zig') }
+    foreach ($r in $deepRoots) {
+        if ($r -and (Test-Path $r)) {
+            Get-ChildItem $r -Recurse -Depth 3 -Filter 'zig.exe' -File -ErrorAction SilentlyContinue |
+                ForEach-Object { $found.Add($_.FullName) }
+        }
+    }
+
+    # Hand-unzipped copies: C:\zig-..., %USERPROFILE%\zig-..., and the Downloads folder, which is
+    # where a zip from ziglang.org lands if nobody moved it.
+    $shallowRoots = @('C:\')
+    if ($env:USERPROFILE) { $shallowRoots += $env:USERPROFILE; $shallowRoots += (Join-Path $env:USERPROFILE 'Downloads') }
+    foreach ($r in $shallowRoots) {
+        if (-not ($r -and (Test-Path $r))) { continue }
+        Get-ChildItem $r -Directory -Filter 'zig*' -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem $_.FullName -Recurse -Depth 2 -Filter 'zig.exe' -File -ErrorAction SilentlyContinue |
+                ForEach-Object { $found.Add($_.FullName) }
+        }
+    }
+
+    $cmd = Get-Command zig -ErrorAction SilentlyContinue
+    if ($cmd) { $found.Add($cmd.Source) }
+
+    return ($found | Sort-Object -Unique)
+}
+
+function Show-AllZig {
+    $all = Find-AllZig
+    if (-not $all -or $all.Count -eq 0) {
+        Say '  no zig found in the usual places'
+        return
+    }
+    $onPath = $null
+    $c = Get-Command zig -ErrorAction SilentlyContinue
+    if ($c) { $onPath = $c.Source }
+
+    Say '  zig installations found (use one of these paths as CRF_ZIG):'
+    foreach ($z in $all) {
+        # `zig version` is the one thing measured to be completely reliable on the broken build
+        # (10/10 twice over), so asking each candidate what it is costs nothing and is trustworthy.
+        $v = '?'
+        try { $v = (Run -Exe $z -Arguments @('version')).Output | Select-Object -First 1 } catch { }
+        $note = ''
+        if ($onPath -and $z -eq $onPath) { $note = '   <- the one on PATH' }
+        Say ("    {0,-8} {1,-7} {2}{3}" -f $v, ('[' + (Get-PeMachine $z) + ']'), $z, $note)
+    }
+}
+
 function Get-PeMachine {
     param([string]$Path)
     try {
@@ -196,6 +280,20 @@ function Get-PeMachine {
 
 
 # == A. What this machine is ===================================================
+
+if ($ListZig) {
+    Head 'zig installations'
+    Show-AllZig
+    Say ''
+    Say '  Then, in the same PowerShell window:'
+    Say '      $env:CRF_ZIG = "<one of the paths above>"'
+    Say '      .\packaging\windows\stub\diagnose-zig.ps1'
+    Say '      .\packaging\windows\build-windows.ps1'
+    Say ''
+    Say '  Unset it again with:  Remove-Item Env:\CRF_ZIG'
+    try { $script:writer.Flush(); $script:writer.Dispose() } catch { }
+    return
+}
 
 Head 'A. Environment'
 
@@ -235,6 +333,10 @@ foreach ($z in $zigs) {
     Say ("    {0}  [{1}]" -f $z.Source, (Get-PeMachine $z.Source))
 }
 $zigExe = $zigs[0].Source
+
+Say ''
+Show-AllZig
+Say ''
 
 foreach ($v in 'ZIG_GLOBAL_CACHE_DIR', 'ZIG_LOCAL_CACHE_DIR', 'ZIG_LIB_DIR') {
     Say ("  {0,-22} : {1}" -f $v, [Environment]::GetEnvironmentVariable($v))
@@ -364,18 +466,51 @@ $fPrivate = Probe 'private cache' $zigExe @('cc','-target',$wt,'-mcpu=baseline',
 # that is random, silent, and specific to one machine.
 
 Head 'G. Windows crash records for zig'
+# THE TRY WRAPS THE READ AND NOTHING ELSE. It used to wrap the printing too, so a failure while
+# WRITING the report was reported as a failure to READ the event log - a message that names the
+# wrong subsystem entirely and would have sent the next person looking at permissions on the
+# Windows event log.
+$events = $null
 try {
-    $events = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000, 1001 } -MaxEvents 250 -ErrorAction Stop |
-              Where-Object { $_.Message -match 'zig' }
-    if ($events) {
+    $events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000, 1001 } -MaxEvents 250 -ErrorAction Stop |
+                Where-Object { $_.Message -match 'zig' })
+}
+catch { Say "  could not read the Application log: $($_.Exception.Message)" }
+
+if ($null -ne $events) {
+    if ($events.Count -gt 0) {
         foreach ($e in ($events | Select-Object -First 8)) {
             Say ("  {0}  Id={1}" -f $e.TimeCreated, $e.Id)
             foreach ($l in ($e.Message -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 6)) {
                 Say "      $l"
             }
         }
-    } else { Say '  no Application-log crash records mention zig' }
-} catch { Say "  could not read the Application log: $($_.Exception.Message)" }
+        # The FAULT OFFSET and the exception code are the two fields that matter, so they are pulled
+        # out of the wall of text and counted. An offset that repeats is one code site; offsets that
+        # scatter are something else entirely, and that distinction is the finding.
+        $offsets = @{}
+        foreach ($e in $events) {
+            # Capture the SIGNIFICANT digits directly. The obvious spelling, .TrimStart('0x'),
+            # happens to give the right answer only because TrimStart takes a char SET and strips
+            # every leading '0' and 'x' - correct by accident, and unreadable as intent.
+            $m = [regex]::Match($e.Message, 'Fault offset: 0x0*([0-9a-fA-F]+)')
+            if ($m.Success) {
+                $o = $m.Groups[1].Value
+                if (-not $offsets.ContainsKey($o)) { $offsets[$o] = 0 }
+                $offsets[$o]++
+            }
+        }
+        if ($offsets.Count -gt 0) {
+            Say ''
+            Say ("  distinct fault offsets: " + (($offsets.Keys | Sort-Object | ForEach-Object { "0x$_ x$($offsets[$_])" }) -join ', '))
+            if ($offsets.Count -le 2) {
+                Say '    -> one code site. A pointer that is intermittently bad at a fixed place in'
+                Say '       the program, not corruption scattered across it.'
+            }
+        }
+    }
+    else { Say '  no Application-log crash records mention zig' }
+}
 
 
 # == Summary ===================================================================
@@ -430,6 +565,46 @@ Say ("  cache: shared {0}/{1}, private {2}/{3}" -f $fShared.Ok, $fShared.Times, 
 Say ''
 $total = ($cResults + @($dCompile,$dLink,$dZig) + $eResults + @($fShared,$fPrivate))
 
+# EVERY DISTINCT CRASH CODE, NAMED. One access violation is a bug; an access violation alongside a
+# stack overflow, a heap-corruption trap and a /GS stack-cookie failure is MEMORY CORRUPTION, and no
+# other reading survives that combination. Naming them is what turns a column of hex into that
+# conclusion, so the reader does not have to look four status codes up to see it.
+$ntNames = @{
+    '0xC0000005' = 'access violation'
+    '0xC000001D' = 'illegal instruction'
+    '0xC0000025' = 'non-continuable exception'
+    '0xC0000094' = 'integer divide by zero'
+    '0xC00000FD' = 'STACK OVERFLOW'
+    '0xC0000374' = 'HEAP CORRUPTION detected'
+    '0xC0000409' = 'STACK BUFFER OVERRUN (/GS security cookie check failed)'
+}
+$allCodes = @{}
+foreach ($r in $total) {
+    foreach ($k in $r.Codes.Keys) {
+        if ($k -like 'CRASH*') {
+            $hex = $k.Substring(6)
+            if (-not $allCodes.ContainsKey($hex)) { $allCodes[$hex] = 0 }
+            $allCodes[$hex] += $r.Codes[$k]
+        }
+    }
+}
+if ($allCodes.Count -gt 0) {
+    Say '  crash codes seen:'
+    foreach ($k in ($allCodes.Keys | Sort-Object)) {
+        $name = 'unknown'
+        if ($ntNames.ContainsKey($k)) { $name = $ntNames[$k] }
+        Say ("    {0}  x{1,-3} {2}" -f $k, $allCodes[$k], $name)
+    }
+    $corrupting = @($allCodes.Keys | Where-Object { $_ -in '0xC00000FD', '0xC0000374', '0xC0000409' })
+    if ($corrupting.Count -gt 0) {
+        Say '    -> more than one KIND of memory fault, at the same place in the program. A stack'
+        Say '       overflow, a heap-corruption trap or a /GS cookie failure beside an access'
+        Say '       violation is memory corruption inside the compiler; nothing on this machine'
+        Say '       and nothing in this repository can produce that combination.'
+    }
+    Say ''
+}
+
 # The memory verdict, over EVERY attempt in the run rather than per section, because per section the
 # sample is far too small to mean anything.
 $allOk  = @(); $allBad = @()
@@ -463,4 +638,4 @@ if ($tCrash -eq 0) {
 
 Say ''
 Say "Report written to $report"
-Set-Content -Path $report -Value $lines -Encoding Ascii
+try { $script:writer.Flush(); $script:writer.Dispose() } catch { }

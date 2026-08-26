@@ -445,8 +445,10 @@ if ($stubFailures.Count -gt 0) {
     # eleven times in twelve. Advice that sends the operator to re-install what they already have
     # costs a round trip and teaches them to distrust the message.
     Write-Host '  The stub needs a working C compiler. Either:'
-    Write-Host '    - point CRF_ZIG at a DIFFERENT zig version and run again, e.g.'
-    Write-Host '        $env:CRF_ZIG = "C:\zig-0.15.1\zig.exe"'
+    Write-Host '    - point CRF_ZIG at a DIFFERENT zig version and run again. To see which'
+    Write-Host '      zigs are installed and what to set it to:'
+    Write-Host '        .\packaging\windows\stub\diagnose-zig.ps1 -ListZig'
+    Write-Host '        $env:CRF_ZIG = "<one of the paths it prints>"'
     Write-Host '      zig 0.16.0 on Windows on ARM has a memory-safety fault of its own'
     Write-Host '      (see packaging/RESOLVED.md); an older build is the first thing to try; or'
     Write-Host '    - install Visual Studio with the C++ workload, which this script then finds'

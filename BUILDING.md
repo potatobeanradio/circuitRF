@@ -81,8 +81,20 @@ So a C compiler must be on PATH when you package. **zig** is the cheapest — on
 installer, no daemon, and it cross-compiles the x86-64 Windows worker from an ARM machine:
 
 ```powershell
-winget install zig.zig                      # Windows  (or: scoop install zig)
+winget install zig.zig --version 0.15.1     # Windows  (or: scoop install zig)
 ```
+
+> **Not the latest zig on Windows, and the version is not incidental.** zig **0.16.0**'s
+> aarch64-windows build has a memory-safety fault of its own: measured over two runs on a
+> Windows-on-ARM machine it crashed **95 times in ~200 invocations**, at one code offset inside
+> `zig.exe`, with four different exception codes — access violation, stack overflow, heap corruption
+> and a `/GS` stack-cookie failure. **0.15.1 on the same machine, same tests: 0 crashes out of 102.**
+> A plain `winget install zig.zig` fetches the latest and walks straight into it. The packaging
+> scripts survive a bad zig by retrying, so a release is still produced either way — but it is slow
+> and it looks broken. See `packaging/RESOLVED.md` for the full measurement, and
+> `packaging\windows\stub\diagnose-zig.ps1` to check a toolchain on any machine.
+>
+> Other hosts are unaffected as far as has been measured; the same 0.16.0 is clean on macOS/arm64.
 ```bash
 brew install zig                            # macOS
 sudo snap install zig --classic --beta      # Linux    (or your package manager, or ziglang.org/download)

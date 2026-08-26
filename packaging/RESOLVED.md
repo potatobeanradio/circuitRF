@@ -206,6 +206,78 @@ The guidance printed on failure has also been corrected: it used to say that Win
 the windows-aarch64 zig and that the x86_64 one runs emulated and crashes. This machine **is**
 running the native windows-aarch64 build, and it crashes anyway.
 
+### Second run: confirmed, and a fourth memory-safety code appeared
+
+A repeat run on the same zig, 102 invocations, 53 succeeded and 45 crashed.
+
+**The fault offsets are identical across runs** — `0x910f34` / `0x910f2c` again, the same 8-byte
+site. A fault that reproduces at one address across separate runs on separate days is a fixed place
+in the program, not drifting corruption.
+
+**A fourth exception code turned up at that same site: `0xC0000409`, STATUS_STACK_BUFFER_OVERRUN** —
+the `/GS` security cookie check firing. With `0xC0000005`, `0xC00000FD` (stack overflow) and
+`0xC0000374` (heap corruption), that is **four distinct kinds of memory fault at one code site**.
+No reading other than memory corruption inside the compiler survives that combination, and nothing
+on the machine or in this repository can produce it.
+
+Memory was refuted a second time and in the same direction: 3263 MB free before an attempt that
+worked, 3386 MB before one that did not.
+
+The summary now names every crash code it saw, because a column of hex does not make that argument
+on its own and four status codes are four lookups.
+
+### Two bugs in the diagnostic, both found only by running it against a real fault
+
+**`Add-Content` per line hit a sharing violation and blamed the event log.** Several hundred
+open-close cycles on one file eventually collide with whatever else has it open for an instant, and
+the throw landed *inside section G's `try`* — so the report said `could not read the Application
+log` when the log had been read perfectly, and the remaining crash records were lost. Two separate
+faults there, each worth naming:
+
+- **The `try` wrapped the printing as well as the read.** A failure while WRITING was reported as a
+  failure to READ, naming the wrong subsystem entirely and pointing the next person at event-log
+  permissions. The `try` now wraps the read and nothing else.
+- **A diagnostic that dies because its own logging failed destroys the evidence it exists to
+  collect.** Logging is now one `StreamWriter` with `AutoFlush` — the survives-a-crash property is
+  kept, with one handle instead of hundreds — and a write failure is swallowed rather than fatal.
+
+### CLOSED: zig 0.15.1 is clean on the same machine. It is a 0.16.0 regression.
+
+Same box, same tests, `CRF_ZIG` pointed at 0.15.1 (winget replaced 0.16.0 rather than installing
+beside it, so the PATH zig became 0.15.1 outright):
+
+| test | 0.16.0, two runs | 0.15.1 |
+|---|---|---|
+| trivial C, x86_64-windows-gnu | 9/10, 8/10 | **10/10** |
+| trivial C, aarch64-windows-gnu | 8/10, 6/10 | **10/10** |
+| trivial C, x86-windows-gnu | 2/10, 8/10 | **10/10** |
+| `-c` only | 5/10, 4/10 | **10/10** |
+| compile and link | 6/10, 5/10 | **10/10** |
+| `zig build-exe` | 4/10, 2/10 | **10/10** |
+| private cache | 0/6, 0/6 | **6/6** |
+
+**95 crashes across ~200 invocations on 0.16.0; zero out of 102 on 0.15.1.** The control row still
+refuses correctly (6/6 `exit 1`), so the harness had not simply stopped noticing. Section G shows no
+new crash records — the ones listed are the previous run's, by timestamp.
+
+It is also four to eight times faster, because none of the time is being spent crashing and
+retrying: compile-and-link 118 ms against roughly a second.
+
+**So the fault is a regression in zig 0.16.0's aarch64-windows build, and the fix is a version.**
+`BUILDING.md` now pins `winget install zig.zig --version 0.15.1` with the reason attached, because
+the plain command fetches the latest and walks a fresh machine straight back into three days of
+this.
+
+**The build-time notice is triggered by the symptom, not by a version string.** A hard-coded list of
+bad versions rots the moment another is released; "this compiler just crashed N times" is true
+whenever it prints, and naming a version measured *clean* is useful without asserting anything about
+versions nobody has tested. The zig version now appears in the build line too — every report of this
+so far had to be followed by "which zig was that?".
+
+**The retry ladder stays.** It costs nothing on a healthy toolchain (attempt 1, every time) and it
+is what turned this from a blocked release into a slow one. Being able to ship while the cause was
+still unknown is the point of it.
+
 ### Also found: `build-stub.sh` had drifted and could not produce a working stub at all
 
 The cross-platform route was left behind when the app name moved to a bare token (2026-08-25). It

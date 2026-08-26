@@ -292,9 +292,15 @@ function Complete-Route {
     if (Test-Path $script:zigCache) { Remove-Item $script:zigCache -Recurse -Force -ErrorAction SilentlyContinue }
     Write-Host "OK  $script:exe"
     if ($script:crashes -gt 0) {
+        # THE ADVICE IS TRIGGERED BY THE SYMPTOM, NOT BY A VERSION STRING. A hard-coded list of bad
+        # zig versions rots the moment one is released; "this compiler just crashed N times" is
+        # true whenever it is printed, and naming a version measured CLEAN is useful without
+        # asserting anything about versions nobody has tested.
         Write-Host ("    Built by $Label on attempt $($script:attempts); zig crashed on " +
                     "$($script:crashes) of the attempts before it. That is this machine's zig, not " +
-                    "the stub - see packaging/RESOLVED.md.")
+                    "the stub.")
+        Write-Host ("    A different zig may fix it: 0.16.0 was measured faulty on Windows/ARM and " +
+                    "0.15.1 clean. See packaging/RESOLVED.md; -ListZig shows what is installed.")
     }
     else {
         Write-Host "    Built by $Label."
@@ -320,7 +326,9 @@ if ($env:CRF_ZIG) {
         else {
             throw ("CRF_ZIG is set to '$($env:CRF_ZIG)', which is neither a file nor a command on " +
                    "PATH. Refusing to fall back to the zig on PATH: you asked for a specific " +
-                   "compiler, and building with a different one would answer the wrong question.")
+                   "compiler, and building with a different one would answer the wrong question. " +
+                   "To see what is installed and what to set it to: " +
+                   ".\packaging\windows\stub\diagnose-zig.ps1 -ListZig")
         }
     }
 }
@@ -330,7 +338,13 @@ else {
 }
 
 if ($zigExe) {
-    Write-Host "Building the launcher stub with zig cc ($zigTarget) ..."
+    # The zig VERSION goes in the build line. Every report of this problem so far has had to be
+    # followed by "which zig was that?", and `zig version` is the one operation measured to be
+    # completely reliable even on the faulty build (10/10, twice).
+    $zigVer = ''
+    try { $zigVer = (Invoke-Compiler -Exe $zigExe -Arguments @('version')).Output | Select-Object -First 1 } catch { }
+    if ($zigVer) { $zigVer = " $zigVer" }
+    Write-Host "Building the launcher stub with zig$zigVer cc ($zigTarget) ..."
     if ($env:CRF_ZIG) { Write-Host "  using CRF_ZIG: $zigExe" }
     foreach ($route in $zigRoutes) {
         for ($try = 1; $try -le $route.Retries; $try++) {
