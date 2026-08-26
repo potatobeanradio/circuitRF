@@ -18,9 +18,9 @@ namespace CircuitRF.Ui.Tests;
 //
 //      System.IndexOutOfRangeException: Index was outside the bounds of the array.
 //         at System.Collections.Generic.Dictionary`2.TryInsert(...)
-//         at CircuitRF.Ui.Layout.LayoutSpatialIndex.StrPackLeaves(List`1 entries)
-//         at CircuitRF.Ui.Layout.LayoutSpatialIndex.RebuildFullShapes(...)
-//         at CircuitRF.Ui.Layout.LayoutView.NotifyChanged(LayoutChangeInfo info)
+//         at CircuitRF.Design.Layout.LayoutSpatialIndex.StrPackLeaves(List`1 entries)
+//         at CircuitRF.Design.Layout.LayoutSpatialIndex.RebuildFullShapes(...)
+//         at CircuitRF.Design.Layout.LayoutView.NotifyChanged(LayoutChangeInfo info)
 //         at CircuitRF.Ui.Commands.Layout.DeleteShapesCommand.Execute()
 //
 //  An IndexOutOfRangeException raised INSIDE Dictionary.TryInsert is not a bad key — it is a

@@ -3,15 +3,21 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using CircuitRF.Design.Results;
 using CircuitRF.Ui.Messages;
 using RfCore.Data;
-using RfCore.Export;
 
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
 /// Writes a run's analysis results as a single grouped .npy to a flat, shared results directory.
 /// Framework-free — no Avalonia, no Skia. Testable headless.
+///
+/// <para><b>The path convention itself lives in <see cref="ResultsWriter"/>, in CircuitRF.Design.</b>
+/// This type is the Messages-posting façade over it: it derives the schematic key, delegates the
+/// write, and posts the success/warning line. See ResultsWriter's own header for why that split runs
+/// where it does — headless callers (<c>circuitrf em</c>) must write the SAME file this does, and a
+/// second copy of the convention is how the two would silently drift apart.</para>
 ///
 /// Path convention: &lt;baseDir&gt;/results/&lt;schematicKey&gt;.npy — **one** file per run, containing
 /// every analysis as a group (plus a <c>measurements</c> group). See docs/design/data-display.md §3,
@@ -79,29 +85,14 @@ public static class RunResultsWriter
     /// null/blank/all-invalid input — callers treat "" as "no override, use the default".
     /// </summary>
     public static string SanitizeFileNameComponent(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return "";
-
-        var invalid = Path.GetInvalidFileNameChars();
-        var sb = new StringBuilder(raw.Length);
-        foreach (var c in raw)
-            sb.Append(c is '/' or '\\' || Array.IndexOf(invalid, c) >= 0 ? '_' : c);
-
-        return sb.ToString().Trim();
-    }
+        => ResultsWriter.SanitizeFileNameComponent(raw);
 
     /// <summary>
     /// Resolves the file name (no directory) a run writes to: the sanitized, ".npy"-suffixed
     /// <paramref name="fileNameOverride"/> when set, else "&lt;schematicKey&gt;.npy".
     /// </summary>
     public static string ResolveFileName(string? fileNameOverride, string schematicKey)
-    {
-        var sanitized = SanitizeFileNameComponent(fileNameOverride);
-        var baseName  = sanitized.Length == 0 ? schematicKey : sanitized;
-        return baseName.EndsWith(".npy", StringComparison.OrdinalIgnoreCase)
-            ? baseName
-            : baseName + ".npy";
-    }
+        => ResultsWriter.ResolveFileName(fileNameOverride, schematicKey);
 
     /// <summary>
     /// Writes one grouped .npy for the whole run directly under &lt;baseDir&gt;/results/ — a flat,
@@ -130,36 +121,22 @@ public static class RunResultsWriter
         IMessageSink? messages,
         string?       fileNameOverride = null)
     {
-        if (grouped is null || grouped.Groups.Count == 0) return [];
+        var outcome = ResultsWriter.WriteRun(baseDir, schematicKey, grouped, fileNameOverride);
 
-        try
+        if (outcome.Error is { } error)
         {
-            var dir = Path.Combine(baseDir, "results");
-            Directory.CreateDirectory(dir);
-
-            var fileName = ResolveFileName(fileNameOverride, schematicKey);
-            var runNpy   = Path.Combine(dir, fileName);
-
-            // R-res-0: scoped delete — only the file we are about to overwrite, never a wildcard scan
-            // of the shared results/ directory.
-            if (File.Exists(runNpy))
-                File.Delete(runNpy);
-
-            DataSetExporter.Export(grouped, runNpy, ExportFormat.Npy);
-
-            var absRunNpy = Path.GetFullPath(runNpy);
-
-            // The posted path is the FILE itself (not its containing directory) so "Reveal in
-            // Finder/File Explorer" on this message selects the actual .npy, not just its folder.
-            messages?.Success($"Results written: {Path.GetFileNameWithoutExtension(fileName)}", absRunNpy);
-
-            return [absRunNpy];
-        }
-        catch (Exception ex)
-        {
-            messages?.Warning($"Results write failed: {ex.Message}");
+            messages?.Warning($"Results write failed: {error}");
             return [];
         }
+
+        if (outcome.Written.Count == 0) return [];
+
+        // The posted path is the FILE itself (not its containing directory) so "Reveal in
+        // Finder/File Explorer" on this message selects the actual .npy, not just its folder.
+        var absRunNpy = outcome.Written[0];
+        messages?.Success($"Results written: {Path.GetFileNameWithoutExtension(absRunNpy)}", absRunNpy);
+
+        return outcome.Written;
     }
 
     /// <summary>

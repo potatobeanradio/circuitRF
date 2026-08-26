@@ -3,6 +3,211 @@
 Completed work's detail lands here instead of `CLAUDE.md`, which stays for durable, still-true
 conventions only. Same pattern as `src/Ui/DataDisplay/RESOLVED.md`.
 
+## The EM setup pipeline crossed the UI firewall, so `circuitrf em` exists (2026-08-26)
+
+`docs/sonnet-briefs/brief-cli-em-verb.md`. Nothing here was rewritten and no physics changed: the
+`.cem`-to-`EmProblem` half had been framework-free by rule since L6/L7 (R-em-1) and simply lived in
+the `CircuitRF.Ui` assembly, which no non-UI project may reference. It now lives in
+**`src/Design` / `CircuitRF.Design`**, which `src/Ui` and `src/Cli` both reference and which
+`tests/Firewall.Tests` gates alongside Core/Engine/RfCore/Cli.
+
+### The closure was re-measured before starting, and it is not quite what the brief measured
+
+§6's procedure (a throwaway project referencing Core + Engine + RfCore, adding files as the compiler
+names them) terminates, and terminates on the three couplings §2 predicted. **Four differences worth
+recording, because each one changes what a reader would expect to find:**
+
+- **`Messages/*` is NOT in the closure.** §2's table lists it; the compiler never asks for it.
+  `EmRunService` takes a `RunControl` for progress and cancellation and returns its three lists as
+  data — it never holds an `IMessageSink`. Good news, and worth stating: the run service was already
+  further from the UI than the brief's own measurement assumed. `Assembly/WasmModel` and
+  `PCells/PCellContract` are likewise listed and likewise unreached.
+
+- **`TechValidation` pulls in the DRC LAYER-EXPRESSION PARSER** (`DrcLayerExpr.cs` +
+  `DrcLayerExprParser.cs`, 518 lines), which §2 does not mention. A `.ctech` DRC rule carries region
+  expressions as text, and validating a technology means parsing them and checking every layer they
+  name. They moved rather than being inverted behind a delegate: they are the FORMAT of a `.ctech`
+  field, so they belong with the technology model, and they drag nothing further. **The DRC engine
+  itself — `DrcEngine`, connectivity, regions, the wBond clearance rules — stayed in `src/Ui`**, which
+  is what R-emcli-3 actually asks for.
+
+- **`CellPersistence` pulls in `UnitDimension`**, a nine-member enum declared in the middle of
+  `ComponentTypeRegistry.cs` (1,301 lines of schematic component metadata). Split into its own file,
+  exactly as `DrcWaiver` was and for the identical reason: `CcellParameter` PERSISTS it, so the
+  `.ccell` reader names it, while nothing else in that registry is reachable from an EM run.
+
+- **The brief measured the RUN's closure, not the CALLER's.** R-emcli-5 requires the verb to resolve
+  its two paths by walk-up, and the walk-up needs `WorkspaceRootFinder` (48 lines) and
+  `WorkspacePersistence`/`CwsFile` (310 lines) — the `.cws` reader, for `DefaultTechRef`. Both are
+  pure and moved to `CircuitRF.Design.Workspace`. Without them the CLI would have had to re-implement
+  the `.cws` format, which is the duplication R-emcli-1 exists to forbid.
+
+The cell-resolution tail R-emcli-3 warned might blow up did not: `CellFolder` (196) +
+`CellPersistence` (229) + `NameValidator` (55) + `CellHierarchy` (315) + the `UnitDimension` split ≈
+810 lines against ~11,200 for the rest. Nowhere near "larger than the rest of the closure put
+together", so `CellLayoutResolver` was moved whole rather than inverted behind a resolver delegate —
+which matters, because inverting it would have forced `src/Cli` to supply its own `.clay` reader.
+
+### Where the three couplings landed
+
+- **`DrcWaiver`** → its own file in `CircuitRF.Design.Layout.Drc`. It is persisted ON the
+  `LayoutView`, so the `.clay` format names it.
+
+- **The core cap is an ARGUMENT now.** `EmRunService.Run` gained `int? maxCores = null`, clamped by
+  `EmSolveCores.Sanitise` exactly as a stored value is. `EmSolveCores` keeps the pure half (processor
+  count, the clamp, the choice list, the labels) and lost `Preferred`; the AppPreferences read/write
+  is `CircuitRF.Ui.Layout.Em.EmSolveCorePreference`, and `WorkspaceViewModel` passes it in. R-emp-6
+  is unchanged — the cap is still a MACHINE property stored in AppPreferences and never in the `.cem`.
+
+- **`RunResultsWriter`: the CONVENTION moved, the MESSAGE POSTING did not.** `CircuitRF.Design.Results.
+  ResultsWriter` holds `<baseDir>/results/`, the filename sanitiser, the scoped delete and the `.npy`
+  write, and returns an outcome instead of posting one. `RunResultsWriter` in `src/Ui` is now the
+  Messages façade over it and keeps `SchematicKey`, `ResolveResultsRoot` and `MigrateOldLayout`. The
+  reasoning is in `ResultsWriter.cs`'s own header, per R-emcli-3's "say which": R-emcli-7 requires
+  `circuitrf em` and Simulate to write the SAME file, and leaving the convention on the UI side would
+  have meant a second copy of it in the CLI — on the one path whose stability the requirement is about.
+
+### One implementation of the resolution rules, not two
+
+`EmSetupResolver` (new, in `CircuitRF.Design.Layout.Em`) holds what `WorkspaceViewModel` used to:
+`ResolveEmLayoutPath`, `MakeEmLayoutRef` and the layout read. `TechnologyResolver.ResolveForDocument`
+holds R-fgn-3's ancestor-`.cws` walk and the `DefaultTechRef` read. **`WorkspaceViewModel` now calls
+both** rather than keeping its own copies — that is the point, not a bonus: a headless run that
+resolved a different layout or a different technology than Simulate would be worse than no verb.
+
+What stayed in the view model is what only the GUI has: the LIVE model of an already-open `.clay`
+(passed in as a `Func<string, LayoutView?>` hook, so an unsaved edit is still what gets analysed),
+R-fgn-4's session technology override, and the orphan-technology prompt.
+
+**The two walks start from different files and that is deliberate.** The layout reference walks up
+from the `.cem`; the technology walks up from the `.clay`. A `.cem` in one workspace may point at a
+layout in another, and that layout's layers must be read by *its* technology.
+
+### R-emcli-4's namespace churn is one file, not three hundred
+
+`CircuitRF.Ui.Layout` inside a non-UI assembly would lie about the architecture forever, so the
+namespaces changed: `CircuitRF.Design.Layout[.Em|.Drc|.PCells]`, `CircuitRF.Design.Cells`,
+`CircuitRF.Design.Theming`, `CircuitRF.Design.Workspace`, `CircuitRF.Design.Results`.
+
+Taken literally that is ~300 files in `src/Ui` and ~300 in `tests/Ui.Tests` needing a `using` line —
+every file that was IN `namespace CircuitRF.Ui.Layout` saw those types implicitly. **`src/Ui/
+GlobalUsings.cs` and `tests/Ui.Tests/GlobalUsings.cs` say it once each instead**, which is what makes
+gate 2's "the layout/EM tests pass unchanged" literally true rather than nearly true. The cost is
+that a type can appear from nowhere; the mitigation is that both files carry the map and are the
+first place to look.
+
+Sixteen call sites still needed hand edits, all of the same shape: a reference qualified by a
+namespace that still exists but no longer holds the type (`Drc.DrcLayerExprParser`,
+`Em.EmPortExtraction`, `Layout.FillPattern`, `Layout.DrcSeverity`, `Schematic.AtomicFile`). Those
+resolve to the nearest enclosing namespace, so a global using cannot reach them — which is a useful
+thing to know before the next split.
+
+### Gate 2's findings: the tests that DID need editing
+
+Four, and all four were forced by a requirement rather than by a behaviour change:
+
+1. **`tests/Ui.Tests/Em/EmCoreCountTests.cs`** — `EmSolveCores.Preferred` /`.TestOverrideStore` /
+   `.TestOverrideActive` → `EmSolveCorePreference.*`. Unavoidable: R-emcli-3 is precisely the
+   requirement that the preference stop being reachable from the run service.
+   Its source-scan test (`EmRunService_PopulatesMaxDegreeOfParallelismFromThePreference`) now scans
+   **two** files, because the wiring is two hops — the preference is read in `WorkspaceViewModel` and
+   handed in, and the run service puts the argument into the solve settings. Scanning one hop would
+   leave the other free to be dropped, which is exactly how a preference becomes decoration.
+
+2. **`tests/Ui.Tests/EmRunProgressTests.cs`** — six fully-qualified `CircuitRF.Ui.Layout.Em.*`
+   references repointed. Pure R-emcli-4 churn; no assertion changed.
+
+3. **`tests/Ui.Tests/Updates/UpdateSwapTests.cs`** — one `using AtomicFile = CircuitRF.Ui.Updates.
+   AtomicFile;` alias added. **Two different `AtomicFile` types exist** and always did: the updater's
+   rename-only writer, and the design-layer text writer that moved. They never collided while they sat
+   in unrelated namespaces; the global using made both visible in one file. The alias says which one
+   that file means. (This is the concrete instance of the global-using risk noted above — worth
+   knowing it surfaced exactly once across ~600 files.)
+
+4. A scatter of fully-qualified `CircuitRF.Ui.{Layout,Schematic,Theming}.<Type>` references in test
+   files, repointed mechanically.
+
+And three **source-scan** tests, which is the category a project split cannot leave alone — they name
+a file by PATH, so they fail the moment it moves, which is exactly what they are for:
+
+5. **`tests/Ui.Tests/Em/EmFrameworkFreeTests.TheExtractorFileExists_AndIsWhereTheBriefSaysItIs`**
+   repointed to `src/Design/Layout/Em`. Its sibling `NothingUnderLayoutEm_ReferencesAvaloniaOrSkia`
+   kept scanning what stayed in `src/Ui` and a second scan was added over the moved half — belt to
+   `Firewall.Tests`' braces. The assembly check is strictly stronger (it sees TRANSITIVE references a
+   grep cannot) but it names the assembly; the scan names the file, which is the difference between
+   "something in `CircuitRF.Design` pulled in Avalonia" and "this one did".
+
+6. **`InternalDeltaGapPortUiTests.BothCallersOfTheExtractor_PassThePortKinds`** — its two callers now
+   sit on opposite sides of the firewall, which makes the test MORE valuable, not less: a port
+   capability the editor passes and the run service does not would make `circuitrf em` quietly answer
+   a different question than Simulate.
+
+7. **`tests/Ui.Tests/Em/AcceleratedSolveUiTests`**'s scan of `EmRunService.cs`, repointed.
+
+Everything else — every layout test, every EM test, every DRC test — passes untouched.
+
+### The acceptance test is a BYTE comparison — and "byte-identical" has exactly one exception
+
+`tests/Ui.Tests/Em/EmCliVerbTests.cs` (gate 3, `Category=Benchmark` because it launches the CLI):
+builds a real workspace on disk — a `.cws` naming a default technology, a cell folder holding a
+`.clay` with a NULL `TechRef` (the normal case, and the only one that exercises the `.cws` read), and
+a `.cem` naming its layout workspace-relatively — then runs the real `Cli em` process and compares
+the `.sNp` byte for byte against `EmRunService.Run`'s.
+
+It asserts the **path** as well as the bytes. A bytes-only comparison would pass just as happily if
+the headless run had minted its own filename, which would orphan every schematic SnP reference —
+R-emcli-7's whole subject.
+
+**Gate 3 as literally worded is unachievable, and the reason is in the file by design.**
+`EmSnpProvenance.BuildHeader` stamps `circuitRF-EM written: <UTC>` into every `.sNp`, so two runs a
+second apart cannot produce identical bytes and no amount of correctness would make them. Measured on
+a real fixture, that stamp is the *only* difference — 172 characters in, on line 4:
+
+```
+< ! circuitRF-EM written: 2026-08-26 23:34:18Z
+> ! circuitRF-EM written: 2026-08-26 23:34:25Z
+```
+
+Everything else matches exactly, **including all three provenance hashes** (`geometry`, `mesh`,
+`ports`), which is the strongest part of the result: those hash the extracted cross-section, the mesh
+settings and the resolved ports, so the two paths demonstrably landed on the same layout, the same
+stackup and the same ports. The grouped `.npy` — which carries the whole `DataSet`, diagnostics group
+included — IS byte-identical, with no exception at all. The test compares the `.sNp` modulo that one
+line and separately asserts the line is still present, so a header that vanished could not be
+mistaken for a match.
+
+### Two findings from writing the test, each of which costs an hour if it is not written down
+
+**1. A nested `dotnet run` inside a test host HANGS — and the repo already knew.** The obvious way to
+launch the verb is `dotnet run --project src/Cli`. Inside `dotnet test` that starts an MSBuild inside
+one already holding this repository's build locks, and it never returns: **no CPU on any thread, no
+child process at all, and nothing in the stack anywhere near `Process` or `WaitForExit`** — for three
+minutes it is indistinguishable from a slow full-wave solve, which is precisely what one is sitting
+there expecting to wait for.
+
+**`tests/Engine.Tests` had already hit this and written it down**, in its own `.csproj` and in
+`MatchStampTests.ACnlContainingAMatch_RunsHeadlessUnderCliSparam` ("the first version of this test
+hung past three minutes and had to be killed"), together with the fix and its measured cost: 173 ms
+exec'ing the DLL against ~3 s through `dotnet run`. It was re-derived here the hard way because a
+`.csproj` comment in a sibling test project is not somewhere anyone thinks to look. `tests/Ui.Tests`
+now uses that pattern verbatim, down to the `CliDir` assembly-metadata attribute: a
+`ReferenceOutputAssembly="false"` project reference guarantees the CLI is built without copying its
+output into the test bin, and the DLL is exec'd directly. The three tests run in 577 ms, so they are
+NOT tagged `Category=Benchmark` — the acceptance test lives in the gate everybody runs.
+
+**Still outstanding, reported rather than fixed:** `tests/Ui.Tests/Harmonica/HarmonicaTestbenchCliTests`
+still launches `dotnet run --project src/Cli` and is therefore a latent hang of exactly this kind. It
+is `Category=Benchmark`, which is presumably why nobody has been bitten yet. Left alone deliberately —
+it is not this brief's test, and a drive-by edit to someone else's is how two problems become one
+confusing commit — but it is a two-line change to the pattern above whenever someone wants it.
+
+**2. Draining the child's pipes SEQUENTIALLY deadlocks.** Reading stdout to the end and only then
+reading stderr is fine for a verb that says little; `em` writes its notes AND its per-point progress
+to stderr (§3.1's split), which fills that pipe's buffer, and then the child blocks writing stderr
+while the parent blocks reading a stdout that will never close. Both are read concurrently now. Any
+future CLI-process test for a verb that talks on stderr needs the same — and note that this failure
+looks *identical* to finding 1 from the outside, which is how it cost two diagnoses instead of one.
+
 ## The port marker: width measured at the end face, and a second mark for a gap (2026-08-24)
 
 Both found by building the user-doc figures for port placement, on a real MKLOPF. A figure of a live

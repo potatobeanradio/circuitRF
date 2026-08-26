@@ -22,7 +22,7 @@ public class LayoutRendererTests
             {
                 Key = key,
                 Name = $"L{key.Layer}",
-                Color = new CircuitRF.Ui.Theming.Rgba(color.Red, color.Green, color.Blue),
+                Color = new CircuitRF.Design.Theming.Rgba(color.Red, color.Green, color.Blue),
                 FillOpacity = fillOpacity,
                 ZOrder = z++,
                 Visible = true,

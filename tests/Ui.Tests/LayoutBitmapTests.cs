@@ -194,11 +194,11 @@ public class LayoutBitmapTests : IDisposable
         var tech = new Technology { Name = "T", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000 };
         tech.Layers.Add(new LayerDef // rect's layer: LOW ZOrder — would normally paint FIRST/bottom
         {
-            Key = LayerA, Name = "Rect", Color = new CircuitRF.Ui.Theming.Rgba(0, 0, 255), FillOpacity = 1.0, ZOrder = 0, Visible = true, Selectable = true,
+            Key = LayerA, Name = "Rect", Color = new CircuitRF.Design.Theming.Rgba(0, 0, 255), FillOpacity = 1.0, ZOrder = 0, Visible = true, Selectable = true,
         });
         tech.Layers.Add(new LayerDef // bitmap's layer: HIGH ZOrder — would normally paint LAST/top
         {
-            Key = LayerB, Name = "Bmp", Color = new CircuitRF.Ui.Theming.Rgba(0, 255, 0), FillOpacity = 1.0, ZOrder = 1000, Visible = true, Selectable = true,
+            Key = LayerB, Name = "Bmp", Color = new CircuitRF.Design.Theming.Rgba(0, 255, 0), FillOpacity = 1.0, ZOrder = 1000, Visible = true, Selectable = true,
         });
 
         var view = FreshModel();

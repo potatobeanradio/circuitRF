@@ -6,6 +6,35 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## `DeviceWorkerProcessTests` is FLAKY — one static event, two workers (2026-08-26, observed, not fixed)
+
+Found while checking a full-suite run for an unrelated change (`brief-cli-em-verb.md`), and recorded
+because a flake nobody has written down gets re-diagnosed every time it appears.
+
+`DeviceWorkerProcessTests.AWorkersOwnLog_ReachesTheHost_WhenItIsAskedFor` fails intermittently:
+
+```
+Assert.Contains() Failure: Item not found in collection
+Collection: ["osdi-worker: dlopen failed: dlopen(/var/folders/k7"...]
+Not found:  "measured node 6 as undriven"
+```
+
+**It is not about the reference worker.** `ProcessDeviceWorkerTransport.Logged` is a PROCESS-WIDE
+static event, and `OsdiWorkerTests` / `OsdiModelDiscoveryTests` / `CompiledModelValidationTests` run
+concurrently in the same assembly and publish into the same subscriber. The test's
+`WaitForDelivery(transport, () => seen.Count > 0)` then returns on the FIRST line to arrive — which
+on this machine is a foreign `osdi-worker: dlopen failed` — and asserts against a collection the
+reference worker has not written to yet.
+
+Measured: `dotnet test tests/Core.Tests` on its own fails 2 runs in 3. It needs no other test project
+and no change to reproduce, so **it is intra-assembly and pre-existing** — worth stating, because it
+turns up in a full-suite run of a change that touched nothing near it and reads like a regression.
+
+The fix, when someone picks it up, is to wait for the line the test is actually about rather than for
+any line at all (`seen.Any(l => l.Contains(expected))`), or to key the collector on the transport it
+started. Left alone here deliberately: it is in a subsystem this change did not touch, and a "while I
+was in there" edit to someone else's flaky test is how two problems become one confusing commit.
+
 ## `at(x, "axis", index)` — a reference value that survives adding a sweep (2026-08-19)
 
 Owner's question, and it is the right shape of question: *"AMPM = trans_phase − phase(HB1.V[0, "Vout", 1])

@@ -56,7 +56,7 @@ public static partial class LayoutRenderer
 
             var colour = marker.Waived
                 ? theme.DrcWaived
-                : marker.Severity == Layout.DrcSeverity.Error ? theme.DrcError : theme.DrcWarning;
+                : marker.Severity == DrcSeverity.Error ? theme.DrcError : theme.DrcWarning;
 
             using var path = new SKPath();
             double minX = double.PositiveInfinity, minY = double.PositiveInfinity;

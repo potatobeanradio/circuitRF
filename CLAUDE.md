@@ -50,7 +50,7 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
 - Build:   `dotnet build`
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
-  Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, `elab`. **The CLI has its own design doc —
+  Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, **`em`**, `elab`. **The CLI has its own design doc —
   `docs/design/cli.md`** — covering the five-step anatomy of a run verb, the stdout/stderr split, and
   the rules below; read it before adding a verb. `hb`/`lp`/`lpp` run the netlist's harmonic-balance,
   loadpull and loadpull-pursuit analyses, and each runs the whole sweep when a `parametric_sweep`
@@ -61,10 +61,16 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
   DIRECTIVE in the TestBench**, because the sweep engine re-resolves it at each point and an override
   handed to one engine instance is discarded after the first. `-o out.{mat,npy,txt}` exports, and `lp`
   also writes `.spl`/`.lpcwave` — the loadpull interchange the Data Display reads back.
-  **There is no `em` verb**, and the obstacle is the UI firewall rather than the engines
-  (`src/Engine/Mom` is already reachable): the `.cem`-to-`EmProblem` half lives in `CircuitRF.Ui`.
-  It is already framework-free, so the work is a project split — measured and specified in
-  `docs/sonnet-briefs/brief-cli-em-verb.md`.
+  **`em` takes a `.cem` and needs no other arguments** (2026-08-26). Both references it must follow
+  are WALK-UPS, not flags: the layout is relative to the nearest ancestor `.cws` above the `.cem`
+  (falling back to the `.cem`'s own directory), and the technology resolves against the LAYOUT's own
+  parent workspace. It writes exactly where Simulate writes — `EmRunService.ResolveSnpPath` is
+  predictable by design so a schematic's SnP reference survives a re-run — and `-o` moves the
+  Touchstone only, never the `.npy` that carries the diagnostics group. A refusal stays a refusal:
+  `Refused`/`NoLayout`/`EngineError` exit 1 with the run service's own sentence, `Cancelled` exits 130.
+  The gate is `tests/Ui.Tests/Em/EmCliVerbTests.cs`, which compares the CLI's `.sNp` **byte for byte**
+  against `EmRunService.Run`'s — every line but the provenance write-timestamp, which the file carries
+  by design; the `.npy` matches with no exception.
 - Package: **exactly one script per platform, and each builds everything that platform ships** —
   `packaging/windows/build-windows.ps1` (9 files: `.msi` x64/arm64/x86 in both install scopes, plus
   the `.zip` the updater fetches), `packaging/macos/build-macos.sh` (2 `.dmg`s, both architectures;
@@ -265,10 +271,20 @@ Add `--no-build` after the first build of a session.
    model. No UI, no domain types.
 
 Source map: `src/Core` (layers 1–2 + the expression engine), `src/Engine` (layer 3 + analyses),
-`src/RfCore` (Touchstone I/O, network params, `DataSet`/`DataCube`, `.npy` export), `src/Ui`
-(Avalonia), `src/Cli` (headless driver + test harness). `RfCore` is an ordinary first-party project
-alongside the rest — see §Stack for why it is no longer at the repo root, and why that changed
-nothing architecturally.
+`src/RfCore` (Touchstone I/O, network params, `DataSet`/`DataCube`, `.npy` export), `src/Design`
+(the design-layer DOCUMENT artifacts — the layout model and `.clay` reader, the technology model and
+`.ctech` reader, the `.ccell` cell-folder format, the `.cem` EM setup and the extractors that turn
+geometry + stackup into an `EmProblem`), `src/Ui` (Avalonia), `src/Cli` (headless driver + test
+harness). `RfCore` is an ordinary first-party project alongside the rest — see §Stack for why it is
+no longer at the repo root, and why that changed nothing architecturally.
+
+**`src/Design` is not a second `src/Core`.** Core is the CIRCUIT design layer — cells as netlists,
+parameters, expressions, elaboration; it knows nothing about DBU, stackups or drawing layers. Design
+is the artwork side, carved out of `CircuitRF.Ui` in 2026-08 so `src/Cli` could run an EM setup
+without pulling Avalonia across the firewall (`docs/sonnet-briefs/brief-cli-em-verb.md`). It draws
+nothing, docks nothing and observes no canvas — the layout EDITOR, the DRC engine, the PCell
+generators and the `.cem` editor all stayed in `src/Ui`. The namespaces that moved with it are
+listed once in `src/Ui/GlobalUsings.cs` rather than in ~300 `using` lines.
 
 `tools/` holds programs that are not part of the application. **A program in there that exists to be
 tested against deliberately references no other project in this repo** — an independent
@@ -287,7 +303,7 @@ itself proves nothing:
   ImageMagick), which is what makes packaging work identically on all three. Not in `circuitRF.slnx`,
   so a plain `dotnet build` neither builds it nor restores its `Svg.Skia` dependency.
 
-**UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Cli` must reference **no UI framework**
+**UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Design`, `src/Cli` must reference **no UI framework**
 (no Avalonia) — all UI-framework code lives in `src/Ui`, so circuitRF can be re-skinned by replacing
 `src/Ui` only. This is an **enforced** invariant (a CI assembly-reference check fails the build if the
 core references Avalonia). Contract across the boundary: design model down, `DataSet` up. See

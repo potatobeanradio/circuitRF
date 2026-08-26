@@ -18,8 +18,8 @@ public class TechEditorDocumentTests
         DefaultFlattenTolDbu = 1000,
         Layers =
         [
-            new LayerDef { Key = new LayerKey(1, 0), Name = "Metal1", Color = new CircuitRF.Ui.Theming.Rgba(200, 100, 50), ZOrder = 1 },
-            new LayerDef { Key = new LayerKey(2, 0), Name = "Metal2", Color = new CircuitRF.Ui.Theming.Rgba(50, 100, 200), ZOrder = 2 },
+            new LayerDef { Key = new LayerKey(1, 0), Name = "Metal1", Color = new CircuitRF.Design.Theming.Rgba(200, 100, 50), ZOrder = 1 },
+            new LayerDef { Key = new LayerKey(2, 0), Name = "Metal2", Color = new CircuitRF.Design.Theming.Rgba(50, 100, 200), ZOrder = 2 },
         ],
     };
 
@@ -60,7 +60,7 @@ public class TechEditorDocumentTests
         var vm = new TechEditorViewModel(TempPath(), FreshTech());
         var row = vm.Layers[0];
         var original = row.Layer.Color;
-        var changed = new CircuitRF.Ui.Theming.Rgba(9, 9, 9);
+        var changed = new CircuitRF.Design.Theming.Rgba(9, 9, 9);
 
         var before = vm.SnapshotJson();
         row.Layer.Color = changed;
@@ -373,12 +373,12 @@ public class TechEditorDocumentTests
             editorVm.TechSaved += path => cache.Invalidate(path);
 
             var before = editorVm.SnapshotJson();
-            editorVm.Layers[0].Layer.Color = new CircuitRF.Ui.Theming.Rgba(1, 2, 3);
+            editorVm.Layers[0].Layer.Color = new CircuitRF.Design.Theming.Rgba(1, 2, 3);
             editorVm.CommitEdit(before, "Change color");
             editorVm.SaveCommand.Execute(null);
 
             Assert.NotSame(originalInstance, layoutVm.Technology);
-            Assert.Equal(new CircuitRF.Ui.Theming.Rgba(1, 2, 3), layoutVm.Technology!.Layers[0].Color);
+            Assert.Equal(new CircuitRF.Design.Theming.Rgba(1, 2, 3), layoutVm.Technology!.Layers[0].Color);
         }
         finally { System.IO.File.Delete(techPath); }
     }

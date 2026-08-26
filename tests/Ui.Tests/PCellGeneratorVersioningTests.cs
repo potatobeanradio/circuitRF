@@ -64,10 +64,10 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
         string staleCellName = "MTEE_" + LegacyHashWithoutVersion("MTEE", defaults, null, PCellLayerSelection.Default);
         string genRoot = Path.Combine(_workspaceDir, GeneratedCellStore.ReservedFolderName);
         string staleCellDir = Path.Combine(genRoot, staleCellName);
-        CircuitRF.Ui.Schematic.CellFolder.CreateCellFolder(genRoot, staleCellName);
+        CircuitRF.Design.Cells.CellFolder.CreateCellFolder(genRoot, staleCellName);
         string staleClayPath = Path.Combine(
-            CircuitRF.Ui.Schematic.CellFolder.SubFolderPath(staleCellDir, CircuitRF.Ui.Schematic.ViewType.Layout),
-            staleCellName + CircuitRF.Ui.Schematic.CellFolder.ViewExtension(CircuitRF.Ui.Schematic.ViewType.Layout));
+            CircuitRF.Design.Cells.CellFolder.SubFolderPath(staleCellDir, CircuitRF.Design.Cells.ViewType.Layout),
+            staleCellName + CircuitRF.Design.Cells.CellFolder.ViewExtension(CircuitRF.Design.Cells.ViewType.Layout));
 
         var staleView = new LayoutView
         {
@@ -90,8 +90,8 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
         Assert.NotEqual(staleCellDir, freshCellDir, StringComparer.OrdinalIgnoreCase);
 
         string freshClayPath = Path.Combine(
-            CircuitRF.Ui.Schematic.CellFolder.SubFolderPath(freshCellDir, CircuitRF.Ui.Schematic.ViewType.Layout),
-            Path.GetFileName(freshCellDir) + CircuitRF.Ui.Schematic.CellFolder.ViewExtension(CircuitRF.Ui.Schematic.ViewType.Layout));
+            CircuitRF.Design.Cells.CellFolder.SubFolderPath(freshCellDir, CircuitRF.Design.Cells.ViewType.Layout),
+            Path.GetFileName(freshCellDir) + CircuitRF.Design.Cells.CellFolder.ViewExtension(CircuitRF.Design.Cells.ViewType.Layout));
         var freshView = LayoutPersistence.LoadFromFile(freshClayPath);
         var freshBranch = freshView.Shapes.OfType<PolygonShape>().Single();
         long minY = freshBranch.Xy.Where((_, i) => i % 2 == 1).Min();

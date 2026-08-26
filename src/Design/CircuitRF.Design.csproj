@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CircuitRF.Design — the design-layer ARTIFACTS an EM problem is built from, and the code that
+    turns them into one (docs/sonnet-briefs/brief-cli-em-verb.md R-emcli-1).
+
+    WHAT LIVES HERE: the layout model and its `.clay` reader, the technology model and its `.ctech`
+    reader, the cell-folder format (`.ccell`) both of those resolve through, the `.cem` EM setup, and
+    the extractors that turn geometry + stackup into an `EmProblem`.
+
+    WHAT MUST NOT: anything that draws, docks, undoes, or observes a canvas. This project is on the
+    far side of the UI firewall and tests/Firewall.Tests asserts it references no Avalonia —
+    transitively, exactly as it does for Core/Engine/RfCore/Cli. A project that starts clean and is
+    not gated does not stay clean.
+
+    WHY IT IS NOT `src/Core`: Core is the CIRCUIT design layer — cells as netlists, parameters,
+    expressions, elaboration into a numbered netlist. This is the DOCUMENT layer for artwork: the
+    files a layout editor and an EM setup are stored in, and their readers. Core knows nothing about
+    DBU, stackups or drawing layers, and nothing here elaborates a netlist.
+
+    The dependency runs ONE way: src/Ui consumes this, never the reverse. src/Cli consumes it too —
+    that is what makes `circuitrf em` possible without a second copy of the layout reader.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
+    <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />
+    <ProjectReference Include="../RfCore/RfCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Polygon booleans/offsets for the layout model's own flatten/boolean paths. Managed C#,
+         Boost licence, integer coordinates matching our DBU storage type — already a src/Ui
+         dependency before this project existed, and it moves with the code that uses it. -->
+    <PackageReference Include="Clipper2" Version="1.5.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same grant src/Ui carries, and for the same reason: the layout/EM tests live in
+         tests/Ui.Tests and reach internal members of the code that used to be there. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>CircuitRF.Ui</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>CircuitRF.Ui.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

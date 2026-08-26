@@ -180,9 +180,9 @@ public class WBondSymbolGeneratorTests
         // The unit is the WORKSPACE technology's, never a hard-coded one (owner, 2026-08-17). Mils is
         // the default — what a bonder works in, and what the wBond editor opens on.
         Assert.Contains("mil", text, System.StringComparison.Ordinal);
-        Assert.Contains("mm", WBondSymbolGenerator.Describe(design, CircuitRF.Ui.Layout.LayoutUnit.Mm),
+        Assert.Contains("mm", WBondSymbolGenerator.Describe(design, CircuitRF.Design.Layout.LayoutUnit.Mm),
                         System.StringComparison.Ordinal);
-        Assert.Contains("µm", WBondSymbolGenerator.Describe(design, CircuitRF.Ui.Layout.LayoutUnit.Um),
+        Assert.Contains("µm", WBondSymbolGenerator.Describe(design, CircuitRF.Design.Layout.LayoutUnit.Um),
                         System.StringComparison.Ordinal);
     }
 

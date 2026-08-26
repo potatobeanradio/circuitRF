@@ -28,10 +28,20 @@ circuitRF is built in layers with a **strict one-way dependency direction** (roo
         ▲      engine, elaboration → the elaborated netlist. NO UI, NO engine-numerics.
   src/Engine  (Numeric layer): MNA, HB, loadpull/pursuit, the analyses. Produces a DataSet.
         ▲      NO UI.
-  src/Ui      (Presentation layer): Avalonia + SkiaSharp. Depends on Core, Engine, RfCore.
+  src/Design  (design-layer DOCUMENT artifacts): the layout model and `.clay` reader, the
+        ▲      technology model and `.ctech` reader, the `.ccell` cell-folder format, the `.cem`
+        ▲      EM setup and the extractors that turn geometry + stackup into an EmProblem.
+        ▲      NO UI — it draws nothing, docks nothing and observes no canvas.
+  src/Ui      (Presentation layer): Avalonia + SkiaSharp. Depends on Core, Engine, Design, RfCore.
         ▲      NOTHING depends on src/Ui.
-  src/Cli     (headless driver): depends on Core/Engine/RfCore, NOT on src/Ui.
+  src/Cli     (headless driver): depends on Core/Engine/Design/RfCore, NOT on src/Ui.
 ```
+
+`src/Design` was carved out of `CircuitRF.Ui` in 2026-08 so `src/Cli` could run an EM setup
+(`docs/sonnet-briefs/brief-cli-em-verb.md`). Nothing was rewritten to do it — the code had been
+framework-free by rule since L6/L7 and simply lived in the wrong assembly. The layout EDITOR, the DRC
+engine, the PCell generators and the `.cem` editor all stayed in `src/Ui`; what crossed is the model,
+the readers, and the extractors.
 
 **The rule:** dependencies point **up the stack only** (UI → Engine → Core → RfCore). Nothing below `src/Ui`
 may reference `src/Ui`, and **nothing below `src/Ui` may reference any UI framework** (Avalonia, and any
@@ -80,7 +90,7 @@ A rule described but not enforced erodes. 6a adds an **automated check that fail
 non-UI project references a UI framework:
 - **Primary mechanism:** an assembly-reference assertion \u2014 a small test (in the existing test suite, runnable
   in CI on all three OSes) that loads each non-UI assembly (`RfCore`, `CircuitRF.Core`, `CircuitRF.Engine`,
-  `CircuitRF.Cli`) and asserts its referenced-assemblies list contains **no `Avalonia*`** (and no other
+  `CircuitRF.Design`, `CircuitRF.Cli`, `CircuitRF.Harmonica`, `CircuitRF.WBond`) and asserts its referenced-assemblies list contains **no `Avalonia*`** (and no other
   UI-framework package). Fails with a clear message naming the offending project and reference.
 - **What it does NOT forbid:** see §3.3 (headless SkiaSharp is allowed). The check targets *UI frameworks*
   (Avalonia and its integration layers), not 2D-graphics math libraries.

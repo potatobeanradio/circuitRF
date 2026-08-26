@@ -19,8 +19,11 @@ src/Cli  ──►  src/Core  ──►  (expressions, design model, elaboration
 ```
 
 `tests/Firewall.Tests` fails the build if that is violated. So the CLI can drive **anything whose
-engine lives in `src/Engine` or `src/RfCore`**, and nothing whose driver lives in `src/Ui` — which is
-exactly the line between the verbs that exist today and the one that does not (§7).
+engine lives in `src/Engine` or `src/RfCore`**, and nothing whose driver lives in `src/Ui`.
+
+`src/Design` joined that path in 2026-08: it holds the design-layer artifacts an EM problem is built
+from — the layout model, the technology model, the cell-folder format, the `.cem` and the extractors —
+and it is gated by the same firewall test. That is what the `em` verb (§8) runs on.
 
 ## 2. The verbs
 
@@ -31,6 +34,7 @@ exactly the line between the verbs that exist today and the one that does not (�
 | `hb` | `.cnl` | `HbEngine` (single- or multi-tone) | stdout tables; `-o .mat/.npy/.txt` |
 | `lp` | `.cnl` | `LoadpullEngine` + `LoadpullPostProcessor` | stdout grid table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` | `LoadpullPursuitEngine` | stdout optima + follow-on grid; `-o` as `hb`; `--out-grid` writes the `.gam` |
+| `em` | `.cem` | `EmSetupResolver` + `EmRunService` (kernel chosen by `EmKernelRegistry`) | Touchstone `.sNp` + grouped `.npy` at the path Simulate writes; `-o` moves the Touchstone |
 | `elab` | `.cnl` | elaboration only | the elaborated netlist, for development |
 
 `--kits <dir>` is pulled out of the argument list before dispatch, so **every** verb takes it: it is
@@ -150,8 +154,9 @@ symptom and not the cause.
 | Code | Meaning |
 |---|---|
 | 0 | ran, and produced something usable |
-| 1 | could not run — bad arguments, missing file, no matching analysis, an exception |
+| 1 | could not run — bad arguments, missing file, no matching analysis, a refusal, an exception |
 | 2 | ran, but did not converge |
+| 130 | stopped — `em` only, and only when the run was cancelled at a work boundary (§8.4) |
 
 `2` is deliberately **not** the same test for every verb. `hb` and `dc` fail on any non-converged
 solve. A loadpull grid in which some points do not converge is a normal, useful result — the edge of
@@ -159,21 +164,118 @@ a Γ grid routinely will not — so `lp` returns `2` only when **every** grid po
 only when neither optimum converged and there is no follow-on grid. A rule that failed the whole run
 on one bad point would make the exit code useless in a script.
 
-## 8. What the CLI does NOT do: EM
+## 8. `em`
 
-There is no `em` verb, and the reason is structural rather than an omission. The EM run pipeline —
-`.cem` model and persistence, geometry flatten, port extraction, the cross-section and planar
-extractors, `EmRunService` — is **already framework-free by rule** (`src/Ui/Layout/Em/`, R-em-1: no
-Avalonia, no SkiaSharp). But it lives in the `CircuitRF.Ui` assembly and its dependency closure
-reaches the layout model, the technology model, and the PCell generators, which live there too. The
-CLI cannot reference that assembly without pulling Avalonia across the firewall.
+```
+circuitrf em Amp.cem                     # → <workspace>/results/Amp.s2p (+ Amp_em.npy)
+circuitrf em Amp.cem -o /tmp/amp.s2p     # explicit Touchstone destination
+```
 
-The engines are not the problem: `src/Engine/Mom` is already on the CLI's side of the line. Only the
-`.cem`-to-`EmProblem` half is on the wrong one.
+**The verb owns no EM logic.** It resolves two paths, calls `EmSetupResolver.Resolve` and
+`EmRunService.Run`, and reports. Which kernel runs, how the geometry is meshed and what is refused all
+live in `CircuitRF.Design` and `src/Engine/Mom`, and are the same code the Simulate button drives —
+which is what makes "a headless run and a Simulate produce the same file" true by construction rather
+than by care.
 
-**The fix, and its measured cost, are specified in `docs/sonnet-briefs/brief-cli-em-verb.md`.** Do not
-start on an `em` verb without reading it — the design question it settles is where the extracted
-project's boundary goes, not whether the verb is possible.
+### 8.1 Both paths resolve by a WALK-UP, and neither is a flag
+
+A `.cem` names a layout; the layout names (or inherits) a technology. Neither reference is stored
+absolutely and neither needs an argument:
+
+- **The layout.** `EmSetup.LayoutRef` is relative to the **workspace root** — the nearest ancestor
+  `.cws` walking up from the `.cem` — and absolute when it names something outside it. With no
+  workspace above it at all, the reference falls back to the `.cem`'s own directory, so a loose `.cem`
+  beside its `.clay` works. That fallback is the GUI's own rule, not a headless special case.
+- **The technology.** Resolved against **the layout's own parent workspace**, found by walking up from
+  the `.clay` (`brief-foreign-documents.md` R-fgn-3) — never against "the current workspace", of which
+  there is none here. A `.clay` with a null `TechRef` is the normal case and picks up the `.cws`'s
+  `DefaultTechRef`.
+
+The two walks start from different files and can land on different workspaces. That is deliberate: a
+`.cem` in one workspace may point at a layout in another, and that layout's layers must be read by
+*its* technology.
+
+`--workspace <path.cws>` overrides the first walk, for a `.cem` being run from outside its own tree.
+It is never required.
+
+### 8.2 Where the results go, and why `-o` moves only one of them
+
+Without `-o`, the run writes exactly where Simulate writes: `<workspace>/results/`, through
+`EmRunService.ResolveSnpPath`. **That path is predictable by design** (R-em-19) so a schematic's SnP
+reference stays valid across re-runs — a headless run that minted its own filename would orphan every
+one of them, which is why the CLI does not get to choose a default here.
+
+Two files come out, and they are not redundant:
+
+| File | Holds |
+|---|---|
+| `<key>.sNp` | S only — the artifact a schematic REFERENCES by path |
+| `<key>_em.npy` | the whole `DataSet`, including the diagnostics group (`tline` or `planar`) that makes a wrong answer diagnosable |
+
+`-o` sets `EmSetup.SnpOutputPathOverride` — the same field the EM panel writes — so the Touchstone
+moves and the `.npy` does not. There is no second naming rule to keep in step, and a `.sNp` extension
+typed into `-o` is not doubled: the exporter appends the real one from the port count it finds.
+
+With no workspace above the `.cem`, `results/` is created beside the `.cem` itself. The GUI's own
+fallback there is the scratch recovery session, which does not exist headlessly; using the `.cem`'s
+directory reuses the fallback its `LayoutRef` already has rather than inventing a third rule.
+
+### 8.3 What goes where, and the three lists
+
+§3.1's split, applied: the summary and the written file paths are **stdout**; progress, the resolved
+workspace/layout/technology, and the run's own three lists are **stderr**.
+
+`EmRunResult` separates `Notes` / `Warnings` / `Errors` by what the reader is expected to DO about
+each, and the verb prints all three under those labels rather than flattening them:
+
+| Prefix | Means |
+|---|---|
+| `note:` | the run explaining itself — which kernel ran and why, the mesh's own sentences, RLGC, ports |
+| `warning:` | something to act on — a stale `.sNp` about to be replaced, a technology that resolved but failed validation |
+| `error:` | something the user asked for and did not get — a results file that could not be written |
+
+Flattening them into one list is the exact defect the three-list split was introduced to fix, and it
+is just as wrong on a terminal as it was in the Messages region.
+
+### 8.4 Exit codes: a refusal stays a refusal
+
+`EmRunStatus` distinguishes `Refused` / `NoLayout` / `EngineError` / `Cancelled`, and each carries a
+written explanation of what is wrong with *this* setup. The verb prints that explanation and exits
+non-zero; it never collapses them into "EM failed", because the explanation is the only part a user
+can act on.
+
+| Status | Code |
+|---|---|
+| `Ok` | 0 |
+| `Refused`, `NoLayout`, `EngineError` | 1 |
+| `Cancelled` | 130 |
+
+### 8.5 What the verb does NOT do
+
+- **Create or edit a `.cem`.** It runs one. A setup with no ports, no technology or no signal
+  conductor is REFUSED with the sentence the run service already writes.
+- **Back-annotate.** Writing an SnP component into a schematic is an editor operation and stays in
+  `src/Ui`.
+
+### 8.6 The gate
+
+`tests/Ui.Tests/Em/EmCliVerbTests.cs` builds a real workspace on disk, runs the real `Cli em` process,
+and compares the `.sNp` **byte for byte** against what `EmRunService.Run` writes for the same setup —
+and asserts the file lands at the same PATH. A tolerance-based comparison would pass just as happily
+if the two paths had drifted onto different geometry, a different technology or a different filename,
+which are the three failures the project split could plausibly have introduced.
+
+One line is exempt and only one: `EmSnpProvenance` stamps the UTC time the file was written, so two
+runs a second apart can never match byte for byte. Everything else does, **including all three
+provenance hashes** — geometry, mesh and ports — which is what proves both paths resolved the same
+layout, stackup and ports. The `.npy` matches with no exception.
+
+**Any test that launches a verb as a process follows `Engine.Tests`' pattern** (`MatchStampTests`,
+which learned it first): a `ReferenceOutputAssembly="false"` project reference on `src/Cli` plus a
+`CliDir` assembly-metadata attribute, and the DLL exec'd directly. A nested `dotnet run` starts an
+MSBuild inside a `dotnet test` that already holds the build locks and does not finish — silently, with
+no CPU and no child process. Drain both of the child's pipes concurrently too: `em` says enough on
+stderr to fill that pipe's buffer and deadlock a sequential reader.
 
 ## 9. Adding a verb
 
@@ -183,3 +285,7 @@ project's boundary goes, not whether the verb is possible.
 4. Results to stdout, everything else to stderr (§3.1).
 5. Pick the exit-code rule that is honest for that analysis (§7) — do not copy `hb`'s by reflex.
 6. Update this file and the verb list in the repo-root `CLAUDE.md`.
+
+`em` follows 1, 4, 5 and 6 and is deliberately outside 2 and 3: it does not read a `.cnl`, so there is
+no chain to select and no directive to override. Its analogue of §5's rule is §8.2's — the one
+override it takes lands in the `EmSetup`, not at the run service, for the same reason.

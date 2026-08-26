@@ -241,6 +241,12 @@
     <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
     <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />
     <ProjectReference Include="../RfCore/RfCore.csproj" />
+    <!-- The design-layer artifacts an EM problem is built from — the layout model, the technology
+         model, the cell-folder format, the `.cem` and the extractors. One way only: src/Design is on
+         the far side of the UI firewall and tests/Firewall.Tests asserts it references no Avalonia.
+         src/Cli references the same project, which is what makes `circuitrf em` possible without a
+         second copy of the layout reader (brief-cli-em-verb.md R-emcli-1). -->
+    <ProjectReference Include="../Design/CircuitRF.Design.csproj" />
     <!-- harmonicaRF's framework-free half. The dependency runs ONE way only: src/Ui consumes
          src/Harmonica, never the reverse — src/Harmonica is on the far side of the UI firewall and
          tests/Firewall.Tests asserts it references no Avalonia (docs/design/harmonicarf.md §3.2). -->

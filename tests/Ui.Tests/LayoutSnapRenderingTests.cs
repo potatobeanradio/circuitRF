@@ -15,7 +15,7 @@ public class LayoutSnapRenderingTests
     private static Technology MakeTech(LayerKey key, SKColor color) => new()
     {
         Name = "Test", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000,
-        Layers = [new LayerDef { Key = key, Name = "L", Color = new CircuitRF.Ui.Theming.Rgba(color.Red, color.Green, color.Blue), FillOpacity = 0.35, ZOrder = 0, Visible = true, Selectable = true }],
+        Layers = [new LayerDef { Key = key, Name = "L", Color = new CircuitRF.Design.Theming.Rgba(color.Red, color.Green, color.Blue), FillOpacity = 0.35, ZOrder = 0, Visible = true, Selectable = true }],
     };
 
     private static SKSurface Render(LayoutView view, LayoutViewport vp, LayoutOverlay? overlay)

@@ -99,7 +99,7 @@ public class LayoutPerformanceBaselineTests : System.IDisposable
     public void R8bCrossoverExperiment()
     {
         var layer = new LayerKey(1, 0);
-        var tech = new Technology { Layers = [new LayerDef { Key = layer, Color = new CircuitRF.Ui.Theming.Rgba(80, 140, 220), FillOpacity = 0.35, Visible = true, Selectable = true }] };
+        var tech = new Technology { Layers = [new LayerDef { Key = layer, Color = new CircuitRF.Design.Theming.Rgba(80, 140, 220), FillOpacity = 0.35, Visible = true, Selectable = true }] };
         const int W = 1000, H = 700;
 
         int[] counts = [500, 2_000, 5_000, 10_000, 20_000, 50_000, 100_000];

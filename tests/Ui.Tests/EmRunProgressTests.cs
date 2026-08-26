@@ -218,7 +218,7 @@ public sealed class EmRunProgressTests
     public void TheFinishedSweepRow_NamesThePointCount_NotJustSuccess()
     {
         string text = WorkspaceViewModel.EmRunSummary(
-            new CircuitRF.Ui.Layout.Em.EmRunResult(CircuitRF.Ui.Layout.Em.EmRunStatus.Ok, null, null, null, null, null, null, []),
+            new CircuitRF.Design.Layout.Em.EmRunResult(CircuitRF.Design.Layout.Em.EmRunStatus.Ok, null, null, null, null, null, null, []),
             adaptive: false, requestedPoints: 101);
 
         Assert.Contains("101", text);
@@ -272,8 +272,8 @@ public sealed class EmRunProgressTests
     {
         // A stopped run is a normal outcome. Reporting it as a failure is the thing this separation
         // exists to prevent.
-        Assert.NotEqual(CircuitRF.Ui.Layout.Em.EmRunStatus.EngineError,
-                        CircuitRF.Ui.Layout.Em.EmRunStatus.Cancelled);
+        Assert.NotEqual(CircuitRF.Design.Layout.Em.EmRunStatus.EngineError,
+                        CircuitRF.Design.Layout.Em.EmRunStatus.Cancelled);
     }
 
     [Fact]
@@ -285,13 +285,13 @@ public sealed class EmRunProgressTests
         cts.Cancel();
         var control = new RunControl { Token = cts.Token };
 
-        var result = CircuitRF.Ui.Layout.Em.EmRunService.Run(
+        var result = CircuitRF.Design.Layout.Em.EmRunService.Run(
             EmProgressFixtures.NewSetup(), null, System.IO.Path.GetTempPath(),
             System.Threading.CancellationToken.None, control);
 
         // No layout, so it refuses before any cancellable work — the point here is only that
         // supplying a cancelled token through the control does not throw out of Run.
-        Assert.Equal(CircuitRF.Ui.Layout.Em.EmRunStatus.NoLayout, result.Status);
+        Assert.Equal(CircuitRF.Design.Layout.Em.EmRunStatus.NoLayout, result.Status);
     }
 
     // ── Mesh (owner: "should the Mesh operation also get a progress bar… how does user cancel?") ──
@@ -377,7 +377,7 @@ public sealed class EmRunProgressTests
 
 internal static class EmProgressFixtures
 {
-    public static CircuitRF.Ui.Layout.Em.EmSetup NewSetup() =>
+    public static CircuitRF.Design.Layout.Em.EmSetup NewSetup() =>
         new() { Name = "MLin", LayoutRef = "MLin.clay" };
 
     public static CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel NewSetupVm() =>

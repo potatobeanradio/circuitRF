@@ -7,6 +7,10 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
 using CircuitRF.Engine.Loadpull;
+using CircuitRF.Engine.Mom;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Workspace;
 using RfCore;
 using RfCore.Data;
 using RfCore.Export;
@@ -43,6 +47,7 @@ return args[0].ToLowerInvariant() switch
     "lp"  or "loadpull"         => RunLoadpull(args[1..], pursuit: false),
     "lpp" or "loadpull_pursuit" or "pursuit"
                                 => RunLoadpull(args[1..], pursuit: true),
+    "em"     => RunEm(args[1..]),
     "elab"   => RunElab(args[1..]),
     _        => PrintHelp()
 };
@@ -977,6 +982,187 @@ static string FormatGamma(Complex g)
 static string FormatOhms(double re, double im)
     => double.IsNaN(re) ? "—" : $"{re:F2}{(im >= 0 ? "+" : "-")}j{Math.Abs(im):F2}";
 
+// ── electromagnetic extraction ────────────────────────────────────────────────
+
+/// <summary>
+/// `circuitrf em &lt;setup.cem&gt;` — runs one EM setup and writes what the Simulate button writes.
+///
+/// <para><b>This verb owns no EM logic.</b> It resolves two paths, calls
+/// <see cref="EmSetupResolver"/> and <see cref="EmRunService"/>, and reports. Everything that decides
+/// an answer — which kernel runs, how the geometry is meshed, what is refused — lives in
+/// CircuitRF.Design and src/Engine/Mom and is the same code the GUI drives. That is the whole point
+/// of brief-cli-em-verb.md: a headless run and a Simulate must produce the same file, and they do
+/// because there is only one implementation of every step between them.</para>
+/// </summary>
+static int RunEm(string[] args)
+{
+    string? input = null, output = null, workspace = null;
+
+    for (int i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "-o" or "--output" when i + 1 < args.Length:
+                output = args[++i];
+                break;
+            case "--workspace" when i + 1 < args.Length:
+                workspace = args[++i];
+                break;
+            default:
+                if (!args[i].StartsWith('-')) input = args[i];
+                break;
+        }
+    }
+
+    if (input is null)
+    {
+        Console.Error.WriteLine("em: input .cem file required");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem> [-o out.sNp] [--workspace <file.cws>]");
+        return 1;
+    }
+    if (!File.Exists(input))
+    {
+        Console.Error.WriteLine($"File not found: {input}");
+        return 1;
+    }
+
+    string cemPath = Path.GetFullPath(input);
+
+    EmSetup setup;
+    try
+    {
+        setup = EmSetupPersistence.LoadFromFile(cemPath);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Could not read '{cemPath}': {ex.Message}");
+        return 1;
+    }
+
+    // R-emcli-5 — a WALK-UP, not a flag. The .cem's own ancestor .cws is what LayoutRef is relative
+    // to, exactly as it is in the GUI; with no workspace above it the reference falls back to the
+    // .cem's own directory, which is already-specified behaviour rather than a headless special case.
+    // --workspace overrides the walk, for a .cem being run from outside its own tree.
+    string? cwsPath = workspace is null
+        ? WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cemPath))
+        : Path.GetFullPath(workspace);
+
+    if (workspace is not null && !File.Exists(cwsPath!))
+    {
+        Console.Error.WriteLine($"Workspace file not found: {cwsPath}");
+        return 1;
+    }
+
+    Console.Error.WriteLine(cwsPath is null
+        ? $"[circuitRF] no workspace above '{Path.GetFileName(cemPath)}' — references resolve " +
+          "against its own directory"
+        : $"[circuitRF] workspace: {cwsPath}");
+
+    var resolution = EmSetupResolver.Resolve(cemPath, setup.LayoutRef, cwsPath, new TechnologyCache());
+
+    // The resolver's diagnostics are warnings about the SETUP, not the run's own notes, and they go
+    // out before anything long starts — "the technology did not resolve" is the sentence that
+    // explains a refusal three lines later.
+    foreach (var d in resolution.Diagnostics)
+        Console.Error.WriteLine($"warning: {d}");
+
+    if (resolution.LayoutPath is { } lp) Console.Error.WriteLine($"[circuitRF] layout: {lp}");
+    if (resolution.TechnologyPath is { } tp) Console.Error.WriteLine($"[circuitRF] technology: {tp}");
+
+    // R-emcli-7 — with no -o the run writes where the GUI writes, and that is not a default this file
+    // gets to choose: EmRunService.ResolveSnpPath is a PREDICTABLE path by design so a schematic's
+    // SnP reference stays valid across re-runs, and a headless run that minted a different filename
+    // would orphan every one of them. -o moves the Touchstone and nothing else — and it goes in
+    // through the setup's own override field, the one the panel writes, so there is no second naming
+    // rule to keep in step.
+    if (output is not null) setup.SnpOutputPathOverride = Path.GetFullPath(output);
+
+    // The GUI's results root is <workspace>/results, falling back to the scratch recovery session
+    // when no workspace is open. Headless there is no recovery session, so a loose .cem falls back to
+    // its OWN directory — the same fallback its LayoutRef already uses, rather than a third rule.
+    string resultsBase = cwsPath is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(cemPath)!;
+    string resultsRoot = Path.Combine(resultsBase, "results");
+
+    EmRunResult result;
+    try
+    {
+        result = EmRunService.Run(setup, resolution.Source, resultsRoot, default, EmProgressToStderr());
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Error: {ex.Message}");
+        return 1;
+    }
+
+    // R-emcli-6 — THREE lists, kept apart, because they ask three different things of the reader.
+    // Notes are the run explaining itself, warnings are things to act on, errors are things the user
+    // asked for and did not get. Flattening them into one list is the exact defect the split was
+    // introduced to fix, and it is just as wrong on a terminal as it was in the Messages region.
+    foreach (var n in result.Notes ?? []) Console.Error.WriteLine($"note: {n}");
+    foreach (var w in result.Warnings)     Console.Error.WriteLine($"warning: {w}");
+    foreach (var e in result.Errors ?? []) Console.Error.WriteLine($"error: {e}");
+
+    // R-emcli-8 — a refusal stays a refusal. Each status carries a written explanation of what is
+    // wrong with THIS setup; collapsing them into "EM failed" throws away the only part a user can
+    // act on.
+    if (result.Status != EmRunStatus.Ok)
+    {
+        Console.Error.WriteLine($"{DescribeEmStatus(result.Status)}: {result.Error}");
+        return result.Status == EmRunStatus.Cancelled ? 130 : 1;
+    }
+
+    Console.WriteLine($"EM setup:  {(setup.Name.Length > 0 ? setup.Name : Path.GetFileNameWithoutExtension(cemPath))}");
+    Console.WriteLine($"Kernel:    {result.KernelName} ({result.Kind})");
+
+    if (result.Data is { } ds)
+    {
+        // Every group, not just the default one: an EM DataSet carries S alongside a diagnostics
+        // group ("tline" or "planar"), and which of them is the default is the writer's business.
+        var freqAxis = ds.Cubes.Values
+            .Concat(ds.Groups.SelectMany(g => ds.CubesIn(g).Values))
+            .SelectMany(c => c.Axes)
+            .FirstOrDefault(a => a.Name.Contains("freq", StringComparison.OrdinalIgnoreCase));
+        if (freqAxis is not null)
+            Console.WriteLine($"Points:    {freqAxis.Length}");
+    }
+
+    if (result.SnpPath is { } snp) Console.WriteLine($"Wrote {snp}");
+    if (result.NpyPath is { } npy) Console.WriteLine($"Wrote {npy}");
+
+    return 0;
+}
+
+/// <summary>The run's own progress, on stderr — §3.1's split, so `circuitrf em x.cem > summary.txt`
+/// still shows a full-wave sweep moving. A de-embedded point costs tens of seconds at the shipping
+/// mesh, so a run reporting nothing is indistinguishable from a hung one.</summary>
+static RunControl EmProgressToStderr()
+{
+    string lastLine = "";
+    return new RunControl
+    {
+        Progress = new Progress<RunProgress>(p =>
+        {
+            string line = p.Total > 0
+                ? $"[{p.Completed}/{p.Total}] {p.Stage}"
+                : $"[{p.Completed}] {p.Stage}";
+            // Adaptive sampling has no honest denominator and reports the same stage repeatedly; only
+            // a CHANGED line is worth a terminal row.
+            if (line == lastLine) return;
+            lastLine = line;
+            Console.Error.WriteLine(line);
+        }),
+    };
+}
+
+static string DescribeEmStatus(EmRunStatus status) => status switch
+{
+    EmRunStatus.Refused     => "Refused",
+    EmRunStatus.NoLayout    => "No layout",
+    EmRunStatus.EngineError => "Engine error",
+    EmRunStatus.Cancelled   => "Cancelled",
+    _                       => "Failed",
+};
+
 // ── Elaboration dump (development tool) ──────────────────────────────────────
 
 static int RunElab(string[] args)
@@ -1490,6 +1676,7 @@ static int PrintHelp()
     Console.WriteLine("  hb     <file.cnl>   (harmonic balance; runs the sweep if one wraps it)");
     Console.WriteLine("  lp     <file.cnl>   (loadpull over the directive's Gamma grid)");
     Console.WriteLine("  lpp    <file.cnl>   (loadpull pursuit: searches for MXP / MXE)");
+    Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
     Console.WriteLine("  elab   <file.cnl>   (dump elaborated netlist)");
     Console.WriteLine();
     Console.WriteLine("hb options:");
@@ -1509,6 +1696,12 @@ static int PrintHelp()
     Console.WriteLine("  --out-grid <file.gam>   lpp only — override where found terminations are written");
     Console.WriteLine("  -o out.spl / .lpcwave   lp only  — the loadpull interchange formats");
     Console.WriteLine();
+    Console.WriteLine("em options:");
+    Console.WriteLine("  -o, --output <path>     where the Touchstone goes. Default: the same file");
+    Console.WriteLine("                          Simulate writes, so a schematic's SnP reference holds.");
+    Console.WriteLine("  --workspace <file.cws>  the workspace paths resolve against. Default: the");
+    Console.WriteLine("                          nearest .cws above the .cem, then its own directory.");
+    Console.WriteLine();
     Console.WriteLine("Options (any command):");
     Console.WriteLine("  --kits <dir>        folder of installed kits, for externally-provided");
     Console.WriteLine("                      devices (ExtDevice Provider=...). Repeatable.");
@@ -1518,5 +1711,6 @@ static int PrintHelp()
     Console.WriteLine("Example: circuitrf hb hero5.cnl --set Pavl_dbm=0 -o hero5.txt");
     Console.WriteLine("Example: circuitrf lp hero3.cnl --pin -20:1:15 -o hero3.spl");
     Console.WriteLine("Example: circuitrf lpp hero3B.cnl --out-grid found.gam -o hero3B.npy");
+    Console.WriteLine("Example: circuitrf em  Amp.cem -o /tmp/amp.s2p");
     return 0;
 }

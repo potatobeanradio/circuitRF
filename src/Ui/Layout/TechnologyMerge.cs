@@ -364,7 +364,7 @@ public static class TechnologyMerge
         foreach (string? text in new[] { rule.RegionA, rule.RegionB })
         {
             if (string.IsNullOrWhiteSpace(text)) continue;
-            if (!Drc.DrcLayerExprParser.TryParse(text, out var expr, out _) || expr is null) continue;
+            if (!DrcLayerExprParser.TryParse(text, out var expr, out _) || expr is null) continue;
             foreach (var k in expr.ReferencedLayers()) yield return k;
         }
     }

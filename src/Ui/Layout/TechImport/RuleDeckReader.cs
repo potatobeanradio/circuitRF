@@ -755,10 +755,10 @@ public static partial class RuleDeckReader
         // has no single layer of its own, and the first operand is the one the deck named first,
         // which is the one a reader of the rule would expect the violation to be attributed to.
         if (derivedByName.TryGetValue(receiver, out string? expr) &&
-            Drc.DrcLayerExprParser.TryParse(expr, out var parsed, out _) && parsed is not null)
+            DrcLayerExprParser.TryParse(expr, out var parsed, out _) && parsed is not null)
         {
             var first = parsed.ReferencedLayers().FirstOrDefault();
-            if (first != default || parsed is Drc.DrcLayerExpr.Layer)
+            if (first != default || parsed is DrcLayerExpr.Layer)
                 result.Add(new RegionTarget(expr, first.Layer, first.Datatype, null));
         }
 

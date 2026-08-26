@@ -3,6 +3,10 @@ using System.IO;
 using System.Text;
 using CircuitRF.Ui.Updates;
 using Xunit;
+// Two different AtomicFile types exist — the updater's rename-only writer (this one) and the
+// design-layer text writer that moved to CircuitRF.Design.Cells, which src/Ui/GlobalUsings.cs
+// now pulls in everywhere. This file means the updater's.
+using AtomicFile = CircuitRF.Ui.Updates.AtomicFile;
 
 namespace CircuitRF.Ui.Tests.Updates;
 

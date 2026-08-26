@@ -94,28 +94,9 @@ public sealed record DrcViolation(
     public bool IsAssembly => Section is not null;
 }
 
-/// <summary>
-/// A deliberate, persisted exception to one rule at one place (§9A.1: "real designs have deliberate
-/// violations. Waiving must be per-violation, persisted, and visible, or people stop running DRC
-/// entirely").
-///
-/// <para>Stored on the <see cref="LayoutView"/> that was checked, not on the technology — the
-/// violation belongs to the artwork, and a technology shared by twenty cells must not accumulate one
-/// cell's exceptions.</para>
-/// </summary>
-public sealed class DrcWaiver
-{
-    /// <summary><see cref="DrcViolation.Key"/> of the violation this waives.</summary>
-    public string Key { get; set; } = "";
-
-    /// <summary>Why. Free text, may be empty — but the UI asks for it, because a waiver with no
-    /// reason is indistinguishable from a mistake six months later.</summary>
-    public string Reason { get; set; } = "";
-
-    /// <summary>The rule's name at the time of waiving, carried so a waiver that no longer matches
-    /// anything can still be listed and removed by a human who recognises it.</summary>
-    public string RuleName { get; set; } = "";
-}
+// DrcWaiver lives in CircuitRF.Design.Layout.Drc — it is persisted on the LayoutView, so the `.clay`
+// format names it and it had to cross to the non-UI side with the rest of the layout model
+// (brief-cli-em-verb.md R-emcli-3). Everything else in this file stays here with the engine.
 
 /// <summary>How a run was bounded and what it flattened at — see <see cref="DrcEngine.Run"/>.</summary>
 /// <param name="MaxShapes">

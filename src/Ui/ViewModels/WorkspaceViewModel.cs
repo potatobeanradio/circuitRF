@@ -812,21 +812,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return new TechResolution(choice.StarterTech, null, TechResolutionSource.None, []);
         }
 
-        string? ownCwsPath = normalizedClayPath is not null
-            ? WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(normalizedClayPath))
-            : CurrentWorkspacePath;
-
-        string? workspaceDir = ownCwsPath is null ? null : Path.GetDirectoryName(ownCwsPath);
-
-        string? defaultTechRef = null;
-        if (ownCwsPath is not null)
-        {
-            try { defaultTechRef = WorkspacePersistence.LoadFromFile(ownCwsPath).DefaultTechRef; }
-            catch { /* corrupt .cws — treated as "no default", matches TryLoadCws elsewhere */ }
-        }
-
-        string? clayDir = normalizedClayPath is null ? null : Path.GetDirectoryName(normalizedClayPath);
-        var resolution = TechnologyResolver.Resolve(techRef, clayDir, workspaceDir, defaultTechRef, _techCache);
+        // The ancestor-.cws walk, the .cws's DefaultTechRef read and the resolve itself are
+        // TechnologyResolver's — shared with `circuitrf em`, which has no "current workspace" to fall
+        // back to and must apply exactly this rule (brief-cli-em-verb.md R-emcli-5). What is left
+        // here is what only the GUI has: posting the diagnostics, and R-fgn-4's orphan prompt.
+        var (resolution, ownCwsPath) = TechnologyResolver.ResolveForDocument(
+            techRef, normalizedClayPath, CurrentWorkspacePath, _techCache);
 
         foreach (var diagnostic in resolution.Diagnostics)
             Messages.Warning(diagnostic);
@@ -5404,17 +5395,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// resolver could not read would look like a corrupt file rather than a bad conversion.
     /// </summary>
     private string MakeEmLayoutRef(string cemPath, string absoluteClayPath)
-    {
-        string full = Path.GetFullPath(absoluteClayPath);
-        string baseDir = CurrentWorkspacePath is { } cws
-            ? Path.GetDirectoryName(cws)!
-            : Path.GetDirectoryName(cemPath)!;
-
-        string rel = Path.GetRelativePath(baseDir, full);
-        // A path that climbs out of the base is not usefully "relative to the workspace" — store it
-        // absolutely rather than as a ../../.. chain that breaks the moment the workspace moves.
-        return rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel) ? full : rel;
-    }
+        => EmSetupResolver.MakeLayoutRef(cemPath, absoluteClayPath, CurrentWorkspacePath);
 
     /// <summary>
     /// The absolute <c>.clay</c> path an <see cref="EmSetup.LayoutRef"/> names, or null when it names
@@ -5423,35 +5404,39 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// agree about what a reference resolves to, and one method is how that is guaranteed.
     /// </summary>
     private string? ResolveEmLayoutPath(string cemPath, string layoutRef)
-    {
-        if (layoutRef.Length == 0) return null;
-
-        return Path.IsPathRooted(layoutRef)
-            ? Path.GetFullPath(layoutRef)
-            : Path.GetFullPath(Path.Combine(
-                CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws)! : Path.GetDirectoryName(cemPath)!,
-                layoutRef));
-    }
+        => EmSetupResolver.ResolveLayoutPath(cemPath, layoutRef, CurrentWorkspacePath);
 
     private EmLayoutSource? ResolveEmLayout(string cemPath, string layoutRef)
     {
-        if (ResolveEmLayoutPath(cemPath, layoutRef) is not { } abs) return null;
+        // The path rules and the disk read are EmSetupResolver's — shared verbatim with `circuitrf em`
+        // (brief-cli-em-verb.md R-emcli-1/R-emcli-5), because a headless run that resolved a different
+        // layout or a different technology than Simulate would be worse than no verb at all.
+        //
+        // What stays here is what only the GUI has: the LIVE model of an already-open .clay, so an
+        // unsaved edit is what gets analysed, and the session technology override / orphan prompt that
+        // ResolveTechFor wraps around the shared walk.
+        var resolution = EmSetupResolver.Resolve(
+            cemPath, layoutRef, CurrentWorkspacePath, _techCache, LiveLayoutView);
 
-        LayoutView? view = null;
+        if (resolution.Source is not { } source) return null;
+
+        // Re-run through ResolveTechFor so the session override (R-fgn-4) and the orphan-technology
+        // prompt still apply, and so the diagnostics reach Messages the way every other resolution's
+        // do. Resolution itself is cached, so this is not a second file read.
+        var tech = ResolveTechFor(source.View.TechRef, source.AbsolutePath);
+        return source with { Technology = tech.Tech };
+    }
+
+    /// <summary>The live model of an already-open <c>.clay</c>, or null when that path is not open —
+    /// <see cref="EmSetupResolver.Resolve"/>'s hook, and the one part of EM layout resolution that
+    /// cannot be shared with a headless run.</summary>
+    private LayoutView? LiveLayoutView(string absoluteClayPath)
+    {
         foreach (var open in _openDocsByPath.Values.OfType<LayoutDocument>())
             if (open.FilePath is { } fp &&
-                string.Equals(Path.GetFullPath(fp), abs, StringComparison.OrdinalIgnoreCase))
-            { view = open.ViewModel.Model; break; }
-
-        if (view is null)
-        {
-            if (!File.Exists(abs)) return null;
-            try { view = LayoutPersistence.LoadFromFile(abs); }
-            catch { return null; }
-        }
-
-        var tech = ResolveTechFor(view.TechRef, abs);
-        return new EmLayoutSource(abs, view, tech.Tech, view.DbuPerMicron);
+                string.Equals(Path.GetFullPath(fp), absoluteClayPath, StringComparison.OrdinalIgnoreCase))
+                return open.ViewModel.Model;
+        return null;
     }
 
     /// <summary>
@@ -5588,7 +5573,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 vm.CancelRequested = cancellation.Cancel;
                 vm.IsRunning       = true;
-                result = await Task.Run(() => EmRunService.Run(setup, source, resultsRoot, default, control));
+                // R-emp-6/R-emcli-3 — the core cap is a MACHINE preference, so it is read HERE, on the
+                // UI side that owns the preferences file, and handed to the run service as an
+                // argument. EmRunService itself lives in CircuitRF.Design and cannot reach it.
+                result = await Task.Run(() => EmRunService.Run(
+                    setup, source, resultsRoot, default, control, EmSolveCorePreference.Preferred));
             }
             catch (Exception ex)
             {

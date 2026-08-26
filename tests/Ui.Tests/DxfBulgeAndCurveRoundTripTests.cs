@@ -181,5 +181,5 @@ public class DxfBulgeAndCurveRoundTripTests
         Assert.IsType<PolygonShape>(imported);
     }
 
-    private static double SignedAreaAbs(long[] ring) => Math.Abs(CircuitRF.Ui.Layout.LayoutGeometry.SignedArea(ring)) / 2.0;
+    private static double SignedAreaAbs(long[] ring) => Math.Abs(CircuitRF.Design.Layout.LayoutGeometry.SignedArea(ring)) / 2.0;
 }

@@ -49,7 +49,7 @@ public sealed class LayoutInstanceArrayPerfTests : IDisposable
 
         var arrayView = new LayoutView { DbuPerMicron = 1000 };
         arrayView.Instances.Add(new LayoutInstance { CellRef = "Via", X = 0, Y = 0, Mag = 1.0, Rows = 50, Cols = 50, PitchX = 1000, PitchY = 1000 });
-        var tech = new Technology { Name = "Test", Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0), FillOpacity = 0.5, ZOrder = 0, Visible = true, Selectable = true }] };
+        var tech = new Technology { Name = "Test", Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0), FillOpacity = 0.5, ZOrder = 0, Visible = true, Selectable = true }] };
         var arrayVp = new LayoutViewport(-2000, -2000, 0.01, 800, 800);
 
         using var surface = SKSurface.Create(new SKImageInfo(800, 800));

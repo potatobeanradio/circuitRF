@@ -3,6 +3,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Core\CircuitRF.Core.csproj" />
     <ProjectReference Include="..\Engine\CircuitRF.Engine.csproj" />
+    <!-- The `.cem`-to-EmProblem half: the layout model, the technology model, the EM setup and the
+         extractors. Framework-free and gated by tests/Firewall.Tests exactly as Core and Engine are,
+         which is what makes the `em` verb possible at all (brief-cli-em-verb.md R-emcli-1). -->
+    <ProjectReference Include="..\Design\CircuitRF.Design.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

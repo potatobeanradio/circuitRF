@@ -176,7 +176,7 @@ public class LayoutLabelOwnerFollowUpFixesTests : IDisposable
         var tech = new Technology
         {
             Name = "T", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000,
-            Layers = [new LayerDef { Key = Layer1, Name = "L", Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0), FillOpacity = 1.0, ZOrder = 0, Visible = true, Selectable = true }],
+            Layers = [new LayerDef { Key = Layer1, Name = "L", Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0), FillOpacity = 1.0, ZOrder = 0, Visible = true, Selectable = true }],
         };
         var view = FreshModel();
         view.Shapes.Add(new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "W", Height = 40_000, Rotation = LayoutRotation.R90 });

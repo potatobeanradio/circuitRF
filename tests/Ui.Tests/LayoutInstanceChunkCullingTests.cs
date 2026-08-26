@@ -53,7 +53,7 @@ public sealed class LayoutInstanceChunkCullingTests : IDisposable
     private static Technology MakeTech(double fillOpacity = 1.0) => new()
     {
         Name = "Test", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000,
-        Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0), FillOpacity = fillOpacity, ZOrder = 0, Visible = true, Selectable = true }],
+        Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0), FillOpacity = fillOpacity, ZOrder = 0, Visible = true, Selectable = true }],
     };
 
     /// <summary>An N x N field of L-shaped polygons. Deliberately NOT rectangles: a grown bounding box

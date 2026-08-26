@@ -185,7 +185,7 @@ public class AcceleratedSolveUiTests
         // solve is minutes. What this pins is the composition — the two fill terms must be applied to
         // ONE base, because as two independent ternaries turning the accelerator on silently discards
         // DirectVerticalKernel.
-        string src = File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Layout/Em/EmRunService.cs"));
+        string src = File.ReadAllText(Path.Combine(RepoRoot(), "src/Design/Layout/Em/EmRunService.cs"));
 
         Assert.Contains("setup.AcceleratedSolve", src, StringComparison.Ordinal);
         Assert.Contains("Aim = PlanarAimSettings.Default", src, StringComparison.Ordinal);

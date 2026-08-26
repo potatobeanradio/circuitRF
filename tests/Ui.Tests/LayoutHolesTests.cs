@@ -131,7 +131,7 @@ public class LayoutHolesTests
         tech.Layers.Add(new LayerDef
         {
             Key = Layer1, Name = "L1",
-            Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0),
+            Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0),
             FillOpacity = 1.0, ZOrder = 0, Visible = true, Selectable = true,
         });
 

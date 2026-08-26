@@ -130,8 +130,8 @@ public sealed class LayoutSnapDenseCostTests : IDisposable
             Name = "T", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000,
             Layers =
             [
-                new LayerDef { Key = LayerA, Name = "vis", Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0), ZOrder = 0, Visible = true, Selectable = true },
-                new LayerDef { Key = hidden, Name = "hid", Color = new CircuitRF.Ui.Theming.Rgba(0, 255, 0), ZOrder = 1, Visible = false, Selectable = true },
+                new LayerDef { Key = LayerA, Name = "vis", Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0), ZOrder = 0, Visible = true, Selectable = true },
+                new LayerDef { Key = hidden, Name = "hid", Color = new CircuitRF.Design.Theming.Rgba(0, 255, 0), ZOrder = 1, Visible = false, Selectable = true },
             ],
         };
 

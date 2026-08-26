@@ -40,7 +40,7 @@ public sealed class LayoutInstanceRendererTests : IDisposable
     private static Technology MakeTech() => new()
     {
         Name = "Test", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000,
-        Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0), FillOpacity = 0.6, ZOrder = 0, Visible = true, Selectable = true }],
+        Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0), FillOpacity = 0.6, ZOrder = 0, Visible = true, Selectable = true }],
     };
 
     private static LayoutView MakeView() => new() { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Um, SnapDbu = 1000 };
@@ -140,7 +140,7 @@ public sealed class LayoutInstanceRendererTests : IDisposable
         var techNoFill = new Technology
         {
             Name = "Test", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000,
-            Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0), FillOpacity = 0.0, ZOrder = 0, Visible = true, Selectable = true }],
+            Layers = [new LayerDef { Key = LayerA, Name = "L1", Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0), FillOpacity = 0.0, ZOrder = 0, Visible = true, Selectable = true }],
         };
         var vp = new LayoutViewport(-300_000, -300_000, 0.0003, 600, 600);
 

@@ -1,5 +1,18 @@
 # `src/Ui/Layout/Em` — the EM setup: extraction, `.cem`, mesh, run
 
+> **MOST OF WHAT THIS FILE DOCUMENTS NOW LIVES IN `src/Design/Layout/Em/` (2026-08-26).** The `.cem`
+> model and persistence, `EmGeometry`, `EmPortExtraction`, `CrossSectionExtractor`,
+> `PlanarExtractor`, `EmRunService`, `EmSnpProvenance`, `EmSolveCores`, `EmExtractionResult` /
+> `EmExtractionSettings`, `EmLengthFormat` and the new `EmSetupResolver` moved to the
+> `CircuitRF.Design` assembly so `circuitrf em` could run them
+> (`docs/sonnet-briefs/brief-cli-em-verb.md`). **Nothing was rewritten** — the code had been
+> framework-free by rule since L6/L7 (R-em-1) and simply lived in the wrong assembly — so every
+> requirement, convention and finding below still holds, at the new path. What is still HERE is the
+> UI half: `EmSetupEditorViewModel`, `EmSetupDocument`, `EmSetupSnapshotCommand`,
+> `EmAnalysisLevelRow`, `EmBackAnnotation`, and `EmSolveCorePreference` (the AppPreferences read that
+> could not cross). This file and `RESOLVED.md` stay put rather than splitting in two: the EM setup is
+> one subsystem and its standing instructions read as one document.
+
 Standing instructions for the Ui half of phases **L6/L7**. Read with `src/Ui/CLAUDE.md` and — before
 touching anything about the physics — **`src/Engine/Mom/CLAUDE.md`**, which owns the kernel, its 17
 requirements, its sign conventions, and two findings about the closed-form oracles themselves.

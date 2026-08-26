@@ -22,14 +22,8 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Layout.Em;
 
-/// <summary>What the workspace hands back when a <c>.cem</c>'s <see cref="EmSetup.LayoutRef"/> is
-/// resolved. R-em-10: the geometry is read HERE, at use time, never embedded in the <c>.cem</c> —
-/// which is the whole reason re-running after a layout edit picks the edit up.</summary>
-public sealed record EmLayoutSource(
-    string      AbsolutePath,
-    LayoutView  View,
-    Technology? Technology,
-    int         DbuPerMicron);
+// EmLayoutSource moved to CircuitRF.Design.Layout.Em — EmRunService.Run takes one, so the record had
+// to cross the firewall with the run service. Only the record moved; this editor stays (§5).
 
 /// <summary>One read-only stackup row for R-em-12's "the stackup is SHOWN, not edited" panel.</summary>
 public sealed record EmStackupRow(
@@ -1069,14 +1063,14 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     public IReadOnlyList<EmSolveCoreChoice> SolveCoreChoices { get; } = EmSolveCores.ChoiceRows();
 
     [ObservableProperty] private EmSolveCoreChoice _selectedSolveCores =
-        EmSolveCores.ChoiceRows().FirstOrDefault(c => c.Cap == EmSolveCores.Preferred)
+        EmSolveCores.ChoiceRows().FirstOrDefault(c => c.Cap == EmSolveCorePreference.Preferred)
         ?? EmSolveCores.ChoiceRows()[0];
 
     partial void OnSelectedSolveCoresChanged(EmSolveCoreChoice value)
     {
         // Written straight to the preference. No CommitEdit, deliberately — see the block comment
         // above; an undo stack that could revert a machine setting would be undoing the wrong thing.
-        if (EmSolveCores.Preferred != value.Cap) EmSolveCores.Preferred = value.Cap;
+        if (EmSolveCorePreference.Preferred != value.Cap) EmSolveCorePreference.Preferred = value.Cap;
     }
 
     /// <summary>The one-line note R-emp-6 asks for: this is a machine setting, not part of the design.</summary>

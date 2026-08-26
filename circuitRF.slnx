@@ -15,6 +15,9 @@
   <Folder Name="/src/Engine/">
     <Project Path="src/Engine/CircuitRF.Engine.csproj" />
   </Folder>
+  <Folder Name="/src/Design/">
+    <Project Path="src/Design/CircuitRF.Design.csproj" />
+  </Folder>
   <Folder Name="/src/Harmonica/">
     <Project Path="src/Harmonica/CircuitRF.Harmonica.csproj" />
   </Folder>

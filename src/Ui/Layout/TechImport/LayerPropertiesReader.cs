@@ -196,7 +196,7 @@ public static class LayerPropertiesReader
             // Square and within the size cap, or it is not a mask this can paint through. Counted
             // rather than named: a file with one bad row has many, and the layers that referred to it
             // fall back to a solid fill, which is visible.
-            if (rows is not { Count: > 0 } || rows.Count > Layout.FillPattern.MaxSize
+            if (rows is not { Count: > 0 } || rows.Count > FillPattern.MaxSize
                 || rows.Exists(r => r.Length != rows.Count))
             {
                 malformed++;

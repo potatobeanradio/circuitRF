@@ -431,7 +431,12 @@ public class InternalDeltaGapPortUiTests
     {
         foreach (string file in new[]
                  {
-                     Path.Combine("..", "..", "..", "..", "..", "src", "Ui", "Layout", "Em", "EmRunService.cs"),
+                     // The two callers now live on opposite sides of the UI firewall — the run
+                     // service moved to CircuitRF.Design with the rest of the EM pipeline
+                     // (brief-cli-em-verb.md), the editor stayed. That is exactly why BOTH still have
+                     // to be checked: a capability the GUI passes and the headless run does not would
+                     // make `circuitrf em` quietly answer a different question.
+                     Path.Combine("..", "..", "..", "..", "..", "src", "Design", "Layout", "Em", "EmRunService.cs"),
                      Path.Combine("..", "..", "..", "..", "..", "src", "Ui", "Layout", "Em", "EmSetupEditorViewModel.cs"),
                  })
         {

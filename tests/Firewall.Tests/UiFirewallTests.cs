@@ -4,9 +4,10 @@ using System.Reflection.PortableExecutable;
 namespace CircuitRF.Firewall.Tests;
 
 /// <summary>
-/// Enforces the UI-framework firewall: RfCore, CircuitRF.Core, CircuitRF.Engine, and
-/// CircuitRF.Cli must not reference any UI framework assembly. All UI-framework code must
-/// live exclusively in src/Ui. See docs/design/ui-architecture.md §3.
+/// Enforces the UI-framework firewall: RfCore, CircuitRF.Core, CircuitRF.Engine, CircuitRF.Design,
+/// CircuitRF.Cli, CircuitRF.Harmonica and CircuitRF.WBond must not reference any UI framework
+/// assembly. All UI-framework code must live exclusively in src/Ui. See
+/// docs/design/ui-architecture.md §3.
 /// </summary>
 public class UiFirewallTests
 {
@@ -20,11 +21,18 @@ public class UiFirewallTests
         // standalone binary too, which does NOT weaken this: the standalone app is src/Ui with a
         // different Main, and src/Harmonica stays on this side of the wall.
         { "CircuitRF.Harmonica", "CircuitRF.Harmonica.dll" },
-        // wBond's framework-free half (docs/design/wbond.md §11). Note that src/Ui/Layout's
-        // model/units/persistence files contain no Avalonia in their SOURCE but live in
-        // CircuitRF.Ui, which does — so src/WBond carries its own units table rather than
-        // referencing LayoutUnits. This assertion is what enforces that.
+        // wBond's framework-free half (docs/design/wbond.md §11). Its own units table predates
+        // CircuitRF.Design and is left alone: LayoutUnits is now reachable across the wall, but
+        // adopting it is a behaviour change to a shipping app, not part of an EM-verb project split.
         { "CircuitRF.WBond", "CircuitRF.WBond.dll" },
+        // The design-layer artifacts an EM problem is built from — the layout model, the technology
+        // model, the cell-folder format, the `.cem` and the extractors (brief-cli-em-verb.md
+        // R-emcli-2). Gated for the reason this whole file exists: this project was carved OUT of
+        // CircuitRF.Ui, so every one of its files sat next to Avalonia until the day it moved. A
+        // project that starts clean and is not gated does not stay clean — and if this one stops
+        // being clean, `circuitrf em` stops being buildable, silently, at whatever later date
+        // someone reaches for a Dispatcher in the layout reader.
+        { "CircuitRF.Design", "CircuitRF.Design.dll" },
     };
 
     [Theory, MemberData(nameof(NonUiAssemblies))]

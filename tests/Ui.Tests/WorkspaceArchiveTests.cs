@@ -557,10 +557,10 @@ public sealed class WorkspaceArchiveTests : IDisposable
         var opened  = WorkspaceArchiveExtractor.Extract(zip, landing);
 
         Assert.NotNull(opened.CwsPath);
-        var view = CircuitRF.Ui.Layout.LayoutPersistence.LoadFromFile(
+        var view = CircuitRF.Design.Layout.LayoutPersistence.LoadFromFile(
             Path.Combine(opened.WorkspaceDir, "Amp", "layout", "Amp.clay"));
 
-        var bmp = Assert.Single(view.Shapes.OfType<CircuitRF.Ui.Layout.BitmapShape>());
+        var bmp = Assert.Single(view.Shapes.OfType<CircuitRF.Design.Layout.BitmapShape>());
         Assert.True(System.IO.File.Exists(bmp.ImagePathRef));    // the whole point of the exercise
         Assert.StartsWith(opened.WorkspaceDir, bmp.ImagePathRef);
     }

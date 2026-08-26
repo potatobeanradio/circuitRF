@@ -41,7 +41,7 @@ public sealed class LayerStipplePatternTests
         {
             Key = Key,
             Name = "L1",
-            Color = new CircuitRF.Ui.Theming.Rgba(255, 0, 0),
+            Color = new CircuitRF.Design.Theming.Rgba(255, 0, 0),
             FillOpacity = fillOpacity,
             FillPattern = patternName,
             ZOrder = 0,

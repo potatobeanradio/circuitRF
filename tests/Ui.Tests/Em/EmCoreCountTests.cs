@@ -27,14 +27,14 @@ internal sealed class CoreStoreScope : IDisposable
 {
     public CoreStoreScope(int? seed = null)
     {
-        EmSolveCores.TestOverrideStore  = seed;
-        EmSolveCores.TestOverrideActive = true;
+        EmSolveCorePreference.TestOverrideStore  = seed;
+        EmSolveCorePreference.TestOverrideActive = true;
     }
 
     public void Dispose()
     {
-        EmSolveCores.TestOverrideActive = false;
-        EmSolveCores.TestOverrideStore  = null;
+        EmSolveCorePreference.TestOverrideActive = false;
+        EmSolveCorePreference.TestOverrideStore  = null;
     }
 }
 
@@ -91,7 +91,7 @@ public class EmCoreCountTests
         {
             using var _ = new CoreStoreScope(cap);
             Assert.Equal(cap is null ? null : Math.Min(cap.Value, EmSolveCores.ProcessorCount),
-                         EmSolveCores.Preferred);
+                         EmSolveCorePreference.Preferred);
 
             // The same problem, mesh and ports at every cap. Nothing the cap can reach is in any of
             // the three hashes — which is what makes an .snp produced at 4 cores still current at 8.
@@ -185,7 +185,7 @@ public class EmCoreCountTests
         Assert.Equal(0, undoBefore);
 
         vm.SelectedSolveCores = vm.SolveCoreChoices.First(c => c.Cap is null);
-        Assert.Null(EmSolveCores.Preferred);
+        Assert.Null(EmSolveCorePreference.Preferred);
         Assert.False(vm.IsDirty);
         Assert.False(vm.UndoRedo.CanUndo);
     }
@@ -211,8 +211,17 @@ public class EmCoreCountTests
         // EmRunService cannot be driven headlessly to a solve inside a routine gate, so the WIRING
         // is pinned by a source scan — the same fallback this suite already uses for view-model-only
         // plumbing. Without this, the whole control is inert and nothing else would notice.
-        string src = File.ReadAllText(RepoFile("src/Ui/Layout/Em/EmRunService.cs"));
-        Assert.Contains("MaxDegreeOfParallelism = EmSolveCores.Preferred", src, StringComparison.Ordinal);
+        //
+        // The wiring is TWO hops since the run service crossed the UI firewall (brief-cli-em-verb.md
+        // R-emcli-3): the preference is read on the UI side and handed in as an argument, and the run
+        // service puts that argument into the solve settings. Scanning only one hop would leave the
+        // other free to be dropped — which is exactly how a preference becomes decoration.
+        string runService = File.ReadAllText(RepoFile("src/Design/Layout/Em/EmRunService.cs"));
+        Assert.Contains("MaxDegreeOfParallelism = EmSolveCores.Sanitise(maxCores)", runService,
+                        StringComparison.Ordinal);
+
+        string workspace = File.ReadAllText(RepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs"));
+        Assert.Contains("EmSolveCorePreference.Preferred));", workspace, StringComparison.Ordinal);
     }
 
     // ── helpers ────────────────────────────────────────────────────────────────────────────────

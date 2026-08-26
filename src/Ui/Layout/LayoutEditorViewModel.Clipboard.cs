@@ -341,13 +341,13 @@ public sealed partial class LayoutEditorViewModel
 
         var used = new HashSet<int>();
         foreach (var s in Model.Shapes)
-            if (s is LabelShape { IsPort: true } l && Em.EmPortExtraction.TryParseNumber(l.Text, out int n))
+            if (s is LabelShape { IsPort: true } l && EmPortExtraction.TryParseNumber(l.Text, out int n))
                 used.Add(n);
 
         int next = 1;
         foreach (var port in pasted)
         {
-            if (!Em.EmPortExtraction.TryParseNumber(port.Text, out int number)) continue;
+            if (!EmPortExtraction.TryParseNumber(port.Text, out int number)) continue;
             if (used.Add(number)) continue;                 // free in the destination — keep it
 
             while (!used.Add(next)) next++;

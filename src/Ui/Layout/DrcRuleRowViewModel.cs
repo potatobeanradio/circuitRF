@@ -193,7 +193,7 @@ public sealed partial class DrcRuleRowViewModel : ObservableObject
             return;
         }
 
-        if (!Drc.DrcLayerExprParser.TryParse(text, out var expr, out string? error) || expr is null)
+        if (!DrcLayerExprParser.TryParse(text, out var expr, out string? error) || expr is null)
         {
             if (isSecond) RegionBError = error; else RegionAError = error;
             return;
@@ -201,7 +201,7 @@ public sealed partial class DrcRuleRowViewModel : ObservableObject
 
         // Store the CANONICAL rendering, not the user's own spacing — so the `.ctech` gets one
         // stable spelling and a re-save does not churn the file on whitespace.
-        string canonical = Drc.DrcLayerExprParser.Format(expr);
+        string canonical = DrcLayerExprParser.Format(expr);
         if (isSecond) RegionBError = null; else RegionAError = null;
         if (canonical == current) { RefreshFromModel(); return; }
 

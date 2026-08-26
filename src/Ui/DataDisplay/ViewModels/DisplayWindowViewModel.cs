@@ -773,7 +773,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
         // file survives intact until the new one is complete. Synchronous on purpose — a `.cdd` is a
         // few kilobytes, and this is the same call every other persistence path in the app makes;
         // Task.Run only keeps the write off the UI thread, matching what WriteAllTextAsync did here.
-        await Task.Run(() => Schematic.AtomicFile.WriteAllText(path, json));
+        await Task.Run(() => AtomicFile.WriteAllText(path, json));
 
         // Update baseline so HasUnsavedChanges() returns false right after saving.
         CaptureBaseline();

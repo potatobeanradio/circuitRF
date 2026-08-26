@@ -20,7 +20,7 @@ public class LayoutPathOutlineSeamTests
         [
             new LayerDef
             {
-                Key = key, Name = "L1", Color = new CircuitRF.Ui.Theming.Rgba(color.Red, color.Green, color.Blue),
+                Key = key, Name = "L1", Color = new CircuitRF.Design.Theming.Rgba(color.Red, color.Green, color.Blue),
                 FillOpacity = fillOpacity, ZOrder = 0, Visible = true, Selectable = true,
             },
         ],

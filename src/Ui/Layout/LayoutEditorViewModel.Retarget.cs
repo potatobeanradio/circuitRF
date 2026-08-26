@@ -32,7 +32,7 @@ public sealed partial class LayoutEditorViewModel
         get
         {
             if (CurrentLayoutPath is not { } path) return null;
-            var cws = CircuitRF.Ui.Schematic.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path));
+            var cws = CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path));
             return cws is null ? null : Path.GetDirectoryName(cws);
         }
     }

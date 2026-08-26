@@ -28,7 +28,7 @@ public class StackupEditorFieldsTests
             {
                 Key = new LayerKey(i, 0),
                 Name = i == 1 ? "Metal1" : i == 2 ? "Metal2" : $"Aux{i}",
-                Color = new CircuitRF.Ui.Theming.Rgba(10, 20, 30),
+                Color = new CircuitRF.Design.Theming.Rgba(10, 20, 30),
                 ZOrder = i,
             });
 

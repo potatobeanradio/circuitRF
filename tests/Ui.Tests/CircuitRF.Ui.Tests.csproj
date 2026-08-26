@@ -34,6 +34,29 @@
     <ProjectReference Include="..\..\src\Ui\CircuitRF.Ui.csproj" />
   </ItemGroup>
 
+  <!--
+    The CLI, built alongside these tests so `Cli em` can be run as a real process (brief-cli-em-verb.md
+    gate 3). Nothing here links against it - it is only ever launched. Its output directory is recorded
+    as assembly metadata and the DLL is exec'd DIRECTLY: a `dotnet run` on src/Cli would start a nested
+    MSBuild inside a `dotnet test` that already holds the build locks, which deadlocks.
+
+    Copied verbatim from tests/Engine.Tests/CircuitRF.Engine.Tests.csproj, which learned all of this
+    first (see MatchStampTests.ACnlContainingAMatch_RunsHeadlessUnderCliSparam). Re-derived here the
+    hard way before that note was found - the hang is silent, with no CPU and no child process, and
+    looks exactly like a slow EM solve.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Cli\CircuitRF.Cli.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>CliDir</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)../../src/Cli/bin/$(Configuration)/net10.0</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <!-- Copy Default.ccolor preset so ColorThemeTests can load it from AppContext.BaseDirectory. -->
   <ItemGroup>
     <Content Include="..\..\src\Ui\Assets\Color\Default.ccolor" CopyToOutputDirectory="PreserveNewest">

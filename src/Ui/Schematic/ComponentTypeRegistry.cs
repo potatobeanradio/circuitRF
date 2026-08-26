@@ -37,20 +37,8 @@ public enum ComponentCategory
     Nonlinear,
 }
 
-/// <summary>Physical dimension of a component parameter — drives the closed Unit ComboBox.</summary>
-public enum UnitDimension
-{
-    None,
-    Resistance,
-    Inductance,
-    Capacitance,
-    Frequency,
-    Voltage,
-    Current,
-    Power,
-    Length,
-    Angle,
-}
+// UnitDimension lives in CircuitRF.Design.Cells — CcellParameter persists it, so the `.ccell` reader
+// names it and it had to cross to the non-UI side (brief-cli-em-verb.md R-emcli-3).
 
 /// <summary>One entry in the default parameter template for a freshly-placed component.</summary>
 public readonly record struct DefaultParam(string Name, string Expression, string Unit, bool ShowOnSchematic, UnitDimension Dimension = UnitDimension.None);
@@ -1270,7 +1258,7 @@ public static class ComponentTypeRegistry
     /// override parameters) — nothing populated them from a real component parameter until this.
     ///
     /// R-tec-7: stored as the stackup layer's own NAME (a string), matching
-    /// <see cref="CircuitRF.Ui.Layout.StackupLayer.SpanFromLayer"/>/<c>SpanToLayer</c>'s own
+    /// <see cref="CircuitRF.Design.Layout.StackupLayer.SpanFromLayer"/>/<c>SpanToLayer</c>'s own
     /// established convention — names, not indices/keys, survive a technology change meaningfully
     /// (the L1g lesson). R-tec-8: empty means "follow the technology" (the zero-configuration
     /// default this whole substrate design exists for) — never shown on schematic by default
