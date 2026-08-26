@@ -241,7 +241,7 @@ for ARCH in $ARCHES; do
 done
 
 echo ""
-echo "=== Done. ${#BUILT[@]} artifact(s) in ${DIST}"
+echo "=== Done. ${#BUILT[@]} file(s) in ${DIST}"
 # ${BUILT[@]} on an EMPTY array is an unbound-variable error under `set -u` on bash 3.2, which is
 # still what macOS ships; the +"..." form is the portable spelling and costs nothing here.
 for f in ${BUILT[@]+"${BUILT[@]}"}; do echo "    $(basename "$f")"; done
@@ -251,5 +251,5 @@ for f in ${BUILT[@]+"${BUILT[@]}"}; do echo "    $(basename "$f")"; done
 # updates with no error anywhere.
 if [ "$ARCH_ARG" = "both" ] && [ "$KIND_ARG" = "both" ] && [ "${#BUILT[@]}" -ne 4 ]; then
     echo ""
-    echo "WARNING: expected 4 artifacts for a full run, got ${#BUILT[@]}."
+    echo "WARNING: expected 4 files for a full run, got ${#BUILT[@]}."
 fi

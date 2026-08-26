@@ -99,6 +99,11 @@ First install is either a per-user `.msi` — WiX v4 `Scope="perUser"` with `Sta
 Id="LocalAppDataFolder"`, which raises no UAC prompt — or a plain zip plus a first-run bootstrap. Either
 is fine; the *update* payload is a zip in both cases, and the updater never runs an installer.
 
+*(MSIX would replace this entire layout — the stub, the versioned directories and the pointer flip —
+with a package the OS updates itself, and would bring block-level delta updates with it. It is the
+strategic answer to the same problem and it is blocked on a certificate and a host rather than on
+code. Investigated and deferred; §18.)*
+
 ### 2.2 Linux — `~/.local/share/circuitRF/`
 
 Identical shape, with `current` as a symlink:
@@ -1012,7 +1017,8 @@ changes signing, packaging layout, or the updater.
 Recorded so that they stay visible rather than quietly becoming permanent omissions:
 
 - **Delta updates.** Full payloads every time. §12 explains why splitting the Linux VM image out is the
-  cheaper first move, and zsync/bsdiff the more expensive second one.
+  cheaper first move, and zsync/bsdiff the more expensive second one. **§18 records a Windows-only
+  route that gets them for free**, at the cost of a certificate and a host.
 - **AppImage as the Linux channel**, with its zsync-based delta updates (§2.2).
 - ~~**A signed manifest**~~ — **built** (§15.5), and shipping inert: the client half is complete and
   every release from the one that carries a key onward must be signed. What is left is the key ceremony,
@@ -1023,3 +1029,147 @@ Recorded so that they stay visible rather than quietly becoming permanent omissi
   installs and each updates itself independently, which costs a user with all three a threefold download.
 - **A "What's new in <version>" entry on the first launch after an update.** Cheap — compare `AppVersion`
   to a persisted `LastRunVersion` — and a natural companion to §10.2, but not asked for.
+
+---
+
+## 18. MSIX — the Windows-only option that would delete most of §2.1
+
+**Status: investigated 2026-08-26, not adopted. Recorded because it is the strategic answer to the
+question §1 answers tactically, and because the two things blocking it are not code.**
+
+The question that prompted this: *can a per-machine Windows install update itself if we simply ask the
+OS for elevation?* §1 answers no on grounds of policy — a UAC prompt cannot be silent and a privileged
+updater service is a surface we will not open. But that answer accepts the per-user/per-machine split as
+a given. MSIX removes the split entirely, which is a different and better kind of answer.
+
+### 18.1 What MSIX would replace
+
+MSIX is Windows' own package format: the OS installs it, the OS updates it, and a packaged app never
+writes its own install tree. An `.appinstaller` file next to the package declares an update URI and a
+polling interval, and Windows 10 2004+ / Windows 11 checks it on launch and (with
+`AutomaticBackgroundTask`) in the background.
+
+| Concern | §2.1 today | Under MSIX |
+|---|---|---|
+| Elevation | avoided by installing into `%LOCALAPPDATA%` | avoided — MSIX installs are per-user by construction |
+| Machine-wide install | a second `.msi`, notify-only forever | `Add-AppxProvisionedPackage` (admin, once) — **and it still auto-updates per-user afterwards** |
+| Running-exe problem | launcher stub + `app-<ver>` + `current` pointer + swap | package layers; the OS handles it |
+| Rollback | launch counter + revert (§14) | the OS's own staged-install semantics |
+| Payload verification | Authenticode check before swap (§9) | the OS refuses a package whose signature does not validate |
+| Payload size | full download every time (§12) | **block-map differential — only changed 64 KB blocks** |
+| Three apps | three installs, three downloads (§17) | one package, three `<Application>` entries, one update |
+
+The stub, `UpdateSwap`, `UpdateStager` and the §14 rollback all exist to work around one Windows fact —
+you cannot overwrite a running `.exe`. MSIX makes that fact irrelevant, so all of it goes. That includes
+retiring the zig-built stub, which is the least reliable thing in the Windows build (`RESOLVED.md`,
+2026-08-25 — zig crashes at random on the release box).
+
+**Differential updates deserve a line of their own**, because §12 calls payload size the honest problem
+and §17 records delta updates as deferred. Every MSIX carries `AppxBlockMap.xml`, hashing every file in
+64 KB blocks; on update Windows diffs the two block maps and downloads only the changed blocks, reusing
+whole unchanged files. Measured Windows payloads at 1.0.0-beta.2 are 58.2 MB (arm64), 60.0 MB (x64) and
+57.3 MB (x86). A beta-to-beta bump that changes a handful of managed assemblies would move single-digit
+megabytes. This is delta updates arriving for free on one platform, with nothing written.
+
+### 18.2 The version-collapse bug MSIX would let us fix
+
+`packaging/version.ps1:29` derives the MSI `ProductVersion` by stripping the prerelease suffix, so
+`1.0.0-beta.1` and `1.0.0-beta.2` both become `1.0.0.0`. The file's own comment admits Windows Installer
+compares only the first three fields, and the standing instruction is to bump the numeric part for
+anything a user should be able to upgrade to.
+
+MSIX compares all four fields, and **a sideloaded package may use a non-zero revision** (only Microsoft
+Store submissions require the fourth field to be `0`). So the prerelease ordinal can live there —
+`1.0.0.2` for `beta.2` — and prerelease-to-prerelease upgrades become expressible rather than requiring
+a numeric bump they do not deserve.
+
+### 18.3 What it costs, and the two things that actually block it
+
+**Signing stops being optional and becomes blocking.** `build-windows.ps1` currently prints
+`Unsigned: SmartScreen will warn on first run` and ships anyway; a tester downloads the `.msi`, clicks
+through the warning, and is running. An MSIX signed by nothing, or by a certificate the machine does not
+trust, **will not install at all** — the remedy is an administrator importing the certificate into the
+Local Computer's Trusted People store, which is not a thing to ask of a user. Authenticode signing is
+already a prerequisite for the per-user channel (§9, `BUILDING.md`), but there it fails closed and
+silently; here it fails in the user's face on the first machine that is not ours.
+
+**Hosting is the sharp edge, and GitHub Releases probably cannot serve it.** App Installer requires the
+`.appinstaller` and the `.msix` to be returned with correct `Content-Type` and `Content-Length` on both
+`GET` and `HEAD`, and its troubleshooting documentation states that redirects and vanity URLs are not
+supported even when they resolve to the right file. Measured 2026-08-26:
+
+```
+GET https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.2/…-arm64.msi
+  -> HTTP/2 302, content-length: 0
+     location: https://release-assets.githubusercontent.com/…&rsct=application%2Foctet-stream
+```
+
+Every release asset is a 302 to a signed CDN URL serving `application/octet-stream`. That is exactly the
+shape the documentation calls out. `raw.githubusercontent.com` returns `text/plain` with no redirect and
+a correct `Content-Length`, so it *might* carry the `.appinstaller` itself — but that is a thing to test
+on a real machine, not a plan, and the package it points at still lives behind the redirect.
+
+**So MSIX collides head-on with §8's requirement** that cutting a release stays "build the installers,
+upload them, done — no second server." Adopting MSIX means adopting §15's move off GitHub for the
+Windows payload, or at minimum a small static host with controllable MIME types. §15.2 already lists what
+such a host must provide; MSIX adds "and it must set `Content-Type` correctly," which rules out some
+otherwise-fine buckets in their default configuration.
+
+**Everything else is ordinary work, not a blocker:**
+
+- **`ms-appinstaller:` is off by default.** Microsoft disabled the protocol handler in December 2023
+  after threat actors used it to deliver ransomware without a SmartScreen prompt. This does not affect
+  updating an already-installed package — that path reads the URI from the installed package, not from a
+  web link — but it does mean first install is "download the file, open it," never "click this link."
+- **AppData is redirected.** A packaged app's writes to `%LOCALAPPDATA%` land in
+  `…\Packages\<family>\LocalCache\Local\`. `AppDataRoot.Dir` keeps working unchanged, which is the
+  dividend of having centralised it — but an existing `.msi` user's preferences, recent files, installed
+  PDK list and recovery sessions are invisible to an MSIX build, so a **one-time migration is required**,
+  and MSIX uninstall now deletes user state that survives an MSI uninstall today.
+- **The install directory is read-only and its location is not user-choosable.** Both already true for
+  the per-machine `.msi`, so nothing in the application should mind — but the `pcell-python` payload is
+  the candidate to check, given that it is the one part of the publish tree with a history of
+  install-layout surprises (`src/Ui/RESOLVED.md`, 2026-08-22).
+- **Child processes inherit package identity**, and with it the file redirection above. circuitRF spawns
+  `python3` off `PATH` for PCell generators, the senior worker for compiled vendor models, and
+  `explorer.exe` for reveal-in-folder. Full-trust packaged apps may do all of this, but **this is where
+  a spike should start** — it is the area most likely to hold a surprise, and the cheapest one to settle
+  empirically.
+- **HKLM writes fail** under a packaged app. The file associations in `circuitRF.wxs` are `ProgId`
+  registrations that move into the MSIX manifest as `uap:FileTypeAssociation` entries anyway, so this
+  costs a translation rather than a redesign.
+- **Tooling fits.** `makeappx pack` plus `signtool sign` from the Windows SDK are a clean CLI path that
+  slots into `build-windows.ps1` beside the WiX invocations — no Visual Studio, no `.wapproj`.
+
+### 18.4 How it would land in the code
+
+One new `InstallShape`:
+
+```
+InstallShape.OsManaged   <- an MSIX package. Detected from package identity, not from a path.
+```
+
+`CanSelfUpdate` is false for it, but it is **not notify-only** — it is the third state the design does
+not currently have: *someone else is handling this*. The whole update subsystem stands down, Help ▸
+Check for Updates… defers to Windows rather than being disabled, and §10.2's Message Panel line is not
+posted because the OS owns the lifecycle. Adding the state to `UpdateInstallSite` keeps §1.1's "one
+predicate, not three platform branches" honest; special-casing Windows inside `UpdatePolicy` would not.
+
+### 18.5 The recommendation
+
+**Not now.** The per-user `.msi` channel is built, tested, and is what makes 1.0 shippable; MSIX cannot
+install on a single machine until a code-signing certificate exists and a host that serves
+`.appinstaller` correctly exists. Neither is a code problem, and neither is on the 1.0 path.
+
+**But it is the right shape after 1.0**, and the argument for it is not the UAC prompt — it is that one
+change deletes the stub, the swap, the rollback, the payload-size problem and the three-separate-updates
+problem together, on the platform where all five are worst. The sequencing that makes it cheap:
+
+1. Obtain the Authenticode certificate. Needed for the per-user channel regardless (§9), so this is not
+   MSIX-specific work.
+2. Settle the host question as part of §15, with "sets `Content-Type` correctly" added to §15.2's list.
+3. Spike the child-process behaviour (`python3`, the senior worker) in a packaged build. One afternoon,
+   and it is the only item that could turn out to be a genuine blocker.
+4. Then, and only then, decide. The per-machine `.msi` stays either way — IT deployment through
+   Configuration Manager and Intune wants either an `.msi` or a provisioned MSIX, and dropping it would
+   strand exactly the managed installations §1 set out to serve.

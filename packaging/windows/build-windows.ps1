@@ -422,7 +422,7 @@ $($components.ToString().TrimEnd())
 }
 
 Write-Host ''
-Write-Host "=== Done. $($built.Count) artifact(s) in $dist"
+Write-Host "=== Done. $($built.Count) file(s) in $dist"
 foreach ($f in $built) { Write-Host "    $(Split-Path -Leaf $f)" }
 
 # A full run ships nine files and a release needs every one of them. Stated here rather than left to
@@ -430,7 +430,7 @@ foreach ($f in $built) { Write-Host "    $(Split-Path -Leaf $f)" }
 # updates with no error anywhere.
 if ($Arch -eq 'all' -and $Scope -eq 'all' -and $built.Count -ne 9) {
     Write-Host ''
-    Write-Host "WARNING: expected 9 artifacts for a full run, got $($built.Count)."
+    Write-Host "WARNING: expected 9 files for a full run, got $($built.Count)."
 }
 
 # Non-zero exit, so a short release cannot be mistaken for a complete one.
