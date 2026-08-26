@@ -159,79 +159,150 @@ $zigTarget = @{ 'x64' = 'x86_64-windows-gnu'; 'arm64' = 'aarch64-windows-gnu'; '
 # is nothing here to escape and nothing for a future route to get wrong. See circuitrf-stub.c.
 $appDefine = "-DCRF_APP_NAME=$AppName"
 
-# -mcpu=baseline IS THE POINT OF THE FIRST TWO ROUTES, not tidiness.
+# WHY EACH ROUTE IS RETRIED: ON THIS CLASS OF MACHINE ZIG CRASHES AT RANDOM.
 #
-# Without an explicit -mcpu, zig resolves the CPU natively whenever the target's architecture and OS
-# match the host's - so `-target aarch64-windows-gnu` is a NATIVE build on a Windows-on-ARM machine
-# and a cross build everywhere else, down a different code path, with a CPU model and feature set
-# that vary per machine. That is why the release box built x86_64 fine and crashed zig outright
-# (0xC0000005, no output at all) on aarch64 while running the correct native windows-aarch64 zig
-# (owner-reported, 2026-08-25). Pinning the CPU takes the native path out of it.
+# Two full release runs on the same Windows-on-ARM box, with the correct native windows-aarch64
+# zig 0.16.0 (owner-reported, 2026-08-25). zig exits -1073741819 (0xC0000005, an access violation)
+# having printed NOTHING AT ALL - a crash, not a refusal, so neither the stub source nor the flags
+# are implicated:
 #
-# It is also the right answer independently of the crash: the stub is shipped to other people's
-# machines, so building it for whatever CPU happened to cut the release is wrong even when it works.
+#     run 1   x64   native CPU, shared cache    -> BUILT, first attempt
+#             arm64 native CPU, shared cache    -> crashed
+#             x86   native CPU, shared cache    -> ran far enough to emit an LLVM warning
+#     run 2   x64   baseline x2 then private cache -> BUILT on the third attempt
+#             arm64 all four routes             -> crashed
+#             x86   all four routes             -> crashed
 #
-# -municode: wWinMain is the Unicode entry point; without it the mingw CRT looks for WinMain.
-# The linker flag is QUOTED: unquoted, PowerShell reads the commas as an array separator and the
-# script does not even parse.
+# THE SAME COMMAND GAVE A DIFFERENT ANSWER ON DIFFERENT RUNS. Route 4 here is character for
+# character what built x64 on the first attempt in run 1, and in run 2 it crashed; the x86 native-CPU
+# command emitted a warning and carried on in run 1 and crashed silently in run 2. That rules out a
+# deterministic fault in a target, a flag or the source, and it is why the earlier theory recorded
+# here - that the aarch64 target is special because it is also the HOST, so zig resolves the CPU
+# natively down a different code path - was wrong. It is a good theory that predicts x86 works, and
+# x86 does not. Across 15 attempts, 2 succeeded: roughly one in seven, spread over every target.
 #
-# ROUTE 3 GIVES ZIG A PRIVATE CACHE. zig caches compiled libc and CRT objects globally
-# (%LOCALAPPDATA%\zig), and a half-written entry there makes it fall over on the target that reads
-# it while every other target still builds - which is exactly the shape of the aarch64 failure.
-# Pointing both cache variables at a scratch directory tests that without deleting anything the
-# operator has, and the directory goes away with the build tree.
+# At one in seven, four attempts fail more often than not, so a four-route ladder of DIFFERENT ideas
+# was the wrong shape for this. Retrying the same route is the shape that fits, and it is cheap
+# because a crash is instant - the run below is bounded at 20 attempts and a losing streak costs
+# seconds, not minutes.
+#
+# The flags are kept anyway, on their own merits, and the ladder is now ordered by that merit rather
+# than by suspicion:
+#
+#   -mcpu=baseline  The stub is shipped to other people's machines, so building it for whichever CPU
+#                   happened to cut the release is wrong even when it works. Without an explicit
+#                   -mcpu, zig resolves the CPU natively whenever the target's architecture and OS
+#                   match the host's, which makes exactly one of the three architectures different.
+#   private cache   zig caches compiled libc and CRT objects globally (%LOCALAPPDATA%\zig). A crash
+#                   part-way through writing that cache can leave a half-written entry, and this run
+#                   is producing crashes, so the next run reading it is a real hazard. A scratch
+#                   directory tests it without deleting anything the operator has.
+#   -municode       wWinMain is the Unicode entry point; without it the mingw CRT looks for WinMain.
+#   -Wl,--subsystem,windows   NOT -mwindows, which is a no-op under zig cc and yields a CONSOLE
+#                   stub. QUOTED, because unquoted PowerShell reads the commas as an array separator
+#                   and the script does not even parse.
+#
+# HOW OFTEN IT CRASHED IS REPORTED ON SUCCESS, not swallowed. A toolchain that works one time in
+# seven is a fact about the machine that the operator needs, and a script that hides it behind a
+# tidy "OK" is how it stays unfixed.
 $zigCache = Join-Path $out 'zig-cache-scratch'
 
+# THE ATTEMPT BUDGET IS ARITHMETIC, not a round number. At the measured rate of roughly one success
+# in seven, twenty attempts still leave (6/7)^20 = 4.6% of runs short - which across three
+# architectures is a one-in-eight chance of an incomplete release, and an incomplete release is the
+# whole thing this script was rewritten to prevent. Forty attempts take it to 0.2% per architecture.
+# It costs nothing when it is not needed: a crash returns instantly, so a losing streak is seconds,
+# and a machine with a healthy zig never sees attempt two.
 $zigRoutes = @(
-    @{ Label = "zig cc ($zigTarget, baseline CPU)";      Flags = @('-mcpu=baseline', '-O2') },
-    @{ Label = "zig cc ($zigTarget, baseline CPU, -O0)"; Flags = @('-mcpu=baseline', '-O0') },
-    @{ Label = "zig cc ($zigTarget, baseline CPU, private cache)";
+    @{ Label = "baseline CPU";                Retries = 14
+       Flags = @('-mcpu=baseline', '-O2') },
+    @{ Label = "baseline CPU, private cache"; Retries = 14
        Flags = @('-mcpu=baseline', '-O2')
        Env   = @{ ZIG_GLOBAL_CACHE_DIR = $zigCache; ZIG_LOCAL_CACHE_DIR = $zigCache } },
-    @{ Label = "zig cc ($zigTarget, native CPU)";        Flags = @('-O2') }
+    @{ Label = "baseline CPU, -O0";           Retries = 6
+       Flags = @('-mcpu=baseline', '-O0') },
+    @{ Label = "native CPU";                  Retries = 6
+       Flags = @('-O2') }
 )
 
-$tried = @()
+$tried        = @()
+$attempts     = 0
+$crashes      = 0
+$lastOutput   = @()
+$lastWasCrash = $false
 
 function Complete-Route {
     param([string]$Label, [object]$Result)
 
     if ($Result.ExitCode -ne 0 -or -not (Test-Path $script:exe)) {
-        # -1073741819 is 0xC0000005, an access violation: the compiler crashed rather than refusing
-        # the code, so nothing about the source or the flags is implicated.
-        $why = if ($Result.ExitCode -eq -1073741819) { 'crashed' } else { "exit $($Result.ExitCode)" }
+
+        # WHAT COUNTS AS A CRASH, and it is deliberately not one magic number. -1073741819 is
+        # 0xC0000005, the access violation actually seen - but every NTSTATUS exception code has its
+        # top bit set and therefore arrives here NEGATIVE, so stack overflow (0xC00000FD), illegal
+        # instruction (0xC000001D) and heap corruption (0xC0000374) are the same event and want the
+        # same answer. Testing for the one code that happened is how the next one gets treated as a
+        # compiler refusal and retried zero times.
+        #
+        # NO OUTPUT AT ALL counts too. A compiler that REFUSES code says why, on stderr, always;
+        # every crash observed on the release box printed nothing whatsoever. A silent non-zero exit
+        # is not a refusal we can learn anything from, so it is worth another attempt - and the
+        # attempt budget bounds it either way.
+        $script:lastWasCrash = ($Result.ExitCode -lt 0) -or ($Result.Output.Count -eq 0)
+
+        $why = if ($script:lastWasCrash) {
+            $script:crashes++
+            if ($Result.ExitCode -eq -1073741819) { 'crashed (access violation)' }
+            elseif ($Result.ExitCode -lt 0)       { ('crashed (0x{0:X8})' -f [uint32]$Result.ExitCode) }
+            else                                  { "exit $($Result.ExitCode), no output" }
+        }
+        else { "exit $($Result.ExitCode)" }
+
         $script:tried += "$Label - $why"
-        $script:lastOutput = $Result.Output
+        if ($Result.Output.Count -gt 0) { $script:lastOutput = $Result.Output }
         if (Test-Path $script:exe) { Remove-Item $script:exe -Force -ErrorAction SilentlyContinue }
         return $false
     }
 
     $wrong = Test-StubBinary $script:exe $script:Arch
     if ($wrong) {
+        # A binary that is the wrong shape is a deterministic outcome, not a dropped dice roll.
+        $script:lastWasCrash = $false
         $script:tried += "$Label - built, but $wrong"
-        $script:lastOutput = $Result.Output
+        if ($Result.Output.Count -gt 0) { $script:lastOutput = $Result.Output }
         Remove-Item $script:exe -Force -ErrorAction SilentlyContinue
         return $false
     }
 
     if (Test-Path $script:zigCache) { Remove-Item $script:zigCache -Recurse -Force -ErrorAction SilentlyContinue }
     Write-Host "OK  $script:exe"
-    Write-Host "    Built by $Label."
+    if ($script:crashes -gt 0) {
+        Write-Host ("    Built by $Label on attempt $($script:attempts); zig crashed on " +
+                    "$($script:crashes) of the attempts before it. That is this machine's zig, not " +
+                    "the stub - see packaging/RESOLVED.md.")
+    }
+    else {
+        Write-Host "    Built by $Label."
+    }
     return $true
 }
 
-$lastOutput = @()
-
 if (Get-Command zig -ErrorAction SilentlyContinue) {
+    Write-Host "Building the launcher stub with zig cc ($zigTarget) ..."
     foreach ($route in $zigRoutes) {
-        if (Test-Path $exe) { break }
-        Write-Host "Building the launcher stub with $($route.Label) ..."
-        $r = Invoke-Compiler -Exe zig -Environment $route.Env -Arguments (
-                 @('cc', '-target', $zigTarget) + $route.Flags +
-                 @('-municode', '-Wl,--subsystem,windows', $appDefine,
-                   $src, '-o', $exe, '-luser32'))
-        if (Complete-Route $route.Label $r) { return }
+        for ($try = 1; $try -le $route.Retries; $try++) {
+            $attempts++
+            $r = Invoke-Compiler -Exe zig -Environment $route.Env -Arguments (
+                     @('cc', '-target', $zigTarget) + $route.Flags +
+                     @('-municode', '-Wl,--subsystem,windows', $appDefine,
+                       $src, '-o', $exe, '-luser32'))
+            if (Complete-Route $route.Label $r) { return }
+
+            # A route that FAILED FOR A REASON is not worth repeating: only a crash is random, and
+            # retrying a compiler that refused the code just prints the same refusal eight times.
+            if (-not $lastWasCrash) { break }
+        }
     }
+    Write-Host "  zig cc did not produce a stub in $attempts attempts ($crashes of them crashes)."
 }
 else {
     $tried += 'zig - not on PATH'
@@ -263,16 +334,39 @@ if (Get-Command cl -ErrorAction SilentlyContinue) {
 # mangles embedded quotes when it builds a native command line - the same handling that ate the app
 # name above - and these arguments contain paths that may have spaces in them.
 
+# NO -requires FILTER ON THE VSWHERE QUERY. The obvious one to ask for is
+# Microsoft.VisualStudio.Component.VC.Tools.x86.x64, and it EXCLUDES the very machine this route
+# exists for: an ARM64 install carries ...VC.Tools.ARM64 instead, so requiring the x64 component
+# hides a Visual Studio that can build all three targets. Take the latest install and let the
+# presence of vcvarsall.bat, and then vcvarsall's own exit code, decide - those answer the real
+# question, which is not "which components are registered" but "can this build arm64".
+#
+# WHY THIS ROUTE IS SKIPPED IS PRINTED. In the 2026-08-25 run it did not appear in the log at all,
+# which left "no C compiler could build it" listing only zig and no way to tell whether Visual
+# Studio was absent, unusable, or simply never looked for.
+
 $vsRoot  = ${env:ProgramFiles(x86)}
 $vswhere = if ($vsRoot) { Join-Path $vsRoot 'Microsoft Visual Studio\Installer\vswhere.exe' } else { $null }
-if (-not (Test-Path $exe) -and $vswhere -and (Test-Path $vswhere)) {
+if (-not (Test-Path $exe)) {
 
-    $vsPath = (Invoke-Compiler $vswhere @('-latest', '-products', '*',
-                                          '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
-                                          '-property', 'installationPath')).Output |
-              Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    $vsPath = $null
+    if ($vswhere -and (Test-Path $vswhere)) {
+        $vsPath = (Invoke-Compiler $vswhere @('-latest', '-products', '*', '-prerelease',
+                                              '-property', 'installationPath')).Output |
+                  Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    }
 
     $vcvars = if ($vsPath) { Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat' } else { $null }
+
+    if (-not ($vswhere -and (Test-Path $vswhere))) {
+        $tried += 'Visual Studio - not installed (no vswhere.exe)'
+    }
+    elseif (-not $vsPath) {
+        $tried += 'Visual Studio - vswhere found no installation'
+    }
+    elseif (-not (Test-Path $vcvars)) {
+        $tried += "Visual Studio - found at $vsPath, but it has no C++ tools (no vcvarsall.bat)"
+    }
 
     if ($vcvars -and (Test-Path $vcvars)) {
 

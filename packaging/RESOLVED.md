@@ -8,7 +8,9 @@ symptom first, because that is what the next person will have in front of them.
 ## A Windows release shipped 5 of 9 artifacts: the launcher stub "could not be built" for arm64 and x86 (2026-08-25)
 
 **Symptom:** `.\packaging\windows\build-windows.ps1` on a Windows-on-ARM machine builds the x64
-stub, then reports for arm64 and for x86 that no C toolchain could build the launcher stub. The
+stub, then reports for arm64 and for x86 that no C toolchain could build the launcher stub. Which
+architectures fail VARIES BETWEEN RUNS, which is the single most important fact in this entry and
+the one that took two runs to see. The
 per-user `.msi` and the `.zip` update payload are skipped for both, and the run ends
 `INCOMPLETE: no launcher stub for arm64, x86.` — five artifacts where a release needs nine, with no
 self-updating channel on two of the three architectures.
@@ -58,31 +60,61 @@ holds it shut — it tracks the preference down each script rather than guessing
 it found **four more instances of the same bug** in `build-windows.ps1`'s WiX extension check, where
 one incidental line from `wix` would have ended the entire Windows release at its first step.
 
-### arm64: zig crashed, and the reason is that the target was the *host*
+### arm64 and x86: zig on this machine crashes at random, roughly six times in seven
 
-zig exited `-1073741819` (0xC0000005, an access violation) having printed nothing at all — a crash,
-not a refusal, so neither the stub source nor the flags were implicated. The machine was running the
+zig exits `-1073741819` (0xC0000005, an access violation) having printed **nothing at all** — a
+crash, not a refusal, so neither the stub source nor the flags are implicated. The machine ran the
 correct **native** `zig-aarch64-windows-0.16.0`, so the usual "you are running the x86_64 zig under
 emulation" answer did not apply.
 
-**What separates aarch64 from the x86_64 target that built fine on the same machine, in the same
-run, seconds earlier: `-target aarch64-windows-gnu` on a Windows-on-ARM host is not a cross build.**
-With no explicit `-mcpu`, zig resolves the CPU natively whenever the target's architecture and OS
-match the host's — a different code path, with a CPU model and feature set that vary per machine.
-Every other architecture takes the cross path.
+**The first theory was wrong, and it is worth recording why**, because it is a good theory that
+survives the first run's evidence and dies on the second's. It was: with no explicit `-mcpu`, zig
+resolves the CPU natively whenever the target's architecture and OS match the host's, so
+`-target aarch64-windows-gnu` on a Windows-on-ARM host is a **native** build down a different code
+path while every other architecture is a cross build. That explains why aarch64 alone failed in run
+1 — and it **predicts x86 works**, because x86 is a cross build from an ARM host. x86 does not work.
 
-**Fix:** always pass `-mcpu=baseline`. That is also correct independently of the crash — the stub is
-shipped to other people's machines, so building it for whichever CPU happened to cut the release is
-wrong even when it works.
+**What actually settles it: the same command gave different answers on different runs.**
 
-`build-stub.ps1` now tries a ladder and takes the first route that produces a *usable* binary:
-`-mcpu=baseline`, then the same with `-O0`, then the same with a private zig cache
-(`ZIG_GLOBAL_CACHE_DIR` pointed at a scratch directory — a half-written entry in the shared cache
-fails one target while every other one still builds, which is the same shape, and this tests it
-without deleting anything the operator has), then the old native-CPU invocation, then `cl.exe` on
-PATH, then **`cl.exe` located with `vswhere` and set up with `vcvarsall.bat <host>_<target>`**. That
-last route is what makes "open a Developer PowerShell instead" stop being something the operator has
-to know.
+```
+run 1   x64    native CPU, shared cache        -> BUILT, first attempt
+        arm64  native CPU, shared cache        -> crashed
+        x86    native CPU, shared cache        -> ran far enough to emit an LLVM warning
+run 2   x64    baseline, baseline -O0, then private cache -> BUILT on the third attempt
+        arm64  all four routes                 -> crashed
+        x86    all four routes                 -> crashed
+```
+
+Run 2's fourth route is character for character what built x64 on the **first** attempt in run 1,
+and it crashed. The x86 native-CPU command emitted a warning and carried on in run 1 and crashed
+silently in run 2. No deterministic fault in a target, a flag, a cache or the source can do that.
+**Across 15 attempts, 2 succeeded** — roughly one in seven, spread over every target.
+
+**Fix: retry.** A ladder of four *different* ideas was the wrong shape for a dice roll; at one in
+seven it fails more often than not. `build-stub.ps1` now retries each route — 40 attempts per
+architecture, which takes the miss rate from 4.6% at twenty attempts to 0.2%. It costs nothing when
+it is not needed, because a crash returns instantly and a healthy zig never sees attempt two.
+
+**What counts as a crash is deliberately not one magic number.** Every NTSTATUS exception code has
+its top bit set and so arrives as a **negative** exit code — stack overflow `0xC00000FD`, illegal
+instruction `0xC000001D`, heap corruption `0xC0000374` are the same event and want the same answer.
+Testing for the one code that happened is how the next one gets misread as a compiler refusal and
+retried zero times. **No output at all counts too:** a compiler that refuses code says why, on
+stderr, always; every crash observed here printed nothing whatsoever. A genuine compile error is
+therefore tried once per route and not forty times — verified.
+
+**How often it crashed is reported on success rather than swallowed.** A toolchain that works one
+time in seven is a fact about the machine that the operator needs, and a tidy "OK" is how it stays
+unfixed.
+
+**The flags were kept anyway, on their own merits** — `-mcpu=baseline` because the stub ships to
+other people's machines and building it for whichever CPU cut the release is wrong even when it
+works; the private zig cache because a crash part-way through writing `%LOCALAPPDATA%\zig` can leave
+a half-written entry, and this machine is producing crashes.
+
+**Still open: why zig crashes at all.** Nothing here diagnoses that — it is worked around. The
+`vswhere` route below is the way off zig entirely, and it now reports why it was skipped rather than
+not appearing in the log at all.
 
 ### Also found: `build-stub.sh` had drifted and could not produce a working stub at all
 
