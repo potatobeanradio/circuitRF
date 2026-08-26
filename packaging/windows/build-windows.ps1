@@ -216,11 +216,7 @@ foreach ($Arch in $arches) {
         }
 
         if (-not (Test-Path $stubExe)) {
-            Write-Host ''
-            Write-Host "WARNING: the launcher stub for $Arch could not be built, so the PER-USER"
-            Write-Host "         installer and the .zip update payload are being SKIPPED for $Arch."
-            Write-Host '         The machine-wide .msi is unaffected and is still being built.'
-            Write-Host ''
+            Write-Host "  No stub for $Arch, so its per-user installer is not built. Carrying on."
             $stubFailures += $Arch
             $archScopes = $scopes | Where-Object { $_ -ne 'perUser' }
         }
@@ -412,27 +408,16 @@ if ($Arch -eq 'all' -and $Scope -eq 'all' -and $built.Count -ne 9) {
     Write-Host "WARNING: expected 9 artifacts for a full run, got $($built.Count)."
 }
 
-# Non-zero exit, so this cannot be mistaken for a complete release by a human OR by a script.
+# Non-zero exit, so a short release cannot be mistaken for a complete one.
 if ($stubFailures.Count -gt 0) {
     Write-Host ''
-    Write-Host '=============================================================================='
-    Write-Host "INCOMPLETE: no launcher stub for $($stubFailures -join ', ')."
+    Write-Host "Incomplete: no launcher stub for $($stubFailures -join ', '), so those"
+    Write-Host '  architectures have no self-updating installer. Do not publish this build.'
     Write-Host ''
-    Write-Host '  The per-user installer and the .zip update payload were NOT built for those'
-    Write-Host '  architectures. Windows users on a machine-wide install would not be offered the'
-    Write-Host '  next version - and would not be told about it either. Do not publish this as a'
-    Write-Host '  release.'
-    Write-Host ''
-    Write-Host '  The stub needs a C toolchain. Check that yours works at all:'
-    Write-Host ''
-    Write-Host '      zig version'
-    Write-Host '      "int main(void){return 0;}" | Out-File -Encoding ascii t.c'
-    Write-Host '      zig cc t.c -o t.exe'
-    Write-Host ''
-    Write-Host '  An access violation (exit -1073741819) from that means zig itself is broken on'
-    Write-Host '  this machine rather than anything to do with circuitRF: clear its cache'
-    Write-Host '  (%LOCALAPPDATA%\zig and %APPDATA%\zig) and reinstall, or use an MSVC Developer'
-    Write-Host '  PowerShell instead so the build falls through to cl.exe.'
-    Write-Host '=============================================================================='
+    Write-Host '  The stub needs a working C compiler. Either:'
+    Write-Host '    - open a Developer PowerShell for VS, so cl.exe is used instead; or'
+    Write-Host '    - install the zig build that matches this machine, from'
+    Write-Host '      https://ziglang.org/download/ (on Windows on ARM you need the'
+    Write-Host '      windows-aarch64 build; the x86_64 one runs emulated and crashes).'
     exit 1
 }

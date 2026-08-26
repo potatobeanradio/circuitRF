@@ -78,17 +78,10 @@ if (-not (Test-Path $exe) -and (Get-Command zig -ErrorAction SilentlyContinue)) 
                     $src -o $exe -luser32 2>&1
     if ($LASTEXITCODE -ne 0) {
         $log | ForEach-Object { Write-Host "  $_" }
-        # -1073741819 is 0xC0000005, an access violation: the compiler crashed rather than refusing
-        # the code, so nothing about the source or the flags is implicated.
-        $why = if ($LASTEXITCODE -eq -1073741819) {
-            'zig cc CRASHED (access violation). That is zig falling over, not a problem with the ' +
-            'stub source. Clearing its cache (%LOCALAPPDATA%\zig, %APPDATA%\zig) and reinstalling ' +
-            'is the usual cure.'
-        } else {
-            "zig cc failed with exit $LASTEXITCODE; its output is above."
-        }
-        Write-Host "  $why"
-        $tried += "zig cc: $why"
+        # -1073741819 is 0xC0000005, an access violation: zig crashed rather than refusing the code.
+        $why = if ($LASTEXITCODE -eq -1073741819) { 'zig crashed' }
+               else { "zig failed (exit $LASTEXITCODE)" }
+        $tried += $why
         if (Test-Path $exe) { Remove-Item $exe -Force -ErrorAction SilentlyContinue }
     }
 }
@@ -101,7 +94,7 @@ if (-not (Test-Path $exe) -and (Get-Command cl -ErrorAction SilentlyContinue)) {
                     /link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup user32.lib "/OUT:$exe" 2>&1
         if ($LASTEXITCODE -ne 0) {
             $log | ForEach-Object { Write-Host "  $_" }
-            $tried += "cl.exe: exit $LASTEXITCODE"
+            $tried += "cl.exe failed (exit $LASTEXITCODE)"
             if (Test-Path $exe) { Remove-Item $exe -Force -ErrorAction SilentlyContinue }
         }
     }
@@ -152,7 +145,7 @@ if (Test-Path $exe) {
 }
 
 if ($tried.Count -gt 0) {
-    throw ("No C toolchain could build the launcher stub. Tried:`n  " + ($tried -join "`n  "))
+    throw ($tried -join '; ')
 }
 
 throw @'
