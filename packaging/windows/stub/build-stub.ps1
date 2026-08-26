@@ -58,9 +58,23 @@ $tried = @()
 
 if (-not (Test-Path $exe) -and (Get-Command zig -ErrorAction SilentlyContinue)) {
     Write-Host "Building the launcher stub with zig cc ($zigTarget) ..."
-    # -mwindows: GUI subsystem, so a shortcut opens no console window.
+    #
+    # -Wl,--subsystem,windows and NOT -mwindows. Both are meant to ask for the GUI subsystem so that
+    # launching circuitRF opens no console window - and with zig cc, -mwindows silently does not.
+    # Measured on zig 0.13.0 by reading the subsystem field back out of the built PE:
+    #
+    #     -mwindows                          -> 3 (CONSOLE)   wrong, and no warning
+    #     -Wl,--subsystem,windows            -> 2 (GUI)       correct
+    #     both together                      -> 3 (CONSOLE)   -mwindows wins and undoes it
+    #
+    # The stub exists to be invisible; a console window flashing up on every launch of every one of
+    # the three applications is about as visible as a defect gets. It was CUI until this was
+    # measured, which is why the check below now reads the field rather than trusting the flag.
+    #
     # -municode: wWinMain is the Unicode entry point; without it the mingw CRT looks for WinMain.
-    $log = & zig cc -target $zigTarget -O2 -municode -mwindows "-DCRF_APP_NAME=$AppName" `
+    # The linker flag is QUOTED: unquoted, PowerShell reads the commas as an array separator and
+    # the script does not even parse.
+    $log = & zig cc -target $zigTarget -O2 -municode '-Wl,--subsystem,windows' "-DCRF_APP_NAME=$AppName" `
                     $src -o $exe -luser32 2>&1
     if ($LASTEXITCODE -ne 0) {
         $log | ForEach-Object { Write-Host "  $_" }
@@ -94,7 +108,45 @@ if (-not (Test-Path $exe) -and (Get-Command cl -ErrorAction SilentlyContinue)) {
     finally { Pop-Location }
 }
 
+# WHAT WAS ACTUALLY BUILT, read out of the PE rather than assumed from the flags. Two things this
+# catches, both of which ship silently otherwise:
+#
+#   * THE SUBSYSTEM. -mwindows was a no-op under zig cc and produced a console stub (above).
+#   * THE ARCHITECTURE. The cl.exe branch has no -Arch switch of its own - it builds for whatever
+#     the Developer PowerShell it was started from targets. On an x64 prompt that yields an x64
+#     binary named circuitRF-stub-arm64.exe, which the arm64 .msi would then ship. Nothing about
+#     that fails until an ARM user double-clicks the shortcut.
+#
+# Same discipline as build-macos.sh reading architecture back with lipo, and build-linux.sh reading
+# the ELF header of the device worker: never trust a toolchain to have done what it was asked.
+
+function Test-StubBinary($path, $wantArch) {
+    $want = @{ 'x64' = 0x8664; 'arm64' = 0xAA64; 'x86' = 0x014C }[$wantArch]
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    if ($bytes.Length -lt 512) { return "the file is $($bytes.Length) bytes; that is not a PE" }
+
+    $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+    if ($pe -le 0 -or $pe + 92 -ge $bytes.Length) { return 'the PE header offset is out of range' }
+    if ($bytes[$pe] -ne 0x50 -or $bytes[$pe + 1] -ne 0x45) { return 'no PE signature' }
+
+    $machine   = [BitConverter]::ToUInt16($bytes, $pe + 4)
+    $subsystem = [BitConverter]::ToUInt16($bytes, $pe + 24 + 68)
+
+    if ($machine -ne $want) {
+        return ("it is machine 0x{0:X4}, not the 0x{1:X4} a {2} install needs" -f $machine, $want, $wantArch)
+    }
+    if ($subsystem -ne 2) {
+        return "its subsystem is $subsystem (2 is GUI); a console window would open on every launch"
+    }
+    return $null
+}
+
 if (Test-Path $exe) {
+    $wrong = Test-StubBinary $exe $Arch
+    if ($wrong) {
+        Remove-Item $exe -Force -ErrorAction SilentlyContinue
+        throw "The launcher stub was built but is not usable: $wrong."
+    }
     Write-Host "OK  $exe"
     return
 }
