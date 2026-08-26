@@ -16,6 +16,9 @@ unrelated locations, not for straightforward lookups.
 If significant findings were found during bug fixes or changes, write to the relevant RESOLVED.md 
 files never CLAUDE.md. This helps keep the CLAUDE.md files small.
 
+Never quote the owner or users in git commit comments, RESOLVED.md files or anywhere in the code.
+Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
+
 ## Stack
 - .NET 10 (LTS), C# 14
 - Avalonia 12 (UI), SkiaSharp (canvas rendering), CommunityToolkit.MVVM (MVVM)
@@ -47,12 +50,21 @@ files never CLAUDE.md. This helps keep the CLAUDE.md files small.
 - Build:   `dotnet build`
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
-  Verbs: `sparam`, `dc`, **`hb`**, `elab`. `hb` runs the netlist's harmonic-balance analysis —
-  single- or multi-tone — and runs the whole sweep when a `parametric_sweep` wraps it (naming the
-  inner HB is promoted to its wrapper, since running the inner alone silently drops the sweep axis).
-  It evaluates the TestBench's `measure` lines exactly as the GUI does, so a `.cnl` that works
-  headless works when opened. `--set var=expr` overrides a global before elaboration;
-  `-o out.{mat,npy,txt}` exports.
+  Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, `elab`. **The CLI has its own design doc —
+  `docs/design/cli.md`** — covering the five-step anatomy of a run verb, the stdout/stderr split, and
+  the rules below; read it before adding a verb. `hb`/`lp`/`lpp` run the netlist's harmonic-balance,
+  loadpull and loadpull-pursuit analyses, and each runs the whole sweep when a `parametric_sweep`
+  wraps it (naming the inner analysis is promoted to its wrapper, since running the inner alone
+  silently drops the sweep axis — a freq-swept loadpull is exactly this shape). They evaluate the
+  TestBench's `measure` lines exactly as the GUI does, so a `.cnl` that works headless works when
+  opened. `--set var=expr` overrides a global before elaboration; **every other override replaces the
+  DIRECTIVE in the TestBench**, because the sweep engine re-resolves it at each point and an override
+  handed to one engine instance is discarded after the first. `-o out.{mat,npy,txt}` exports, and `lp`
+  also writes `.spl`/`.lpcwave` — the loadpull interchange the Data Display reads back.
+  **There is no `em` verb**, and the obstacle is the UI firewall rather than the engines
+  (`src/Engine/Mom` is already reachable): the `.cem`-to-`EmProblem` half lives in `CircuitRF.Ui`.
+  It is already framework-free, so the work is a project split — measured and specified in
+  `docs/sonnet-briefs/brief-cli-em-verb.md`.
 - Package: **exactly one script per platform, and each builds everything that platform ships** —
   `packaging/windows/build-windows.ps1` (9 files: `.msi` x64/arm64/x86 in both install scopes, plus
   the `.zip` the updater fetches), `packaging/macos/build-macos.sh` (2 `.dmg`s, both architectures;
@@ -337,7 +349,7 @@ suite on Windows, macOS, and Linux.
 
 ## Commercial Vendor References
 - Do not allow references to commercial vendors or their products to leak into the circuitRF repo - not even as a glossery of names to filter out.
-- This includes the names of any specific PDK that does not come built into circtuiRF
+- This includes the names of any specific PDK that does not come built into circuitRF
 - The only exception to this rule is ".kicad_pcb" - that is a file name extension for a data format.
 - Before any commit, always grep search for these names that could pollute the repo.  Remove them, and indicate what was removed via chat.
 
