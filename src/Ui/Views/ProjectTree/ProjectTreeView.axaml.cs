@@ -108,9 +108,14 @@ public partial class ProjectTreeView : UserControl
     /// activated panel is fully navigable; the scroller is the fallback for the states where the tree
     /// cannot take focus (no workspace open, so it is not even visible).</para>
     /// </summary>
+    /// <para>Declined when focus already sits inside this panel — activation fires for a click
+    /// ANYWHERE in it, the Search box included, and this grab is posted, so it would otherwise land
+    /// after the click gave the box the caret and take it straight back (owner, 2026-08-26, against
+    /// the Library palette; the same shape is here). See <see cref="PanelActivationFocus"/>.</para>
     private void OnActivationFocusRequested() =>
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
+            if (PanelActivationFocus.AlreadyInside(this)) return;
             if (!TheTreeView.Focus()) TreeScroll.Focus();
         }, Avalonia.Threading.DispatcherPriority.Input);
 

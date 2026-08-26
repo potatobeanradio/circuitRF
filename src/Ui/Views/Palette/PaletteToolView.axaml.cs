@@ -50,8 +50,14 @@ public partial class PaletteToolView : UserControl
     }
 
     private void OnActivationFocusRequested() =>
-        Avalonia.Threading.Dispatcher.UIThread.Post(
-            () => TileScroll.Focus(), Avalonia.Threading.DispatcherPriority.Input);
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            // Activation fires for a click ANYWHERE in the panel, the Search box included — and this
+            // grab is posted, so without the guard it lands after the click gave the box the caret
+            // and takes it straight back (owner, 2026-08-26). See PanelActivationFocus.
+            if (PanelActivationFocus.AlreadyInside(this)) return;
+            TileScroll.Focus();
+        }, Avalonia.Threading.DispatcherPriority.Input);
 
     private void OnScrollKeyDown(object? sender, KeyEventArgs e)
     {

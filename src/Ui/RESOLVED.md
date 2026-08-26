@@ -1,5 +1,42 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Activation focus stole the caret out of the Library palette's Search field (2026-08-26)
+
+**Reported:** *"If I click in the Library palette's Search field, I immediately lose focus of the
+textedit box and can't use it."*
+
+Caused by the fix directly above it. Activation focus exists because clicking a tool's TAB leaves
+focus on Dock's chrome, outside the panel, so the panel's own key handlers are never on the event's
+route — the owner could not use Page Up/Down without clicking inside first. `PaletteToolView` answers
+the request by posting `TileScroll.Focus()` at `Input` priority.
+
+**But a tool panel's activation is not a document tab's.** `ActivationFocusRelay.Follow` watches
+`Tool.IsActive`, which turns true when focus moves into the panel from **anywhere** — including the
+click that just put the caret in the search box. Because the grab is posted, it runs *after* that
+click and takes the caret straight back. The panel became unusable in the one place a user types.
+It reproduces on the first click only (a panel that is already active raises nothing), which is
+exactly the shape that reads as "the field doesn't work" rather than "something else took focus".
+
+**The request is a fallback, not an override.** `PanelActivationFocus.AlreadyInside(this)`, checked
+*inside* the posted action — never before it, since the click that triggered activation has not moved
+focus yet when the request is raised. A tab click still lands (the chrome is not a descendant of the
+panel); a click on the search field, the category picker or a tile does not. The category combo was
+losing focus the same way and is fixed by the same line.
+
+**Deliberately narrower than `TechEditorView`'s `onlyIfUnclaimed`**, which declines whenever anything
+at all holds focus: that would also decline when focus sits in a *different* panel, which is precisely
+when a tab activation should pull it in.
+
+**`ProjectTreeView` has the identical shape and the identical search box**, and was fixed with it
+rather than waiting for the second report.
+
+**Gate:** `ActivatableDocumentViewFocusTests.EveryToolPanelClaimingActivationFocus_DeclinesWhenFocusIsAlreadyInsideIt`
+— **derived**, not a list: every `*.axaml.cs` under `src/Ui/Views` mentioning `IActivatableTool` must
+also call `PanelActivationFocus.AlreadyInside`, so a third tool panel is forced to make the decision
+instead of inheriting the bug. Guarded against matching nothing by asserting both known panels were
+scanned, and verified red by removing the guard from one of them. Scanned rather than exercised
+because this suite has no headless Avalonia host — the same reason the tests beside it are scans.
+
 ## Document tab context menu — "Reveal in Finder/Explorer" (2026-08-26)
 
 Owner request: a Reveal entry on the tabbed document's own header menu, at the top, with a separator

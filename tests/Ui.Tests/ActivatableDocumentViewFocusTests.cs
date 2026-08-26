@@ -116,4 +116,43 @@ public sealed class ActivatableDocumentViewFocusTests
         raw = Regex.Replace(raw, @"//[^\n]*", "");
         return raw;
     }
+
+    /// <summary>
+    /// The other half of activation focus, and the bug it caused.
+    ///
+    /// <para><b>Owner, 2026-08-26:</b> <i>"If I click in the Library palette's Search field, I
+    /// immediately lose focus of the textedit box and can't use it."</i> A TOOL panel's activation
+    /// is not a document tab's: <c>ActivationFocusRelay.Follow</c> watches <c>Tool.IsActive</c>,
+    /// which turns true when focus moves into the panel from ANYWHERE — including the click that
+    /// just put the caret in the search box. The grab is posted, so it runs after that click and
+    /// takes the caret straight back, and the field is unusable.</para>
+    ///
+    /// <para>So every tool panel that claims activation focus has to decline when focus is already
+    /// inside it. Derived rather than listed, so a third panel wired to <c>IActivatableTool</c> is
+    /// forced to make the same decision instead of inheriting the bug.</para>
+    /// </summary>
+    [Fact]
+    public void EveryToolPanelClaimingActivationFocus_DeclinesWhenFocusIsAlreadyInsideIt()
+    {
+        var viewsDir = Path.Combine(RepoRoot(), "src", "Ui", "Views");
+        var panels   = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(viewsDir, "*.axaml.cs", SearchOption.AllDirectories))
+        {
+            string src = Src(Path.GetRelativePath(RepoRoot(), file));
+            if (!src.Contains("IActivatableTool", StringComparison.Ordinal)) continue;
+
+            panels.Add(Path.GetFileName(file));
+
+            Assert.True(src.Contains("PanelActivationFocus.AlreadyInside", StringComparison.Ordinal),
+                $"{Path.GetFileName(file)} claims keyboard focus when its panel is activated but never " +
+                "checks whether focus is already inside it. Tool.IsActive turns true for a click " +
+                "ANYWHERE in the panel, so this steals the caret back out of the panel's own search " +
+                "field on the click that put it there.");
+        }
+
+        // A scan that matches nothing passes every assertion it never runs.
+        Assert.Contains("PaletteToolView.axaml.cs", panels);
+        Assert.Contains("ProjectTreeView.axaml.cs", panels);
+    }
 }
