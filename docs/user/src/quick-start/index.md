@@ -202,8 +202,13 @@ human-readable circuit description):
 
 This reads the netlist, runs the S-parameter analysis, and writes a Touchstone file. (Make sure
 the circuit's port count matches the extension, or omit `-o` to let circuitRF name it `.sNp`
-automatically.) Harmonic-balance and loadpull runs are driven from the GUI's Run button in this
-release.
+automatically.)
+
+**Every analysis runs this way, not just S-parameters** — `dc`, `hb` (harmonic balance), `lp` and
+`lpp` (loadpull and pursuit), and `em`, which runs an [EM setup](../reference/em-setup.html) and
+writes the same files the Simulate button writes. Results go to stdout and progress to stderr, so a
+long run can be piped and watched at the same time. The full reference is
+[The Command Line](../reference/cli.html).
 
 <div class="callout tip">
     <span class="label">Next</span>

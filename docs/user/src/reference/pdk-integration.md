@@ -237,6 +237,13 @@ PCells can be authored in **Python** — the generator, its parameters, its pins
 [parameter handles](pcells.html#handles) all in one function in one file. That, the OpenPDK layout, and a
 complete worked example are in [PDK Authoring](pdk-authoring.html).
 
+<div class="callout note">
+<span class="label">Kits headless</span>
+<p>A <a href="cli.html">command-line</a> run has no workspace to read the kit list from, so it takes the
+folders directly: <code>--kits &lt;dir&gt;</code>, repeatable, valid on every verb. That is what makes a
+design placing externally-supplied device models runnable in a script or a CI job.</p>
+</div>
+
 <p class="small">See also: <a href="pdk-authoring.html">PDK Authoring</a> ·
 <a href="pcells.html">PCells</a> · <a href="components.html#veriloga">Compiled Verilog-A models</a> ·
-<a href="layout-editor.html#technology">Technology</a>.</p>
+<a href="layout-editor.html#technology">Technology</a> · <a href="cli.html">The command line</a>.</p>

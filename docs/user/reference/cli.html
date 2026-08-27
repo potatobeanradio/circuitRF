@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — The Command Line</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/cli.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › The command line</p>
+
+  <h1>The Command Line</h1>
+  <p class="lede">Every engine circuitRF has runs without the GUI. One executable, seven verbs — S-parameters, DC, harmonic balance, loadpull, loadpull pursuit, electromagnetic extraction, and an elaborated-netlist dump. This chapter is the operational reference for all of them, including a worked EM run from an empty folder.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#invoking">Invoking it</a></li>
+<li><a href="#verbs">The verbs at a glance</a></li>
+<li><a href="#channels">Results on stdout, everything else on stderr</a></li>
+<li><a href="#common">Options every verb takes</a></li>
+<li><a href="#sparam"><code>sparam</code> — S-parameters</a></li>
+<li><a href="#dc"><code>dc</code> — the operating point</a></li>
+<li><a href="#hb"><code>hb</code> — harmonic balance</a></li>
+<li><a href="#lp"><code>lp</code> — loadpull</a></li>
+<li><a href="#lpp"><code>lpp</code> — loadpull pursuit</a></li>
+<li><a href="#em"><code>em</code> — electromagnetic extraction</a></li>
+<li><a href="#elab"><code>elab</code> — the elaborated netlist</a></li>
+<li><a href="#exit">Exit codes</a></li>
+<li><a href="#scripting">Scripting patterns</a></li>
+</ol>
+</nav>
+<h2 id="invoking">Invoking it</h2>
+<p>The command-line driver is the same program as the GUI's Run button with the window taken off. It
+reads the same files, elaborates them with the same elaborator, runs the same engines, and evaluates
+the test bench's <code>measure</code> lines with the same evaluator.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf &lt;verb&gt; &lt;file&gt; [options]</code></pre>
+<p>From a source checkout there is no <code>circuitrf</code> on your path yet, so put <code>dotnet run --project src/Cli --</code>
+wherever <code>circuitrf</code> appears:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>dotnet run --project src/Cli -- sparam mycircuit.cnl --freq 1GHz:3GHz:50MHz</code></pre>
+<p>Run it with no arguments for the built-in help.</p>
+<div class="callout note">
+<span class="label">A file that works headless works when opened</span>
+<p>This is the point of the command line being the <em>same</em> code rather than a second
+implementation. A <code>.cnl</code> that runs here runs when you open it in the workspace, and an EM
+setup run with <code>em</code> writes the byte-identical Touchstone the <b>Simulate</b> button writes.
+There is one elaborator, one set of engines, one measurement evaluator and one results-path
+convention behind both.</p>
+</div>
+<h2 id="verbs">The verbs at a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Verb</th>
+<th>Takes</th>
+<th>Runs</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sparam</code></td>
+<td><code>.cnl</code></td>
+<td>The linear S-parameter engine over a frequency sweep</td>
+<td>A Touchstone <code>.sNp</code>, always</td>
+</tr>
+<tr>
+<td><code>dc</code></td>
+<td><code>.cnl</code></td>
+<td>The nonlinear DC engine</td>
+<td>Node voltages and probe currents, to stdout</td>
+</tr>
+<tr>
+<td><code>hb</code></td>
+<td><code>.cnl</code></td>
+<td>Harmonic balance, single- or multi-tone</td>
+<td>Spectra tables to stdout; <code>-o .mat/.npy/.txt</code></td>
+</tr>
+<tr>
+<td><code>lp</code></td>
+<td><code>.cnl</code></td>
+<td>Loadpull over the directive's Γ grid</td>
+<td>A per-Γ-point table; <code>-o .mat/.npy/.txt/.spl/.lpcwave</code></td>
+</tr>
+<tr>
+<td><code>lpp</code></td>
+<td><code>.cnl</code></td>
+<td>Loadpull <strong>pursuit</strong> — searches for the optima</td>
+<td>Optima + the follow-on grid; <code>-o</code> as <code>hb</code>; <code>--out-grid</code> writes a <code>.gam</code></td>
+</tr>
+<tr>
+<td><code>em</code></td>
+<td><code>.cem</code></td>
+<td>The EM kernel the setup resolves to</td>
+<td>A Touchstone <code>.sNp</code> <strong>and</strong> a grouped <code>.npy</code>, where <strong>Simulate</strong> writes them</td>
+</tr>
+<tr>
+<td><code>elab</code></td>
+<td><code>.cnl</code></td>
+<td>Elaboration only, no analysis</td>
+<td>The elaborated netlist, to stdout</td>
+</tr>
+</tbody>
+</table>
+<p><code>hb</code>, <code>lp</code> and <code>lpp</code> all run <strong>the whole parametric sweep</strong> when one wraps the analysis — see
+<a href="#wrapper">naming the wrapper</a>.</p>
+<h2 id="channels">Results on stdout, everything else on stderr</h2>
+<p><strong>stdout is the result. stderr is everything else</strong> — progress, per-grid-point engine chatter,
+<code>[circuitRF]</code> notes, elaboration and engine warnings, device-worker logs.</p>
+<p>That split is what makes the output pipeable while the terminal still shows a long run moving:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lp hero3.cnl &gt; table.txt</code></pre>
+<p><code>table.txt</code> gets the loadpull table and nothing else; the per-drive-step <code>[LP]</code> lines and the
+convergence notes still scroll past on screen. Redirect <code>2&amp;gt;/dev/null</code> to silence them, or
+<code>2&amp;gt;run.log</code> to keep them.</p>
+<h2 id="common">Options every verb takes</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--kits &lt;dir&gt;</code></td>
+<td>A folder of installed kits, so an externally-supplied device model (<code>ExtDevice Provider=…</code>) resolves headlessly the way opening a workspace resolves it in the GUI. Repeatable.</td>
+</tr>
+</tbody>
+</table>
+<p>Frequencies are written as <code>1GHz</code>, <code>100MHz</code>, or bare Hz (<code>1e9</code>) anywhere a frequency is accepted.</p>
+<hr />
+<h2 id="sparam"><code>sparam</code> — S-parameters</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf sparam &lt;file.cnl&gt; [--freq start:stop:step] [-o out.sNp]</code></pre>
+<pre><code class="language-text">$ circuitrf sparam hero1.cnl --freq 1GHz:3GHz:1GHz -o hero1.s2p
+S-parameter analysis: 3 points, 1–3 GHz
+Wrote hero1.s2p
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--freq start:stop:step</code></td>
+<td>Override the sweep. <strong>Omit it and the netlist's own <code>sparam</code> analysis is used</strong>, segments and all — which is almost always what you want, because it is the sweep the design was set up with.</td>
+</tr>
+<tr>
+<td><code>-o</code>, <code>--output &lt;path&gt;</code></td>
+<td>Where the Touchstone goes. Omitted, it is the input file with its extension changed to <code>.sNp</code> for the port count found.</td>
+</tr>
+</tbody>
+</table>
+<p><code>sparam</code> <strong>always</strong> writes a Touchstone; there is no stdout table. The port count in the extension
+comes from the network, so a circuit that grew a port writes <code>.s3p</code> without you editing the command.</p>
+<h2 id="dc"><code>dc</code> — the operating point</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf dc &lt;file.cnl&gt;</code></pre>
+<pre><code class="language-text">$ circuitrf dc hero2.cnl
+DC: converged in 3 iteration(s), residual 7.27E-16
+Node voltages:
+  0                                         0
+  n_src                                     0
+  n_gate                                -3.05
+  n_drain                                  48
+</code></pre>
+<p>No options beyond the common ones. It prints the converged node voltages and any probe currents, and
+<a href="#exit">exits 2</a> if the solve did not converge — the operating point is the one thing every nonlinear
+analysis is built on, so a non-converged DC is a failed run, not a partial one.</p>
+<h2 id="hb"><code>hb</code> — harmonic balance</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf hb &lt;file.cnl&gt; [-a name] [--set var=expr] [-o out.npy]</code></pre>
+<p>The same verb runs <strong>single- and multi-tone</strong> — which it is comes from the netlist's directive, not
+from a flag.</p>
+<pre><code class="language-text">$ circuitrf hb hero2.cnl --rows 6
+HB 'HB1': f0=2 GHz, MaxHarm=4, tol=1E-06
+Analysis: HB1   (hero2.cnl)
+  Converged: yes (1 solve(s))
+  Residual:  1.24E-09 (worst)
+  Tones:     2 GHz
+  V  [node:7 x harmonic:5]  (mag ∠deg)
+                        0                     1                     2
+    n_gate              3.05 ∠  180.0         0.029814 ∠    0.1     0
+    n_drain             48 ∠    0.0           0.15004 ∠ -172.4      1.6824E-05 ∠ -179.8
+    … 1 more row(s) — use --all or --rows N
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-a</code>, <code>--analysis &lt;name&gt;</code></td>
+<td>Which analysis to run. Optional when the file declares one HB chain.</td>
+</tr>
+<tr>
+<td><code>--set &lt;var=expr&gt;</code></td>
+<td>Override a global variable <strong>before elaboration</strong>. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--maxharm K</code></td>
+<td>Override <code>MaxHarm</code>.</td>
+</tr>
+<tr>
+<td><code>--maxmix M</code></td>
+<td>Override <code>MaxMixOrder</code> (multi-tone only).</td>
+</tr>
+<tr>
+<td><code>--tol t</code>, <code>--max-iter N</code></td>
+<td>Override the convergence tolerance and the iteration cap.</td>
+</tr>
+<tr>
+<td><code>--rows N</code>, <code>--all</code></td>
+<td>How much of each printed table to show. Default is a truncated head.</td>
+</tr>
+<tr>
+<td><code>--diag</code></td>
+<td>Engine convergence diagnostics, on stderr.</td>
+</tr>
+<tr>
+<td><code>-o</code>, <code>--export &lt;path&gt;</code></td>
+<td>Export the results. <strong>The extension picks the format</strong>: <code>.mat</code>, <code>.npy</code> or <code>.txt</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="set"><code>--set</code> overrides the VARIABLE, not the number</h3>
+<p><code>--set Pavl_dbm=0</code> replaces the global variable in the test bench's own scope, then elaborates. So
+every expression derived from it re-derives — a bias that was written <code>Vg = Vth + 0.2</code> follows a
+changed <code>Vth</code>, and a sweep computed from the variable sweeps the new values.</p>
+<p>An override pushed at the engine instead would move one number and leave everything computed from it
+stale, which is why there is no such option.</p>
+<h3 id="wrapper">Name the wrapper, or name nothing</h3>
+<p>When a <a href="simulations.html#parametric-sweep">parametric sweep</a> wraps an analysis, the sweep is what
+runs. Naming the inner analysis with <code>-a</code> is <strong>promoted</strong> to its outermost enabled wrapper, and the
+promotion is announced:</p>
+<pre><code class="language-text">[circuitRF] 'HB1' is the inner analysis of 'SW1' — running 'SW1' so the sweep axis is not lost.
+</code></pre>
+<div class="callout note">
+<span class="label">Why it is promoted rather than obeyed</span>
+<p>Running the inner analysis alone produces a converged, plausible, complete-looking result at one
+operating point — <em>with the sweep axis silently missing</em>. Nothing about it looks wrong. A
+frequency-swept loadpull has exactly this shape, which is why the rule is the same for every verb
+rather than something harmonic balance does on its own.</p>
+</div>
+<p>If more than one runnable chain exists, all their names are printed and the first runs; if none does,
+the message says whether the netlist declares no such analysis or declares one that is disabled.</p>
+<h3 id="measurements">Measurements</h3>
+<p>The <code>measure</code> lines on the test bench are evaluated exactly as the GUI evaluates them, and the results
+join the exported <code>DataSet</code> as named cubes. A measurement that fails to evaluate is <strong>reported on
+stderr and the run continues</strong> — one bad expression does not throw away a run that took minutes:</p>
+<pre><code class="language-text">[circuitRF] measurement: Measurement 'Gain_dB': failed to evaluate 'Pout_dBm - Pavl_dbm':
+                         Unresolved name 'Pout_dBm' in scope 'measurements'
+</code></pre>
+<h2 id="lp"><code>lp</code> — loadpull</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lp &lt;file.cnl&gt; [--grid grid.gam] [--pin start:step:max] [-o out.spl]</code></pre>
+<p><code>lp</code> sweeps the load (or source) termination over the directive's Γ grid, runs a harmonic-balance
+drive ladder at each point, and reports the figures of merit.</p>
+<pre><code class="language-text">$ circuitrf lp hero3.cnl --rows 8
+Analysis: LP1   (hero3.cnl)
+  Grid: 20 point(s) — 0 reached compression, 20 stopped at max drive
+  Nothing reached compression — raise --pin's max (or the directive's PinMax).
+
+      #  GammaLoad           ZLoad (ohm)           stop              Pavl     Pout      Gt     DE%    PAE%
+      0  0.0000 ∠    0.0     50.00+j0.00           max drive        10.00    20.54   10.54    3.35    3.09
+      1  0.2000 ∠    0.0     75.00+j0.00           max drive        10.00    22.31   12.31    5.03    4.76
+      2  0.2000 ∠   90.0     46.15+j19.23          max drive        10.00    20.19   10.19    3.09    2.83
+    … 12 more point(s) — use --all or --rows N
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-a</code>, <code>--analysis &lt;name&gt;</code></td>
+<td>Which loadpull analysis to run.</td>
+</tr>
+<tr>
+<td><code>--set &lt;var=expr&gt;</code></td>
+<td>Override a global variable before elaboration. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--grid &lt;file.gam&gt;</code></td>
+<td>Override the Γ grid the directive reads. <strong>Resolved against your working directory</strong>, not the netlist's.</td>
+</tr>
+<tr>
+<td><code>--pin start:step:max</code></td>
+<td>Override the drive ladder, in dBm.</td>
+</tr>
+<tr>
+<td><code>--compression dB</code></td>
+<td>Override the compression target.</td>
+</tr>
+<tr>
+<td><code>--maxharm K</code>, <code>--tol t</code>, <code>--max-iter N</code></td>
+<td>Override the inner HB settings.</td>
+</tr>
+<tr>
+<td><code>--rows N</code>, <code>--all</code></td>
+<td><code>--all</code> dumps every cube instead of the summary table.</td>
+</tr>
+<tr>
+<td><code>--diag</code></td>
+<td>Engine diagnostics, on stderr.</td>
+</tr>
+<tr>
+<td><code>-o</code>, <code>--export &lt;path&gt;</code></td>
+<td><code>.mat</code>, <code>.npy</code>, <code>.txt</code> — <strong>or <code>.spl</code> / <code>.lpcwave</code></strong>, the loadpull interchange formats.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lp-rows">One row per Γ point, at the point that answers the question</h3>
+<p>A loadpull's raw cubes are <code>[gridPoint × driveStep]</code> — a 61-point grid driven up in 1 dB steps is a
+61 × 30 table <em>per figure of merit</em>, and eight of those scroll a terminal without answering anything.</p>
+<p>So the default table is <strong>one row per Γ grid point</strong>: where it was, how it stopped, and its FOMs at
+the <strong>last converged, non-tickle drive step</strong> — the compression point where the point compressed, the
+highest drive it managed otherwise. Reading a fixed drive index instead would mix compressed and
+uncompressed points in one column. <code>--all</code> still dumps everything.</p>
+<p>A swept run prints one table per sweep point.</p>
+<h3 id="lp-export"><code>.spl</code> and <code>.lpcwave</code></h3>
+<p><code>-o out.spl</code> writes the loadpull interchange format the <a href="data-display.html">Data Display</a> reads back
+as a measured surface, so a headless run can produce a file the GUI opens. <code>lp</code> also runs the same
+post-processor a GUI run does, so the exported cubes carry the derived display metrics (<code>Pout_dBm</code>,
+<code>Zin</code>, <code>IRL_dB</code>, <code>AMPM_deg</code>) — a <code>.npy</code> written here and one written by the GUI carry the same cubes.</p>
+<h2 id="lpp"><code>lpp</code> — loadpull pursuit</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lpp &lt;file.cnl&gt; [--out-grid found.gam] [-o out.npy]</code></pre>
+<p>A pursuit <strong>searches</strong> for the max-power (MXP) and max-efficiency (MXE) terminations rather than
+reading a grid, then runs a follow-on loadpull over the terminations it recommends.</p>
+<pre><code class="language-text">$ circuitrf lpp hero3B_at_compression.cnl
+Analysis: LP1   (hero3B_at_compression.cnl)
+  Pursuit optima:
+  MXP (max power)            converged   Pout=40.625 dBm   Zload=80.48+j0.00   Zsource=50.00+j0.00
+  MXE (max efficiency)       converged   Eff=69.617 %   Zload=140.31-j4.95   Zsource=50.00+j0.00
+  21 termination(s) queried, 45 recommended termination(s)
+
+  Grid: 45 point(s) — 45 reached compression
+
+      #  GammaLoad           ZLoad (ohm)           stop              Pavl     Pout      Gt     DE%    PAE%
+      0  0.2690 ∠    7.0     86.15+j6.11           compressed       26.00    40.56   14.56   67.08   64.74
+      1  0.2030 ∠    9.6     74.80+j5.30           compressed       27.00    40.68   13.68   63.55   60.82
+</code></pre>
+<p><code>lpp</code> takes every <code>lp</code> option <strong>except <code>--grid</code></strong>, and adds <code>--out-grid</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--out-grid &lt;file.gam&gt;</code></td>
+<td>Where the terminations the pursuit found are written, as a <code>.gam</code> you can feed back to <code>lp</code>. Resolved against your working directory.</td>
+</tr>
+</tbody>
+</table>
+<div class="callout warn">
+<span class="label">The two grid options are refused, not ignored</span>
+<p><code>--grid</code> on <code>lpp</code> and <code>--out-grid</code> on <code>lp</code> each stop the
+run with a sentence naming the verb that owns them. A grid option silently doing nothing would be a
+run that answered a different question and said nothing about it.</p>
+</div>
+<p>A <strong>non-converged</strong> optimum is still printed, with its status. The engine publishes the last
+termination it looked at, and printing nothing there reads as &quot;the search found nothing&quot; when what
+actually happened is &quot;nothing it tried reached compression&quot;.</p>
+<hr />
+<h2 id="em"><code>em</code> — electromagnetic extraction</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf em &lt;setup.cem&gt; [-o out.sNp] [--workspace file.cws]</code></pre>
+<p><code>em</code> is the only verb that does not take a <code>.cnl</code>. It takes a <strong><code>.cem</code> EM setup</strong> — the document the
+<a href="em-setup.html">EM Setup panel</a> edits — and runs it: extracts the geometry from the layout the setup
+names, resolves the stackup, meshes, solves the frequency plan, de-embeds, and writes the results.</p>
+<p><strong>It needs no other arguments.</strong> Everything else it needs is already recorded in the files.</p>
+<h3 id="em-inputs">What an EM run takes</h3>
+<p>Four files, and three of them are things you already have if you have drawn a layout:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it supplies</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>.cem</code></strong></td>
+<td>The setup: which layout, which analysis, the frequency plan, port impedances and types, mesh settings, solver switches</td>
+<td><strong>File ▸ New ▸ EM Setup…</strong>, or the layout editor's <strong>EM</strong> button</td>
+</tr>
+<tr>
+<td><strong><code>.clay</code></strong></td>
+<td>The artwork — the metal, and the port labels for a full-wave run</td>
+<td>The <a href="layout-editor.html">layout editor</a></td>
+</tr>
+<tr>
+<td><strong><code>.ctech</code></strong></td>
+<td>The <a href="stackup.html">stackup</a>: layer thicknesses, ε_r, tanδ, conductivity, which conductor is ground, and which drawing layers map onto what</td>
+<td>The technology editor, or one of the shipped starter technologies</td>
+</tr>
+<tr>
+<td><strong><code>.cws</code></strong></td>
+<td>The workspace marker, carrying <code>DefaultTechRef</code> — the technology a layout uses when it does not name one itself</td>
+<td>Created with the workspace</td>
+</tr>
+</tbody>
+</table>
+<div class="callout note">
+<span class="label">Author the setup in the GUI; run it from the command line</span>
+<p>The <code>em</code> verb <b>runs</b> a setup — it does not create or edit one, and it will not
+repair one. A setup with no ports, no technology or no signal conductor is <a href="#em-refusals">refused
+with the sentence explaining what is missing</a>. Build the <code>.cem</code> once in the
+<a href="em-setup.html">EM Setup panel</a>, where every control tells you as you type whether the run
+is blocked and why, then commit it beside the layout and run it headlessly from then on.</p>
+</div>
+<h3 id="em-resolution">Both file references resolve by walking UP, and neither is a flag</h3>
+<p>A <code>.cem</code> names a layout; the layout names — or inherits — a technology. Neither reference is stored
+absolutely, and neither needs an argument:</p>
+<ul>
+<li><strong>The layout.</strong> The setup's layout reference is relative to the <strong>workspace root</strong>: the nearest
+ancestor <code>.cws</code> found by walking up from the <code>.cem</code>. With no workspace above it at all, the
+reference falls back to the <code>.cem</code>'s own directory, so a loose <code>.cem</code> sitting beside its <code>.clay</code>
+simply works.</li>
+<li><strong>The technology.</strong> Resolved against <strong>the layout's own parent workspace</strong>, found by walking up from
+the <code>.clay</code> — never against &quot;the workspace you are in&quot;, of which there is none headlessly. A <code>.clay</code>
+that names no technology picks up its workspace's <code>DefaultTechRef</code>.</li>
+</ul>
+<p><strong>The two walks start from different files, and that is deliberate.</strong> A <code>.cem</code> in one workspace may
+point at a layout in another, and that layout's layers have to be read by <em>its</em> technology, not by
+whichever workspace the setup happened to live in.</p>
+<p><code>--workspace &lt;file.cws&gt;</code> overrides the first walk, for a <code>.cem</code> being run from outside its own tree.
+It is never required.</p>
+<p>The three resolutions are echoed on stderr before anything expensive starts, so you can see what the
+run is actually about to read:</p>
+<pre><code class="language-text">[circuitRF] workspace: /work/amp/.cws
+[circuitRF] layout: /work/amp/Line/layout/Line.clay
+[circuitRF] technology: /work/amp/pcb.ctech
+</code></pre>
+<h3 id="em-example">A worked example, from an empty folder</h3>
+<p>Here is a complete, minimal EM workspace — a single 20 mm × 2.9 mm microstrip line on a two-layer PCB
+technology, swept 1–10 GHz in 3 points. Four files:</p>
+<pre><code class="language-text">amp/
+├─ .cws                        the workspace marker, naming the default technology
+├─ pcb.ctech                   the stackup
+├─ line.cem                    the EM setup
+└─ Line/
+   └─ layout/
+      └─ Line.clay             the artwork
+</code></pre>
+<p>The <code>.cem</code> is JSON, and this is all of it — every field not written takes its documented default:</p>
+<pre><code class="language-json">{
+  &quot;FormatVersion&quot;: 1,
+  &quot;Name&quot;: &quot;line&quot;,
+  &quot;LayoutRef&quot;: &quot;Line/layout/Line.clay&quot;,
+  &quot;Frequency&quot;: {
+    &quot;StartExpr&quot;: &quot;1&quot;, &quot;StopExpr&quot;: &quot;10&quot;, &quot;NumPoints&quot;: 3,
+    &quot;Mode&quot;: &quot;PointCount&quot;, &quot;Kind&quot;: &quot;Linear&quot;,
+    &quot;StartUnit&quot;: &quot;GHz&quot;, &quot;StopUnit&quot;: &quot;GHz&quot;
+  },
+  &quot;Port1Z0Real&quot;: 50, &quot;Port2Z0Real&quot;: 50
+}
+</code></pre>
+<p><code>LayoutRef</code> is <strong>workspace-relative</strong> — relative to the directory holding <code>.cws</code>, not to the <code>.cem</code>.
+The <code>.cws</code> supplies the technology:</p>
+<pre><code class="language-json">{ &quot;DefaultTechRef&quot;: &quot;pcb.ctech&quot; }
+</code></pre>
+<p>Nothing in the <code>.cem</code> names a technology, a kernel, a mesh or a port. The technology is inherited, the
+kernel is chosen from the geometry, the mesh settings are the engine's own defaults, and this
+structure's ports are the two ends of a uniform line by construction. Then:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf em amp/line.cem</code></pre>
+<pre><code class="language-text">[circuitRF] workspace: amp/.cws
+[circuitRF] layout: amp/Line/layout/Line.clay
+[circuitRF] technology: amp/pcb.ctech
+[0] solving the cross-section
+[3] solving the cross-section
+note: Automatic chose &quot;Uniform transmission line&quot;: this geometry is a uniform cross-section, which
+      that analysis solves exactly and is about a thousand times cheaper than &quot;Full-wave planar&quot;.
+      Set Analysis to &quot;Full-wave planar&quot; if you want the full-wave answer anyway.
+note: Dielectric interfaces truncated 20 substrate heights (32000 µm) beyond the outermost conductor
+      on each side.
+EM setup:  line
+Kernel:    Quasi-static cross-section (CrossSection)
+Points:    3
+Wrote amp/results/line.s2p
+Wrote amp/results/line_em.npy
+</code></pre>
+<p>Everything from <code>EM setup:</code> down is on <strong>stdout</strong>; the resolution lines, the progress and the notes are
+on stderr.</p>
+<p>A <strong>full-wave</strong> run differs only in what the files say, not in how you invoke it: draw port labels in
+the layout with the layout editor's <strong>Port</strong> tool, set the setup's analysis to <code>Planar</code> (or leave it
+<code>Auto</code> and let the geometry decide), and run exactly the same command. It will take very much longer —
+a de-embedded full-wave point costs tens of seconds at the shipping mesh — which is why the progress
+lines exist.</p>
+<h3 id="em-output">Where the results go, and what <code>-o</code> moves</h3>
+<p>With no <code>-o</code>, the run writes <strong>exactly where the Simulate button writes</strong>: into the workspace's
+<code>results/</code> folder. Two files come out, and they are not redundant:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>&lt;name&gt;.sNp</code></td>
+<td>S-parameters only — the artefact a schematic's <a href="components.html#snp">SnP component</a> references by path</td>
+</tr>
+<tr>
+<td><code>&lt;name&gt;_em.npy</code></td>
+<td>The whole <code>DataSet</code>, including the per-kernel <strong>diagnostics</strong> group — Z_c, γ, ε_eff, RLGC for the cross-section kernel; the calibration residual and usability flags for the full-wave one</td>
+</tr>
+</tbody>
+</table>
+<div class="callout warn">
+<span class="label">Why the default path is not the CLI's to choose</span>
+<p>That results path is <b>predictable by design</b>, so a schematic's SnP reference stays valid across
+re-runs. A headless run that minted its own file name would orphan every one of them — so
+<code>circuitrf em</code> writes the same file <b>Simulate</b> does, and the acceptance test for the
+verb compares the two Touchstones <em>byte for byte</em>.</p>
+</div>
+<p><code>-o</code> moves <strong>the Touchstone only</strong>. The <code>.npy</code> stays where it was, because it is the diagnostics
+record of the run rather than the deliverable:</p>
+<pre><code class="language-text">$ circuitrf em amp/line.cem -o /tmp/mine.s2p
+Wrote /tmp/mine.s2p
+Wrote amp/results/line_em.npy
+</code></pre>
+<p>You do not have to get the extension right — the port count decides it, so a <code>.s2p</code> you typed for a
+structure that turned out to have four ports is written <code>.s4p</code>.</p>
+<p>With no workspace above the <code>.cem</code>, <code>results/</code> is created beside the <code>.cem</code> itself.</p>
+<h3 id="em-messages">note, warning, error — three lists, kept apart</h3>
+<p>An EM run has three different things to say and they ask three different things of you, so they are
+printed under three labels rather than flattened into one stream:</p>
+<table>
+<thead>
+<tr>
+<th>Prefix</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>note:</code></td>
+<td>The run explaining itself — which kernel it chose and why, the mesh's own sentences, RLGC, the ports it found. Read these; they are the cheapest check that the tool is looking at the structure you think it is.</td>
+</tr>
+<tr>
+<td><code>warning:</code></td>
+<td>Something to act on — a stale <code>.sNp</code> about to be replaced, a technology that resolved but failed validation.</td>
+</tr>
+<tr>
+<td><code>error:</code></td>
+<td>Something you asked for and did not get — a results file that could not be written.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="em-refusals">A refusal is a result</h3>
+<p>The EM engine declines geometry it cannot solve <em>correctly</em> rather than returning a plausible number.
+Each refusal carries a written explanation of what is wrong with <strong>this</strong> setup, and <code>em</code> prints that
+explanation rather than collapsing it into &quot;EM failed&quot;:</p>
+<pre><code class="language-text">[circuitRF] workspace: amp/.cws
+warning: Layout file not found: amp/Line/layout/Missing.clay
+No layout: The layout 'Line/layout/Missing.clay' could not be found, so there is no geometry to
+analyse. Point this EM setup at a layout that exists.
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Means</th>
+<th>Exit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Refused</strong></td>
+<td>The extractor or the kernel declined this geometry — see <a href="mom-engine.html#refusals">what the engine refuses</a></td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong>No layout</strong></td>
+<td>The layout reference did not resolve</td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong>Engine error</strong></td>
+<td>The solve failed</td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong>Cancelled</strong></td>
+<td>Stopped at a work boundary</td>
+<td>130</td>
+</tr>
+</tbody>
+</table>
+<h2 id="elab"><code>elab</code> — the elaborated netlist</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf elab &lt;file.cnl&gt;</code></pre>
+<p>Elaborates and stops: flattens the hierarchy, resolves every parameter and expression top-down, and
+numbers the nodes, then prints <a href="netlist.html">the elaborated netlist</a> — the exact thing the engines
+consume. No analysis runs.</p>
+<p>This is the debugging verb. When a value is not what you expected, <code>elab</code> is where you find out
+whether the expression resolved to something different from what you meant, or resolved correctly and
+the analysis is doing something else.</p>
+<h2 id="exit">Exit codes</h2>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td>Ran, and produced something usable</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>Could not run — bad arguments, a missing file, no matching analysis, a refusal, an exception</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>Ran, but did not converge</td>
+</tr>
+<tr>
+<td><strong>130</strong></td>
+<td>Stopped — <code>em</code> only, and only when the run was cancelled at a work boundary</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>2</code> is deliberately not the same test for every verb.</strong> <code>hb</code> and <code>dc</code> fail on any non-converged
+solve. A loadpull grid in which some points do not converge is a normal and useful result — the edge
+of a Γ grid routinely will not — so <code>lp</code> returns <code>2</code> only when <strong>every</strong> grid point failed, and <code>lpp</code>
+only when neither optimum converged and there is no follow-on grid. A rule that failed the whole run
+on one bad point would make the exit code useless in a script.</p>
+<h2 id="scripting">Scripting patterns</h2>
+<p><strong>Keep the table, keep the log, and still see it run.</strong></p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf lp hero3.cnl -o hero3.npy &gt; hero3-table.txt 2&gt; hero3-run.log</code></pre>
+<p><strong>Sweep a variable the netlist already has</strong>, without editing the netlist:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>for p in -10 -5 0 5; do circuitrf hb pa.cnl --set Pavl_dbm=$p -o pa_$p.npy; done</code></pre>
+<p><strong>Fail a build on a regression</strong>, using the exit code:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf hb pa.cnl -o out.npy || echo "PA did not converge" &gt;&amp;2</code></pre>
+<p><strong>Re-extract every EM setup in a workspace</strong> after a technology edit — the layout and stackup
+references resolve themselves, so the loop needs nothing but the file names:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>for f in em/*.cem; do circuitrf em "$f" || exit 1; done</code></pre>
+<p>Because each of those writes the same file <strong>Simulate</strong> writes, a schematic that references the
+extracted Touchstones picks the new results up with no further action.</p>
+<hr />
+<p class="small">See also: <a href="simulations.html">Simulations</a> (what each analysis computes) ·
+  <a href="netlist.html">The netlist format</a> · <a href="em-setup.html">EM Setup</a> ·
+  <a href="mom-engine.html">The MoM engine</a> ·
+  <a href="npy-export.html">Results &amp; data export</a> ·
+  <a href="pdk-integration.html">Kits and external device models</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="npy-export.html"><span class="dir">Previous</span><span class="name">Results &amp; Data Export</span></a>
+  <a class="next" href="layout-editor.html"><span class="dir">Next</span><span class="name">The Layout Editor</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+</body>
+</html>

@@ -204,9 +204,9 @@ what <a href="measurements.html">Measurements</a> are for.</p>
 <div class="callout tip">
 <span class="label">The same run, headless</span>
 <p>An analysis set up here runs identically from the command line — <code>circuitrf sparam</code>,
-<code>dc</code> or <code>hb</code> against an elaborated <a href="netlist.html">netlist</a>, with
-<strong>Simulate ▸ Generate Netlist</strong> producing the <code>.cnl</code>. See
-{{anchor: simulations#cli|Running an analysis from the command line}}.</p>
+<code>dc</code>, <code>hb</code>, <code>lp</code> or <code>lpp</code> against an elaborated
+<a href="netlist.html">netlist</a>, with <strong>Simulate ▸ Generate Netlist</strong> producing the
+<code>.cnl</code>. See {{anchor: cli|The Command Line}}.</p>
 </div>
 
 ## The toolbar {#toolbar}

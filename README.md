@@ -142,14 +142,25 @@ product) independent of any GUI framework. Full detail:
   src/Core      Design + Elaboration: cells, instances, nets, parameters, the expression
         ▲        engine; flatten + resolve → an "elaborated netlist".  No UI, no numerics.
         │
-  src/Engine    Numeric layer: sparse MNA, DC, S-parameters, harmonic balance, loadpull.
-        ▲        Consumes the elaborated netlist, produces a DataSet.  No UI.
+  src/Engine    Numeric layer: sparse MNA, DC, S-parameters, harmonic balance, loadpull,
+        ▲        and the planar method-of-moments EM kernel.  Consumes the elaborated
+        │        netlist, produces a DataSet.  No UI.
         │
-  src/Ui        Presentation: Avalonia 12 + SkiaSharp. Schematic/symbol editors, Data
-                 Display, workspace. Depends on Core + Engine + RfCore. Nothing depends on it.
+  src/Design    Design-layer DOCUMENTS for artwork: the layout model and .clay reader, the
+        ▲        technology/stackup model and .ctech reader, the .ccell cell folder, the
+        │        .cem EM setup, and the extractors that turn geometry + stackup into an
+        │        EmProblem.  No UI — it draws nothing and docks nothing.
+        │
+  src/Ui        Presentation: Avalonia 12 + SkiaSharp. Schematic/symbol/layout editors,
+                 Data Display, workspace. Depends on everything above. Nothing depends on it.
 
-  src/Cli       Headless driver — depends on Core/Engine/RfCore, NOT on src/Ui. Proof the
-                 engine is fully usable with no GUI; the engine's primary test harness.
+  src/Harmonica  harmonicaRF's framework-free half — interactive harmonic loadpull on one
+  src/WBond      wBond's framework-free half — bondwire geometry + its own 3D MoM kernel
+                 Both also ship as standalone apps: src/Ui with a different Main().
+
+  src/Cli       Headless driver — depends on Core/Engine/RfCore/Design, NOT on src/Ui. Proof
+                 the engines are fully usable with no GUI; the engines' primary test harness.
+                 Verbs: sparam, dc, hb, lp, lpp, em, elab.  See docs/user/reference/cli.html.
 ```
 
 ### The three layers (design → elaboration → numeric)
@@ -188,6 +199,11 @@ global variables, cell parameters, the SDD's device equations, and measurements
   engine and a post-processor that derives the display metrics measured files carry.
   ([`docs/design/loadpull.md`](docs/design/loadpull.md),
   [`docs/design/loadpull-contours.md`](docs/design/loadpull-contours.md))
+- **Electromagnetic (`src/Engine/Mom`)** — two kernels behind one registry: a **quasi-static
+  cross-section** solver for uniform lines (Z₀, ε_eff, loss, RLGC) and a **full-wave planar
+  method-of-moments** solver over a layered Green's function, with meshing, ports, de-embedding,
+  adaptive frequency sampling and an AIM accelerator. Fed by `src/Design`'s extractors, driven by the
+  GUI's EM Setup panel *or* by `circuitrf em`. ([`docs/design/mom-engine.md`](docs/design/mom-engine.md))
 
 ### How rendering works — SkiaSharp and Avalonia
 
@@ -205,9 +221,16 @@ just a host.
 ### The framework firewall
 
 The circuitRF *engines* must be skinnable by any new
-UI with as little trouble as possible — so **`RfCore`, `src/Core`, `src/Engine`, and `src/Cli` reference no
-UI framework at all** (no Avalonia). This is **not** a hope; it's an **enforced invariant** — a CI test
-loads each non-UI assembly and fails the build if it references `Avalonia*`.
+UI with as little trouble as possible — so **`RfCore`, `src/Core`, `src/Engine`, `src/Design`, `src/Cli`,
+`src/Harmonica` and `src/WBond` reference no UI framework at all** (no Avalonia). This is **not** a hope;
+it's an **enforced invariant** — [`tests/Firewall.Tests`](tests/Firewall.Tests) loads each of those seven
+assemblies and fails the build if any references `Avalonia*`.
+
+That firewall is why `circuitrf em` exists at all. The half of the EM path that turns a `.cem` plus a
+`.clay` into an `EmProblem` used to sit in the `CircuitRF.Ui` assembly; it was carved out into
+**`src/Design`** so the CLI could reach it without dragging Avalonia across the line — one
+implementation of the layout reader, the stackup resolver and the run service, driven by both the
+Simulate button and the command line.
 
 The entire engine↔UI contract is two shapes: **design model down, `DataSet` up.** A replacement UI
 re-implements only the *presentation* of those two shapes; the engine, elaboration, analyses, result model,
@@ -238,28 +261,68 @@ circuitRF/
 │  │  ├─ Netlist/        .cnl reader/writer
 │  │  └─ Data/           DataSet/DataCube result model (mirrors RfCore)
 │  ├─ Engine/          Numeric layer — consumes the elaborated netlist, returns a DataSet (no UI)
+│  │  ├─ (root)            sparse MNA, DC, S-parameters, parametric sweeps, measurements
 │  │  ├─ HarmonicBalance/  HB residual, conversion-matrix Jacobian, single/two-tone, continuation
-│  │  └─ Loadpull/         loadpull + pursuit engines, .gam terminations
+│  │  ├─ Loadpull/         loadpull + pursuit engines, .gam terminations
+│  │  ├─ Match/            termination probe for the Match component's direct synthesis
+│  │  └─ Mom/              the EM kernels: quasi-static cross-section + full-wave planar MoM,
+│  │                       layered Green's function, mesher, ports, de-embedding, AIM accelerator
+│  ├─ Design/          Design-layer DOCUMENTS for artwork — the artefacts an EM problem is built
+│  │  │                from, and the code that turns them into one (no UI: draws nothing, docks
+│  │  │                nothing). Referenced by BOTH src/Ui and src/Cli, so there is exactly one
+│  │  │                layout reader and one stackup resolver. See src/Design/CLAUDE.md.
+│  │  ├─ Layout/         layout model + .clay reader, integer-DBU geometry, flatten/booleans,
+│  │  │  │               spatial index, technology/stackup model + .ctech reader
+│  │  │  ├─ Em/            the .cem EM setup, its reader, the cross-section and planar extractors,
+│  │  │  │                 EmRunService (what the Simulate button and `circuitrf em` both call)
+│  │  │  ├─ Drc/           the .ctech DRC layer-expression format (the DRC engine stays in src/Ui)
+│  │  │  └─ PCells/        PCell parameter VALUE types (the generators stay in src/Ui)
+│  │  ├─ Cells/          the .ccell cell-folder format and its atomic writer
+│  │  ├─ Workspace/      the .cws reader and the workspace-root walk-up
+│  │  └─ Results/        the results-folder convention: <base>/results/<key>.npy
+│  ├─ Harmonica/       harmonicaRF's framework-free half — interactive harmonic loadpull (no UI)
+│  ├─ WBond/           wBond's framework-free half — bondwire geometry + its own 3D MoM (no UI)
 │  ├─ Ui/              Avalonia 12 + SkiaSharp — the only place UI-framework code lives
 │  │  ├─ Schematic/      net extractor, editable model, library palette, placement
-│  │  ├─ Layout/         layout editor: integer-DBU geometry model, technology + stackup, spatial
-│  │  │  │                index, booleans/flatten, hierarchy, schematic↔layout generation
-│  │  │  ├─ PCells/        parametric cells — geometry generated from component parameters
+│  │  ├─ Layout/         layout EDITOR: commands, snapping, handles, DRC engine, schematic↔layout
+│  │  │  │                generation, the .ctech editor  (the MODEL is in src/Design)
+│  │  │  ├─ PCells/        parametric-cell generators — geometry from component parameters
+│  │  │  ├─ Em/            the .cem editor panel and back-annotation  (the RUN is in src/Design)
 │  │  │  └─ Interchange/   GDSII, DXF and Gerber/Excellon readers and writers
 │  │  ├─ Renderers/      pure SkiaSharp renderers (schematic, symbols, layout) — no Avalonia types
 │  │  ├─ Controls/       Avalonia custom controls hosting Skia surfaces + input
 │  │  ├─ DataDisplay/    DataCube-native plots (Smith/polar/rect/table), loadpull surface, contours
-│  │  ├─ ViewModels/  Views/  Commands/  Theming/  …   the MVVM shell
-│  └─ Cli/             Headless driver + the engine's test harness (no UI)
-├─ tools/             programs that are not part of the application (not in circuitRF.slnx)
-│  └─ DocGen/           the user-docs factory: regenerates docs/user/ from the live application
+│  │  ├─ Harmonica/  WBond/   the two standalone tools' views — each also has its own Main()
+│  │  ├─ Diagnostics/    the docs factory's capture side: figure catalog, fixtures, SVG lint
+│  │  ├─ Updates/        the in-app updater
+│  │  └─ ViewModels/  Views/  Commands/  Theming/  Docking/  …   the MVVM shell
+│  └─ Cli/             Headless driver + the engines' test harness (no UI)
+│                        verbs: sparam, dc, hb, lp, lpp, em, elab — docs/design/cli.md
+├─ tools/             programs that are not part of the application (none in circuitRF.slnx)
+│  ├─ DocGen/           the user-docs factory: regenerates docs/user/ + docs/slides/ from the app
+│  ├─ IconGen/          rasterises the brand SVGs into .icns/.ico/.png — run by every packaging script
+│  ├─ senior-worker/    the shipped device worker for compiled vendor model libraries (C)
+│  ├─ osdi-worker/  netlist-worker/   the OSDI and netlist-model device workers (C)
+│  ├─ pcell-python/     the Python PCell host a kit's generators run in
+│  ├─ DeviceWorkerExample/  fake-model-lib/  fake-osdi-model/   reference + test-only workers,
+│  │                    deliberately referencing no other project in this repo
+│  ├─ ReleaseSigner/    release signing for the updater's payloads
+│  └─ macos-vmhost/  macos-vmimage/   the macOS VM used for cross-platform build checks
+├─ packaging/         one script per platform, each building everything that platform ships
+│  ├─ windows/          build-windows.ps1 → 3 .msi architectures × 2 scopes + the updater .zip
+│  ├─ macos/            build-macos.sh    → 2 .dmg (x64, arm64)
+│  └─ linux/            build-linux.sh    → .deb and .tar.gz for x64 and arm64
 ├─ docs/
 │  ├─ PRD.md             what v1 must do + the five "hero" acceptance circuits
 │  ├─ Development_Plan.md  the roadmap, status, and AI-workflow strategy
 │  ├─ design/            per-subsystem design notes (the "why")  ← start here to go deep
 │  ├─ skills/            step-by-step procedures (e.g. adding-a-library-component.md)
+│  ├─ sonnet-briefs/     the per-phase implementation briefs work is cut from
+│  ├─ slides/            generated landscape PDF decks (light and dark)
 │  └─ user/             the shipped user documentation — GENERATED; sources in docs/user/src/
-├─ testdata/           golden references + regression fixtures
+├─ testdata/           golden references + regression fixtures (the five heroes live here)
+├─ tests/              Core, Engine, Ui, RfCore, Harmonica, WBond and Firewall test projects
+├─ VERSION             the ONE place the version number is written
 └─ CLAUDE.md           standing project memory (architecture, invariants) — root + nested per subsystem
 ```
 
@@ -372,23 +435,42 @@ Display. New to it? Start a scratch schematic (**File → New Schematic**), drag
 
 ### Run headless from the command line
 
-The engine is fully drivable without the GUI — this is how it's tested, and how you'd script a batch. The
-CLI takes a `.cnl` netlist (a human-readable text circuit description):
+Every engine is fully drivable without the GUI — this is how they're tested, and how you'd script a batch.
+Most verbs take a `.cnl` netlist (a human-readable text circuit description); `em` takes a `.cem` EM setup.
 
 ```bash
-# S-parameters: sweep 1–3 GHz in 50 MHz steps, write a Touchstone file
+# S-parameters: sweep 1-3 GHz in 50 MHz steps, write a Touchstone file
 dotnet run --project src/Cli -- sparam mycircuit.cnl --freq 1GHz:3GHz:50MHz -o mycircuit.s2p
 
-# Dump the elaborated netlist (flattened + parameters resolved) — great for debugging
+# DC operating point
+dotnet run --project src/Cli -- dc mycircuit.cnl
+
+# Harmonic balance (runs the parametric sweep, if one wraps the analysis)
+dotnet run --project src/Cli -- hb hero2.cnl --set Pavl_dbm=0 -o hero2.npy
+
+# Loadpull over the directive's Gamma grid, exported as loadpull interchange
+dotnet run --project src/Cli -- lp hero3.cnl --pin -20:1:15 -o hero3.spl
+
+# Loadpull pursuit: search for the max-power and max-efficiency terminations
+dotnet run --project src/Cli -- lpp hero3B.cnl --out-grid found.gam -o hero3B.npy
+
+# Electromagnetic extraction of the layout a .cem names — no other arguments needed
+dotnet run --project src/Cli -- em Amp.cem
+
+# Dump the elaborated netlist (flattened + parameters resolved) - great for debugging
 dotnet run --project src/Cli -- elab mycircuit.cnl
 
 # Help
 dotnet run --project src/Cli
 ```
 
-Frequencies accept `1GHz`, `100MHz`, or bare Hz (`1e9`). Harmonic-balance and loadpull runs are currently
-driven from the GUI's **Run** button (which uses the same headless run path); a dedicated CLI verb for them
-is on the roadmap.
+Frequencies accept `1GHz`, `100MHz`, or bare Hz (`1e9`). **Results go to stdout, everything else to
+stderr**, so `... lp x.cnl > table.txt` gives you a table and still shows progress on the terminal.
+
+The CLI evaluates a test bench's `measure` lines through the same evaluator the GUI does, so **a `.cnl`
+that works headless works when opened**. Full documentation: the
+[Command Line chapter](docs/user/reference/cli.html) of the user docs (design notes in
+[`docs/design/cli.md`](docs/design/cli.md)).
 
 ### Run a netlist through an engine (in code)
 
@@ -532,7 +614,8 @@ programmer — MATLAB/Python scripting experience plus an AI assistant is plenty
 
 **The ground rules:**
 - The architecture is layered and the **UI firewall is enforced** — keep Avalonia out of
-  `RfCore`/`Core`/`Engine`/`Cli` (a CI test will catch you). Renderers stay Skia-only.
+  `RfCore`/`Core`/`Engine`/`Design`/`Cli`/`Harmonica`/`WBond` (a CI test will catch you).
+  Renderers stay Skia-only.
 - **Every numerical change needs a `testdata/` regression test** within the tolerance the PRD states.
 - The core is **MIT** — never ingest GPL code.
 - Each subsystem has a `CLAUDE.md` with its local conventions; read the relevant one before diving in.

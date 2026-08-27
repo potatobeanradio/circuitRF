@@ -22,6 +22,7 @@ lede: The EM Setup panel, control by control, and where the results land.
 <li><a href="#stackup">Stackup</a></li>
 <li><a href="#blocked">When Simulate is greyed out</a></li>
 <li><a href="#results">Where the results land</a></li>
+<li><a href="#headless">Running the setup without the GUI</a></li>
 <li><a href="#overlays">What the layout shows after a run</a></li>
 </ol>
 </nav>
@@ -330,6 +331,25 @@ its own name, or set the output file explicitly.</p>
 the engine and is exercised by the test suite, but no button in this release invokes it: place the
 component yourself and point its `File` parameter at the written path. Re-running updates the file in
 place, so the schematic picks the new result up the way it picks up any changed source.
+
+## Running the setup without the GUI {#headless}
+
+A `.cem` is a complete, self-contained description of a run, which means the panel is only one way to
+start one. The command line is the other:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf em Amp.cem</code></pre>
+
+**No other arguments.** The layout reference resolves against the nearest workspace above the `.cem`,
+and the technology against the layout's own workspace — the same two walk-ups the panel does, because
+it is the same code. The run writes **the same two files to the same place** as Simulate, so a
+schematic's SnP reference stays valid across a headless re-run; `-o` moves the Touchstone if you want
+it elsewhere.
+
+That is what makes re-extraction scriptable: edit the stackup once, then re-run every setup in the
+workspace and let each schematic pick up its new Touchstone.
+
+The verb, its options, the three message lists, the exit codes and a worked example from an empty
+folder are in [The Command Line](cli.html#em).
 
 ## What the layout shows after a run {#overlays}
 

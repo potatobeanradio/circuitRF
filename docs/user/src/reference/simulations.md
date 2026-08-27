@@ -505,16 +505,23 @@ and per-band `Z[k]` to the whole multi-tone spectrum this way.
 
 Everything above is driven from the GUI's Run button, and everything above also runs headless. The
 command-line driver takes a `.cnl` netlist — hand-authored, or extracted from a schematic — and runs
-one of four verbs:
+one analysis:
 
 ```text
 circuitrf sparam <file.cnl> [--freq start:stop:step] [-o out.sNp]
 circuitrf dc     <file.cnl>
 circuitrf hb     <file.cnl>       harmonic balance; runs the sweep if one wraps it
+circuitrf lp     <file.cnl>       loadpull over the directive's Gamma grid
+circuitrf lpp    <file.cnl>       loadpull pursuit: searches for MXP / MXE
+circuitrf em     <file.cem>       electromagnetic extraction of the layout it names
 circuitrf elab   <file.cnl>       dump the elaborated netlist
 ```
 
 From a source checkout, put `dotnet run --project src/Cli --` where `circuitrf` appears.
+
+**The full reference for every verb, its options, its output and its exit codes is
+[The Command Line](cli.html)** — including a worked EM run from an empty folder. This section covers
+only the part that is about *analyses* rather than about the driver.
 
 ### Harmonic balance from the command line {#cli-hb}
 
@@ -541,14 +548,42 @@ That runs the netlist's harmonic-balance analysis — **single- or multi-tone; t
 dotnet run --project src/Cli -- hb hero5.cnl --set Pavl_dbm=0 -o hero5.txt
 ```
 
-<div class="callout warn">
-<span class="label">Name the wrapper, not the inner analysis</span>
-<p>When a <a href="#parametric-sweep">parametric sweep</a> wraps a harmonic-balance analysis,
-<code>hb</code> runs <strong>the whole sweep</strong> — and naming the inner HB with <code>-a</code>
-runs that one operating point instead, <strong>silently dropping the sweep axis</strong>. It does not
-error: you get a valid result of the wrong shape. Pass the sweep's own name, or pass nothing and let it
-find the chain.</p>
+<div class="callout note">
+<span class="label">The sweep runs, whichever name you give</span>
+<p>When a <a href="#parametric-sweep">parametric sweep</a> wraps an analysis, <b>the sweep</b> is what
+runs — and naming the inner analysis with <code>-a</code> is <strong>promoted</strong> to its outermost
+enabled wrapper, with a line on stderr saying so. That promotion exists because running the inner
+analysis alone gives a converged, plausible, complete-looking result with the sweep axis silently
+missing. It is the same rule for <code>hb</code>, <code>lp</code> and <code>lpp</code>: a
+frequency-swept loadpull has exactly that shape.</p>
 </div>
+
+### Loadpull and pursuit from the command line {#cli-lp}
+
+```netlist
+dotnet run --project src/Cli -- lp  hero3.cnl  --pin -20:1:15 -o hero3.spl
+dotnet run --project src/Cli -- lpp hero3B.cnl --out-grid found.gam -o hero3B.npy
+```
+
+`lp` prints **one row per Γ grid point** — where it was, how it stopped, and its figures of merit at
+the last converged, non-tickle drive step — rather than the raw `[gridPoint × driveStep]` cubes.
+`lpp` prints its MXP and MXE optima first, then the follow-on grid. Both take the HB options above,
+plus `--pin`, `--compression`, and one grid option each: `--grid` for `lp`, `--out-grid` for `lpp`.
+`lp` also exports `.spl` and `.lpcwave`, the loadpull interchange formats the Data Display reads back.
+[Full detail](cli.html#lp).
+
+### Electromagnetic extraction from the command line {#cli-em}
+
+```netlist
+dotnet run --project src/Cli -- em Amp.cem
+```
+
+`em` takes a [`.cem` EM setup](em-setup.html) and needs no other arguments — the layout and the
+technology resolve by walking up to their own workspaces, exactly as they do in the GUI. It writes the
+Touchstone and the diagnostics `.npy` **where the Simulate button writes them**, so a schematic's SnP
+reference survives a headless re-run. [Full detail, with a worked example](cli.html#em).
+
+### Measurements, and why headless is the regression harness {#cli-measure}
 
 The `measure` lines on the TestBench are evaluated exactly as the GUI evaluates them, and a
 measurement that fails to evaluate is reported on stderr and the run continues. **A `.cnl` that works
@@ -559,4 +594,5 @@ the two paths share the elaborator, the engines and the measurement evaluator.
 
 <p class="small">See also: <a href="netlist.html">the netlist format</a> (how analyses are written) ·
   <a href="components.html">Components</a> · <a href="plot-types.html">Plot types</a> ·
-  <a href="measurements.html">Measurements</a> · <a href="npy-export.html">Results &amp; data export</a>.</p>
+  <a href="measurements.html">Measurements</a> · <a href="npy-export.html">Results &amp; data export</a> ·
+  <a href="cli.html">The command line</a>.</p>

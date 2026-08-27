@@ -975,7 +975,16 @@ Raise cells per wavelength by 1.4× and re-run. If |S₁₁| at the top of the b
 care about, you are converged. If it moves a lot, refine again — and if it moves *differently* each
 time on a mitred bend, turn on [conformal boundary cells](#conformal).
 
+### 9. Run it again without the GUI
+
+Once the setup is right, it does not need the window any more. `circuitrf em Bend.cem` runs the same
+extraction, the same mesh and the same solve, and writes the **same two files** to the same place — so
+a re-extraction after a technology edit is one line in a script, and the schematic that references the
+Touchstone picks the new result up with no further action. See
+<a href="cli.html#em">the command line, EM section</a>.
+
 <p class="small">See also: <a href="em-setup.html">EM Setup</a> — the panel, control by control ·
-<a href="layout-editor.html">The Layout Editor</a> · <a href="wbond.html">wBond</a> (3D bondwires) ·
+<a href="layout-editor.html">The Layout Editor</a> · <a href="cli.html#em">Running an EM setup
+headless</a> · <a href="wbond.html">wBond</a> (3D bondwires) ·
 <a href="components.html#mlin">The microstrip component family</a> ·
 <a href="data-display.html">The Data Display</a>.</p>

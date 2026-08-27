@@ -45,6 +45,7 @@ reference/netlist.html      | The .cnl elaborated-netlist format.
 reference/data-display.html | Plots, tables, trace cards and markers.
 reference/plot-types.html   | Rectangular, Smith, Polar and Table — and which data each will accept.
 reference/npy-export.html   | Getting results out into Python, MATLAB or a Touchstone file.
+reference/cli.html          | Running every analysis headless: the verbs, their options and their exit codes.
 
 == Layout & EM
 reference/layout-editor.html   | The layout view: technology, drawing, snapping, and the schematic it belongs to.

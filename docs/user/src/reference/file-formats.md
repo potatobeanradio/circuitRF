@@ -141,7 +141,7 @@ single `netlist.cnl` to the workspace root and the engine runs it. It is:
   (e.g. `; netlist.cnl — generated from TestBench "PA_loadpull" at 2026-06-06T14:22:31Z`).
 
 - **Human-inspectable and re-runnable** — it's exactly what the engine saw, and you can re-run it
-  headless from the CLI.
+  headless from <a href="cli.html">the command line</a>.
 
 It is a generated scratch artifact, not part of the saved project — the `.csch` is the source of
 truth.

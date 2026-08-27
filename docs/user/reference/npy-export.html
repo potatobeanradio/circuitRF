@@ -95,6 +95,10 @@ format:</p>
 <p>You can include or exclude the <code>measurements</code> group, and Touchstone/loadpull exports let you pin
 or iterate sweep axes to slice out the block you want. Multi-frequency loadpull results export
 across all their frequency blocks.</p>
+<p><strong>The same formats come out of a headless run.</strong> Every run verb takes <code>-o &lt;path&gt;</code>, and the
+<strong>extension picks the format</strong> — <code>hb</code>, <code>lp</code> and <code>lpp</code> write <code>.mat</code>, <code>.npy</code> or <code>.txt</code>; <code>lp</code> also writes
+<code>.spl</code> and <code>.lpcwave</code>; <code>sparam</code> always writes Touchstone; <code>em</code> writes both a Touchstone and a grouped
+<code>.npy</code> carrying its diagnostics. See <a href="cli.html">The Command Line</a>.</p>
 <h2 id="groups">Grouped results</h2>
 <p>A run that has several analyses produces <strong>one grouped DataSet</strong>: a group per analysis (named for
 the analysis — <code>HB1</code>, <code>SP1</code>, <code>DC1</code>, …) plus a <code>measurements</code> group for your figures of merit. In
@@ -106,7 +110,7 @@ the <code>.npy</code> file:</p>
 (<code>V</code>) — the same way a <a href="measurements.html">measurement</a> references it.</p>
 </li>
 </ul>
-<p>A single-analysis run (e.g. a CLI S-parameter export) typically has just one group plus possibly
+<p>A single-analysis run (e.g. a <a href="cli.html">CLI</a> S-parameter export) typically has just one group plus possibly
 <code>measurements</code>.</p>
 <h2 id="python">Reading a <code>.npy</code> in Python</h2>
 <p>The file is a single NumPy structured array. The <code>__meta__</code> field is a JSON blob describing every
@@ -164,7 +168,7 @@ for pin, v in zip(sweep, fund):
 
 <nav class="page-nav">
   <a class="prev" href="plot-types.html"><span class="dir">Previous</span><span class="name">Plot Types</span></a>
-  <a class="next" href="layout-editor.html"><span class="dir">Next</span><span class="name">The Layout Editor</span></a>
+  <a class="next" href="cli.html"><span class="dir">Next</span><span class="name">The Command Line</span></a>
 </nav>
 </main>
 

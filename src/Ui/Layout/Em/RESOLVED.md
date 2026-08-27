@@ -148,7 +148,7 @@ Everything else — every layout test, every EM test, every DRC test — passes 
 
 ### The acceptance test is a BYTE comparison — and "byte-identical" has exactly one exception
 
-`tests/Ui.Tests/Em/EmCliVerbTests.cs` (gate 3, `Category=Benchmark` because it launches the CLI):
+`tests/Ui.Tests/Em/EmCliVerbTests.cs` (gate 3; NOT tagged `Category=Benchmark` — see below):
 builds a real workspace on disk — a `.cws` naming a default technology, a cell folder holding a
 `.clay` with a NULL `TechRef` (the normal case, and the only one that exercises the `.cws` read), and
 a `.cem` naming its layout workspace-relatively — then runs the real `Cli em` process and compares

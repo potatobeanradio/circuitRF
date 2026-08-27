@@ -449,13 +449,19 @@ product lands exactly on the grid and the waveform is exactly periodic — close
 <h2 id="cli">Running an analysis from the command line</h2>
 <p>Everything above is driven from the GUI's Run button, and everything above also runs headless. The
 command-line driver takes a <code>.cnl</code> netlist — hand-authored, or extracted from a schematic — and runs
-one of four verbs:</p>
+one analysis:</p>
 <pre><code class="language-text">circuitrf sparam &lt;file.cnl&gt; [--freq start:stop:step] [-o out.sNp]
 circuitrf dc     &lt;file.cnl&gt;
 circuitrf hb     &lt;file.cnl&gt;       harmonic balance; runs the sweep if one wraps it
+circuitrf lp     &lt;file.cnl&gt;       loadpull over the directive's Gamma grid
+circuitrf lpp    &lt;file.cnl&gt;       loadpull pursuit: searches for MXP / MXE
+circuitrf em     &lt;file.cem&gt;       electromagnetic extraction of the layout it names
 circuitrf elab   &lt;file.cnl&gt;       dump the elaborated netlist
 </code></pre>
 <p>From a source checkout, put <code>dotnet run --project src/Cli --</code> where <code>circuitrf</code> appears.</p>
+<p><strong>The full reference for every verb, its options, its output and its exit codes is
+<a href="cli.html">The Command Line</a></strong> — including a worked EM run from an empty folder. This section covers
+only the part that is about <em>analyses</em> rather than about the driver.</p>
 <h3 id="cli-hb">Harmonic balance from the command line</h3>
 <pre><code class="language-netlist">dotnet run --project src/Cli -- hb hero2.cnl -o out.mat
 </code></pre>
@@ -509,14 +515,33 @@ circuitrf elab   &lt;file.cnl&gt;       dump the elaborated netlist
 </table>
 <pre><code class="language-netlist">dotnet run --project src/Cli -- hb hero5.cnl --set Pavl_dbm=0 -o hero5.txt
 </code></pre>
-<div class="callout warn">
-<span class="label">Name the wrapper, not the inner analysis</span>
-<p>When a <a href="#parametric-sweep">parametric sweep</a> wraps a harmonic-balance analysis,
-<code>hb</code> runs <strong>the whole sweep</strong> — and naming the inner HB with <code>-a</code>
-runs that one operating point instead, <strong>silently dropping the sweep axis</strong>. It does not
-error: you get a valid result of the wrong shape. Pass the sweep's own name, or pass nothing and let it
-find the chain.</p>
+<div class="callout note">
+<span class="label">The sweep runs, whichever name you give</span>
+<p>When a <a href="#parametric-sweep">parametric sweep</a> wraps an analysis, <b>the sweep</b> is what
+runs — and naming the inner analysis with <code>-a</code> is <strong>promoted</strong> to its outermost
+enabled wrapper, with a line on stderr saying so. That promotion exists because running the inner
+analysis alone gives a converged, plausible, complete-looking result with the sweep axis silently
+missing. It is the same rule for <code>hb</code>, <code>lp</code> and <code>lpp</code>: a
+frequency-swept loadpull has exactly that shape.</p>
 </div>
+<h3 id="cli-lp">Loadpull and pursuit from the command line</h3>
+<pre><code class="language-netlist">dotnet run --project src/Cli -- lp  hero3.cnl  --pin -20:1:15 -o hero3.spl
+dotnet run --project src/Cli -- lpp hero3B.cnl --out-grid found.gam -o hero3B.npy
+</code></pre>
+<p><code>lp</code> prints <strong>one row per Γ grid point</strong> — where it was, how it stopped, and its figures of merit at
+the last converged, non-tickle drive step — rather than the raw <code>[gridPoint × driveStep]</code> cubes.
+<code>lpp</code> prints its MXP and MXE optima first, then the follow-on grid. Both take the HB options above,
+plus <code>--pin</code>, <code>--compression</code>, and one grid option each: <code>--grid</code> for <code>lp</code>, <code>--out-grid</code> for <code>lpp</code>.
+<code>lp</code> also exports <code>.spl</code> and <code>.lpcwave</code>, the loadpull interchange formats the Data Display reads back.
+<a href="cli.html#lp">Full detail</a>.</p>
+<h3 id="cli-em">Electromagnetic extraction from the command line</h3>
+<pre><code class="language-netlist">dotnet run --project src/Cli -- em Amp.cem
+</code></pre>
+<p><code>em</code> takes a <a href="em-setup.html"><code>.cem</code> EM setup</a> and needs no other arguments — the layout and the
+technology resolve by walking up to their own workspaces, exactly as they do in the GUI. It writes the
+Touchstone and the diagnostics <code>.npy</code> <strong>where the Simulate button writes them</strong>, so a schematic's SnP
+reference survives a headless re-run. <a href="cli.html#em">Full detail, with a worked example</a>.</p>
+<h3 id="cli-measure">Measurements, and why headless is the regression harness</h3>
 <p>The <code>measure</code> lines on the TestBench are evaluated exactly as the GUI evaluates them, and a
 measurement that fails to evaluate is reported on stderr and the run continues. <strong>A <code>.cnl</code> that works
 headless works when opened</strong>, which is what makes the command line usable as a regression harness:
@@ -524,7 +549,8 @@ the two paths share the elaborator, the engines and the measurement evaluator.</
 <hr />
 <p class="small">See also: <a href="netlist.html">the netlist format</a> (how analyses are written) ·
   <a href="components.html">Components</a> · <a href="plot-types.html">Plot types</a> ·
-  <a href="measurements.html">Measurements</a> · <a href="npy-export.html">Results &amp; data export</a>.</p>
+  <a href="measurements.html">Measurements</a> · <a href="npy-export.html">Results &amp; data export</a> ·
+  <a href="cli.html">The command line</a>.</p>
 
 <nav class="page-nav">
   <a class="prev" href="match.html"><span class="dir">Previous</span><span class="name">The Match Component</span></a>

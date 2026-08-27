@@ -34,7 +34,7 @@ extracts the netlist for you. But the `.cnl` file is worth understanding because
   as text.
 
 - It is the **engine's input contract**: the schematic, the CLI, and the engine all meet here. The
-  headless CLI runs a `.cnl` directly.
+  [headless CLI](cli.html) runs a `.cnl` directly — every verb but `em` takes one.
 
 - It's the clearest way to see exactly *what* got simulated — components, parameter values after
   resolution, analyses, and measurements, all in one place.

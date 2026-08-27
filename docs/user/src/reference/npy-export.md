@@ -91,6 +91,11 @@ You can include or exclude the `measurements` group, and Touchstone/loadpull exp
 or iterate sweep axes to slice out the block you want. Multi-frequency loadpull results export
 across all their frequency blocks.
 
+**The same formats come out of a headless run.** Every run verb takes `-o <path>`, and the
+**extension picks the format** — `hb`, `lp` and `lpp` write `.mat`, `.npy` or `.txt`; `lp` also writes
+`.spl` and `.lpcwave`; `sparam` always writes Touchstone; `em` writes both a Touchstone and a grouped
+`.npy` carrying its diagnostics. See [The Command Line](cli.html).
+
 ## Grouped results {#groups}
 
 A run that has several analyses produces **one grouped DataSet**: a group per analysis (named for
@@ -102,7 +107,7 @@ the `.npy` file:
 - A cube is addressed by its **qualified** name (`HB1.V`) or, when unambiguous, its **bare** name
   (`V`) — the same way a [measurement](measurements.html) references it.
 
-A single-analysis run (e.g. a CLI S-parameter export) typically has just one group plus possibly
+A single-analysis run (e.g. a [CLI](cli.html) S-parameter export) typically has just one group plus possibly
 `measurements`.
 
 ## Reading a `.npy` in Python {#python}
