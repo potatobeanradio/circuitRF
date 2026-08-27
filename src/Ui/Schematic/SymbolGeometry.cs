@@ -399,13 +399,46 @@ public static class SymbolGeometry
     // ── ScaleBy — scale about a reference point ───────────────────────────────
 
     /// <summary>
+    /// The smallest a scale is allowed to leave any extent — a radius, a width, a height.
+    ///
+    /// <para>Zero is not a size: a primitive scaled to nothing draws nothing, has a degenerate
+    /// bounding box, and therefore has no resize grippers to drag it back out with. It is gone from
+    /// the canvas and unrecoverable except by undo. This is the same floor the Properties Inspector
+    /// advertises on its own extent fields, so dragging and typing cannot disagree about what the
+    /// smallest legal shape is.</para>
+    /// </summary>
+    public const double MinExtent = 0.001;
+
+    /// <summary>
     /// Scales all control points of <paramref name="prim"/> about the reference point
     /// (refX, refY) by factors (sx, sy).  Used by
     /// <see cref="Commands.Symbol.ResizeSymbolPrimitiveCommand"/>.
+    ///
+    /// <para><b>A negative factor is a reflection, not an error.</b> Dragging a resize gripper past
+    /// its anchor flips one axis, and it flips ONE axis first — the pointer crosses the anchor in x
+    /// before it crosses in y. A circle scaled that way used to take <c>Math.Sqrt(sx * sy)</c> of a
+    /// NEGATIVE product and land on <b>NaN</b> (owner report, 2026-08-26: a circle shrunk small
+    /// enough stops rendering, and the inspector's R field fills with a conversion error). NaN is
+    /// the worst possible outcome here: nothing draws, the bounding box is NaN so the grippers
+    /// disappear too, and the number reaches the inspector where <c>Convert.ToDecimal</c> throws on
+    /// it — which is the error message the user actually sees. A reflection scales a radius by the
+    /// MAGNITUDE of the factors; taking the geometric mean of the absolute values is what that
+    /// means, and it is defined for every sign combination.</para>
+    ///
+    /// <para>Every extent is then floored at <see cref="MinExtent"/> — see its own note for why
+    /// zero is not a size.</para>
     /// </summary>
     public static void ScaleBy(SymbolPrimitive prim, double refX, double refY, double sx, double sy)
     {
         static double S(double v, double r, double s) => r + (v - r) * s;
+
+        // Magnitude, floored, and never NaN or infinite — a non-finite extent is the failure this
+        // whole guard exists to prevent, so it is caught here rather than at each call site.
+        static double Extent(double v)
+            => double.IsFinite(v) ? Math.Max(Math.Abs(v), MinExtent) : MinExtent;
+
+        // The isotropic factor a circle or arc radius scales by: the geometric mean of |sx| and |sy|.
+        double iso = Math.Sqrt(Math.Abs(sx) * Math.Abs(sy));
 
         switch (prim)
         {
@@ -419,25 +452,27 @@ public static class SymbolGeometry
                 break;
             case RectPrimitive r:
                 r.Cx = S(r.Cx, refX, sx); r.Cy = S(r.Cy, refY, sy);
-                r.W  = Math.Abs(r.W * sx); r.H  = Math.Abs(r.H * sy);
+                r.W  = Extent(r.W * sx); r.H  = Extent(r.H * sy);
                 break;
             case RoundedRectPrimitive rr:
                 rr.Cx = S(rr.Cx, refX, sx); rr.Cy = S(rr.Cy, refY, sy);
-                rr.W  = Math.Abs(rr.W * sx); rr.H  = Math.Abs(rr.H * sy);
-                rr.Radius = Math.Min(rr.Radius * Math.Min(sx, sy),
-                                     Math.Min(rr.W, rr.H) * 0.4);
+                rr.W  = Extent(rr.W * sx); rr.H  = Extent(rr.H * sy);
+                // The CORNER radius is floored at zero, not at MinExtent: zero corners are a square
+                // corner, which is a legitimate rounded rect and not a degenerate shape.
+                rr.Radius = Math.Clamp(rr.Radius * Math.Min(Math.Abs(sx), Math.Abs(sy)),
+                                       0.0, Math.Min(rr.W, rr.H) * 0.4);
                 break;
             case CirclePrimitive c:
                 c.Cx = S(c.Cx, refX, sx); c.Cy = S(c.Cy, refY, sy);
-                c.R  = Math.Abs(c.R * Math.Sqrt(sx * sy));
+                c.R  = Extent(c.R * iso);
                 break;
             case EllipsePrimitive e:
                 e.Cx = S(e.Cx, refX, sx); e.Cy = S(e.Cy, refY, sy);
-                e.Rx = Math.Abs(e.Rx * sx); e.Ry = Math.Abs(e.Ry * sy);
+                e.Rx = Extent(e.Rx * sx); e.Ry = Extent(e.Ry * sy);
                 break;
             case ArcPrimitive a:
                 a.Cx = S(a.Cx, refX, sx); a.Cy = S(a.Cy, refY, sy);
-                a.R  = Math.Abs(a.R * Math.Sqrt(sx * sy));
+                a.R  = Extent(a.R * iso);
                 break;
             case PolygonPrimitive pg:
                 foreach (var p in pg.Points)

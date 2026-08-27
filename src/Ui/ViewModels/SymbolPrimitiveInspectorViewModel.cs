@@ -103,13 +103,13 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     [ObservableProperty] private double _fieldW;
     [ObservableProperty] private double _fieldH;
 
-    partial void OnFieldWChanged(double oldValue, double newValue) => ApplyDouble("W", oldValue, newValue,
+    partial void OnFieldWChanged(double oldValue, double newValue) => ApplyExtent("W", oldValue, newValue,
         _prim switch {
             RectPrimitive        p => v => p.W = v,
             RoundedRectPrimitive p => v => p.W = v,
             _ => null,
         });
-    partial void OnFieldHChanged(double oldValue, double newValue) => ApplyDouble("H", oldValue, newValue,
+    partial void OnFieldHChanged(double oldValue, double newValue) => ApplyExtent("H", oldValue, newValue,
         _prim switch {
             RectPrimitive        p => v => p.H = v,
             RoundedRectPrimitive p => v => p.H = v,
@@ -120,7 +120,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
 
     [ObservableProperty] private double _fieldRadius;
 
-    partial void OnFieldRadiusChanged(double oldValue, double newValue) => ApplyDouble("R", oldValue, newValue,
+    partial void OnFieldRadiusChanged(double oldValue, double newValue) => ApplyExtent("R", oldValue, newValue,
         _prim switch {
             CirclePrimitive p => v => p.R = v,
             ArcPrimitive    p => v => p.R = v,
@@ -132,9 +132,9 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     [ObservableProperty] private double _fieldRx;
     [ObservableProperty] private double _fieldRy;
 
-    partial void OnFieldRxChanged(double oldValue, double newValue) => ApplyDouble("Rx", oldValue, newValue,
+    partial void OnFieldRxChanged(double oldValue, double newValue) => ApplyExtent("Rx", oldValue, newValue,
         _prim is EllipsePrimitive p ? v => p.Rx = v : null);
-    partial void OnFieldRyChanged(double oldValue, double newValue) => ApplyDouble("Ry", oldValue, newValue,
+    partial void OnFieldRyChanged(double oldValue, double newValue) => ApplyExtent("Ry", oldValue, newValue,
         _prim is EllipsePrimitive p ? v => p.Ry = v : null);
 
     // ── Corner radius (RoundedRect) ───────────────────────────────────────────
@@ -733,9 +733,28 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     private void ApplyDouble(string description, double oldVal, double newVal, Action<double>? apply)
     {
         if (_isRefreshing || apply is null || _prim is null || _vm is null) return;
+        // A non-finite typed value is refused outright rather than stored. NaN also has to be let
+        // THROUGH as oldVal, which it is: NaN fails every comparison, so the "did it actually change"
+        // test below is false and a primitive already holding NaN can be repaired by typing over it.
+        if (!double.IsFinite(newVal)) return;
         if (Math.Abs(newVal - oldVal) < 0.001) return;
         _vm.Execute(new SetSymbolPrimitiveFieldCommand<double>(_vm.EditableSymbol, description, oldVal, newVal, apply));
     }
+
+    /// <summary>
+    /// <see cref="ApplyDouble"/> for a field that is a SIZE — a radius, a width, a height. Floored at
+    /// <see cref="SymbolGeometry.MinExtent"/>, the same floor a resize drag is held to, so the two
+    /// ways of shrinking a primitive cannot disagree about the smallest legal shape (owner,
+    /// 2026-08-26).
+    ///
+    /// <para>The box carries the same <c>Minimum</c>, and this is not redundant with it: the XAML
+    /// minimum is what the spinner and the parser enforce, this is what the MODEL is held to, and
+    /// only the second survives a value arriving from anywhere other than that box.</para>
+    /// </summary>
+    private void ApplyExtent(string description, double oldVal, double newVal, Action<double>? apply)
+        => ApplyDouble(description, oldVal,
+                       double.IsFinite(newVal) ? Math.Max(newVal, SymbolGeometry.MinExtent) : newVal,
+                       apply);
 }
 
 /// <summary>Editable row in the polyline/polygon coordinate list.</summary>

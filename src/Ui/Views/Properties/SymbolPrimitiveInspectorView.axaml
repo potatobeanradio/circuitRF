@@ -84,12 +84,14 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     <NumericUpDown Grid.Column="1"
                                    Value="{Binding FieldW, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   Minimum="0.001"
                                    ShowButtonSpinner="False" FormatString="0.##"
                                    FontSize="11" Padding="4,2"/>
                     <TextBlock Grid.Column="3" Text="H" VerticalAlignment="Center" FontSize="11"
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     <NumericUpDown Grid.Column="4"
                                    Value="{Binding FieldH, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   Minimum="0.001"
                                    ShowButtonSpinner="False" FormatString="0.##"
                                    FontSize="11" Padding="4,2"/>
                 </Grid>
@@ -110,12 +112,14 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     <NumericUpDown Grid.Column="1"
                                    Value="{Binding FieldRx, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   Minimum="0.001"
                                    ShowButtonSpinner="False" FormatString="0.##"
                                    FontSize="11" Padding="4,2"/>
                     <TextBlock Grid.Column="3" Text="Ry" VerticalAlignment="Center" FontSize="11"
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                     <NumericUpDown Grid.Column="4"
                                    Value="{Binding FieldRy, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   Minimum="0.001"
                                    ShowButtonSpinner="False" FormatString="0.##"
                                    FontSize="11" Padding="4,2"/>
                 </Grid>
