@@ -1479,7 +1479,12 @@ public sealed class CnlReader
                     pexpr.Length >= 2 && pexpr[0] == '"' && pexpr[^1] == '"')
                 {
                     var rawPath      = pexpr[1..^1];
-                    var resolvedPath = _sourceDirectory is not null
+                    // A BLANK path stays blank. Path.Combine(dir, "") is dir, so an SnP whose File
+                    // was never set used to resolve to the netlist's own folder and then be reported
+                    // as a Touchstone file "not found" at that folder — a real path, pointing at
+                    // nothing the user had typed. Leaving it empty is what lets SnpModel say the file
+                    // is missing rather than misplaced.
+                    var resolvedPath = _sourceDirectory is not null && !string.IsNullOrWhiteSpace(rawPath)
                         ? Path.GetFullPath(Path.Combine(_sourceDirectory, rawPath))
                         : rawPath;
                     pexpr = "\"" + resolvedPath.Replace('\\', '/') + "\"";

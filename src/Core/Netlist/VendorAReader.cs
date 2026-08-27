@@ -295,7 +295,8 @@ public sealed class VendorAReader
                     pexpr.Length >= 2 && pexpr[0] == '"' && pexpr[^1] == '"')
                 {
                     var rawPath = pexpr[1..^1];
-                    var resolved = _sourceDirectory is not null
+                    // Blank stays blank — see CnlReader's copy of this for why.
+                    var resolved = _sourceDirectory is not null && !string.IsNullOrWhiteSpace(rawPath)
                         ? Path.GetFullPath(Path.Combine(_sourceDirectory, rawPath))
                         : rawPath;
                     pexpr = "\"" + resolved.Replace('\\', '/') + "\"";

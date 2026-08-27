@@ -332,9 +332,13 @@ public static class ComponentModelFactory
             throw new InvalidOperationException("SnP: NumPorts parameter is missing or not a number");
         int portCount = (int)np.AsReal();
 
-        if (!parameters.TryGetValue("File", out var fileVal) || fileVal.Kind != ValueKind.String)
-            throw new InvalidOperationException("SnP: File parameter is missing or not a string");
-        string filePath = fileVal.AsString();
+        // A missing or blank File is NOT refused here. This factory sees resolved parameters and has
+        // no idea which instance they came from, so its refusal could only say "SnP:" — and that is
+        // the whole complaint the message is being fixed for. SnpModel raises it instead, at stamp
+        // time, where ElaboratedComponent.InstancePath names the component and its parent cells.
+        string filePath = parameters.TryGetValue("File", out var fileVal) && fileVal.Kind == ValueKind.String
+                          ? fileVal.AsString()
+                          : "";
 
         // Default is cubic spline — anything other than an explicit "linear"/"makima" falls back to
         // it, which also covers the pre-existing stored value "Cubic".

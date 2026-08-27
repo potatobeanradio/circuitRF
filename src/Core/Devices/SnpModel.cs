@@ -52,18 +52,62 @@ public sealed class SnpModel : ComponentModel
         for (int k = 0; k < portCount; k++) PortBranchIndices[k] = -1;
     }
 
-    private SNP LoadSnp()
+    /// <summary>
+    /// Loads the backing Touchstone, or refuses in a way that NAMES THE COMPONENT.
+    ///
+    /// <para>Owner-reported, 2026-08-26: an SnP with no file set reported only
+    /// <c>"SnP: Touchstone file not found: '&lt;the workspace folder&gt;'"</c>. Two things were missing.
+    /// The component was not identified at all — the only name in the line was the ANALYSIS's
+    /// (<c>SchematicRunService</c> prefixes every analysis failure with its result name), so on a
+    /// design with several SnPs, one of them nested, there was nothing to search for. And a blank
+    /// <c>File</c> read as a wrong PATH rather than as a missing one, because an empty relative path
+    /// combines to its own base directory.</para>
+    ///
+    /// <para>The instance path is the elaborated one — dotted, top-down, e.g. <c>X1.X2.SP1</c> — so it
+    /// already IS the route through the hierarchy. That is why the refusal is raised HERE rather than
+    /// in the factory: <see cref="ElaboratedComponent.InstancePath"/> exists only once the design is
+    /// flattened, and the factory sees resolved parameters with no idea who they belong to. A blank
+    /// path therefore reaches the model instead of being refused at construction (see
+    /// <c>ComponentModelFactory.CreateSnpModel</c>).</para>
+    /// </summary>
+    private SNP LoadSnp(ElaboratedComponent c)
     {
         if (_snp is not null) return _snp;
+
+        string who = Describe(c.InstancePath);
+
+        if (string.IsNullOrWhiteSpace(_filePath))
+            throw new FileNotFoundException(
+                $"{who}: no Touchstone file is specified. Open the component's parameters and set " +
+                "'File' to a Touchstone (.sNp) file.");
+
+        // A folder is what a blank path used to turn into, and it can still be typed or pasted. It
+        // is not "not found" — the path is right there — so saying so separately stops the user
+        // hunting for a file that was never named.
+        if (Directory.Exists(_filePath))
+            throw new FileNotFoundException(
+                $"{who}: its 'File' parameter names a folder, not a Touchstone file: '{_filePath}'.",
+                _filePath);
+
         if (!File.Exists(_filePath))
             throw new FileNotFoundException(
-                $"SnP: Touchstone file not found: '{_filePath}'", _filePath);
+                $"{who}: Touchstone file not found: '{_filePath}'.", _filePath);
+
         return _snp = TouchstoneIO.ReadFile(_filePath);
     }
 
+    /// <summary>
+    /// "SnP 'X1.X2.SP1'" — the elaborated instance path, verbatim. Nested or not, the dotted path IS
+    /// the route through the hierarchy, read left to right, so it needs no gloss (owner, 2026-08-26 —
+    /// an earlier "(inside 'X1' then 'X2')" suffix said the same thing twice). An unnamed instance
+    /// (nothing but a type) gets just "SnP", so the caller never has to test for one.
+    /// </summary>
+    internal static string Describe(string instancePath)
+        => string.IsNullOrWhiteSpace(instancePath) ? "SnP" : $"SnP '{instancePath}'";
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
-        var snp   = LoadSnp();
+        var snp   = LoadSnp(c);
         double hz = omega / (2.0 * Math.PI);
 
         // Interpolate the stored S-parameters to this frequency, then convert to Z.

@@ -6,6 +6,44 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## An SnP with no Touchstone file named neither itself nor its problem (2026-08-26)
+
+Owner-reported. A schematic with an unset `File` on an SnP failed the run with:
+
+```
+Running 'S-Param_Test.csch' 0 / 101 - 'SP1': SnP: Touchstone file not found: '/…/Documents/damon2'
+```
+
+Two independent defects, one line.
+
+**1. The only name in the line belonged to the ANALYSIS.** `SchematicRunService` prefixes every
+analysis failure with `pa.ResultName`, so `'SP1'` is the S-parameter analysis — not the component.
+`SnpModel` had no idea who it was: `ComponentModelFactory` hands it resolved parameter VALUES, and
+resolved values carry no identity. On a design with several SnPs, one of them nested inside a cell,
+there was nothing to search the schematic for.
+
+The name does exist — `ElaboratedComponent.InstancePath`, the dotted top-down path the elaborator
+builds (`X1.X2.SP1`) — but only AFTER flattening, and `Stamp(mna, c, omega)` is the first place the
+model sees it. So the refusal moved into the stamp and now reads `SnP 'X1.X2.SP1': …`. The path is
+carried VERBATIM: read left to right it already is the route through the hierarchy, so a first cut
+that appended `(inside 'X1' then 'X2')` was saying the same thing twice and the owner had it removed
+the same day. **A missing `File` parameter is therefore no longer refused in the factory either** — it
+constructs with an empty path and lets the model raise the named message, rather than throwing an
+anonymous `"SnP: File parameter is missing or not a string"` from a place that cannot name anyone.
+
+**2. A blank path resolved to a real directory.** `Path.Combine(dir, "")` is `dir`, and both readers
+resolved a quoted relative `File` unconditionally — so `File=""` became the netlist's OWN folder, and
+"not found" then pointed at a path that exists and that the user never typed. `CnlReader` and
+`VendorAReader` now leave a blank path blank, which is what lets the model distinguish three cases the
+one message used to collapse: no file specified, a path naming a folder, and a genuinely absent file.
+The folder case is kept as its own sentence because a blank path is no longer the only way to reach it
+— one can still be typed or pasted.
+
+Gate: `tests/Engine.Tests/Linear/SnpMissingFileMessageTests.cs` (5 tests), T5 of which drives the
+whole `.cnl` → `Elaborator` → `Stamp` path and asserts the netlist's own directory does NOT appear in
+the message.
+
+
 ## `DeviceWorkerProcessTests` is FLAKY — one static event, two workers (2026-08-26, observed, not fixed)
 
 Found while checking a full-suite run for an unrelated change (`brief-cli-em-verb.md`), and recorded
