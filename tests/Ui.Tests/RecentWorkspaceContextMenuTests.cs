@@ -85,4 +85,80 @@ public class RecentWorkspaceContextMenuTests
         Assert.Contains("private void OpenRecent(string path) => _actions?.OpenWorkspacePath(path);",
                         code, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// <b>Remove from Recent</b> (owner, 2026-08-26) sits below the reveal item, behind a separator —
+    /// it is the only item on this menu that changes anything, and the rule holds the grouping.
+    /// </summary>
+    [Fact]
+    public void TheRecentListMenu_OffersRemoveFromRecentBelowASeparator()
+    {
+        var xaml = Read("src", "Ui", "Views", "ProjectTree", "ProjectTreeView.axaml");
+
+        int list = xaml.IndexOf("ItemsSource=\"{Binding RecentWorkspaces}\"", StringComparison.Ordinal);
+        Assert.True(list >= 0);
+        int end = xaml.IndexOf("</ItemsControl>", list, StringComparison.Ordinal);
+        var template = xaml[list..end];
+
+        int reveal = template.IndexOf("Header=\"{Binding RevealLabel}\"", StringComparison.Ordinal);
+        int sep    = template.IndexOf("<Separator/>", StringComparison.Ordinal);
+        int remove = template.IndexOf("Header=\"Remove from Recent\"", StringComparison.Ordinal);
+
+        Assert.True(remove >= 0, "the recent-list menu should offer Remove from Recent");
+        Assert.True(sep >= 0, "a separator goes above Remove from Recent");
+        Assert.True(reveal < sep && sep < remove,
+                    "order is Reveal, then the separator, then Remove from Recent");
+    }
+
+    /// <summary>
+    /// Same popup-tree constraint as the other two items: the ENTRY carries the command, and it is
+    /// actually assigned when the list is built — otherwise the item is greyed out and does nothing.
+    /// </summary>
+    [Fact]
+    public void TheRemoveItem_BindsTheEntrysOwnCommand_AndTheEntryCarriesIt()
+    {
+        var xaml = Read("src", "Ui", "Views", "ProjectTree", "ProjectTreeView.axaml");
+
+        int at = xaml.IndexOf("Header=\"Remove from Recent\"", StringComparison.Ordinal);
+        Assert.True(at >= 0);
+        var item = xaml[at..xaml.IndexOf("/>", at, StringComparison.Ordinal)];
+
+        Assert.Contains("Command=\"{Binding RemoveCommand}\"", item, StringComparison.Ordinal);
+        Assert.Contains("CommandParameter=\"{Binding Path}\"", item, StringComparison.Ordinal);
+        Assert.DoesNotContain("$parent", item, StringComparison.Ordinal);
+
+        var code = Read("src", "Ui", "ViewModels", "Dock", "ProjectTreeTool.cs");
+        int start = code.IndexOf("private void RefreshRecent()", StringComparison.Ordinal);
+        int stop  = code.IndexOf("private void OpenRecent(", StringComparison.Ordinal);
+        Assert.True(start >= 0 && stop > start);
+        Assert.Contains("RemoveCommand = RemoveRecentCommand,", code[start..stop], StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The workspace is untouched. The removal path forgets a PATH — it must not reach for any of the
+    /// delete/trash verbs, and it has to persist, or the entry returns on the next launch.
+    /// </summary>
+    [Fact]
+    public void RemovingARecentEntry_ForgetsThePathAndDeletesNothing()
+    {
+        var tool = Read("src", "Ui", "ViewModels", "Dock", "ProjectTreeTool.cs");
+        int at   = tool.IndexOf("private void RemoveRecent(", StringComparison.Ordinal);
+        Assert.True(at >= 0);
+        var body = tool[at..tool.IndexOf("private void ClearRecent(", at, StringComparison.Ordinal)];
+        Assert.Contains("_actions?.RemoveRecentWorkspace(cwsPath);", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Delete", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Trash", body, StringComparison.Ordinal);
+
+        var ws  = Read("src", "Ui", "ViewModels", "WorkspaceViewModel.cs");
+        int imp = ws.IndexOf("void ITreeActions.RemoveRecentWorkspace(", StringComparison.Ordinal);
+        Assert.True(imp >= 0);
+        var body2 = ws[imp..ws.IndexOf("// \u2500\u2500 ITreeActions: workspace-level items", imp, StringComparison.Ordinal)];
+
+        // Persisted, or the entry is back on the next launch.
+        Assert.Contains("SaveRecent();", body2, StringComparison.Ordinal);
+        // The same case-insensitive comparison PushRecent de-duplicates with.
+        Assert.Contains("StringComparison.OrdinalIgnoreCase", body2, StringComparison.Ordinal);
+        Assert.DoesNotContain("Directory.Delete", body2, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Delete", body2, StringComparison.Ordinal);
+    }
 }

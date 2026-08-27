@@ -182,6 +182,13 @@
                                         <MenuItem Header="{Binding RevealLabel}"
                                                   Command="{Binding RevealCommand}"
                                                   CommandParameter="{Binding Path}"/>
+                                        <!-- Separated because this one alone changes something. The two
+                                             above act ON the workspace; this forgets the path and the
+                                             workspace itself stays where it is. -->
+                                        <Separator/>
+                                        <MenuItem Header="Remove from Recent"
+                                                  Command="{Binding RemoveCommand}"
+                                                  CommandParameter="{Binding Path}"/>
                                     </ContextMenu>
                                 </Button.ContextMenu>
                             </Button>

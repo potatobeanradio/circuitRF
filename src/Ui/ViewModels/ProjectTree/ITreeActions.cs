@@ -95,6 +95,12 @@ public interface ITreeActions
     /// <summary>Clear all recent workspaces.</summary>
     void ClearRecentWorkspaces();
 
+    /// <summary>
+    /// Drop one entry from the recent list. The workspace itself is untouched — this forgets the
+    /// path, it does not delete anything on disk.
+    /// </summary>
+    void RemoveRecentWorkspace(string cwsPath);
+
     // ── Workspace-level actions on the tree header (owner request, 2026-08-15) ─
 
     /// <summary>

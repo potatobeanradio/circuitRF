@@ -8867,6 +8867,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         RebuildRecentMenuItems();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Case-insensitive, to match <see cref="PushRecent"/>'s own de-duplication — the list can hold a
+    /// path whose spelling differs from the one the row was built from only if the two compare equal
+    /// there, so removal has to use the same comparison or the entry would come back on the next scan.
+    /// Nothing on disk is touched: the workspace stays where it is and can be reopened from Open.
+    /// </remarks>
+    void ITreeActions.RemoveRecentWorkspace(string cwsPath)
+    {
+        if (string.IsNullOrWhiteSpace(cwsPath)) return;
+        if (_recentWorkspaces.RemoveAll(p =>
+                string.Equals(p, cwsPath, StringComparison.OrdinalIgnoreCase)) == 0) return;
+        SaveRecent();
+        RebuildRecentMenuItems();
+    }
+
     // ── ITreeActions: workspace-level items on the tree header ────────────────
     //  Each routes to the command the File menu already uses rather than repeating its work — the
     //  dirty-work prompt, the generated-cells cleanup and the picker all live in one place, and a

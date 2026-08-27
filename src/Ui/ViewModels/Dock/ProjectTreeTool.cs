@@ -103,6 +103,12 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         /// walk out to the tool view model.
         /// </summary>
         public IRelayCommand<string>? OpenCommand { get; init; }
+
+        /// <summary>
+        /// Forgets this entry — same popup-tree constraint as the two above, so it is carried here
+        /// rather than reached for. The workspace is not touched.
+        /// </summary>
+        public IRelayCommand<string>? RemoveCommand { get; init; }
     }
 
     public ObservableCollection<RecentEntry> RecentWorkspaces { get; } = new();
@@ -118,6 +124,7 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
                     RevealLabel   = RevealLabel,
                     RevealCommand = RevealRecentCommand,
                     OpenCommand   = OpenRecentCommand,
+                    RemoveCommand = RemoveRecentCommand,
                 });
         OnPropertyChanged(nameof(HasRecentWorkspaces));
     }
@@ -138,6 +145,19 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         if (string.IsNullOrWhiteSpace(cwsPath)) return;
         string dir = Path.GetDirectoryName(cwsPath) ?? cwsPath;
         _actions?.RevealPath(dir);
+    }
+
+    /// <summary>
+    /// Drops one row from the recent list. The workspace folder is left exactly as it is — this is a
+    /// "forget this path" verb, not a delete — and the list is re-read afterwards so the row goes away
+    /// without waiting for the next workspace open.
+    /// </summary>
+    [RelayCommand]
+    private void RemoveRecent(string? cwsPath)
+    {
+        if (string.IsNullOrWhiteSpace(cwsPath)) return;
+        _actions?.RemoveRecentWorkspace(cwsPath);
+        RefreshRecent();
     }
 
     [RelayCommand]
