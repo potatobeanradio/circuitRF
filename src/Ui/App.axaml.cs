@@ -194,6 +194,8 @@ public partial class App : Application
                     Avalonia.Threading.DispatcherPriority.Background);
             }
 
+            Diagnostics.MenuBarProbe.StartIfRequested();   // opt-in; inert without CRF_MENU_DIAG
+
             // "The last session crashed" is announced LAST, at ApplicationIdle. Everything above can
             // still open a workspace, and a workspace open CLEARS the Messages region — announcing
             // any earlier would post the notice and then wipe it. Idle is below every priority those
