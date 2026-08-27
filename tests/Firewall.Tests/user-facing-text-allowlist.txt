@@ -1,0 +1,499 @@
+# Existing user-facing exception text below the UI firewall — the BACKLOG, not a target.
+#
+# Every line is one English sentence authored in src/Core, src/RfCore, src/Engine, src/Design or
+# src/WBond and delivered to the user by being thrown, caught in src/Ui, and interpolated into a
+# Messages call. brief-localization-groundwork.md R-loc-5 converts ONE family (the EM run-service
+# refusals) to coded diagnostics and deliberately leaves the rest alone; this file exists so the
+# rest cannot quietly grow.
+#
+# The gate (UserFacingTextGateTests) fails on any entry NOT listed here. To add a user-facing
+# message below the firewall, prefer a CircuitRF.Diagnostics.Diagnostic — an id, typed arguments
+# and an English template — which the Messages window can filter, deduplicate and hang an action
+# on. Adding a line here instead is always possible and should always be a deliberate choice.
+#
+# Shrinking this file is the point. Convert opportunistically, whenever a message is being touched
+# for another reason, and delete its line.
+#
+# Format: <path>|<exact message text>
+#
+src/Core/ComponentModel.cs|{GetType().Name} is not a nonlinear model
+src/Core/ComponentModel.cs|{GetType().Name}.Stamp is not implemented
+src/Core/ComponentModel.cs|{GetType().Name}: H[{w}] is not defined
+src/Core/Design/Analysis.cs|SParameterAnalysis requires at least one FrequencySpec.
+src/Core/Devices/ComponentModelFactory.cs|Expected numeric value, got {v.Kind}
+src/Core/Devices/ComponentModelFactory.cs|ExtDevice: provider '{providerName}' described type '{typeId}' with 
+src/Core/Devices/ComponentModelFactory.cs|ExtDevice: provider '{providerName}' does not expose a device type '{typeId}'. 
+src/Core/Devices/ComponentModelFactory.cs|ExtDevice: the 'Provider' parameter is missing — it names the registered device 
+src/Core/Devices/ComponentModelFactory.cs|ExtDevice: the 'Type' parameter is missing — it names the device type to create.
+src/Core/Devices/ComponentModelFactory.cs|Match '{name}': its 'Design' parameter could not be read as a matching-network 
+src/Core/Devices/ComponentModelFactory.cs|Match '{name}': its 'Design' parameter is empty, so there is no matching network to 
+src/Core/Devices/ComponentModelFactory.cs|Match '{name}': this design cannot be synthesised. {refusal.Message}
+src/Core/Devices/ComponentModelFactory.cs|Match '{name}': this design produced no ladder. Re-open the Match Designer on this 
+src/Core/Devices/ComponentModelFactory.cs|Mutual: Inductor1 parameter is missing or not a string
+src/Core/Devices/ComponentModelFactory.cs|Mutual: Inductor2 parameter is missing or not a string
+src/Core/Devices/ComponentModelFactory.cs|P1Tone '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.
+src/Core/Devices/ComponentModelFactory.cs|PnTone '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': C[{n}] index must be ≥ 1
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': C[{n}] value must be a String (instance name), got {kv.Value.Kind}
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': Cport[{n}] value must be a String, got {kv.Value.Kind}
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': Cport[{n}]={portStr} is not a valid port number (≥1)
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': H[{w}] is a built-in weighting function and cannot be redefined
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': H[{w}] must be stored as a String expression, got {kv.Value.Kind}
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': I[p,{w}] references weighting H[{w}] which is not defined
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': equation references '_c{refN}' but C[{refN}] is not defined
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': equation references port {p} but only {portCount} port(s) of nets were given
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': implicit equation F[...] not supported; use I[...] for explicit current
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': {key} must be stored as a String expression, got {kv.Value.Kind}
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': {key} must be stored as a String expression, got {val.Kind}
+src/Core/Devices/ComponentModelFactory.cs|SDD: SddPortCount is required
+src/Core/Devices/ComponentModelFactory.cs|SnP: NumPorts parameter is missing or not a number
+src/Core/Devices/ComponentModelFactory.cs|Tuner '{instanceName}': Z[1] or G[1] is required (the fundamental termination must be specified).
+src/Core/Devices/ComponentModelFactory.cs|Tuner '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.
+src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' declares no device type. It loaded, so it is a compiled 
+src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' declares {offered.Count} device types, so which one to 
+src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' has no device type '{typeId}'. It offers: 
+src/Core/Devices/ComponentModelFactory.cs|VerilogA: no model file. Set the component's 'File' parameter to a compiled model — 
+src/Core/Devices/ComponentModelFactory.cs|Z_Port: ZPortCount is required
+src/Core/Devices/ComponentModelFactory.cs|wBond: its linked wirebond file was not found: '{path}'. Either restore the file, 
+src/Core/Devices/ComponentModelFactory.cs|wBond: neither 'Design' (the embedded wires) nor 'File' (a .wBond to load) is set.
+src/Core/Devices/ComponentModelFactory.cs|wBond: the 'Design' parameter could not be read as a wirebond design. Re-import 
+src/Core/Devices/External/DeviceWorkerInstance.cs|'{Descriptor.TypeId}' has {n} nodes, but evaluation point {k} supplied {v.Count} voltages.
+src/Core/Devices/External/DeviceWorkerInstance.cs|'{Descriptor.TypeId}' returned {data.Length} values for {count} evaluation points; 
+src/Core/Devices/External/DeviceWorkerInstance.cs|Asked '{Descriptor.TypeId}' for {count} points of {n} nodes and was answered with 
+src/Core/Devices/External/DeviceWorkerProtocol.cs|Every frame must carry a control-plane object.
+src/Core/Devices/External/DeviceWorkerProtocol.cs|The device worker announced an implausible frame ({jsonLen} + {binLen} bytes). 
+src/Core/Devices/External/DeviceWorkerProtocol.cs|The device worker announced {binLen} payload bytes, which is not a whole number 
+src/Core/Devices/External/DeviceWorkerProtocol.cs|The device worker closed its output before sending a reply. It may have exited; 
+src/Core/Devices/External/DeviceWorkerProtocol.cs|The device worker sent a frame with no control-plane object; the stream is not in step.
+src/Core/Devices/External/DeviceWorkerProtocol.cs|The device worker's reply was truncated mid-frame.
+src/Core/Devices/External/DeviceWorkerProtocol.cs|The device worker's reply was truncated mid-payload.
+src/Core/Devices/External/DeviceWorkerProvider.cs|'{Name}' created '{typeId}' but did not say which instance it created.
+src/Core/Devices/External/DeviceWorkerProvider.cs|'{Name}' has no device type named '{typeId}'. It offers: 
+src/Core/Devices/External/DeviceWorkerProvider.cs|'{descriptor.TypeId}' has no parameter named '{name}'. It declares: 
+src/Core/Devices/External/DeviceWorkerProvider.cs|Parameter '{name}' of '{descriptor.TypeId}' expects a number, but is set to '{text}'.
+src/Core/Devices/External/DeviceWorkerProviderResolver.cs|A model library was chosen for a device from '{kit}', but the kit's own settings 
+src/Core/Devices/External/DeviceWorkerProviderResolver.cs|The kit '{name}' cannot evaluate its devices on this machine 
+src/Core/Devices/External/DeviceWorkerProviderResolver.cs|The kit '{name}' describes how to evaluate its devices, but that 
+src/Core/Devices/External/DeviceWorkerTransport.cs|The device worker '{executablePath}' could not be started.
+src/Core/Devices/External/ExternalDeviceModel.cs|External device '{InstanceLabel}' (provider '{ProviderName}', type 
+src/Core/Devices/External/ExternalDeviceModel.cs|External device '{InstanceLabel}': {ex.Message}
+src/Core/Devices/External/ExternalDeviceRegistry.cs|External device provider '{name}' is not available. Registered: 
+src/Core/Devices/External/VerilogAFileResolver.cs|The compiled model file '{modelFile}' does not exist. Point the component's model 
+src/Core/Devices/External/VerilogAFileResolver.cs|circuitRF's own model-hosting helper ('{WorkerCommand}') was not found beside the 
+src/Core/Devices/MatchModel.cs|Match: ladder element '{e.Name}' has the unusable value {e.Value}. 
+src/Core/Devices/Microstrip/KlopfensteinTaper.cs|Klopfenstein taper: GammaMax={gammaMax:G6} must be strictly less than 
+src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path1}' is not an InductorModel
+src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path2}' is not an InductorModel
+src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path1}' not found
+src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path2}' not found
+src/Core/Devices/MutualInductanceModel.cs|MutualInductanceModel '{c.InstancePath}': Resolve() was not called
+src/Core/Devices/SddModel.cs|SDD '{_name}': I[p,{w}] used but H[{w}] is not defined
+src/Core/Devices/SnpModel.cs|{who}: Touchstone file not found: '{_filePath}'.
+src/Core/Devices/SnpModel.cs|{who}: its 'File' parameter names a folder, not a Touchstone file: '{_filePath}'.
+src/Core/Devices/SnpModel.cs|{who}: no Touchstone file is specified. Open the component's parameters and set 
+src/Core/Devices/WBondModel.cs|The wBond design '{sourceDescription}' has no wires, so the component has no pins. 
+src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' ({_sourceDescription}) has its ground plane disabled and no array 
+src/Core/Elaboration/Elaborator.cs|'{inst.Reference}:{inst.InstanceName}' parameter '{ov.Name}' is frequency-dependent, 
+src/Core/Elaboration/Elaborator.cs|'{path}' states a device multiplier {MultiplierParamName}={m:G6}. It is the number 
+src/Core/Elaboration/Elaborator.cs|Cell '{inst.Reference}' not found in libraries (referenced by '{childPath}')
+src/Core/Elaboration/Elaborator.cs|Chain '{inst.InstanceName}': expected 4 nets (port1 +,− then port2 +,−); 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}') declares {d.ExternalPinCount} 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): external pin {node.Index} is reported 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is reported both 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is slaved to 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): pins 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): the model writes no equation for 
+src/Core/Elaboration/Elaborator.cs|Failed to create model for primitive '{inst.Reference}' at '{childPath}'
+src/Core/Elaboration/Elaborator.cs|SDD '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); 
+src/Core/Elaboration/Elaborator.cs|SDD equation references '{name}' which resolved to a Complex value; 
+src/Core/Elaboration/Elaborator.cs|Z_Port '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); got {netCount}.
+src/Core/Elaboration/Elaborator.cs|Z_Port '{inst.InstanceName}': expected {2 * portCount} nets (2 per port: +,−) for a {portCount}-port 
+src/Core/Expressions/Evaluator.cs|'[...]' indexing requires a cube (e.g. HB1.V[...]); got {target.Kind}.
+src/Core/Expressions/Evaluator.cs|'{cl.Name}' requires real arguments
+src/Core/Expressions/Evaluator.cs|'{label}' not found on axis '{axis.Name}'. Available: [{string.Join(
+src/Core/Expressions/Evaluator.cs|Axis '{axis.Name}' has no name labels — cannot resolve \"{label}\".
+src/Core/Expressions/Evaluator.cs|Cannot apply unit '{unit}' to a String value
+src/Core/Expressions/Evaluator.cs|Condition must be Bool, got {cond.Kind}
+src/Core/Expressions/Evaluator.cs|Cube index has {ix.Tokens.Length} token(s) but cube has {cube.Rank} axis/axes 
+src/Core/Expressions/Evaluator.cs|Index for axis '{axis.Name}' must be ':', a name, an integer, or a range — got {v.Kind}.
+src/Core/Expressions/Evaluator.cs|Operator '{lg.Op}' requires Bool, got {l.Kind}
+src/Core/Expressions/Evaluator.cs|Operator '{lg.Op}' requires Bool, got {r.Kind}
+src/Core/Expressions/Evaluator.cs|Port {n} not found on axis '{axis.Name}'. Available ports: 
+src/Core/Expressions/Evaluator.cs|Unknown AST node: {expr.GetType().Name}
+src/Core/Expressions/Evaluator.cs|Unknown binary op '{b.Op}'
+src/Core/Expressions/Evaluator.cs|Unknown comparison op '{cmp.Op}'
+src/Core/Expressions/Evaluator.cs|Unknown constant '{name}'
+src/Core/Expressions/Evaluator.cs|Unknown unary op '{u.Op}'
+src/Core/Expressions/Evaluator.cs|Unknown unit '{unit}'
+src/Core/Expressions/Evaluator.cs|at(): the index must be a number, e.g. at(x, \"{axis}\", 0).
+src/Core/Expressions/Evaluator.cs|at(): this value is a single number, so it has no '{axis}' axis to pin 
+src/Core/Expressions/Evaluator.cs|complex() imaginary part must be Real
+src/Core/Expressions/Evaluator.cs|complex() real part must be Real
+src/Core/Expressions/Evaluator.cs|if() condition must be Bool, got {cond.Kind}
+src/Core/Expressions/Evaluator.cs|polar() magnitude must be Real
+src/Core/Expressions/Evaluator.cs|polar() phase must be Real
+src/Core/Expressions/Evaluator.cs|sign() requires a real argument
+src/Core/Expressions/Evaluator.cs|{cl.Name}: {axisName} '{label}' not found. 
+src/Core/Expressions/Evaluator.cs|{exprName}: V back-solve: unsupported argument combination 
+src/Core/Expressions/Evaluator.cs|{exprName}: node '{nodeName}' not found in stored cube or netlist.
+src/Core/Expressions/Evaluator.cs|{name}: argument {idx} must be an integer index or All, got {v.Kind}
+src/Core/Expressions/FreqDeferral.cs|'{original.Name}' resolved to {v.Kind}, which cannot appear inside a 
+src/Core/Expressions/FreqDeferral.cs|A frequency-dependent expression in scope '{scope.DebugName}' indexes a result 
+src/Core/Expressions/FreqDeferral.cs|A frequency-dependent expression in scope '{scope.DebugName}' nests more than 
+src/Core/Expressions/FreqDeferral.cs|Cannot render {e.GetType().Name} back to expression text.
+src/Core/Expressions/MeasurementContext.cs|No analysis named '{name}' in measurement context. Available: [{string.Join(
+src/Core/Expressions/Parser.cs|'~' (curve family) has no meaning in a measurement; use ':' to keep an axis 
+src/Core/Expressions/Parser.cs|Expected '{kw}', got '{Current.Text}'
+src/Core/Expressions/Parser.cs|Expected '{text}', got '{Current.Text}'
+src/Core/Expressions/Parser.cs|Unexpected token '{p.Current.Text}'
+src/Core/Expressions/Parser.cs|Unexpected token '{t.Text}'
+src/Core/Expressions/Parser.cs|Unknown infix op '{op}'
+src/Core/Expressions/PolynomialFit.cs|PolynomialFit: singular normal matrix (degenerate/duplicate data?)
+src/Core/Expressions/PolynomialFit.cs|need ≥ {n} points to fit order {order}, got {m}
+src/Core/Expressions/PolynomialFit.cs|v and c must be the same length
+src/Core/Expressions/SddCompiled.cs|Unknown comparison op '{cmp.Op}'
+src/Core/Expressions/SddCompiled.cs|Unknown compiled condition node: {c.GetType().Name}
+src/Core/Expressions/SddCompiled.cs|Unknown compiled node kind: {node.Kind}
+src/Core/Expressions/SddCompiled.cs|unreachable binary op
+src/Core/Expressions/SddEvaluator.cs|Port count {nV} + control count {nC} = {n} exceeds Dual.MaxN = {Dual.MaxN}; 
+src/Core/Expressions/SddEvaluator.cs|Port count {n} exceeds Dual.MaxN = {Dual.MaxN}
+src/Core/Expressions/SddEvaluator.cs|SDD conditional: expected a comparison or logical expression, got {cond.GetType().Name}
+src/Core/Expressions/SddEvaluator.cs|SDD context: '!' not allowed (SDD equations are real-only)
+src/Core/Expressions/SddEvaluator.cs|SDD context: comparison result is Bool, cannot use as scalar
+src/Core/Expressions/SddEvaluator.cs|SDD context: imaginary unit 'j' not allowed (SDD equations are real-only)
+src/Core/Expressions/SddEvaluator.cs|SDD context: logical result is Bool, cannot use as scalar
+src/Core/Expressions/SddEvaluator.cs|SDD context: string literal not allowed in expression
+src/Core/Expressions/SddEvaluator.cs|Unknown AST node: {e.GetType().Name}
+src/Core/Expressions/SddEvaluator.cs|Unknown binary op '{b.Op}'
+src/Core/Expressions/SddEvaluator.cs|Unknown comparison op '{cmp.Op}'
+src/Core/Expressions/SddEvaluator.cs|Unknown constant '{name}'
+src/Core/Expressions/SddEvaluator.cs|Unknown unary op '{u.Op}'
+src/Core/Expressions/SddRegisterProgram.cs|SddRegisterCompiler: 'if' reached the register path
+src/Core/Expressions/SddRegisterProgram.cs|SddRegisterCompiler: conditional reached the register path
+src/Core/Expressions/SddRegisterProgram.cs|Unknown register op: {ins.Op}
+src/Core/Expressions/Token.cs|Unexpected '=' (did you mean '=='?)
+src/Core/Expressions/Token.cs|Unexpected character '{c}'
+src/Core/Expressions/Token.cs|Unterminated string literal
+src/Core/Expressions/Value.cs|Bool value used in arithmetic context
+src/Core/Expressions/Value.cs|Cannot apply unary + to a {a.Kind}
+src/Core/Expressions/Value.cs|Cannot compare Bool values with ==
+src/Core/Expressions/Value.cs|Cannot compare a String with a {(a.Kind == ValueKind.String ? b.Kind : a.Kind)} using ==
+src/Core/Expressions/Value.cs|Cannot convert String to Complex
+src/Core/Expressions/Value.cs|Cannot convert {Kind} to Complex
+src/Core/Expressions/Value.cs|Cannot negate a {a.Kind}
+src/Core/Expressions/Value.cs|Cube operand must go through Add/Sub/Mul/Div — not CommonArithmeticKind
+src/Core/Expressions/Value.cs|Division by zero
+src/Core/Expressions/Value.cs|Operator '{op}' requires Bool operands, got {v.Kind}
+src/Core/Expressions/Value.cs|Operator '{op}' requires real operands, got {v.Kind}
+src/Core/Expressions/Value.cs|String value used in arithmetic context
+src/Core/Expressions/Value.cs|Value is {Kind}, not Bool
+src/Core/Expressions/Value.cs|Value is {Kind}, not Complex
+src/Core/Expressions/Value.cs|Value is {Kind}, not Cube
+src/Core/Expressions/Value.cs|Value is {Kind}, not Real
+src/Core/Expressions/Value.cs|Value is {Kind}, not String
+src/Core/Match/MatchEmbedding.cs|The Match design payload decoded to null.
+src/Core/Match/MatchPrototypes.cs|odd power of Omega in an even family
+src/Core/Match/NortonTransform.cs|A transform pair is {gap} apart; only 1..3 is reachable.
+src/Core/Match/NortonTransform.cs|Making a transform pair adjacent would swap {el[a].Name} past {el[b].Name}, which 
+src/Core/Match/NortonTransform.cs|The pair did not become adjacent.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Npts={nptsStr} must be a positive integer.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Start/Stop form requires Step= or Npts=.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Step= must be > 0 (got {step}).
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Values= must contain at least one value.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': cannot parse Start='{startStr}'.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': cannot parse Step='{stepStr}'.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': cannot parse Stop='{stopStr}'.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': cannot parse Values='{valuesStr}': {ex.Message}
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': missing or empty Inner= key.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': missing or empty Var= key.
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': needs Values= or Start=/Stop=.
+src/Core/Pdk/PdkImporter.cs|not a number
+src/Design/Cells/CellFolder.cs|Invalid cell name '{cellName}': {reason}
+src/Design/Cells/CellPersistence.cs|.ccell format_version {cell.FormatVersion} does not match 
+src/Design/Cells/CellPersistence.cs|Failed to deserialize .ccell file.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected ',' or ')' at position {p.Index}.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected '{c}' at position {Index}.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected a layer or an operation at position {p.Index}.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected a layer or an operation.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Expected a number at position {start}.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Layer '{layer}/{datatype}' is out of range.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Unhandled expression node {e.GetType().Name}.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Unhandled select op {op}.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Unknown operation '{name}'.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|Unterminated '{name}(' — expected ')'.
+src/Design/Layout/Drc/DrcLayerExprParser.cs|{message} (at position {pos})
+src/Design/Layout/Em/EmRunService.cs|Touchstone export returned {result.Status}.
+src/Design/Layout/Em/EmRunService.cs|the solved DataSet carries no S cube
+src/Design/Layout/Em/EmSetupPersistence.cs|.cem format_version {file.FormatVersion} is newer than expected 
+src/Design/Layout/Em/EmSetupPersistence.cs|Failed to deserialize .cem file.
+src/Design/Layout/LayoutCoordinateWalk.cs|{shape.GetType().Name} is axis-aligned by type and cannot be walked through a rotating 
+src/Design/Layout/LayoutPersistence.cs|.clay format_version {file.FormatVersion} is newer than 
+src/Design/Layout/LayoutPersistence.cs|Failed to deserialize .clay file.
+src/Design/Layout/PCells/PCellValueJsonConverter.cs|Unhandled PCell value kind '{value.Kind}'.
+src/Design/Layout/PCells/PCellValueJsonConverter.cs|Unrecognised PCell parameter value token '{reader.TokenType}'.
+src/Design/Layout/PCells/PCellValueJsonConverter.cs|Unrecognised PCell parameter value — expected a number, string, boolean, or {{\"{IntTag}\": n}}.
+src/Design/Layout/TechPersistence.cs|.ctech format_version {file.FormatVersion} is newer than 
+src/Design/Layout/TechPersistence.cs|Failed to deserialize .ctech file.
+src/Design/Workspace/WorkspacePersistence.cs|.cws format_version {ws.FormatVersion} does not match 
+src/Design/Workspace/WorkspacePersistence.cs|Failed to deserialize .cws file.
+src/Engine/HarmonicBalance/HbApft.cs|HB (multi-tone): the APFT matrix would need {(long)S * D:N0} entries 
+src/Engine/HarmonicBalance/HbApft.cs|HB (multi-tone): the {T}-tone APFT sample set is rank-deficient 
+src/Engine/HarmonicBalance/HbEngine.cs|Commensurability check failed: source '{ec.InstancePath}' 
+src/Engine/HarmonicBalance/HbEngine.cs|Commensurability check failed: source '{ec.InstancePath}' Freq={fTone:G6} Hz 
+src/Engine/HarmonicBalance/HbEngine.cs|Commensurability check failed: source '{ec.InstancePath}' {key}={fTone:G6} Hz 
+src/Engine/HarmonicBalance/HbEngine.cs|Commensurability check failed: source '{instance}' {key}={fTone:G6} Hz 
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sdd.Name}': C[{n}] branch index {brIdx} 
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sdd.Name}': C[{n}]={refInst} — no component named '{refInst}'.
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}] references {kind}; Cport[{n}]=<port> is required.
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}] — {kind} branch index not assigned; 
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}] — {kind} port {port} branch index not assigned.
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}]={target.InstancePath} references 
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': Cport[{n}]={port} out of range for {kind} 
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': Cport[{n}]={port} — {kind} is two-terminal; 
+src/Engine/HarmonicBalance/HbEngine.cs|HB: {tones} tones at MaxMixOrder={maxMixOrder} retains {products:N0} mixing products 
+src/Engine/HarmonicBalance/HbEngine.cs|HB: {tones} tones declared, but this engine supports at most {_settings.HbMaxTones} 
+src/Engine/HarmonicBalance/HbEngine.cs|Vstar dimensions [{Vstar.GetLength(0)},{Vstar.GetLength(1)}] 
+src/Engine/HarmonicBalance/TwoToneMeasurements.cs|Interface node '{node}' not found among [{string.Join(
+src/Engine/HarmonicBalance/TwoToneMeasurements.cs|Mixing product {MixingLattice.Label(k)} and its conjugate are not in the retained set 
+src/Engine/HarmonicBalance/TwoToneMeasurements.cs|TwoToneMeasurements requires a multi-tone DataSet (no 'mixIndex' axis found — 
+src/Engine/HarmonicBalance/TwoToneMeasurements.cs|V cube has no axis named 'node' — not a valid HB DataSet.
+src/Engine/HarmonicBalance/TwoToneMeasurements.cs|V cube node axis has no labels.
+src/Engine/Loadpull/GamReader.cs|[.gam line {lineNum}] Cannot parse '{s}' as a number.
+src/Engine/Loadpull/GamReader.cs|[.gam line {lineNum}] Empty complex literal.
+src/Engine/Loadpull/GamReader.cs|[.gam line {lineNum}] Expected 'mag angle' (two columns), got: '{line}'
+src/Engine/Loadpull/GamReader.cs|[.gam line {lineNum}] Expected 'real imag' (two columns), got: '{line}'
+src/Engine/Loadpull/LoadpullEngine.cs|LoadTuner '{p.LoadTunerName}' DUT node (node {loadDutNode}, net 
+src/Engine/Loadpull/LoadpullEngine.cs|LoadpullAnalysis '{lpa.Name}': Grid file not found: '{lpa.GridPath}'
+src/Engine/Loadpull/LoadpullEngine.cs|LoadpullAnalysis '{lpa.Name}': Grid= path is required.
+src/Engine/Loadpull/LoadpullEngine.cs|LoadpullAnalysis: LoadTuner= is required.
+src/Engine/Loadpull/LoadpullEngine.cs|LoadpullAnalysis: SourceTuner= is required.
+src/Engine/Loadpull/LoadpullEngine.cs|SourceTuner '{p.SourceTunerName}' DUT node (node {srcDutNode}, net 
+src/Engine/Loadpull/LoadpullEngine.cs|{role}={instanceName}: expected TunerModel, got {ec.Model.GetType().Name}.
+src/Engine/Loadpull/LoadpullEngine.cs|{role}={instanceName}: no Tuner named '{instanceName}'. Available: [{avail}]
+src/Engine/MeasurementEvaluator.cs|Measurement '{m.Name}' produced an unsupported value kind: {result.Kind}
+src/Engine/MnaSystem.cs|AMD ordering failed — assembled matrix is empty. 
+src/Engine/MnaSystem.cs|Singular MNA matrix ({reason}). 
+src/Engine/Mom/ChargeSolver.cs|MoM: cannot solve an empty mesh.
+src/Engine/Mom/ChargeSolver.cs|MoM: mesh has no conductors.
+src/Engine/Mom/Dcim.cs|A DcimModel's images are referenced to the top half-space and need z, z′ ≥ H = 
+src/Engine/Mom/Dcim.cs|DerivativeAtHeights belongs to a Dcim.FitAtHeights model.
+src/Engine/Mom/Dcim.cs|This DcimModel was fitted for a source and observer in the TOP HALF-SPACE, where 
+src/Engine/Mom/LayeredMedium.cs|Every split fraction must be positive.
+src/Engine/Mom/LayeredMedium.cs|LayeredStaticGreens is referenced to the top half-space and needs z, z′ ≥ H = 
+src/Engine/Mom/LayeredMedium.cs|The top termination is {stack.Top}, a solid wall — there is no half-space above 
+src/Engine/Mom/ModalDecomposition.cs|MoM: modal matrix column {m} is degenerate — the modes are not independent.
+src/Engine/Mom/ModalDecomposition.cs|MoM: the RLGC model has no conductors.
+src/Engine/Mom/ModalDecomposition.cs|MoM: the lossless modal eigenproblem [C]v = λ[L]⁻¹v could not be solved. Both 
+src/Engine/Mom/ModalDecomposition.cs|The even/odd decomposition is defined for exactly two conductors; this model has 
+src/Engine/Mom/PlanarAdaptiveSweep.cs|at least one node
+src/Engine/Mom/PlanarAdaptiveSweep.cs|one value per node
+src/Engine/Mom/PlanarAim.cs|Expected a vector of length {_n}, got {x.Length}.
+src/Engine/Mom/PlanarAim.cs|The AIM accelerator models the horizontal (x̂/ŷ) basis family only. A ẑ-directed 
+src/Engine/Mom/PlanarAim.cs|The accelerated solve did not converge: {iterations} iteration(s) reached a relative 
+src/Engine/Mom/PlanarAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
+src/Engine/Mom/PlanarAim.cs|The stencil's Vandermonde matrix is singular, which can only happen if the grid 
+src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no in-plane ramp: its current crosses the shared FOOTPRINT 
+src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no shared EDGE — its unit current crosses the shared 
+src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis spans two cells at the same (x, y) on DIFFERENT levels, so 
+src/Engine/Mom/PlanarBasisFunctions.cs|Only a vertical (via) basis has a shared footprint.
+src/Engine/Mom/PlanarCalibration.cs|Each long standard needs its own Δℓ.
+src/Engine/Mom/PlanarCalibration.cs|Port {port.Number}'s feed is only {port.LongitudinalRunM.Count} cell(s) long, and the 
+src/Engine/Mom/PlanarCurrentDensity.cs|The solution has {basisCurrents.Count} unknowns and the mesh has 
+src/Engine/Mom/PlanarDeembed.cs|The two calibration standards have the same length.
+src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance solve (D7's reference impedance) needs 
+src/Engine/Mom/PlanarDeembed.cs|{p} ports need {p} error boxes, not {boxes.Count}.
+src/Engine/Mom/PlanarExcitation.cs|A solve needs at least one port.
+src/Engine/Mom/PlanarFeedExtension.cs|{p} ports need {p} lengths and {p} propagation constants.
+src/Engine/Mom/PlanarFill.cs|These cores were built geometry-only (M5's accelerator path), so the cached cell-pair 
+src/Engine/Mom/PlanarFill.cs|This fill needs the cached cell-pair and basis-pair cores, and these were built 
+src/Engine/Mom/PlanarFill.cs|This mesh has {n:N0} unknowns, which is past the {SurfaceMesher.UnknownCeiling:N0}-unknown 
+src/Engine/Mom/PlanarKernel.cs|A planar solve needs at least one port. Place port labels on the conductor ends in 
+src/Engine/Mom/PlanarKernel.cs|This layout has no port {drivenPortNumber} to drive; it has 
+src/Engine/Mom/PlanarSolve.cs|A sweep needs at least one frequency.
+src/Engine/Mom/PlanarSolve.cs|Port {owners[ci].Number}'s calibration standard needs {nStd:N0} unknowns to 
+src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at 
+src/Engine/Mom/PlanarSolve.cs|The sweep's lowest frequency is {SurfaceMesher.Eng(fLo)}Hz. 
+src/Engine/Mom/PlanarSolve.cs|This mesh was built without a level list, so the general kernel has no height to 
+src/Engine/Mom/PlanarSolve.cs|This problem needs the GENERAL (multi-level) kernel, and M5's accelerator models the 
+src/Engine/Mom/PlanarSystem.cs|This geometry needs {n:N0} unknowns, which is past the 
+src/Engine/Mom/QuasiStaticKernel.cs|{Name} cannot solve this problem. {ok.Reason}
+src/Engine/Mom/RlgcExtractor.cs|MoM: [C₀] is singular — the conductor set has no reference.
+src/Engine/Mom/RlgcToSparams.cs|At least one frequency point required.
+src/Engine/Mom/RlgcToSparams.cs|This cross-section has {rlgc.ConductorCount} signal conductor
+src/Engine/Mom/SingularExtraction.cs|These terms carry no radial derivative. Only the MIXED component has one, because it 
+src/Engine/Mom/SingularExtraction.cs|This model was fitted for the TOP HALF-SPACE, where the height pair is an exact shift 
+src/Engine/Mom/SingularExtraction.cs|nothing to combine
+src/Engine/Mom/SommerfeldIntegral.cs|EvaluateLayered is referenced to the top half-space and needs z, z′ ≥ H = {h:G6} m; 
+src/Engine/Mom/SpectralGreens.cs|The top termination is {Stack.Top}, a solid wall — there is no half-space above 
+src/Engine/Mom/SpectralGreens.cs|The {what} at z = {z:G6} m lies inside the stack's {(r == 0 ? 
+src/Engine/Mom/SpectralGreens.cs|The {what} height is {z}; it must be finite.
+src/Engine/Mom/SpectralGreens.cs|This is SpectralGreens — the ONE-LAYER kernel — and it is defined for z, z′ ≥ h = 
+src/Engine/Mom/SpectralGreens.cs|{kernel} has no 'asymptotic top reflection': it is not built from a reflection 
+src/Engine/Mom/SurfaceMesher.cs|This mesh has {n:N0} unknowns, which is past the {ceiling:N0}-unknown 
+src/Engine/NonlinearDcEngine.cs|SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' 
+src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] references a {kind} device; 
+src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] — {kind} branch index not yet assigned. 
+src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] — {kind} port {port} branch index not yet assigned.
+src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' 
+src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} is out of range for {kind} device 
+src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} — {kind} is a two-terminal device; 
+src/Engine/ParametricSweepEngine.cs|Parametric sweep '{sweep.Name}': inner analysis 
+src/Engine/ParametricSweepEngine.cs|ParametricSweepEngine: inner analysis type 
+src/Engine/SParameterEngine.cs|S-parameter analysis requires at least one Port, Term, or P1Tone component at the testbench top level. 
+src/Engine/SParameterEngine.cs|SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' 
+src/Engine/SParameterEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' 
+src/Engine/SParameterEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} — referenced device allocated no branch 
+src/Engine/SParameterEngine.cs|{ec.InstancePath}: Port/Term is missing the Num parameter.
+src/RfCore/Data/DataCube.cs|At least one cube is required.
+src/RfCore/Data/DataCube.cs|Axis '{Axes[d].Name}' index {pinIdx} out of range [0,{axisLen}).
+src/RfCore/Data/DataCube.cs|Axis {d} length mismatch: {a.Axes[d].Length} vs {b.Axes[d].Length}.
+src/RfCore/Data/DataCube.cs|Cannot align axis '{sx.Name}': differing coordinates.
+src/RfCore/Data/DataCube.cs|Cannot align axis '{sx.Name}': lengths {result[j].Length} vs {sx.Length}.
+src/RfCore/Data/DataCube.cs|Cannot reduce an empty axis.
+src/RfCore/Data/DataCube.cs|Cube [{n}] DataKind mismatch.
+src/RfCore/Data/DataCube.cs|Cube [{n}] axis {d} length {cubes[n].Axes[d].Length} 
+src/RfCore/Data/DataCube.cs|Cube [{n}] rank mismatch.
+src/RfCore/Data/DataCube.cs|Cube is Complex.
+src/RfCore/Data/DataCube.cs|Cube is Real.
+src/RfCore/Data/DataCube.cs|Cube rank mismatch: {a.Rank} vs {b.Rank}.
+src/RfCore/Data/DataCube.cs|Data length {dataLength} does not match axes shape {expected}.
+src/RfCore/Data/DataCube.cs|Expected {Rank} slice arguments, got {args.Length}.
+src/RfCore/Data/DataCube.cs|Labels length ({labels.Length}) must match Values length ({values.Length}).
+src/RfCore/Data/DataCube.cs|New axis length ({newAxis.Length}) must match cube count ({cubes.Count}).
+src/RfCore/Data/DataCube.cs|No axis named '{name}' — {available}.
+src/RfCore/Data/DataCube.cs|No axis named '{name}'.
+src/RfCore/Data/DataCube.cs|Peak requires a Real cube — call .Mag() first.
+src/RfCore/Data/DataCube.cs|Reduce requires a Real cube — call .Mag() first.
+src/RfCore/Data/DataCube.cs|Slice arg {d} must be int or Range, got {args[d]?.GetType().Name}.
+src/RfCore/Data/DataCube.cs|SliceResult is a bare element, not a DataCube.
+src/RfCore/Data/DataCube.cs|SliceResult is not a Complex scalar.
+src/RfCore/Data/DataCube.cs|SliceResult is not a Real scalar.
+src/RfCore/Data/DataCube.cs|{op} requires a Complex cube.
+src/RfCore/Data/DataSet.cs|At least one DataSet is required.
+src/RfCore/Data/DataSet.cs|Axis '{axisName}' of cube '{cubeName}' has no string labels — 
+src/RfCore/Data/DataSet.cs|Cannot build a DataSet from an empty SNP.
+src/RfCore/Data/DataSet.cs|Cube name must be non-empty.
+src/RfCore/Data/DataSet.cs|Expected {cube.Rank - 1} positional args after node name, got {remainingArgs.Length}.
+src/RfCore/Data/DataSet.cs|Group '{group}' has no cube named '{cube}' in this DataSet.
+src/RfCore/Data/DataSet.cs|No cube named '{name}' in the default or measurements group. 
+src/RfCore/Data/DataSet.cs|No cube named '{name}' — DataSet is empty.
+src/RfCore/Data/DataSet.cs|No group named '{group}' in this DataSet.
+src/RfCore/Data/DataSet.cs|Node/branch name '{label}' not found on axis '{axisName}' of cube '{cubeName}'. 
+src/RfCore/Data/DataSet.cs|Parameter cube does not have an axis named '{name}'.
+src/RfCore/Data/DataSet.cs|Port {portNumber} not found on axis '{axisName}' of cube '{cubeName}'.
+src/RfCore/Data/NetworkMetrics.cs|2-port metrics need at least 2 ports; this network has {nPorts}.
+src/RfCore/Data/NetworkMetrics.cs|DataSet carries no \"S\" cube.
+src/RfCore/Data/NetworkMetrics.cs|Input and output port must differ.
+src/RfCore/Data/NetworkMetrics.cs|Reference impedance must have Re(Z0) > 0 (got {z}) — the power-wave form divides by √Re(Z0).
+src/RfCore/Data/NetworkMetrics.cs|targetType must be Z or Y.
+src/RfCore/Data/NetworkMetrics.cs|{metric} is not a 2-port metric.
+src/RfCore/Export/DataSetImporter.cs|File not found.
+src/RfCore/Export/NpyReader.cs|'cube' is null for field '{f.Name}'.
+src/RfCore/Export/NpyReader.cs|'kind' is null for cube field '{f.Name}'.
+src/RfCore/Export/NpyReader.cs|.npy header 'descr' value is not a list.
+src/RfCore/Export/NpyReader.cs|.npy header missing 'descr' key.
+src/RfCore/Export/NpyReader.cs|Axis {i} of cube '{fieldNameForError}' has null 'name'.
+src/RfCore/Export/NpyReader.cs|Complex field byte count mismatch: expected {count * 16}, got {bytes.Length}.
+src/RfCore/Export/NpyReader.cs|Cube field '{f.Name}' is missing 'cube' in __meta__.
+src/RfCore/Export/NpyReader.cs|Cube field '{f.Name}' is missing 'group' in __meta__.
+src/RfCore/Export/NpyReader.cs|Dtype tuple has fewer than 2 elements: '{t}'.
+src/RfCore/Export/NpyReader.cs|Expected linnet field '{name}' not found in .npy dtype.
+src/RfCore/Export/NpyReader.cs|Expected shape tuple '(...)' , got: '{s}'.
+src/RfCore/Export/NpyReader.cs|Expected single-quoted Python string, got: '{s}'.
+src/RfCore/Export/NpyReader.cs|Expected tuple in dtype list, got: {t}
+src/RfCore/Export/NpyReader.cs|Field '{f.Name}' in dtype has no entry in __meta__ — file is inconsistent.
+src/RfCore/Export/NpyReader.cs|Int32 field byte count mismatch: expected {count * 4}, got {bytes.Length}.
+src/RfCore/Export/NpyReader.cs|Int64 scalar byte count mismatch: expected 8, got {bytes.Length}.
+src/RfCore/Export/NpyReader.cs|Missing '__meta__' field — not a circuitRF .npy file.
+src/RfCore/Export/NpyReader.cs|Not a NumPy .npy file: expected magic \\x93NUMPY, got {BitConverter.ToString(magic)}.
+src/RfCore/Export/NpyReader.cs|Null label at index {j} in axis '{name}' of cube '{fieldNameForError}'.
+src/RfCore/Export/NpyReader.cs|Null string at index {i} in __meta__['{key}'].
+src/RfCore/Export/NpyReader.cs|Real field byte count mismatch: expected {count * 8}, got {bytes.Length}.
+src/RfCore/Export/NpyReader.cs|Truncated data for field '{f.Name}': expected {byteCount} bytes, got {bytes.Length}.
+src/RfCore/Export/NpyReader.cs|Unsupported .npy format version {major}.{minor}. Expected 1 or 2.
+src/RfCore/Export/NpyReader.cs|Unsupported dtype in .npy field: '{dtype}'.
+src/RfCore/Export/NpyReader.cs|format_version mismatch: file has version {foundVersion}, 
+src/RfCore/Export/NpyReader.cs|format_version missing from __meta__. 
+src/RfCore/Export/TouchstoneExporter.cs|Axis '{name}' not found in DataCube.
+src/RfCore/Loadpull/Interp1DLinear.cs|At least 2 points are required for linear interpolation.
+src/RfCore/Loadpull/Interp1DLinear.cs|x and y must have the same length.
+src/RfCore/Loadpull/Interp1DLinear.cs|x must be strictly ascending; x[{i - 1}]={x[i - 1]}, x[{i}]={x[i]}.
+src/RfCore/Loadpull/LoadpullExportModel.cs|DataSet has no GammaLoad/ZLoad termination cube — not a loadpull dataset.
+src/RfCore/Loadpull/LoadpullExportModel.cs|Termination cube has no 'gridPoint' axis.
+src/RfCore/Loadpull/LpcwaveReader.cs|.lpcwave: no column header ('Point Gamma Phase[deg] ...') found.
+src/RfCore/Loadpull/LpcwaveReader.cs|.lpcwave: no grid points (# lines) found.
+src/RfCore/Loadpull/LpcwaveWriter.cs|Loadpull DataSet has no frequency blocks.
+src/RfCore/Loadpull/Rbf2D.cs|This factorization was built for a different set of present nodes. The kernel 
+src/RfCore/Loadpull/SplReader.cs|.spl Freq={freqGhz} GHz: no column header ('valid ...') found.
+src/RfCore/Loadpull/SplReader.cs|.spl: no freq/grid/pin header line found.
+src/RfCore/Loadpull/SplWriter.cs|Loadpull DataSet has no frequency blocks.
+src/RfCore/RFNetwork.Interpolation.cs|Cannot interpolate an empty SNP.
+src/RfCore/RFNetwork.Interpolation.cs|targetFrequencies must not be empty.
+src/RfCore/RFNetwork.cs|De-embedding requires 2-port matrices.
+src/RfCore/RFNetwork.cs|Passivity requires a square scattering matrix.
+src/RfCore/RFNetwork.cs|SToS requires an S-parameter SNP.
+src/RfCore/RFNetwork.cs|StabilityMu requires a 2-port (2×2) matrix.
+src/RfCore/RFNetwork.cs|StabilityMuPrime requires a 2-port (2×2) matrix.
+src/RfCore/RFNetwork.cs|This calculation requires a 2-port network.
+src/RfCore/RFNetwork.cs|z0New length ({z0New.Length}) must equal matrix size ({n}).
+src/RfCore/RFNetwork.cs|z0Old length ({z0Old.Length}) must equal matrix size ({n}).
+src/RfCore/SNP.cs|All matrices must be square and the same size.
+src/RfCore/SNP.cs|At least one frequency point required.
+src/RfCore/SNP.cs|Frequency and matrix counts must match.
+src/RfCore/TouchstoneIO.cs|No valid frequency points found in Touchstone file.
+src/RfCore/TouchstoneIO.cs|Token overflow: got {blockTokens.Count} tokens, 
+src/WBond/ArrayReduction.cs|Array '{arrayNames?[a] ?? a.ToString()}' has no wires. An empty array makes the mapping 
+src/WBond/ArrayReduction.cs|Expected {ArrayCount} array currents, got {arrayCurrents.Length}.
+src/WBond/ArrayReduction.cs|The wire-to-array map has {arrayOfWire.Length} entries but the matrix is {n} x {n}.
+src/WBond/ArrayReduction.cs|Wire mapped to array index {a}, outside 0..{m - 1}.
+src/WBond/CapacitanceReduction.cs|The wBond terminal network is exactly at self-resonance, so its input impedance 
+src/WBond/CapacitanceReduction.cs|{DescribeWire(mesh, i)} lies in the ground plane, so the plane holds it at zero 
+src/WBond/CholeskyFactor.cs|Matrix is {matrix.Length} long, expected at least {n * n}.
+src/WBond/CholeskyFactor.cs|Rank-1 {(downdate ? 
+src/WBond/CholeskyFactor.cs|The Cholesky factor is singular at index {j}.
+src/WBond/CholeskyFactor.cs|The {matrixName} is not positive definite (pivot {diagonal:E3} at wire {j}). 
+src/WBond/CholeskyFactor.cs|This factor has already been inverted in place.
+src/WBond/CholeskyFactor.cs|This factor was consumed by InvertInPlace and no longer holds L. Multiply by the 
+src/WBond/ComplexLdlt.cs|Matrix is {matrix.Length} long, expected at least {(long)n * n}.
+src/WBond/ComplexLdlt.cs|Need room for {n} x {columns}, got {block.Length}.
+src/WBond/ComplexLdlt.cs|The complex-symmetric factorisation broke down at index {j} (zero pivot). The 
+src/WBond/ComplexLu.cs|Matrix is {matrix.Length} long, expected at least {(long)n * n}.
+src/WBond/ComplexLu.cs|The impedance matrix is singular at wire {k}. That normally means two wires 
+src/WBond/ControllingParameters.cs|wBond: array '{arrayName}' asks for wire material '{requested}', which this design does 
+src/WBond/ControllingParameters.cs|wBond: loop height for {scope} must be positive; got {metres.ToString(
+src/WBond/ControllingParameters.cs|wBond: wire diameter for array '{arrayName}' must be positive; got 
+src/WBond/ControllingParameters.cs|wBond: wire diameter for array '{arrayName}' rounds to zero at the design's own 
+src/WBond/Grover.cs|A filament of zero length has no direction.
+src/WBond/InductanceMatrix.cs|Expected at least {n * n} values for a {n} x {n} matrix, got {rowMajor.Length}.
+src/WBond/InductanceMatrix.cs|Wire {wire} now has {w.Points.Count} points ({expected} filaments) but the mesh was built 
+src/WBond/LoopShape.cs|A loop shape has {shape.Count} control point(s); it needs at least 2.
+src/WBond/LoopShape.cs|A loop shape must have zero height at both feet — that is what pins them under 
+src/WBond/LoopShape.cs|A loop shape's control points must have strictly increasing span; 
+src/WBond/Mom/MomAssembly.cs|K~ is {ns} x {ns} and does not fit in one array.
+src/WBond/Mom/NodePotential.cs|A {n} x {n} potential matrix does not fit in one array. The mesh ceiling exists to 
+src/WBond/Mom/SegmentInductance.cs|A {n} x {n} inductance matrix does not fit in one array. The mesh ceiling exists to 
+src/WBond/Mom/SegmentInternalZ.cs|Need room for {_group.Length} segments, got {destination.Length}.
+src/WBond/Mom/WireMomMesh.cs|This design has its ground plane disabled and no array nominated as the return 
+src/WBond/Mom/WireMomMesh.cs|This design meshes to {report.Segments:N0} segments (~{report.PredictedPeakMegabytes / 1024.0:F1} GB peak) 
+src/WBond/Mom/WireMomSolver.cs|The distributed (MoM) model was asked for {frequencyHz:0.###E+0} Hz, below its measured 
+src/WBond/WBondDesign.cs|A wire in array '{array.Name}' has a non-positive diameter.
+src/WBond/WBondDesign.cs|A wire in array '{array.Name}' has {wire.Points.Count} point(s); a wire needs at least 2.
+src/WBond/WBondDesign.cs|Duplicate wBond array name '{array.Name}'. Array names are the symbol's pin names 
+src/WBond/WBondDesign.cs|The overmold relative permittivity is {OvermoldEr}. It must be at least 1 
+src/WBond/WBondDesign.cs|wBond array '{array.Name}' has no wires. An empty array makes the mapping matrix 
+src/WBond/WBondDesign.cs|wBond array has no name.
+src/WBond/WBondIo.cs|The .wBond file is empty or not an object.
+src/WBond/WBondIo.cs|This .wBond file is format version {doc.FormatVersion}; this build reads up to 
+src/WBond/WireEdits.cs|Duplicate pitch is zero in both axes — the copies would land on the source.
+src/WBond/WireEdits.cs|The source wire does not belong to any array in this design.
+src/WBond/WireTableCsv.cs|Line {lineNumber}: '# units: {value}' names an unknown unit. 
+src/WBond/WireTableCsv.cs|Line {lineNumber}: column '{name}' contains '{text}', which is not a number.
+src/WBond/WireTableCsv.cs|Line {lineNumber}: column '{name}' is empty; a coordinate is required.
+src/WBond/WireTableCsv.cs|Line {lineNumber}: column '{name}' is {text}, which is not finite.
+src/WBond/WireTableCsv.cs|Line {lineNumber}: has {fields.Length} field(s) but the header declares column '{name}' 
+src/WBond/WireTableCsv.cs|Line {lineNumber}: the 'array' column is empty. Every wire belongs to exactly one array.
+src/WBond/WireTableCsv.cs|Line {lineNumber}: the header names column '{fields[i]}' twice.
+src/WBond/WireTableCsv.cs|Line {lineNumber}: the wire's two feet are at the same point. A wire needs a span.
+src/WBond/WireTableCsv.cs|Line {lineNumber}: the wirebond table header is missing required column(s) 
+src/WBond/WireTableCsv.cs|Line {lineNumber}: wire diameter must be positive, got {diameter} nm.
+src/WBond/WireTableCsv.cs|The wirebond table has no header row. Expected a line naming at least: 

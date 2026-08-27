@@ -308,6 +308,59 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>Every macOS bundle must declare the file-access usage descriptions.</b> macOS gates
+    /// <c>~/Documents</c>, <c>~/Desktop</c>, <c>~/Downloads</c>, removable volumes and network
+    /// volumes behind per-folder privacy grants and shows a consent prompt the first time an app
+    /// touches one; these strings are that prompt's explanatory text, and Apple documents them as
+    /// required for these services.
+    ///
+    /// <para><b>Gated because the failure is silent and self-concealing.</b> With no string declared
+    /// the prompt is at best unexplained and at worst never shown — and a request that is never
+    /// prompted is denied. The app then reports "Access to the path … is denied" for a file whose
+    /// own permissions are perfectly normal, and it may never appear in System Settings &gt; Privacy
+    /// &amp; Security &gt; Files and Folders at all, because that list is populated by apps that have
+    /// actually asked. The user is told to enable a setting that is not there. Nothing crashes and
+    /// nothing is logged — the app simply cannot open the user's own documents.</para>
+    ///
+    /// <para>All three bundles, because a key added to circuitRF's plist and forgotten in
+    /// harmonicaRF's or wBond's fails only in the app nobody tested — the same three-place trap the
+    /// bundle identity keys already carry.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("Info.plist", "circuitRF")]
+    [InlineData("Harmonica-Info.plist", "harmonicaRF")]
+    [InlineData("WBond-Info.plist", "wBond")]
+    public void MacBundleDeclaresTheFileAccessUsageDescriptions(string plist, string appName)
+    {
+        string text = File.ReadAllText(RepoFile("src", "Ui", "Assets", "macOS", plist));
+
+        foreach (var key in new[]
+                 {
+                     "NSDocumentsFolderUsageDescription",
+                     "NSDesktopFolderUsageDescription",
+                     "NSDownloadsFolderUsageDescription",
+                     "NSRemovableVolumesUsageDescription",
+                     "NSNetworkVolumesUsageDescription",
+                 })
+        {
+            int i = text.IndexOf($"<key>{key}</key>", StringComparison.Ordinal);
+            Assert.True(i >= 0,
+                $"{plist} does not declare {key}. Without it macOS may deny access to that location " +
+                $"WITHOUT ever prompting, and {appName} will not appear in the Files and Folders " +
+                $"privacy list for the user to grant — see the note above this test.");
+
+            // The prompt shows this sentence. An empty or placeholder string is the same failure
+            // wearing a key, and it is what a copy-paste between the three plists produces.
+            int open  = text.IndexOf("<string>", i, StringComparison.Ordinal);
+            int close = text.IndexOf("</string>", open, StringComparison.Ordinal);
+            string value = text[(open + "<string>".Length)..close].Trim();
+
+            Assert.True(value.Length >= 30, $"{plist}'s {key} is too short to explain anything: '{value}'");
+            Assert.StartsWith(appName, value, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
     /// <b>The .deb must not name a versioned ICU package.</b> ICU bumps its SONAME every release and
     /// the Debian package name follows it (<c>libicu76</c>, <c>libicu77</c>, …), so a
     /// <c>Depends: libicu76 | libicu74 | …</c> lists only the versions that existed the day it was

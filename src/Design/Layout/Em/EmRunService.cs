@@ -28,6 +28,8 @@ using RfCore.Export;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 
+using CircuitRF.Diagnostics;
+
 namespace CircuitRF.Design.Layout.Em;
 
 /// <summary><see cref="Cancelled"/> means the user pressed Cancel: the run was abandoned at a work
@@ -70,7 +72,22 @@ public sealed record EmRunResult(
     PlanarCurrentDensityMap? CurrentDensity = null,
     /// <summary>The resolved ports, so the layout can draw the de-embedding reference planes over
     /// the location the ENGINE reports rather than one the Ui re-derives (§10.6).</summary>
-    IReadOnlyList<PlanarPortResolution>? PlanarPorts = null);
+    IReadOnlyList<PlanarPortResolution>? PlanarPorts = null,
+    /// <summary>
+    /// The coded form of <see cref="Error"/> — an id plus typed arguments plus the English template
+    /// (brief-localization-groundwork.md R-loc-5). Non-null for every non-Ok status.
+    ///
+    /// <para><b><see cref="Error"/> is not deprecated by this and is not going away.</b> It is
+    /// exactly <c>Diagnostic.Render()</c>, kept as a plain string because that is what the CLI
+    /// writes to stderr — permanently, in English, regardless of any future language setting, so
+    /// that nobody's grep or CI job breaks. The two are redundant on purpose: the string is the
+    /// contract, the diagnostic is the structure. See docs/design/cli.md §8.</para>
+    ///
+    /// <para>What the id buys the Messages window is what a sentence cannot give it: grouping and
+    /// filtering by kind, dedup of a refusal repeated at every sweep point, and a place to hang an
+    /// action.</para>
+    /// </summary>
+    Diagnostic? Diagnostic = null);
 
 /// <summary>
 /// Headless. Everything the Simulate button does that is not dispatcher work, so it is testable
@@ -149,17 +166,10 @@ public static class EmRunService
     /// — and the chosen analysis is the uniform-line kernel. Shared by the run and by the panel's
     /// live blocking reason, so the two cannot word it differently.
     /// </summary>
+    /// <summary>Kept as the name the tests and call sites already use; the sentence itself now
+    /// lives once, in <see cref="EmDiagnostics"/>.</summary>
     internal static string InternalPortNeedsFullWave(string kernelName) =>
-        $"This EM setup declares an internal port, and the analysis it resolved to is the " +
-        $"{kernelName}. An internal delta gap is a cut across a conductor at a mesh gridline, and an " +
-        "internal port is the foot of a via down to the ground plane — and the uniform-line " +
-        "kernel never meshes the " +
-        "plane at all: it solves a cross-section for per-unit-length RLGC and forms the network of a " +
-        "length-L line in closed form, so its only ports are the two ends of that line, by " +
-        "construction. There is nowhere for either to be. Running anyway would publish a complete " +
-        "and plausible answer for your line WITHOUT the port you asked for, which is why this is " +
-        "refused rather than reported. Set Analysis to the full-wave planar kernel, or change the " +
-        "port back to an edge port.";
+        EmDiagnostics.InternalPortNeedsFullWave(kernelName).Render();
 
     /// <param name="maxCores">The solver's core cap, or null for Automatic (unbounded — the
     /// behaviour every run had before the control existed). <b>An argument rather than a preference
@@ -182,8 +192,9 @@ public static class EmRunService
             // A stopped run is a normal outcome, not a failure — and it wrote nothing, because every
             // write in this file happens after the solve it belongs to. Reported as its own status so
             // the caller can say "stopped" rather than "the EM solve failed".
+            var cancelled = EmDiagnostics.Cancelled();
             return new EmRunResult(EmRunStatus.Cancelled, null, null, null, null, null,
-                "The EM run was stopped. Nothing was written.", []);
+                cancelled.Render(), [], Diagnostic: cancelled);
         }
     }
 
@@ -205,14 +216,18 @@ public static class EmRunService
         var errors   = new List<string>();
 
         if (source is null)
+        {
+            var d = EmDiagnostics.NoLayout(setup.LayoutRef);
             return new EmRunResult(EmRunStatus.NoLayout, null, null, null, null, null,
-                $"The layout '{setup.LayoutRef}' could not be found, so there is no geometry to " +
-                "analyse. Point this EM setup at a layout that exists.", warnings);
+                d.Render(), warnings, Diagnostic: d);
+        }
 
         if (source.Technology is null)
+        {
+            var d = EmDiagnostics.NoTechnology(setup.LayoutRef);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                $"The layout '{setup.LayoutRef}' has no technology resolved, so nothing says how " +
-                "thick its metal is or where the ground plane sits.", warnings);
+                d.Render(), warnings, Diagnostic: d);
+        }
 
         double[] freqs;
         try
@@ -221,14 +236,17 @@ public static class EmRunService
         }
         catch (Exception ex)
         {
+            var d = EmDiagnostics.FrequencySweepUnresolvable(ex.Message);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                $"The frequency sweep could not be resolved: {ex.Message}", warnings);
+                d.Render(), warnings, Diagnostic: d);
         }
 
         if (freqs.Length == 0)
+        {
+            var d = EmDiagnostics.FrequencySweepEmpty();
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                "The frequency sweep produced no points. Check the start, stop and step or count.",
-                warnings);
+                d.Render(), warnings, Diagnostic: d);
+        }
 
         double fMax = 0;
         foreach (double f in freqs) fMax = Math.Max(fMax, f);
@@ -269,9 +287,12 @@ public static class EmRunService
         // Refused by name rather than silently re-routed to the planar kernel. Re-routing would be a
         // guess at intent that costs minutes of solve time, and the remedy is one dropdown.
         if (choice.Ok && choice.Kind == EmAnalysisKind.CrossSection && setup.DeclaresInternalPort())
+        {
+            var d = EmDiagnostics.InternalPortNeedsFullWave(choice.KernelName);
             return new EmRunResult(EmRunStatus.Refused, null, crossSection.Readback, null, null, null,
-                InternalPortNeedsFullWave(choice.KernelName), warnings, Notes: notes, Errors: errors,
-                Kind: choice.Kind, KernelName: choice.KernelName);
+                d.Render(), warnings, Notes: notes, Errors: errors,
+                Kind: choice.Kind, KernelName: choice.KernelName, Diagnostic: d);
+        }
 
         notes.Add(choice.Reason);
 
@@ -280,8 +301,12 @@ public static class EmRunService
         notes.AddRange(choice.Kind == EmAnalysisKind.Planar ? planar.Notes : crossSection.Notes);
 
         if (!choice.Ok)
+        {
+            var d = EmDiagnostics.Forwarded("analysis-choice", choice.Refusal);
             return new EmRunResult(EmRunStatus.Refused, null, crossSection.Readback, null, null, null,
-                choice.Refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                choice.Refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
 
         if (choice.Kind == EmAnalysisKind.Planar)
             return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, notes, errors, ct, control, maxCores);
@@ -292,8 +317,12 @@ public static class EmRunService
 
         var verdict = kernel.CanSolve(problem);
         if (!verdict.Ok)
+        {
+            var d = EmDiagnostics.Forwarded("kernel", verdict.Reason);
             return new EmRunResult(EmRunStatus.Refused, null, extraction.Readback, null, null, null,
-                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
 
         EmSolveResult solved;
         try
@@ -306,8 +335,10 @@ public static class EmRunService
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
+            var d = EmDiagnostics.SolveFailed(ex.Message);
             return new EmRunResult(EmRunStatus.EngineError, null, extraction.Readback, null, null, null,
-                $"The EM solve failed: {ex.Message}", warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                d.Render(), warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
         }
 
         // R-em-16: the engine's own report is surfaced verbatim, never re-worded.
@@ -374,8 +405,12 @@ public static class EmRunService
 
         var verdict = kernel.CanSolve(problem);
         if (!verdict.Ok)
+        {
+            var d = EmDiagnostics.Forwarded("kernel", verdict.Reason);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                verdict.Reason, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
 
         // D3 — the ports come from the layout's own IsPort labels, and an ambiguous one is refused
         // by name rather than guessed (R-res-5).
@@ -386,8 +421,12 @@ public static class EmRunService
 
         notes.AddRange(ports.Notes);
         if (!ports.Ok)
+        {
+            var d = EmDiagnostics.Forwarded("ports", ports.Refusal);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                ports.Refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                ports.Refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
 
         PlanarKernelResult solved;
         try
@@ -434,13 +473,17 @@ public static class EmRunService
             // it reads as "circuitRF broke" when the answer is "this mesh is too big, and here is the
             // quantity that made it that big".
             notes.AddRange(ex.Report.Notes);
+            var d = EmDiagnostics.Forwarded("mesh-ceiling", ex.Message);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
         }
         catch (Exception ex)
         {
+            var d = EmDiagnostics.SolveFailed(ex.Message);
             return new EmRunResult(EmRunStatus.EngineError, null, null, null, null, null,
-                $"The EM solve failed: {ex.Message}", warnings, Notes: notes, Errors: errors, Kind: choice.Kind, KernelName: choice.KernelName);
+                d.Render(), warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
         }
 
         // R-em-16, unchanged for kernel B: the engine's own notes go out verbatim.

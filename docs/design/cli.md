@@ -164,6 +164,35 @@ a Γ grid routinely will not — so `lp` returns `2` only when **every** grid po
 only when neither optimum converged and there is no follow-on grid. A rule that failed the whole run
 on one bad point would make the exit code useless in a script.
 
+## 7A. The CLI stays English, permanently
+
+**Decided, not assumed.** If the GUI is ever localized, the CLI is not.
+
+Every diagnostic the run services produce goes to two places: the Messages window and this program's
+stderr. A localized error on stderr breaks every user's `grep`, every log scraper, and every CI job
+that matches on a message — silently, and in a way that only shows up on machines in one country.
+So the split is by SURFACE, not by user:
+
+| | Follows the user's locale? |
+|---|---|
+| GUI display text — status lines, Messages entries, dialogs | yes, when localization lands |
+| CLI stdout and stderr | **no, ever** |
+| Every file format (`.cnl`, `.clay`, Touchstone, Gerber, DXF, `.kicad_pcb`, …) | no — see `FormatCultureInvarianceTests` |
+| The expression language | no — see `expressions.md` §15A |
+
+Mechanically this costs nothing, because of how coded diagnostics are shaped
+(`brief-localization-groundwork.md` R-loc-5). A `CircuitRF.Diagnostics.Diagnostic` carries an id,
+typed arguments **and an English default template**. The GUI renders it through the one render point
+in `src/Ui` — the place a resource lookup would later be inserted. The CLI calls `Render()` and gets
+the English template, always, with no lookup and no language setting consulted. Numbers inside a
+diagnostic render invariantly for the same reason: `2.5` on stderr must not become `2,5` because of
+where the machine is.
+
+This is also why `EmRunResult` carries **both** `Error` (a plain string) and `Diagnostic`. The
+redundancy is deliberate: the string is the contract §8 already promises — a refusal stays a refusal,
+exit 1 with the run service's own sentence, `Cancelled` exits 130 — and the diagnostic is the
+structure the Messages window needs to group, deduplicate and act on it. Neither replaces the other.
+
 ## 8. `em`
 
 ```

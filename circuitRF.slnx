@@ -9,6 +9,9 @@
   <Folder Name="/src/RfCore/">
     <Project Path="src/RfCore/RfCore.csproj" />
   </Folder>
+  <Folder Name="/src/Diagnostics/">
+    <Project Path="src/Diagnostics/CircuitRF.Diagnostics.csproj" />
+  </Folder>
   <Folder Name="/src/Core/">
     <Project Path="src/Core/CircuitRF.Core.csproj" />
   </Folder>

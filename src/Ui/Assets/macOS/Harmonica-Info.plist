@@ -94,6 +94,44 @@
     <!-- Document types this app can open. .crfw is deliberately ABSENT: there is no workspace in this
          build (§1.2), so claiming the type would put an application that cannot open one in the
          "Open With" list for every workspace on the machine. -->
+    <!-- ── macOS privacy: the file-access consent prompts (2026-08-27) ───────────
+         macOS gates ~/Documents, ~/Desktop, ~/Downloads, removable volumes and network volumes
+         behind per-folder privacy grants (TCC), and shows a consent prompt the FIRST time an app
+         touches one. THESE STRINGS ARE THE PROMPT'S EXPLANATORY TEXT. Apple documents them as
+         required for these services.
+
+         WHY THEY ARE NOT OPTIONAL, and why the failure is the expensive kind: with no string
+         declared, the prompt is at best unexplained and at worst never shown — and a request that
+         is never prompted is simply DENIED. The app then reports "Access to the path ... is
+         denied" for a file whose own permissions are perfectly normal, and harmonicaRF may not appear
+         in System Settings > Privacy & Security > Files and Folders AT ALL, because that list is
+         populated by apps that have actually asked. The user is then told to enable a setting
+         that is not there. Nothing logs, nothing crashes; the app simply cannot open the user's
+         own documents.
+
+         This was reached the long way round in 2026-08 from a real report of exactly that error
+         (src/Ui/RESOLVED.md). CircuitRF.Diagnostics' FileAccessDiagnostics turns the raw
+         UnauthorizedAccessException into a message naming the privacy setting; these keys are the
+         other half — they are what makes the setting exist to be named.
+
+         Keep the wording specific about WHAT is being opened. "would like to access your files"
+         is what users decline. -->
+
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>harmonicaRF needs access to your Documents folder to open and save your harmonicaRF documents and the Touchstone and load-pull files they reference.</string>
+
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>harmonicaRF needs access to your Desktop to open and save your harmonicaRF documents and the Touchstone and load-pull files they reference.</string>
+
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>harmonicaRF needs access to your Downloads folder to open and save your harmonicaRF documents and the Touchstone and load-pull files they reference.</string>
+
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>harmonicaRF needs access to your removable volumes to open and save your harmonicaRF documents and the Touchstone and load-pull files they reference.</string>
+
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>harmonicaRF needs access to your network volumes to open and save your harmonicaRF documents and the Touchstone and load-pull files they reference.</string>
+
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

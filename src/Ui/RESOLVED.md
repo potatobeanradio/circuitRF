@@ -1,5 +1,106 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## No macOS bundle declared a file-access usage description (2026-08-27)
+
+All three `Info.plist`s — circuitRF, harmonicaRF, wBond — shipped with **no `NS*UsageDescription`
+key of any kind**. macOS gates `~/Documents`, `~/Desktop`, `~/Downloads`, removable volumes and
+network volumes behind per-folder privacy grants and prompts on first touch; these strings are that
+prompt's explanatory text, and Apple documents them as required for those services.
+
+**The failure this causes conceals itself, which is why it survived to 1.0.0-beta.3.** With no string
+declared, the prompt is at best unexplained and at worst never shown — and a request that is never
+prompted is denied. The app then reports `Access to the path ... is denied` for a file whose own
+permissions are completely normal (mode 644, owned by the user, real data on disk), and **the app may
+never appear in System Settings > Privacy & Security > Files and Folders at all**, because that list
+is populated by apps that have actually asked. The user is told to enable a setting that is not
+there. Nothing crashes, nothing is logged.
+
+Five keys now in each of the three plists, worded per app. Gated by
+`PackagingScriptTests.MacBundleDeclaresTheFileAccessUsageDescriptions`, which checks all three
+bundles and rejects a too-short or wrong-app string — a key added to one plist and forgotten in the
+other two fails only in the app nobody tested, the same three-place trap the bundle identity keys
+already carry. Verified to catch a deletion, not assumed.
+
+`CircuitRF.Diagnostics.FileAccessDiagnostics` is the other half: it turns the raw
+`UnauthorizedAccessException` into a message naming the privacy setting, with separate text for a
+bundled app and a terminal-launched build (macOS attributes file access to the app RESPONSIBLE for
+launching the process, so a dev build is granted through the terminal and circuitRF is not listed at
+all). These keys are what make the setting exist to be named in the packaged case.
+
+**Not investigated here:** `Entitlements.plist` declares `com.apple.security.files.user-selected.read-write`,
+a SANDBOX entitlement, and its comment claims it is required for the hardened runtime. The app does
+not declare `com.apple.security.app-sandbox`, so that key is inert. Harmless, but the comment is
+misleading and the key is not what makes TCC-protected locations work — the usage descriptions are.
+
+## Gerber's own timestamp was NOT culture-proof — `:` is a format PLACEHOLDER (2026-08-27)
+
+**The brief that commissioned this work stated, after a writer-by-writer check, that "no known
+culture leak into any file format exists." That was wrong, and the check that found the exception is
+worth keeping.**
+
+`GerberWriter` wrote `%TF.CreationDate,{creationTimeUtc:yyyy-MM-ddTHH:mm:ssZ}` and `GerberJobFile`
+wrote the same string into the `.gbrjob` header — neither naming a culture. In a **custom** date
+format string, `:` is not a literal colon: it is the culture's **time-separator placeholder**. Under
+a Finnish locale that attribute came out as
+
+```
+%TF.CreationDate,2026-08-27T14.23.05Z*%
+```
+
+which is not ISO-8601, is not what the Gerber spec's `%TF.CreationDate` demands, and would reach a
+board house as a malformed attribute in an otherwise valid file. Both now name `InvariantCulture`.
+
+**Why every existing review missed it.** Two reasons, and both generalise:
+
+1. **It is not a number.** Every audit of "does this writer leak the locale" looks for `double` →
+   string. This leak has no `double` in it at all.
+2. **`de-DE` cannot see it.** German uses `:` as its time separator, same as `en-US`. The obvious
+   sharpest probe for numbers — comma decimal *and* dot thousands — is completely blind to this
+   entire class. `fi-FI` uses `.` and exposes it immediately.
+
+That is why `FormatCultureInvarianceTests` probes **both** `de-DE` and `fi-FI` rather than just the
+one the brief recommended. Reverting either fix turns the corresponding test red, with the offending
+line quoted in the failure message; that was checked, not assumed.
+
+**The general lesson**: a custom format string is culture-sensitive in ways that have nothing to do
+with decimal separators. `:` (time separator) and `/` (date separator) are both placeholders. Any
+`ToString("…")` whose output lands in a FILE needs an explicit culture even when it contains no
+number.
+
+## Localization groundwork: the .ctech editor's numeric rows (brief-localization-groundwork.md, 2026-08-27)
+
+**Four `double.TryParse` calls in the .ctech editor had no culture**, so εr, tan δ, µr (in
+`StackupLayerRowViewModel`) and fill opacity (in `LayerRowViewModel`) were parsed at the OS locale.
+The σ row beside them already named `InvariantCulture`, so the file was internally inconsistent and
+three of its four stackup rows were wrong. Now all invariant.
+
+**The parse was only half of it, and the half that was easy to miss.** Those staged strings are
+ROUND-TRIPPED, not displayed: `RefreshFromModel` writes them with `ToString("0.####")` and the
+`Commit*` methods read them straight back. Making the parse invariant while leaving the format at the
+current culture would have made things WORSE for a comma-decimal user — `4.4.ToString("0.####")`
+under de-DE is `"4,4"`, which the invariant parse then rejects, so the field would have reverted
+**on every focus-out, even when the user typed nothing**. Both halves are invariant now, and both
+carry a comment saying they are two halves of one round trip.
+
+This is not the same thing as the ~728 culture-sensitive FORMAT sites elsewhere in the repo, which
+are display text (status lines, Messages entries, DRC violations) and are correct as they are — a
+French user should read `2,5 GHz`. The distinction that matters is **display vs. machine-readable**,
+not invariant vs. not.
+
+### Still open: the silent revert itself
+
+Invariant parsing is a **stopgap here, not the answer**, and the brief said so. A German user typing
+`4,4` into εr now fails *consistently* rather than differently from the row below it — but the field
+still reverts to its old value with **no message, nothing logged, nothing thrown**. The user sees
+their edit disappear and is told nothing.
+
+The shape of the fix already exists in this codebase: `DrcRuleRowViewModel` and
+`SweepAxisRowViewModel` parse invariantly *and* report; `StackupLayerRowViewModel`'s own thickness
+row has a `ThicknessError` field for exactly this. Giving the four numeric rows the same treatment —
+a rejected value that says why — is the honest end state and is **not** done. Coded diagnostics
+(`CircuitRF.Diagnostics.Diagnostic`, added by the same brief) would let it explain itself.
+
+
 ## A shrunk circle went NaN, and the inspector reported it three removes away (owner report, 2026-08-26)
 
 Shrink a circle primitive in the Symbol Editor and eventually it stops rendering, with

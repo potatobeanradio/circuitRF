@@ -1,3 +1,4 @@
+using CircuitRF.Diagnostics;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -1488,7 +1489,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         catch (Exception ex)
         {
-            Messages.Error($"Workspace save failed: {ex.Message}");
+            // "Access to the path … is denied" is the same sentence for an OS privacy block and a
+            // real permissions problem, and on macOS it points at the wrong one — the file's own
+            // permissions are normal. Let the diagnostic name the actual cause where it can.
+            if (FileAccessDiagnostics.TryDescribe(path, ex) is { } diagnostic)
+                Messages.PostDiagnostic(diagnostic, path);
+            else
+                Messages.Error($"Workspace save failed: {ex.Message}");
         }
     }
 
@@ -1824,8 +1831,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try { return WorkspacePersistence.LoadFromFile(cwsPath); }
         catch (Exception ex)
         {
-            Messages.Warning(
-                $"Workspace config (.cws) could not be read; starting from defaults. ({ex.Message})");
+            // Same reasoning as the save path above. This one matters more: it fires on every open,
+            // so a privacy block reads as "your workspace is corrupt" repeated at every launch.
+            if (FileAccessDiagnostics.TryDescribe(cwsPath, ex) is { } diagnostic)
+                Messages.PostDiagnostic(diagnostic, cwsPath);
+            else
+                Messages.Warning(
+                    $"Workspace config (.cws) could not be read; starting from defaults. ({ex.Message})");
             return new CwsFile();
         }
     }
@@ -5623,7 +5635,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             foreach (var w in result.Warnings)     Messages.Warning(w);
             foreach (var e in result.Errors ?? []) Messages.Error(e);
 
-            Messages.Error(result.Error ?? "The EM solve failed.");
+            // Through the render point, not as a bare sentence: the diagnostic's ID is what a future
+            // dedup ("this sweep refused at 400 points") or filter ("every technology-resolution
+            // failure") has to key on, and the id only exists up to here. Falls back to the rendered
+            // string for a result that predates the conversion (brief-localization-groundwork.md
+            // R-loc-5 §8.3).
+            if (result.Diagnostic is { } diagnostic)
+                Messages.PostDiagnostic(diagnostic);
+            else
+                Messages.Error(result.Error ?? "The EM solve failed.");
             return;
         }
 

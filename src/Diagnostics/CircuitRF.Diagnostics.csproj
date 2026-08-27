@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A LEAF. This project references nothing — not RfCore, not Core, and above all no UI framework —
+    and that is the whole point of it existing separately.
+
+    RfCore and WBond are both leaves of the reference graph and have no common ancestor, so no
+    EXISTING project can hold a type visible to all five projects that author user-facing message
+    text (Core, RfCore, Engine, Design, WBond). Something has to sit below all of them. Putting the
+    type in RfCore instead would have covered 125 of the 131 messages while stranding WBond's 6, and
+    would have put diagnostics on a project whose stated charter is Touchstone I/O, network
+    parameters, DataSet/DataCube, interpolation and plotting.
+
+    tests/Firewall.Tests gates the no-UI half of that, exactly as it does for every other project on
+    this side of the wall.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

@@ -36,4 +36,8 @@
     close that cycle — so if one is ever needed, the component model moves rather than the arrow.
   -->
 
+  <ItemGroup>
+    <ProjectReference Include="../Diagnostics/CircuitRF.Diagnostics.csproj" />
+  </ItemGroup>
+
 </Project>

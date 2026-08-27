@@ -33,6 +33,12 @@ public class UiFirewallTests
         // being clean, `circuitrf em` stops being buildable, silently, at whatever later date
         // someone reaches for a Dispatcher in the layout reader.
         { "CircuitRF.Design", "CircuitRF.Design.dll" },
+        // The coded-diagnostics leaf (brief-localization-groundwork.md R-loc-5). Gated because its
+        // ENTIRE reason for existing is to be referenceable from every project that authors
+        // user-facing text — RfCore and WBond included, which are leaves with no common ancestor.
+        // A diagnostic is an id, typed arguments and an English template; it references no
+        // framework, and the day it does, the wall has a hole in it that reaches everywhere.
+        { "CircuitRF.Diagnostics", "CircuitRF.Diagnostics.dll" },
     };
 
     [Theory, MemberData(nameof(NonUiAssemblies))]

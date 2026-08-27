@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Diagnostics/CircuitRF.Diagnostics.csproj" />
     <ProjectReference Include="../RfCore/RfCore.csproj" />
     <!-- wBond physics: a dependency-free leaf, so this arrow cannot become a cycle (WB-B). -->
     <ProjectReference Include="../WBond/CircuitRF.WBond.csproj" />

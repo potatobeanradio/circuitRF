@@ -18,4 +18,9 @@
     <PackageReference Include="NumFlat"  Version="1.3.0" />
     <PackageReference Include="PureHDF" Version="2.1.2" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Diagnostics/CircuitRF.Diagnostics.csproj" />
+  </ItemGroup>
+
 </Project>
