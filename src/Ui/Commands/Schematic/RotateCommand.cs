@@ -3,18 +3,18 @@ using CircuitRF.Ui.Schematic;
 namespace CircuitRF.Ui.Commands.Schematic;
 
 /// <summary>
-/// Rotates selected components 90° CW or CCW. Canvas objects rotate by a given angle.
-/// Re-routes any wire whose endpoint sits on a moved port to stay connected.
-/// Undo reverses the rotation and wire reroutes atomically.
+/// Rotates the selection 90° CW or CCW as ONE RIGID BODY — components, canvas objects, the wires
+/// between them and their junction dots all turn together about a single pivot, so nothing that was
+/// connected comes apart. <see cref="SchematicGroupTransform"/> owns that rule and the reasoning
+/// behind it; a single selected component still turns about its own origin and does not move.
+///
+/// <para>Undo reverses the whole gesture atomically.</para>
 /// </summary>
 internal sealed class RotateCommand : IUiCommand
 {
     private readonly SchematicEditModel _model;
+    private readonly SchematicGroupTransform _transform;
     private readonly bool _clockwise;
-
-    private readonly List<(EditableComponent Comp, SymbolRotation OldRot)> _compSnaps = [];
-    private readonly List<(EditableCanvasObject Obj, double OldDeg)> _objSnaps = [];
-    private readonly List<WireMoveSnapshot> _wireSnaps = [];
 
     public string Description => _clockwise ? "Rotate CW" : "Rotate CCW";
 
@@ -23,81 +23,26 @@ internal sealed class RotateCommand : IUiCommand
         _model     = model;
         _clockwise = clockwise;
 
-        foreach (var id in selectedIds)
-        {
-            var comp = model.FindComponent(id);
-            if (comp is not null) { _compSnaps.Add((comp, comp.Rotation)); continue; }
-
-            var obj = model.FindCanvasObject(id);
-            if (obj is not null) _objSnaps.Add((obj, obj.RotationDeg));
-        }
-
-        // Compute old→new port-position moves caused by the rotation.
-        var portMoves = new List<(double Ox, double Oy, double Nx, double Ny)>();
-        foreach (var (comp, oldRot) in _compSnaps)
-        {
-            var newRot   = Step(oldRot, clockwise);
-            var portDefs = SymbolPortDefs.For(comp.Symbol);
-            for (int pi = 0; pi < portDefs.Length; pi++)
-            {
-                var (ox, oy) = SchematicGeometry.LocalToWorld(
-                    portDefs[pi].LocalX, portDefs[pi].LocalY,
-                    comp.X, comp.Y, oldRot, comp.MirrorX);
-                var (nx, ny) = SchematicGeometry.LocalToWorld(
-                    portDefs[pi].LocalX, portDefs[pi].LocalY,
-                    comp.X, comp.Y, newRot, comp.MirrorX);
-                portMoves.Add((ox, oy, nx, ny));
-            }
-        }
-
-        // Build wire-reroute snaps for any wire connected to a moved port.
-        if (portMoves.Count > 0)
-        {
-            const double tol = 8.0;
-            foreach (var wire in model.Wires)
-            {
-                if (wire.Points.Count < 2) continue;
-                double sx = wire.Points[0].X,  sy = wire.Points[0].Y;
-                double ex = wire.Points[^1].X, ey = wire.Points[^1].Y;
-                double newSX = sx, newSY = sy, newEX = ex, newEY = ey;
-                bool changed = false;
-                foreach (var (ox, oy, nx, ny) in portMoves)
-                {
-                    if (SchematicGeometry.CoincidentPoints(sx, sy, ox, oy, tol))
-                    { newSX = nx; newSY = ny; changed = true; }
-                    if (SchematicGeometry.CoincidentPoints(ex, ey, ox, oy, tol))
-                    { newEX = nx; newEY = ny; changed = true; }
-                }
-                if (!changed) continue;
-                var newRoute = WireGeometry.OrthogonalRoute(newSX, newSY, newEX, newEY);
-                _wireSnaps.Add(new WireMoveSnapshot(wire, wire.Points.ToList(), newRoute));
-            }
-        }
+        // The offset map and the symbol map are the SAME rotation, written twice: R90 takes a local
+        // (x,y) to (-y,x) — which is what SchematicGeometry.LocalToWorld does — and Step advances a
+        // symbol by that same quarter turn. They have to agree, or a pin drifts off the geometry it
+        // belongs to. `clockwise: false` is the R0 → R90 direction.
+        _transform = SchematicGroupTransform.Build(model, selectedIds, new SchematicGroupTransform.Spec(
+            MapOffset:         clockwise ? (dx, dy) => (dy, -dx) : (dx, dy) => (-dy, dx),
+            MapRotation:       r => Step(r, clockwise),
+            TogglesMirrorX:    false,
+            MapObjectAngleDeg: d => (d + (clockwise ? -90.0 : 90.0) + 360.0) % 360.0));
     }
 
     public void Execute()
     {
-        foreach (var (comp, _) in _compSnaps)
-            comp.Rotation = Step(comp.Rotation, _clockwise);
-        foreach (var (obj, _) in _objSnaps)
-            obj.RotationDeg = (obj.RotationDeg + (_clockwise ? 90.0 : -90.0) + 360.0) % 360.0;
-        foreach (var s in _wireSnaps)
-        {
-            s.Wire.Points.Clear();
-            s.Wire.Points.AddRange(s.EndPoints);
-        }
+        _transform.Apply();
         _model.NotifyChanged();
     }
 
     public void Undo()
     {
-        foreach (var (comp, old) in _compSnaps) comp.Rotation = old;
-        foreach (var (obj, old) in _objSnaps)   obj.RotationDeg = old;
-        foreach (var s in _wireSnaps)
-        {
-            s.Wire.Points.Clear();
-            s.Wire.Points.AddRange(s.StartPoints);
-        }
+        _transform.Revert();
         _model.NotifyChanged();
     }
 

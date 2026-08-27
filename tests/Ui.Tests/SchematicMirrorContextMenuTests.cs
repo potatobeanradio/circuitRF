@@ -61,7 +61,15 @@ public sealed class SchematicMirrorContextMenuTests
 
         vm.MirrorSelection(horizontal: true);
         Assert.True(comp.MirrorX);
-        Assert.Equal(SymbolRotation.R90, comp.Rotation);   // horizontal mirror leaves rotation alone
+
+        // This expected R90 until 2026-08-26 — "horizontal mirror leaves rotation alone" — and that
+        // was the bug, not the contract. Leaving the rotation alone reflects about the SYMBOL's own
+        // x axis, which after a quarter turn is the world's Y axis: Mirror Horizontal on an R90 part
+        // mirrored it vertically. On this resistor it was a visible no-op. A real reflection negates
+        // the rotation (M ∘ Rot(θ) ∘ Mx^m = Rot(−θ) ∘ Mx^(m+1)), so R90 becomes R270 and the two pins
+        // trade ends — see MirrorCommand and RotateMirrorConnectivityTests.
+        Assert.Equal(SymbolRotation.R270, comp.Rotation);
+        Assert.Equal((200.0, 0.0), model.PortWorldOf(comp, model.PortDefsOf(comp)[1]));
 
         vm.UndoRedo.Undo();
         Assert.False(comp.MirrorX);

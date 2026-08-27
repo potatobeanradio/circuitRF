@@ -1,5 +1,212 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A shrunk circle went NaN, and the inspector reported it three removes away (owner report, 2026-08-26)
+
+Shrink a circle primitive in the Symbol Editor and eventually it stops rendering, with
+`System.InvalidCastException: Could not convert '(unset)' … to System.Double` filling the Properties
+Inspector's **R** field where the number should be.
+
+**One root cause, three symptoms, and the visible message was the furthest thing from the fault.**
+
+`SymbolGeometry.ScaleBy` scaled a circle's radius by `Math.Abs(c.R * Math.Sqrt(sx * sy))`. Dragging a
+resize gripper past its anchor flips an axis — and it flips **one axis first**, because the pointer
+crosses the anchor in x before it crosses in y. That makes `sx * sy` negative, `Math.Sqrt` of it
+**NaN**, and `Math.Abs(NaN)` is still NaN. From there:
+
+1. **Nothing draws** — a NaN radius has no geometry.
+2. **It cannot be dragged back.** `ComputeBb` propagates the NaN, so the bounding box is NaN, so the
+   resize grippers have nowhere to be; and `HitTest`'s `dist <= c.R` is false for every point on the
+   canvas, so it cannot even be clicked. Undo was the only way out.
+3. **The inspector fills with an exception string.** `FieldRadius = NaN` reaches
+   `NumericFieldConverter.Convert`, where `Convert.ToDecimal(double.NaN)` **throws** (decimal has no
+   NaN); the catch returns null, so the box empties; the empty box writes back; and `ConvertBack`
+   answered `AvaloniaProperty.UnsetValue`, which means *"there is no value"* — so the binding tried
+   to store that in a non-nullable `double` and reported that it could not. **That is the message the
+   user sees, and it is three steps downstream of the arithmetic that caused it.**
+
+### The fixes, in the three places the owner named
+
+**The drag.** `ScaleBy` now takes the geometric mean of the **magnitudes**,
+`Math.Sqrt(Math.Abs(sx) * Math.Abs(sy))` — a reflection scales a radius by |s|, it does not make it
+imaginary — and that is defined for every sign combination. Every extent (circle/arc R, ellipse
+Rx/Ry, rect and rounded-rect W/H) then goes through one `Extent()` helper that takes the magnitude,
+rejects any non-finite result, and floors it at the new `SymbolGeometry.MinExtent` (0.001). **Zero is
+not a size**: a primitive scaled to nothing draws nothing, has a degenerate bbox, and so has no
+grippers to drag it back out with — the same dead end as NaN, reached more slowly. A rounded rect's
+CORNER radius keeps its own floor of zero, because zero corners is a square corner, which is a
+legitimate shape rather than a degenerate one.
+
+**The edit box.** The extent fields (`W`, `H`, `Rx`, `Ry`; `R` already had one) carry
+`Minimum="0.001"`, and `SymbolPrimitiveInspectorViewModel` routes them through a new `ApplyExtent`
+that floors at the same `SymbolGeometry.MinExtent` and refuses a non-finite value outright. **The two
+are not redundant:** the XAML minimum is what the spinner and the parser enforce, `ApplyExtent` is
+what the MODEL is held to, and only the second survives a value arriving from anywhere but that box.
+`ApplyDouble`'s existing "did it actually change" test is what lets a NaN already in a file be
+repaired — NaN fails every comparison, so the guard is false and typing over it goes through.
+
+**The display.** `NumericFieldConverter` now maps a non-finite double to an EMPTY field rather than
+letting `ToDecimal` throw, and `ConvertBack` returns **`BindingOperations.DoNothing`** instead of
+`UnsetValue`. The distinction is the whole bug: *"there is no value"* versus *"make no assignment"*.
+Only the second is what an empty box wants, and the difference is invisible until the binding target
+refuses nulls. Every numeric field in the Properties Inspector shares this converter, so the same
+error was reachable through any of them — not only the one that got reported.
+
+**Gate: `tests/Ui.Tests/Symbol/PrimitiveExtentGuardTests.cs`.** 8 of its 14 tests fail against the
+pre-fix code. The scale theory covers all four sign combinations deliberately: the mixed-sign pair is
+the only one that produced NaN, and it is easy to "fix" in a way that only handles both-negative. It
+also asserts the shrunk shape is still hit-testable and its bbox still finite — the two properties
+that decide whether the user can get their circle back without reaching for undo.
+
+## A dropped component was selected but deaf to the keyboard (owner report, 2026-08-26)
+
+Drag a component out of the Library palette onto the schematic: it is placed, and it is SELECTED —
+and pressing **R** does nothing. So does M, so do the arrows, so does Delete.
+
+**The selection was real; the keyboard was somewhere else.** Every editing key on these canvases is
+routed by the canvas control's own `KeyDown` handler, and the drag began on a palette tile, so that
+is where keyboard focus still was. `SchematicViewModel.OnKeyDown` was never reached, so nothing
+errored and nothing looked wrong: the part sat there with selection handles on it, ignoring the
+keyboard until the user clicked it — at which point `OnPointerPressed` took focus and everything
+worked, which is what makes the report sound impossible.
+
+**`OnPointerPressed` has called `Focus()` on its very first line all along**, for exactly this
+reason. No drop handler did. A drop finishes the same gesture — the user has just put something on
+the canvas and is now working on it — so it owes the same, and the omission was in **every drop
+handler on every canvas**, not only the reported one: `SchematicCanvas` (palette, cell, image file),
+`LayoutCanvas` (the same three — its own R key was equally dead after a palette drop) and
+`SymbolEditorCanvas` (image file). Each now calls a named `TakeKeyboardFocus()` before anything else,
+including before the early returns that reject an unparseable payload — a refused drop that also
+swallowed the keyboard would be worse, not better.
+
+**The schematic's cell drop takes it twice, on purpose.** `OnCellDrop` awaits
+`CommitCellPlacementAsync`, which asks whether to auto-generate a symbol when the cell has none. That
+dialog takes focus on its way in, so focus grabbed before the await is gone by the time the user is
+looking at the new component; the handler takes it again afterwards.
+
+**Gate: `tests/Ui.Tests/DropTakesKeyboardFocusTests.cs`** — a source scan, because a `UserControl`
+cannot be constructed headlessly in this project and a real `DragDrop.DropEvent` cannot be raised
+(the same constraint `SchematicMirrorContextMenuTests` works around by parsing the AXAML). It strips
+comments and string literals first — a doc comment on this subject would otherwise satisfy the scan
+by talking about it — then finds every `On…Drop` handler by brace matching and checks each takes
+focus before any `return`, that the helper really calls `Focus()` rather than just being named for
+it, and that the awaiting cell drop re-takes it. All 10 fail against the pre-fix code. The scan also
+pins the HANDLER COUNT per file, so a new drop target added later fails the test rather than
+inheriting the bug from the handler it was copied from.
+
+## Rotate and mirror re-wired the schematic (owner report, 2026-08-26)
+
+Two components placed, wired together, both selected, one **Rotate** — and the netlist came out
+different. Same for **Mirror Horizontal / Vertical**. The owner stated the rule twice, and the second
+statement is the stricter one that decided the design: *a rotate or mirror never changes how the
+components are connected, and if two components have their pins touching they are still touching
+afterwards.*
+
+**Why a geometric editor makes this so easy to get wrong.** Connectivity here is not stored — it is
+*measured*, by `SchematicEditModel.ComputeConnectivityGeometry`, from a pin and a wire vertex being
+at the same point. So moving a symbol without moving what is attached to it does not produce a
+broken-looking schematic; it produces one that still looks wired up and extracts as a different
+circuit. Every defect below has that signature.
+
+### The four defects
+
+**1. The re-route could short the symbol it was following.** `RotateCommand` re-drew each moved wire
+as `WireGeometry.OrthogonalRoute`'s bare L — horizontal leg first, then vertical — with nothing
+checking what that L crossed. A resistor's pins are at local (0, ±200), so a quarter turn lays them
+out *horizontally, at the same Y*: precisely the row the new route's first leg runs along. Two
+resistors in series, both selected, rotated once, measured end to end against `NetExtractor`:
+
+```
+before  R1[n1,n2]  R2[n2,n3]      # a series chain
+after   R1[n1,n1]  R2[n1,n2]      # R1 shorted out by its own wire
+```
+
+The wire went `(-200,0) → (200,0) → (200,600)`, and `(200,0)` is R1's other pin.
+
+**2. Mirror re-routed nothing at all.** `MirrorCommand` flipped `MirrorX` (and, for vertical, the
+rotation) and returned. On any symbol whose pins are not symmetric about the mirror axis — a TLIN, an
+MTee, a FET, anything with a left pin and a right pin — the pins trade places under a wire that has
+not moved, so each wire silently lands on the *other* pin: `T1[n1,n2] T2[n2,n3]` → `T1[n1,n2]
+T2[n3,n1]`.
+
+**3. The re-route asked the wrong source for the pins.** It called
+`SymbolPortDefs.For(comp.Symbol)` — the convenience overload, which assumes **two** ports. Wrong for
+everything whose pins are not the built-in default, and wrong *silently*, because an unknown pin has
+no entry and its wire is simply left behind: a **cell instance or kit part** (pins live in the
+referenced symbol, so it returned an empty list and NO wire moved for those at all), an **SnP**
+(RefNode/PinConfig/Pitch decide the pins), anything **variadic** (an SDD's pin count is a parameter).
+It also ignored `DetachedPorts`, so a wire merely lying over a deliberately-disconnected pin was
+dragged by it.
+
+**4. Both operations spun each symbol about its own origin, so touching pins came apart.** Two
+symbols abutted pin-to-pin have a connection made of nothing but an overlap. There is no wire to
+re-route, and the instant the two turn independently that shared point goes in two directions. **No
+amount of wire fixing can address this** — which is why the first round of work recorded it here as
+unfixable. It is not: the transform was the wrong shape.
+
+### The fix
+
+**`SchematicGroupTransform` — the selection moves as ONE RIGID BODY.** One pivot, one map, everything
+selected carried together: components (position *and* orientation), canvas objects, the wires between
+them and their junction dots. Rigidity is what makes this safe, and it is provable rather than
+tested-for: a pin sits at `O + Rot(θ)·L`; map the origin by `O' = P + M·(O−P)` and compose the same
+`M` into the orientation (`Rot(θ') = M ∘ Rot(θ)`) and the pin lands at `P + M·(pin − P)` — the rigid
+image of where it was. Every coincidence between two group members survives, including the ones no
+wire records. This is what the Layout Editor already does with its own selection
+(`LayoutEditorViewModel.Rotate.cs`); the Schematic Editor's old spin-in-place rule is superseded for
+a multi-selection.
+
+- **The pivot is snapped to the CONNECTION grid, and that is load-bearing.** A 90° rotation and a
+  reflection both map the grid onto itself, so an on-grid part about an on-grid pivot stays on-grid —
+  and a pin half a pitch out is a pin connected to nothing, since connectivity is coincidence within
+  0.5 world units. Three parts at odd spacings put the raw centroid between grid lines.
+- **A single selected component still pivots on its own origin** and does not move, so "place a part,
+  press R" is a pure re-orientation exactly as before.
+- **Wires carried whole**: selected outright, or *implied* — both ends on pins of moving components
+  (click one part, shift-click the other; the wire between them is plainly part of what is turning).
+  Carrying keeps the user's bends instead of re-drawing them. Junction dots ride along only when
+  every wire through them is being carried.
+- Net labels need no snapshot: their draw position is derived from their owner wire's geometry on
+  every build, so they follow it for free.
+
+**`PinFollowReroute` — the boundary case only.** A wire with one end on a moving pin and the other
+somewhere staying put cannot be carried, so it is re-drawn, and that is where defects 1–3 lived. Pins
+now come from `SchematicEditModel.PortDefsOf`, the same source connectivity itself reads, so what
+follows a pin and what counts as connected to it can no longer disagree; detached ports are skipped
+exactly as the connectivity pass skips them; attachment matches at `ConnectTolerance` (0.5) rather
+than the old 8.0, because a point 4 units off a pin is not on that net and dragging it would move
+something that was never attached. **The route is CHOSEN, not computed**: candidates nearest-first
+(the direct run, the two Ls, then Z detours stepping a grid pitch either side of the midpoint), and
+the first that touches nothing but its own two endpoints wins. The cleanliness test is the
+connectivity rules read backwards — a pin anywhere on the route, another wire's vertex on it, or one
+of its own bends on another wire's body. **A plain 4-way crossing is deliberately allowed**: two
+wires passing through each other with no vertex connect only via a user-placed dot (§5.1), and
+forbidding crossings would leave most schematics unroutable. If every candidate is obstructed it
+falls back to the plain L, so the worst case is what shipped before.
+
+### A behaviour change that had a test asserting the bug
+
+**Mirror is a real reflection now, including on a rotated symbol.** A symbol's transform is
+mirror-then-rotate, so pre-composing a world reflection gives `M ∘ Rot(θ) ∘ Mx^m = Rot(−θ) ∘
+Mx^(m+1)`: a horizontal flip NEGATES the rotation and toggles the flag; a vertical flip is a half
+turn on top, `Rot(180 − θ)`. The old command toggled the flag and left the rotation alone
+(horizontal) or advanced it by a half turn regardless (vertical) — which is a reflection only for an
+*unrotated* symbol. On a symbol at R90 or R270, Mirror Horizontal reflected it about the world's Y
+axis instead; on a resistor it was a visible no-op. `SchematicMirrorContextMenuTests` had
+`Assert.Equal(SymbolRotation.R90, …)` with the comment *"horizontal mirror leaves rotation alone"* —
+that comment was the bug written down as a contract, and the assertion is now R270 with the
+derivation recorded beside it. The rigid-body transform also *requires* the correct rule: with the
+positions reflected but the orientations not, abutted pins would not line up.
+
+### Gate
+
+**`tests/Ui.Tests/Schematic/RotateMirrorConnectivityTests.cs`**, 25 tests. The oracle is the extracted
+netlist's connectivity as a **partition** — for each net, which `Instance.Terminal` sit on it — never
+net names, which are generated in discovery order and can make a pin swap look plausible. Abutment is
+checked geometrically as well, straight off `PortWorldOf`. **17 of the 25 fail against the pre-fix
+code**; the rest cover the rigid-body properties that had nothing to fail against before (the group
+lands back on grid, a lone component still turns in place, four turns are the identity in position as
+well as connectivity).
+
 ## The auto-update reported itself as a crash (2026-08-26)
 
 Owner-reported on macOS: a crash report appeared in
