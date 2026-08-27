@@ -162,6 +162,23 @@ public sealed class LayoutCanvas : Control
 
     private long SnapTolDbu() => _zoom > 0 ? (long)Math.Round(SnapHitTolerancePixels / _zoom) : 0;
 
+    /// <summary>GRIP-LOCK's own radius (docs/design/pcell-parameter-handles.md R-pch-12) — the
+    /// distance within which Alt+press claims the nearest PCell parameter grip. Deliberately much
+    /// larger than <see cref="SelectHitTolerancePixels"/>: the whole point of holding Alt is that the
+    /// grip stops being a four-pixel target you have to hit exactly, and at a zoom where the grip and
+    /// the instance corner are the same pixel there is no aim precise enough to separate them.
+    /// <para/>
+    /// BOUNDED rather than "nearest grip anywhere" (owner's call): an unbounded radius means an
+    /// Alt+press well away from the cell yanks a grip the user was not looking at, and a wide cell is
+    /// exactly where that is easiest to do. Outside this radius the press does nothing at all — which
+    /// is the promise grip-lock makes, not a failure of it.
+    /// <para/>
+    /// Converted to DBU HERE, from the CURRENT zoom, on every call — same discipline as the two
+    /// tolerances above, and never derived from either of them.</summary>
+    private const double GripLockHitTolerancePixels = 24.0;
+
+    private long GripLockTolDbu() => _zoom > 0 ? (long)Math.Round(GripLockHitTolerancePixels / _zoom) : 0;
+
     /// <summary>R-bmp-4: the current viewport's world-space width in DBU — a newly-placed bitmap's
     /// long edge is sized as ~25% of this, computed fresh per placement (never cached, DBU are
     /// nanometres so a stale width would be meaningless after any zoom/pan).</summary>
@@ -511,7 +528,8 @@ public sealed class LayoutCanvas : Control
             if ((e.KeyModifiers & KeyModifiers.Control) != 0)
             {
                 ContextMenuTarget = null; // L1-fix: no pending target -> the Opening handler cancels
-                _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), 0, SnapTolDbu());
+                _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), 0, SnapTolDbu(),
+                                        GripLockTolDbu());
                 InvalidateVisual();
                 e.Handled = true;
                 return;
@@ -563,7 +581,8 @@ public sealed class LayoutCanvas : Control
                 return;
             }
 
-            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom, SnapTolDbu());
+            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom, SnapTolDbu(),
+                                        GripLockTolDbu());
             InvalidateVisual();
         }
     }
@@ -1232,7 +1251,13 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
-        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu());
+        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu(),
+                                   GripLockTolDbu());
+
+        // R-pch-12: the pointer shape is half of "you can see which gesture you are about to get", and
+        // the view model has just recomputed which grip (if any) is under the cursor. Cheap — it only
+        // constructs a Cursor when the answer actually changed.
+        UpdateCursor();
         InvalidateVisual();
     }
 
@@ -1288,6 +1313,13 @@ public sealed class LayoutCanvas : Control
         // unhandled routed event) — this guard only stops the SIDE EFFECT, not the character.
         if (e.Key == Key.Space && _viewModel?.IsTypingLabel != true) { _spaceHeld = true; UpdateCursor(); return; }
 
+        // R-pch-12: Alt with the pointer STATIONARY still has to light the grips up — the armed state
+        // is what tells the user the next press cannot move the cell, and waiting for a pointer move to
+        // say so would make the mode announce itself only after they had already committed to aiming.
+        // Deliberately not `return`: Alt is a modifier, and swallowing it here would cost every
+        // Alt-combination below. The view model refuses to arm when the selection has no grips.
+        if (e.Key is Key.LeftAlt or Key.RightAlt) { _viewModel?.SetGripLockArmed(true); InvalidateVisual(); }
+
         // A paste ghost in progress owns every key itself (Escape cancels it) — never let a
         // clipboard shortcut race with an already-armed placement.
         if (_viewModel?.IsPastePlacementActive == true)
@@ -1339,6 +1371,7 @@ public sealed class LayoutCanvas : Control
     {
         _canvasOverlay?.OnKeyUp(e.Key, e.KeyModifiers);
         if (e.Key == Key.Space) { _spaceHeld = false; UpdateCursor(); }
+        if (e.Key is Key.LeftAlt or Key.RightAlt) { _viewModel?.SetGripLockArmed(false); InvalidateVisual(); }
     }
 
     /// <summary>
@@ -1356,6 +1389,13 @@ public sealed class LayoutCanvas : Control
     {
         _spaceHeld = false;
         _canvasOverlay?.OnFocusLost();
+
+        // R-pch-12's latch has exactly the shape this method exists for: hold Alt, click a toolbar
+        // button, and the key-up is delivered to whatever took focus. Without this the grips stay lit
+        // and every subsequent press claims a grip instead of moving the instance — the same failure
+        // as the Space-to-pan latch above, with a different key.
+        _viewModel?.ClearGripLockArmed();
+
         UpdateCursor();
     }
 
@@ -1369,9 +1409,43 @@ public sealed class LayoutCanvas : Control
     // Crosshair for every drawing tool, arrow for Select — mirrors SymbolEditorCanvas.UpdateCursor.
     private void UpdateCursor()
     {
-        if (_isPanning || _spaceHeld) { Cursor = new Cursor(StandardCursorType.Hand); return; }
+        if (_isPanning || _spaceHeld) { SetCursor(StandardCursorType.Hand); return; }
+
+        // R-pch-12: over a PCell parameter grip the pointer says which way that grip travels, which is
+        // the only pre-press signal separating "edit this parameter" from "move the whole instance".
+        // Below panning (a held Space outranks everything) and above the tool cursor, because a grip
+        // is a Select-tool affordance and no drawing tool shows one.
+        if (_viewModel is { ActiveTool: LayoutEditorViewModel.Tool.Select } vm
+            && vm.HoveredPCellHandleCursor != PCellGripCursor.None)
+        {
+            SetCursor(vm.HoveredPCellHandleCursor switch
+            {
+                PCellGripCursor.EastWest           => StandardCursorType.SizeWestEast,
+                PCellGripCursor.NorthSouth         => StandardCursorType.SizeNorthSouth,
+                PCellGripCursor.NorthEastSouthWest => StandardCursorType.TopRightCorner,
+                PCellGripCursor.NorthWestSouthEast => StandardCursorType.TopLeftCorner,
+                _                                  => StandardCursorType.SizeAll,
+            });
+            return;
+        }
+
         bool useCross = _viewModel is { ActiveTool: not LayoutEditorViewModel.Tool.Select };
-        Cursor = useCross ? new Cursor(StandardCursorType.Cross) : Cursor.Default;
+        if (useCross) { SetCursor(StandardCursorType.Cross); return; }
+        if (_currentCursorType is null) return;
+        _currentCursorType = null;
+        Cursor = Cursor.Default;
+    }
+
+    /// <summary>The cursor is now refreshed on EVERY pointer move (R-pch-12 needs it to be), so it has
+    /// to be free when nothing changed: a <c>new Cursor(...)</c> per move allocates a platform handle
+    /// per frame of a drag.</summary>
+    private StandardCursorType? _currentCursorType;
+
+    private void SetCursor(StandardCursorType type)
+    {
+        if (_currentCursorType == type) return;
+        _currentCursorType = type;
+        Cursor = new Cursor(type);
     }
 
     // ── ICustomDrawOperation ──────────────────────────────────────────────────

@@ -69,6 +69,128 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>True while the active drag is running in deferred mode (R-pch-10).</summary>
     internal bool PCellHandleDragIsDeferred => _pcellHandleDrag?.Deferred ?? false;
 
+    /// <summary>True while the active drag was started under grip-lock (R-pch-12) — the state in
+    /// which Alt has been spent and no longer suspends snap.</summary>
+    internal bool PCellHandleDragIsLocked => _pcellHandleDrag?.Locked ?? false;
+
+    // ── Grip-lock and hover (R-pch-12) ────────────────────────────────────────
+
+    /// <summary>
+    /// R-pch-12. True while Alt is held over a selection that HAS grips — the state in which the next
+    /// press can only talk to a grip and can never move the instance.
+    ///
+    /// <para>Kept as state rather than derived per frame because the canvas learns about Alt from two
+    /// unrelated places: a pointer move (which carries modifiers) and a bare Alt key-down with the
+    /// pointer stationary. Both write here; <see cref="ClearGripLockArmed"/> is the LostFocus escape
+    /// hatch, and it is not optional — a held-key latch whose key-up goes to whatever took focus is
+    /// exactly the bug the Space-to-pan latch already caused once.</para>
+    /// </summary>
+    internal bool GripLockArmed { get; private set; }
+
+    /// <summary>The grip under the cursor, or −1. Drawn emphasised and reported to the canvas as a
+    /// cursor change, so which of the two gestures a press will get is visible BEFORE the press.</summary>
+    internal int HoveredPCellHandleIndex { get; private set; } = -1;
+
+    /// <summary>What the canvas should show the pointer as, for the grip currently under it.</summary>
+    internal PCellGripCursor HoveredPCellHandleCursor { get; private set; } = PCellGripCursor.None;
+
+    /// <summary>Called by the canvas on a bare Alt key-down/up, and on LostFocus. Arming is refused
+    /// when the selection has no grips, so Alt keeps every other meaning it has everywhere else in
+    /// this editor.</summary>
+    internal void SetGripLockArmed(bool armed)
+    {
+        bool next = armed && !ScaleModeActive && _pcellHandleDrag is null && SelectionHasPCellHandles();
+        if (next == GripLockArmed) return;
+        GripLockArmed = next;
+        RebuildOverlay();
+    }
+
+    /// <summary>Drops the armed latch. See <see cref="GripLockArmed"/> for why a LostFocus path has
+    /// to exist at all.</summary>
+    internal void ClearGripLockArmed()
+    {
+        if (!GripLockArmed && HoveredPCellHandleIndex < 0) return;
+        GripLockArmed = false;
+        HoveredPCellHandleIndex = -1;
+        HoveredPCellHandleCursor = PCellGripCursor.None;
+        RebuildOverlay();
+    }
+
+    /// <summary>Whether a press right now could reach a grip at all — the gate on grip-lock, and the
+    /// reason Alt's other meanings (cycling, scale-about-centre, suspend-snap) are untouched
+    /// everywhere else.</summary>
+    private bool SelectionHasPCellHandles()
+        => ResolveSelectedPCellHandles(out _, out _, out _, out _).Count > 0;
+
+    /// <summary>
+    /// Recomputes what the pointer is over, on an idle hover. This is the whole of the "the user can
+    /// see which gesture they are about to get" half: the grip under the cursor is drawn emphasised
+    /// and the canvas swaps in an axis cursor, so the 4-pixel boundary between "edit this parameter"
+    /// and "move the whole cell" stops being invisible.
+    ///
+    /// <para>Uses the GRIP-LOCK radius while Alt is held, because that is the radius a press would
+    /// actually use — the highlight has to promise exactly what the press will deliver.</para>
+    /// </summary>
+    private void UpdatePCellHandleHover(long px, long py, long tolDbu, long lockTolDbu, bool alt)
+    {
+        int previousIndex = HoveredPCellHandleIndex;
+        var previousCursor = HoveredPCellHandleCursor;
+        bool previousArmed = GripLockArmed;
+
+        HoveredPCellHandleIndex = -1;
+        HoveredPCellHandleCursor = PCellGripCursor.None;
+
+        var handles = ResolveSelectedPCellHandles(out var inst, out _, out _, out _);
+        GripLockArmed = alt && !ScaleModeActive && handles.Count > 0;
+
+        if (handles.Count > 0 && inst is not null)
+        {
+            long tol = Math.Max(GripLockArmed ? Math.Max(lockTolDbu, tolDbu) : tolDbu, 1);
+            double bestDistance = double.MaxValue;
+            for (int i = 0; i < handles.Count; i++)
+            {
+                var m = ToMarker(handles[i], inst, active: false);
+                double d = Math.Sqrt((double)(m.X - px) * (m.X - px) + (double)(m.Y - py) * (m.Y - py));
+                if (d > tol || d >= bestDistance) continue;
+                bestDistance = d;
+                HoveredPCellHandleIndex = i;
+                HoveredPCellHandleCursor = CursorFor(m);
+            }
+        }
+
+        if (HoveredPCellHandleIndex != previousIndex || HoveredPCellHandleCursor != previousCursor
+            || GripLockArmed != previousArmed)
+            RebuildOverlay();
+    }
+
+    /// <summary>
+    /// Which pointer shape announces this grip. A two-axis grip (R-pch-4a) and an angular one both
+    /// travel in more than one direction, so both get the omnidirectional cursor rather than a lie
+    /// about a single axis; everything else quantises its travel direction to the nearest of four.
+    ///
+    /// <para>No Y flip here, and that is deliberate rather than an oversight: world +Y is Y-UP and it
+    /// is drawn as screen NORTH, so a world axis pointing up-and-right is a NE-SW cursor directly.
+    /// The renderer negates Y because it works in Y-DOWN path space; a compass direction does not.</para>
+    /// </summary>
+    private static PCellGripCursor CursorFor(PCellHandleMarker m)
+    {
+        if (m.IsAngular || m.HasCrossAxis) return PCellGripCursor.All;
+        if (m.AxisDx == 0 && m.AxisDy == 0) return PCellGripCursor.All;
+
+        double deg = Math.Atan2(m.AxisDy, m.AxisDx) * (180.0 / Math.PI);
+        if (deg < 0) deg += 180.0;          // an axis has no sense of direction, only orientation
+        if (deg >= 180.0) deg -= 180.0;
+
+        return deg switch
+        {
+            < 22.5  => PCellGripCursor.EastWest,
+            < 67.5  => PCellGripCursor.NorthEastSouthWest,
+            < 112.5 => PCellGripCursor.NorthSouth,
+            < 157.5 => PCellGripCursor.NorthWestSouthEast,
+            _       => PCellGripCursor.EastWest,
+        };
+    }
+
     /// <summary>
     /// The instance a grip drag is currently in flight on, or −1. Paired with
     /// <see cref="PCellHandleDragParameters"/> so a reader can tell WHICH instance the in-flight
@@ -155,11 +277,12 @@ public sealed partial class LayoutEditorViewModel
         for (int i = 0; i < resolved.Count; i++)
         {
             bool active = _pcellHandleDrag is { } d && d.HandleIndex == i;
+            bool hovered = _pcellHandleDrag is null && HoveredPCellHandleIndex == i;
             // While a grip is being dragged everything renders where the SOLVER put it, which is where
             // the regenerated cell actually places it (R-pch-3) rather than where the cursor is.
             var use = live?[i]
                       ?? (active && _pcellHandleDrag!.PreviewHandle is { } moved ? moved : resolved[i]);
-            markers.Add(ToMarker(use, inst, active));
+            markers.Add(ToMarker(use, inst, active) with { Hovered = hovered, Armed = GripLockArmed });
         }
         return markers;
     }
@@ -290,6 +413,12 @@ public sealed partial class LayoutEditorViewModel
 
         public bool Deferred;
         public bool Moved;
+
+        /// <summary>R-pch-12: this drag was started under GRIP-LOCK (Alt held at press). Alt is
+        /// SPENT by that press — for the rest of the gesture it no longer means suspend-snap, so
+        /// holding it to guarantee the grip does not silently cost the geometry snapping the grip was
+        /// grabbed to use.</summary>
+        public bool Locked;
         public PCellValue? PendingValue;
         public PCellValue? PendingCrossValue;
 
@@ -313,7 +442,10 @@ public sealed partial class LayoutEditorViewModel
     /// would move the whole instance instead, which is the one interaction failure a user cannot
     /// work around.
     /// </summary>
-    private bool TryBeginPCellHandleDrag(long px, long py, long tolDbu)
+    /// <param name="locked">R-pch-12: this press was made under grip-lock. The caller passes the
+    /// larger lock radius as <paramref name="tolDbu"/> and consumes the press whatever this returns —
+    /// all this flag does is mark the resulting drag so Alt stops meaning suspend-snap for it.</param>
+    private bool TryBeginPCellHandleDrag(long px, long py, long tolDbu, bool locked = false)
     {
         var handles = ResolveSelectedPCellHandles(out var inst, out var origin, out var gen, out int instIdx);
         if (handles.Count == 0 || inst is null || origin is null || gen is null) return false;
@@ -352,6 +484,7 @@ public sealed partial class LayoutEditorViewModel
             Generator = gen,
             Instance = inst,
             ValuePerProjection = valuePerProjection,
+            Locked = locked,
         };
 
         // R-pch-4a: a grip may drive a second parameter across its own axis. Measured the same way
@@ -381,6 +514,14 @@ public sealed partial class LayoutEditorViewModel
         if (PreviewModeOf(origin, gen) == PCellPreviewMode.Deferred) drag.Deferred = true;
 
         _pcellHandleDrag = drag;
+
+        // The armed highlight has done its job the moment the grip is caught: from here the ACTIVE
+        // grip is the thing to look at, and leaving every other grip lit would say the press is still
+        // open when it is not.
+        GripLockArmed = false;
+        HoveredPCellHandleIndex = -1;
+        HoveredPCellHandleCursor = PCellGripCursor.None;
+
         RebuildOverlay();
         return true;
     }

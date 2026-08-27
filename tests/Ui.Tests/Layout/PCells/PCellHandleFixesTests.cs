@@ -226,9 +226,13 @@ public sealed class PCellHandleFixesTests : IDisposable
         var vm = PlaceMlin();
         var g = vm.Overlay.PCellHandles.First(h => h.Label == "W" && h.AxisDy > 0);
 
-        // A deliberately off-grid destination: half a mil past a whole number of them.
+        // R-pch-12: Alt is held from the first MOVE, not from the press. Alt AT PRESS now means
+        // grip-lock, and that press SPENDS it — a locked drag keeps snapping on, deliberately, so
+        // that holding Alt to guarantee the grip cannot silently cost the geometry snap the grip was
+        // grabbed to use. Suspending the grid on a grip drag is therefore: press, then hold Alt.
+        // The subject of this test is unchanged; only where the modifier goes has moved.
         long toY = g.Y + 20 * OneMilDbu + OneMilDbu / 2;
-        vm.OnPointerPressed(g.X, g.Y, KeyModifiers.Alt, hitTolDbu: 20_000);
+        vm.OnPointerPressed(g.X, g.Y, KeyModifiers.None, hitTolDbu: 20_000);
         vm.OnPointerMoved(g.X, toY, leftDown: true, KeyModifiers.Alt, hitTolDbu: 20_000);
         vm.OnPointerReleased(g.X, toY, KeyModifiers.Alt);
 

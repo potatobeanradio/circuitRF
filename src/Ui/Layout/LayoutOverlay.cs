@@ -157,6 +157,12 @@ public sealed record class LayoutOverlay
 /// <param name="IsAngular">The grip SWINGS about its anchor rather than sliding. The hint is drawn as
 /// an arc through the grip rather than a straight line, because a straight tangent would read as
 /// "drag this way and keep going" — which is exactly what an angular grip does not do.</param>
+/// <param name="Hovered">R-pch-12: the pointer is within this grip's own grab radius RIGHT NOW, so a
+/// press here edits this parameter rather than moving the instance. Drawn emphasised — the boundary
+/// between the two gestures was otherwise a four-pixel disc with nothing on screen marking it.</param>
+/// <param name="Armed">R-pch-12: grip-lock is engaged (Alt held over a selection that has grips), so
+/// every grip is currently a large target and the instance cannot be moved at all. Drawn on EVERY
+/// grip, not just the hovered one, because what the user needs to see is that the mode is on.</param>
 public readonly record struct PCellHandleMarker(
     long   X,
     long   Y,
@@ -167,7 +173,30 @@ public readonly record struct PCellHandleMarker(
     string Label,
     bool   Active,
     bool   HasCrossAxis = false,
-    bool   IsAngular = false);
+    bool   IsAngular = false,
+    bool   Hovered = false,
+    bool   Armed = false);
+
+/// <summary>
+/// What the pointer should look like over a parameter grip — a compass orientation, resolved by the
+/// view model from the grip's own travel axis and mapped to a platform cursor by the canvas.
+///
+/// <para>Deliberately an orientation rather than an Avalonia <c>StandardCursorType</c>: which
+/// platform cursor best says "this slides east-west" is the canvas's judgement, and every other
+/// overlay type in this file is likewise a description of what to draw, never a drawing primitive.</para>
+/// </summary>
+public enum PCellGripCursor
+{
+    /// <summary>Not over a grip — the canvas keeps whatever cursor the active tool asks for.</summary>
+    None,
+    EastWest,
+    NorthSouth,
+    NorthEastSouthWest,
+    NorthWestSouthEast,
+
+    /// <summary>Travels in more than one direction: a two-axis grip (R-pch-4a) or an angular one.</summary>
+    All,
+}
 
 /// <summary>
 /// One violation's region, ready to draw. Deliberately a flat render-facing record rather than the

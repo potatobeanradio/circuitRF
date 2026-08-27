@@ -32,6 +32,16 @@ public static partial class LayoutRenderer
     /// direction, short enough not to be mistaken for geometry.</summary>
     private const double PCellHandleAxisHintDevicePixels = 18.0;
 
+    /// <summary>R-pch-12. How much bigger a grip draws once the pointer is inside its own grab radius.
+    /// This is the answer to the owner's report that the two gestures felt like a coin flip: the grip
+    /// says, before the press, that the press belongs to IT and not to the instance under it.</summary>
+    private const double PCellHandleHoverGrowth = 1.45;
+
+    /// <summary>R-pch-12. The grip-lock halo, in device pixels beyond the grip's own half-size. Drawn
+    /// on EVERY grip while Alt is held, because the thing that has to be visible is that the mode is
+    /// on and the instance can no longer be moved — not merely which grip is nearest.</summary>
+    private const double PCellHandleArmedHaloDevicePixels = 5.0;
+
     private static void DrawPCellHandles(
         SKCanvas canvas, IReadOnlyList<PCellHandleMarker> handles,
         LayoutRenderTheme theme, PathSpace ps, double scaleUm)
@@ -41,6 +51,7 @@ public static partial class LayoutRenderer
         float half     = DevicePixelsToPathSpace(scaleUm, PCellHandleSizeDevicePixels) / 2f;
         float reach    = DevicePixelsToPathSpace(scaleUm, PCellHandleAxisHintDevicePixels);
         float hairline = DevicePixelsToPathSpace(scaleUm, 1.5);
+        float halo     = DevicePixelsToPathSpace(scaleUm, PCellHandleArmedHaloDevicePixels);
 
         using var fill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.PCellHandle };
         using var outline = new SKPaint
@@ -52,6 +63,11 @@ public static partial class LayoutRenderer
             IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = hairline,
             Color = theme.PCellHandle.WithAlpha(150),
             PathEffect = SKPathEffect.CreateDash([4f, 3f], 0),
+        };
+        using var armedHalo = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = hairline,
+            Color = theme.PCellHandle.WithAlpha(90),
         };
 
         foreach (var h in handles)
@@ -92,13 +108,25 @@ public static partial class LayoutRenderer
                 if (h.HasCrossAxis) canvas.DrawLine(cx - hy, cy + hx, cx + hy, cy - hx, hint);
             }
 
+            // R-pch-12: grip-lock's halo, drawn under the glyph so it reads as a widened target rather
+            // than a second object. Suppressed on the hovered grip, which is already making the same
+            // statement more precisely.
+            if (h.Armed && !h.Hovered && !h.Active)
+                canvas.DrawCircle(cx, cy, half + halo, armedHalo);
+
             // L1d's own grab square, shared (see DrawGrabSquare) — the grip being dragged is filled
             // solid, the rest hollow, so which one is live reads without moving the pointer off it.
-            DrawGrabSquare(canvas, cx, cy, half, h.Active ? fill : outline);
+            // R-pch-12 adds the third state between those two: HOVERED draws filled and larger, which
+            // is what makes "this press edits the parameter, it does not move the cell" visible while
+            // the user can still change their mind about pressing.
+            float glyphHalf = h.Hovered && !h.Active ? half * (float)PCellHandleHoverGrowth : half;
+            DrawGrabSquare(canvas, cx, cy, glyphHalf, h.Active || h.Hovered ? fill : outline);
 
             // The one mark that says "parameter, not vertex": a small hollow centre. Cheap, and it
-            // survives at the small on-screen sizes where a shape difference would not.
-            if (!h.Active) canvas.DrawCircle(cx, cy, half * 0.35f, outline);
+            // survives at the small on-screen sizes where a shape difference would not. Dropped on a
+            // hovered or active grip for the same reason it is drawn on the others — both of those are
+            // FILLED, and a stroke in the fill's own colour on top of it draws nothing at all.
+            if (!h.Active && !h.Hovered) canvas.DrawCircle(cx, cy, half * 0.35f, outline);
         }
     }
 }

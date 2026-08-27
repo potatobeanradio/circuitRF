@@ -1006,7 +1006,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// a selected vertex"). Cleared on any selection change, model mutation, or Escape.</summary>
     private int? _pickedVertexIndex;
 
-    private void HandleSelectPress(double wx, double wy, KeyModifiers mods, long tolDbu, long snapTolDbu = 0)
+    private void HandleSelectPress(double wx, double wy, KeyModifiers mods, long tolDbu, long snapTolDbu = 0,
+                                   long gripLockTolDbu = 0)
     {
         bool shift = (mods & KeyModifiers.Shift) != 0;
         bool ctrl  = (mods & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
@@ -1014,6 +1015,26 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
         _selectPressWX = px; _selectPressWY = py;
+
+        // pcell-parameter-handles.md R-pch-12 — GRIP-LOCK. Owner report: which of two gestures a press
+        // on a PCell's corner produces felt like a coin flip. The grips and the instance body are the
+        // same pixels, separated only by a four-pixel radius nothing on screen marks, and whether the
+        // grips exist at all depends on what was selected BEFORE the press. Alt held at press resolves
+        // it by force: the nearest grip within a much larger radius wins, and the press is CONSUMED
+        // whatever happens — no move, no marquee, no selection change, and specifically no silent
+        // fall-through to a move when the grip refuses (a sensitivity that cannot be measured is the
+        // one case where the old code moved the whole cell after a dead-on click on a grip).
+        //
+        // Gated on the selection actually HAVING grips, which is what keeps Alt's other meanings in
+        // this editor intact: suspend-snap, Alt+click overlap cycling, and scale-about-centre all
+        // behave exactly as before everywhere else. Scale mode is excluded because its own handles
+        // take priority over everything (R-L1h-5) and would otherwise be unreachable while a
+        // PCell is selected.
+        if (alt && !ScaleModeActive && SelectionHasPCellHandles())
+        {
+            TryBeginPCellHandleDrag(px, py, Math.Max(Math.Max(gripLockTolDbu, tolDbu), 1), locked: true);
+            return;
+        }
 
         // pcell-parameter-handles.md R-pch-8: a PCell instance's PARAMETER grips are tested FIRST, and
         // specifically before the instance-body move drag further down — otherwise grabbing a grip
@@ -1728,9 +1749,18 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         SelectionStatusText = ComputeSelectionStatus();
     }
 
-    private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu, long pixelDbu = 0, long snapTolDbu = 0)
+    private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu, long pixelDbu = 0, long snapTolDbu = 0,
+                                  long gripLockTolDbu = 0)
     {
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        // R-pch-12: ALT IS SPENT BY THE PRESS THAT LOCKED THIS DRAG. Stripped here, at the one place
+        // modifiers enter the move path, so everything downstream — UpdateSnapMarker's own R-snp-11
+        // suppression as much as the grip solver's — sees the same answer. Doing it at the two call
+        // sites instead would leave the geometry-snap QUERY suppressed while the solver believed snap
+        // was on, and the grip would silently only ever reach the grid: exactly the workflow (grab the
+        // grip, snap it to a real feature) that grip-lock exists to make reliable.
+        if (_pcellHandleDrag is { Locked: true }) mods &= ~KeyModifiers.Alt;
 
         if (_cycleCache.HasStack)
         {
@@ -1795,6 +1825,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // candidate and then silently discarded it — the query ran (SnapQueryRunCount incremented)
             // but nothing was ever drawn. Call unconditionally so hover shows a marker exactly like
             // every other per-tick recompute in this method already does.
+            //
+            // R-pch-12: and this is where a grip learns it is under the cursor. Hover is the ONLY tick
+            // that can announce which gesture the next press will produce, so it runs on the same path
+            // the snap marker already uses rather than waiting for the press to decide.
+            UpdatePCellHandleHover(px, py, tolDbu, gripLockTolDbu, (mods & KeyModifiers.Alt) != 0);
             RebuildOverlay();
             return;
         }
@@ -2314,14 +2349,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// name="snapTolDbu"/> (docs/sonnet-briefs/brief-snap-distance-and-geometry-snap.md R-snp-15) is
     /// geometry snap's own screen-pixel tolerance, already converted to DBU by the caller from the
     /// CURRENT zoom — a deliberately separate constant from <paramref name="hitTolDbu"/>, never
-    /// cached, never derived from <c>SnapDbu</c>. 0 (the default) means "no geometry-snap query."</summary>
-    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0, double zoomPxPerDbu = 0, long snapTolDbu = 0)
+    /// cached, never derived from <c>SnapDbu</c>. 0 (the default) means "no geometry-snap query."
+    /// <paramref name="gripLockTolDbu"/> (R-pch-12) is GRIP-LOCK's own, deliberately generous
+    /// screen-pixel radius, converted to DBU by the caller from the CURRENT zoom on the same
+    /// discipline as the other two — the radius within which Alt+press claims the nearest PCell
+    /// parameter grip. 0 (the default) falls back to <paramref name="hitTolDbu"/>, so a caller that
+    /// does not know about grip-lock still gets the ordinary grip radius rather than an unbounded
+    /// one.</summary>
+    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0, double zoomPxPerDbu = 0, long snapTolDbu = 0,
+                                 long gripLockTolDbu = 0)
     {
         // L1f: a paste placement in progress takes priority over every other gesture — a click
         // commits it, regardless of the currently active drawing tool.
         if (_pastePlacementShapes is not null) { CommitPastePlacement(); return; }
 
-        if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0), Math.Max(snapTolDbu, 0)); return; }
+        if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
 
@@ -2378,7 +2420,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// name="snapTolDbu"/> is geometry snap's own screen-pixel tolerance, converted to DBU by the
     /// caller from the CURRENT zoom (R-snp-15) — 0 (the default) disables the geometry-snap marker/
     /// target query for this call.</summary>
-    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0, long pixelDbu = 0, long snapTolDbu = 0)
+    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0, long pixelDbu = 0, long snapTolDbu = 0,
+                               long gripLockTolDbu = 0)
     {
         if (_pastePlacementShapes is not null)
         {
@@ -2387,7 +2430,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
-        if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0), Math.Max(snapTolDbu, 0)); return; }
+        if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance)
         {

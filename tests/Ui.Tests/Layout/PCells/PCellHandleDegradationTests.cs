@@ -245,6 +245,45 @@ public sealed class PCellHandleDegradationTests : IDisposable
         Assert.Contains(_sink.Warnings, w => w.Contains("L") && w.Contains(DeadGrip));
     }
 
+    /// <summary>
+    /// R-pch-12. The same dead grip, pressed under GRIP-LOCK: a refusal has to stay a refusal. The
+    /// ordinary path falls through to the instance-body move when the sensitivity probe fails, which
+    /// means a dead-on click on a visible grip MOVED THE WHOLE CELL — the worst outcome under a
+    /// modifier whose entire promise is that the cell cannot move.
+    /// </summary>
+    [Fact]
+    public void UnderGripLock_AGripThatRefuses_MovesNothingAtAll()
+    {
+        var (vm, cellRef) = Place(DeadGrip);
+        var grip = Assert.Single(vm.Overlay.PCellHandles);
+
+        vm.OnPointerPressed(grip.X, grip.Y, KeyModifiers.Alt, hitTolDbu: 200_000, snapTolDbu: 0,
+                            gripLockTolDbu: 600_000);
+        vm.OnPointerMoved(5_000_000, 0, leftDown: true, KeyModifiers.Alt, hitTolDbu: 200_000,
+                          pixelDbu: 0, snapTolDbu: 0, gripLockTolDbu: 600_000);
+        vm.OnPointerReleased(5_000_000, 0, KeyModifiers.Alt);
+
+        Assert.Equal(cellRef, vm.Model.Instances[0].CellRef);   // design unchanged
+        Assert.Equal(0, vm.Model.Instances[0].X);               // and the cell did not run away
+        Assert.Equal(0, vm.Model.Instances[0].Y);
+    }
+
+    /// <summary>The pair to the test above, and the reason it is worth having: WITHOUT grip-lock the
+    /// refusal still falls through to an ordinary body move, which is the pre-existing behaviour and
+    /// is left alone deliberately — a plain press is allowed to mean "move this".</summary>
+    [Fact]
+    public void WithoutGripLock_ARefusedGripPress_FallsThroughToAnOrdinaryMove()
+    {
+        var (vm, _) = Place(DeadGrip);
+        var grip = Assert.Single(vm.Overlay.PCellHandles);
+
+        vm.OnPointerPressed(grip.X, grip.Y, KeyModifiers.None, hitTolDbu: 200_000);
+        vm.OnPointerMoved(5_000_000, 0, leftDown: true, KeyModifiers.None, hitTolDbu: 200_000);
+        vm.OnPointerReleased(5_000_000, 0, KeyModifiers.None);
+
+        Assert.NotEqual(0, vm.Model.Instances[0].X);
+    }
+
     [Fact]
     public void ARejection_IsReportedOncePerSession_NotOncePerRepaint()
     {

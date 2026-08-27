@@ -1,5 +1,62 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## PCell grip vs. instance move: which gesture a corner press produced was a coin flip (2026-08-27)
+
+Owner report, on MKlopf: click-dragging a corner sometimes moved the whole instance and sometimes
+edited the parameter, with no way to tell in advance which. **Three independent causes, all producing
+the same symptom** — worth separating, because two of them look like the third and would have been
+"fixed" by widening a radius:
+
+1. **The gesture depended on selection state.** `ResolveSelectedPCellHandles` only returns grips for a
+   selection of exactly one instance and no shapes, so the drag that SELECTS an unselected PCell moves
+   it while the identical drag a moment later edits a parameter. The deciding input was selection
+   history, not anything under the cursor.
+2. **Both targets were the same pixels, with the boundary invisible.** A grip claimed a press within
+   `SelectHitTolerancePixels` (4 px); one pixel further moved the cell. There was NO hover feedback of
+   any kind — `LayoutCanvas.UpdateCursor` only ever produced Hand/Cross/Default, and nothing
+   highlighted a grip under the pointer. MKlopf is the worst case because its grips sit ON the
+   corners, which is where a user grabs to move.
+3. **A drawn grip could refuse and silently fall through to a move.** A grip draws once
+   `PCellHandleSolver.Validate` passes, but the PRESS additionally runs `MeasureSensitivity` against
+   the real generator; when that failed, `TryBeginPCellHandleDrag` returned false and the press
+   reached the instance-body move. A dead-on click on a visible grip moved the cell.
+
+**Fixed as R-pch-12** (design doc §4.6): Alt at press is GRIP-LOCK — nearest grip within a bounded
+24-px radius wins, and the press is consumed whatever happens, including a refusal. Plus hover
+feedback: the grip under the cursor draws filled and enlarged and the canvas shows an axis cursor
+derived from that grip's own travel direction, so the choice is visible before the press.
+
+**Two decisions worth keeping, both non-obvious:**
+
+- **Alt is SPENT by the press.** Alt is this editor's universal suspend-snap modifier (R-snp-11, and
+  `HandleSelectMove` passed it straight into `UpdatePCellHandleDrag`), so the naive version of
+  grip-lock would break the exact workflow it exists to serve: hold Alt to guarantee the grip, and the
+  geometry snapping the grip was grabbed to use is off. It is stripped ONCE, at the top of
+  `HandleSelectMove`, rather than at the two call sites — otherwise `UpdateSnapMarker` would suppress
+  the QUERY while the solver believed snap was on, and the grip could only ever reach the grid. The
+  behaviour change this carries: suspending the grid on a grip drag is now *press, then hold Alt*
+  rather than *hold Alt, then press*.
+- **The radius is bounded, not "nearest grip anywhere"** (owner's call). Unbounded means an Alt+press
+  well away from the cell yanks a grip the user was not looking at, and a wide cell is where that is
+  easiest to do. Outside the radius the press does nothing — the promise, not a failure of it.
+
+Grip-lock is gated on the selection actually HAVING grips (and Scale mode being off), which is what
+leaves Alt's other meanings — suspend-snap, Alt+click overlap cycling, scale-about-centre — untouched
+everywhere else in the editor.
+
+**Cause 1 survives deliberately.** Resolving grips for whatever instance the cursor happens to be over
+would invoke a generator per hover, which a `Deferred`-mode vendor cell cannot afford; grips still
+belong to the selection. Under hover feedback that is no longer invisible, which was the actual
+complaint.
+
+**The armed highlight is a held-key latch and is cleared on LostFocus** (`ClearGripLockArmed`) — hold
+Alt, click a toolbar button, and the key-up goes to whatever took focus. This editor shipped exactly
+that bug once already with Space-to-pan.
+
+Gates: `tests/Ui.Tests/Layout/PCells/PCellGripLockTests.cs` (16 tests — every "the grip won"
+assertion paired with the same press without Alt, so none of them can pass on a generous radius
+alone), plus two in `PCellHandleDegradationTests` pinning the refusal case in both directions.
+
 ## No macOS bundle declared a file-access usage description (2026-08-27)
 
 All three `Info.plist`s — circuitRF, harmonicaRF, wBond — shipped with **no `NS*UsageDescription`

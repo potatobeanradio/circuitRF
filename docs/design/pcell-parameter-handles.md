@@ -580,6 +580,68 @@ out of scope.
 
 ---
 
+### 4.6 R-pch-12 — telling the two gestures apart (grip-lock and hover)
+
+**Owner report, 2026-08-27.** Click-dragging the corner of a PCell that has grips — MKlopf is the
+case it was reported on — sometimes moved the whole instance and sometimes edited the parameter, and
+which one a press would produce felt like a coin flip. It was not one bug but three, all of which
+made the same press ambiguous:
+
+1. **The gesture depended on selection state.** Grips only resolve for a selection of exactly one
+   instance, so the drag that SELECTS an unselected PCell moves it, while the identical drag on the
+   identical pixel a moment later edits a parameter. The deciding input was the user's selection
+   history, not anything under the cursor.
+2. **The two targets were the same pixels, with nothing marking the boundary.** A grip claimed a
+   press within the ordinary ~4-device-pixel hit radius; a press one pixel further moved the cell.
+   There was no hover feedback of any kind — no highlight, no cursor change — so the user was asked
+   to hit an invisible disc whose miss-behaviour was a completely different operation. It is worst
+   exactly where it was reported: MKlopf's grips sit ON the corners, which is also where a user
+   naturally grabs to move.
+3. **A drawn grip could silently refuse and fall through to a move.** A grip draws once `Validate`
+   passes, but the press additionally runs `MeasureSensitivity` against the real generator; when that
+   failed, the press fell through to the instance-body move. The user clicked exactly on a visible
+   grip and the cell moved.
+
+**Grip-lock: Alt held at press.** The nearest grip within a much larger radius wins, and the press is
+CONSUMED whatever happens — no move drag, no marquee, no selection change, and no fall-through when
+the grip refuses. Holding Alt is a statement that the user is only talking to grips.
+
+- **Gated on the selection actually having grips** (and on Scale mode being off, since its own
+  handles take priority over everything — R-L1h-5). This is what leaves every other meaning of Alt in
+  this editor untouched: suspend-snap, Alt+click overlap cycling, scale-about-centre.
+- **The radius is BOUNDED** (`LayoutCanvas.GripLockHitTolerancePixels`, 24 device pixels, converted
+  fresh from the live zoom like every other tolerance here). Owner's call, against "nearest grip
+  anywhere": an unbounded radius means an Alt+press well away from the cell yanks a grip the user was
+  not looking at, and a wide cell is where that is easiest to do. Outside the radius the press does
+  nothing, which is the promise, not a failure of it.
+- **ALT IS SPENT BY THE PRESS.** For the rest of that gesture Alt no longer means suspend-snap. This
+  carve-out is the design's own precondition, not a convenience: the workflow grip-lock exists to
+  make reliable is *grab the grip, then snap it to a real feature elsewhere in the layout*, and Alt
+  keeping its usual meaning would silently turn the geometry snap off in exactly that gesture. It is
+  stripped once, at the top of `HandleSelectMove`, so the snap QUERY (R-snp-11's own suppression) and
+  the grip solver can never disagree about whether snap is on. A drag begun **without** Alt keeps
+  Alt = suspend-snap, unchanged — if you want to suspend snap, do not lock.
+
+**Hover.** The other half, and the one that works without a modifier: on an idle hover the grip under
+the cursor is drawn filled and enlarged, and the canvas swaps in an axis cursor derived from that
+grip's own travel direction (two-axis and angular grips report the omnidirectional cursor rather than
+a lie about a single axis). While Alt is held, hover uses the LOCK radius — the highlight has to
+promise exactly what the press will deliver. While Alt is held with grips showing, every grip draws a
+halo, because what the user needs to see is that the mode is on, not merely which grip is nearest.
+
+**The armed state is a held-key latch, and it is cleared on LostFocus.** Hold Alt, click a toolbar
+button, and the key-up is delivered to whatever took focus. This editor has already shipped that bug
+once with Space-to-pan; `ClearGripLockArmed` is why it is not shipping it again.
+
+**What is deliberately NOT changed:** grips still resolve for the SELECTION only, so the click that
+selects a PCell still cannot edit a parameter. Resolving grips for whatever instance the cursor
+happens to be over would invoke a generator per hover, which a 743-shape vendor cell in `Deferred`
+mode cannot afford. Cause 1 above therefore survives — but under hover feedback it is no longer
+invisible: an unselected PCell shows no grips and no grip cursor, and grip-lock covers the impatient
+case once it is selected.
+
+---
+
 ## 7. Invariants this must not break
 
 Restated because each one is load-bearing and each is easy to break by accident:
@@ -605,7 +667,7 @@ Restated because each one is load-bearing and each is easy to break by accident:
 | Generator declares no handles | No grips. Exactly today's behaviour. Not an error, not reported. |
 | Handle names an undeclared parameter | Dropped, reported once naming the handle and the generator. |
 | Handle drives a **String** or **Bool** parameter | Dropped, reported. There is no continuum for a drag to move along; those belong in the dialog. |
-| Sensitivity unmeasurable (grip does not move for any δ) | That handle is dropped for this session with a stated reason. The parameter stays editable in the dialog. |
+| Sensitivity unmeasurable (grip does not move for any δ) | That handle is dropped for this session with a stated reason. The parameter stays editable in the dialog. Under grip-lock the press is consumed and **nothing moves** (R-pch-12); an ordinary press still falls through to a body move, which is what a plain press is allowed to mean. |
 | Generator throws while probing or previewing | Drag is abandoned, design unchanged, the script's own traceback surfaced — the same treatment a failed parameter edit already gets. |
 | Drag hits a declared `Min`/`Max` | Grip stops at the bound; readout names the bound. |
 | Regeneration does not converge on the dragged position | Best achieved value is committed and the grip shows where it actually landed (R-pch-3). |
