@@ -223,13 +223,31 @@ public static class BuiltInSymbols
                    Cx = cx, Cy = cy, Amp = amp, Cycles = cycles,
                    Length = length, Axis = axis };
 
+    /// <summary>
+    /// A built-in symbol's text. <b><c>ForceReadable</c> is ON by default here</b> — every built-in
+    /// label is a WORD to be read ("1", "2", "Ref", "VAR", "d+"), never a mark whose orientation
+    /// carries meaning, so a rotated instance must keep it right side up rather than spinning it
+    /// rigidly (owner, 2026-08-26 — an SnP rotated 180 degrees rendered its port numbers upside
+    /// down; SDD, ZPort and the generic device box all had it too, since all four share this helper).
+    ///
+    /// <para>The flip is 180 degrees about the text's OWN box centre, so nothing moves: a label
+    /// stays at the body edge it was authored against, which after a 180 degree instance rotation is
+    /// the edge its port has moved to. The <c>+</c>/<c>−</c> polarity marks pass through it
+    /// unchanged, both being symmetric under that flip.</para>
+    ///
+    /// <para>Authored <c>.csym</c> text is NOT touched — <c>ForceReadable</c> stays per-primitive and
+    /// off by default there, because a symbol's author may have meant the rotation. The symbol editor
+    /// shows the literal authored orientation either way.</para>
+    /// </summary>
     private static TextPrimitive Txt(string content, double ax, double ay,
                                       double fontSize = 12,
                                       SymbolTextAlign align = SymbolTextAlign.Center,
                                       SymbolTextVAlign vAlign = SymbolTextVAlign.Middle,
-                                      SymbolColorRole colorRole = SymbolColorRole.SymbolLine)
+                                      SymbolColorRole colorRole = SymbolColorRole.SymbolLine,
+                                      bool forceReadable = true)
         => new() { Content = content, AnchorX = ax, AnchorY = ay,
-                   FontSize = fontSize, Align = align, VAlign = vAlign, ColorRole = colorRole };
+                   FontSize = fontSize, Align = align, VAlign = vAlign, ColorRole = colorRole,
+                   ForceReadable = forceReadable };
 
     // ── Sym helper ────────────────────────────────────────────────────────────
 

@@ -250,6 +250,9 @@ internal static class WBondSymbolGenerator
             Align = align,
             VAlign = SymbolTextVAlign.Middle,
             ColorRole = role,
+            // Every label this generator writes is a word or a terminal name, so a rotated instance
+            // keeps it upright rather than spinning it (BuiltInSymbols.Txt carries the same default).
+            ForceReadable = true,
         };
 
     /// <summary>

@@ -1,5 +1,52 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A rotated SnP rendered its port numbers upside down (2026-08-26)
+
+Owner-reported, of an SnP rotated in a schematic; SDD, ZPort and the generic device box had it too.
+
+The mechanism already existed and was simply never switched on: `TextPrimitive.ForceReadable` makes
+`SchematicRenderer.DrawSymbol` flip a label 180 degrees when the instance rotation would leave it
+between 90 and 270 degrees, and `applyForceReadable` is already true on all three component-instance
+draw paths. **Every built-in symbol's text was authored with the flag off.** So the fix is the DEFAULT
+in `BuiltInSymbols.Txt` — the one helper all of them go through — rather than a list of call sites
+that would drift. `AutoSymbolGenerator` and `WBondSymbolGenerator` set it on the labels they write for
+the same reason.
+
+**Authored `.csym` text is deliberately untouched.** `ForceReadable` stays per-primitive and off by
+default there: a symbol's author may have meant the rotation, and the symbol editor shows the literal
+authored orientation either way.
+
+**Nothing moves.** The flip is 180 degrees about the text's OWN box centre, and that centre goes
+through the instance transform like any other point — so a label stays on the body edge it was
+authored against, which after the rotation is the edge its port has moved to. Only the ink WITHIN the
+box shifts, by at most half a glyph.
+
+### The pin-association test, and why "nearest pin" is the wrong metric for it
+
+The owner's follow-up — a label must not end up naming the wrong lead — is gated by
+`tests/Ui.Tests/SymbolTextForceReadableTests.cs`'s `EveryPortLabel_StaysOnTheLeadOfThePinItNames`,
+over every rotation, both mirror states, and for SnP every pin configuration and pitch.
+
+**The first version measured distance to the PIN TIP and failed — on geometry, not on the fix.** A
+4-port SnP with the Ref pin on has its "3" label at (75, 100): 125 units from pin 3 at (200, 100) and
+125 units from Ref at (0, 200). An exact tie, present at every rotation with or without the flag,
+decided by the pixel of glyph offset that `baselineDy` contributes in whichever direction the text
+frame points. Measuring to the **lead** — the line the label actually sits on, which is how a reader
+associates the two — gives 15 units against 90. The test asserts the winner clears the runner-up by
+more than 10 px, so it cannot pass on a coin flip the way the pin-tip version was doing.
+
+### Two render-oracle notes worth not rediscovering
+
+- **Pixel-diffing a rotated glyph against its own rotation does not work.** Skia hints an upright
+  glyph to the pixel grid and does not hint a rotated one, so two rasterisations of the same outline
+  disagree on ~70% of ink pixels while being geometrically identical. The oracle is the alpha-weighted
+  ink CENTROID, which does not care; even that carries a ~1.8 px hinting offset, against a ~22 px
+  signal.
+- **`DrawSymbol`'s pan is SUBTRACTED before zoom** (`pixel = (world - pan) * zoom`), so a test that
+  wants the component origin at the centre of the pixel grid passes `-((Side - 1) / 2)`, not
+  `+Side / 2`. Half a pixel out and a reflection-based comparison measures the resampling.
+
+
 ## Activation focus stole the caret out of the Library palette's Search field (2026-08-26)
 
 **Reported:** *"If I click in the Library palette's Search field, I immediately lose focus of the

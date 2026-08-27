@@ -95,6 +95,9 @@ internal static class AutoSymbolGenerator
                 // offset at the old 12 and an obvious one at 18. This is what centres the number on
                 // the stub it names rather than merely making it bigger.
                 VAlign   = SymbolTextVAlign.Middle,
+                // A port NUMBER is read, not oriented — so it stays upright on a rotated instance,
+                // exactly as the built-in box symbols' labels do (BuiltInSymbols.Txt).
+                ForceReadable = true,
             });
         }
 
