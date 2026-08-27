@@ -80,15 +80,7 @@ public static class CrashReporter
                 _pending = PromoteAbandonedSessions(_dir);
                 Prune(_dir);
 
-                string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-                _path = Path.Combine(_dir, $"session-{stamp}-{Environment.ProcessId}.running");
-
-                // FileShare.Read, deliberately: readable by a probe or by the user, but an exclusive
-                // (FileShare.None) open fails while this process lives, which is what makes
-                // "abandoned" decidable without pid arithmetic.
-                var fs = new FileStream(_path, FileMode.Create, FileAccess.Write, FileShare.Read);
-                _writer = new StreamWriter(fs, new UTF8Encoding(false)) { AutoFlush = true };
-                _writer.Write(Header());
+                OpenSession();
             }
             catch { Close(); }   // no disk, no reports — never a reason to fail startup
         }
@@ -102,6 +94,23 @@ public static class CrashReporter
             TaskScheduler.UnobservedTaskException      += OnUnobservedTaskException;
         }
         catch { /* nothing to do if the runtime refuses the subscription */ }
+    }
+
+    /// <summary>
+    /// Opens this process's session file and writes the header. Caller holds <see cref="_gate"/> and
+    /// has already resolved <see cref="_dir"/>.
+    /// </summary>
+    private static void OpenSession()
+    {
+        string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        _path = Path.Combine(_dir!, $"session-{stamp}-{Environment.ProcessId}.running");
+
+        // FileShare.Read, deliberately: readable by a probe or by the user, but an exclusive
+        // (FileShare.None) open fails while this process lives, which is what makes
+        // "abandoned" decidable without pid arithmetic.
+        var fs = new FileStream(_path, FileMode.Create, FileAccess.Write, FileShare.Read);
+        _writer = new StreamWriter(fs, new UTF8Encoding(false)) { AutoFlush = true };
+        _writer.Write(Header());
     }
 
     // ── Breadcrumbs ──────────────────────────────────────────────────────────────
@@ -218,6 +227,39 @@ public static class CrashReporter
             Close();
             if (promoted) return;                       // this session DID crash earlier; keep its report
             try { File.Delete(path); } catch { /* a leftover file only costs a spurious report */ }
+        }
+    }
+
+    /// <summary>
+    /// Hands this session off to a process image that is about to REPLACE this one via <c>execv</c>,
+    /// which is how an applied auto-update relaunches on macOS and Linux.
+    ///
+    /// <para><b>An exec is not an exit, and that is exactly the problem.</b> The pid survives, the
+    /// runtime does not, and <see cref="AppDomain.ProcessExit"/> therefore never fires — so
+    /// <see cref="MarkCleanExit"/> never runs and the session file is left behind. The replacement
+    /// image then starts, sweeps the directory seconds later, finds a session file nobody owns
+    /// (the exec closed the handle) and promotes it into a crash report announcing that the previous
+    /// session "was killed rather than throwing". Nothing crashed; the user updated. The trail in
+    /// such a report is EMPTY, which is the tell — a real death has breadcrumbs.</para>
+    ///
+    /// <para>So the update path says so explicitly, immediately before it execs. If the exec returns
+    /// — it only returns on failure — call <see cref="ResumeAfterExec"/>, because a session that
+    /// carries on running still deserves a report if it dies.</para>
+    /// </summary>
+    public static void HandOffToExec() => MarkCleanExit();
+
+    /// <summary>
+    /// Re-arms reporting after a <see cref="HandOffToExec"/> whose <c>execv</c> failed and returned.
+    /// A no-op unless the reporter is installed and its session file is closed, so calling it on any
+    /// other path cannot produce a second session file for one process.
+    /// </summary>
+    public static void ResumeAfterExec()
+    {
+        lock (_gate)
+        {
+            if (!_installed || _dir is null || _writer is not null) return;
+            try { OpenSession(); }
+            catch { Close(); }   // same bargain as Install: no disk, no reports, never a failure
         }
     }
 

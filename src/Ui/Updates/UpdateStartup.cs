@@ -36,8 +36,9 @@ public static class UpdateStartup
     }
 
     /// <summary>
-    /// Called FIRST in <c>Program.Main</c>, before Avalonia is initialised and before the crash
-    /// reporter has anything to report on.
+    /// Called early in <c>Program.Main</c>, before Avalonia is initialised — but AFTER
+    /// <c>CrashReporter.Install</c>, which is why the exec below has to hand the session file off
+    /// rather than abandon it.
     ///
     /// <para>It reclaims debris, resolves the outstanding startup attempt (raising it, or reverting a
     /// version that has failed to start twice), and applies anything staged. On macOS both an applied
@@ -81,7 +82,7 @@ public static class UpdateStartup
                     // on as the version that does not work. The pointer layout needs no re-exec: the
                     // stub reads `current` at the start of the NEXT launch.
                     if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
-                        UpdateSwap.ExecReplace(result.NewExecutable, args);
+                        ExecReplacingThisProcess(result.NewExecutable, args);
                     return;
 
                 case SwapOutcome.PointerFlipped:
@@ -94,7 +95,7 @@ public static class UpdateStartup
                 case SwapOutcome.BundleSwapped:
                     RecordSwap(state, result.Detail, previousDirectoryName: null);
                     if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
-                        UpdateSwap.ExecReplace(result.NewExecutable, args);
+                        ExecReplacingThisProcess(result.NewExecutable, args);
                     // Only reached if execv failed; the swap already happened, so carrying on runs
                     // the OLD process image against the NEW tree for this session only. Harmless,
                     // and better than refusing to start.
@@ -108,6 +109,26 @@ public static class UpdateStartup
         {
             // An updater that can prevent a launch is worse than no updater.
         }
+    }
+
+    /// <summary>
+    /// <c>execv</c>s <paramref name="executable"/>, closing this session's crash-report file first.
+    ///
+    /// <para><b>The close is the point.</b> An exec keeps the pid and discards the runtime, so
+    /// <c>ProcessExit</c> never fires and the crash reporter never learns the session ended — it
+    /// simply stops existing mid-session. The replacement image starts two seconds later, sweeps the
+    /// report directory, finds that session file owned by nobody, and announces to the user that
+    /// circuitRF "did not shut down cleanly last time". It shut down perfectly; it updated. Telling
+    /// the reporter BEFORE the exec is what makes an update look like the clean handoff it is.</para>
+    ///
+    /// <para><c>execv</c> returns only on failure, and this session then carries on running — so the
+    /// reporter is re-armed on that path rather than left blind for the rest of the run.</para>
+    /// </summary>
+    private static void ExecReplacingThisProcess(string executable, string[] args)
+    {
+        Diagnostics.CrashReporter.HandOffToExec();
+        UpdateSwap.ExecReplace(executable, args);
+        Diagnostics.CrashReporter.ResumeAfterExec();
     }
 
     /// <summary>

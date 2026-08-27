@@ -134,6 +134,101 @@ public sealed class CrashReporterTests : IDisposable
 
     // ── The managed half ─────────────────────────────────────────────────────
 
+    // ── The exec hand-off (an applied auto-update) ───────────────────────────
+
+    /// <summary>
+    /// The bug this pins, seen in the wild on macOS: an applied update <c>execv</c>s the new
+    /// executable, which keeps the pid and discards the runtime, so <c>ProcessExit</c> never fires.
+    /// The session file was therefore left behind, the replacement image swept the directory two
+    /// seconds later, found it owned by nobody and promoted it — and the user was told circuitRF
+    /// "did not shut down cleanly last time" about an update they had just chosen. The empty trail
+    /// was the tell.
+    /// </summary>
+    [Fact]
+    public void AnExecHandoff_LeavesNothingForTheReplacementImageToPromote()
+    {
+        CrashReporter.Install("circuitRF");
+        Assert.Single(Sessions());
+
+        CrashReporter.HandOffToExec();
+        Assert.Empty(Sessions());
+
+        // The replacement image: same pid, seconds later, sweeping the same directory.
+        CrashReporter.ResetForTests();
+        CrashReporter.Install("circuitRF");
+
+        Assert.Empty(CrashReporter.TakePendingReports());
+        Assert.Empty(Reports());
+    }
+
+    /// <summary>
+    /// <c>execv</c> returns only when it FAILS, and the update path then carries on running this
+    /// image. A session that is still alive must still be reportable, so the hand-off is re-armed
+    /// rather than leaving the rest of the run blind.
+    /// </summary>
+    [Fact]
+    public void WhenTheExecFails_TheSessionIsReArmed_SoTheRestOfTheRunIsStillReported()
+    {
+        CrashReporter.Install("circuitRF");
+        CrashReporter.HandOffToExec();
+        CrashReporter.ResumeAfterExec();
+
+        Assert.Single(Sessions());
+
+        CrashReporter.Note("opened a workspace after the exec failed");
+        string session = Sessions().Single();
+        Assert.Contains("opened a workspace after the exec failed", File.ReadAllText(session));
+    }
+
+    /// <summary>
+    /// A stray <see cref="CrashReporter.ResumeAfterExec"/> must not give one process two session
+    /// files — the second would outlive the clean exit that only removes the first, which is the very
+    /// false report this whole mechanism exists to avoid.
+    /// </summary>
+    [Fact]
+    public void ResumeWithoutAHandoff_DoesNotOpenASecondSessionFile()
+    {
+        CrashReporter.Install("circuitRF");
+        CrashReporter.ResumeAfterExec();
+        Assert.Single(Sessions());
+
+        CrashReporter.MarkCleanExit();
+        Assert.Empty(Sessions());
+    }
+
+    /// <summary>
+    /// The update path must actually USE the hand-off. Both <c>execv</c> sites in
+    /// <c>UpdateStartup</c> — an applied update and a rollback — go through the one helper that
+    /// closes the session file first; a third site added later without it would silently reintroduce
+    /// the false crash report.
+    /// </summary>
+    [Fact]
+    public void TheUpdatePath_ClosesTheSessionBeforeEveryExec()
+    {
+        string source = File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Updates/UpdateStartup.cs"));
+
+        Assert.Contains("CrashReporter.HandOffToExec()", source);
+        Assert.Contains("CrashReporter.ResumeAfterExec()", source);
+
+        // Every ExecReplace in the update-startup path is the one inside the helper.
+        Assert.Equal(1, CountOutsideComments(source, "UpdateSwap.ExecReplace("));
+    }
+
+    private static int CountOutsideComments(string source, string needle)
+    {
+        int n = 0;
+        foreach (string raw in source.Split('\n'))
+        {
+            string line = raw.TrimStart();
+            if (line.StartsWith("//", StringComparison.Ordinal) ||
+                line.StartsWith("///", StringComparison.Ordinal) ||
+                line.StartsWith("*", StringComparison.Ordinal)) continue;
+            int i = 0;
+            while ((i = line.IndexOf(needle, i, StringComparison.Ordinal)) >= 0) { n++; i += needle.Length; }
+        }
+        return n;
+    }
+
     [Fact]
     public void ReportFatal_WritesTheWholeExceptionChain_AndTheReportExistsImmediately()
     {

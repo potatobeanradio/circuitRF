@@ -1,5 +1,49 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The auto-update reported itself as a crash (2026-08-26)
+
+Owner-reported on macOS: a crash report appeared in
+`~/Library/Application Support/circuitRF/crash-reports`, and the Messages panel said circuitRF "did
+not shut down cleanly last time". **Nothing had crashed.** The report was written by the update the
+user had just accepted.
+
+**The two files name the mechanism between them.** The report header said version 1.0.0-beta.2,
+started 20:05:10, pid 35935; the live session file beside it said 1.0.0-beta.3, started 20:05:12,
+**pid 35935**. One pid cannot be two versions two seconds apart by any route except `execv`, and pid
+reuse within two seconds onto the same number is not a competing explanation. `ps` confirmed it
+directly: pid 35935 was still alive, and macOS reports its start time as 20:05:10 because an exec
+keeps the process, not just the number.
+
+**Why an exec produces a crash report.** `CrashReporter` is deliberately built so that the ONLY thing
+which removes the session file is a clean exit, because the deaths worth reporting (stack overflow,
+the OOM killer, a native fault) raise nothing a managed handler can see. `execv` defeats that
+premise: the pid survives, the runtime does not, `AppDomain.ProcessExit` never fires, and .NET's
+`O_CLOEXEC` closes the file handle — so the session file is left behind AND its liveness probe
+succeeds. The replacement image then runs `CrashReporter.Install`, sweeps the directory, finds a
+session nobody owns, and promotes it under the "the process was killed rather than throwing" banner.
+Both were doing exactly what they were written to do; neither knew about the other.
+
+**The empty trail was the tell, and it generalises.** The promoted report's breadcrumb section was
+completely empty. The pre-exec image lived for two seconds and never got past
+`UpdateStartup.RunBeforeUi`, so it had nothing to record. A real death has breadcrumbs — a crash
+report with an empty trail is a report about a session that never started, not one that ended badly.
+
+**The fix is a hand-off, not a suppression.** `CrashReporter.HandOffToExec()` closes the session file
+immediately before the exec, and `ResumeAfterExec()` re-arms it if `execv` returns — which it only
+does on failure, and the update path then carries on running that image for the rest of the session,
+which is precisely a state worth having a report for. Both `execv` sites in `UpdateStartup` (an
+applied update and a rollback) go through one private helper so a third added later cannot quietly
+miss it; `CrashReporterTests.TheUpdatePath_ClosesTheSessionBeforeEveryExec` counts the bare
+`ExecReplace` calls to hold that shut, and fails on the pre-fix source (2 sites, no hand-off).
+
+**Not a bug, and it came up while diagnosing this: the process still running after "quitting" is the
+macOS resident convention.** `App.NotifyWindowCountChanged` deliberately shows `_bgMenuWindow` and
+stays alive when the last `WorkspaceWindow` closes, so the Dock icon and menu bar survive. Cmd-Q goes
+through `ShutdownRequested` to `Quit()`, which reaches `Environment.Exit(0)` and so DOES fire
+`ProcessExit` and remove the session file. The sampled main thread was parked in `[NSApplication run]`
+waiting for events — an idle run loop, not a stalled shutdown path.
+
+
 ## A rotated SnP rendered its port numbers upside down (2026-08-26)
 
 Owner-reported, of an SnP rotated in a schematic; SDD, ZPort and the generic device box had it too.
