@@ -494,8 +494,16 @@ public sealed class DeviceWorkerProcessTests
         // test on its own. Twelve isolated passes were once taken as proof the race did not exist —
         // it was the wrong experiment, and the conclusion was wrong with it.
         //
-        // So: if this ever fails, it is not flaky. Do not add a wait for the process to be reaped
-        // either — polling for that IS the grace period, and it hides exactly what is being tested.
+        // So a failure here means the RACE IS STILL LIVE under that much load — not that the test
+        // is badly written. Fix the reader; do not add a wait for the process to be reaped, because
+        // polling for that IS the grace period and it hides exactly what is being tested.
+        //
+        // Corollary, and the reason this paragraph was reworded (2026-08-27): it USED to say "if
+        // this ever fails, it is not flaky." That reads as "this failure is deterministic, go find
+        // what you broke," and it cost a contributor ~15 min chasing a clean-tree baseline for a
+        // failure they had not caused. Both halves are true at once and the comment has to say so:
+        // the failure is REAL (something to fix), and it is LOAD-DEPENDENT (it will pass on its own,
+        // so an isolated pass is not evidence you fixed it — nor that you caused it).
         const string reason = "cannot open model data file: no such file or directory";
 
         using var transport = ProcessDeviceWorkerTransport.Start(WorkerPath, ["--fail-with", reason]);

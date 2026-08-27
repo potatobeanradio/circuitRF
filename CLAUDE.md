@@ -148,6 +148,23 @@ name, outcome, duration, failure message, stack trace and captured stdout.
 - Corollary: **scope the run before starting it**, per the section below — `dotnet test tests/Ui.Tests`
   for layout/UI work is ~40 s against ~7 min for the full solution.
 
+**A failure in code you did not touch: attribute it before re-running anything.** The question is
+"is it mine?", not "is it real?" — and **never `git stash` your work to run a clean-tree baseline**
+(that is the full run again, plus a restore, plus re-verifying the restored tree, with a
+half-finished change at risk). Three checks, in cost order:
+
+1. **`git status --porcelain`** — did the change touch that path at all? Usually settles it.
+2. **Read the test's own comment.** Several here document themselves as load-dependent.
+3. **Run that one test alone** — `dotnet test tests/Core.Tests --no-build --filter
+   "FullyQualifiedName~<Name>"` is well under a second. Fails in isolation → deterministic → probably
+   yours. Passes → load-dependent → consistent with a known race, and NOT evidence you caused it.
+   (An isolated pass still never proves a race *absent* — it only separates "deterministic break"
+   from "load-dependent".)
+
+Then report it and move on: "failed, I touched nothing on that path, here is the evidence" is a
+complete answer. Whether a load-dependent test has genuinely regressed is a question about the repo,
+not about your change — ask the owner rather than spending minutes of machine time on it unasked.
+
 ### `dotnet test` is fast by default (brief-test-default-fast.md, 2026-07-28)
 
 **Plain `dotnet test`, with no flags, is the routine gate — it is fast by construction, not by
