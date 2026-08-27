@@ -191,16 +191,23 @@
                         <!-- Rotate. Same icons, order and shortcuts as the Schematic Editor's own
                              pair, so the gesture transfers between editors. A multi-selection turns
                              as ONE rigid body here (see LayoutEditorViewModel.Rotate.cs). -->
-                        <Button Click="OnRotateCcw" ToolTip.Tip="Rotate 90° CCW  (R)" Padding="6,3">
+                        <!-- IsEnabled starts False and is maintained live by UpdateSelectionButtonStates,
+                             the same shape as the Schematic Editor's own four (owner, 2026-08-27: they
+                             stayed enabled here with nothing selected, and clicking one did nothing). -->
+                        <Button x:Name="RotateCcwBtn" Click="OnRotateCcw" IsEnabled="False"
+                                ToolTip.Tip="Rotate 90° CCW  (R)" Padding="6,3">
                             <mi:MaterialIcon Kind="RotateLeft" Width="16" Height="16"/>
                         </Button>
-                        <Button Click="OnRotateCw" ToolTip.Tip="Rotate 90° CW  (Shift+R)" Padding="6,3">
+                        <Button x:Name="RotateCwBtn" Click="OnRotateCw" IsEnabled="False"
+                                ToolTip.Tip="Rotate 90° CW  (Shift+R)" Padding="6,3">
                             <mi:MaterialIcon Kind="RotateRight" Width="16" Height="16"/>
                         </Button>
-                        <Button Click="OnMirrorH" ToolTip.Tip="Mirror Horizontal  (M)" Padding="6,3">
+                        <Button x:Name="MirrorHBtn" Click="OnMirrorH" IsEnabled="False"
+                                ToolTip.Tip="Mirror Horizontal  (M)" Padding="6,3">
                             <mi:MaterialIcon Kind="FlipHorizontal" Width="16" Height="16"/>
                         </Button>
-                        <Button Click="OnMirrorV" ToolTip.Tip="Mirror Vertical  (Shift+M)" Padding="6,3">
+                        <Button x:Name="MirrorVBtn" Click="OnMirrorV" IsEnabled="False"
+                                ToolTip.Tip="Mirror Vertical  (Shift+M)" Padding="6,3">
                             <mi:MaterialIcon Kind="FlipVertical" Width="16" Height="16"/>
                         </Button>
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Instance}"

@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.DuplicateOffsetDialog"
+        Title="Duplicate"
+        Width="320"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock Text="Offset the copy by:" FontSize="12"/>
+
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="6">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="X:" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="OffsetXBox"
+                         FontSize="12"
+                         KeyDown="OnKeyDown"
+                         TextChanged="OnOffsetChanged"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Y:" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="OffsetYBox"
+                         FontSize="12"
+                         KeyDown="OnKeyDown"
+                         TextChanged="OnOffsetChanged"/>
+            </Grid>
+
+            <TextBlock Text="Zero offset places the copy exactly on top of the original. Negative moves left/down."
+                       FontSize="10" Opacity="0.55" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ValidationMessage"
+                       Text="Enter a dimension, e.g. 1mm or -500nm."
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Duplicate" Width="90" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

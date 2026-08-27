@@ -46,7 +46,9 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.ClipboardCutRequested         += async (_, _) => await OnClipboardCut();
         LayoutCanvasCtrl.ClipboardPasteRequested        += async (_, _) => await OnClipboardPaste(inPlace: false);
         LayoutCanvasCtrl.ClipboardPasteInPlaceRequested += async (_, _) => await OnClipboardPaste(inPlace: true);
-        LayoutCanvasCtrl.DuplicateRequested             += (_, _) => { Vm?.Duplicate(); LayoutCanvasCtrl.InvalidateVisual(); };
+        // Ctrl+D prompts for the copy's offset exactly as the context menu's own "Duplicate…" does —
+        // same method, so the two surfaces cannot disagree (owner, 2026-08-27).
+        LayoutCanvasCtrl.DuplicateRequested             += async (_, _) => await LayoutCanvasCtrl.ShowDuplicateDialogAsync();
 
         // brief-layout-testing-fixes.md item 3/R-fix-3: a click into the canvas always re-focuses it
         // (GotFocus fires whenever focus WASN'T already here — e.g. after a project-tree click moved
@@ -128,7 +130,14 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.CanvasOverlay = _hostOverlay ?? _frameOverlay;
     }
 
-    private void OnFrameOverlayChanged() => LayoutCanvasCtrl.InvalidateOverlay();
+    // A WIRE selection is enough for Rotate/Mirror (LayoutEditorViewModel.RotateAvailability), and it
+    // lives in the wBond overlay rather than in the view model's own selection — so this repaint
+    // signal, not SelectionStatusText, is where a wire-only selection change becomes observable here.
+    private void OnFrameOverlayChanged()
+    {
+        LayoutCanvasCtrl.InvalidateOverlay();
+        UpdateSelectionButtonStates();
+    }
 
     // ── The two wBond panel buttons (wbond.md §10.1) ──────────────────────────
 
@@ -554,6 +563,23 @@ public partial class LayoutEditorView : UserControl
         PopOutBtn.IsEnabled = doc.CanPopOut;
     }
 
+    /// <summary>
+    /// Rotate/Mirror follow the SELECTION, mirroring SchematicView's own UpdateDisableButtonStates —
+    /// they used to sit permanently enabled here, so with nothing selected the click was a silent
+    /// no-op (owner, 2026-08-27). The single source of truth is the view model's
+    /// <c>RotateAvailability</c> (which <c>MirrorAvailability</c> forwards to), so the toolbar and the
+    /// context menu's own Rotate items can never disagree about when the command can run — including
+    /// its wire case, where a wirebond cell's selected WIRES are enough on their own.
+    /// </summary>
+    private void UpdateSelectionButtonStates()
+    {
+        bool canTransform = (DataContext as LayoutDocument)?.ActiveViewModel.RotateAvailability.CanExecute == true;
+        RotateCcwBtn.IsEnabled = canTransform;
+        RotateCwBtn.IsEnabled  = canTransform;
+        MirrorHBtn.IsEnabled   = canTransform;
+        MirrorVBtn.IsEnabled   = canTransform;
+    }
+
     private void OnPopToTop(object? sender, RoutedEventArgs e)
     {
         if (DataContext is LayoutDocument doc) DoPopToLevel(doc, 0);
@@ -601,6 +627,7 @@ public partial class LayoutEditorView : UserControl
         }
         ApplyCanvasOverlay();   // WB40 — this frame's own wires, if its cell has any
         UpdateHierarchyButtonStates();
+        UpdateSelectionButtonStates();
         UpdateWirePanelButtonStates();
     }
 
@@ -621,6 +648,7 @@ public partial class LayoutEditorView : UserControl
         }
         ApplyCanvasOverlay();   // WB40 — pushing into a wirebond cell brings ITS wires with it
         UpdateHierarchyButtonStates();
+        UpdateSelectionButtonStates();
         UpdateWirePanelButtonStates();
     }
 
@@ -900,6 +928,7 @@ public partial class LayoutEditorView : UserControl
         else if (e.PropertyName is nameof(LayoutEditorViewModel.SelectionStatusText))
         {
             UpdateHierarchyButtonStates();
+            UpdateSelectionButtonStates();
         }
         // WB40: a wirebond cell's wires can arrive while this document is already open — Update Layout
         // from Schematic writes the sidecar into a layout it has just brought to the front (§9.5). The

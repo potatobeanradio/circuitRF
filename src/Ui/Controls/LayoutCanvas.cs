@@ -1121,6 +1121,12 @@ public sealed class LayoutCanvas : Control
         AddAvailItem("Rotate 90° CCW", rotAvail).Click += (_, _) => { _viewModel.RotateSelection(clockwise: false); InvalidateVisual(); };
         AddAvailItem("Rotate 90° CW", rotAvail).Click  += (_, _) => { _viewModel.RotateSelection(clockwise: true);  InvalidateVisual(); };
 
+        // Duplicate sits directly below Rotate (owner, 2026-08-27) — until now it was reachable only
+        // from Ctrl+D, i.e. from nowhere a user could SEE, which is the same complaint Rotate itself
+        // answered above. Both surfaces run the same ShowDuplicateDialogAsync, so the offset prompt
+        // cannot appear on one and not the other.
+        AddAvailItem("Duplicate…", _viewModel.DuplicateAvailability).Click += async (_, _) => await ShowDuplicateDialogAsync();
+
         Sep();
         var boolAvail = _viewModel.BooleanOpAvailability;
         AddAvailItem("Union", boolAvail).Click      += (_, _) => { _viewModel.ApplyUnion(); InvalidateVisual(); };
@@ -1207,6 +1213,22 @@ public sealed class LayoutCanvas : Control
 
         _viewModel.CommitOffsetText(text);
         _viewModel.ApplyOffsetToSelection();
+        InvalidateVisual();
+    }
+
+    /// <summary>Prompts for the copy's X/Y offset (default 0,0, in the layout's display unit) and
+    /// duplicates. Shared by the context-menu item and the view's Ctrl+D handler — the ONE place the
+    /// Duplicate gesture is spelled out, so the keyboard and the menu can never drift apart.</summary>
+    internal async Task ShowDuplicateDialogAsync()
+    {
+        if (_viewModel is null || !_viewModel.CanDuplicateSelection) return;
+        var dialog = new DuplicateOffsetDialog(_viewModel);
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var result = owner is not null ? await dialog.ShowDialog<DuplicateOffsetResult?>(owner) : null;
+        if (result is not { } r) return;
+
+        _viewModel.Duplicate(r.DxDbu, r.DyDbu);
         InvalidateVisual();
     }
 

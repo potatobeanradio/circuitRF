@@ -1,5 +1,50 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Duplicate with Offset, and the toolbar's Rotate/Mirror that never disabled (2026-08-27)
+
+Two owner items in one round: make Duplicate visible and give it an offset prompt, and fix the layout
+toolbar's Rotate/Mirror buttons staying enabled with nothing selected.
+
+**Duplicate was reachable from Ctrl+D and from nowhere a user could see** — the same complaint the
+context menu's own Rotate items answered in 2026-08. It is now `Duplicate…`, directly below the Rotate
+pair in `LayoutCanvas.BuildContextMenuItems`, present-but-disabled-with-a-reason like everything else
+in that menu (`DuplicateAvailability`). Wires are deliberately NOT in that availability, unlike
+`RotateAvailability`: `Duplicate` clones shapes and instances only, so a wire-only selection would get
+a command that does nothing.
+
+**Both surfaces prompt, and they prompt through one method.** `Ctrl+D` no longer duplicates
+immediately; its handler and the menu item both call `LayoutCanvas.ShowDuplicateDialogAsync`, so the
+prompt cannot appear on one surface and not the other. `DuplicateOffsetDialog` mirrors `OffsetDialog`
+exactly (a `Window` returning a typed result, parsing through `LayoutUnits.TryParse` against the
+document's `DisplayUnit`/`DbuPerMicron`), with one deliberate difference: **it defaults to (0,0) on
+every opening rather than pre-filling the last-used value.** A copy exactly on top of the original is
+what was asked for, and silently reusing a previous offset would move a copy somewhere nobody asked
+for this time.
+
+`Duplicate()` (parameterless) is unchanged and still nudges by one snap step — it is the programmatic
+entry point, and three existing tests pin that behaviour. The new `Duplicate(long dx, long dy)` is what
+the dialog calls, with the offset applied verbatim in DBU and never re-snapped.
+
+**The toolbar bug, and the one part of it that is not a copy of the schematic's fix.** The four
+buttons had no `x:Name` and no enable logic at all; they now start `IsEnabled="False"` and are pushed
+from `RotateAvailability` by `UpdateSelectionButtonStates`, the same shape as `SchematicView`'s
+`UpdateDisableButtonStates`.
+
+The part that does not transfer: **a WIRE selection is enough for Rotate/Mirror, and wire selection is
+invisible to the view model's own notifications.** It lives in `WireEditor.Selection`
+(`SelectedWireIndices` reads straight through to it), so the `SelectionStatusText` PropertyChanged hook
+this view already used for the Push In button never fires for it. Driving the buttons from that hook
+alone would have greyed out Rotate on a wirebond cell with wires selected — the commonest thing on that
+cell, and a fresh bug in place of the reported one. The overlay's `OverlayChanged` (which every wire
+selection path already raises, because the canvas has to repaint) is the signal that covers it, so
+`OnFrameOverlayChanged` refreshes the buttons too.
+
+Gates: `tests/Ui.Tests/Layout/LayoutDuplicateWithOffsetTests.cs` — offset behaviour against the view
+model, and source-scan assertions for the parts that live in a `Window`/`Control` this suite cannot
+construct (menu POSITION directly below Rotate with nothing added between, one shared dialog path for
+both surfaces, units, the four buttons' names/initial state, and that the refresh is called from both
+the selection hook and the overlay hook).
+
 ## Drag modifiers: Shift constrains, Alt duplicates, and Alt stops suspending snap (2026-08-27)
 
 Owner request, the round after grip-lock: Shift-ortho in the layout editor (the schematic already had

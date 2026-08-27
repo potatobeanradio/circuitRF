@@ -21,6 +21,16 @@ public sealed partial class LayoutEditorViewModel
     public bool CanCopySelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0;
     public bool CanDuplicateSelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0;
 
+    /// <summary>The same test as <see cref="CanDuplicateSelection"/>, carrying the reason a disabled
+    /// menu item should state (R-L1h-3's "always present, disabled with a reason" rule). Wires are
+    /// deliberately absent from it, unlike <c>RotateAvailability</c>: <see cref="Duplicate(long,long)"/>
+    /// clones shapes and instances only, so offering it for a wire-only selection would be a no-op
+    /// dressed as a command.</summary>
+    public LayoutCommandAvailability DuplicateAvailability =>
+        CanDuplicateSelection
+            ? new LayoutCommandAvailability(true, null)
+            : new LayoutCommandAvailability(false, "Select geometry or an instance to duplicate.");
+
     public IRelayCommand DuplicateCommand { get; private set; } = null!;
 
     private void InitClipboardCommands()
@@ -57,17 +67,22 @@ public sealed partial class LayoutEditorViewModel
     /// side effect of Duplicate is a small betrayal people notice. Instance CellRefs never need
     /// rebasing here — the duplicate lands in the SAME document, so the original relative path is
     /// already correct.</summary>
-    public void Duplicate()
-    {
-        long step = OneSnapStepDbu;
+    public void Duplicate() => Duplicate(OneSnapStepDbu, OneSnapStepDbu);
 
+    /// <summary>Duplicate at a CALLER-CHOSEN offset, in DBU — the "Duplicate with Offset" prompt
+    /// (owner, 2026-08-27), whose default is (0,0), i.e. a copy exactly on top of the original. Both
+    /// UI surfaces (Ctrl+D and the context menu) go through the dialog and then through here, so the
+    /// two can never disagree about what Duplicate does; <see cref="Duplicate()"/> keeps the
+    /// one-snap-step nudge for programmatic callers.</summary>
+    public void Duplicate(long dxDbu, long dyDbu)
+    {
         var indices = ValidSelectedIndices;
         var shapes = indices.Count > 0
-            ? LayoutFragment.Translate(indices.Select(i => Model.Shapes[i]).ToList(), step, step)
+            ? LayoutFragment.Translate(indices.Select(i => Model.Shapes[i]).ToList(), dxDbu, dyDbu)
             : [];
 
         var srcInstances = SelectedInstanceIndices.Select(i => Model.Instances[i]).ToList();
-        var instances = srcInstances.Count > 0 ? LayoutFragment.Translate(srcInstances, step, step) : [];
+        var instances = srcInstances.Count > 0 ? LayoutFragment.Translate(srcInstances, dxDbu, dyDbu) : [];
 
         InsertPastedMixed(shapes, instances, "Duplicate");
     }
