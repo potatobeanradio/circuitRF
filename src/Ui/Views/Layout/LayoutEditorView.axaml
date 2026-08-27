@@ -113,7 +113,7 @@
             <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory needs a
                  stable handle on this panel. -->
             <WrapPanel x:Name="DocsToolbar" Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
-                        <Button Click="OnZoomToFit" ToolTip.Tip="Zoom to Fit" Padding="6,3">
+                        <Button Click="OnZoomToFit" ToolTip.Tip="Zoom to Fit  (F)" Padding="6,3">
                             <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
                         </Button>
                         <Button Click="OnZoomIn" ToolTip.Tip="Zoom In" Padding="6,3">
