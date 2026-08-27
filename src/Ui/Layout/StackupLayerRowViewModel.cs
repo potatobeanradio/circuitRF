@@ -24,6 +24,13 @@ namespace CircuitRF.Ui.Layout;
 /// </summary>
 public sealed partial class StackupLayerRowViewModel : ObservableObject
 {
+
+    /// <summary>
+    /// The culture the staged numeric strings in this row are both formatted with and parsed with.
+    /// Invariant on purpose — see <see cref="RefreshFromModel"/>.
+    /// </summary>
+    private static readonly System.Globalization.CultureInfo Inv =
+        System.Globalization.CultureInfo.InvariantCulture;
     private readonly TechEditorViewModel _owner;
     private bool _isRefreshing;
 
@@ -193,10 +200,17 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         StagedName          = Layer.Name;
         StagedThicknessText  = LayoutUnits.Format(Layer.ThicknessDbu, _owner.Working.DefaultDisplayUnit, LayoutUnits.DefaultDbuPerMicron);
         ThicknessError       = null;
-        StagedEpsr           = Layer.Epsr.ToString("0.####");
-        StagedTanD           = Layer.TanD.ToString("0.######");
-        StagedMur            = Layer.Mur.ToString("0.####");
-        StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0");
+        // Invariant, to match the Commit* parses below. These four are NOT display text: the same
+        // string is written here and read back there, so the format and the parse are two halves of
+        // one round trip and must agree on the decimal separator. Formatting in the user's culture
+        // while parsing invariantly would make every focus-out revert silently for a comma-decimal
+        // user, even when they typed nothing. (See brief-localization-groundwork.md §4 and §2.4 —
+        // the rule against converting display formatting is about status lines and messages, not
+        // about an editable value that has to survive a round trip.)
+        StagedEpsr           = Layer.Epsr.ToString("0.####", Inv);
+        StagedTanD           = Layer.TanD.ToString("0.######", Inv);
+        StagedMur            = Layer.Mur.ToString("0.####", Inv);
+        StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0", Inv);
         IsGroundReference    = Layer.IsGroundReference;
 
         DrawingLayerOptions.Clear();
@@ -319,7 +333,8 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitEpsr()
     {
-        if (!double.TryParse(StagedEpsr, out var v)) { RefreshFromModel(); return; }
+        if (!double.TryParse(StagedEpsr, System.Globalization.NumberStyles.Float, Inv, out var v))
+        { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.Epsr) < 1e-12) return;
         var before = _owner.SnapshotJson();
         Layer.Epsr = v;
@@ -328,7 +343,8 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitTanD()
     {
-        if (!double.TryParse(StagedTanD, out var v)) { RefreshFromModel(); return; }
+        if (!double.TryParse(StagedTanD, System.Globalization.NumberStyles.Float, Inv, out var v))
+        { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.TanD) < 1e-15) return;
         var before = _owner.SnapshotJson();
         Layer.TanD = v;
@@ -337,7 +353,8 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitMur()
     {
-        if (!double.TryParse(StagedMur, out var v)) { RefreshFromModel(); return; }
+        if (!double.TryParse(StagedMur, System.Globalization.NumberStyles.Float, Inv, out var v))
+        { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.Mur) < 1e-12) return;
         var before = _owner.SnapshotJson();
         Layer.Mur = v;
@@ -346,8 +363,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public void CommitSigmaSm()
     {
-        if (!double.TryParse(StagedSigmaSm, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var v))
+        if (!double.TryParse(StagedSigmaSm, System.Globalization.NumberStyles.Float, Inv, out var v))
         { RefreshFromModel(); return; }
         if (System.Math.Abs(v - Layer.SigmaSm) < 1e-6) return;
         var before = _owner.SnapshotJson();

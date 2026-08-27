@@ -1647,14 +1647,19 @@ static (int Notes, int Warnings) PrintWarnings(ElaboratedNetlist nl, (int Notes,
     return from;
 }
 
+// Invariant, always. A command line is a machine-readable interface, like the file formats and the
+// expression language: `2.5GHz` must mean the same thing on every machine, so a script, a Makefile or
+// a CI job written in one country keeps working in another. This is the CLI's only unqualified
+// floating-point parse (brief-localization-groundwork.md §2.3).
 static double ParseHz(string s)
 {
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
     s = s.Trim();
-    if (s.EndsWith("GHz", StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^3]) * 1e9;
-    if (s.EndsWith("MHz", StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^3]) * 1e6;
-    if (s.EndsWith("kHz", StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^3]) * 1e3;
-    if (s.EndsWith("Hz",  StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^2]);
-    return double.Parse(s);
+    if (s.EndsWith("GHz", StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^3], inv) * 1e9;
+    if (s.EndsWith("MHz", StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^3], inv) * 1e6;
+    if (s.EndsWith("kHz", StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^3], inv) * 1e3;
+    if (s.EndsWith("Hz",  StringComparison.OrdinalIgnoreCase)) return double.Parse(s[..^2], inv);
+    return double.Parse(s, inv);
 }
 
 static double[] BuildFreqArray(double start, double stop, double step)

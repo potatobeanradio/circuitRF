@@ -319,6 +319,43 @@ All reported with the offending text/name, never a silent zero or NaN swallow:
 
 ---
 
+## 15A. Locale — the language is invariant, in every country, forever
+
+The expression language is a **formal language**, like C# or a SPICE deck. It does **not** follow the
+user's locale, and it will not start to when the UI is localized.
+
+- **Numeric literals use `.` as the decimal separator in every locale.** `1.5e9` parses everywhere;
+  `1,5e9` parses nowhere, ever.
+- **`,` is the function-argument separator and nothing else.**
+- **These are one rule, not two.** A grammar cannot have both `if(a,b,c)` and a comma decimal:
+  `f(1,5)` would be simultaneously "f of one-point-five" and "f of one and five", with nothing in the
+  text to tell them apart. Every circuit simulator resolves this the same way, and so does every
+  programming language.
+- **Localizing the UI does not change any of this.** What a German user *reads* in a status line is
+  display text and correctly follows their locale (`2,5 GHz`); what they *type* into a parameter field
+  is source code and does not. The same display-vs-machine-readable split governs the file formats.
+
+**Why it is worth stating rather than leaving to the implementation.** `Parser` already parses every
+literal with `CultureInfo.InvariantCulture`, but that is one argument on one line, and it looks
+redundant to a reader who has only ever run in `en-US` — where invariant and current agree exactly.
+Removing it does not fail loudly. It fails *silently and wrongly*: with the parser at `de-DE`,
+`abs(-3.5)` evaluates to **35**, and `7.5-2.25-1.25` to **-275**. No exception, no warning, a
+plausible number, a different circuit.
+
+**The gate** is `tests/Core.Tests/Expressions/ExpressionCultureInvarianceTests.cs`, which drives the
+v1 language surface — literals, exponents, precedence, the standard functions, comparisons, `if()`,
+nesting — under `de-DE` and `fi-FI` and demands results **bit-identical** to `en-US`, plus the
+negative half: a comma decimal must never be *accepted* as one. It is a deliberate foreign-locale
+pass because the default run cannot substitute for it — `tests/TestCulture.cs` pins the whole suite to
+`en-US`, precisely so no test is accidentally asserting the runner's locale.
+
+**A unit suffix is a row FIELD, not part of the expression** (§8), which is why `60u` is a parse
+error here. That is unrelated to locale, and localization is not a reason to revisit it — but it is
+pinned in the same file, so that "make the parser more forgiving about what follows a number" cannot
+arrive as a fix for a comma-decimal user and quietly change it.
+
+---
+
 ## 16. Deferred (grows later)
 
 Per PRD §7's "built to extend without breaking v1 files": units *inside* expressions and unit algebra/checking; vectors/arrays as first-class operands in the *core* language (measurements already operate on cube quantities as an extension, §13); string operations; user-definable operators. None of these are needed by the five heroes.

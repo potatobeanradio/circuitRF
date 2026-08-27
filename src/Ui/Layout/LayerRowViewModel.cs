@@ -17,6 +17,13 @@ namespace CircuitRF.Ui.Layout;
 /// </summary>
 public sealed partial class LayerRowViewModel : ObservableObject
 {
+
+    /// <summary>
+    /// The culture the staged numeric strings in this row are both formatted with and parsed with.
+    /// Invariant on purpose — see <see cref="RefreshFromModel"/>.
+    /// </summary>
+    private static readonly System.Globalization.CultureInfo Inv =
+        System.Globalization.CultureInfo.InvariantCulture;
     private readonly TechEditorViewModel _owner;
     private bool _isRefreshing;
 
@@ -79,7 +86,10 @@ public sealed partial class LayerRowViewModel : ObservableObject
         StagedLayerNumber  = Layer.Key.Layer.ToString();
         StagedDatatype     = Layer.Key.Datatype.ToString();
         Color              = Layer.Color;
-        StagedFillOpacity  = Layer.FillOpacity.ToString("0.###");
+        // Invariant, to pair with the invariant parse in CommitFillOpacity — this staged string is
+        // round-tripped, not displayed, so both halves must agree on the decimal separator (see the
+        // longer note in StackupLayerRowViewModel.RefreshFromModel).
+        StagedFillOpacity  = Layer.FillOpacity.ToString("0.###", Inv);
         StagedZOrder       = Layer.ZOrder.ToString();
         Visible            = Layer.Visible;
         Selectable         = Layer.Selectable;
@@ -156,13 +166,14 @@ public sealed partial class LayerRowViewModel : ObservableObject
 
     public void CommitFillOpacity()
     {
-        if (!double.TryParse(StagedFillOpacity, out var v)) { RefreshFromModel(); return; }
+        if (!double.TryParse(StagedFillOpacity, System.Globalization.NumberStyles.Float, Inv, out var v))
+        { RefreshFromModel(); return; }
         v = System.Math.Clamp(v, 0.0, 1.0);
-        if (System.Math.Abs(v - Layer.FillOpacity) < 1e-9) { StagedFillOpacity = v.ToString("0.###"); return; }
+        if (System.Math.Abs(v - Layer.FillOpacity) < 1e-9) { StagedFillOpacity = v.ToString("0.###", Inv); return; }
         var before = _owner.SnapshotJson();
         Layer.FillOpacity = v;
         _owner.CommitEdit(before, $"Set fill opacity of {Layer.Name}");
-        StagedFillOpacity = v.ToString("0.###");
+        StagedFillOpacity = v.ToString("0.###", Inv);
     }
 
     public void CommitZOrder()

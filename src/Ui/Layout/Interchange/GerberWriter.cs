@@ -7,6 +7,8 @@
 
 using Clipper2Lib;
 
+using System.Globalization;
+
 namespace CircuitRF.Ui.Layout.Interchange;
 
 public static class GerberWriter
@@ -41,7 +43,12 @@ public static class GerberWriter
         using var w = new StreamWriter(stream, System.Text.Encoding.ASCII, -1, leaveOpen: true) { NewLine = "\n" };
 
         w.WriteLine($"%TF.GenerationSoftware,circuitRF,{Version}*%");
-        w.WriteLine($"%TF.CreationDate,{creationTimeUtc:yyyy-MM-ddTHH:mm:ssZ}*%");
+        // InvariantCulture is load-bearing, not decoration. In a CUSTOM date format string ':' is the
+        // culture's TIME-SEPARATOR PLACEHOLDER, not a literal colon — so under a Finnish locale this
+        // attribute came out as "2026-08-27T14.23.05Z", which is not ISO-8601 and not what the Gerber
+        // spec's %TF.CreationDate demands. Caught by FormatCultureInvarianceTests, which is why that
+        // gate probes fi-FI as well as de-DE (brief-localization-groundwork.md §5).
+        w.WriteLine($"%TF.CreationDate,{creationTimeUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)}*%");
         if (layerDef?.Interchange?.GerberFileFunction is { Length: > 0 } fn)
             w.WriteLine($"%TF.FileFunction,{fn}*%");
         w.WriteLine("%TF.FilePolarity,Positive*%");

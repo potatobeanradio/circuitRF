@@ -24,6 +24,7 @@
     <!-- Project references cause the DLLs to be copied to the test output — that's the
          only reason for these references. The test inspects the DLL metadata; it does not
          call into the assemblies. -->
+    <ProjectReference Include="../../src/Diagnostics/CircuitRF.Diagnostics.csproj" />
     <ProjectReference Include="../../src/RfCore/RfCore.csproj" />
     <ProjectReference Include="../../src/Core/CircuitRF.Core.csproj" />
     <ProjectReference Include="../../src/Engine/CircuitRF.Engine.csproj" />
@@ -31,6 +32,13 @@
     <ProjectReference Include="../../src/Cli/CircuitRF.Cli.csproj" />
     <ProjectReference Include="../../src/Harmonica/CircuitRF.Harmonica.csproj" />
     <ProjectReference Include="../../src/WBond/CircuitRF.WBond.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pins this assembly to en-US before any test runs, so assertions stop depending on the
+         runner's OS locale (brief-localization-groundwork.md R-loc-4). Shared by all seven test
+         projects; see tests/TestCulture.cs for why it is a ModuleInitializer. -->
+    <Compile Include="../TestCulture.cs" Link="TestCulture.cs" />
   </ItemGroup>
 
 </Project>

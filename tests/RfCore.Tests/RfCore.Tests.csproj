@@ -42,4 +42,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pins this assembly to en-US before any test runs, so assertions stop depending on the
+         runner's OS locale (brief-localization-groundwork.md R-loc-4). Shared by all seven test
+         projects; see tests/TestCulture.cs for why it is a ModuleInitializer. -->
+    <Compile Include="../TestCulture.cs" Link="TestCulture.cs" />
+  </ItemGroup>
+
 </Project>

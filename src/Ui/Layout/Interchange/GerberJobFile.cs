@@ -8,6 +8,8 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using System.Globalization;
+
 namespace CircuitRF.Ui.Layout.Interchange;
 
 public static class GerberJobFile
@@ -50,7 +52,10 @@ public static class GerberJobFile
             Header = new JobFileHeader
             {
                 GenerationSoftware = new JobFileGenSoftware { Version = version },
-                CreationDate = creationTimeUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                // Invariant for the same reason as GerberWriter's %TF.CreationDate: ':' in a custom
+                // date format is the culture's time separator, so this field silently stopped being
+                // ISO-8601 under a Finnish locale.
+                CreationDate = creationTimeUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
             },
             FilesAttributes = files.Select(f => new JobFileEntry
             {
