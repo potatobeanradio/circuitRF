@@ -402,6 +402,18 @@ public sealed class SchematicCanvas : Control
 
     // ── Pointer — press ───────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Takes keyboard focus for the canvas.
+    ///
+    /// <para><b>A drop has to do this, and it is not obvious.</b> Dropping a tile from the Library
+    /// palette places the component and SELECTS it, but the drag began in the palette, so that is
+    /// where keyboard focus still is — and every editing key (R, M, arrows, Delete) is routed by
+    /// this control's own KeyDown. The result is a part that looks ready to work on and ignores the
+    /// keyboard until the user clicks it. <c>OnPointerPressed</c> has always taken focus on its
+    /// first line for exactly this reason; a drop finishes the same gesture and owes the same.</para>
+    /// </summary>
+    private void TakeKeyboardFocus() => Focus();
+
     private void OnPointerPressed(object? _, PointerPressedEventArgs e)
     {
         Focus();
@@ -879,6 +891,7 @@ public sealed class SchematicCanvas : Control
 
     private void OnPaletteDrop(object? sender, DragEventArgs e)
     {
+        TakeKeyboardFocus();
         // Clear drag ghost regardless of outcome.
         if (_editContext is not null)
             _editContext.Overlay = _editContext.Overlay with { Ghost = null };
@@ -972,6 +985,7 @@ public sealed class SchematicCanvas : Control
 
     private async void OnCellDrop(object? sender, DragEventArgs e)
     {
+        TakeKeyboardFocus();
         // Clear ghost before processing so it disappears on any outcome.
         if (_editContext is not null)
             _editContext.Overlay = _editContext.Overlay with { Ghost = null };
@@ -992,6 +1006,9 @@ public sealed class SchematicCanvas : Control
         var rotation = _editContext.CurrentPlacementRotation;
 
         await _editContext.CommitCellPlacementAsync(payload.CellAbsPath, wx, wy, rotation);
+        // Again after the await: placing a cell with no symbol yet asks whether to generate one, and
+        // the dialog takes focus on its way in. Without this the prompt hands it back to nobody.
+        TakeKeyboardFocus();
         e.Handled = true;
         InvalidateVisual();
     }
@@ -1011,6 +1028,7 @@ public sealed class SchematicCanvas : Control
 
     private void OnImageFileDrop(object? _, DragEventArgs e)
     {
+        TakeKeyboardFocus();
         DropDiagnostics.Dump("SchematicCanvas.Drop", e);
         var path = TryExtractImagePath(e);
         if (path is null || _editContext is null) return;

@@ -267,6 +267,17 @@ public sealed class SymbolEditorCanvas : Control
 
     // ── Pointer ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Takes keyboard focus for the canvas.
+    ///
+    /// <para><b>A drop has to do this, and it is not obvious.</b> A drop places something and leaves
+    /// it selected, but the drag began somewhere else — that is where keyboard focus still is, and
+    /// every editing key is routed by this control's own KeyDown. The result looks ready to work on
+    /// and ignores the keyboard until the user clicks it. <c>OnPointerPressed</c> has always taken
+    /// focus on its first line for the same reason; a drop finishes the same gesture.</para>
+    /// </summary>
+    private void TakeKeyboardFocus() => Focus();
+
     private void OnPointerPressed(object? _, PointerPressedEventArgs e)
     {
         Focus();
@@ -427,6 +438,7 @@ public sealed class SymbolEditorCanvas : Control
 
     private void OnImageFileDrop(object? _, DragEventArgs e)
     {
+        TakeKeyboardFocus();
         DropDiagnostics.Dump("SymbolEditorCanvas.Drop", e);
         var path = TryExtractImagePath(e);
         if (path is null || _viewModel is null) return;

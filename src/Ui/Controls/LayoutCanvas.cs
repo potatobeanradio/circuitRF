@@ -469,6 +469,18 @@ public sealed class LayoutCanvas : Control
 
     // ── Pointer ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Takes keyboard focus for the canvas.
+    ///
+    /// <para><b>A drop has to do this, and it is not obvious.</b> Dropping a tile from the Library
+    /// palette places the component and SELECTS it, but the drag began in the palette, so that is
+    /// where keyboard focus still is — and every editing key (R, M, arrows, Delete) is routed by
+    /// this control's own KeyDown. The result is a part that looks ready to work on and ignores the
+    /// keyboard until the user clicks it. <c>OnPointerPressed</c> has always taken focus on its
+    /// first line for exactly this reason; a drop finishes the same gesture and owes the same.</para>
+    /// </summary>
+    private void TakeKeyboardFocus() => Focus();
+
     private void OnPointerPressed(object? _, PointerPressedEventArgs e)
     {
         Focus();
@@ -566,6 +578,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnImageFileDrop(object? _, DragEventArgs e)
     {
+        TakeKeyboardFocus();
         var path = TryExtractImagePath(e);
         if (path is null || _viewModel is null) return;
         var pos = e.GetPosition(this);
@@ -643,6 +656,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnCellDrop(object? sender, DragEventArgs e)
     {
+        TakeKeyboardFocus();
         // Clear the ghost before processing so it disappears regardless of outcome (mirrors
         // SchematicCanvas.OnCellDrop).
         _viewModel?.CancelDragInstancePlacement();
@@ -733,6 +747,7 @@ public sealed class LayoutCanvas : Control
 
     private void OnPaletteDrop(object? sender, DragEventArgs e)
     {
+        TakeKeyboardFocus();
         _viewModel?.CancelPaletteDragGhost();
 
         if (_viewModel is not { } vm) return;
@@ -1294,6 +1309,21 @@ public sealed class LayoutCanvas : Control
 
         bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         bool shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+
+        // F — Zoom to Fit, the same key the Schematic and Symbol editors have always used (owner,
+        // 2026-08-26; it was simply never wired up here). Handled on the CANVAS rather than in the
+        // view's tunnel because ZoomToFit is the canvas's own, which is where SymbolEditorCanvas and
+        // WBondProfileCanvas both put it.
+        //
+        // Suppressed while a label is being typed, and that guard is load-bearing: 'f' is an ordinary
+        // character in label text, and without this the editor would jump to fit the moment the user
+        // typed one. SymbolEditorCanvas gates its own F on the same condition for the same reason.
+        if (!ctrl && e.Key == Key.F && _viewModel?.IsTypingLabel != true)
+        {
+            ZoomToFit();
+            e.Handled = true;
+            return;
+        }
 
         if (ctrl && e.Key == Key.C) { ClipboardCopyRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
         if (ctrl && e.Key == Key.X) { ClipboardCutRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
