@@ -1318,7 +1318,13 @@ public sealed class LayoutCanvas : Control
         // say so would make the mode announce itself only after they had already committed to aiming.
         // Deliberately not `return`: Alt is a modifier, and swallowing it here would cost every
         // Alt-combination below. The view model refuses to arm when the selection has no grips.
-        if (e.Key is Key.LeftAlt or Key.RightAlt) { _viewModel?.SetGripLockArmed(true); InvalidateVisual(); }
+        if (e.Key is Key.LeftAlt or Key.RightAlt)
+        {
+            _altHeld = true;
+            _viewModel?.SetGripLockArmed(true);
+            UpdateCursor();
+            InvalidateVisual();
+        }
 
         // A paste ghost in progress owns every key itself (Escape cancels it) — never let a
         // clipboard shortcut race with an already-armed placement.
@@ -1371,7 +1377,13 @@ public sealed class LayoutCanvas : Control
     {
         _canvasOverlay?.OnKeyUp(e.Key, e.KeyModifiers);
         if (e.Key == Key.Space) { _spaceHeld = false; UpdateCursor(); }
-        if (e.Key is Key.LeftAlt or Key.RightAlt) { _viewModel?.SetGripLockArmed(false); InvalidateVisual(); }
+        if (e.Key is Key.LeftAlt or Key.RightAlt)
+        {
+            _altHeld = false;
+            _viewModel?.SetGripLockArmed(false);
+            UpdateCursor();
+            InvalidateVisual();
+        }
     }
 
     /// <summary>
@@ -1395,6 +1407,7 @@ public sealed class LayoutCanvas : Control
         // and every subsequent press claims a grip instead of moving the instance — the same failure
         // as the Space-to-pan latch above, with a different key.
         _viewModel?.ClearGripLockArmed();
+        _altHeld = false;   // same latch, same reason — see above
 
         UpdateCursor();
     }
@@ -1429,6 +1442,17 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
+        // R-dup-1: Alt says "the thing you are dragging will be a COPY", and it has to say so with the
+        // pointer — the ghost only appears once the drag has moved, and the decision is made before
+        // that. Shown whenever Alt is held with something to copy, so it also announces the gesture
+        // BEFORE the press, not only during the drag it arms.
+        if (_viewModel is { ActiveTool: LayoutEditorViewModel.Tool.Select } dupVm
+            && (dupVm.DuplicateDragArmed || (_altHeld && dupVm.HasDuplicableSelection)))
+        {
+            SetCursor(StandardCursorType.DragCopy);
+            return;
+        }
+
         bool useCross = _viewModel is { ActiveTool: not LayoutEditorViewModel.Tool.Select };
         if (useCross) { SetCursor(StandardCursorType.Cross); return; }
         if (_currentCursorType is null) return;
@@ -1440,6 +1464,11 @@ public sealed class LayoutCanvas : Control
     /// to be free when nothing changed: a <c>new Cursor(...)</c> per move allocates a platform handle
     /// per frame of a drag.</summary>
     private StandardCursorType? _currentCursorType;
+
+    /// <summary>R-dup-1: Alt held, tracked for the duplicate CURSOR only. A pointer move carries its
+    /// own modifiers and does not need this; a bare key-down with the pointer stationary does. Cleared
+    /// on LostFocus with every other held-key latch here.</summary>
+    private bool _altHeld;
 
     private void SetCursor(StandardCursorType type)
     {

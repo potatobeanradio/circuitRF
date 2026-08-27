@@ -629,6 +629,14 @@ a lie about a single axis). While Alt is held, hover uses the LOCK radius — th
 promise exactly what the press will deliver. While Alt is held with grips showing, every grip draws a
 halo, because what the user needs to see is that the mode is on, not merely which grip is nearest.
 
+**Superseded in part, same day (R-dup-1/R-dup-2).** Alt now also arms a DUPLICATE drag, and no longer
+suspends snap anywhere in the layout editor. Two consequences here: the "Alt is spent by the press"
+carve-out above is moot — a locked drag has nothing to spend, because snapping no longer answers to
+any modifier — and grip-lock consumes an Alt press only when a grip is actually CLAIMED. A press that
+finds no grip falls through to ordinary handling, so Alt+dragging a PCell's body copies it rather than
+doing nothing. What grip-lock still guarantees is unchanged: a grip in range wins, a grip that refuses
+still refuses without falling through, and neither outcome moves the original. See `src/Ui/RESOLVED.md`.
+
 **The armed state is a held-key latch, and it is cleared on LostFocus.** Hold Alt, click a toolbar
 button, and the key-up is delivered to whatever took focus. This editor has already shipped that bug
 once with Space-to-pan; `ClearGripLockArmed` is why it is not shipping it again.

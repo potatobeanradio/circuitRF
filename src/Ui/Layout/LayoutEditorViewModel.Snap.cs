@@ -201,7 +201,7 @@ public sealed partial class LayoutEditorViewModel
         _snapQueryLastComputedPoint = null; // force UpdateSnapMarker past its own sub-pixel-skip guard
         UpdateSnapMarker(last.X, last.Y, _snapLastMods, _snapQueryLastTolDbu, 0);
         if (_selectDragKind == SelectDragKind.Move)
-            RecomputeMoveDelta(last.X, last.Y, (_snapLastMods & KeyModifiers.Alt) != 0);
+            RecomputeMoveDelta(last.X, last.Y, (_snapLastMods & KeyModifiers.Shift) != 0);
         RebuildOverlay();
     }
 
@@ -356,6 +356,7 @@ public sealed partial class LayoutEditorViewModel
 
     private void UpdateSnapMarkerCore(long px, long py, KeyModifiers mods, long snapTolDbu, long pixelDbu)
     {
+        var previousMods = _snapLastMods;
         _snapLastMods = mods;
 
         bool handleKindOutOfScope = _handleDragKind is HandleDragKind.Bulge or HandleDragKind.CubicControl
@@ -366,6 +367,10 @@ public sealed partial class LayoutEditorViewModel
         // commit path reads only ComputeMarqueeSelection. Running the query anyway made every pointer
         // move of a rubber-band drag pay for a snap search over whatever the cursor was sweeping
         // across — which, over a dense cell, is the most expensive place it could possibly run.
+        //
+        // R-dup-4: an ortho drag is NOT in this list. Geometry snap keeps working under Shift — see
+        // the echo gate further down for the half of the owner's report that was real, and
+        // RecomputeMoveDelta for how an attracted target is applied to a constrained move.
         if (handleKindOutOfScope || _scaleDragKind != ScaleDragKind.None
             || _selectDragKind == SelectDragKind.Marquee)
         {
@@ -374,8 +379,12 @@ public sealed partial class LayoutEditorViewModel
             return;
         }
 
-        bool suppressed = (mods & KeyModifiers.Alt) != 0; // R-snp-11: Alt suppresses, never enables
-        if (!GeometrySnapEnabled || suppressed || snapTolDbu <= 0)
+        // R-snp-11 USED to suppress the whole query on Alt. R-dup-2 retired that: Alt now arms a
+        // duplicate drag, and suspending the snap that a duplicate is being aimed with would defeat
+        // the gesture in exactly the way it defeated a grip drag (R-pch-12). Geometry snap is turned
+        // off by its own toggle — S or F3 — which is persistent and visible in the toolbar, and grid
+        // snap by F9. Momentary suppression is gone; nothing else here changes.
+        if (!GeometrySnapEnabled || snapTolDbu <= 0)
         {
             _currentSnapCandidate = null;
             _snapCandidateIsRealTarget = false;
@@ -384,8 +393,15 @@ public sealed partial class LayoutEditorViewModel
         }
 
         // R-snp-16: skip the query entirely for a sub-device-pixel cursor move at an unchanged tolerance.
+        //
+        // R-dup-4: …and at UNCHANGED MODIFIERS. Pressing Shift without moving the mouse changes the
+        // answer — it decides whether the grab echo below is offered at all — and this guard would
+        // otherwise leave the previous tick's marker frozen on screen until the pointer moved again.
+        // That is one of the ways the owner saw a marker with nothing to snap to: it was a stale
+        // answer to a question that had since changed.
         long moveGuard = Math.Max(pixelDbu, 1);
         if (_snapQueryLastComputedPoint is { } last && snapTolDbu == _snapQueryLastTolDbu
+            && mods == previousMods
             && Math.Abs(last.X - px) < moveGuard && Math.Abs(last.Y - py) < moveGuard)
             return;
         _snapQueryLastComputedPoint = (px, py);
@@ -421,7 +437,22 @@ public sealed partial class LayoutEditorViewModel
             // for the whole drag. Most visible on a via, whose one feature IS its centre, so the
             // offset reads directly as "the glyph is not in the middle of the via". It is drawn at the
             // grabbed feature's own snapped position now, computed by the same helper the commit uses.
-            : _snapDragActive
+            //
+            // R-dup-4 (owner report, 2026-08-27: "holding Shift for ortho, the snap cursor is
+            // sometimes on even though there's no geometry nearby"). THIS is the marker that was
+            // on with nothing nearby — it is synthetic by definition, shown precisely when no real
+            // feature is in range, and only ever during a marker-grabbed drag, which is the
+            // "sometimes". Under an ortho constraint it is also drawn in the wrong place: it tracks
+            // SnappedGrabPoint, computed from the UNCONSTRAINED delta, so it floats off the axis the
+            // geometry is actually travelling on. Suppressed for the duration of a constrained move
+            // rather than relocated: with the axis locked, "here is where the thing you grabbed has
+            // got to" is already told by the geometry itself, and a marker whose whole job is to
+            // stand in for an absent target is exactly what the report is about.
+            //
+            // REAL candidates are untouched by this — snapping to actual geometry within the
+            // threshold keeps working under Shift, which is the owner's follow-up correction to a
+            // first fix that stood the whole query down.
+            : _snapDragActive && !(_selectDragKind == SelectDragKind.Move && (mods & KeyModifiers.Shift) != 0)
                 ? MakeGrabEcho(px, py)
                 : null;
     }
@@ -502,10 +533,14 @@ public sealed partial class LayoutEditorViewModel
     /// snap candidate's owning shape/instance (R-snp-9 cycling on repeated near-identical presses,
     /// reusing <see cref="_snapCycleCache"/>) even when the raw click misses that shape's own
     /// hit-test. Returns false (letting the caller fall through to ordinary selection) when geometry
-    /// snap is off, Alt-suppressed, or nothing is within tolerance.</summary>
-    private bool TryBeginSnapMarkerDrag(long px, long py, bool shift, bool ctrl, bool alt, long snapTolDbu)
+    /// snap is off or nothing is within tolerance.
+    /// <para/>
+    /// R-dup-2: no longer refuses on Alt. A marker-grabbed drag is an ordinary Move drag, so Alt on it
+    /// now means what it means on every other Move drag — duplicate — and refusing here would have made
+    /// the one press most likely to be aimed at a feature the one press that could not be duplicated.</summary>
+    private bool TryBeginSnapMarkerDrag(long px, long py, bool shift, bool ctrl, long snapTolDbu)
     {
-        if (!GeometrySnapEnabled || alt || snapTolDbu <= 0) return false;
+        if (!GeometrySnapEnabled || snapTolDbu <= 0) return false;
 
         SnapCandidate chosen;
         if (_snapCycleCache.Matches(px, py, snapTolDbu, bypassDistance: false))

@@ -721,8 +721,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void CommitViaPlacement(double wx, double wy, KeyModifiers mods)
     {
         if (!ViaToolAvailability.CanExecute) return;
-        bool suspend = (mods & KeyModifiers.Alt) != 0;
-        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+        // R-dup-2: Alt no longer suspends snap anywhere in this editor — it arms a duplicate drag.
+        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend: false);
 
         long pad   = Technology is { DefaultViaPadDbu: > 0 }   t1 ? t1.DefaultViaPadDbu   : 500_000; // 0.5 mm
         long drill = Technology is { DefaultViaDrillDbu: > 0 } t2 ? t2.DefaultViaDrillDbu : 300_000; // 0.3 mm
@@ -794,7 +794,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// </summary>
     private LabelShape? TryBuildPortPlacement(double wx, double wy, KeyModifiers mods, long snapTolDbu, double zoomPxPerDbu)
     {
-        bool suspend = (mods & KeyModifiers.Alt) != 0;
+        const bool suspend = false;   // R-dup-2: Alt arms a duplicate drag; it no longer suspends snap.
 
         UpdateSnapMarker((long)Math.Round(wx), (long)Math.Round(wy), mods, Math.Max(snapTolDbu, 0), 1);
         var (sx, sy) = _snapCandidateIsRealTarget && _currentSnapCandidate is { } target
@@ -1025,15 +1025,22 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // fall-through to a move when the grip refuses (a sensitivity that cannot be measured is the
         // one case where the old code moved the whole cell after a dead-on click on a grip).
         //
-        // Gated on the selection actually HAVING grips, which is what keeps Alt's other meanings in
-        // this editor intact: suspend-snap, Alt+click overlap cycling, and scale-about-centre all
-        // behave exactly as before everywhere else. Scale mode is excluded because its own handles
-        // take priority over everything (R-L1h-5) and would otherwise be unreachable while a
-        // PCell is selected.
+        // Gated on the selection actually HAVING grips, so Alt keeps its other meanings in this editor:
+        // Alt+click overlap cycling, scale-about-centre, and — since R-dup-1 — arming a duplicate drag.
+        // Scale mode is excluded because its own handles take priority over everything (R-L1h-5) and
+        // would otherwise be unreachable while a PCell is selected.
+        //
+        // R-dup-1 NARROWED this from "consume the press whatever happens" to "consume it only when a
+        // grip is actually claimed". The original rule existed so an Alt press could never move the
+        // cell; with Alt now arming a duplicate, a press that finds no grip has to reach the ordinary
+        // handling below or Alt+dragging a PCell's BODY — the natural way to copy one — would be the
+        // one drag in the editor that did nothing. The promise is intact either way: neither outcome
+        // moves the original. A grip in range still wins, and still refuses without falling through.
         if (alt && !ScaleModeActive && SelectionHasPCellHandles())
         {
-            TryBeginPCellHandleDrag(px, py, Math.Max(Math.Max(gripLockTolDbu, tolDbu), 1), locked: true);
-            return;
+            TryBeginPCellHandleDrag(px, py, Math.Max(Math.Max(gripLockTolDbu, tolDbu), 1),
+                                    locked: true, out bool gripClaimedPress);
+            if (gripClaimedPress) return;
         }
 
         // pcell-parameter-handles.md R-pch-8: a PCell instance's PARAMETER grips are tested FIRST, and
@@ -1070,7 +1077,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // the ordinary hit-test/cycling fallback below. A marker showing at the click point consumes
         // the click for its OWNING shape/instance even when the click itself misses that shape's own
         // hit-test — this is the feature's headline behaviour.
-        if (TryBeginSnapMarkerDrag(px, py, shift, ctrl, alt, snapTolDbu))
+        if (TryBeginSnapMarkerDrag(px, py, shift, ctrl, snapTolDbu))
             return;
 
         if (_cycleCache.Matches(px, py, tolDbu, alt))
@@ -1786,7 +1793,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_pcellHandleDrag is not null)
         {
             if (!leftDown) { ResetPCellHandleDragState(); RebuildOverlay(); return; }
-            UpdatePCellHandleDrag(px, py, (mods & KeyModifiers.Alt) != 0);
+            // R-dup-2: no modifier suspends snap on a grip drag any more. R-pch-12's own carve-out
+            // (Alt spent by a locked press) is therefore moot and gone with it — the grid and
+            // geometry toggles, F9 and S/F3, are how snapping is turned off now.
+            UpdatePCellHandleDrag(px, py, suspendSnap: false);
             return;
         }
 
@@ -1800,8 +1810,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_handleDragKind != HandleDragKind.None)
         {
             if (!leftDown) { ResetHandleDragState(); RebuildOverlay(); return; }
-            bool suspend = (mods & KeyModifiers.Alt) != 0;
-            var preview = BuildHandleDragPreview(px, py, suspend);
+            var preview = BuildHandleDragPreview(px, py, suspendSnap: false);   // R-dup-2
             if (preview is not null) { _handleDragPreview = preview; _handleDragMoved = true; }
             RebuildOverlay();
             return;
@@ -1816,6 +1825,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
                 _snapDragActive = false;
                 _pointSnapDragActive = false;
+                SetDuplicateDragArmed(false);   // R-dup-1: an abandoned drag disarms with everything else
             }
             // brief-geometry-snap-followups.md R-snpf-7/8: this is the plain-hover path (no button
             // down, no drag). UpdateSnapMarker above already ran the query and refreshed
@@ -1830,6 +1840,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // that can announce which gesture the next press will produce, so it runs on the same path
             // the snap marker already uses rather than waiting for the press to decide.
             UpdatePCellHandleHover(px, py, tolDbu, gripLockTolDbu, (mods & KeyModifiers.Alt) != 0);
+            UpdateShapeHandleHover(px, py, tolDbu);
             RebuildOverlay();
             return;
         }
@@ -1838,8 +1849,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             case SelectDragKind.Move:
             {
-                bool suspend = (mods & KeyModifiers.Alt) != 0;
-                RecomputeMoveDelta(px, py, suspend);
+                // R-dup-1/R-dup-3: both drag modifiers are read LIVE, every tick, and neither is
+                // latched at press — a user decides mid-drag that they wanted a copy, or that the
+                // move should stay on one axis, and both must take effect without restarting the
+                // gesture. Alt arming a duplicate rebuilds the overlay into a ghost (see
+                // RebuildOverlay) rather than changing anything about the delta.
+                SetDuplicateDragArmed((mods & KeyModifiers.Alt) != 0);
+                RecomputeMoveDelta(px, py, (mods & KeyModifiers.Shift) != 0);
                 RebuildOverlay();
                 break;
             }
@@ -1896,7 +1912,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         switch (_selectDragKind)
         {
             case SelectDragKind.Move:
-                CommitMoveDrag();
+                if (DuplicateDragArmed) CommitDuplicateDrag();
+                else CommitMoveDrag();
                 break;
             case SelectDragKind.Marquee:
                 CommitMarquee(px, py);
@@ -1925,10 +1942,23 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// enabled. <see cref="_snapCandidateIsRealTarget"/> is true ONLY for a real
     /// <see cref="LayoutSnapQuery.FindCandidates"/> hit, never for the synthetic marker-persistence
     /// fallback, so the two concerns (what to DRAW vs. what to SNAP the position to) stay independent.</summary>
-    private void RecomputeMoveDelta(long px, long py, bool suspend)
+    private void RecomputeMoveDelta(long px, long py, bool ortho)
     {
+        var (gridDx, gridDy) = GridSnappedDrag(px, py, suspend: false);
+
+        // R-dup-3: Shift constrains the move to one axis, measured from where the drag STARTED — the
+        // schematic editor's own ApplyDragAxisLock, in DBU.
+        //
+        // The axis is chosen from the CURSOR's own travel, never from wherever a snap target happens
+        // to lie (R-dup-4). Those differ: drag mostly rightwards past a feature that sits well above,
+        // and picking the axis from the target would lock the drag to the vertical the user never
+        // asked for. The user's direction decides which axis is free; the target only decides how far
+        // along it to go.
+        bool lockX = ortho && Math.Abs(gridDy) >= Math.Abs(gridDx);   // predominantly vertical
+        bool lockY = ortho && !lockX;                                  // predominantly horizontal
+
         long dx, dy;
-        if ((_snapDragActive || _pointSnapDragActive) && !suspend
+        if ((_snapDragActive || _pointSnapDragActive)
             && _snapCandidateIsRealTarget && _currentSnapCandidate is { } target)
         {
             dx = target.X - _moveAnchorX;
@@ -1936,8 +1966,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
         else
         {
-            (dx, dy) = GridSnappedDrag(px, py, suspend);
+            (dx, dy) = (gridDx, gridDy);
         }
+
+        // R-dup-4 (owner, 2026-08-27): geometry snap KEEPS WORKING under Shift. Zeroing the locked
+        // axis after the attraction is what makes the two compose — the grabbed point lands exactly on
+        // the target's coordinate along the free axis and does not budge on the other, which is what
+        // "align this with that, without leaving my axis" means. The first attempt at the report above
+        // this one stood the whole snap query down instead, which threw away the useful half.
+        if (lockX) dx = 0;
+        if (lockY) dy = 0;
+
         if (dx != _moveLiveDx || dy != _moveLiveDy) _moveHasMoved = true;
         _moveLiveDx = dx; _moveLiveDy = dy;
     }
@@ -1956,6 +1995,138 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         var (dx, dy) = GridSnappedDrag(px, py, suspend: false);
         return (_moveAnchorX + dx, _moveAnchorY + dy);
+    }
+
+    // ── R-dup-1: Alt during a Move drag duplicates instead of moving ─────────────────────────
+
+    /// <summary>
+    /// True while the in-flight Move drag is a DUPLICATE drag — Alt is held, so the selection stays
+    /// where it is and what follows the cursor is a copy.
+    ///
+    /// <para>Live state, not latched at press: Alt pressed or released mid-drag switches the gesture
+    /// both ways, which is the whole affordance (a user commits to a drag first and decides it should
+    /// have been a copy second). Nothing about the DELTA changes with it — the same snapped, possibly
+    /// Shift-constrained offset drives either outcome, so a duplicate lands exactly where the move
+    /// would have.</para>
+    /// </summary>
+    internal bool DuplicateDragArmed { get; private set; }
+
+    /// <summary>
+    /// Is there anything an Alt drag could copy RIGHT NOW? Drives the duplicate CURSOR, which has to
+    /// answer before the press — offering a copy cursor over an empty selection would promise a
+    /// gesture that does nothing.
+    ///
+    /// <para>OWNER REPORT (2026-08-27): the copy cursor appeared while editing geometry with the
+    /// handle grippers. A selection is present throughout such a drag, so "is anything selected" is
+    /// the wrong question — the right one is whether an Alt press could actually duplicate, and during
+    /// a handle, grip, scale or marquee drag it cannot. Those gestures reshape ONE thing or select;
+    /// none of them has a copy to offer, and a cursor that says otherwise is promising an operation
+    /// the next press will not perform.</para>
+    /// </summary>
+    internal bool HasDuplicableSelection
+        => _pcellHandleDrag is null
+        && _handleDragKind == HandleDragKind.None
+        && _scaleDragKind == ScaleDragKind.None
+        && _selectDragKind != SelectDragKind.Marquee
+        && !_hoveringShapeHandle
+        && (MovableSelectedIndices(_selectedIndices).Count > 0 || _selectedInstanceIndices.Count > 0);
+
+    /// <summary>
+    /// The pointer is over one of the single selected shape's own geometry handles, so the next press
+    /// starts a RESHAPE, not a move — and therefore cannot duplicate whatever Alt is doing.
+    ///
+    /// <para>The same report as <see cref="HasDuplicableSelection"/>'s, one moment earlier: the copy
+    /// cursor has to be honest BEFORE the press, not only once the reshape is under way. A PCell grip
+    /// needs no equivalent — its own hover cursor already wins ahead of the copy cursor.</para>
+    /// </summary>
+    private bool _hoveringShapeHandle;
+
+    /// <summary>Refreshes <see cref="_hoveringShapeHandle"/> on an idle hover, under exactly the
+    /// conditions that decide whether a press would reach a handle at all — same gate, same
+    /// hit-test, so the cursor cannot promise one gesture while the press performs another.</summary>
+    private void UpdateShapeHandleHover(long px, long py, long tolDbu)
+    {
+        _hoveringShapeHandle = false;
+        if (_selectedIndices.Count != 1 || _selectedInstanceIndices.Count != 0 || ScaleModeActive) return;
+
+        int idx = _selectedIndices[0];
+        if (idx < 0 || idx >= Model.Shapes.Count) return;
+
+        var handles = LayoutHandles.Build(Model.Shapes[idx]);
+        _hoveringShapeHandle = LayoutHandleHitTest.HitTest(handles, px, py, Math.Max(tolDbu, 1)) is not null;
+    }
+
+    /// <summary>Per selected instance, in <see cref="_selectedInstanceIndices"/> order: is its
+    /// resolved geometry small enough to draw live as a ghost? Decided ONCE, when Alt arms the
+    /// duplicate — the same rule and the same budget the paste ghost uses, and for the same reason it
+    /// is decided once there: asking per pointer move would put a hierarchy walk on the drag's frame
+    /// path, and a ghost that flickered between real geometry and a box as the cursor moved would be
+    /// worse than either treatment on its own.</summary>
+    private bool[] _duplicateGhostBoxOnly = [];
+
+    private void SetDuplicateDragArmed(bool armed)
+    {
+        if (armed == DuplicateDragArmed) return;
+        DuplicateDragArmed = armed;
+
+        _duplicateGhostBoxOnly = [];
+        if (armed)
+        {
+            var instances = SelectedInstancesForDuplicate();
+            _duplicateGhostBoxOnly = new bool[instances.Count];
+            for (int i = 0; i < instances.Count; i++)
+            {
+                // CountResultingShapes returns NEGATIVE when it gives up past the ceiling, so
+                // "small" has to test both — the paste ghost's own note explains what reading that
+                // backwards cost.
+                long n = LayoutFlatten.CountResultingShapes(
+                    instances[i], InstanceBaseDir, PasteGhostLiveShapeBudget);
+                _duplicateGhostBoxOnly[i] = n < 0 || n > PasteGhostLiveShapeBudget;
+            }
+        }
+
+        OnPropertyChanged(nameof(DuplicateDragArmed));
+    }
+
+    /// <summary>The selected instances a duplicate drag would copy, in one order that the ghost
+    /// builder, the box-only decision and the commit all share — three readers of one list, so the
+    /// ghost cannot be drawn for a different set than the one that lands.</summary>
+    private List<LayoutInstance> SelectedInstancesForDuplicate()
+        => _selectedInstanceIndices
+            .Where(i => i >= 0 && i < Model.Instances.Count)
+            .Select(i => Model.Instances[i])
+            .ToList();
+
+    /// <summary>
+    /// The duplicate-drag commit. Clones the selection, translates the clones by the drag's own live
+    /// delta, and inserts them through <see cref="InsertPastedMixed"/> — the SAME funnel Paste, Paste
+    /// in Place and Duplicate already use, so a dragged copy cannot disagree with a Ctrl+D one about
+    /// port renumbering, undo granularity, or what ends up selected afterwards.
+    ///
+    /// <para>The originals are never touched: no move command is pushed, which is also why a
+    /// duplicate drag that ends where it started is a no-op rather than an empty undo entry.</para>
+    /// </summary>
+    private void CommitDuplicateDrag()
+    {
+        if (_moveHasMoved && (_moveLiveDx != 0 || _moveLiveDy != 0))
+        {
+            var shapeIndices = MovableSelectedIndices(_selectedIndices);
+            var shapes = shapeIndices.Count > 0
+                ? LayoutFragment.Translate(shapeIndices.Select(i => Model.Shapes[i]).ToList(), _moveLiveDx, _moveLiveDy)
+                : [];
+
+            var srcInstances = SelectedInstancesForDuplicate();
+            var instances = srcInstances.Count > 0
+                ? LayoutFragment.Translate(srcInstances, _moveLiveDx, _moveLiveDy)
+                : [];
+
+            InsertPastedMixed(shapes, instances, "Duplicate");
+        }
+
+        _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
+        _snapDragActive = false;
+        _pointSnapDragActive = false;
+        SetDuplicateDragArmed(false);
     }
 
     /// <summary>brief-L3a-followups.md §2/R-fix-2: moves whichever of shapes/instances are currently
@@ -1995,6 +2166,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         _snapDragActive = false;
         _pointSnapDragActive = false;
+        SetDuplicateDragArmed(false);
     }
 
     /// <summary>The DBU anchors of every port label among <paramref name="indices"/>, as they are
@@ -2371,7 +2543,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (ActiveTool == Tool.Port) { CommitPortPlacement(wx, wy, mods, zoomPxPerDbu, Math.Max(snapTolDbu, 0)); return; }
 
-        bool suspend = (mods & KeyModifiers.Alt) != 0;
+        const bool suspend = false;   // R-dup-2: Alt arms a duplicate drag; it no longer suspends snap.
 
         if (IsTwoPointDragTool(ActiveTool))
         {
@@ -2425,8 +2597,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         if (_pastePlacementShapes is not null)
         {
-            bool pasteSuspend = (mods & KeyModifiers.Alt) != 0;
-            UpdatePastePlacementCursor(wx, wy, pasteSuspend);
+            UpdatePastePlacementCursor(wx, wy, suspendSnap: false);   // R-dup-2
             return;
         }
 
@@ -2434,8 +2605,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (ActiveTool == Tool.Instance)
         {
-            bool instanceSuspend = (mods & KeyModifiers.Alt) != 0;
-            UpdateInstancePlacementCursor(wx, wy, instanceSuspend);
+            UpdateInstancePlacementCursor(wx, wy, suspendSnap: false);   // R-dup-2
             return;
         }
 
@@ -2453,7 +2623,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
-        bool suspend = (mods & KeyModifiers.Alt) != 0;
+        const bool suspend = false;   // R-dup-2
 
         if (_isDrawingTwoPoint)
         {
@@ -2478,8 +2648,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (ActiveTool == Tool.Select) { HandleSelectRelease(wx, wy); return; }
 
         if (!_isDrawingTwoPoint) return;
-        bool suspend = (mods & KeyModifiers.Alt) != 0;
-        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend: false);   // R-dup-2
         _drawP2X = sx; _drawP2Y = sy;
         _drawP2RawX = (long)Math.Round(wx); _drawP2RawY = (long)Math.Round(wy);
         FinishTwoPointDraw();
@@ -2676,6 +2845,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         _snapDragActive = false;
         _pointSnapDragActive = false;
+        SetDuplicateDragArmed(false);   // R-dup-1: Escape cancels the copy along with the drag
         ResetHandleDragState();
         ResetScaleDragState();
         // Escape mid-drag: nothing committed, no undo entry — the parameters were never touched,
@@ -2899,8 +3069,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // MoveInstance drag kind) — this block and the shape one just below it are independent `if`s,
         // both gated on the SAME _selectDragKind == Move, each naturally a no-op when its own selected-
         // index list is empty.
+        // R-dup-1: a DUPLICATE drag deliberately produces no drag overrides at all. The overrides
+        // channel means "draw this object somewhere else", which is the one thing a duplicate must not
+        // do — the original has to stay visibly put while the copy follows the cursor. The copy rides
+        // the PASTE GHOST channel further down instead, which already draws un-indexed geometry that
+        // is not in the model yet. That is exactly what an uncommitted duplicate is.
+        bool duplicating = _selectDragKind == SelectDragKind.Move && DuplicateDragArmed;
+
         IReadOnlyDictionary<int, LayoutInstance> instanceDragOverrides = EmptyInstanceDragOverrides;
-        if (_selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
+        if (!duplicating && _selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
         {
             var dict = new Dictionary<int, LayoutInstance>();
             foreach (var idx in _selectedInstanceIndices)
@@ -2924,7 +3101,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
 
         IReadOnlyDictionary<int, LayoutShape> dragOverrides = EmptyDragOverrides;
-        if (_selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
+        if (!duplicating && _selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
         {
             var dict = new Dictionary<int, LayoutShape>();
             foreach (var idx in MovableSelectedIndices(_selectedIndices))
@@ -2973,6 +3150,26 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                         moved[i],
                         CellHierarchy.InstanceBbox(moved[i], InstanceBaseDir),
                         i < _pastePlacementInstanceBoxOnly.Length && _pastePlacementInstanceBoxOnly[i]));
+                pasteInstancePreview = ghosts;
+            }
+        }
+        else if (duplicating && (_moveLiveDx != 0 || _moveLiveDy != 0))
+        {
+            var shapeIndices = MovableSelectedIndices(_selectedIndices);
+            if (shapeIndices.Count > 0)
+                pastePreview = LayoutFragment.Translate(
+                    shapeIndices.Select(i => Model.Shapes[i]).ToList(), _moveLiveDx, _moveLiveDy);
+
+            var srcInstances = SelectedInstancesForDuplicate();
+            if (srcInstances.Count > 0)
+            {
+                var moved = LayoutFragment.Translate(srcInstances, _moveLiveDx, _moveLiveDy);
+                var ghosts = new List<LayoutOverlay.GhostInstance>(moved.Count);
+                for (int i = 0; i < moved.Count; i++)
+                    ghosts.Add(new LayoutOverlay.GhostInstance(
+                        moved[i],
+                        CellHierarchy.InstanceBbox(moved[i], InstanceBaseDir),
+                        i < _duplicateGhostBoxOnly.Length && _duplicateGhostBoxOnly[i]));
                 pasteInstancePreview = ghosts;
             }
         }

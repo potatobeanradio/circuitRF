@@ -156,12 +156,17 @@ public sealed class PCellGripLockTests : IDisposable
     }
 
     /// <summary>
-    /// Bounded, by the owner's call. Outside the lock radius the press does NOTHING — it does not fall
-    /// through to a move, a marquee, or a deselect. "Alt means I am only talking to grips" is the
-    /// promise; reaching across the canvas for a grip the user was not looking at is not part of it.
+    /// Bounded, by the owner's call: outside the lock radius the press claims no grip. Reaching across
+    /// the canvas for a grip the user was not looking at is not part of the promise.
+    ///
+    /// <para>R-dup-1 changed what happens NEXT. Grip-lock used to swallow such a press entirely; now
+    /// it falls through to ordinary handling, because Alt also arms a duplicate drag and Alt+dragging a
+    /// PCell's BODY — the natural way to copy one — would otherwise be the one drag in the editor that
+    /// did nothing. What grip-lock still guarantees is the part that mattered: the press never edits a
+    /// parameter it did not claim, and never moves the original.</para>
     /// </summary>
     [Fact]
-    public void AltPress_BeyondTheLockRadius_DoesNothingAtAll()
+    public void AltPress_BeyondTheLockRadius_ClaimsNoGrip()
     {
         var vm = PlaceMlin();
         double lengthBefore = ParametersOf(vm).Real("L", 0);
@@ -174,7 +179,27 @@ public sealed class PCellGripLockTests : IDisposable
 
         Assert.Equal(lengthBefore, ParametersOf(vm).Real("L", 0), precision: 12);
         Assert.Equal(0, vm.Model.Instances[0].X);
-        Assert.Single(vm.Overlay.PCellHandles, h => h.Label == "L" && h.AxisDx > 0);  // still selected
+        Assert.Single(vm.Model.Instances);   // nothing was copied either — the press hit empty space
+    }
+
+    /// <summary>
+    /// The other side of that fall-through, and the reason it was made: Alt on a PCell's BODY has to
+    /// reach the duplicate gesture rather than being eaten by grip-lock.
+    /// </summary>
+    [Fact]
+    public void AltDrag_OnAPCellBody_DuplicatesTheInstance()
+    {
+        var vm = PlaceMlin();
+        var grip = Grip(vm, "L", 1, 0);
+        long insideX = grip.X - LockTol * 2;   // on the artwork, far from every grip
+
+        Press(vm, insideX, grip.Y, KeyModifiers.Alt);
+        Move(vm, insideX, grip.Y + 2_000_000, leftDown: true, KeyModifiers.Alt);
+        vm.OnPointerReleased(insideX, grip.Y + 2_000_000, KeyModifiers.Alt);
+
+        Assert.Equal(2, vm.Model.Instances.Count);
+        Assert.Equal(0, vm.Model.Instances[0].Y);              // the original stayed put
+        Assert.Equal(2_000_000, vm.Model.Instances[1].Y);      // the copy landed at the delta
     }
 
     [Fact]
@@ -222,11 +247,13 @@ public sealed class PCellGripLockTests : IDisposable
     }
 
     /// <summary>
-    /// The carve-out is scoped to the gesture Alt STARTED, and nothing wider: a drag begun without Alt
-    /// still has Alt meaning suspend-snap, exactly as every other drag in this editor does.
+    /// R-dup-2 made the carve-out unnecessary rather than wrong: no modifier suspends snap anywhere in
+    /// this editor now, so a grip drag snaps to geometry whether or not it was locked, and whether or
+    /// not Alt is held during it. Kept as a test because "locked and unlocked drags behave the same
+    /// here" is exactly the kind of equivalence that quietly stops being true.
     /// </summary>
     [Fact]
-    public void AnUnlockedGripDrag_WithAltHeldDuringTheMove_StillSuspendsSnap()
+    public void AnUnlockedGripDrag_WithAltHeldDuringTheMove_SnapsToGeometryToo()
     {
         const long snap = 10_000;
         const long targetX = 3_333_000;
@@ -242,7 +269,7 @@ public sealed class PCellGripLockTests : IDisposable
         Move(vm, targetX - 2_000, grip.Y, leftDown: true, KeyModifiers.Alt, snapTolDbu: 50_000);
         vm.OnPointerReleased(targetX - 2_000, grip.Y, KeyModifiers.Alt);
 
-        Assert.NotEqual(targetX, Grip(vm, "L", 1, 0).X);
+        Assert.Equal(targetX, Grip(vm, "L", 1, 0).X);
     }
 
     [Fact]
@@ -264,9 +291,10 @@ public sealed class PCellGripLockTests : IDisposable
     // ── Alt's other meanings are untouched where there are no grips ───────────
 
     /// <summary>
-    /// Grip-lock is gated on the selection actually HAVING grips, which is what keeps Alt+click
-    /// overlap cycling, Alt-suspend-snap and Alt-scale-about-centre working everywhere else. With
-    /// nothing selected there are no grips, so an Alt press is an ordinary press.
+    /// Grip-lock is gated on the selection actually HAVING grips, which is what keeps Alt's other
+    /// meanings — overlap cycling, scale-about-centre, and arming a duplicate drag — working
+    /// everywhere else. With nothing selected there are no grips, so an Alt press is an ordinary
+    /// press, and an ordinary Alt drag duplicates.
     /// </summary>
     [Fact]
     public void AltPress_WithNoGripsOnTheSelection_IsAnOrdinaryPress()
@@ -283,7 +311,8 @@ public sealed class PCellGripLockTests : IDisposable
         vm.OnPointerReleased(10_500_000 + 400_000, 500_000, KeyModifiers.Alt);
 
         var rect = Assert.IsType<RectShape>(vm.Model.Shapes[0]);
-        Assert.NotEqual(10_000_000, rect.X1);      // the ordinary Alt+drag moved it
+        Assert.Equal(10_000_000, rect.X1);         // the original is untouched
+        Assert.Equal(2, vm.Model.Shapes.Count);    // and the Alt drag left a copy behind
     }
 
     // ── Hover: seeing which gesture you are about to get ─────────────────────

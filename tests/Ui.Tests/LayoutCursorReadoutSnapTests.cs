@@ -72,17 +72,32 @@ public class LayoutCursorReadoutSnapTests
         Assert.Equal("-40 µm", vm.CursorYText);
     }
 
+    /// <summary>R-dup-2 retired R-snp-11's Alt escape hatch — the geometry-snap toggle (S / F3) is the
+    /// "place freely" control now, and it is persistent and visible in the toolbar rather than
+    /// momentary. The readout claim is unchanged: with snap off it reports the raw cursor.</summary>
     [Fact]
-    public void AltSuppressesSnap_SoTheReadoutFallsBackToTheRawCursor()
+    public void TheGeometrySnapToggle_MakesTheReadoutFallBackToTheRawCursor()
     {
         var vm = SelectVm(ModelWithACornerAtOrigin());
 
         MoveTo(vm, -2000, -2000);
         Assert.True(vm.CursorReadoutIsSnapped);           // control: it WAS snapping
 
-        MoveTo(vm, -2000, -2000, KeyModifiers.Alt);       // R-snp-11's "place freely" escape hatch
+        vm.GeometrySnapEnabled = false;
+        MoveTo(vm, -2000, -2000);
         Assert.False(vm.CursorReadoutIsSnapped);
         Assert.Equal("-2 µm", vm.CursorXText);
+    }
+
+    /// <summary>The retirement itself, pinned: Alt is inert for the readout now.</summary>
+    [Fact]
+    public void AltNoLongerSuppressesSnap_SoTheReadoutStaysSnapped()
+    {
+        var vm = SelectVm(ModelWithACornerAtOrigin());
+
+        MoveTo(vm, -2000, -2000, KeyModifiers.Alt);
+
+        Assert.True(vm.CursorReadoutIsSnapped);
     }
 
     /// <summary>The ordering guard. The canvas stores the raw point first and only then hands the

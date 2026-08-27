@@ -105,6 +105,29 @@ public sealed record class SchematicOverlay
     /// </summary>
     public (double X, double Y)? CanvasObjectGripperPos { get; init; }
 
+    // ── R-dup-1: the Alt duplicate drag (docs/design/pcell-parameter-handles.md's sibling rule for
+    //    the schematic; the layout editor's own half rides its paste-ghost channel) ────────────────
+
+    /// <summary>
+    /// The copy a duplicate drag is about to make, as ghost symbols at the dragged offset. Null when
+    /// no duplicate drag is in flight.
+    ///
+    /// <para><b>Deliberately NOT <see cref="ComponentDragPositions"/>.</b> That channel means "draw
+    /// this existing object somewhere else", which is the one thing a duplicate must not do — the
+    /// original has to stay visibly put. These ghosts are extra geometry that is in no model yet,
+    /// which is exactly what an uncommitted copy is, and they are drawn in the same ghost paint the
+    /// placement ghost already uses so the two read as the same kind of "not yet real".</para>
+    /// </summary>
+    public IReadOnlyList<PlacementGhost>? DuplicateGhosts { get; init; }
+
+    /// <summary>The wire half of that copy: world polylines, already offset.</summary>
+    public IReadOnlyList<IReadOnlyList<(double X, double Y)>>? DuplicateGhostWires { get; init; }
+
+    /// <summary>The canvas-object half: top-left-anchored rectangles, already offset. Drawn as
+    /// outlines — a bitmap ghost that painted its own image would be indistinguishable from the
+    /// committed copy, which is the one thing the ghost has to say it is not.</summary>
+    public IReadOnlyList<(double X, double Y, double W, double H)>? DuplicateGhostRects { get; init; }
+
     private static readonly HashSet<string> HashSetEmpty = new();
 }
 

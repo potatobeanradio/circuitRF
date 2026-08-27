@@ -100,17 +100,23 @@ public class LayoutPortDragSnapTests
         Assert.Equal(fromY + 3_000 * Dbu, port.Y);
     }
 
+    /// <summary>
+    /// R-dup-2 retired Alt-suspends-snap; the two persistent toggles are how snapping is turned off
+    /// now. The subject of this test is unchanged — a port dragged with both snaps off follows the raw
+    /// cursor and does NOT land on the corner — only the mechanism has moved from a held modifier to
+    /// the toggles the toolbar already shows.
+    /// </summary>
     [Fact]
-    public void AltStillSuppressesTheSnap()
+    public void WithBothSnapsToggledOff_ThePortFollowsTheRawCursor()
     {
         var (vm, _, port) = Fixture();
+        vm.GeometrySnapEnabled = false;   // S / F3
+        vm.ToggleSnapDbuEnabled();        // F9
 
         vm.OnPointerPressed(port.X, port.Y, KeyModifiers.None, 1, 0, 0, Tol);
-        vm.OnPointerMoved(-100 * Dbu, -120 * Dbu, leftDown: true, KeyModifiers.Alt, 0, 0, Tol);
-        vm.OnPointerReleased(-100 * Dbu, -120 * Dbu, KeyModifiers.Alt);
+        vm.OnPointerMoved(-100 * Dbu, -120 * Dbu, leftDown: true, KeyModifiers.None, 0, 0, Tol);
+        vm.OnPointerReleased(-100 * Dbu, -120 * Dbu, KeyModifiers.None);
 
-        // Alt suspends snapping outright — geometry AND grid — so the port follows the raw cursor.
-        // The point of the assertion is that it does NOT land on the corner: the attraction is off.
         Assert.Equal(-100 * Dbu, port.X);
         Assert.Equal(-120 * Dbu, port.Y);
     }

@@ -397,8 +397,11 @@ public sealed class PCellParameterHandleDragTests : IDisposable
 
     // ── Snap ─────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>R-dup-2 moved the "suspend it" half from Alt to the grid-snap toggle (F9); the claim
+    /// itself — that the PARAMETER answers to the world-space snap, not just the cursor — is
+    /// unchanged, and is still tested against its own unsnapped control.</summary>
     [Fact]
-    public void TheDragSnapsInWorldSpace_AndAltSuspendsIt()
+    public void TheDragSnapsInWorldSpace_AndTheGridToggleSuspendsIt()
     {
         var (vm, _) = PlaceMlin();
         vm.SnapDbu = 1_000_000;   // 1 mm
@@ -409,9 +412,10 @@ public sealed class PCellParameterHandleDragTests : IDisposable
 
         var (vm2, _) = PlaceMlin();
         vm2.SnapDbu = 1_000_000;
+        vm2.ToggleSnapDbuEnabled();
         var grip2 = GripFor(vm2, "L");
         vm2.OnPointerPressed(grip2.X, grip2.Y, KeyModifiers.None, hitTolDbu: 200_000);
-        vm2.OnPointerMoved(6_400_000, 0, leftDown: true, KeyModifiers.Alt, hitTolDbu: 200_000);
+        vm2.OnPointerMoved(6_400_000, 0, leftDown: true, KeyModifiers.None, hitTolDbu: 200_000);
         vm2.OnPointerReleased(6_400_000, 0, KeyModifiers.None);
         double unsnapped = ParametersOf(vm2, 0).Real("L");
 

@@ -110,9 +110,15 @@ public sealed class SchematicCanvas : Control
                            or nameof(SchematicViewModel.SpatialIndex)
                            or nameof(SchematicViewModel.Overlay))
             SyncFromVm();
-        else if (e.PropertyName == nameof(SchematicViewModel.ActiveTool))
+        else if (e.PropertyName is nameof(SchematicViewModel.ActiveTool)
+                                or nameof(SchematicViewModel.DuplicateDragArmed))
             UpdateCursor();
     }
+
+    /// <summary>R-dup-1: Alt held, for the copy CURSOR. Cleared on key-up AND on LostFocus, because
+    /// the key-up after a click on a toolbar button is delivered to whatever took focus — the latch
+    /// bug the layout canvas already shipped once with Space-to-pan.</summary>
+    private bool _altHeld;
 
     private void UpdateCursor()
     {
@@ -121,6 +127,17 @@ public sealed class SchematicCanvas : Control
             Cursor = new Cursor(StandardCursorType.Hand);
             return;
         }
+
+        // R-dup-1: Alt says the drag will leave the original where it is and take a copy. Shown while
+        // the duplicate is actually armed, and also on a bare Alt with something selected, so the
+        // gesture announces itself BEFORE the press rather than only once the ghost appears.
+        if (_editContext is { ActiveTool: SchematicViewModel.Tool.Select } vm
+            && (vm.DuplicateDragArmed || (_altHeld && vm.HasDuplicableSelection)))
+        {
+            Cursor = new Cursor(StandardCursorType.DragCopy);
+            return;
+        }
+
         Cursor = _editContext?.ActiveTool switch
         {
             SchematicViewModel.Tool.Pan        => new Cursor(StandardCursorType.Hand),
@@ -209,6 +226,8 @@ public sealed class SchematicCanvas : Control
         PointerReleased     += OnPointerReleased;
         PointerWheelChanged += OnPointerWheel;
         KeyDown             += OnKeyDown;
+        KeyUp               += OnKeyUp;
+        LostFocus           += OnCanvasLostFocus;
         DoubleTapped        += OnDoubleTapped;
 
         ((IResourceHost)this).ResourcesChanged += (_, _) => InvalidateVisual();
@@ -770,8 +789,23 @@ public sealed class SchematicCanvas : Control
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
 
+    private void OnKeyUp(object? _, KeyEventArgs e)
+    {
+        if (e.Key is Key.LeftAlt or Key.RightAlt) { _altHeld = false; UpdateCursor(); }
+    }
+
+    private void OnCanvasLostFocus(object? _, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _altHeld = false;
+        UpdateCursor();
+    }
+
     private void OnKeyDown(object? _, KeyEventArgs e)
     {
+        // Deliberately not `return` — Alt is a modifier, and swallowing it here would cost every
+        // Alt-combination below it.
+        if (e.Key is Key.LeftAlt or Key.RightAlt) { _altHeld = true; UpdateCursor(); }
+
         if (_editContext is null) return;
 
         bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;

@@ -888,6 +888,21 @@ public sealed partial class SchematicViewModel : ObservableObject
         // Clamp so a wire grabbed by its endpoint can't slide a body-tap off its end.
         (dx, dy) = ApplyWireSlideClamp(dx, dy);
 
+        // R-dup-1: Alt turns this drag into a DUPLICATE. Read live, every tick, exactly like the
+        // Shift lock above — a user commits to a drag first and decides it should have been a copy
+        // second, and neither decision should require restarting the gesture.
+        SetDuplicateDragArmed((modifiers & KeyModifiers.Alt) != 0, dx, dy);
+        if (DuplicateDragArmed)
+        {
+            // The originals go back to EXACTLY where they started — not through the snap, which would
+            // shift an off-grid object that the user never dragged anywhere. What follows the cursor
+            // is the ghost built in UpdateDragOverlay; nothing in the model moves until release, and
+            // then only by adding.
+            RestoreDragStartPositions();
+            UpdateDragOverlay();
+            return;
+        }
+
         // Move selected components
         if (_dragStartCompPositions is not null)
         {
@@ -967,7 +982,8 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         if (_isDragging)
         {
-            CommitDragAsCommand(wx, wy, modifiers);
+            if (DuplicateDragArmed) CommitDuplicateDrag();
+            else CommitDragAsCommand(wx, wy, modifiers);
             // CommitDragAsCommand → Execute(MoveCommand) → NotifyChanged() → RebuildRenderModel()
             // which also calls RebuildOverlay() — so drag overrides are cleared by the full rebuild.
         }
@@ -1905,6 +1921,8 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
         }
 
+        var (dupGhosts, dupGhostWires, dupGhostRects) = BuildDuplicateGhosts();
+
         // Push overlay update — canvas watches Overlay property change → InvalidateVisual().
         // No BuildRenderModel() call.
         Overlay = new SchematicOverlay
@@ -1919,7 +1937,70 @@ public sealed partial class SchematicViewModel : ObservableObject
             PinOnPinPreviewWires     = popPreviews,
             ConnectionDotsOverride   = LiveConnectionDots(),
             CanvasObjectDragPositions = objOverrides,
+            DuplicateGhosts           = dupGhosts,
+            DuplicateGhostWires       = dupGhostWires,
+            DuplicateGhostRects       = dupGhostRects,
         };
+    }
+
+    /// <summary>
+    /// The ghost a duplicate drag shows: the selection redrawn at the copy's offset, leaving the
+    /// originals to render normally where they are. Built from the START positions and the ONE
+    /// group delta the commit will use, so the picture the user is aiming with is the geometry that
+    /// lands — the failure this avoids is a ghost drawn from live positions that the originals were
+    /// simultaneously being restored to, which is a half-tick disagreement nobody can debug from a
+    /// screenshot.
+    /// </summary>
+    private (List<PlacementGhost>? Ghosts,
+             List<IReadOnlyList<(double X, double Y)>>? Wires,
+             List<(double X, double Y, double W, double H)>? Rects) BuildDuplicateGhosts()
+    {
+        if (!DuplicateDragArmed) return (null, null, null);
+        var (dx, dy) = _duplicateDragDelta;
+        if (dx == 0 && dy == 0) return (null, null, null);
+
+        List<PlacementGhost>? ghosts = null;
+        if (_dragStartCompPositions is { Count: > 0 } && RenderModel is not null)
+        {
+            ghosts = new List<PlacementGhost>(_dragStartCompPositions.Count);
+            foreach (var (id, start) in _dragStartCompPositions)
+            {
+                var rc = RenderModel.Components.FirstOrDefault(c => c.Id == id);
+                if (rc is null) continue;
+
+                // The resolved artwork, by the same precedence the renderer itself uses for a
+                // committed component: a per-instance symbol first, then a resolved cell's
+                // primitives, then the built-in glyph the ghost record falls back to on its own.
+                var prims = rc.InstanceSymbol?.Primitives ?? rc.CellRefPrimitives;
+                var pins  = rc.InstanceSymbol?.Pins;
+
+                ghosts.Add(new PlacementGhost(
+                    EditModel.SnapToGrid(start.X) + dx, EditModel.SnapToGrid(start.Y) + dy,
+                    rc.Symbol, rc.Rotation, rc.MirrorX, rc.Ports.Count, prims, pins));
+            }
+        }
+
+        List<IReadOnlyList<(double X, double Y)>>? wires = null;
+        if (_dragWireInfo is { Count: > 0 })
+        {
+            wires = new List<IReadOnlyList<(double X, double Y)>>(_dragWireInfo.Count);
+            foreach (var (_, info) in _dragWireInfo)
+                wires.Add(info.StartPoints.Select(pt => (pt.X + dx, pt.Y + dy)).ToList());
+        }
+
+        List<(double X, double Y, double W, double H)>? rects = null;
+        if (_dragStartObjPositions is { Count: > 0 })
+        {
+            rects = new List<(double, double, double, double)>(_dragStartObjPositions.Count);
+            foreach (var (id, start) in _dragStartObjPositions)
+            {
+                if (EditModel.FindCanvasObject(id) is not EditableBitmap bm) continue;
+                rects.Add((start.X + dx - bm.Width / 2.0, start.Y + dy - bm.Height / 2.0,
+                           bm.Width, bm.Height));
+            }
+        }
+
+        return (ghosts, wires, rects);
     }
 
     // Live connection dots for the drag preview. The drag mutates EditModel geometry live, so a
@@ -1969,6 +2050,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _resizeObjId              = null;
         _wireSlideMinDx = double.NegativeInfinity; _wireSlideMaxDx = double.PositiveInfinity;
         _wireSlideMinDy = double.NegativeInfinity; _wireSlideMaxDy = double.PositiveInfinity;
+        SetDuplicateDragArmed(false, 0, 0);   // R-dup-1: the copy disarms with the drag that armed it
     }
 
     /// <summary>
@@ -2595,6 +2677,111 @@ public sealed partial class SchematicViewModel : ObservableObject
         });
         Execute(new MoveLabelsCommand(EditModel, snaps));
         SetSelectTool();
+    }
+
+    // ── R-dup-1: Alt during a drag duplicates instead of moving ──────────────────────────────
+
+    /// <summary>True while the in-flight drag is a duplicate drag — the selection stays where it is
+    /// and a ghost of the copy follows the cursor. Read by the canvas for the copy cursor.</summary>
+    public bool DuplicateDragArmed { get; private set; }
+
+    /// <summary>The offset the copy will land at, quantised ONCE for the whole group rather than
+    /// per object. A duplicate has to preserve the relative geometry of what it copies, and snapping
+    /// each object independently does not: two components a half-grid apart would land a whole grid
+    /// apart. The ghost and the commit both read this, so what is drawn is what lands.</summary>
+    private (double DX, double DY) _duplicateDragDelta;
+
+    /// <summary>Is there anything an Alt drag could copy? Drives the duplicate CURSOR, which has to
+    /// answer before the press — a copy cursor over an empty selection promises a gesture that would
+    /// do nothing.</summary>
+    public bool HasDuplicableSelection => !Selection.IsEmpty;
+
+    private void SetDuplicateDragArmed(bool armed, double dx, double dy)
+    {
+        _duplicateDragDelta = armed
+            ? (EditModel.SnapToGrid(dx), EditModel.SnapToGrid(dy))
+            : (0, 0);
+        if (armed == DuplicateDragArmed) return;
+        DuplicateDragArmed = armed;
+        OnPropertyChanged(nameof(DuplicateDragArmed));
+    }
+
+    /// <summary>Puts everything the drag has been moving back exactly where it started. Exact, not
+    /// snapped: re-snapping here would move an off-grid object the user only ever pressed on.</summary>
+    private void RestoreDragStartPositions()
+    {
+        if (_dragStartCompPositions is not null)
+            foreach (var (id, start) in _dragStartCompPositions)
+                if (EditModel.FindComponent(id) is { } comp) { comp.X = start.X; comp.Y = start.Y; }
+
+        if (_dragWireInfo is not null)
+            foreach (var (id, info) in _dragWireInfo)
+                if (EditModel.FindWire(id) is { } wire)
+                {
+                    wire.Points.Clear();
+                    foreach (var pt in info.StartPoints) wire.Points.Add(pt);
+                }
+
+        if (_dragStartObjPositions is not null)
+            foreach (var (id, start) in _dragStartObjPositions)
+                if (EditModel.FindCanvasObject(id) is { } obj) { obj.X = start.X; obj.Y = start.Y; }
+
+        // Unselected wires that were following a moved port have to come back with them, or the
+        // duplicate would leave the originals connected to re-routed stubs.
+        UpdateConnectedWireEndpointsLive();
+    }
+
+    /// <summary>
+    /// The copy this drag would make: clones of the selection, offset by the drag's own delta, added
+    /// through the SAME <c>SchematicPasteCommand</c> that paste uses — one undo entry, new ids, and
+    /// the copies selected afterwards, none of which a duplicate should decide differently from a
+    /// paste. The originals are not touched, so no move command is pushed beside it.
+    /// </summary>
+    private void CommitDuplicateDrag()
+    {
+        var (dx, dy) = _duplicateDragDelta;
+        if (dx == 0 && dy == 0) return;
+
+        var comps = new List<EditableComponent>();
+        if (_dragStartCompPositions is not null)
+            foreach (var id in _dragStartCompPositions.Keys)
+                if (EditModel.FindComponent(id) is { } c)
+                {
+                    var nc = c.Clone();
+                    nc.X += dx; nc.Y += dy;
+                    comps.Add(nc);
+                }
+
+        var wires = new List<EditableWire>();
+        if (_dragWireInfo is not null)
+            foreach (var (id, info) in _dragWireInfo)
+                if (EditModel.FindWire(id) is { } w)
+                {
+                    var nw = w.Clone();
+                    nw.Points.Clear();
+                    // From the START points, not the live ones: a duplicate copies the wire the user
+                    // selected, never whatever shape a half-finished re-route had it in.
+                    foreach (var pt in info.StartPoints) nw.Points.Add((pt.X + dx, pt.Y + dy));
+                    wires.Add(nw);
+                }
+
+        var cobjs = new List<EditableCanvasObject>();
+        if (_dragStartObjPositions is not null)
+            foreach (var id in _dragStartObjPositions.Keys)
+                if (EditModel.FindCanvasObject(id) is { } o)
+                {
+                    var no = o.Clone();
+                    no.X += dx; no.Y += dy;
+                    cobjs.Add(no);
+                }
+
+        if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return;
+
+        Execute(new SchematicPasteCommand(
+            EditModel, comps, wires, cobjs,
+            ids => Selection.SetAll(ids),
+            sourceGridSize: EditModel.GridSize,
+            messageSink: _messageSink));
     }
 
     /// <summary>

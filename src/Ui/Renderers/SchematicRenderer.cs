@@ -1125,7 +1125,12 @@ public static class SchematicRenderer
         // Placement ghost — uses DrawSymbol with overridePaint so it reads the single
         // geometry source (BuiltInSymbols.Primitives) and draws only SymbolLine-role
         // primitives (matching the prior behaviour that called SchematicSymbols.For only).
-        if (overlay.Ghost is { } ghost && !isLod)
+        //
+        // R-dup-1 gave this exactly one more caller rather than a second ghost style: the copy an Alt
+        // drag is about to make is drawn by the same code, in the same paint, because it is the same
+        // statement — "this is not in the model yet". A duplicate that looked different from a
+        // placement would be a second visual language for one idea.
+        if (!isLod && (overlay.Ghost is not null || overlay.DuplicateGhosts is { Count: > 0 }))
         {
             using var ghostPaint = new SKPaint
             {
@@ -1134,13 +1139,6 @@ public static class SchematicRenderer
                 Color       = theme.GhostBody,
                 PathEffect  = SKPathEffect.CreateDash([6f, 3f], 0f),
             };
-            var ghostPrimitives = ghost.ResolvedPrimitives
-                ?? BuiltInSymbols.Primitives(ghost.Symbol, ghost.PortCount).Primitives;
-            DrawSymbol(canvas, ghostPrimitives,
-                ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom,
-                theme, ghostPaint);
-
-            // Ghost port markers — same geometry source as DrawPortMarkers, ghost color (solid; no dash)
             float ghostBoxHalf = (float)Math.Max(3.0, zoom * PortBoxHalf);
             using var ghostPortPaint = new SKPaint
             {
@@ -1148,20 +1146,65 @@ public static class SchematicRenderer
                 StrokeWidth = (float)Math.Max(1.0, zoom * 2),
                 Color       = theme.GhostBody,
             };
-            if (ghost.ResolvedPins is { } resolvedPins)
+
+            void DrawOneGhost(PlacementGhost g)
             {
-                foreach (var pin in resolvedPins)
+                var ghostPrimitives = g.ResolvedPrimitives
+                    ?? BuiltInSymbols.Primitives(g.Symbol, g.PortCount).Primitives;
+                DrawSymbol(canvas, ghostPrimitives,
+                    g.X, g.Y, g.Rotation, g.MirrorX, panX, panY, zoom,
+                    theme, ghostPaint);
+
+                // Ghost port markers — same geometry source as DrawPortMarkers, ghost color (solid; no dash)
+                if (g.ResolvedPins is { } resolvedPins)
                 {
-                    var (px, py) = LocalToPixel(pin.LocalX, pin.LocalY, ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
-                    canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+                    foreach (var pin in resolvedPins)
+                    {
+                        var (px, py) = LocalToPixel(pin.LocalX, pin.LocalY, g.X, g.Y, g.Rotation, g.MirrorX, panX, panY, zoom);
+                        canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+                    }
+                }
+                else
+                {
+                    foreach (var (_, lx, ly) in SymbolPortDefs.For(g.Symbol, g.PortCount))
+                    {
+                        var (px, py) = LocalToPixel(lx, ly, g.X, g.Y, g.Rotation, g.MirrorX, panX, panY, zoom);
+                        canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+                    }
                 }
             }
-            else
+
+            if (overlay.Ghost is { } ghost) DrawOneGhost(ghost);
+            if (overlay.DuplicateGhosts is { } dupGhosts)
+                foreach (var g in dupGhosts) DrawOneGhost(g);
+
+            // The wire and canvas-object halves of a duplicate. Plain strokes in the same paint: a
+            // wire has no symbol to resolve, and a bitmap ghost that painted its own image would be
+            // indistinguishable from the copy it is promising to make.
+            if (overlay.DuplicateGhostWires is { } dupWires)
             {
-                foreach (var (_, lx, ly) in SymbolPortDefs.For(ghost.Symbol, ghost.PortCount))
+                foreach (var pts in dupWires)
                 {
-                    var (px, py) = LocalToPixel(lx, ly, ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
-                    canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+                    if (pts.Count < 2) continue;
+                    using var path = new SKPath();
+                    var (w0x, w0y) = ToPixel(pts[0].X, pts[0].Y, panX, panY, zoom);
+                    path.MoveTo(w0x, w0y);
+                    for (int i = 1; i < pts.Count; i++)
+                    {
+                        var (wx, wy) = ToPixel(pts[i].X, pts[i].Y, panX, panY, zoom);
+                        path.LineTo(wx, wy);
+                    }
+                    canvas.DrawPath(path, ghostPaint);
+                }
+            }
+
+            if (overlay.DuplicateGhostRects is { } dupRects)
+            {
+                foreach (var (rx, ry, rw, rh) in dupRects)
+                {
+                    var (x0, y0) = ToPixel(rx, ry, panX, panY, zoom);
+                    var (x1, y1) = ToPixel(rx + rw, ry + rh, panX, panY, zoom);
+                    canvas.DrawRect(new SKRect(x0, y0, x1, y1), ghostPaint);
                 }
             }
         }

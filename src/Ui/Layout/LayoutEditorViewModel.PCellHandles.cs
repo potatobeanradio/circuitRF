@@ -442,13 +442,20 @@ public sealed partial class LayoutEditorViewModel
     /// would move the whole instance instead, which is the one interaction failure a user cannot
     /// work around.
     /// </summary>
-    /// <param name="locked">R-pch-12: this press was made under grip-lock. The caller passes the
-    /// larger lock radius as <paramref name="tolDbu"/> and consumes the press whatever this returns —
-    /// all this flag does is mark the resulting drag so Alt stops meaning suspend-snap for it.</param>
-    private bool TryBeginPCellHandleDrag(long px, long py, long tolDbu, bool locked = false)
+    /// <param name="locked">R-pch-12: this press was made under grip-lock — the caller passes the
+    /// larger lock radius as <paramref name="tolDbu"/>. Marks the resulting drag as locked.</param>
+    /// <param name="claimedPress">True when a grip was within <paramref name="tolDbu"/> and therefore
+    /// OWNS this press, whether or not a drag actually began. The two answers differ exactly once: a
+    /// grip whose sensitivity cannot be measured refuses, and under grip-lock that refusal must stay a
+    /// refusal rather than becoming whatever the press would otherwise have done (R-dup-1 made that a
+    /// duplicate drag, so "false means nothing was here" would silently turn a dead grip into a copy).
+    /// A press with no grip in range claims nothing and falls through.</param>
+    private bool TryBeginPCellHandleDrag(long px, long py, long tolDbu, bool locked, out bool claimedPress)
     {
+        claimedPress = false;
         var handles = ResolveSelectedPCellHandles(out var inst, out var origin, out var gen, out int instIdx);
         if (handles.Count == 0 || inst is null || origin is null || gen is null) return false;
+
 
         long tol = Math.Max(tolDbu, 1);
         int best = -1;
@@ -460,6 +467,7 @@ public sealed partial class LayoutEditorViewModel
             if (d <= tol && d < bestDistance) { bestDistance = d; best = i; }
         }
         if (best < 0) return false;
+        claimedPress = true;
 
         var handle = handles[best];
         var localCache = new PCellGeometryCache();
@@ -525,6 +533,11 @@ public sealed partial class LayoutEditorViewModel
         RebuildOverlay();
         return true;
     }
+
+    /// <summary>The ordinary, unlocked entry point — a press only ever claims a grip by starting a
+    /// drag on it, so the two answers coincide and the caller has nothing to distinguish.</summary>
+    private bool TryBeginPCellHandleDrag(long px, long py, long tolDbu)
+        => TryBeginPCellHandleDrag(px, py, tolDbu, locked: false, out _);
 
     /// <summary>
     /// One drag step. Snaps in WORLD space (the user is aligning to the grid they can see), then

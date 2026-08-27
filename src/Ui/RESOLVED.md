@@ -1,5 +1,92 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Drag modifiers: Shift constrains, Alt duplicates, and Alt stops suspending snap (2026-08-27)
+
+Owner request, the round after grip-lock: Shift-ortho in the layout editor (the schematic already had
+it), Alt-duplicate in BOTH editors with the original left in place and a ghost for the copy, and Alt
+retired from suspending snap in the layout editor.
+
+**R-dup-2 — retiring Alt-suspends-snap is what made the rest possible.** Alt was this editor's
+universal momentary suspend: eleven call sites plus R-snp-11's own suppression of the whole geometry
+query. Nothing momentary is lost that cannot be had persistently — **F9** toggles grid snap
+(`ToggleSnapDbuEnabled`) and **S / F3** toggles geometry snap, both visible in the toolbar. Removed
+editor-wide, drawing tools included, deliberately: one key meaning "suspend snap" while drawing and
+"duplicate" while dragging is exactly the split-personality this round exists to remove. Eleven tests
+pinned the old spelling; each was RE-POINTED at the surviving toggle rather than deleted, and a
+partner test added where the retirement itself is worth pinning.
+
+This also dissolved R-pch-12's "Alt is spent by the press" carve-out. Grip-lock's locked drag no longer
+needs to strip Alt, because Alt no longer means anything to the snap.
+
+**R-dup-3 — Shift** constrains a Move drag to its dominant axis, measured from the press point every
+tick (not accumulated), applied to the RESOLVED delta so it composes with both the grid-snapped and
+geometry-attracted branches. Same rule as the schematic's `ApplyDragAxisLock`, in DBU.
+
+**R-dup-4 — two owner reports from testing R-dup-3, and a first fix that overshot.**
+
+*"Holding Shift, the snap cursor is sometimes on even though there's no geometry nearby."* The marker
+is the synthetic **grab echo** (R-cmb-4's "keep the marker visible for the whole grab") — shown
+precisely when NO real feature is in range, and only during a marker-grabbed drag, which is the
+"sometimes". Under an ortho constraint it is also drawn in the wrong place: it tracks
+`SnappedGrabPoint`, computed from the UNCONSTRAINED delta, so it floats off the axis the geometry is
+travelling on. It is suppressed for the duration of a constrained move.
+
+**The first fix stood the WHOLE query down and was rejected** — *"snap does not work in Shift ortho
+mode; the user should still be able to snap to geometry within the threshold."* Correct: an ortho drag
+is exactly when you want to align one coordinate with a real feature. Geometry snap keeps working; the
+attraction is applied to the free axis and the locked axis holds at zero, so the grabbed point lands on
+the target's coordinate along the axis you are travelling and does not budge on the other.
+
+Two details that fall out of that, both load-bearing:
+- **The axis is chosen from the CURSOR's own travel, never from where the target lies.** They differ on
+  a near-diagonal drag, and reading the axis off the target locks the one the user did not ask for.
+- **A modifier change now defeats R-snp-16's sub-pixel skip guard.** Pressing Shift without moving the
+  mouse changes the answer, and the guard would otherwise leave the previous tick's marker frozen on
+  screen until the pointer moved again — a stale answer to a question that had since changed, and one
+  of the ways a marker appeared with nothing to snap to.
+
+**Second report: the copy cursor appeared while editing geometry with the handle grippers.** A
+selection is present throughout a handle drag, so `HasDuplicableSelection`'s "is anything selected" was
+the wrong question — the right one is whether an Alt press could actually duplicate. It cannot during a
+handle, grip, scale or marquee drag, nor while merely HOVERING one of the selected shape's handles,
+since that press is already spoken for by the reshape. A PCell grip needs no equivalent: its own hover
+cursor already outranks the copy cursor.
+
+**R-dup-1 — Alt duplicates.** Read live every tick, never latched at press, so a user who decides
+mid-drag that they wanted a copy does not restart the gesture. The two editors reach the same picture
+from opposite architectures, and that is the part worth remembering:
+- **Layout** previews a drag through `DragOverrides` ("draw this object somewhere else"), which is the
+  one thing a duplicate must not do. A duplicate drag emits NO overrides and rides the PASTE-GHOST
+  channel instead — which already draws geometry that is in no model yet, which is exactly what an
+  uncommitted copy is. Commit goes through `InsertPastedMixed`, the same funnel as Paste and Ctrl+D.
+- **Schematic** mutates the model LIVE during a drag (the overlay carries already-moved positions), so
+  a duplicate has to actively put the originals back every tick — exactly, not through the snap, which
+  would shift an off-grid object the user only pressed on — and draw the copy through a NEW ghost
+  channel (`DuplicateGhosts` / `DuplicateGhostWires` / `DuplicateGhostRects`). Those reuse the
+  placement ghost's own paint and drawing code rather than inventing a second "not yet real" look.
+  Commit goes through `SchematicPasteCommand`, the same funnel as paste.
+- The offset is quantised ONCE for the group, not per object: a duplicate must preserve the relative
+  geometry of what it copies, and per-object snapping does not (two parts a half-grid apart land a
+  whole grid apart).
+- Scope: **selection drags only**. A schematic SEGMENT drag reshapes one segment rather than moving a
+  selection, so there is nothing there to copy.
+
+**Grip-lock (R-pch-12) was narrowed to fit.** It used to consume an Alt press whatever happened; now it
+consumes one only when a grip is actually CLAIMED, so Alt+dragging a PCell's body — the natural way to
+copy one — reaches the duplicate gesture instead of doing nothing. `TryBeginPCellHandleDrag` grew an
+explicit `claimedPress` out-param for this, because "returned false" conflates *no grip in range* with
+*a grip refused*, and a refused grip must still not fall through — under the old code that meant a
+body move, under the new one it would silently mean a COPY.
+
+Gates: `tests/Ui.Tests/Layout/LayoutDragGesturesTests.cs` (22) and
+`tests/Ui.Tests/Schematic/SchematicDuplicateDragTests.cs` (12). Every "Alt copied it" assertion is
+paired with the same drag without Alt, which moves the original and copies nothing.
+
+*Fixture trap worth keeping:* in the schematic tests the components at the wire's endpoints cannot be
+used to test a component drag — a press there selects the WIRE, the drag moves that, and every
+assertion afterwards silently measures nothing. The fixture carries a lone part clear of all wires,
+and a free wire clear of all parts, for exactly that reason.
+
 ## PCell grip vs. instance move: which gesture a corner press produced was a coin flip (2026-08-27)
 
 Owner report, on MKlopf: click-dragging a corner sometimes moved the whole instance and sometimes

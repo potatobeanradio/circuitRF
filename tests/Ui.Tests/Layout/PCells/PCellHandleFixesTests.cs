@@ -219,22 +219,19 @@ public sealed class PCellHandleFixesTests : IDisposable
     }
 
     [Fact]
-    public void HoldingAlt_SuspendsTheGrid_ForTheParameterJustAsItDoesForTheCursor()
+    public void TurningTheGridOff_SuspendsItForTheParameterJustAsItDoesForTheCursor()
     {
-        // Alt already suspends snapping everywhere else in the editor; the parameter lattice has to
-        // answer to the same modifier or "snapping off" would only be half true.
+        // The parameter lattice has to answer to the same control the cursor does, or "snapping off"
+        // would only be half true. R-dup-2 moved that control from Alt (which now duplicates) to the
+        // grid-snap toggle; the claim being tested is unchanged.
         var vm = PlaceMlin();
         var g = vm.Overlay.PCellHandles.First(h => h.Label == "W" && h.AxisDy > 0);
 
-        // R-pch-12: Alt is held from the first MOVE, not from the press. Alt AT PRESS now means
-        // grip-lock, and that press SPENDS it — a locked drag keeps snapping on, deliberately, so
-        // that holding Alt to guarantee the grip cannot silently cost the geometry snap the grip was
-        // grabbed to use. Suspending the grid on a grip drag is therefore: press, then hold Alt.
-        // The subject of this test is unchanged; only where the modifier goes has moved.
         long toY = g.Y + 20 * OneMilDbu + OneMilDbu / 2;
+        vm.ToggleSnapDbuEnabled();
         vm.OnPointerPressed(g.X, g.Y, KeyModifiers.None, hitTolDbu: 20_000);
-        vm.OnPointerMoved(g.X, toY, leftDown: true, KeyModifiers.Alt, hitTolDbu: 20_000);
-        vm.OnPointerReleased(g.X, toY, KeyModifiers.Alt);
+        vm.OnPointerMoved(g.X, toY, leftDown: true, KeyModifiers.None, hitTolDbu: 20_000);
+        vm.OnPointerReleased(g.X, toY, KeyModifiers.None);
 
         double mils = Mils(ParametersOf(vm).Real("W"));
         Assert.NotEqual(Math.Round(mils), mils, 6);

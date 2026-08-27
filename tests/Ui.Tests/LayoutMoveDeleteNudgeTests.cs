@@ -78,8 +78,30 @@ public class LayoutMoveDeleteNudgeTests
         Assert.Equal(25_000, b.X1); // moved by the same delta as A
     }
 
+    /// <summary>R-dup-2: the grid-snap toggle (F9) is what applies a raw delta now. Alt was the old
+    /// spelling and means duplicate from this round on — see the test below.</summary>
     [Fact]
-    public void Move_AltSuspendsSnap_DeltaAppliedRaw()
+    public void Move_WithGridSnapToggledOff_DeltaAppliedRaw()
+    {
+        var model = FreshModel(1000);
+        var rect = new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 };
+        model.Shapes.Add(rect);
+        var vm = SelectVm(model);
+        vm.ToggleSnapDbuEnabled();
+
+        vm.OnPointerPressed(500, 500, KeyModifiers.None, 1, 40);
+        vm.OnPointerMoved(500 + 33, 500 + 77, true, KeyModifiers.None, 40);
+        vm.OnPointerReleased(500 + 33, 500 + 77, KeyModifiers.None);
+
+        Assert.Equal(33, rect.X1);
+        Assert.Equal(77, rect.Y1);
+    }
+
+    /// <summary>R-dup-1: the same drag under Alt leaves the original exactly where it was and adds a
+    /// copy at the delta. Pinned here, beside the move it replaces, because the two gestures differ by
+    /// one held key and the failure mode is silently getting the other one.</summary>
+    [Fact]
+    public void Move_WithAltHeld_LeavesTheOriginalAndAddsACopy()
     {
         var model = FreshModel(1000);
         var rect = new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 };
@@ -87,11 +109,12 @@ public class LayoutMoveDeleteNudgeTests
         var vm = SelectVm(model);
 
         vm.OnPointerPressed(500, 500, KeyModifiers.None, 1, 40);
-        vm.OnPointerMoved(500 + 33, 500 + 77, true, KeyModifiers.Alt, 40); // Alt suspends snapping
-        vm.OnPointerReleased(500 + 33, 500 + 77, KeyModifiers.Alt);
+        vm.OnPointerMoved(500 + 3000, 500, true, KeyModifiers.Alt, 40);
+        vm.OnPointerReleased(500 + 3000, 500, KeyModifiers.Alt);
 
-        Assert.Equal(33, rect.X1);
-        Assert.Equal(77, rect.Y1);
+        Assert.Equal(2, vm.Model.Shapes.Count);
+        Assert.Equal(0, rect.X1);                                   // the original never moved
+        Assert.Equal(3000, ((RectShape)vm.Model.Shapes[1]).X1);     // the copy landed at the delta
     }
 
     // ── Gate 9: nudge — arrow keys move by one snap step; Shift by ten ───────

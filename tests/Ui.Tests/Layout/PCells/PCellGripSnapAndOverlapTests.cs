@@ -165,8 +165,30 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
         vm.OnPointerReleased(grip.X + 3_000, 0, KeyModifiers.None);
     }
 
+    /// <summary>R-dup-2: the geometry-snap TOGGLE is what turns the attraction off now. Alt used to,
+    /// and no longer does — see the test below, which pins the retirement rather than leaving it to be
+    /// inferred from this one's absence.</summary>
     [Fact]
-    public void GripDrag_WithAltHeld_IgnoresGeometrySnapEntirely()
+    public void GripDrag_WithGeometrySnapToggledOff_IgnoresTheCornerEntirely()
+    {
+        const long snap = 10_000;
+        const long targetX = 3_333_000;
+
+        var vm = Place("MLIN", SchematicToLayoutGenerator.ResolveDefaultParameters(SymbolKind.Mlin, 0), snap);
+        vm.GeometrySnapEnabled = false;
+        vm.Model.Shapes.Add(new RectShape
+        {
+            Layer = new LayerKey(1, 0),
+            X1 = targetX, Y1 = 0, X2 = targetX + 500_000, Y2 = 500_000,
+        });
+
+        Drag(vm, Grip(vm, "L", 1, 0), targetX - 2_000, 0);
+
+        Assert.NotEqual(targetX, RightEdgeOf(vm));
+    }
+
+    [Fact]
+    public void GripDrag_WithAltHeld_StillSnapsToGeometry()
     {
         const long snap = 10_000;
         const long targetX = 3_333_000;
@@ -180,8 +202,7 @@ public sealed class PCellGripSnapAndOverlapTests : IDisposable
 
         Drag(vm, Grip(vm, "L", 1, 0), targetX - 2_000, 0, mods: KeyModifiers.Alt);
 
-        // Alt suspends BOTH snaps, so the grip follows the raw cursor rather than the corner.
-        Assert.NotEqual(targetX, RightEdgeOf(vm));
+        Assert.Equal(targetX, RightEdgeOf(vm));
     }
 
     // ── The MKlopf overlap guard ──────────────────────────────────────────────

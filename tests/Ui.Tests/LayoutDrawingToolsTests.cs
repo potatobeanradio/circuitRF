@@ -249,8 +249,29 @@ public class LayoutDrawingToolsTests
             Assert.Equal(0, v % 1000);
     }
 
+    /// <summary>R-dup-2: the grid-snap TOGGLE (F9) is what places raw coordinates now — Alt no longer
+    /// suspends snap for a drawing tool any more than it does for a drag, since one key meaning
+    /// "suspend snap" while drawing and "duplicate" while dragging is the split this round removed.</summary>
     [Fact]
-    public void Snap_AltModifierSuspendsSnap_ForThatPoint()
+    public void Snap_GridToggleOff_PlacesRawCoordinates_ForThatPoint()
+    {
+        var vm = MakeVm(FreshModel(snapDbu: 1000));
+        vm.ActiveTool = LayoutEditorViewModel.Tool.Rect;
+        vm.ToggleSnapDbuEnabled();
+
+        vm.OnPointerPressed(123, 456, KeyModifiers.None);
+        vm.OnPointerMoved(789, 1011, true, KeyModifiers.None);
+        vm.OnPointerReleased(789, 1011, KeyModifiers.None);
+
+        var rect = Assert.IsType<RectShape>(Assert.Single(vm.Model.Shapes));
+        Assert.Equal(123, rect.X1); Assert.Equal(456, rect.Y1);
+        Assert.Equal(789, rect.X2); Assert.Equal(1011, rect.Y2);
+    }
+
+    /// <summary>The other half of R-dup-2, stated as its own test so the retirement is pinned rather
+    /// than merely implied by the absence of the old one: Alt while DRAWING is now inert.</summary>
+    [Fact]
+    public void Snap_AltNoLongerSuspendsSnap_WhileDrawing()
     {
         var vm = MakeVm(FreshModel(snapDbu: 1000));
         vm.ActiveTool = LayoutEditorViewModel.Tool.Rect;
@@ -260,8 +281,8 @@ public class LayoutDrawingToolsTests
         vm.OnPointerReleased(789, 1011, KeyModifiers.Alt);
 
         var rect = Assert.IsType<RectShape>(Assert.Single(vm.Model.Shapes));
-        Assert.Equal(123, rect.X1); Assert.Equal(456, rect.Y1);
-        Assert.Equal(789, rect.X2); Assert.Equal(1011, rect.Y2);
+        Assert.Equal(0, rect.X1 % 1000); Assert.Equal(0, rect.Y1 % 1000);
+        Assert.Equal(0, rect.X2 % 1000); Assert.Equal(0, rect.Y2 % 1000);
     }
 
     [Fact]

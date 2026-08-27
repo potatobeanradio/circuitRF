@@ -217,8 +217,14 @@ public class LayoutSnapGestureTests
         vm.OnPointerReleased(40_000, 40_000, KeyModifiers.None);
     }
 
+    /// <summary>
+    /// R-dup-2: Alt no longer suppresses the click-through. It used to, which made the one press most
+    /// likely to be aimed at a feature the one press that could not be duplicated once Alt started
+    /// arming a copy. The suppression case it used to cover is the test directly below, through the
+    /// toggle that still does it.
+    /// </summary>
     [Fact]
-    public void AltModifier_SuppressesSnap_ClickMissingTheShapeSelectsNothing()
+    public void AltModifier_NoLongerSuppressesSnap_TheClickStillSelectsThroughTheMarker()
     {
         var model = FreshModel();
         model.Shapes.Add(new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 50_000, Y2 = 50_000 });
@@ -226,7 +232,7 @@ public class LayoutSnapGestureTests
 
         vm.OnPointerPressed(-2000, -2000, KeyModifiers.Alt, 1, 40, 0, SnapTol);
 
-        Assert.Empty(vm.SelectedIndices);
+        Assert.Equal([0], vm.SelectedIndices);
     }
 
     [Fact]
