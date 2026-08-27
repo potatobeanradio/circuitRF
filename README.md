@@ -67,6 +67,10 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 These install for you alone, need no administrator rights, and update themselves in the background.
 
+> **While circuitRF is in beta, tick *Settings ▸ Security & Permissions ▸ Include beta releases*.**
+> Beta versions are published as GitHub pre-releases, and that box is what puts them on your update
+> channel — without it you stay on the version you installed until the first stable release.
+
 | Platform | Download |
 |---|---|
 | Windows, Intel/AMD | [circuitRF-1.0.0-beta.3-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.3/circuitRF-1.0.0-beta.3-win-x64-user.msi) |

@@ -74,3 +74,6 @@ docs/slides/
 *.pem
 *.key
 release-key*
+# NOTE: the line above is why packaging/signing-status.sh is not called release-key.sh. A helper
+# named to match it is silently untracked, and the two build scripts that source it then fail on a
+# fresh clone with nothing to explain why. Keep the pattern broad; name files around it.

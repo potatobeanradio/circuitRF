@@ -43,7 +43,9 @@ public static class ReleaseKeys
     /// reviewable, diffable and attributable to the commit that introduced it. The private half
     /// never touches this repository — see <c>tools/ReleaseSigner</c> and <c>BUILDING.md</c>.</para>
     /// </summary>
-    public const string PublicKeySpkiBase64 = "";
+    public const string PublicKeySpkiBase64 =
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKIeiY5VcCdrU+3j98ktXT/Fqv5sUemLgumK4DMbfAUUI"
+        + "wPu8cpaMbLG3a09LRMGhBXpIz/ZepkxQ/2rp/F7hfg==";
 
     /// <summary>
     /// Whether this build demands a signed manifest before it will install anything.

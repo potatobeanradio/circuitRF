@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using CircuitRF.Ui.Updates;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -572,4 +573,160 @@ public class PackagingScriptTests
             }
         }
     }
+
+    // -- the release key, and what each script says about it ---------------------------------
+
+    /// <summary>
+    /// All three platform scripts must end by saying whether this build can be installed as an
+    /// automatic update. It is the one thing about a packaging run that is invisible in its output
+    /// and silent when wrong: a release published without a signed manifest is offered to nobody,
+    /// and says so nowhere.
+    /// </summary>
+    [Theory]
+    [InlineData("packaging/macos/build-macos.sh")]
+    [InlineData("packaging/linux/build-linux.sh")]
+    [InlineData("packaging/windows/build-windows.ps1")]
+    public void EveryPlatformScriptReportsWhetherAReleaseKeyIsCompiledIn(string script)
+    {
+        string text = File.ReadAllText(RepoFile(script.Split('/')));
+
+        // Every one of them names the source of truth it reads the key out of.
+        Assert.Contains("ReleaseKeys.cs", text);
+
+        // The two shell scripts share one implementation (packaging/signing-status.sh); the .ps1 cannot
+        // source a .sh, so it restates it. Either way the run must END by saying which it is.
+        Assert.True(text.Contains("crf_report_release_key") || text.Contains("Release key:"),
+                    $"{script} does not report whether a release key is compiled in.");
+    }
+
+    /// <summary>
+    /// The wording the two shell scripts share lives in one file, and it has to name the script that
+    /// finishes the job — a build that says "signed releases auto-update" without saying what signs
+    /// one has moved the silent failure rather than removed it.
+    /// </summary>
+    [Fact]
+    public void TheSharedReportNamesTheSigningStep()
+    {
+        string helper = File.ReadAllText(RepoFile("packaging", "signing-status.sh"));
+
+        Assert.Contains("Release key:", helper);
+        Assert.Contains("sign-release.sh", helper);
+        Assert.Contains("notify-only", helper);      // the Windows consequence of having no key
+    }
+
+    /// <summary>
+    /// Signing lives in ONE script, and deliberately not in the three platform ones: a release
+    /// carries a single manifest covering every asset, and the three run on three different machines
+    /// that each see only their own share. Three partial manifests cannot be combined.
+    /// </summary>
+    [Fact]
+    public void SigningIsOneScript_AndNoPlatformScriptSignsAManifest()
+    {
+        Assert.True(File.Exists(RepoFile("packaging", "sign-release.sh")));
+
+        foreach (string script in new[]
+                 {
+                     "packaging/macos/build-macos.sh",
+                     "packaging/linux/build-linux.sh",
+                     "packaging/windows/build-windows.ps1",
+                 })
+        {
+            string text = File.ReadAllText(RepoFile(script.Split('/')));
+            Assert.DoesNotContain("ReleaseSigner", text);
+        }
+    }
+
+    /// <summary>
+    /// <c>build-windows.ps1</c> extracts the compiled-in public key with a regex, and the constant is
+    /// written as adjacent string literals across several lines — so a pattern that took only the
+    /// first quoted run would truncate the key silently and every release would then verify against
+    /// nothing.
+    ///
+    /// <para>Run here in .NET because there is no PowerShell on a macOS build box; what is pinned is
+    /// the PATTERN and the shape of the declaration it reads, which is the half that can rot. The
+    /// shell scripts' <c>sed</c>/<c>grep</c> spelling of the same extraction is exercised directly
+    /// whenever they run.</para>
+    /// </summary>
+    [Fact]
+    public void TheWindowsScriptsKeyRegexReadsTheWholeKey()
+    {
+        string keys = File.ReadAllText(RepoFile("src", "Ui", "Updates", "ReleaseKeys.cs"));
+
+        // Exactly what the .ps1 does, in the same order.
+        string decl = Regex.Replace(keys, @"(?s).*PublicKeySpkiBase64\s*=", "").Split(';')[0];
+        string pub  = string.Concat(Regex.Matches(decl, "\"([^\"]*)\"")
+                                         .Select(m => m.Groups[1].Value));
+
+        Assert.Equal(ReleaseKeys.PublicKeySpkiBase64, pub);
+
+        // And it is not passing by both being empty, which would prove nothing about the joining.
+        Assert.NotEqual("", pub);
+        Assert.True(decl.Split('"').Length - 1 >= 2, "the declaration is no longer split across literals");
+    }
+    /// <summary>
+    /// The GitHub pre-release flag is the WHOLE channel mechanism — <c>UpdateSelector</c> filters on
+    /// <c>includeBetas || !r.IsPreRelease</c> and on nothing else — so the release script must set it,
+    /// and must set it from the one thing that decides it. Getting this wrong is silent in both
+    /// directions: a beta published as a stable release is pushed to every user who never asked for
+    /// beta code, and a stable release published as a pre-release is offered to nobody but testers.
+    /// </summary>
+    [Fact]
+    public void TheReleaseScriptDerivesThePreReleaseFlagFromTheVersion()
+    {
+        string sign = File.ReadAllText(RepoFile("packaging", "sign-release.sh"));
+
+        Assert.Contains("--prerelease", sign);
+
+        // Derived from the '-' in the VERSION string, never asked for and never hard-coded.
+        Assert.Matches(@"case\s+""\$CRF_VERSION""\s+in", sign);
+        Assert.Contains("IS_PRERELEASE=1", sign);
+        Assert.Contains("IS_PRERELEASE=0", sign);
+
+        // The flag is set ONCE, at creation. `gh release edit` builds its request from the flags
+        // actually passed - every bool is a NilBoolFlag, so `--draft=false` sends only `draft` and
+        // leaves `prerelease` alone. So the publish line must NOT re-pass it (that would teach the
+        // wrong rule) and must instead tell the reader how to confirm what actually landed.
+        Assert.DoesNotContain("--draft=false --prerelease", sign);
+        Assert.Contains("--json isDraft,isPrerelease", sign);
+    }
+
+    /// <summary>
+    /// <b>No <c>v</c> on the tag.</b> The manifest's asset URLs are built as
+    /// <c>.../releases/download/&lt;tag&gt;/&lt;file&gt;</c> from the <c>VERSION</c> string, so a tag
+    /// spelled <c>v1.1.0</c> gives every client a URL that 404s — which presents as an update that
+    /// never arrives rather than as an error anyone sees. Pinned across the script and the document
+    /// someone actually follows, because the two drifted apart once already.
+    /// </summary>
+    [Fact]
+    public void NothingTellsAnyoneToPrefixTheReleaseTagWithV()
+    {
+        string sign     = File.ReadAllText(RepoFile("packaging", "sign-release.sh"));
+        string building = File.ReadAllText(RepoFile("BUILDING.md"));
+
+        Assert.DoesNotMatch(@"download/v\$?\{?CRF_VERSION", sign);
+        Assert.DoesNotMatch(@"`v<version>`|download/v<version>", building);
+
+        // The tag the script creates and the base URL it writes are the same string, so they cannot
+        // disagree about the prefix whatever that string turns out to be.
+        Assert.Contains("releases/download/${CRF_VERSION}", sign);
+        Assert.Contains("gh release create \"$CRF_VERSION\"", sign);
+    }
+
+    /// <summary>
+    /// A partly-uploaded DRAFT must be resumable: the script's own advice after a failed upload is to
+    /// re-run it, and a blanket "this tag already exists" refusal made that advice unreachable. A
+    /// PUBLISHED release is still refused — re-uploading over it swaps assets under clients being
+    /// offered it right now.
+    /// </summary>
+    [Fact]
+    public void AFailedUploadCanBeRetriedIntoTheDraftButNotOverAPublishedRelease()
+    {
+        string sign = File.ReadAllText(RepoFile("packaging", "sign-release.sh"));
+
+        Assert.Contains("--json isDraft", sign);
+        Assert.Contains("already PUBLISHED", sign);
+        Assert.Contains("Resuming the existing DRAFT", sign);
+        Assert.Contains("--clobber", sign);
+    }
+
 }

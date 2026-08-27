@@ -457,3 +457,35 @@ if ($stubFailures.Count -gt 0) {
     Write-Host '  packaging\windows\stub\diagnose-zig.ps1 measures which of those is happening.'
     exit 1
 }
+
+# --- What these artifacts mean for automatic updates -------------------------------------------
+#
+# The same statement build-macos.sh and build-linux.sh end with. Whether these files can EVER be
+# installed as an automatic update is decided by the release key compiled into the binary, not by
+# anything this script did - so it is said here, while someone is reading the output, rather than
+# discovered when a published release is offered to nobody.
+#
+# The constant is written as adjacent string literals across several lines, so every quoted run in
+# the declaration is joined; reading only the first line would truncate the key silently.
+$keysCs = Join-Path $root 'src\Ui\Updates\ReleaseKeys.cs'
+$pub    = ''
+if (Test-Path $keysCs) {
+    $decl = (Get-Content $keysCs -Raw) -replace "(?s).*PublicKeySpkiBase64\s*=", ''
+    $decl = ($decl -split ';')[0]
+    $pub  = (([regex]::Matches($decl, '"([^"]*)"') | ForEach-Object { $_.Groups[1].Value }) -join '')
+}
+
+Write-Host ''
+if ($pub.Length -gt 0) {
+    Write-Host "Release key: COMPILED IN ($($pub.Length) chars)."
+    Write-Host '   These artifacts can be installed as automatic updates - but ONLY once the release'
+    Write-Host '   manifest is signed. Collect all 15 files from all three platforms into dist/, then'
+    Write-Host '   run packaging/sign-release.sh on the machine holding the private key.'
+    Write-Host '   Publishing without it means NO client is offered the release at all, silently.'
+} else {
+    Write-Host 'Release key: NONE compiled in.'
+    Write-Host '   macOS and Linux clients will still update, anchored by the platform signature and'
+    Write-Host '   the download hash. WINDOWS CLIENTS WILL NOT: an unsigned Windows build has no'
+    Write-Host '   publisher for the updater to compare a payload against, so it stays notify-only.'
+    Write-Host "   See BUILDING.md, 'The release signing key'."
+}

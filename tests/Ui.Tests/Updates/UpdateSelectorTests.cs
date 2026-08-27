@@ -139,7 +139,7 @@ public class UpdateSelectorTests
 
         UpdateCandidate? c = await UpdateSelector.SelectAsync(
             new FakeUpdateFeed(feed), feed, SemanticVersion.Parse("1.0.0"), includeBetas: false,
-            app: "wBond", UpdatePlatform.MacOS, Architecture.Arm64, CancellationToken.None);
+            app: "wBond", UpdatePlatform.MacOS, Architecture.Arm64, CancellationToken.None, new ReleaseTrust(""));
 
         Assert.Equal("wBond-2.0.0-arm64.dmg", c?.Asset.Name);
         Assert.False(c?.FromManifest);
@@ -152,7 +152,7 @@ public class UpdateSelectorTests
 
         UpdateCandidate? c = await UpdateSelector.SelectAsync(
             new FakeUpdateFeed(feed), feed, SemanticVersion.Parse("1.0.0"), includeBetas: false,
-            app: "circuitRF", UpdatePlatform.Linux, Architecture.Arm64, CancellationToken.None);
+            app: "circuitRF", UpdatePlatform.Linux, Architecture.Arm64, CancellationToken.None, new ReleaseTrust(""));
 
         Assert.Null(c);
     }

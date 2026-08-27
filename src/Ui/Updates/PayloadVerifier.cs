@@ -168,16 +168,30 @@ public sealed class PayloadVerifier
     ///
     /// <para>Linux has no signing infrastructure to ask, so it answers true and the hash and TLS are
     /// what there is, exactly as <c>VerifyStagedAsync</c> already concludes.</para>
+    ///
+    /// <para><b>Windows accepts a release key in place of Authenticode</b> (design §15.5). An
+    /// unsigned Windows publish has no publisher to compare a payload against, but a build carrying
+    /// a compiled-in release key does not need one: the signed manifest names the payload's SHA-256,
+    /// and the key that signed it is on no host. That anchor is the STRONGER of the two here — it
+    /// covers every byte, where Authenticode covers only the PEs and therefore not
+    /// <c>pcell-python/**/*.py</c>, which circuitRF executes (§9.1). Where the build IS signed both
+    /// checks still run; this only stops the ABSENCE of a certificate being fatal.</para>
+    ///
+    /// <para><b>macOS is deliberately not given the same relaxation.</b> Its builds are Developer ID
+    /// signed already, so accepting a key instead would trade an anchor away for nothing.</para>
     /// </summary>
-    public static async Task<bool> RunningBuildCanAcceptUpdatesAsync(InstallSite site, CancellationToken ct)
+    public static async Task<bool> RunningBuildCanAcceptUpdatesAsync(
+        InstallSite site, CancellationToken ct, ReleaseTrust? trust = null)
     {
+        trust ??= ReleaseTrust.Compiled;
+
         try
         {
             if (site.Shape == InstallShape.MacOsBundle)
                 return await TeamIdAsync(site.Root, ct).ConfigureAwait(false) is not null;
 
             if (OperatingSystem.IsWindows())
-                return PublisherOf(Path.Combine(AppContext.BaseDirectory, UpdateApp.Name + ".exe")) is not null;
+                return trust.RequireSignedManifest || RunningWindowsPublisher() is not null;
 
             return true;
         }
@@ -306,6 +320,31 @@ public sealed class PayloadVerifier
             return new VerifyResult(VerifyOutcome.SignatureInvalid, e.Message);
         }
     }
+
+    /// <summary>
+    /// The running Windows build's Authenticode publisher, or <c>null</c> when it carries no
+    /// certificate at all — which is every unsigned publish, and the shipping state of the Windows
+    /// build today. Always <c>null</c> off Windows.
+    /// </summary>
+    public static string? RunningWindowsPublisher()
+        => OperatingSystem.IsWindows()
+            ? PublisherOf(Path.Combine(AppContext.BaseDirectory, UpdateApp.Name + ".exe"))
+            : null;
+
+    /// <summary>
+    /// Whether the Windows platform-signature check applies to this build — the one place design
+    /// §15.5's Windows relaxation is stated, so that the gate before the feed and the check after the
+    /// unpack cannot drift apart.
+    ///
+    /// <para>It is skipped in exactly one case: an unsigned build that carries a release key, where
+    /// the signed manifest's SHA-256 is the anchor instead. A signed build is always checked, so a
+    /// certificate adds a second anchor rather than replacing the key. <b>And with neither — no
+    /// certificate and no key — it APPLIES</b>, which refuses the payload: the fail-safe direction,
+    /// and unreachable in practice because
+    /// <see cref="RunningBuildCanAcceptUpdatesAsync"/> has already answered notify-only.</para>
+    /// </summary>
+    public static bool WindowsPlatformCheckApplies(string? runningPublisher, bool requireSignedManifest)
+        => runningPublisher is not null || !requireSignedManifest;
 
     private static string? PublisherOf(string exePath)
     {

@@ -253,3 +253,9 @@ if [ "$ARCH_ARG" = "both" ] && [ "$KIND_ARG" = "both" ] && [ "${#BUILT[@]}" -ne 
     echo ""
     echo "WARNING: expected 4 files for a full run, got ${#BUILT[@]}."
 fi
+
+# Whether these artifacts can ever be installed as an AUTOMATIC UPDATE is decided by the release key
+# compiled into the binary, not by anything this script did - so it is stated here, where someone is
+# already reading the output, rather than discovered when a published release reaches nobody.
+source "${ROOT}/packaging/signing-status.sh"
+crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"

@@ -32,9 +32,12 @@ public class UpdateManifestTests
 
     private static Task<UpdateCandidate?> Select(FakeUpdateFeed feed, List<ReleaseInfo> releases,
                                                  string running = "1.0.0")
+        // An UNKEYED trust, explicitly: this file is about how a build with no release key falls back
+        // between a manifest and name matching. The shipped build is keyed (design §15.5.1), and
+        // inheriting that here would make every case below "not a candidate" for the same one reason.
         => UpdateSelector.SelectAsync(feed, releases, SemanticVersion.Parse(running), includeBetas: false,
                                       "circuitRF", UpdatePlatform.MacOS, Architecture.Arm64,
-                                      CancellationToken.None);
+                                      CancellationToken.None, new ReleaseTrust(""));
 
     [Fact]
     public async Task AManifestWins_OverNameMatching()

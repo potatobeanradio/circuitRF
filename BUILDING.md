@@ -589,17 +589,17 @@ any of it — the outcomes are dialogs that either appear or do not.
 |---|---|---|
 | macOS | An updated build launches with **no** Gatekeeper dialog and **no** App Management prompt | |
 | macOS | The released `.dmg` itself is signed and stapled — the updater verifies the **image** before it mounts it, so an unsigned image is refused and the update never happens (design §9.2) | |
-| Windows | The published `circuitRF.exe` is Authenticode-signed — an unsigned one is notify-only, silently | |
-| Windows | `PublishSingleFile` is still on, so "every PE in the payload" and "the whole application" are the same set (design §9.1) | |
+| Windows | A per-user install **installs** an update rather than only announcing one — the release key is what makes that possible on an unsigned build (design §15.5.1), so this is the row that catches a release published without a valid signature | |
+| Windows | *Only if you have started Authenticode-signing:* **all six** PEs in the update `.zip` carry your certificate — `circuitRF.exe`, `senior_worker.exe`, `crf-model-host.dll`, `av_libglesv2.dll`, `libSkiaSharp.dll`, `libHarfBuzzSharp.dll`. Signing only the first fails the identity match, silently (design §9.1's Correction) | |
 | Windows | A per-user install updates with **no** UAC prompt and **no** SmartScreen warning | |
 | Linux | A `~/.local` install updates and the `.desktop` entry still launches afterwards | |
 | All | A read-only install (`.msi` / `.deb` / standard-user macOS) is notify-only and writes nothing | |
 
-**And one thing that is not a build step.** Until design §15.5's signed manifest exists, **the GitHub
-release is a signing key on two of the three platforms** — whoever can publish a release gets code
-execution on Linux, and on Windows through the `pcell-python/**` payload that Authenticode cannot cover.
-Two-factor on the account, no long-lived release tokens, and the same care over who can push a tag as
-over who holds the Developer ID certificate. Design §9.1 has the full table.
+**And one thing that is not a build step.** Design §15.5's signed manifest now exists and the key is
+compiled in, so the GitHub release is **no longer** a signing key: a release is accepted only when a
+manifest signed by a key that is on no host names the payload and its SHA-256. What still matters is the
+key itself — two-factor on the account, no long-lived release tokens, and the same care over the private
+key as over the Developer ID certificate. Design §9.1 has the full table.
 
 How to drive one without waiting for a real release: install the previous version, publish the new one
 as a GitHub prerelease, tick **Settings ▸ Security & Permissions ▸ Include beta releases**, then
@@ -630,53 +630,169 @@ staged. Quit and relaunch — that relaunch is what the matrix is actually testi
    already running it should open in the RUNNING copy rather than starting a second one.
 5. **Run the manual acceptance matrix above** if this release touched signing, packaging or the
    updater.
-6. **If a release key is compiled in** (`src/Ui/Updates/ReleaseKeys.cs` — see below), build and sign the
-   manifest, and attach **both** files to the release under exactly those names:
+6. **Collect all fifteen files from all three machines into one `dist/`, then sign and upload:**
 
    ```bash
-   dotnet run --project tools/ReleaseSigner -- manifest dist \
-       --base-url https://github.com/potatobeanradio/circuitRF/releases/download/v<version>
-   dotnet run --project tools/ReleaseSigner -- sign dist/update-manifest.json ~/keys/release-key.pem
-   dotnet run --project tools/ReleaseSigner -- verify \
-       dist/update-manifest.json dist/update-manifest.json.sig "<the public key from ReleaseKeys.cs>"
+   ./packaging/sign-release.sh
    ```
 
-   Forgetting this on a keyed build means **no client is offered the release at all**, silently — which
-   is the intended failure direction and is exactly why the `verify` step is in the list.
-7. Attach them to the GitHub release and update the download table in `README.md`.
-8. Publish it — see **Publishing the GitHub release** below for the tag and the flag, which are what
-   decide who is offered it.
+   Push your commits first — `--target main` means the tag is created at whatever `origin/main`
+   points at, so an unpushed `VERSION` bump tags a commit that does not contain it. The script warns
+   if your HEAD is not `origin/main`, or if the tree is dirty.
+
+   That is the whole step. It prompts for the private key (default `~/keys/circuitrf-release.pem`),
+   builds `update-manifest.json` from `dist/`, signs it, **verifies the signature against the public
+   key compiled into this very build**, and then says in as many words whether users will receive
+   this release as an automatic update. Then it offers to create a **draft** GitHub release with
+   empty notes and upload every file, reporting each one as it goes and checking name and byte size
+   against `dist/` afterwards.
+
+   **It sets the channel for you, from the `VERSION` string.** A version with a `-` suffix is created
+   as a GitHub **pre-release**; one without is a stable release. That flag is the entire channel
+   mechanism (see *Publishing the GitHub release*), so it is derived rather than asked for.
+
+   ```
+   [ 1/17] circuitRF-1.0.0-beta.4-arm64.deb            55.7 MiB  OK 41s
+   ...
+     All 17 verified on the release, name and byte size.
+   ```
+
+   **It never fails for a key problem.** A missing, declined or wrong key leaves `dist/` with nothing
+   uploadable in it and prints what that means — a wrong key's manifest is renamed `*.rejected` so it
+   cannot be attached by accident. That is the point: a release published without a valid signature is
+   offered to **nobody**, on every platform, and says so nowhere.
+
+   **If an upload fails, just run it again.** The script resumes its own **draft**, re-uploading with
+   `--clobber` so each asset is replaced rather than duplicated — which also repairs an upload that
+   reported success and truncated, the one failure the byte-size check exists to catch. A release that
+   is already **published** is refused instead, because re-uploading over it would swap assets under
+   clients being offered it right now.
+
+   Environment overrides, for scripting: `CRF_RELEASE_KEY` (a path, or `skip`), `CRF_PUBLISH=1` to
+   upload without asking and `0` to never upload, `CRF_RELEASE_BASE_URL` if the release tag is not the
+   `VERSION` string, `CRF_RELEASE_TITLE` for the release title. With no terminal and no
+   `CRF_RELEASE_KEY`, it signs nothing rather than blocking.
+
+   *Doing it by hand* is still three commands — `ReleaseSigner manifest`, `sign`, then `verify` — but
+   prefer the script: the `verify` step against the compiled-in key is the one people leave out, and
+   it is the only one that answers the question that matters.
+
+   **Why signing is not in the three build scripts.** A release carries exactly one manifest covering
+   every asset, and the three scripts run on three different machines that each see only their own
+   share — nine files, two, four. Three partial manifests cannot be combined, and doing it per-platform
+   would put the private key on three machines instead of one. What the build scripts *do* is end by
+   stating whether a release key is compiled in and therefore whether these artifacts can auto-update
+   at all; `tests/Ui.Tests/PackagingScriptTests.cs` holds all three to it.
+7. Update the download table in `README.md` to the new version.
+8. Add the release notes and publish it. **One command, the same for either channel:**
+
+   ```bash
+   gh release edit <version> --draft=false
+   ```
+
+   **The channel is already set and this does not disturb it.** `gh release edit` builds its API call
+   from the flags you actually passed — every bool is a `NilBoolFlag`, so one you omit is left out of
+   the request rather than sent as `false`. `--draft=false` therefore changes `draft` and nothing else,
+   and the `prerelease` flag step 6 set at creation survives untouched.
+
+   Check it rather than trusting it, since being wrong here is silent either way:
+
+   ```bash
+   gh release view <version> --json isDraft,isPrerelease
+   ```
+
+   `--latest` is cosmetic and optional. circuitRF orders releases by SemVer itself and ignores the
+   badge entirely (see below), GitHub already awards it to the newest non-pre-release by itself, and it
+   cannot be given to a pre-release at all.
+
+   See **Publishing the GitHub release** below for what the tag and the flag decide. The draft is
+   invisible to the updater until this runs, which is why step 6 uploads into one — a published
+   release whose assets are still arriving offers some platforms a version whose file does not exist
+   yet.
 
 ---
 
 ## The release signing key (design §15.5)
 
-**This is not a build step. It is a one-time decision, and it is one-way.**
+> **The key already exists.** It was generated on 2026-08-27 and its public half is compiled into
+> `src/Ui/Updates/ReleaseKeys.cs`. **Do not run `keygen` again.** A new key pair replaces the constant
+> every shipped client is holding, and from that moment every one of them refuses every release you
+> publish — silently, with no way back but a hand reinstall by every user. The `keygen` command below is
+> recorded for how the key was made and for a future re-key you have decided on deliberately; it is not
+> a step in cutting a release. Signing a release is step 6, and it is one command.
 
-Until a key exists, an update's integrity rests on the platform's own code signing: everything on macOS,
-only the PEs on Windows — so **not** `pcell-python/**/*.py`, which circuitRF executes — and nothing at
-all on Linux. Whoever can publish a release to the repository therefore gets code execution on two of
-the three platforms. A release key removes that: a release is accepted only when a manifest signed by a
-key that is on no host names the payload and its SHA-256.
+**This was a one-time decision, and it was one-way.**
+
+Before a key existed, an update's integrity rested on the platform's own code signing: everything on
+macOS, only the PEs on Windows — so **not** `pcell-python/**/*.py`, which circuitRF executes — and
+nothing at all on Linux. Whoever could publish a release to the repository therefore had code execution
+on two of the three platforms. The release key removed that: a release is accepted only when a manifest
+signed by a key that is on no host names the payload and its SHA-256.
+
+**On Windows the key is also what makes auto-update work at all** (design §15.5.1). circuitRF's Windows
+builds are not Authenticode signed, and an unsigned build has no publisher for the updater to compare a
+payload against — so without a key it is notify-only forever, and the user is told to download the
+release by hand. With one, the manifest's signature is the anchor instead and updates install normally.
+This does **not** remove SmartScreen's warning on a browser download of the `.msi`; only a certificate
+does that, and it never applied to updates in the first place (§5).
 
 ```bash
 dotnet run --project tools/ReleaseSigner -- keygen ~/keys/circuitrf-release.pem
 ```
 
-It prints the public half. Paste that into `ReleaseKeys.PublicKeySpkiBase64` and commit it — a *public*
-key belongs in version control, because it is the thing being trusted and should be reviewable, diffable
-and attributable to the commit that introduced it.
+It prints the public half, which was pasted into `ReleaseKeys.PublicKeySpkiBase64` and committed — a
+*public* key belongs in version control, because it is the thing being trusted and should be reviewable,
+diffable and attributable to the commit that introduced it.
 
-**What changes the moment you do:**
+**What that changed, and what is now true of every build:**
 
 - The build carrying the key, and every build after it, **refuses any release without a validly signed
-  manifest**. Clients older than it are unaffected and keep updating normally, so this is a forward
+  manifest**. Clients older than it are unaffected and keep updating normally, so this was a forward
   migration rather than a flag day — but there is no going back for a client that has the key.
+- **On Windows, one cohort updates by hand once.** 1.0.0-beta.3 and earlier carry neither a key nor a
+  certificate, so they are notify-only and cannot install the first keyed release however it is signed.
+  They reinstall from the README table once; every release after that installs itself. macOS and Linux
+  are unaffected — their older clients are unkeyed, so they demand no manifest and update normally.
 - Every release from then on must carry `update-manifest.json` and `update-manifest.json.sig`. Step 6 of
   the checklist above.
 - A signed manifest may name the payload on **any** `https` host, so the compiled-in host allow-list
   stops constraining a keyed build. That is what makes moving off GitHub, or mirroring, possible for
   clients already in the field (design §15.4, §15.6).
+
+**Where the key is used, and where it is not.** Not in `dotnet build`, not in `dotnet run`, and not in
+any of the three packaging scripts — nothing about building circuitRF touches it, and you are never
+prompted for it while building. It is used once, by `packaging/sign-release.sh`, after all fifteen
+artifacts exist. Day to day it sits in your password manager and nowhere else.
+
+**Letting someone else cut a release without giving them the key.** Signing is not part of the build:
+the thing that gets signed is `update-manifest.json`, a few kilobytes of file names and SHA-256s. So a
+contributor can build the fifteen artifacts, upload them to a **draft** release, run the `manifest` step
+themselves and send you only that one small file; you run `sign` on your own machine and send back
+`update-manifest.json.sig`, which they attach before publishing. The private key never leaves your
+machine, and nobody waits on you for more than a moment.
+
+**Test the backup before you need it.** A copy in a password-manager note is text, and a mangled line
+break is invisible until it is the only copy left. Paste it back out into `/tmp/restored-key.pem` and
+check it still signs — three commands, once, now:
+
+```bash
+# 1. any folder will do as the probe; the manifest's contents do not matter, only its bytes
+dotnet run --project tools/ReleaseSigner -- manifest . -o /tmp/probe-manifest.json
+# 2. sign it with the RESTORED copy of the key
+dotnet run --project tools/ReleaseSigner -- sign /tmp/probe-manifest.json /tmp/restored-key.pem
+# 3. and check that signature against the key every client carries
+dotnet run --project tools/ReleaseSigner -- verify \
+    /tmp/probe-manifest.json /tmp/probe-manifest.json.sig "<the public key from ReleaseKeys.cs>"
+```
+
+`OK  the signature is valid.` means the backup is usable — it is the same check step 6 makes, so a
+backup that passes it can cut a release. Then `rm /tmp/restored-key.pem`.
+
+This is worth preferring over handing out copies. A contributor who builds releases could always put
+something in a build — but without the key it **cannot be auto-installed onto machines in the field**,
+which is the difference that matters. Every extra copy of the key is another way it leaks, there is no
+record of who signed what, and taking it back from one person means re-keying for everyone (a new build,
+signed with the OLD key, that anyone declining to update never receives).
 
 **The private key.** Off this repository, off the build machine if you can manage it, owner-read-only
 (`keygen` sets that), and **backed up somewhere you will still have in five years**. Losing it strands
@@ -692,10 +808,23 @@ Four things on the release page decide who gets the update. Nothing else does.
 
 | | |
 |---|---|
-| **Tag** | `v<version>`, matching the repo-root `VERSION` file exactly — `v1.1.0`, `v1.1.0-beta.1`. |
+| **Tag** | The repo-root `VERSION` string, **with no `v` prefix** — `1.1.0`, `1.1.0-beta.1`. |
 | **Pre-release** | Ticked for a beta, clear for a stable release. This is the whole channel mechanism. |
-| **Draft** | Never. A draft is offered on neither channel. |
+| **Draft** | Never, once published. A draft is offered on neither channel — which is what makes it the right place to *upload* into. |
 | **Assets** | Straight from `dist/`, names unchanged. |
+
+`packaging/sign-release.sh` sets all four **from the `VERSION` file alone**, so this table is what it
+is doing and what to check afterwards rather than a list to apply by hand. Changing `VERSION` from
+`1.1.0` to `1.1.0-beta.1` — or back — is the whole of switching channel: the `-` suffix decides the
+pre-release flag, and publishing the draft in step 8 preserves it. Any suffix counts, not only `beta`,
+which matches how `SemanticVersion` reads the same string.
+
+**No `v` on the tag, and this one is not cosmetic.** The manifest's asset URLs are built as
+`…/releases/download/<tag>/<file>`, so a tag spelled `v1.1.0` against a manifest written for `1.1.0`
+gives every client a URL that 404s — which presents as an update that never arrives, not as an error
+anyone sees. Every release so far is tagged bare, the README's download table is built the same way,
+and the script derives both from the same `VERSION` string. If you ever do need a tag that is not the
+`VERSION` string, pass `CRF_RELEASE_BASE_URL` so the manifest is written to match it.
 
 **A beta needs the suffix in the tag as well as the flag.** The flag alone keeps it off the stable
 channel today, but it burns the version: tag a beta `v1.1.0` and your testers are running `1.1.0`, so
@@ -713,6 +842,14 @@ user who is not offered an update has nothing to notice.
 **The "Latest" badge is ignored.** circuitRF reads the release list and orders it by SemVer itself, so
 *Set as the latest release* cannot hold users on a version or roll them back. To withhold a bad release,
 draft it or delete it and ship the next one.
+
+**What ticking Pre-release actually costs, and why it is still right.** Betas are off by default
+(*Settings ▸ Security & Permissions ▸ Include beta releases*, unticked), so a pre-release is offered
+only to users who asked for one. Everyone else waits for the next stable release — and is not stranded,
+because `1.1.0-beta.4 < 1.1.0`, so the stable release is strictly greater than every beta that preceded
+it and is offered to all of them at once. The alternative — publishing betas as stable releases — makes
+that checkbox inert and, the moment a stable release exists, pushes beta code onto users who never
+opted in. Say so in the release notes and in the README, so testers know to tick the box.
 
 ---
 

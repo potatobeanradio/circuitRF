@@ -108,38 +108,81 @@ public sealed class SignedManifestTests
     // ── how the shipped build behaves, and how a keyed one would ────────────────────────────
 
     /// <summary>
-    /// <b>This build ships with no key</b>, so nothing changes for anyone until one is generated —
-    /// which is the only way to add the mechanism without stranding every installed copy on the day
-    /// it lands. The moment <c>PublicKeySpkiBase64</c> is filled in, the demand becomes unconditional.
+    /// <b>This build ships WITH a key</b> (2026-08-27), so a release carrying no validly signed
+    /// manifest is not a candidate at all — and on Windows that key is also what makes auto-update
+    /// possible, since the build carries no Authenticode publisher (design §15.5.1).
+    ///
+    /// <para>Pinned as the shipped state because it is one-way: every client from this build onward
+    /// demands a signature, so a release process that stops producing one strands them silently.</para>
     /// </summary>
     [Fact]
-    public void ShippedToday_NoKeyIsCompiledIn_SoNothingIsDemanded()
+    public void ShippedToday_AKeyIsCompiledIn_SoASignedManifestIsDemanded()
     {
-        Assert.Equal("", ReleaseKeys.PublicKeySpkiBase64);
-        Assert.False(ReleaseKeys.RequireSignedManifest);
-        Assert.False(ReleaseKeys.Verify(FixtureManifest, FixtureSignature));   // no key ⇒ no
+        Assert.NotEqual("", ReleaseKeys.PublicKeySpkiBase64);
+        Assert.True(ReleaseKeys.RequireSignedManifest);
+        Assert.True(ReleaseTrust.Compiled.RequireSignedManifest);
     }
 
     /// <summary>
-    /// With no key compiled in the allow-list is the constraint; with one, any <c>https</c> host is
-    /// acceptable — which is the whole of "mirroring becomes free" and of §15.4's migration.
+    /// The compiled-in key is a well-formed P-256 SubjectPublicKeyInfo — checked by importing it,
+    /// because a truncated or mistyped paste is base64 that decodes and then verifies NOTHING, which
+    /// would present as every release being silently refused rather than as a malformed constant.
     /// </summary>
     [Fact]
-    public void WithoutAKey_OnlyTheAllowListedHostsAreAcceptable()
+    public void TheCompiledInKeyIsAWellFormedP256Key()
     {
-        Assert.True(FeedUrlAllowList.IsAcceptable("https://api.github.com/x"));
-        Assert.False(FeedUrlAllowList.IsAcceptable("https://mirror.example/x"));
-        Assert.False(FeedUrlAllowList.IsAcceptable("http://api.github.com/x"));
+        using ECDsa k = ECDsa.Create();
+        k.ImportSubjectPublicKeyInfo(
+            Convert.FromBase64String(ReleaseKeys.PublicKeySpkiBase64), out int read);
+
+        Assert.Equal(256, k.KeySize);
+        Assert.Equal(Convert.FromBase64String(ReleaseKeys.PublicKeySpkiBase64).Length, read);
     }
 
+    /// <summary>
+    /// The compiled-in key is actually the one consulted: a signature made by a DIFFERENT key — the
+    /// fixture's — does not verify under it. Without this, a key that was never read would pass every
+    /// other test here.
+    /// </summary>
     [Fact]
-    public void APersistedFeedUrlOffTheAllowListIsIgnoredOnAnUnkeyedBuild()
+    public void AnotherKeysSignatureDoesNotVerifyUnderTheCompiledInKey()
+        => Assert.False(ReleaseKeys.Verify(FixtureManifest, FixtureSignature));
+
+    /// <summary>
+    /// With no key compiled in the allow-list is the constraint; with one, any <c>https</c> host is
+    /// acceptable — which is the whole of "mirroring becomes free" and of §15.4's migration. This
+    /// build is keyed, so both halves are asserted through the two predicates that still separate
+    /// them: <c>IsAllowed</c> is the unkeyed rule and never widens.
+    /// </summary>
+    [Fact]
+    public void WithAKey_AnyHttpsHostIsAcceptable_ButTheAllowListItselfNeverWidens()
     {
-        Assert.Equal(GitHubReleasesFeed.DefaultApiUrl,
+        Assert.True(FeedUrlAllowList.IsAcceptable("https://api.github.com/x"));
+        Assert.True(FeedUrlAllowList.IsAcceptable("https://mirror.example/x"));   // the key permits it
+
+        // Still https-only: TLS no longer carries integrity here, but it still carries confidentiality.
+        Assert.False(FeedUrlAllowList.IsAcceptable("http://api.github.com/x"));
+
+        // The compiled-in list is unchanged; it is the KEY that widened what is acceptable, not it.
+        Assert.True(FeedUrlAllowList.IsAllowed("https://api.github.com/x"));
+        Assert.False(FeedUrlAllowList.IsAllowed("https://mirror.example/x"));
+    }
+
+    /// <summary>
+    /// A keyed build honours a persisted mirror, which is what §15.6 needs; an <c>http</c> one is
+    /// still discarded in favour of the compiled-in feed.
+    /// </summary>
+    [Fact]
+    public void APersistedMirrorIsHonouredOnAKeyedBuild_ButNeverOverHttp()
+    {
+        Assert.Equal("https://mirror.example/releases",
                      UpdateScheduler.ResolveFeedUrl("https://mirror.example/releases"));
 
         Assert.Equal("https://api.github.com/repos/x/y/releases",
                      UpdateScheduler.ResolveFeedUrl("https://api.github.com/repos/x/y/releases"));
+
+        Assert.Equal(GitHubReleasesFeed.DefaultApiUrl,
+                     UpdateScheduler.ResolveFeedUrl("http://mirror.example/releases"));
     }
 
     // ── the manifest's own rules ────────────────────────────────────────────────────────────

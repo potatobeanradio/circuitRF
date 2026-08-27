@@ -507,3 +507,9 @@ else
     echo "       CRF_SIGN_IDENTITY=\"Developer ID Application: NAME (TEAMID)\" \\"
     echo "       CRF_NOTARY_PROFILE=circuitrf-notary $0 $APP"
 fi
+
+# Whether these artifacts can ever be installed as an AUTOMATIC UPDATE is decided by the release key
+# compiled into the binary, not by anything this script did - so it is stated here, where someone is
+# already reading the output, rather than discovered when a published release reaches nobody.
+source "${ROOT}/packaging/signing-status.sh"
+crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"

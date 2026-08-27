@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CircuitRF.Ui;
@@ -57,8 +59,11 @@ public sealed class UpdateServiceBehaviourTests : IDisposable
 
     private InstallSite Site() => new(_install, InstallShape.VersionedPointer, true, _install);
 
+    // An UNKEYED trust: these cases are about space, staging, throttling and announcement, and the
+    // canned releases carry no signed manifest. The shipped build IS keyed (design §15.5.1), so
+    // inheriting it would turn every one of them into "not a candidate" for that single reason.
     private UpdateService Service(IUpdateFeed feed, long available)
-        => new(() => feed, new FakeFreeSpaceProbe(available), _sink, Site);
+        => new(() => feed, new FakeFreeSpaceProbe(available), _sink, Site, new ReleaseTrust(""));
 
     /// <summary>A feed that throws the way an unreachable network, a timeout or a 403 does.</summary>
     private sealed class ThrowingFeed(Exception what) : IUpdateFeed
@@ -254,6 +259,98 @@ public sealed class UpdateServiceBehaviourTests : IDisposable
             .CheckAsync(manual: false, CancellationToken.None);
 
         Assert.Null(UpdateStateIo.Load().LastCheckUtc);
+    }
+
+    // -- the shipped, KEYED configuration, through the service rather than the selector -----------
+
+    /// <summary>
+    /// Every test above injects an UNKEYED trust, so between them they cover only the path no shipped
+    /// build takes any more. This is the other one: a build carrying a release key, checking a release
+    /// whose manifest is validly signed by that key, driven through <see cref="UpdateService"/> rather
+    /// than through <c>UpdateSelector</c> directly.
+    ///
+    /// <para>The observable is <see cref="CheckOutcome.InsufficientSpace"/>, and deliberately so — it
+    /// is the last outcome before the download, so reaching it proves the whole chain in front of it
+    /// ran: the gate did not answer notify-only (design §15.5.1, which is what makes this reachable on
+    /// Windows at all), the manifest was fetched, its signature verified against the injected key, and
+    /// the asset for THIS platform selected out of it. Staging itself cannot be asserted portably,
+    /// since it unpacks a real <c>.dmg</c> / <c>.zip</c> / <c>.tar.gz</c>.</para>
+    /// </summary>
+    [Fact]
+    public async Task OnAKeyedBuild_AValidlySignedReleaseIsSelectedThroughTheService()
+    {
+        (FakeUpdateFeed feed, string key) = SignedRelease("9.9.9", 900 * MB);
+
+        var service = new UpdateService(
+            () => feed, new FakeFreeSpaceProbe(380 * MB), _sink, Site, new ReleaseTrust(key));
+
+        CheckResult r = await service.CheckAsync(manual: true, CancellationToken.None);
+
+        Assert.Equal(CheckOutcome.InsufficientSpace, r.Outcome);
+    }
+
+    /// <summary>
+    /// The same release, the same keyed build, with the SIGNATURE asset removed — and now there is no
+    /// candidate at all. Without this the test above would pass just as well on a build that had
+    /// quietly fallen back to name matching, which is the exact failure design §15.5 exists to stop.
+    /// </summary>
+    [Fact]
+    public async Task OnAKeyedBuild_TheSameReleaseWithNoSignatureIsNotACandidate()
+    {
+        (FakeUpdateFeed feed, string key) = SignedRelease("9.9.9", 900 * MB, withSignature: false);
+
+        var service = new UpdateService(
+            () => feed, new FakeFreeSpaceProbe(380 * MB), _sink, Site, new ReleaseTrust(key));
+
+        CheckResult r = await service.CheckAsync(manual: true, CancellationToken.None);
+
+        Assert.Equal(CheckOutcome.UpToDate, r.Outcome);
+    }
+
+    /// <summary>
+    /// A release whose manifest names every platform's asset, signed by a throwaway key. Named for all
+    /// three platforms rather than for the host, so the two tests above assert the same thing on each
+    /// CI runner instead of only on whichever one happens to match.
+    /// </summary>
+    private static (FakeUpdateFeed Feed, string PublicKey) SignedRelease(
+        string version, long size, bool withSignature = true)
+    {
+        string[] names =
+        [
+            UpdateAssetNames.Expected(UpdateApp.Name, version, UpdatePlatform.MacOS,   "arm64"),
+            UpdateAssetNames.Expected(UpdateApp.Name, version, UpdatePlatform.MacOS,   "x64"),
+            UpdateAssetNames.Expected(UpdateApp.Name, version, UpdatePlatform.Windows, "arm64"),
+            UpdateAssetNames.Expected(UpdateApp.Name, version, UpdatePlatform.Windows, "x64"),
+            UpdateAssetNames.Expected(UpdateApp.Name, version, UpdatePlatform.Windows, "x86"),
+            UpdateAssetNames.Expected(UpdateApp.Name, version, UpdatePlatform.Linux,   "arm64"),
+            UpdateAssetNames.Expected(UpdateApp.Name, version, UpdatePlatform.Linux,   "x64"),
+        ];
+
+        const string sha = "1ac30fd677168dffa8e69a4c83256bc951fd9d50ab6d8774f60d279f84ee6406";
+
+        string entries = string.Join(",", names.Select(n =>
+            $"{{\"name\":\"{n}\",\"url\":\"https://api.github.com/{n}\","
+            + $"\"size\":{size},\"sha256\":\"{sha}\"}}"));
+
+        byte[] manifest = Encoding.UTF8.GetBytes($"{{\"assets\":[{entries}]}}");
+
+        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        string sig = Convert.ToBase64String(
+            key.SignData(manifest, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence));
+
+        List<string> assetNames = [.. names, UpdateManifest.AssetName];
+        var bytes = new Dictionary<string, byte[]> { [UpdateManifest.AssetName] = manifest };
+
+        if (withSignature)
+        {
+            assetNames.Add(UpdateManifest.SignatureAssetName);
+            bytes[UpdateManifest.SignatureAssetName] = Encoding.UTF8.GetBytes(sig);
+        }
+
+        ReleaseInfo release = CannedReleases.Release(version, assetNames: [.. assetNames]);
+
+        return (FakeUpdateFeed.WithBytes([release], bytes),
+                Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()));
     }
 
     private static ReleaseInfo MacRelease(string tag, long size)

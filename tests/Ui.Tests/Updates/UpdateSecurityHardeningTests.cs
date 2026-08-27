@@ -261,18 +261,33 @@ public sealed class UpdateSecurityHardeningTests
         var feed = new GitHubReleasesFeed(new System.Net.Http.HttpClient());
 
         Assert.Null(await feed.GetAssetBytesAsync(
-            new ReleaseAsset(UpdateManifest.AssetName, "https://evil.example/update-manifest.json", 10),
+            new ReleaseAsset(UpdateManifest.AssetName, "http://api.github.com/x", 10),
             CancellationToken.None));
 
         Assert.Null(await feed.GetAssetBytesAsync(
-            new ReleaseAsset(UpdateManifest.AssetName, "http://api.github.com/x", 10),
+            new ReleaseAsset(UpdateManifest.AssetName, "ftp://api.github.com/x", 10),
             CancellationToken.None));
     }
 
-    [Fact]
-    public async Task AFeedUrlOffTheAllowList_IsNeverAsked()
+    /// <summary>
+    /// <b>Since a key was compiled in (2026-08-27) the HOST is no longer the constraint here</b> — a
+    /// keyed build accepts a feed on any <c>https</c> host, which is exactly what §15.4's migration
+    /// and §15.6's mirroring need, and is safe only because the signature makes the host untrusted
+    /// for integrity. The SCHEME is still a refusal, and it is refused before any request is made.
+    ///
+    /// <para>The unkeyed rule has not widened and is asserted directly against
+    /// <c>FeedUrlAllowList.IsAllowed</c> in <c>SignedManifestTests</c>; it cannot be exercised
+    /// through the feed any more, because the feed reads the compiled-in key rather than an injected
+    /// one.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("http://evil.example/releases")]
+    [InlineData("ftp://api.github.com/releases")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("file:///etc/passwd")]
+    public async Task AFeedUrlOnASchemeWeDoNotAccept_IsNeverAsked(string url)
     {
-        var feed = new GitHubReleasesFeed(new System.Net.Http.HttpClient(), "https://evil.example/releases");
+        var feed = new GitHubReleasesFeed(new System.Net.Http.HttpClient(), url);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => feed.ListReleasesAsync(CancellationToken.None));
@@ -288,6 +303,81 @@ public sealed class UpdateSecurityHardeningTests
     [InlineData(null)]
     public void AFeedUrlAManifestOffersIsNotHonouredUnlessItIsAllowed(string? url)
         => Assert.False(FeedUrlAllowList.IsAllowed(url));
+
+    // ── design 15.5: a release key stands in for Authenticode on Windows ────────────────────
+
+    /// <summary>
+    /// The whole Windows relaxation, as a truth table. A SIGNED build is always checked, so a
+    /// certificate adds a second anchor rather than replacing the key; the check is skipped only for
+    /// an unsigned build that carries one.
+    /// </summary>
+    [Theory]
+    [InlineData("CN=Someone", true,  true)]    // signed + key      -> both anchors
+    [InlineData("CN=Someone", false, true)]    // signed, no key    -> Authenticode, as before
+    [InlineData(null,         true,  false)]   // unsigned + key    -> the manifest digest anchors it
+    [InlineData(null,         false, true)]    // unsigned, no key  -> APPLIES, and so refuses
+    public void TheWindowsPlatformCheckIsSkippedOnlyForAnUnsignedBuildCarryingAReleaseKey(
+        string? publisher, bool requireSignedManifest, bool expected)
+        => Assert.Equal(expected,
+                        PayloadVerifier.WindowsPlatformCheckApplies(publisher, requireSignedManifest));
+
+    /// <summary>
+    /// The fail-safe corner stated on its own, because it is the one that must never invert: with no
+    /// certificate AND no key there is nothing to anchor a payload to, so the check APPLIES and the
+    /// payload is refused. Reaching it at all would take a bug upstream — the gate before the feed
+    /// has already answered notify-only — which is exactly why it must not be the permissive case.
+    /// </summary>
+    [Fact]
+    public void WithNeitherACertificateNorAKey_TheCheckStillApplies()
+        => Assert.True(PayloadVerifier.WindowsPlatformCheckApplies(null, requireSignedManifest: false));
+
+    /// <summary>
+    /// A build with no key compiled in behaves exactly as it did before §15.5 was switched on. This
+    /// is what makes filling the key in a deliberate act rather than a change that already happened.
+    /// </summary>
+    [Fact]
+    public void WithNoKeyCompiledIn_TheWindowsCheckIsUnchanged()
+    {
+        if (ReleaseKeys.RequireSignedManifest) return;   // a key has since been added; see the theory above
+
+        Assert.True(PayloadVerifier.WindowsPlatformCheckApplies(null, ReleaseKeys.RequireSignedManifest));
+        Assert.False(ReleaseTrust.Compiled.RequireSignedManifest);
+    }
+
+    /// <summary>
+    /// Both halves of the policy must read the SAME predicate — the gate before the feed and the
+    /// check after the unpack. Source-scanned because the two live in different files and drifting
+    /// apart would show up only as updates that fetch a payload and then always refuse it.
+    /// </summary>
+    [Fact]
+    public void BothHalvesOfTheWindowsPolicyReadTheOnePredicate()
+    {
+        string service = UpdateInstallSiteTests.StripComments(
+            UpdateInstallSiteTests.SourceFile("src/Ui/Updates/UpdateService.cs"));
+        string verifier = UpdateInstallSiteTests.StripComments(
+            UpdateInstallSiteTests.SourceFile("src/Ui/Updates/PayloadVerifier.cs"));
+
+        Assert.Contains("WindowsPlatformCheckApplies", service);
+        Assert.Contains("RequireSignedManifest", verifier);
+    }
+
+    /// <summary>
+    /// macOS is deliberately NOT relaxed: its builds carry a Developer ID already, so accepting a key
+    /// in place of it would trade an anchor away for nothing. Pinned because the symmetry is
+    /// tempting and the cost of it is invisible.
+    /// </summary>
+    [Fact]
+    public void TheMacBundleCheckIsNotRelaxedByAReleaseKey()
+    {
+        string verifier = UpdateInstallSiteTests.StripComments(
+            UpdateInstallSiteTests.SourceFile("src/Ui/Updates/PayloadVerifier.cs"));
+
+        int mac = verifier.IndexOf("InstallShape.MacOsBundle", StringComparison.Ordinal);
+        int win = verifier.IndexOf("OperatingSystem.IsWindows()", mac, StringComparison.Ordinal);
+
+        Assert.True(mac >= 0 && win > mac);
+        Assert.DoesNotContain("RequireSignedManifest", verifier[mac..win]);
+    }
 
     private static string Temp()
     {

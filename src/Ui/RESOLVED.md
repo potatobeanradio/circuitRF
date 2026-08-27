@@ -10874,3 +10874,159 @@ time, and nothing else in the build would notice.
 
 Gate: `tests/Ui.Tests/Updates/SignedManifestTests.cs` (18) and two new cases in
 `UpdateSettingsWiringTests`.
+
+---
+
+## Windows auto-update: the release key replaces Authenticode (2026-08-27)
+
+**Reported as** an update refusing to install on Windows with *"This build is not signed, so it cannot
+verify that an update came from us and will not install one."*
+
+**Not a bug.** `UpdateService.CheckAsync` asks `RunningBuildCanAcceptUpdatesAsync` before it fetches
+anything, and on Windows that asked whether the RUNNING `.exe` carried an Authenticode certificate. The
+shipped Windows build carries none, so every Windows install was notify-only and always had been. The
+message names the running build, not the release, which is why it reads as a defect in beta.3
+specifically when it is not.
+
+**Three findings from working out what to do about it.**
+
+- **`PublishSingleFile` was never load-bearing the way §15.5 claimed.** Both the design doc and
+  `VerifyWindowsTree`'s own comment said single-file makes "every PE in the payload" and "the whole
+  application" the same one file, with an instruction not to turn it off. Measured against
+  `circuitRF-1.0.0-beta.3-win-x64.zip`, the payload holds **six** PEs:
+  `circuitRF.exe`, `senior_worker.exe`, `crf-model-host.dll` (ours) and `av_libglesv2.dll`,
+  `libSkiaSharp.dll`, `libHarfBuzzSharp.dll` (third-party). `IncludeNativeLibrariesForSelfContained`
+  does not embed them. Read straight out of each file's PE certificate table, the last two are already
+  signed by their own publishers — so they would fail `VerifyWindowsExecutable`'s *identity* match
+  rather than its validity check. **Any future Authenticode build must sign all six with one
+  certificate**, and signing `circuitRF.exe` alone would fail silently, since update failures are
+  silent by design.
+- **Signing only the installer, as `BUILDING.md` used to suggest, could never have worked.** Both the
+  MSI and the update `.zip` are built from the publish tree, and the updater verifies the PEs *inside*
+  the zip — so a certificate has to be applied to the publish tree between `dotnet publish` and the
+  harvest/compress steps, not to the finished artifacts.
+- **The manifest's `--base-url` example named a `v`-prefixed tag.** circuitRF's releases are tagged
+  `1.0.0-beta.3` with no prefix, so following it verbatim yields a manifest whose asset URLs 404 —
+  presenting as an update that never arrives rather than as a bad command.
+
+**The fix is design §15.5.1, not a certificate.** A compiled-in release key is now accepted in place of
+a publisher certificate on Windows, because for the update question it is the stronger of the two
+anchors: it covers every byte named in the manifest, where Authenticode covers only PEs and therefore
+not `pcell-python/**/*.py`, which circuitRF executes. Windows goes from one anchor that is absent — and
+hence no auto-update at all — to one that is present.
+
+`PayloadVerifier.WindowsPlatformCheckApplies` states the rule once and both halves of the policy read
+it: a **signed** build is always checked (a certificate ADDS a second anchor rather than replacing the
+key), an unsigned build with a key skips the platform check, and an unsigned build with neither still
+applies it and therefore refuses — the fail-safe corner, unreachable because the gate has already
+answered notify-only. macOS is deliberately not relaxed: it is Developer ID signed already, so accepting
+a key instead would trade an anchor away for nothing.
+
+Gates in `tests/Ui.Tests/Updates/UpdateSecurityHardeningTests.cs`. The source-scan one was verified red
+against a **behaviourally identical** inlining of the predicate — not against a version that fails to
+compile, which proves only that the call exists.
+
+**The key was generated and compiled in the same day**, so this is live rather than inert: from this
+build onward a release with no validly signed manifest is not a candidate on any platform.
+
+**Verified before the key was trusted**, since a mistyped paste would present as every future release
+being silently refused rather than as a malformed constant: the public half decodes to 91 bytes, imports
+as P-256 under both OpenSSL and `ECDsa`, verifies a signature the private half produced through
+`ReleaseSigner`, and *fails* on a manifest with one hex digit altered.
+
+**Turning the key on broke 20 updater tests, and every one of them was right to break.** They asserted
+the unkeyed shipping state — that no key is compiled in, that only the allow-listed hosts are
+acceptable, that an unsigned canned release is still a candidate. Two kinds of fix:
+
+- Tests whose subject is the UNKEYED fallback (manifest-versus-name-matching, space, staging,
+  throttling) now pass an explicit `new ReleaseTrust("")`. `UpdateService` gained an optional
+  `trust` constructor argument to make that reachable — the same "a value passed in, never a global
+  that can be set" shape `ReleaseTrust` already existed for, rather than a settable anchor.
+- Tests whose subject IS the shipped state were re-pointed rather than patched: the build now carries a
+  key, and **a keyed build accepts a feed on any `https` host by design** (§15.5, §15.6), so
+  `AFeedUrlOffTheAllowList_IsNeverAsked` became a SCHEME refusal. The unkeyed host rule has not
+  widened and is now asserted directly against `FeedUrlAllowList.IsAllowed`, which the feed can no
+  longer exercise because it reads the compiled-in key rather than an injected one. Two of those
+  tests had begun passing for the wrong reason — one was making a real DNS lookup for
+  `evil.example` — which a bare assertion count would not have shown.
+
+**The one-time break for Windows.** beta.3 and earlier carry no key and no certificate, so on Windows
+they are notify-only and cannot install beta.4 automatically however beta.4 is signed. Those users
+install once by hand; every release after that updates itself. macOS and Linux are unaffected — their
+beta.3 clients are unkeyed, so they do not demand a manifest and update normally.
+
+---
+
+## Audit of the release/signing procedure: four silent failures in the paperwork (2026-08-27)
+
+A review of the packaging, signing and auto-update change above, before the first keyed release is cut.
+The code was sound; **every finding was in the procedure a person follows, and each one fails silently.**
+
+- **Nothing set the GitHub pre-release flag, and that flag is the entire channel mechanism.**
+  `UpdateSelector.SelectRelease` filters on `includeBetas || !r.IsPreRelease` and on nothing else, but
+  `sign-release.sh` created the release without `--prerelease` and the documented publish command was
+  `gh release edit <version> --draft=false --latest`. Following it verbatim publishes a beta as a stable
+  release, pushing beta code to every user who never opted in — while `--latest`, the flag it *did*
+  prescribe, is ignored by the updater by design. Worse in the other direction too: `gh release edit`
+  writes only the flags it is given, so an edit that omits `--prerelease` converts a beta to stable in
+  one command. The flag is now **derived from the `VERSION` string** (a `-` suffix means pre-release),
+  and the script prints the matching publish command rather than leaving it to be copied from the doc.
+  All three shipped betas were in fact published with `isPrerelease: false`, so the *Include beta
+  releases* checkbox has never actually been exercised.
+
+  **The first write-up of this said `gh release edit --draft=false` would silently drop the flag. It
+  does not, and the correction matters more than the original claim.** Every bool on
+  `gh release edit` is a `cmdutil.NilBoolFlag`, i.e. a `*bool` left nil unless the flag appears on the
+  command line, and `getParams()` adds a field only for a non-nil one — so an omitted flag is left out
+  of the PATCH body entirely rather than sent as `false`. Publishing therefore changes `draft` and
+  nothing else. Read out of `cli/cli`'s own `pkg/cmd/release/edit/edit.go` rather than inferred from
+  the flag's help text. So switching channel really is just the `VERSION` file: the suffix decides the
+  flag at creation and the publish preserves it. Both the doc and the script now say so, and neither
+  re-passes `--prerelease` on the publish line — a harmless no-op that would have taught a rule that
+  is not true. They print `gh release view <ver> --json isDraft,isPrerelease` instead, because the
+  useful habit here is checking what landed, not repeating a flag.
+- **The tag table still said `v<version>`** — the exact prefix listed three sections earlier in this
+  file as one of the three findings behind the change. Asset URLs are built as
+  `.../releases/download/<tag>/<file>` from `VERSION`, so a `v`-prefixed tag 404s for every client. The
+  fix had corrected the `--base-url` example but not the table that example points the reader at.
+- **The retry advice was unreachable.** After a partial upload the script printed *"re-run to retry;
+  `--clobber` replaces an asset rather than duplicating it"*, but its next run refused any tag that
+  already existed — and the draft it had just created was one. It now reads `gh release view --json
+  isDraft`: a draft is resumed, a published release is still refused.
+- **The design note's §9.1 identity table did not render.** The Correction blockquote was inserted
+  between the macOS row and the Windows row; the blank line ends the table and GFM lazy continuation
+  then swallows the Windows and Linux rows into the quote as prose. Moved below the table.
+
+Two smaller ones: `--target main` names a *branch*, so an unpushed `VERSION` bump tags a commit that
+does not contain it — on a keyed release, a commit without the key the manifest verifies against; the
+script now warns on both an unpushed HEAD and a dirty tree. And `read` under `set -euo pipefail` made a
+Ctrl-D at either prompt exit mid-run with no output.
+
+**Stale instructions in `BUILDING.md` that would have been acted on.** The acceptance matrix still told
+the reader to confirm the Windows build is Authenticode-signed (§15.5.1 is precisely the decision that
+it is not, and that this no longer means notify-only) and that `PublishSingleFile` makes every PE one
+file (retracted by §9.1's own Correction the same day — it is six, and a future certificate must cover
+all six). The worst was the signing-key section, still written as a decision not yet taken — *"Until a
+key exists…"*, then a `keygen` command. A reader working top to bottom next release would generate a
+**new** key pair, replacing the constant every shipped client holds, and strand all of them. It now
+opens with a banner saying the key exists and `keygen` must not be run again.
+
+**Gates.** `PackagingScriptTests` gained three: the pre-release flag is derived from `VERSION` and
+survives the publish; nothing anywhere tells anyone to prefix the tag with `v` (asserted against
+`BUILDING.md` as well as the script, since it was the *document* that was wrong); and a draft is
+resumable while a published release is not. The tag gate was verified red against the pre-fix
+`BUILDING.md` rather than assumed.
+
+`UpdateServiceBehaviourTests` gained the coverage the trust-injection refactor had left missing: every
+existing case there now injects `new ReleaseTrust("")`, so between them they exercised only the path no
+shipped build takes. Two new cases drive a **keyed** build through `UpdateService.CheckAsync` — one
+with a validly signed manifest, one identical but for the missing signature asset. The observable is
+`InsufficientSpace` versus `UpToDate`, chosen because it is the last outcome before the download and so
+proves the whole chain in front of it ran; staging cannot be asserted portably, since it unpacks a real
+`.dmg`/`.zip`/`.tar.gz`. The pair is differential on purpose — the positive alone would pass on a build
+that had quietly fallen back to name matching.
+
+**`sign-release.sh` was driven end to end** against a scratch replica of the repo and a stub `gh`:
+wrong key (manifest renamed `*.rejected`), matching key, pre-release create, stable create, a failing
+upload caught by the byte-size cross-check, that draft resumed and repaired on the next run, and a
+published release refused.

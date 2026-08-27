@@ -410,8 +410,18 @@ three platforms and it is easy to read §9 as though it were.
 | Platform | What the identity check covers | What it does not |
 |---|---|---|
 | **macOS** | Everything. The bundle's seal covers every file inside it, `pcell-python/**` included, and the disk image carries the same Developer ID. | — |
-| **Windows** | Every PE in the payload. Today `PublishSingleFile` makes that the whole application in one file. | **Non-PE content Authenticode cannot sign** — chiefly `pcell-python/**/*.py`, which circuitRF executes. |
+| **Windows** | Every PE in the payload — **when the build is signed at all. It is not, and shipping it unsigned is a decision, not an oversight (§15.5.1).** | **Non-PE content Authenticode cannot sign** — chiefly `pcell-python/**/*.py`, which circuitRF executes. |
 | **Linux** | Nothing. There is no platform signing infrastructure to ask. | **The entire payload.** TLS to the feed host is the whole of the trust chain. |
+
+> **Correction (2026-08-27).** An earlier revision of the Windows row said `PublishSingleFile` makes
+> "every PE" and "the whole application" the same one file, and §15.5 repeated it as a rule not to
+> break. **It was already untrue of the shipped artifact.** `circuitRF-1.0.0-beta.3-win-x64.zip`
+> carries **six** PEs, not one: `circuitRF.exe`, `senior_worker.exe` and `crf-model-host.dll` are
+> ours, and `av_libglesv2.dll`, `libSkiaSharp.dll` and `libHarfBuzzSharp.dll` are third-party —
+> the last two already signed by their own publishers, which fails `VerifyWindowsTree`'s identity
+> match rather than its validity check. `IncludeNativeLibrariesForSelfContained` does not embed them.
+> So a future Authenticode build must sign **all six** with one certificate, and the single-file
+> property was never load-bearing in the way §15.5 claimed.
 
 So the honest statement of the threat model is: **an attacker who can publish a release to our GitHub
 repository gets code execution on Linux, and on Windows through the Python payload — but not on macOS,
@@ -948,10 +958,56 @@ key and update normally; the keyed build and everything after it require a signa
 is evidence rather than a tautology. `tests/Ui.Tests/Updates/SignedManifestTests.cs` verifies a fixture
 the *tool* produced, which is the half a self-signing test could never prove.
 
-**What it still does not cover.** A compromise of the signing key itself. On macOS and Windows the
-platform code signature is a second, independent anchor and both checks still run — so the key alone is
-not enough there. On Linux it is, which is the residual risk and the reason the private key's handling is
-a release-process matter rather than a build-script one.
+**What it still does not cover.** A compromise of the signing key itself. On macOS the platform code
+signature is a second, independent anchor and both checks still run — so the key alone is not enough
+there. On Linux it is, which is the residual risk and the reason the private key's handling is a
+release-process matter rather than a build-script one. **On Windows it depends on whether the build is
+signed — see §15.5.1.**
+
+### 15.5.1 Windows: the release key stands in for Authenticode
+
+**Decision, 2026-08-27.** circuitRF's Windows builds are not Authenticode signed and will not be for
+now. A certificate costs money every year, and its only unique benefit is SmartScreen on the *first
+manual download* — it is not what makes an update trustworthy. So on Windows a compiled-in release key is
+accepted **in place of** a publisher certificate, and the platform check is skipped for an unsigned build
+that carries one.
+
+Before this, an unsigned Windows build was notify-only forever: `RunningBuildCanAcceptUpdatesAsync` asked
+whether the running `.exe` carried a certificate, and with none there was nothing for R-AU-25's third
+step to compare a payload against. That is the right answer when Authenticode is the *only* anchor. It is
+the wrong one once a key exists, because the key is the **stronger** anchor of the two here:
+
+| | Authenticode | Release key |
+|---|---|---|
+| Covers | the PEs only | **every byte named in the manifest** |
+| `pcell-python/**/*.py` (executed by circuitRF) | not covered | covered |
+| Private half reachable from the release host | no | no |
+
+So Windows moves from *one anchor that is absent* — hence no auto-update at all — to *one anchor that is
+present*. Strictly better than the state it replaces, and weaker only than having both, which is what a
+certificate would buy and can be revisited without another design change.
+
+**The rule is stated once**, in `PayloadVerifier.WindowsPlatformCheckApplies`, which both halves of the
+policy read — the gate before the feed and the check after the unpack:
+
+| Running build | Release key | Platform check |
+|---|---|---|
+| signed | either | **applies** — a certificate ADDS a second anchor, it does not replace the key |
+| unsigned | present | skipped; the manifest's SHA-256 is the anchor |
+| unsigned | absent | **applies**, and therefore refuses — the fail-safe corner |
+
+That last row is unreachable in practice, because the gate has already answered notify-only. It is
+written that way round on purpose: the check applies by default and is skipped only for a positive
+reason, so a bug upstream fails closed.
+
+**macOS is deliberately not relaxed.** Its builds carry a Developer ID already, so accepting a key
+instead would trade an anchor away for nothing.
+`tests/Ui.Tests/Updates/UpdateSecurityHardeningTests.cs` pins that asymmetry, because the symmetry is
+tempting and its cost is invisible.
+
+**What this does not change.** SmartScreen still warns on a browser download of the `.msi`, and only a
+certificate fixes that. It does *not* warn on an update: the Mark of the Web is written by the
+downloading application, and the updater is not a browser (§5).
 
 ### 15.6 Mirroring, once a key exists
 

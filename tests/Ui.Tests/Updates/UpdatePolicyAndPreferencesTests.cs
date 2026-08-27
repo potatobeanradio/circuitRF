@@ -279,7 +279,8 @@ public sealed class UpdatePolicyAndPreferencesTests : IDisposable
             () => new FakeUpdateFeed([CannedReleases.Release("v99.0.0", false, false, "circuitRF-99.0.0-arm64.dmg")]),
             new FakeFreeSpaceProbe(long.MaxValue),
             messages,
-            site: () => new InstallSite(flat, InstallShape.Flat, false, flat));
+            site: () => new InstallSite(flat, InstallShape.Flat, false, flat),
+            trust: new ReleaseTrust(""));   // the canned release carries no signed manifest
 
         CheckResult r = await service.CheckAsync(manual: true, CancellationToken.None);
 

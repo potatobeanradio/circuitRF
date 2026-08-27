@@ -85,17 +85,25 @@ public sealed class UpdateService
     private readonly IFreeSpaceProbe _space;
     private readonly IMessageSink? _messages;
     private readonly Func<InstallSite> _site;
+    private readonly ReleaseTrust _trust;
 
+    /// <param name="trust">
+    /// Which release key this service checks against. Defaults to the key compiled into the build,
+    /// which is what the application always uses — <b>a value passed in, never a global that can be
+    /// set</b>, so a test can exercise the unkeyed path without a mutable trust anchor existing.
+    /// </param>
     public UpdateService(
         Func<IUpdateFeed> feedFactory,
         IFreeSpaceProbe space,
         IMessageSink? messages,
-        Func<InstallSite>? site = null)
+        Func<InstallSite>? site = null,
+        ReleaseTrust? trust = null)
     {
         _feedFactory = feedFactory;
         _space       = space;
         _messages    = messages;
         _site        = site ?? UpdateInstallSite.Detect;
+        _trust       = trust ?? ReleaseTrust.Compiled;
     }
 
     /// <summary>How many times the feed was constructed. The counter R-AU-44's gate reads.</summary>
@@ -131,7 +139,7 @@ public sealed class UpdateService
             notifyOnlyReason = $"This {UpdateApp.Name} installation is in a location this account "
                              + "cannot write, so it does not update itself.";
         }
-        else if (!await PayloadVerifier.RunningBuildCanAcceptUpdatesAsync(site, ct).ConfigureAwait(false))
+        else if (!await PayloadVerifier.RunningBuildCanAcceptUpdatesAsync(site, ct, _trust).ConfigureAwait(false))
         {
             // R-AU-25's publisher check compares the staged payload against the RUNNING application,
             // so a running build with no publisher identity of its own can never accept anything — an
@@ -179,7 +187,7 @@ public sealed class UpdateService
             candidate = await UpdateSelector.SelectAsync(
                 feed, await feed.ListReleasesAsync(ct).ConfigureAwait(false),
                 running, policy.IncludeBetas, UpdateApp.Name, platform.Value,
-                RuntimeInformation.ProcessArchitecture, ct).ConfigureAwait(false);
+                RuntimeInformation.ProcessArchitecture, ct, _trust).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { return new CheckResult(CheckOutcome.Failed, Detail: "cancelled"); }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException)
@@ -297,7 +305,7 @@ public sealed class UpdateService
         // The signature and the identity run against the .partial tree, BEFORE the rename that gives
         // it a real name (R-AU-27). Verifying afterwards left an unverified app-<ver> holding a real
         // name in the live install root whenever the process died in between.
-        Task<VerifyResult> Verify(string partialPath) => VerifyStagedAsync(site, partialPath, ct);
+        Task<VerifyResult> Verify(string partialPath) => VerifyStagedAsync(site, partialPath, ct, _trust);
 
         if (site.Shape == InstallShape.MacOsBundle)
         {
@@ -346,13 +354,24 @@ public sealed class UpdateService
         return new CheckResult(CheckOutcome.Staged, version);
     }
 
-    private static async Task<VerifyResult> VerifyStagedAsync(InstallSite site, string stagedPath, CancellationToken ct)
+    private static async Task<VerifyResult> VerifyStagedAsync(
+        InstallSite site, string stagedPath, CancellationToken ct, ReleaseTrust trust)
     {
         if (site.Shape == InstallShape.MacOsBundle)
             return await PayloadVerifier.VerifyMacBundleAsync(stagedPath, site.Root, ct).ConfigureAwait(false);
 
         if (OperatingSystem.IsWindows())
         {
+            // Design §15.5: an unsigned Windows build carrying a release key is anchored by the
+            // signed manifest's SHA-256 instead, which is verified before this runs and covers every
+            // byte rather than only the PEs. A SIGNED build is still checked here, so a certificate
+            // adds a second anchor rather than replacing the key.
+            if (!PayloadVerifier.WindowsPlatformCheckApplies(
+                    PayloadVerifier.RunningWindowsPublisher(),
+                    trust.RequireSignedManifest))
+                return new VerifyResult(VerifyOutcome.NotApplicable,
+                                        "unsigned build; the signed manifest's digest is the anchor");
+
             string exe = UpdateApp.Name + ".exe";
             return PayloadVerifier.VerifyWindowsTree(
                 stagedPath, Path.Combine(AppContext.BaseDirectory, exe), exe);
