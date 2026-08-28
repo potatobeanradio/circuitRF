@@ -81,6 +81,11 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         = System.Enum.GetValues<LayoutUnits.LayoutNumberFormat>();
     public static LabelFontStyle[] RulerStyleOptions   { get; } = System.Enum.GetValues<LabelFontStyle>();
 
+    /// <summary>The readout's anchor — which point of the text block its position names. The EXISTING
+    /// label alignment enums, never a parallel pair (R-rul-2's rule, applied to alignment).</summary>
+    public static LabelHAlign[] RulerTextHAlignOptions { get; } = System.Enum.GetValues<LabelHAlign>();
+    public static LabelVAlign[] RulerTextVAlignOptions { get; } = System.Enum.GetValues<LabelVAlign>();
+
     // ── Empty state ────────────────────────────────────────────────────────────
 
     [ObservableProperty] private bool _isEmptyState = true;
@@ -158,6 +163,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "RulerSize":      CommitRulerSizeText(text); break;
             case "RulerCaption":   CommitRulerCaptionText(text); break;
             case "RulerDecimals":  CommitRulerDecimalsText(text); break;
+            case "RulerTextX":     CommitRulerTextPosition(text, isY: false); break;
+            case "RulerTextY":     CommitRulerTextPosition(text, isY: true);  break;
         }
     }
 
@@ -205,6 +212,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "RulerY2":         RulerY2Error = null; break;
             case "RulerSize":       RulerSizeError = null; break;
             case "RulerDecimals":   RulerDecimalsError = null; break;
+            case "RulerTextX":      RulerTextXError = null; break;
+            case "RulerTextY":      RulerTextYError = null; break;
         }
     }
 
@@ -2123,6 +2132,40 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// <summary>Tri-state (null = differs across the selection) — the Delta-x/Delta-y toggle.</summary>
     [ObservableProperty] private bool? _rulerShowComponentsValue;
 
+    /// <summary>
+    /// The hand-placed readout position (§9B.12). <b>Blank means the dynamic position</b> — the one
+    /// the renderer computes from the midpoint — exactly as a blank <see cref="RulerDecimalsText"/>
+    /// means the display unit's own default, and the watermark says so rather than leaving an empty
+    /// box to be read as "unknown".
+    /// </summary>
+    [ObservableProperty] private string _rulerTextXText = "";
+    [ObservableProperty] private string? _rulerTextXError;
+    public bool HasRulerTextXError => RulerTextXError is not null;
+
+    [ObservableProperty] private string _rulerTextYText = "";
+    [ObservableProperty] private string? _rulerTextYError;
+    public bool HasRulerTextYError => RulerTextYError is not null;
+
+    /// <summary>Tri-state combos: null means the selection's anchors DIFFER.</summary>
+    [ObservableProperty] private LabelHAlign? _rulerTextHAlignValue;
+    [ObservableProperty] private LabelVAlign? _rulerTextVAlignValue;
+
+    /// <summary>R13a: the Reset button is present whether or not it can do anything, and states its
+    /// reason when it cannot — never a silently inert control.</summary>
+    [ObservableProperty] private bool _canResetRulerLabelPosition;
+    [ObservableProperty] private string? _resetRulerLabelPositionReason;
+
+    /// <summary>Puts every selected ruler's readout back to its default (dynamic) position, as one
+    /// undo entry. The SAME call the right-click "Reset Ruler Label Position" makes, so the two
+    /// surfaces cannot drift apart.</summary>
+    [RelayCommand]
+    public void ResetRulerLabelPosition()
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        _vm.ResetSelectedRulerLabelPositions();
+        RefreshFromVm();
+    }
+
     /// <summary>R-rul-5: the measured distance is shown and is NEVER editable. A ruler whose number
     /// can be typed over is not a measurement, and in a design review it is worse than no ruler at
     /// all. The caption is the free text; the number is computed.
@@ -2267,6 +2310,53 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
+    /// <summary>
+    /// The readout position field (§9B.12). <b>Blank clears it</b>, which is the same "Reset" the
+    /// button beside it performs — a field whose emptiness is meaningful has to accept being emptied,
+    /// or the button becomes the only way back and the field lies about what it holds.
+    ///
+    /// <para>X and Y are one decision on the model (<see cref="RulerAnnotation.HasTextPosition"/>
+    /// needs both), so typing into ONE of them while the other is blank seeds the other from the
+    /// position the ruler is currently drawing at — otherwise the entry silently does nothing.</para>
+    /// </summary>
+    public void CommitRulerTextPosition(string text, bool isY)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+
+        void SetError(string? e) { if (isY) RulerTextYError = e; else RulerTextXError = e; }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            SetError(null);
+            _vm.ResetSelectedRulerLabelPositions();
+            RefreshFromVm();
+            return;
+        }
+
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out long v))
+        { SetError("Invalid value"); return; }
+        SetError(null);
+
+        // The editor VM owns the seeding of the OTHER coordinate — see
+        // SetSelectedRulerTextCoordinate, which measures it through the renderer.
+        _vm.SetSelectedRulerTextCoordinate(isY, v);
+        RefreshFromVm();
+    }
+
+    partial void OnRulerTextHAlignValueChanged(LabelHAlign? oldValue, LabelHAlign? newValue)
+    {
+        if (_isRefreshing || _vm is null || newValue is null || DragBlocksEdits()) return;
+        _vm.ApplyToEachRuler<LabelHAlign?>(
+            "Ruler Label Anchor", r => r.TextHAlign, (r, v) => r.TextHAlign = v, newValue.Value);
+    }
+
+    partial void OnRulerTextVAlignValueChanged(LabelVAlign? oldValue, LabelVAlign? newValue)
+    {
+        if (_isRefreshing || _vm is null || newValue is null || DragBlocksEdits()) return;
+        _vm.ApplyToEachRuler<LabelVAlign?>(
+            "Ruler Label Anchor", r => r.TextVAlign, (r, v) => r.TextVAlign = v, newValue.Value);
+    }
+
     private void CommitRulerEndpoint(string text, bool first, bool isY)
     {
         if (DragBlocksEdits() || _vm is null) return;
@@ -2354,6 +2444,23 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
         var deltas = rulers.Select(r => r.ShowComponents).Distinct().ToList();
         RulerShowComponentsValue = deltas.Count == 1 ? deltas[0] : null;
+
+        // §9B.12: blank IS the dynamic position, and the watermark says so — a ruler whose label has
+        // never been moved shows an empty pair of boxes with "auto" behind them, not a coordinate the
+        // user would then think is stored.
+        SetTextIfNotFocused("RulerTextX", FormatSharedDbu(rulers.Select(r => r.TextX)),
+            () => RulerTextXText, v => RulerTextXText = v);
+        SetTextIfNotFocused("RulerTextY", FormatSharedDbu(rulers.Select(r => r.TextY)),
+            () => RulerTextYText, v => RulerTextYText = v);
+
+        var hAligns = rulers.Select(r => r.EffectiveTextHAlign).Distinct().ToList();
+        RulerTextHAlignValue = hAligns.Count == 1 ? hAligns[0] : null;
+        var vAligns = rulers.Select(r => r.EffectiveTextVAlign).Distinct().ToList();
+        RulerTextVAlignValue = vAligns.Count == 1 ? vAligns[0] : null;
+
+        var resetAvail = _vm.ResetRulerLabelPositionAvailability;
+        CanResetRulerLabelPosition = resetAvail.CanExecute;
+        ResetRulerLabelPositionReason = resetAvail.DisabledReason;
 
         // R-rul-5/R-rul-6: computed, read-only, formatted in the document's own display unit and at
         // the ruler's own precision — the SAME LayoutUnits.Format the canvas readout goes through, so

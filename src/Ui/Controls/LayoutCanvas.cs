@@ -958,6 +958,21 @@ public sealed class LayoutCanvas : Control
             editRuler.Click += async (_, _) => await ShowRulerEditDialogAsync(rulerIndex);
             items.Add(editRuler);
 
+            // §9B.12, directly under Edit Ruler… — the undo of an F5 label move, reachable without
+            // opening the dialog. Scoped to the ruler under the click, not to the selection, exactly
+            // like the two items around it; disabled with its reason when that ruler's label is
+            // already at its default position (R13a — never a silent no-op).
+            var resetAvail = _viewModel.ResetRulerLabelPositionAvailabilityFor(rulerIndex);
+            var resetLabel = new MenuItem
+            {
+                Header = "Reset Ruler Label Position",
+                IsEnabled = resetAvail.CanExecute,
+            };
+            if (!resetAvail.CanExecute && resetAvail.DisabledReason is { } resetReason)
+                ToolTip.SetTip(resetLabel, resetReason);
+            resetLabel.Click += (_, _) => { _viewModel.ResetRulerLabelPosition(rulerIndex); InvalidateVisual(); };
+            items.Add(resetLabel);
+
             var deleteRuler = new MenuItem { Header = "Delete Ruler" };
             deleteRuler.Click += (_, _) => { _viewModel.DeleteRuler(rulerIndex); InvalidateVisual(); };
             items.Add(deleteRuler);

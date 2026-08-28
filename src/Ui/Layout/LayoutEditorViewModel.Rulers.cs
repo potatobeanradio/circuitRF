@@ -322,6 +322,187 @@ public sealed partial class LayoutEditorViewModel
         _rulerEndpointDrag = null;
     }
 
+    // ── Moving the readout — F5, mirroring the schematic's own label move ─────────────────────────
+
+    /// <summary>
+    /// The live "place the readout" gesture: the ruler being aimed, the value to restore on Escape,
+    /// and the candidate the canvas is drawing. Null when no such gesture is in flight.
+    ///
+    /// <para><b>A mode, not a tool</b> — deliberately. The schematic's F5 uses its own
+    /// <c>Tool.MoveLabels</c> because it must first PICK a component; a ruler's label move always
+    /// starts from an already-selected ruler, so there is nothing to pick and a fourth entry in
+    /// <see cref="Tool"/> would be a tool that can never be armed from the toolbar.</para>
+    /// </summary>
+    private (int Index, RulerAnnotation Original, RulerAnnotation Preview)? _rulerLabelMove;
+
+    /// <summary>True while a readout is being placed — read by the Escape contract, so a half-placed
+    /// label counts as an operation in progress exactly like a half-placed ruler.</summary>
+    internal bool RulerLabelMoveActive => _rulerLabelMove is not null;
+
+    /// <summary>R13a-style availability: enabled only for exactly one selected ruler, with the reason
+    /// stated when not — never a silent no-op key.</summary>
+    public LayoutCommandAvailability MoveRulerLabelAvailability
+    {
+        get
+        {
+            if (_selectedRulerIndices.Count == 1
+                && _selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0)
+                return LayoutCommandAvailability.Enabled;
+            return LayoutCommandAvailability.Disabled(
+                _selectedRulerIndices.Count == 0
+                    ? "Move Ruler Label: select one ruler first."
+                    : "Move Ruler Label: select exactly one ruler.");
+        }
+    }
+
+    /// <summary>
+    /// Begins the F5 gesture on the single selected ruler — the readout follows the cursor and the
+    /// next click drops it (§9B.12). Same shape as the schematic's <c>BeginMoveLabels</c>, minus its
+    /// pick phase: a ruler is already selected by the time F5 is meaningful here.
+    /// </summary>
+    public void BeginMoveRulerLabel()
+    {
+        var avail = MoveRulerLabelAvailability;
+        if (!avail.CanExecute)
+        {
+            if (avail.DisabledReason is { } reason) _messageSink?.Info(reason);
+            return;
+        }
+
+        int index = _selectedRulerIndices[0];
+        var original = Model.Rulers[index];
+        _rulerLabelMove = (index, original.Clone(), original.Clone());
+        _messageSink?.Info("Click to place the ruler label, Esc to cancel");
+        RebuildOverlay();
+    }
+
+    /// <summary>
+    /// The cursor's effect while placing: the readout's ANCHOR lands where the pointer is, through
+    /// the ordinary grid snap. Geometry snap is deliberately NOT consulted — snapping a label to a
+    /// trace corner would fight the one thing this gesture exists for, which is getting the number
+    /// out of the artwork's way.
+    /// </summary>
+    private void UpdateRulerLabelMove(double wx, double wy)
+    {
+        if (_rulerLabelMove is not { } move) return;
+
+        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend: false);
+        var preview = move.Original.Clone();
+        preview.TextX = sx;
+        preview.TextY = sy;
+        _rulerLabelMove = (move.Index, move.Original, preview);
+        RebuildOverlay();
+    }
+
+    /// <summary>Drops the readout where it is being drawn — one undo entry, and nothing at all when
+    /// the position did not actually change.</summary>
+    private void CommitRulerLabelMove()
+    {
+        if (_rulerLabelMove is not { } move) return;
+        _rulerLabelMove = null;
+
+        var before = move.Original;
+        var after = move.Preview;
+        if (after.TextX != before.TextX || after.TextY != before.TextY)
+            Execute(new ReplaceRulerCommand(Model, move.Index, before, after, "Move Ruler Label"));
+
+        RebuildOverlay();
+    }
+
+    /// <summary>Abandons the gesture with the readout back where it was. Called from
+    /// <c>CancelDrawOp</c>, so Escape needs no ruler-specific branch of its own.</summary>
+    private void CancelRulerLabelMove() => _rulerLabelMove = null;
+
+    /// <summary>
+    /// Sets ONE coordinate of the readout position on every selected ruler, as one undo entry — the
+    /// Properties Inspector's X/Y boxes.
+    ///
+    /// <para><b>A ruler with no position yet is SEEDED from where its readout is currently drawn</b>
+    /// (<see cref="LayoutRenderer.RulerTextAnchorPoint"/>) before the typed coordinate is applied.
+    /// Without that, typing an X into a ruler whose Y is still dynamic would write half a position,
+    /// which the model reads as no position at all — the field would silently do nothing.</para>
+    /// </summary>
+    public void SetSelectedRulerTextCoordinate(bool isY, long value)
+    {
+        IUiCommand? combined = null;
+        foreach (var index in _selectedRulerIndices.Distinct())
+        {
+            if (index < 0 || index >= Model.Rulers.Count) continue;
+            var before = Model.Rulers[index];
+
+            var seed = LayoutRenderer.RulerTextAnchorPoint(
+                before, DisplayUnit, Model.DbuPerMicron, LastZoomPxPerDbu);
+
+            var after = before.Clone();
+            after.TextX = isY ? (before.TextX ?? seed?.X) : value;
+            after.TextY = isY ? value : (before.TextY ?? seed?.Y);
+            if (after.TextX is null || after.TextY is null) continue;   // degenerate ruler: nothing to seed from
+            if (after.TextX == before.TextX && after.TextY == before.TextY) continue;
+
+            IUiCommand cmd = new ReplaceRulerCommand(
+                Model, index, before, after, isY ? "Ruler Label Y" : "Ruler Label X");
+            combined = combined is null ? cmd : new CompositeCommand(combined, cmd);
+        }
+
+        if (combined is not null) { Execute(combined); RebuildOverlay(); }
+    }
+
+    // ── Reset to the dynamic position ─────────────────────────────────────────────────────────────
+
+    /// <summary>Whether anything in the CURRENT SELECTION has a hand-placed readout to reset —
+    /// what the Properties Inspector's Reset button reads.</summary>
+    public LayoutCommandAvailability ResetRulerLabelPositionAvailability
+        => SelectedRulers().Any(r => r.HasTextPosition)
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled(
+                _selectedRulerIndices.Count == 0
+                    ? "Reset Ruler Label Position: select a ruler first."
+                    : "Reset Ruler Label Position: this ruler's label is already at its default position.");
+
+    /// <summary>Whether ONE named ruler has a hand-placed readout — what the right-click menu reads,
+    /// since that item is scoped to the ruler under the click rather than to the selection.</summary>
+    public LayoutCommandAvailability ResetRulerLabelPositionAvailabilityFor(int index)
+        => index >= 0 && index < Model.Rulers.Count && Model.Rulers[index].HasTextPosition
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled(
+                "Reset Ruler Label Position: this ruler's label is already at its default position.");
+
+    /// <summary>Puts one ruler's readout back to the dynamic position the renderer computes.</summary>
+    public void ResetRulerLabelPosition(int index)
+    {
+        if (index < 0 || index >= Model.Rulers.Count) return;
+        ResetRulerLabelPositions([index]);
+    }
+
+    /// <summary>Every selected ruler's readout back to its default position, as ONE undo entry —
+    /// the Properties Inspector's Reset button, which is a multi-selection edit like every other
+    /// control in that panel (R-rul-11a).</summary>
+    public void ResetSelectedRulerLabelPositions() => ResetRulerLabelPositions(_selectedRulerIndices);
+
+    /// <summary>
+    /// The one implementation both entry points share. <b><see cref="ReplaceRulerCommand"/> rather
+    /// than two <see cref="SetShapeFieldCommand{T}"/>s</b>: X and Y are one decision, and a pair of
+    /// field commands would put "half the label position reset" on the undo stack as a reachable
+    /// state.
+    /// </summary>
+    private void ResetRulerLabelPositions(IEnumerable<int> indices)
+    {
+        IUiCommand? combined = null;
+        foreach (var index in indices.Distinct())
+        {
+            if (index < 0 || index >= Model.Rulers.Count) continue;
+            var before = Model.Rulers[index];
+            if (!before.HasTextPosition) continue;
+
+            var after = before.Clone();
+            after.ResetTextPosition();
+            IUiCommand cmd = new ReplaceRulerCommand(Model, index, before, after, "Reset Ruler Label Position");
+            combined = combined is null ? cmd : new CompositeCommand(combined, cmd);
+        }
+
+        if (combined is not null) { Execute(combined); RebuildOverlay(); }
+    }
+
     // ── Context menu (R-rul-12) ───────────────────────────────────────────────────────────────────
 
     /// <summary>Topmost ruler under the click, within tolerance — mirrors

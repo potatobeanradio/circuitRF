@@ -2678,6 +2678,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         NoteZoomPxPerDbu(zoomPxPerDbu);
 
+        // §9B.12: an F5 ruler-label placement is the same kind of gesture as a paste placement — the
+        // click DROPS what is being carried and does nothing else, whatever tool is armed.
+        if (_rulerLabelMove is not null) { UpdateRulerLabelMove(wx, wy); CommitRulerLabelMove(); return; }
+
         if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
@@ -2748,6 +2752,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
 
         if (pixelDbu > 0) NoteZoomPxPerDbu(1.0 / pixelDbu);
+
+        // §9B.12: the readout follows the cursor while it is being placed, ahead of every tool — the
+        // gesture owns the pointer until a click drops it or Escape puts it back.
+        if (_rulerLabelMove is not null) { UpdateRulerLabelMove(wx, wy); return; }
 
         if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
@@ -2824,6 +2832,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
+        // §9B.12: F5 moves the selected ruler's readout — the SAME key the schematic and symbol
+        // editors already use for "move the text of the thing that is selected", so it is one gesture
+        // across the application rather than a third spelling of it. While the gesture is live it owns
+        // the keyboard: only Escape (below) gets through, so a stray letter cannot arm a drawing tool
+        // out from under a label the user is carrying.
+        if (_rulerLabelMove is not null)
+        {
+            if (key == Key.Escape) { CancelRulerLabelMove(); RebuildOverlay(); }
+            return;
+        }
+
         if (_isTypingLabel)
         {
             if (key == Key.Escape) { CancelDrawOp(); ActiveTool = Tool.Select; return; }
@@ -2831,6 +2850,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (key == Key.Back && _labelBuffer.Length > 0) { _labelBuffer = _labelBuffer[..^1]; RebuildOverlay(); }
             return;
         }
+
+        // Below the label-typing branch on purpose, so F5 cannot start a second text gesture while
+        // one is already running.
+        if (key == Key.F5) { BeginMoveRulerLabel(); return; }
 
         // brief-snap-distance-and-geometry-snap.md — R-snp-1: F9 toggles this document's own snap
         // distance on/off (AutoCAD's grid-snap toggle). R-snp-6: F3 and 's' both toggle geometry snap
@@ -2887,6 +2910,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             bool hasActiveOp = WireOperationInProgress
                              || ActiveTool != Tool.Select
                              || RulerEndpointDragActive
+                             || RulerLabelMoveActive
                              || _isDrawingTwoPoint
                              || _drawPoints.Count > 0
                              || _selectDragKind != SelectDragKind.None
@@ -3036,6 +3060,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // ruler is abandoned here, on the same path every other drawing tool's in-progress geometry is.
         CancelRulerPlacement();
         CancelRulerEndpointDrag();
+        CancelRulerLabelMove();
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
     }
@@ -3388,7 +3413,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // drag, translated by the same live delta the shapes get) and a single-endpoint drag — which
         // is what makes the readout re-measure live while an endpoint is being aimed.
         IReadOnlyDictionary<int, RulerAnnotation>? rulerDragOverrides = null;
-        if (_rulerEndpointDrag is { } endpointDrag)
+        if (_rulerLabelMove is { } labelMove)
+        {
+            // §9B.12: the label being placed rides the SAME override channel the endpoint drag uses,
+            // so the readout's live position, its hit region and its painted bounds all come from one
+            // geometry — there is no second "preview label" path that could draw somewhere else.
+            rulerDragOverrides = new Dictionary<int, RulerAnnotation> { [labelMove.Index] = labelMove.Preview };
+        }
+        else if (_rulerEndpointDrag is { } endpointDrag)
         {
             rulerDragOverrides = new Dictionary<int, RulerAnnotation> { [endpointDrag.Index] = endpointDrag.Preview };
         }
@@ -3400,8 +3432,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             {
                 if (idx < 0 || idx >= Model.Rulers.Count) continue;
                 var clone = Model.Rulers[idx].Clone();
-                clone.X1 += _moveLiveDx; clone.Y1 += _moveLiveDy;
-                clone.X2 += _moveLiveDx; clone.Y2 += _moveLiveDy;
+                clone.TranslateBy(_moveLiveDx, _moveLiveDy);
                 dict[idx] = clone;
             }
             rulerDragOverrides = dict;

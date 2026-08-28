@@ -18,15 +18,22 @@ internal sealed class ReplaceRulerCommand : IUiCommand
     private readonly LayoutView _view;
     private readonly int _index;
     private readonly RulerAnnotation _before, _after;
+    private readonly string _description;
 
-    public string Description => "Edit Ruler";
+    public string Description => _description;
 
-    public ReplaceRulerCommand(LayoutView view, int index, RulerAnnotation before, RulerAnnotation after)
+    /// <param name="description">What the undo entry is called. Defaults to the endpoint drag's own
+    /// wording; the label move and the label-position reset pass their own, because "Edit Ruler" on
+    /// the undo stack for a gesture that moved only the readout says nothing about what would come
+    /// back.</param>
+    public ReplaceRulerCommand(LayoutView view, int index, RulerAnnotation before, RulerAnnotation after,
+                               string description = "Edit Ruler")
     {
         _view = view;
         _index = index;
         _before = before;
         _after = after;
+        _description = description;
     }
 
     private void Put(RulerAnnotation r)

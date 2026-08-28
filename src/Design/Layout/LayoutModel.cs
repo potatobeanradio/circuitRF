@@ -235,6 +235,81 @@ public sealed class RulerAnnotation
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Caption { get; set; }
 
+    /// <summary>
+    /// <b>Where the readout is drawn, in world DBU — <c>null</c> means "wherever the ruler puts it"</b>
+    /// (the dynamic midpoint-plus-normal-offset the renderer has always computed). Both coordinates
+    /// move together: <see cref="HasTextPosition"/> is the one predicate everything asks, and a file
+    /// carrying only one of the pair is treated as unpositioned rather than half-placed.
+    ///
+    /// <para><b>Absolute, not an offset from the midpoint</b> — the user asked to put the number
+    /// somewhere in the LAYOUT, and an offset would silently re-aim it every time an endpoint moved.
+    /// A whole-ruler move and a paste translate it with the endpoints (see
+    /// <see cref="TranslateBy"/>), so the annotation still travels as one object; an ENDPOINT drag
+    /// deliberately leaves it where it was put, because that is the position the user chose.</para>
+    ///
+    /// <para>Omitted from the file when null, so every <c>.clay</c> written before this field existed
+    /// — and every ruler that never has its label moved — re-serializes byte for byte.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? TextX { get; set; }
+
+    /// <summary>The Y half of <see cref="TextX"/>. See that field's doc comment.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? TextY { get; set; }
+
+    /// <summary>True when this ruler's readout has been placed by hand. The ONE predicate the
+    /// renderer, the inspector, the context menu and the DXF writer all ask, so none of them can
+    /// disagree about whether a half-written pair counts.</summary>
+    [JsonIgnore]
+    public bool HasTextPosition => TextX is not null && TextY is not null;
+
+    /// <summary>
+    /// Which point of the readout BLOCK <see cref="TextX"/>/<see cref="TextY"/> names, horizontally —
+    /// <c>null</c> is <see cref="LabelHAlign.Center"/>, which is what a ruler has always drawn.
+    ///
+    /// <para><b>The existing <see cref="LabelHAlign"/>, never a parallel enum</b> — R-rul-2's rule for
+    /// <see cref="LabelFontStyle"/>, applied for the same reason. <b>Nullable rather than defaulted</b>
+    /// for <see cref="Decimals"/>'s reason: the enum's own default is <c>Left</c>, so a non-nullable
+    /// field defaulting to <c>Center</c> would be written into every file that never touched it.</para>
+    ///
+    /// <para>It also sets how a multi-line readout JUSTIFIES inside its own block, which is why it is
+    /// not inert on a ruler whose label has never been moved.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LabelHAlign? TextHAlign { get; set; }
+
+    /// <summary>The vertical half of <see cref="TextHAlign"/> — <c>null</c> is
+    /// <see cref="LabelVAlign.Middle"/>. <c>Baseline</c> means the FIRST line's baseline, the only
+    /// reading of it that is well defined for a block of several lines.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LabelVAlign? TextVAlign { get; set; }
+
+    /// <summary>This ruler's effective horizontal anchor — its own override when it has one,
+    /// otherwise <see cref="LabelHAlign.Center"/>. The ONE accessor every consumer goes through.</summary>
+    [JsonIgnore]
+    public LabelHAlign EffectiveTextHAlign => TextHAlign ?? LabelHAlign.Center;
+
+    /// <summary>This ruler's effective vertical anchor — its own override when it has one, otherwise
+    /// <see cref="LabelVAlign.Middle"/>.</summary>
+    [JsonIgnore]
+    public LabelVAlign EffectiveTextVAlign => TextVAlign ?? LabelVAlign.Middle;
+
+    /// <summary>Clears the hand-placed readout position, returning it to the dynamic one the renderer
+    /// computes. The anchor is deliberately LEFT ALONE — it is a separate property with its own
+    /// control, and resetting a position the user asked to reset must not silently undo a second
+    /// choice they did not mention.</summary>
+    public void ResetTextPosition() { TextX = null; TextY = null; }
+
+    /// <summary>Moves this ruler — both endpoints AND a hand-placed readout — by one integer delta.
+    /// The single place that pairing is written down, so a move, a nudge, a paste and a duplicate
+    /// cannot drift apart on whether the label comes along.</summary>
+    public void TranslateBy(long dx, long dy)
+    {
+        X1 += dx; Y1 += dy; X2 += dx; Y2 += dy;
+        if (TextX is { } tx) TextX = tx + dx;
+        if (TextY is { } ty) TextY = ty + dy;
+    }
+
     /// <summary>R-rul-7: the Delta-x / Delta-y line. Off by default and a per-ruler toggle, never an
     /// automatic angle test — auto-showing it "when angled" would silently change what a ruler SAYS
     /// when an endpoint is nudged one DBU off axis.</summary>
@@ -335,6 +410,7 @@ public sealed class RulerAnnotation
         SizeMode = SizeMode, TextSizePt = TextSizePt, TextHeightDbu = TextHeightDbu,
         Style = Style, Caption = Caption, ShowComponents = ShowComponents,
         Decimals = Decimals, NumberFormat = NumberFormat,
+        TextX = TextX, TextY = TextY, TextHAlign = TextHAlign, TextVAlign = TextVAlign,
     };
 }
 

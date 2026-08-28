@@ -32,8 +32,10 @@ internal sealed class MoveRulersCommand : IUiCommand
             foreach (var i in _indices)
             {
                 if (i < 0 || i >= _view.Rulers.Count) continue;
-                var r = _view.Rulers[i];
-                r.X1 += dx; r.Y1 += dy; r.X2 += dx; r.Y2 += dy;
+                // Endpoints AND a hand-placed readout — RulerAnnotation.TranslateBy is the single
+                // place that pairing is written down, so a move, a nudge and a paste cannot disagree
+                // about whether the label comes along.
+                _view.Rulers[i].TranslateBy(dx, dy);
             }
             _view.NotifyChanged();
         }

@@ -149,7 +149,35 @@ public static partial class LayoutRenderer
         public double LineStep;          // world DBU, baseline-to-baseline
         public double BlockCx, BlockCy;  // readout block centre, world DBU
         public double BlockHalfW, BlockHalfH;
+        public LabelHAlign HAlign;       // how the lines justify inside the block
         public IReadOnlyList<string> Lines;
+    }
+
+    /// <summary>
+    /// Where the readout block's CENTRE goes when the ruler carries a hand-placed position — the
+    /// anchor names which point of the block sits on <c>(TextX, TextY)</c>, so the centre is that
+    /// point plus half the block in the opposite direction.
+    ///
+    /// <para><b>World space is Y-UP here</b>, which is why <c>Top</c> subtracts and <c>Bottom</c> adds.
+    /// <c>Baseline</c> is the FIRST line's baseline: the block's top edge sits one ascent above it.</para>
+    /// </summary>
+    private static (double Cx, double Cy) AnchorToBlockCentre(
+        double ax, double ay, LabelHAlign h, LabelVAlign v, double halfW, double halfH, double ascent)
+    {
+        double cx = h switch
+        {
+            LabelHAlign.Left  => ax + halfW,
+            LabelHAlign.Right => ax - halfW,
+            _                 => ax,
+        };
+        double cy = v switch
+        {
+            LabelVAlign.Top      => ay - halfH,
+            LabelVAlign.Bottom   => ay + halfH,
+            LabelVAlign.Baseline => ay + ascent - halfH,
+            _                    => ay,
+        };
+        return (cx, cy);
     }
 
     /// <summary>
@@ -191,6 +219,21 @@ public static partial class LayoutRenderer
         double blockH = g.Ascent + g.Descent + (g.Lines.Count - 1) * g.LineStep;
         g.BlockHalfH = blockH / 2.0;
 
+        g.HAlign = ruler.EffectiveTextHAlign;
+
+        // A HAND-PLACED readout wins outright (owner, 2026-08-27): the anchor decides which point of
+        // the block lands on the stored coordinate, and the midpoint-plus-normal offset below is not
+        // consulted at all. Nothing else in this method changes, so the hit region, Zoom-to-Fit and
+        // the clipboard's painted bounds follow the moved text for free — they all read this one
+        // geometry rather than re-deriving the midpoint themselves.
+        if (ruler.HasTextPosition)
+        {
+            (g.BlockCx, g.BlockCy) = AnchorToBlockCentre(
+                ruler.TextX!.Value, ruler.TextY!.Value, g.HAlign, ruler.EffectiveTextVAlign,
+                g.BlockHalfW, g.BlockHalfH, g.Ascent);
+            return g;
+        }
+
         double midX = (ruler.X1 + (double)ruler.X2) / 2.0;
         double midY = (ruler.Y1 + (double)ruler.Y2) / 2.0;
         double halfExtentAlongN = Math.Abs(nx) * g.BlockHalfW + Math.Abs(ny) * g.BlockHalfH;
@@ -231,6 +274,37 @@ public static partial class LayoutRenderer
         => BuildRulerGeometry(ruler, unit, dbuPerMicron, devicePxPerDbu) is { } g
             ? RulerTextWorldBbox(g)
             : Bbox.Empty;
+
+    /// <summary>
+    /// Where <see cref="RulerAnnotation.TextX"/>/<see cref="TextY"/> would have to be for this ruler's
+    /// readout to stay EXACTLY where it is drawn now — the inverse of
+    /// <see cref="AnchorToBlockCentre"/>, evaluated against its own anchor.
+    ///
+    /// <para>This is what "start from where it already is" means everywhere the position becomes
+    /// explicit: typing into one coordinate box, or reading back a dynamic position. Deriving it here
+    /// rather than re-computing the midpoint push at the call site is the same rule the whole file
+    /// follows — the renderer is the only thing that knows the font metrics.</para>
+    /// </summary>
+    public static (long X, long Y)? RulerTextAnchorPoint(
+        RulerAnnotation ruler, LayoutUnit unit, int dbuPerMicron, double devicePxPerDbu)
+    {
+        if (BuildRulerGeometry(ruler, unit, dbuPerMicron, devicePxPerDbu) is not { } g) return null;
+
+        double ax = ruler.EffectiveTextHAlign switch
+        {
+            LabelHAlign.Left  => g.BlockCx - g.BlockHalfW,
+            LabelHAlign.Right => g.BlockCx + g.BlockHalfW,
+            _                 => g.BlockCx,
+        };
+        double ay = ruler.EffectiveTextVAlign switch
+        {
+            LabelVAlign.Top      => g.BlockCy + g.BlockHalfH,
+            LabelVAlign.Bottom   => g.BlockCy - g.BlockHalfH,
+            LabelVAlign.Baseline => g.BlockCy + g.BlockHalfH - g.Ascent,
+            _                    => g.BlockCy,
+        };
+        return ((long)Math.Round(ax), (long)Math.Round(ay));
+    }
 
     private static Bbox RulerTextWorldBbox(RulerGeometry g) => new(
         (long)Math.Floor(g.BlockCx - g.BlockHalfW), (long)Math.Floor(g.BlockCy - g.BlockHalfH),
@@ -342,7 +416,15 @@ public static partial class LayoutRenderer
         using var font = new SKFont(LayoutTextOutline.ResolveTypeface(ruler.Style), sizePath);
         using var textPaint = new SKPaint { IsAntialias = true, Color = textColor };
 
-        float cx = ps.X(g.BlockCx);
+        // The lines justify inside the block per the ruler's own horizontal anchor — Center is what a
+        // ruler has always drawn and stays the default. Left/Right are what make a multi-line readout
+        // (distance + Delta line + caption) line up down one edge instead of ragged on both.
+        var (align, cx) = g.HAlign switch
+        {
+            LabelHAlign.Left  => (SKTextAlign.Left,  ps.X(g.BlockCx - g.BlockHalfW)),
+            LabelHAlign.Right => (SKTextAlign.Right, ps.X(g.BlockCx + g.BlockHalfW)),
+            _                 => (SKTextAlign.Center, ps.X(g.BlockCx)),
+        };
         // Path space is Y-DOWN: the block's world TOP edge is its smallest path-space Y.
         float topY = ps.Y(g.BlockCy + g.BlockHalfH);
         float baseline = topY + ps.Len(g.Ascent);
@@ -350,7 +432,7 @@ public static partial class LayoutRenderer
 
         foreach (var line in g.Lines)
         {
-            canvas.DrawText(line, cx, baseline, SKTextAlign.Center, font, textPaint);
+            canvas.DrawText(line, cx, baseline, align, font, textPaint);
             baseline += step;
         }
 

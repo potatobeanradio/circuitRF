@@ -133,10 +133,14 @@ public static partial class DxfWriter
         return extra.Count == 0 ? null : "<>" + string.Concat(extra.Select(e => "\\P" + e));
     }
 
-    /// <summary>The text midpoint (groups 11/21) — the same perpendicular offset the on-screen
-    /// renderer uses, so the exported picture reads like the one the user placed.</summary>
+    /// <summary>The text position (groups 11/21) — <b>a hand-placed readout (§9B.12) exports at the
+    /// coordinate the user put it at</b>, and only a ruler that has never had its label moved falls
+    /// back to the same perpendicular offset the on-screen renderer uses. Both are world coordinates
+    /// in DBU, so the moved label survives the trip with no scaling of its own.</summary>
     private static (double X, double Y) RulerTextMidpoint(RulerAnnotation r, double textHeight)
     {
+        if (r.TextX is { } tx && r.TextY is { } ty) return (tx, ty);
+
         double dx = (double)r.X2 - r.X1, dy = (double)r.Y2 - r.Y1;
         double len = Math.Sqrt(dx * dx + dy * dy);
         if (len <= 0) return (r.X1, r.Y1);
@@ -148,6 +152,56 @@ public static partial class DxfWriter
         double midY = (r.Y1 + (double)r.Y2) / 2.0;
         double push = textHeight * 0.9;
         return (midX + nx * push, midY + ny * push);
+    }
+
+    /// <summary>
+    /// The ruler's anchor as DXF's own <b>MTEXT attachment point</b> (DIMENSION group 71): 1..9
+    /// running top-left, top-centre, top-right, middle-left, … bottom-right. 5 — middle-centre — is
+    /// what every export wrote before §9B.12 and is still what an un-anchored ruler resolves to, so
+    /// nothing changes for a document that never moves a label.
+    ///
+    /// <para><c>Baseline</c> has no attachment point of its own in DXF and maps to the BOTTOM row,
+    /// which is the nearest thing the format can say. It is the one place the export is approximate,
+    /// and it is approximate in the direction that keeps the text out of the dimension line.</para>
+    /// </summary>
+    internal static int RulerAttachmentPoint(RulerAnnotation r)
+    {
+        int row = r.EffectiveTextVAlign switch
+        {
+            LabelVAlign.Top                          => 0,
+            LabelVAlign.Middle                       => 1,
+            LabelVAlign.Bottom or LabelVAlign.Baseline => 2,
+            _                                        => 1,
+        };
+        int col = r.EffectiveTextHAlign switch
+        {
+            LabelHAlign.Left  => 0,
+            LabelHAlign.Right => 2,
+            _                 => 1,
+        };
+        return row * 3 + col + 1;
+    }
+
+    /// <summary>The same anchor as a plain <c>TEXT</c> entity's justification pair — group 72
+    /// (horizontal: 0 left, 1 centre, 2 right) and group 73 (vertical: 0 baseline, 1 bottom,
+    /// 2 middle, 3 top). Used for the picture inside the <c>*D#</c> block, which is a TEXT and not an
+    /// MTEXT and therefore spells the same idea a second way.</summary>
+    internal static (int Horizontal, int Vertical) RulerTextJustification(RulerAnnotation r)
+    {
+        int h = r.EffectiveTextHAlign switch
+        {
+            LabelHAlign.Left  => 0,
+            LabelHAlign.Right => 2,
+            _                 => 1,
+        };
+        int v = r.EffectiveTextVAlign switch
+        {
+            LabelVAlign.Baseline => 0,
+            LabelVAlign.Bottom   => 1,
+            LabelVAlign.Top      => 3,
+            _                    => 2,
+        };
+        return (h, v);
     }
 
     private static void WriteDimstyleRecord(DxfGroupWriter w, DxfHandles handles, string tableHandle,
@@ -247,11 +301,18 @@ public static partial class DxfWriter
         // fidelity note about the user's drawing and must not be reported as one.
         w.WriteGeneratedString(1, readout);
         w.WriteDouble(50, 0.0);   // §9B.4: always upright, whatever the ruler's angle
-        w.WriteInt(72, 1);        // horizontal alignment: centre
+        // §9B.12: the ruler's own anchor, which for an un-anchored ruler is still (centre, middle) —
+        // the pair every export wrote before the readout could be placed by hand.
+        var (justH, justV) = RulerTextJustification(r);
+        w.WriteInt(72, justH);
         w.WriteDouble(11, tx * dbuToDrawingUnit);
         w.WriteDouble(21, ty * dbuToDrawingUnit);
         w.WriteDouble(31, 0.0);
         w.WriteString(100, "AcDbText"); // TEXT's own spec quirk — the subclass marker repeats
+        // Group 73 comes AFTER the repeated subclass marker per spec — it belongs to AcDbText's
+        // second block, not its first, and a reader that validates subclass membership rejects it
+        // in the other position.
+        w.WriteInt(73, justV);
 
         WriteBlockFooter(w, handles, ownerHandle);
     }
@@ -281,7 +342,7 @@ public static partial class DxfWriter
         w.WriteDouble(21, ty * dbuToDrawingUnit);
         w.WriteDouble(31, 0.0);
         w.WriteInt(70, 1 | 32);
-        w.WriteInt(71, 5);                                     // attachment point: middle-centre
+        w.WriteInt(71, RulerAttachmentPoint(r));               // attachment point (§9B.12); 5 = middle-centre
         w.WriteDouble(42, r.DistanceDbu * dbuToDrawingUnit);   // the measured value
 
         if (RulerTextOverride(r, unit, dbuPerMicron) is { } text)

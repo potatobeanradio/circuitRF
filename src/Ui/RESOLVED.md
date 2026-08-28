@@ -12225,3 +12225,53 @@ that had quietly fallen back to name matching.
 wrong key (manifest renamed `*.rejected`), matching key, pre-release create, stable create, a failing
 upload caught by the byte-size cross-check, that draft resumed and repaired on the next run, and a
 published release refused.
+
+---
+
+## Ruler readouts can be placed by hand (2026-08-27)
+
+*Owner request: move a ruler's rendered text anywhere in the layout, the way F5 already moves
+component text in the schematic, and give it anchor alignment. Persist all of it, carry it into the
+DXF, edit it in the Properties Inspector, add a Reset, and add a "Reset Ruler Label Position" item
+under Edit Ruler…. Design note: `docs/design/layout-view.md` §9B.12.*
+
+**The one decision the rest fell out of: resolve the position inside `BuildRulerGeometry`, not at the
+draw call.** That method already feeds four callers — the draw pass, `LayoutRulerHitTest`,
+Zoom-to-Fit, and the clipboard's painted-bounds pass — so the request's own "make sure the text
+hitbox follows the rendered text" needed no hit-test change at all. Placing the text at the draw call
+instead would have produced exactly the drift `MeasureLabelWorldBbox`'s doc comment already records: a
+number you can see and cannot click.
+
+**Absolute position, not an offset.** An offset from the midpoint would have re-aimed the label every
+time an endpoint moved, which is the opposite of "put it there and leave it". The cost is that a
+whole-ruler move has to carry the label explicitly — paid once, in
+`RulerAnnotation.TranslateBy`, which `MoveRulersCommand`, `LayoutFragment.Translate` and the live
+drag preview now all route through instead of each adding a delta to four fields.
+
+**Both new enum fields are nullable, and that is a serialization constraint rather than a modelling
+preference.** The anchor reuses the existing `LabelHAlign`/`LabelVAlign` (R-rul-2's rule for
+`LabelFontStyle`, applied to alignment), but their own zero values are `Left`/`Baseline` while a
+ruler's sensible default is Centre/Middle. A non-nullable field defaulting to Centre would have been
+written into every `.clay` that never touched it, breaking §9B.7's byte-for-byte re-serialization.
+Nullable-plus-`Effective*` accessor is the shape `Decimals` already uses for the same reason. A test
+asserts none of the four new keys appear in a file whose ruler was never touched.
+
+**The anchor is applied only when a position is stored.** Applying it to the dynamic midpoint push as
+well is coherent on paper and was rejected: it silently moves the readout on every ruler in a document
+that never asked for one to be moved, and §9B.4's "the text never overlaps the line" is a property of
+that push. What the anchor still does unconditionally is set the multi-line justification, so it is
+not an inert control on an unmoved ruler.
+
+**Typing one coordinate into the inspector seeds the other.** `HasTextPosition` needs both, so an X
+typed against a null Y would have been silently discarded — the field would look like it worked and do
+nothing. `LayoutRenderer.RulerTextAnchorPoint` (the inverse of the anchor placement) supplies the
+missing half from where the readout is currently drawn, so making a dynamic position explicit does not
+move it. A round-trip test covers all twelve anchor combinations.
+
+**DXF already had somewhere to put both.** The DIMENSION's text midpoint is groups 11/21 and the
+attachment point is group 71 — which the exporter had been writing as the constant 5 (middle-centre).
+The anchor maps onto DXF's own 1..9 grid, and the picture TEXT inside the `*D#` block takes the same
+information a second way as groups 72/73. Group 73 goes AFTER the repeated `100 AcDbText` subclass
+marker, per spec. `Baseline` has no attachment point in the format and maps to the bottom row. An
+un-anchored ruler still writes 5, so a document that never moves a label produces the file it always
+did.

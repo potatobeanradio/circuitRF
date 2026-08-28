@@ -1341,6 +1341,61 @@ skipped, and its `*D#` block is already skipped by the importer's existing anony
 dimensions back would mean deciding what a foreign `DIMSTYLE` means in circuitRF's terms and guessing
 wrong sometimes; a ruler is authored in circuitRF, and the export is a one-way courtesy to the reader.
 
+### 9B.12 Moving the readout, and anchoring it
+
+*Owner request, 2026-08-27.* A ruler's number is placed for you, and where it lands is often in the
+way — over the trace being measured, or on top of a second ruler's readout. **The readout can be
+dragged anywhere in the layout, and the position persists.**
+
+**The gesture is F5**, and it is F5 because that is already what the schematic and symbol editors use
+for "move the text of the thing that is selected". Select one ruler, press F5, the readout follows the
+cursor, a click drops it, Escape puts it back. It is a MODE and not a fourth `Tool`: the schematic's
+own F5 needs a tool because it must first pick a component, and a ruler's label move always starts
+from a ruler that is already selected — a `Tool.MoveRulerLabel` would be a tool no toolbar button
+could ever arm.
+
+**The stored position is ABSOLUTE, not an offset from the midpoint.** The user asked to put the number
+somewhere in the layout; an offset would silently re-aim it every time an endpoint moved. `TextX` and
+`TextY` are nullable and move together — `HasTextPosition` is the one predicate everything asks, so a
+hand-edited file carrying only one of them is unpositioned rather than half-placed. A whole-ruler
+move, a nudge, a paste and a duplicate all carry the label with the endpoints, through
+`RulerAnnotation.TranslateBy`, which is the single place that pairing is written down. **An ENDPOINT
+drag deliberately does not** — the position is the one the user chose.
+
+**The anchor** (`TextHAlign`/`TextVAlign`) says which point of the text BLOCK that position names —
+the nine-way attachment grid, plus `Baseline` for the first line's baseline. They are the EXISTING
+`LabelHAlign`/`LabelVAlign`, never a parallel pair, which is R-rul-2's rule applied to alignment; they
+are nullable for `Decimals`' reason, since the enums' own defaults are `Left`/`Baseline` and a
+non-nullable field defaulting to Centre/Middle would be written into every file that never touched it.
+The horizontal anchor ALSO sets how a multi-line readout justifies inside its block, which is why it
+is not inert on a ruler whose label has never been moved.
+
+**The anchor governs a POSITION, so a ruler that has none renders exactly as it always did.** Applying
+it to the dynamic midpoint push would silently move every readout in a document that never asked for
+one to be moved; §9B.4's "the text never overlaps the line" is that push's guarantee and is left
+untouched.
+
+**Everything is resolved inside `BuildRulerGeometry`, and that is the whole design.** The hit region,
+Zoom-to-Fit and the clipboard's painted-bounds pass all read that one geometry — so the hit box
+follows the moved text for free, and the "number you can see and cannot click" failure is structurally
+unavailable. `LayoutRenderer.RulerTextAnchorPoint` is its inverse: where the position would have to be
+for the readout to stay exactly where it is drawn now, which is what "start from where it already is"
+means when a dynamic position becomes explicit.
+
+**Reset** puts the position back to dynamic, in three places that all call one implementation: a
+button in the Properties Inspector (which acts on the whole selection, as one undo entry), emptying
+either coordinate field (a field whose blankness is meaningful has to accept being emptied), and
+**Reset Ruler Label Position** in the right-click menu, directly under Edit Ruler… and scoped to the
+ruler under the click. It clears the position and deliberately leaves the ANCHOR alone — resetting a
+second choice the user did not mention is not what they asked for.
+
+**DXF carries both** (§9B.10). A hand-placed readout exports at its own coordinate as the DIMENSION's
+text midpoint (groups 11/21), and the anchor becomes DXF's own MTEXT attachment point (group 71,
+1..9) plus the picture TEXT's justification pair (groups 72/73). `Baseline` has no attachment point of
+its own in the format and maps to the bottom row — the one place the export is approximate, and it is
+approximate in the direction that keeps the text off the dimension line. **An un-anchored ruler still
+writes attachment point 5**, which is what every export wrote before this section existed.
+
 ### 9B.11 What a ruler is not
 
 Stated so they stay non-goals:

@@ -155,6 +155,68 @@
                      ToolTip.Tip="Free text under the readout. The measured number above is computed and cannot be typed over."/>
         </Grid>
 
+        <!-- §9B.12: WHERE the readout is drawn, and which point of it that position names.
+
+             Blank IS the answer for a ruler whose label has never been moved: the position is
+             dynamic and the renderer derives it from the midpoint. The watermark says "auto" rather
+             than leaving an empty box to be read as "unknown", and emptying the field is the same
+             Reset the button performs — a field whose emptiness is meaningful has to accept being
+             emptied. F5 on the canvas is the gesture this pair records. -->
+        <Grid ColumnDefinitions="72,*,40,*" ColumnSpacing="4">
+            <TextBlock Grid.Column="0" Text="Label at" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="1" Text="{Binding RulerTextXText}" Tag="RulerTextX"
+                     PlaceholderText="auto"
+                     Classes.error="{Binding HasRulerTextXError}" ToolTip.Tip="{Binding RulerTextXError}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"/>
+            <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="3" Text="{Binding RulerTextYText}" Tag="RulerTextY"
+                     PlaceholderText="auto"
+                     Classes.error="{Binding HasRulerTextYError}" ToolTip.Tip="{Binding RulerTextYError}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"/>
+        </Grid>
+
+        <!-- R13a: present whether or not it can act, disabled with its stated reason — never a
+             silently inert button. -->
+        <Grid ColumnDefinitions="72,*">
+            <Button Grid.Column="1" Content="Reset" FontSize="11" Padding="10,2"
+                    HorizontalAlignment="Left"
+                    Command="{Binding ResetRulerLabelPositionCommand}"
+                    IsEnabled="{Binding CanResetRulerLabelPosition}">
+                <ToolTip.Tip>
+                    <TextBlock TextWrapping="Wrap" MaxWidth="260"
+                               Text="Put the label back at its default position, derived from the ruler's own midpoint."/>
+                </ToolTip.Tip>
+            </Button>
+        </Grid>
+        <TextBlock IsVisible="{Binding !CanResetRulerLabelPosition}"
+                   Text="{Binding ResetRulerLabelPositionReason}"
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                   FontSize="10" TextWrapping="Wrap" Margin="72,0,0,0"/>
+
+        <!-- The anchor — which point of the text block the position above names, and how a multi-line
+             readout justifies inside it. The EXISTING label alignment enums (R-rul-2's rule), which is
+             why Baseline appears here: it means the FIRST line's baseline. -->
+        <Grid ColumnDefinitions="72,*,40,*" ColumnSpacing="4">
+            <TextBlock Grid.Column="0" Text="Anchor" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RulerTextHAlignOptions}"
+                      SelectedItem="{Binding RulerTextHAlignValue, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
+                      ToolTip.Tip="Which side of the text block its position names — and how the readout's lines justify."/>
+            <TextBlock Grid.Column="2" Text="V" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <ComboBox Grid.Column="3"
+                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RulerTextVAlignOptions}"
+                      SelectedItem="{Binding RulerTextVAlignValue, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
+                      ToolTip.Tip="Which point of the text block's height its position names. Baseline is the first line's baseline."/>
+        </Grid>
+
         <!-- R-rul-7: a per-ruler toggle, not an automatic angle test. -->
         <Grid ColumnDefinitions="72,*">
             <TextBlock Grid.Column="0" Text="Δx / Δy" VerticalAlignment="Center" FontSize="11"

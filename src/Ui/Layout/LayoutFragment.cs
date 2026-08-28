@@ -361,7 +361,7 @@ public static class LayoutFragment
         foreach (var r in rulers)
         {
             var clone = r.Clone();
-            clone.X1 += dx; clone.Y1 += dy; clone.X2 += dx; clone.Y2 += dy;
+            clone.TranslateBy(dx, dy);   // endpoints AND a hand-placed readout, in one place
             result.Add(clone);
         }
         return result;
