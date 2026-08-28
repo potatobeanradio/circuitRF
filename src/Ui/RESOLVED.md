@@ -12275,3 +12275,161 @@ information a second way as groups 72/73. Group 73 goes AFTER the repeated `100 
 marker, per spec. `Baseline` has no attachment point in the format and maps to the bottom row. An
 un-anchored ruler still writes 5, so a document that never moves a label produces the file it always
 did.
+
+### Follow-ups the same day
+
+**Rulers rendered under the wBond wires.** §9B.1's "a ruler always paints above every layer" was true
+of `LayoutRenderer.Draw` and false of the frame: `LayoutCanvas.DrawFrame` hands the Skia lease to
+`ILayoutCanvasOverlay.Draw` *after* that call returns, so the wires painted over everything the layout
+render produced, annotations included. Fixed with the mechanism already there for the identical
+problem — `LayoutRenderOptions.DeferSnapMarker`, whose own doc comment records the geometry-snap glyph
+disappearing under a wide wire in 2026-08-19. `DeferRulers` + `LayoutRenderer.DrawRulersOnTop` is its
+twin; the canvas now paints layout → wires → rulers → snap glyph. **The two wBond EXPORT paths had the
+same bug** (`WBondClipboardWriter.Compose`, `WBondGraphicExport`) and §9B.9 exports rulers on exactly
+that presentation path, so both were fixed too. On the deferred path rulers land above the layout's
+own selection chrome as well, which is the honest cost of there being one seam. The regression test is
+differential: the control render (no deferral) has the ruler covered *completely*, so any surviving
+pixel is the fix.
+
+**DXF was already right, and is now pinned.** Rulers are written after every wire in `ENTITIES` and
+therefore hold higher handles, which is "on top" both for a reader that draws in file order and for
+one that sorts by handle. Nothing changed; `EveryRulerIsWrittenAfterEveryWire_SoItDrawsOnTopOfThem`
+stops it drifting.
+
+**Shift did not constrain a wBond move drag to ortho.** `Constrain` existed and was applied only to a
+wire being DRAWN — the move path never saw the modifiers at all. Dragging a wire, a point and a
+segment are one gesture underneath (`WireEdits.Translate` of the selection), so the constraint sits on
+the cursor once and all three inherit it. Anchored at the PRESS point rather than the previous frame,
+or the drag ratchets sideways one axis-locked step per frame and ends up off the axis; applied before
+the snap, for `Constrain`'s own stated reason. **Not extended to the profile view**, where Shift
+already means coarse snap. Verified red first: 6 of the 7 new tests fail without the change, and the
+7th is the no-Shift control that must stay green.
+
+## Alt-drag duplicates a wBond selection (2026-08-27)
+
+*Owner request, with the collision named in the request itself: Alt already meant "scale span/height"
+in wBond, and the layout editor has meant "copy what you are dragging" by it since R-dup-1. Both are
+wanted. Design note: `docs/design/wbond.md` §6.4.*
+
+**WHAT IS UNDER THE HAND separates them — a grab on a foot stretches, a grab anywhere else copies**
+(owner picked this from three candidates; the alternatives were splitting by VIEW, which would have
+deleted the layout view's span scale, and splitting by WHEN Alt is pressed, which is two
+identical-looking gestures with different results). The rule is not an arbitrary tie-break: the
+stretch anchors on the foot *opposite* the grab and projects onto the chord, so an Alt-drag on a
+wire's middle pulled sideways **already did nothing at all**. The copy takes space the stretch never
+used, and the existing WB24b tests stayed green untouched because they all grab the output foot.
+
+**A segment is never a foot**, whichever end it is nearest — it is the wire's body, and so are the
+interior loop vertices. That keeps the rule statable in one sentence, and aiming at a foot is reliable
+because `WireHitTest` already treats a press inside a vertex's drawn dot as a press on that vertex.
+
+**The two Alt gestures are armed differently, on purpose.** The stretch stays latched at the press
+because it scales from `_altReferenceSpan` — the span the wire *had* when it was grabbed. The copy has
+no such anchor, so Alt is read live and the gesture arms and abandons mid-drag like R-dup-1's.
+Arming mid-drag translates the originals back first (inside the open gesture, so the un-move is not
+its own undo entry); abandoning it rewinds `_lastXNm` to the press anchor so the resumed move lands
+where the hand is rather than only applying the travel since Alt was released.
+
+**One undo entry falls out of `PushUndo` declining inside a gesture.** The commit is
+`WBondViewModel.PasteWires` — a duplicate is a paste at a delta the hand chose — called *before*
+`EndGesture`, so it rides the entry the press already made. Called after, it would be a second entry
+and undoing the drag would leave the copies behind.
+
+**The ghost is the existing `WBondRenderer.DrawGhostWire`, once per copy**, with the originals still
+drawn un-moved by the ordinary pass — which is the whole affordance the owner asked for. The copy
+cursor needed a new `ILayoutCanvasOverlay.DuplicateDragArmed` (defaulted to false), asked *before* the
+layout editor's own answer: when the overlay owns the gesture, the editor's answer is about a
+selection this drag is not touching.
+
+**Reported as left out, then asked for and built the same day (below): a selection mixing wires with
+layout primitives.** Those did not co-MOVE either, which was the prerequisite.
+
+**Follow-up the same day: the stretch grab widened from the two FEET to either END** — a foot or
+either OUTER SEGMENT. The outer segments are the part of the wire that comes down to the pad, so
+grabbing one and pulling is the same physical gesture, and a foot alone is a small target at any real
+zoom. A segment is indexed by its start vertex, so the outer pair is `0` and `lastPoint - 1`. The rule
+has one visible seam, pinned by a test rather than smoothed over: on a THREE-point wire both segments
+are outer, yet the apex VERTEX is still body and still copies. That is the honest reading of "either
+end", and the vertex has its own drawn dot, so it is a precise target rather than an accident.
+
+## Three more from the same round (2026-08-27)
+
+**Dragging a ruler across a bond wire recoloured the wire — and actually SELECTED it.**
+`WBondLayoutOverlay.LayoutHasSomethingAt` is the routing question "is this press the layout editor's
+rather than mine", and it asked about shapes and instances but not rulers, which are the layout
+editor's third selection channel and post-date the method. A press it calls a miss becomes a COMPANION
+MARQUEE, which publishes a preview highlight and on release commits a real wire selection — so the
+colour change was the visible half of a selection the user never made. One line, plus caching
+`LayoutViewport.Zoom` from the draw pass because a Fixed-size ruler's painted extent is a function of
+it. Verified red first. Anything added as a fourth channel belongs in that method too.
+
+**A mixed selection of wires and primitives moved only one half.** The COMPANION MOVE, and the shape
+of it is the interesting part: the overlay's own "it never touches the layout" invariant forbids
+either half reaching across, so the CANVAS mediates — the same role it already plays for the companion
+marquee. Whichever half owns the press drives, and the canvas pushes that half's own delta into the
+other. The delta is ABSOLUTE from the press and applied verbatim: re-deriving it on the far side (the
+receiving half has its own snap rules) or accumulating per frame are the two ways the halves end up a
+step apart, and both are structurally unavailable this way. The receiving gesture opens lazily on the
+first frame that actually moves, so a press that turns out to be a click leaves no undo entry on
+either side. **Two undo stacks remain** — unchanged, and predating this: undoing a mixed move is one
+Ctrl+Z per half.
+
+**The Layout Editor's DXF export dropped every bond wire.** The writer was never the problem — it has
+taken a `WBondDesign` since wbond.md §9.4, and the wBond editor's own export passes one. The Layout
+Editor passed `null`, and `DxfExport.Preview`'s own doc comment blessed that as "the Layout Editor's
+own case". WB40 made the comment stale: a wirebond CELL keeps its wires in a `.wBond` sidecar beside
+the `.clay`, so this editor opens documents that have them. Passed to the PREVIEW as well as the
+write, or the fidelity dialog would describe a different file from the one that lands, and the
+Messages note now states the wire count. **Confirmed against the reported file before and after**: 5
+wires in the sidecar, 0 written before, 5 after. GDSII, Gerber and PCB take no wires at all, so the
+scope really is DXF alone. Pinned by a differential on the writer plus a comment-stripped source scan
+of the code-behind, which Ui.Tests cannot construct.
+
+### Two more on the same gesture (2026-08-27)
+
+**A mixed drag took two undos.** The two halves land on two histories that genuinely cannot be merged
+(snapshots vs. commands — `EditSequence`'s own header says so), but every entry already carries a
+stamp answering "what did I do last". `EditSequence.Group()` records everything in its scope under ONE
+stamp, and `UndoLast`/`RedoLast` now drain every entry carrying the stamp they are acting on. Outside
+a group the counter is monotonic, so a stamp is unique per edit and the drain can never swallow a
+neighbour — pinned by a test that does two ungrouped edits and checks it still takes two undos.
+`LayoutCanvas.OnPointerReleased` opens the group unconditionally: a release commits at most one
+gesture, so on an ordinary drag the group holds one entry and costs nothing.
+
+**The half that made this not work first time: a wBond gesture stamped at its START.** `BeginGesture`
+pushes the undo snapshot, so a group around the COMMIT — where the layout half stamps — could never
+cover it, however it was wrapped. `EndGesture` now re-dates the entry. That is a better answer
+independently: for a drag that ran for two seconds, "what did I do last" means when the hand let go.
+
+**Alt taken mid-drag did nothing when the press had grabbed an END.** `_grabbedEnd` decides which
+gesture the PRESS offers, and it does that where the stretch is dispatched; testing it AGAIN on the
+copy line left a dead zone — the stretch could not arm (it needs a reference span from a press that
+has passed) and the copy was blocked by a grab that had already lost its claim. Now: Alt at the press
+on an end stretches, Alt at any other time copies. **Separately, the copy cursor never appeared during
+an overlay-owned drag** — that branch of `LayoutCanvas.OnPointerMoved` returns before the
+`UpdateCursor()` at the end of the method, so it now asks for itself.
+
+### A plain click must mean "just this" (2026-08-27)
+
+**A ruler dragged over a wire point took the point with it.** The companion move was doing exactly
+what it was built to do; what it exposed is that wbond.md §6.3 deliberately keeps the two selections
+independent ("neither clears the other"), so a wire selected minutes earlier is still live when an
+unmodified click lands on a ruler. Before the companion move that was invisible. After it, one plain
+click moved something the user had never touched.
+
+**Fixed WITHOUT reversing §6.3** — clearing the wire selection on a layout press is precisely the
+2026-08-16 report ("nudging a pad silently threw away the wires the user had selected") and must not
+come back. Instead the companion refuses to follow a press that RESOLVED a new selection; only a press
+that picks up an EXISTING one is a statement that the whole selection travels. Both halves report the
+same signal (`LastPressResolvedNewSelection`), and the overlay's answer was already computed — it is
+`!keepSelection`, the same `SelectionCovers` test that makes a multi-element selection draggable.
+Shift/Ctrl still builds a deliberate mixed selection, which then moves as one.
+
+**Still open, reported in the same message: overlap CYCLING does not reach the wires.** A click that
+lands on both a wire and a ruler always takes the wire — the overlay is asked first and consumes any
+wire hit, so the layout never builds a pick stack for that click. Extending `LayoutPick` with a
+`Wire` kind is the obvious shape and the enum was built for exactly this ("one cache and one
+algorithm serve all three"), but it inverts the press routing: the layout would have to win whenever
+both are present, and the overlay's own point/segment drag machinery — the fine wire-editing gestures
+— lives behind the press it would no longer receive. That is a focused piece of work with real
+regression risk in a heavily-tested area, not a rider on this batch.

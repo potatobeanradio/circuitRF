@@ -286,20 +286,25 @@ internal static class WBondClipboardWriter
 
     private static void Compose(SKCanvas canvas, ExportContext ctx, LayoutViewport vp)
     {
-        if (ctx.Layout is not null)
+        var layoutOpts = new LayoutRenderOptions
         {
-            LayoutRenderer.Draw(canvas, ctx.Layout, ctx.Tech, vp, new LayoutRenderOptions
-            {
-                Theme = ctx.LayoutTheme,
-                ShowGrid = false,               // an export is artwork, not an editing surface
-                Overlay = null,                 // no selection outlines, no handles, no ghosts
-                TransparentBackground = true,   // the destination document supplies the background
-                BaseDir = ctx.BaseDir ?? "",
-            });
-        }
+            Theme = ctx.LayoutTheme,
+            ShowGrid = false,               // an export is artwork, not an editing surface
+            Overlay = null,                 // no selection outlines, no handles, no ghosts
+            TransparentBackground = true,   // the destination document supplies the background
+            BaseDir = ctx.BaseDir ?? "",
+        };
+
+        if (ctx.Layout is not null)
+            LayoutRenderer.Draw(canvas, ctx.Layout, ctx.Tech, vp, layoutOpts with { DeferRulers = true });
 
         WBondRenderer.Draw(canvas, ctx.Design, vp, ctx.WireTheme, selection: null,
                            thickness: ctx.Thickness, dbuPerMicron: ctx.DbuPerMicron);
+
+            // §9B.9 exports rulers on the presentation path, and the wires below are painted after
+            // this call — so without the deferral the annotation lands UNDER the wire it measures,
+            // exactly as it did on the interactive canvas. See LayoutRenderOptions.DeferRulers.
+        LayoutRenderer.DrawRulersOnTop(canvas, ctx.Layout, vp, layoutOpts);
     }
 
     private static byte[]? TryRenderToPdf(ExportContext ctx)

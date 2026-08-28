@@ -1460,6 +1460,71 @@ a rubber-band line) between them. **Shift constrains to ortho.** The new wire is
 **gold**. Gold is both the RF packaging norm and the metal of the LW1 validation set in
 `mom-wirebond-kernel.md`, so the shipped default and the validated path agree.
 
+**Alt-drag duplicates (owner, 2026-08-27)** — the copy gesture the layout editor has had for
+primitives since R-dup-1, now for wires: hold Alt, drag, and the originals stay where they are while a
+dashed ghost of the copy follows the cursor. The copy lands as one undo entry and is what ends up
+selected. A point or segment selection copies the **whole wire** it belongs to (`TouchedWires`, the
+same rule the clipboard uses), so a selection mixing wires, points and segments copies each touched
+wire exactly once, and the commit runs through `WBondViewModel.PasteWires` — a duplicate is a paste at
+a delta the hand chose, never a second implementation of "add these wires".
+
+**Alt already meant "stretch the span" here (WB24b), and WHAT IS UNDER THE HAND separates the two: a
+grab on either END of the wire — a foot, or either OUTER SEGMENT — stretches, and a grab on its BODY
+copies.** (The outer segments were added the same day: they are the part of the wire that comes down
+to the pad, so grabbing one and pulling is the same physical gesture as grabbing the foot, and a foot
+alone is a small target at any real zoom. An interior VERTEX is body even on a three-point wire whose
+segments are both outer — the vertex has its own drawn dot and is a precise target.) That is not an arbitrary tie-break. The
+stretch anchors on the foot *opposite* the grab and projects the drag onto the chord, so it is
+inherently "take an end and pull it out" — and an Alt-drag that grabbed the middle of a wire and
+pulled sideways already did nothing at all. The copy takes over space the stretch was never using, and
+both gestures survive in both views. The copy cursor announces which one is on offer before the press.
+
+*The two are also armed differently, and that asymmetry is principled rather than an oversight:* the
+stretch is decided at the press, because it scales from the span the wire **had** at the press; the
+copy has no such anchor, so Alt is read live and the gesture can be armed or abandoned mid-drag, as it
+is for primitives. Arming mid-drag puts the originals back before the ghost takes over; abandoning it
+resumes the move at the cursor, with the whole travel since the press applied.
+
+**Which is why the grab is consulted ONCE, at the press, and not again.** Alt taken mid-drag copies
+whatever was grabbed — including an end. Testing the grab a second time left a dead zone: grab an
+end, drag without Alt, then press it, and the stretch could not arm (it needs a reference span from a
+press that has passed) while the copy was blocked by a grab that had already lost its claim, so
+nothing happened at all. The rule is unchanged and is stated at the only moment it can be decided:
+**Alt AT THE PRESS on an end stretches; Alt at any other time copies.**
+
+**A selection mixing wires with layout primitives drags as one thing** — the COMPANION MOVE, added
+2026-08-27 after the same round found that such a selection did not co-*move* either. §6.3 makes
+holding both at once the point ("select the pads and the wires landing on them" is one gesture), but
+only the half that owned the PRESS ever heard about the drag.
+
+**The HOST mediates**, exactly as it already does for the companion marquee, because the canvas is the
+one object that holds both halves and the overlay's own "it never touches the layout" invariant
+forbids either half reaching across. Whichever half owns the press drives; the canvas pushes that
+half's OWN delta into the other through `ILayoutCanvasOverlay.CompanionMoveTo` /
+`LayoutEditorViewModel.CompanionMoveTo`. **One delta, from one snap decision** — the delta is
+ABSOLUTE from the press and applied verbatim, because re-deriving or accumulating it on the far side
+is exactly how the two halves of a selection end up a step apart. The receiving gesture opens
+lazily, on the first frame that actually moves something, so a press that turns out to be a click
+leaves no undo entry on either side.
+
+**One Ctrl+Z, across both histories.** The wires and the layout keep their own stacks — one restores
+whole-design snapshots, the other replays commands, and they cannot be merged — but every entry
+already carries an `EditSequence` stamp answering "what did I do last". A mixed gesture records both
+halves inside an `EditSequence.Group()`, so they share one stamp, and `UndoLast`/`RedoLast` drain
+every entry carrying the stamp they are acting on. Outside a group the counter is monotonic, so a
+stamp is unique per edit and draining it can never swallow a neighbouring one.
+
+**A plain click means "just this", on both sides of the seam.** The companion follows only a press
+that picked up an EXISTING selection; a press that RESOLVED a new one moves only what it selected.
+Without that gate the independence §6.3 grants the two selections turns into a trap: a wire selected
+minutes ago is still live, so an unmodified click on a ruler lying over it dragged the wire too
+(owner, 2026-08-27). **Nothing is cleared** — §6.3's contract is untouched, and Shift/Ctrl still
+builds a deliberate mixed selection that then travels as one.
+
+*A wBond gesture is stamped when it ENDS, not when it begins* — which is both the honest answer to
+"what did I do last" for a drag that ran for two seconds, and what lets it match the layout half, which
+stamps at its commit.
+
 **Transforms**, all operating on any selection (point, segment, wire, array, mixed):
 
 | | |

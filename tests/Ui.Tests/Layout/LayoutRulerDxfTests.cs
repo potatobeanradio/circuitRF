@@ -376,4 +376,54 @@ public class LayoutRulerDxfTests : System.IDisposable
         foreach (var st in read.Structures) foreach (var sh in st.Shapes) view.Shapes.Add(sh.Shape);
         Assert.Empty(view.Rulers);
     }
+
+    // ── Rulers come last in ENTITIES, so they are above the bond wires ────────────────────────────
+
+    /// <summary>
+    /// Owner, 2026-08-27, alongside the on-screen fix: rulers must export above the wBond wires too.
+    /// A DXF with no <c>SORTENTSTABLE</c> is drawn in ENTITIES order (and, for a reader that sorts by
+    /// handle, in handle order — which is the same order here, since handles are issued as entities
+    /// are written). So "above" is a position in the file, and this pins it.
+    /// </summary>
+    [Fact]
+    public void EveryRulerIsWrittenAfterEveryWire_SoItDrawsOnTopOfThem()
+    {
+        var design = new CircuitRF.WBond.WBondDesign();
+        var array = new CircuitRF.WBond.WireArray { Name = "G1" };
+        array.Wires.Add(CircuitRF.WBond.LoopShape.CreateSeedWire(
+            new CircuitRF.WBond.Point3(0, 0, 0),
+            new CircuitRF.WBond.Point3(20_000_000, 0, 0),
+            CircuitRF.Ui.WBond.WBondDefaults.DiameterNm, CircuitRF.Ui.WBond.WBondDefaults.Material,
+            2_000_000, CircuitRF.Ui.WBond.WBondDefaults.Points));
+        design.Arrays.Add(array);
+
+        var structure = new InterchangeStructure(
+            "TOP",
+            [new RectShape { Layer = Metal, X1 = 0, Y1 = 0, X2 = 40_000, Y2 = 20_000 }],
+            []);
+
+        var sw = new StringWriter();
+        DxfWriter.Write(sw, [structure], "TOP", null, 1000, new DxfExportOptions(), design,
+                        [Bare()], LayoutUnit.Um);
+
+        var groups = Groups(sw.ToString());
+
+        // Index of the LAST wire entity and of the FIRST ruler DIMENSION, in the ENTITIES section.
+        int entitiesAt = groups.FindIndex(g => g.Code == 2 && g.Value == "ENTITIES");
+        Assert.True(entitiesAt >= 0);
+
+        int lastWire = -1, firstDim = -1;
+        for (int i = entitiesAt; i < groups.Count; i++)
+        {
+            if (groups[i].Code == 8 && groups[i].Value.StartsWith(DxfWireIo.LayerPrefix, System.StringComparison.Ordinal))
+                lastWire = i;
+            if (firstDim < 0 && groups[i].Code == 0 && groups[i].Value == "DIMENSION")
+                firstDim = i;
+        }
+
+        Assert.True(lastWire >= 0, "the fixture must actually export a wire");
+        Assert.True(firstDim >= 0, "the fixture must actually export a ruler");
+        Assert.True(firstDim > lastWire,
+                    $"the ruler DIMENSION (at {firstDim}) must come after every wire (last at {lastWire})");
+    }
 }

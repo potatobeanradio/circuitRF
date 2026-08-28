@@ -45,6 +45,42 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     private double _altApplied = 1.0;
     private double _altAxisX, _altAxisY;
 
+    // ── Alt-drag DUPLICATE (owner, 2026-08-27) ───────────────────────────────────────────────────
+    //
+    // Alt already meant "stretch the span" here (WB24b), and the layout editor has meant "copy what
+    // you are dragging" by it since R-dup-1. Both are wanted, and WHAT IS UNDER THE HAND is what
+    // separates them: a grab on either END of the wire — a foot, or either OUTER SEGMENT — stretches,
+    // and a grab on its BODY copies.
+    //
+    // That is not an arbitrary tie-break. The stretch anchors on the foot OPPOSITE the grab and
+    // projects the drag onto the chord (see AltDragFrame) — it is inherently "take an end and pull
+    // it out", and an alt-drag that grabbed the middle of a wire and pulled sideways already did
+    // nothing at all. The copy takes over space the stretch was never using.
+
+    /// <summary>Whether the press landed on one of the wire's ENDS — either foot or either outer
+    /// segment. Decided once, at the press, because it is what chooses between the two Alt gestures
+    /// and the answer must not change under the hand.</summary>
+    private bool _grabbedEnd;
+
+    /// <summary>True while this drag is making a COPY: the originals stay where they are and a dashed
+    /// ghost of the copy follows the cursor, exactly as R-dup-1 does for primitives.</summary>
+    private bool _duplicating;
+
+    /// <summary>Whether an Alt-drag on this press would COPY rather than stretch — read by the canvas
+    /// for the copy cursor, so which of the two gestures is on offer is visible before the press.</summary>
+    public bool DuplicateDragArmed => _duplicating;
+
+    /// <summary>The snapped press point the ghost's offset is measured from. Not
+    /// <see cref="_lastXNm"/>, which walks with the cursor.</summary>
+    private long _dupAnchorXNm, _dupAnchorYNm;
+
+    /// <summary>What an ordinary move has already written to the geometry this gesture — so Alt
+    /// pressed MID-drag can put the originals back before the ghost takes over.</summary>
+    private long _moveAppliedDxNm, _moveAppliedDyNm;
+
+    /// <summary>The copies being aimed, already translated. Null when no copy is in flight.</summary>
+    private List<Wire>? _duplicateGhosts;
+
     /// <summary>
     /// A press that deliberately LEFT the selection alone, held in case the gesture turns out to be a
     /// plain click — see the click-through note at the call site.
@@ -90,6 +126,10 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     private bool _drawArmed;
     private Point3? _drawStart;
     private Wire? _drawGhost;
+
+    /// <summary>The last zoom the draw pass ran at, in device pixels per DBU — see its assignment in
+    /// <see cref="Draw"/>. Zero before the first frame, which <c>LayoutRulerHitTest</c> accepts.</summary>
+    private double _lastZoomPxPerDbu;
 
     private bool _rotateArmed;
     private bool _rotating;
@@ -372,6 +412,11 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
 
         try
         {
+            // A Fixed-size ruler's painted extent is a function of the zoom (that IS the mode), so
+            // LayoutHasSomethingAt needs the same number the renderer used to ask whether a press
+            // landed on one. LayoutViewport.Zoom is already device pixels per DBU.
+            _lastZoomPxPerDbu = viewport.Zoom;
+
             var transform = WBondDescent.FrameTransform(DescentChain, DbuPerMicron);
 
             WBondRenderer.Draw(
@@ -394,6 +439,13 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
 
             if (_drawGhost is { } ghost)
                 WBondRenderer.DrawGhostWire(canvas, ghost, viewport, Theme, DbuPerMicron, Thickness);
+
+            // The COPIES being aimed, in the same dashed ghost the draw tool uses — and the originals
+            // are still drawn by the pass above, un-moved, which is the whole affordance: you can see
+            // what you are copying and where the copy will land at the same time.
+            if (_duplicateGhosts is { Count: > 0 } copies)
+                foreach (var copy in copies)
+                    WBondRenderer.DrawGhostWire(canvas, copy, viewport, Theme, DbuPerMicron, Thickness);
         }
         finally { canvas.Restore(); }
     }
@@ -483,6 +535,11 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
                           && !_lastModifiers.HasFlag(WBondModifiers.Shift)
                           && SelectionCovers(hit);
 
+        // …and that same answer decides whether the LAYOUT's selection travels with this drag: a press
+        // that newly selects a wire means "just this wire", so a pad selected earlier must not follow
+        // it. See LayoutEditorViewModel.LastPressResolvedNewSelection for the whole story.
+        LastPressResolvedNewSelection = !keepSelection && !_lastModifiers.HasFlag(WBondModifiers.Shift);
+
         // ...and if the press turns out to be a plain CLICK, the re-resolve happens on release
         // instead. That is the standard click-through: a drag moves what was selected, a click still
         // narrows to what is under the cursor. Doing only the first would make an element inside a
@@ -549,7 +606,16 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         _dragThresholdNm = Math.Max(tolNm, 1.0);
         _pressed = true;
 
-        _altDrag = (modifiers & KeyModifiers.Alt) != 0;
+        // WHAT IS UNDER THE HAND decides which Alt gesture this press offers — see the field group
+        // at the top of this class. Resolved here and held, so it cannot change mid-gesture.
+        _grabbedEnd = GrabIsWireEnd(hit);
+        _altDrag = _grabbedEnd && (modifiers & KeyModifiers.Alt) != 0;
+
+        _duplicating = false;
+        _duplicateGhosts = null;
+        _moveAppliedDxNm = 0;
+        _moveAppliedDyNm = 0;
+        (_dupAnchorXNm, _dupAnchorYNm) = (_lastXNm, _lastYNm);   // the SNAPPED press point
 
         // Dropped rather than left standing: an alt-drag never recomputes it, so a marker from the
         // last hover would survive the whole gesture. SnapMarker also refuses to publish one while
@@ -565,20 +631,144 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         return true;
     }
 
+    // ── The companion move: the LAYOUT is driving and the wires come along ───────────────────────
+
+    /// <summary>True while a host-driven move of the wire selection is open. See
+    /// <see cref="ILayoutCanvasOverlay.BeginCompanionMove"/> for why the host mediates.</summary>
+    private bool _companionMove;
+
+    /// <summary>What the companion move has already written to the geometry, in nm — so each frame
+    /// applies only the difference and the host can keep sending an ABSOLUTE delta.</summary>
+    private long _companionAppliedDxNm, _companionAppliedDyNm;
+
     /// <summary>
-    /// Whether the reference layout has a shape or an instance under the given point, in the layout's
-    /// OWN database units — the question "is this press the layout editor's rather than mine".
+    /// The live delta of a drag this overlay owns, in the layout's own DBU — what the host pushes
+    /// into the layout editor so a pad selected beside a wire moves with it.
     ///
-    /// <para>Both stacks are asked because both are draggable: a shape and a placed cell instance are
-    /// selected and moved by the same press, through two different hit tests
-    /// (<see cref="LayoutHitTest.HitStack"/> and <see cref="LayoutHitTest.HitInstanceStack"/>). Asking
-    /// only about shapes would fix pads and leave instances exactly as stuck as they were.</para>
+    /// <para><b>Null during an alt-STRETCH</b>: that gesture scales one wire's span about its far
+    /// foot and translates nothing, so there is no delta for a pad to follow. A COPY reports its
+    /// delta like a move — the layout half duplicates its own selection at the same offset.</para>
+    /// </summary>
+    public (long Dx, long Dy)? CompanionDragDelta
+    {
+        get
+        {
+            if (!_dragging || _altDrag) return null;
+            long dxNm = _lastXNm - _dupAnchorXNm;
+            long dyNm = _lastYNm - _dupAnchorYNm;
+            return (WBondSnap.ToDbu(dxNm, DbuPerMicron), WBondSnap.ToDbu(dyNm, DbuPerMicron));
+        }
+    }
+
+    /// <summary>Whether the most recent press RESOLVED a new wire selection rather than picking up the
+    /// one that was already there. See <c>LayoutEditorViewModel.LastPressResolvedNewSelection</c> —
+    /// the same rule, stated on this side of the seam.</summary>
+    public bool LastPressResolvedNewSelection { get; private set; }
+
+    /// <summary>Set by the host before <see cref="BeginCompanionMove"/>: whether the press arming this
+    /// companion resolved a new selection in the half that owns it.</summary>
+    public bool CompanionPressResolvedNewSelection { get; set; }
+
+    public void BeginCompanionMove()
+    {
+        if (_pressed || _dragging || _marqueeActive) return;   // this overlay is already driving
+
+        // A press that newly selected something in the OTHER half means "just that" — these wires are
+        // a stale selection and must not ride along.
+        if (CompanionPressResolvedNewSelection) return;
+
+        // A companion MARQUEE is the other thing a declined press can become, and it is a selection
+        // gesture: nothing is being moved, so nothing may follow a delta.
+        if (_companionMarquee) return;
+
+        if (_vm.Selection.TouchedWires().Count == 0) return;
+
+        _companionMove = true;
+        _companionAppliedDxNm = 0;
+        _companionAppliedDyNm = 0;
+    }
+
+    public void CompanionMoveTo(long dxDbu, long dyDbu)
+    {
+        if (!_companionMove) return;
+
+        long dxNm = WBondSnap.ToNm(dxDbu, DbuPerMicron);
+        long dyNm = WBondSnap.ToNm(dyDbu, DbuPerMicron);
+
+        long stepX = dxNm - _companionAppliedDxNm;
+        long stepY = dyNm - _companionAppliedDyNm;
+        if (stepX == 0 && stepY == 0) return;
+
+        // Opened lazily, on the first frame that actually moves something: a companion move armed on
+        // a press that turns out to be a click must leave no gesture and no undo entry behind.
+        if (!_controller.IsDragging) { _vm.BeginGesture(); _controller.BeginDrag(); }
+
+        _companionAppliedDxNm = dxNm;
+        _companionAppliedDyNm = dyNm;
+
+        _controller.DragFrame(
+            _ => WireEdits.Translate(_vm.Design, _vm.Selection, stepX, stepY, EditorView.Layout));
+
+        OverlayChanged?.Invoke();
+    }
+
+    public void CommitCompanionMove()
+    {
+        if (!_companionMove) return;
+        _companionMove = false;
+
+        if (!_controller.IsDragging) return;   // it never moved: nothing was opened and nothing to close
+
+        _controller.EndDrag();
+        _vm.EndGesture();
+        OverlayChanged?.Invoke();
+    }
+
+    public void CancelCompanionMove()
+    {
+        if (!_companionMove) return;
+        _companionMove = false;
+
+        if (!_controller.IsDragging) return;
+
+        // Put the wires back: the host's gesture was abandoned, so this half commits nothing either.
+        long backX = -_companionAppliedDxNm, backY = -_companionAppliedDyNm;
+        if (backX != 0 || backY != 0)
+            _controller.DragFrame(
+                _ => WireEdits.Translate(_vm.Design, _vm.Selection, backX, backY, EditorView.Layout));
+
+        _companionAppliedDxNm = 0;
+        _companionAppliedDyNm = 0;
+
+        _controller.EndDrag();
+        _vm.EndGesture();
+        OverlayChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Whether the reference layout has anything DRAGGABLE under the given point, in the layout's OWN
+    /// database units — the question "is this press the layout editor's rather than mine".
+    ///
+    /// <para><b>All THREE of the layout editor's selection channels are asked</b>, because all three
+    /// are draggable and each has its own hit test: shapes (<see cref="LayoutHitTest.HitStack"/>),
+    /// placed cell instances (<see cref="LayoutHitTest.HitInstanceStack"/>) and ruler annotations
+    /// (<see cref="LayoutRulerHitTest"/>). Missing one is not a near miss — a press this method calls
+    /// a miss becomes a COMPANION MARQUEE, which highlights and then genuinely SELECTS every wire the
+    /// box sweeps.</para>
+    ///
+    /// <para>Which is exactly what rulers did until 2026-08-27, being the channel added after this
+    /// method was written: dragging a ruler across the wires it was measuring selected them, and the
+    /// colour change that caused is what the owner reported. A fourth channel would belong here
+    /// too.</para>
     /// </summary>
     private bool LayoutHasSomethingAt(long worldX, long worldY, long tolDbu)
     {
         if (ReferenceLayout is not { } view) return false;
 
         if (LayoutHitTest.HitStack(view, ReferenceTechnology, worldX, worldY, tolDbu).Count > 0)
+            return true;
+
+        if (LayoutRulerHitTest.Hit(view, worldX, worldY, tolDbu, _lastZoomPxPerDbu) is not null)
             return true;
 
         return LayoutHitTest.HitInstanceStack(
@@ -712,8 +902,67 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
 
         if (_altDrag) return AltDragFrame(rawX, rawY);
 
+        // Shift constrains a MOVE to ortho, exactly as it already constrained a wire being DRAWN
+        // (owner, 2026-08-27: dragging a wire, a point or a segment ignored it). All three are the
+        // same gesture underneath — one WireEdits.Translate of whatever is selected — so one
+        // constraint on the cursor serves all of them.
+        //
+        // Anchored at the PRESS point, not at the previous frame: a per-frame constraint would let
+        // the drag ratchet sideways one axis-locked step at a time and end up nowhere near the axis.
+        // Applied BEFORE the snap, for Constrain's own stated reason.
+        var (conX, conY) = Constrain(_pressXNm, _pressYNm, rawX, rawY, modifiers);
+
         // ONE snap rule for the whole editor — geometry first, then the grid (see SnapPoint).
-        var (xNm, yNm) = SnapPoint(rawX, rawY);
+        var (xNm, yNm) = SnapPoint(conX, conY);
+
+        // <b>Alt is read LIVE here, unlike the stretch above.</b> The stretch is latched at the press
+        // because it scales from the span the wire HAD at the press (_altReferenceSpan); the copy has
+        // no such anchor, so it can arm and disarm mid-gesture the way R-dup-1 does for primitives.
+        //
+        // <b>_grabbedEnd is deliberately NOT consulted here</b> (owner, 2026-08-27: a plain drag that
+        // then took Alt did nothing at all). It decided which gesture the PRESS offered, and it did
+        // that above: an end-grab WITH Alt already returned into AltDragFrame. Reaching for it again
+        // on this line left a dead zone — grab an end, drag without Alt, then press it, and the
+        // stretch could not arm (it needs a reference span from a press that has passed) while the
+        // copy was blocked by a grab that had already lost its claim. The rule is what it always was,
+        // stated at the only moment it can be decided: Alt AT THE PRESS on an end stretches; Alt at
+        // any other time copies.
+        bool wantCopy = (modifiers & KeyModifiers.Alt) != 0;
+
+        if (wantCopy)
+        {
+            if (!_duplicating)
+            {
+                // Alt arrived mid-drag: put the originals back where they were, because a copy leaves
+                // them alone. Inside the open gesture, so this un-move is not its own undo entry.
+                if (_moveAppliedDxNm != 0 || _moveAppliedDyNm != 0)
+                {
+                    long backX = -_moveAppliedDxNm, backY = -_moveAppliedDyNm;
+                    _controller.DragFrame(
+                        _ => WireEdits.Translate(_vm.Design, _vm.Selection, backX, backY, EditorView.Layout));
+                    _moveAppliedDxNm = 0;
+                    _moveAppliedDyNm = 0;
+                }
+                _duplicating = true;
+            }
+
+            _lastXNm = xNm;
+            _lastYNm = yNm;
+            _duplicateGhosts = BuildDuplicateGhosts(xNm - _dupAnchorXNm, yNm - _dupAnchorYNm);
+            OverlayChanged?.Invoke();
+            return true;
+        }
+
+        if (_duplicating)
+        {
+            // Alt let go mid-drag: the copy is abandoned and the gesture is an ordinary move again,
+            // landing where the hand actually is — so the whole travel since the press is applied in
+            // this one frame rather than only what has happened since Alt was released.
+            _duplicating = false;
+            _duplicateGhosts = null;
+            _lastXNm = _dupAnchorXNm;
+            _lastYNm = _dupAnchorYNm;
+        }
 
         long dx = xNm - _lastXNm;
         long dy = yNm - _lastYNm;
@@ -721,6 +970,8 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
 
         _lastXNm = xNm;
         _lastYNm = yNm;
+        _moveAppliedDxNm += dx;
+        _moveAppliedDyNm += dy;
 
         // The delta is applied by the shared edit primitive; the controller times the frame and feeds
         // the quality ladder around it.
@@ -729,6 +980,90 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
 
         OverlayChanged?.Invoke();
         return true;
+    }
+
+    /// <summary>
+    /// Whether a hit grabbed one of the wire's ENDS — either foot, or either OUTER SEGMENT — which is
+    /// the grab that keeps Alt meaning "stretch the span" (see the <c>_grabbedEnd</c> field group).
+    ///
+    /// <para><b>The outer segments count</b> (owner, 2026-08-27, refining the foot-only rule this
+    /// started as). They are the part of the wire that comes down to the pad, so grabbing one and
+    /// pulling is the same physical gesture as grabbing the foot — and a foot alone is a small target
+    /// on a wire drawn at any real zoom.</para>
+    ///
+    /// <para>Everything between them — the interior loop vertices and the interior segments, which on
+    /// the default 7-point seed is most of the wire — is BODY, and the body is what the copy gesture
+    /// takes. A two-point wire has one segment, and it is outer at both ends: such a wire is nothing
+    /// BUT its ends, so Alt on it stretches, which is the only reading that leaves the span gesture
+    /// reachable on the simplest wire there is.</para>
+    /// </summary>
+    private bool GrabIsWireEnd(WireHitTest.Hit hit)
+    {
+        if (!hit.Found) return false;
+
+        var wires = _vm.Design.AllWires().ToList();
+        if (hit.Wire < 0 || hit.Wire >= wires.Count) return false;
+
+        int lastPoint = wires[hit.Wire].Points.Count - 1;
+        if (lastPoint <= 0) return false;
+
+        // A segment is indexed by its START vertex, so the outer pair is 0 and lastPoint - 1.
+        return hit.IsSegment
+            ? hit.Point == 0 || hit.Point == lastPoint - 1
+            : hit.Point == 0 || hit.Point == lastPoint;
+    }
+
+    /// <summary>
+    /// The copies being aimed — every WHOLE wire the selection touches, translated by the live delta.
+    ///
+    /// <para><b><c>TouchedWires</c>, so a point or a segment selection copies the wire it belongs
+    /// to.</b> That is the same rule <c>WBondClipboard.Copy</c> uses, which is what commits this
+    /// gesture — a ghost that showed something the commit would not produce is worse than no ghost.
+    /// It is also what makes a selection mixing wires, points and segments copy coherently: all three
+    /// resolve to the same set of whole wires.</para>
+    /// </summary>
+    private List<Wire> BuildDuplicateGhosts(long dxNm, long dyNm)
+    {
+        var wires = _vm.Design.AllWires().ToList();
+        var result = new List<Wire>();
+
+        foreach (int index in _vm.Selection.TouchedWires().OrderBy(i => i))
+        {
+            if (index < 0 || index >= wires.Count) continue;
+            var source = wires[index];
+
+            var copy = new Wire { DiameterNm = source.DiameterNm, Material = source.Material };
+            foreach (var p in source.Points) copy.Points.Add(new Point3(p.X + dxNm, p.Y + dyNm, p.Z));
+            result.Add(copy);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Drops the copies into the design and selects them — <b>through the same
+    /// <c>WBondViewModel.PasteWires</c> the clipboard uses</b>, so a duplicate is a paste at a delta
+    /// the hand chose and there is no second implementation of "add these wires" to drift from it.
+    ///
+    /// <para>Called while the drag's gesture is still OPEN, which is what makes the whole thing one
+    /// undo entry: <c>PushUndo</c> declines to push inside a gesture, so the paste rides the entry
+    /// the press already made.</para>
+    /// </summary>
+    private void CommitDuplicate()
+    {
+        long dx = _lastXNm - _dupAnchorXNm;
+        long dy = _lastYNm - _dupAnchorYNm;
+
+        _duplicating = false;
+        _duplicateGhosts = null;
+
+        // A copy exactly on top of its original is not what the gesture was for, and two wires on
+        // identical geometry are the singular inductance matrix WBondViewModel.PasteWires' own
+        // paste-pitch note records.
+        if (dx == 0 && dy == 0) return;
+
+        if (_vm.CopySelection() is not { } payload) return;
+        _vm.PasteWires(payload, dx, dy);
     }
 
     /// <summary>
@@ -802,15 +1137,24 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     {
         bool wasDragging = _dragging;
 
+        bool wasDuplicating = _duplicating;
+
         _pressed = false;
         _dragging = false;
         _altDrag = false;
+        _duplicating = false;
+        _duplicateGhosts = null;
 
         // A press that never crossed the threshold opened nothing, so there is nothing to close —
         // calling EndDrag on the controller would publish a spurious final answer for a plain click.
         if (wasDragging)
         {
             _controller.EndDrag();  // restores exact geometry and publishes the final, non-provisional answer
+
+            // BEFORE EndGesture, deliberately: the paste has to land inside the open gesture or it
+            // becomes a second undo entry, and undoing an alt-drag would then leave the copies behind.
+            if (wasDuplicating) CommitDuplicate();
+
             _vm.EndGesture();
         }
         else if (_deferredPress is { } press)
@@ -987,12 +1331,19 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     /// whatever it had just snapped to.</para>
     /// </summary>
     private static (long X, long Y) Constrain(Point3 start, long xNm, long yNm, KeyModifiers modifiers)
+        => Constrain(start.X, start.Y, xNm, yNm, modifiers);
+
+    /// <summary>The coordinate form — what a MOVE drag constrains against, since its anchor is the
+    /// press point rather than a wire's foot. The one implementation both callers share, so drawing
+    /// a wire and dragging one cannot end up with two different ideas of what Shift means.</summary>
+    private static (long X, long Y) Constrain(long startX, long startY, long xNm, long yNm,
+                                              KeyModifiers modifiers)
     {
         if ((modifiers & KeyModifiers.Shift) == 0) return (xNm, yNm);
 
-        return Math.Abs(xNm - start.X) >= Math.Abs(yNm - start.Y)
-            ? (xNm, start.Y)
-            : (start.X, yNm);
+        return Math.Abs(xNm - startX) >= Math.Abs(yNm - startY)
+            ? (xNm, startY)
+            : (startX, yNm);
     }
 
     /// <summary>
@@ -1156,6 +1507,11 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
     {
         _gHeld = false;
 
+        // A companion move is armed on a press the LAYOUT owns, so its release may never reach this
+        // overlay. Unwound rather than left open, for AbandonGesture's own reason: a stranded drag
+        // leaves the wires somewhere nobody asked for.
+        CancelCompanionMove();
+
         // …and a gesture that was still running when focus left is UNWOUND, not left half-open. See
         // AbandonGesture: a stranded drag leaves the wire COLLAPSED TO ITS CHORD, which is a loop the
         // user can watch disappear.
@@ -1202,7 +1558,13 @@ public sealed partial class WBondLayoutOverlay : ILayoutCanvasOverlay
         _altDrag = false;
         _deferredPress = null;
 
+        // An abandoned gesture COMMITS NOTHING — the copies are dropped with the rest of it. The
+        // originals never moved while a copy was in flight, so there is nothing to unwind either.
+        _duplicating = false;
+        _duplicateGhosts = null;
+
         if (!wasDragging) return;
+
 
         _controller.EndDrag();   // restores whatever was collapsed, and publishes the final answer
         _vm.EndGesture();

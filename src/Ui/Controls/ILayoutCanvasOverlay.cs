@@ -52,6 +52,56 @@ public interface ILayoutCanvasOverlay
     /// </summary>
     Bbox ContentBounds();
 
+    /// <summary>
+    /// True when the gesture the overlay currently has in flight will produce a COPY rather than move
+    /// what it grabbed — so the host can show the copy cursor, exactly as it already does for the
+    /// layout editor's own R-dup-1 duplicate drag.
+    ///
+    /// <para>Defaulted to false: an overlay with no copy gesture of its own says nothing and the host
+    /// falls through to the layout editor's answer.</para>
+    /// </summary>
+    bool DuplicateDragArmed => false;
+
+    // ── The COMPANION move (owner, 2026-08-27) ───────────────────────────────────────────────────
+    //
+    // An overlay holds a selection of its own beside the layout editor's, and §6.3 of wbond.md makes
+    // holding both at once the point: "select the pads and the wires landing on them" is one gesture.
+    // Dragging that selection moved only the half that owned the press.
+    //
+    // The HOST mediates, exactly as it already does for the companion marquee, because it is the one
+    // object that holds both halves. Whichever half owns the press drives; the host pushes that
+    // half's OWN delta into the other. One delta from one snap decision — re-deriving it on the far
+    // side is how the two halves of a selection end up a step apart.
+
+    /// <summary>The live delta of a drag this overlay OWNS, in the host's world units (DBU), absolute
+    /// from its own press — or null when it is not driving one. The host pushes this into the layout
+    /// editor so what the layout has selected comes along.</summary>
+    (long Dx, long Dy)? CompanionDragDelta => null;
+
+    /// <summary>Whether the most recent press RESOLVED a new selection in this overlay rather than
+    /// picking up the one that was already there — the host reads it to decide whether the LAYOUT's
+    /// own selection should travel with this drag.</summary>
+    bool LastPressResolvedNewSelection => true;
+
+    /// <summary>Set by the host before <see cref="BeginCompanionMove"/>: whether the press arming this
+    /// companion resolved a new selection in the half that owns it. A companion refuses when it did —
+    /// a plain click means "just the thing I clicked", on both sides of the seam.</summary>
+    bool CompanionPressResolvedNewSelection { get; set; }
+
+    /// <summary>Arms a move of this overlay's own selection, driven by a gesture the HOST owns. No-op
+    /// when the overlay has nothing selected.</summary>
+    void BeginCompanionMove() { }
+
+    /// <summary>The host's own delta, in DBU, absolute from its press. Applied verbatim — it is
+    /// already the snapped answer that half committed to.</summary>
+    void CompanionMoveTo(long dxDbu, long dyDbu) { }
+
+    /// <summary>Commits the companion move as one edit of this overlay's own.</summary>
+    void CommitCompanionMove() { }
+
+    /// <summary>Abandons it with nothing committed.</summary>
+    void CancelCompanionMove() { }
+
     /// <summary>Returns true when the press was consumed and must not reach the layout editor.</summary>
     bool OnPointerPressed(long worldX, long worldY, long tolDbu, KeyModifiers modifiers, int clickCount);
 

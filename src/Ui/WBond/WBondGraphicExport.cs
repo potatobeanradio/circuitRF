@@ -57,20 +57,25 @@ internal static class WBondGraphicExport
 
         var vp = FitViewport(design, layout, pageWidth, pageHeight, dbuPerMicron);
 
-        if (layout is not null)
+        var layoutOpts = new LayoutRenderOptions
         {
-            LayoutRenderer.Draw(canvas, layout, technology, vp, new LayoutRenderOptions
-            {
-                Theme = layoutTheme,
-                ShowGrid = false,             // an export is artwork, not an editing surface
-                Overlay = null,               // no selection, no handles, no ghosts
-                TransparentBackground = true, // the destination document supplies the background
-                BaseDir = instanceBaseDir,
-            });
-        }
+            Theme = layoutTheme,
+            ShowGrid = false,             // an export is artwork, not an editing surface
+            Overlay = null,               // no selection, no handles, no ghosts
+            TransparentBackground = true, // the destination document supplies the background
+            BaseDir = instanceBaseDir,
+        };
+
+        if (layout is not null)
+            LayoutRenderer.Draw(canvas, layout, technology, vp, layoutOpts with { DeferRulers = true });
 
         WBondRenderer.Draw(canvas, design, vp, wireTheme, selection: null,
                            thickness: thickness, dbuPerMicron: dbuPerMicron);
+
+            // §9B.9 exports rulers on the presentation path, and the wires below are painted after
+            // this call — so without the deferral the annotation lands UNDER the wire it measures,
+            // exactly as it did on the interactive canvas. See LayoutRenderOptions.DeferRulers.
+        LayoutRenderer.DrawRulersOnTop(canvas, layout, vp, layoutOpts);
     }
 
     /// <summary>

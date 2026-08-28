@@ -252,4 +252,73 @@ public class LayoutRulerRenderingTests : System.IDisposable
         Assert.NotEqual(LayoutRenderTheme.Light.RulerTick, LayoutRenderTheme.Light.RulerAnnotationLine);
         Assert.NotEqual(LayoutRenderTheme.Light.RulerText, LayoutRenderTheme.Light.RulerAnnotationText);
     }
+
+    // ── Rulers stay on top of a HOST-DRAWN overlay (owner, 2026-08-27) ────────────────────────────
+
+    /// <summary>
+    /// The exact sequence <c>LayoutCanvas.DrawFrame</c> runs on a wirebond layout: the layout, then
+    /// the host's own overlay pass (wBond's wires), then — with <c>DeferRulers</c> — the rulers.
+    /// <paramref name="deferRulers"/> false is the pre-fix order, kept as the control so the test
+    /// measures a real difference rather than asserting that something was drawn.
+    /// </summary>
+    private static SKBitmap RenderWithOverlayBand(LayoutView view, bool deferRulers)
+    {
+        var vp = new LayoutViewport(-2_000, -20_000, 0.004, 200, 200);
+        using var surface = SKSurface.Create(new SKImageInfo((int)vp.Width, (int)vp.Height));
+
+        var opts = new LayoutRenderOptions
+        {
+            Theme = LayoutRenderTheme.Light, ShowGrid = false, Overlay = null, ShowRulers = true,
+        };
+        LayoutRenderer.Draw(surface.Canvas, view, Tech(new LayerKey(1, 0)), vp,
+                            deferRulers ? opts with { DeferRulers = true } : opts);
+
+        // Stand-in for the host overlay — an opaque band across the whole canvas, which is what a
+        // wire wide enough to cover the readout amounts to. Drawn in DEVICE space, exactly like the
+        // real overlay's own pass, after Draw has returned.
+        using var band = new SKPaint { Color = new SKColor(255, 0, 255), Style = SKPaintStyle.Fill };
+        surface.Canvas.DrawRect(SKRect.Create(0, 0, (float)vp.Width, (float)vp.Height), band);
+
+        if (deferRulers) LayoutRenderer.DrawRulersOnTop(surface.Canvas, view, vp, opts);
+
+        using var img = surface.Snapshot();
+        return SKBitmap.FromImage(img);
+    }
+
+    [Fact]
+    public void ARuler_PaintsAboveAHostDrawnOverlay_WhenTheHostDefersIt()
+    {
+        // §9B.1 says a ruler "always paints above every layer" — but the wBond overlay paints after
+        // LayoutRenderer.Draw has returned, so before DeferRulers the annotation ended up UNDER the
+        // wire it was measuring. Order is the property that has to hold.
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Um };
+        view.Rulers.Add(new RulerAnnotation
+        {
+            X1 = 0, Y1 = 0, X2 = 40_000, Y2 = 0, SizeMode = RulerSizeMode.Scaled, TextHeightDbu = 10_000,
+        });
+
+        var bandColor = new SKColor(255, 0, 255);
+
+        using var deferred = RenderWithOverlayBand(view, deferRulers: true);
+        using var buried   = RenderWithOverlayBand(view, deferRulers: false);
+
+        int visible = 0, hidden = 0;
+        for (int y = 0; y < deferred.Height; y++)
+            for (int x = 0; x < deferred.Width; x++)
+            {
+                if (deferred.GetPixel(x, y) != bandColor) visible++;
+                if (buried.GetPixel(x, y) != bandColor) hidden++;
+            }
+
+        // The control is the load-bearing half: without the deferral the band covers the ruler
+        // COMPLETELY, so anything at all surviving in the other render is the fix working.
+        Assert.Equal(0, hidden);
+        Assert.True(visible > 100, $"expected the deferred ruler to survive the overlay, saw {visible} px");
+    }
+
+    [Fact]
+    public void DeferRulers_IsOff_ByDefault_SoEveryExportAndThumbnailIsUnchanged()
+    {
+        Assert.False(LayoutRenderOptions.Default(LayoutRenderTheme.Light).DeferRulers);
+    }
 }

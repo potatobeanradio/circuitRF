@@ -204,6 +204,25 @@ public readonly struct LayoutRenderOptions
     /// </summary>
     public bool DeferSnapMarker { get; init; }
 
+    /// <summary>
+    /// Same deal as <see cref="DeferSnapMarker"/>, for the RULER annotations, and for exactly the same
+    /// reason (owner, 2026-08-27: rulers were rendering underneath the wBond wires). §9B.1's whole
+    /// point is that a ruler "always paints above every layer" — but a host that paints an OVERLAY
+    /// after <see cref="LayoutRenderer.Draw"/> returns paints it over everything that call produced,
+    /// rulers included, so on a wirebond layout the annotation ended up under the wires it was
+    /// measuring. When set, <c>Draw</c> skips its ruler pass and the host calls
+    /// <see cref="LayoutRenderer.DrawRulersOnTop"/> after the overlay instead.
+    ///
+    /// <para><b>On that path rulers land above the layout's own selection chrome too</b> (outlines,
+    /// handles, marquee), where ordinarily they paint below it. That is the honest cost of there
+    /// being only one seam: everything that must be above the overlay has to move past the chrome
+    /// with it. Content over thin dashed chrome is the right way round of the two.</para>
+    ///
+    /// <para>Defaults to false, so every export, thumbnail and one-shot test render is unchanged —
+    /// they paint nothing after the call, so there is nothing for a ruler to be under.</para>
+    /// </summary>
+    public bool DeferRulers { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true, ShowPCellPins = true };
 }
 
@@ -593,7 +612,9 @@ public static partial class LayoutRenderer
                 // top — but BEFORE the transient interaction overlay (selection outlines, handles,
                 // marquee, snap marker), which is chrome about the current gesture rather than
                 // content. Default-true and NOT gated on Overlay, so an export carries them.
-                if (opts.ShowRulers
+                // Unless the host has taken it on itself to draw them LAST, above whatever it paints
+                // after this call — see LayoutRenderOptions.DeferRulers.
+                if (!opts.DeferRulers && opts.ShowRulers
                     && (view.Rulers.Count > 0 || opts.Overlay?.RulerPreview is not null
                         || opts.Overlay?.RulerPastePreview is { Count: > 0 }))
                     DrawRulers(canvas, view.Rulers,

@@ -607,6 +607,16 @@ public sealed class LayoutCanvas : Control
                 // holding — including the layout's, which the overlay cannot reach.
                 if (_canvasOverlay.ConsumedPressWasEmptySpace)
                     _viewModel.DeselectAllCommand.Execute(null);
+                else
+                {
+                    // …and a press it DID hit arms the other half of a mixed selection, so a pad
+                    // selected beside a bond wire comes along with it. See
+                    // ILayoutCanvasOverlay.BeginCompanionMove — and note the gate: a press that
+                    // resolved a NEW wire selection means "just this wire", so the layout's own
+                    // selection stays put rather than being dragged by a click that never touched it.
+                    _viewModel.CompanionPressResolvedNewSelection = _canvasOverlay.LastPressResolvedNewSelection;
+                    _viewModel.BeginCompanionMove();
+                }
 
                 InvalidateVisual();
                 e.Handled = true;
@@ -615,6 +625,15 @@ public sealed class LayoutCanvas : Control
 
             _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom, SnapTolDbu(),
                                         GripLockTolDbu());
+
+            // The mirror of the branch above: the LAYOUT owns this press, so the overlay's own
+            // selection follows it — unless that press resolved a new one, in which case it means
+            // "just this" and a wire selected earlier must not come along.
+            if (_canvasOverlay is { } companionOverlay)
+            {
+                companionOverlay.CompanionPressResolvedNewSelection = _viewModel.LastPressResolvedNewSelection;
+                companionOverlay.BeginCompanionMove();
+            }
             InvalidateVisual();
         }
     }
@@ -1370,13 +1389,31 @@ public sealed class LayoutCanvas : Control
         if (_canvasOverlay?.OnPointerMoved(
                 (long)Math.Round(wx), (long)Math.Round(wy), HitTolDbu(), leftDown, e.KeyModifiers) == true)
         {
+            // The overlay is driving: push ITS delta into the layout editor so the layout's half of a
+            // mixed selection follows. One delta, from one snap decision — re-deriving it here is how
+            // the two halves end up a step apart.
+            if (_canvasOverlay.CompanionDragDelta is { } overlayDelta && _viewModel is { } companionVm)
+            {
+                companionVm.SetCompanionMoveDuplicate(_canvasOverlay.DuplicateDragArmed);
+                companionVm.CompanionMoveTo(overlayDelta.Dx, overlayDelta.Dy);
+            }
+
             PushOverlaySnapMarker();
+
+            // …and the pointer, or an Alt taken MID-drag on a wire arms the copy with nothing on
+            // screen saying so (owner, 2026-08-27). This branch returns before the UpdateCursor at
+            // the end of the method, so it has to ask for itself.
+            UpdateCursor();
             InvalidateVisual();
             return;
         }
 
         _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu(),
                                    GripLockTolDbu());
+
+        // …and the mirror: the LAYOUT is driving, so the overlay's half follows its delta.
+        if (_viewModel?.MoveDragDelta is { } layoutDelta)
+            _canvasOverlay?.CompanionMoveTo(layoutDelta.Dx, layoutDelta.Dy);
 
         // R-pch-12: the pointer shape is half of "you can see which gesture you are about to get", and
         // the view model has just recomputed which grip (if any) is under the cursor. Cheap — it only
@@ -1424,13 +1461,27 @@ public sealed class LayoutCanvas : Control
         // capture that outlives its gesture would swallow every later click on the panel beside it.
         if (ReferenceEquals(e.Pointer.Captured, this)) e.Pointer.Capture(null);
 
+        // ONE EDIT STAMP for the whole release, which is what makes a MIXED drag one Ctrl+Z (owner,
+        // 2026-08-27). The two halves of such a gesture land on two different undo histories — the
+        // wires' snapshots and the layout's command stack — and those cannot be merged; a shared
+        // EditSequence stamp is how LayoutEditorViewModel.UndoLast knows they are one edit.
+        //
+        // Opened unconditionally rather than only for a mixed drag: a release commits at most one
+        // gesture, so on every ordinary drag the group holds exactly one entry and costs nothing.
+        using var editGroup = CircuitRF.Ui.Commands.EditSequence.Group();
+
         if (_canvasOverlay?.OnPointerReleased((long)Math.Round(wx), (long)Math.Round(wy)) == true)
         {
+            _viewModel?.CommitCompanionMove();
             PushOverlaySnapMarker();   // the gesture is over, so this clears the glyph
             InvalidateVisual();
             return;
         }
 
+        // Both halves close, whichever one drove: the overlay's companion move is armed on every
+        // press it declined, and one left open would go on translating wires under the next gesture.
+        _canvasOverlay?.CommitCompanionMove();
+        _viewModel?.CommitCompanionMove();
         _viewModel?.OnPointerReleased(wx, wy, e.KeyModifiers);
         InvalidateVisual();
     }
@@ -1590,6 +1641,15 @@ public sealed class LayoutCanvas : Control
         // pointer — the ghost only appears once the drag has moved, and the decision is made before
         // that. Shown whenever Alt is held with something to copy, so it also announces the gesture
         // BEFORE the press, not only during the drag it arms.
+        // …and an OVERLAY gets the same say, so an Alt-drag that will copy a bond wire looks like one
+        // (owner, 2026-08-27). Asked first: when the overlay owns the gesture, the layout editor's own
+        // answer is about a selection this drag is not touching.
+        if (_canvasOverlay?.DuplicateDragArmed == true)
+        {
+            SetCursor(StandardCursorType.DragCopy);
+            return;
+        }
+
         if (_viewModel is { ActiveTool: LayoutEditorViewModel.Tool.Select } dupVm
             && (dupVm.DuplicateDragArmed || (_altHeld && dupVm.HasDuplicableSelection)))
         {
@@ -1667,12 +1727,22 @@ public sealed class LayoutCanvas : Control
 
         private LayoutRenderResult DrawFrame(SKCanvas canvas)
         {
-            var opts = _overlay is null ? _opts : _opts with { DeferSnapMarker = true };
+            var opts = _overlay is null
+                ? _opts
+                : _opts with { DeferSnapMarker = true, DeferRulers = true };
             var result = LayoutRenderer.Draw(canvas, _view, _tech, _vp, opts);
 
             // After the layout, inside the same lease — the overlay draws ON the layout (WB23), and
             // its own pass never reaches LayoutRenderer's caches.
             _overlay?.Draw(canvas, _vp, _opts.Theme);
+
+            // Then the rulers, above that overlay. §9B.1: a ruler "always paints above every layer",
+            // and on a wirebond layout the overlay's wires are painted after every one of them — so
+            // drawn in their ordinary place the annotation ends up UNDER the wire it is measuring
+            // (owner, 2026-08-27). Order is the property that has to hold. See
+            // LayoutRenderOptions.DeferRulers.
+            if (_overlay is not null)
+                LayoutRenderer.DrawRulersOnTop(canvas, _view, _vp, _opts);
 
             // …and the geometry-snap glyph goes on last of all, above that overlay, which is the only
             // place it can be seen at high zoom: an overlay's wires and vertex dots scale with zoom

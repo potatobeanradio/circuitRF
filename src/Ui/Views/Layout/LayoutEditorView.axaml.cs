@@ -1488,7 +1488,13 @@ public partial class LayoutEditorView : UserControl
         var previewOptions = new DxfExportOptions(
             _lastFlattenSplines, _lastPathAsOutline, _lastViewMode, LayoutCanvasCtrl.CurrentViewport, canvasAspect,
             AcadVersion: _lastAcadVersion);
-        var preview = DxfExport.Preview(plan, previewOptions);
+        // WB40: a wirebond CELL carries its wires in a sidecar beside the .clay, so a .clay opened in
+        // THIS editor can have them — and exporting it wrote the artwork and silently dropped every
+        // wire (owner, 2026-08-27: primitives present in QCAD, wires absent). Passed to the preview
+        // as well as to the write, or the fidelity dialog would report a different file from the one
+        // that lands. Null on an ordinary layout, which writes exactly what it always did.
+        var wires = vm.WireDesign;
+        var preview = DxfExport.Preview(plan, previewOptions, wires);
 
         var dialog = new DxfExportOptionsDialog(
             plan, preview, _lastFlattenSplines, _lastPathAsOutline, _lastViewMode, _lastAcadVersion);
@@ -1517,11 +1523,12 @@ public partial class LayoutEditorView : UserControl
             var options = new DxfExportOptions(
                 dialog.FlattenSplines, dialog.PathAsOutlinePolygon, dialog.ViewMode,
                 LayoutCanvasCtrl.CurrentViewport, canvasAspect, AcadVersion: dialog.AcadVersion);
-            var summary = DxfExport.Write(file.Path.LocalPath, plan, options);
+            var summary = DxfExport.Write(file.Path.LocalPath, plan, options, wires);
             vm.ReportMessage(
                 $"Exported DXF · {summary.CurvedShapesWritten} curved shape(s), " +
                 $"{summary.HolesAsHatch} hole(s) as HATCH, {summary.BitmapsSkipped} bitmap(s) skipped, " +
                 $"{summary.LabelRecordsWritten} label(s) written, " +
+                $"{summary.WiresWritten} bond wire(s), " +
                 $"{summary.RulersWritten} ruler(s) as DIMENSION.",
                 file.Path.LocalPath);
 

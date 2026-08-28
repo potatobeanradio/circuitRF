@@ -1521,10 +1521,14 @@ public sealed partial class WBondViewModel : ObservableObject
     public void BeginGesture()
     {
         if (_inGesture) return;
-        PushUndo();
+        _gesturePushedUndo = PushUndo();
         _inGesture = true;
         _fillHeld = false;   // a new gesture starts from a matrix that is in step
     }
+
+    /// <summary>Whether <see cref="BeginGesture"/> actually recorded an entry — so
+    /// <see cref="EndGesture"/> knows there is a stamp of its own to re-date.</summary>
+    private bool _gesturePushedUndo;
 
     /// <summary>
     /// Closes a gesture. Safe to call when none is open.
@@ -1536,6 +1540,19 @@ public sealed partial class WBondViewModel : ObservableObject
     public void EndGesture()
     {
         _inGesture = false;
+
+        // RE-DATE the entry to when the gesture FINISHED, not when it started (owner, 2026-08-27).
+        //
+        // "What did I do last" is the only question the stamp exists to answer, and for a drag that
+        // ran for two seconds the honest answer is when the hand let go. It also makes a MIXED drag
+        // one Ctrl+Z: the layout half stamps at its commit, so a stamp taken at the press could never
+        // match it however the two were grouped — see EditSequence.Group.
+        if (_gesturePushedUndo && _undoStamps.Count > 0)
+        {
+            _undoStamps.Pop();
+            _undoStamps.Push(CircuitRF.Ui.Commands.EditSequence.Next());
+        }
+        _gesturePushedUndo = false;
 
         if (_fillHeld)
         {

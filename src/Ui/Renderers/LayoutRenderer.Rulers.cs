@@ -380,6 +380,53 @@ public static partial class LayoutRenderer
         return false;
     }
 
+    /// <summary>
+    /// Draws every ruler ON TOP of a canvas that is otherwise finished — the second half of
+    /// <see cref="LayoutRenderOptions.DeferRulers"/>, which see for why this exists at all.
+    ///
+    /// <para>It rebuilds the same path-space transform <see cref="Draw"/> used, from the same viewport
+    /// and the same view, rather than being handed one — exactly as
+    /// <see cref="DrawSnapMarkerOnTop"/> does, and for the same reason: a transform passed across the
+    /// seam is a second copy of the rule that decides where anything on this canvas lands.</para>
+    /// </summary>
+    public static void DrawRulersOnTop(SKCanvas canvas, LayoutView? view, LayoutViewport vp,
+                                       LayoutRenderOptions opts)
+    {
+        if (canvas is null || view is null || !opts.ShowRulers) return;
+        if (view.Rulers.Count == 0 && opts.Overlay?.RulerPreview is null
+            && opts.Overlay?.RulerPastePreview is not { Count: > 0 }) return;
+
+        double centerX = vp.PanX + vp.Width  / (2.0 * vp.Zoom);
+        double centerY = vp.PanY + vp.Height / (2.0 * vp.Zoom);
+        var (originX, originY) = ComputeOrigin(centerX, centerY, vp.Width / vp.Zoom, vp.Height / vp.Zoom);
+
+        double dbuToUm = 1.0 / Math.Max(1, view.DbuPerMicron);
+        double scaleUm = vp.Zoom / dbuToUm;
+
+        canvas.Save();
+        try
+        {
+            canvas.ClipRect(SKRect.Create(0, 0, (float)vp.Width, (float)vp.Height));
+            canvas.Concat(SKMatrix.CreateScaleTranslation(
+                (float)scaleUm, (float)scaleUm,
+                (float)((originX - vp.PanX) * vp.Zoom),
+                (float)(vp.Height - (originY - vp.PanY) * vp.Zoom)));
+
+            DrawRulers(canvas, view.Rulers,
+                       opts.Overlay?.SelectedRulerIndices ?? [],
+                       opts.Overlay?.RulerDragOverrides,
+                       opts.Overlay?.RulerPreview,
+                       opts.Overlay?.RulerPastePreview,
+                       opts.Overlay?.ShowRulerEndpointHandles == true,
+                       view.DisplayUnit, view.DbuPerMicron, opts.Theme,
+                       new PathSpace(originX, originY, dbuToUm), scaleUm);
+        }
+        finally
+        {
+            canvas.Restore();
+        }
+    }
+
     private static void DrawOneRuler(
         SKCanvas canvas, RulerAnnotation ruler, LayoutUnit unit, int dbuPerMicron,
         LayoutRenderTheme theme, PathSpace ps, double scaleUm, double devicePxPerDbu,

@@ -407,8 +407,32 @@ public sealed partial class LayoutEditorViewModel
     internal bool RedoTakesWires => EditSequence.RedoTakesFirst(
         WireCanRedo, WireEditor?.TopRedoStamp ?? 0, UndoRedo.CanRedo, UndoRedo.TopRedoStamp);
 
-    /// <summary>Undoes whichever of this session's two histories holds the more recent edit.</summary>
+    /// <summary>
+    /// Undoes whichever of this session's two histories holds the more recent edit — <b>and every
+    /// other entry recorded under the SAME stamp</b>.
+    ///
+    /// <para>Owner, 2026-08-27: a drag of wires AND primitives together took two undos. It records
+    /// one entry on each history, and there is no stack to merge them onto (see this file's own
+    /// header); what makes it one gesture is that both were stamped inside an
+    /// <see cref="EditSequence.Group"/>, so draining the stamp is exactly "undo that gesture".</para>
+    ///
+    /// <para>A stamp is otherwise unique per edit — the counter is monotonic outside a group — so this
+    /// loop takes exactly one entry in every ordinary case, and cannot swallow an unrelated edit.</para>
+    /// </summary>
     public void UndoLast()
+    {
+        if (!CanUndoLast) return;
+
+        long stamp = UndoTakesWires ? WireEditor!.TopUndoStamp : UndoRedo.TopUndoStamp;
+        do
+        {
+            UndoOne();
+        }
+        while (CanUndoLast && stamp != 0
+               && (UndoTakesWires ? WireEditor!.TopUndoStamp : UndoRedo.TopUndoStamp) == stamp);
+    }
+
+    private void UndoOne()
     {
         if (UndoTakesWires)
         {
@@ -420,8 +444,22 @@ public sealed partial class LayoutEditorViewModel
         UndoRedo.Undo();
     }
 
-    /// <summary>Redoes the oldest undone entry across both histories — the one the last undo produced.</summary>
+    /// <summary>Redoes the oldest undone entry across both histories — the one the last undo produced
+    /// — and every other entry sharing its stamp, so a grouped gesture comes back whole.</summary>
     public void RedoLast()
+    {
+        if (!CanRedoLast) return;
+
+        long stamp = RedoTakesWires ? WireEditor!.TopRedoStamp : UndoRedo.TopRedoStamp;
+        do
+        {
+            RedoOne();
+        }
+        while (CanRedoLast && stamp != 0
+               && (RedoTakesWires ? WireEditor!.TopRedoStamp : UndoRedo.TopRedoStamp) == stamp);
+    }
+
+    private void RedoOne()
     {
         if (RedoTakesWires)
         {

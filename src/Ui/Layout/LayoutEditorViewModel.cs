@@ -1139,6 +1139,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (picks.Count == 0)
         {
             _cycleCache.Clear();
+            LastPressResolvedNewSelection = true;   // nothing picked up: see the property's own note
             if (!shift && !ctrl) SetSelection([]); // clearOtherKind:true (default) clears the other two
             BeginMarquee(px, py, shift, ctrl);
             return;
@@ -1180,8 +1181,27 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     /// <summary>Routes one picked entry to its own channel's click-selection rule — each of the three
     /// already knows how to handle Shift/Ctrl and how to clear the other two.</summary>
+    /// <summary>
+    /// Whether the most recent select-press RESOLVED A NEW selection rather than picking up the one
+    /// that was already there — read by the host to decide whether a companion move is warranted.
+    ///
+    /// <para>Owner, 2026-08-27: a ruler dragged over a wire point took the point with it. The two
+    /// selections are deliberately independent (wbond.md §6.3 — "select the pads and the wires landing
+    /// on them" is one gesture), so a wire selected earlier is still live when a plain click lands on
+    /// a ruler. Before the companion move that was invisible; after it, one unmodified click moved
+    /// something the user had not clicked.</para>
+    ///
+    /// <para><b>The rule is the plain-click convention every editor has</b>, stated across both halves:
+    /// a press that newly selects something means "just this", and only a press that picks up an
+    /// EXISTING selection is a statement that the whole selection — both halves of it — travels
+    /// together. Nothing is cleared, so §6.3's contract is untouched.</para>
+    /// </summary>
+    public bool LastPressResolvedNewSelection { get; private set; }
+
     private void ApplyPickSelection(LayoutPick pick, bool shift, bool ctrl)
     {
+        LastPressResolvedNewSelection = !shift && !ctrl && !PickIsAlreadySelected(pick);
+
         switch (pick.Kind)
         {
             case LayoutPickKind.Ruler:    ApplyRulerClickSelection(pick.Index, shift, ctrl); break;
@@ -1189,6 +1209,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             default:                      ApplyClickSelection(pick.Index, shift, ctrl); break;
         }
     }
+
+    private bool PickIsAlreadySelected(LayoutPick pick) => pick.Kind switch
+    {
+        LayoutPickKind.Ruler    => _selectedRulerIndices.Contains(pick.Index),
+        LayoutPickKind.Instance => _selectedInstanceIndices.Contains(pick.Index),
+        _                       => _selectedIndices.Contains(pick.Index),
+    };
 
     /// <summary>Tests Ctrl/Cmd+click-insert FIRST, then handles (R-L1d-2 priority order), then the
     /// plain-click edge-drag fallback, for the single selected shape. Returns true if the press was
@@ -1707,6 +1734,104 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _moveAnchorX = px; _moveAnchorY = py;
         _moveLiveDx = 0; _moveLiveDy = 0;
         _moveHasMoved = false;
+    }
+
+    // ── The COMPANION move (owner, 2026-08-27) ────────────────────────────────────────────────────
+    //
+    // A layout view can host an OVERLAY that owns a selection of its own — wBond's wires. Select a
+    // pad and a bond wire together and drag, and only one of them moved: whichever half owned the
+    // press consumed it and the other half never heard about the gesture.
+    //
+    // The canvas is the one object that holds both, so it mediates, exactly as it already does for
+    // the companion MARQUEE: whichever half owns the press drives, and the canvas pushes that half's
+    // own delta into the other. ONE delta, from ONE snap decision — the two halves of a selection
+    // drifting apart by a snap step is the failure this shape is chosen to make impossible.
+    //
+    // These three are the receiving end. They deliberately reuse the ordinary move drag's state and
+    // its commit, so a companion move IS a move: the same preview, the same snap-free delta, the same
+    // one-undo-entry CompositeCommand across all three channels.
+
+    /// <summary>True while a move drag is live and has something to report — the delta the OVERLAY
+    /// must follow when the layout editor is the half that owns the press.</summary>
+    public (long Dx, long Dy)? MoveDragDelta =>
+        _selectDragKind == SelectDragKind.Move && _moveHasMoved ? (_moveLiveDx, _moveLiveDy) : null;
+
+    /// <summary>Whether this drag will COPY rather than move — so a companion follows it as a copy.</summary>
+    public bool MoveDragIsDuplicate => _selectDragKind == SelectDragKind.Move && DuplicateDragArmed;
+
+    /// <summary>
+    /// Arms a move of the layout's own selection, driven by a gesture the OVERLAY owns. Does nothing
+    /// when the layout has nothing selected, which is the ordinary case and must stay free.
+    /// </summary>
+    public void BeginCompanionMove()
+    {
+        if (_selectDragKind != SelectDragKind.None) return;   // the layout is already driving
+        if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0
+            && _selectedRulerIndices.Count == 0) return;
+
+        // A press that newly selected something in the OTHER half means "just that" — this half's
+        // selection is stale and must not ride along. See LastPressResolvedNewSelection.
+        if (CompanionPressResolvedNewSelection) return;
+
+        _selectDragKind = SelectDragKind.Move;
+        _moveAnchorX = 0; _moveAnchorY = 0;
+        _moveLiveDx = 0; _moveLiveDy = 0;
+        _moveHasMoved = false;
+        _companionMove = true;
+    }
+
+    /// <summary>Set by the host before <see cref="BeginCompanionMove"/>: whether the press that is
+    /// arming this companion resolved a NEW selection in the half that owns it.</summary>
+    public bool CompanionPressResolvedNewSelection { get; set; }
+
+    /// <summary>True when the live move drag was armed by the overlay rather than by a press on the
+    /// layout — read so the pointer handlers do not also recompute the delta from a cursor that is
+    /// driving the other half.</summary>
+    private bool _companionMove;
+
+    /// <summary>The overlay's own delta, in DBU, absolute from ITS press. Applied verbatim: it is
+    /// already the snapped answer that half committed to, and re-snapping it here is exactly how the
+    /// two halves of one selection would end up a step apart.</summary>
+    public void CompanionMoveTo(long dxDbu, long dyDbu)
+    {
+        if (!_companionMove) return;
+        if (dxDbu == _moveLiveDx && dyDbu == _moveLiveDy) return;
+
+        _moveLiveDx = dxDbu; _moveLiveDy = dyDbu;
+        _moveHasMoved = true;
+        RebuildOverlay();
+    }
+
+    /// <summary>Arms or disarms the copy on a companion move, following the overlay's own Alt.</summary>
+    public void SetCompanionMoveDuplicate(bool duplicating)
+    {
+        if (_companionMove) SetDuplicateDragArmed(duplicating);
+    }
+
+    /// <summary>Commits the companion move — through the SAME <see cref="CommitMoveDrag"/> /
+    /// <see cref="CommitDuplicateDrag"/> the pointer path uses, so it is one undo entry covering
+    /// every channel.</summary>
+    public void CommitCompanionMove()
+    {
+        if (!_companionMove) return;
+        _companionMove = false;
+        _selectDragKind = SelectDragKind.None;
+
+        if (DuplicateDragArmed) CommitDuplicateDrag();
+        else CommitMoveDrag();
+
+        RebuildOverlay();
+    }
+
+    /// <summary>Abandons it with nothing committed — the overlay's gesture was cancelled.</summary>
+    public void CancelCompanionMove()
+    {
+        if (!_companionMove) return;
+        _companionMove = false;
+        _selectDragKind = SelectDragKind.None;
+        _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
+        SetDuplicateDragArmed(false);
+        RebuildOverlay();
     }
 
     private void BeginMarquee(long px, long py, bool shift, bool ctrl)
