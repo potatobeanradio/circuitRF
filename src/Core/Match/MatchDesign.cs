@@ -32,6 +32,28 @@ public enum TerminationTopology
     Parallel,
 }
 
+/// <summary>
+/// The network form (match.md §16). <see cref="Bandpass"/> is §4's synthesis; the other two are
+/// ladders of SINGLE elements matched between F1 and F2, with the impedance ratio pinned by the
+/// ladder's own transparency at DC (lowpass) or at infinity (highpass).
+/// </summary>
+/// <remarks>
+/// <b>Additive, and default <see cref="Bandpass"/>.</b> A payload written before rev 2 carries no
+/// <c>Form</c> at all and decodes to the form it was synthesised in, so <c>Version</c> stays 1 and an
+/// old design rebuilds to the identical ladder.
+/// </remarks>
+public enum NetworkForm
+{
+    /// <summary>match.md §4: two-element arms resonant at band centre. The default.</summary>
+    Bandpass,
+
+    /// <summary>Series L in the through path, shunt C to ground. Transparent at DC.</summary>
+    Lowpass,
+
+    /// <summary>Series C in the through path, shunt L to ground. Transparent at infinity.</summary>
+    Highpass,
+}
+
 /// <summary>The prototype family the synthesis draws from (match.md §4.3, §6).</summary>
 public enum ResponseShape
 {
@@ -183,6 +205,9 @@ public sealed class MatchDesign
     /// <summary>Which prototype family.</summary>
     public ResponseShape Response { get; set; } = ResponseShape.ChebyshevFano;
 
+    /// <summary>Which network form — match.md §16. Additive; absent in a pre-rev-2 payload.</summary>
+    public NetworkForm Form { get; set; } = NetworkForm.Bandpass;
+
     /// <summary>Equal-ripple level, dB — the real-to-real prototype only (match.md §4.3).</summary>
     public double RippleDb { get; set; } = 0.1;
 
@@ -249,6 +274,7 @@ public sealed class MatchDesign
         F2 = F2,
         Order = Order,
         Response = Response,
+        Form = Form,
         RippleDb = RippleDb,
         Term1 = Term1,
         Term2 = Term2,

@@ -130,8 +130,9 @@ ordinary circuitRF value-and-unit pair, so [unit entry](units.html) works exactl
 | **R**, **X kind**, **Value** | The termination. `X = –` means purely resistive. |
 | **Conjugate** | Targets Z* instead of Z — which flips the reactance sign, and so turns a measured parallel R‖C into a parallel R‖L target. |
 | **Band f1, f2** | The passband. Everything is computed at ω₀ = √(ω₁ω₂) with fractional bandwidth *w*. |
-| **Order** | Number of elements, 2–6, restricted to the parities the terminations permit. |
-| **Response** | Chebyshev (Fano-optimum), Chebyshev (fixed ripple), Butterworth, or Bessel where feasible. |
+| **Order** | Number of in-band match points, 2–6, restricted to the parities the terminations permit. The element count is **2n in every form**. |
+| **Response** | Chebyshev — single-match (optimum), Chebyshev — double-match (exact), Butterworth, or Bessel where feasible. |
+| **Form** | Bandpass, lowpass or highpass. Not a control — you choose it by applying a solution, and every solution card names its form. |
 | **Q-adjust** | Offers solutions synthesised at a raised Q, which trades a little bandwidth for element values that may be easier to build. |
 | **Allow negative components** | Widens the Norton slider ranges past the positivity threshold. Off by default, and it is off for a reason — see below. |
 
@@ -228,8 +229,36 @@ click through candidates and watch the ladder and the response change live. Each
 acts on, the Q-adjust value when non-zero, and the response type.
 
 **Ordering is by transform count, then by position, then by Q-adjust** — the simplest realizable
-solution first. The response is the same for every one of them; what differs is the element values you
-would have to build.
+solution first. Within one form, order and family the response is the same for every row; what differs
+is the element values you would have to build.
+
+### Bandpass, lowpass and highpass {#forms}
+
+The list covers **three network forms**, and the filter's first group turns each on and off. A bandpass
+network is two-element arms resonant at band centre. A **lowpass** network is series inductors in the
+through path and shunt capacitors to ground; a **highpass** network is the other way round. All three
+are matched between f1 and f2, and all three use 2n elements at order n — the lowpass form is not the
+cheaper one.
+
+What the lowpass and highpass forms buy is **tame element values at wide bandwidth** — there are no
+resonators, so the L's and C's stay within a factor of a few of each other instead of spreading over
+decades — plus a DC path (lowpass) or a DC block (highpass), which is what a bias network wants. What
+they cost is **return loss that depends on the impedance ratio**: the ladder is transparent at DC, so
+|Γ(0)| = (r−1)/(r+1) is fixed by the two resistances and comes out of the same budget as the in-band
+match. At a 2:1 band, four elements, that is −22.2 dB into a 2:1 ratio and −10.5 dB into a 10:1 one,
+against a bandpass order-2 network's −16.4 dB at any ratio. Which is better depends on your numbers, so
+the panel lists all three and you read the return loss off the cards.
+
+Two consequences worth knowing before you go looking for them:
+
+- **A lowpass or highpass network has no Norton transforms.** Every like-kind element in it sits in the
+  same orientation, so there is no pair to transform; the ratio is already on target and the transform
+  rack says so instead of showing an empty list.
+- **Each form absorbs half of the termination kinds, and the impedance ratio decides which end takes
+  which.** A lowpass ladder puts its series inductor against the *lower*-impedance port and its shunt
+  capacitor against the *higher*-impedance one. So a shunt capacitance on the high side of a step-down
+  absorbs; the same capacitance on the low side of a step-up does not, and the refusal says so and
+  points you at bandpass form.
 
 ## Worked example: a two-stage FET interstage match {#worked}
 

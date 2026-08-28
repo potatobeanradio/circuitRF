@@ -31,6 +31,30 @@ public sealed partial class MatchDesignerViewModel
     /// <summary>Posts one refusal from a row's inline editor. Empty clears it.</summary>
     internal void SetTransformNote(string note) => TransformNote = note ?? "";
 
+    /// <summary>
+    /// True when the rack's controls mean anything — i.e. the design is in bandpass form.
+    /// </summary>
+    /// <remarks>
+    /// A lowpass or highpass ladder is single elements, so every like-kind pair in it shares an
+    /// orientation and <c>NortonTransform.Discover</c> finds nothing (match.md §16.5). Nothing is
+    /// hidden by this that could otherwise be used: <c>+ add</c> would open an empty menu,
+    /// <c>− remove</c> has nothing to remove, and the link toggle has nothing to link.
+    /// </remarks>
+    public bool TransformRackApplies => _design.Form == NetworkForm.Bandpass;
+
+    /// <summary>
+    /// The one line the rack shows instead of an empty list in lowpass and highpass form.
+    /// </summary>
+    /// <remarks>
+    /// <b>It must not read as a fault</b> (match.md §16.5). The rack's own "no transformable pair"
+    /// refusal is about a bandpass ladder that came out without one — a thing that stops the design
+    /// completing. Here there are no pairs BY CONSTRUCTION and the design is finished anyway, because
+    /// the DC pin already put the far resistance on its target. Same empty list, opposite meaning.
+    /// </remarks>
+    public string TransformRackNote => TransformRackApplies
+        ? ""
+        : "Lowpass and highpass networks have no Norton pairs: every value is the prototype's.";
+
     /// <summary>Moving one N re-solves the unlocked others so <c>Π N²</c> stays on target.</summary>
     public bool LinkTransforms
     {
@@ -329,5 +353,7 @@ public sealed partial class MatchDesignerViewModel
         foreach (var row in Transforms) row.Refresh();
 
         OnPropertyChanged(nameof(CanRemoveTransform));
+        OnPropertyChanged(nameof(TransformRackApplies));
+        OnPropertyChanged(nameof(TransformRackNote));
     }
 }

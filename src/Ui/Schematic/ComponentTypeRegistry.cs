@@ -295,7 +295,7 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Matching,
             SearchTerms: ["impedance matching", "filter", "filter design", "transform", "Chebyshev",
                           "Butterworth", "Bessel", "match", "matching", "interstage", "Fano", "Norton",
-                          "absorb", "Cgs", "Cds", "Ropt", "bandpass"],
+                          "absorb", "Cgs", "Cds", "Ropt", "bandpass", "lowpass", "highpass"],
             IsCommon: true),
         // Tuner: general programmable RF termination (loadpull.md §1). Single DUT-facing pin;
         // the reference net is hard-coded ground at extraction. Appears under Terminals + Sources.
@@ -867,7 +867,7 @@ public static class ComponentTypeRegistry
             //
             // The default payload is a REAL design (1.8–2.2 GHz, order 4, 50 Ω to 10 Ω,
             // Chebyshev-Fano) and not a blank: a freshly dropped Match must simulate immediately. The
-            // six ECHO parameters below MUST agree with MatchEmbedding.DefaultDesign — they are what
+            // seven ECHO parameters below MUST agree with MatchEmbedding.DefaultDesign — they are what
             // a reader sees on the page before the Designer has ever rewritten them, and a set that
             // disagrees with the payload describes a component that does not exist. Same rule wBond
             // follows in shipping a default wire rather than an empty array.
@@ -877,6 +877,7 @@ public static class ComponentTypeRegistry
                         new("F2",       "2.2",           "GHz", true,  UnitDimension.Frequency),
                         new("Order",    "4",             "",    true,  UnitDimension.None),
                         new("Response", "ChebyshevFano", "",    false, UnitDimension.None),
+                        new("Form",     "Bandpass",      "",    false, UnitDimension.None),
                         new("R1",       "50",            "Ω",   false, UnitDimension.Resistance),
                         new("R2",       "10",            "Ω",   false, UnitDimension.Resistance)];
 

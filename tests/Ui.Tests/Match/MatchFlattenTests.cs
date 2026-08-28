@@ -183,6 +183,48 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
+    /// <b>The same equivalence in lowpass and highpass form</b> (match.md §16).
+    /// </summary>
+    /// <remarks>
+    /// The arms are SINGLE elements here, so the flatten writer's "a series L+C arm is two
+    /// components" placement rule has half as much to place and the ladder alternates on every
+    /// position rather than every arm. Nothing in the writer, the stamp or the extraction was changed
+    /// for it; this is the test that says so.
+    /// </remarks>
+    [Theory]
+    [InlineData(NetworkForm.Lowpass)]
+    [InlineData(NetworkForm.Highpass)]
+    public void AMatchInEitherNewForm_AndItsFlattenedCell_AlsoAgree(NetworkForm form)
+    {
+        // Mixed the way each form absorbs: lowpass takes the shunt C at the HIGH-impedance end and
+        // the series L at the low one; highpass takes their duals (match.md §16.4, as corrected —
+        // the impedance ratio decides which end takes which).
+        var design = new MatchDesign
+        {
+            F1 = 1.8e9, F2 = 2.2e9, Order = 4, Form = form,
+            Response = ResponseShape.ChebyshevFano,
+            Term1 = form == NetworkForm.Lowpass
+                ? new Termination(50.0, ReactanceKind.C, TerminationTopology.Parallel, 0.5e-12)
+                : new Termination(50.0, ReactanceKind.L, TerminationTopology.Parallel, 15e-9),
+            Term2 = form == NetworkForm.Lowpass
+                ? new Termination(25.0, ReactanceKind.L, TerminationTopology.Series, 0.1e-9)
+                : new Termination(25.0, ReactanceKind.C, TerminationTopology.Series, 80e-12),
+        };
+
+        var (vm, match) = Workspace(design);
+        AddTestBenchAround(vm.EditModel);
+
+        var before = Sweep(vm.EditModel, Band);
+        var run = MatchFlattenService.Run(vm, match, _root, "MN1_match", replaceInPlace: true);
+        Assert.True(run.Ok, run.Message);
+        var after = Sweep(vm.EditModel, Band);
+
+        double worst = WorstDifference(before, after);
+        output.WriteLine($"{form}: worst |ΔS| over {Band.Length} frequencies: {worst:E3}");
+        Assert.True(worst < 1e-12, $"the component and the flattened cell differ by {worst:E3}");
+    }
+
+    /// <summary>
     /// <b>The terminations are disabled</b>: the netlist ignores them, and enabling both Terms and
     /// running the CELL ALONE reproduces the Designer's own response.
     /// </summary>
@@ -481,7 +523,8 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
 
         Assert.Contains("3.3 – 5 GHz", text, StringComparison.Ordinal);
         Assert.Contains("order 4", text, StringComparison.Ordinal);
-        Assert.Contains("Fano", text, StringComparison.Ordinal);
+        Assert.Contains("single-match", text, StringComparison.Ordinal);   // match.md §6.9
+        Assert.Contains("bandpass", text, StringComparison.Ordinal);       // match.md §16.7
         Assert.Contains("200 Ω parallel", text, StringComparison.Ordinal);
         Assert.Contains("1.25 Ω series", text, StringComparison.Ordinal);
         Assert.Contains("return loss", text, StringComparison.Ordinal);

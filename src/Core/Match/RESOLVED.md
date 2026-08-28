@@ -549,3 +549,169 @@ changed.
 one instance to two callers would let one caller's edit appear in the other's result. Every in-repo
 caller happens to treat both as read-only today, and that is not something the cache gets to depend
 on.
+
+
+## MN-LP — lowpass and highpass form (2026-08-28)
+
+match.md §16, §6.9 and brief `brief-match-lowpass-highpass-form.md`. Everything below is a place where
+the design note and the implementation disagree, and the implementation is what was measured.
+
+### The orientation is decided by the impedance RATIO, not by the analysis end's topology
+
+**§16.3 and brief §3.3 both say the ladder starts shunt-first for a parallel analysis end and
+series-first for a series one, "exactly as today", and that a required orientation which does not
+extract is a refusal. There is no such choice to make.**
+
+The family depends on the terminations only through `Γ₀²`, which is invariant under `r ↔ 1/r`, so one
+extraction serves both — and the terminating value it produces is `max(r, 1/r)` in **every** cell
+measured (5 orders × 6 bandwidths × 6 ratios × 2 families, 360 cells, exact to 1e-13). Reading that
+g-vector as a series-first ladder puts `R_far = g_last · R_ana`; reading it as its dual, shunt-first,
+puts `R_far = R_ana / g_last`. Exactly one lands on the requested resistance.
+
+Said physically, which is how to remember it: **the low-impedance port sees a series inductor and the
+high-impedance port sees a shunt capacitor** (lowpass; series C and shunt L for highpass). That is the
+L-match rule, and every order inherits it.
+
+**The consequence is a constraint on absorption that §16.4 does not state.** Its item 1 — a lowpass
+ladder absorbs `R ‖ C` and `R + L` — is true, but *which end* takes which is fixed by the ratio. A
+shunt capacitance on the LOW-impedance side of a step-up is absorbable by neither lowpass nor highpass
+form, and its refusal has to blame the ratio rather than the kind, because "use highpass form" is
+wrong advice there. `MatchFormSynthesis.CheckAbsorbable` writes two different sentences for the two
+cases; `AnAbsorbableKindOnTheWrongEnd_IsRefusedForTheRatio_NotForTheKind` holds them apart.
+
+A corollary worth knowing before hunting for a bug in the search: **a pair with a reactance at each end
+can only ever list ONE of lowpass and highpass**, because the two forms want dual kinds. Only a purely
+resistive pair lists all three forms.
+
+### §3.7's physical golden values do not describe a 50 Ω far end
+
+The normalised g-vector is exact and reproduces to 1e-9 (`2.485340, 0.674662, 6.761736, 0.247821,
+10.000000` at a = 0.5, n = 2, r = 10, K = 1e-6). The physical line beneath it —
+`C1 = 15.8222 pF, L1 = 107.376 pH, C2 = 43.0466 pF, L2 = 39.4420 pH` for *"5 Ω (analysis, parallel
+side) → 50 Ω"* — is those g's denormalised at R_ana = 5 Ω and read **shunt-first**, which by the
+paragraph above is the r = 0.1 network: 5 Ω down to **0.5 Ω**. Simulated as printed into 50 Ω it is a
+**−0.10 dB** match, not the −10.511 dB the same block quotes. Series-first at R_ana = 5 Ω into 50 Ω,
+and shunt-first at R_ana = 50 Ω into 5 Ω, both give −10.511 dB exactly.
+
+Goldens B, C and D are all self-consistent as the 5 → 0.5 Ω problem (`g₁_actual = ω_c·R·C` uses
+R = 5 Ω throughout), which is how the slip was located rather than guessed at. **Only the "→ 50 Ω"
+annotation is wrong**; every number in §16.2's table, and Golden B's `K = 0.086588` with its −8.010 dB,
+reproduce to the digits printed.
+
+### The polynomial route cannot solve this family past order 4 — and the fix is two changes, not one
+
+§16.3 says §6.2's spectral factorisation and Cauer extraction "apply unchanged". They do in principle
+and do not in double precision: the polynomials are degree **4n in s** (24 at order 6) with
+coefficients spanning many decades. Following `MatchPrototypes` literally — build the polynomial,
+root-find it, `Extract` — **fails 144 of the 360-cell sweep, including every order-6 cell at every K.**
+`MatchFormPrototype` takes it to **zero** with two independent changes; either alone is not enough:
+
+1. **The roots are written down, not searched for.** Both polynomials are `c + ε²Φ`, so their roots
+   solve `Φ(x) = −c/ε²` and map through `x → u → s` by exact arithmetic. One arccosine (Chebyshev) or
+   one root of unity (Butterworth). No degree-4n polynomial is ever formed. Take the arccosine in the
+   `π/2 − j·asinh(y)` form — its argument is `+jy`, the branch where `−j log(z + j√(1−z²))` has no
+   cancellation; the other sign of y is the branch where it does.
+2. **The continued fraction's degree drop is STRUCTURAL.** `MatchPrototypes.Extract` subtracts `g_k s`
+   and then asks a tolerance which leading coefficients cancelled. The top **two** always do,
+   identically — but at order 6 the second survives at ~1e-4 of its neighbours after twelve steps of
+   cancellation, the length test fails, and the whole extraction returns null. Dropping both because
+   they are known to be zero removes the question. **The last removal is the exception**: the remainder
+   is then the terminating resistance itself, so only one comes off, which is what the
+   `max(1, b.Length - 1)` is for. Getting that wrong costs the terminating ratio and nothing else
+   visible — it just returns null.
+
+None of this touched `MatchPrototypes`; the bandpass route is unchanged and still passes its own
+cross-checks.
+
+### K's floor is a RETURN-LOSS floor, and 1e-6 is too high
+
+§16.9 is right that K = 0 is a trap (double jω-axis roots make "the left half" undefined and the
+tie-break takes both copies of the lowest pairs) and right that the difference is "below 0.01 dB" — but
+only above the floor it sets. **K is the in-band return-loss floor as well as a numerical guard**: the
+worst `|Γ|²` is `(K + ε²)/(1 + ε²)`, so it caps the response at `10 log10 K` whatever the family could
+otherwise reach. At 1e-6 that is −60 dB, which
+
+- costs **0.12 dB** on §16.2's own −44.3 dB cell — twice the 0.05 dB the acceptance test allows, and
+- puts the from-DC reduction **2.4e-3** off the textbook 0.1 dB table, against that test's 1e-5.
+
+The error scales as √K and nothing degrades on the way down: every floor from 1e-6 to **1e-14**
+extracts all 360 cells with the terminating ratio exact to 1e-13; only K = 0 fails. `KFloor = 1e-12` is
+taken — the from-DC reduction reaches 2.4e-6 and the g-values are converged to five significant
+figures. match.md's Golden A was computed at 1e-6 and its **Golden E at 1e-9** (its numbers are the
+1e-9 values exactly, not the 1e-6 ones), which is how the inconsistency surfaced; both are asserted at
+their own K rather than against the constant.
+
+### K is not monotone in the near-end element
+
+§16.4 item 3 calls this "a 1-D monotone problem" and both the brief and the design note prescribe a
+bisection. The far element does fall monotonically. **The near element rises and then falls**, peaking
+near `K = 0.95 Γ₀²` — measured, a = 0.5, n = 2, r = 10: g₁ goes 2.485 at the floor → **11.00 at
+K = 0.64** → 4.35 at K = 0.66942 (Γ₀² = 0.669421). A bisection written for a monotone g₁ finds the
+wrong end of the feasible interval or misses it, and it also under-reports the family's largest g₁ in
+the refusal — a log grid samples the top of the range twice and gave 7.98 where the truth is 11.00.
+
+What is implemented is a **linear** scan of 128 members over `[K_floor, Γ₀²)` followed by a geometric
+bisection on the boundary it brackets. Linear because all the structure is in the top few per cent;
+geometric on the refinement because K_min routinely sits decades below the first grid step.
+
+### A bigger termination is HARDER at a higher order — the opposite of the bandpass intuition
+
+With the ratio pinned, more elements means better return loss and a gentler ladder, so the **end
+elements shrink with order**: at a = 0.5, r = 10 the near element is 2.485 at order 2 and 0.820 at
+order 6. A termination sized for a bandpass order-4 network absorbs at order 2 and is refused at 5 and
+6. This bit while choosing a Designer test fixture and would bite a user the same way; it is why
+`MatchFormDesignerTests.Problem` uses 0.5 pF and 0.1 nH rather than the round numbers a bandpass
+fixture would.
+
+### `MatchSolutionSearch` had no way to say "finished, with no transforms"
+
+`EnumerateSets` emits only NON-EMPTY transform sets, so a basis already on target produced zero
+solutions and the panel reported `NoTransformablePairs` — a refusal — about a network that needs none.
+§16.5's "each cell contributes exactly one solution" is only true with the extra emission that is now
+in `SolutionsFor`, and it is written as a property of the **ratio** (`|required − 1| ≤ tolerance`)
+rather than of the form, because that is what it is.
+
+`NortonTransform.Discover` needed nothing: a single-element ladder alternates L-series with C-shunt, so
+every like-kind pair shares an orientation and the existing `Opposite` test rejects all of them. It
+still returns empty after the end splits, since a surplus element is the same kind and orientation as
+the one it sits beside.
+
+The Q-adjusted variant IS skipped in these forms (§16.4 item 3) and had to be skipped explicitly: it
+produced a second, identical zero-transform row under a different label, and `FindQAdjust` bisects
+toward "some transform set completes", which never happens here.
+
+### The end split is linear in prototype units — all four combinations
+
+`MatchQ.SplitExcess`'s C_eq algebra exists because a bandpass arm holds both an L and a C. A
+lowpass/highpass end arm is one element, and **the surplus is `g_synth − g_actual` in every case**: a
+shunt C's g is `ωRC` and parallel capacitances add; a series L's is `ωL/R` and series inductances add;
+a shunt L's is `R/(ωL)` and parallel inductances add reciprocally, which is the same thing in g; a
+series C's is `1/(ωRC)`, likewise. So `MatchFormSynthesis.WithEndSplits` is three lines, and the
+absorbed element's value is the termination's own **exactly** rather than to a tolerance.
+
+One deliberate consequence: the feasibility test requires `g_synth ≥ g_actual` with **no** slack. A
+member that misses by one part in 1e9 would leave an element marked absorbed while carrying a value the
+termination does not supply — the "a parasitic cannot be subtracted" failure §4.6's own 2026-08-20 note
+records. The 1e-9 slack that does exist only widens the family's side, and only for the refusal's
+wording.
+
+### r = 1 has no member of this family, and is handled as a named special case
+
+The pin reads `|Γ(0)| = 0`, which this family meets only at K = 0 — the trap. So for `Γ₀² ≤ 4·K_floor`
+the pin is dropped, K sits on its floor and ε is fixed for a nominal −40 dB in-band, giving **one**
+member and no search. Brief §3.2 says this "only matters for a purely resistive equal pair"; that is
+where it is honest. A 1:1 match with a reactive end either fits that single member or is refused, and
+the result carries a `Notes` line saying so. Making ε the search parameter in that branch would fix it
+and was not done — it is a second search with its own bounds, for a case the brief calls degenerate.
+
+### Two smaller things
+
+- **§16.3's "Φ is degree n in u" is a slip.** `T_n(x)` is degree n in x and x is degree 1 in u, so the
+  square is degree **2n**. Every conclusion the section draws from it (2n elements, degree 4n in s) is
+  the arithmetic for 2n and is right.
+- **`ValidOrders` had to take the form, and `AdjustOrderForParity` had to learn that the list can be
+  EMPTY.** A like-topology pair has orders 3 and 5 in bandpass form and none in the other two, and the
+  old code's `valid.OrderBy(...).First()` throws on an empty list. The solutions FILTER is built from
+  the union across the three forms, not from the design's own form: a lowpass design with a like pair
+  would otherwise have no order lines while the panel listed bandpass rows at 3 and 5, and `Accepts`
+  shows a row whose order has no line — so every one of them would have been unhideable.

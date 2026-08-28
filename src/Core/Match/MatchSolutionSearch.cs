@@ -90,7 +90,15 @@ public static class MatchSolutionSearch
         var notes = new List<string>(basis.Notes);
         var solutions = new List<MatchSolution>(SolutionsFor(design, basis, design.QAdjust));
 
-        if (includeQAdjust && design.QAdjust <= 0)
+        // ── No Q-adjusted variant in lowpass or highpass form (match.md §16.4 item 3) ──
+        //
+        // A Q-adjust is a deliberately inflated analysis-end Q that buys an extra element at that
+        // end. In these forms the excess rule ALREADY produces that element whenever the end arm
+        // comes out bigger than the termination — it is the same network, and offering it twice puts
+        // two identical zero-transform rows in the panel under different labels. There is also
+        // nothing for FindQAdjust to bisect toward: it looks for the smallest Q at which some
+        // TRANSFORM SET completes, and these ladders have no transforms.
+        if (includeQAdjust && design.QAdjust <= 0 && design.Form == NetworkForm.Bandpass)
         {
             var q = FindQAdjust(design, qMin);
             if (q is { } qa)
@@ -193,6 +201,23 @@ public static class MatchSolutionSearch
         var pairs = NortonTransform.Discover(basis.Network!);
         double required = basis.RequiredTransformRatio;
         if (!double.IsFinite(required) || required <= 0) yield break;
+
+        // ── A basis already on target IS a solution, with no transforms ──────
+        //
+        // This is what makes match.md §16.5 true. A lowpass or highpass ladder has no Norton pairs at
+        // all — every like-kind element in it shares an orientation, so §4.7's scan finds nothing,
+        // correctly and with no special case — and the DC pin puts the far resistance ON the target,
+        // so RequiredTransformRatio is 1. EnumerateSets emits only NON-EMPTY sets, so without this
+        // the whole form would report "no transformable pair" about a network that needs none.
+        //
+        // Stated as a property of the RATIO rather than of the form, because that is what it is: a
+        // bandpass basis that happened to land on its target would be a finished network too, and
+        // saying so in terms of the form would be a coincidence waiting to be wrong.
+        if (Math.Abs(required - 1.0) <= RatioTolerance)
+        {
+            var direct = Solve(design, basis, pairs, [], required, qAdjust);
+            if (direct is not null) yield return direct;
+        }
 
         foreach (var set in EnumerateSets(pairs))
         {
@@ -374,6 +399,7 @@ public static class MatchSolutionSearch
 
         var sb = new StringBuilder();
         sb.Append(design.Order).Append('|').Append(design.Response).Append('|')
+          .Append(design.Form).Append('|')
           .Append(design.QAdjust.ToString("G6", CultureInfo.InvariantCulture)).Append('|');
         foreach (var t in transforms)
             sb.Append(t.ElementA).Append('-').Append(t.ElementB).Append(':').Append(t.Form).Append(',');

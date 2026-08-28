@@ -64,7 +64,7 @@ public partial class ParameterEditorViewModel
     /// <summary>"order 4 · Chebyshev — Fano optimum".</summary>
     public string MatchOrderSummary => _matchDesign is not { } d
         ? ""
-        : $"order {d.Order} · {ResponseName(d.Response)}";
+        : $"order {d.Order} · {FormName(d.Form)} · {ResponseName(d.Response)}";
 
     /// <summary>Termination 1, as one line.</summary>
     public string MatchTerm1Summary => _matchDesign is { } d ? TerminationLine(d, d.Term1) : "";
@@ -148,12 +148,21 @@ public partial class ParameterEditorViewModel
     private static string Ghz(double hz) =>
         (hz / 1e9).ToString("0.####", CultureInfo.InvariantCulture);
 
+    /// <summary>The response family under match.md §6.9's names. Display only; the enum is untouched.</summary>
     private static string ResponseName(ResponseShape shape) => shape switch
     {
-        ResponseShape.ChebyshevFano     => "Chebyshev — Fano optimum",
-        ResponseShape.ChebyshevTwoEnded => "Chebyshev — both ends prescribed",
+        ResponseShape.ChebyshevFano     => "Chebyshev — single-match (optimum)",
+        ResponseShape.ChebyshevTwoEnded => "Chebyshev — double-match (exact)",
         ResponseShape.Butterworth       => "Butterworth",
         _                               => "Bessel",
+    };
+
+    /// <summary>The network form, lower-case, as the Designer's own cards spell it (match.md §16.7).</summary>
+    private static string FormName(NetworkForm form) => form switch
+    {
+        NetworkForm.Lowpass  => "lowpass",
+        NetworkForm.Highpass => "highpass",
+        _                    => "bandpass",
     };
 
     private static string TerminationLine(MatchDesign design, Termination t)

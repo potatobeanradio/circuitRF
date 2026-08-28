@@ -278,11 +278,20 @@
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Foreground" Value="#2FA85A"/>
         </Style>
-        <Style Selector="TextBlock.soltitle">
+        <!-- ── `:is(TextBlock)`, NOT `TextBlock`, on the three classes the solution card uses ──
+             An Avalonia type selector matches that type EXACTLY. `SelectableTextBlock` derives from
+             `TextBlock`, so `TextBlock.note` skips it silently and the card's lines fell back to the
+             inherited font size — which is what made them jump when they became selectable
+             (owner-reported, 2026-08-28). `:is()` is the selector that includes derived types.
+
+             Only these three move, because only these three are worn by a SelectableTextBlock. The
+             rest stay exact-type selectors: nothing in this window subclasses them, and a widened
+             selector is a wider blast radius for no gain. -->
+        <Style Selector=":is(TextBlock).soltitle">
             <Setter Property="FontSize"   Value="11"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
-        <Style Selector="Border.card.current TextBlock.soltitle">
+        <Style Selector="Border.card.current :is(TextBlock).soltitle">
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
 
@@ -347,12 +356,14 @@
             <Setter Property="FontSize"          Value="11"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
-        <Style Selector="TextBlock.note">
+        <!-- :is() for the same reason as .soltitle above — the solution card wears both of these
+             on a SelectableTextBlock. -->
+        <Style Selector=":is(TextBlock).note">
             <Setter Property="FontSize"     Value="10"/>
             <Setter Property="Opacity"      Value="0.75"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
-        <Style Selector="TextBlock.warn">
+        <Style Selector=":is(TextBlock).warn">
             <Setter Property="FontSize"     Value="10"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="Margin"       Value="0,2,0,0"/>
@@ -713,6 +724,20 @@
                                 <Button.Flyout>
                                     <Flyout Placement="BottomEdgeAlignedRight">
                                         <StackPanel Spacing="3" Margin="8">
+                                            <!-- Form first (match.md §16.7). It is the coarsest cut
+                                                 in the list and the one a user reaches for to
+                                                 compare like with like: three bandpass rows and
+                                                 three lowpass rows at the same order are two
+                                                 different networks answering the same question. -->
+                                            <ItemsControl ItemsSource="{Binding Filter.Forms}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="mvm:MatchSolutionFilterToggle">
+                                                        <CheckBox IsChecked="{Binding IsOn}"
+                                                                  Content="{Binding Label}" FontSize="12"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <Separator/>
                                             <ItemsControl ItemsSource="{Binding Filter.Orders}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="mvm:MatchSolutionFilterToggle">
@@ -804,26 +829,44 @@
                                              button is gone. What marks the applied row is unchanged:
                                              the green border, the bold title and the tick, all three
                                              from Classes.current — see the styles at the top. -->
+                                        <!-- ── EVERY LINE IS SELECTABLE TEXT ────────────────
+                                             Owner, 2026-08-28: the card's text is a readout — the
+                                             element pairs, the return loss, the refusal-adjacent
+                                             warnings — and a readout you cannot copy out of is one
+                                             you have to retype. Same rule the Messages pane and the
+                                             harmonicaRF readout strip already follow.
+
+                                             The badge stays a plain TextBlock: it is a tick or a
+                                             ring, there is nothing in it to copy, and it carries the
+                                             tooltip that explains it.
+
+                                             SelectableTextBlock SETS e.Handled ON PointerPressed and
+                                             CAPTURES the pointer, and InputElement's class handler
+                                             for that event is registered WITHOUT handledEventsToo —
+                                             so ListBoxItem.OnPointerPressed never runs and clicking
+                                             a card's TEXT would no longer apply it. The gesture is
+                                             restored deterministically by a TUNNELLING handler on
+                                             the list itself; see OnSolutionsPointerPressed. -->
                                         <Border Classes="card" Classes.current="{Binding IsCurrent}"
                                                 Cursor="Hand">
                                             <Grid ColumnDefinitions="16,*">
                                                 <TextBlock Classes="solbadge" Text="{Binding BadgeGlyph}"
                                                            ToolTip.Tip="{Binding BadgeTooltip}"/>
                                                 <StackPanel Grid.Column="1">
-                                                    <TextBlock Classes="soltitle" Text="{Binding TitleText}"
-                                                               TextWrapping="Wrap"/>
-                                                    <TextBlock Classes="note" Text="{Binding CountText}"/>
-                                                    <TextBlock Classes="note" Text="{Binding PairsText}"/>
+                                                    <SelectableTextBlock Classes="soltitle" Text="{Binding TitleText}"
+                                                                         TextWrapping="Wrap"/>
+                                                    <SelectableTextBlock Classes="note" Text="{Binding CountText}"/>
+                                                    <SelectableTextBlock Classes="note" Text="{Binding PairsText}"/>
                                                     <!-- A Q-adjust and a negative element get a line
                                                          each; their ABSENCE gets nothing (owner,
                                                          2026-08-28). -->
-                                                    <TextBlock Classes="note" Text="{Binding QAdjustText}"
-                                                               IsVisible="{Binding QAdjustText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                                    <TextBlock Classes="note" Text="{Binding ReturnLossText}"/>
-                                                    <TextBlock Classes="warn" Text="{Binding NegativeNote}"
-                                                               IsVisible="{Binding HasNegativeComponents}"/>
-                                                    <TextBlock Classes="warn" Text="{Binding ImplausibleNote}"
-                                                               IsVisible="{Binding ImplausibleValues}"/>
+                                                    <SelectableTextBlock Classes="note" Text="{Binding QAdjustText}"
+                                                                         IsVisible="{Binding QAdjustText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                    <SelectableTextBlock Classes="note" Text="{Binding ReturnLossText}"/>
+                                                    <SelectableTextBlock Classes="warn" Text="{Binding NegativeNote}"
+                                                                         IsVisible="{Binding HasNegativeComponents}"/>
+                                                    <SelectableTextBlock Classes="warn" Text="{Binding ImplausibleNote}"
+                                                                         IsVisible="{Binding ImplausibleValues}"/>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -958,7 +1001,8 @@
                     <Grid RowDefinitions="Auto,*,Auto">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Classes="panelhdr" Text="Transforms"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                                        IsVisible="{Binding TransformRackApplies}">
                                 <!-- "+" and a chevron, no word (owner, 2026-08-20: "remove the word
                                      'add' from the add transform button"). The chevron is what says
                                      it opens a menu; beside the "−" next to it the pair reads as one
@@ -994,7 +1038,16 @@
                         <TextBlock Grid.Row="2" Classes="warn" Text="{Binding TransformNote}"
                                    IsVisible="{Binding TransformNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <!-- match.md §16.5's empty state. NOT the rack's "no transformable pair"
+                             refusal, which is a fault; this is the normal and finished state of a
+                             lowpass or highpass ladder, so it is a note and not a warning. -->
+                        <TextBlock Grid.Row="1" Classes="note" TextWrapping="Wrap" Margin="0,4"
+                                   VerticalAlignment="Top"
+                                   Text="{Binding TransformRackNote}"
+                                   IsVisible="{Binding !TransformRackApplies}"/>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                      IsVisible="{Binding TransformRackApplies}">
                             <ItemsControl ItemsSource="{Binding Transforms}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="mvm:MatchTransformRowViewModel">

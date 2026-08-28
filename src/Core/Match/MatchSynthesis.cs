@@ -88,8 +88,8 @@ public static class MatchSynthesis
     /// why the cache below earns its keep on a slider drag.
     /// </remarks>
     private readonly record struct SynthesisKey(
-        double F1, double F2, int Order, ResponseShape Response, double RippleDb, double QAdjust,
-        AnalysisEndChoice AnalysisEnd, Termination Term1, Termination Term2);
+        double F1, double F2, int Order, ResponseShape Response, NetworkForm Form, double RippleDb,
+        double QAdjust, AnalysisEndChoice AnalysisEnd, Termination Term1, Termination Term2);
 
     /// <summary>
     /// A bounded memo of recent syntheses.
@@ -153,8 +153,8 @@ public static class MatchSynthesis
         ArgumentNullException.ThrowIfNull(design);
 
         var key = new SynthesisKey(
-            design.F1, design.F2, design.Order, design.Response, design.RippleDb, design.QAdjust,
-            design.AnalysisEnd, design.Term1, design.Term2);
+            design.F1, design.F2, design.Order, design.Response, design.Form, design.RippleDb,
+            design.QAdjust, design.AnalysisEnd, design.Term1, design.Term2);
         if (Memo.TryGetValue(key, out var cached)) return Copy(cached);
 
         var fresh = SynthesizeUncached(design);
@@ -188,25 +188,28 @@ public static class MatchSynthesis
 
     private static MatchSynthesisResult SynthesizeUncached(MatchDesign design)
     {
+        // ── The form dispatch comes FIRST, and not only for tidiness ──────────
+        //
+        // match.md §16's forms have no band centre, no fractional bandwidth and no Fano root, so
+        // NOTHING of §4.1-§4.3 below applies to them — not the omega0/w derivation, not the Q's, not
+        // the parity rule, not even this method's own band test: a lowpass network is allowed to run
+        // from F1 = 0 (§16.1), which the bandpass validation refuses outright. Running any of it
+        // first and then branching would mean maintaining two readings of every quantity here.
+        //
+        // The TERMINATION validation is duplicated rather than shared, because it is three lines and
+        // sharing it would mean either exporting it or reordering the two refusals a caller sees.
+        foreach (var (t, which) in (ReadOnlySpan<(Termination, int)>)[(design.Term1, 1), (design.Term2, 2)])
+        {
+            var bad = ValidateTermination(t, which);
+            if (bad is not null) return MatchSynthesisResult.Refuse(bad);
+        }
+        if (design.Form != NetworkForm.Bandpass) return MatchFormSynthesis.Synthesize(design);
+
         if (!(design.F1 > 0) || !(design.F2 > design.F1))
             return MatchSynthesisResult.Refuse(MatchRefusal.Create(
                 MatchRefusalKind.InvalidTermination,
                 "The band must satisfy 0 < F1 < F2.",
                 null, ("f1", design.F1), ("f2", design.F2)));
-
-        foreach (var (t, which) in (ReadOnlySpan<(Termination, int)>)[(design.Term1, 1), (design.Term2, 2)])
-        {
-            if (!(t.R > 0))
-                return MatchSynthesisResult.Refuse(MatchRefusal.Create(
-                    MatchRefusalKind.InvalidTermination,
-                    $"Termination {which} has a non-positive resistance.", which, ("r", t.R)));
-            if (t.Kind != ReactanceKind.None && !(t.Value > 0))
-                return MatchSynthesisResult.Refuse(MatchRefusal.Create(
-                    MatchRefusalKind.InvalidTermination,
-                    $"Termination {which}'s {t.Kind} must be positive; " +
-                    "a short or an open is expressed as Kind = None, not as a magic value.",
-                    which, ("value", t.Value)));
-        }
 
         var valid = MatchOrders.ValidOrders(design.Term1, design.Term2);
         if (!valid.Contains(design.Order))
@@ -486,6 +489,25 @@ public static class MatchSynthesis
     }
 
     /// <summary>
+    /// The one validation every form shares: a positive resistance, and a reactance that is a real
+    /// value rather than a magic one. Returns null when the end is well-formed.
+    /// </summary>
+    private static MatchRefusal? ValidateTermination(Termination t, int which)
+    {
+        if (!(t.R > 0))
+            return MatchRefusal.Create(
+                MatchRefusalKind.InvalidTermination,
+                $"Termination {which} has a non-positive resistance.", which, ("r", t.R));
+        if (t.Kind != ReactanceKind.None && !(t.Value > 0))
+            return MatchRefusal.Create(
+                MatchRefusalKind.InvalidTermination,
+                $"Termination {which}'s {t.Kind} must be positive; " +
+                "a short or an open is expressed as Kind = None, not as a magic value.",
+                which, ("value", t.Value));
+        return null;
+    }
+
+    /// <summary>
     /// Decomposes the end arms' absorbed elements into the terminations' own values plus the real
     /// added elements of match.md §4.5 (CFano/LFano, far end) and §4.6 (CDetune/LDetune, analysis end).
     /// </summary>
@@ -507,6 +529,11 @@ public static class MatchSynthesis
         ArgumentNullException.ThrowIfNull(network);
         ArgumentNullException.ThrowIfNull(result);
         ArgumentNullException.ThrowIfNull(design);
+
+        // A lowpass or highpass end arm is ONE element and its surplus adds linearly in prototype
+        // units, so none of the C_eq algebra below serves it. See MatchFormSynthesis.WithEndSplits.
+        if (design.Form != NetworkForm.Bandpass)
+            return MatchFormSynthesis.WithEndSplits(network, result, design);
 
         var net = network.Clone();
         double om0 = result.Omega0;

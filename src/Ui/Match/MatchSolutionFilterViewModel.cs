@@ -13,11 +13,13 @@ public sealed partial class MatchSolutionFilterToggle : ObservableObject
 {
     private readonly Action _changed;
 
-    internal MatchSolutionFilterToggle(string label, int order, ResponseShape? shape, Action changed)
+    internal MatchSolutionFilterToggle(
+        string label, int order, ResponseShape? shape, NetworkForm? form, Action changed)
     {
         Label = label;
         Order = order;
         Shape = shape;
+        Form = form;
         _changed = changed;
     }
 
@@ -29,6 +31,9 @@ public sealed partial class MatchSolutionFilterToggle : ObservableObject
 
     /// <summary>The response family this line stands for, or null when it stands for an order.</summary>
     public ResponseShape? Shape { get; }
+
+    /// <summary>The network form this line stands for, or null when it stands for something else.</summary>
+    public NetworkForm? Form { get; }
 
     /// <summary>Whether solutions of this order / family are listed.</summary>
     [ObservableProperty] private bool _isOn = true;
@@ -69,8 +74,23 @@ public sealed partial class MatchSolutionFilterViewModel : ObservableObject
         // from the cards it hides would be a filter nobody could use.
         foreach (var option in responses)
             Responses.Add(new MatchSolutionFilterToggle(
-                MatchSolutionRowViewModel.FamilyName(option.Shape), 0, option.Shape, Raise));
+                MatchSolutionRowViewModel.FamilyName(option.Shape), 0, option.Shape, null, Raise));
+
+        // The form group is FIRST in the flyout and fixed: unlike the orders, all three always exist.
+        // Whether any has rows is a different question, and one the list itself answers.
+        foreach (var form in (NetworkForm[])[NetworkForm.Bandpass, NetworkForm.Lowpass, NetworkForm.Highpass])
+            Forms.Add(new MatchSolutionFilterToggle(FormLabel(form), 0, null, form, Raise));
     }
+
+    private static string FormLabel(NetworkForm form) => form switch
+    {
+        NetworkForm.Lowpass  => "Lowpass",
+        NetworkForm.Highpass => "Highpass",
+        _                    => "Bandpass",
+    };
+
+    /// <summary>One line per network form — match.md §16.7. All three on by default.</summary>
+    public ObservableCollection<MatchSolutionFilterToggle> Forms { get; } = [];
 
     /// <summary>One line per order the termination pair permits.</summary>
     public ObservableCollection<MatchSolutionFilterToggle> Orders { get; } = [];
@@ -113,7 +133,7 @@ public sealed partial class MatchSolutionFilterViewModel : ObservableObject
             foreach (int order in orders)
             {
                 var toggle = new MatchSolutionFilterToggle(
-                    $"Order {order.ToString(CultureInfo.InvariantCulture)}", order, null, Raise);
+                    $"Order {order.ToString(CultureInfo.InvariantCulture)}", order, null, null, Raise);
                 if (was.TryGetValue(order, out bool on)) toggle.IsOn = on;
                 Orders.Add(toggle);
             }
@@ -130,6 +150,9 @@ public sealed partial class MatchSolutionFilterViewModel : ObservableObject
 
         if (row.Solution.QAdjust > 0 && !ShowQAdjusted) return false;
         if (row.HasNegativeComponents && !ShowNegativeComponents) return false;
+
+        var form = Forms.FirstOrDefault(f => f.Form == row.Form);
+        if (form is not null && !form.IsOn) return false;
 
         // An order the pair no longer permits has no line to consult. Such a row can only be one the
         // design is already on — it is shown, because a panel that hides the applied solution is
@@ -151,6 +174,10 @@ public sealed partial class MatchSolutionFilterViewModel : ObservableObject
             var offOrders = Orders.Where(o => !o.IsOn).Select(o => o.Order).ToList();
             if (offOrders.Count > 0)
                 parts.Add("hiding order " + string.Join(", ", offOrders));
+
+            var offForms = Forms.Where(f => !f.IsOn).Select(f => f.Label.ToLowerInvariant()).ToList();
+            if (offForms.Count > 0)
+                parts.Add("hiding " + string.Join(", ", offForms));
 
             var offShapes = Responses.Where(r => !r.IsOn).Select(r => r.Label).ToList();
             if (offShapes.Count > 0)
@@ -180,7 +207,7 @@ public sealed partial class MatchSolutionFilterViewModel : ObservableObject
     /// </remarks>
     public bool IsNarrowed =>
         !ShowQAdjusted || !ShowNegativeComponents
-        || Orders.Any(o => !o.IsOn) || Responses.Any(r => !r.IsOn);
+        || Orders.Any(o => !o.IsOn) || Responses.Any(r => !r.IsOn) || Forms.Any(f => !f.IsOn);
 
     private void Raise()
     {

@@ -359,7 +359,8 @@ public static class MatchFlatten
         var lines = new List<string>
         {
             $"Matching network flattened from {instanceName}.",
-            $"Band {band} · order {design.Order.ToString(CultureInfo.InvariantCulture)} · {ResponseName(design.Response)}",
+            $"Band {band} · order {design.Order.ToString(CultureInfo.InvariantCulture)} · "
+            + $"{FormName(design.Form)} · {ResponseName(design.Response)}",
             $"Termination 1 (pin 1): {TerminationLine(design, design.Term1)}",
             $"Termination 2 (pin 2): {TerminationLine(design, design.Term2)}",
             $"Worst in-band return loss {F(-worst, "0.00")} dB · insertion loss {F(il, "0.000")} dB · "
@@ -401,10 +402,17 @@ public static class MatchFlatten
                + (t.Probed ? ", probed from the schematic" : "");
     }
 
+    private static string FormName(NetworkForm form) => form switch
+    {
+        NetworkForm.Lowpass  => "lowpass",
+        NetworkForm.Highpass => "highpass",
+        _                    => "bandpass",
+    };
+
     private static string ResponseName(ResponseShape shape) => shape switch
     {
-        ResponseShape.ChebyshevFano     => "Chebyshev — Fano optimum",
-        ResponseShape.ChebyshevTwoEnded => "Chebyshev — both ends prescribed",
+        ResponseShape.ChebyshevFano     => "Chebyshev — single-match (optimum)",
+        ResponseShape.ChebyshevTwoEnded => "Chebyshev — double-match (exact)",
         ResponseShape.Butterworth       => "Butterworth",
         _                               => "Bessel",
     };

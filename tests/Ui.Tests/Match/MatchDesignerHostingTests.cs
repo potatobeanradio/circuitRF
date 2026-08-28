@@ -161,7 +161,9 @@ public sealed class MatchDesignerHostingTests(ITestOutputHelper output)
 
         Assert.Equal("3.3 – 5 GHz", editor.MatchBandSummary);
         Assert.Contains("order 4", editor.MatchOrderSummary);
-        Assert.Contains("Fano", editor.MatchOrderSummary);
+        // match.md §6.9: the family is named by its OUTCOME now, and §16.7 puts the form on the line.
+        Assert.Contains("single-match", editor.MatchOrderSummary, StringComparison.Ordinal);
+        Assert.Contains("bandpass", editor.MatchOrderSummary, StringComparison.Ordinal);
         Assert.Contains("200", editor.MatchTerm1Summary);
         Assert.Contains("parallel", editor.MatchTerm1Summary);
         Assert.Contains("series", editor.MatchTerm2Summary);

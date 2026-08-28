@@ -21,13 +21,14 @@ internal sealed record MatchAnalysis(IReadOnlyList<MatchAnalysis.OptionVerdict> 
     internal sealed record OptionVerdict(ResponseShape Shape, bool Ok, MatchRefusal? Refusal);
 }
 
-/// <summary>One cell of the order x response search, as it comes back off the worker.</summary>
+/// <summary>One cell of the form x order x response search, as it comes back off the worker.</summary>
+/// <param name="Form">The network form it was searched in (match.md §16).</param>
 /// <param name="Order">The order it was searched at.</param>
 /// <param name="Response">The family it was searched under.</param>
-/// <param name="Set">MN-1's own result for that pair.</param>
+/// <param name="Set">MN-1's own result for that cell.</param>
 /// <param name="IsCurrent">True for the combination the design is on — the one searched FIRST.</param>
 internal sealed record MatchSolutionBatch(
-    int Order, ResponseShape Response, MatchSolutionSet Set, bool IsCurrent);
+    NetworkForm Form, int Order, ResponseShape Response, MatchSolutionSet Set, bool IsCurrent);
 
 /// <summary>
 /// Everything about a design that changes WHAT SOLUTIONS EXIST — and nothing that only changes which
@@ -203,7 +204,7 @@ public sealed partial class MatchDesignerViewModel
         // than a beat later. Enablement and the tooltips are what costs, and they keep their previous
         // values until the pass lands — stale for a moment, never blank.
         foreach (var option in ResponseOptions) option.IsSelected = option.Shape == _design.Response;
-        Filter.SetOrders(OrderOptions);
+        Filter.SetOrders(FilterOrderOptions);
 
         // A termination edit asks for an auto-solve, and the answer is a solution for the design's
         // OWN combination — which is the first cell the search runs. Recorded as a pending request
@@ -373,40 +374,69 @@ public sealed partial class MatchDesignerViewModel
     {
         MatchRefusal? here = null;
 
-        foreach (var (order, shape) in Combinations(design))
+        foreach (var (form, order, shape) in Combinations(design))
         {
             token.ThrowIfCancellationRequested();
 
             var probe = design.Clone();
+            probe.Form = form;
             probe.Order = order;
             probe.Response = shape;
             probe.QAdjust = 0.0;
             probe.AllowNegativeComponents = true;
 
             var set = MatchSolutionSearch.Search(probe, includeQAdjust: true, qMin);
-            bool isCurrent = order == design.Order && shape == design.Response;
+            bool isCurrent = form == design.Form && order == design.Order && shape == design.Response;
             if (isCurrent) here = set.Refusal;
 
-            publish(new MatchSolutionBatch(order, shape, set, isCurrent));
+            publish(new MatchSolutionBatch(form, order, shape, set, isCurrent));
         }
 
         return here;
     }
 
-    /// <summary>
-    /// Every (order, family) pair to search, <b>the design's own first</b> and the rest in the order
-    /// the list will show them.
-    /// </summary>
-    private static IEnumerable<(int Order, ResponseShape Shape)> Combinations(MatchDesign design)
-    {
-        var orders = MatchOrders.ValidOrders(design.Term1, design.Term2);
-        bool ownIsValid = orders.Contains(design.Order);
-        if (ownIsValid) yield return (design.Order, design.Response);
+    /// <summary>The families offered in lowpass and highpass form — match.md §16.2.</summary>
+    /// <remarks>
+    /// <b>Two, not four.</b> With the impedance ratio pinned at DC the family has ONE free parameter,
+    /// so there is neither a second prescribed Q for the double-match Chebyshev to take nor a delay
+    /// target for Bessel to shape; MN-1 refuses both with that sentence, and searching for them here
+    /// would spend twenty cells producing it.
+    /// </remarks>
+    private static readonly ResponseShape[] FormShapes =
+        [ResponseShape.ChebyshevFano, ResponseShape.Butterworth];
 
-        foreach (int order in orders)
-            foreach (var shape in AllShapes)
-                if (!ownIsValid || order != design.Order || shape != design.Response)
-                    yield return (order, shape);
+    /// <summary>
+    /// Every (form, order, family) cell to search, <b>the design's own first</b> and the rest in the
+    /// order the list will show them.
+    /// </summary>
+    /// <remarks>
+    /// <b>The form is a cell coordinate, not a spec input</b> — which is why <see cref="MatchSpecKey"/>
+    /// does not mention it and applying a lowpass solution does not restart the search, exactly as
+    /// applying a different order does not.
+    ///
+    /// <para>The valid orders are asked PER FORM: a like-topology termination pair has orders 3 and 5
+    /// in bandpass form and none at all in the other two (match.md §16.4 item 2), so a single order
+    /// list would either search cells that refuse or hide bandpass rows that exist.</para>
+    /// </remarks>
+    private static IEnumerable<(NetworkForm Form, int Order, ResponseShape Shape)> Combinations(
+        MatchDesign design)
+    {
+        var forms = (NetworkForm[])[NetworkForm.Bandpass, NetworkForm.Lowpass, NetworkForm.Highpass];
+        var ownOrders = MatchOrders.ValidOrders(design.Term1, design.Term2, design.Form);
+        bool ownIsValid = ownOrders.Contains(design.Order)
+                          && (design.Form == NetworkForm.Bandpass
+                              || FormShapes.Contains(design.Response));
+        if (ownIsValid) yield return (design.Form, design.Order, design.Response);
+
+        foreach (var form in forms)
+        {
+            var shapes = form == NetworkForm.Bandpass ? AllShapes : FormShapes;
+            foreach (int order in MatchOrders.ValidOrders(design.Term1, design.Term2, form))
+                foreach (var shape in shapes)
+                    if (!ownIsValid || form != design.Form || order != design.Order
+                        || shape != design.Response)
+                        yield return (form, order, shape);
+        }
     }
 
     // ── Landings ──────────────────────────────────────────────────────────────
@@ -460,7 +490,7 @@ public sealed partial class MatchDesignerViewModel
 
         foreach (var solution in batch.Set.Solutions)
             _allSolutions.Add(new MatchSolutionRowViewModel(
-                this, solution, BadgeFor(solution, current), batch.Order, batch.Response));
+                this, solution, BadgeFor(solution, current), batch.Order, batch.Response, batch.Form));
 
         ReapplyFilter();
         RefreshSolutionsSummary();
@@ -589,7 +619,8 @@ public sealed partial class MatchDesignerViewModel
         var applied = _allSolutions.FirstOrDefault(s => s.Badge == MatchSolutionBadge.Current);
         string appliedText = applied is null
             ? _design.Transforms.Count == 0 ? "applied: none" : "applied: a hand-set transform set"
-            : $"applied: {applied.CountText}, {applied.ResponseName} order {applied.Order}";
+            : $"applied: {applied.CountText}, {applied.ResponseName} "
+              + $"{MatchSolutionRowViewModel.FormName(applied.Form)} order {applied.Order}";
 
         int shown = Solutions.Count;
         int total = _allSolutions.Count;

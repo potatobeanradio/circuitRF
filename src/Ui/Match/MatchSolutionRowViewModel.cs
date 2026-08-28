@@ -47,13 +47,14 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
 
     internal MatchSolutionRowViewModel(
         MatchDesignerViewModel owner, MatchSolution solution, MatchSolutionBadge badge,
-        int order, ResponseShape response)
+        int order, ResponseShape response, NetworkForm form)
     {
         _owner = owner;
         Solution = solution;
         _badge = badge;
         Order = order;
         Response = response;
+        Form = form;
         // Read once from the network the search produced, not recomputed per binding read: a solution
         // is immutable, and this is what the "allow negative components" filter is keyed on.
         HasNegativeComponents = solution.Network?.Elements.Any(e => e.Value <= 0) ?? false;
@@ -67,6 +68,9 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
 
     /// <summary>The response family it was found under.</summary>
     public ResponseShape Response { get; }
+
+    /// <summary>The network form it was found in (match.md §16).</summary>
+    public NetworkForm Form { get; }
 
     /// <summary>
     /// True when some element of the finished network is zero or negative.
@@ -118,21 +122,57 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
         _                                    => "Never applied.",
     };
 
-    /// <summary>"Chebyshev (Fano) · order 4" — the card's own heading.</summary>
-    public string TitleText => $"{ResponseName} · order {Order.ToString(CultureInfo.InvariantCulture)}";
+    /// <summary>
+    /// "Chebyshev (single-match) · lowpass · order 4" — the card's own heading.
+    /// </summary>
+    /// <remarks>
+    /// <b>Bandpass rows carry the form word too</b> (match.md §16.7). The panel lists all three forms
+    /// side by side; a card that named its form only when the form was unusual would read as though
+    /// the unnamed ones were a different KIND of answer.
+    /// </remarks>
+    public string TitleText =>
+        $"{ResponseName} · {FormName(Form)} · order {Order.ToString(CultureInfo.InvariantCulture)}";
 
     /// <summary>The response family, short enough for a card in the specification column.</summary>
-    public string ResponseName => FamilyName(Response);
+    public string ResponseName => FamilyName(Response, Form);
+
+    /// <summary>The form, lower-case, as the card and the footer spell it.</summary>
+    public static string FormName(NetworkForm form) => form switch
+    {
+        NetworkForm.Lowpass  => "lowpass",
+        NetworkForm.Highpass => "highpass",
+        _                    => "bandpass",
+    };
 
     /// <summary>
     /// One family's short name — <b>the single place it is spelled</b>, because the solution cards
     /// and the filter's own family lines have to agree or a user cannot tell which line hides which
     /// cards.
     /// </summary>
-    public static string FamilyName(ResponseShape shape) => shape switch
+    /// <remarks>
+    /// <b>"single-match" and "double-match" are the broadband-matching literature's own terms</b>
+    /// (match.md §6.9): one reactive termination prescribed against both. They replace "(Fano)" and
+    /// "(2-ended)", which named the derivation rather than the outcome and which a user could not
+    /// choose between. Display only — the enum members and the serialized spelling are untouched, and
+    /// a renamed enum value would break every saved design for no gain.
+    /// </remarks>
+    public static string FamilyName(ResponseShape shape) => FamilyName(shape, NetworkForm.Bandpass);
+
+    /// <inheritdoc cref="FamilyName(ResponseShape)"/>
+    /// <param name="shape">The family.</param>
+    /// <param name="form">The form the row was found in.</param>
+    /// <remarks>
+    /// <b>The single/double distinction is bandpass-only.</b> match.md §16.2: with the ratio pinned
+    /// at DC the family has ONE free parameter, so a second prescribed Q does not exist and
+    /// <see cref="ResponseShape.ChebyshevTwoEnded"/> is never searched in these forms. A lowpass row
+    /// reading "Chebyshev (single-match)" would be drawing a contrast with an option that is not on
+    /// offer there.
+    /// </remarks>
+    public static string FamilyName(ResponseShape shape, NetworkForm form) => shape switch
     {
-        ResponseShape.ChebyshevFano     => "Chebyshev (Fano)",
-        ResponseShape.ChebyshevTwoEnded => "Chebyshev (2-ended)",
+        ResponseShape.ChebyshevFano when form != NetworkForm.Bandpass => "Chebyshev",
+        ResponseShape.ChebyshevFano     => "Chebyshev (single-match)",
+        ResponseShape.ChebyshevTwoEnded => "Chebyshev (double-match)",
         ResponseShape.Butterworth       => "Butterworth",
         _                               => "Bessel",
     };
@@ -155,9 +195,19 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
         ? "Has a negative element — realizable only by absorbing it into a neighbour."
         : "";
 
-    /// <summary>Worst in-band return loss this solution reaches, dB.</summary>
+    /// <summary>
+    /// Worst in-band return loss this solution reaches, dB — <b>signed, as the quantity is</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>"RL -10.51 dB", not "RL 10.51 dB"</b> (owner, 2026-08-28). Return loss is quoted both ways
+    /// in the field — as a positive magnitude and as the negative |S11| it is read off a plot from —
+    /// and this card sits beside the response plots, whose y axis is negative. Two spellings of one
+    /// number in one window is the ambiguity worth removing, and the sign is what the underlying
+    /// <see cref="MatchSolution.WorstReturnLossDb"/> has always carried; it was being negated here
+    /// only for display.
+    /// </remarks>
     public string ReturnLossText =>
-        $"RL {(-Solution.WorstReturnLossDb).ToString("0.00", CultureInfo.InvariantCulture)} dB";
+        $"RL {Solution.WorstReturnLossDb.ToString("0.00", CultureInfo.InvariantCulture)} dB";
 
     /// <summary>
     /// True when some element came out above 1 H / 1 F or below 1e-24 — exact, response-preserving

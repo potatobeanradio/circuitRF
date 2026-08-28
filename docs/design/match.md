@@ -1,7 +1,8 @@
 # circuitRF — Match: the absorbing impedance-matching component
 
-**Status:** Proposal — rev 1, owner decisions folded in (§14) · **Date:** 2026-08-19 · **Phase:** MN0
-(design layer)
+**Status:** Proposal — rev 2 · **Date:** 2026-08-19, rev 2 2026-08-28 (§6.8–§6.9, §16–§17: response
+families excluded, family naming, lowpass/highpass forms) · **Phase:** MN0 (design layer); the
+lowpass/highpass form is **MN-LP** (`docs/sonnet-briefs/brief-match-lowpass-highpass-form.md`)
 
 **Match** is a two-port schematic component that synthesises a bandpass LC matching network which
 matches **both** of its ports simultaneously to the external network — and which **absorbs each
@@ -50,7 +51,10 @@ supplies them, which is what makes the match real.
 - Bandpass Chebyshev/Fano synthesis, orders 2–6, with capacitive **or inductive** terminations in
   **series or shunt** topology, plus purely resistive terminations.
 - Selectable response: **Chebyshev (Fano-optimum)**, **Chebyshev (fixed ripple)**, **Butterworth**, and
-  **Bessel** where feasible (§6).
+  **Bessel** where feasible (§6). **Elliptic and inverse Chebyshev are excluded, with reasons** (§6.8).
+- **Three network forms — bandpass, lowpass and highpass** (§16, rev 2). Bandpass is §4's synthesis;
+  lowpass and highpass are ladders of single elements matched between F1 and F2, with their own
+  absorption rules and no Norton degrees of freedom.
 - Norton (π and T) transforms with positivity-bounded ranges, per-transform locks, and the linkage rule
   that keeps the cumulative transformation on target.
 - The Match Designer window.
@@ -509,19 +513,24 @@ the opposite of the intuition that more elements always help.
 A **Response** selector in the specification pane:
 
 ```
-  Response:  ( ) Chebyshev — Fano optimum      [default]
-             ( ) Chebyshev — both ends prescribed
+  Response:  ( ) Chebyshev — single-match (optimum)   [default]
+             ( ) Chebyshev — double-match (exact)
              ( ) Butterworth
-             ( ) Bessel                        [disabled with a reason when infeasible]
-             Ripple [ 0.10 ] dB                [enabled only when neither end has a reactance]
+             ( ) Bessel                                [disabled with a reason when infeasible]
+             Ripple [ 0.10 ] dB                        [enabled only when neither end has a reactance]
 ```
 
-**"Both ends prescribed"** is §4.3's two-ended Levy prototype: it absorbs both terminations exactly and
+(The names are §6.9's; the first two were "Fano optimum" and "both ends prescribed" until rev 2.)
+**Double-match** is §4.3's two-ended Levy prototype: it absorbs both terminations exactly and
 never needs §4.5's excess element, at the cost of Fano optimality. It is the reference implementation's
 "Fano Optimum" toggle in its off position, and it is the right choice when a surplus element is
 unwelcome. Changing the selector re-runs the solution search and repopulates the solutions list. A response that cannot
 absorb both ends at the current order is shown disabled with the numeric reason in its tooltip, never
 silently missing.
+
+*Since the Solutions-panel round (2026-08-28) the Response and Order selectors live in the panel's
+filter rather than the specification pane — the search runs the whole cross-product and the user picks a
+network by looking at networks. §16.7 adds the network form to that filter.*
 
 ### 6.7 Numerical robustness
 
@@ -534,6 +543,81 @@ extractor; the numerical extractor's agreement with it is a permanent regression
 
 ---
 
+### 6.8 Excluded, with reasons — elliptic and inverse Chebyshev (rev 2, 2026-08-28)
+
+**The owner asked whether elliptic (Cauer) and inverse-Chebyshev (Chebyshev type II) responses could be
+added, on the condition that the transformations actually deliver the target match. They cannot, and
+the reason is structural rather than numerical — so both are excluded rather than deferred.**
+
+Both families place **finite transmission zeros**. Inverse Chebyshev is the elliptic family with the
+passband ripple taken to zero (`|H|² = 1/(1 + 1/(ε²T_n²(ω_s/ω)))`, equiripple in the *stopband*), so
+the two stand or fall together:
+
+1. **The ladder cannot express them.** Everything in Match is an *all-pole* ladder: §4.4 alternates
+   series and shunt arms, each arm one L and one C resonant at ω₀, and `MatchNetwork` is a flat list in
+   which every element is either in the through path or from the current node to ground. A finite
+   transmission zero needs a **series-LC branch to ground** (or a parallel LC in the through path) — a
+   branch with an internal node — which that list has no way to say. The ABCD evaluator, the Norton pair
+   scan (which relies on strict L/C alternation), the ladder drawing, Flatten and the stamp all inherit
+   the same assumption. After the bandpass transformation an elliptic branch is four elements to ground,
+   and a 4th-order elliptic bandpass match is ~14 parts against 8.
+2. **The synthesis is a different algorithm.** There is no Levy-style g recursion for either family, and
+   §6.2's Cauer continued fraction cannot place a finite zero — that needs Darlington zero-shifting
+   extraction (partial pole removal), a fussier procedure than anything in §6.
+3. **What it would buy a matching network is marginal.** Fano's integral is set by the load; a steeper
+   skirt recovers only a sliver of in-band return loss, at the cost of tolerance-sensitive resonators.
+   Even-order elliptic and inverse Chebyshev also have a non-zero floor at ∞, which is incompatible with
+   a shunt-capacitive termination outright.
+4. **In-band, inverse Chebyshev offers nothing Butterworth does not** — both are monotone in the
+   passband — at nearly double the part count.
+
+Norton transforms would remain *valid* on such a network in principle (the N² scaling side would simply
+include the resonator branch), but §4.7's pair discovery and the response-preserving list-swap rule
+would both have to be rewritten. None of this is worth it for a response the user would rarely choose.
+
+If a user actually needs a notch — a harmonic trap in a PA output match — that is a separate *"add a
+transmission zero at f_z"* feature on the finished ladder, not a response family, and it is not designed
+here.
+
+**The one family that would slot into §6.2 unchanged**, should more choice ever be wanted, is
+**Legendre / Papoulis "optimum L"** — monotone passband with the steepest all-pole roll-off, sitting
+between Butterworth and Chebyshev. It is a different `F` in the same two-parameter family and needs
+nothing else. Not recommended now; recorded so the cheap option is known.
+
+### 6.9 Naming the two Chebyshev families (rev 2, 2026-08-28)
+
+**The owner observed that users cannot tell "Chebyshev (2-ended)" from "Chebyshev (Fano)" by name, and
+asked what the RF world calls them — and whether "Chebyshev (Levy)" / "Chebyshev (Dawson)" would do.**
+
+What the user chooses by is the **outcome**: the Fano form gives the best return loss and may add a
+surplus element at the far end (§4.5); the two-ended form absorbs both ends exactly, adds nothing, and
+gives up a little return loss. Neither current name says that.
+
+- **The field's own vocabulary** is the broadband-matching literature's (Youla, Carlin, Yarman, Chen):
+  the **single-matching** problem — one reactive termination prescribed, the other resistive — and the
+  **double-matching** problem — both prescribed. That is precisely the distinction between §4.3's two
+  prototypes: the Fano form prescribes one end (and reconciles the other with an element), the two-ended
+  form prescribes both. Matthaei's terms ("prescribed load decrement", "interstage") do not separate
+  them, since this document's own interstage example uses the Fano form.
+- **Levy/Dawson is defensible but slightly unfair.** Both prototypes run *Levy's* 1964 recursion; Dawson's
+  2009 contribution is the closed-form *optimum* root (§4.3's `P_n(c)` table). So "Levy" for the two-ended
+  form is right, and "Dawson" for the Fano form credits the optimisation rather than the network. Fano's
+  name belongs on the bound, not on a network. More to the point, an eponym does not help a user choose
+  — it swaps one opaque tag for another (Butterworth gets away with it only through ninety years of
+  familiarity).
+
+**Recommendation — descriptive primary, eponym in the tooltip and the user reference:**
+
+| Until rev 2 | Selector | Card / footer / filter | Tooltip lead |
+|---|---|---|---|
+| Chebyshev — Fano optimum | **Chebyshev — single-match (optimum)** | Chebyshev (single-match) | Best return loss at this order; may add a surplus element at the far end. Levy's recursion with Dawson's optimum root. |
+| Chebyshev — both ends prescribed | **Chebyshev — double-match (exact)** | Chebyshev (double-match) | Absorbs both terminations exactly and never adds an element; slightly lower return loss. Levy 1964. |
+
+The enum members `ChebyshevFano` / `ChebyshevTwoEnded` and the serialized spelling stay as they are —
+this is a display change, and a renamed enum value would break every saved design for no gain. The
+user reference (`docs/user/src/reference/match.md`) still calls the second option "fixed ripple", which
+was never what it is; it changes with the labels.
+
 ## 7. Data model and persistence
 
 ### 7.1 `MatchDesign`
@@ -544,7 +628,8 @@ One serializable object, the single source of truth:
   MatchDesign
     Version                       int
     F1, F2                        double, Hz
-    Order                         int  (2…6)
+    Order                         int  (2…6)   — n in-band match points; 2n elements in every form (§16.2)
+    Form                          enum { Bandpass, Lowpass, Highpass }   (rev 2, §16; default Bandpass, additive)
     Response                      enum { ChebyshevFano, ChebyshevTwoEnded, Butterworth, Bessel }
     RippleDb                      double        (real-to-real prototype only; default 0.1)
     Term1, Term2                  Termination { R, Kind{None,C,L}, Topology{Series,Parallel}, Value,
@@ -1022,6 +1107,12 @@ belongs in `src/Core` alongside the rest of the design layer. The firewall is un
 | **Session round-trip** — a design with two transforms (one π, one T, one locked, link on, a Q-adjusted solution applied) saved, reloaded and rebuilt gives identical element values, identical N's, identical lock/link state and identical S-parameters | §7.3 — this is the "everything I set is still there" guarantee |
 | **Transform pairs survive a basis change** — perturb the synthesis output slightly and confirm the name-keyed pairs still resolve, the fingerprint mismatch is reported, and no transform silently re-points | §7.3's trap, the one that would fail silently |
 | **Corrupt blob** — refuses at elaboration naming the instance, never silently substitutes a default | §7.2 |
+| **Lowpass-form DC pin (§16.3)** — a real-to-real lowpass design's R_far equals the target to 1e-9 relative with *no* transforms, and the closed form `worst|Γ|² = Γ₀²/(Γ₀² + T_n²(x₀)(1−Γ₀²))` predicts the simulated worst in-band return loss to 0.05 dB | the ratio is pinned by transparency at DC; the closed form is an oracle the code does not contain |
+| **Lowpass-form ≡ classical Chebyshev at F1 = 0** — order n at F1 = 0 with R_far/R_ana = coth²(B/4) reproduces `RippleG(2n, ripple)` to 1e-6 | §16.3's family reduces to the textbook prototype, which pins the frequency mapping |
+| **Lowpass/highpass absorption identity** — the end element equals the termination's own value exactly; a load below the family's smallest end element gets an added element of the same kind, a load above its largest is refused naming both numbers | §16.4 |
+| **No Norton pairs in a single-element ladder** — `NortonTransform.Discover` returns nothing for every lowpass/highpass basis, and `RequiredTransformRatio` is 1 | §16.5; this must fall out of the existing scan, not be special-cased |
+| **Highpass is the dual** — a highpass design over [F1, F2] has the lowpass design's g-values over [1/F2, 1/F1] with L↔C, and the same worst return loss | §16.6 |
+| **Old blobs decode as bandpass** — a `Design` payload written before `Form` existed rebuilds to the identical ladder | §16.8 |
 
 ### 13.3 Cost
 
@@ -1063,3 +1154,210 @@ four-element network and would not be here).
   flag, decided by using it.
 - Any change to `SParameterEngine`, `PlotControl`, `NetExtractor` or the elaborator beyond the one
   internal-node mint in §8.3, which follows three existing precedents exactly.
+
+---
+
+## 16. Network form — bandpass, lowpass, highpass (rev 2, 2026-08-28)
+
+**The owner asked whether lowpass and highpass solutions would work, whether they could serve as the
+absorption method, and whether they have value even if only for real-to-real transforms. Answer: yes,
+with one real limitation each, and a value proposition that is different from the one first
+guessed.** Everything below was checked numerically while writing it (spectral factorisation + Cauer
+extraction of the stated family, with an independent ABCD sweep against the closed form); the numbers
+are quoted, and they become golden values in §13.2.
+
+### 16.1 Two facts that decide the design
+
+1. **A lowpass ladder is transparent at DC.** Every shunt C is open and every series L is short, so
+   `|Γ(0)| = |(R₂ − R₁)/(R₂ + R₁)|` whatever the loads' reactances (they vanish at DC too). A highpass
+   ladder is transparent at ∞ in the same way. Two consequences:
+   - **The impedance ratio is paid for out of the Fano budget.** In bandpass, the prototype's ratio
+     `g_{n+1}` is whatever it is and a Norton transform reaches the real ratio *without changing the
+     response* (§4.7) — the ratio is free. In lowpass form there is nothing to absorb a transformer
+     into, and the DC value is part of the response.
+   - **A "band from DC" lowpass is not a useful product feature.** With DC in the band, `|Γ(0)|` is the
+     in-band floor: an even-order 0.1 dB Chebyshev transforms only `coth²(B/4) = 1.354 : 1`, and
+     50 → 5 Ω from DC is stuck at |Γ| = 0.82, i.e. **−1.7 dB** (4 elements, verified: −1.74 dB). This is
+     the textbook case — the one Fano's own paper solves — and it is the wrong thing to offer.
+2. **A ladder of single elements has no Norton pairs.** A Norton transform needs a series/shunt pair
+   of *like kind* (§4.7); in a lowpass ladder every series element is an L and every shunt element a C.
+   §4.7's scan finds nothing — correctly, and without a special case. So the transform rack is empty,
+   the linkage rule is vacuous, and every element value is what the prototype says.
+
+What practitioners mean by a "lowpass matching network" is therefore a **lowpass-form ladder matched
+between F1 and F2**, with the mismatch allowed to rise below F1 and the ratio pinned at DC. That is the
+feature. F1 = 0 (F2 = ∞ for highpass) is permitted and degenerates to the classical case, carrying its
+own penalty honestly.
+
+### 16.2 What it buys, and what it does not — the corrected value proposition
+
+- **Not fewer parts.** An n-match-point lowpass-form network has **2n elements — the same count as
+  bandpass order n**. (A ladder of m elements has m/2 in-band match points in any form.) "Order" keeps
+  its meaning — n in-band match points — and the element count is 2n in every form, so the order picker
+  and the parity language do not change.
+- **Tame element values at wide bandwidth.** The bandpass transformation at `w ≳ 1` (an octave and
+  more) produces resonators whose L and C values are spread over decades; the lowpass form has no
+  resonators and its values stay within a factor of a few of each other. This is the case wideband PA
+  output and LNA input matches actually live in, and it is where the form earns its place.
+- **A DC path (lowpass) or a DC block (highpass) for free**, which is what a bias network wants.
+- **No selectivity** beyond the roll-off, and **no rejection below F1** (lowpass) or above F2 (highpass).
+- **The ratio costs return loss.** From the closed form of §16.3, Chebyshev, 2n elements, real-to-real,
+  worst in-band return loss (a = F1/F2; verified by simulation to 0.01 dB in every cell):
+
+  | a = F1/F2 | elements | r = 2 | r = 10 |
+  |---|---|---|---|
+  | 0.33 (3 : 1) | 4 | −15.6 dB | −5.0 dB |
+  | 0.33 | 6 | −21.1 dB | −9.5 dB |
+  | 0.50 (2 : 1) | 4 | −22.2 dB | −10.5 dB |
+  | 0.50 | 6 | −31.7 dB | −19.6 dB |
+  | 0.66 (3.3–5 GHz) | 4 | −30.6 dB | −18.5 dB |
+  | 0.66 | 6 | −44.3 dB | −32.2 dB |
+
+  Compare bandpass order 2 (4 elements), real-to-real at 0.1 dB ripple: −16.4 dB at **any** ratio the
+  Norton ranges can reach. The lowpass form wins comfortably at a = 0.66 and loses at a = 0.33, r = 10;
+  the Solutions panel lists both and the user sees the numbers.
+- **Butterworth in lowpass form** exists (shifted `F = xⁿ`, §16.3) and is 4–5 dB worse than Chebyshev at
+  the same count: a = 0.5, r = 10 → −6.8 dB (4 el.), −10.6 dB (6 el.); a = 0.66, 4 el. → −13.4 dB against
+  Chebyshev's −18.5 dB. **Bessel is not offered in lowpass or highpass form** — with the DC pin the
+  family has no free parameter left, and a delay-flat network matched over a band that excludes DC is
+  not a defined thing. **The double-match Chebyshev is not offered either**: with the ratio pinned there
+  is one free parameter, not two, so both end Q's cannot be prescribed; §16.4's rule covers what the
+  form can do.
+
+### 16.3 The lowpass-form prototype
+
+Normalise to ω_c = 2πF2 and the analysis-end resistance. With `u = ω²`, `a = F1/F2`, map the band onto
+[−1, 1]:
+
+```
+  x(u) = (2u − 1 − a²) / (1 − a²)                       x(a²) = −1,  x(1) = +1,  x₀ = x(0) = −(1 + a²)/(1 − a²)
+  Φ(u) = T_n(x(u))²      (Chebyshev)     or     x(u)^{2n}   (Butterworth)
+  |Γ(jω)|² = (K + ε²Φ) / (1 + ε²Φ)
+```
+
+`Φ` is degree n in u, so `|Γ|²` is degree 2n in u and the Hurwitz factor is degree 2n in s — **2n
+elements**, all-pole (`|S21|² = (1 − K)/(1 + ε²Φ)`, constant numerator, every transmission zero at ∞), so
+§6.2's spectral factorisation and Cauer extraction apply unchanged. At a = 0, `x(u) = 2ω² − 1 = T₂(ω)` and
+`T_n(T₂(ω)) = T_{2n}(ω)`: **the family reduces exactly to the classical Chebyshev lowpass of order 2n**,
+which is §13.2's cross-check against `RippleG`.
+
+**The DC pin** is one equation in (ε, K):
+
+```
+  (K + ε²Φ(0)) / (1 + ε²Φ(0)) = Γ₀²,      Γ₀ = (r − 1)/(r + 1),   r = R_far / R_ana,   Φ(0) = T_n(x₀)²
+```
+
+so the family has **one free parameter**, K. For a real-to-real design the worst in-band `|Γ|²` is
+`(K + ε²)/(1 + ε²)` and is **monotone increasing in K**, so the optimum is K → 0 and the answer is closed
+form:
+
+```
+  worst |Γ|²  =  Γ₀² / ( Γ₀² + T_n(x₀)² · (1 − Γ₀²) )
+```
+
+This is the oracle in §13.2 — the implementation does not contain it, and the table in §16.2 is it.
+
+**Which orientation the ladder starts with** is chosen by the sign of Γ in §6.2 step 3, exactly as
+today: shunt-first for a parallel analysis end, series-first for a series one, shunt-first by default
+for a resistive one. The extracted `g_{2n+1}` is the resistance ratio (or its inverse for a shunt last
+element, the same convention `Build` uses today) and comes out **equal to the target** by construction
+— which is the DC pin seen from the other side, and is what makes §16.5 true.
+
+**Only even element counts have this closed form.** An odd-count ladder between unequal resistances
+needs `Φ(u) = (u + u_r)·R_k(u)²` — a *weighted* Chebyshev polynomial with one more free parameter,
+solvable by a Remez exchange but not by a formula, and its best member approaches the even count below
+it as the extra element vanishes. **v1 offers 2n elements for n = 2…6 (4–12), and odd counts are a
+recorded follow-up**, not a silent gap. The consequence for absorption is in §16.4.
+
+### 16.4 Absorption in lowpass and highpass form
+
+The prototype stage was always lowpass — Levy's recursions are lowpass formulas and the bandpass step is
+the resonating transformation. So absorption works the same way, with three differences:
+
+1. **Each form absorbs half of the termination kinds.** A lowpass ladder has only C to ground and L in
+   the through path, so it absorbs **R ‖ C** and **R + L**; highpass absorbs **R ‖ L** and **R + C**. The
+   other two are **refusals**, and §5's `C_eq` trick cannot rescue them — it depends on each arm having
+   both an L and a C, which is exactly what these forms lack. The refusal names the kind: *"A parallel
+   R ‖ L cannot be absorbed by a lowpass network — there is no shunt inductor to absorb it into. Use
+   highpass or bandpass form."*
+2. **The end elements are always of opposite orientation** (even count, alternating), so **only a mixed
+   pair — one series, one shunt — can have both ends absorbed.** A like pair (shunt C to shunt C, the
+   classic interstage) needs an odd count and is refused in these forms in v1, with the reason: *"Both
+   terminations are parallel; a lowpass network needs an odd element count to absorb both, which this
+   form does not offer yet. Bandpass form absorbs both."* `MatchOrders.ValidOrders` takes the form and
+   returns the empty list for that case. The common single-ended cases — a transistor's shunt-C output
+   into a 50 Ω load, a series-L drain feed — are exactly the ones that work.
+3. **K is chosen by both ends at once, and it is a 1-D monotone problem.** With the DC pin used, the
+   one free parameter moves the two end elements in opposite directions (verified, a = 0.5, 4 elements,
+   r = 10: K from 0 to 0.6 takes `g₁` from 2.49 to 10.6 and `g_far` from 0.248 to 0.069, and the worst
+   return loss from −10.5 to −2.2 dB). The rule, at each reactive end, is §4.5's: **synthesised ≥ actual
+   → the surplus is a real added element of the same kind and topology; synthesised < actual → not
+   absorbable.** Since return loss worsens with K, the design is the **smallest K** whose end elements
+   are both ≥ their terminations; the feasible interval is `[K_min from the near end, K_max from the
+   far end]`, and an empty interval is a refusal that names both numbers. There is no Fano root to find
+   and no §4.6 Q-adjust — the added element at the near end *is* the Q-adjust, produced by the same rule,
+   so `QAdjust` is ignored in these forms and Q-adjusted solutions are not searched for.
+
+The absorbed element carries `AbsorbedEnd` exactly as in bandpass and is not stamped; the excess element
+carries `IsExcess`; Flatten and the stamp need nothing new.
+
+### 16.5 Norton transforms, the linkage rule and the solutions list
+
+`NortonTransform.Discover` finds no pairs in a single-element ladder because like-kind elements are
+never of opposite orientation — this must **fall out of the existing scan**, and a test asserts that it
+does. `RequiredTransformRatio` is 1 by the DC pin, so the linkage rule is satisfied with no transforms
+and nothing turns red. The transform rack shows its empty state with one line — *"Lowpass and highpass
+networks have no Norton pairs: every value is the prototype's."* — rather than an empty list that looks
+broken. Each (form, order, family) cell therefore contributes **exactly one solution**, with zero
+transforms; the solutions list sorts it where zero transforms sort today, ahead of the bandpass rows
+of the same order.
+
+### 16.6 Highpass is the dual, not a second implementation
+
+Design the lowpass form over `[1/F2, 1/F1]` (with `F2 = ∞` allowed) and apply `s → 1/s`: every L becomes
+a C and every C an L, `C_hp = 1/(g·ω_ref·R)` and `L_hp = R/(g·ω_ref)` with `ω_ref = 2πF1`. The ratio is
+pinned at ∞ instead of DC, the absorbable kinds swap (§16.4), and the worst return loss is identical.
+One code path with a mirror, and §13.2's duality test holds it.
+
+### 16.7 What the user sees
+
+- The Solutions panel's filter gains a **Form** group — `Bandpass`, `Lowpass`, `Highpass`, all on by
+  default — above the Order group, and the search cross-product becomes (form × order × family): 20
+  bandpass cells as today plus 10 lowpass and 10 highpass (two families each). Lowpass/highpass cells
+  are cheap — a bracketed 1-D solve in K, no shape sweep — and the design's own form is searched first.
+- A card reads **"Chebyshev · lowpass · order 4"**; bandpass cards gain the word too, so the three read
+  alike. The footer and the Properties-panel summary carry the form.
+- The design's `Form` is set by **applying a solution**, as Order and Response are today; the
+  specification pane does not grow a selector.
+- The ladder preview draws single-element arms with the same symbols and roles; the response plots are
+  unchanged, and the plot band default (design band ±10 %) is unchanged even though a lowpass network's
+  response continues to DC — the user can widen it.
+- Refusals name the form and the remedy, as §4.5's do.
+
+### 16.8 Persistence
+
+`MatchDesign.Form` is an **additive** field, default `Bandpass`, omitted from nothing and read as
+`Bandpass` when absent — a payload written before rev 2 rebuilds to the identical ladder, and `Version`
+stays 1. The `Form` echo parameter joins `F1, F2, Order, Response, R1, R2` on the instance (§7.2).
+
+### 16.9 Numerical notes
+
+- **K = 0 exactly is a trap**: the numerator's roots then sit in double pairs on the jω axis and the
+  Hurwitz picker's "lower half by real part" tie-break returns a degenerate factor (observed: every
+  real-to-real case reported unrealizable at K = 0 and extracted cleanly at K = 1e-6). Floor K at
+  1e-6; the return-loss difference is below 0.01 dB.
+- The DC pin is applied analytically (ε from K and Γ₀), so the only search is 1-D in K and monotone —
+  bracket and bisect, no grid.
+- §6.7's leading-coefficient trimming rule applies as written; the polynomials are degree 4n in s.
+
+## 17. Owner decisions — 2026-08-28 (rev 2)
+
+1. **Elliptic and inverse Chebyshev are excluded** (§6.8), not deferred: the ladder cannot express them,
+   the synthesis is a different algorithm, and the matching benefit is marginal. A future notch is a
+   separate feature.
+2. **Lowpass and highpass forms are added as §16 specifies** — matched between F1 and F2, even element
+   counts, Chebyshev and Butterworth only, no Norton rack, ratio pinned by transparency. Odd element
+   counts are a recorded follow-up (§16.3).
+3. **The two Chebyshev families are renamed** per §6.9 — *single-match (optimum)* and *double-match
+   (exact)* — as a display change only; enum members and saved designs are untouched. *(Recommended in
+   rev 2; the owner has not yet confirmed the exact wording.)*

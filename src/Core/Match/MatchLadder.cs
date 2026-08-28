@@ -204,7 +204,35 @@ public static class MatchOrders
     /// pair forces even n and a LIKE pair forces odd n. Either end resistive frees the parity.
     /// </summary>
     public static IReadOnlyList<int> ValidOrders(Termination term1, Termination term2)
+        => ValidOrders(term1, term2, NetworkForm.Bandpass);
+
+    /// <inheritdoc cref="ValidOrders(Termination, Termination)"/>
+    /// <param name="term1">The port-1 end.</param>
+    /// <param name="term2">The port-2 end.</param>
+    /// <param name="form">Which network form the orders are being asked about (match.md §16.4).</param>
+    /// <remarks>
+    /// <b>The parity argument is a BANDPASS argument.</b> Its arms hold two elements each, so an end
+    /// absorbing a series reactance needs a series arm and the alternation forces the parity above.
+    ///
+    /// <para>A lowpass or highpass ladder is single elements, so it alternates every position rather
+    /// than every arm, and the count is 2n whatever n is (match.md §16.2) — with 2n even, the two END
+    /// elements are always of OPPOSITE orientation. So every order serves a mixed pair, and a LIKE
+    /// pair (shunt-C to shunt-C, the classic interstage) needs an odd element count, which §16.3's
+    /// closed form does not have: it would need a weighted Chebyshev polynomial and a Remez exchange.
+    /// v1 says so by offering no order at all for that pair rather than by producing a network that
+    /// only absorbs one of the two ends.</para>
+    /// </remarks>
+    public static IReadOnlyList<int> ValidOrders(Termination term1, Termination term2, NetworkForm form)
     {
+        ArgumentNullException.ThrowIfNull(term1);
+        ArgumentNullException.ThrowIfNull(term2);
+
+        if (form != NetworkForm.Bandpass)
+        {
+            bool bothReactive = term1.HasReactance && term2.HasReactance;
+            return bothReactive && term1.Topology == term2.Topology ? [] : [2, 3, 4, 5, 6];
+        }
+
         if (!term1.HasReactance || !term2.HasReactance)
             return [2, 3, 4, 5, 6];
 

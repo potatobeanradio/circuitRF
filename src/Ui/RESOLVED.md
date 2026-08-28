@@ -12944,3 +12944,116 @@ algorithm serve all three"), but it inverts the press routing: the layout would 
 both are present, and the overlay's own point/segment drag machinery — the fine wire-editing gestures
 — lives behind the press it would no longer receive. That is a focused piece of work with real
 regression risk in a heavily-tested area, not a rider on this batch.
+
+
+## Match Designer — the form cross-product and the §6.9 rename (2026-08-28)
+
+Brief `brief-match-lowpass-highpass-form.md` §4-§5. The numerical findings are in
+`src/Core/Match/RESOLVED.md`; these are the ones that only show up in the window.
+
+### The search cell is (form, order, family), and the form is a CELL COORDINATE
+
+`MatchSpecKey` is unchanged, deliberately: the form is not an input to the search any more than the
+order is, so applying a lowpass solution moves the badges and nothing else. What did have to change is
+that the valid orders are asked **per form**. A like-topology termination pair has orders 3 and 5 in
+bandpass form and none at all in the other two, so one order list would either search cells that
+refuse or hide bandpass rows that exist.
+
+The cross-product grew from 20 cells to at most 40 — 20 bandpass, then 10 lowpass and 10 highpass (two
+families each; the double-match Chebyshev and Bessel are refused in these forms and searching them
+would spend twenty cells producing that sentence). Measured on the shipped default document: 444
+bandpass rows before, 464 after. The new cells are cheap — a bracketed 1-D solve with no shape sweep
+and no transform-set enumeration — so no timing test was added and none is wanted.
+
+**A reactive pair lists only ONE of lowpass and highpass**, because the two forms absorb dual kinds
+(see the Core note). This is not a gap in the search and a test asserting all three forms on a reactive
+fixture is a test that will fail; `TheSearch_ReachesTheFormThePairAdmits` asserts the present one and
+the ABSENCE of its dual, and `AResistivePair_ListsAllThreeForms` covers the case where all three exist.
+
+### The filter's order lines come from the union, not from the design's own form
+
+`Accepts` shows a row whose order has no line — that rule exists so the applied solution is never
+hidden. Combined with a per-form order list it becomes a hole: a lowpass design with a like-topology
+pair has NO valid orders, so the filter would have no order lines at all while the panel listed
+bandpass rows at 3 and 5, and every one of them would be unhideable. `FilterOrderOptions` is the union
+across the three forms; `OrderOptions` (the picker's own) stays the design's form.
+
+### The rack's empty state is a NOTE, not the refusal it looks like
+
+Both states show an empty transform list and they mean opposite things. "No transformable pair" is a
+bandpass ladder that came out without one — a thing that stops the design completing. A lowpass ladder
+has no pairs BY CONSTRUCTION and is finished anyway, because the DC pin already put the far resistance
+on target. One flag (`TransformRackApplies`) drives the note, the `+`/`−`/link controls and the list,
+so the three cannot disagree about which state the rack is in.
+
+### §6.9's rename is display-only, and it touched four sites
+
+`ChebyshevFano` → **"Chebyshev — single-match (optimum)"** in the selector and **"Chebyshev
+(single-match)"** on a card; `ChebyshevTwoEnded` → **"double-match (exact)"** / **"(double-match)"**.
+The enum members and the serialized spelling are untouched — a renamed enum value would break every
+saved design for no gain — so the four places that spell a family for a human all had to move
+together: `MatchSolutionRowViewModel.FamilyName` (cards and the filter's own lines, which must agree
+or a user cannot tell which line hides which cards), `MatchDesignerViewModel`'s `ResponseOptions`
+(the selector plus its tooltips, where the Levy/Dawson credit now lives), and the two independent
+copies in `ParameterEditorViewModel.Match.cs` and `MatchFlatten.cs`.
+
+**In lowpass and highpass rows the family reads just "Chebyshev".** The single/double distinction is
+bandpass-only — with the ratio pinned there is one free parameter, so the double-match form is not on
+offer and a contrast with it would be a contrast with nothing. `FamilyName` takes the form for this;
+the filter's family lines keep the bandpass spellings, because they hide cards across all three forms.
+
+Three existing tests asserted the substring "Fano" against user-facing text and were updated to assert
+"single-match" plus the form word. That is the whole blast radius; nothing keys on those strings.
+
+### Selectable card text costs the card's own click, and the reason is `handledEventsToo`
+
+Owner, 2026-08-28: quote the return loss signed (**"RL -10.51 dB"**, not "RL 10.51 dB" — the card sits
+beside response plots whose y axis is negative, and two spellings of one number in one window is the
+ambiguity worth removing), and make every line on the solution card selectable text.
+
+The second half is not a one-word substitution. **`SelectableTextBlock.OnPointerPressed` sets
+`e.Handled = true` and captures the pointer**, and `InputElement`'s class handler for
+`PointerPressedEvent` is registered **without `handledEventsToo`** — so `ListBoxItem.OnPointerPressed`,
+which is the thing that selects the row, is never reached. Since 2026-08-28 the card IS the button
+(selecting a row applies its solution), so the failure mode would have been: clicking a card's blank
+margin applies it, clicking its **text** — the whole readable area — does nothing. Verified by reading
+the framework sources, not inferred from behaviour.
+
+This is a second face of the hazard `HISTORY.md` records at R-h9r2-15, where `SelectableTextBlock` ate
+a **double**-tap before the harmonicaRF readout strip's inline editor could see it. The rule that
+generalises: **`SelectableTextBlock` is a drop-in for `TextBlock` only where nothing else wants the
+pointer.** `MessagesView` gets away with it because nothing reads that list's `SelectedItem`.
+
+The fix is a **tunnelling** `PointerPressed` handler on the solutions `ListBox`
+(`OnSolutionsPointerPressed`): tunnelling runs root-to-source, so it sets the selection before the text
+block's own bubbling handler can mark the event handled, whatever the click landed on. It deliberately
+does **not** set `Handled` — the press still reaches the text, so dragging still selects and the stock
+copy menu still works — and selecting an already-selected row is a no-op, so it is inert on the clicks
+the framework would have handled by itself. Applying is still `OnSolutionSelectionChanged`'s single
+path; only *what moves the selection* was restored.
+
+The badge stays a plain `TextBlock`: it is a tick or a ring, there is nothing in it to copy, and it is
+the element carrying the tooltip that explains it.
+
+### `TextBlock.x` does not style a `SelectableTextBlock`, and the failure is silent
+
+Owner-reported the moment the card's lines became selectable: **the font size changed.** An Avalonia
+style selector written as a bare type name matches that type **exactly** — `SelectableTextBlock`
+derives from `TextBlock`, so `Selector="TextBlock.note"` skipped every one of the new lines and they
+fell back to the inherited size. Nothing errors and nothing warns; the style simply does not apply.
+`:is(TextBlock).note` is the selector that includes derived types, and the three classes the card
+wears (`soltitle`, `note`, `warn`) now use it. `solbadge` stays an exact-type selector because the
+badge stays a plain `TextBlock`.
+
+**Rule for the next time this comes up:** swapping `TextBlock` for `SelectableTextBlock` is two
+changes, never one — the gesture (see above) and the styles.
+
+### The Ripple note came off the specification column
+
+Owner-reported: the note put a scroll bar on the specification pane. `RippleNote` is silent now when
+**both** ends carry a reactance — the default shape of a design and most real ones, so the line the
+column could least afford was the one it showed almost always, and with both ends reactive it has no
+end to name. The single-end spelling stays, because *which* end is the half a reader cannot get from
+looking at the row. `RippleTooltip` opens with the sentence that came off, so it is still the first
+thing said on the row it is about, and the row still dims — which is what the round-6 bug the note was
+originally written for actually needed.

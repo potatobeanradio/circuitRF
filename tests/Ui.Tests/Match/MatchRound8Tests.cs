@@ -435,8 +435,12 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         var (_, _, d) = Open(Problem());
         d.WaitForAnalysis();
 
-        Assert.Equal(MatchOrders.ValidOrders(d.Design.Term1, d.Design.Term2),
-                     d.Filter.Orders.Select(o => o.Order));
+        // The UNION across the three forms, not the bandpass parity alone (match.md §16.4 item 2).
+        // A mixed pair is orders 2, 4, 6 in bandpass form and 2..6 in the other two, and the filter
+        // is a view over what was FOUND — a line missing here is a row nobody can hide.
+        Assert.Equal(d.FilterOrderOptions, d.Filter.Orders.Select(o => o.Order));
+        Assert.Equal([2, 3, 4, 5, 6], d.Filter.Orders.Select(o => o.Order));
+        Assert.Equal([2, 4, 6], MatchOrders.ValidOrders(d.Design.Term1, d.Design.Term2));
 
         var four = d.Filter.Orders.Single(o => o.Order == 4);
         four.IsOn = false;
@@ -468,11 +472,14 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         string xaml = Xaml();
         Assert.Contains("Classes.current=\"{Binding IsCurrent}\"", xaml, StringComparison.Ordinal);
 
+        // The title's selector is :is(TextBlock) since the card's lines became SelectableTextBlock
+        // (2026-08-28) — an Avalonia type selector matches its type EXACTLY, so the bare spelling
+        // would silently stop applying. The badge is still a plain TextBlock and still exact-type.
         foreach (string selector in new[]
         {
             "Selector=\"Border.card.current\"",
             "Selector=\"Border.card.current TextBlock.solbadge\"",
-            "Selector=\"Border.card.current TextBlock.soltitle\"",
+            "Selector=\"Border.card.current :is(TextBlock).soltitle\"",
         })
             Assert.Contains(selector, xaml, StringComparison.Ordinal);
 
@@ -480,7 +487,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         // than assumed from their names.
         Assert.Contains("<Setter Property=\"Foreground\" Value=\"#2FA85A\"/>", xaml, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"BorderBrush\"     Value=\"#2FA85A\"/>", xaml, StringComparison.Ordinal);
-        Assert.Equal(2, Regex.Matches(xaml, @"Border\.card\.current TextBlock\.(solbadge|soltitle)"">\s*(?:<Setter[^>]*>\s*)*?<Setter Property=""FontWeight"" Value=""Bold""/>").Count);
+        Assert.Equal(2, Regex.Matches(xaml, @"Border\.card\.current (?::is\(TextBlock\)|TextBlock)\.(solbadge|soltitle)"">\s*(?:<Setter[^>]*>\s*)*?<Setter Property=""FontWeight"" Value=""Bold""/>").Count);
 
         // …and the flag itself is what a row exposes.
         var (_, _, d) = Open(Problem());
@@ -613,11 +620,11 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         string analysis = Src("src", "Ui", "Match", "MatchDesignerViewModel.Analysis.cs");
 
         // Published per cell, from inside the loop.
-        Assert.Contains("publish(new MatchSolutionBatch(order, shape, set, isCurrent));",
+        Assert.Contains("publish(new MatchSolutionBatch(form, order, shape, set, isCurrent));",
                         analysis, StringComparison.Ordinal);
 
         // The design's own combination is yielded before the sweep.
-        Assert.Contains("if (ownIsValid) yield return (design.Order, design.Response);",
+        Assert.Contains("if (ownIsValid) yield return (design.Form, design.Order, design.Response);",
                         analysis, StringComparison.Ordinal);
 
         // APPENDED, never inserted — see the next test for the defect that establishes.

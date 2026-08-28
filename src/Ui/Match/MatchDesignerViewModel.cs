@@ -87,12 +87,18 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
         ResponseOptions =
         [
-            new(ResponseShape.ChebyshevFano, "Chebyshev — Fano optimum",
-                "The singly-prescribed closed form with the Fano root. The default, and the best "
-                + "in-band match a network of this order can reach for this termination."),
-            new(ResponseShape.ChebyshevTwoEnded, "Chebyshev — both ends prescribed",
-                "Both end Q's are inputs, so the far end absorbs exactly and no surplus element is "
-                + "ever needed. What it gives up is Fano optimality."),
+            // match.md §6.9: the names say the OUTCOME, not the derivation. "single-match" and
+            // "double-match" are the broadband-matching literature's own terms for one prescribed
+            // reactive termination against two, which is exactly what separates these two prototypes
+            // — and unlike "(Fano)" and "(2-ended)" they tell a user which one they want. The
+            // eponyms move into the tooltips, where a credit belongs. Display only: the enum members
+            // and the serialized spelling are untouched.
+            new(ResponseShape.ChebyshevFano, "Chebyshev — single-match (optimum)",
+                "Best return loss at this order; may add a surplus element at the far end. Levy's "
+                + "recursion with Dawson's optimum root."),
+            new(ResponseShape.ChebyshevTwoEnded, "Chebyshev — double-match (exact)",
+                "Absorbs both terminations exactly and never adds an element; slightly lower return "
+                + "loss. Levy 1964."),
             new(ResponseShape.Butterworth, "Butterworth",
                 "Maximally-flat magnitude, through the numerical route. Roughly half the "
                 + "group-delay variation of the Chebyshev design."),
@@ -729,8 +735,21 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// </summary>
     private void AdjustOrderForParity()
     {
-        var valid = MatchOrders.ValidOrders(_design.Term1, _design.Term2);
+        var valid = MatchOrders.ValidOrders(_design.Term1, _design.Term2, _design.Form);
         if (valid.Contains(_design.Order)) { OrderNote = ""; return; }
+
+        // A like-topology pair has NO valid order in lowpass or highpass form (match.md §16.4 item
+        // 2), so there is nothing to move the order to. The order is left where it is — MN-1's own
+        // refusal names the reason, and the Solutions panel still lists the bandpass rows, which is
+        // where the user is going to go.
+        if (valid.Count == 0)
+        {
+            OrderNote =
+                $"Both terminations are {(_design.Term1.Topology == TerminationTopology.Parallel ? "parallel" : "series")}, "
+                + $"and a {MatchSolutionRowViewModel.FormName(_design.Form)} network needs an odd "
+                + "element count to absorb two ends of the same topology. Bandpass form absorbs both.";
+            return;
+        }
 
         int old = _design.Order;
         int chosen = valid.OrderBy(o => Math.Abs(o - old)).ThenBy(o => o).First();
@@ -787,8 +806,25 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// <summary>The one line explaining an automatic Q-adjust change, or empty.</summary>
     [ObservableProperty] private string _qAdjustNote = "";
 
-    /// <summary>The orders <c>MatchOrders.ValidOrders</c> permits for the current pair.</summary>
-    public IReadOnlyList<int> OrderOptions => MatchOrders.ValidOrders(_design.Term1, _design.Term2);
+    /// <summary>The orders <c>MatchOrders.ValidOrders</c> permits for the current pair AND form.</summary>
+    public IReadOnlyList<int> OrderOptions =>
+        MatchOrders.ValidOrders(_design.Term1, _design.Term2, _design.Form);
+
+    /// <summary>
+    /// Every order that any form permits for the current pair — what the solutions FILTER offers.
+    /// </summary>
+    /// <remarks>
+    /// <b>The union, not the current form's list.</b> A like-topology pair has orders 3 and 5 in
+    /// bandpass form and none in the other two; a filter built from a lowpass design's own options
+    /// would then have no order lines at all while the panel was listing bandpass rows at orders 3
+    /// and 5, and <c>Accepts</c> shows a row whose order has no line — so every one of them would be
+    /// unhideable. The filter is a view over what was FOUND, and what was found spans the forms.
+    /// </remarks>
+    public IReadOnlyList<int> FilterOrderOptions =>
+        [.. new[] { NetworkForm.Bandpass, NetworkForm.Lowpass, NetworkForm.Highpass }
+             .SelectMany(f => MatchOrders.ValidOrders(_design.Term1, _design.Term2, f))
+             .Distinct()
+             .Order()];
 
     /// <summary>Network order.</summary>
     public int Order
@@ -900,15 +936,33 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// half that answers "why can I not type here", naming the end, and the rest is one hover away on
     /// the row it is about.
     /// </remarks>
+    /// <remarks>
+    /// <b>Nothing at all when BOTH ends carry a reactance</b> (owner-reported, 2026-08-28: the line
+    /// pushed the specification column past its own height and put a scroll bar on it). That is the
+    /// DEFAULT design and most real ones, so the line the column could least afford was the one it
+    /// showed almost always — and it is the one carrying the least, since with both ends reactive
+    /// there is no end to name. The single-end spelling stays: it says WHICH end, which is the half
+    /// that cannot be guessed from looking at the row.
+    ///
+    /// <para>Nothing is lost. The row still dims — which is what the round-6 bug this note was
+    /// written for actually needed — and <see cref="RippleTooltip"/> still carries the whole of §6.6
+    /// on the row it is about.</para>
+    /// </remarks>
     public string RippleNote =>
-        RippleEnabled ? ""
-        : BothEndsReactive ? "The terminations' reactances set this."
+        RippleEnabled || BothEndsReactive ? ""
         : $"{WhichEnd(lower: false)}'s reactance sets this.";
 
     /// <summary>The whole of §6.6's explanation, on the Ripple row itself.</summary>
+    /// <remarks>
+    /// <b>It opens with the sentence the note used to show</b> (owner, 2026-08-28), so the line that
+    /// came off the specification column for want of height is still the first thing said on the row
+    /// it was about — and it is said in the both-ends case, which is the one that no longer has a
+    /// visible note at all. See <see cref="RippleNote"/>.
+    /// </remarks>
     public string RippleTooltip => RippleEnabled
         ? "Equal-ripple level in dB — the real-to-real prototype only. Double-click to edit."
-        : $"{WhichEnd(lower: false)} carr{(BothEndsReactive ? "y" : "ies")} a reactance, so the "
+        : (BothEndsReactive ? "The terminations' reactances set this. " : "")
+          + $"{WhichEnd(lower: false)} carr{(BothEndsReactive ? "y" : "ies")} a reactance, so the "
           + "prototype is the singly- or doubly-prescribed one and the ripple is set by the "
           + "terminations rather than by hand (match.md §6.6). Clear the reactance to – to set it here.";
 
@@ -1361,6 +1415,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
             Set(updated, "F2", Echo(_design.F2 / 1e9), "GHz", UnitDimension.Frequency, true);
             Set(updated, "Order", _design.Order.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None, true);
             Set(updated, "Response", _design.Response.ToString(), "", UnitDimension.None, false);
+            Set(updated, "Form", _design.Form.ToString(), "", UnitDimension.None, false);
             Set(updated, "R1", Echo(_design.Term1.R), "Ω", UnitDimension.Resistance, false);
             Set(updated, "R2", Echo(_design.Term2.R), "Ω", UnitDimension.Resistance, false);
 

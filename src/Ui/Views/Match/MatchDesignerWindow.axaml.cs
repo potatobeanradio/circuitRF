@@ -356,6 +356,37 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
     /// either of which raises this event again. Re-entering would apply a solution twice and, worse,
     /// could apply a row the list had merely re-selected on the user's behalf.</para>
     /// </remarks>
+    /// <summary>
+    /// Selects the card under the pointer <b>before</b> its text can swallow the press.
+    /// </summary>
+    /// <remarks>
+    /// <b>The card is the button, and since the card's lines became <c>SelectableTextBlock</c> the
+    /// framework no longer selects the row for us on a click that lands on TEXT.</b> Read, not
+    /// guessed: <c>SelectableTextBlock.OnPointerPressed</c> sets <c>e.Handled = true</c> and captures
+    /// the pointer, and <c>InputElement</c>'s class handler for <c>PointerPressedEvent</c> is
+    /// registered <i>without</i> <c>handledEventsToo</c> — so <c>ListBoxItem.OnPointerPressed</c>,
+    /// which is what would have selected the row, is never reached. The card's blank margins would
+    /// still work and its text would not, which is the worst possible half of the gesture to lose.
+    ///
+    /// <para><b>Tunnelling, so it cannot be pre-empted.</b> A tunnelling handler runs root-to-source,
+    /// i.e. before the text block's own bubbling one, whatever the click landed on. It deliberately
+    /// does NOT set <c>Handled</c>: the press still reaches the text, so dragging still selects text
+    /// and the stock copy menu still works. Selecting a row that is already selected is a no-op, so
+    /// this is also inert on every click the framework would have handled by itself.</para>
+    ///
+    /// <para>Applying is still <see cref="OnSolutionSelectionChanged"/>'s job and there is still one
+    /// path to it — this only restores WHAT MOVES THE SELECTION, which is the thing
+    /// <c>SelectableTextBlock</c> took away.</para>
+    /// </remarks>
+    private void OnSolutionsPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_solutionsList is null) return;
+        if (!e.GetCurrentPoint(_solutionsList).Properties.IsLeftButtonPressed) return;
+
+        var item = (e.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
+        if (item?.DataContext is MatchSolutionRowViewModel row) _solutionsList.SelectedItem = row;
+    }
+
     private void OnSolutionSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_syncingSolutionSelection) return;
@@ -453,6 +484,8 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         if (_solutionsList is null) return;
 
         _solutionsList.SelectionChanged += OnSolutionSelectionChanged;
+        _solutionsList.AddHandler(
+            PointerPressedEvent, OnSolutionsPointerPressed, RoutingStrategies.Tunnel);
 
         var solutions = Vm.Solutions;
         solutions.CollectionChanged += OnSolutionsCollectionChanged;

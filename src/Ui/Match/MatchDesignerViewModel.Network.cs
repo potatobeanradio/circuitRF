@@ -370,6 +370,7 @@ public sealed partial class MatchDesignerViewModel
 
         _design.Order = row.Order;
         _design.Response = row.Response;
+        _design.Form = row.Form;
         _design.AllowNegativeComponents = row.HasNegativeComponents;
         _design.Transforms = [.. row.Solution.Transforms];
         _design.QAdjust = row.Solution.QAdjust;

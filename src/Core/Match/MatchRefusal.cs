@@ -29,6 +29,14 @@ public enum MatchRefusalKind
 
     /// <summary>A termination is degenerate — a non-positive R, or a short/open reactance.</summary>
     InvalidTermination,
+
+    /// <summary>
+    /// The network FORM has no element of the kind and orientation a termination needs (match.md
+    /// §16.4 item 1). A lowpass ladder is series inductors and shunt capacitors, so it has no shunt
+    /// inductor to absorb an R &#8741; L into; a highpass ladder is the other way round. The same
+    /// termination is absorbable in another form, which is why the message names the ones that can.
+    /// </summary>
+    FormCannotAbsorb,
 }
 
 /// <summary>
