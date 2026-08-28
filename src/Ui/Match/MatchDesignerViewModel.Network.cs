@@ -108,12 +108,15 @@ public sealed partial class MatchDesignerViewModel
                 .Where(e => e.Role == MatchElementRole.Absorbed)
                 .Select(e => e.Name)
                 .ToList();
+            // ONE CLAUSE (owner, 2026-08-28). It used to add "drawn beside the termination that
+            // supplies them — this component does not contain them", which is two more clauses saying
+            // the same thing as the first in a shape that does not read: the drawing already puts the
+            // element beside its termination, and "supplied by the external termination" already says
+            // the component has not got it.
             return absorbed.Count == 0
                 ? ""
                 : $"{string.Join(", ", absorbed)} {(absorbed.Count == 1 ? "is" : "are")} supplied by "
-                  + "the external terminations, drawn beside the termination that supplies "
-                  + $"{(absorbed.Count == 1 ? "it" : "them")} — this component does not contain "
-                  + $"{(absorbed.Count == 1 ? "it" : "them")}.";
+                  + $"the external termination{(absorbed.Count == 1 ? "" : "s")}.";
         }
     }
 
@@ -297,35 +300,84 @@ public sealed partial class MatchDesignerViewModel
     // ── Solutions ─────────────────────────────────────────────────────────────
 
     /// <summary>The solutions panel's rows, in MN-1's own order: fewest transforms, then position,
-    /// then Q-adjust. Filled by the background analysis — see
-    /// <c>MatchDesignerViewModel.Analysis.cs</c>.</summary>
+    /// then Q-adjust — <b>filtered</b>. Filled batch by batch as the background cross-product search
+    /// finds them, and kept in step with <see cref="Filter"/>; the unfiltered list is
+    /// <see cref="AllSolutions"/>. See <c>MatchDesignerViewModel.Analysis.cs</c>.</summary>
     public ObservableCollection<MatchSolutionRowViewModel> Solutions { get; } = [];
 
-    /// <summary>Whether the docked solutions list is out.</summary>
-    [ObservableProperty] private bool _solutionsPanelOpen;
-
-    /// <summary>The footer's own line: "3 solutions · applied: 2-transform, Fano".</summary>
+    /// <summary>The footer's own line: "7 solutions · applied: 2 transforms, Chebyshev (Fano) order 4".</summary>
     [ObservableProperty] private string _solutionsSummary = "";
 
-    /// <summary>Non-empty when the search has nothing to offer — "No solutions available for order 4",
-    /// said plainly, with the numbers behind it.</summary>
+    /// <summary>
+    /// True when some listed row is the one the design is on — what the header's "scroll to the
+    /// applied solution" button is enabled by.
+    /// </summary>
+    /// <remarks>
+    /// False for a design carrying a hand-set transform set, which matches no row: there is nothing
+    /// to scroll to, and a button that scrolls nowhere is worse than one that is plainly unavailable.
+    /// </remarks>
+    public bool HasAppliedSolution => Solutions.Any(r => r.IsCurrent);
+
+    /// <summary>Non-empty when the whole cross-product came back empty — said plainly, with MN-1's own
+    /// numbers behind it. See <c>LandSearchComplete</c>.</summary>
     [ObservableProperty] private string _solutionsRefusal = "";
 
     /// <summary>
-    /// Applies one solution: its transforms, its Q-adjust, and its fingerprint into
-    /// <see cref="MatchDesign.AppliedSolutions"/> — which is what makes the "previously applied" badge
-    /// survive a reload.
+    /// Applies one solution: <b>its order and its response family</b> as well as its transforms, its
+    /// Q-adjust and its fingerprint into <see cref="MatchDesign.AppliedSolutions"/> — which is what
+    /// makes the "previously applied" badge survive a reload.
     /// </summary>
-    public void ApplySolution(MatchSolutionRowViewModel row)
+    /// <remarks>
+    /// <b>A card now carries the order and the family it was found at</b> (owner, 2026-08-28: the
+    /// specification pane's Order and Filter Response cards are gone, and the list spans all of both),
+    /// so applying one has to move the design onto them. Before that change every row shared the
+    /// design's own order and family and there was nothing to carry.
+    ///
+    /// <para><c>AllowNegativeComponents</c> is set from what the SOLUTION contains rather than left
+    /// where the user had it. The search runs with it on for every combination, so an applied row may
+    /// need it — and a rebuild that clamped the N's back inside their positivity ranges would quietly
+    /// produce a different network from the one the card described. A row with no negative element
+    /// clears it for the same reason in reverse: the clamp is a no-op on a rack that is already
+    /// inside its ranges, so leaving the flag on would only widen what a later drag may reach.</para>
+    ///
+    /// <para><b>This does not restart the solution search.</b> None of the five things it writes is
+    /// part of <c>MatchSpecKey</c>, so <c>QueueSolutionSearch</c> leaves the list alone and only the
+    /// badges move — see MatchDesignerViewModel.Analysis.cs.</para>
+    /// </remarks>
+    public void ApplySolution(MatchSolutionRowViewModel row) => ApplySolution(row, 0);
+
+    /// <inheritdoc cref="ApplySolution(MatchSolutionRowViewModel)"/>
+    /// <param name="row">The solution to apply.</param>
+    /// <param name="amendStamp">
+    /// Non-zero when this apply is the second half of one user gesture — the termination auto-solve —
+    /// in which case its commit absorbs the gesture's earlier one rather than adding an undo entry
+    /// beside it. See <c>CommitCore</c>.
+    /// </param>
+    private void ApplySolution(MatchSolutionRowViewModel row, long amendStamp)
     {
         ArgumentNullException.ThrowIfNull(row);
+        AsOneEdit(() => ApplySolutionCore(row, amendStamp));
+    }
+
+    private void ApplySolutionCore(MatchSolutionRowViewModel row, long amendStamp)
+    {
+
+        // A row at a DIFFERENT order makes the automatic-order note stale — it names a move the
+        // design has now made again, by hand. A row at the same order leaves it standing, which is
+        // what the termination auto-solve needs: that path applies at the design's own order, and
+        // the note beside it is still the true account of why the order is what it is.
+        if (row.Order != _design.Order) OrderNote = "";
+
+        _design.Order = row.Order;
+        _design.Response = row.Response;
+        _design.AllowNegativeComponents = row.HasNegativeComponents;
         _design.Transforms = [.. row.Solution.Transforms];
         _design.QAdjust = row.Solution.QAdjust;
         if (!_design.AppliedSolutions.Contains(row.Solution.Fingerprint, StringComparer.Ordinal))
             _design.AppliedSolutions.Add(row.Solution.Fingerprint);
 
         Refresh(specChanged: true);
-        Commit();
+        CommitCore(amendStamp);
     }
 
     // ── Flatten — MN-5 ────────────────────────────────────────────────────────

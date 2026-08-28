@@ -207,6 +207,14 @@
                  is the fix that makes this class of bug impossible to reintroduce per-dialog — do NOT
                  go back to fixing it button-by-button in each new dialog's AXAML. -->
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <!-- AND THE OTHER AXIS, for the same reason and by the same policy (owner-reported
+                 2026-08-28, against the Match Designer's Probe button: "the Probe button text is not
+                 aligned middle within its button"). Avalonia's ContentControl default is Stretch on
+                 both axes, so a Button TALLER than its label — one given a Height, or stretched by a
+                 sibling in its row — renders the text against the top edge. It is exactly the bug the
+                 paragraph above is about, on the axis that paragraph did not fix, and it belongs in
+                 the same one place: a per-button VerticalContentAlignment is how this comes back. -->
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="CheckBox">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>

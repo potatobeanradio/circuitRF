@@ -7,9 +7,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace CircuitRF.Ui.Matching;
 
 /// <summary>
-/// What the Designer's <c>Settings</c> flyout holds — and match.md §9.9 is explicit that it is this
-/// and nothing more: display units per dimension, significant digits, <c>Qmin</c>, and whether to
-/// offer Q-adjusted solutions at all.
+/// What the Designer's <c>Settings</c> flyout holds: display units per dimension, significant digits
+/// and <c>Qmin</c>. match.md §9.9 listed a fourth — whether to offer Q-adjusted solutions at all —
+/// and it is gone (owner, 2026-08-28). The solutions search now always computes them and the
+/// solutions panel's own filter decides whether they are listed, which is the same choice made in
+/// front of the list it changes, and free rather than a re-search.
 /// </summary>
 /// <remarks>
 /// <b>There is deliberately no standard-value series here</b> (§9.3, owner 2026-08-19). What counts as
@@ -67,9 +69,6 @@ public sealed partial class MatchDesignerSettings : ObservableObject
 
     /// <summary>match.md §4.6's floor on a deliberately-inflated analysis-end Q.</summary>
     [ObservableProperty] private double _qMin = MatchSolutionSearch.DefaultQMin;
-
-    /// <summary>Whether the solutions list offers §4.6's Q-adjusted extra solution at all.</summary>
-    [ObservableProperty] private bool _offerQAdjustedSolutions = true;
 
     /// <summary>
     /// match.md §14.5 — the mean |ΔΓ| above which a probed termination is applied but flagged.

@@ -55,6 +55,10 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         // slider, a specification field or the network canvas is handled by that control and never
         // bubbles anywhere a deselect could hang off. See OnWindowPointerPressed.
         AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel);
+
+        // Page Up/Down, Home and End, on the way DOWN to whatever has focus. See
+        // OnPanelScrollKeyDown for why the window and not the list.
+        AddHandler(KeyDownEvent, OnPanelScrollKeyDown, RoutingStrategies.Tunnel);
     }
 
     /// <summary>
@@ -333,9 +337,171 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         if (Vm.IsStandalone) Vm.SetFlattenOutcome(result.Message, result.Ok);
     }
 
-    private void OnApplySolution(object? sender, RoutedEventArgs e)
+    /// <summary>
+    /// <b>Selecting a solution applies it.</b>
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-28:</b> the Apply / Applied button comes off the card, and a solution is
+    /// applied as soon as the user clicks the card. A Click handler on the card was the obvious shape
+    /// and is the wrong one: the owner asked in the same breath for the up and down arrows to move
+    /// between solutions, and a <c>ListBox</c> already turns BOTH a click and an arrow key into the
+    /// same thing — a selection. Hanging the apply off selection rather than off the pointer is what
+    /// makes the keyboard gesture free, and it is why there is no second code path to diverge from.
+    ///
+    /// <para>The double-tap handler is gone with the button, and nothing is lost: a double-click
+    /// selects on its first press, so it applies exactly as it did.</para>
+    ///
+    /// <para><b>The guard is not decoration.</b> <c>Apply</c> re-badges every row and refreshes the
+    /// list, and <see cref="SyncSolutionSelection"/> writes <c>SelectedItem</c> straight back —
+    /// either of which raises this event again. Re-entering would apply a solution twice and, worse,
+    /// could apply a row the list had merely re-selected on the user's behalf.</para>
+    /// </remarks>
+    private void OnSolutionSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if ((sender as Control)?.Tag is MatchSolutionRowViewModel row) row.Apply();
+        if (_syncingSolutionSelection) return;
+        if (_solutionsList?.SelectedItem is not MatchSolutionRowViewModel row) return;
+        if (row.IsCurrent) return;
+
+        _syncingSolutionSelection = true;
+        try { row.Apply(); }
+        finally { _syncingSolutionSelection = false; }
+
+        SyncSolutionSelection();
+    }
+
+    /// <summary>
+    /// Points the list's selection at the applied row, without that write being read back as a new
+    /// choice by the user.
+    /// </summary>
+    /// <remarks>
+    /// The selection has to FOLLOW the applied row as well as cause it, for two reasons: the arrow
+    /// keys step from wherever the selection is, and the applied row changes from paths that are not
+    /// clicks at all — the termination auto-solve, an undo, a filter that hides the row that was
+    /// selected. Without this the first arrow key after any of those would jump somewhere the user
+    /// was not.
+    /// </remarks>
+    private void SyncSolutionSelection()
+    {
+        if (_solutionsList is null || Vm is null) return;
+
+        var applied = Vm.Solutions.FirstOrDefault(r => r.IsCurrent);
+        if (ReferenceEquals(_solutionsList.SelectedItem, applied)) return;
+
+        _syncingSolutionSelection = true;
+        try { _solutionsList.SelectedItem = applied; }
+        finally { _syncingSolutionSelection = false; }
+    }
+
+    private bool _syncingSolutionSelection;
+
+    /// <summary>
+    /// Moves the solutions selection one row, which applies that solution.
+    /// </summary>
+    /// <remarks>
+    /// <b>The scroll is EXPLICIT here and nowhere else.</b> The list has
+    /// <c>AutoScrollToSelectedItem</c> off, because a selection made by clicking must not move the
+    /// viewport (owner, same round) — but a selection made by an arrow key must, or the user walks
+    /// the list straight off the bottom of it. Doing it from this one method is what separates the
+    /// two gestures; a property could not, since both arrive as the same selection change.
+    ///
+    /// <para>Returns true at the ends of the list as well, so holding an arrow down does not start
+    /// scrolling the pane underneath once the selection can go no further.</para>
+    /// </remarks>
+    private bool MoveSolutionSelection(int delta)
+    {
+        if (_solutionsList is null || Vm is null || Vm.Solutions.Count == 0) return false;
+
+        int from = _solutionsList.SelectedIndex;
+        if (from < 0)
+        {
+            var applied = Vm.Solutions.FirstOrDefault(r => r.IsCurrent);
+            from = applied is null ? -1 : Vm.Solutions.IndexOf(applied);
+        }
+
+        int to = Math.Clamp(from + delta, 0, Vm.Solutions.Count - 1);
+        if (to != from) _solutionsList.SelectedIndex = to;
+        _solutionsList.ScrollIntoView(to);
+        return true;
+    }
+
+    // ── The solutions list scrolls to the applied row ─────────────────────────
+
+    private ListBox? _solutionsList;
+    private bool _scrolledToApplied;
+
+    /// <summary>
+    /// Brings the applied solution into view the first time the list has one to show (owner,
+    /// 2026-08-28: "when Solutions scroll view first appears, it needs to be scrolled to the
+    /// currently applied solution").
+    /// </summary>
+    /// <remarks>
+    /// <b>Once per list, not once per change.</b> Re-scrolling whenever the applied row moves would
+    /// yank the panel away from whatever the user was reading every time they clicked Apply — which
+    /// is the opposite of the ask, since after an Apply the row they want is the one already under
+    /// their pointer. The flag is re-armed on a Reset (the collection is cleared when a specification
+    /// change starts a fresh search), because at that point the scroll position means nothing anyway.
+    ///
+    /// <para>Posted at <c>Background</c> priority rather than called inline: the row arrives as the
+    /// search publishes its first cell, and a virtualized container for it does not exist until the
+    /// next layout pass — <c>ScrollIntoView</c> on a row with no container scrolls nowhere and
+    /// reports nothing.</para>
+    /// </remarks>
+    private void WireSolutionsList()
+    {
+        if (Vm is null) return;
+        _solutionsList = this.FindControl<ListBox>("SolutionsList");
+        if (_solutionsList is null) return;
+
+        _solutionsList.SelectionChanged += OnSolutionSelectionChanged;
+
+        var solutions = Vm.Solutions;
+        solutions.CollectionChanged += OnSolutionsCollectionChanged;
+        Closed += (_, _) => solutions.CollectionChanged -= OnSolutionsCollectionChanged;
+        ScrollToAppliedOnce();
+        SyncSolutionSelection();
+    }
+
+    private void OnSolutionsCollectionChanged(
+        object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+        {
+            _scrolledToApplied = false;
+            SyncSolutionSelection();
+            return;
+        }
+        ScrollToAppliedOnce();
+        SyncSolutionSelection();
+    }
+
+    private void ScrollToAppliedOnce()
+    {
+        if (_scrolledToApplied || _solutionsList is null || Vm is null) return;
+        if (!Vm.Solutions.Any(r => r.IsCurrent)) return;
+
+        _scrolledToApplied = true;
+        ScrollToApplied();
+    }
+
+    /// <summary>
+    /// Brings the applied solution into view — the header's own button, and what the once-only
+    /// automatic scroll calls (owner, 2026-08-28: "add a button next to the filter button that will
+    /// auto-scroll to the current solution card").
+    /// </summary>
+    /// <remarks>
+    /// The automatic scroll happens once, when the list first has an applied row to show, and after
+    /// that the panel stays where the user left it. That is the right default and it leaves them no
+    /// way back once they have scrolled a long list looking for something better — which is what this
+    /// button is. Both go through here, so there is one behaviour and not two.
+    /// </remarks>
+    private void ScrollToApplied()
+    {
+        if (_solutionsList is null || Vm is null) return;
+
+        var applied = Vm.Solutions.FirstOrDefault(r => r.IsCurrent);
+        if (applied is null) return;
+
+        Dispatcher.UIThread.Post(() => _solutionsList?.ScrollIntoView(applied), DispatcherPriority.Background);
     }
 
     private void OnSortGrid(object? sender, RoutedEventArgs e)
@@ -365,10 +531,15 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         WireSchematicContextMenu();
         WireSchematicInlineEditor();
         WirePlotHost();
+        WireSolutionsList();
+        WireButton("ScrollToAppliedButton", (_, _) => ScrollToApplied());
         WireButton("RemoveTransformButton", (_, _) => Vm.RemoveLastTransform());
         WireButton("AddTransformButton", (s, _) => ShowAddTransformMenu(s as Control));
         WireButton("ExportButton", (s, _) => ShowExportMenu(s as Control));
         WireButton("SettingsButton", (s, _) => ShowSettingsMenu(s as Control));
+        // No wiring for SolutionsFilterButton: it carries a Button.Flyout of CheckBoxes bound
+        // straight to Filter, exactly as the Project Tree's category filter does (owner, 2026-08-28).
+        // A code-behind menu was the first shape of it and is gone — see the AXAML for why.
         // Same deep link the Parameter Editor's own Help button uses, to the same Reference page.
         // The Match CHAPTER, not the components page's one-paragraph entry (brief-user-docs-content
         // §10 gave Match a chapter of its own, and this window is what it documents). Listed in
@@ -463,6 +634,116 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
 
         this.FindControl<MatchSchematicCanvas>("NetworkSchematic")?.ZoomToFit();
         e.Handled = true;
+    }
+
+    // ── Page Up / Page Down / Home / End ──────────────────────────────────────
+
+    /// <summary>
+    /// Routes the four scrolling keys to the Solutions list.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-28:</b> Page Up, Page Down, Home and End are unreliable — the same
+    /// keystroke sometimes moves the list and sometimes does nothing.
+    ///
+    /// <para><b>"Sometimes" was exactly right, and it was about FOCUS.</b> Nothing in this window
+    /// bound those keys at all: the only thing that ever answered them was the <c>ListBox</c>'s own
+    /// built-in navigation, which runs on <c>KeyDown</c> and therefore only when the keyboard focus is
+    /// already inside the list. Click a card and it works; scroll the list with the wheel, or arrive
+    /// from a field in the specification pane, or open the window and press Home before touching
+    /// anything, and the key reaches a focused element somewhere else entirely and the list does not
+    /// move. The same keystroke, two outcomes, decided by something the user has no way to see.</para>
+    ///
+    /// <para><b>Tunnelling, from the window.</b> A tunnel handler sees the key on its way DOWN to the
+    /// focused element, so it runs wherever the focus is — which is the whole fix. It is also what
+    /// takes the keys off the ListBox's own navigation, and that is wanted: the built-in behaviour
+    /// moves the SELECTION, and selection is invisible in this list by design (see the AXAML's row
+    /// styles). Home moving a mark nobody can see, while the viewport stays put, is not what the
+    /// owner asked Home to do.</para>
+    ///
+    /// <para><b>The rule itself is <see cref="PanelScrollKeys"/>'s</b>, the one the Project Tree, the
+    /// Library palette and the .ctech editor's row lists already share: Page Up/Down are always taken,
+    /// Home and End are yielded to a <c>TextBox</c> because there they mean "caret to the start/end of
+    /// this field". An open <c>ComboBox</c> dropdown owns all four for the same reason it does in the
+    /// Project Tree — it is navigating its own items.</para>
+    ///
+    /// <para><b>Which scroller.</b> The one the focus is already inside, when there is one — the
+    /// specification cards and the component listing are scrollers too, and a Page Down typed with
+    /// the caret in a transform's field should page what the user is looking at. Otherwise the
+    /// Solutions list, because it is the long list this window is read from and the one the four keys
+    /// are worth having. Both cases are deterministic, which is what the report was really
+    /// about.</para>
+    /// </remarks>
+    private void OnPanelScrollKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Source is ComboBox { IsDropDownOpen: true }) return;
+
+        if (e.Key is Key.Up or Key.Down)
+        {
+            if (!SolutionsTakeTheArrowKeys(e.Source)) return;
+            if (!MoveSolutionSelection(e.Key == Key.Up ? -1 : +1)) return;
+            e.Handled = true;
+            return;
+        }
+
+        var action = PanelScrollKeys.ActionFor(e.Key, e.Source is TextBox);
+        if (action is null) return;
+
+        if (ScrollerForKeys() is not { } scroll) return;
+
+        PanelScrollKeys.Apply(action.Value, scroll);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Whether an Up/Down keystroke belongs to the solutions list, or to whatever it landed on.
+    /// </summary>
+    /// <remarks>
+    /// <b>Up and Down step through the solutions</b> (owner, 2026-08-28: the arrow keys select the
+    /// card above or below the current one). Selecting a card applies it, so this really is the
+    /// gesture for auditioning solutions one at a time — which is the point.
+    ///
+    /// <para><b>THE MARKER WINS, and the owner said so</b> in the same breath as asking for the
+    /// gesture: <i>a marker up/down keystroke for a plot may conflict; give priority to the
+    /// marker.</i> A selected marker steps by one x-axis sample on Up/Down
+    /// (<c>PlotControl.OnKeyDown</c> and <c>MarkerInfoBoxView.OnKeyDown</c>, both bubbling — so a
+    /// tunnel handler like this one would otherwise take the key off them before they ever saw it).
+    /// The test is the same one <c>DeleteSelectedMarkers</c> in this window already uses for "is a
+    /// marker selected", so the two gestures cannot disagree about what a selected marker is. When
+    /// there is one, this yields and touches nothing, and the marker path runs exactly as it does
+    /// today.</para>
+    ///
+    /// <para><b>The three controls that own their own arrows keep them</b> — a slider (the transform
+    /// rack is full of them, and Up/Down is how an N is nudged), a text box, and a combo. This is a
+    /// tunnel handler, so without naming them it would silently take the arrows off all three; the
+    /// four scrolling keys below do not need the same list because none of those three does anything
+    /// with Page Up/Down, and Home/End are already yielded to a field by
+    /// <see cref="PanelScrollKeys"/>'s own rule.</para>
+    /// </remarks>
+    private bool SolutionsTakeTheArrowKeys(object? source)
+    {
+        if (Vm is null) return false;
+        if (Vm.PlotHost.MarkerInfoBoxes.Any(b => b.IsSelected)) return false;
+        return source is not (TextBox or Slider or ComboBox);
+    }
+
+    /// <summary>
+    /// The scroller the four keys act on: the nearest one above the focused element, or the Solutions
+    /// list's own when the focus is not inside a scroller at all.
+    /// </summary>
+    private ScrollViewer? ScrollerForKeys()
+    {
+        if (FocusManager?.GetFocusedElement() is Visual focused)
+        {
+            for (var v = focused; v is not null; v = v.GetVisualParent())
+            {
+                if (v is ScrollViewer sv) return sv;
+                if (ReferenceEquals(v, this)) break;
+            }
+        }
+
+        // The ListBox's own — a ListBox IS a scroller, but through the ScrollViewer in its template,
+        // so the control itself has no PageDown to call.
+        return _solutionsList?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
     }
 
     /// <summary>
@@ -878,9 +1159,15 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
     }
 
     /// <summary>
-    /// Settings (§9.9): display units per dimension, significant digits, Qmin, and whether Q-adjusted
-    /// solutions are offered. <b>Nothing else</b> — and in particular no standard-value series.
+    /// Settings (§9.9): display units per dimension, significant digits and Qmin. <b>Nothing else</b>
+    /// — and in particular no standard-value series.
     /// </summary>
+    /// <remarks>
+    /// <b>"Offer Q-adjusted solutions" was the fourth entry and is gone</b> (owner, 2026-08-28). It
+    /// switched off a whole class of solution before the search ran; the same choice is now a line in
+    /// the solutions panel's own filter, made in front of the list it changes and costing nothing to
+    /// flip because the candidates are always computed.
+    /// </remarks>
     private void ShowSettingsMenu(Control? anchor)
     {
         if (Vm is null || anchor is null) return;
@@ -897,14 +1184,6 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
             DigitsMenu(),
             QMinMenu(),
         };
-
-        var offer = new MenuItem
-        {
-            Header = "Offer Q-adjusted solutions",
-            Icon = s.OfferQAdjustedSolutions ? new TextBlock { Text = "✓" } : null,
-        };
-        offer.Click += (_, _) => s.OfferQAdjustedSolutions = !s.OfferQAdjustedSolutions;
-        items.Add(offer);
 
         var menu = new ContextMenu { ItemsSource = items };
         menu.PlacementTarget = anchor;

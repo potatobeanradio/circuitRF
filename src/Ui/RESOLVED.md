@@ -1,5 +1,516 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Match Designer round 8 — the Solutions panel becomes the specification (2026-08-28)
+
+**Owner's ask, in one sentence:** stop making the user *specify* an order and a response family and
+then read what those produced; list every solution for every family and every order, and let them
+pick one. Order, Filter Response and the Options group left the specification pane; the Solutions
+list moved in under Frequency Band and grew a filter.
+
+**What that does to the architecture.** Those three cards were INPUTS to a search that produced one
+order's solutions in one family. The search now runs the whole cross-product — up to five orders x
+four families — always with Q-adjusted candidates and always with negative components permitted, so
+the same four knobs are the wrong shape as inputs and the right shape as a FILTER over the answer.
+`MatchSolutionFilterViewModel` is display state only; nothing it holds reaches `MatchDesign`.
+
+### Two background jobs, keyed on different things — this is what makes Apply instant
+
+The cross-product is ~4.2 s on the shipped default document (measured, 444 solutions). Re-running it
+per click would be unusable, and it does not have to:
+
+- **The search** is keyed on `MatchSpecKey` — the terminations, the band, the ripple, the analysis
+  end and Qmin. **Applying a solution, changing the order and changing the response family all leave
+  that key alone**, so the list is not recomputed and not even re-sorted; only the badges move.
+- **The response verdicts** are order-dependent and re-run on every specification refresh. They are
+  four `MatchSynthesis.Synthesize` calls against a memo the search has already filled.
+
+### The list streams, and a row that has landed never moves
+
+Owner: *"UI needs to feel responsive so if the solution list is built (and added to the UI) in the
+background that would be nice."* Each (order, family) cell publishes the moment it is done — first
+rows on screen at ~5 ms against 4.2 s for the whole sweep. The design's OWN combination is searched
+first, so the applied solution is there immediately and the termination auto-solve has something to
+act on without waiting for the sweep.
+
+**Rows are APPENDED, and that is a bug fix rather than a simplification.** They were being inserted
+at their canonical (order, family, rank) position while the cells arrive in a different order, so for
+four seconds every landing cell slid the rows below it down — under the user's pointer. Two
+owner-reported symptoms, one cause:
+
+> *"sometimes hitting Apply changes the scroll view to a different position and it seems like my
+> solution selection was not picked (I did not see a green outline box)"*
+
+> *"hitting Apply on the Solution card does not update the Response plots"*
+
+A click in that window applies whichever card has arrived beneath the cursor. The list jumps, the
+green outline lands on a row that has scrolled out of view, and the plots change to a network the
+user did not choose. Appending cannot do that: rows only ever arrive BELOW everything on screen. The
+grouping it costs is not a loss — the combination the design is on comes first, then the rest in
+ascending order, and every card names its own family and order.
+
+### **A sibling solution has the SAME response, and that is not a bug**
+
+The second report above has a second half worth recording, because the obvious reading of it is
+wrong. **Two solutions of the same order, family and Q-adjust produce a bit-identical response** —
+measured at worst 6.7e-16 in |S21| against 0.155 for a solution from another family. A Norton
+transform is response-preserving by construction; that is MN-1's whole premise and the reason several
+racks exist for one network at all. Siblings differ in what is BUILDABLE, never in what the network
+does. Only an order or family change moves the curve. Pinned by
+`MatchRound8Tests.ASiblingSolution_HasTheSameResponse_AndAnotherCombinationDoesNot`, so the next
+reader does not go hunting for a refresh path that is working correctly.
+
+### Apply carries the order, the family AND the negative-component flag
+
+A card now belongs to an order and a family, so applying one has to move the design onto them. It
+also writes `AllowNegativeComponents` from **what the row contains**, and that is load-bearing:
+measured, a solution carrying a negative element applied with the flag off comes back off target with
+element values wrong by orders of magnitude, because `MatchRebuild.ApplySequence` clamps every N back
+inside its positivity range. A row with no negative element is unaffected either way — the clamp is a
+no-op on a rack already inside its ranges — so the flag can be, and is, set from the row.
+
+**The search runs every cell with the flag ON, once, not twice.** Allowing negatives is a strict
+superset (the flag only widens a range), so one pass finds what two would; the negative ones are then
+identified by looking at the finished network. **The auto-solve does NOT follow that**: it refuses to
+move onto a negative-element rack unless the design's own flag is already set, because the default
+filter hides those and handing the user one silently would be a network they cannot see.
+
+### Things this turned up that were true before and nobody knew
+
+- **Order 3 on the owner's own 50 Ω ↔ 5 Ω ∥ 1 pF problem DOES complete** — an all-positive, buildable
+  Q-adjusted network at ~37 dB return loss. The old search never saw it: run with
+  `AllowNegativeComponents` off, `MatchSolutionSearch.FindQAdjust` bisects inside a clamped rack,
+  fails, and offers nothing. The 2026-08-20 refusal that named order 4 was right about what it could
+  see and wrong about what exists.
+- **`FindWaysOut` is gone.** It re-ran the search at every other order so a refusal could name the
+  ones that reach the target — the repository's standing lesson that a remedy is only a remedy if it
+  BINDS. There is no other setting to name now: an order that reaches it has its rows in the list. A
+  remedy you can click beats one you have to go and set. `SolutionsRefusal` is reserved for the case
+  where the whole cross-product came back empty.
+- **`WaitForAnalysis`'s "handed on" branch spun instead of yielding.** Both flags are set
+  synchronously by the queue methods and the task fields are assigned a moment later, so there is a
+  window in which the tasks in hand are complete and `IsAnalysing` is already true for a pass that
+  has no task yet. A tight loop burns its whole budget inside that window and returns as though the
+  panel had settled. Found as a load-dependent `MatchRound6Tests` failure; it now yields.
+- **`PlotControl`'s Delete Plot enablement was applied in exactly one place, and the wrong one.**
+  `ApplyMenuAvailability`'s own remark has always claimed build time AND every open; only the
+  `Opening` hook was wired, and the menu is built lazily and cached for the control's lifetime. Both
+  halves are real now, plus an `OnPropertyChanged` hook for a host that moves either flag after the
+  menu exists. (Owner-reported twice, 2026-08-20 and again this round.)
+
+### Two UI notes
+
+- **The filter is the Project Tree's control, to the letter** (owner: *"it uses checkboxes and
+  overall has a way better UX; I also like its icon better"*) — same borderless button, same
+  `MaterialIcon Kind="Filter"`, same `Button.Flyout` of 12 pt CheckBoxes. The two `ItemsControl`s are
+  the only difference: its eight categories are fixed, and the orders here come from
+  `MatchOrders.ValidOrders` and change with the termination pair. A code-behind `ContextMenu` was the
+  first shape of it and is gone.
+- **The list virtualizes**, via the `ListBox.rows` class this repository had already settled on twice
+  (`TechEditorView`, the wBond Touchstone export dialog). 444 cards of seven text blocks is ~3,000
+  controls, and an `ItemsControl` in a `ScrollViewer` realizes every one — a `ScrollViewer` hands it
+  infinite height, so nothing is ever out of view to skip.
+
+## The Match Designer never presents an unmatched network after a termination edit (2026-08-28)
+
+**Owner's ask:** a Designer showing a network that does not reach the value the user just typed is
+confusing. If a termination's R, L or C changes, or its topology flips parallel↔series, and the rack
+in place no longer reaches the target, the design should move to a solution that does.
+
+`RelinkAfterSpecChange` already covered half of it: with Link on it re-drives one unlocked transform
+so Π N² lands on the new required ratio. The half it cannot reach — Link off, every transform locked,
+the new target outside the rack's range, a topology change that renames the ladder's elements
+underneath the stored records, or no transforms at all — is what `AutoApplyAReachingSolution` now
+covers, using the solution search that was *already running* for that edit.
+
+**The choice is nearest-first, not best-ranked.** MN-1 ranks fewest transforms first, so taking row 0
+would rebuild a two-transform rack into a one-transform one every time the target moved a little. The
+rack in place is preferred whenever the search still offers it — same element pairs, same order, same
+form, same Q-adjust, only the N's redriven — and MN-1's own order (with a buildable solution
+preferred over one flagged `ImplausibleValues`) is the fallback for when the ladder no longer has it.
+
+**Locks go with the applied solution, and that is the intended trade.** A lock pins one N against the
+LINKAGE's redistribution; it is not a veto over the whole rack, and honouring it here would leave
+exactly the unmatched network this exists to stop presenting. Applying a solution from the panel by
+hand has always replaced the records the same way.
+
+**It says nothing.** A note was written first — the same treatment `OrderNote` gives an automatic
+order change — and the owner rejected it: re-declaring an end is a change to the *problem*, the user
+is already expecting a different network, and the specification pane's column is too narrow to spend
+on a sentence nobody needed. The precedent does not carry across, because `OrderNote` and
+`QAdjustNote` describe a control the user did NOT touch.
+
+### Three things had to be got right, and each was found by a test going red
+
+**1. The flag cannot be read live at the landing.** The search runs on a worker (see
+`MatchDesignerViewModel.Analysis.cs` for why), so the answer arrives ~100 ms after the edit. A
+"pending auto-solve" field read at landing time fires under whatever the design has become — and
+`MatchRound6Tests`' fixture is exactly that shape: two terminations set, then three transforms added,
+with nothing waiting in between. **Two guards, because one is not enough.** The flag is set for the
+duration of one `SetTermination` and copied by every pass that edit queues (there can be two — the
+relink refreshes again), so a later edit's pass carries nothing. And each pass records the design
+EPOCH it was queued for: **an edit that refreshes without queuing a pass does not supersede one**, so
+"newest pass" is not on its own evidence that the design is still the one that pass was about.
+
+**2. The landing now starts a refresh, so it had to be serialized against the edit.** In the
+application this changes nothing — the landing is on `FromCurrentSynchronizationContext`, which is
+the UI thread, and edits are too. In a host with **no dispatcher** that scheduler falls back to the
+pool, and the landing genuinely runs beside the caller. Harmless while it only filled two
+collections; fatal once it refreshed, because two overlapping refreshes both rebuild the plots and
+`Plot.Autoscale` enumerates `Traces` on every add — one thread's add lands inside the other's
+enumeration and throws *"collection was modified"*. Observed under full-suite load, not theorised.
+`MatchDesignerViewModel.RefreshGate` is a plain `Monitor` lock over `RefreshCore` and over the
+landing; it is reentrant, and nothing inside it waits on a task, so there is no side to deadlock
+against.
+
+**3. `WaitForAnalysis` was assuming applying a result cannot start another pass.** It can now. A
+completed `AnalysisTask` is no longer proof the panel has settled, so the loop reads `IsAnalysing`
+too — it is set synchronously by `QueueAnalysis`, which is what distinguishes "finished" from "handed
+on". A cancelled pass still clears it on the way out, so the loop stays bounded.
+
+### A false trail worth recording
+
+Two of the three runs that "proved" the gate had not fixed the crash were run with `--no-build`
+after rebuilding only `src/Ui` — which does not refresh the test project's copy of
+`CircuitRF.Ui.dll`. **`--no-build` after a source-only build tests the previous binary.** The gate
+had worked on the first try.
+
+### What this cost elsewhere
+
+`MatchRound5Tests.WhenTheLadderCannotReachIt_TheGlyphNamesBothNumbers` reached its state through a
+termination edit, which is now precisely the state that gets rescued. The claim it makes about
+`OhmsTextFor` is unchanged and still worth holding, so it reaches the state the other two ways
+instead: an N driven by hand with Link off, and an order change with every transform locked. In that
+second half the locks must be applied BEFORE Link is switched on — switching Link on re-drives one
+unlocked transform there and then, which puts the rack back on target and leaves the rest measuring
+nothing.
+
+`MatchRound7Tests.TheClear_DoesNotEatTheNoteItsOwnRefreshProduces` scans the body of `Refresh`; the
+public entry point is now a one-line lock around `RefreshCore`, and the scan follows the body.
+
+Gate: `tests/Ui.Tests/Match/MatchAutoSolveTests.cs` (11 tests), including the cost test that keeps
+the search off the UI thread — a termination edit measures ~8 ms of blocking, against the 150 ms
+bound `MatchDesignerSpecEditCostTests` uses for the same reason.
+
+## Match Designer round 9 — the Solutions panel stops fighting the user (2026-08-28)
+
+Four owner reports against the panel round 8 built, plus the vertical space it needed. Three of the
+four are one sentence each in the report and none of them was where it looked.
+
+### Applying a solution scrolled the list, and TWO framework defaults were doing it
+
+**Reported:** applying a solution, by double-click or by the Apply button, nudges the scroll view.
+It should not move at all — the only things that change are the applied card's green border and the
+button's own wording.
+
+Nothing in this codebase scrolled it. Two Avalonia defaults did, and the two gestures hit **different
+ones**, which is why they nudged the list by different amounts:
+
+- **`SelectingItemsControl.AutoScrollToSelectedItem` defaults to true.** A double-click selects the
+  card's `ListBoxItem` on the way through, and the ListBox then scrolls that whole item into view —
+  so a card half off the bottom edge slid up under the pointer at the exact moment the user was
+  reading the result of their own double-click.
+- **`ScrollViewer.BringIntoViewOnFocusChange` defaults to true** on the presenter inside the ListBox.
+  Clicking the Apply button focuses it, and the focus change asks the nearest scroller for the
+  *button's* rectangle.
+
+Both are off now, on the `SolutionsList` opening tag. Nothing is lost either way: **selection means
+nothing in this list** — the row styles already flatten every piece of its chrome, and the applied
+row is marked by its own `current` border — and the **explicit** scroll is untouched, because
+`ListBox.ScrollIntoView` is a different path from either default. The header's target button and the
+once-per-list automatic scroll both still work.
+
+### The response plots redrew "sometimes", and nothing here had ever invalidated them
+
+**Reported:** applying a solution sometimes leaves the frequency-response plots looking unchanged,
+including across a move between two response families that should look nothing alike.
+
+**The model side was right all along** — `TwoFamiliesAtOneOrder_PlotDifferentResponses` measures the
+S11 of two families at one order and they differ, and round 8's
+`EveryAppliedRow_RebuildsToTheNetworkItPromised` already held the network itself. What never happened
+was the repaint.
+
+`BuildPlots` announced itself two ways and neither is one. The two plot MODELS are **the same two
+objects for the window's whole life** — a rebuild clears their `Traces` and refills them — so
+`OnPropertyChanged(nameof(MagnitudePlot))` re-pushes an unchanged reference through the binding, and
+`PlotContainerViewModel.OnPlotChanged` only raises property changes on the container's own
+view-model. A `PlotControl` renders from a Skia draw operation and repaints when it is invalidated;
+neither of those invalidates it. So the control redrew when something **else** did — the pointer
+crossing it, a resize, the window being re-activated — which is exactly a change that appears
+"sometimes", and appears the moment the user moves the mouse to look closer.
+
+`PlotContainerViewModel.PlotNeedsRedraw` is the seam the Data Display already uses for this, and
+`WirePlotHost` already had it wired to `PlotControl.InvalidateVisual`. **It simply had no caller on
+this side.** All three notifications now leave through one method, `AnnounceRebuiltPlots`, and every
+exit of both rebuild paths calls it — the previous shape spelled two of the three out in three
+separate places, which is how the third came to be in none of them.
+
+### Page Up / Home / End worked only after a click inside the list
+
+**Reported:** Page Up, Page Down, Home and End are unreliable — the same keystroke sometimes moves
+the list and sometimes does nothing.
+
+**"Sometimes" was about FOCUS, and nothing bound those keys at all.** The only thing answering them
+was the `ListBox`'s own navigation, which runs on `KeyDown` and therefore only while the keyboard
+focus is already inside the list. Click a card and Home works; scroll with the wheel, arrive from a
+field in the specification pane, or open the window and press Home before touching anything, and the
+key reaches a focused element somewhere else and the list does not move.
+
+Now a **tunnel** handler on the window, which sees the key on its way down to whatever has focus, so
+it runs wherever the focus is. It also takes the keys **off** the ListBox's own navigation, which is
+wanted: that moves the SELECTION, and selection is invisible in this list by design — Home moving a
+mark nobody can see, while the viewport stays put, is not what Home was asked to do. The rule itself
+is `PanelScrollKeys`', the one the Project Tree, the Library palette and the .ctech editor already
+share, rather than a fourth copy of the same four-case switch. Which scroller: the one the focus is
+already inside when there is one (the specification cards and the component listing are scrollers
+too), otherwise the Solutions list.
+
+**`ToolActivationFocusTests.EveryViewThatBindsTheScrollKeys_AlsoClaimsFocusOnActivation` went red on
+this, and the right answer was to scope the rule rather than satisfy it.** That rule exists because a
+dock TAB is chrome living OUTSIDE the panel it names: clicking it leaves focus on something the
+panel's key route never passes through, so a docked tool has to reach out and take the focus back. A
+top-level Window has no such gap — when nothing inside it has focus, the window itself is the key
+event's target, so a handler it registered on itself is always on the route. The scan now excludes
+classes deriving from `Window`, with that reasoning written where the exclusion is.
+
+### The height for all of it
+
+The specification cards are an `Auto` row over the Solutions list's `*` row, so **the cap on the
+cards' scroller IS the floor under the list** — an Auto row takes what it wants first. 392 → 300, and
+the two layout changes are where the 92 px come from: Frequency Band and Ripple became one card of
+three rows (a border, a heading and a card margin, for a card that framed one field), and each
+termination's Probe button moved off its own row and onto the card's heading, which costs the
+difference between an 11 pt line and a 17 px button. The cap is lowered rather than left to track the
+content on purpose: a cap that merely followed the cards would hand the saving straight back the
+first time one of the pane's four notes appeared.
+
+Gate: `tests/Ui.Tests/Match/MatchRound9Tests.cs` (10 tests).
+
+### A termination edit was one undo entry, or two, depending on the machine
+
+`MatchRound5Tests.ATermGEdit_WritesTheSpecificationsOwnR_AndRefusesAComplexValue` **failed in
+isolation and passed under full-suite load** — the reverse of the usual flake, and the reason it is
+worth writing down. Its last assertion is that one Undo puts the termination's R back; alone it came
+back 75 instead of 50.
+
+A termination edit writes the design **twice**: once for the edit, and once more when the auto-solve
+moves it onto a rack that reaches the new target. Two commits is two `SetParametersCommand`s, so one
+Ctrl+Z put the transforms back and left the termination where the user had typed it — halfway through
+an edit they made once. **And the NUMBER of entries depended on whether the background search had
+finished**, which is why an idle machine and a loaded one disagreed.
+
+**Fixed, on the owner's instruction, and it needed both halves** because the search can land on either
+side of the gesture returning:
+
+- **Landing INSIDE the gesture** (a cached or fast search publishes its first batch from within
+  `CommitSpecChange`'s own `Refresh`, and the auto-solve runs before the gesture's own commit): every
+  commit is deferred for the duration and exactly one is made at the end. That also absorbs
+  `RelinkAfterSpecChange`'s commit, which was already a second write nobody had noticed.
+- **Landing LATER**: there is nothing left to defer, so the entry is remembered by its undo STAMP and
+  the auto-solve's commit AMENDS it — undo the first command, which puts the parameters back to where
+  the gesture started, then build the replacement so it spans the whole gesture. `Execute` clears the
+  redo stack, so the entry that was undone does not linger there, and the undo is inside the
+  `_isCommitting` guard so the Designer does not go and re-read a design it is mid-way through
+  writing. No new `UndoRedoStack` API.
+
+**A stamp rather than a flag, because this window is not modal.** The schematic behind it is live, and
+the user may edit the drawing in the seconds between the two commits — amending on a flag would then
+undo *their* edit. The stamp identifies the entry rather than counting it, so a top that is no longer
+ours is left alone and the auto-solve simply commits normally: two entries in the one case where two
+entries are the truth.
+
+**Two things that were wrong in the first attempt and are worth keeping:**
+
+- **The stamp must be recorded AT THE PUSH, inside `CommitCore`**, not read off the top of the stack
+  when the gesture returns. The gesture does not know which of its writes ends up being the entry —
+  its own, or the relink's — and reading it afterwards also loses a race (below).
+- **The gesture must hold `RefreshGate`.** Every analysis landing takes that lock before it can reach
+  `TryPendingAutoSolve`, so holding it across the gesture makes the two cases a *choice* rather than a
+  race. Without it they interleave, and they genuinely do: in the application `_resultScheduler` is the
+  UI thread's, but in a test host it falls back to the thread pool, and the auto-solve was observed
+  reading the stamp before the gesture had recorded it and committing a second entry anyway.
+
+`MatchRound9Tests.ATerminationEdit_IsOneUndoEntry` asserts it by UNDOING rather than by counting —
+one Ctrl+Z has to put back the termination AND the rack the auto-solve moved — and
+`TheOneEntry_IsBuiltTwoWays_AndTheAmendIsGuarded` pins the two halves and the guard.
+
+### Round 9, second pass: the card is the button, and four smaller things
+
+**The Apply / Applied button came off the solution card**, and a click on the card applies it (owner).
+The obvious shape — a Click handler on the card — is the wrong one, because the owner asked in the
+same breath for the **up and down arrows to step between solutions**, and a `ListBox` already turns
+both a click and an arrow key into the same thing: a **selection**. Hanging the apply off selection
+rather than off the pointer is what makes the keyboard gesture free, and it is why there is no second
+code path to diverge from. The double-tap handler went with the button and nothing was lost, since a
+double-click selects on its first press. `ApplyText` is gone from the row view-model: the tick, the
+bold title and the green border already say which row the design is on.
+
+**The marker wins the arrow keys, and the owner said so** when asking for the gesture. A selected
+marker steps by one x-axis sample on Up/Down, from `PlotControl.OnKeyDown` and
+`MarkerInfoBoxView.OnKeyDown` — both **bubbling**, so the window's tunnel handler would otherwise take
+the key before either ever saw it. When a marker is selected this yields and touches nothing, using
+the same "is a marker selected" test `DeleteSelectedMarkers` in this window already uses. **Three
+controls keep their own arrows** — a slider (Up/Down is how an N is nudged, and the transform rack is
+full of them), a text box, and a combo; a tunnel handler that did not name them would silently take
+the arrows off all three.
+
+**The scroll is explicit in exactly one place.** The list's `AutoScrollToSelectedItem` is off so a
+click cannot move the viewport, so the arrow path has to `ScrollIntoView` itself — the two gestures
+arrive as the same selection change, and only a method can tell them apart.
+
+**A pi/T switch was re-framing the schematic view** (owner-reported). The canvas re-fitted whenever
+the ladder's SHAPE changed. Measured on the shipped default: pi and T produce the same **ten**
+elements, with the same names, at the same x, inside a bounding box **identical to the last decimal** —
+three of them simply move between the series rail and a shunt arm. So the shape test said "different",
+the fit ran, and the user's zoom was thrown away for a redraw that occupied exactly the same pixels.
+The gate is now the **extent**, which is the question the canvas's own comment was already trying to
+ask ("the old viewport is framing a circuit that no longer exists"). An added or removed element still
+re-fits; an order change still re-fits; a value edit and a pi/T swap do not.
+
+**The group-delay trace is named with its unit** — `DerivedParameters.GroupDelay.Description()`, the
+application's own spelling, rather than a literal. On the trace's `CubeName` rather than as a custom
+Y2 label, because that one string is what the axis label, the marker readout and the info box all
+derive from (`TraceLabeler.BuildCubeQuantity`): a custom axis label would have put the unit on the
+axis and left the marker beside it reading a bare number, and it would have lost the trace's colour.
+
+**The Probe button moved onto its termination's heading and its label was not centred.** The centring
+is fixed **globally**, beside the horizontal setter that has been there since the third time this was
+reported — Avalonia's `ContentControl` default is Stretch on BOTH axes, so a Button taller than its
+label renders the text against the top edge, and that setter's own comment already says that fixing
+this per-button is how it comes back. The button's fixed `Height` went with it; one sized by its own
+padding cannot raise the question again.
+
+**Undo and Redo are on the title strip**, left of Settings. The commands are not new — they have
+always delegated to the OWNING SCHEMATIC's stack, because a Designer edit *is* a schematic edit and a
+second history beside it would be two answers to "what did I just do". What was missing was somewhere
+to aim a pointer. Their tooltips name the entry, from the stack's own `UndoDescription`.
+
+**The dot beside the filter button is gone** (owner: distracting). It marked a filter that was hiding
+something — but the DEFAULT filter hides negative-component solutions, so it was lit on almost every
+design, in a warning colour, for a state that is normal. A mark that is always on marks nothing. The
+distinction is still made in words, by the button's tooltip; `MatchSolutionFilterViewModel.IsNarrowed`
+stays as the one place that question is decided.
+
+## The auto-solve was declining to solve, for two independent reasons (2026-08-28)
+
+**Reported:** adding reactance left the termination target unmet and the design on its old rack,
+*even though a solution existed*. Changing a termination — or probing a new one — must move onto a
+solution that meets the target whenever one exists.
+
+**Three things had to change, and each alone would have left the report standing.**
+
+### 1. `OnTarget` is not "matched", and a refused design reads as matched
+
+`MatchRebuildResult.OnTarget` compares Π N² against the ratio the rack has to reach. **A design whose
+synthesis REFUSED has no ladder and no transforms at all — so both sides are 1, the comparison
+passes, and `OnTarget` is TRUE.** The auto-solve's first guard was `if (_rebuild.OnTarget) return`,
+so the one state that most needed re-solving was the one it returned early on. Measured on the Bessel
+fixture: after the edit, `Achieved = Required = 1`, `OnTarget = true`, and termination 2 flagged red
+on screen.
+
+The question it asks now is the one the window is actually showing: **is there a network, was it
+built without a refusal, and does it reach?**
+
+### 2. The request was spent on the first cell to land — which is the one that comes back empty
+
+The design's own order-and-family combination is searched **first**, precisely so an auto-solve can
+fire early rather than after a cross-product that takes seconds. But that cell is exactly the one that
+lands with **no rows** when the family refuses. `TryPendingAutoSolve` consumed the request there,
+against a list of nothing, and never retried as the cells that did have solutions landed behind it.
+
+It is offered every cell now and **keeps the request until something answers it**, with the end of
+the search as the last chance. `AutoApplyAReachingSolution` returns whether the request is SETTLED —
+applied, superseded, or not needed — and the single `false` is "nothing to move onto *yet*".
+
+### 3. The candidates had to widen past the design's own family
+
+Until this round the candidates were the design's own order AND family, on the grounds that answering
+"termination 2 is 75 Ω now" by silently changing the network's ORDER would be changing a design
+decision the user made under cover of one they did not. **That reasoning is sound and it lost to the
+thing it was trading against.** What it produced is a Designer showing an unmatched network with a red
+termination while its own list holds rows that match — leaving the user to notice the mismatch, work
+out that the fix is a different family, and find it.
+
+The reasoning survives as the search ORDER: own order and family (nothing the user picked moves, and
+this answers almost every edit); then own order in any family, because the order is the more
+structural of the two; then the nearest order, `OrderBy` being stable so MN-1's ranking holds within
+one. A buildable row still beats an exact but unbuildable one, at every tier.
+
+**And the candidates are the FILTERED list, not every solution found** (owner, same round; a filter
+set so tight that nothing is left is a fine outcome). Auto-applying a row the panel is not showing
+would move the design onto a network the user has said they do not want to consider, and leave them
+reading a list that does not contain the thing they are now on.
+
+That also **retires the separate negative-element guard, which was the same rule said twice**. It
+used to skip a row with a non-positive element unless `MatchDesign.AllowNegativeComponents` was set —
+but the filter's own "Allow negative components" toggle is exactly that question, it is off by
+default, and it is the one the user can see and change. The design flag is no longer an input at all:
+nothing in the window sets it (the Options card went earlier the same day) and `ApplySolution` WRITES
+it from whatever row was applied, **so gating candidates on it was gating on the auto-solve's own
+output**. The applied row is listed whatever the filter says, so it stays a candidate — which is what
+keeps the "re-drive the rack already in place" tier working when the filter excludes the design's own
+family.
+
+`MatchAutoSolveTests.WhenTheDesignsOwnFamilyHasNothingToOffer_NothingIsApplied` asserted the OPPOSITE
+and is now `…_AnotherFamilyIsAppliedRatherThanNone`. **A probe needs nothing of its own**: it writes
+through `ApplyProbedTermination` → `SetTermination`, the same door.
+
+### The hazard that came with it: an edit and a landing racing
+
+Letting the request wait for later cells means **the auto-solve can now land seconds later, in the
+middle of an unrelated edit** — and it is the only landing that WRITES the design. Caught by
+measurement, not theory: switching a transform from π to T straight after a termination edit came
+back as π, because the auto-solve had replaced `_design.Transforms` wholesale between that edit
+reading the record and its refresh rebuilding from it.
+
+Every landing already took `RefreshGate`, and `Refresh` took it too — **but an edit is a READ, a
+MUTATION and then a refresh, and only the last of the three was inside it.** `AsOneEdit` now holds the
+whole of one, and every path that mutates the design goes through it: the specification funnel, the
+four transform setters, an applied solution, a typed element value, and Revert. The lock is
+reentrant, so an edit that reaches another edit — the linkage re-driving a transform, the auto-solve
+applying a solution — costs nothing.
+
+In the application both run on the UI thread and cannot interleave; a host whose result scheduler
+falls back to the thread pool is where this is visible, and where it was caught.
+
+### Two tests changed because the behaviour did, not because they broke
+
+`MatchDesignerTests.EveryCommittedEdit_WritesTheDesignParameter` asserted `Assert.Single` on the
+transforms after `AddTransform`; a termination edit earlier in the same test can now leave the design
+on an auto-solved rack that already carries transforms, so it asserts **one more than there were**.
+`MatchRound2Tests.TheSelectors_RoundTripThroughTheDesign` was the test that caught the race above.
+
+### Round 9, third pass: three smaller things
+
+**The Undo and Redo buttons were always disabled.** Binding `Command` alone leaves a Button's
+enablement to arrive through `ICommand.CanExecuteChanged`, and its first evaluation happens when the
+binding attaches — which is after `SetTarget` has run, against an empty stack, so the answer is false
+and stays false. **Every other gated button in this window states its enablement outright** (Probe
+reads `CanProbe`, the scroll-to-applied button reads `HasAppliedSolution`), so these two now read
+`CanUndo`/`CanRedo` rather than introducing a second mechanism beside it. The commands are still
+notified, so the keyboard path stays right.
+
+**The Probe button's label sat against the top of the button.** Fixed **globally**, beside the
+horizontal setter that has been there since the third time this class of bug was reported —
+Avalonia's `ContentControl` default is Stretch on BOTH axes, and that setter's own comment already
+says that fixing it per-button is how it comes back. Its fixed `Height` went with it, and it moved to
+the right-hand column of the heading row, over the same edge the R and X value fields below run to.
+
+**The absorbed-element legend said the same thing three ways.** It now stops at "…is supplied by the
+external termination" — the drawing already puts the element beside its termination, and that clause
+already says the component has not got it.
+
+### Open: the user-doc figures are stale, and not only for this round
+
+`docs/user` no longer matches the source. A full `dotnet run --project tools/DocGen -- --out
+docs/user` rewrites **77 files**, and classifying them (id-churn vs real change, normalising the hex
+`cl_<hex>` ids) says **none is pure id-churn** — they are all genuine content differences. Most have
+nothing to do with the Match Designer: the layout toolbar's button figures have changed icon AND
+fill, and the wBond, workspace and DRC figures have all moved. That drift predates this work.
+
+The regeneration was run, classified, and then **reverted**, because folding 70-odd unrelated figure
+changes into this change set would bury the two that belong to it (`match-interstage{,-dark}.svg`
+carry the old legend sentence). A DocGen pass is owed, as its own commit.
+
 ## The kill window that silently downgraded the user (2026-08-27)
 
 Found while designing the `.swapaside-` fix below, reported rather than folded into it, and then

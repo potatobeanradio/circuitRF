@@ -103,32 +103,44 @@ public sealed class MatchSchematicCanvas : Control
 
         var next = Layout;
 
-        // A rebuild that produced the same SHAPE — the same elements in the same places — keeps the
-        // user's zoom and pan. Dragging a transform's N rebuilds the ladder on every frame, and a
-        // pane that re-fitted itself each time would swim under the pointer. A structural change
-        // (an element added, removed or moved) re-fits, because the old viewport is then framing a
-        // circuit that no longer exists.
-        bool sameShape = SameShape(_layout, next);
+        // ── WHAT RE-FRAMES THE VIEW: THE EXTENT MOVING, NOT THE TOPOLOGY CHANGING ──
+        //
+        // A rebuild that draws into the same rectangle keeps the user's zoom and pan. Dragging a
+        // transform's N rebuilds the ladder on every frame, and a pane that re-fitted itself each
+        // time would swim under the pointer. A drawing that no longer fits the old rectangle re-fits,
+        // because the viewport is then framing a circuit that is partly off screen.
+        //
+        // The test USED to be the shape — the same elements, of the same kind, at the same points —
+        // and that is why switching a transform between its pi and T equivalents re-framed the view
+        // (owner-reported, 2026-08-28). Measured on the shipped default: pi and T produce the same
+        // TEN elements, with the same names, at the same x, inside a bounding box identical to the
+        // last decimal. Three of them move between the series rail and a shunt arm, which is a change
+        // of topology and no change at all to what the frame has to contain — so the shape test
+        // reported "different", the fit ran, and the user's zoom was thrown away for a redraw that
+        // occupied exactly the same pixels.
+        //
+        // The extent is the honest question, and it is also the one the paragraph above was already
+        // trying to ask. An added or removed element widens the box and still re-fits; an order
+        // change still re-fits; a value edit and a pi/T swap do not.
+        var nextModel = MatchSchematicModel.Build(next);
+        bool sameExtent = SameExtent(_model, nextModel);
         _layout = next;
-        _model = MatchSchematicModel.Build(next);
-        if (!sameShape) _fitted = false;
+        _model = nextModel;
+        if (!sameExtent) _fitted = false;
         InvalidateVisual();
     }
 
-    private static bool SameShape(MatchLadderLayout? a, MatchLadderLayout? b)
-    {
-        if (a is null || b is null) return false;
-        if (a.Elements.Count != b.Elements.Count) return false;
-        for (int i = 0; i < a.Elements.Count; i++)
-        {
-            var (x, y) = (a.Elements[i], b.Elements[i]);
-            if (!string.Equals(x.Name, y.Name, StringComparison.Ordinal)
-                || x.IsShunt != y.IsShunt || x.Type != y.Type
-                || Math.Abs(x.X - y.X) > 0.5 || Math.Abs(x.Y - y.Y) > 0.5)
-                return false;
-        }
-        return true;
-    }
+    /// <summary>
+    /// Whether two builds of the drawing occupy the same rectangle, to within half a world unit.
+    /// </summary>
+    /// <remarks>
+    /// Half a unit is the same tolerance the old shape comparison used on a single coordinate, and
+    /// the drawing's own grid is in the hundreds — so this separates "the same box" from "a box that
+    /// grew by an element" without ever being decided by floating-point noise.
+    /// </remarks>
+    private static bool SameExtent(SchematicModel a, SchematicModel b) =>
+        Math.Abs(a.BbMinX - b.BbMinX) <= 0.5 && Math.Abs(a.BbMaxX - b.BbMaxX) <= 0.5 &&
+        Math.Abs(a.BbMinY - b.BbMinY) <= 0.5 && Math.Abs(a.BbMaxY - b.BbMaxY) <= 0.5;
 
     /// <summary>Frames the whole network, the way the editor's own Zoom to Fit does.</summary>
     public void ZoomToFit()

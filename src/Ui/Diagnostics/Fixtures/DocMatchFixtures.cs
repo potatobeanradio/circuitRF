@@ -131,11 +131,22 @@ public static class DocMatchFixtures
         return new FigureScene(content);
     }
 
-    /// <summary>The solutions list, opened — the alternative transform sets, simplest first.</summary>
+    /// <summary>
+    /// The solutions list — every order and every response family, simplest first.
+    /// </summary>
+    /// <remarks>
+    /// <b>Nothing is opened here any more</b> (2026-08-28): the list is the lower half of the
+    /// specification pane and is always out.
+    ///
+    /// <para><b>And nothing WAITS here either.</b> <c>MatchDesignerViewModel.WaitForAnalysis</c>
+    /// blocks the calling thread, and under the docs host that thread is the dispatcher the search's
+    /// own continuations are posted to — so waiting for them on it is a deadlock, not a wait. The
+    /// figure captures the list as the generator's own dispatcher pumping has filled it, exactly as
+    /// every other figure in this file captures whatever its view-model has settled to.</para>
+    /// </remarks>
     public static FigureScene Solutions()
     {
         var vm = DesignerVm();
-        vm.SolutionsPanelOpen = true;
 
         var window = new MatchDesignerWindow { DataContext = vm };
         var content = window.Content as Control

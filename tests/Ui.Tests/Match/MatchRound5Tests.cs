@@ -567,28 +567,51 @@ public sealed class MatchRound5Tests(ITestOutputHelper output)
     /// own reference is the honest thing to draw, and it is also the thing that looks like a bug when
     /// drawn alone. The status strip's <c>Π N²  ✘ not reached</c> already said so, three panes away
     /// from the glyph the user was looking at.
+    ///
+    /// <para><b>The state is reached by a TRANSFORM edit here, not a termination edit, and that is a
+    /// real change to what this test can be about.</b> A termination edit that leaves the rack short
+    /// is now moved onto a solution that reaches the target (<c>MatchAutoSolveTests</c>), so it no
+    /// longer produces a disagreement for the glyph to name — deliberately, because that is the state
+    /// the owner did not want presented. What is left is every OTHER way to reach it: driving an N by
+    /// hand with Link off, and moving the order with every transform locked. Both are below, and both
+    /// are what <c>OhmsTextFor</c> exists for.</para>
     /// </remarks>
     [Fact]
     public void WhenTheLadderCannotReachIt_TheGlyphNamesBothNumbers()
     {
         var (_, _, d) = OpenWithTransforms();
+        double declared = d.Design.Term2.R;
 
+        // ── Link off: one N driven by hand, and nothing re-solves the rest against it ──
         d.LinkTransforms = false;
-        Assert.True(d.CommitInlineEdit(d.ResolveInlineEdit("Termination 2")!, "40 Ω"));
+        d.WaitForAnalysis();
+        var range = d.Transforms[0].Range!;
+        d.SetTransformN(0, (range.Min + range.Max) / 2);
+        d.WaitForAnalysis();
 
-        Assert.Equal(40.0, d.Design.Term2.R, 9);
-        Assert.NotEqual(40.0, d.Rebuild!.Network!.R2, 3);      // the ladder did NOT follow
+        Assert.Equal(declared, d.Design.Term2.R, 9);
+        Assert.NotEqual(declared, d.Rebuild!.Network!.R2, 3);     // the ladder did NOT follow
         Assert.False(d.Status.OnTarget);
 
         string label = TerminationLabel(d, 2);
         output.WriteLine(label);
         Assert.Contains("target", label, StringComparison.Ordinal);
-        Assert.Contains("40", label, StringComparison.Ordinal);
+        Assert.Contains(
+            declared.ToString("0.###", CultureInfo.InvariantCulture), label, StringComparison.Ordinal);
 
-        // Every transform locked is the same story, with Link back on.
-        d.LinkTransforms = true;
+        // ── Every transform locked, with Link back on: the linkage has nothing it may move ──
+        //
+        // Locked FIRST and Link on second, deliberately: switching Link on re-drives one unlocked
+        // transform there and then (see LinkTransforms' own setter), which would put the rack back on
+        // target and leave the rest of this measuring nothing.
         foreach (var row in d.Transforms) row.Locked = true;
-        Assert.True(d.CommitInlineEdit(d.ResolveInlineEdit("Termination 2")!, "60 Ω"));
+        d.LinkTransforms = true;
+        d.WaitForAnalysis();
+        d.Order = d.OrderOptions.First(o => o != d.Order);
+        d.WaitForAnalysis();
+
+        Assert.False(d.Status.OnTarget);
+        output.WriteLine(TerminationLabel(d, 2));
         Assert.Contains("target", TerminationLabel(d, 2), StringComparison.Ordinal);
         d.Dispose();
     }
@@ -970,11 +993,15 @@ public sealed class MatchRound5Tests(ITestOutputHelper output)
     public void TheSpecificationColumn_IsNarrower_AndItsWidestRowStillFits()
     {
         string xaml = Xaml();
-        var cols = Regex.Match(xaml, @"ColumnDefinitions=""(\d+),\*,380,Auto""");
+        var cols = Regex.Match(xaml, @"ColumnDefinitions=""(\d+),\*,380""");
         Assert.True(cols.Success, "the three-pane grid no longer declares a fixed first column");
 
         double column = double.Parse(cols.Groups[1].Value, CultureInfo.InvariantCulture);
-        Assert.InRange(column, 190, 230);          // "100 pixels or so" off 300
+        // 215 was "100 pixels or so" off 300 (owner, 2026-08-20); 285 is that WIDENED "slightly"
+        // (owner, 2026-08-28) because the Solutions list moved into this pane and a solution card
+        // carries a family name, an order and an Apply button. Still narrower than the 300 it started
+        // at, which is the claim this test is about.
+        Assert.InRange(column, 190, 295);
 
         const double paneMargin = 4 * 2, panePadding = 10 * 2;
         const double cardBorder = 1 * 2, cardPadding = 8 * 2;
@@ -1010,8 +1037,14 @@ public sealed class MatchRound5Tests(ITestOutputHelper output)
     {
         string xaml = Xaml();
         Assert.Contains("Text=\"Impedance Matching Network\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Frequency Band\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Filter Response\"", xaml, StringComparison.Ordinal);
+        // Merged with Ripple on 2026-08-28 — see MatchRound9Tests. The RENAME this test is about
+        // ("Band" -> "Frequency Band") is still in force; it is now the first half of one heading.
+        Assert.Contains("Text=\"Frequency Band &amp; Ripple\"", xaml, StringComparison.Ordinal);
+        // "Filter Response" is NOT here any more — that card was removed on 2026-08-28 with Order
+        // and Options, because the Solutions list spans every family and every order and none of the
+        // three is an input to it. The rename it was the subject of is preserved where it still
+        // applies: the filter's own lines name the four families.
+        Assert.DoesNotContain("cardhdr\" Text=\"Filter Response\"", xaml, StringComparison.Ordinal);
 
         // The plots pane is still "Response" — the rename was of the SPECIFICATION card below the
         // band, and this is a different heading in a different pane.
@@ -1060,12 +1093,12 @@ public sealed class MatchRound5Tests(ITestOutputHelper output)
             Assert.Contains($"ToolTip.Tip=\"{tip}", block, StringComparison.Ordinal);
         }
 
-        // The Solutions drawer's toggle has no Name; it is found by what it binds.
-        int toggle = xaml.IndexOf("SolutionsPanelOpen, Mode=TwoWay", StringComparison.Ordinal);
-        Assert.True(toggle > 0);
-        string toggleBlock = xaml[Math.Max(0, toggle - 300)..Math.Min(xaml.Length, toggle + 400)];
-        Assert.Contains("Kind=\"FormatListBulleted\"", toggleBlock, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"Solutions", toggleBlock, StringComparison.Ordinal);
+        // The Solutions drawer's toggle is gone with the drawer (owner, 2026-08-28: the list moved
+        // into the specification pane and is always out). Asserted on BOTH surfaces for the reason
+        // Close is: a binding left behind names a property that no longer exists, and a property left
+        // behind is state nothing reads.
+        Assert.DoesNotContain("SolutionsPanelOpen", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("FormatListBulleted", xaml, StringComparison.Ordinal);
     }
 
     /// <summary>

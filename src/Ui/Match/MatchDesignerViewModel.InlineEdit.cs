@@ -283,6 +283,16 @@ public sealed partial class MatchDesignerViewModel
     /// </remarks>
     private bool SetElementValue(string name, double target)
     {
+        // Read, solve, write and rebuild as one step, held against the analysis landings — the
+        // termination auto-solve replaces the whole transform list and can land mid-edit. See
+        // MatchDesignerViewModel.AsOneEdit.
+        bool ok = false;
+        AsOneEdit(() => ok = SetElementValueCore(name, target));
+        return ok;
+    }
+
+    private bool SetElementValueCore(string name, double target)
+    {
         if (_rebuild?.Basis is not { Ok: true } basis)
         {
             InlineEditNote = "This design is refused, so there is no ladder to aim at.";

@@ -286,9 +286,16 @@ public sealed class MatchRound2Tests
         // panel to Frequency Band; change Response below it to Filter Response"). The sentence-case
         // rule is what this test is about and it still holds of all three — the right-hand plots pane
         // is still headed "Response", so that spelling is checked as well.
+        // "Filter Response" and "Order" are no longer among them: both cards were removed on
+        // 2026-08-28, because the Solutions list spans every family and every order. The rule this
+        // test is about — sentence case — still holds of every heading that is left.
+        // "Frequency Band" and "Ripple" are ONE heading since 2026-08-28 (owner: the two groups were
+        // to be merged into one of three rows), to give the Solutions list the height the second
+        // card's framing was spending. The rule this test is about — sentence case — holds of the
+        // merged heading exactly as it held of the two it replaces.
         foreach (string heading in new[]
         {
-            "Specification", "Frequency Band", "Filter Response", "Order",
+            "Specification", "Frequency Band &amp; Ripple",
             "Impedance Matching Network", "Transforms", "Solutions", "Response",
         })
             Assert.Contains($"Text=\"{heading}\"", xaml, StringComparison.Ordinal);

@@ -165,13 +165,24 @@ public class MatchDesignerSpecEditCostTests(ITestOutputHelper output)
             Assert.Equal(MatchSynthesis.Synthesize(probe).Ok, option.IsEnabled);
         }
 
-        // And so does the solutions list.
-        var expected = MatchSolutionSearch.Search(
-            designer.Design, designer.Settings.OfferQAdjustedSolutions, designer.Settings.QMin);
-        Assert.Equal(expected.Solutions.Count, designer.Solutions.Count);
+        // And so does the solutions list — for the design's OWN combination, which is the slice of it
+        // a single MatchSolutionSearch.Search answers. The list spans every order and family since
+        // 2026-08-28, so the whole of it is not what one search produces; what has to agree is that
+        // the rows carrying this order and this family are exactly that search's own result, in its
+        // own order. The probe clears QAdjust and allows negatives for the reason
+        // SearchEveryCombination gives: both are filters over the answer now, not inputs to it.
+        var cell = designer.Design.Clone();
+        cell.QAdjust = 0.0;
+        cell.AllowNegativeComponents = true;
+        var expected = MatchSolutionSearch.Search(cell, includeQAdjust: true, designer.Settings.QMin);
+
+        var here = designer.AllSolutions
+            .Where(r => r.Order == designer.Design.Order && r.Response == designer.Design.Response)
+            .ToList();
+        Assert.Equal(expected.Solutions.Count, here.Count);
         Assert.Equal(
             expected.Solutions.Select(s => s.Fingerprint),
-            designer.Solutions.Select(s => s.Solution.Fingerprint));
+            here.Select(s => s.Solution.Fingerprint));
 
         designer.Dispose();
     }

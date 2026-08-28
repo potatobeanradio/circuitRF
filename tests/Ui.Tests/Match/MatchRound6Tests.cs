@@ -346,9 +346,10 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
 
         // Both termination selectors — the topology one and the kind one — take it.
         string xaml = Xaml();
-        // THREE: the topology selector, the reactance-kind selector (one template, both
-        // terminations) and the Order selector, which joined them later in the same round.
-        Assert.Equal(3, Regex.Matches(xaml,
+        // TWO: the topology selector and the reactance-kind selector (one template, both
+        // terminations). The Order selector was a third and is gone with its card — the order is not
+        // an input any more, it is something a solution carries (owner, 2026-08-28).
+        Assert.Equal(2, Regex.Matches(xaml,
             @"Background=""\{DynamicResource ButtonBackground\}""").Count);
     }
 
@@ -533,7 +534,9 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
         Assert.Contains("ResponseExpanded", changed, StringComparison.Ordinal);
 
         // The resting width the code restores is the SAME number the AXAML declares.
-        Assert.Contains("ColumnDefinitions=\"215,*,380,Auto\"", xaml, StringComparison.Ordinal);
+        // 285 since 2026-08-28 (the Solutions list moved into the specification pane), and three
+        // columns rather than four (the drawer that was the fourth is what moved).
+        Assert.Contains("ColumnDefinitions=\"285,*,380\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ResponseColumnWidth = 380", code, StringComparison.Ordinal);
     }
 
@@ -948,13 +951,31 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
     /// Three decimals is the right density for the matched case and hid the entire disagreement in
     /// the unmatched one. Anything that now fails the tolerance is at least 0.0001 % off, which this
     /// line can show.
+    ///
+    /// <para><b>The rack is knocked off target by HAND, not by a termination edit</b> (rewritten
+    /// 2026-08-28). This used to declare 5 Ω into 200 Ω and read the strip straight afterwards —
+    /// which the termination auto-solve now answers by moving the design onto a solution that does
+    /// reach it, so the strip correctly said ✔ and the test was asserting that a feature does not
+    /// work. A transform edit reaches the same state and triggers nothing: it is a change to the rack
+    /// the user made deliberately, which is exactly the case this line exists for.</para>
     /// </remarks>
     [Fact]
     public void WhenTheRatioIsNotReached_TheStripSaysByHowMuch()
     {
         var (_, _, d) = Open();
         d.SetTermination(1, Termination.Resistive(5.0));
-        d.SetTermination(2, Termination.Resistive(200.0));   // a step UP the rack cannot reach
+        d.SetTermination(2, Termination.Resistive(200.0));
+        d.WaitForAnalysis();
+
+        Assert.NotEmpty(d.Solutions);
+        d.ApplySolution(d.Solutions[0]);
+        d.WaitForAnalysis();
+        Assert.True(d.Status.OnTarget, "the fixture has to start matched for the knock to mean anything");
+
+        // Link OFF, so moving one N is not compensated by the others.
+        d.LinkTransforms = false;
+        var row = d.Transforms[0];
+        d.SetTransformN(0, (row.N + row.NMax) / 2);
 
         output.WriteLine(d.Status.RatioText);
         Assert.False(d.Status.OnTarget);

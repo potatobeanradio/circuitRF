@@ -169,15 +169,22 @@ public class MatchDesignerTests(ITestOutputHelper output)
         designer.PlotPoints = 201;
         Assert.Equal(201, StoredDesign(comp).PlotPoints);
 
+        // ONE MORE than there were, not exactly one. The termination edit above can now leave the
+        // design on an auto-solved rack that already carries transforms (2026-08-28: a termination
+        // edit moves onto a solution that reaches the target, widening past the design's own family
+        // rather than presenting a mismatch), and what this line is about is that AddTransform
+        // reaches the stored parameter — not how many were there before it.
+        int had = StoredDesign(comp).Transforms.Count;
         var pair = designer.AvailablePairs().First();
         designer.AddTransform(pair);
-        Assert.Single(StoredDesign(comp).Transforms);
+        Assert.Equal(had + 1, StoredDesign(comp).Transforms.Count);
 
-        designer.Transforms[0].Locked = true;
-        Assert.True(StoredDesign(comp).Transforms[0].Locked);
+        int last = designer.Transforms.Count - 1;
+        designer.Transforms[last].Locked = true;
+        Assert.True(StoredDesign(comp).Transforms[last].Locked);
 
-        designer.Transforms[0].Form = TransformForm.T;
-        Assert.Equal(TransformForm.T, StoredDesign(comp).Transforms[0].Form);
+        designer.Transforms[last].Form = TransformForm.T;
+        Assert.Equal(TransformForm.T, StoredDesign(comp).Transforms[last].Form);
 
         designer.Dispose();
     }
@@ -501,17 +508,41 @@ public class MatchDesignerTests(ITestOutputHelper output)
         designer.Dispose();
     }
 
-    /// <summary>"No solutions available for order 4" — a sentence this window can say plainly.</summary>
+    /// <summary>
+    /// A family with nothing to offer says so — <b>and the panel does not go empty for it</b>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Rewritten 2026-08-28.</b> This used to assert an empty <c>Solutions</c> and the sentence
+    /// "No solutions available for order 4" beside it, on a Bessel design. Both halves were about a
+    /// panel that showed ONE order in ONE family: selecting a family that refuses left the list with
+    /// nothing in it, and the refusal was the only thing on screen.
+    ///
+    /// <para>The list now spans every order and every family, so a Bessel that refuses is a family
+    /// with no rows among rows that other families produced — which is a strictly better answer to
+    /// "why can't I use Bessel here?" than an empty panel was. What is asserted is that pair: the
+    /// family genuinely refuses (its verdict carries MN-1's numbers), and the panel is not empty
+    /// because of it. <c>SolutionsRefusal</c> is now reserved for the case where the WHOLE
+    /// cross-product came back empty — see <c>LandSearchComplete</c>.</para>
+    /// </remarks>
     [Fact]
-    public void WhenTheSearchFinesNothing_TheWindowSaysSoPlainly()
+    public void WhenAFamilyFindsNothing_ItSaysSo_AndTheListIsNotEmptyForIt()
     {
         var design = Golden();
         design.Response = ResponseShape.Bessel;
         var (_, _, designer) = Open(design);
+        designer.WaitForAnalysis();
 
-        output.WriteLine(designer.SolutionsRefusal);
-        Assert.Empty(designer.Solutions);
-        Assert.StartsWith("No solutions available for order 4.", designer.SolutionsRefusal);
+        var bessel = designer.ResponseOptions.Single(o => o.Shape == ResponseShape.Bessel);
+        Assert.False(bessel.IsEnabled, "the fixture has to be a family that refuses to mean anything");
+        Assert.NotEmpty(bessel.Tooltip);
+
+        // No Bessel rows AT THIS ORDER — which is what the verdict above says. Bessel at some other
+        // order is a different question and one the list is now entitled to answer.
+        Assert.DoesNotContain(designer.AllSolutions,
+                              r => r.Response == ResponseShape.Bessel && r.Order == designer.Design.Order);
+        Assert.NotEmpty(designer.AllSolutions);
+        Assert.Equal("", designer.SolutionsRefusal);
+        output.WriteLine(designer.SolutionsSummary);
 
         designer.Dispose();
     }
@@ -749,7 +780,13 @@ public class MatchDesignerTests(ITestOutputHelper output)
 
         Assert.Equal(DependentVarFormat.Db, designer.MagnitudePlot.Traces[0].YAxis);
         Assert.Equal(DependentVarFormat.Phase, designer.PhasePlot.Traces[0].YAxis);
-        Assert.Equal("GroupDelay", designer.PhasePlot.Traces[1].CubeName);
+        // NAMED WITH ITS UNIT since 2026-08-28 (owner: the right y-axis label needs the group delay's
+        // units on it), and named from the application's own derived-parameter table rather than
+        // written out here — the axis label, the marker readout and the info box all derive from this
+        // one string, so a literal in this test would be a second spelling to drift from.
+        Assert.Equal(MatchDesignerViewModel.TraceGroupDelayName,
+                     designer.PhasePlot.Traces[1].CubeName);
+        Assert.Contains("(ns)", designer.PhasePlot.Traces[1].CubeName!, StringComparison.Ordinal);
         Assert.True(designer.PhasePlot.Traces[1].UseSecondaryAxis);
 
         designer.Dispose();

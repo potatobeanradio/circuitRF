@@ -79,29 +79,37 @@ public sealed partial class MatchDesignerViewModel
             ? Math.Pow(required, 1.0 / (2.0 * k))
             : 1.0;
 
-        _design.Transforms.Add(new TransformRecord(pair.ElementA, pair.ElementB, TransformForm.Pi, seed, false));
-        Refresh(specChanged: true);
-
-        if (_design.LinkTransforms && _design.Transforms.Count > 1)
+        // Held against the analysis landings for the whole edit — see AsOneEdit.
+        AsOneEdit(() =>
         {
-            SetTransformN(_design.Transforms.Count - 1, seed);
-            return;
-        }
-        Commit();
+            _design.Transforms.Add(
+                new TransformRecord(pair.ElementA, pair.ElementB, TransformForm.Pi, seed, false));
+            Refresh(specChanged: true);
+
+            if (_design.LinkTransforms && _design.Transforms.Count > 1)
+            {
+                SetTransformN(_design.Transforms.Count - 1, seed);
+                return;
+            }
+            Commit();
+        });
     }
 
     /// <summary>Removes the last transform.</summary>
     public void RemoveLastTransform()
     {
-        if (_design.Transforms.Count == 0) return;
-        _design.Transforms.RemoveAt(_design.Transforms.Count - 1);
-        Refresh(specChanged: true);
-        if (_design.LinkTransforms && _design.Transforms.Count > 0)
+        AsOneEdit(() =>
         {
-            SetTransformN(0, _design.Transforms[0].N);
-            return;
-        }
-        Commit();
+            if (_design.Transforms.Count == 0) return;
+            _design.Transforms.RemoveAt(_design.Transforms.Count - 1);
+            Refresh(specChanged: true);
+            if (_design.LinkTransforms && _design.Transforms.Count > 0)
+            {
+                SetTransformN(0, _design.Transforms[0].N);
+                return;
+            }
+            Commit();
+        });
     }
 
     /// <summary>True when there is a transform to remove.</summary>
@@ -111,7 +119,7 @@ public sealed partial class MatchDesignerViewModel
     /// Moves one transform, redistributing the unlocked others through <c>MatchLinkage</c>.
     /// <b>A locked row is never written</b> — including the one being asked to move.
     /// </summary>
-    public void SetTransformN(int index, double n)
+    public void SetTransformN(int index, double n) => AsOneEdit(() =>
     {
         if (index < 0 || index >= _design.Transforms.Count) return;
         if (_design.Transforms[index].Locked) return;
@@ -143,25 +151,25 @@ public sealed partial class MatchDesignerViewModel
         }
 
         if (!_isDragging) Commit();
-    }
+    });
 
     /// <summary>Switches one transform between the pi and the T equivalent.</summary>
-    public void SetTransformForm(int index, TransformForm form)
+    public void SetTransformForm(int index, TransformForm form) => AsOneEdit(() =>
     {
         if (index < 0 || index >= _design.Transforms.Count) return;
         _design.Transforms[index] = _design.Transforms[index] with { Form = form };
         Refresh(specChanged: false);
         Commit();
-    }
+    });
 
     /// <summary>Locks or unlocks one transform.</summary>
-    public void SetTransformLocked(int index, bool locked)
+    public void SetTransformLocked(int index, bool locked) => AsOneEdit(() =>
     {
         if (index < 0 || index >= _design.Transforms.Count) return;
         _design.Transforms[index] = _design.Transforms[index] with { Locked = locked };
         Refresh(specChanged: false);
         Commit();
-    }
+    });
 
     // ── The drag ──────────────────────────────────────────────────────────────
 

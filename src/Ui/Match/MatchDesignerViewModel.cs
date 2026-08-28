@@ -100,6 +100,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
                 "Maximally-flat group delay. Feasible as a prototype and usually refused by the far "
                 + "end, which is why the refusal names its numbers."),
         ];
+
+        // After ResponseOptions: the filter's family lines are one per entry, in the same order.
+        BuildFilter();
     }
 
     // ── Binding ───────────────────────────────────────────────────────────────
@@ -360,13 +363,65 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         if (_hookedStack is not null) _hookedStack.PropertyChanged += OnStackChanged;
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
+        RaiseUndoState();
     }
 
     private void OnStackChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
         if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
+        RaiseUndoState();
     }
+
+    /// <summary>True when there is something on the owning schematic's stack to undo.</summary>
+    /// <remarks>
+    /// <b>The title strip's two buttons bind their <c>IsEnabled</c> to this, not to their command's
+    /// <c>CanExecute</c></b> (owner-reported, 2026-08-28: they were always disabled). Binding
+    /// <c>Command</c> alone leaves a Button's enablement to reach it through
+    /// <c>ICommand.CanExecuteChanged</c>, and the first evaluation happens when the binding attaches —
+    /// which here is after <c>SetTarget</c> has already run, with an empty stack and therefore a
+    /// false answer. Every other gated button in this window states its enablement outright for the
+    /// same reason (Probe reads <c>CanProbe</c>, the scroll-to-applied button reads
+    /// <c>HasAppliedSolution</c>), and this is that pattern rather than a second mechanism beside it.
+    ///
+    /// <para>The commands are still notified, so the keyboard path and any menu binding stay right.
+    /// This is the half the strip renders from.</para>
+    /// </remarks>
+    public bool CanUndo => _hookedStack?.CanUndo ?? false;
+
+    /// <inheritdoc cref="CanUndo"/>
+    public bool CanRedo => _hookedStack?.CanRedo ?? false;
+
+    private void RaiseUndoState()
+    {
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(CanRedo));
+        OnPropertyChanged(nameof(UndoTooltip));
+        OnPropertyChanged(nameof(RedoTooltip));
+    }
+
+    /// <summary>
+    /// What the title strip's Undo button offers, <b>named</b> — the schematic stack's own
+    /// <see cref="UndoRedoStack.UndoDescription"/>, so the Designer and the application's Edit menu
+    /// say the same words about the same entry.
+    /// </summary>
+    /// <remarks>
+    /// The buttons are new (owner, 2026-08-28); the commands behind them are not, and neither is
+    /// where they go. A Designer edit IS a schematic edit — <see cref="Commit"/> writes one
+    /// <c>SetParametersCommand</c> onto the owning schematic's stack — so this window has never had a
+    /// history of its own and must not grow one: two stacks would be two answers to "what did I just
+    /// do", and the schematic's is the one the drawing obeys.
+    ///
+    /// <para>A STANDALONE Designer has no schematic and therefore no stack, which is why both
+    /// buttons are simply unavailable there rather than wired to something local. Revert is what that
+    /// window has instead, and it restores the design the window opened with.</para>
+    /// </remarks>
+    public string UndoTooltip =>
+        _hookedStack is { CanUndo: true } s ? s.UndoDescription : "Nothing to undo";
+
+    /// <inheritdoc cref="UndoTooltip"/>
+    public string RedoTooltip =>
+        _hookedStack is { CanRedo: true } s ? s.RedoDescription : "Nothing to redo";
 
     /// <summary>
     /// The design changed underneath us — an undo, a redo, or another editor. Re-read it rather than
@@ -458,10 +513,15 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Units and digits are display only — re-render, do not rebuild and do not commit. Qmin and
-        // the Q-adjust toggle change what the SEARCH offers, so they re-run it.
-        bool searchAffecting = e.PropertyName is nameof(MatchDesignerSettings.QMin)
-                                              or nameof(MatchDesignerSettings.OfferQAdjustedSolutions);
+        // Units and digits are display only — re-render, do not rebuild and do not commit. Qmin is
+        // part of MatchSpecKey and so changes what the SEARCH finds, which re-runs it.
+        //
+        // "Offer Q-adjusted solutions" used to be here beside it and is gone (owner, 2026-08-28:
+        // "remove Offer Q-adjusted solutions from the Settings button menu"). It was a SEARCH input
+        // that decided whether §4.6's candidates were ever computed; the solutions filter's own
+        // Q-adjusted toggle is a view over an answer that always includes them, which is the same
+        // choice made where the user is looking at its result and at no cost when it is flipped.
+        bool searchAffecting = e.PropertyName is nameof(MatchDesignerSettings.QMin);
         Refresh(specChanged: searchAffecting);
     }
 
@@ -493,8 +553,86 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         if (end == 1) _design.Term1 = replacement; else _design.Term2 = replacement;
         AdjustOrderForParity();
         AdjustQAdjustForAnalysisEnd();
-        CommitSpecChange();
+
+        // Re-declaring an end moves the ratio the rack has to reach, and the stored N's are what they
+        // were. RelinkAfterSpecChange absorbs that whenever it can; when it cannot, this asks the
+        // solution search for a rack that does reach it. See AutoApplyAReachingSolution.
+        //
+        // The flag lives for the DURATION OF THIS EDIT and no longer. Every analysis pass this edit
+        // queues copies it — there can be two, because RelinkAfterSpecChange refreshes again — and
+        // whichever of them lands acts on it. A pass queued by any LATER edit copies nothing, so an
+        // edit whose own pass was superseded before it landed is dropped rather than carried forward
+        // to fire under an unrelated change. (Round 6's fixture is exactly that: two terminations set,
+        // then three transforms added, with no wait in between.)
+        // ── ONE UNDO ENTRY FOR THE WHOLE GESTURE (owner, 2026-08-28) ──
+        //
+        // A termination edit can write the design TWICE: once for the edit itself, and once more when
+        // the auto-solve moves it onto a rack that reaches the new target. Which of the two lands
+        // first — and whether the second happens at all — depends on whether the background solution
+        // search has finished, so the naive shape put a nondeterministic NUMBER of entries on the
+        // schematic's undo stack for one gesture. Both halves are covered, because the search can
+        // land on either side of this method returning:
+        //
+        //  * SYNCHRONOUSLY, from inside CommitSpecChange's own Refresh — a cached or fast search
+        //    lands its batch there and the auto-solve runs before this method's commit. Deferring
+        //    every commit for the duration and making exactly one at the end collapses that, and it
+        //    also absorbs RelinkAfterSpecChange's own commit on the way.
+        //  * LATER, on the dispatcher, after this returns. There is nothing to defer by then, so the
+        //    entry made here is remembered by its stamp and the auto-solve's commit AMENDS it. See
+        //    CommitCore.
+        //
+        // UNDER THE EDIT GATE, which is what makes the two cases a CHOICE rather than a race — see
+        // AsOneEdit. The auto-solve either runs inside this block, where the suppression catches it,
+        // or after it, by which time the entry it should amend exists and has been recorded.
+        AsOneEdit(() =>
+        {
+            _autoSolveEnd = end;
+            _commitSuppressed++;
+            try { CommitSpecChange(); }
+            finally { _autoSolveEnd = 0; _commitSuppressed--; }
+
+            if (_commitDeferred)
+            {
+                _commitDeferred = false;
+                Commit();
+            }
+        });
     }
+
+    /// <summary>
+    /// Runs one user edit <b>with the analysis landings held off</b> — the read-modify-write of the
+    /// design, its rebuild and its commit, as one indivisible step.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every landing already takes <see cref="RefreshGate"/></b> before it can touch anything, and
+    /// <see cref="Refresh"/> takes it too — but an edit is a READ, a MUTATION and then a refresh, and
+    /// only the last of the three was inside it. That was survivable while the only landing that
+    /// WRITES the design, the termination auto-solve, could fire in a narrow window right after the
+    /// edit that asked for it. It stopped being survivable when that request was allowed to wait for
+    /// later cells of the search (2026-08-28, so that a design whose own family refuses still ends
+    /// matched): the auto-solve can now land seconds later, in the middle of an unrelated edit.
+    ///
+    /// <para><b>Measured, not theorised.</b> Switching a transform from π to T immediately after a
+    /// termination edit came back as π — the auto-solve had replaced <c>_design.Transforms</c>
+    /// wholesale between this edit reading the record and its refresh rebuilding from it. In the
+    /// application both run on the UI thread and cannot interleave; in a host whose result scheduler
+    /// falls back to the thread pool they do, which is where it was caught.</para>
+    ///
+    /// <para>The lock is reentrant, so an edit that reaches another edit — the linkage re-driving a
+    /// transform, the auto-solve applying a solution — costs nothing extra.</para>
+    /// </remarks>
+    private void AsOneEdit(Action edit)
+    {
+        lock (RefreshGate) edit();
+    }
+
+    /// <summary>Non-zero while a gesture is collecting its writes into ONE commit.</summary>
+    /// <remarks>A depth counter rather than a flag, because the calls nest: a termination edit can
+    /// reach <c>SetTransformN</c> through <c>RelinkAfterSpecChange</c>, and each of those commits.</remarks>
+    private int _commitSuppressed;
+
+    /// <summary>True when a suppressed commit was asked for and still owes the stack an entry.</summary>
+    private bool _commitDeferred;
 
     /// <summary>
     /// Re-solves the transform rack against the ratio the SPECIFICATION now requires, when Link is on.
@@ -577,12 +715,12 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// restored, and a commit on load would put an edit on the schematic's undo stack that nobody
     /// made.</para>
     /// </remarks>
-    private void CommitSpecChange()
+    private void CommitSpecChange() => AsOneEdit(() =>
     {
         Refresh(specChanged: true);
         if (RelinkAfterSpecChange()) return;   // it has already refreshed and committed
         Commit();
-    }
+    });
 
     /// <summary>
     /// match.md §9.2: the Order picker offers only the parities §4.2 permits, and a topology change
@@ -1031,19 +1169,56 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// Restores the design this window opened with, as ONE undoable command. Not a discard: the
     /// intervening edits were real commits, so undoing them has to be a commit too.
     /// </summary>
-    public void Revert()
+    public void Revert() => AsOneEdit(() =>
     {
         _design = _openingDesign.Clone();
         Refresh(specChanged: true);
         Commit();
-    }
+    });
 
     // ── Rebuild ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Serializes a refresh against the analysis landing that can now start one.
+    /// </summary>
+    /// <remarks>
+    /// <b>In the application this is uncontended and does nothing</b>: the analysis lands on
+    /// <c>TaskScheduler.FromCurrentSynchronizationContext</c>, which is the UI thread, and every edit
+    /// is on the UI thread too, so the two were already serialized by the message loop.
+    ///
+    /// <para>It exists for the host that has NO dispatcher — a test, or a headless export — where
+    /// that scheduler falls back to the pool and the landing genuinely runs beside the caller. That
+    /// was harmless while the landing only filled two collections. It stopped being harmless when
+    /// <c>AutoApplyAReachingSolution</c> gave it a <see cref="Refresh"/> of its own: two overlapping
+    /// refreshes both rebuild the plots, and <c>Plot.Autoscale</c> enumerates <c>Traces</c> on every
+    /// add, so one thread's add lands inside the other's enumeration and throws "collection was
+    /// modified". Observed, not theorised.</para>
+    ///
+    /// <para>A <c>Monitor</c> lock, and deliberately: the landing takes it and then calls
+    /// <see cref="Refresh"/>, which takes it again on the same thread. Nothing inside it waits on a
+    /// task, so there is no side to deadlock against.</para>
+    /// </remarks>
+    internal readonly object RefreshGate = new();
+
+    /// <summary>Bumped by every rebuild. See <see cref="RefreshCore"/>.</summary>
+    private int _designEpoch;
 
     /// <summary>Re-derives everything from the design. <paramref name="specChanged"/> also re-runs the
     /// two expensive searches.</summary>
     public void Refresh(bool specChanged)
     {
+        lock (RefreshGate) RefreshCore(specChanged);
+    }
+
+    private void RefreshCore(bool specChanged)
+    {
+        // Every rebuild is a new epoch. An analysis pass records the one it was queued for, and the
+        // auto-solve is honoured only when the design has not moved since — see
+        // AutoApplyAReachingSolution. A pass is NOT superseded by an edit that refreshes without
+        // queuing one (adding a transform, toggling Link), so "the newest pass" is not on its own
+        // evidence that the design is still the one that pass was about.
+        _designEpoch++;
+
         // ── The inline-edit note is about the LAST inline edit, and only that ──
         //
         // Owner-reported, 2026-08-20: "sometimes the error messages in the grid area (below
@@ -1117,8 +1292,50 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// ECHO parameters beside it, as ONE <c>SetParametersCommand</c> — one undo entry per edit,
     /// undoable from the schematic's own stack (brief §1).
     /// </summary>
-    public void Commit()
+    public void Commit() => CommitCore(0);
+
+    /// <summary>
+    /// <inheritdoc cref="Commit"/>
+    /// </summary>
+    /// <param name="amendStamp">
+    /// The <see cref="UndoRedoStack.TopUndoStamp"/> of an earlier commit made <b>in this same user
+    /// gesture</b>, which this one should absorb rather than stack on top of; 0 for an ordinary
+    /// commit.
+    /// </param>
+    /// <remarks>
+    /// <b>One gesture, one undo entry — owner, 2026-08-28.</b> A termination edit commits once
+    /// immediately and then, seconds later, a SECOND time when the background solution search lands
+    /// and the auto-solve moves the design onto a rack that reaches the new target (see
+    /// <c>AutoApplyAReachingSolution</c>). Two commits is two <c>SetParametersCommand</c>s, so one
+    /// Ctrl+Z put the transforms back and left the termination where the user had typed it —
+    /// halfway through an edit they made once.
+    ///
+    /// <para><b>Worse, it was nondeterministic:</b> whether the second commit happened at all
+    /// depended on whether the search had finished, so the same gesture was one undo entry on a slow
+    /// machine and two on a fast one. That is how it was found —
+    /// <c>MatchRound5Tests.ATermGEdit_WritesTheSpecificationsOwnR_AndRefusesAComplexValue</c> failed
+    /// in ISOLATION and passed under full-suite load.</para>
+    ///
+    /// <para><b>The amend is an undo-then-replace</b>, which needs no new stack API and is exactly
+    /// right: undoing the first command puts the component's parameters back to what they were
+    /// before the gesture, so the <c>SetParametersCommand</c> built below captures THAT as its
+    /// "before" and spans the whole gesture. <c>Execute</c> clears the redo stack, so the entry that
+    /// was undone does not linger there. The undo is inside the <c>_isCommitting</c> guard, so the
+    /// model change it raises does not send this Designer back to re-read a design it is in the
+    /// middle of writing.</para>
+    ///
+    /// <para><b>Guarded on the stamp</b>, because this window is not modal and the schematic behind
+    /// it is live: between the two commits the user may have edited the drawing, and amending would
+    /// then undo THEIR edit. The stamp identifies the entry rather than merely counting it, so a top
+    /// that is no longer ours is left alone and the auto-solve simply commits normally — two entries
+    /// in the one case where two entries are the truth.</para>
+    /// </remarks>
+    private void CommitCore(long amendStamp)
     {
+        // Inside a gesture that is collecting its writes: the design is already correct in memory and
+        // the caller commits it once when the gesture ends. See SetTermination.
+        if (_commitSuppressed > 0) { _commitDeferred = true; return; }
+
         if (_target is null || _schematicVm is null) return;
         // A deleted component is not written to. See IsOrphaned — this is the single choke point
         // every setter in this class already funnels through, which is why the guard is only here.
@@ -1129,17 +1346,34 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         // synthesis has genuinely changed underneath the design (match.md §7.3).
         if (_rebuild?.Basis.Ok == true) _design.BasisFingerprint = _rebuild.Basis.BasisFingerprint;
 
-        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
-        Set(updated, MatchEmbedding.DesignParameter, MatchEmbedding.Encode(_design), "", UnitDimension.None, false);
-        Set(updated, "F1", Echo(_design.F1 / 1e9), "GHz", UnitDimension.Frequency, true);
-        Set(updated, "F2", Echo(_design.F2 / 1e9), "GHz", UnitDimension.Frequency, true);
-        Set(updated, "Order", _design.Order.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None, true);
-        Set(updated, "Response", _design.Response.ToString(), "", UnitDimension.None, false);
-        Set(updated, "R1", Echo(_design.Term1.R), "Ω", UnitDimension.Resistance, false);
-        Set(updated, "R2", Echo(_design.Term2.R), "Ω", UnitDimension.Resistance, false);
-
         _isCommitting = true;
-        try { _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated)); }
+        try
+        {
+            // Take the earlier half of this same gesture off the stack FIRST, so the component's
+            // parameters are back at the state the gesture started from and the command built below
+            // spans all of it.
+            if (amendStamp != 0 && _schematicVm.UndoRedo.TopUndoStamp == amendStamp)
+                _schematicVm.UndoRedo.Undo();
+
+            var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+            Set(updated, MatchEmbedding.DesignParameter, MatchEmbedding.Encode(_design), "", UnitDimension.None, false);
+            Set(updated, "F1", Echo(_design.F1 / 1e9), "GHz", UnitDimension.Frequency, true);
+            Set(updated, "F2", Echo(_design.F2 / 1e9), "GHz", UnitDimension.Frequency, true);
+            Set(updated, "Order", _design.Order.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None, true);
+            Set(updated, "Response", _design.Response.ToString(), "", UnitDimension.None, false);
+            Set(updated, "R1", Echo(_design.Term1.R), "Ω", UnitDimension.Resistance, false);
+            Set(updated, "R2", Echo(_design.Term2.R), "Ω", UnitDimension.Resistance, false);
+
+            _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+
+            // While a termination edit is still waiting on its auto-solve, remember the entry just
+            // pushed so that auto-solve can amend it instead of adding one beside it. Recorded HERE
+            // rather than at the end of the gesture because the gesture does not know which of its
+            // writes will end up being the one on the stack — the relink's, or its own — and
+            // recording it at the point of the push is the only spelling that cannot be wrong.
+            if (_pendingAutoSolve is not null)
+                _autoSolveCommitStamp = _schematicVm.UndoRedo.TopUndoStamp;
+        }
         finally { _isCommitting = false; }
 
         // The echoes were just rewritten from the design, so they agree by construction — and this is

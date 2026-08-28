@@ -59,9 +59,55 @@
         <DataTemplate x:Key="TerminationTemplate" x:DataType="mvm:MatchTerminationViewModel">
             <Border Classes="card">
               <StackPanel Spacing="3">
-                <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Classes="cardhdr" Text="{Binding Header}"/>
-                    <TextBlock Grid.Column="1" Text="⚑" FontSize="12"
+                <!-- ── The header row carries the Probe button ───────────────────
+                     Owner, 2026-08-28: each Probe button had a row of its own, and the two
+                     termination cards were asked to give some of that vertical height back — with the
+                     right of the "Termination <x>" heading suggested as where the button could go.
+
+                     Exactly there. The button used to be the card's last row, under the R/X block,
+                     with its own 4 px top margin and the stack's 3 px spacing above that — a whole
+                     row of the specification column spent on one small button per card, twice. Beside
+                     the heading it costs the difference between a 11 pt line and a 17 px button,
+                     which is four pixels, and the two cards give back the rest to the Solutions list
+                     below (see that pane's own note).
+
+                     The flag stays on the FAR right, in its own `*`-separated column: it marks the
+                     card, not the button, and a refusal's flag sitting immediately beside a control
+                     would read as being about that control. -->
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                    <TextBlock Classes="cardhdr" Text="{Binding Header}" VerticalAlignment="Center"/>
+                    <!-- The button is disabled with a tooltip that says WHICH of match.md §10.4's
+                         reasons it is. NO Conjugate checkbox (owner, 2026-08-20: "remove the
+                         Conjugate checkbox (2 instance) — we should not need it; clicking Probe gets
+                         the answer of which R, L, C and topology to use"). The probe reports the
+                         network it MEASURED looking outward, which is the termination the synthesis
+                         absorbs; conjugating it was a second question asked at the wrong moment.
+                         MatchDesign.Term1Conjugate/Term2Conjugate stay on the model and stay false,
+                         so an older design that carries one still decodes.
+
+                         The "probed 2026-08-20 14:31" line that used to sit beside it is gone (owner,
+                         2026-08-20: "remove the 'probed' date text that can sometimes appear next to
+                         the probe button") — it appeared only after a probe, so the card changed shape
+                         under the user for a provenance nobody had asked for. The provenance itself is
+                         unaffected: it lives on the design (Termination.Probed / ProbedAtUtc), still
+                         survives a save and reload, and is still what §10.5's "a hand edit clears the
+                         badge" rule is written against. -->
+                    <!-- HARD RIGHT, under the card's own padding, which is what puts it over the
+                         right edge of the R and X value fields below (owner, 2026-08-28: move it to
+                         hug the right side of the group box, with some padding, aligned with the R
+                         and X values below it). Those fields are the `*` column of their own rows and
+                         so run to that same edge — one line, and the three right edges agree.
+
+                         No Height. A fixed one was what left the label sitting against the top of the
+                         button; the fix for that is global (see CircuitRfStyles' Button style) and a
+                         button sized by its own padding does not raise the question at all. -->
+                    <Button Grid.Column="2" Content="Probe" FontSize="10"
+                            Padding="8,1" MinHeight="0" Margin="8,0,0,2"
+                            VerticalAlignment="Center"
+                            Command="{Binding ProbeCommand}"
+                            IsEnabled="{Binding CanProbe}"
+                            ToolTip.Tip="{Binding ProbeTooltip}"/>
+                    <TextBlock Grid.Column="3" Text="⚑" FontSize="12" Margin="4,0,0,0"
                                Foreground="{DynamicResource CrfWarningBrush}"
                                IsVisible="{Binding IsFlagged}"
                                ToolTip.Tip="A refusal names this termination — see the status strip"/>
@@ -147,28 +193,11 @@
                 </Grid>
 
                 <!-- ── Probe (match.md §10) ──────────────────────────────────────
-                     The button is disabled with a tooltip that says WHICH of §10.4's reasons it is.
-
-                     Probe, and the provenance of what it last wrote. NO Conjugate checkbox (owner,
-                     2026-08-20: "remove the Conjugate checkbox (2 instance) — we should not need it;
-                     clicking Probe gets the answer of which R, L, C and topology to use"). The probe
-                     reports the network it MEASURED looking outward, which is the termination the
-                     synthesis absorbs; conjugating it was a second question asked at the wrong
-                     moment. MatchDesign.Term1Conjugate/Term2Conjugate stay on the model and stay
-                     false, so an older design that carries one still decodes. -->
-                <!-- The button and NOTHING beside it. The "probed 2026-08-20 14:31" line that used
-                     to sit here is gone (owner, 2026-08-20: "remove the 'probed' date text that can
-                     sometimes appear next to the probe button") — it appeared only after a probe, so
-                     the card changed shape under the user for a provenance nobody had asked for. The
-                     provenance itself is unaffected: it lives on the design (Termination.Probed /
-                     ProbedAtUtc), still survives a save and reload, and is still what §10.5's
-                     "a hand edit clears the badge" rule is written against. -->
-                <Button Content="Probe" FontSize="11" Padding="8,2" Margin="0,4,0,0"
-                        HorizontalAlignment="Left"
-                        Command="{Binding ProbeCommand}"
-                        IsEnabled="{Binding CanProbe}"
-                        ToolTip.Tip="{Binding ProbeTooltip}"/>
-
+                     The BUTTON is up in the header row now (owner, 2026-08-28) — see its note there.
+                     What is left here is what the probe has to SAY, and it stays at the bottom of the
+                     card because that is where a card's own messages belong. Both lines are empty
+                     until there is something to report, so a probe that works costs no height at
+                     all. -->
                 <TextBlock Classes="warn" Text="{Binding ProbeError}"
                            IsVisible="{Binding ProbeError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
@@ -219,6 +248,80 @@
             <Setter Property="CornerRadius"    Value="6"/>
             <Setter Property="Padding"         Value="8,5"/>
             <Setter Property="Margin"          Value="0,0,0,5"/>
+        </Style>
+
+        <!-- ── The applied solution's card ────────────────────────────────────────
+             (owner, 2026-08-28: "the solution that is currently being viewed has a check mark
+             indicator on its card. This needs to be more prominent and obvious to the user… Consider
+             using bold text in the card's title, perhaps change the check mark color indictor to
+             green?")
+
+             All three, and all three from ONE class: `Classes.current="{Binding IsCurrent}"` on the
+             card, with these selectors reaching its children. A tick alone could not carry it — at
+             12 px in the same foreground as the ring beside it, on a list that is now long enough to
+             scroll, it was a character the eye had to hunt for.
+
+             The green is stated here rather than taken from a theme key because there is no success
+             brush in CircuitRfResources (CrfWarningBrush is the only semantic colour there, and it is
+             red). #2FA85A reads as green against both SystemChromeLowColor variants without being the
+             saturated one that would compete with the schematic's own accents. -->
+        <Style Selector="Border.card.current">
+            <Setter Property="BorderBrush"     Value="#2FA85A"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+        <Style Selector="TextBlock.solbadge">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+        </Style>
+        <Style Selector="Border.card.current TextBlock.solbadge">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#2FA85A"/>
+        </Style>
+        <Style Selector="TextBlock.soltitle">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Border.card.current TextBlock.soltitle">
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+
+        <!-- ── The solutions list virtualizes ─────────────────────────────────────
+             A bare ItemsControl inside a ScrollViewer is NOT virtualized: Avalonia's ItemsControl
+             defaults to a plain StackPanel and, given a ScrollViewer's infinite measure height,
+             realizes EVERY item. That was fine when the panel held one order's solutions in one
+             family; it is not fine now that it holds the whole cross-product — the shipped default
+             document comes back with 444 rows, each a card of seven text blocks, and realizing three
+             thousand controls is the opposite of the responsiveness this round is for.
+
+             ListBox is the fix, its default ItemsPanel being a VirtualizingStackPanel, and it is the
+             SAME answer this codebase already settled on twice (TechEditorView's row lists, the
+             wBond Touchstone export dialog's port list) — including the class name. These styles are
+             those styles: flatten the selection chrome so a virtualized row reads as a card rather
+             than as something to pick from. The card's own `current` border is what marks the applied
+             one; a selection highlight beside it would be a second, contradictory mark. -->
+        <Style Selector="ListBox.rows">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding"         Value="0"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility"   Value="Auto"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem">
+            <Setter Property="Padding"                    Value="0"/>
+            <Setter Property="Margin"                     Value="0"/>
+            <Setter Property="MinHeight"                  Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding"    Value="0"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
         </Style>
 
         <Style Selector="TextBlock.panelhdr">
@@ -328,14 +431,45 @@
                  button on the same strip; left as the one word among the glyphs it reads as an
                  unstyled leftover rather than as a deliberate exception. CLOSE was dropped outright
                  in the same round — see below. -->
+            <!-- No Solutions toggle (owner, 2026-08-28: "move the Solutions listing to be under the
+                 Frequency Band group in the Specification panel"). The list is not a drawer any more
+                 and there is nothing left for a toggle to open; a button that hid the specification
+                 pane's own lower half would be a different control answering a question nobody asked. -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                <ToggleButton Padding="6,3"
-                              IsChecked="{Binding SolutionsPanelOpen, Mode=TwoWay}"
-                              ToolTip.Tip="Solutions — every valid transform set, simplest first; click through them and watch the ladder and the response change">
-                    <mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/>
-                </ToggleButton>
+                <!-- ── Undo and Redo (owner, 2026-08-28) ──────────────────────────
+                     Left of Settings, in the same glyph language as the rest of the strip. The
+                     COMMANDS are not new and neither is the behaviour: MatchDesignerViewModel's
+                     UndoCommand and RedoCommand have always delegated to the owning schematic's own
+                     stack, because a Designer edit IS a schematic edit and a second history beside it
+                     would be two answers to "what did I just do". Ctrl+Z in this window already went
+                     there; what was missing was somewhere to aim a pointer.
+
+                     Their tooltips name the entry, so the strip says WHAT would be undone rather than
+                     just that something would be — the same UndoDescription the application's own
+                     Edit menu reads, and it is why a Designer that has just amended its own commit
+                     (see CommitCore) reads as one entry here too.
+
+                     IsEnabled IS STATED, and that is not belt-and-braces (owner-reported, 2026-08-28:
+                     the two buttons were always disabled). Binding Command alone leaves a Button's
+                     enablement to arrive through ICommand.CanExecuteChanged, and its first evaluation
+                     happens when the binding attaches — which is after SetTarget has run, against an
+                     empty stack, so the answer is false and stays false. Every other gated button in
+                     this window says so outright for the same reason: Probe reads CanProbe, the
+                     scroll-to-applied button reads HasAppliedSolution. -->
+                <Button Name="UndoButton" Padding="6,3"
+                        Command="{Binding UndoCommand}"
+                        IsEnabled="{Binding CanUndo}"
+                        ToolTip.Tip="{Binding UndoTooltip}">
+                    <mi:MaterialIcon Kind="UndoVariant" Width="16" Height="16"/>
+                </Button>
+                <Button Name="RedoButton" Padding="6,3"
+                        Command="{Binding RedoCommand}"
+                        IsEnabled="{Binding CanRedo}"
+                        ToolTip.Tip="{Binding RedoTooltip}">
+                    <mi:MaterialIcon Kind="RedoVariant" Width="16" Height="16"/>
+                </Button>
                 <Button Name="SettingsButton" Padding="6,3"
-                        ToolTip.Tip="Settings — display units, significant digits, Qmin, and whether Q-adjusted solutions are offered">
+                        ToolTip.Tip="Settings — display units, significant digits and Qmin">
                     <mi:MaterialIcon Kind="CogOutline" Width="16" Height="16"/>
                 </Button>
                 <Button Name="ExportButton" Padding="6,3"
@@ -353,16 +487,19 @@
             </StackPanel>
         </Grid>
 
-        <!-- ── The three panes, plus the solutions drawer ─────────────────── -->
-        <!-- The specification column is 215, not 300 (owner, 2026-08-20: "reduce the width of the
-             Specification panel so the text and UI elements are closer together within its panel —
-             looks like a reduction of 100 pixels or so; careful, we don't want overlapping text").
-             Nothing in it wraps or collides at that width because three things gave room back in the
-             same round: the reactance's two rows became one, its kind selector went to a single
-             character, and the pictogram and topology selector each lost a few pixels. The widest
-             row left is "Topology" (about 46 px at 10 pt) plus a 56 px selector, in a card interior
-             of 169 px once the pictogram's 44 + 6 is taken out — which leaves room for the pane's
-             own scrollbar as well. -->
+        <!-- ── The three panes ────────────────────────────────────────────── -->
+        <!-- The specification column is 285, WIDENED from 215 (owner, 2026-08-28: "widen the
+             Specification panel slightly"), and there is no fourth column any more. Both are the
+             same change: the Solutions list moved out of its own 330 px drawer and into this pane,
+             so the pane has to hold a card that carries a family name, an order, a pair listing and
+             an Apply button — which 215 cannot. The window is 70 px narrower in total for it, since
+             what left was 330 wide whenever it was open.
+
+             215 was itself a reduction from 300 (owner, 2026-08-20: "reduce the width of the
+             Specification panel so the text and UI elements are closer together within its panel").
+             What that round bought is not given back: the reactance's two rows are still one row,
+             its kind selector is still a single character, and the termination cards are unchanged —
+             they simply have 70 px of slack now, which is where a solution card's own text goes. -->
         <!-- Either of the two right-hand panes can be given the other's width (owner, 2026-08-20:
              "add a button in front of Impedance Matching Network… when clicked, the Schematic and
              Transforms panels expand to the right to occupy more space and the Response panel is no
@@ -375,17 +512,48 @@
              nothing. The specification column is untouched in both states: it is the input side, and
              an expansion that hid it would make the window unusable in exactly the moment the user is
              reading detail off the other two. -->
-        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="215,*,380,Auto">
+        <Grid Grid.Row="1" Name="PaneGrid" ColumnDefinitions="285,*,380">
 
             <!-- Specification -->
+            <!-- THREE CARDS LEFT (owner, 2026-08-28): the two terminations, the band, and the ripple.
+                 Order, Filter Response and Options were removed in the same round — "they are no
+                 longer needed because we now have the Solution panel displaying all the possible
+                 solutions". Each of the three was an INPUT that narrowed a search to one answer; the
+                 search now runs the whole order x family cross-product with Q-adjusted candidates and
+                 negative components both included, so the same four knobs live on the Solutions
+                 filter as a view over the result. What stays here is what genuinely specifies the
+                 PROBLEM rather than the search: what is at each end, over what band, to what ripple.
+
+                 The two automatic-change notes those cards carried (OrderNote, QAdjustNote) moved to
+                 the top of the pane rather than going with them. They are not about a control — they
+                 say that the design changed underneath the user, which is still true and still worth
+                 saying when there is no longer a control to say it beside. -->
             <Border Grid.Column="0" Classes="pane">
-                <Grid RowDefinitions="Auto,*">
+                <Grid RowDefinitions="Auto,Auto,*">
                     <TextBlock Classes="panelhdr" Text="Specification"/>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+
+                    <!-- MaxHeight, so the solutions list below always has room. An Auto row over a
+                         star row takes what it wants first, and three cards plus four notes can
+                         exceed a short window on their own — at which point the star row underneath
+                         collapses to nothing and the list the user came here to read is not on
+                         screen at all. Bounded here and scrolled, the two divide the pane instead.
+
+                         300, DOWN FROM 392 (owner, 2026-08-28: the Solutions listing needs more
+                         vertical space, room is to be made for it, and the height the changes above
+                         free is to go to it). Ninety-two pixels of it, and the two
+                         changes above are where they come from: the band and ripple cards became one
+                         (a border, a heading and a card margin), and each termination's Probe button
+                         moved off its own row and onto the card's heading. The cards fit in what is
+                         left, so what this cap actually decides is the FLOOR under the Solutions
+                         list, which is the half of the pane the owner asked to grow — a cap that
+                         merely tracked the content would have handed the saving straight back the
+                         first time a note appeared. -->
+                    <ScrollViewer Grid.Row="1" MaxHeight="300"
+                                  VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <!-- The probe's PROGRESS is not here any more — it is in the footer, beside
-                             the solutions summary (owner-reported, 2026-08-20: "if I click probe, the
+                        <!-- The probe's PROGRESS is not here — it is in the footer, beside the
+                             solutions summary (owner-reported, 2026-08-20: "if I click probe, the
                              Group box rendering glitches out then returns to normal. Need no
                              glitches"). It was a row that appeared for the duration of the run and
                              then vanished, INSIDE this pane's stack: every card under it slid down
@@ -400,17 +568,57 @@
                              reported and not rewritten. -->
                         <TextBlock Classes="note" Text="{Binding EchoNote}"
                                    IsVisible="{Binding EchoNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <!-- An order the terminations no longer permit is MOVED, and a Q-adjust they
+                             have overtaken is CLEARED. Both used to sit inside the card whose control
+                             they were about; both cards are gone and both changes still happen, so
+                             they say so here. See AdjustOrderForParity and AdjustQAdjustForAnalysisEnd. -->
+                        <TextBlock Classes="note" Text="{Binding OrderNote}"
+                                   IsVisible="{Binding OrderNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Classes="note" Text="{Binding QAdjustNote}"
+                                   IsVisible="{Binding QAdjustNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                         <ContentControl Content="{Binding Term1}" ContentTemplate="{StaticResource TerminationTemplate}"/>
                         <ContentControl Content="{Binding Term2}" ContentTemplate="{StaticResource TerminationTemplate}"/>
 
-                        <!-- Band: TWO labelled edges (owner, 2026-08-19: "needs text labels for f1
-                             and f2, there's currently only just 'f'"). One "f" over two boxes left
-                             the reader to work out which was which from their order. The unit combo
-                             that used to sit beside them is gone with the others — see the R row. -->
+                        <!-- ── Frequency Band & Ripple — ONE card, three rows ─────────────
+                             Owner, 2026-08-28: the Frequency Band and Ripple groups are to become one
+                             group headed "Frequency Band & Ripple", with three rows — f1, f2 and
+                             Ripple, dB.
+
+                             They were two cards, and the second held ONE row. A card costs its
+                             border, its 8,5 padding, its 5 px bottom margin and a heading line, so
+                             the second one spent roughly thirty pixels of the specification column
+                             on framing a single field — height the Solutions list below wanted
+                             more (see that pane's own note). Nothing about either input changes:
+                             both edges and the ripple keep their own row, their own label and their
+                             own tooltip, and the ripple row keeps the IsEnabled and the note that go
+                             with it.
+
+                             TWO labelled band edges, not one "f" (owner, 2026-08-19: "needs text
+                             labels for f1 and f2, there's currently only just 'f'"). One "f" over
+                             two boxes left the reader to work out which was which from their order.
+
+                             RIPPLE SURVIVED the Filter Response card it used to live in, and had to:
+                             it is an input to the PROBLEM (the equal-ripple level the real-to-real
+                             prototype is built to), not a choice of family. Its row dims when it does
+                             not apply and RippleNote says which end is the reason. It could not
+                             before (owner, 2026-08-20: "is Ripple, dB supposed to be an input? If so,
+                             the inline text editor does not show when I double click on its value")
+                             — an InlineEditText rests as a bare TextBlock and Avalonia does not dim a
+                             disabled one, so a switched-off row read as live and swallowed the
+                             gesture. RippleNote is ONE SHORT LINE; the paragraph it used to be is on
+                             the row's own tooltip.
+
+                             The three label columns are all `Auto` and each row sizes its own, which
+                             is right here and not an oversight: "f1" and "Ripple, dB" are of very
+                             different widths, and one shared column would push both value fields in
+                             by the width of the longest label to buy an alignment nobody reads down.
+                             The shared-column rule this window does keep is the termination card's
+                             R-over-kind-selector, where the two glyphs sit in ONE column and had to
+                             be told to. -->
                         <Border Classes="card">
                             <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Frequency Band"/>
+                                <TextBlock Classes="cardhdr" Text="Frequency Band &amp; Ripple"/>
                                 <Grid ColumnDefinitions="Auto,*">
                                     <TextBlock Classes="detailLabel" Text="f1"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
@@ -423,87 +631,6 @@
                                                         Text="{Binding F2Entry, Mode=TwoWay}"
                                                         ToolTip.Tip="Upper band edge. Double-click to edit; a typed unit moves BOTH edges' display unit."/>
                                 </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Classes="card">
-                            <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Order"/>
-                                <!-- A SELECTOR, not a typed field (owner, 2026-08-20: "the Order
-                                     needs to be that custom icon selector UI element whose options
-                                     change depending on the two terminations"). Its items ARE
-                                     OrderOptions — only the parities this termination pair permits
-                                     (match.md §4.2) — so the refusal the typed field had to spell out
-                                     is now made by simply not offering the order. -->
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Classes="detailLabel" Text="Elements"/>
-                                    <ddc:IconSelectButton Grid.Column="1" Width="34" Height="19"
-                                                          HorizontalAlignment="Right"
-                                                          Background="{DynamicResource ButtonBackground}"
-                                                          ItemsSource="{Binding OrderChoices}"
-                                                          SelectedItem="{Binding OrderChoice, Mode=TwoWay}"
-                                                          ToolTip.Tip="{Binding OrderTooltip}">
-                                        <ddc:IconSelectButton.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding}" FontSize="10"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </DataTemplate>
-                                        </ddc:IconSelectButton.ItemTemplate>
-                                    </ddc:IconSelectButton>
-                                </Grid>
-                                <TextBlock Classes="note" Text="{Binding OrderNote}"
-                                           IsVisible="{Binding OrderNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- The response family is a ComboBox, not four radio buttons (owner,
-                             2026-08-19). An infeasible family still APPEARS, disabled, carrying the
-                             refusal that explains it — dropping it from the list would answer "why
-                             can't I pick Bessel?" by saying nothing at all. It is a LIST of four with
-                             one-line descriptions, which is the one selector an IconSelectButton
-                             would make worse: that control shows a glyph, and these are sentences. -->
-                        <Border Classes="card">
-                            <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Filter Response"/>
-                                <!-- The CLOSED control carries the selected family's own line, or
-                                     the refusal that disabled it (owner, 2026-08-20: "add it back as
-                                     a tooltip addition in the combobox"). The drop-down's items have
-                                     always carried theirs; the control the user is left looking at
-                                     afterwards carried nothing. -->
-                                <ComboBox FontSize="11" HorizontalAlignment="Stretch"
-                                          ItemsSource="{Binding ResponseOptions}"
-                                          SelectedItem="{Binding SelectedResponseOption, Mode=TwoWay}"
-                                          ToolTip.Tip="{Binding ResponseTooltip}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate x:DataType="mvm:MatchResponseOptionViewModel">
-                                            <TextBlock Text="{Binding Display}" FontSize="11"
-                                                       IsEnabled="{Binding IsEnabled}"
-                                                       Opacity="{Binding ListOpacity}"
-                                                       ToolTip.Tip="{Binding Tooltip}"/>
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                                <TextBlock Classes="warn" Text="{Binding ResponseRefusal}"
-                                           IsVisible="{Binding ResponseRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-
-                                <!-- Ripple: four characters is the whole ask ("0.05"). It IS an
-                                     input — but only for the real-to-real prototype, and the row was
-                                     disabled with nothing to show for it (owner, 2026-08-20: "is
-                                     Ripple, dB supposed to be an input? If so, the inline text editor
-                                     does not show when I double click on its value").
-
-                                     It could not: InlineEditText rests as a bare TextBlock, and a
-                                     disabled TextBlock in Avalonia looks EXACTLY like an enabled one
-                                     — so the row read as a live field that ignored the gesture. Two
-                                     things fix that and neither is "make it always editable": the
-                                     row dims when it does not apply, and RippleNote says which of
-                                     the two terminations is the reason.
-
-                                     RippleNote is ONE SHORT LINE since 2026-08-20 ("set by
-                                     termination 2.") — the paragraph it used to be is on this row's
-                                     own tooltip now, because five wrapped lines were present in this
-                                     column for most designs and the card had no height for them.
-                                     Deleting it outright would put the round-6 bug straight back. -->
                                 <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding RippleEnabled}">
                                     <TextBlock Classes="detailLabel" Text="Ripple, dB"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="46"
@@ -514,27 +641,196 @@
                                            IsVisible="{Binding RippleNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                             </StackPanel>
                         </Border>
-
-                        <Border Classes="card">
-                            <StackPanel Spacing="2">
-                                <TextBlock Classes="cardhdr" Text="Options"/>
-                                <CheckBox FontSize="11" Content="Q-adjust" MinHeight="0"
-                                          IsChecked="{Binding QAdjustEnabled, Mode=TwoWay}"
-                                          ToolTip.Tip="Deliberately inflate the analysis end's Q so a lower order completes — adds one element at that end"/>
-                                <CheckBox FontSize="11" Content="Allow negative components" MinHeight="0"
-                                          IsChecked="{Binding AllowNegativeComponents, Mode=TwoWay}"
-                                          ToolTip.Tip="Widens every transform's range past its positivity threshold"/>
-                                <!-- A Q-adjust the terminations have overtaken is CLEARED, and this is
-                                     the line that says so — the same treatment OrderNote gives an
-                                     automatic order change, and for the same reason: a control that
-                                     silently changes another control is worse than one that explains
-                                     itself. See AdjustQAdjustForAnalysisEnd. -->
-                                <TextBlock Classes="note" Text="{Binding QAdjustNote}"
-                                           IsVisible="{Binding QAdjustNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                            </StackPanel>
-                        </Border>
                     </StackPanel>
                     </ScrollViewer>
+
+                    <!-- ── Solutions ────────────────────────────────────────────────────────
+                         Owner, 2026-08-28: "move the Solutions listing to be under the Frequency Band
+                         group in the Specification panel", and "the Solutions panel [lists] all the
+                         solutions for every filter response and order". It is not a drawer any more
+                         and it is not opened; it is the lower half of this pane, always out, because
+                         picking a network from it IS how the design is now specified.
+
+                         It fills as the background search finds them (owner: "UI needs to feel
+                         responsive so if the solution list is built (and added to the UI) in the
+                         background that would be nice") — the design's own order and family are
+                         searched first and land immediately, the rest are inserted around them in
+                         canonical order. SolutionsProgressNote is what says the list is not final
+                         yet, so a short list mid-search is never mistaken for the whole answer. -->
+                    <Grid Grid.Row="2" RowDefinitions="Auto,Auto,Auto,*" Margin="0,6,0,0">
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBlock Classes="cardhdr" Text="Solutions" VerticalAlignment="Center"/>
+
+                            <!-- Back to the applied card (owner, 2026-08-28: "add a button next to
+                                 the filter button that will auto-scroll to the current solution
+                                 card"). The list scrolls there once when it first has one to show,
+                                 and after that it stays where the user put it — which is right, and
+                                 leaves them with no way back once they have scrolled through four
+                                 hundred rows looking for something better. This is that way back.
+
+                                 Same borderless transparent shape as the filter beside it. Disabled
+                                 when there is nothing to go to: a design on a hand-set transform set
+                                 matches no row, and a button that scrolls nowhere is worse than one
+                                 that is plainly unavailable. -->
+                            <Button Grid.Column="1" Name="ScrollToAppliedButton"
+                                    ToolTip.Tip="Scroll to the applied solution"
+                                    IsEnabled="{Binding HasAppliedSolution}"
+                                    Padding="3,2" Background="Transparent" BorderThickness="0">
+                                <mi:MaterialIcon Kind="TargetVariant" Width="14" Height="14"
+                                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                            </Button>
+                            <!-- The Project Tree's own filter control, to the letter (owner,
+                                 2026-08-28: "change the Filter UI in the Solutions panel to be more
+                                 like the Project Tree filter UI for workspaces. It uses checkboxes
+                                 and overall has a way better UX; I also like its icon better"). Same
+                                 borderless transparent button, same MaterialIcon Kind="Filter" in
+                                 SystemBaseMediumColor, same Button.Flyout holding a spaced StackPanel
+                                 of 12 pt CheckBoxes — see ProjectTreeView.axaml, which is where all
+                                 of it comes from.
+
+                                 The two ItemsControls are the one thing that view does not need: its
+                                 eight categories are fixed, and the orders here come from
+                                 MatchOrders.ValidOrders and change with the termination pair (two for
+                                 a like pair, three for a mixed one, five when either end is
+                                 resistive). A checkbox per row, generated, is the same control with
+                                 the same behaviour — what could not be written out is the LIST, not
+                                 the line.
+
+                                 NO DOT ON THE BUTTON (owner, 2026-08-28: it is distracting). It was
+                                 a small warning-coloured ellipse that appeared whenever the filter was
+                                 hiding something, so "no solutions" and "no solutions shown" could be
+                                 told apart at a glance — but the default filter hides negative-
+                                 component solutions, so it was lit on almost every design, at a
+                                 warning colour, for a state that is normal. A mark that is always on
+                                 marks nothing. The distinction it was for is still made, twice and
+                                 in words: the tooltip is Filter.Summary, which says what is hidden,
+                                 and the footer's own line counts what is listed. -->
+                            <Button Grid.Column="2" Name="SolutionsFilterButton"
+                                    ToolTip.Tip="{Binding Filter.Summary}"
+                                    Padding="3,2" Background="Transparent" BorderThickness="0">
+                                <mi:MaterialIcon Kind="Filter" Width="14" Height="14"
+                                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                <Button.Flyout>
+                                    <Flyout Placement="BottomEdgeAlignedRight">
+                                        <StackPanel Spacing="3" Margin="8">
+                                            <ItemsControl ItemsSource="{Binding Filter.Orders}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="mvm:MatchSolutionFilterToggle">
+                                                        <CheckBox IsChecked="{Binding IsOn}"
+                                                                  Content="{Binding Label}" FontSize="12"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <Separator/>
+                                            <ItemsControl ItemsSource="{Binding Filter.Responses}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="mvm:MatchSolutionFilterToggle">
+                                                        <CheckBox IsChecked="{Binding IsOn}"
+                                                                  Content="{Binding Label}" FontSize="12"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <Separator/>
+                                            <CheckBox IsChecked="{Binding Filter.ShowQAdjusted}"
+                                                      Content="Q-adjusted" FontSize="12"
+                                                      ToolTip.Tip="§4.6's deliberately inflated analysis-end Q — an ordinary network with one more element at that end. Listed by default."/>
+                                            <CheckBox IsChecked="{Binding Filter.ShowNegativeComponents}"
+                                                      Content="Allow negative components" FontSize="12"
+                                                      ToolTip.Tip="Solutions carrying an element at or below zero — exact, and only buildable by absorbing it into a neighbour. Hidden by default."/>
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </Grid>
+                        <TextBlock Grid.Row="1" Classes="note" Text="{Binding SolutionsProgressNote}"
+                                   IsVisible="{Binding IsSearchingSolutions}"/>
+                        <TextBlock Grid.Row="2" Classes="warn" Text="{Binding SolutionsRefusal}"
+                                   IsVisible="{Binding SolutionsRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <!-- ── APPLYING A SOLUTION MUST NOT MOVE THE LIST ────────────────
+                             Owner-reported, 2026-08-28: applying a solution — by double-clicking a
+                             card, or by its Apply button — nudges the scroll view. It should not move
+                             at all; the only things that change are the applied card's green border
+                             and the button's own wording.
+
+                             It scrolled for TWO independent reasons, and both had to go or the
+                             remaining one would still nudge it:
+
+                             * `AutoScrollToSelectedItem` is a SelectingItemsControl default of TRUE.
+                               A double-click on a card selects its ListBoxItem on the way through,
+                               and the ListBox then scrolls the whole item into view — so a card that
+                               was half off the bottom edge slid up under the pointer at the exact
+                               moment the user was reading the result of their own double-click.
+                               Selection means NOTHING in this list (the styles above flatten every
+                               piece of its chrome — the `current` border is the mark, not the
+                               selection), so nothing is lost by switching the scroll off.
+
+                             * `ScrollViewer.BringIntoViewOnFocusChange` is a ScrollContentPresenter
+                               default of TRUE: clicking the Apply button focuses it, and the focus
+                               change asks the nearest scroller to bring it into view. That is the
+                               half the button click hit, which is why the two gestures scrolled by
+                               slightly different amounts.
+
+                             Neither switch touches the EXPLICIT scroll: `ListBox.ScrollIntoView` is
+                             what the header's target button and the once-only automatic scroll call
+                             (see ScrollToApplied), and it still works — these two only stop the
+                             list scrolling itself as a side effect of a click.
+
+                             Keyboard scrolling does not come from here either: Page Up/Down, Home and
+                             End are routed to this list by the window, through the same
+                             PanelScrollKeys the Project Tree and the .ctech editor use, so they work
+                             wherever the focus happens to be. See OnPanelScrollKeyDown. -->
+                        <ListBox Grid.Row="3" Name="SolutionsList" Classes="rows" Margin="0,4,0,0"
+                                 AutoScrollToSelectedItem="False"
+                                 ScrollViewer.BringIntoViewOnFocusChange="False"
+                                 ItemsSource="{Binding Solutions}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="mvm:MatchSolutionRowViewModel">
+                                        <!-- Classes.current drives all three marks of the applied row
+                                             from one flag: the green tick, the bold title and the
+                                             card's own accent border. See the styles at the top. -->
+                                        <!-- ── THE CARD IS THE BUTTON ────────────────────────
+                                             Owner, 2026-08-28: the Apply / Applied button comes off
+                                             the card and a solution is applied as soon as the user
+                                             clicks the card itself.
+
+                                             So there is no Click handler here and no DoubleTapped
+                                             either: SELECTING a row is what applies it, and the
+                                             ListBox already turns a click — and an arrow key — into a
+                                             selection. One path, and it is the framework's own, which
+                                             is why the keyboard gesture needed no second
+                                             implementation. See OnSolutionSelectionChanged.
+
+                                             The hand cursor is the whole affordance now that the
+                                             button is gone. What marks the applied row is unchanged:
+                                             the green border, the bold title and the tick, all three
+                                             from Classes.current — see the styles at the top. -->
+                                        <Border Classes="card" Classes.current="{Binding IsCurrent}"
+                                                Cursor="Hand">
+                                            <Grid ColumnDefinitions="16,*">
+                                                <TextBlock Classes="solbadge" Text="{Binding BadgeGlyph}"
+                                                           ToolTip.Tip="{Binding BadgeTooltip}"/>
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Classes="soltitle" Text="{Binding TitleText}"
+                                                               TextWrapping="Wrap"/>
+                                                    <TextBlock Classes="note" Text="{Binding CountText}"/>
+                                                    <TextBlock Classes="note" Text="{Binding PairsText}"/>
+                                                    <!-- A Q-adjust and a negative element get a line
+                                                         each; their ABSENCE gets nothing (owner,
+                                                         2026-08-28). -->
+                                                    <TextBlock Classes="note" Text="{Binding QAdjustText}"
+                                                               IsVisible="{Binding QAdjustText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                    <TextBlock Classes="note" Text="{Binding ReturnLossText}"/>
+                                                    <TextBlock Classes="warn" Text="{Binding NegativeNote}"
+                                                               IsVisible="{Binding HasNegativeComponents}"/>
+                                                    <TextBlock Classes="warn" Text="{Binding ImplausibleNote}"
+                                                               IsVisible="{Binding ImplausibleValues}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
                 </Grid>
             </Border>
 
@@ -874,42 +1170,6 @@
               </ScrollViewer>
             </Border>
 
-            <!-- Solutions — a dockable drawer, NOT a modal sheet: the user has to be able to click
-                 through candidates and watch the ladder and the response change. -->
-            <Border Grid.Column="3" Classes="pane" Width="330"
-                    IsVisible="{Binding SolutionsPanelOpen}">
-                <Grid RowDefinitions="Auto,Auto,*">
-                    <TextBlock Classes="panelhdr" Text="Solutions"/>
-                    <TextBlock Grid.Row="1" Classes="warn" Text="{Binding SolutionsRefusal}"
-                               IsVisible="{Binding SolutionsRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Solutions}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="mvm:MatchSolutionRowViewModel">
-                                    <Border Classes="card">
-                                        <Grid ColumnDefinitions="18,*,Auto">
-                                            <TextBlock Text="{Binding BadgeGlyph}" FontSize="12"
-                                                       ToolTip.Tip="{Binding BadgeTooltip}"/>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="{Binding CountText}" FontSize="11" FontWeight="SemiBold"/>
-                                                <TextBlock Classes="note" Text="{Binding PairsText}"/>
-                                                <TextBlock Classes="note" Text="{Binding QAdjustText}"
-                                                           IsVisible="{Binding QAdjustText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                                <TextBlock Classes="note" Text="{Binding ReturnLossText}"/>
-                                                <TextBlock Classes="warn" Text="{Binding ImplausibleNote}"
-                                                           IsVisible="{Binding ImplausibleValues}"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="2" Content="Apply" FontSize="10" Padding="6,2"
-                                                    VerticalAlignment="Top"
-                                                    Tag="{Binding}" Click="OnApplySolution"/>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </Grid>
-            </Border>
         </Grid>
 
         <!-- ── Footer ────────────────────────────────────────────────────── -->
@@ -926,9 +1186,8 @@
                            VerticalAlignment="Center" IsVisible="{Binding IsOrphaned}"/>
                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                             IsVisible="{Binding !IsOrphaned}">
-                    <TextBlock Text="{Binding SolutionsSummary}" FontSize="11" VerticalAlignment="Center"
-                               IsVisible="{Binding !IsAnalysing}"/>
-                    <TextBlock Text="Searching solutions and response families…" FontSize="11" Opacity="0.7"
+                    <TextBlock Text="{Binding SolutionsSummary}" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock Text="searching…" FontSize="11" Opacity="0.7"
                                VerticalAlignment="Center" IsVisible="{Binding IsAnalysing}"/>
                 </StackPanel>
 

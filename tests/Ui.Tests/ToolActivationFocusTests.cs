@@ -15,6 +15,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using CircuitRF.Ui.ViewModels.Dock;
 using Xunit;
 
@@ -149,13 +150,26 @@ public class ToolActivationFocusTests
     //  works only after a preliminary click inside it — which is the whole bug. Enumerated from the
     //  source rather than listed by hand, so a NEW scrollable panel cannot be added without either
     //  wiring this up or deliberately editing this test.
+    //
+    //  DOCKED TOOL PANELS ONLY, and that exclusion is the rule's own reasoning rather than a hole in
+    //  it (2026-08-28, when the Match Designer bound the same four keys). Activation focus exists
+    //  because a dock TAB is chrome living OUTSIDE the panel it names: clicking it leaves the focus
+    //  on something the panel's key route never passes through, so the panel has to reach out and
+    //  take the focus back. A top-level Window has no such gap — when nothing inside it has focus the
+    //  window itself is the key event's target, so a handler the window registered ON ITSELF is
+    //  always on the route. Requiring ActivationFocusRequested there would be requiring a mechanism
+    //  that does not exist for windows, to fix a bug they cannot have.
     [Fact]
     public void EveryViewThatBindsTheScrollKeys_AlsoClaimsFocusOnActivation()
     {
         var viewsDir = RepoPath("src/Ui/Views");
-        var users = Directory
+        var all = Directory
             .EnumerateFiles(viewsDir, "*.axaml.cs", SearchOption.AllDirectories)
             .Where(f => File.ReadAllText(f).Contains("PanelScrollKeys.ActionFor", StringComparison.Ordinal))
+            .ToList();
+
+        var users = all
+            .Where(f => !Regex.IsMatch(File.ReadAllText(f), @"class\s+\w+\s*:\s*Window\b"))
             .ToList();
 
         // If this ever reads zero, the scan is broken and the assertion below is vacuous.

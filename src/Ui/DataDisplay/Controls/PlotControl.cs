@@ -465,7 +465,31 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 ApplyMenuAvailability();
             };
 
+            // BUILD TIME as well, and this is the half that was missing (owner-reported again,
+            // 2026-08-28: "the Delete Plot context menu should be disabled (greyed out) on the two
+            // response plots"). The remark below has always claimed both, and only the Opening hook
+            // was wired — so a host that sets either flag in its AXAML depended entirely on that
+            // event reaching this menu instance. Applying it here as well makes the item's state a
+            // property of the menu from the moment it exists, with the Opening hook left as the
+            // refresh it is described as.
+            ApplyMenuAvailability();
+
             return menu;
+        }
+
+        /// <summary>
+        /// Keeps the two gated menu items in step when a host moves either flag.
+        /// </summary>
+        /// <remarks>
+        /// The menu is built lazily, on the first right-click, and cached for the control's lifetime
+        /// — so a flag set BEFORE it exists is picked up by the build-time call above and one set
+        /// after it exists is picked up here. Neither waits for the next open.
+        /// </remarks>
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+            if (change.Property == CanDeletePlotProperty || change.Property == CanEditPlotPropertiesProperty)
+                ApplyMenuAvailability();
         }
 
         /// <summary>

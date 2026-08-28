@@ -178,10 +178,7 @@ public sealed partial class MatchDesignerViewModel
             MagnitudePlot.Traces.Clear();
             PhasePlot.Traces.Clear();
             ResponseError = _rebuild?.Refusal is { } r ? r.Message : "";
-            MagnitudeContainer.OnPlotChanged(this, EventArgs.Empty);
-            PhaseContainer.OnPlotChanged(this, EventArgs.Empty);
-            OnPropertyChanged(nameof(MagnitudePlot));
-            OnPropertyChanged(nameof(PhasePlot));
+            AnnounceRebuiltPlots();
             return;
         }
 
@@ -303,10 +300,7 @@ public sealed partial class MatchDesignerViewModel
 
         if (ResponseSnp is not { } snp)
         {
-            MagnitudeContainer.OnPlotChanged(this, EventArgs.Empty);
-            PhaseContainer.OnPlotChanged(this, EventArgs.Empty);
-            OnPropertyChanged(nameof(MagnitudePlot));
-            OnPropertyChanged(nameof(PhasePlot));
+            AnnounceRebuiltPlots();
             return;
         }
 
@@ -341,15 +335,44 @@ public sealed partial class MatchDesignerViewModel
         PhasePlot.CustomTitle = "Phase and Group Delay";
         PhasePlot.Autoscale(force: true);
 
-        // The traces the markers were on have just been REPLACED — an edit rebuilds both plots from
-        // scratch — so the host has to be told, or its info boxes go on pointing at Trace objects
-        // that are no longer in any plot. OnPlotChanged is the same notification PlotContainerView
-        // raises on the canvas, and it drops exactly the boxes whose markers are gone.
+        AnnounceRebuiltPlots();
+    }
+
+    /// <summary>
+    /// Tells the host that both plots have been rebuilt: <b>the info boxes, the bindings, and the
+    /// repaint</b>. The one exit every rebuild takes, so no path can announce two of the three.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>OnPlotChanged</b> — the traces the markers were on have just been REPLACED, since an
+    /// edit rebuilds both plots from scratch, so the host has to be told or its info boxes go on
+    /// pointing at <c>Trace</c> objects that are no longer in any plot. It is the same notification
+    /// <c>PlotContainerView</c> raises on the canvas, and it drops exactly the boxes whose markers are
+    /// gone.</para>
+    ///
+    /// <para><b>RequestPlotRedraw is the part that was missing</b> (owner-reported, 2026-08-28:
+    /// applying a solution sometimes leaves the plots looking unchanged, including across a move
+    /// between two response families that should look nothing alike).
+    /// Nothing here ever invalidated the <c>PlotControl</c>. The two plot MODELS are the same two
+    /// objects for the window's whole life — a rebuild clears their <c>Traces</c> and refills them —
+    /// so <c>OnPropertyChanged(nameof(MagnitudePlot))</c> re-pushes an unchanged reference through the
+    /// binding, and <c>OnPlotChanged</c> only raises property changes on the container's own view-model.
+    /// Neither is a repaint. The control redrew when something ELSE happened to invalidate it — the
+    /// pointer crossing it, a resize, the window being re-activated — which is precisely a change that
+    /// appears "sometimes", and appears the moment the user moves the mouse to look closer.
+    /// <c>PlotContainerViewModel.PlotNeedsRedraw</c> is the seam the Data Display already uses for
+    /// exactly this, and <c>WirePlotHost</c> in the code-behind has it wired to
+    /// <c>PlotControl.InvalidateVisual</c> — it simply had no caller on this side.</para>
+    /// </remarks>
+    private void AnnounceRebuiltPlots()
+    {
         MagnitudeContainer.OnPlotChanged(this, EventArgs.Empty);
         PhaseContainer.OnPlotChanged(this, EventArgs.Empty);
 
         OnPropertyChanged(nameof(MagnitudePlot));
         OnPropertyChanged(nameof(PhasePlot));
+
+        MagnitudeContainer.RequestPlotRedraw();
+        PhaseContainer.RequestPlotRedraw();
     }
 
     /// <summary>
@@ -406,6 +429,19 @@ public sealed partial class MatchDesignerViewModel
     /// baked, the seam the Data Display already uses for any value it has reduced itself, so the
     /// trace renders, autoscales and reads out like any other.</para>
     /// </remarks>
+    /// <summary>
+    /// What the group-delay trace is called — <b>the application's own spelling of the quantity,
+    /// units included</b>, read from the derived-parameter table rather than written out here so the
+    /// two cannot drift.
+    /// </summary>
+    /// <remarks>
+    /// The Designer computes this delay itself (see <see cref="GroupDelayTrace"/> for why it is not a
+    /// <c>DerivedParameters</c> trace), but it is the SAME quantity in the same nanoseconds, and a
+    /// user reading one plot after the other must not be told it is two.
+    /// </remarks>
+    public static string TraceGroupDelayName => DerivedParameters.GroupDelay.Description();
+
+    /// <inheritdoc cref="TraceGroupDelayName"/>
     public static Trace? GroupDelayTrace(SNP snp, FreqUnit freqUnit)
     {
         ArgumentNullException.ThrowIfNull(snp);
@@ -418,7 +454,16 @@ public sealed partial class MatchDesignerViewModel
         var trace = new Trace(snp, MatrixType.S, 1, 0, DependentVarFormat.Real,
                               secondaryAxis: true, properties: SecondaryStyle())
         {
-            CubeName = "GroupDelay",
+            // NAMED WITH ITS UNIT, and named the way the rest of the application already names this
+            // quantity — DerivedParameters.GroupDelay's own Description(), character for character
+            // (owner, 2026-08-28: the right-hand y-axis label needs the group delay's units on it).
+            //
+            // On the CubeName rather than as a custom Y2 label on the plot, because that is the one
+            // string the axis label, the marker readout and the info box all derive from
+            // (TraceLabeler.BuildCubeQuantity): a custom axis label would have put the unit on the
+            // axis and left the marker beside it reading a bare number with no unit at all. It also
+            // keeps the label in the TRACE's own colour, which a custom label does not.
+            CubeName = TraceGroupDelayName,
         };
         trace.SetCubeData(f, null, tauNs, "freq", "Hz", PlotType.Rect, freqUnit, transformBaked: true);
         return trace;

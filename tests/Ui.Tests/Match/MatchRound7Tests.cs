@@ -140,14 +140,19 @@ public sealed class MatchRound7Tests(ITestOutputHelper output)
     [Fact]
     public void TheClear_DoesNotEatTheNoteItsOwnRefreshProduces()
     {
+        // RefreshCore, not Refresh: the public entry point is now a one-line lock around it (see
+        // MatchDesignerViewModel._refreshGate). The body that clears the note is the same body.
         string body = Between(
-            Src("src", "Ui", "Match", "MatchDesignerViewModel.cs"), "public void Refresh(bool specChanged)");
+            Src("src", "Ui", "Match", "MatchDesignerViewModel.cs"), "private void RefreshCore(bool specChanged)");
         Assert.Contains("InlineEditNote = \"\";", body, StringComparison.Ordinal);
 
-        // SetElementValue sets the note AFTER its Refresh, which is what makes the clear safe.
+        // SetElementValue sets the note AFTER its Refresh, which is what makes the clear safe. The
+        // BODY is SetElementValueCore since 2026-08-28 — the public method is a one-line hold against
+        // the analysis landings around it (MatchDesignerViewModel.AsOneEdit), exactly as Refresh is a
+        // one-line lock around RefreshCore above. The body that matters is the same body.
         string solve = Between(
             Src("src", "Ui", "Match", "MatchDesignerViewModel.InlineEdit.cs"),
-            "private bool SetElementValue(string name, double target)");
+            "private bool SetElementValueCore(string name, double target)");
         int refresh = solve.IndexOf("Refresh(specChanged: false);", StringComparison.Ordinal);
         int note = solve.LastIndexOf("InlineEditNote =", StringComparison.Ordinal);
         Assert.True(refresh > 0 && note > refresh,
@@ -332,40 +337,55 @@ public sealed class MatchRound7Tests(ITestOutputHelper output)
         d.Dispose();
     }
 
-    // ══ 6 — 50 Ω into 5 Ω ∥ 1 pF: the refusal names the order that works ═════
+    // ══ 6 — 50 Ω into 5 Ω ∥ 1 pF: the panel OFFERS what reaches it ══════════
 
     /// <summary>
     /// <b>Owner-reported:</b> "I find it hard to believe that the Match component cannot match a 50
     /// ohm termination to a parallel RC of 5 ohms // 1pF at 2 GHz. Am I doing something wrong?"
     /// </summary>
     /// <remarks>
-    /// <b>It can — at order 4, and the refusal at order 3 was correct but unhelpful.</b> This test
-    /// pins both halves: that order 3 genuinely has no solutions and now SAYS which orders do, and
-    /// that one of the orders it names really does produce a matched network. The second half is what
-    /// makes the first a remedy rather than a suggestion.
+    /// <b>It can, and since 2026-08-28 the Designer simply shows how, with nothing to set.</b>
+    ///
+    /// <para>The first answer to this (2026-08-20) was a refusal that NAMED the orders that reach it,
+    /// because the panel showed one order in one family and the user had to go and pick another.
+    /// That was the repository's standing lesson about refusals — a remedy is only a remedy if it
+    /// BINDS — and this round takes it one step further: the list spans every permitted order and
+    /// family, so opening the problem at order 3 puts the networks that reach it on screen as rows.
+    /// A remedy you can click beats one you have to go and set.</para>
+    ///
+    /// <para><b>Order 3 reaches it too</b>, which the old search could not see. Every cell is now
+    /// searched with negative components permitted, and <c>MatchSolutionSearch.FindQAdjust</c>
+    /// therefore finds the Q-adjust that completes at order 3 — an all-positive, buildable network at
+    /// about 37 dB return loss. Under the old flag it bisected inside a clamped rack, failed, and
+    /// offered nothing. So this test asserts what the user gets rather than which order they have to
+    /// use: buildable rows exist, and applying one matches.</para>
     /// </remarks>
     [Fact]
-    public void TheUnreachableRatioRefusal_NamesAnOrderThatReachesIt()
+    public void TheOwnersProblem_IsOfferedAsRows_AtEveryOrderThatReachesIt()
     {
         var (_, _, d) = Open(OwnersProblem(order: 3));
         d.WaitForAnalysis();
 
-        Assert.Empty(d.Solutions);
-        output.WriteLine(d.SolutionsRefusal);
-        Assert.Contains("Order 4", d.SolutionsRefusal, StringComparison.Ordinal);
-        d.Dispose();
+        var buildable = d.AllSolutions
+            .Where(r => !r.HasNegativeComponents && !r.Solution.ImplausibleValues)
+            .ToList();
+        Assert.NotEmpty(buildable);
+        output.WriteLine($"{d.AllSolutions.Count} solutions listed, {buildable.Count} of them buildable: "
+                         + string.Join(", ", buildable.Select(r => r.TitleText).Distinct()));
 
-        // ...and order 4 is not merely offered, it works.
-        var (_, _, d4) = Open(OwnersProblem(order: 4));
-        d4.WaitForAnalysis();
-        Assert.NotEmpty(d4.Solutions);
+        // Order 4 was the one the old refusal named, and it is still there — now as a row.
+        var atFour = buildable.Where(r => r.Order == 4).ToList();
+        Assert.NotEmpty(atFour);
 
-        d4.Solutions.First(s => !s.Solution.ImplausibleValues).Apply();
-        double worst = d4.Status.WorstReturnLossDb;
+        atFour[0].Apply();
+        d.WaitForAnalysis();
+
+        Assert.Equal(4, d.Design.Order);
+        double worst = d.Status.WorstReturnLossDb;
         output.WriteLine($"order 4 worst in-band return loss: {worst:F2} dB");
         Assert.True(worst < -20.0, $"order 4 should match this pair; got {worst:F2} dB");
-        Assert.True(d4.Status.OnTarget, "Π N² should be on target once a solution is applied");
-        d4.Dispose();
+        Assert.True(d.Status.OnTarget, "Π N² should be on target once a solution is applied");
+        d.Dispose();
     }
 
     // ══ 7 — the "(target …)" annotation, and what the editor opens with ══════
@@ -632,12 +652,21 @@ public sealed class MatchRound7Tests(ITestOutputHelper output)
         d.Dispose();
     }
 
-    /// <summary>The closed Response combo now carries the selected family's own line.</summary>
+    /// <summary>
+    /// The selected family still explains itself — <b>the combo it used to explain itself IN is gone</b>.
+    /// </summary>
+    /// <remarks>
+    /// The Filter Response card was removed on 2026-08-28 along with Order and Options. What that
+    /// round changed is where the choice is MADE, not whether the four families are still described:
+    /// each one's line and each one's refusal are what the solutions list is built out of, and
+    /// <c>ResponseTooltip</c> is still the selected family's own. So the surface assertion goes and
+    /// the behaviour it was guarding stays.
+    /// </remarks>
     [Fact]
-    public void TheResponseCombo_ExplainsItselfWithoutBeingOpened()
+    public void TheSelectedResponse_StillCarriesItsOwnLine()
     {
         var (_, _, d) = Open();
-        Assert.Contains("ToolTip.Tip=\"{Binding ResponseTooltip}\"", Xaml(), StringComparison.Ordinal);
+        Assert.DoesNotContain("ToolTip.Tip=\"{Binding ResponseTooltip}\"", Xaml(), StringComparison.Ordinal);
         Assert.Equal(d.SelectedResponseOption!.Tooltip, d.ResponseTooltip);
         Assert.NotEmpty(d.ResponseTooltip);
         d.Dispose();
