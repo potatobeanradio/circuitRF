@@ -59,6 +59,26 @@ public sealed class UpdateState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PendingPath { get; set; }
 
+    /// <summary>
+    /// The staged bundle path of a macOS exchange that has STARTED but whose bookkeeping has not been
+    /// written yet. Null the rest of the time, which is almost always.
+    ///
+    /// <para><b>It exists because the exchange and the record of it are two operations.</b> On macOS
+    /// <c>SwapBundle</c> exchanges the installed bundle with the staged one and <c>RecordSwap</c>
+    /// writes what happened only after it returns. A process killed between the two left this file
+    /// still advertising the new version as STAGED while the disk already had it INSTALLED — so the
+    /// next launch exchanged the pair straight back, <c>execv</c>ed the old version, and then released
+    /// <c>updates/previous</c>, destroying the update. The user was silently downgraded and the
+    /// download was thrown away, with nothing anywhere saying so.</para>
+    ///
+    /// <para>Written before the first thing that moves on disk and cleared by the record that
+    /// supersedes it, so a launch that finds it set knows a swap was interrupted.
+    /// <c>UpdateSwap.ResolveInterruptedSwap</c> is what reads it.</para>
+    /// </summary>
+    [JsonPropertyName("swap_in_progress")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SwapInProgress { get; set; }
+
     /// <summary>The version that was running before the last swap, retained as rollback insurance.</summary>
     [JsonPropertyName("previous_version")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

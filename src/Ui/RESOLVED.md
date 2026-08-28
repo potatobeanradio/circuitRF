@@ -1,5 +1,246 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The kill window that silently downgraded the user (2026-08-27)
+
+Found while designing the `.swapaside-` fix below, reported rather than folded into it, and then
+fixed on the owner's instruction. **This one is on the ATOMIC path, so unlike that fallback it is
+the window that exists on every real Mac.**
+
+`SwapBundle` exchanges the installed bundle with the staged one; `RecordSwap` — a caller in
+`UpdateStartup`, after the method returns — writes down that it happened. **Those are two
+operations, and nothing tied them together.** A process killed between them leaves `state.json`
+still advertising the new version as STAGED while the disk already has it INSTALLED. The next
+launch reads that state, runs `SwapBundle` again, exchanges the pair straight back, `execv`s the
+OLD version, and then `NoteFirstWindowShown` releases `updates/previous` — which by then holds the
+NEW bundle. Net effect: the user is returned to the previous version, the update is destroyed, and
+the next check re-downloads it. Nothing anywhere says so.
+
+**The fix is one durable field written before the first thing that moves.** `UpdateState`
+`swap_in_progress` is set immediately before the exchange and cleared by the record that supersedes
+it, so a launch that finds it set knows a swap was interrupted. `UpdateSwap.ResolveInterruptedSwap`
+then settles it.
+
+**The running version is what answers "did the exchange happen".** On macOS the bundle IS the
+launch path, so this process's own version is the version sitting at the install path: matching the
+staged one means the exchange completed and this process is already the new build. **A sentinel
+file inside the bundle would have been the obvious alternative and is not available** — adding a
+file to a signed `.app` breaks its seal and Gatekeeper then refuses to launch it, so the answer had
+to come from something already there.
+
+The two spellings are compared as **versions, not as text**: `AppVersion.Display` normalises a
+`1.0` tag to `1.0.0` while `staged_version` is the tag the release carried — the same trap
+`SwapResult.PreviousDirectoryName` documents for directory names. Comparing them as strings would
+have swapped a correctly-installed update straight back out.
+
+**"Nothing moved" stays recoverable, and that ordering was the real design decision.** The obvious
+fix — write `RecordSwap` BEFORE the exchange — closes the rare window by breaking the common one:
+a permissions error or a locked file would then discard the update instead of retrying it next
+launch. Far more launches reach this method through an ordinary failure than through a kill in the
+microseconds between two renames. So the marker is a question, not a commitment: unresolved means
+retry, and only a running version that matches the staged one is treated as done.
+
+The interrupted retaining move is completed where it can be, so the rollback survives — checked
+rather than unconditional, because `ReclaimSwapAside` may already have adopted it on the fallback
+path. A new outcome, `SwapOutcome.SwapAlreadyApplied`, carries this back to `UpdateStartup`: it
+records the bookkeeping and does **not** exec, because this process is already the new version.
+
+**`RecordSwap` gained an explicit `previousVersion` parameter for one reason.** It used to write
+`AppVersion.Display` unconditionally, which is right on the ordinary path — that call is made by
+the OLD version before it execs — and wrong on this one, where it is made by the NEW version and
+would name the wrong build as the rollback. macOS reverts by PATH (`Revert` reads
+`updates/previous` and never the string), so `null` is the honest record rather than a confidently
+wrong one.
+
+### The versioned layout's half of the same gap
+
+Owner asked whether Windows and Linux had equivalents. The two fixes below are macOS-only and that
+was verified from the call sites, not assumed: `AtomicFile.SwapDirectories` has exactly two callers
+(`SwapBundle` and the macOS half of `Revert`), so there is no `.swapaside-` debris on the versioned
+layout; `hdiutil` is macOS-only; and `ExecReplace` has one caller that no `VersionedPointer` outcome
+ever supplies an executable to, so **the beta.3 false crash report cannot happen there either.**
+Downloading is one code path on all three platforms and behaves identically. The nearest analogue is
+Linux-only and benign: `tar` is a child process, so a `SIGKILL` orphans it mid-extraction — it keeps
+writing into a `.partial` tree that is never given a real name and is reclaimed at the next launch.
+
+**But the two-operation gap itself is not macOS-only, and it does bite.** `WriteCurrent` and
+`RecordSwap` are just as separate as the bundle exchange and its record. The consequence is milder,
+because **re-writing `current` with the value it already holds is idempotent** — nobody is
+downgraded. What breaks is the ROLLBACK: the second flip reports `runningDirectoryName` as the
+previous version, and on that launch the running directory IS the new version. `Revert` would then
+`WriteCurrent` the failing version over itself, change nothing, and return `RolledBack` — telling
+the user their previous version had been restored when it had not. **That is the identical bug the
+macOS half of `Revert` was fixed for on 2026-08-25, reappearing on the other shape by another
+route.**
+
+`FlipPointer` now recognises the case and returns `SwapAlreadyApplied` with no previous directory
+name. **Both halves of its test are load-bearing**: `current` naming the staged version is also the
+ordinary state between a flip and the next launch, when the session is still the OLD tree and has
+every reason to record itself as the rollback. Only the running directory separates the two, and a
+test pins each side.
+
+The rollback for that one generation is genuinely unavailable — which `app-<ver>` was the
+predecessor is not recoverable after the fact, since several may be on disk and none of them says
+so — and `Revert` now refuses with "the previous version is gone". A refusal is worth far more than
+a revert that silently does nothing.
+
+**The tests were verified to fail without the fix, not merely to pass with it** — disabling
+`ResolveInterruptedSwap` turns exactly three of them red
+(`KilledAfterTheExchange_TheNextLaunchKeepsTheNewVersion`,
+`KilledAfterTheExchange_ASecondLaunchDoesNotSwapItBack`,
+`TheTwoSpellingsOfOneVersion_AreTheSameVersion`). A fourth,
+`KilledBeforeTheExchange_TheUpdateIsRetried`, is the one that guards the ordering decision above.
+Neutering `FlipPointer`'s check likewise turns exactly
+`KilledAfterThePointerFlip_TheRollbackIsNotMisrecordedAsTheNewVersion` red and leaves the
+flip-normally test green.
+
+Design doc §13.6a now states all of this — cancel, quit, kill, per phase — in one place.
+
+## Force-quit during an update: the two residues that outlive the process (2026-08-27)
+
+Owner question, following the beta.3 crash-report entry below: what does quitting or killing
+circuitRF mid-update actually leave behind?
+
+**Most of it is already safe, and the reason is structural rather than careful.** The install
+happens in `Program.Main` BEFORE Avalonia initialises, so there is no window to quit during it —
+only *download* and *stage* overlap with a user's session, and both are restartable by
+construction. A download lands in `<name>.partial` and resumes from the file's **actual on-disk
+length**, so a lost 128 KB `FileStream` buffer merely shortens it; an unpack lands in
+`app-<ver>.partial`, which is never executed from and never counted; `state.json` is written temp
+file + rename, and a corrupt one falls back to a fresh one. Debris of both kinds is reclaimed at
+the next launch.
+
+**Two things survived a `SIGKILL` that nothing could reclaim, and they had that in common: both
+live OUTSIDE the updater's own directories.** `UpdateReclaimer`'s rule with teeth is that it never
+leaves them, so neither residue was reachable by any existing step.
+
+### 1. `<app>.app.swapaside-<id>`
+
+`AtomicFile.SwapDirectories` prefers `renamex_np(RENAME_SWAP)` — a true exchange, so nothing is
+left to reclaim, and every Mac with an APFS or HFS+ volume takes that path. The fallback for a
+filesystem without it is three renames: original aside, staged into place, original into the staged
+slot. A kill after the second one strands the displaced bundle at
+`<app>.app.swapaside-<8 hex>` — a sibling of the installed application in `/Applications`, which is
+why `grep` found that name in exactly two places, `AtomicFile` and one test asserting the happy
+path leaves none.
+
+**It is ADOPTED, not deleted, and that distinction is the whole fix.** The stranded directory is
+the version the user was running a moment ago — the rollback §14 calls the design's best insurance.
+Deleting it would leave the new version installed with nothing to revert TO, so a new version that
+then failed to start twice would find `updates/previous` empty and strand the user on a build that
+does not run: the exact disaster §14 exists to prevent, arriving from the cleanup meant to help.
+`UpdateSwap.ReclaimSwapAside` therefore moves it to `previous`, which is precisely the rename the
+kill interrupted — completing the operation rather than tidying up after it. Only when `previous`
+is already populated (which `SwapBundle`'s own ordering says cannot happen) is the copy redundant,
+and only then is it deleted.
+
+**The guard that matters is the one for the OTHER window.** A kill between the FIRST and second
+rename leaves nothing at the launch path at all, and the aside is then the user's only copy of the
+application. That state cannot reach the method — an application that is not there does not start —
+but it is written down and tested rather than assumed, because the cost of being wrong is deleting
+somebody's only installed copy. `AtomicFile.SwapAsidesOf` requires the original's own file name,
+plus the marker, plus exactly 8 hex digits, so a match cannot be anything else.
+
+### 2. A leaked `hdiutil` mount
+
+`StageMacBundleAsync` detaches in a `finally`, which covers every ordinary failure — but a
+`SIGKILL` runs no `finally`, so a force-quit during staging leaves the `.dmg` attached at
+`/tmp/crf-update-<8 hex>`. The user gets a volume in Finder they cannot account for or eject, with
+nothing to connect it to, surviving until a reboot.
+
+`UpdateStager.ReclaimAbandonedMountsAsync` sweeps it, called fire-and-forget from
+`UpdateStartup.AfterFirstWindow` — **not** from `RunBeforeUi`, because it spawns a process and
+nothing about a launch may wait on one. Same shape of name guard as above: the prefix, then exactly
+8 hex digits, so only this stager's own mount points match. A sweep that ran `hdiutil detach`
+against somebody else's temp directory would be a far worse bug than the leak it fixes.
+
+**Concurrency is handled at two different levels, on purpose.** Within this process a stage
+registers its mount point before the attach and withdraws it in the `finally`, so a sweep cannot
+detach a volume this process is reading from. Across processes — two of the three applications
+updating at once — the protection is the operating system's: `ditto` makes the volume busy,
+`hdiutil detach` is refused with EBUSY, and the sweep leaves it for the next launch. **The
+uncovered window is the few milliseconds between the attach returning and `ditto` opening the
+volume**; losing that race costs one `StageOutcome.UnpackFailed`, which §9 discards without a
+blacklist and retries at the next check. Recorded rather than closed with an age heuristic, which
+would have made the fix not work in the case it is actually for — a user force-quitting and
+relaunching straight away to get rid of the phantom volume.
+
+### Still open, found while designing the above and NOT fixed
+
+**A kill between `AtomicFile.SwapDirectories` and `Directory.Move(staged, previous)` silently
+downgrades the user.** This is on the ATOMIC path, so it is the one that exists on real Macs.
+After the exchange, `site.Root` holds the new version and the `staged` path holds the old one, but
+`RecordSwap` — which runs only after `SwapBundle` returns — has not written anything, so
+`state.json` still advertises the new version as staged. The next launch runs `SwapBundle` again,
+exchanges the two back, and `execv`s the OLD version; `NoteFirstWindowShown` then clears the
+pending record and releases `updates/previous`, deleting the new bundle. Net effect: the user is
+returned to the previous version, the update is destroyed, and the next check re-downloads it.
+
+Reachable only by killing the process in the microsecond window between two renames during launch,
+before any window exists — but it is a genuine defect and a different one from the two above, which
+is why it is written down here rather than quietly folded into them. The fix is to make the state
+write and the disk operation agree (record the intent before the swap, or have the swap detect that
+it has already happened) rather than to reclaim anything afterwards.
+
+## An update FROM beta.3 announced itself as a crash, and the build had 11 warnings (2026-08-27)
+
+Owner-reported, on the first launch after auto-updating to 1.0.0-beta.4: a Message Panel line
+saying circuitRF "did not shut down cleanly last time", pointing at
+`crash-20260827-213157-39276.log`. Nothing had crashed.
+
+**The report is real, its contents identify it exactly, and the fix for it had already shipped —
+one release too late.** The promoted file carries `version: 1.0.0-beta.3`, an EMPTY breadcrumb
+trail, and process id 39276; the live beta.4 session file sitting beside it carries the SAME pid,
+two seconds later. An `execv` keeps the pid, so those two lines are one process: beta.3 execed into
+the freshly swapped bundle, and the beta.4 image that came up swept the directory and found the
+predecessor's session file owned by nobody.
+
+`CrashReporter.HandOffToExec` — which closes the session file immediately before the exec, so the
+handoff looks like the clean exit it is — was added in `89b2bd4`, and `git merge-base --is-ancestor`
+puts that commit AFTER beta.3's tag and inside beta.4's. So beta.3 in the field calls
+`UpdateSwap.ExecReplace` directly and there is no way to change that: **the outgoing fix cannot be
+applied retroactively to a build a user already has installed.**
+
+**So the RECEIVING build has to be the one that knows.** `PromoteAbandonedSessions` now skips a
+session file that is this process's own exec predecessor (`CrashReporter.IsOwnExecPredecessor`),
+and deletes it rather than promoting it. The discriminator is exact, not a heuristic, and needs
+nothing but the file NAME (`session-{yyyyMMdd}-{HHmmss}-{pid}.running`):
+
+- **The pid equals ours.** No live process can hold it, because we hold it. So the file is either
+  our own predecessor image or a stale file from a recycled pid.
+- **Its start second is at or after this process's OS-reported start time.** `execv` replaces the
+  image without restarting the kernel's process clock, so a predecessor's stamp satisfies this and
+  a genuinely older session — the recycled-pid case — cannot.
+
+Every uncertain answer is `false`: an unparseable name, an unavailable `Process.StartTime`, a
+platform with no exec. That keeps the failure direction right — the worst the guard can do is
+decline to suppress, which is exactly the behaviour it replaced. Two tests hold both halves
+(`ASessionThisProcessExecedAwayFrom_IsNotAnnouncedAsACrash`,
+`ARecycledPidFromAnEarlierCrash_IsStillReported`); the second is the one that matters, since a
+guard that swallows real crash reports is worse than the false positive it fixes.
+
+**The false positive is therefore a beta.3→beta.4 artifact and will not recur** — beta.4 already
+hands off on the way out, and now also recognises a predecessor on the way in.
+
+### The build warnings
+
+`dotnet build` was emitting 11, all of them silent-by-default noise that had accumulated:
+
+- **`AVLN5001` in `LayoutRulerPropertiesView.axaml`** — `TextBox.Watermark` is obsolete in
+  Avalonia 12; renamed to `PlaceholderText`. This one only appears when `src/Ui` actually rebuilds,
+  which is why a full-solution build with that project up to date reports ten warnings and not
+  eleven. Worth knowing before concluding a warning is gone.
+- **Nine xUnit analyzer warnings** in `Ui.Tests`, all mechanical: `Assert.Equal(1, x.Count)` →
+  `Assert.Single(x)`, `Assert.Single(x.Where(p))` → `Assert.Single(x, p)`, `Assert.Empty(x.Where(p))`
+  → `Assert.DoesNotContain(x, p)`.
+- **`xUnit1031` in `LayoutRenderThreadSafetyTests.NotifyChanged_TakesTheRenderLock`** — the one that
+  is NOT a cleanup. The blocking `Task.Wait(250 ms)` there IS the assertion: the claim under test is
+  that the task does not finish while the render lock is held, and a wait that times out is the only
+  way to observe that. Awaiting is not available either — the lock is held across that line and
+  `Monitor` is thread-affine, so a continuation resuming on another thread could not release it.
+  Suppressed narrowly with `#pragma warning disable xUnit1031` and that reasoning in place.
+
+Build is at 0 warnings; `Ui.Tests` 9,887 passed, `Firewall.Tests` 10 passed.
+
 ## The update download had no progress bar and no Cancel (2026-08-27)
 
 Owner-reported, on macOS, immediately after publishing 1.0.0-beta.4: Help ▸ Check for Updates…

@@ -73,10 +73,15 @@ public sealed class UpdateStager
             return new StageResult(StageOutcome.Unsupported, null, "not macOS");
 
         string partial = PartialNameFor(destinationBundle);
-        string mount   = Path.Combine(Path.GetTempPath(), "crf-update-" + Guid.NewGuid().ToString("N")[..8]);
+        string mount   = Path.Combine(Path.GetTempPath(),
+                                      MountPrefix + Guid.NewGuid().ToString("N")[..MountIdLength]);
 
         SafeDelete(partial);
         Directory.CreateDirectory(mount);
+
+        // Declared before the attach and withdrawn in the finally, so a sweep running concurrently in
+        // THIS process cannot detach a mount this one is reading from. See ReclaimAbandonedMountsAsync.
+        lock (_mountsGate) _liveMounts.Add(mount);
 
         bool attached = false;
         try
@@ -117,6 +122,7 @@ public sealed class UpdateStager
                 catch { /* the mount is the OS's problem now; nothing further we can do */ }
             }
             try { Directory.Delete(mount, false); } catch { /* best effort */ }
+            lock (_mountsGate) _liveMounts.Remove(mount);
         }
 
         if (!Directory.Exists(partial))
@@ -133,6 +139,109 @@ public sealed class UpdateStager
         }
 
         return Promote(partial, destinationBundle);
+    }
+
+    // ── Abandoned mounts ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The name every mount point this stager creates begins with.</summary>
+    public const string MountPrefix = "crf-update-";
+
+    /// <summary>Hex characters of the id that follows <see cref="MountPrefix"/>.</summary>
+    private const int MountIdLength = 8;
+
+    private static readonly Lock _mountsGate = new();
+    private static readonly HashSet<string> _liveMounts = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Detaches and removes disk images this application left mounted, and returns what it cleared.
+    ///
+    /// <para><b>Why anything is left at all.</b> <see cref="StageMacBundleAsync"/> detaches in a
+    /// <c>finally</c>, which covers every ordinary failure — but a <c>SIGKILL</c> runs no
+    /// <c>finally</c>, so a force-quit during staging leaves the <c>.dmg</c> attached. The user sees
+    /// a volume in Finder they cannot account for and cannot eject, with nothing to connect it to,
+    /// and it survives until a reboot. It is also the ONE piece of update debris outside this
+    /// application's own directories, so no reclaim step can reach it.</para>
+    ///
+    /// <para><b>What it will not touch.</b> A name must be <see cref="MountPrefix"/> followed by
+    /// exactly <see cref="MountIdLength"/> hex digits, so only this stager's own mount points match;
+    /// and a mount point a stage in THIS process currently holds is skipped outright. Across
+    /// processes — two of the three applications updating at once — the protection is the operating
+    /// system's: <c>ditto</c> reading from the image makes it busy, <c>hdiutil detach</c> is refused,
+    /// and the sweep leaves it for the next launch. The uncovered window is the few milliseconds
+    /// between the attach returning and <c>ditto</c> opening the volume; losing that race costs one
+    /// <see cref="StageOutcome.UnpackFailed"/>, which is discarded without a blacklist and retried at
+    /// the next check.</para>
+    /// </summary>
+    /// <param name="tempDirectory">Where to look. Defaults to the real temp directory.</param>
+    /// <param name="detach">How to unmount. Defaults to <c>hdiutil detach</c>; a test supplies its own
+    /// so the naming and liveness rules can be pinned without a real disk image.</param>
+    public static async Task<IReadOnlyList<string>> ReclaimAbandonedMountsAsync(
+        CancellationToken ct,
+        string? tempDirectory = null,
+        Func<string, CancellationToken, Task>? detach = null)
+    {
+        var cleared = new List<string>();
+
+        string temp = tempDirectory ?? Path.GetTempPath();
+        string[] candidates;
+        try { candidates = Directory.GetDirectories(temp, MountPrefix + "*"); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return cleared; }
+
+        foreach (string dir in candidates)
+        {
+            if (ct.IsCancellationRequested) break;
+
+            string name = Path.GetFileName(dir);
+            if (name.Length != MountPrefix.Length + MountIdLength) continue;
+
+            bool hex = true;
+            for (int i = MountPrefix.Length; i < name.Length; i++)
+                if (!Uri.IsHexDigit(name[i])) { hex = false; break; }
+            if (!hex) continue;
+
+            lock (_mountsGate)
+                if (_liveMounts.Contains(dir)) continue;
+
+            try
+            {
+                // The result is deliberately ignored. A directory whose stage had already detached is
+                // not a mount at all and this fails by design; a mount another process is reading is
+                // refused with EBUSY, which is the answer we want. Either way the Delete below is the
+                // test of whether anything was actually freed — an empty directory goes, a still
+                // mounted one does not.
+                if (detach is not null)
+                    await detach(dir, ct).ConfigureAwait(false);
+                else
+                    await ProcessRunner.RunAsync("hdiutil", ["detach", dir, "-quiet"],
+                                                 ct, TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not OperationCanceledException) { /* see above */ }
+
+            try
+            {
+                Directory.Delete(dir, recursive: false);
+                cleared.Add(dir);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* next launch */ }
+        }
+
+        return cleared;
+    }
+
+    /// <summary>
+    /// Registers <paramref name="mountPoint"/> as in use until the returned handle is disposed, so a
+    /// test can pin the liveness skip without racing a real <c>hdiutil attach</c>. Test-only: the
+    /// application registers its own inside <see cref="StageMacBundleAsync"/>.
+    /// </summary>
+    internal static IDisposable HoldMountForTests(string mountPoint)
+    {
+        lock (_mountsGate) _liveMounts.Add(mountPoint);
+        return new MountHold(mountPoint);
+    }
+
+    private sealed class MountHold(string path) : IDisposable
+    {
+        public void Dispose() { lock (_mountsGate) _liveMounts.Remove(path); }
     }
 
     // ── Windows and Linux ────────────────────────────────────────────────────────────────────

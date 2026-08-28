@@ -43,7 +43,7 @@
             <TextBlock Grid.Column="0" Text="Decimals" VerticalAlignment="Center" FontSize="11"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
             <TextBox Grid.Column="1" Text="{Binding RulerDecimalsText}" Tag="RulerDecimals"
-                     Watermark="{Binding RulerDecimalsPlaceholder}"
+                     PlaceholderText="{Binding RulerDecimalsPlaceholder}"
                      Classes.error="{Binding HasRulerDecimalsError}"
                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                      FontSize="11" Padding="4,2">

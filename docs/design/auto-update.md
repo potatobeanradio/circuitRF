@@ -774,6 +774,74 @@ time circuitRF starts, whether or not the update ever completes, and no sequence
 debris. A user who fills their disk during an update and never updates again ends up with exactly the
 footprint they started with.
 
+### 13.6a Cancelling, quitting, and being killed
+
+The question a user actually asks is "what happens if I stop this?", and it has one answer for every
+way of stopping: **nothing that is incomplete has a real name, so there is nothing to be left in a
+bad state.** What follows is that rule applied to each phase, plus the two places it needed help.
+
+**The install phase does not overlap with the user's session at all.** The swap happens in
+`Program.Main` *before* Avalonia initialises (§4), so there is no window to quit from and no menu to
+quit with. Only *download* and *stage* run while the application is on screen, and both are
+restartable by construction.
+
+| Phase | Cancel / clean quit | Force-quit, kill, power loss |
+|---|---|---|
+| Download | `.partial` kept; the run reports `Cancelled` | Same. Resume reads the file's **actual on-disk length**, so an unflushed buffer only shortens it |
+| Unpack | `app-<ver>.partial` — never executed from, never counted | Same; reclaimed at the next launch (§13.6) |
+| Swap | n/a — no UI exists yet | See "the two kill windows" below |
+
+**Cancel is a first-class outcome, not an abort.** The Message Panel's progress row offers it
+(`IProgressMessage.BindCancellation`), it lands at the next buffer, and the partial file stays.
+Note that the *resume* it enables is currently unreachable from the shipping flow: `UpdateService`
+step 1 calls `ReclaimDebris()` before the feed is even asked, which deletes the whole of `staging/`.
+That is a deliberate trade — self-limiting disk use beats saving a re-download — but it means a
+cancelled 160 MB transfer starts again from zero at the next check.
+
+**`state.json` cannot be torn.** It is written to a temp file and renamed (§13.2's rule applied to
+the bookkeeping as well as to `current`), and a state file that is unreadable for any reason falls
+back to a fresh one rather than failing a launch.
+
+**The two kill windows, and what closes them.** Both come from the same shape of problem: a disk
+operation and the record of it are two steps, and a `SIGKILL` can land between them.
+
+1. **macOS, between the bundle exchange and `RecordSwap`.** The state file said "staged" while the
+   disk said "installed", so the next launch exchanged the pair back, `execv`ed the *old* version,
+   and then released `updates/previous` — silently downgrading the user and destroying the update.
+   Closed by `swap_in_progress`, written before anything moves and resolved at the next launch by
+   `UpdateSwap.ResolveInterruptedSwap`. It asks only "did the exchange happen", and the running
+   version answers it: on macOS the bundle *is* the launch path, so this process's own version is
+   the version installed. (A sentinel file inside the bundle would break its code signature, so the
+   answer has to come from something already there.) An unresolved marker means *retry*, never
+   *abandon* — a permissions error is far likelier to reach that code than a kill, and it deserves
+   its next attempt.
+
+2. **Windows and Linux, between the pointer flip and `RecordSwap`.** Milder, because re-writing
+   `current` with the value it already holds is idempotent: nobody is downgraded. What went wrong
+   was the rollback record — the second flip reported the *running* directory as the previous
+   version, and by then that was the new one, so a later revert would have restored the failing
+   version to itself and reported success. `FlipPointer` now recognises that the pointer already
+   names the staged version *and* this process is running it, and records no previous directory at
+   all. The rollback for that one generation is genuinely gone, and a refusal ("the previous version
+   is gone") is worth much more than a revert that silently does nothing.
+
+**Two residues survive a `SIGKILL` because they live outside the updater's own directories**, which
+is why no reclaim step could reach them — `UpdateReclaimer`'s rule with teeth is that it never
+leaves them. Both are macOS-only.
+
+- **A stranded bundle at `<app>.app.swapaside-<id>`.** Only from the non-atomic fallback in
+  `AtomicFile.SwapDirectories`; every APFS or HFS+ volume takes the `renamex_np(RENAME_SWAP)` path
+  and leaves nothing. It is **adopted into `updates/previous`, not deleted** — it is the version the
+  user was running a moment ago, i.e. exactly the insurance §14 rule 1 is about, and deleting it
+  would leave a new version installed with nothing to revert to. A kill between the fallback's
+  *first* and second rename is different and is never touched: the launch path is empty and that
+  directory is the user's only copy of the application.
+- **A leaked `hdiutil` mount** at `/tmp/crf-update-<id>`, because a `SIGKILL` runs no `finally`.
+  Swept at the next launch, after the first window rather than before it — it spawns a process, and
+  nothing about a launch may wait on one. A stage in this process registers its mount so a
+  concurrent sweep skips it; across processes the protection is the operating system's, since
+  `ditto` makes the volume busy and `hdiutil detach` is refused.
+
 ### 13.7 Testing it
 
 Disk-full is famous for being tested only in production. Most of it does not have to be:
@@ -823,6 +891,8 @@ Other failure modes and their handling:
 | Install root not writable | notify-only (§1.1) |
 | Staged version deleted by the user or antivirus | detected at swap; fall through and re-stage later |
 | Two circuitRF processes running | swap is at launch and pointer-based; last writer wins, both end up on the same version |
+| Cancelled or force-quit mid-download or mid-unpack | nothing incomplete ever held a real name; reclaimed or resumed at the next launch — §13.6a |
+| Killed between the swap and the record of it | `swap_in_progress` on macOS, an already-flipped pointer on Windows/Linux; resolved at the next launch — §13.6a |
 
 ---
 

@@ -113,7 +113,7 @@ public class LayoutRulerRound2Tests : System.IDisposable
 
             // Additive: absent from the file for a ruler that never set one.
             string json = File.ReadAllText(path);
-            Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(json, "\"Decimals\"").Count);
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(json, "\"Decimals\""));
 
             var reloaded = LayoutPersistence.LoadFromFile(path);
             Assert.Null(reloaded.Rulers[0].Decimals);
@@ -262,8 +262,8 @@ public class LayoutRulerRound2Tests : System.IDisposable
 
             var path = Path.Combine(dir, "f.clay");
             LayoutPersistence.SaveToFile(path, view);
-            Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(
-                File.ReadAllText(path), "\"NumberFormat\"").Count);
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(
+                File.ReadAllText(path), "\"NumberFormat\""));
 
             var reloaded = LayoutPersistence.LoadFromFile(path);
             Assert.Equal(LayoutUnits.LayoutNumberFormat.General, reloaded.Rulers[0].NumberFormat);

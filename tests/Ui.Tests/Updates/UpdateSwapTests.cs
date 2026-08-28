@@ -181,6 +181,281 @@ public class UpdateSwapTests : IDisposable
             Assert.DoesNotContain(".swapaside-", d);
     }
 
+    // ── the interrupted exchange ─────────────────────────────────────────────────────────────
+
+    /// <summary>Only the exact <c>&lt;original&gt;.swapaside-&lt;8 hex&gt;</c> shape may ever match.</summary>
+    [Fact]
+    public void SwapAsidesOf_MatchesOnlyItsOwnDebris()
+    {
+        string app = Dir("circuitRF.app");
+        Dir("circuitRF.app.swapaside-0a1b2c3d");        // ours
+        Dir("circuitRF.app.swapaside-zzzzzzzz");        // not hex
+        Dir("circuitRF.app.swapaside-0a1b2c");          // too short
+        Dir("circuitRF.app.backup");                    // not the marker
+        Dir("somethingelse.app.swapaside-0a1b2c3d");    // another application's
+
+        string found = Assert.Single(AtomicFile.SwapAsidesOf(app));
+        Assert.Equal("circuitRF.app.swapaside-0a1b2c3d", Path.GetFileName(found));
+    }
+
+    /// <summary>
+    /// A kill between the fallback's second and third rename strands the version the user was running
+    /// beside the installed bundle. It is the rollback §14 calls the design's best insurance, so the
+    /// next launch COMPLETES the interrupted rename rather than deleting it — otherwise a new version
+    /// that then failed to start twice would find nothing to revert to.
+    /// </summary>
+    [Fact]
+    public void AnInterruptedExchange_LeavesTheDisplacedBundleAsTheRollback()
+    {
+        string app     = Dir("circuitRF.app");
+        string aside   = Dir("circuitRF.app.swapaside-0a1b2c3d");
+        string updates = Dir("updates");
+        File.WriteAllText(Path.Combine(aside, "who.txt"), "the version that was running");
+
+        UpdateSwap.ReclaimSwapAside(Site(app), updates);
+
+        Assert.False(Directory.Exists(aside));
+        Assert.Equal("the version that was running",
+                     File.ReadAllText(Path.Combine(updates, "previous", "who.txt")));
+    }
+
+    /// <summary>With a rollback already retained, the stranded copy is redundant and simply goes.</summary>
+    [Fact]
+    public void AnInterruptedExchange_WithARollbackAlreadyHeld_JustClearsTheDebris()
+    {
+        string app     = Dir("circuitRF.app");
+        string aside   = Dir("circuitRF.app.swapaside-0a1b2c3d");
+        string updates = Dir("updates");
+        File.WriteAllText(Path.Combine(Dir("updates", "previous"), "who.txt"), "the retained one");
+
+        UpdateSwap.ReclaimSwapAside(Site(app), updates);
+
+        Assert.False(Directory.Exists(aside));
+        Assert.Equal("the retained one", File.ReadAllText(Path.Combine(updates, "previous", "who.txt")));
+    }
+
+    /// <summary>
+    /// The case worth the guard: a kill between the FIRST and second rename leaves nothing at the
+    /// launch path, and the aside is then the user's ONLY copy of the application. It must survive.
+    /// </summary>
+    [Fact]
+    public void WithNothingAtTheLaunchPath_TheAsideIsNeverTouched()
+    {
+        string app   = Path.Combine(_tmp, "circuitRF.app");   // deliberately NOT created
+        string aside = Dir("circuitRF.app.swapaside-0a1b2c3d");
+
+        UpdateSwap.ReclaimSwapAside(Site(app), Dir("updates"));
+
+        Assert.True(Directory.Exists(aside));
+    }
+
+    /// <summary>The versioned layout has no bundle to strand, and this must not go looking.</summary>
+    [Fact]
+    public void TheVersionedLayout_IsLeftAlone()
+    {
+        string root  = Dir("install");
+        string aside = Dir("install.swapaside-0a1b2c3d");
+
+        UpdateSwap.ReclaimSwapAside(
+            new InstallSite(root, InstallShape.VersionedPointer, true, root), Dir("updates"));
+
+        Assert.True(Directory.Exists(aside));
+    }
+
+    private static InstallSite Site(string bundle)
+        => new(bundle, InstallShape.MacOsBundle, IsWritable: true, ProbeDirectory: bundle);
+
+    // ── the versioned layout's half of the same gap ──────────────────────────────────────────
+
+    /// <summary>
+    /// Windows and Linux have the same two-operation gap — the pointer write and the record of it are
+    /// separate — but a re-flip is idempotent, so nobody is downgraded. What is lost is the ROLLBACK:
+    /// the second flip reports the running directory as the previous version, and by then the running
+    /// directory is the new one. Revert would restore the failing version to itself and report
+    /// success, which is the bug the macOS half of Revert already had once.
+    /// </summary>
+    [Fact]
+    public void KilledAfterThePointerFlip_TheRollbackIsNotMisrecordedAsTheNewVersion()
+    {
+        string root = Dir("install");
+        Dir("install", "app-1.0.0");
+        Dir("install", "app-2.0.0");
+        File.WriteAllText(Path.Combine(root, UpdateInstallSite.CurrentPointerName), "app-2.0.0");
+
+        var site  = new InstallSite(root, InstallShape.VersionedPointer, true, root);
+        var state = new UpdateState { StagedVersion = "2.0.0", StagedPath = "app-2.0.0" };
+
+        // The relaunch runs app-2.0.0, because the stub read the pointer the kill left flipped.
+        SwapResult r = UpdateSwap.ApplyAtLaunch(site, state, Dir("updates"), "app-2.0.0", "2.0.0",
+                                                mutate => mutate(state));
+
+        Assert.Equal(SwapOutcome.SwapAlreadyApplied, r.Outcome);
+        Assert.Null(r.PreviousDirectoryName);              // NOT app-2.0.0, which is what it used to say
+        Assert.Null(r.NewExecutable);                      // the stub already launched the right tree
+        Assert.Equal("app-2.0.0", UpdateSwap.ReadCurrent(root));
+    }
+
+    /// <summary>
+    /// The half of that test which is easy to get wrong: `current` naming the staged version is ALSO
+    /// the ordinary state between a flip and the next launch. That session is still the old tree and
+    /// must record itself as the rollback, so the running directory is what separates the two.
+    /// </summary>
+    [Fact]
+    public void TheSessionThatFlipsThePointer_StillRecordsItselfAsTheRollback()
+    {
+        string root = Dir("install");
+        Dir("install", "app-1.0.0");
+        Dir("install", "app-2.0.0");
+        File.WriteAllText(Path.Combine(root, UpdateInstallSite.CurrentPointerName), "app-1.0.0");
+
+        var site  = new InstallSite(root, InstallShape.VersionedPointer, true, root);
+        var state = new UpdateState { StagedVersion = "2.0.0", StagedPath = "app-2.0.0" };
+
+        SwapResult r = UpdateSwap.ApplyAtLaunch(site, state, Dir("updates"), "app-1.0.0", "1.0.0",
+                                                mutate => mutate(state));
+
+        Assert.Equal(SwapOutcome.PointerFlipped, r.Outcome);
+        Assert.Equal("app-1.0.0", r.PreviousDirectoryName);
+        Assert.Equal("app-2.0.0", UpdateSwap.ReadCurrent(root));
+    }
+
+    // ── the downgrade window ─────────────────────────────────────────────────────────────────
+    //
+    // The exchange and the state write that records it are two operations. A kill between them left
+    // state.json advertising the new version as STAGED while the disk already had it INSTALLED, so
+    // the next launch exchanged the pair back, execv'd the OLD version, and then released
+    // updates/previous — destroying the update and silently downgrading the user.
+
+    /// <summary>A fabricated macOS install: the bundle, a staged replacement, and the state to match.</summary>
+    private (InstallSite Site, UpdateState State, string Updates, string Staged) MacInstall()
+    {
+        string app     = Dir("circuitRF.app");
+        string updates = Dir("updates");
+        string staged  = Dir("updates", "staged", "circuitRF.app");
+
+        File.WriteAllText(Path.Combine(app, "who.txt"), "1.0.0-beta.3");
+        File.WriteAllText(Path.Combine(staged, "who.txt"), "1.0.0-beta.4");
+
+        return (Site(app), new UpdateState { StagedVersion = "1.0.0-beta.4", StagedPath = staged },
+                updates, staged);
+    }
+
+    /// <summary>The state file, as a durable side effect the swap can write to mid-operation.</summary>
+    private static Action<Action<UpdateState>> PersistInto(UpdateState state)
+        => mutate => mutate(state);
+
+    /// <summary>
+    /// The marker has to be durable BEFORE anything moves, or the whole scheme is a no-op: it is read
+    /// by a launch that only exists because the previous one died partway through.
+    /// </summary>
+    [Fact]
+    public void TheExchange_RecordsThatItIsUnderway_BeforeItTouchesTheDisk()
+    {
+        (InstallSite site, UpdateState state, string updates, string staged) = MacInstall();
+
+        string? markerWhenTheDiskMoved = null;
+        UpdateSwap.ApplyAtLaunch(site, state, updates, "", "1.0.0-beta.3", mutate =>
+        {
+            mutate(state);
+            markerWhenTheDiskMoved ??= state.SwapInProgress;
+
+            // The exchange must not already have happened when the marker was written.
+            Assert.Equal("1.0.0-beta.3", File.ReadAllText(Path.Combine(site.Root, "who.txt")));
+        });
+
+        Assert.Equal(staged, markerWhenTheDiskMoved);
+    }
+
+    /// <summary>
+    /// Killed AFTER the exchange: the disk is right and only the bookkeeping is missing. The next
+    /// launch must recognise that it is already the new version — not swap the pair back.
+    /// </summary>
+    [Fact]
+    public void KilledAfterTheExchange_TheNextLaunchKeepsTheNewVersion()
+    {
+        (InstallSite site, UpdateState state, string updates, string staged) = MacInstall();
+
+        // The disk as the kill left it: the exchange done, the retaining move not.
+        AtomicFile.SwapDirectories(site.Root, staged, out _);
+        state.SwapInProgress = staged;
+
+        // …and the relaunch is the NEW version, because the new bundle is what is at the launch path.
+        SwapResult r = UpdateSwap.ApplyAtLaunch(
+            site, state, updates, "", "1.0.0-beta.4", PersistInto(state));
+
+        Assert.Equal(SwapOutcome.SwapAlreadyApplied, r.Outcome);
+        Assert.Null(r.NewExecutable);   // this process IS the new version; there is nothing to exec
+
+        Assert.Equal("1.0.0-beta.4", File.ReadAllText(Path.Combine(site.Root, "who.txt")));
+
+        // The retaining move the kill interrupted is completed, so the rollback still exists.
+        Assert.Equal("1.0.0-beta.3",
+                     File.ReadAllText(Path.Combine(updates, "previous", "who.txt")));
+    }
+
+    /// <summary>
+    /// The regression itself: without the marker this is the launch that exchanged the pair BACK.
+    /// Running it twice is what a second kill would do, and the version must not oscillate.
+    /// </summary>
+    [Fact]
+    public void KilledAfterTheExchange_ASecondLaunchDoesNotSwapItBack()
+    {
+        (InstallSite site, UpdateState state, string updates, string staged) = MacInstall();
+        AtomicFile.SwapDirectories(site.Root, staged, out _);
+        state.SwapInProgress = staged;
+
+        UpdateSwap.ApplyAtLaunch(site, state, updates, "", "1.0.0-beta.4", PersistInto(state));
+
+        // RecordSwap is UpdateStartup's, so stand in for it: the marker is cleared and nothing is
+        // staged any more.
+        state.SwapInProgress = null;
+        state.StagedVersion  = null;
+        state.StagedPath     = null;
+
+        SwapResult again = UpdateSwap.ApplyAtLaunch(
+            site, state, updates, "", "1.0.0-beta.4", PersistInto(state));
+
+        Assert.Equal(SwapOutcome.Nothing, again.Outcome);
+        Assert.Equal("1.0.0-beta.4", File.ReadAllText(Path.Combine(site.Root, "who.txt")));
+    }
+
+    /// <summary>
+    /// Killed BEFORE the exchange — the common case, since it covers every ordinary failure as well
+    /// as a kill. Nothing moved, so the update must simply be retried rather than abandoned.
+    /// </summary>
+    [Fact]
+    public void KilledBeforeTheExchange_TheUpdateIsRetried()
+    {
+        (InstallSite site, UpdateState state, string updates, string staged) = MacInstall();
+        state.SwapInProgress = staged;   // written; the exchange never followed
+
+        SwapResult r = UpdateSwap.ApplyAtLaunch(
+            site, state, updates, "", "1.0.0-beta.3", PersistInto(state));
+
+        Assert.Equal(SwapOutcome.BundleSwapped, r.Outcome);
+        Assert.Equal("1.0.0-beta.4", File.ReadAllText(Path.Combine(site.Root, "who.txt")));
+        Assert.Equal("1.0.0-beta.3", File.ReadAllText(Path.Combine(updates, "previous", "who.txt")));
+    }
+
+    /// <summary>
+    /// `AppVersion.Display` normalises a `1.0` tag to `1.0.0` while `staged_version` is the tag the
+    /// release carried. Compared as text those are different versions, and the resolution would then
+    /// swap a correctly-installed update straight back out.
+    /// </summary>
+    [Fact]
+    public void TheTwoSpellingsOfOneVersion_AreTheSameVersion()
+    {
+        (InstallSite site, UpdateState state, string updates, string staged) = MacInstall();
+        state.StagedVersion = "1.0";
+        AtomicFile.SwapDirectories(site.Root, staged, out _);
+        state.SwapInProgress = staged;
+
+        SwapResult r = UpdateSwap.ApplyAtLaunch(
+            site, state, updates, "", "1.0.0", PersistInto(state));
+
+        Assert.Equal(SwapOutcome.SwapAlreadyApplied, r.Outcome);
+    }
+
     // ── rollback ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]

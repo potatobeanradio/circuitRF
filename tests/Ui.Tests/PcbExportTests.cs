@@ -663,7 +663,7 @@ public class PcbExportTests : IDisposable
         Assert.Contains("(layers \"F.Cu\" \"F.Mask\")", text);
 
         var cell = Assert.Single(ReadBack(text).FootprintCells.Values);
-        Assert.Single(cell.Shapes.Where(sh => sh.Shape is not ViaShape));
+        Assert.Single(cell.Shapes, sh => sh.Shape is not ViaShape);
     }
 
     [Fact]
@@ -721,7 +721,7 @@ public class PcbExportTests : IDisposable
 
         // What re-imports is the same annulus that was exported: one outer ring, one hole.
         var cell = Assert.Single(ReadBack(text).FootprintCells.Values);
-        var copper = Assert.Single(cell.Shapes.Where(sh => sh.Shape is not ViaShape)).Shape;
+        var copper = Assert.Single(cell.Shapes, sh => sh.Shape is not ViaShape).Shape;
         var rings = LayoutFlattener.Flatten(copper, 200);
         Assert.Equal(2, rings.Count);
         var outer = LayoutGeometry.BboxOf(copper);
@@ -784,7 +784,7 @@ public class PcbExportTests : IDisposable
         Assert.Contains("(offset 0.6 0)", text);
 
         var cell = Assert.Single(ReadBack(text).FootprintCells.Values);
-        var copper = Assert.Single(cell.Shapes.Where(sh => sh.Shape is not ViaShape)).Shape;
+        var copper = Assert.Single(cell.Shapes, sh => sh.Shape is not ViaShape).Shape;
         var via = Assert.Single(cell.Shapes.Select(sh => sh.Shape).OfType<ViaShape>());
 
         // The hole stayed on the origin; the copper stayed 0.6 mm away from it.
@@ -835,7 +835,7 @@ public class PcbExportTests : IDisposable
         // fills back in. That is a limitation of stating a hole as a slit in a format whose graphics
         // have no inner rings, not of this omission rule; without the rule BOTH holes were lost.)
         var cell = Assert.Single(ReadBack(text).FootprintCells.Values);
-        var copper = Assert.Single(cell.Shapes.Where(sh => sh.Shape is not ViaShape)).Shape;
+        var copper = Assert.Single(cell.Shapes, sh => sh.Shape is not ViaShape).Shape;
         Assert.Equal(2, LayoutFlattener.Flatten(copper, 200).Count);
         Assert.Equal(12.0 - Math.PI * 0.4 * 0.4, NetAreaMm2(copper), 2);
     }

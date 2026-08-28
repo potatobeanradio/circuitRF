@@ -260,7 +260,7 @@ public class UpdateSpaceTests : IDisposable
 
         Assert.True(File.Exists(Path.Combine(workspaces, "important.cws")));
         Assert.True(Directory.Exists(sibling));
-        Assert.Empty(r.Deleted.Where(d => !r.IsOurs(d)));
+        Assert.DoesNotContain(r.Deleted, d => !r.IsOurs(d));
     }
 
     [Fact]

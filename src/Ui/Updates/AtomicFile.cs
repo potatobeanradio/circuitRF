@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -110,6 +111,56 @@ public static class AtomicFile
     /// nothing is at the path. Acceptable, but it is a fallback, and <paramref name="wasAtomic"/> says
     /// which happened so the completion note can record it rather than guess.</para>
     /// </summary>
+    /// <summary>
+    /// What the fallback names the displaced original while the exchange is in flight, and the only
+    /// thing that identifies one afterwards. <see cref="SwapAsidesOf"/> is the reader.
+    /// </summary>
+    public const string SwapAsideMarker = ".swapaside-";
+
+    /// <summary>Hex characters of the id that follows <see cref="SwapAsideMarker"/>.</summary>
+    private const int IdLength = 8;
+
+    /// <summary>
+    /// Every <c>&lt;original&gt;.swapaside-&lt;id&gt;</c> lying beside <paramref name="original"/>,
+    /// newest first — the debris a process killed BETWEEN the fallback's renames leaves behind.
+    ///
+    /// <para>It is listed rather than deleted here because the primitive has no standing to decide
+    /// what an interrupted exchange meant; only the caller that knows the install site does. What
+    /// this guarantees is that a match cannot be anything else: the name is the original's own file
+    /// name, plus a fixed marker, plus exactly <see cref="IdLength"/> hex digits.</para>
+    /// </summary>
+    public static IReadOnlyList<string> SwapAsidesOf(string original)
+    {
+        var found = new List<string>();
+        try
+        {
+            string full     = Path.TrimEndingDirectorySeparator(Path.GetFullPath(original));
+            string? parent  = Path.GetDirectoryName(full);
+            string name     = Path.GetFileName(full);
+            if (parent is null || name.Length == 0 || !Directory.Exists(parent)) return found;
+
+            string prefix = name + SwapAsideMarker;
+            foreach (string d in Directory.EnumerateDirectories(parent))
+            {
+                string n = Path.GetFileName(d);
+                if (n.Length != prefix.Length + IdLength) continue;
+                if (!n.StartsWith(prefix, StringComparison.Ordinal)) continue;
+
+                bool hex = true;
+                for (int i = prefix.Length; i < n.Length; i++)
+                    if (!Uri.IsHexDigit(n[i])) { hex = false; break; }
+
+                if (hex) found.Add(d);
+            }
+
+            // Newest first: with more than one, the most recent is the exchange that was interrupted.
+            found.Sort((x, y) => Directory.GetLastWriteTimeUtc(y).CompareTo(Directory.GetLastWriteTimeUtc(x)));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { }
+
+        return found;
+    }
+
     public static void SwapDirectories(string a, string b, out bool wasAtomic)
     {
         if (OperatingSystem.IsMacOS() && NativeFileOps.TrySwap(a, b))
@@ -120,7 +171,7 @@ public static class AtomicFile
 
         wasAtomic = false;
 
-        string aside = a + ".swapaside-" + Guid.NewGuid().ToString("N")[..8];
+        string aside = a + SwapAsideMarker + Guid.NewGuid().ToString("N")[..IdLength];
         Directory.Move(a, aside);
         try
         {

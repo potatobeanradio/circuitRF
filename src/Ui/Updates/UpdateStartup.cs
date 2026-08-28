@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CircuitRF.Ui.Updates;
 
@@ -29,6 +31,13 @@ public static class UpdateStartup
         {
             string? notice = NoteFirstWindowShown();
             if (notice is not null) messages?.Warning(notice);
+
+            // A disk image this application left mounted when it was force-quit mid-stage. Swept here
+            // rather than in RunBeforeUi because it spawns a process and nothing about a launch may
+            // wait on one; never awaited, because nothing about a window depends on the answer. It is
+            // the only update debris outside our own directories, so nothing else can reclaim it.
+            if (OperatingSystem.IsMacOS())
+                _ = Task.Run(() => UpdateStager.ReclaimAbandonedMountsAsync(CancellationToken.None));
 
             UpdateScheduler.ScheduleFirstCheck(messages);
         }
@@ -85,15 +94,31 @@ public static class UpdateStartup
                         ExecReplacingThisProcess(result.NewExecutable, args);
                     return;
 
+                case SwapOutcome.SwapAlreadyApplied:
+                    // An earlier launch swapped and was killed before it could record it. This process
+                    // IS the new version, so there is nothing to exec — only the bookkeeping to
+                    // finish. On macOS, without it the next launch would exchange the pair back and
+                    // silently downgrade the user; in the versioned layout a re-flip is idempotent, so
+                    // what it saves there is the rollback record rather than the version.
+                    //
+                    // The previous version is recorded as a PATH and no version string: RecordSwap's
+                    // AppVersion.Display is right on the ordinary path, where that call is made by the
+                    // OLD version before it execs, and wrong here, where it is made by the new one.
+                    // macOS rolls back by path (Revert reads updates/previous, never the string), so
+                    // no version at all is the honest record rather than a confidently wrong one.
+                    RecordSwap(state, result.Detail, previousDirectoryName: null, previousVersion: null);
+                    return;
+
                 case SwapOutcome.PointerFlipped:
                     // The flip is for the NEXT launch. This session keeps running the OLD tree, so it
                     // records what to go back to and raises nothing — counting an attempt here is what
                     // used to make rollback inert.
-                    RecordSwap(state, result.Detail, result.PreviousDirectoryName);
+                    RecordSwap(state, result.Detail, result.PreviousDirectoryName, AppVersion.Display);
                     return;
 
                 case SwapOutcome.BundleSwapped:
-                    RecordSwap(state, result.Detail, previousDirectoryName: null);
+                    RecordSwap(state, result.Detail, previousDirectoryName: null,
+                               previousVersion: AppVersion.Display);
                     if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
                         ExecReplacingThisProcess(result.NewExecutable, args);
                     // Only reached if execv failed; the swap already happened, so carrying on runs
@@ -137,13 +162,14 @@ public static class UpdateStartup
     /// text: <c>AppVersion.Display</c> normalises a <c>1.0</c> tag to <c>1.0.0</c> while the directory
     /// is named after the tag the packaging script interpolated.
     /// </summary>
-    private static void RecordSwap(UpdateState before, string pendingPath, string? previousDirectoryName)
+    private static void RecordSwap(UpdateState before, string pendingPath, string? previousDirectoryName,
+                                   string? previousVersion)
         => UpdateStateIo.Update(s =>
         {
             s.PendingVersion = before.StagedVersion;
             s.PendingPath    = pendingPath;
 
-            s.PreviousVersion = AppVersion.Display;
+            s.PreviousVersion = previousVersion;
             s.PreviousPath    = previousDirectoryName;
 
             s.LaunchAttempts = 0;
@@ -151,6 +177,9 @@ public static class UpdateStartup
             s.StagedVersion      = null;
             s.StagedPath         = null;
             s.StagedIsPreRelease = null;
+
+            // This record supersedes the in-progress marker, whichever outcome wrote it.
+            s.SwapInProgress = null;
         });
 
     /// <summary>

@@ -203,7 +203,15 @@ public class LayoutRenderThreadSafetyTests
         lock (view.RenderLock)
         {
             var blocked = Task.Run(() => { view.NotifyChanged(); notifyCompleted = true; });
+
+            // xUnit1031 warns that a blocking wait can deadlock. Here the block IS the assertion —
+            // the claim under test is that this task does NOT finish while the lock is held, and the
+            // timing out of the wait is the only way to observe that. Awaiting instead is not open to
+            // us either: the lock is held across this line, and Monitor is thread-affine, so a
+            // continuation resuming on another thread could not release it.
+#pragma warning disable xUnit1031
             Assert.False(blocked.Wait(TimeSpan.FromMilliseconds(250)), "NotifyChanged ran while a frame held RenderLock");
+#pragma warning restore xUnit1031
             Assert.False(notifyCompleted);
         }
 

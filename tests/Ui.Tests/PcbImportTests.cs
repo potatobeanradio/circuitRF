@@ -1050,7 +1050,7 @@ public class PcbImportTests : IDisposable
         var cellDir = Assert.Single(result.CreatedCellDirs, d => d != result.BoardCellDir);
         var shapes = LoadPrimaryLayout(cellDir).Shapes;
 
-        var slot = Assert.Single(shapes.OfType<PathShape>().Where(p => p.Width == 600_000));
+        var slot = Assert.Single(shapes.OfType<PathShape>(), p => p.Width == 600_000);
         Assert.Equal(PathEndStyle.Round, slot.End);
         Assert.Equal(600_000, slot.Width);                       // across: the narrow diameter
         Assert.Equal(600_000, slot.Xy[2] - slot.Xy[0]);          // along: 1.2 - 0.6, plus the round caps
@@ -1058,7 +1058,7 @@ public class PcbImportTests : IDisposable
 
         // …and the barrel it belongs to is the slot's WIDTH, not its length — the narrow dimension is
         // what the hole measures everywhere along it.
-        var via = Assert.Single(shapes.OfType<ViaShape>().Where(v => v.X == 12_000_000));
+        var via = Assert.Single(shapes.OfType<ViaShape>(), v => v.X == 12_000_000);
         Assert.Equal(600_000, via.DrillSize);
     }
 

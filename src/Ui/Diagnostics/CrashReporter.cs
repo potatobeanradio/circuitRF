@@ -311,6 +311,16 @@ public static class CrashReporter
         {
             try
             {
+                // An image this same process EXECed away from is not a crash. HandOffToExec covers
+                // the outgoing side, but only for a version that already has it — an update FROM an
+                // older build execs without saying so, and the file it leaves is swept by the NEW
+                // build seconds later. So the incoming side recognises it too: see IsOwnExecPredecessor.
+                if (IsOwnExecPredecessor(path))
+                {
+                    try { File.Delete(path); } catch { /* a leftover only costs a spurious report */ }
+                    continue;
+                }
+
                 // The liveness probe. An exclusive open succeeds only if no process holds the file,
                 // and the handle is closed again immediately — the read below reopens it shared.
                 try
@@ -343,6 +353,53 @@ public static class CrashReporter
         }
 
         return made;
+    }
+
+    /// <summary>
+    /// True when <paramref name="path"/> is the session file of the process image THIS process
+    /// replaced via <c>execv</c> — an applied auto-update, not a crash.
+    ///
+    /// <para><b>Why the incoming side needs its own test.</b> <see cref="HandOffToExec"/> closes the
+    /// session before the exec, which settles it for every version that has that call. It cannot
+    /// settle an update <i>from</i> a version released before it: 1.0.0-beta.3 execed straight into
+    /// the new bundle, so its session file was still lying there when beta.4 swept the directory two
+    /// seconds later, and the user was told beta.3 "did not shut down cleanly". It shut down
+    /// perfectly. The outgoing fix cannot be applied retroactively to a build already in the field,
+    /// so the receiving build has to be the one that knows.</para>
+    ///
+    /// <para><b>The discriminator is exact, not a heuristic.</b> An <c>execv</c> keeps the process id
+    /// and does NOT restart the kernel's process clock, so the predecessor's session — whose id and
+    /// start second are both in its file NAME — reports our own pid and a start at or after our own
+    /// OS-reported start time. Nothing else can: a live sibling cannot hold our pid because we hold
+    /// it, and a stale file from a recycled pid necessarily started before this process did.</para>
+    ///
+    /// <para>Every uncertain answer is <c>false</c> — an unparseable name, an unavailable start time,
+    /// a platform with no exec at all. That keeps the failure direction right: the worst this guard
+    /// can do is decline to suppress, which is exactly the behaviour it replaced.</para>
+    /// </summary>
+    private static bool IsOwnExecPredecessor(string path)
+    {
+        try
+        {
+            // session-{yyyyMMdd}-{HHmmss}-{pid}.running
+            string[] parts = Path.GetFileNameWithoutExtension(path).Split('-');
+            if (parts.Length != 4 || !string.Equals(parts[0], "session", StringComparison.Ordinal)) return false;
+
+            if (!int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out int pid)) return false;
+            if (pid != Environment.ProcessId) return false;
+
+            if (!DateTime.TryParseExact(parts[1] + "-" + parts[2], "yyyyMMdd-HHmmss",
+                                        CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime started))
+                return false;
+
+            // Truncated to the second, because the file name is: our own start carries a fraction the
+            // predecessor's stamp never had, and without this the comparison fails by milliseconds.
+            DateTime start = Process.GetCurrentProcess().StartTime;
+            start = start.AddTicks(-(start.Ticks % TimeSpan.TicksPerSecond));
+
+            return started >= start;
+        }
+        catch { return false; }
     }
 
     private static void Prune(string dir)

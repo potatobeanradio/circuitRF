@@ -162,6 +162,57 @@ public sealed class CrashReporterTests : IDisposable
     }
 
     /// <summary>
+    /// The other half of the exec problem, and the half that actually reached a user: an update FROM
+    /// a build released before <see cref="CrashReporter.HandOffToExec"/> existed. 1.0.0-beta.3 execed
+    /// straight into the new bundle and left its session file behind, so beta.4 swept the directory
+    /// two seconds later and told the owner beta.3 "did not shut down cleanly". The outgoing fix
+    /// cannot be shipped into a build already installed, so the INCOMING build has to recognise its
+    /// own predecessor: same pid — which no live process can hold, because this process holds it —
+    /// and a start second at or after this process's own, which an <c>execv</c> preserves and a
+    /// recycled pid cannot fake.
+    /// </summary>
+    [Fact]
+    public void ASessionThisProcessExecedAwayFrom_IsNotAnnouncedAsACrash()
+    {
+        // Written exactly as a pre-HandOffToExec build would have left it: our pid, no trail, and a
+        // start stamped one second after this process began.
+        DateTime start = System.Diagnostics.Process.GetCurrentProcess().StartTime.AddSeconds(1);
+        string name = $"session-{start:yyyyMMdd-HHmmss}-{Environment.ProcessId}.running";
+        WriteAbandonedSession(name, "circuitRF crash report\nversion     : 1.0.0-beta.3\n--- trail ---\n");
+
+        CrashReporter.Install("circuitRF");
+
+        Assert.Empty(CrashReporter.TakePendingReports());
+        Assert.Empty(Reports());
+
+        // The predecessor was removed rather than left to be re-swept next launch: the only session
+        // file now is the one this Install just opened. (Its name can legitimately COLLIDE with the
+        // fabricated one — same pid, and the stamp is only second-resolution — so the count is what
+        // this can assert, and the two Empty checks above are what actually pin the behaviour.)
+        Assert.Single(Sessions());
+    }
+
+    /// <summary>
+    /// The guard above must not swallow a real crash. A session whose pid happens to match ours
+    /// because the OS recycled it started BEFORE this process did — so it is an ordinary abandoned
+    /// session and is reported like any other.
+    /// </summary>
+    [Fact]
+    public void ARecycledPidFromAnEarlierCrash_IsStillReported()
+    {
+        DateTime before = System.Diagnostics.Process.GetCurrentProcess().StartTime.AddDays(-3);
+        WriteAbandonedSession(
+            $"session-{before:yyyyMMdd-HHmmss}-{Environment.ProcessId}.running",
+            "circuitRF crash report\n--- trail ---\n[09:00:01] run: begin 'SP1'\n");
+
+        CrashReporter.Install("circuitRF");
+
+        string report = Assert.Single(Reports());
+        Assert.Contains("WITHOUT a clean exit", File.ReadAllText(report));
+        Assert.Equal(new[] { report }, CrashReporter.TakePendingReports());
+    }
+
+    /// <summary>
     /// <c>execv</c> returns only when it FAILS, and the update path then carries on running this
     /// image. A session that is still alive must still be reportable, so the hand-off is re-armed
     /// rather than leaving the rest of the run blind.

@@ -442,4 +442,81 @@ public sealed class UpdateStagerTests : IDisposable
         Assert.True(File.Exists(Path.Combine(destination, "circuitRF.exe")));
         Assert.False(Directory.Exists(UpdateStager.PartialNameFor(destination)));
     }
+
+    // ── abandoned mounts ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A force-quit during staging runs no <c>finally</c>, so the <c>.dmg</c> stays attached and the
+    /// user is left with a volume in Finder they cannot account for or eject. It is the only piece of
+    /// update debris outside this application's own directories, so no reclaim step reaches it.
+    ///
+    /// <para>The detach is injected: what is under test is which directories the sweep is willing to
+    /// touch, and that question needs no real disk image.</para>
+    /// </summary>
+    [Fact]
+    public async Task AnAbandonedMount_IsDetachedAndRemoved()
+    {
+        string leaked = Path.Combine(_tmp, UpdateStager.MountPrefix + "0a1b2c3d");
+        Directory.CreateDirectory(leaked);
+
+        var detached = new List<string>();
+        IReadOnlyList<string> cleared = await UpdateStager.ReclaimAbandonedMountsAsync(
+            CancellationToken.None, _tmp, (p, _) => { detached.Add(p); return Task.CompletedTask; });
+
+        Assert.Equal(new[] { leaked }, detached);
+        Assert.Equal(new[] { leaked }, cleared);
+        Assert.False(Directory.Exists(leaked));
+    }
+
+    /// <summary>
+    /// Only this stager's own mount points match: the prefix, then exactly eight hex digits. A sweep
+    /// that ran `hdiutil detach` against somebody else's temp directory would be a far worse bug than
+    /// the leak it is fixing.
+    /// </summary>
+    [Theory]
+    [InlineData("crf-update-zzzzzzzz")]      // not hex
+    [InlineData("crf-update-0a1b2c3")]       // too short
+    [InlineData("crf-update-0a1b2c3d4")]     // too long
+    [InlineData("crf-updates-0a1b2c3d")]     // not the prefix
+    [InlineData("somebody-elses-temp-dir")]
+    public async Task NothingButOurOwnMountPointsIsTouched(string name)
+    {
+        string other = Path.Combine(_tmp, name);
+        Directory.CreateDirectory(other);
+
+        var detached = new List<string>();
+        IReadOnlyList<string> cleared = await UpdateStager.ReclaimAbandonedMountsAsync(
+            CancellationToken.None, _tmp, (p, _) => { detached.Add(p); return Task.CompletedTask; });
+
+        Assert.Empty(detached);
+        Assert.Empty(cleared);
+        Assert.True(Directory.Exists(other));
+    }
+
+    /// <summary>
+    /// A mount a stage in THIS process is reading from must survive a concurrent sweep — detaching it
+    /// would fail that stage for no reason. Across processes the protection is the operating system's
+    /// instead: <c>ditto</c> makes the volume busy and <c>hdiutil detach</c> is refused.
+    /// </summary>
+    [Fact]
+    public async Task AMountThisProcessIsStillUsing_IsSkipped()
+    {
+        string live = Path.Combine(_tmp, UpdateStager.MountPrefix + "0a1b2c3d");
+        Directory.CreateDirectory(live);
+
+        var detached = new List<string>();
+
+        using (UpdateStager.HoldMountForTests(live))
+        {
+            Assert.Empty(await UpdateStager.ReclaimAbandonedMountsAsync(
+                CancellationToken.None, _tmp, (p, _) => { detached.Add(p); return Task.CompletedTask; }));
+
+            Assert.Empty(detached);
+            Assert.True(Directory.Exists(live));
+        }
+
+        // …and once that stage has finished, the same sweep takes it.
+        Assert.Equal(new[] { live }, await UpdateStager.ReclaimAbandonedMountsAsync(
+            CancellationToken.None, _tmp, (p, _) => { detached.Add(p); return Task.CompletedTask; }));
+    }
 }
