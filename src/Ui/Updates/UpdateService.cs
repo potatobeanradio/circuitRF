@@ -31,6 +31,13 @@ public enum CheckOutcome
 
     /// <summary>Skipped by the 24-hour throttle.</summary>
     Throttled,
+
+    /// <summary>
+    /// The user stopped the download from its progress bar. <b>Not a failure</b>, and deliberately
+    /// distinct from <see cref="Failed"/>: the partial transfer stays on disk and the next check
+    /// resumes from it, so nothing was lost and there is nothing to report as having gone wrong.
+    /// </summary>
+    Cancelled,
 }
 
 /// <summary>What a check concluded, with the figures the two visible cases need.</summary>
@@ -115,7 +122,8 @@ public sealed class UpdateService
     /// <para><paramref name="manual"/> is Help ▸ Check for Updates…: it ignores the 24-hour throttle
     /// and is the one place a network failure may be reported, because the user explicitly asked.</para>
     /// </summary>
-    public async Task<CheckResult> CheckAsync(bool manual, CancellationToken ct)
+    public async Task<CheckResult> CheckAsync(
+        bool manual, CancellationToken ct, RunCancellation? cancellation = null)
     {
         UpdatePolicyState policy = UpdatePolicy.Current;
 
@@ -255,13 +263,99 @@ public sealed class UpdateService
         }
 
         // ── 4-6. download, verify, stage ────────────────────────────────────────────────────
-        return await FetchVerifyStageAsync(candidate, site, required, running.ToString(), manual, ct)
+        return await FetchVerifyStageAsync(
+                         candidate, site, required, running.ToString(), manual, ct, cancellation)
                      .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Owns the live Messages row for the whole of download, verify and stage, and settles it on
+    /// every exit path.
+    ///
+    /// <para><b>One row, not one per phase.</b> The download is the only phase with an honest
+    /// denominator, but it is not the only slow one — a macOS <c>codesign --verify --deep</c> over a
+    /// 335 MB unpacked bundle is minutes of its own. A bar that reaches 100% and is then replaced by
+    /// silence has moved the stall rather than removed it, so the same row carries on
+    /// indeterminate through the phases that cannot be counted.</para>
+    ///
+    /// <para><b>The row is settled in a <c>finally</c>.</b> There are a dozen ways out of the core
+    /// below and most of them are silent by design (§9's "failure is silent"); a row left live is a
+    /// bar that animates for the rest of the session. Silence about the CAUSE is the policy — a
+    /// permanently spinning bar is not what it asks for.</para>
+    /// </summary>
     private async Task<CheckResult> FetchVerifyStageAsync(
         UpdateCandidate candidate, InstallSite site, long required, string runningVersion,
-        bool manual, CancellationToken ct)
+        bool manual, CancellationToken ct, RunCancellation? cancellation)
+    {
+        string version = candidate.Release.VersionText;
+        string title   = $"Downloading {UpdateApp.Name} {version}";
+
+        IProgressMessage? live = _messages?.BeginProgress(title);
+
+        // Before the first byte moves, so a Cancel is available for the whole of the transfer rather
+        // than from whenever the first progress report happens to arrive.
+        live?.BindCancellation(cancellation);
+
+        CheckResult result;
+        try
+        {
+            result = await FetchVerifyStageCoreAsync(
+                candidate, site, required, runningVersion, manual, ct, live, title)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            live?.Complete(MessageLevel.Info, $"{title} - stopped.");
+            throw;
+        }
+
+        SettleDownloadRow(live, title, result);
+        return result;
+    }
+
+    /// <summary>
+    /// How a finished row reads. <b>Only two outcomes are allowed to be visible as such</b> (design
+    /// §13.5): a staged update and a full disk. Everything else settles quietly at
+    /// <see cref="MessageLevel.Info"/> — the row is removed as a live bar without being promoted into
+    /// a warning the policy says not to post.
+    /// </summary>
+    private static void SettleDownloadRow(IProgressMessage? live, string title, CheckResult result)
+    {
+        if (live is null) return;
+
+        switch (result.Outcome)
+        {
+            case CheckOutcome.Staged:
+                // Complete rather than Finish: Finish APPENDS to the counter, and by this point the
+                // counter is the phase word ("installing"), so the row would settle reading
+                // "installing - downloaded." The bar goes with it — the Announce line that follows
+                // is the message, and a full bar under it is noise.
+                live.Complete(MessageLevel.Info, $"{title} - done.");
+                break;
+
+            case CheckOutcome.Cancelled:
+                // Deliberately does NOT promise a resume. UpdateDownloader keeps the .partial and can
+                // resume from it, but ReclaimDebris deletes the whole of staging/ at the start of
+                // every check (UpdateService step 1), so in the shipping flow the next check starts
+                // the transfer over. Saying "we kept what arrived" would be a comfortable sentence
+                // that is not true of the system, only of one component in it.
+                live.Complete(MessageLevel.Info, $"{title} - stopped.");
+                break;
+
+            case CheckOutcome.InsufficientSpace:
+                // ReportSpace has already posted the figures on its own row.
+                live.Complete(MessageLevel.Info, $"{title} - not enough disk space.");
+                break;
+
+            default:
+                live.Complete(MessageLevel.Info, $"{title} - did not complete.");
+                break;
+        }
+    }
+
+    private async Task<CheckResult> FetchVerifyStageCoreAsync(
+        UpdateCandidate candidate, InstallSite site, long required, string runningVersion,
+        bool manual, CancellationToken ct, IProgressMessage? live, string title)
     {
         string version = candidate.Release.VersionText;
 
@@ -271,8 +365,17 @@ public sealed class UpdateService
         using HttpClient http = UpdateDownloader.CreateDownloadHttpClient();
         var downloader = new UpdateDownloader(http, _space);
 
+        // The row starts indeterminate rather than at zero: between here and the first buffer sits a
+        // DNS lookup, a TLS handshake and a redirect to the asset host, which on a slow link is the
+        // several seconds that prompted this feature. A bar pinned at 0% reads as stuck.
+        live?.Update(title, indeterminate: true);
+
+        IProgress<long>? progress = live is null
+            ? null
+            : new DownloadProgressReporter(live, title, candidate.Asset.Size);
+
         DownloadResult dl = await downloader
-            .DownloadAsync(candidate.Asset, UpdatePaths.Staging, required, null, ct).ConfigureAwait(false);
+            .DownloadAsync(candidate.Asset, UpdatePaths.Staging, required, progress, ct).ConfigureAwait(false);
 
         if (dl.Outcome == DownloadOutcome.OutOfSpace)
         {
@@ -280,6 +383,12 @@ public sealed class UpdateService
             ReportSpace(manual, required, available);
             return new CheckResult(CheckOutcome.InsufficientSpace, version, required, available);
         }
+
+        // The user's own Cancel, which is not a failure and must not be reported as one: the
+        // .partial stays on disk and the next check resumes from it (UpdateDownloader's read loop),
+        // so nothing was lost and nothing is owed an explanation.
+        if (dl.Outcome == DownloadOutcome.Cancelled)
+            return new CheckResult(CheckOutcome.Cancelled, version);
 
         if (dl.Outcome != DownloadOutcome.Completed || dl.Path is null)
             return new CheckResult(CheckOutcome.Failed, version, Detail: dl.Outcome.ToString());
@@ -294,10 +403,14 @@ public sealed class UpdateService
                           verificationFailure: true);
 
         // Hash first — cheap, and it catches a truncated or substituted transfer before an unpack.
+        live?.Update(title, "verifying", indeterminate: true);
+
         VerifyResult hash = await PayloadVerifier
             .VerifyHashAsync(dl.Path, candidate.Asset.Sha256, ct).ConfigureAwait(false);
 
         if (!hash.Ok) return Reject(version, dl.Path, null, hash.Detail, verificationFailure: true);
+
+        live?.Update(title, "installing", indeterminate: true);
 
         var stager = new UpdateStager(_space);
         StageResult staged;

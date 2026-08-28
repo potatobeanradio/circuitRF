@@ -1,5 +1,100 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The update download had no progress bar and no Cancel (2026-08-27)
+
+Owner-reported, on macOS, immediately after publishing 1.0.0-beta.4: Help ▸ Check for Updates…
+left the Messages panel reading "Checking for circuitRF updates..." for the whole of a 160 MB
+`.dmg` transfer, with no bar, no byte count and no way to stop it.
+
+**Three of the four pieces already existed.** `UpdateDownloader.DownloadAsync` has always taken an
+`IProgress<long>?` and reported cumulative bytes on every buffer; `ReleaseAsset.Size` is a real
+denominator; and `IProgressMessage.BindCancellation` is the right-click-to-cancel menu the EM run,
+the mesher and the analysis row already use. **The entire gap was the literal `null` passed as that
+argument in `UpdateService.FetchVerifyStageAsync`.** The download side was built for this and never
+wired up.
+
+**Cancel is safe, but it is NOT free, and the first version of this note said it was.** The read
+loop catches `OperationCanceledException` and returns `DownloadOutcome.Cancelled`, leaving the
+`.partial` on disk, and `UpdateDownloader` does know how to resume from it (`resumeFrom` plus a
+`Range` header). **That resume is unreachable in the shipping flow.** `UpdateService`'s step 1 calls
+`UpdateReclaimer.ReclaimDebris()` before the feed is even asked, and that deletes the whole of
+`staging/` — which is where the `.partial` lives (`UpdatePaths.Staging`). So the next check, manual
+or background, starts the transfer from zero. `UpdateSpaceTests.DebrisReclaim_IsUnconditional_
+AndTakesOnlyStagingAndPartialTrees` has always asserted exactly this; the two behaviours had simply
+never been read against each other.
+
+**Three comments in `UpdateDownloader` therefore overclaim** and are left alone rather than quietly
+edited, because whether the resume SHOULD be reachable is a design decision, not a wording one: the
+stall path's "the partial stays and the next check resumes from it", the out-of-space path's "it
+costs nothing, the next attempt resumes from it", and `resumeFrom`'s own reason for existing. The
+resume logic is correct and well-guarded (a partial longer than the asset is deleted, one exactly
+its length is promoted, and a server answering 200 instead of 206 discards it rather than appending
+into the wrong bytes) — it is simply never handed a partial to work with.
+
+**What this costs, concretely:** cancelling a 160 MB `.dmg` at 80% and checking again re-transfers
+all 160 MB. **What it buys:** the stale-partial hazard cannot arise. A release re-published under the
+same version and the same byte count would otherwise be resumed into, producing a file of the right
+length and the wrong content — which fails the hash, and a hash failure is a `verificationFailure`,
+which is a PERMANENT blacklist for that version on that machine. The unconditional wipe makes that
+unreachable. So this is a real trade, not an oversight to fix on sight.
+
+**The row's Cancel message says only "stopped."** for that reason — promising that what arrived was
+kept would be true of `UpdateDownloader` and false of the application.
+
+**`DownloadOutcome.Cancelled` was being reported as a failure.** It fell into the generic
+`!= Completed` branch as `CheckOutcome.Failed` with `Detail: "Cancelled"`, and the manual check's
+switch has no case for `Failed`, so a user who pressed Cancel would have been told "Could not reach
+the update server." A new `CheckOutcome.Cancelled` plus a case that says nothing — the row already
+said it.
+
+**The Cancel is created in `UpdateScheduler.RunCheckAsync`, not in the view-model command.** Both
+entry points run that method, so one construction gives Cancel to the background check as well —
+which is the path that moves 160 MB unprompted and therefore wants it more, not less. Building it in
+`CheckForUpdatesAsync` would have given it to the watched path and withheld it from the unwatched
+one.
+
+**Two traps, both found while writing it rather than after:**
+
+- **`IProgressMessage.Finish` APPENDS to the counter, and by the time the row settles the counter is
+  the phase word.** A staged update would have read `installing - downloaded.` The staged case uses
+  `Complete` instead, which replaces. Worth remembering at any future call site that drives the
+  counter through phases rather than leaving a count in it.
+- **`percentComplete` is on a 0-100 scale, not a fraction.** `LiveProgressMessage` clamps to
+  `[0,100]`, so passing `bytes / total` would have pinned every bar in the application at 1% and read
+  as a stall rather than as an error. `PercentIsOnAHundredScale_NotAFraction` is there because the
+  clamp makes the mistake silent.
+
+**The throttle is not a nicety.** The downloader reports once per 80 KB buffer — ~2,000 calls for a
+160 MB payload, several hundred a second on a fast link — and each one would marshal a mutation onto
+the UI thread and raise `PropertyChanged` into a bound control. `DownloadProgressReporter` holds it
+to one rewrite per 100 ms, with the completing byte always allowed through so a download that
+finishes inside one window does not leave the row reading its first figure. The clock is injected for
+the same reason `LiveProgressMessage`'s marshaller is: a test asserting "2,000 reports produce at
+most 25 updates" cannot do it against a real one.
+
+**All three platforms, gated structurally rather than by running.** macOS stages a `.dmg` through
+`hdiutil`/`ditto`/`codesign`, Windows a `.zip` through `VerifyWindowsTree`, Linux a `.tar.gz` through
+`tar` — and a test host is only ever one of the three. What makes the bar platform-independent is
+that **there is exactly one `DownloadAsync` call site in the whole source tree** and every platform
+reaches it through the method that owns the row; every platform branch (`InstallShape.MacOsBundle`,
+`OperatingSystem.IsWindows()`) sits INSIDE that method, in the phases the row already covers as
+"verifying" and "installing". `DownloadProgressWiringTests` pins both facts against the source, in
+the spirit of `CrashReporterTests.TheUpdatePath_ClosesTheSessionBeforeEveryExec`: a second download
+path, or the `progress` argument reverting to `null`, restores the original bug on all three at once
+and is invisible to every behavioural test. The macOS leg is the one that needed the row most — its
+`codesign --verify --deep` over a 335 MB unpacked bundle carries a 3-minute timeout, which is why
+verify and stage continue the row indeterminate instead of letting the bar finish at 100% and go
+quiet.
+
+**What is NOT gated, and why.** There is no end-to-end test of the row through `UpdateService`,
+because `CreateDownloadHttpClient` carries the shipping `FeedUrlAllowList`, which refuses the
+loopback listener a test would have to serve from — the same reason no existing test stages through
+the service. The pieces that can go wrong on their own are gated instead:
+`DownloadProgressReporterTests` (throttle, completing byte, scale, indeterminate-with-no-size, and
+that only the counter changes so the bar does not slide sideways) and `DownloadCancellationTests`
+(a real socket, a real cancel, `Cancelled` not `Failed`, and the `.partial` left behind).
+
+
 ## Ruler annotations, round 2 — precision, contrast, and four bugs (2026-08-27)
 
 Owner follow-ups on the §9B ruler work, plus the defects that surfaced while testing them.

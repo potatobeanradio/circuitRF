@@ -61,8 +61,27 @@ public static class UpdateScheduler
     public static Task<CheckResult> CheckNowAsync(IMessageSink? messages, CancellationToken ct = default)
         => RunCheckAsync(messages, manual: true, ct);
 
+    /// <summary>
+    /// <b>The Cancel is created HERE, not at the menu item</b>, so both entry points get one from a
+    /// single place: Help ▸ Check for Updates… and the once-per-launch background check run the same
+    /// code, and a download started by the background check is exactly as worth being able to stop as
+    /// one the user asked for. Putting it in the view-model command would have given Cancel to the
+    /// path nobody is watching and withheld it from the path that moves 160 MB unprompted.
+    ///
+    /// <para>The source is linked to <paramref name="ct"/> so shutdown still cancels everything;
+    /// <see cref="RunCancellation.Finish"/> runs in the <c>finally</c>, which is what makes a bar left
+    /// on screen by a completed run stop offering a Cancel that would do nothing.</para>
+    /// </summary>
     private static async Task<CheckResult> RunCheckAsync(IMessageSink? messages, bool manual, CancellationToken ct)
     {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var cancellation = new RunCancellation("the update download", () =>
+        {
+            // Cancellation lands at the next 80 KB buffer, which is immediate at any real transfer
+            // rate — so unlike the EM run there is nothing worth saying about a pending stop.
+            try { cts.Cancel(); } catch (ObjectDisposedException) { /* already settled */ }
+        });
+
         try
         {
             var service = new UpdateService(
@@ -70,11 +89,21 @@ public static class UpdateScheduler
                 new DriveFreeSpaceProbe(),
                 messages);
 
-            return await service.CheckAsync(manual, ct).ConfigureAwait(false);
+            return await service.CheckAsync(manual, cts.Token, cancellation).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // The user's own Cancel, arriving as an exception from somewhere that does not return a
+            // DownloadResult. Not a failure.
+            return new CheckResult(CheckOutcome.Cancelled);
         }
         catch (Exception e)
         {
             return new CheckResult(CheckOutcome.Failed, Detail: e.Message);
+        }
+        finally
+        {
+            cancellation.Finish();
         }
     }
 

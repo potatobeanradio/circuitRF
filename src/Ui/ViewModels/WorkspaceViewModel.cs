@@ -12488,6 +12488,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     : "Automatic updates are turned off in Settings, so no check was made.");
                 break;
 
+            case Updates.CheckOutcome.Cancelled:
+                // The progress row said what happened, on the row the user cancelled. Reaching the
+                // default here would report their own Cancel back to them as an unreachable server.
+                break;
+
             default:
                 Messages.Warning("Could not reach the update server. Nothing was changed.");
                 break;
