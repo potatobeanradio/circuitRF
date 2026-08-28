@@ -18,8 +18,13 @@ namespace CircuitRF.Ui.Layout;
 /// </summary>
 public sealed partial class LayoutEditorViewModel
 {
-    public bool CanCopySelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0;
-    public bool CanDuplicateSelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0;
+    /// <summary>§9B.6 R-rul-11: rulers are copyable, and that is the reason they are SELECTABLE at all
+    /// — this property is selection-driven and the clipboard graphic renders the copied fragment, so
+    /// "rulers work with copy and paste" is not expressible unless a ruler can be selected.</summary>
+    public bool CanCopySelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0
+                                    || SelectedRulerIndices.Count > 0;
+    public bool CanDuplicateSelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0
+                                         || SelectedRulerIndices.Count > 0;
 
     /// <summary>The same test as <see cref="CanDuplicateSelection"/>, carrying the reason a disabled
     /// menu item should state (R-L1h-3's "always present, disabled with a reason" rule). Wires are
@@ -48,9 +53,11 @@ public sealed partial class LayoutEditorViewModel
     {
         var indices = ValidSelectedIndices;
         var (instances, cellDirs, workspaceRelativeDirs) = BuildCopyInstancesPayload();
-        if (indices.Count == 0 && instances.Count == 0) return null;
+        var rulers = SelectedRulers();
+        if (indices.Count == 0 && instances.Count == 0 && rulers.Count == 0) return null;
         var shapes = indices.Select(i => Model.Shapes[i]).ToList();
-        return LayoutFragment.Build(shapes, instances, cellDirs, workspaceRelativeDirs, Technology, Model.DbuPerMicron);
+        return LayoutFragment.Build(shapes, instances, cellDirs, workspaceRelativeDirs, rulers, Technology,
+                                    Model.DbuPerMicron, Model.DisplayUnit);
     }
 
     /// <summary>Cut = Copy (the caller writes to the system clipboard BEFORE calling this) then
@@ -84,7 +91,10 @@ public sealed partial class LayoutEditorViewModel
         var srcInstances = SelectedInstanceIndices.Select(i => Model.Instances[i]).ToList();
         var instances = srcInstances.Count > 0 ? LayoutFragment.Translate(srcInstances, dxDbu, dyDbu) : [];
 
-        InsertPastedMixed(shapes, instances, "Duplicate");
+        var srcRulers = SelectedRulers();
+        var rulers = srcRulers.Count > 0 ? LayoutFragment.Translate(srcRulers, dxDbu, dyDbu) : [];
+
+        InsertPastedMixed(shapes, instances, "Duplicate", rulers);
     }
 
     // ── Paste preparation — rescale + layer reconciliation (called by the view before placing) ───
@@ -161,6 +171,7 @@ public sealed partial class LayoutEditorViewModel
 
     private IReadOnlyList<LayoutShape>? _pastePlacementShapes;
     private IReadOnlyList<LayoutInstance> _pastePlacementInstances = [];
+    private IReadOnlyList<RulerAnnotation> _pastePlacementRulers = [];
 
     /// <summary>Per pasted instance: is its resolved geometry small enough to draw live? Decided ONCE,
     /// when the placement is armed — see <see cref="LayoutOverlay.GhostInstance.BoxOnly"/>.</summary>
@@ -197,11 +208,12 @@ public sealed partial class LayoutEditorViewModel
     /// none so every pre-existing (shape-only) call site is unaffected.
     /// </summary>
     public void BeginPastePlacement(IReadOnlyList<LayoutShape> shapes, long anchorX, long anchorY,
-        IReadOnlyList<LayoutInstance>? instances = null)
+        IReadOnlyList<LayoutInstance>? instances = null, IReadOnlyList<RulerAnnotation>? rulers = null)
     {
-        if (shapes.Count == 0 && (instances is null || instances.Count == 0)) return;
+        if (shapes.Count == 0 && (instances is null || instances.Count == 0) && (rulers is null || rulers.Count == 0)) return;
         _pastePlacementShapes = shapes;
         _pastePlacementInstances = instances ?? [];
+        _pastePlacementRulers = rulers ?? [];
         _pastePlacementInstanceBoxOnly = new bool[_pastePlacementInstances.Count];
         for (int i = 0; i < _pastePlacementInstances.Count; i++)
         {
@@ -232,29 +244,34 @@ public sealed partial class LayoutEditorViewModel
         _pastePlacementShapes = null;
         _pastePlacementInstances = [];
         _pastePlacementInstanceBoxOnly = [];
+        _pastePlacementRulers = [];
         RebuildOverlay();
     }
 
     private void CommitPastePlacement()
     {
         if (_pastePlacementShapes is not { } shapes) return;
-        if (shapes.Count == 0 && _pastePlacementInstances.Count == 0) { _pastePlacementShapes = null; return; }
+        if (shapes.Count == 0 && _pastePlacementInstances.Count == 0 && _pastePlacementRulers.Count == 0)
+        { _pastePlacementShapes = null; return; }
         long dx = _pasteCursorX - _pastePlacementAnchorX;
         long dy = _pasteCursorY - _pastePlacementAnchorY;
         var placedShapes = LayoutFragment.Translate(shapes, dx, dy);
         var placedInstances = LayoutFragment.Translate(_pastePlacementInstances, dx, dy);
+        var placedRulers = LayoutFragment.Translate(_pastePlacementRulers, dx, dy);
         _pastePlacementShapes = null;
         _pastePlacementInstances = [];
         _pastePlacementInstanceBoxOnly = [];
-        InsertPastedMixed(placedShapes, placedInstances, "Paste");
+        _pastePlacementRulers = [];
+        InsertPastedMixed(placedShapes, placedInstances, "Paste", placedRulers);
     }
 
     /// <summary>Paste in Place (§3 of the brief; extended to a mixed copy by brief-L3a-followups.md
     /// §2) — original coordinates, no ghost, immediate; one undo entry covering both kinds.
     /// <paramref name="instances"/> defaults to none so every pre-existing (shape-only) call site is
     /// unaffected.</summary>
-    public void PasteInPlace(IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance>? instances = null) =>
-        InsertPastedMixed(shapes, instances ?? [], "Paste in Place");
+    public void PasteInPlace(IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance>? instances = null,
+                             IReadOnlyList<RulerAnnotation>? rulers = null) =>
+        InsertPastedMixed(shapes, instances ?? [], "Paste in Place", rulers ?? []);
 
     // ── L3a instance paste (gate 11) — immediate placement, no ghost (see this file's own header
     // note on why shape paste and instance paste use different placement mechanisms) ───────────────
@@ -303,14 +320,17 @@ public sealed partial class LayoutEditorViewModel
     /// the newly placed shapes AND instances together become the selection (§3: "the next action
     /// operates on what was just placed"; mirrors <c>ReplaceMixedSelection</c>'s "both kinds at once"
     /// rule elsewhere in this VM).</summary>
-    private void InsertPastedMixed(IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, string description)
+    private void InsertPastedMixed(IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances,
+                                   string description, IReadOnlyList<RulerAnnotation>? rulers = null)
     {
-        if (shapes.Count == 0 && instances.Count == 0) return;
+        rulers ??= [];
+        if (shapes.Count == 0 && instances.Count == 0 && rulers.Count == 0) return;
 
         ResolvePortNumbers(shapes);
 
         int shapeInsertAt = Model.Shapes.Count;
         int instanceInsertAt = Model.Instances.Count;
+        int rulerInsertAt = Model.Rulers.Count;
 
         IUiCommand? combined = null;
         if (shapes.Count > 0)
@@ -320,11 +340,18 @@ public sealed partial class LayoutEditorViewModel
             IUiCommand instCmd = new Commands.Layout.AddInstanceCommand(Model, inst);
             combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
         }
+        // §9B.9: the third kind joins the SAME composite, so a mixed paste is still one undo entry.
+        foreach (var ruler in rulers)
+        {
+            IUiCommand rulerCmd = new Commands.Layout.AddRulerCommand(Model, ruler);
+            combined = combined is null ? rulerCmd : new CompositeCommand(combined, rulerCmd);
+        }
         Execute(combined!);
 
         ReplaceMixedSelection(
             Enumerable.Range(shapeInsertAt, shapes.Count),
-            Enumerable.Range(instanceInsertAt, instances.Count));
+            Enumerable.Range(instanceInsertAt, instances.Count),
+            Enumerable.Range(rulerInsertAt, rulers.Count));
     }
 
     /// <summary>

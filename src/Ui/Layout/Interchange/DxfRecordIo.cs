@@ -46,10 +46,19 @@ public sealed class DxfGroupReader(TextReader reader)
 /// wrong, only enough precision to round-trip exactly).</summary>
 public sealed class DxfGroupWriter(TextWriter writer)
 {
-    /// <summary>Count of <see cref="WriteEscapedString"/> calls that actually contained non-ASCII text
-    /// and were therefore `\U+XXXX`-escaped (docs/sonnet-briefs/brief-dxf-version-support.md R-dxf-2) —
-    /// read by <c>DxfWriter.Write</c> at the end to populate <see cref="DxfExportSummary"/>, so escaping
-    /// is reported rather than silent.</summary>
+    /// <summary>
+    /// Count of <b>USER-AUTHORED</b> text values that contained non-ASCII characters and were therefore
+    /// `\U+XXXX`-escaped (docs/sonnet-briefs/brief-dxf-version-support.md R-dxf-2) — read by
+    /// <c>DxfWriter.Write</c> at the end to populate <see cref="DxfExportSummary"/>, so escaping of
+    /// THEIR data is reported rather than silent.
+    ///
+    /// <para><b>Text this writer generates itself does not count</b> — see
+    /// <see cref="WriteGeneratedString"/>. Owner report, 2026-08-27: exporting a layout whose only
+    /// content was one ruler produced "1 non-ASCII text value(s) … will be escaped", on a file
+    /// containing no non-ASCII character at all. The Δ in our own <c>Δx / Δy</c> readout was being
+    /// reported back to the user as a fidelity caveat about their drawing. It is a caveat about a
+    /// choice this writer made, the user cannot act on it, and nothing of theirs was affected.</para>
+    /// </summary>
     public int EscapedTextCount { get; private set; }
 
     public void WriteString(int code, string value)
@@ -73,6 +82,19 @@ public sealed class DxfGroupWriter(TextWriter writer)
         if (anyEscaped) EscapedTextCount++;
         WriteString(code, encoded);
     }
+
+    /// <summary>
+    /// Escapes exactly like <see cref="WriteEscapedString"/> — so the bytes on disk are identical and
+    /// just as conformant — but does <b>not</b> count toward <see cref="EscapedTextCount"/>.
+    ///
+    /// <para>For text THIS WRITER composes (a dimension's own readout, its <c>Δx / Δy</c> line, a
+    /// <c>µm</c> unit suffix), as opposed to a string the user typed. The escaping still has to happen
+    /// and still has to be correct: <c>\U+0394</c> is AutoCAD's own convention and a real reader
+    /// renders it as Δ. What must not happen is reporting our own spelling to the user as though their
+    /// drawing contained something that needed handling.</para>
+    /// </summary>
+    public void WriteGeneratedString(int code, string value) =>
+        WriteString(code, DxfEncoding.EscapeNonAscii(value, out _));
 
     public void WriteInt(int code, int value) => WriteString(code, value.ToString(CultureInfo.InvariantCulture));
 

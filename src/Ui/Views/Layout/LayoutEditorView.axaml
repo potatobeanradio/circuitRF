@@ -184,6 +184,18 @@
                                 ToolTip.Tip="Port — click a conductor end to place an EM port (auto-numbered)" Padding="6,3">
                             <mi:MaterialIcon Kind="TargetVariant" Width="16" Height="16"/>
                         </Button>
+                        <!-- Ruler annotation tool (docs/design/layout-view.md §9B.5). Two clicks,
+                             with a live preview of the WHOLE ruler including its readout, so the
+                             number is visible before committing; the tool stays armed afterwards,
+                             because measuring is something a user does several times in a row.
+                             Escape disarms it to Select, on the same contract every other drawing
+                             tool here already uses. This is the IN-DESIGN ruler, nothing to do with
+                             the ruler strip along the canvas edge. -->
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Ruler}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Ruler"
+                                ToolTip.Tip="Ruler  (D) — click two points to measure (Shift locks to 0/45/90°; Ctrl+K clears every ruler)" Padding="6,3">
+                            <mi:MaterialIcon Kind="Ruler" Width="16" Height="16"/>
+                        </Button>
                         <Button Click="OnInsertBitmap" ToolTip.Tip="Insert Bitmap…" Padding="6,3">
                             <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
                         </Button>

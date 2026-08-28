@@ -100,6 +100,45 @@ public sealed record class LayoutOverlay
     /// (R-L5-7: generated once, cached, never written to disk until the drop actually commits).</summary>
     public (LayoutView GhostView, long X, long Y)? PendingPCellPlacement { get; init; }
 
+    // ── Ruler annotations (docs/design/layout-view.md §9B) ──────────────────────────────────────
+    // The THIRD selection channel, mirroring SelectedInstanceIndices exactly. Rulers themselves are
+    // document content and are drawn from LayoutView.Rulers whether or not an overlay exists (an
+    // export has none); only these four fields — which ruler is selected, what a live drag is moving
+    // it to, the not-yet-committed placement preview, and whether endpoint handles show — are
+    // interaction state and therefore live here.
+
+    /// <summary>Currently selected RULER indices — the selected ruler additionally takes the
+    /// <c>Layout.Selection</c> accent, exactly as a selected shape does (§9B.8).</summary>
+    public IReadOnlyList<int> SelectedRulerIndices { get; init; } = [];
+
+    /// <summary>Live ruler drag preview — ruler index -&gt; the moved/re-measured clone to draw in its
+    /// place. Mirrors <see cref="DragOverrides"/> exactly; the model is untouched until the drag
+    /// commits. Covers BOTH a whole-ruler move and a single-endpoint drag, which is what makes the
+    /// readout re-measure live during the latter.</summary>
+    public IReadOnlyDictionary<int, RulerAnnotation>? RulerDragOverrides { get; init; }
+
+    /// <summary>The Ruler tool's live two-click preview — the WHOLE ruler including its readout, so
+    /// the number is visible BEFORE the second click commits (R-rul-8). Null when no placement is in
+    /// progress.</summary>
+    public RulerAnnotation? RulerPreview { get; init; }
+
+    /// <summary>
+    /// Rulers riding a PASTE or a DUPLICATE drag — already translated to the current cursor, and not
+    /// in the model yet. The ruler half of <see cref="PastePreview"/>/<see cref="PastePreviewInstances"/>,
+    /// and separate from <see cref="RulerPreview"/> for the same reason those are separate from
+    /// <see cref="InProgressPrimitive"/>: one is a tool composing a new object, the other is a copy of
+    /// existing ones being aimed.
+    ///
+    /// <para><b>Why a duplicate needs its own channel rather than a drag override</b> (R-dup-1): an
+    /// override means "draw this object somewhere else", which is the one thing a duplicate must not
+    /// do — the original has to stay visibly put while the copy follows the cursor.</para>
+    /// </summary>
+    public IReadOnlyList<RulerAnnotation>? RulerPastePreview { get; init; }
+
+    /// <summary>§9B.6: endpoint handles render only for a single-ruler selection, mirroring §6.3's
+    /// vertex-handle rule.</summary>
+    public bool ShowRulerEndpointHandles { get; init; }
+
     /// <summary>Geometry snap's top-priority candidate at the current cursor position (docs/sonnet-
     /// briefs/brief-snap-distance-and-geometry-snap.md §2.5) — null whenever no candidate is within
     /// tolerance, geometry snap is off, or the Alt modifier is suppressing it. Rendered as a fixed

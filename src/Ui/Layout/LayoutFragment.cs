@@ -28,6 +28,13 @@ public static class LayoutFragment
     {
         public string? Marker { get; set; }
         public int DbuPerMicron { get; set; }
+
+        /// <summary>The SOURCE document's display unit. Carried for R-rul-6: a ruler's readout is
+        /// rendered through <c>LayoutUnits.Format</c> in a document's own display unit, and the
+        /// clipboard's graphic export (the PowerPoint path, §9B.9) has no document — without this it
+        /// would have to hard-code one, which is the "one WHAT" defect that rule exists to avoid.
+        /// Defaults to <see cref="LayoutUnit.Um"/> for a payload written before this field existed.</summary>
+        public LayoutUnit DisplayUnit { get; set; } = LayoutUnit.Um;
         public long AnchorX { get; set; }
         public long AnchorY { get; set; }
 
@@ -70,6 +77,13 @@ public static class LayoutFragment
         /// root, since it stays correct even if the two documents' workspace happens to live at a
         /// different absolute location (e.g. a shared workspace checked out at two different paths).</summary>
         public List<string?> InstanceWorkspaceRelativeDirs { get; set; } = [];
+
+        /// <summary>docs/design/layout-view.md §9B.9 — the copied RULER annotations. <b>No layer
+        /// reconciliation applies</b> (a ruler has no layer, R-rul-1), but the endpoints ARE
+        /// coordinates and are rescaled with everything else by <see cref="Rescale"/>: a ruler pasted
+        /// into a document at a different <c>DbuPerMicron</c> must still measure the same PHYSICAL
+        /// distance.</summary>
+        public List<RulerAnnotation> Rulers { get; set; } = [];
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -107,10 +121,20 @@ public static class LayoutFragment
     public static Payload Build(
         IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> instanceCellDirs,
         IReadOnlyList<string?> instanceWorkspaceRelativeDirs, Technology? tech, int dbuPerMicron)
+        => Build(shapes, instances, instanceCellDirs, instanceWorkspaceRelativeDirs, [], tech, dbuPerMicron);
+
+    /// <summary>docs/design/layout-view.md §9B.9 overload — also carries the selection's RULERS.</summary>
+    public static Payload Build(
+        IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> instanceCellDirs,
+        IReadOnlyList<string?> instanceWorkspaceRelativeDirs, IReadOnlyList<RulerAnnotation> rulers,
+        Technology? tech, int dbuPerMicron, LayoutUnit displayUnit = LayoutUnit.Um)
     {
         var bbox = Bbox.Empty;
         foreach (var s in shapes) bbox = bbox.Union(LayoutGeometry.BboxOf(s));
         foreach (var i in instances) bbox = bbox.Union(new Bbox(i.X, i.Y, i.X, i.Y));
+        foreach (var r in rulers)
+            bbox = bbox.Union(new Bbox(Math.Min(r.X1, r.X2), Math.Min(r.Y1, r.Y2),
+                                       Math.Max(r.X1, r.X2), Math.Max(r.Y1, r.Y2)));
 
         var seen = new HashSet<LayerKey>();
         var layers = new List<LayerDef>();
@@ -125,6 +149,7 @@ public static class LayoutFragment
         {
             Marker           = Marker,
             DbuPerMicron     = dbuPerMicron,
+            DisplayUnit      = displayUnit,
             AnchorX          = bbox.IsEmpty ? 0 : bbox.MinX,
             AnchorY          = bbox.IsEmpty ? 0 : bbox.MinY,
             TechName         = tech?.Name,
@@ -133,6 +158,7 @@ public static class LayoutFragment
             Instances        = instances.Select(LayoutGeometry.Clone).ToList(),
             InstanceCellDirs = instanceCellDirs.ToList(),
             InstanceWorkspaceRelativeDirs = instanceWorkspaceRelativeDirs.ToList(),
+            Rulers           = rulers.Select(r => r.Clone()).ToList(),
         };
     }
 
@@ -167,7 +193,8 @@ public static class LayoutFragment
     // ── Rescale (R-L1f-2) ────────────────────────────────────────────────────
 
     public sealed record RescaleResult(
-        IReadOnlyList<LayoutShape> Shapes, long AnchorX, long AnchorY, IReadOnlyList<string> Warnings);
+        IReadOnlyList<LayoutShape> Shapes, long AnchorX, long AnchorY, IReadOnlyList<string> Warnings,
+        IReadOnlyList<RulerAnnotation>? Rulers = null);
 
     /// <summary>
     /// Rescales a fragment's shapes (and anchor) from its source <see cref="Payload.DbuPerMicron"/>
@@ -184,9 +211,11 @@ public static class LayoutFragment
     public static RescaleResult Rescale(Payload payload, int destDbuPerMicron)
     {
         var shapes = payload.Shapes.Select(LayoutGeometry.Clone).ToList();
+        var rulers = payload.Rulers.Select(r => r.Clone()).ToList();
+
 
         if (destDbuPerMicron == payload.DbuPerMicron || payload.DbuPerMicron <= 0)
-            return new RescaleResult(shapes, payload.AnchorX, payload.AnchorY, []);
+            return new RescaleResult(shapes, payload.AnchorX, payload.AnchorY, [], rulers);
 
         var warnings = new List<string>();
 
@@ -221,7 +250,27 @@ public static class LayoutFragment
         long ay = ScaleAnchor(payload.AnchorY);
         _ = anchorLossy; // the anchor is internal placement math, not user-visible geometry — no separate warning
 
-        return new RescaleResult(shapes, ax, ay, warnings);
+        // §9B.9 / R-L1f-2: a ruler's endpoints are coordinates like any other, and rescaling them is
+        // exactly what makes a pasted ruler still measure the SAME PHYSICAL DISTANCE in a document at
+        // a different resolution. Rounding is reported no more loudly than a shape's is (the paste is
+        // one Ctrl+Z away), and the reported number follows the endpoints by construction, since it is
+        // computed rather than stored.
+        long ScalePlain(long v)
+        {
+            decimal scaled = (decimal)v * destDbuPerMicron / payload.DbuPerMicron;
+            return (long)Math.Round(scaled, MidpointRounding.AwayFromZero);
+        }
+        foreach (var r in rulers)
+        {
+            r.X1 = ScalePlain(r.X1); r.Y1 = ScalePlain(r.Y1);
+            r.X2 = ScalePlain(r.X2); r.Y2 = ScalePlain(r.Y2);
+            // The world text height is a LENGTH in the source document's units and must travel the
+            // same way; the point size is a screen quantity and is resolution-independent, so it is
+            // deliberately left alone.
+            if (r.TextHeightDbu > 0) r.TextHeightDbu = Math.Max(1, ScalePlain(r.TextHeightDbu));
+        }
+
+        return new RescaleResult(shapes, ax, ay, warnings, rulers);
     }
 
     private static string ShapeLabel(LayoutShape shape, int index) => $"{shape.GetType().Name} #{index}";
@@ -298,6 +347,21 @@ public static class LayoutFragment
         {
             var clone = LayoutGeometry.Clone(s);
             if (dx != 0 || dy != 0) LayoutGeometry.TranslateBy(clone, dx, dy);
+            result.Add(clone);
+        }
+        return result;
+    }
+
+    /// <summary>Ruler analogue of <see cref="Translate(IReadOnlyList{LayoutShape}, long, long)"/> —
+    /// the SAME translation shapes and instances get, so a fragment's three kinds can never drift
+    /// apart mid-placement (§9B.9).</summary>
+    public static IReadOnlyList<RulerAnnotation> Translate(IReadOnlyList<RulerAnnotation> rulers, long dx, long dy)
+    {
+        var result = new List<RulerAnnotation>(rulers.Count);
+        foreach (var r in rulers)
+        {
+            var clone = r.Clone();
+            clone.X1 += dx; clone.Y1 += dy; clone.X2 += dx; clone.Y2 += dy;
             result.Add(clone);
         }
         return result;

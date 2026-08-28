@@ -1,0 +1,168 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Properties.LayoutRulerPropertiesView"
+             x:DataType="vm:LayoutShapePropertiesViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBox.error">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- docs/design/layout-view.md §9B.6. ONE surface, hosted BOTH by the docked Properties panel and
+         by the right-click Edit Ruler… modal (R-rul-12: "Edit… opens the same property set as a
+         modal") — never two ruler-editing implementations that could disagree. -->
+    <StackPanel Spacing="4">
+
+        <!-- R-rul-5: the measured distance is shown and is NEVER editable. A ruler whose number can
+             be typed over is not a measurement. The CAPTION below is the free text.
+
+             SelectableTextBlock, not TextBlock: the value exists to be read AND copied into a review
+             note. Not a read-only TextBox either — a control that takes a caret and then discards
+             what is typed is worse than one that plainly cannot be typed into. It gets the row to
+             itself: it is the thing this dialog is about. -->
+        <Grid ColumnDefinitions="72,*">
+            <TextBlock Grid.Column="0" Text="Distance" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <SelectableTextBlock Grid.Column="1" Text="{Binding RulerDistanceText}" VerticalAlignment="Center"
+                                 FontSize="11" FontWeight="SemiBold"
+                                 ToolTip.Tip="Measured, never typed — a ruler's number is computed from its endpoints."/>
+        </Grid>
+
+        <!-- The two halves of "how that number is written", together on the row under it, because
+             neither is legible alone: Decimals supplies the precision and Format the spelling.
+             General trims trailing zeros ("40 mil"); Fixed keeps them ("40.0 mil"), which is the one
+             thing General cannot do and the reason to pick it — a column of rulers that lines up.
+
+             The Decimals box is two characters wide because the value never needs more (the field is
+             capped at 9, and a blank means "this display unit's own default" — the watermark shows
+             what that resolves to). -->
+        <Grid ColumnDefinitions="72,34,Auto,*" ColumnSpacing="4">
+            <TextBlock Grid.Column="0" Text="Decimals" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="1" Text="{Binding RulerDecimalsText}" Tag="RulerDecimals"
+                     Watermark="{Binding RulerDecimalsPlaceholder}"
+                     Classes.error="{Binding HasRulerDecimalsError}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2">
+                <ToolTip.Tip>
+                    <TextBlock Text="{Binding RulerDecimalsHint}" TextWrapping="Wrap" MaxWidth="260"/>
+                </ToolTip.Tip>
+            </TextBox>
+            <TextBlock Grid.Column="2" Text="Format" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <ComboBox Grid.Column="3"
+                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RulerNumberFormatOptions}"
+                      SelectedItem="{Binding RulerNumberFormatValue, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
+                      ToolTip.Tip="General trims trailing zeros; Fixed keeps them; the exponential forms differ only in the case of the E."/>
+        </Grid>
+
+        <!-- The measured components, always readable here regardless of whether the Δ toggle below
+             paints them on the canvas — the inspector is where a user comes to READ the numbers. -->
+        <Grid ColumnDefinitions="72,*,40,*" ColumnSpacing="4">
+            <TextBlock Grid.Column="0" Text="Δx" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <SelectableTextBlock Grid.Column="1" Text="{Binding RulerDeltaXText}" VerticalAlignment="Center"
+                                 FontSize="11"/>
+            <TextBlock Grid.Column="2" Text="Δy" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <SelectableTextBlock Grid.Column="3" Text="{Binding RulerDeltaYText}" VerticalAlignment="Center"
+                                 FontSize="11"/>
+        </Grid>
+
+        <Grid ColumnDefinitions="72,*,40,*" ColumnSpacing="4">
+            <TextBlock Grid.Column="0" Text="Start" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="1" Text="{Binding RulerX1Text}" Tag="RulerX1"
+                     Classes.error="{Binding HasRulerX1Error}" ToolTip.Tip="{Binding RulerX1Error}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"/>
+            <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="3" Text="{Binding RulerY1Text}" Tag="RulerY1"
+                     Classes.error="{Binding HasRulerY1Error}" ToolTip.Tip="{Binding RulerY1Error}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"/>
+        </Grid>
+
+        <Grid ColumnDefinitions="72,*,40,*" ColumnSpacing="4">
+            <TextBlock Grid.Column="0" Text="End" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="1" Text="{Binding RulerX2Text}" Tag="RulerX2"
+                     Classes.error="{Binding HasRulerX2Error}" ToolTip.Tip="{Binding RulerX2Error}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"/>
+            <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="3" Text="{Binding RulerY2Text}" Tag="RulerY2"
+                     Classes.error="{Binding HasRulerY2Error}" ToolTip.Tip="{Binding RulerY2Error}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"/>
+        </Grid>
+
+        <!-- §9B.3: the mode is per ruler and neither value is a default that fights the other
+             purpose. Fixed = n points on screen at every zoom (the temporary measurement); Scaled =
+             a physical height in the layout (the review annotation). -->
+        <Grid ColumnDefinitions="72,*">
+            <TextBlock Grid.Column="0" Text="Size mode" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RulerSizeModeOptions}"
+                      SelectedItem="{Binding RulerSizeModeValue, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
+                      ToolTip.Tip="Fixed: n points on screen at every zoom. Scaled: a physical height in the layout."/>
+        </Grid>
+
+        <!-- R-rul-3: ONE size field whose label and unit follow the mode — two fields with one of
+             them always inert is the trap this avoids. R-rul-3a: disabled with its reason when the
+             selection's modes differ, because the field means points in one and a length in the
+             other and there is no honest unit to label it with. -->
+        <Grid ColumnDefinitions="72,*">
+            <TextBlock Grid.Column="0" Text="{Binding RulerSizeCaption}" VerticalAlignment="Center" FontSize="11"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="1" Text="{Binding RulerSizeText}" Tag="RulerSize"
+                     IsEnabled="{Binding IsRulerSizeEnabled}"
+                     Classes.error="{Binding HasRulerSizeError}"
+                     ToolTip.Tip="{Binding RulerSizeDisabledReason}"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"/>
+        </Grid>
+        <TextBlock IsVisible="{Binding !IsRulerSizeEnabled}"
+                   Text="{Binding RulerSizeDisabledReason}"
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                   FontSize="10" TextWrapping="Wrap" Margin="72,0,0,0"/>
+
+        <!-- R-rul-2: the EXISTING LabelFontStyle, never a parallel enum. -->
+        <Grid ColumnDefinitions="72,*">
+            <TextBlock Grid.Column="0" Text="Style" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RulerStyleOptions}"
+                      SelectedItem="{Binding RulerStyleValue, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"/>
+        </Grid>
+
+        <Grid ColumnDefinitions="72,*">
+            <TextBlock Grid.Column="0" Text="Caption" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <TextBox Grid.Column="1" Text="{Binding RulerCaptionText}" Tag="RulerCaption"
+                     GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                     FontSize="11" Padding="4,2"
+                     ToolTip.Tip="Free text under the readout. The measured number above is computed and cannot be typed over."/>
+        </Grid>
+
+        <!-- R-rul-7: a per-ruler toggle, not an automatic angle test. -->
+        <Grid ColumnDefinitions="72,*">
+            <TextBlock Grid.Column="0" Text="Δx / Δy" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <CheckBox Grid.Column="1" IsThreeState="True"
+                      IsChecked="{Binding RulerShowComponentsValue, Mode=TwoWay}"
+                      ToolTip.Tip="Show the horizontal and vertical components under the distance."/>
+        </Grid>
+
+    </StackPanel>
+</UserControl>

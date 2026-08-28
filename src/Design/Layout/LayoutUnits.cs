@@ -91,6 +91,43 @@ public static class LayoutUnits
         return value.ToString(fmt, CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// How a formatted length is spelled — the .NET standard numeric specifiers, named.
+    ///
+    /// <para><b><see cref="General"/> is what this file has always done</b> and stays the default: up
+    /// to <c>maxDecimals</c> places with trailing zeros TRIMMED, so 40 reads "40" and not "40.0000".
+    /// <see cref="Fixed"/> is the same count of places with the zeros KEPT, which is what a column of
+    /// numbers meant to line up wants and the one thing General cannot do. The two exponential forms
+    /// differ only in the case of the letter, exactly as .NET's own <c>E</c>/<c>e</c> do.</para>
+    /// </summary>
+    public enum LayoutNumberFormat { General, Fixed, Exponential, ExponentialLower }
+
+    /// <summary>
+    /// Formats a DBU value in <paramref name="unit"/> with an explicit spelling.
+    ///
+    /// <para><b><paramref name="decimals"/> means DECIMAL PLACES in <see cref="LayoutNumberFormat.General"/>
+    /// and <see cref="LayoutNumberFormat.Fixed"/>, and MANTISSA digits in the exponential forms</b> —
+    /// which is what "the number of decimals" means in each. It is deliberately NOT passed through as
+    /// .NET's <c>G</c> precision, which counts SIGNIFICANT digits: a caller asking for one decimal
+    /// place would get <c>G1</c>, i.e. one significant digit, and 40 would render as "4E+01".</para>
+    /// </summary>
+    public static string Format(long dbu, LayoutUnit unit, int dbuPerMicron, int decimals,
+                                LayoutNumberFormat format)
+    {
+        if (format == LayoutNumberFormat.General) return Format(dbu, unit, dbuPerMicron, decimals);
+
+        decimals = Math.Clamp(decimals, 0, 15);
+        var value = FromDbu(dbu, unit, dbuPerMicron);
+        string spec = format switch
+        {
+            LayoutNumberFormat.Fixed            => "F",
+            LayoutNumberFormat.Exponential      => "E",
+            LayoutNumberFormat.ExponentialLower => "e",
+            _                                   => "F",
+        };
+        return value.ToString(spec + decimals.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Short display suffix for a unit (e.g. for a "units reminder" label next to a
     /// dimension field) — the single source other call sites should share rather than
     /// re-deriving their own copy of this switch.</summary>

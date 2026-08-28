@@ -6138,6 +6138,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     private bool IsCheckableDocumentActive() => ResolveDrcTargetLayout() is not null;
 
+    /// <summary>
+    /// Ctrl+K / Cmd+K — docs/design/layout-view.md §9B.6 R-rul-13: removes every in-design RULER
+    /// annotation from the active layout, as ONE undo entry, with no confirmation prompt (the
+    /// operation is undoable, and a prompt on an undoable action trains people to dismiss prompts).
+    ///
+    /// <para><b><c>Ctrl+Shift+K</c> is Check Design Rules and is deliberately untouched.</b> The two
+    /// share a letter and are far enough apart in effect that the overlap is worth watching in review
+    /// but not worth renaming — §9B.6 says so explicitly. Routed through
+    /// <see cref="ResolveDrcTargetLayout"/> for the same reason that command is: a wBond document's
+    /// rulers live on its REFERENCE layout.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsCheckableDocumentActive))]
+    private void ClearAllRulers() => ResolveDrcTargetLayout()?.ClearAllRulers();
+
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private void ExportGdsii() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGdsii();
 
@@ -10437,6 +10451,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Design ▸ Check Design Rules is enabled when a layout document is active, and when a wBond
         // document is — a wirebond design is checked through its reference layout.
         CheckDesignRulesCommand.NotifyCanExecuteChanged();
+        // Same document-type gate, same fan-out — see the standing gotcha note further down: a
+        // [RelayCommand(CanExecute=...)] gated on the active document is NOT re-evaluated on its own.
+        ClearAllRulersCommand.NotifyCanExecuteChanged();
 
         // Export GDSII/DXF (item 8) are enabled only when a layout document is active.
         ExportGdsiiCommand.NotifyCanExecuteChanged();

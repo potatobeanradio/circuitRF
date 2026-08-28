@@ -50,6 +50,12 @@ public sealed class LayoutRenderTheme
     /// as an inset, kernel B's is in the same (x, y) plane the canvas already draws.</summary>
     public SKColor PlanarMeshCell { get; init; }
 
+    /// <summary>docs/design/layout-view.md §9B.8 — the IN-DESIGN ruler annotation's line/ticks/handles
+    /// and its readout text. Distinct from <see cref="RulerTick"/>/<see cref="RulerText"/> above, which
+    /// belong to the canvas-edge ruler STRIP: the two share a word and nothing else.</summary>
+    public SKColor RulerAnnotationLine { get; init; }
+    public SKColor RulerAnnotationText { get; init; }
+
     /// <summary>L5b DRC violation markers — see <see cref="ColorRole.LayoutDrcError"/>.</summary>
     public SKColor DrcError { get; init; }
     public SKColor DrcWarning { get; init; }
@@ -80,6 +86,8 @@ public sealed class LayoutRenderTheme
             EmMeshInterface  = SK(ColorRole.LayoutEmMeshInterface),
             EmMeshTruncation = SK(ColorRole.LayoutEmMeshTruncation),
             PlanarMeshCell   = SK(ColorRole.LayoutPlanarMeshCell),
+            RulerAnnotationLine = SK(ColorRole.LayoutRulerAnnotationLine),
+            RulerAnnotationText = SK(ColorRole.LayoutRulerAnnotationText),
             DrcError         = SK(ColorRole.LayoutDrcError),
             DrcWarning       = SK(ColorRole.LayoutDrcWarning),
             DrcWaived        = SK(ColorRole.LayoutDrcWaived),

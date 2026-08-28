@@ -89,7 +89,13 @@ public sealed record DxfExportSummary(
     /// <see cref="ViaShape"/> part (barrel or pad) whose layer has no <c>.ctech</c>-known name (or, for
     /// the pad, no <see cref="ViaShape.LandingLayer"/> set at all) is skipped and named in
     /// <see cref="Diagnostics"/> — never silently exported on DXF's fallback layer "0".</summary>
-    int ViaPartsSkipped = 0);
+    int ViaPartsSkipped = 0,
+    /// <summary>docs/design/layout-view.md §9B.10 — in-design rulers written as aligned
+    /// <c>DIMENSION</c> entities on the <c>RULER</c> layer. Reported so an export that carried none is
+    /// distinguishable from one that did, and because R-rul-18b makes a Fixed ruler's exported text
+    /// height a function of the drawing extents, which is a surprise the second time someone
+    /// exports.</summary>
+    int RulersWritten = 0);
 
 public enum DxfViewMode { FitToExtents, MatchCurrentView }
 
@@ -125,7 +131,7 @@ public sealed class DxfHandles
     public string Next() => (_next++).ToString("X");
 }
 
-public static class DxfWriter
+public static partial class DxfWriter
 {
     private const string SplinePatternName = "SOLID";
 
@@ -166,6 +172,14 @@ public static class DxfWriter
     /// <summary>Writes a hierarchy of structures: every structure becomes a BLOCK; the ROOT structure
     /// is ALSO instanced once, at identity transform, in ENTITIES — this is what makes the file open
     /// with the design on screen (§2A) rather than an empty model space plus unreferenced blocks.</summary>
+    /// <param name="rulers">docs/design/layout-view.md §9B.10 — the ROOT cell's in-design ruler
+    /// annotations, written as genuine aligned <c>DIMENSION</c> entities on their own <c>RULER</c>
+    /// layer. Null or empty writes exactly what this method always did, including an empty DIMSTYLE
+    /// table. <b>Root-only, deliberately</b>: rulers are cell-local (§9B.7) and do not render through
+    /// an instance placement, so a sub-cell's working notes are not scattered across every design that
+    /// reuses it.</param>
+    /// <param name="displayUnit">The document's display unit — the readout in each dimension's picture
+    /// block is formatted in it (R-rul-6: never a hard-coded unit, never a second formatter).</param>
     public static DxfExportSummary Write(
         TextWriter textWriter,
         IReadOnlyList<InterchangeStructure> structures,
@@ -173,7 +187,9 @@ public static class DxfWriter
         Technology? tech,
         int dbuPerMicron,
         DxfExportOptions options,
-        WBondDesign? wires = null)
+        WBondDesign? wires = null,
+        IReadOnlyList<RulerAnnotation>? rulers = null,
+        LayoutUnit displayUnit = LayoutUnit.Um)
     {
         double dbuToDrawingUnit = 1.0 / (double)DxfUnits.DbuPerDrawingUnit(options.InsUnits, dbuPerMicron);
 
@@ -185,6 +201,12 @@ public static class DxfWriter
         var blockNames = DxfNaming.MangleForExport(structures.Select(s => s.Name).ToList());
         var layerNames = ResolveLayerNames(structures, tech);
 
+        // §9B.10 — one plan per ruler: its resolved world text height (R-rul-18b turns a Fixed ruler's
+        // point size into a length against THESE extents) and which DIMSTYLE record it lands on.
+        var rulerPlans = PlanRulers(rulers ?? [], bbox);
+        var dimStyles = DistinctDimStyles(rulerPlans);
+        var rulerBlockNames = Enumerable.Range(0, rulerPlans.Count).Select(RulerBlockName).ToList();
+
         var w = new DxfGroupWriter(textWriter);
         var handles = new DxfHandles();
 
@@ -195,7 +217,15 @@ public static class DxfWriter
         // wire entities reference, which a strict reader rejects the whole file over.
         var wireLayerNames = wires is null ? null : DxfWireIo.LayerNames(wires);
 
-        var blockRecordHandles = WriteTablesSection(w, handles, layerNames, tech, blockNames.Values, bbox, dbuToDrawingUnit, options, wireLayerNames);
+        // The RULER layer rides the SAME extraLayerNames seam, for the same reason: a layer a strict
+        // reader sees referenced but not declared makes it reject the whole file.
+        var extraLayers = new List<string>();
+        if (wireLayerNames is not null) extraLayers.AddRange(wireLayerNames);
+        if (rulerPlans.Count > 0) extraLayers.Add(RulerLayerName);
+
+        var blockRecordHandles = WriteTablesSection(
+            w, handles, layerNames, tech, blockNames.Values.Concat(rulerBlockNames), bbox, dbuToDrawingUnit,
+            options, extraLayers.Count > 0 ? extraLayers : null, dimStyles);
 
         // ── BLOCKS ────────────────────────────────────────────────────────────
         WriteSectionStart(w, "BLOCKS");
@@ -212,6 +242,8 @@ public static class DxfWriter
                 WriteInsert(w, inst, blockNames, dbuToDrawingUnit, handles, ownerHandle);
             WriteBlockFooter(w, handles, ownerHandle);
         }
+        // One anonymous *D# block per ruler, through this same path unchanged.
+        WriteRulerBlocks(w, handles, rulerPlans, blockRecordHandles, displayUnit, dbuPerMicron, dbuToDrawingUnit);
         WriteSectionEnd(w);
 
         // ── ENTITIES ──────────────────────────────────────────────────────────
@@ -232,17 +264,26 @@ public static class DxfWriter
             ? 0
             : DxfWireIo.WriteWires(w, wires, dbuToDrawingUnit, dbuPerMicron, handles, modelSpaceHandle);
 
+        // Rulers live in MODEL SPACE beside the root INSERT for the same reason the wires do: they are
+        // statements about the assembly, not part of any cell's own definition, and a recipient
+        // expects to see them without descending into a block.
+        int rulersWritten = WriteRulerDimensions(w, handles, rulerPlans, blockRecordHandles, modelSpaceHandle,
+                                                 displayUnit, dbuPerMicron, dbuToDrawingUnit);
+
         WriteSectionEnd(w);
 
         w.WriteString(0, "EOF");
 
         counts.WiresWritten = wiresWritten;
 
+        if (rulersWritten > 0)
+            diagnostics.Add(RulerExportNote(rulersWritten, rulerPlans.Any(p => p.Ruler.SizeMode == RulerSizeMode.Fixed)));
+
         return new DxfExportSummary(
             counts.CurveFlattened, counts.HolesAsHatch, counts.BitmapsSkipped,
             counts.MixedArcCubicApproximated, counts.PathsFlattenedForCubic,
             counts.SplineFlattenedToPolyline, w.EscapedTextCount, diagnostics,
-            counts.LabelsWritten, counts.WiresWritten, counts.ViaPartsSkipped);
+            counts.LabelsWritten, counts.WiresWritten, counts.ViaPartsSkipped, rulersWritten);
     }
 
     private sealed class Counts
@@ -311,7 +352,8 @@ public static class DxfWriter
     private static IReadOnlyDictionary<string, string> WriteTablesSection(
         DxfGroupWriter w, DxfHandles handles, IReadOnlyDictionary<LayerKey, string> layerNames, Technology? tech,
         IEnumerable<string> blockNames, Bbox bbox, double dbuToDrawingUnit, DxfExportOptions options,
-        IReadOnlyList<string>? extraLayerNames = null)
+        IReadOnlyList<string>? extraLayerNames = null,
+        IReadOnlyList<(string Name, double TextHeightDbu)>? dimStyles = null)
     {
         WriteSectionStart(w, "TABLES");
 
@@ -322,7 +364,7 @@ public static class DxfWriter
         WriteEmptyTable(w, handles, "VIEW");
         WriteEmptyTable(w, handles, "UCS");
         WriteAppidTable(w, handles);
-        WriteDimstyleTable(w, handles);
+        WriteDimstyleTable(w, handles, dimStyles ?? [], dbuToDrawingUnit);
         var blockRecordHandles = WriteBlockRecordTable(w, handles, blockNames);
 
         WriteSectionEnd(w);
@@ -491,15 +533,6 @@ public static class DxfWriter
         w.WriteString(100, "AcDbRegAppTableRecord");
         w.WriteString(2, "ACAD");
         w.WriteInt(70, 0);
-        WriteTableFooter(w);
-    }
-
-    private static void WriteDimstyleTable(DxfGroupWriter w, DxfHandles handles)
-    {
-        // Zero DIMSTYLE records — this codebase's own export never creates a dimension entity, so
-        // there is nothing for one to reference. The table itself (with its extra AcDbDimStyleTable
-        // subclass marker, unique to this one table type per spec) must still exist.
-        WriteTableHeader(w, handles, "DIMSTYLE", 0, extraSubclass: "AcDbDimStyleTable");
         WriteTableFooter(w);
     }
 

@@ -59,7 +59,14 @@ public sealed partial class LayoutEditorViewModel
     /// that already knows the index (brief-L5-followups-3.md R-L5h-1/2: double-click on a PCell
     /// instance routes here instead of pushing in, so its parameter editor — the Properties
     /// Inspector's existing PCell-instance context, brief-L5-followups.md §5 — reflects it).</summary>
-    public void SelectInstance(int index) => SetInstanceSelection([index]);
+    public void SelectInstance(int index)
+    {
+        // Invalidated HERE rather than inside SetInstanceSelection, which the overlap cycle itself
+        // calls — see SetRulerSelection's own note. This is a selection arriving from somewhere other
+        // than the click stack, so the stack no longer describes what is selected.
+        _cycleCache.Clear();
+        SetInstanceSelection([index]);
+    }
 
     /// <summary>Mirrors <c>SetSelection</c> for instances — brief-L3a-followups.md §2/R-fix-2:
     /// <paramref name="clearOtherKind"/> is false for Shift/Ctrl add-toggle (keep whatever shapes are
@@ -76,7 +83,16 @@ public sealed partial class LayoutEditorViewModel
         _selectedInstanceIndices.Clear();
         _selectedInstanceIndices.AddRange(distinct);
 
-        if (clearOtherKind && _selectedIndices.Count > 0) { _selectedIndices.Clear(); _pickedVertexIndex = null; _cycleCache.Clear(); }
+        if (clearOtherKind)
+        {
+            if (_selectedIndices.Count > 0) { _selectedIndices.Clear(); _pickedVertexIndex = null; }
+
+            // §9B.6: AND the third channel. Owner report, 2026-08-27 — cycling from a ruler down to a
+            // placed cell left the ruler selected as well, while cycling to a plain shape did not.
+            // Nothing to do with PCells or with MKlopf: SetSelection had been taught about rulers and
+            // this, its instance-side mirror, had not.
+            if (_selectedRulerIndices.Count > 0) _selectedRulerIndices.Clear();
+        }
 
         SelectionStatusText = ComputeSelectionStatus();
         RebuildOverlay();

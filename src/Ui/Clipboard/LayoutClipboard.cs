@@ -69,7 +69,11 @@ public static class LayoutClipboard
         Engine.Mom.PlanarCurrentDensityMap? currentDensity = null,
         IReadOnlyList<Layout.DrcMarker>? drcMarkers = null)
     {
-        if (payload.Shapes.Count == 0 && payload.Instances.Count == 0) return;
+        // §9B.9: RULERS COUNT AS CONTENT. Owner report, 2026-08-27 — pasting a ruler produced some
+        // other geometry instead of it. A ruler-only copy fell out of this guard and returned
+        // without touching the system clipboard AT ALL, so the previous copy was still sitting there
+        // and Ctrl+V pasted that. The copy did not fail loudly; it did not happen.
+        if (payload.Shapes.Count == 0 && payload.Instances.Count == 0 && payload.Rulers.Count == 0) return;
 
         string json = LayoutFragment.Serialize(payload);
 
@@ -166,7 +170,12 @@ public static class LayoutClipboard
     /// arrow at the conductor end, and an instance's extent has to be resolved through its cell. Using
     /// the stored bboxes is exactly what cropped the owner's ports off the bottom of the page.</para>
     /// </summary>
-    private static (double WorldW, double WorldH, double BbMinX, double BbMinY)? ComputeSelectionBounds(ExportContext ctx)
+    /// <param name="pageW">The flavour's own page width in device pixels — the SMALLER the page, the
+    /// larger a <c>Fixed</c> ruler's world text, so each renderer passes its own rather than sharing
+    /// one guess (see the two-pass note below).</param>
+    /// <param name="pageH">That flavour's page height.</param>
+    private static (double WorldW, double WorldH, double BbMinX, double BbMinY)? ComputeSelectionBounds(
+        ExportContext ctx, double pageW = DefaultBoundsPageW, double pageH = DefaultBoundsPageH)
     {
         var bbox = Bbox.Empty;
         var conductorAt = LayoutPortDirection.LookupFor(ctx.Payload.Shapes);
@@ -198,12 +207,88 @@ public static class LayoutClipboard
             if (!ib.IsEmpty) bbox = bbox.Union(ib);
         }
 
+        // ── R-rul-16: rulers, in EXACTLY TWO PASSES ───────────────────────────────────────────────
+        //
+        // A Fixed-mode ruler's readout is n screen POINTS, so its WORLD extent depends on the export
+        // scale — which depends on these bounds, which depend on that extent. That is circular, and
+        // this method's own doc comment above records the family of bug it belongs to: measuring a
+        // label's STORED bbox (a point) instead of its painted glyphs is what cropped the owner's
+        // ports off the page.
+        //
+        // Pass 1 unions the line endpoints and every SCALED ruler's measured text — neither depends
+        // on the scale. Pass 2 measures the FIXED text at the scale pass 1 chose, and unions that.
+        // The iteration is MONOTONE (a larger bbox means a smaller scale means smaller world-space
+        // fixed text), so a second pass cannot make it worse and the residual is absorbed by the page
+        // margin every renderer already applies. Do not iterate to a fixed point; do not skip pass 2.
+        // R-rul-6: the SOURCE document's own display unit, carried in the payload — never a
+        // hard-coded one here.
+        var unit = ctx.Payload.DisplayUnit;
+        int dbuPerMicron = ctx.Payload.DbuPerMicron > 0 ? ctx.Payload.DbuPerMicron : LayoutUnits.DefaultDbuPerMicron;
+
+        foreach (var r in ctx.Payload.Rulers)
+        {
+            bbox = bbox.Union(new Bbox(Math.Min(r.X1, r.X2), Math.Min(r.Y1, r.Y2),
+                                       Math.Max(r.X1, r.X2), Math.Max(r.Y1, r.Y2)));
+            if (r.SizeMode == RulerSizeMode.Scaled)
+                bbox = bbox.Union(LayoutRenderer.MeasureRulerWorldBbox(r, unit, dbuPerMicron, 0));
+        }
+
         if (bbox.IsEmpty) return null;
+
+        // A legitimately ONE-DIMENSIONAL selection is not an empty one. A purely horizontal or
+        // vertical ruler — which is most rulers — has zero extent on one axis, and the degenerate
+        // check at the bottom of this method used to refuse the whole graphic export for it: no PDF,
+        // no SVG, no bitmap, and nothing said. Give the flat axis a nominal extent so pass 2 has a
+        // scale to work with; the real text measurement then dominates it. (The same refusal applied
+        // to any 1-D selection and predates rulers — they are just what finally produced one.)
+        bbox = InflateDegenerateAxes(bbox);
+
+        if (ctx.Payload.Rulers.Any(r => r.SizeMode == RulerSizeMode.Fixed))
+        {
+            double pass1Zoom = ZoomForBounds(bbox, pageW, pageH);
+            if (pass1Zoom > 0)
+                foreach (var r in ctx.Payload.Rulers)
+                    if (r.SizeMode == RulerSizeMode.Fixed)
+                        bbox = bbox.Union(LayoutRenderer.MeasureRulerWorldBbox(r, unit, dbuPerMicron, pass1Zoom));
+        }
 
         double worldW = bbox.MaxX - bbox.MinX;
         double worldH = bbox.MaxY - bbox.MinY;
         if (worldW < 1 || worldH < 1) return null;
         return (worldW, worldH, bbox.MinX, bbox.MinY);
+    }
+
+    /// <summary>Widens an axis with no extent to an eighth of the other, so a flat selection still
+    /// gets a page. Never touches an axis that already has extent.</summary>
+    private static Bbox InflateDegenerateAxes(Bbox bb)
+    {
+        long w = bb.MaxX - bb.MinX, h = bb.MaxY - bb.MinY;
+        if (w >= 1 && h >= 1) return bb;
+
+        long span = Math.Max(Math.Max(w, h), 1);
+        long padX = w >= 1 ? 0 : Math.Max(1, span / 8);
+        long padY = h >= 1 ? 0 : Math.Max(1, span / 8);
+        return new Bbox(bb.MinX - padX, bb.MinY - padY, bb.MaxX + padX, bb.MaxY + padY);
+    }
+
+    /// <summary>The page margin every export flavour applies, as a fraction of the world extent.</summary>
+    private const double ExportPad = 0.15;
+
+    /// <summary>The most conservative page the three flavours use — the PDF's. Only reached by a
+    /// caller that does not state its own (the test seam), and conservative in the safe direction: a
+    /// smaller page means a smaller scale means LARGER world-space fixed text, so the bounds it
+    /// produces contain what any larger page would paint.</summary>
+    private const double DefaultBoundsPageW = 720.0;
+    private const double DefaultBoundsPageH = 540.0;
+
+    /// <summary>The one place the three renderers' shared zoom rule lives, so pass 1 of
+    /// <see cref="ComputeSelectionBounds"/> cannot compute a different scale from the one that is
+    /// actually used to draw.</summary>
+    private static double ZoomForBounds(Bbox bbox, double pageW, double pageH)
+    {
+        double w = bbox.MaxX - bbox.MinX, h = bbox.MaxY - bbox.MinY;
+        if (w < 1 || h < 1) return 0;
+        return Math.Min(pageW / (w * (1 + 2 * ExportPad)), pageH / (h * (1 + 2 * ExportPad)));
     }
 
     /// <summary>A transient, throwaway <see cref="LayoutView"/> wrapping the exported shapes AND
@@ -215,8 +300,16 @@ public static class LayoutClipboard
     {
         var view = new LayoutView();
         if (ctx.Payload.DbuPerMicron > 0) view.DbuPerMicron = ctx.Payload.DbuPerMicron;
+        // R-rul-6: the readout renders in the SOURCE document's display unit, so a ruler copied out
+        // of a mil-unit board says "mil" in the slide too.
+        view.DisplayUnit = ctx.Payload.DisplayUnit;
         foreach (var s in ctx.Payload.Shapes) view.Shapes.Add(s);
         foreach (var i in ctx.Payload.Instances) view.Instances.Add(i);
+        // §9B.9: one line, and the ruler then appears in the PDF, SVG and bitmap flavours with no
+        // export-specific rendering code at all. Rulers are DOCUMENT CONTENT, so they survive the
+        // export's suppression of grid/ghost/selection (which is overlay state); selection handles do
+        // not, which is correct.
+        foreach (var r in ctx.Payload.Rulers) view.Rulers.Add(r);
         return view;
     }
 
@@ -283,11 +376,11 @@ public static class LayoutClipboard
         var tech = ctx.Tech;
         try
         {
-            var b = ComputeSelectionBounds(ctx);
+            var b = ComputeSelectionBounds(ctx, 720.0, 540.0);
             if (b is null) return null;
             var (worldW, worldH, bbMinX, bbMinY) = b.Value;
 
-            const double pad = 0.15;
+            const double pad = ExportPad;
             double zoom = Math.Min(720.0 / (worldW * (1 + 2 * pad)), 540.0 / (worldH * (1 + 2 * pad)));
             float pxW = Math.Clamp((float)Math.Ceiling(worldW * zoom * (1 + 2 * pad)), 80, 720);
             float pxH = Math.Clamp((float)Math.Ceiling(worldH * zoom * (1 + 2 * pad)), 80, 540);
@@ -315,11 +408,11 @@ public static class LayoutClipboard
         var tech = ctx.Tech;
         try
         {
-            var b = ComputeSelectionBounds(ctx);
+            var b = ComputeSelectionBounds(ctx, 800.0, 800.0);
             if (b is null) return null;
             var (worldW, worldH, bbMinX, bbMinY) = b.Value;
 
-            const double pad = 0.15;
+            const double pad = ExportPad;
             double zoom = Math.Min(800.0 / (worldW * (1 + 2 * pad)), 800.0 / (worldH * (1 + 2 * pad)));
             int pxW = Math.Clamp((int)Math.Ceiling(worldW * zoom * (1 + 2 * pad)), 80, 2400);
             int pxH = Math.Clamp((int)Math.Ceiling(worldH * zoom * (1 + 2 * pad)), 80, 2400);
@@ -348,11 +441,11 @@ public static class LayoutClipboard
         var tech = ctx.Tech;
         try
         {
-            var b = ComputeSelectionBounds(ctx);
+            var b = ComputeSelectionBounds(ctx, 1200.0, 1200.0);
             if (b is null) return null;
             var (worldW, worldH, bbMinX, bbMinY) = b.Value;
 
-            const double pad   = 0.15;
+            const double pad   = ExportPad;
             const int    maxPx = 1200;
             double zoom = Math.Min(maxPx / (worldW * (1 + 2 * pad)), maxPx / (worldH * (1 + 2 * pad)));
             int pxW = Math.Clamp((int)Math.Ceiling(worldW * zoom * (1 + 2 * pad)), 80, maxPx);

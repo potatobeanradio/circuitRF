@@ -425,9 +425,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // All must select everything: every shape (bitmaps included — BitmapShape is a LayoutShape,
         // already covered) AND every instance (ordinary AND PCell — an instance is an instance, R-L5-1's
         // whole point being that a PCell instance is not a special case anywhere else either).
+        // docs/design/layout-view.md §9B: and every RULER, for exactly the reason the instance bug
+        // above records — Select All must select everything the user can select, or Ctrl+A then Delete
+        // silently leaves one kind behind.
         SelectAllCommand = new RelayCommand(() =>
         {
-            ReplaceMixedSelection(Enumerable.Range(0, Model.Shapes.Count), Enumerable.Range(0, Model.Instances.Count));
+            ReplaceMixedSelection(Enumerable.Range(0, Model.Shapes.Count),
+                                  Enumerable.Range(0, Model.Instances.Count),
+                                  Enumerable.Range(0, Model.Rulers.Count));
             _cycleCache.Clear();
         });
         DeselectAllCommand = new RelayCommand(() =>
@@ -525,7 +530,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
             bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
             bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
-            if (shapesChanged || instancesChanged) SelectionStatusText = ComputeGenericSelectionStatus();
+            bool rulersChanged = PruneRulerSelection();
+            if (shapesChanged || instancesChanged || rulersChanged) SelectionStatusText = ComputeSelectionStatus();
 
             // Unconditionally, not only when the selection LIST changed. A PCell parameter committed
             // from the Properties Inspector re-points the selected instance at a different generated
@@ -673,7 +679,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// tool in this list: a single click commits a <see cref="ViaShape"/> immediately at the snapped
     /// point, technology-default pad/drill, no drag and no ghost-then-click two-step — see
     /// <see cref="ViaToolAvailability"/> for why it is not always enabled.</summary>
-    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label, Instance, Via, Port }
+    /// <summary><c>Ruler</c> (docs/design/layout-view.md §9B.5) places an in-design MEASUREMENT, not
+    /// artwork: two clicks with a live preview of the whole ruler, readout included, and the tool stays
+    /// armed afterward because measuring is something a user does several times in a row. It commits to
+    /// <see cref="LayoutView.Rulers"/>, never to <c>Shapes</c> — see <see cref="RulerAnnotation"/>.</summary>
+    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label, Instance, Via, Port, Ruler }
 
     [ObservableProperty] private Tool _activeTool = Tool.Select;
 
@@ -881,6 +891,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // Guarded on Count>0 so a replace against an already-empty instance selection is a no-op (no
         // spurious overlay rebuild) — the overwhelmingly common case.
         if (clearOtherKind && _selectedInstanceIndices.Count > 0) _selectedInstanceIndices.Clear();
+        // §9B.6: rulers are the third channel and follow the same rule — a REPLACE owns the whole
+        // selection, so it clears them too.
+        if (clearOtherKind && _selectedRulerIndices.Count > 0) _selectedRulerIndices.Clear();
 
         SelectionStatusText = ComputeSelectionStatus();
         RebuildOverlay();
@@ -907,12 +920,20 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         bool hasShapes = _selectedIndices.Count > 0;
         bool hasInstances = _selectedInstanceIndices.Count > 0;
-        if (hasShapes && hasInstances)
+        bool hasRulers = _selectedRulerIndices.Count > 0;
+
+        // A mixed selection has no single "type · layer" detail to show, so it reports the count of
+        // each kind that is actually present — now three kinds, not two (docs/design/layout-view.md §9B).
+        int kinds = (hasShapes ? 1 : 0) + (hasInstances ? 1 : 0) + (hasRulers ? 1 : 0);
+        if (kinds > 1)
         {
-            string shapeWord = _selectedIndices.Count == 1 ? "shape" : "shapes";
-            string instWord = _selectedInstanceIndices.Count == 1 ? "instance" : "instances";
-            return $"{_selectedIndices.Count} {shapeWord} + {_selectedInstanceIndices.Count} {instWord}";
+            var parts = new List<string>(3);
+            if (hasShapes) parts.Add($"{_selectedIndices.Count} shape{(_selectedIndices.Count == 1 ? "" : "s")}");
+            if (hasInstances) parts.Add($"{_selectedInstanceIndices.Count} instance{(_selectedInstanceIndices.Count == 1 ? "" : "s")}");
+            if (hasRulers) parts.Add($"{_selectedRulerIndices.Count} ruler{(_selectedRulerIndices.Count == 1 ? "" : "s")}");
+            return string.Join(" + ", parts);
         }
+        if (hasRulers) return ComputeRulerSelectionStatus();
         if (hasInstances) return ComputeInstanceSelectionStatus();
         return ComputeGenericSelectionStatus();
     }
@@ -948,7 +969,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     // any selection change originating elsewhere (SelectAll/DeselectAll/marquee/delete below). The
     // generic ClickCycleCache<T> (docs/sonnet-briefs/brief-snap-distance-and-geometry-snap.md R-snp-9)
     // is the SAME cycling algorithm geometry-snap candidate cycling reuses — do not fork a second one.
-    private readonly ClickCycleCache<int> _cycleCache = new();
+    private readonly ClickCycleCache<LayoutPick> _cycleCache = new();
 
     // ── Select-tool gesture state ─────────────────────────────────────────────
 
@@ -962,6 +983,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private bool _marqueeAdd, _marqueeToggle;      // Shift / Ctrl captured at press
     private List<int> _marqueeBaseSelection = [];
     private List<int> _marqueeBaseInstanceSelection = [];
+    private List<int> _marqueeBaseRulerSelection = [];
 
     // ── Live marquee preview (L1i, docs/sonnet-briefs/brief-L1i-live-marquee-selection.md; extended
     // to instances by brief-L3a-followups.md §2/R-fix-3) ────────────────────────────────────────────
@@ -974,6 +996,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private readonly List<int> _marqueePreview = [];
     private readonly List<int> _marqueeInstanceHitsScratch = [];
     private readonly List<int> _marqueeInstancePreview = [];
+    // §9B.6: rulers marquee on §6.2's SAME enclose/crossing rule, through the same
+    // CombineMarqueePreview Shift/Ctrl/plain combination — a third pair of scratch buffers, not a
+    // third rule.
+    private readonly List<int> _marqueeRulerHitsScratch = [];
+    private readonly List<int> _marqueeRulerPreview = [];
     private (long X, long Y)? _marqueeLastComputedCorner; // null = "not computed yet this drag"
 
     /// <summary>How many times <see cref="ComputeMarqueeSelection"/> actually ran (as opposed to being
@@ -1072,50 +1099,95 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         _pickedVertexIndex = null;
 
+        // §9B.6: a ruler ENDPOINT is a handle, and beats the cycle for the same reason L1d's handles
+        // do — a press on a handle must not disturb the selection. Selecting a ruler is NOT here; it
+        // is an entry in the pick stack below, so a click on an already-selected ruler cycles down to
+        // whatever is underneath it.
+        if (TryBeginRulerEndpointDrag(px, py, shift, ctrl, tolDbu))
+            return;
+
+        // Everything under this click, in paint order — see BuildPickStack. Computed BEFORE the
+        // geometry-snap grab because R-rul-11 puts rulers above artwork, and a snap marker is always
+        // about artwork (a ruler is never a snap target, §9B.11): a marker must not claim a press that
+        // landed on a ruler lying over the feature it belongs to.
+        var picks = BuildPickStack(px, py, tolDbu);
+
         // brief-snap-distance-and-geometry-snap.md R-snp-8/R-snp-10: geometry snap sits between L1d's
         // handle check (above — handles still win within their own radius on a selected shape) and
         // the ordinary hit-test/cycling fallback below. A marker showing at the click point consumes
         // the click for its OWNING shape/instance even when the click itself misses that shape's own
         // hit-test — this is the feature's headline behaviour.
-        if (TryBeginSnapMarkerDrag(px, py, shift, ctrl, snapTolDbu))
+        //
+        // It stays AHEAD of the cycle, which is load-bearing and was briefly got wrong here: pressing
+        // a second time at the same point is normally "now drag it", not "show me the next thing", so
+        // letting the cycle pre-empt this would break select-then-drag onto a snap target. The only
+        // thing that outranks it is a RULER on top (R-rul-11), and a marker is always about artwork
+        // since a ruler is never a snap target (§9B.11).
+        if (picks is not [{ Kind: LayoutPickKind.Ruler }, ..]
+            && TryBeginSnapMarkerDrag(px, py, shift, ctrl, snapTolDbu))
             return;
 
         if (_cycleCache.Matches(px, py, tolDbu, alt))
         {
-            int advanced = _cycleCache.Advance(px, py);
-            ApplyClickSelection(advanced, shift, ctrl);
+            var advanced = _cycleCache.Advance(px, py);
+            ApplyPickSelection(advanced, shift, ctrl);
             UpdateSelectionStatusFromCycle();
             if (!shift && !ctrl) BeginMoveDrag(px, py);
             return;
         }
 
-        var stack = LayoutHitTest.HitStack(Model, Technology, px, py, tolDbu, PortMarkerRegion);
-        if (stack.Count == 0)
+        if (picks.Count == 0)
         {
             _cycleCache.Clear();
-
-            // L3a (R-L3a-5): no shape under the click — try an instance before falling back to a
-            // marquee. Instances get their own (simpler, no cycling) click-select: a fresh press
-            // always re-hit-tests, since instances are typically few enough that "which one is on
-            // top" rarely needs the shape overlap-cycling machinery.
-            var instStack = LayoutHitTest.HitInstanceStack(Model, Technology, InstanceBaseDir, px, py, tolDbu);
-            if (instStack.Count > 0)
-            {
-                ApplyInstanceClickSelection(instStack[0], shift, ctrl);
-                if (!shift && !ctrl) BeginMoveDrag(px, py);
-                return;
-            }
-
-            if (!shift && !ctrl) SetSelection([]); // clearOtherKind:true (default) clears instances too
+            if (!shift && !ctrl) SetSelection([]); // clearOtherKind:true (default) clears the other two
             BeginMarquee(px, py, shift, ctrl);
             return;
         }
 
-        int hitIndex = _cycleCache.Rebuild(px, py, stack);
-        ApplyClickSelection(hitIndex, shift, ctrl);
+        var hit = _cycleCache.Rebuild(px, py, picks);
+        ApplyPickSelection(hit, shift, ctrl);
         UpdateSelectionStatusFromCycle();
 
         if (!shift && !ctrl) BeginMoveDrag(px, py);
+    }
+
+    /// <summary>
+    /// Everything under one click, ordered the way it is PAINTED: rulers first (they draw above every
+    /// layer and above instances, R-rul-11), then shapes in §6.2's own z-order, then instances.
+    ///
+    /// <para><b>Instances are still only reached when no shape was hit</b> — L3a's own rule
+    /// (R-L3a-5), preserved exactly. What changed is that they now live in the same stack rather than
+    /// being selected off to the side, so a ruler drawn over a placed cell can be clicked through to
+    /// reach it. With no rulers in the document this produces precisely the stack the shape-only
+    /// version did, which is why existing cycling behaviour is unchanged.</para>
+    /// </summary>
+    private List<LayoutPick> BuildPickStack(long px, long py, long tolDbu)
+    {
+        var picks = new List<LayoutPick>();
+
+        foreach (int i in LayoutRulerHitTest.HitStack(Model, px, py, tolDbu, LastZoomPxPerDbu))
+            picks.Add(new LayoutPick(LayoutPickKind.Ruler, i));
+
+        var shapes = LayoutHitTest.HitStack(Model, Technology, px, py, tolDbu, PortMarkerRegion);
+        foreach (int i in shapes) picks.Add(new LayoutPick(LayoutPickKind.Shape, i));
+
+        if (shapes.Count == 0)
+            foreach (int i in LayoutHitTest.HitInstanceStack(Model, Technology, InstanceBaseDir, px, py, tolDbu))
+                picks.Add(new LayoutPick(LayoutPickKind.Instance, i));
+
+        return picks;
+    }
+
+    /// <summary>Routes one picked entry to its own channel's click-selection rule — each of the three
+    /// already knows how to handle Shift/Ctrl and how to clear the other two.</summary>
+    private void ApplyPickSelection(LayoutPick pick, bool shift, bool ctrl)
+    {
+        switch (pick.Kind)
+        {
+            case LayoutPickKind.Ruler:    ApplyRulerClickSelection(pick.Index, shift, ctrl); break;
+            case LayoutPickKind.Instance: ApplyInstanceClickSelection(pick.Index, shift, ctrl); break;
+            default:                      ApplyClickSelection(pick.Index, shift, ctrl); break;
+        }
     }
 
     /// <summary>Tests Ctrl/Cmd+click-insert FIRST, then handles (R-L1d-2 priority order), then the
@@ -1534,22 +1606,45 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
     }
 
+    /// <summary>"Rect · M1 · 2 of 3" — what is selected plus where it sits in the click's own stack,
+    /// so a user cycling through overlapping objects can see there is more underneath. Now says it for
+    /// all three kinds, since all three cycle.</summary>
     private void UpdateSelectionStatusFromCycle()
     {
-        if (_selectedIndices.Count == 1 && _cycleCache.HasStack && _cycleCache.Stack.Count > 1)
+        if (_cycleCache.HasStack && _cycleCache.Stack.Count > 1
+            && CurrentSinglePick() is { } pick
+            && DescribePick(pick) is { Length: > 0 } what)
         {
-            int idx = _selectedIndices[0];
             int pos = -1;
-            for (int i = 0; i < _cycleCache.Stack.Count; i++) if (_cycleCache.Stack[i] == idx) { pos = i; break; }
-            if (pos >= 0 && idx >= 0 && idx < Model.Shapes.Count)
+            for (int i = 0; i < _cycleCache.Stack.Count; i++) if (_cycleCache.Stack[i] == pick) { pos = i; break; }
+            if (pos >= 0)
             {
-                var shape = Model.Shapes[idx];
-                SelectionStatusText = $"{ShapeTypeName(shape)} · {LayerDisplayName(shape.Layer)} · {pos + 1} of {_cycleCache.Stack.Count}";
+                SelectionStatusText = $"{what} · {pos + 1} of {_cycleCache.Stack.Count}";
                 return;
             }
         }
-        SelectionStatusText = ComputeGenericSelectionStatus();
+        SelectionStatusText = ComputeSelectionStatus();
     }
+
+    /// <summary>The one selected thing, when exactly one thing of exactly one kind is selected —
+    /// which is the only state the "n of m" readout can describe. Null otherwise.</summary>
+    private LayoutPick? CurrentSinglePick()
+    {
+        int total = _selectedIndices.Count + _selectedInstanceIndices.Count + _selectedRulerIndices.Count;
+        if (total != 1) return null;
+        if (_selectedIndices.Count == 1) return new LayoutPick(LayoutPickKind.Shape, _selectedIndices[0]);
+        if (_selectedInstanceIndices.Count == 1) return new LayoutPick(LayoutPickKind.Instance, _selectedInstanceIndices[0]);
+        return new LayoutPick(LayoutPickKind.Ruler, _selectedRulerIndices[0]);
+    }
+
+    private string DescribePick(LayoutPick pick) => pick.Kind switch
+    {
+        LayoutPickKind.Shape when pick.Index >= 0 && pick.Index < Model.Shapes.Count =>
+            $"{ShapeTypeName(Model.Shapes[pick.Index])} · {LayerDisplayName(Model.Shapes[pick.Index].Layer)}",
+        LayoutPickKind.Instance => ComputeInstanceSelectionStatus(),
+        LayoutPickKind.Ruler    => ComputeRulerSelectionStatus(),
+        _                       => "",
+    };
 
     /// <summary>True while the current move drag is a lone POINT-LIKE shape — today, an EM port —
     /// which geometry snap may attract to an absolute target the same way a grab-role drag can.
@@ -1592,7 +1687,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private void BeginMoveDrag(long px, long py)
     {
-        if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return;
+        if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0 && _selectedRulerIndices.Count == 0) return;
         _selectDragKind = SelectDragKind.Move;
 
         // A lone port anchors the drag at its OWN anchor rather than at the raw click, so what lands
@@ -1623,6 +1718,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _marqueeToggle = ctrl;
         _marqueeBaseSelection = _selectedIndices.ToList();
         _marqueeBaseInstanceSelection = _selectedInstanceIndices.ToList();
+        _marqueeBaseRulerSelection = _selectedRulerIndices.ToList();
         _marqueeLastComputedCorner = null;
         ComputeMarqueeSelection(px, py);
         _marqueeLastComputedCorner = (px, py);
@@ -1656,6 +1752,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         _marqueeHitsScratch.Clear();
         _marqueeInstanceHitsScratch.Clear();
+
+        // Rulers are NOT in the spatial index (§9B.11 — tens of them, not 500,000), so they are
+        // scanned directly rather than queried; the enclose/crossing predicate is §6.2's own.
+        _marqueeRulerHitsScratch.Clear();
+        _marqueeRulerHitsScratch.AddRange(LayoutRulerHitTest.Marquee(Model, marqueeBb, leftToRight));
 
         // L2b/R-L3a-4: the R-tree query is an INTERSECT test against a possibly-larger-than-exact
         // conservative bbox — a safe superset for BOTH enclose and crossing mode, since containment
@@ -1697,6 +1798,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         CombineMarqueePreview(_marqueePreview, _marqueeBaseSelection, _marqueeHitsScratch);
         CombineMarqueePreview(_marqueeInstancePreview, _marqueeBaseInstanceSelection, _marqueeInstanceHitsScratch);
+        CombineMarqueePreview(_marqueeRulerPreview, _marqueeBaseRulerSelection, _marqueeRulerHitsScratch);
 
         return _marqueePreview;
     }
@@ -1732,14 +1834,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private void UpdateMarqueeSelectionStatus()
     {
-        int shapeCount = _marqueePreview.Count, instCount = _marqueeInstancePreview.Count;
-        SelectionStatusText = (shapeCount, instCount) switch
-        {
-            (0, 0) => "",
-            ( > 0, 0) => shapeCount == 1 ? "1 shape" : $"{shapeCount} shapes",
-            (0, > 0) => instCount == 1 ? "1 instance" : $"{instCount} instances",
-            _ => $"{shapeCount} shape{(shapeCount == 1 ? "" : "s")} + {instCount} instance{(instCount == 1 ? "" : "s")}",
-        };
+        var parts = new List<string>(3);
+        if (_marqueePreview.Count > 0) parts.Add($"{_marqueePreview.Count} shape{(_marqueePreview.Count == 1 ? "" : "s")}");
+        if (_marqueeInstancePreview.Count > 0) parts.Add($"{_marqueeInstancePreview.Count} instance{(_marqueeInstancePreview.Count == 1 ? "" : "s")}");
+        if (_marqueeRulerPreview.Count > 0) parts.Add($"{_marqueeRulerPreview.Count} ruler{(_marqueeRulerPreview.Count == 1 ? "" : "s")}");
+        SelectionStatusText = parts.Count == 0 ? "" : string.Join(" + ", parts);
     }
 
     /// <summary>Escape (or any other abandonment of an in-progress marquee, e.g. the pointer button
@@ -1752,6 +1851,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_selectDragKind != SelectDragKind.Marquee) return;
         _marqueePreview.Clear();
         _marqueeInstancePreview.Clear();
+        _marqueeRulerPreview.Clear();
         _marqueeLastComputedCorner = null;
         SelectionStatusText = ComputeSelectionStatus();
     }
@@ -1804,6 +1904,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             if (!leftDown) { ResetScaleDragState(); RebuildOverlay(); return; }
             UpdateScaleDragPreview(px, py);
+            return;
+        }
+
+        if (_rulerEndpointDrag is not null)
+        {
+            if (!leftDown) { CancelRulerEndpointDrag(); RebuildOverlay(); return; }
+            UpdateRulerEndpointDrag(wx, wy, mods, snapTolDbu);
             return;
         }
 
@@ -1899,6 +2006,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             CommitScaleDragFromPointer();
             RebuildOverlay();
+            return;
+        }
+
+        if (_rulerEndpointDrag is not null)
+        {
+            CommitRulerEndpointDrag();
             return;
         }
 
@@ -2120,7 +2233,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 ? LayoutFragment.Translate(srcInstances, _moveLiveDx, _moveLiveDy)
                 : [];
 
-            InsertPastedMixed(shapes, instances, "Duplicate");
+            var srcRulers = SelectedRulers();
+            var rulers = srcRulers.Count > 0
+                ? LayoutFragment.Translate(srcRulers, _moveLiveDx, _moveLiveDy)
+                : [];
+
+            InsertPastedMixed(shapes, instances, "Duplicate", rulers);
         }
 
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
@@ -2146,6 +2264,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             {
                 IUiCommand instCmd = new Commands.Layout.MoveInstancesCommand(Model, _selectedInstanceIndices, _moveLiveDx, _moveLiveDy);
                 combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
+            }
+            // §9B: the third channel joins the same composite, so a mixed selection still moves as ONE
+            // undo entry rather than acquiring a second one for its rulers.
+            if (_selectedRulerIndices.Count > 0)
+            {
+                IUiCommand rulerCmd = new Commands.Layout.MoveRulersCommand(Model, _selectedRulerIndices, _moveLiveDx, _moveLiveDy);
+                combined = combined is null ? rulerCmd : new CompositeCommand(combined, rulerCmd);
             }
             if (combined is not null)
             {
@@ -2240,10 +2365,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void CommitMarquee(long releaseX, long releaseY)
     {
         ComputeMarqueeSelection(releaseX, releaseY);
-        ReplaceMixedSelection(_marqueePreview, _marqueeInstancePreview);
+        ReplaceMixedSelection(_marqueePreview, _marqueeInstancePreview, _marqueeRulerPreview);
         _cycleCache.Clear();
         _marqueePreview.Clear();
         _marqueeInstancePreview.Clear();
+        _marqueeRulerPreview.Clear();
         _marqueeLastComputedCorner = null;
     }
 
@@ -2252,15 +2378,19 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// kind" here; this method IS both kinds' new state, together, in one overlay rebuild — unlike
     /// <see cref="SetSelection"/>/<see cref="SetInstanceSelection"/>, which each only ever own one
     /// kind and treat the other as either "clear it" or "leave it alone."</summary>
-    private void ReplaceMixedSelection(IEnumerable<int> shapeIndices, IEnumerable<int> instanceIndices)
+    private void ReplaceMixedSelection(IEnumerable<int> shapeIndices, IEnumerable<int> instanceIndices,
+                                       IEnumerable<int>? rulerIndices = null)
     {
         var shapes = new List<int>();
         foreach (var i in shapeIndices) if (i >= 0 && i < Model.Shapes.Count && !shapes.Contains(i)) shapes.Add(i);
         var insts = new List<int>();
         foreach (var i in instanceIndices) if (i >= 0 && i < Model.Instances.Count && !insts.Contains(i)) insts.Add(i);
+        var rulers = new List<int>();
+        foreach (var i in rulerIndices ?? []) if (i >= 0 && i < Model.Rulers.Count && !rulers.Contains(i)) rulers.Add(i);
 
         _selectedIndices.Clear(); _selectedIndices.AddRange(shapes);
         _selectedInstanceIndices.Clear(); _selectedInstanceIndices.AddRange(insts);
+        _selectedRulerIndices.Clear(); _selectedRulerIndices.AddRange(rulers);
         _pickedVertexIndex = null;
 
         SelectionStatusText = ComputeSelectionStatus();
@@ -2282,7 +2412,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         var shapeIndices = _selectedIndices.ToList();
         var instIndices = _selectedInstanceIndices.ToList();
-        if (shapeIndices.Count == 0 && instIndices.Count == 0) return;
+        var rulerIndices = _selectedRulerIndices.ToList();
+        if (shapeIndices.Count == 0 && instIndices.Count == 0 && rulerIndices.Count == 0) return;
 
         IUiCommand? combined = null;
         if (shapeIndices.Count > 0) combined = new Commands.Layout.DeleteShapesCommand(Model, shapeIndices);
@@ -2290,6 +2421,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             IUiCommand instCmd = new Commands.Layout.DeleteInstancesCommand(Model, instIndices);
             combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
+        }
+        if (rulerIndices.Count > 0)
+        {
+            IUiCommand rulerCmd = new Commands.Layout.DeleteRulersCommand(Model, rulerIndices);
+            combined = combined is null ? rulerCmd : new CompositeCommand(combined, rulerCmd);
         }
         Execute(combined!);
         SetSelection([]);
@@ -2315,7 +2451,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// entry, exactly as before; only "which kinds move together" changed).</summary>
     private void NudgeSelection(Key key, KeyModifiers mods)
     {
-        if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return;
+        if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0 && _selectedRulerIndices.Count == 0) return;
         long step = OneSnapStepDbu;
         if ((mods & KeyModifiers.Shift) != 0) step *= 10;
 
@@ -2330,6 +2466,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             IUiCommand instCmd = new Commands.Layout.MoveInstancesCommand(Model, _selectedInstanceIndices, dx, dy);
             combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
+        }
+        if (_selectedRulerIndices.Count > 0)
+        {
+            IUiCommand rulerCmd = new Commands.Layout.MoveRulersCommand(Model, _selectedRulerIndices, dx, dy);
+            combined = combined is null ? rulerCmd : new CompositeCommand(combined, rulerCmd);
         }
         if (combined is not null) Execute(combined);
     }
@@ -2535,6 +2676,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // commits it, regardless of the currently active drawing tool.
         if (_pastePlacementShapes is not null) { CommitPastePlacement(); return; }
 
+        NoteZoomPxPerDbu(zoomPxPerDbu);
+
         if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
@@ -2542,6 +2685,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (ActiveTool == Tool.Via) { CommitViaPlacement(wx, wy, mods); return; }
 
         if (ActiveTool == Tool.Port) { CommitPortPlacement(wx, wy, mods, zoomPxPerDbu, Math.Max(snapTolDbu, 0)); return; }
+
+        // §9B.5: two clicks, and the tool stays armed after a commit.
+        if (ActiveTool == Tool.Ruler) { HandleRulerToolPress(wx, wy, mods, Math.Max(snapTolDbu, 0)); return; }
 
         const bool suspend = false;   // R-dup-2: Alt arms a duplicate drag; it no longer suspends snap.
 
@@ -2601,7 +2747,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
+        if (pixelDbu > 0) NoteZoomPxPerDbu(1.0 / pixelDbu);
+
         if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0), Math.Max(snapTolDbu, 0), Math.Max(gripLockTolDbu, 0)); return; }
+
+        // The Ruler tool snaps to geometry, so its marker (and its previewed number) have to be live
+        // while hovering — otherwise the point the click lands on is invisible until after the fact,
+        // exactly as for the Port tool above.
+        if (ActiveTool == Tool.Ruler) { HandleRulerToolMove(wx, wy, mods, Math.Max(snapTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance)
         {
@@ -2686,6 +2839,32 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (key == Key.F9) { ToggleSnapDbuEnabled(); return; }
         if (key == Key.F3 || key == Key.S) { GeometrySnapEnabled = !GeometrySnapEnabled; return; }
 
+        // ── D ARMS THE RULER TOOL ───────────────────────────────────────────────────────────
+        //
+        // "Dimension" — the CAD term for this object, and literally the DXF entity it exports as
+        // (§9B.10). Audited against every other bare letter this editor already takes before it was
+        // chosen: F is Zoom to Fit, M mirror, R rotate, S geometry snap, W the wire tool. D was free.
+        //
+        // Ctrl/Cmd+D is Duplicate and is excluded here, the same way R guards Ctrl+R (Run) and W
+        // guards Ctrl+W (Close) — this editor already has two letters whose bare and Ctrl forms mean
+        // different things, so a third is a pattern rather than a surprise. Alt is excluded too, since
+        // Alt arms a duplicate drag.
+        //
+        // Deliberately NOT gated on the active tool, unlike W: arming one tool from another is what
+        // the toolbar button already does, and making the keyboard take a detour through Select first
+        // would be a rule with nothing behind it. It IS excluded while a label is being typed (the
+        // branch above returns first, so "d" stays a character) and while any drag is in progress,
+        // where switching tools would abandon a gesture mid-way.
+        if (key == Key.D
+            && (mods & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) == 0
+            && _selectDragKind == SelectDragKind.None
+            && _handleDragKind == HandleDragKind.None
+            && _scaleDragKind == ScaleDragKind.None)
+        {
+            ActiveTool = Tool.Ruler;
+            return;
+        }
+
         // Mirrors SymbolEditorViewModel.OnKeyDown's Escape contract exactly: any in-progress
         // operation (a non-Select tool being active counts as one) cancels and switches to Select;
         // only when genuinely idle ON the Select tool does Escape clear the selection instead.
@@ -2707,6 +2886,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // cancels the draw — so the two-press contract holds whether the first foot is down or not.
             bool hasActiveOp = WireOperationInProgress
                              || ActiveTool != Tool.Select
+                             || RulerEndpointDragActive
                              || _isDrawingTwoPoint
                              || _drawPoints.Count > 0
                              || _selectDragKind != SelectDragKind.None
@@ -2852,6 +3032,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // because a handle drag only ever writes on release.
         ResetPCellHandleDragState();
         CancelInstancePlacement();
+        // §9B.5 R-rul-8: "the ruler needs no new escape logic, only to be one of them" — a half-placed
+        // ruler is abandoned here, on the same path every other drawing tool's in-progress geometry is.
+        CancelRulerPlacement();
+        CancelRulerEndpointDrag();
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
     }
@@ -3132,11 +3316,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         IReadOnlyList<LayoutShape>? pastePreview = null;
         IReadOnlyList<LayoutOverlay.GhostInstance>? pasteInstancePreview = null;
+        // §9B: the ruler half of the paste/duplicate ghost. Owner report, 2026-08-27 — Alt+dragging a
+        // ruler committed the copy correctly but showed nothing while aiming it, because rulers rode
+        // the COMMIT path (CommitDuplicateDrag) and not the ghost path. Same gap applied to Ctrl+V.
+        IReadOnlyList<RulerAnnotation>? pasteRulerPreview = null;
         if (_pastePlacementShapes is { } pasteShapes)
         {
             long dx = _pasteCursorX - _pastePlacementAnchorX;
             long dy = _pasteCursorY - _pastePlacementAnchorY;
             if (pasteShapes.Count > 0) pastePreview = LayoutFragment.Translate(pasteShapes, dx, dy);
+            if (_pastePlacementRulers.Count > 0)
+                pasteRulerPreview = LayoutFragment.Translate(_pastePlacementRulers, dx, dy);
 
             // The instance half of the ghost (owner report: the ports followed the cursor and the
             // MLIN did not). Translated the same way and by the same delta as the shapes, so the two
@@ -3172,6 +3362,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                         i < _duplicateGhostBoxOnly.Length && _duplicateGhostBoxOnly[i]));
                 pasteInstancePreview = ghosts;
             }
+
+            var srcGhostRulers = SelectedRulers();
+            if (srcGhostRulers.Count > 0)
+                pasteRulerPreview = LayoutFragment.Translate(srcGhostRulers, _moveLiveDx, _moveLiveDy);
         }
 
         // L1i: one highlight path, not a committed one and a preview one — the marquee preview IS the
@@ -3186,12 +3380,47 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         IReadOnlyList<int> effectiveInstanceHighlight = _selectDragKind == SelectDragKind.Marquee
             ? _marqueeInstancePreview
             : _selectedInstanceIndices;
+        IReadOnlyList<int> effectiveRulerHighlight = _selectDragKind == SelectDragKind.Marquee
+            ? _marqueeRulerPreview
+            : _selectedRulerIndices;
+
+        // §9B.6: the ruler drag-override channel carries BOTH a whole-ruler move (the shared Move
+        // drag, translated by the same live delta the shapes get) and a single-endpoint drag — which
+        // is what makes the readout re-measure live while an endpoint is being aimed.
+        IReadOnlyDictionary<int, RulerAnnotation>? rulerDragOverrides = null;
+        if (_rulerEndpointDrag is { } endpointDrag)
+        {
+            rulerDragOverrides = new Dictionary<int, RulerAnnotation> { [endpointDrag.Index] = endpointDrag.Preview };
+        }
+        else if (!duplicating && _selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0)
+                 && _selectedRulerIndices.Count > 0)
+        {
+            var dict = new Dictionary<int, RulerAnnotation>();
+            foreach (var idx in _selectedRulerIndices)
+            {
+                if (idx < 0 || idx >= Model.Rulers.Count) continue;
+                var clone = Model.Rulers[idx].Clone();
+                clone.X1 += _moveLiveDx; clone.Y1 += _moveLiveDy;
+                clone.X2 += _moveLiveDx; clone.Y2 += _moveLiveDy;
+                dict[idx] = clone;
+            }
+            rulerDragOverrides = dict;
+        }
 
         Overlay = new LayoutOverlay
         {
             InProgressPrimitive = inProgress,
             SelectedIndices = effectiveHighlight.ToArray(),
             SelectedInstanceIndices = effectiveInstanceHighlight.ToArray(),
+            SelectedRulerIndices = effectiveRulerHighlight.ToArray(),
+            RulerDragOverrides = rulerDragOverrides,
+            RulerPreview = BuildRulerPreview(),
+            RulerPastePreview = pasteRulerPreview,
+            // §9B.6: endpoint handles render only for a single-ruler selection, mirroring §6.3's
+            // vertex-handle rule — and never while another kind is mixed in, since the gesture they
+            // advertise (drag this endpoint alone) is not available then.
+            ShowRulerEndpointHandles = _selectedRulerIndices.Count == 1
+                                       && _selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0,
             Marquee = marquee,
             DragOverrides = dragOverrides,
             InstanceDragOverrides = instanceDragOverrides,

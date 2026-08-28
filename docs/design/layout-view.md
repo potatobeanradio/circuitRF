@@ -631,7 +631,8 @@ document's own `UndoRedoStack`; every mutation an `IUiCommand`; toolbar buttons 
 ### 6.1 Tools
 
 **Drawing:** Select · Rect · RoundedRect · Circle · Polygon · Curve · Path · Label · Port ·
-Instance-place · Array · Ruler/measure.
+Instance-place · Array · **Ruler/measure (§9B)** — the in-design measurement annotation, which is not
+geometry and does not live in `Shapes`; see §9B.1 for why.
 
 **Edit operations:** Boolean — **Union grouped per layer** (one result per distinct layer among the
 operands; this is what the deleted `Merge` command used to do); Intersect/Difference/XOR require a
@@ -986,6 +987,374 @@ Three properties worth stating, because each was arrived at by a measurement rat
   agree on is the (layer, datatype) pair the geometry is actually drawn with.
 - **A rule on a DERIVED layer expression** (one layer minus another, a size- or angle-filtered subset)
   is reported, not mapped onto its base layer — mapping it would widen the rule silently.
+
+---
+
+## 9B. Ruler annotations — measuring inside the design
+
+A **ruler** is a two-point measurement drawn *in* the layout: a line between two points, with the
+distance between them rendered at its midpoint. It serves two purposes at once, and both are ordinary
+daily work rather than a feature for a special occasion:
+
+1. **"How far apart are these two things?"** — the question a layout engineer asks a dozen times an
+   hour while placing and routing, answered without leaving the canvas, without a dialog, and without
+   disturbing the artwork.
+2. **An annotation for a design review** — the ruler stays where it was put, saves with the cell, and
+   comes out in a copy-paste into a slide, so a review can point at a clearance rather than describe it.
+
+**This is not the ruler strip along the canvas edge** (`LayoutRulerControl`/`LayoutRulerRenderer`,
+`Layout.Ruler*` colour roles). That one is chrome: it tracks the viewport, shows a scale, and cannot be
+placed, saved or selected. The two share a word and nothing else. Everything below is the *in-design*
+ruler, and it uses its own role names (`Layout.RulerAnnotationLine`/`Layout.RulerAnnotationText`)
+precisely so the two never get confused in the theme editor.
+
+§6.1 has listed "Ruler/measure" among the tools since L0; this section is what it means.
+
+### 9B.1 D-ruler-1 — a ruler is NOT a `LayoutShape`
+
+**Rulers live in their own top-level collection, `LayoutView.Rulers`, alongside `Shapes` and
+`Instances` — never in `Shapes`.**
+
+The tempting alternative is a `RulerShape : LayoutShape`, which would inherit selection, marquee, move,
+undo, clipboard, hit-test, the spatial index and the Properties Inspector for free. `BitmapShape`
+took exactly that route, and it is the reason the route is rejected here: a bitmap is *not* geometry
+either, and paying for that required excluding it, by hand, at **every** site that walks `Shapes` —
+GDSII, DXF, Gerber, PCB, booleans, offset, flatten, repair, DRC, MoM meshing, coordinate walk, rotation
+promotion, scaling and the snap-feature index. Roughly thirty edits, each of them a place where a
+future contributor adding a new geometry consumer forgets one.
+
+The cost of forgetting is not symmetric. A missed exclusion on a bitmap draws a placeholder box
+somewhere odd. **A missed exclusion on a ruler puts an annotation into a manufacturing file** — a
+Gerber with a dimension line etched in copper is a scrapped board, and nothing in the flow catches it
+before the fab does. A collection nothing walks cannot leak, and that guarantee is structural rather
+than maintained.
+
+What that route gives up is real but smaller than it looks, because **the second selection channel
+already exists**: `SelectedInstanceIndices` sits beside `SelectedIndices` and carries its own hit-test,
+drag, delete, copy and inspector plumbing across eight files. Rulers are a third channel following an
+established pattern, not a new mechanism.
+
+**§4's own note that `Label` is a shape and not a top-level array is not a counter-example.** A label
+*is* artwork: it becomes a GDSII text record and a DXF `TEXT` entity, it belongs to a layer, it is
+manufacturable intent. A ruler is a statement *about* the artwork. The two look alike on screen and are
+categorically different in the file.
+
+### 9B.2 The model
+
+```csharp
+public enum RulerSizeMode { Fixed, Scaled }
+
+public sealed class RulerAnnotation
+{
+    public long X1, Y1, X2, Y2;              // DBU, §1.1 — integers like every layout coordinate
+
+    public RulerSizeMode SizeMode = RulerSizeMode.Fixed;
+    public double TextSizePt   = 11.0;       // meaningful when SizeMode == Fixed  (screen points)
+    public long   TextHeightDbu;             // meaningful when SizeMode == Scaled (world height)
+    public LabelFontStyle Style = LabelFontStyle.Regular;
+
+    public string? Caption;                  // optional, omitted from the file when null
+    public bool ShowComponents;              // the Δx / Δy line
+}
+```
+
+**R-rul-1. The ruler has no `Layer`, and that is the point.** It is not on a layer, it does not obey
+layer visibility, it never takes a layer colour, and it always paints above every layer. Giving it a
+`Layer` field would have made hiding M1 hide a ruler that happens to measure something else, and would
+have left an inert field for someone to later wire up wrongly. Rulers are governed by one thing: a
+per-document **Show Rulers** toggle, which is a view state and is not persisted in the `.clay`.
+
+**R-rul-2. `Style` reuses `LabelFontStyle`** (`Regular`/`Bold`/`Italic`/`Condensed`) rather than
+declaring a parallel enum, so one typeface resolver (`LayoutTextOutline.ResolveTypeface`) serves both
+and a ruler cannot acquire a face a label cannot.
+
+### 9B.3 Fixed vs. Scaled text — one enum, two honest behaviours
+
+**R-rul-3. The size mode is per ruler, chosen by the user, and neither value is a default that fights
+the other purpose.**
+
+- **`Fixed`** — the text is *n* points on screen, the same size at every zoom. This is the temporary-
+  measurement mode: zoom out to the whole board and the readout is still legible. Line weight and the
+  end ticks are likewise constant in device pixels.
+- **`Scaled`** — the text is a physical height in the layout, exactly like `LabelShape.Height`. Zoom in
+  and it grows. This is the annotation mode: the ruler keeps its proportion to the artwork, so a
+  review figure looks the same whatever scale it is reproduced at.
+
+The Properties Inspector shows **one** size field whose label and units follow the mode — "Text size
+(pt)" or "Text height (µm/mil/…, the document's display unit)". Two fields, one of them always inert,
+is the trap this avoids; the two backing values are stored separately so switching modes and switching
+back does not destroy the other one's setting.
+
+**R-rul-3a. A multi-selection whose size MODES differ disables the size field rather than guessing.**
+The one field means points in `Fixed` and a world length in `Scaled`; with a mixed selection there is no
+honest unit to label it with, and writing "11" into it would put 11 pt into seven rulers and 11 µm into
+three. The mode combo goes to its mixed (null) state, and the size field is disabled with the R13a
+reason *"Set every selected ruler to the same size mode first."* Setting the mode is itself a
+multi-edit, so the fix is one click and the field lights up.
+
+**R-rul-4. A newly-placed ruler defaults to `Fixed`, 11 pt.** Purpose 1 is the common one and the one
+where a bad default is immediately annoying; purpose 2 is deliberate work where changing a property is
+already part of the job.
+
+### 9B.4 What the readout says
+
+Three parts, composed top to bottom at the midpoint of the line, each independently omittable:
+
+```
+        ╱
+       ╱  3.59 mm            ← the distance, always
+      ╱   Δx 2.54  Δy 2.54   ← when ShowComponents
+     ╱    bond wire span     ← when Caption is non-empty
+```
+
+**R-rul-5. The distance is always shown and is never editable.** A ruler whose number can be typed over
+is not a measurement, and in a design review it is worse than no ruler at all. The *caption* is the
+free text; the number is computed.
+
+**R-rul-6. Every length renders through `LayoutUnits.Format` in the document's own `DisplayUnit`** —
+never a hard-coded unit and never a second formatter. Switching the document from mm to mil re-renders
+every ruler with no stored value changing, which is §1.3's "changing the display unit is free" applied
+here.
+
+**R-rul-7. `ShowComponents` is off by default and is a per-ruler toggle, not an automatic
+angle test.** Auto-showing Δx/Δy "when angled" sounds helpful and means a ruler silently changes what it
+says when an endpoint is nudged one DBU off axis — a rendering that mutates under an edit the user did
+not think was about the readout.
+
+The text never overlaps the line: it is offset perpendicular, on the side away from the second endpoint's
+turn, and it is **always drawn upright** regardless of the ruler's angle. Rotating the text with the line
+is how a vertical measurement becomes unreadable in a slide.
+
+### 9B.5 Placing one
+
+**R-rul-8. Two clicks, from a `Ruler` toolbar button that arms `Tool.Ruler`.** Press to set the first
+endpoint, move (with a live preview of the whole ruler, readout included, so the number is visible
+*before* committing), press to set the second. The tool stays armed for the next ruler; **Escape
+disarms it and returns to `Tool.Select`**, which is the contract `OnKeyDown` already implements for
+every drawing tool — the ruler needs no new escape logic, only to be one of them.
+
+**R-rul-9. Both endpoints go through the editor's existing snap stack, unchanged.** Grid snap
+(`SnapDbu`) and geometry snap (`LayoutSnapQuery` — pins, corners/endpoints, intersections, midpoints,
+centroids) apply exactly as they do to a `Path` vertex, with the same marker feedback. This is what
+makes the ruler *trustworthy*: a measurement that lands 3 DBU short of the corner reports a number that
+is wrong in a way nobody notices.
+
+**R-rul-10. Free angle by default; Shift locks the second endpoint to horizontal, vertical or 45°.**
+Shift already means "keep the axis" everywhere else in this editor. It is **not** governed by the
+document's `AngleMode`: a Manhattan document is a statement about manufacturable artwork, and the
+diagonal gap between two Manhattan traces is exactly the measurement you most want to take. Geometry
+snap outranks the Shift constraint when a snap feature is in tolerance — a snapped endpoint is a
+stronger statement of intent than a held modifier.
+
+A ruler whose two endpoints coincide after snapping is discarded rather than committed; a zero-length
+ruler reads as a rendering glitch, not as a measurement.
+
+### 9B.6 Selecting, editing, deleting
+
+**R-rul-11. Rulers are selectable, and this follows from Copy rather than from taste.** `CanCopySelection`
+is selection-driven and the clipboard graphic renders the *copied fragment*; "rulers work with copy and
+paste" is not expressible unless a ruler can be selected. Selection lives in a third channel,
+`SelectedRulerIndices`, mirroring `SelectedInstanceIndices`.
+
+- **Hit-test** takes the line within the tolerance, either endpoint, **and the readout text's box** —
+  clicking the number selects the ruler, which is the affordance a user reaches for first.
+- **Rulers hit-test above all geometry**, since they paint above it. A ruler lying over a trace is
+  grabbed before the trace.
+- **Marquee** selects rulers whose whole line is enclosed, on the same enclose/crossing rule as §6.2.
+- **Drag** moves a whole selected ruler; **dragging one endpoint** moves that endpoint alone and
+  re-measures live. Endpoint handles render only for a single-ruler selection, mirroring §6.3's
+  vertex-handle rule.
+- **Delete** removes the selected rulers.
+- **The Properties Inspector** grows a Ruler section — both endpoints, the size mode and its one size
+  field, style, caption, and the Δ toggle. The measured distance appears there too, read-only.
+
+**R-rul-11a. Every ruler property is editable across a multi-selection, as ONE undo entry.** Draw ten
+rulers, decide the text is too small, select all ten, type one number. This is not a new mechanism: the
+Properties Inspector has done exactly this for shapes since L1j — a field shows the shared value or
+blanks when they differ, and committing it folds one field-set command per item into a single
+`CompositeCommand`. Rulers join that behaviour rather than reproducing it, including the tri-state
+(null = differs) convention for the combos and the checkbox. The one thing it costs is a ruler-side
+`ApplyToEach` sibling, because the existing one is typed over `LayoutShape` and a ruler is deliberately
+not one (§9B.1) — an honest ~20 lines, and the only place D-ruler-1 charges anything concrete.
+
+**R-rul-12. Right-click on a ruler gives `Edit…` and `Delete`,** built the way every other layout
+context-menu entry is (`FindRulerForContextMenu`, mirroring `FindBitmapForContextMenu`; items disabled
+with a stated reason rather than hidden, per R13a). `Edit…` opens the same property set as a modal, so
+the ruler can be adjusted without the inspector docked — which is the state a user is usually in when
+they are presenting.
+
+**R-rul-13. `Ctrl+K` / `Cmd+K` removes every ruler in the document, as ONE undo entry.** No confirmation
+prompt: the operation is undoable, and a prompt on an undoable action trains people to dismiss prompts.
+Enabled only when there is at least one ruler, with the R13a reason when not. `Ctrl+Shift+K` is already
+Check Design Rules; the two are far enough apart in effect that the shared letter is worth watching in
+review but not worth renaming.
+
+**R-rul-14. Every mutation is an `IUiCommand`** on the document's existing undo stack —
+`AddRulerCommand`, `MoveRulersCommand`, `ReplaceRulerCommand` (property edits and endpoint drags),
+`DeleteRulersCommand`, `ClearAllRulersCommand`. Same restore-at-original-index discipline as
+`AddShapeCommand`, for the same reason. Unlike `DrcWaivers` (§9A.1), rulers **are** undoable: a waiver is
+a review judgement recorded against the design, a ruler is an edit.
+
+### 9B.7 Persistence
+
+**R-rul-15. Additive, no `FormatVersion` bump.** `ClayFile.Rulers` is a `List<RulerAnnotation>?`,
+omitted from the file entirely when empty — so every `.clay` written before this feature re-serializes
+byte for byte, exactly as `Pins` and `DrcWaivers` did. `Caption` is omitted when null;
+`TextSizePt`/`TextHeightDbu` both persist so a mode switch is reversible.
+
+Rulers are **cell-local**. A ruler drawn in a sub-cell does **not** render when that cell is placed as
+an instance in a parent layout, and is not carried by `LayoutFlattener`. An annotation is a statement
+its author made while working on *that* cell; propagating it upward would scatter other people's
+working notes across every design that reuses the cell.
+
+### 9B.8 Colours
+
+Two new roles, following §2.2's rule that chrome themes and layer colours do not:
+
+| Role | What it paints |
+|---|---|
+| `Layout.RulerAnnotationLine` | the measurement line, its end ticks, and the endpoint handles |
+| `Layout.RulerAnnotationText` | the distance, the Δx/Δy line, and the caption |
+
+Both take light and dark defaults in `ColorTheme.BuiltIn` and join `ColorRole.All`; the Color Theme
+Settings dialog enumerates that list, so they appear there with no dialog change. They are projected
+into `LayoutRenderTheme` like every other layout colour. A **selected** ruler additionally takes the
+`Layout.Selection` accent, exactly as a selected shape does — the accent is the app's one word for
+"selected" and a ruler must not invent a second.
+
+### 9B.9 Copy, paste, and the slide
+
+Two paths, and both must carry rulers.
+
+**Internal fragment.** `LayoutFragment.Payload` grows a `Rulers` list beside `Shapes` and `Instances`,
+translated by the same `Translate` on copy and placement. No layer reconciliation and no DBU-resolution
+rescale question arises for the *text*, but the **endpoints are coordinates and are rescaled with
+everything else** (R-L1f-2) — a ruler pasted into a document at a different `DbuPerMicron` must still
+measure the same physical distance.
+
+**Graphic export (the PowerPoint path).** `LayoutClipboard.BuildTransientView` already constructs a
+throwaway `LayoutView` from the payload and hands it to `LayoutRenderer.Draw`; copying the payload's
+rulers into `view.Rulers` is one line, and the ruler then appears in the PDF, SVG and bitmap flavours
+with no export-specific rendering code. Export mode suppresses the grid, the ghost and the selection
+overlay, and rulers are **not** overlay state — they are document content, so they survive that
+suppression by construction. Selection handles do not, which is correct.
+
+**R-rul-16. `ComputeSelectionBounds` must measure what a ruler PAINTS, and a `Fixed` ruler is
+circular.** That method's existing doc comment records the bug this is: measuring a label's *stored*
+bbox (a point) rather than its painted glyphs is what cropped the owner's ports off the page. A ruler
+adds a sharper version — a `Fixed`-mode readout's world extent depends on the export scale, which
+depends on the bounds, which depend on the extent. Resolve it in **exactly two passes**: pass 1 takes
+the union of the line endpoints and every `Scaled` ruler's measured text; pass 2 measures the `Fixed`
+text at the scale pass 1 chose and unions that. The iteration is monotone — a larger bbox means a
+smaller scale means smaller world-space fixed text — so a second pass cannot make it worse, and the
+residual is absorbed by the page margin. Do not iterate to a fixed point; do not skip pass 2.
+
+### 9B.10 Interchange — DXF yes, manufacturing formats no
+
+**R-rul-17. Rulers are written to DXF and to nothing else.** DXF is a *drawing* interchange format
+whose whole purpose includes annotation, and a mechanical engineer opening the board's DXF wants the
+dimensions. GDSII, Gerber, Excellon and `.kicad_pcb` are manufacturing descriptions, where an
+annotation is at best noise and at worst etched.
+
+| Format | Rulers | Why |
+|---|---|---|
+| **DXF** | **exported, as real `DIMENSION` entities** | a drawing format; annotation is native to it |
+| GDSII | no | mask data |
+| Gerber / Excellon | no | fabrication data — a dimension line here becomes copper |
+| `.kicad_pcb` | no | board fabrication data |
+| Clipboard PDF/SVG/bitmap | **exported** | §9B.9 — the presentation path is the whole point |
+
+#### R-rul-18. A ruler exports as a genuine aligned `DIMENSION`, not as a line and some text
+
+The cheap alternative — `LINE` + `TEXT` on a layer named `RULER` — renders identically in every viewer
+and is the wrong artifact. It arrives in the recipient's CAD as loose geometry: it does not report a
+measurement, it does not update if they stretch the drawing, it cannot be styled, and it does not
+appear as a dimension in anything that enumerates them. **The reason to export a measurement at all is
+that the recipient wants a measurement**, so it goes out as the object DXF has for exactly that.
+
+Each ruler writes one `DIMENSION` entity on the `RULER` layer, with subclass markers
+`AcDbDimension` + `AcDbAlignedDimension` — an *aligned* dimension (measuring along its own axis) rather
+than a rotated/linear one, because a ruler's whole point is the distance between its two endpoints at
+whatever angle they happen to lie:
+
+| Group | Value |
+|---|---|
+| `2` | the anonymous block name (`*D1`, `*D2`, …) |
+| `3` | the `DIMSTYLE` record name this ruler resolves to |
+| `10`/`20` | dimension-line definition point |
+| `11`/`21` | text midpoint — where the readout is painted |
+| `13`/`23` | first extension-line origin = the ruler's first endpoint |
+| `14`/`24` | second extension-line origin = the ruler's second endpoint |
+| `42` | the measured value |
+| `70` | `1 \| 32` — aligned, and the block belongs to this dimension alone |
+| `1` | text override, only when the ruler has a caption or Δ line (below) |
+
+Three pieces of surrounding machinery have to come with it, and each is a small extension of something
+already in `DxfWriter`:
+
+- **`WriteDimstyleTable` stops writing zero records.** Its current comment states plainly that the table
+  is empty *"because this codebase's own export never creates a dimension entity, so there is nothing
+  for one to reference"* — that premise is what this section retires; update the comment along with the
+  code. Write **one record per distinct (text height, font style) pair actually used**, named
+  `CIRCUITRF_1`, `CIRCUITRF_2`, … Per-entity `DSTYLE` XDATA overrides are the alternative and are
+  rejected: they are the fussiest corner of the format, and a handful of named styles is both
+  conformant and legible to the recipient, who can restyle every ruler at once by editing one.
+- **One anonymous block per ruler.** DXF's model is that the `DIMENSION` carries the semantics and a
+  block carries the *picture* a non-regenerating viewer draws. `*D1`, `*D2`, … go through the existing
+  `WriteBlockRecordTable`/`WriteBlockHeader`/`WriteBlockFooter` path unchanged, each holding the
+  extension lines, the dimension line with its end ticks, and the readout `TEXT`. **Our own importer
+  already skips `*D#` blocks** as anonymous/system blocks (see `DxfWriter`'s header note), which is
+  what makes R-rul-19 below true by construction rather than by a new rule.
+- **The `RULER` layer goes in through the existing `extraLayerNames` seam** that `DxfWireIo` already
+  uses for wBond wires. No new mechanism, and the recipient can freeze or delete every ruler at once
+  because they are all on their own layer.
+
+**R-rul-18a. The caption and the Δx/Δy line ride in the text override, and the measurement stays
+live.** Group `1` is written only when there is something to add, and it always begins with `<>` — DXF's
+placeholder for *"the value you measured"* — so the recipient's CAD still recomputes the number if they
+move an endpoint. Extra lines follow as MTEXT paragraph breaks: `<>\PΔx 2.54  Δy 2.54\Pmin trace gap`.
+A ruler with neither caption nor Δ line omits group `1` entirely and gets the pure measured value.
+Never write the formatted distance as literal text — that is precisely the dead number that made
+`LINE` + `TEXT` the wrong answer.
+
+**R-rul-18b. `Fixed` sizing has no meaning in DXF, so it is resolved once at export.** A DXF is a world-
+coordinate drawing with no screen and no zoom; "11 points" does not survive the trip. A `Scaled` ruler
+exports its own world text height directly. A `Fixed` ruler exports at the height that occupies the
+same fraction of the drawing that its point size occupies of a nominal viewport:
+`height = extentsDiagonal × TextSizePt / NominalViewportDiagonalPt`, with the constant stated once in
+code and no second copy. That makes a `Fixed` ruler legible when the recipient zooms to extents, which
+is what the mode meant on screen. Say so in the Messages note, because a ruler whose text height
+changes with the drawing's extents is otherwise a surprise the second time someone exports.
+
+**R-rul-18c. Validate against a reader that is not ours.** `DIMENSION` is the fussiest entity in this
+writer — three subclass markers, an anonymous block whose ownership handles must point at its own
+`BLOCK_RECORD`, and a `DIMSTYLE` reference that must resolve — and a malformed one can make a whole
+file unreadable rather than merely drawing wrong. The existing DXF work already established the rule
+and names the third-party readers it was checked against — see `DxfWriter`'s header note on R13+
+subclass markers. Apply it here rather than trusting a round-trip through our own reader, which proves
+nothing about conformance.
+
+One Messages note per export states how many rulers were written as dimensions.
+
+**R-rul-19. DXF import does not reconstruct rulers, deliberately.** A `DIMENSION` read back in is
+skipped, and its `*D#` block is already skipped by the importer's existing anonymous-block rule. Reading
+dimensions back would mean deciding what a foreign `DIMSTYLE` means in circuitRF's terms and guessing
+wrong sometimes; a ruler is authored in circuitRF, and the export is a one-way courtesy to the reader.
+
+### 9B.11 What a ruler is not
+
+Stated so they stay non-goals:
+
+- **Not DRC input.** A ruler measures; it does not assert. It has no pass/fail, no tolerance and no
+  rule binding, and `DrcRegions` never sees one.
+- **Not geometry.** Never an operand of Union/Intersect/Difference/XOR/Offset/Slice/Flatten, never
+  meshed by the MoM extractors, never in the spatial index (there are tens of rulers, not 500,000 — a
+  linear scan for hit-test and paint is the right-sized tool), never a snap *target* (it can snap *to*
+  artwork; artwork does not snap to it).
+- **Not a chained or angular dimension.** One segment, two endpoints, a length. Chained dimension
+  strings, angular and radial dimensions, and leader/callout arrows are plausible later work and are
+  not this.
+- **Not net-aware.** No `Net`, no connectivity, nothing in hierarchical net extraction.
 
 ---
 

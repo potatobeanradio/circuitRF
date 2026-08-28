@@ -180,6 +180,164 @@ public sealed class ViaShape : LayoutShape
 /// (this file's header: "Layout borrows patterns from Schematic, not types") — same four options.</summary>
 public enum LabelFontStyle { Regular, Bold, Italic, Condensed }
 
+/// <summary>docs/design/layout-view.md §9B.3 — how a ruler's text (and its line weight) is sized.
+/// <c>Fixed</c> is n screen POINTS at every zoom (the temporary-measurement mode); <c>Scaled</c> is a
+/// physical height in the layout, exactly like <see cref="LabelShape.Height"/> (the annotation mode).
+/// Both backing values are stored separately on <see cref="RulerAnnotation"/>, so switching modes and
+/// switching back never destroys the other one's setting (R-rul-3).</summary>
+public enum RulerSizeMode { Fixed, Scaled }
+
+/// <summary>
+/// A two-point measurement drawn IN the layout — docs/design/layout-view.md §9B. The line between
+/// <c>(X1,Y1)</c> and <c>(X2,Y2)</c> plus the distance between them, rendered at its midpoint.
+///
+/// <para><b>D-ruler-1 (§9B.1): a ruler is NOT a <see cref="LayoutShape"/> and never enters
+/// <see cref="LayoutView.Shapes"/>.</b> It lives in <see cref="LayoutView.Rulers"/>, its own top-level
+/// collection. The tempting alternative — a <c>RulerShape : LayoutShape</c> inheriting selection,
+/// marquee, move, undo, clipboard, hit-test and the inspector for free — is exactly the route
+/// <see cref="BitmapShape"/> took, and paying for it meant excluding a bitmap BY HAND at every site
+/// that walks <c>Shapes</c>: GDSII, DXF, Gerber, PCB, booleans, offset, flatten, repair, DRC, MoM
+/// meshing, coordinate walk, rotation promotion, scaling and the snap-feature index. A missed
+/// exclusion on a bitmap draws a placeholder box somewhere odd; <b>a missed exclusion on a ruler puts
+/// an annotation into a manufacturing file</b>, and a Gerber with a dimension line etched in copper is
+/// a scrapped board. A collection nothing walks cannot leak, and that guarantee is structural rather
+/// than maintained.</para>
+///
+/// <para><b>No <c>Layer</c> field, and that is the point (R-rul-1).</b> Not "a Layer we ignore" —
+/// absent. A ruler is not on a layer, does not obey layer visibility, never takes a layer colour, and
+/// always paints above every layer. A <c>Layer</c> here would have made hiding M1 hide a ruler that
+/// happens to measure something else, and would have left an inert field for someone to later wire up
+/// wrongly.</para>
+/// </summary>
+public sealed class RulerAnnotation
+{
+    public long X1 { get; set; }
+    public long Y1 { get; set; }
+    public long X2 { get; set; }
+    public long Y2 { get; set; }
+
+    public RulerSizeMode SizeMode { get; set; } = RulerSizeMode.Fixed;
+
+    /// <summary>Screen points — meaningful when <see cref="SizeMode"/> is
+    /// <see cref="RulerSizeMode.Fixed"/>. R-rul-4: a newly-placed ruler defaults to Fixed, 11 pt.</summary>
+    public double TextSizePt { get; set; } = 11.0;
+
+    /// <summary>World height in DBU — meaningful when <see cref="SizeMode"/> is
+    /// <see cref="RulerSizeMode.Scaled"/>. Persisted alongside <see cref="TextSizePt"/> so a mode
+    /// switch is reversible (§9B.7).</summary>
+    public long TextHeightDbu { get; set; }
+
+    /// <summary>R-rul-2: the EXISTING <see cref="LabelFontStyle"/>, never a parallel enum — one
+    /// typeface resolver serves both, and a ruler cannot acquire a face a label cannot.</summary>
+    public LabelFontStyle Style { get; set; } = LabelFontStyle.Regular;
+
+    /// <summary>Optional free text under the readout. Omitted from the file when null.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Caption { get; set; }
+
+    /// <summary>R-rul-7: the Delta-x / Delta-y line. Off by default and a per-ruler toggle, never an
+    /// automatic angle test — auto-showing it "when angled" would silently change what a ruler SAYS
+    /// when an endpoint is nudged one DBU off axis.</summary>
+    public bool ShowComponents { get; set; }
+
+    /// <summary>
+    /// How many decimal places the readout shows — the distance AND the Delta-x/Delta-y line, since a
+    /// ruler that reported those two at different precisions from the number above them would be
+    /// stating one measurement three ways.
+    ///
+    /// <para><b>Null means "this display unit's own default"</b> (<see cref="DefaultDecimalsFor"/>),
+    /// which is what keeps §1.3's "changing the display unit is free" true here: a document switched
+    /// from mm to mil re-renders at mil's own precision with nothing stored changing. A non-null value
+    /// is the user's override and travels with the ruler across a unit change, because at that point
+    /// they have said what they want to see.</para>
+    ///
+    /// <para><b>It is a CEILING, not a fixed width</b> — it is passed straight to
+    /// <see cref="LayoutUnits.Format"/>'s existing <c>maxDecimals</c> parameter, which trims trailing
+    /// zeros. That is deliberate: R-rul-6 says every length renders through that one formatter, and a
+    /// fixed-width variant would be a second one. So a 40 mil ruler at 1 decimal reads "40 mil", not
+    /// "40.0 mil".</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Decimals { get; set; }
+
+    /// <summary>
+    /// The default decimal places for a display unit — the finest place a user working in that unit
+    /// actually dimensions to, rather than a single number that is noise in one unit and coarse in
+    /// another.
+    ///
+    /// <para>The metric three step one decade apart — nm, µm and mm resolve to 1 nm, 10 nm and
+    /// 100 nm — so each unit reports a little coarser than the one below it, which is what someone
+    /// choosing the bigger unit is asking for. <b>The imperial pair agrees by construction</b>: 1 mil
+    /// is 0.001 inch, so mil at 1 decimal and inch at 4 are the same physical step (2.54 µm), and
+    /// mil at 1 is the owner's own stated default.</para>
+    ///
+    /// <para>mm was briefly 3 (1 µm) and is 4 because 3 rounded a 25.4 µm measurement to
+    /// <c>0.025 mm</c> — dropping real signal for the sake of a digit nobody had asked to lose. Since
+    /// this is a CEILING and <see cref="LayoutUnits.Format"/> trims trailing zeros, the extra place
+    /// costs nothing when it is not needed: a 3.59 mm ruler still reads "3.59 mm".</para>
+    /// </summary>
+    public static int DefaultDecimalsFor(LayoutUnit unit) => unit switch
+    {
+        LayoutUnit.Nm   => 0,
+        LayoutUnit.Um   => 2,
+        LayoutUnit.Mm   => 4,
+        LayoutUnit.Mil  => 1,
+        LayoutUnit.Inch => 4,
+        _               => 4,
+    };
+
+    /// <summary>This ruler's effective precision in <paramref name="unit"/> — its own override when it
+    /// has one, otherwise that unit's default. The ONE accessor every readout goes through, so the
+    /// canvas, the Properties Inspector, the status line and the DXF export cannot disagree.</summary>
+    public int DecimalsFor(LayoutUnit unit) => Decimals is { } d ? Math.Clamp(d, 0, MaxDecimals) : DefaultDecimalsFor(unit);
+
+    /// <summary>
+    /// How the readout's numbers are SPELLED — General (the default), Fixed, or either exponential
+    /// form. Works together with <see cref="Decimals"/>, which supplies the precision.
+    ///
+    /// <para><b>General is the default and is what a ruler has always done</b>: up to
+    /// <see cref="Decimals"/> places, trailing zeros trimmed. <b>Fixed</b> keeps them, which is the
+    /// one thing General cannot do and the reason to reach for it — ten rulers at "F1" all read
+    /// "40.0 mil", "12.5 mil", and line up. The exponential forms are for a document whose features
+    /// span decades.</para>
+    ///
+    /// <para>Omitted from the file at its default, so every <c>.clay</c> written before this field
+    /// existed — and every ruler that never leaves General — re-serializes byte for byte.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public LayoutUnits.LayoutNumberFormat NumberFormat { get; set; } = LayoutUnits.LayoutNumberFormat.General;
+
+    /// <summary>This ruler's formatted length in <paramref name="unit"/> — precision AND spelling
+    /// together. The ONE call every readout goes through (canvas, inspector, status line, DXF), so
+    /// they cannot disagree about how a number looks.</summary>
+    public string FormatLength(long dbu, LayoutUnit unit, int dbuPerMicron) =>
+        LayoutUnits.Format(dbu, unit, dbuPerMicron, DecimalsFor(unit), NumberFormat);
+
+    /// <summary>Upper bound on <see cref="Decimals"/>. Beyond this the digits are below one DBU at
+    /// every resolution this editor supports, so they report rounding noise rather than a measurement.</summary>
+    public const int MaxDecimals = 9;
+
+    /// <summary>The measured distance, in DBU. R-rul-5: computed, never stored and never editable —
+    /// a ruler whose number can be typed over is not a measurement.</summary>
+    [JsonIgnore]
+    public long DistanceDbu
+    {
+        get
+        {
+            double dx = (double)X2 - X1, dy = (double)Y2 - Y1;
+            return (long)Math.Round(Math.Sqrt(dx * dx + dy * dy));
+        }
+    }
+
+    public RulerAnnotation Clone() => new()
+    {
+        X1 = X1, Y1 = Y1, X2 = X2, Y2 = Y2,
+        SizeMode = SizeMode, TextSizePt = TextSizePt, TextHeightDbu = TextHeightDbu,
+        Style = Style, Caption = Caption, ShowComponents = ShowComponents,
+        Decimals = Decimals, NumberFormat = NumberFormat,
+    };
+}
+
 /// <summary>Which point of the text's own box <see cref="LabelShape.X"/> names, horizontally.</summary>
 public enum LabelHAlign { Left, Center, Right }
 
@@ -563,6 +721,23 @@ public sealed class LayoutView
 
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
+
+    /// <summary>
+    /// docs/design/layout-view.md §9B: the in-design ruler annotations — a top-level collection
+    /// beside <see cref="Shapes"/> and <see cref="Instances"/>, never inside <c>Shapes</c>
+    /// (D-ruler-1; see <see cref="RulerAnnotation"/>'s own doc comment for why that boundary is
+    /// structural rather than maintained).
+    ///
+    /// <para><b>Deliberately not in <see cref="SpatialIndex"/></b> (§9B.11): there are tens of
+    /// rulers, not 500,000 — a linear scan for hit-test and paint is the right-sized tool. Mutations
+    /// still go through <see cref="NotifyChanged"/> so the canvas repaints; pass
+    /// <see cref="LayoutChangeInfo.Full"/> rather than inventing a ruler-specific change kind.</para>
+    ///
+    /// <para><b>Cell-local</b> (§9B.7): a ruler drawn here does NOT render when this cell is placed as
+    /// an instance in a parent layout, and <c>LayoutFlattener</c> does not carry it up. An annotation
+    /// is a statement its author made while working on THIS cell.</para>
+    /// </summary>
+    public List<RulerAnnotation> Rulers { get; } = [];
 
     /// <summary>The R-tree spatial index (L2b, docs/design/layout-view.md §5.2 R11) over
     /// <see cref="Shapes"/> — every query self-heals lazily (see its own doc comment), so it is always

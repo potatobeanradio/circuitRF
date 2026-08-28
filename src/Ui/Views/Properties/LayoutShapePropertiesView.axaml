@@ -315,6 +315,11 @@
                         </Grid>
                     </StackPanel>
 
+                    <!-- ── Ruler annotation (docs/design/layout-view.md §9B.6). A THIRD top-level
+                         context, and the SAME control the right-click Edit Ruler… modal hosts
+                         (R-rul-12) — never a second ruler-editing implementation. -->
+                    <props:LayoutRulerPropertiesView IsVisible="{Binding IsRulerContext}"/>
+
                     <!-- ── Instance (L3a §6) ────────────────────────────────────────────────── -->
                     <StackPanel IsVisible="{Binding IsInstanceContext}" Spacing="4">
 

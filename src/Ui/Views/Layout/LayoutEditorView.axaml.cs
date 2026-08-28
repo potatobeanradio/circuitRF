@@ -1230,10 +1230,16 @@ public partial class LayoutEditorView : UserControl
         // instance-only paste path already did, just no longer gated on "no shapes in the payload."
         var rebasedInstances = vm.RebaseFragmentInstances(payload);
 
+        // docs/design/layout-view.md §9B.9: rulers travel with the fragment, already rescaled by
+        // RescaleFragment (their endpoints are coordinates like any other — R-L1f-2, so a ruler
+        // pasted into a document at a different resolution still measures the same PHYSICAL
+        // distance). No layer reconciliation applies: a ruler has no layer.
+        var rescaledRulers = rescale.Rulers ?? [];
+
         if (inPlace)
-            vm.PasteInPlace(reconciled, rebasedInstances);
+            vm.PasteInPlace(reconciled, rebasedInstances, rescaledRulers);
         else
-            vm.BeginPastePlacement(reconciled, rescale.AnchorX, rescale.AnchorY, rebasedInstances);
+            vm.BeginPastePlacement(reconciled, rescale.AnchorX, rescale.AnchorY, rebasedInstances, rescaledRulers);
 
         ReportLayerMappingSummary("Pasted", vm.Technology?.Name, reconciled.Count, mapping);
 
@@ -1307,11 +1313,12 @@ public partial class LayoutEditorView : UserControl
         var shapes = LayoutFragment.Translate(payload.Shapes, dxNm, dyNm);
         var instances = vm.RebaseFragmentInstances(payload);
         if (instances.Count > 0) instances = LayoutFragment.Translate(instances, dxNm, dyNm);
+        var rulers = LayoutFragment.Translate(payload.Rulers, dxNm, dyNm);
 
-        if (shapes.Count == 0 && instances.Count == 0) return 0;
+        if (shapes.Count == 0 && instances.Count == 0 && rulers.Count == 0) return 0;
 
-        vm.PasteInPlace(shapes, instances);
-        return shapes.Count + instances.Count;
+        vm.PasteInPlace(shapes, instances, rulers);
+        return shapes.Count + instances.Count + rulers.Count;
     }
 
     /// <summary>Shows the shared layer-mapping dialog (docs/sonnet-briefs/brief-L1g-technology-retarget.md
@@ -1514,8 +1521,15 @@ public partial class LayoutEditorView : UserControl
             vm.ReportMessage(
                 $"Exported DXF · {summary.CurvedShapesWritten} curved shape(s), " +
                 $"{summary.HolesAsHatch} hole(s) as HATCH, {summary.BitmapsSkipped} bitmap(s) skipped, " +
-                $"{summary.LabelRecordsWritten} label(s) written.",
+                $"{summary.LabelRecordsWritten} label(s) written, " +
+                $"{summary.RulersWritten} ruler(s) as DIMENSION.",
                 file.Path.LocalPath);
+
+            // §9B.10's "one Messages note per export" — it says how many rulers were written AND, per
+            // R-rul-18b, that a Fixed-size ruler's text height was resolved against this drawing's own
+            // extents, because a height that changes with the extents is otherwise a surprise the
+            // second time someone exports.
+            foreach (var d in summary.Diagnostics) vm.ReportMessage(d);
         }
         catch (Exception ex)
         {

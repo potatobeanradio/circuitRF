@@ -36,6 +36,32 @@ public static class ColorRole
     /// fill: the layer color is the information the user is reading.</summary>
     public const string LayoutSelection = "Layout.Selection";
 
+    /// <summary>docs/design/layout-view.md §9B.8 — an in-design RULER ANNOTATION's measurement line,
+    /// its end ticks and its endpoint handles.
+    ///
+    /// <para><b>The two DEFAULT to the same value — the text colour</b> (owner, 2026-08-27). A ruler
+    /// reads as one object, so its line and its number start out matching; they stay two roles
+    /// precisely so anyone who wants them apart can pull them apart in the theme editor without a
+    /// code change.</para>
+    ///
+    /// <para><b>Chosen for CONTRAST against the canvas, not for prettiness</b> — the owner asked for
+    /// more of it in both variants (2026-08-27). A ruler is read at a glance over whatever artwork it
+    /// happens to cross, so both roles are pushed hard AWAY from their variant's own
+    /// <see cref="LayoutBackground"/> — near-black warm on the light ground, near-white warm on the
+    /// dark one — while keeping the warm hue that separates a ruler from the blue selection accent and
+    /// the red DRC marker. <c>LayoutRulerAnnotationContrastTests</c> holds the floor.</para>
+    ///
+    /// <para><b>Deliberately not <c>Layout.Ruler*</c>.</b> Those three roles above paint the ruler
+    /// STRIP along the canvas edge — chrome that tracks the viewport and cannot be placed, saved or
+    /// selected. The two share a word and nothing else, and the longer name is what keeps them apart
+    /// in the theme editor.</para></summary>
+    public const string LayoutRulerAnnotationLine = "Layout.RulerAnnotationLine";
+
+    /// <summary>§9B.8 — an in-design ruler annotation's distance readout, its Delta-x/Delta-y line and
+    /// its caption. See <see cref="LayoutRulerAnnotationLine"/> for why this is not a
+    /// <c>Layout.Ruler*</c> role.</summary>
+    public const string LayoutRulerAnnotationText = "Layout.RulerAnnotationText";
+
     /// <summary>brief-L5-followups-2.md §6 (R-L5g-13): a PCell pin's screen-space dot + outward-
     /// direction tick — deliberately a color distinct from every layer color, so a pin marker never
     /// reads as copper (or any other physical layer).</summary>
@@ -233,6 +259,7 @@ public static class ColorRole
         LayoutBackground, LayoutGridMinor, LayoutGridMajor,
         LayoutRulerBackground, LayoutRulerText, LayoutRulerTick, LayoutCursorIndicator,
         LayoutSelection, LayoutPCellPin, LayoutPCellHandle,
+        LayoutRulerAnnotationLine, LayoutRulerAnnotationText,
         LayoutEmMeshConductor, LayoutEmMeshInterface, LayoutEmMeshTruncation,
         LayoutPlanarMeshCell,
         LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived,

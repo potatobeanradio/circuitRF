@@ -1,5 +1,323 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Ruler annotations, round 2 — precision, contrast, and four bugs (2026-08-27)
+
+Owner follow-ups on the §9B ruler work, plus the defects that surfaced while testing them.
+
+**A precision field, defaulting per DISPLAY UNIT rather than per ruler.** `RulerAnnotation.Decimals`
+is `int?`: null means "this display unit's own default", which is what keeps §1.3's *changing the
+display unit is free* true — a document switched mm → mil re-renders at mil's precision with nothing
+stored changing. A non-null value is the user's override and travels with the ruler. It governs the
+distance **and** the Δx/Δy line, because a ruler reporting its components at a different precision
+from the number above them is stating one measurement three ways.
+
+The ladder is nm 0, µm 2, mm 4, mil 1, inch 4 — the metric three step a decade apart (1 nm / 10 nm /
+100 nm), and **the imperial pair agrees by construction**: 1 mil is 0.001 inch, so mil@1 and inch@4
+are the same physical step (2.54 µm), and mil@1 is the owner's own stated default. A test asserts that
+relationship so retuning one without the other fails rather than silently making the same ruler report
+two precisions depending on which imperial unit the document is set to. **mm was 3 for about ten
+minutes**: a test expectation caught it rounding a 25.4 µm measurement to `0.025 mm`, dropping real
+signal for a digit nobody asked to lose.
+
+**It is a CEILING, not a fixed width** — passed straight to `LayoutUnits.Format`'s existing
+`maxDecimals`, which trims trailing zeros. Deliberate: R-rul-6 says every length renders through that
+one formatter, and a fixed-width variant would be a second one. So a 40 mil ruler at 1 decimal reads
+"40 mil", and mm's extra place costs nothing when unused ("3.59 mm" stays "3.59 mm").
+
+**Distance, Δx and Δy are `SelectableTextBlock`s in the dialog**, not read-only `TextBox`es — the
+values exist to be read and copied into a review note, and a control that takes a caret then discards
+what is typed is worse than one that plainly cannot be typed into. Decimals sits immediately right of
+Distance, which is both the number it governs and the number that shows what it did. **The component
+readouts are independent of the Δ toggle**: that toggle decides what the CANVAS paints; the inspector
+is where a user comes to READ them.
+
+**Layer and Net are gone from the ruler context** (owner asked what they signify — nothing). R-rul-1
+and §9B.11: a ruler has no `Layer` field at all (absent, not ignored) and is not net-aware. Showing
+either would be a control with nothing behind it — the same trap R-rul-1 avoided in the model by
+refusing to declare the fields.
+
+**Higher-contrast defaults.** Light went (200,90,20)/(150,60,10) → (140,45,0)/(60,20,0); dark went
+(255,170,80)/(255,205,140) → (255,190,120)/(255,228,195). Both roles now sit ≥160 apart in luminance
+from their own variant's `Layout.Background`, **and the floor has teeth**: the previous light line
+scored 138 and the previous dark line 149, so both would fail it. A second test pins the DIRECTION
+separately (darker on light, lighter on dark), since a role far from the background on the wrong side
+would pass the magnitude test alone.
+
+**Double-click a ruler opens its properties**, checked before the instance hit-test for the same
+reason single-click is — rulers paint above everything. It opens the SAME
+`LayoutRulerPropertiesView` the right-click item and the docked panel use.
+
+**A number FORMAT beside the precision** (owner). `RulerAnnotation.NumberFormat` is
+`LayoutUnits.LayoutNumberFormat` — General (default), Fixed, Exponential, ExponentialLower — and
+`RulerAnnotation.FormatLength` is now the ONE call every readout goes through (canvas, inspector,
+status line, DXF picture block, DXF group-1 override), so precision and spelling cannot disagree
+between them. Omitted from the file at its default, so an existing `.clay` re-serializes byte for byte.
+
+**`Decimals` means DECIMAL PLACES in General and Fixed, and mantissa digits in the exponential forms —
+deliberately NOT .NET's `G` precision**, which counts SIGNIFICANT digits. Passing it through would have
+made "one decimal place" mean `G1`, and 40 would render as "4E+01". General stays exactly what this
+code always did (up to *n* places, trailing zeros trimmed); **Fixed keeps the zeros**, which is the one
+thing General cannot do and the whole reason to reach for it — ten rulers at F1 all read "40.0 mil" and
+line up. The overload lives on `LayoutUnits`, not in the ruler code, so R-rul-6's "one formatter" holds.
+
+**Line and text default to the same colour** (owner): both roles are now the text value — light
+(60,20,0), dark (255,228,195). A ruler reads as one object, so it starts out one colour; they stay two
+ROLES precisely so anyone who wants them apart can separate them in the theme editor with no code
+change. That change also broke a test in an instructive way: `ARuler_PaintsOverTheMetal` counted "warm"
+pixels, which coupled it to the ruler's own default RGB, so retuning the palette made it measure the
+palette rather than whether anything was drawn. It is a **differential render** now — ShowRulers on
+against off, counting changed pixels — which answers the question actually being asked and stays true
+whatever colour a ruler paints in.
+
+**`D` arms the Ruler tool.** "Dimension" — the CAD term for the object and literally the DXF entity it
+exports as. Chosen after auditing every bare letter this editor already takes (F fit, M mirror,
+R rotate, S geometry snap, W wire); D was free. Ctrl/Cmd+D is Duplicate and Alt arms a duplicate drag,
+so both are excluded, the same way R guards Ctrl+R (Run) and W guards Ctrl+W (Close) — two letters here
+already mean different things bare and with Ctrl, so a third is a pattern rather than a surprise.
+Unlike W it is **not** gated on the active tool: arming one tool from another is what the toolbar
+button already does. It stays an ordinary character while a label is being typed, and is ignored
+mid-drag, where a tool switch would abandon a gesture.
+
+### Four bugs
+
+**1. A ruler-only copy never reached the clipboard.** Reported as pasting some other geometry instead
+of the ruler. `LayoutClipboard.CopyAsync` opened with
+`if (payload.Shapes.Count == 0 && payload.Instances.Count == 0) return;` — a guard I updated in
+`CanCopySelection` and `BuildCopyPayload` and missed here. A ruler-only copy returned **without
+touching the system clipboard at all**, so the previous copy was still sitting there and Ctrl+V pasted
+that. The copy did not fail loudly; it did not happen.
+
+**2. A flat selection refused its own graphic export.** `ComputeSelectionBounds` ends with
+`if (worldW < 1 || worldH < 1) return null;` — true for any purely horizontal or vertical ruler, i.e.
+most rulers and the owner's own file. No PDF, no SVG, no bitmap, and nothing said. Now a degenerate
+axis is inflated to an eighth of the other before pass 2, so a 1-D selection still gets a page. **The
+refusal predates rulers** and applied to any 1-D selection; rulers are just what finally produced one.
+
+**3. The DXF export reported its OWN Δ as a fidelity note about the user's drawing.** Reported as an
+unwanted "1 non-ASCII text value(s) … will be escaped" line in the export dialog. Their file was read
+directly: **zero non-ASCII characters anywhere in it**. The one
+escaped value was the `Δ` in our own `Δx / Δy` readout — a caveat about a spelling this writer chose,
+which the user cannot act on and which affected nothing of theirs. `EscapedTextCount` now counts
+**user-authored** text only; `DxfGroupWriter.WriteGeneratedString` escapes identically (`\U+0394` is
+AutoCAD's own convention and a real reader renders it as Δ) without counting. The group-1 override
+MIXES the two — our `<>` and Δ prefixes with their caption — so only a non-ASCII **caption** counts.
+Tests pin both halves: our Δ is silent, a non-ASCII caption or label still reports. Verified against
+the owner's actual file: the count is 0, the `Δ` is still escaped on disk, and ezdxf audits it clean.
+
+**4. Alt+drag showed no ghost for the copied ruler.** Rulers rode the COMMIT path
+(`CommitDuplicateDrag`) but not the ghost path, so the copy landed correctly and was invisible while
+being aimed. Ctrl+V paste placement had the same gap. `LayoutOverlay.RulerPastePreview` is the ruler
+half of `PastePreview`/`PastePreviewInstances` — and it is deliberately NOT a drag override, because
+an override means "draw this object somewhere else", which is the one thing a duplicate must not do:
+the original has to stay visibly put.
+
+### Cycling through what is under a ruler
+
+Asked for: clicking an already-selected ruler should cycle down through whatever lies under it, the
+way overlapping geometry already does. Before this, `TryHandleRulerSelectPress` consumed the press
+whenever a ruler was hit, so anything a ruler lay over was simply unreachable by clicking.
+
+**One pick stack, one cycle, three kinds.** `_cycleCache` is now `ClickCycleCache<LayoutPick>` rather
+than `ClickCycleCache<int>`: a bare index cannot say WHICH list index 3 belongs to once a click can
+land on a ruler, a shape or an instance at the same point. `BuildPickStack` returns everything under
+the click in PAINT order — rulers first (R-rul-11), then shapes in §6.2's z-order, then instances —
+and `ApplyPickSelection` routes each step to its own channel's existing click rule. **With no rulers in
+the document the stack is byte-for-byte the shape-only one**, which is why existing cycling behaviour
+is untouched; instances are still only reached when no shape was hit (L3a's R-L3a-5), they just live in
+the same stack now instead of being selected off to the side.
+
+**Selecting a ruler left `TryBeginRulerEndpointDrag`; the endpoint grab stayed.** An endpoint is a
+HANDLE — it belongs to a ruler the user has already selected and must beat the cycle for exactly the
+reason `TryHandleSelectPressOnHandles` beats it for a shape. Turning it into a cycle step would make
+the one gesture that re-measures a ruler unreachable the moment anything lay underneath it.
+
+**The precedence I got wrong first, and the tests that caught it.** I moved the geometry-snap marker
+grab BELOW the cycle, reasoning that "once cycling, the cycle owns the press". Three
+`LayoutDragGesturesTests` went red immediately, and they were right: **a second press at the same point
+is normally "now drag it", not "show me the next thing"**, so pre-empting the snap grab breaks
+select-then-drag onto a snap target. The grab is back above the cycle, with one carve-out — a RULER on
+top wins, since a marker is always about artwork (a ruler is never a snap target, §9B.11) and R-rul-11
+puts rulers above artwork. That is why `BuildPickStack` runs before the grab rather than after it.
+
+`UpdateSelectionStatusFromCycle` now describes all three kinds, so "Ruler · 40 mil · 1 of 2" tells you
+there is something underneath before you click again.
+
+**Two defects the first cut had, both reported as one symptom** — the cycle left the ruler selected
+when the thing underneath was a placed cell, but not when it was a primitive. That parenthetical was
+the decisive clue, and it is nothing to do with PCells:
+
+- **`SetInstanceSelection` had not been taught about the third channel.** `SetSelection` clears rulers,
+  its instance-side mirror did not, so cycling ruler → shape deselected the ruler and ruler → instance
+  left both selected. One missing line, in the one of the three setters that had not been touched.
+- **Beside it, the cycle was clearing its own stack.** `SetRulerSelection` and `SetInstanceSelection`
+  both called `_cycleCache.Clear()` when they cleared a shape selection — and the overlap cycle CALLS
+  those methods to move between kinds, so walking the stack destroyed it. Three clicks looked correct
+  (ruler → shape → ruler) and the fourth rebuilt the stack and sat on the ruler forever, which is why
+  the original test missed it. `SetSelection` has never cleared the cache, for exactly this reason;
+  the two now match it, and the public non-pointer entry points (`SelectInstance`, `SelectRuler`,
+  `SelectRulers`) invalidate it themselves, as `SelectAll`/`DeselectAll`/`Delete`/the marquee commit
+  already do. `TheCycleWrapsIndefinitely_NotJustOnce` walks six clicks and was verified RED against the
+  reverted line rather than assumed to cover it.
+
+### And one that was not a ruler bug at all
+
+**The stuck hand cursor.** Reported as the pointer sometimes turning into a hand and being hard to
+get back, with the suggestion that it should never be a hand here. The hand is correct — it is the pan
+cursor for a middle-drag or Space+drag, and removing it would remove the only feedback that pan is
+active. What was wrong is that it **stuck, deterministically**: the pan branch of
+`LayoutCanvas.OnPointerPressed` assigned `Cursor = new Cursor(Hand)` directly, bypassing `SetCursor`'s
+memo, so `_currentCursorType` still said "default" while the real cursor was a hand — and the release
+ran `UpdateCursor`, hit its own *already default, nothing to do* early-out, and returned without
+clearing it. On the Select tool with nothing hovered that is **every** middle-drag pan. It only looked
+intermittent because anything that sets a real cursor (hovering a PCell grip, holding Alt, arming a
+drawing tool) makes the memo non-null again and the next release then does clear it — which is also
+exactly why it was "hard" rather than impossible to get back.
+
+Fixed at the assignment, plus three hardenings for the OTHER route (a pan that never sees its own
+release — capture lost, app deactivated, a swallowed middle-button up — leaves `_isPanning` set, and
+from then on every move pans and the cursor is pinned): `EndPanIfActive` is now the one place the flag
+is cleared, wired to `PointerCaptureLost`, to `OnCanvasLostFocus` (the same latch family that method
+already documents for `_spaceHeld` and Alt — this is the one it missed), and to a no-button-held guard
+on the first move.
+
+**Test files.** `tests/Ui.Tests/Layout/LayoutRulerRound2Tests.cs` — the precision ladder and its
+round-trip, the number-format matrix (including that `Decimals` is not `G` precision), the dialog's
+read-only measurements, Layer/Net absence, the same-colour default and both contrast assertions, and
+one test per bug. Four more in `LayoutRulerToolTests` for the `D` shortcut. 120 ruler tests in total.
+
+
+## Ruler annotations in the Layout editor (2026-08-27)
+
+`docs/sonnet-briefs/brief-layout-ruler-annotations.md`, implementing `docs/design/layout-view.md` §9B:
+a two-point measurement placed *inside* the layout, which reads out the distance between its
+endpoints, persists in the `.clay`, and comes out in a slide and in a DXF.
+
+**§9B.1 — a ruler is not a `LayoutShape`, and the manufacturing writers therefore needed no
+exclusions.** `RulerAnnotation` lives in `LayoutView.Rulers`, its own top-level collection beside
+`Shapes` and `Instances`. The whole argument for that boundary is asymmetric cost: a missed exclusion
+on a bitmap draws a placeholder box somewhere odd, while a missed exclusion on a ruler puts an
+annotation into a manufacturing file. **Gate 3 pins it as a property rather than as a promise** —
+`LayoutRulerModelTests` exports the same layout twice, once with two rulers and once with none, and
+asserts GDSII, Gerber, Excellon and `.kicad_pcb` come out **byte-identical**. It passes because not one
+line of those four writers was touched. (Each export writes into its own scratch parent directory so
+both runs can use the same cell name: every one of those writers stamps the structure/board name into
+its output, and a per-call unique name fails the comparison for a reason that has nothing to do with
+rulers — which is exactly how the first draft of that test failed.)
+
+**The third selection channel.** `SelectedRulerIndices` mirrors `SelectedInstanceIndices`, and Move,
+Nudge, Delete, Cut/Copy/Paste and Duplicate stayed **unified**: each folds a ruler command into the
+same `CompositeCommand` the other two kinds already use, so a mixed selection is still one undo entry.
+`ComputeSelectionStatus` went from a two-kind `switch` to a three-part join, and `ReplaceMixedSelection`
+took a third (optional) list. What is genuinely ruler-specific — two-click placement, the endpoint
+drag, Clear All — lives in `LayoutEditorViewModel.Rulers.cs`. Rulers hit-test **above all geometry**
+(they paint above it), placed after L1d's handle check because a handle is chrome for a gesture the
+user has already committed to, not artwork competing for the click.
+
+**R-rul-3 — one size field, not two with one inert;** **R-rul-3a — mixed size modes disable it.** The
+Properties Inspector shows a single field whose caption and unit follow the mode ("Text size (pt)" /
+"Text height (µm)"), with both backing values stored separately so a mode switch is reversible. Across
+a selection whose modes DIFFER the field is disabled with the R13a reason rather than guessing a unit,
+and `CommitRulerSizeText` refuses defensively as well as being greyed — `AMixedModeSelection_NeverAcceptsANumber`
+asserts that neither backing value moves and no undo entry is pushed.
+
+**R-rul-11a — multi-selection editing is the EXISTING mechanism, plus one sibling.**
+`SetShapeFieldCommand<T>` is reused **verbatim**: its body only touches the view for `NotifyChanged` and
+mutates through a caller-supplied closure, so it was already generic over "a field on something this
+`LayoutView` owns" — its doc comment was widened to say so rather than a copy being made. What §9B.1
+does charge is `ApplyToEachRuler<T>`, ~25 lines, because the existing `ApplyToEach` is typed
+`Func<LayoutShape, T>`. It lives on the EDITOR view model rather than on the panel, so the docked
+inspector and the right-click `Edit Ruler…` modal commit through one path; the modal likewise hosts the
+same `LayoutRulerPropertiesView` control the panel does, so "the same property set as a modal" is
+literally the same control.
+
+**R-rul-16 — the two-pass export bounds, and why one pass crops.** A `Fixed` ruler's readout is *n*
+screen points, so its WORLD extent depends on the export scale, which depends on the bounds, which
+depend on the extent. `LayoutClipboard.ComputeSelectionBounds` resolves it in exactly two passes: pass
+1 unions the line endpoints and every `Scaled` ruler's measured text (neither depends on the scale);
+pass 2 measures the `Fixed` text at the scale pass 1 chose. The iteration is monotone — a larger bbox
+means a smaller scale means smaller world-space fixed text — so a second pass cannot make it worse.
+**The method now takes the flavour's own page size** (PDF 720×540, SVG 800×800, bitmap 1200×1200)
+instead of guessing one, and the shared zoom rule moved into `ZoomForBounds` so pass 1 cannot compute a
+different scale from the one that actually draws. `OnePass_WouldHaveCropped_SoTheSecondPassIsLoadBearing`
+constructs a ruler that provably escapes a one-pass bbox and then asserts the real answer contains it,
+so "do not skip pass 2" is a tested rule and not a comment.
+
+**One measurement, several callers.** The renderer is the only thing here that knows the font metrics,
+so `LayoutRenderer.MeasureRulerWorldBbox` / `MeasureRulerScreenBox` / `MeasureRulerTextWorldBbox` are
+what hit-test, Zoom-to-Fit and the clipboard's painted-bounds pass all read. `LayoutRulerHitTest` is
+therefore deliberately NOT framework-free, unlike `LayoutHitTest` — re-deriving the readout's box from
+a character-count estimate is precisely the drift `MeasureLabelWorldBbox`'s own doc comment records. It
+is a linear scan: there are tens of rulers, not 500,000, and `Rulers` is not in the spatial index.
+
+**R-rul-18 — a real `DIMENSION`, and the `DIMSTYLE` comment that had to be retired.**
+`WriteDimstyleTable` used to write zero records and say so, in a comment whose stated premise was
+*"this codebase's own export never creates a dimension entity, so there is nothing for one to
+reference"*. That premise is what §9B.10 retires. It now writes one record per distinct (text height,
+font style) pair actually used, named `CIRCUITRF_1`, `CIRCUITRF_2`, …; a ruler-free export still writes
+an empty table, exactly as before. Each ruler gets one anonymous `*D#` block (through the existing
+`WriteBlockRecordTable`/`WriteBlockHeader`/`WriteBlockFooter` path) and one `DIMENSION` in model space
+beside the root INSERT, on a `RULER` layer that rides the same `extraLayerNames` seam wBond wires
+already use. The caption and Δ line ride in group `1`, always beginning `<>`, so the recipient's CAD
+still recomputes the number — the formatted distance is never written as literal text.
+
+**R-rul-18b — `Fixed` has no meaning in DXF, so it is resolved against the drawing extents.** A DXF is
+a world-coordinate drawing with no screen and no zoom. `height = extentsDiagonal × TextSizePt /
+NominalViewportDiagonalPt`, the constant stated once (960 pt — a 1024×768 viewport at 96 dpi is 1280 px
+on the diagonal). Because that makes a ruler's exported text height a function of the drawing's own
+extents, the export posts a Messages note saying so; it is otherwise a surprise the second time
+someone exports.
+
+**R-rul-18c earned its keep, and found a real defect.** The file was validated against two readers that
+are not ours. `ezdxf` 1.4.4 opened it, audited it **clean (0 errors, 0 fixes)**, resolved every
+`DIMSTYLE` reference and every `*D#` block — and reported a **vertical ruler's measurement as exactly
+zero**. Cause: an aligned `DIMENSION`'s measurement is computed by PROJECTING the 13→14 vector onto the
+ray group `50` names, and group `50` defaults to 0, so a file written without it reports the horizontal
+component of every ruler. **The file opened, audited clean, and drew plausibly the whole time** — only
+asking a real reader for the *number* exposed it, which is the whole reason R-rul-18c refuses a
+round-trip through our own `DxfReader` (which dispatches on the leading `0 <TYPE>` token and ignores
+every group code it does not specifically look for). Fixed by writing group `50` as the ruler's own
+angle; re-checked with ezdxf (all three measurements now exact) and with QCAD 3.32.9's ODA-based
+`dwg2svg`, which opens and renders it. `EveryDimension_CarriesGroup50_TheMeasurementDirection` is the
+regression, at 0°, 90°, 180° and an oblique angle.
+
+**Import is untouched, by construction.** `DxfReader.ParseBlocksSection` already skips any block whose
+name starts with `*`, so R-rul-19 needed no new rule — verified rather than re-implemented.
+
+**Select All takes rulers too**, for exactly the reason the L5-era instance bug already recorded in
+`SelectAllCommand`'s own comment: Select All must select everything the user can select, or Ctrl+A then
+Delete silently leaves one kind behind.
+
+**Smaller things worth knowing.**
+
+- `LayoutRenderOptions.ShowRulers` defaults to **true** and is stored INVERTED behind an `init`
+  accessor. It is a `readonly struct`, so a field initializer would force an explicit parameterless
+  constructor — which `default(...)` bypasses, and a defaulted options value would then silently drop
+  every ruler from a slide. Backing the property with the negation keeps `default` and `new { }`
+  agreeing.
+- `LayoutFragment.Payload` gained `DisplayUnit`. The clipboard's graphic export has no document, and
+  R-rul-6 forbids a hard-coded unit — so a ruler copied out of a mil-unit board says "mil" in the
+  slide too. A ruler's world text HEIGHT is rescaled across a `DbuPerMicron` mismatch along with its
+  endpoints; its POINT size is a screen quantity and is deliberately left alone.
+- Shift uses `AngleMode.Deg45` passed **explicitly**, never the document's own `AngleMode` (R-rul-10) —
+  and it reuses `LayoutSnapping.ConstrainAndSnap`, which preserves the drag's own LENGTH along the
+  chosen direction rather than projecting onto it. A ruler must not acquire a second constraint rule,
+  so the test asserts the helper's actual behaviour (4,002, not 4,000, for a 4,000×120 drag).
+- `Ctrl+K` / `Cmd+K` is registered in `WorkspaceWindow.axaml` beside the existing pairs and routes
+  through `ResolveDrcTargetLayout`, so a wBond document clears the rulers on its reference layout.
+  `Ctrl+Shift+K` (Check Design Rules) is untouched. The command had to be added to BOTH
+  `NotifyCanExecuteChanged` fan-outs — the standing gotcha that file already documents.
+
+**Test files.** `tests/Ui.Tests/Layout/LayoutRulerModelTests.cs` (round-trip, byte-identical
+manufacturing exports, cell-local), `LayoutRulerToolTests.cs` (placement, snap, Shift, Escape,
+selection, endpoint drag, undo/redo, Clear All), `LayoutRulerRenderingTests.cs` (Fixed vs Scaled device
+height, display unit, the readout never straddling the line at four angles, `ShowRulers`, both theme
+roles), `LayoutRulerClipboardTests.cs` (mixed marquee copy, cross-resolution rescale, the SVG carrying
+the readout and caption, the two-pass bounds), `LayoutRulerPropertiesTests.cs` (multi-edit as one undo
+entry, blank-on-differ, mixed-mode refusal), `LayoutRulerDxfTests.cs` (both subclass markers, group 50,
+the resolvable `DIMSTYLE`, block ownership, the `RULER` layer record, group 1, and import producing no
+rulers). 69 tests.
+
+
 ## Duplicate with Offset, and the toolbar's Rotate/Mirror that never disabled (2026-08-27)
 
 Two owner items in one round: make Duplicate visible and give it an offset prompt, and fix the layout

@@ -70,6 +70,16 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public static PathEndStyle[]   PathEndStyleOptions { get; } = System.Enum.GetValues<PathEndStyle>();
     public static LayoutRotation[] RotationOptions     { get; } = System.Enum.GetValues<LayoutRotation>();
     public static LabelFontStyle[] LabelStyleOptions   { get; } = System.Enum.GetValues<LabelFontStyle>();
+    /// <summary>docs/design/layout-view.md §9B.3 — the two ruler size modes, for the tri-state combo.
+    /// <see cref="RulerStyleOptions"/> is deliberately the SAME <see cref="LabelFontStyle"/> list a
+    /// label uses (R-rul-2): one typeface resolver serves both, and a ruler cannot acquire a face a
+    /// label cannot.</summary>
+    public static RulerSizeMode[] RulerSizeModeOptions { get; } = System.Enum.GetValues<RulerSizeMode>();
+
+    /// <summary>The readout's number spelling (§9B.4) — General, Fixed, or either exponential form.</summary>
+    public static LayoutUnits.LayoutNumberFormat[] RulerNumberFormatOptions { get; }
+        = System.Enum.GetValues<LayoutUnits.LayoutNumberFormat>();
+    public static LabelFontStyle[] RulerStyleOptions   { get; } = System.Enum.GetValues<LabelFontStyle>();
 
     // ── Empty state ────────────────────────────────────────────────────────────
 
@@ -93,7 +103,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// the drag. Both cases read the same to a user: values move live, fields are not typeable.
     /// </summary>
     private bool DragBlocksEdits() =>
-        _vm is not null && (_vm.Overlay.DragOverrides.Count > 0 || _vm.PCellHandleDragParameters is not null);
+        _vm is not null && (_vm.Overlay.DragOverrides.Count > 0
+                            || _vm.Overlay.RulerDragOverrides is { Count: > 0 }
+                            || _vm.PCellHandleDragParameters is not null);
 
     // ── Generic field dispatch (view code-behind is Tag-keyed, mirrors TechEditorView's
     // CommitField/OnComboSelectionChanged dispatcher pattern) ──────────────────────────────────────
@@ -139,6 +151,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "InstanceCols":    CommitInstanceColsText(text); break;
             case "InstancePitchX":  CommitInstancePitchXText(text); break;
             case "InstancePitchY":  CommitInstancePitchYText(text); break;
+            case "RulerX1":        CommitRulerEndpoint(text, first: true,  isY: false); break;
+            case "RulerY1":        CommitRulerEndpoint(text, first: true,  isY: true);  break;
+            case "RulerX2":        CommitRulerEndpoint(text, first: false, isY: false); break;
+            case "RulerY2":        CommitRulerEndpoint(text, first: false, isY: true);  break;
+            case "RulerSize":      CommitRulerSizeText(text); break;
+            case "RulerCaption":   CommitRulerCaptionText(text); break;
+            case "RulerDecimals":  CommitRulerDecimalsText(text); break;
         }
     }
 
@@ -180,6 +199,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "InstanceCols":    InstanceColsError = null; break;
             case "InstancePitchX":  InstancePitchXError = null; break;
             case "InstancePitchY":  InstancePitchYError = null; break;
+            case "RulerX1":         RulerX1Error = null; break;
+            case "RulerY1":         RulerY1Error = null; break;
+            case "RulerX2":         RulerX2Error = null; break;
+            case "RulerY2":         RulerY2Error = null; break;
+            case "RulerSize":       RulerSizeError = null; break;
+            case "RulerDecimals":   RulerDecimalsError = null; break;
         }
     }
 
@@ -205,14 +230,22 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// <c>Net</c> field at all (never did — this was a display bug, not a model gap). Nets attach to
     /// conductor geometry and pins, not to a placement; the sub-cell's own port labels are what will
     /// carry nets once L5 lands. Nothing is lost by hiding this row for an instance.</summary>
-    public bool ShowNet => !ShowBitmap && !IsInstanceContext;
+    /// <para>Also false for a RULER (§9B.11: "not net-aware" — no <c>Net</c>, no connectivity, nothing
+    /// in hierarchical net extraction). A ruler is a statement ABOUT the artwork, not a conductor.</para>
+    public bool ShowNet => !ShowBitmap && !IsInstanceContext && !IsRulerContext;
 
     /// <summary>False for an instance selection — brief-L3a-followups.md §3: an instance paints on
     /// whatever layers its SUB-CELL uses (it has no <c>Layer</c> field of its own, and never did),
     /// exactly like GDSII's <c>SREF</c> carries no layer either. Hiding layer M1 already hides M1
     /// geometry INSIDE an instance via the sub-cell's own resolved technology — showing a Layer combo
-    /// on the instance itself would imply a control that does nothing.</summary>
-    public bool ShowLayer => !IsInstanceContext;
+    /// on the instance itself would imply a control that does nothing.
+    ///
+    /// <para><b>False for a RULER too, and for a stronger reason</b> (docs/design/layout-view.md
+    /// R-rul-1): a ruler has no <c>Layer</c> field at all — not one that is ignored, ABSENT. It does
+    /// not obey layer visibility, never takes a layer colour, and always paints above every layer. A
+    /// Layer combo here would be a control with nothing behind it, which is the same trap R-rul-1
+    /// avoided in the model by refusing to declare the field in the first place.</para></summary>
+    public bool ShowLayer => !IsInstanceContext && !IsRulerContext;
 
     partial void OnSelectedLayerItemChanged(LayerPickerItem? value)
     {
@@ -1781,6 +1814,16 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     {
         if (_vm is null) { SetEmpty("No active layout."); return; }
 
+        // §9B.6: a PURE ruler selection gets the ruler context. Checked before instances so a
+        // ruler-only selection is never mistaken for an empty one; a MIXED selection still shows the
+        // shape/instance context it already did, since those two have the richer per-item editing and
+        // a mixed panel would offer fields that apply to only some of what is selected.
+        if (_vm.SelectedRulerIndices.Count > 0
+            && _vm.SelectedIndices.Count == 0 && _vm.SelectedInstanceIndices.Count == 0)
+        { RefreshRulerContext(); return; }
+
+        IsRulerContext = false;
+
         if (_vm.SelectedInstanceIndices.Count > 0) { RefreshInstanceContext(); return; }
 
         _selected = _vm.EffectiveSelectedShapes().ToList(); // R-L1j-1: drag-override-aware
@@ -1929,6 +1972,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         SelectionSummaryText = "";
         IsEditingEnabled = true;
         IsInstanceContext = false;
+        IsRulerContext = false;
         ShowRoundedRect = ShowCircle = ShowVia = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = ShowPortDirection = false;
         PortWidthText = "";
         OnPropertyChanged(nameof(LabelHeightCaption));
@@ -2009,6 +2053,340 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         BitmapShape       => "Bitmap",
         _                 => shape.GetType().Name,
     };
+
+    // ── Ruler annotations (docs/design/layout-view.md §9B.6) ──────────────────────────────────────
+    //
+    // A THIRD top-level context beside shapes and instances, for the same reason instances got the
+    // second one: a ruler has none of the shape concepts (no Layer, no Net, no vertex list, no
+    // flatten tolerance) and lives in its own selection channel. Unlike the instance context, ruler
+    // editing IS full multi-selection (R-rul-11a) — the whole point of the section is "draw ten
+    // rulers, decide the text is too small, select all ten, type one number."
+
+    [ObservableProperty] private bool _isRulerContext;
+
+    /// <summary>Layer and Net are shape concepts a ruler does not have — see <see cref="ShowLayer"/>
+    /// and <see cref="ShowNet"/>. Mirrors <c>OnIsInstanceContextChanged</c>, which exists for exactly
+    /// the same reason: a computed visibility flag has to be re-raised when what it reads changes.</summary>
+    partial void OnIsRulerContextChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowLayer));
+        OnPropertyChanged(nameof(ShowNet));
+    }
+
+    [ObservableProperty] private string _rulerX1Text = "";
+    [ObservableProperty] private string? _rulerX1Error;
+    public bool HasRulerX1Error => RulerX1Error is not null;
+
+    [ObservableProperty] private string _rulerY1Text = "";
+    [ObservableProperty] private string? _rulerY1Error;
+    public bool HasRulerY1Error => RulerY1Error is not null;
+
+    [ObservableProperty] private string _rulerX2Text = "";
+    [ObservableProperty] private string? _rulerX2Error;
+    public bool HasRulerX2Error => RulerX2Error is not null;
+
+    [ObservableProperty] private string _rulerY2Text = "";
+    [ObservableProperty] private string? _rulerY2Error;
+    public bool HasRulerY2Error => RulerY2Error is not null;
+
+    /// <summary>Tri-state, like every other combo here: null means the selection's modes DIFFER.</summary>
+    [ObservableProperty] private RulerSizeMode? _rulerSizeModeValue;
+
+    /// <summary><b>ONE size field, whose label and unit follow the mode</b> (R-rul-3). Two fields with
+    /// one of them always inert is the trap this avoids; the two backing values are stored separately
+    /// on the model, so switching modes and switching back does not destroy the other one's
+    /// setting.</summary>
+    [ObservableProperty] private string _rulerSizeText = "";
+    [ObservableProperty] private string? _rulerSizeError;
+    public bool HasRulerSizeError => RulerSizeError is not null;
+
+    /// <summary>"Text size (pt)" in Fixed, "Text height (<unit>)" in Scaled — the caption IS how the
+    /// one field states which quantity it currently means.</summary>
+    [ObservableProperty] private string _rulerSizeCaption = "Text size";
+
+    /// <summary>
+    /// R-rul-3a: <b>a multi-selection whose size MODES differ disables the size field rather than
+    /// guessing.</b> The one field means points in <c>Fixed</c> and a world length in <c>Scaled</c>;
+    /// with a mixed selection there is no honest unit to label it with, and writing "11" into it would
+    /// put 11 pt into seven rulers and 11 µm into three. Setting the mode is itself a multi-edit, so
+    /// the fix is one click and the field lights up.
+    /// </summary>
+    [ObservableProperty] private bool _isRulerSizeEnabled = true;
+
+    /// <summary>R13a: the stated reason the size field is disabled, never a silently inert control.</summary>
+    [ObservableProperty] private string? _rulerSizeDisabledReason;
+
+    [ObservableProperty] private LabelFontStyle? _rulerStyleValue;
+
+    [ObservableProperty] private string _rulerCaptionText = "";
+
+    /// <summary>Tri-state (null = differs across the selection) — the Delta-x/Delta-y toggle.</summary>
+    [ObservableProperty] private bool? _rulerShowComponentsValue;
+
+    /// <summary>R-rul-5: the measured distance is shown and is NEVER editable. A ruler whose number
+    /// can be typed over is not a measurement, and in a design review it is worse than no ruler at
+    /// all. The caption is the free text; the number is computed.
+    ///
+    /// <para><b>Rendered as a SELECTABLE text element</b>, not an editable field — the value is there
+    /// to be read and copied into a review note, and a control that accepts a caret but discards what
+    /// is typed is worse than one that plainly cannot be typed into.</para></summary>
+    [ObservableProperty] private string _rulerDistanceText = "";
+
+    /// <summary>The measured components, shown alongside the distance and read-only for the same
+    /// reason. <b>Independent of <see cref="RulerShowComponentsValue"/></b>: that toggle decides what
+    /// the CANVAS draws, and the inspector is where a user goes to read the numbers whether or not
+    /// they want them painted over the artwork.</summary>
+    [ObservableProperty] private string _rulerDeltaXText = "";
+    [ObservableProperty] private string _rulerDeltaYText = "";
+
+    /// <summary>
+    /// The readout's decimal places — one field governing the distance AND the components, since a
+    /// ruler stating one measurement at three precisions is stating it three ways.
+    ///
+    /// <para>Blank means "this display unit's own default" (<see cref="RulerDecimalsPlaceholder"/>
+    /// shows what that resolves to), which is what keeps §1.3's "changing the display unit is free"
+    /// true — a document switched mm to mil re-renders at mil's precision with nothing stored
+    /// changing. Blank ALSO means "they differ" across a multi-selection, exactly as every other
+    /// field in this panel does.</para>
+    /// </summary>
+    [ObservableProperty] private string _rulerDecimalsText = "";
+    [ObservableProperty] private string? _rulerDecimalsError;
+    public bool HasRulerDecimalsError => RulerDecimalsError is not null;
+
+    /// <summary>What a BLANK decimals field resolves to — always the unit default, never some
+    /// selected ruler's own override, mirroring <see cref="FlattenTolPlaceholder"/>'s own rule.
+    /// <b>The bare digit</b>, because it is the watermark of a field only wide enough for one; the
+    /// sentence explaining it lives in <see cref="RulerDecimalsHint"/>.</summary>
+    [ObservableProperty] private string _rulerDecimalsPlaceholder = "";
+
+    /// <summary>The decimals field's tooltip, naming the current unit's own default — the same number
+    /// the watermark shows, in a place with room to say what it means.</summary>
+    [ObservableProperty] private string _rulerDecimalsHint = "";
+
+    /// <summary>How the readout's numbers are spelled. Tri-state (null = they differ), like every
+    /// other combo here. General trims trailing zeros; Fixed keeps them, which is the reason to pick
+    /// it — a column of rulers that lines up.</summary>
+    [ObservableProperty] private LayoutUnits.LayoutNumberFormat? _rulerNumberFormatValue;
+
+    partial void OnRulerNumberFormatValueChanged(
+        LayoutUnits.LayoutNumberFormat? oldValue, LayoutUnits.LayoutNumberFormat? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        if (DragBlocksEdits()) return;
+        _vm.ApplyToEachRuler<LayoutUnits.LayoutNumberFormat>(
+            "Ruler Number Format", r => r.NumberFormat, (r, v) => r.NumberFormat = v, newValue.Value);
+        RefreshFromVm();
+    }
+
+    private const string RulerMixedModeReason = "Set every selected ruler to the same size mode first.";
+
+    partial void OnRulerSizeModeValueChanged(RulerSizeMode? oldValue, RulerSizeMode? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        if (DragBlocksEdits()) return;
+        _vm.ApplyToEachRuler<RulerSizeMode>("Ruler Size Mode", r => r.SizeMode, (r, v) => r.SizeMode = v, newValue.Value);
+        RefreshFromVm();
+    }
+
+    partial void OnRulerStyleValueChanged(LabelFontStyle? oldValue, LabelFontStyle? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        if (DragBlocksEdits()) return;
+        _vm.ApplyToEachRuler<LabelFontStyle>("Ruler Style", r => r.Style, (r, v) => r.Style = v, newValue.Value);
+        RefreshFromVm();
+    }
+
+    partial void OnRulerShowComponentsValueChanged(bool? oldValue, bool? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        if (DragBlocksEdits()) return;
+        _vm.ApplyToEachRuler<bool>("Ruler Components", r => r.ShowComponents, (r, v) => r.ShowComponents = v, newValue.Value);
+        RefreshFromVm();
+    }
+
+    public void CommitRulerCaptionText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        string? caption = string.IsNullOrWhiteSpace(text) ? null : text;
+        _vm.ApplyToEachRuler<string?>("Ruler Caption", r => r.Caption, (r, v) => r.Caption = v, caption);
+        RefreshFromVm();
+    }
+
+    /// <summary>Blank clears the override back to the unit default — the only way to GET back to it,
+    /// and the reason the underlying field is a nullable int rather than a number that can only ever
+    /// be set.</summary>
+    public void CommitRulerDecimalsText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            RulerDecimalsError = null;
+            _vm.ApplyToEachRuler<int?>("Ruler Decimals", r => r.Decimals, (r, v) => r.Decimals = v, null);
+            RefreshFromVm();
+            return;
+        }
+
+        if (!int.TryParse(text.Trim(), System.Globalization.NumberStyles.Integer,
+                          System.Globalization.CultureInfo.InvariantCulture, out int d))
+        { RulerDecimalsError = "Invalid value"; return; }
+        if (d < 0 || d > RulerAnnotation.MaxDecimals)
+        { RulerDecimalsError = $"Decimals must be between 0 and {RulerAnnotation.MaxDecimals}"; return; }
+
+        RulerDecimalsError = null;
+        _vm.ApplyToEachRuler<int?>("Ruler Decimals", r => r.Decimals, (r, v) => r.Decimals = v, d);
+        RefreshFromVm();
+    }
+
+    public void CommitRulerSizeText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+
+        // R-rul-3a again, defensively: never write a number into a mixed-mode selection even if a
+        // stale commit somehow reaches here with the field disabled.
+        if (RulerSizeModeValue is not { } mode)
+        { RulerSizeError = RulerMixedModeReason; return; }
+
+        if (mode == RulerSizeMode.Fixed)
+        {
+            if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
+                                 System.Globalization.CultureInfo.InvariantCulture, out double pt))
+            { RulerSizeError = "Invalid value"; return; }
+            if (pt <= 0) { RulerSizeError = "Text size must be greater than 0"; return; }
+            RulerSizeError = null;
+            _vm.ApplyToEachRuler<double>("Ruler Text Size", r => r.TextSizePt, (r, v) => r.TextSizePt = v, pt);
+        }
+        else
+        {
+            if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out long h))
+            { RulerSizeError = "Invalid value"; return; }
+            if (h <= 0) { RulerSizeError = "Text height must be greater than 0"; return; }
+            RulerSizeError = null;
+            _vm.ApplyToEachRuler<long>("Ruler Text Height", r => r.TextHeightDbu, (r, v) => r.TextHeightDbu = v, h);
+        }
+        RefreshFromVm();
+    }
+
+    private void CommitRulerEndpoint(string text, bool first, bool isY)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+
+        void SetError(string? e)
+        {
+            if (first && !isY) RulerX1Error = e;
+            else if (first) RulerY1Error = e;
+            else if (!isY) RulerX2Error = e;
+            else RulerY2Error = e;
+        }
+
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out long v))
+        { SetError("Invalid value"); return; }
+        SetError(null);
+
+        string desc = $"Ruler {(first ? "Start" : "End")} {(isY ? "Y" : "X")}";
+        if (first && !isY)      _vm.ApplyToEachRuler<long>(desc, r => r.X1, (r, nv) => r.X1 = nv, v);
+        else if (first)         _vm.ApplyToEachRuler<long>(desc, r => r.Y1, (r, nv) => r.Y1 = nv, v);
+        else if (!isY)          _vm.ApplyToEachRuler<long>(desc, r => r.X2, (r, nv) => r.X2 = nv, v);
+        else                    _vm.ApplyToEachRuler<long>(desc, r => r.Y2, (r, nv) => r.Y2 = nv, v);
+        RefreshFromVm();
+    }
+
+    private void RefreshRulerContext()
+    {
+        var rulers = _vm!.EffectiveSelectedRulers();
+        if (rulers.Count == 0) { SetEmpty("Select a shape, an instance or a ruler to inspect."); return; }
+
+        _isRefreshing = true;
+        IsEmptyState = false;
+        IsInstanceContext = false;
+        IsRulerContext = true;
+        ShowRoundedRect = ShowCircle = ShowVia = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize
+            = ShowVertexList = ShowBitmap = ShowPortDirection = false;
+        ShowPCellParameterList = false;
+        PCellParamRows = null; _pcellParamGeneratedCellDir = null;
+        IsEditingEnabled = !DragBlocksEdits();
+
+        SelectionSummaryText = rulers.Count == 1 ? "Ruler" : $"{rulers.Count} rulers selected";
+
+        SetTextIfNotFocused("RulerX1", FormatSharedDbu(rulers.Select(r => (long?)r.X1)), () => RulerX1Text, v => RulerX1Text = v);
+        SetTextIfNotFocused("RulerY1", FormatSharedDbu(rulers.Select(r => (long?)r.Y1)), () => RulerY1Text, v => RulerY1Text = v);
+        SetTextIfNotFocused("RulerX2", FormatSharedDbu(rulers.Select(r => (long?)r.X2)), () => RulerX2Text, v => RulerX2Text = v);
+        SetTextIfNotFocused("RulerY2", FormatSharedDbu(rulers.Select(r => (long?)r.Y2)), () => RulerY2Text, v => RulerY2Text = v);
+
+        var modes = rulers.Select(r => r.SizeMode).Distinct().ToList();
+        RulerSizeModeValue = modes.Count == 1 ? modes[0] : null;
+
+        string unitSuffix = LayoutUnits.Suffix(_vm.DisplayUnit);
+        if (RulerSizeModeValue is RulerSizeMode.Fixed)
+        {
+            IsRulerSizeEnabled = true;
+            RulerSizeDisabledReason = null;
+            RulerSizeCaption = "Text size (pt)";
+            var pts = rulers.Select(r => r.TextSizePt).Distinct().ToList();
+            SetTextIfNotFocused("RulerSize",
+                pts.Count == 1 ? pts[0].ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) : "",
+                () => RulerSizeText, v => RulerSizeText = v);
+        }
+        else if (RulerSizeModeValue is RulerSizeMode.Scaled)
+        {
+            IsRulerSizeEnabled = true;
+            RulerSizeDisabledReason = null;
+            RulerSizeCaption = $"Text height ({unitSuffix})";
+            SetTextIfNotFocused("RulerSize", FormatSharedDbu(rulers.Select(r => (long?)r.TextHeightDbu)),
+                () => RulerSizeText, v => RulerSizeText = v);
+        }
+        else
+        {
+            // R-rul-3a: mixed modes — disabled, with the reason, and blank rather than a number in
+            // whichever unit happened to come first.
+            IsRulerSizeEnabled = false;
+            RulerSizeDisabledReason = RulerMixedModeReason;
+            RulerSizeCaption = "Text size";
+            SetTextIfNotFocused("RulerSize", "", () => RulerSizeText, v => RulerSizeText = v);
+        }
+
+        var styles = rulers.Select(r => r.Style).Distinct().ToList();
+        RulerStyleValue = styles.Count == 1 ? styles[0] : null;
+
+        var captions = rulers.Select(r => r.Caption ?? "").Distinct().ToList();
+        SetTextIfNotFocused("RulerCaption", captions.Count == 1 ? captions[0] : "",
+            () => RulerCaptionText, v => RulerCaptionText = v);
+
+        var deltas = rulers.Select(r => r.ShowComponents).Distinct().ToList();
+        RulerShowComponentsValue = deltas.Count == 1 ? deltas[0] : null;
+
+        // R-rul-5/R-rul-6: computed, read-only, formatted in the document's own display unit and at
+        // the ruler's own precision — the SAME LayoutUnits.Format the canvas readout goes through, so
+        // the panel and the artwork can never disagree about the number.
+        var decimalsSet = rulers.Select(r => r.Decimals).Distinct().ToList();
+        SetTextIfNotFocused("RulerDecimals",
+            decimalsSet.Count == 1 && decimalsSet[0] is { } dv
+                ? dv.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : "",
+            () => RulerDecimalsText, v => RulerDecimalsText = v);
+        int unitDefault = RulerAnnotation.DefaultDecimalsFor(_vm.DisplayUnit);
+        RulerDecimalsPlaceholder = unitDefault.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        RulerDecimalsHint =
+            "Decimal places in the readout — the distance and the components together. "
+            + $"Leave blank to follow the display unit's own default ({unitDefault} for {unitSuffix}).";
+
+        string Measure(System.Func<RulerAnnotation, long> pick)
+        {
+            var texts = rulers
+                .Select(r => r.FormatLength(pick(r), _vm.DisplayUnit, _vm.Model.DbuPerMicron))
+                .Distinct().ToList();
+            return texts.Count == 1 ? $"{texts[0]} {unitSuffix}" : "(multiple)";
+        }
+
+        var formats = rulers.Select(r => r.NumberFormat).Distinct().ToList();
+        RulerNumberFormatValue = formats.Count == 1 ? formats[0] : null;
+
+        RulerDistanceText = Measure(r => r.DistanceDbu);
+        RulerDeltaXText   = Measure(r => System.Math.Abs(r.X2 - r.X1));
+        RulerDeltaYText   = Measure(r => System.Math.Abs(r.Y2 - r.Y1));
+
+        _isRefreshing = false;
+    }
 
     // ── Command dispatch helper ────────────────────────────────────────────────
 

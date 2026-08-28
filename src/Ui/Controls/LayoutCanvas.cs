@@ -262,6 +262,7 @@ public sealed class LayoutCanvas : Control
         PointerReleased     += OnPointerReleased;
         PointerExited       += OnPointerExited;
         PointerWheelChanged += OnPointerWheel;
+        PointerCaptureLost  += OnPointerCaptureLost;
         DoubleTapped        += OnDoubleTapped;
         KeyDown             += OnKeyDown;
         KeyUp               += OnKeyUp;
@@ -321,6 +322,18 @@ public sealed class LayoutCanvas : Control
         double wx = CurrentViewport.ScreenToWorldX(pos.X);
         double wy = CurrentViewport.ScreenToWorldY(pos.Y);
         long tolDbu = HitTolDbu();
+
+        // A RULER first, and above all geometry — the same precedence the single-click path uses,
+        // since rulers paint above everything. Double-clicking one opens its properties, which is the
+        // gesture the rest of this editor already spends on "show me what this is": a PCell instance's
+        // parameter popup is the same shape, and it routes through the SAME dialog the right-click
+        // Edit Ruler… item opens rather than a second one.
+        if (_viewModel.FindRulerForContextMenu(wx, wy, tolDbu) is { } rulerIndex)
+        {
+            _ = ShowRulerEditDialogAsync(rulerIndex);
+            e.Handled = true;
+            return;
+        }
 
         var hits = LayoutHitTest.HitInstanceStack(
             _viewModel.Model, _viewModel.Technology, _viewModel.InstanceBaseDir,
@@ -405,6 +418,16 @@ public sealed class LayoutCanvas : Control
             // rather than a second bbox notion.
             foreach (var inst in model.Instances)
                 bb = bb.Union(CellHierarchy.InstanceBbox(inst, _viewModel.InstanceBaseDir));
+
+            // docs/design/layout-view.md §9B: a ruler is document content and must be framed like any
+            // other. Measured through the RENDERER (LayoutRenderer.MeasureRulerWorldBbox), never by a
+            // second footprint derived here — the readout's extent is real font metrics, and a Fixed
+            // ruler's is a function of the zoom. The CURRENT zoom is the right one to ask with: this
+            // frames what is on screen now, and a fit that changed the zoom to change the answer to
+            // change the zoom would not converge.
+            foreach (var ruler in model.Rulers)
+                bb = bb.Union(LayoutRenderer.MeasureRulerWorldBbox(
+                    ruler, model.DisplayUnit, model.DbuPerMicron, _zoom));
         }
 
         // Whatever rides ON the canvas counts too. A wBond document's wires are an overlay by design
@@ -511,7 +534,16 @@ public sealed class LayoutCanvas : Control
             _panDragStartPanX = _panX;
             _panDragStartPanY = _panY;
             e.Pointer.Capture(this);
-            Cursor = new Cursor(StandardCursorType.Hand);
+            // Through SetCursor, NOT a bare `Cursor = new Cursor(...)`. Owner report, 2026-08-27: the
+            // pointer sometimes became a hand and was hard to get back to an arrow.
+            // Assigning Cursor directly left _currentCursorType saying "default" while the real cursor
+            // was a hand — so the release ran UpdateCursor, reached its own "already default, nothing
+            // to do" early-out, and returned WITHOUT clearing it. On the Select tool with nothing
+            // hovered that is every middle-drag pan, not an occasional one; it only looked intermittent
+            // because any state that sets a real cursor (hovering a PCell grip, holding Alt, arming a
+            // drawing tool) makes the memo non-null again and the next release then does clear it,
+            // which is also exactly why it was "hard" rather than impossible to get back.
+            SetCursor(StandardCursorType.Hand);
             return;
         }
 
@@ -916,6 +948,32 @@ public sealed class LayoutCanvas : Control
         // docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md — click-target-scoped, same
         // shape as the edge/vertex items above: only present when the right-click actually landed on
         // a bitmap.
+        // §9B.6 R-rul-12: click-target-scoped, the same shape as the bitmap items below — only
+        // present when the right-click actually landed on a ruler.
+        if (_viewModel.FindRulerForContextMenu(wx, wy, HitTolDbu()) is { } rulerIndex)
+        {
+            if (items.Count > 0) items.Add(new Separator());
+
+            var editRuler = new MenuItem { Header = "Edit Ruler…" };
+            editRuler.Click += async (_, _) => await ShowRulerEditDialogAsync(rulerIndex);
+            items.Add(editRuler);
+
+            var deleteRuler = new MenuItem { Header = "Delete Ruler" };
+            deleteRuler.Click += (_, _) => { _viewModel.DeleteRuler(rulerIndex); InvalidateVisual(); };
+            items.Add(deleteRuler);
+        }
+
+        // R13a: always present, disabled with its stated reason rather than hidden, so "Clear All
+        // Rulers" is discoverable on a document that has none.
+        {
+            if (items.Count > 0) items.Add(new Separator());
+            var avail = _viewModel.ClearAllRulersAvailability;
+            var clearAll = new MenuItem { Header = "Clear All Rulers", IsEnabled = avail.CanExecute };
+            if (!avail.CanExecute && avail.DisabledReason is { } reason) ToolTip.SetTip(clearAll, reason);
+            clearAll.Click += (_, _) => { _viewModel.ClearAllRulers(); InvalidateVisual(); };
+            items.Add(clearAll);
+        }
+
         var foundBitmap = _viewModel.FindBitmapForContextMenu(wx, wy, HitTolDbu());
         if (foundBitmap is { } bmp)
         {
@@ -1180,6 +1238,26 @@ public sealed class LayoutCanvas : Control
         }
     }
 
+    /// <summary>
+    /// R-rul-12's <c>Edit…</c>: selects the right-clicked ruler (so the docked inspector agrees with
+    /// the popup) and opens the SAME property surface as a non-modal window, mirroring
+    /// <c>LayoutEditorView</c>'s own PCell-parameter popup exactly.
+    /// </summary>
+    private Task ShowRulerEditDialogAsync(int rulerIndex)
+    {
+        if (_viewModel is null) return Task.CompletedTask;
+        _viewModel.SelectRuler(rulerIndex);
+        InvalidateVisual();
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var dialogVm = new ViewModels.LayoutShapePropertiesViewModel();
+        dialogVm.SetContext(_viewModel);
+        var dialog = new Views.Dialogs.LayoutRulerEditDialog { DataContext = dialogVm };
+        dialog.Closed += (_, _) => dialogVm.SetContext(null);   // unsubscribe from the layout VM
+        if (owner is not null) dialog.Show(owner); else dialog.Show();
+        return Task.CompletedTask;
+    }
+
     private async Task ShowResolveBitmapPathDialogAsync(int shapeIndex)
     {
         if (_viewModel is null) return;
@@ -1251,6 +1329,15 @@ public sealed class LayoutCanvas : Control
 
         if (_isPanning)
         {
+            // A pan cannot be in progress with nothing held. If the release went somewhere else, this
+            // is the first move that can notice — cheaper and more reliable than hoping for the event.
+            var held = e.GetCurrentPoint(this).Properties;
+            if (!held.IsLeftButtonPressed && !held.IsMiddleButtonPressed)
+            {
+                EndPanIfActive();
+                return;
+            }
+
             var vp = CurrentViewport;
             // Screen Y maps to world via a Y-up flip, so a downward drag (increasing screen Y) must
             // move PanY the SAME direction as the drag, unlike the schematic's Y-down canvases.
@@ -1285,13 +1372,32 @@ public sealed class LayoutCanvas : Control
 
     private void OnPointerExited(object? _, PointerEventArgs e) => CursorWorldChanged?.Invoke(this, null);
 
+    /// <summary>
+    /// Ends a pan wherever it ended — the ONE place <see cref="_isPanning"/> is cleared, so every exit
+    /// from the gesture restores the cursor the same way.
+    ///
+    /// <para><b>A pan that never sees its own release is the latch this exists for.</b> Losing the
+    /// capture to another window, the app deactivating mid-drag, or a middle-button release the OS
+    /// swallows all leave <c>_isPanning</c> set — and from then on <see cref="OnPointerMoved"/>'s first
+    /// branch pans on every move and <see cref="UpdateCursor"/>'s first branch pins the hand, with
+    /// nothing on screen explaining either. Same family as the <see cref="_spaceHeld"/> latch
+    /// <see cref="OnCanvasLostFocus"/> already documents; this is the one it missed.</para>
+    /// </summary>
+    private void EndPanIfActive()
+    {
+        if (!_isPanning) return;
+        _isPanning = false;
+        UpdateCursor();
+    }
+
+    private void OnPointerCaptureLost(object? _, PointerCaptureLostEventArgs e) => EndPanIfActive();
+
     private void OnPointerReleased(object? _, PointerReleasedEventArgs e)
     {
         if (_isPanning)
         {
-            _isPanning = false;
             e.Pointer.Capture(null);
-            UpdateCursor();
+            EndPanIfActive();
             return;
         }
 
@@ -1430,6 +1536,7 @@ public sealed class LayoutCanvas : Control
         // as the Space-to-pan latch above, with a different key.
         _viewModel?.ClearGripLockArmed();
         _altHeld = false;   // same latch, same reason — see above
+        _isPanning = false; // and the pan latch — see EndPanIfActive for the report this closes
 
         UpdateCursor();
     }

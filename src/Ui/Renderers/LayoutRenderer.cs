@@ -94,6 +94,26 @@ public readonly struct LayoutRenderOptions
     /// — the toggle default lives at the VM layer, not here).</summary>
     public bool ShowPCellPins { get; init; }
 
+    /// <summary>
+    /// docs/design/layout-view.md §9B / R-rul-1 — the per-document <b>Show Rulers</b> view toggle.
+    /// Defaults to TRUE, unlike every other overlay flag here, because a ruler is DOCUMENT CONTENT
+    /// rather than overlay state: it is in the <c>.clay</c>, it comes out in a slide, and an export
+    /// path that quietly dropped it would contradict §9B.9's whole point. Export mode therefore leaves
+    /// this ON — the grid, the ghost and the selection overlay are what <c>Overlay = null</c>
+    /// suppresses, and rulers are none of those.
+    /// </summary>
+    /// <remarks><b>Stored inverted, deliberately.</b> This is a <c>readonly struct</c>, so a field
+    /// initializer would force an explicit parameterless constructor — and <c>default(...)</c> bypasses
+    /// one, which would make a defaulted options value silently DROP every ruler. Backing the property
+    /// with the negation keeps <c>default</c> and <c>new { }</c> agreeing that rulers show.</remarks>
+    public bool ShowRulers
+    {
+        get => !_rulersSuppressed;
+        init => _rulersSuppressed = !value;
+    }
+
+    private readonly bool _rulersSuppressed;
+
     /// <summary>brief-L6-L7-em-ui.md R-em-15 — draws the EM cross-section mesh as a screen-space
     /// inset (see <c>LayoutRenderer.Mesh.cs</c>). Copies <see cref="ShowPCellPins"/>' contract
     /// exactly: never layer geometry, never contributes to any <see cref="LayoutFrameCounters"/>
@@ -567,6 +587,22 @@ public static partial class LayoutRenderer
 
                 if (opts.Overlay?.PendingPCellPlacement is { } pendingPCell)
                     DrawPendingPCellPlacement(canvas, pendingPCell, tech, theme, ps, scaleUm, counters);
+
+                // docs/design/layout-view.md §9B: rulers paint AFTER every layer and after
+                // instances — they are not on a layer, obey no layer's visibility, and always sit on
+                // top — but BEFORE the transient interaction overlay (selection outlines, handles,
+                // marquee, snap marker), which is chrome about the current gesture rather than
+                // content. Default-true and NOT gated on Overlay, so an export carries them.
+                if (opts.ShowRulers
+                    && (view.Rulers.Count > 0 || opts.Overlay?.RulerPreview is not null
+                        || opts.Overlay?.RulerPastePreview is { Count: > 0 }))
+                    DrawRulers(canvas, view.Rulers,
+                               opts.Overlay?.SelectedRulerIndices ?? [],
+                               opts.Overlay?.RulerDragOverrides,
+                               opts.Overlay?.RulerPreview,
+                               opts.Overlay?.RulerPastePreview,
+                               opts.Overlay?.ShowRulerEndpointHandles == true,
+                               view.DisplayUnit, view.DbuPerMicron, theme, ps, scaleUm);
 
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {

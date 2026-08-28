@@ -277,6 +277,10 @@
              every other gesture in this file before choosing it — nothing else uses it. -->
         <KeyBinding Gesture="Ctrl+Shift+K"  Command="{Binding CheckDesignRulesCommand}"/>
         <KeyBinding Gesture="Meta+Shift+K"  Command="{Binding CheckDesignRulesCommand}"/>
+        <!-- §9B.6 R-rul-13: clear every in-design ruler annotation, one undo entry, no prompt. The
+             UNSHIFTED K is free — Ctrl+Shift+K above is Check Design Rules and is left alone. -->
+        <KeyBinding Gesture="Ctrl+K"        Command="{Binding ClearAllRulersCommand}"/>
+        <KeyBinding Gesture="Meta+K"        Command="{Binding ClearAllRulersCommand}"/>
         <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding ShowSettingsCommand}" CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+Q"        Command="{Binding QuitApplicationCommand}"/>
         <KeyBinding Gesture="Escape"        Command="{Binding DisarmPlacementCommand}"/>

@@ -24,7 +24,12 @@ public static class DxfExport
         IReadOnlyList<InterchangeStructure> Structures,
         string RootStructureName,
         Technology? Tech,
-        int DbuPerMicron)
+        int DbuPerMicron,
+        /// <summary>docs/design/layout-view.md §9B.10 — the ROOT cell's ruler annotations. Root-only:
+        /// rulers are cell-local (§9B.7) and do not render through an instance placement, so a
+        /// sub-cell's working notes are not scattered across every design that reuses it.</summary>
+        IReadOnlyList<RulerAnnotation>? Rulers = null,
+        LayoutUnit DisplayUnit = LayoutUnit.Um)
     {
         public bool CanWrite => true;
 
@@ -45,8 +50,10 @@ public static class DxfExport
     /// own parameter exactly. Null (the project-tree/no-open-document path) reads from disk as before.</summary>
     public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron, LayoutView? rootView = null)
     {
-        var (structures, nameByCellName, unresolvedRefs, rootName) = CollectHierarchy(rootCellDir, rootView);
-        return new ExportPlan(unresolvedRefs, nameByCellName, structures, rootName, tech, dbuPerMicron);
+        var (structures, nameByCellName, unresolvedRefs, rootName, rootRulers, displayUnit) =
+            CollectHierarchy(rootCellDir, rootView);
+        return new ExportPlan(unresolvedRefs, nameByCellName, structures, rootName, tech, dbuPerMicron,
+                              rootRulers, displayUnit);
     }
 
     /// <summary>
@@ -58,17 +65,20 @@ public static class DxfExport
     /// what it always did.
     /// </param>
     public static DxfExportSummary Preview(ExportPlan plan, DxfExportOptions options, WBondDesign? wires = null) =>
-        DxfWriter.Write(TextWriter.Null, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options, wires);
+        DxfWriter.Write(TextWriter.Null, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron,
+                        options, wires, plan.Rulers, plan.DisplayUnit);
 
     /// <inheritdoc cref="Preview(ExportPlan, DxfExportOptions, WBondDesign?)"/>
     public static DxfExportSummary Write(string filePath, ExportPlan plan, DxfExportOptions options, WBondDesign? wires = null)
     {
         using var stream = new StreamWriter(filePath, append: false);
-        return DxfWriter.Write(stream, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options, wires);
+        return DxfWriter.Write(stream, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron,
+                               options, wires, plan.Rulers, plan.DisplayUnit);
     }
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,
-        IReadOnlyList<string> UnresolvedRefs, string RootName) CollectHierarchy(string rootCellDir, LayoutView? rootView)
+        IReadOnlyList<string> UnresolvedRefs, string RootName,
+        IReadOnlyList<RulerAnnotation> RootRulers, LayoutUnit DisplayUnit) CollectHierarchy(string rootCellDir, LayoutView? rootView)
     {
         var rootAbs = Path.GetFullPath(rootCellDir);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootAbs };
@@ -136,7 +146,10 @@ public static class DxfExport
             structures.Add(new InterchangeStructure(dirToBlockName[dir], [.. view.Shapes], instances));
         }
 
-        return (structures, blockNameByCellName, unresolvedRefs, dirToBlockName[rootAbs]);
+        // §9B.7: cell-LOCAL. Only the root's own rulers travel; a sub-cell's stay with that cell.
+        var rootLayout = viewByDir[rootAbs];
+        return (structures, blockNameByCellName, unresolvedRefs, dirToBlockName[rootAbs],
+                [.. rootLayout.Rulers], rootLayout.DisplayUnit);
     }
 
     private static LayoutView LoadPrimaryLayout(string cellDir)
