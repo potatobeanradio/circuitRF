@@ -291,23 +291,59 @@ public class MatchFormSynthesisTests
         Assert.DoesNotContain("Use highpass", basis.Refusal.Message, StringComparison.Ordinal);
     }
 
-    // ── 6. A like-topology pair has no order in these forms ──
+    // ── 6. A like-topology pair now HAS an order in these forms (MN-MB2) ──
 
+    /// <summary>
+    /// <b>The like-pair gap of match.md §16.4 item 2 is closed</b>: every order serves a like pair
+    /// too, through §18.5's weighted family, and the element count is <c>2n + 1</c> instead of
+    /// <c>2n</c>.
+    /// </summary>
+    /// <remarks>
+    /// Which end must be the analysis end is decided by the ratio and by the pair's own topology —
+    /// an odd ladder's two ends share one orientation, and a shunt-ended one steps DOWN — so a
+    /// parallel pair is analysed from the HIGHER resistance. The other way round is a refusal that
+    /// names the remedy, which the test below it checks.
+    /// </remarks>
     [Fact]
-    public void ALikeTopologyPair_HasNoValidOrderInLowpassOrHighpassForm()
+    public void ALikeTopologyPair_TakesTheOddElementCountInLowpassAndHighpassForm()
     {
-        var t1 = new Termination(50.0, ReactanceKind.C, TerminationTopology.Parallel, 1e-12);
+        var t1 = new Termination(50.0, ReactanceKind.C, TerminationTopology.Parallel, 0.4e-12);
         var t2 = new Termination(5.0, ReactanceKind.C, TerminationTopology.Parallel, 5e-12);
 
-        Assert.Empty(MatchOrders.ValidOrders(t1, t2, NetworkForm.Lowpass));
-        Assert.Empty(MatchOrders.ValidOrders(t1, t2, NetworkForm.Highpass));
+        Assert.Equal([2, 3, 4, 5, 6], MatchOrders.ValidOrders(t1, t2, NetworkForm.Lowpass));
+        Assert.Equal([2, 3, 4, 5, 6], MatchOrders.ValidOrders(t1, t2, NetworkForm.Highpass));
+        Assert.True(MatchOrders.NeedsOddCount(t1, t2));
+
+        // The bandpass rule is unchanged: there, order IS the arm count and parity is the order's.
         Assert.Equal([3, 5], MatchOrders.ValidOrders(t1, t2, NetworkForm.Bandpass));
         Assert.Equal([3, 5], MatchOrders.ValidOrders(t1, t2));
 
         var basis = MatchSynthesis.Synthesize(Design(NetworkForm.Lowpass, 3, t1, t2));
+        Assert.True(basis.Ok, basis.Refusal?.Message);
+        Assert.Equal(7, basis.Network!.Elements.Count);
+
+        // Both ends absorbed, both shunt — which is the whole point of the odd count.
+        var ends = basis.Network!.Elements.Where(e => e.AbsorbedEnd != 0).ToList();
+        Assert.Equal(2, ends.Count);
+        Assert.All(ends, e => Assert.True(e.IsShunt));
+        Assert.All(ends, e => Assert.Equal(ElementType.C, e.Type));
+    }
+
+    /// <summary>
+    /// A like pair analysed from the wrong end is refused with the remedy named — <b>the analysis
+    /// end</b>, not the form, because an odd ladder's ends flip together.
+    /// </summary>
+    [Fact]
+    public void ALikeParallelPair_AnalysedFromTheLowerResistance_IsRefusedNamingTheOtherEnd()
+    {
+        var t1 = new Termination(5.0, ReactanceKind.C, TerminationTopology.Parallel, 5e-12);
+        var t2 = new Termination(50.0, ReactanceKind.C, TerminationTopology.Parallel, 0.4e-12);
+
+        var basis = MatchSynthesis.Synthesize(Design(NetworkForm.Lowpass, 3, t1, t2));
         Assert.False(basis.Ok);
-        Assert.Equal(MatchRefusalKind.InvalidOrder, basis.Refusal!.Kind);
-        Assert.Contains("ODD element count", basis.Refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(MatchRefusalKind.FormCannotAbsorb, basis.Refusal!.Kind);
+        Assert.Contains("BOTH ends", basis.Refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("HIGHER resistance", basis.Refusal.Message, StringComparison.Ordinal);
     }
 
     [Fact]

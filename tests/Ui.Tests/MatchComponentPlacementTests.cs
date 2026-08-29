@@ -233,12 +233,41 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
 
     /// <summary><c>Design</c> is base64 of the whole design and must never render as a text row; the
     /// echo parameters must, because they are the only description of the network a user has.</summary>
+    /// <summary>
+    /// <b>A Match offers no generic parameter rows at all</b> (owner, 2026-08-28) — the payload
+    /// because nobody can read it, the echoes because nothing reads them back and the compact panel
+    /// already states every one of them in words. A name the registry does not declare is not the
+    /// Match's own and still gets a row.
+    /// </summary>
     [Fact]
-    public void TheDesignPayload_IsNotAGenericParameterRow()
+    public void NoParameterOfAMatch_IsAGenericParameterRow()
     {
-        Assert.True(ParameterEditorViewModel.IsMatchPanelParameter("Design"));
-        foreach (string echo in new[] { "F1", "F2", "Order", "Response", "R1", "R2" })
-            Assert.False(ParameterEditorViewModel.IsMatchPanelParameter(echo), echo);
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Match, 0))
+            Assert.True(ParameterEditorViewModel.IsMatchPanelParameter(dp.Name), dp.Name);
+
+        Assert.False(ParameterEditorViewModel.IsMatchPanelParameter("Temp"));
+    }
+
+    /// <summary>
+    /// The other half of the same rule: none of them is drawn beside the symbol either — not on a
+    /// freshly placed instance (the registry's own defaults), and not on one placed before the change
+    /// whose file still says <c>ShowOnSchematic = true</c>.
+    /// </summary>
+    [Fact]
+    public void AMatchDrawsNoParameterLabels()
+    {
+        var comp = PlaceFresh("MN1", 0, 0);
+        Assert.All(comp.Parameters, p => Assert.False(p.ShowOnSchematic, p.Name));
+        Assert.Empty(comp.LabelParameters());
+
+        // The legacy instance: three of them were true when the file was written.
+        foreach (string name in new[] { "F1", "F2", "Order" })
+            comp.Parameters.Single(p => p.Name == name).ShowOnSchematic = true;
+        Assert.Empty(comp.LabelParameters());
+
+        // Type and instance name still label it — only the PARAMETERS are gone.
+        var rendered = comp.ToRenderComponent();
+        Assert.Equal(new[] { "Match", "MN1" }, rendered.Labels);
     }
 
     // ── §3: the symbol ────────────────────────────────────────────────────────
@@ -289,38 +318,192 @@ public class MatchComponentPlacementTests(ITestOutputHelper output)
     {
         var sym = BuiltInSymbols.Primitives(SymbolKind.Match);
         var sines = sym.Primitives.OfType<SinePrimitive>().OrderBy(s => s.Cy).ToList();
-        var slashes = sym.Primitives.OfType<LinePrimitive>()
-                         .Where(l => l.X1 != l.X2 && l.Y1 != l.Y2)   // the leads are axis-aligned
-                         .ToList();
+        var slashes = Slashes(sym);
         Assert.Equal(2, slashes.Count);
 
+        Assert.True(slashes.Any(s => Crosses(sines[0], s, rotation, mirrored)),
+            "the top wave must be struck through");
+        Assert.True(slashes.Any(s => Crosses(sines[2], s, rotation, mirrored)),
+            "the bottom wave must be struck through");
+        Assert.False(slashes.Any(s => Crosses(sines[1], s, rotation, mirrored)),
+            "the passband wave must be left unstruck — a slash across it inverts the glyph's meaning");
+    }
+
+    // ── the form- and band-dependent glyph (match.md §8.4) ────────────────────
+
+    /// <summary>
+    /// <b>Which waves carry a slash is the whole content of the glyph.</b> The three waves read as a
+    /// frequency axis with the highest at the top, so a bandpass strikes the outer two, a lowpass the
+    /// top two and a highpass the bottom two — and the check is geometric, on the real primitives,
+    /// because a slash that is merely NEAR a wave is not a strikethrough.
+    /// </summary>
+    [Theory]
+    [InlineData(NetworkForm.Bandpass, true,  false, true)]
+    [InlineData(NetworkForm.Lowpass,  true,  true,  false)]
+    [InlineData(NetworkForm.Highpass, false, true,  true)]
+    public void TheStruckWavesFollowTheNetworkForm(NetworkForm form, bool top, bool middle, bool bottom)
+    {
+        var sym = BuiltInSymbols.PrimitivesForMatch(form, 1);
+        var sines = sym.Primitives.OfType<SinePrimitive>().OrderBy(s => s.Cy).ToList();
+        Assert.Equal(3, sines.Count);
+
+        var slashes = Slashes(sym);
+        Assert.Equal(2, slashes.Count);
+
+        foreach (var (wave, expected, which) in new[]
+                 {
+                     (sines[0], top,    "top"),
+                     (sines[1], middle, "middle"),
+                     (sines[2], bottom, "bottom"),
+                 })
+        {
+            bool struck = slashes.Any(sl => Crosses(wave, sl, SymbolRotation.R0, mirrored: false));
+            Assert.True(struck == expected,
+                $"{form}: the {which} wave should {(expected ? "" : "NOT ")}be struck through");
+        }
+    }
+
+    /// <summary>The two forms that are not bandpass must not merely re-use its glyph.</summary>
+    [Fact]
+    public void TheThreeFormsAreThreeDifferentGlyphs()
+    {
+        var forms = new[] { NetworkForm.Bandpass, NetworkForm.Lowpass, NetworkForm.Highpass };
+        var keys = forms.Select(f => string.Join("|", Slashes(BuiltInSymbols.PrimitivesForMatch(f, 1))
+                                                      .Select(l => $"{l.Y1:F3},{l.Y2:F3}")
+                                                      .OrderBy(t => t, StringComparer.Ordinal)))
+                        .ToList();
+        Assert.Equal(3, keys.Distinct().Count());
+    }
+
+    /// <summary>
+    /// A multiband design is bandpass in EVERY band, so it is drawn as one smaller bandpass stack per
+    /// band — two side by side, three as two-below-one — rather than as one stack that cannot say how
+    /// many passbands there are. Every stack is a real bandpass stack (three waves, outer two struck),
+    /// every one is smaller than the single-band stack, and none of them leaves the body.
+    /// </summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void AMultibandMatchDrawsOneSmallerBandpassStackPerBand(int bands)
+    {
+        var single = BuiltInSymbols.PrimitivesForMatch(NetworkForm.Bandpass, 1);
+        var sym    = BuiltInSymbols.PrimitivesForMatch(NetworkForm.Bandpass, bands);
+
+        var sines = sym.Primitives.OfType<SinePrimitive>().ToList();
+        Assert.Equal(3 * bands, sines.Count);
+        Assert.Equal(2 * bands, Slashes(sym).Count);
+
+        double full = single.Primitives.OfType<SinePrimitive>().First().Length;
+        Assert.All(sines, w => Assert.True(w.Length < full, "a multiband wave must be smaller"));
+
+        // Group the waves by their own stack, and check each stack in isolation.
+        foreach (var group in sines.GroupBy(w => (Math.Round(w.Cx, 6), Math.Round(RowOf(w), 6))))
+        {
+            var stack = group.OrderBy(w => w.Cy).ToList();
+            Assert.Equal(3, stack.Count);
+            var near = Slashes(sym)
+                       .Where(l => Math.Abs((l.X1 + l.X2) / 2 - group.Key.Item1) < 1e-6
+                                && (l.Y1 + l.Y2) / 2 > stack[0].Cy - 30
+                                && (l.Y1 + l.Y2) / 2 < stack[2].Cy + 30)
+                       .ToList();
+            Assert.Equal(2, near.Count);
+            Assert.True(near.Any(l => Crosses(stack[0], l, SymbolRotation.R0, false)), "top wave struck");
+            Assert.False(near.Any(l => Crosses(stack[1], l, SymbolRotation.R0, false)), "middle wave clear");
+            Assert.True(near.Any(l => Crosses(stack[2], l, SymbolRotation.R0, false)), "bottom wave struck");
+        }
+
+        // The body is 220 x 220 about the origin; everything drawn inside it must stay inside it.
+        var body = Assert.Single(sym.Primitives.OfType<RoundedRectPrimitive>());
+        Assert.All(sines, w =>
+        {
+            Assert.True(Math.Abs(w.Cx) + w.Length / 2 < body.W / 2, "a wave runs through the body wall");
+            Assert.True(Math.Abs(w.Cy) + w.Amp < body.H / 2, "a wave runs through the body wall");
+        });
+
+        // Dual-band is side by side: two stacks, one row. Tri-band is two below one: three x centres
+        // and two rows, the lone stack above the pair.
+        Assert.Equal(bands, sines.Select(w => Math.Round(w.Cx, 6)).Distinct().Count());
+        var rows = sines.Select(w => Math.Round(RowOf(w), 6)).Distinct().OrderBy(v => v).ToList();
+        Assert.Equal(bands == 3 ? 2 : 1, rows.Count);
+        if (bands == 3) Assert.True(rows[0] < rows[1]);
+
+        // The centre of a wave's own stack: the middle wave of the three it belongs to.
+        double RowOf(SinePrimitive w)
+            => sines.Where(o => Math.Abs(o.Cx - w.Cx) < 1e-6)
+                    .Select(o => o.Cy)
+                    .OrderBy(y => Math.Abs(y - w.Cy))
+                    .Take(3)
+                    .Average();
+    }
+
+    /// <summary>
+    /// The instance draws itself from its own <c>Form</c> and <c>Bands</c> echoes — the glyph that
+    /// reaches the renderer, not the type's default one.
+    /// </summary>
+    [Theory]
+    [InlineData("Bandpass", "1", 3)]
+    [InlineData("Lowpass",  "1", 3)]
+    [InlineData("Bandpass", "2", 6)]
+    [InlineData("Bandpass", "3", 9)]
+    public void TheInstanceGlyphFollowsTheEchoParameters(string form, string bands, int waves)
+    {
+        var comp = PlaceFresh("MN1", 0, 0);
+        comp.Parameters.Single(p => p.Name == "Form").Expression  = form;
+        comp.Parameters.Single(p => p.Name == "Bands").Expression = bands;
+
+        var rendered = comp.ToRenderComponent();
+        Assert.NotNull(rendered.InstanceSymbol);
+        Assert.Equal(waves, rendered.InstanceSymbol!.Primitives.OfType<SinePrimitive>().Count());
+
+        // Same two pins in the same places, whatever the glyph — the wires must not move.
+        Assert.Equal(2, rendered.InstanceSymbol.Pins.Count);
+        Assert.Equal((-200.0, 0.0), (rendered.InstanceSymbol.Pins[0].LocalX, rendered.InstanceSymbol.Pins[0].LocalY));
+        Assert.Equal((200.0, 0.0), (rendered.InstanceSymbol.Pins[1].LocalX, rendered.InstanceSymbol.Pins[1].LocalY));
+    }
+
+    /// <summary>A malformed or absent echo falls back to the single-band bandpass glyph, never crashes.</summary>
+    [Theory]
+    [InlineData("Elliptic", "0")]
+    [InlineData("", "nonsense")]
+    public void AnUnreadableEchoFallsBackToTheDefaultGlyph(string form, string bands)
+    {
+        var comp = PlaceFresh("MN1", 0, 0);
+        comp.Parameters.Single(p => p.Name == "Form").Expression  = form;
+        comp.Parameters.Single(p => p.Name == "Bands").Expression = bands;
+
+        var rendered = comp.ToRenderComponent();
+        Assert.Equal(3, rendered.InstanceSymbol!.Primitives.OfType<SinePrimitive>().Count());
+        Assert.Equal(2, Slashes(rendered.InstanceSymbol).Count);
+    }
+
+    private static List<LinePrimitive> Slashes(Symbol sym)
+        => sym.Primitives.OfType<LinePrimitive>()
+              .Where(l => l.X1 != l.X2 && l.Y1 != l.Y2)   // the leads are axis-aligned
+              .ToList();
+
+    /// <summary>True when the sampled wave and the slash segment genuinely intersect.</summary>
+    private static bool Crosses(SinePrimitive wave, LinePrimitive slash,
+                                SymbolRotation rotation, bool mirrored)
+    {
         (double X, double Y) W(double lx, double ly)
             => SchematicGeometry.LocalToWorld((float)lx, (float)ly, 0, 0, rotation, mirrored);
 
-        bool Crosses(SinePrimitive wave, LinePrimitive slash)
+        var (ax, ay) = W(slash.X1, slash.Y1);
+        var (bx, by) = W(slash.X2, slash.Y2);
+
+        const int samples = 400;
+        (double X, double Y)? previous = null;
+        for (int i = 0; i <= samples; i++)
         {
-            var (ax, ay) = W(slash.X1, slash.Y1);
-            var (bx, by) = W(slash.X2, slash.Y2);
-
-            const int samples = 400;
-            (double X, double Y)? previous = null;
-            for (int i = 0; i <= samples; i++)
-            {
-                double t = i / (double)samples;
-                double lx = wave.Cx - wave.Length / 2 + t * wave.Length;
-                double ly = wave.Cy + wave.Amp * Math.Sin(2 * Math.PI * wave.Cycles * t);
-                var here = W(lx, ly);
-                if (previous is { } p && SegmentsCross(p.X, p.Y, here.X, here.Y, ax, ay, bx, by))
-                    return true;
-                previous = here;
-            }
-            return false;
+            double t = i / (double)samples;
+            double lx = wave.Cx - wave.Length / 2 + t * wave.Length;
+            double ly = wave.Cy + wave.Amp * Math.Sin(2 * Math.PI * wave.Cycles * t);
+            var here = W(lx, ly);
+            if (previous is { } p && SegmentsCross(p.X, p.Y, here.X, here.Y, ax, ay, bx, by))
+                return true;
+            previous = here;
         }
-
-        Assert.True(slashes.Any(s => Crosses(sines[0], s)), "the top wave must be struck through");
-        Assert.True(slashes.Any(s => Crosses(sines[2], s)), "the bottom wave must be struck through");
-        Assert.False(slashes.Any(s => Crosses(sines[1], s)),
-            "the passband wave must be left unstruck — a slash across it inverts the glyph's meaning");
+        return false;
     }
 
     private static bool SegmentsCross(double ax, double ay, double bx, double by,

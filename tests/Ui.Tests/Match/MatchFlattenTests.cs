@@ -33,6 +33,22 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
 
     // ── fixtures ──────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The digit count the tests below ask a flatten for when what they are measuring is EXACTNESS.
+    /// </summary>
+    /// <remarks>
+    /// <b>The shipping default is the Designer's readout setting — three digits</b> (owner,
+    /// 2026-08-28: the cell must show the number the pane showed), so a flattened cell is normally a
+    /// ROUNDED copy of the design and agrees with the <c>Match</c> component to about one part in a
+    /// thousand rather than 1e-12. Asking for 15 digits here takes that rounding off the table so the
+    /// agreement gates keep measuring what they were written to measure — that the writer put the
+    /// right elements, in the right arms, on the right nets. The two failures are orders of magnitude
+    /// apart: a misplaced element moves |ΔS| by O(1), the rounding by 10^−digits.
+    /// <see cref="TheFlattenedCell_WritesItsValues_AtTheDesignersOwnSignificantDigits"/> is what
+    /// pins the default.
+    /// </remarks>
+    private const int ExactDigits = 15;
+
     /// <summary>match.md §4.9's interstage problem — two absorbed ends, one series and one parallel.</summary>
     private static MatchDesign Golden() => new()
     {
@@ -171,7 +187,8 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
 
         var before = Sweep(vm.EditModel, Band);
 
-        var run = MatchFlattenService.Run(vm, match, _root, "MN1_match", replaceInPlace: true);
+        var run = MatchFlattenService.Run(
+            vm, match, _root, "MN1_match", replaceInPlace: true, significantDigits: ExactDigits);
         Assert.True(run.Ok, run.Message);
         output.WriteLine(run.Message);
 
@@ -215,12 +232,50 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
         AddTestBenchAround(vm.EditModel);
 
         var before = Sweep(vm.EditModel, Band);
-        var run = MatchFlattenService.Run(vm, match, _root, "MN1_match", replaceInPlace: true);
+        var run = MatchFlattenService.Run(
+            vm, match, _root, "MN1_match", replaceInPlace: true, significantDigits: ExactDigits);
         Assert.True(run.Ok, run.Message);
         var after = Sweep(vm.EditModel, Band);
 
         double worst = WorstDifference(before, after);
         output.WriteLine($"{form}: worst |ΔS| over {Band.Length} frequencies: {worst:E3}");
+        Assert.True(worst < 1e-12, $"the component and the flattened cell differ by {worst:E3}");
+    }
+
+    /// <summary>
+    /// <b>The same equivalence for a DUAL-BAND design</b> (match.md §18).
+    /// </summary>
+    /// <remarks>
+    /// Eight elements in four resonant arms rather than four in two — an ordinary bandpass ladder,
+    /// twice as long. Nothing in the flatten writer, the stamp or the extraction was changed for it,
+    /// and that they all handle it is §18.2's structural claim rather than a detail; this is the test
+    /// that says so end to end.
+    /// </remarks>
+    [Fact]
+    public void ADualBandMatch_AndItsFlattenedCell_AlsoAgree()
+    {
+        var design = new MatchDesign
+        {
+            BandCount = 2,
+            F1 = 2.4e9, F2 = 2.5e9, F3 = 5.15e9, F4 = 5.85e9,
+            Order = 2,
+            Response = ResponseShape.ChebyshevFano,
+            Term1 = new Termination(20.0, ReactanceKind.C, TerminationTopology.Parallel, 2.5e-12),
+            Term2 = Termination.Resistive(50.0),
+            AnalysisEnd = AnalysisEndChoice.Term1,
+        };
+
+        var (vm, match) = Workspace(design);
+        AddTestBenchAround(vm.EditModel);
+
+        var before = Sweep(vm.EditModel, Band);
+        var run = MatchFlattenService.Run(
+            vm, match, _root, "MN1_match", replaceInPlace: true, significantDigits: ExactDigits);
+        Assert.True(run.Ok, run.Message);
+        var after = Sweep(vm.EditModel, Band);
+
+        double worst = WorstDifference(before, after);
+        output.WriteLine($"dual-band: worst |ΔS| over {Band.Length} frequencies: {worst:E3}");
         Assert.True(worst < 1e-12, $"the component and the flattened cell differ by {worst:E3}");
     }
 
@@ -234,7 +289,8 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
         var design = Golden();
         var (vm, match) = Workspace(design);
 
-        var run = MatchFlattenService.Run(vm, match, _root, "MN1_match", replaceInPlace: false);
+        var run = MatchFlattenService.Run(
+            vm, match, _root, "MN1_match", replaceInPlace: false, significantDigits: ExactDigits);
         Assert.True(run.Ok, run.Message);
 
         var (cell, _, _) = SchematicPersistence.LoadFromFile(PrimarySchematicPath(run.CellDir!));
@@ -277,6 +333,78 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
         output.WriteLine($"worst |ΔS| vs the Designer's own response: {worst:E3}");
         Assert.True(worst < 1e-9,
             $"the enabled cell must reproduce the Designer's response; it differs by {worst:E3}");
+    }
+
+    /// <summary>
+    /// <b>The flattened cell carries the numbers the Designer was showing</b> (owner, 2026-08-28: an
+    /// inductor that reads 1.201 pH in the Designer must not land in the cell as 1.20099999999 pH).
+    /// Every element value is the design's own value rounded to the Designer's <c>Significant
+    /// digits</c> setting — no more digits than that, and the correctly-rounded number rather than a
+    /// truncation of it.
+    /// </summary>
+    /// <remarks>
+    /// The check is on the WRITTEN TEXT and on its distance from the exact value, not against a
+    /// second call to the formatter: re-deriving the expected string from the same helper the writer
+    /// uses would pass however many digits it emitted. Four digits, not the default three, so the
+    /// assertion cannot be satisfied by a coincidence of the default.
+    /// </remarks>
+    [Fact]
+    public void TheFlattenedCell_WritesItsValues_AtTheDesignersOwnSignificantDigits()
+    {
+        const int digits = 4;
+
+        var design = Golden();
+        var (vm, match) = Workspace(design);
+
+        var designer = new MatchDesignerViewModel();
+        designer.SetTarget(vm, match);
+        designer.Settings.SignificantDigits = digits;
+
+        var run = designer.Flatten(_root, "MN1_match", replaceInPlace: false);
+        Assert.True(run.Ok, run.Message);
+
+        var (cell, _, _) = SchematicPersistence.LoadFromFile(PrimarySchematicPath(run.CellDir!));
+        var network = MatchRebuild.Rebuild(design).Network!;
+
+        var placed = cell.Components
+            .Where(c => c.Symbol is SymbolKind.Inductor or SymbolKind.Capacitor)
+            .ToList();
+        Assert.Equal(network.Elements.Count, placed.Count);
+
+        foreach (var c in placed)
+        {
+            var element = network.Elements.Single(e => e.Name == c.InstanceName);
+            var p = c.Parameters.Single(x => x.Name is "L" or "C");
+
+            int written = SignificantDigitsIn(p.Expression);
+            double si = double.Parse(p.Expression, System.Globalization.CultureInfo.InvariantCulture)
+                        * MatchValueFormat.Scale(p.Unit);
+            double relative = Math.Abs(si - element.Value) / Math.Abs(element.Value);
+
+            output.WriteLine(
+                $"{c.InstanceName}: wrote '{p.Expression} {p.Unit}' ({written} digits) for "
+                + $"{element.Value:E15}; relative {relative:E2}");
+
+            Assert.True(written <= digits,
+                $"{c.InstanceName} was written as '{p.Expression}' — {written} significant digits, "
+                + $"but the Designer is set to {digits}");
+            // …and it is that value ROUNDED, not truncated or otherwise a different number: half a
+            // unit in the last significant place is 5e-1 x 10^-(digits-1).
+            Assert.True(relative <= 5e-4,
+                $"{c.InstanceName}: '{p.Expression} {p.Unit}' is {relative:E2} away from the "
+                + "design's own value, which is more than rounding to 4 digits can explain");
+        }
+    }
+
+    /// <summary>
+    /// How many significant digits a plain decimal string carries — leading zeros are placeholders
+    /// and trailing zeros after rounding are padding, so "0.1250" and "125" both carry three.
+    /// </summary>
+    private static int SignificantDigitsIn(string number)
+    {
+        string d = new string([.. number.Where(char.IsDigit)]).TrimStart('0');
+        if (number.Contains('.', StringComparison.Ordinal)) d = d.TrimEnd('0');
+        return Math.Max(1, d.Length);
     }
 
     // ── §3: replacing in place ────────────────────────────────────────────────
@@ -578,7 +706,8 @@ public sealed class MatchFlattenTests(ITestOutputHelper output) : IDisposable
     {
         var design = Golden();
         var (vm, match) = Workspace(design);
-        var run = MatchFlattenService.Run(vm, match, _root, "MN1_match", replaceInPlace: false);
+        var run = MatchFlattenService.Run(
+            vm, match, _root, "MN1_match", replaceInPlace: false, significantDigits: ExactDigits);
         Assert.True(run.Ok, run.Message);
 
         var (cell, _, _) = SchematicPersistence.LoadFromFile(PrimarySchematicPath(run.CellDir!));

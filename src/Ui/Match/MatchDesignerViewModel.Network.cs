@@ -21,9 +21,34 @@ namespace CircuitRF.Ui.Matching;
 /// <param name="Required">The product they had to reach.</param>
 /// <param name="OnTarget">True when the two agree to a relative 1e-9.</param>
 /// <param name="Refusal">MN-1's refusal, or null.</param>
+/// <param name="GapMaxS11">The largest |S11| in the first gap, or 0 when there is no gap.</param>
+/// <param name="GapLo">Lower edge of the first gap, Hz — band 1's upper edge.</param>
+/// <param name="GapHi">Upper edge of the first gap, Hz — band 2's lower edge.</param>
+/// <param name="Gap2MaxS11">The largest |S11| in the SECOND gap. Tri-band only; 0 otherwise.</param>
+/// <param name="Gap2Lo">Lower edge of the second gap, Hz — band 2's upper edge.</param>
+/// <param name="Gap2Hi">Upper edge of the second gap, Hz — band 3's lower edge.</param>
+/// <param name="CeilingDb">The binding Fano ceiling over the effective bands, dB negative
+/// (match.md §18.10). −∞ when neither end is reactive.</param>
+/// <param name="CeilingEnd">Which termination sets it — 1, 2, or 0 for none.</param>
+/// <param name="Ceiling1Db">Termination 1's own ceiling over the same bands.</param>
+/// <param name="Ceiling2Db">Termination 2's own ceiling over the same bands.</param>
+/// <param name="CeilingTypedDb">The binding ceiling over the bands AS TYPED, before §18.3's
+/// widening — the difference from <paramref name="CeilingDb"/> is what mirroring cost.</param>
+/// <param name="CeilingOverSpanDb">The binding ceiling over the single outer span — what a
+/// prototype that does not exclude the gaps actually spends.</param>
+/// <param name="GapRise">How far the prototype rises above its passband level in each gap at the
+/// design's order, in gap order. Empty for a single band.</param>
+/// <param name="GapOpensAtOrder">The smallest offered order at which every gap opens, or 0.</param>
 public sealed record MatchStatus(
     double Q1, double Q2, double WorstReturnLossDb, double InsertionLossDb, double RippleDb,
-    double Achieved, double Required, bool OnTarget, MatchRefusal? Refusal)
+    double Achieved, double Required, bool OnTarget, MatchRefusal? Refusal,
+    double GapMaxS11 = 0.0, double GapLo = 0.0, double GapHi = 0.0,
+    double Gap2MaxS11 = 0.0, double Gap2Lo = 0.0, double Gap2Hi = 0.0,
+    double CeilingDb = double.NegativeInfinity, int CeilingEnd = 0,
+    double Ceiling1Db = double.NegativeInfinity, double Ceiling2Db = double.NegativeInfinity,
+    double CeilingTypedDb = double.NegativeInfinity,
+    double CeilingOverSpanDb = double.NegativeInfinity,
+    IReadOnlyList<double>? GapRise = null, int GapOpensAtOrder = 0)
 {
     /// <summary>Nothing to say yet.</summary>
     public static MatchStatus Empty { get; } = new(0, 0, 0, 0, 0, 1, 1, true, null);
@@ -41,6 +66,99 @@ public sealed record MatchStatus(
 
     /// <summary>The match line. Return loss is quoted positive, the way an RF engineer says it.</summary>
     public string ReturnLossText => IsRefused ? "" : $"worst RL {F(-WorstReturnLossDb, "0.00")} dB";
+
+    /// <summary>
+    /// The gap line — <b>the number that says the design is working</b>, and empty for a single band.
+    /// </summary>
+    /// <remarks>
+    /// match.md §18.4: a finite ladder buys its in-band return loss by leaving the gap unmatched, and
+    /// the gap maximum RISES with order because a higher-degree polynomial is bigger there. A status
+    /// strip that showed only in-band numbers would hide the mechanism, so this sits beside the worst
+    /// in-band return loss rather than behind a tooltip.
+    /// </remarks>
+    public string GapText => GapLine(GapLo, GapHi, GapMaxS11, 0);
+
+    /// <summary>
+    /// The SECOND gap line — tri-band only, and empty otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <b>A separate line rather than one line naming both</b>, because the two gaps of a tri-band
+    /// design are independent numbers a user compares against each other: mirroring makes them come
+    /// out equal on a symmetric spec and unequal as soon as the middle band is off centre, and that
+    /// difference is the first thing to read when the response is not what was wanted.
+    /// </remarks>
+    public string GapText2 => GapLine(Gap2Lo, Gap2Hi, Gap2MaxS11, 1);
+
+    private string GapLine(double lo, double hi, double max, int index)
+    {
+        if (IsRefused || !(hi > lo) || !(max > 0)) return "";
+        double db = 20.0 * Math.Log10(max);
+        string line = $"gap {F(lo / 1e9, "0.###")}–{F(hi / 1e9, "0.###")} GHz: "
+                      + $"max |S11| {F(max, "0.000")} ({F(db, "0.0")} dB)";
+
+        // The PROTOTYPE's rise beside the network's own gap mismatch (match.md §18.10). They answer
+        // different questions: the |S11| says how much is reflected there, the rise says whether the
+        // polynomial excludes the gap AT ALL — and at low order on a narrow middle band it does not,
+        // which is the one thing the |S11| number cannot tell anybody.
+        if (GapRise is { Count: > 0 } r && index < r.Count && double.IsFinite(r[index]))
+            line += $" · prototype rise ×{F(r[index], "0.00")}";
+        return line;
+    }
+
+    /// <summary>
+    /// The Fano ceiling line — <b>what the best possible network could do here</b> (match.md §18.10).
+    /// </summary>
+    /// <remarks>
+    /// <b>Computed from the design alone, so it survives a refusal</b>, which is exactly when a user
+    /// needs it: a synthesis that reaches nothing and a ceiling of −3 dB are the same fact stated
+    /// twice, and only one of them says what to change.
+    ///
+    /// <para><b>"at the ceiling" fires against EITHER ceiling</b>, the one over the bands or the one
+    /// over the outer span, because a network can be at a wall in two different ways. Within a dB of
+    /// the band ceiling, nothing lossless does better over these bands. Within a dB of the outer-span
+    /// ceiling, the network is spending its whole budget across the span instead of excluding the
+    /// gaps — the owner's tri-band fixture sits at −2.60 dB against an outer-span ceiling of −3.11
+    /// and a band ceiling of −6.43, and calling that "not at the ceiling" because it missed the
+    /// unreachable number would be the wrong half of the truth. The gap-rise note says which of the
+    /// two it is; the tooltip carries both figures.</para>
+    /// </remarks>
+    public string CeilingText
+    {
+        get
+        {
+            if (CeilingEnd == 0 || !double.IsFinite(CeilingDb)) return "";
+            string line =
+                $"Fano ceiling {F(-CeilingDb, "0.0")} dB (termination {CeilingEnd}, over the bands)";
+            if (IsRefused || WorstReturnLossDb == 0.0 || !double.IsFinite(WorstReturnLossDb))
+                return line;
+
+            double slack = MatchFanoBound.AtCeilingSlackDb;
+            bool atBands = WorstReturnLossDb - CeilingDb <= slack;
+            bool atSpan = double.IsFinite(CeilingOverSpanDb)
+                          && WorstReturnLossDb - CeilingOverSpanDb <= slack;
+            return atBands || atSpan ? line + " — at the ceiling" : line;
+        }
+    }
+
+    /// <summary>Both ends, both other band sets, and what the mirror widening cost.</summary>
+    public string CeilingTip
+    {
+        get
+        {
+            if (CeilingEnd == 0 || !double.IsFinite(CeilingDb)) return "";
+            var parts = new List<string>(5);
+            if (double.IsFinite(Ceiling1Db)) parts.Add($"Termination 1: {F(Ceiling1Db, "0.0")} dB.");
+            if (double.IsFinite(Ceiling2Db)) parts.Add($"Termination 2: {F(Ceiling2Db, "0.0")} dB.");
+            if (double.IsFinite(CeilingTypedDb))
+                parts.Add($"Over the bands as typed: {F(CeilingTypedDb, "0.0")} dB.");
+            if (double.IsFinite(CeilingOverSpanDb))
+                parts.Add($"Over the whole span: {F(CeilingOverSpanDb, "0.0")} dB.");
+            if (double.IsFinite(CeilingTypedDb) && CeilingDb - CeilingTypedDb > 0.05)
+                parts.Add($"Widening to mirror cost {F(CeilingDb - CeilingTypedDb, "0.0")} dB of "
+                          + "ceiling.");
+            return string.Join(" ", parts);
+        }
+    }
 
     /// <summary>The loss line.</summary>
     public string LossText => IsRefused
@@ -70,9 +188,18 @@ public sealed record MatchStatus(
     }
 
     /// <summary>The whole strip as one line — what a test and a tooltip both read.</summary>
+    /// <remarks>
+    /// <b>The ceiling line survives a refusal</b> — <c>Text</c> drops every other line but Q, because
+    /// the numeric readouts are meaningless when nothing was synthesised, and the ceiling is not one
+    /// of them: it is arithmetic on the specification and it is at its most useful precisely here.
+    /// </remarks>
     public string Text => IsRefused
-        ? $"{QText}   —   {Refusal!.Message}"
-        : string.Join("   ", QText, ReturnLossText, LossText, RatioText);
+        ? string.Join("   ", new[] { QText, CeilingText }.Where(t => t.Length > 0))
+          + $"   —   {Refusal!.Message}"
+        : string.Join(
+            "   ",
+            new[] { QText, ReturnLossText, CeilingText, GapText, GapText2, LossText, RatioText }
+                .Where(t => t.Length > 0));
 }
 
 public sealed partial class MatchDesignerViewModel
@@ -271,18 +398,60 @@ public sealed partial class MatchDesignerViewModel
         double q1 = _design.Term1.QAt(om0), q2 = _design.Term2.QAt(om0);
         var network = _rebuild?.Network;
 
+        // ── Feasibility, from the DESIGN alone (match.md §18.10) ──
+        //
+        // None of this waits for the rebuild and none of it is invalidated by a refusal: the Fano
+        // ceiling is a theorem about the terminations and the bands, and the gap rise is a property
+        // of the prototype the order asks for. Both are the numbers the owner's tri-band report was
+        // missing — a correct synthesis that produced a single wideband match, with nothing on screen
+        // saying that order 2 cannot exclude those gaps or that termination 2's wall is at −6.4 dB.
+        var (c1, c2, binding) = MatchFanoBound.Of(_design);
+        var typed = MatchFanoBound.OfTypedBands(_design).Binding;
+        var span = MatchFanoBound.OfOuterSpan(_design).Binding;
+        var effective = _design.Effective;
+        var rise = MatchFanoBound.GapRise(effective, _design.Order);
+        int opensAt = rise.Count > 0 ? MatchFanoBound.GapOpensAtOrder(effective) : 0;
+
+        int ceilingEnd = binding.IsBounded ? binding.End : 0;
+        double ceilingDb = binding.IsBounded ? binding.CeilingDb : double.NegativeInfinity;
+
+        RefreshGapRiseNote(effective, rise, opensAt, span);
+
         if (network is null)
         {
-            Status = new MatchStatus(q1, q2, 0, 0, 0, 1, 1, false, _rebuild?.Refusal);
+            Status = new MatchStatus(
+                q1, q2, 0, 0, 0, 1, 1, false, _rebuild?.Refusal,
+                CeilingDb: ceilingDb, CeilingEnd: ceilingEnd,
+                Ceiling1Db: c1.CeilingDb, Ceiling2Db: c2.CeilingDb,
+                CeilingTypedDb: typed.CeilingDb, CeilingOverSpanDb: span.CeilingDb,
+                GapRise: rise, GapOpensAtOrder: opensAt);
         }
         else
         {
-            double worst = MatchResponse.WorstReturnLossDb(network, _design.F1, _design.F2);
-            var (il, ripple) = MatchResponse.InsertionLoss(network, _design.F1, _design.F2);
+            // Over the EFFECTIVE bands (match.md §18.3) — which for a single band is (F1, F2)
+            // exactly as before. Insertion loss stays on the FIRST band: it is one number and a
+            // ripple, and quoting it across a gap the network deliberately reflects would report the
+            // gap's rejection as loss.
+            var e = _design.Effective;
+            double worst = MatchResponse.WorstReturnLossDb(network, _design.Bands);
+            var (il, ripple) = MatchResponse.InsertionLoss(network, e.F1, e.F2);
+
+            // One gap for a dual-band design, two for tri, none for one band — read off the design
+            // rather than reconstructed here, so the strip and the ladder agree by construction.
+            var gaps = _design.Gaps;
+            var (g1Lo, g1Hi) = gaps.Count > 0 ? gaps[0] : (0.0, 0.0);
+            var (g2Lo, g2Hi) = gaps.Count > 1 ? gaps[1] : (0.0, 0.0);
+
             Status = new MatchStatus(
                 q1, q2, worst, il, ripple,
-                _rebuild!.Achieved, _rebuild.Required, _rebuild.OnTarget, null);
+                _rebuild!.Achieved, _rebuild.Required, _rebuild.OnTarget, null,
+                gaps.Count > 0 ? MatchResponse.GapMaxS11(network, g1Lo, g1Hi) : 0.0, g1Lo, g1Hi,
+                gaps.Count > 1 ? MatchResponse.GapMaxS11(network, g2Lo, g2Hi) : 0.0, g2Lo, g2Hi,
+                ceilingDb, ceilingEnd, c1.CeilingDb, c2.CeilingDb,
+                typed.CeilingDb, span.CeilingDb, rise, opensAt);
         }
+
+        RefreshFeasibilityHint();
 
         // The affected termination turns red — and ONLY the affected one. A refusal about neither end
         // (no transformable pair, an invalid order) flags nothing, which is the honest rendering.
@@ -296,6 +465,132 @@ public sealed partial class MatchDesignerViewModel
         Term1.IsFlagged = flagged == 1;
         Term2.IsFlagged = flagged == 2;
     }
+
+    // ── Feasibility (match.md §18.10) ─────────────────────────────────────────
+
+    /// <summary>
+    /// The Frequency Band card's second note: what the chosen order does to the gaps, or empty when
+    /// it excludes them.
+    /// </summary>
+    /// <remarks>
+    /// <b>The sentence the owner's tri-band report was missing.</b> A prototype whose gap rise is 1
+    /// is the single-band hull polynomial — the design is a wideband match over the outer span and
+    /// the three bands are decoration. That is not a synthesis failure and there is no refusal to
+    /// raise, because at that degree no polynomial does better; it is a fact about the band geometry
+    /// and the order, and it belongs beside the bands that caused it.
+    /// </remarks>
+    [ObservableProperty] private string _gapRiseNote = "";
+
+    /// <summary>
+    /// The loosen hints, under the solutions panel — <b>a hint, never a refusal</b>.
+    /// </summary>
+    /// <remarks>
+    /// Shown only when the ceiling is genuinely in the way (above <see cref="HintCeilingFloorDb"/>)
+    /// AND the search has finished either empty or against that wall. Solutions that exist still
+    /// list; this sits beside them and says what the wall is and what would move it.
+    /// </remarks>
+    [ObservableProperty] private string _feasibilityHint = "";
+
+    /// <summary>
+    /// The ceiling above which a hint is worth showing, dB.
+    /// </summary>
+    /// <remarks>
+    /// <b>−10 dB is where a ceiling stops being an explanation and starts being an excuse.</b> A
+    /// design whose ceiling is −20 dB and whose search reached −16 has not been stopped by physics,
+    /// and telling it about Fano would be noise; a design whose ceiling is −6.4 dB has been stopped
+    /// by nothing else.
+    /// </remarks>
+    public const double HintCeilingFloorDb = -10.0;
+
+    private void RefreshGapRiseNote(
+        EffectiveBands bands, IReadOnlyList<double> rise, int opensAt, FanoCeiling span)
+    {
+        if (rise.Count == 0 || !rise.Any(r => r <= 1.0 + 1e-6)) { GapRiseNote = ""; return; }
+
+        string kind = bands.Count >= 3 ? "tri-band" : "dual-band";
+        var (lo, hi) = bands.Outer;
+        string ceiling = span.IsBounded
+            ? $" (ceiling {span.CeilingDb.ToString("0.0", CultureInfo.InvariantCulture)} dB)"
+            : "";
+        string head =
+            $"At order {_design.Order.ToString(CultureInfo.InvariantCulture)} the {kind} prototype "
+            + "does not exclude the gaps — this is a single-band match over "
+            + $"{Ghz(lo)}–{Ghz(hi)} GHz{ceiling}.";
+
+        if (opensAt > 0)
+        {
+            var at = MatchFanoBound.GapRise(bands, opensAt);
+            string factor = at.Count > 0
+                ? $" (rise ×{at[0].ToString("0.#", CultureInfo.InvariantCulture)})"
+                : "";
+            GapRiseNote = head
+                + $" The gaps open at order {opensAt.ToString(CultureInfo.InvariantCulture)}{factor}.";
+            return;
+        }
+
+        GapRiseNote = head
+            + " No offered order opens them for this band geometry; widen the middle band or move "
+            + "the outer bands closer.";
+    }
+
+    private void RefreshFeasibilityHint()
+    {
+        var (_, _, binding) = MatchFanoBound.Of(_design);
+        if (!binding.IsBounded || binding.CeilingDb <= HintCeilingFloorDb || !SolutionsComplete)
+        {
+            FeasibilityHint = "";
+            return;
+        }
+
+        bool show;
+        if (_allSolutions.Count == 0)
+        {
+            show = true;
+        }
+        else
+        {
+            // The BEST worst-RL any listed solution reaches — the most negative, since the quantity
+            // is signed the way MatchResponse quotes it.
+            double best = _allSolutions.Min(r => r.Solution.WorstReturnLossDb);
+            double slack = MatchFanoBound.AtCeilingSlackDb;
+            double spanDb = MatchFanoBound.OfOuterSpan(_design).Binding.CeilingDb;
+            show = best - binding.CeilingDb <= slack
+                   || (double.IsFinite(spanDb) && best - spanDb <= slack);
+        }
+
+        if (!show) { FeasibilityHint = ""; return; }
+
+        var remedies = MatchFanoBound.Remedies(_design, MatchFanoBound.HintTargetDb);
+        string bands = string.Join(
+            " / ", _design.Bands.Select(b => $"{Ghz(b.Lo)}–{Ghz(b.Hi)}"));
+        string head =
+            $"The best any lossless network can do here is "
+            + $"{binding.CeilingDb.ToString("0.0", CultureInfo.InvariantCulture)} dB, set by "
+            + $"termination {binding.End.ToString(CultureInfo.InvariantCulture)} "
+            + $"({Describe(binding.End == 1 ? _design.Term1 : _design.Term2)}) over {bands} GHz.";
+
+        FeasibilityHint = remedies.Count == 0
+            ? head
+            : head
+              + $" To reach {MatchFanoBound.HintTargetDb.ToString("0.#", CultureInfo.InvariantCulture)}"
+              + " dB: " + string.Join("; or ", remedies.Select(r => r.Sentence)) + ".";
+    }
+
+    /// <summary>"1.25 Ω + 5 pF series" — the termination, as the hint's first sentence names it.</summary>
+    private static string Describe(Termination t)
+    {
+        string r = MatchValueFormat.FormatWithUnit(t.R, MatchQuantity.Resistance, null, 3);
+        if (!t.HasReactance) return r;
+
+        var quantity = t.Kind == ReactanceKind.C ? MatchQuantity.Capacitance : MatchQuantity.Inductance;
+        string x = MatchValueFormat.FormatWithUnit(t.Value, quantity, null, 3);
+        string join = t.Topology == TerminationTopology.Parallel ? " ‖ " : " + ";
+        string how = t.Topology == TerminationTopology.Parallel ? "" : " series";
+        return r + join + x + how;
+    }
+
+    private static string Ghz(double hz) =>
+        (hz / 1e9).ToString("0.###", CultureInfo.InvariantCulture);
 
     // ── Solutions ─────────────────────────────────────────────────────────────
 
@@ -344,7 +639,14 @@ public sealed partial class MatchDesignerViewModel
     /// part of <c>MatchSpecKey</c>, so <c>QueueSolutionSearch</c> leaves the list alone and only the
     /// badges move — see MatchDesignerViewModel.Analysis.cs.</para>
     /// </remarks>
-    public void ApplySolution(MatchSolutionRowViewModel row) => ApplySolution(row, 0);
+    public void ApplySolution(MatchSolutionRowViewModel row)
+    {
+        // The user picked this row, so the badge move it causes is not a move to report — see
+        // AppliedSolutionMoved. The auto-solve goes to the private overload and does report.
+        ApplyingByClick = true;
+        try { ApplySolution(row, 0); }
+        finally { ApplyingByClick = false; }
+    }
 
     /// <inheritdoc cref="ApplySolution(MatchSolutionRowViewModel)"/>
     /// <param name="row">The solution to apply.</param>
@@ -361,12 +663,6 @@ public sealed partial class MatchDesignerViewModel
 
     private void ApplySolutionCore(MatchSolutionRowViewModel row, long amendStamp)
     {
-
-        // A row at a DIFFERENT order makes the automatic-order note stale — it names a move the
-        // design has now made again, by hand. A row at the same order leaves it standing, which is
-        // what the termination auto-solve needs: that path applies at the design's own order, and
-        // the note beside it is still the true account of why the order is what it is.
-        if (row.Order != _design.Order) OrderNote = "";
 
         _design.Order = row.Order;
         _design.Response = row.Response;
@@ -441,7 +737,8 @@ public sealed partial class MatchDesignerViewModel
         if (_isStandalone)
         {
             var standalone = MatchFlattenService.RunStandalone(
-                _rebuild, _design, InstanceName, parentDir, cellName);
+                _rebuild, _design, InstanceName, parentDir, cellName,
+                significantDigits: Settings.SignificantDigits);
             RefreshFlatten();
             return standalone;
         }
@@ -449,7 +746,9 @@ public sealed partial class MatchDesignerViewModel
         if (_schematicVm is null || _target is null)
             return new(false, "This Designer is not bound to a component.", null, null);
 
-        var result = MatchFlattenService.Run(_schematicVm, _target, parentDir, cellName, replaceInPlace);
+        var result = MatchFlattenService.Run(
+            _schematicVm, _target, parentDir, cellName, replaceInPlace,
+            significantDigits: Settings.SignificantDigits);
         if (result.Ok) _schematicVm.MessageSink?.Success(result.Message);
         else _schematicVm.MessageSink?.Warning(result.Message);
         RefreshFlatten();

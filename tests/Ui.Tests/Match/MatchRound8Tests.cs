@@ -135,17 +135,17 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         Assert.Contains("Text=\"Ripple, dB\"", xaml, StringComparison.Ordinal);
         Assert.Contains("{Binding RippleEntry, Mode=TwoWay}", xaml, StringComparison.Ordinal);
 
-        // So did the two automatic-change notes the departing cards carried. They are not about a
-        // control — they say the design moved underneath the user — and both still happen.
-        Assert.Contains("{Binding OrderNote}", xaml, StringComparison.Ordinal);
+        // So did the ONE automatic-change note the departing cards carried that is still worth
+        // saying: a Q-adjust the terminations have overtaken is a number the user typed, and nothing
+        // else on screen reports that it has been cleared.
         Assert.Contains("{Binding QAdjustNote}", xaml, StringComparison.Ordinal);
 
-        // …and a topology change still SAYS the order moved, from the pane rather than from the card.
-        var (_, _, d) = Open(Problem());
-        d.Term2.Topology = TerminationTopology.Parallel;
-        Assert.Contains("cannot absorb both ends", d.OrderNote, StringComparison.Ordinal);
-        output.WriteLine(d.OrderNote);
-        d.Dispose();
+        // The ORDER's note went entirely (owner-reported, 2026-08-28: "I don't want to see messages
+        // like this after I make changes just because the order changed. I can clearly see the order
+        // changed because a different solution card is now selected, so cluttering the UI with this
+        // message is bad UX", and then to drop the dead-end line too). An adjusted order is on the
+        // applied card; a pair that permits no order refuses, and the refusal is in the status strip.
+        Assert.DoesNotContain("OrderNote", xaml, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -620,8 +620,9 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         string analysis = Src("src", "Ui", "Match", "MatchDesignerViewModel.Analysis.cs");
 
         // Published per cell, from inside the loop.
-        Assert.Contains("publish(new MatchSolutionBatch(form, order, shape, set, isCurrent));",
-                        analysis, StringComparison.Ordinal);
+        Assert.Contains(
+            "publish(new MatchSolutionBatch(form, order, shape, set, isCurrent, design.BandCount));",
+            analysis, StringComparison.Ordinal);
 
         // The design's own combination is yielded before the sweep.
         Assert.Contains("if (ownIsValid) yield return (design.Form, design.Order, design.Response);",

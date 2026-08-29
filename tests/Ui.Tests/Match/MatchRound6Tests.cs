@@ -346,10 +346,11 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
 
         // Both termination selectors — the topology one and the kind one — take it.
         string xaml = Xaml();
-        // TWO: the topology selector and the reactance-kind selector (one template, both
-        // terminations). The Order selector was a third and is gone with its card — the order is not
-        // an input any more, it is something a solution carries (owner, 2026-08-28).
-        Assert.Equal(2, Regex.Matches(xaml,
+        // THREE: the topology selector, the reactance-kind selector (one template, both
+        // terminations), and the Bands selector in the Frequency Band card's header (match.md §18.7).
+        // The Order selector was a fourth and is gone with its card — the order is not an input any
+        // more, it is something a solution carries (owner, 2026-08-28).
+        Assert.Equal(3, Regex.Matches(xaml,
             @"Background=""\{DynamicResource ButtonBackground\}""").Count);
     }
 
@@ -454,10 +455,15 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
         Assert.Contains("reactance", d.RippleNote, StringComparison.OrdinalIgnoreCase);
 
         // The note is ONE LINE since round 7 (owner: "there is not enough height space for the
-        // current amount of text") — it still names the end, and §6.6's paragraph, which is what it
-        // shed, is on the row's own tooltip. Both halves are asserted so neither can quietly go.
+        // current amount of text") — it still names the end, and the paragraph it shed is on the
+        // row's own tooltip. Both halves are asserted so neither can quietly go.
+        //
+        // The tooltip quotes no design-note SECTION (owner, 2026-08-28: the user does not read
+        // those), so what pins it here is the explanation itself, not the reference it used to carry.
         Assert.True(d.RippleNote.Length < 60, $"the note grew back: \"{d.RippleNote}\"");
-        Assert.Contains("6.6", d.RippleTooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("§", d.RippleTooltip, StringComparison.Ordinal);
+        Assert.Contains("set by the terminations rather than by hand", d.RippleTooltip,
+                        StringComparison.Ordinal);
         Assert.Contains("Termination 2", d.RippleTooltip, StringComparison.Ordinal);
 
         string xaml = Xaml();

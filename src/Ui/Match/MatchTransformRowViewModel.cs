@@ -45,10 +45,46 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
     // ── N ─────────────────────────────────────────────────────────────────────
 
     /// <summary>The turns ratio.</summary>
+    /// <remarks>
+    /// <b>Two writes that are not edits, and both used to become one</b> (owner-reported, 2026-08-28:
+    /// undoing repeatedly, or alternating undo and redo quickly, eventually loses the history
+    /// altogether).
+    ///
+    /// <para>The slider this backs is <c>Value="{Binding N, Mode=TwoWay}"</c> with its
+    /// <c>Minimum</c>/<c>Maximum</c> bound to <see cref="NMin"/>/<see cref="NMax"/>. Avalonia's
+    /// <c>RangeBase</c> clamps <c>Value</c> into the current range on EVERY set — its own and the two
+    /// bounds' — and a two-way binding writes each clamp straight back here. So a rebuild that moves
+    /// this row published a value the user never typed, and this setter, having no guard at all,
+    /// turned it into <c>SetTransformN</c> and therefore into a <c>SetParametersCommand</c> on the
+    /// schematic's undo stack.</para>
+    ///
+    /// <para><b>During an UNDO that is fatal.</b> The write-back arrives inside
+    /// <c>UndoRedoStack.Undo</c>'s own call to the command — the model change it raises reaches
+    /// <c>MatchDesignerViewModel.OnModelChanged</c>, which refreshes these rows — so the undo pushed a
+    /// NEW entry while it was still moving the old one. <c>Execute</c> clears the redo stack, so redo
+    /// vanished; the history grew by one entry for every undo, so undoing never reached the bottom;
+    /// and the stamp stack came out of lockstep with the command stack, which is what
+    /// <c>TopUndoStamp</c> — and therefore the termination auto-solve's amend — reads. Measured on the
+    /// order-4 fixture: 8 real edits took 14 undos to unwind, with 6 phantom entries injected.</para>
+    ///
+    /// <para>An ordinary edit hid it: those refreshes happen inside <c>AsOneEdit</c> with
+    /// <c>_commitSuppressed</c> up, which absorbs the extra commit. An undo has no such gesture around
+    /// it, which is why the report is about undo and redo and nothing else.</para>
+    ///
+    /// <para>So a write that changes nothing is dropped, and a write arriving while the view-model is
+    /// PUBLISHING its own state to the view is dropped too — see
+    /// <c>MatchDesignerViewModel.IsPublishing</c>. <see cref="Refresh"/> also publishes the bounds
+    /// before the value now, so the common case never produces a clamp in the first place.</para>
+    /// </remarks>
     public double N
     {
         get => Record.N;
-        set => _owner.SetTransformN(Index, value);
+        set
+        {
+            if (value == N) return;
+            if (_owner.IsPublishing) return;
+            _owner.SetTransformN(Index, value);
+        }
     }
 
     /// <summary>
@@ -244,27 +280,44 @@ public sealed partial class MatchTransformRowViewModel : ObservableObject
     public bool IsAtLimit { get; internal set; }
 
     /// <summary>Raises everything after a rebuild.</summary>
+    /// <remarks>
+    /// <b>The BOUNDS go out before the value, and that ordering is load-bearing.</b> The slider clamps
+    /// whatever it is given into the range it holds at that moment, so publishing N first handed it to
+    /// a control still carrying the PREVIOUS row's Minimum and Maximum — and a value outside those was
+    /// clamped and written back through the two-way binding as though the user had dragged it. See
+    /// <see cref="N"/> for what that cost on the undo path.
+    ///
+    /// <para><b>Under the publishing flag</b>, which is the belt to that ordering's braces: a rebuild
+    /// can legitimately move a row's range past its own N — the far end of an unreachable ratio does
+    /// exactly that — and the clamp is then real. It is still not an edit, and the flag is what says
+    /// so at the one place every one of these notifications leaves the view-model.</para>
+    /// </remarks>
     internal void Refresh()
     {
-        OnPropertyChanged(nameof(Label));
-        OnPropertyChanged(nameof(Record));
-        OnPropertyChanged(nameof(N));
-        OnPropertyChanged(nameof(NEntry));
-        OnPropertyChanged(nameof(NTooltip));
-        OnPropertyChanged(nameof(NMin));
-        OnPropertyChanged(nameof(NMax));
-        OnPropertyChanged(nameof(Range));
-        OnPropertyChanged(nameof(Reachable));
-        OnPropertyChanged(nameof(WasClamped));
-        OnPropertyChanged(nameof(IsDropped));
-        OnPropertyChanged(nameof(Form));
-        OnPropertyChanged(nameof(IsPi));
-        OnPropertyChanged(nameof(IsT));
-        OnPropertyChanged(nameof(FormChoice));
-        OnPropertyChanged(nameof(Locked));
-        OnPropertyChanged(nameof(CanEditN));
-        OnPropertyChanged(nameof(DisabledReason));
-        OnPropertyChanged(nameof(IsAtLimit));
+        _owner.BeginPublish();
+        try
+        {
+            OnPropertyChanged(nameof(Label));
+            OnPropertyChanged(nameof(Record));
+            OnPropertyChanged(nameof(Range));
+            OnPropertyChanged(nameof(Reachable));
+            OnPropertyChanged(nameof(NMin));
+            OnPropertyChanged(nameof(NMax));
+            OnPropertyChanged(nameof(N));
+            OnPropertyChanged(nameof(NEntry));
+            OnPropertyChanged(nameof(NTooltip));
+            OnPropertyChanged(nameof(WasClamped));
+            OnPropertyChanged(nameof(IsDropped));
+            OnPropertyChanged(nameof(Form));
+            OnPropertyChanged(nameof(IsPi));
+            OnPropertyChanged(nameof(IsT));
+            OnPropertyChanged(nameof(FormChoice));
+            OnPropertyChanged(nameof(Locked));
+            OnPropertyChanged(nameof(CanEditN));
+            OnPropertyChanged(nameof(DisabledReason));
+            OnPropertyChanged(nameof(IsAtLimit));
+        }
+        finally { _owner.EndPublish(); }
     }
 }
 

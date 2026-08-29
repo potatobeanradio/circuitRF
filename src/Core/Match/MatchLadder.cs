@@ -198,6 +198,31 @@ public static class MatchOrders
     /// <summary>The highest order the closed forms are tabulated for.</summary>
     public const int MaxOrder = 6;
 
+    /// <summary>The highest DUAL-band order — match points per band, and 4n elements (match.md §18.2).</summary>
+    /// <remarks>
+    /// <b>Three, because a dual-band prototype excludes its gap from the very first order.</b> Its
+    /// passband is the single interval <c>[a^2, 1]</c> and the rise below it is
+    /// <c>cosh(n.arccosh((1+a^2)/(1-a^2)))</c> — 3.2 at n = 1 on match.md §18.4's own fixture. There
+    /// is no low-order failure mode to escape, so the twelve-element comparison against a
+    /// single-band order 6 stands as the manufacturing limit it was chosen to be.
+    /// </remarks>
+    public const int MaxMultibandOrder = 3;
+
+    /// <summary>The highest TRI-band order (match.md §18.10, §21 rev 5).</summary>
+    /// <remarks>
+    /// <b>Six, and the extra three orders exist for a reason the dual-band case does not have.</b> A
+    /// tri-band prototype with a narrow middle band does not exclude its gaps AT ALL below order 4 —
+    /// the Remez polynomial on the union is the single-band hull Chebyshev, and the design is a wide
+    /// mediocre match with no trace of three bands (the owner's own report, §18.10). The gap rise on
+    /// that fixture is 0.97 at order 2 and 2.90 at order 4, so 4 is the first order at which a
+    /// tri-band spec of that shape becomes three bands.
+    ///
+    /// <para>It is paid for in parts: the element count is <c>4n</c> for a mixed termination pair and
+    /// <c>4n + 2</c> for a like one, so order 6 is <b>24</b> elements against order 3's 12. The
+    /// picker says so, and the low orders are still there and still first.</para>
+    /// </remarks>
+    public const int MaxTriBandOrder = 6;
+
     /// <summary>
     /// The orders that can absorb both ends. An end absorbing a series reactance needs a series arm
     /// there and an end absorbing a shunt reactance needs a shunt arm; arms alternate, so a MIXED
@@ -223,20 +248,74 @@ public static class MatchOrders
     /// only absorbs one of the two ends.</para>
     /// </remarks>
     public static IReadOnlyList<int> ValidOrders(Termination term1, Termination term2, NetworkForm form)
+        => ValidOrders(term1, term2, form, 1);
+
+    /// <inheritdoc cref="ValidOrders(Termination, Termination, NetworkForm)"/>
+    /// <param name="term1">The port-1 end.</param>
+    /// <param name="term2">The port-2 end.</param>
+    /// <param name="form">Which network form the orders are being asked about (match.md §16.4).</param>
+    /// <param name="bandCount">How many bands (match.md §18.2). 1 is the single-band rule above.</param>
+    /// <remarks>
+    /// <b>Multiband order is MATCH POINTS PER BAND, and the ceiling is 3</b> rather than
+    /// <see cref="MaxOrder"/>, because the element count is <b>4n</b>: order 3 is the same twelve
+    /// elements order 6 gives single-band, which is the fair comparison and the same manufacturing
+    /// limit.
+    ///
+    /// <h3>Parity is decided by the TERMINATIONS, not by the order (match.md §18.5)</h3>
+    /// <para><b>Every order now serves every termination pair, and the like-pair empty list is
+    /// gone.</b> §18.2's prototype is <c>Phi = p(u)^2</c>, so it has 2n elements and 2n arms — and 2n
+    /// arms have ends of OPPOSITE orientation, which absorbs a mixed pair and cannot absorb a like
+    /// one. The weighted family <c>Phi = (u + uR) R_n(u)^2</c> of §18.5 has degree 2n + 1, so it has
+    /// an ODD arm count and its two ends have the SAME orientation, which is exactly what the classic
+    /// shunt-C-to-shunt-C interstage needs. Both carry n match points per band — <c>R_n</c> has n
+    /// zeros in u and the extra pole sits at <c>u = -uR</c>, off the axis — so ORDER means the same
+    /// thing in both and the synthesis picks the family the terminations require. The element count
+    /// is <c>4n</c> for a mixed pair and <c>4n + 2</c> for a like one.</para>
+    ///
+    /// <para>The odd family is equiripple by construction (a Remez exchange produces nothing else), so
+    /// a like pair is Chebyshev-only; the synthesis refuses Butterworth there by name.</para>
+    /// </remarks>
+    public static IReadOnlyList<int> ValidOrders(
+        Termination term1, Termination term2, NetworkForm form, int bandCount)
     {
         ArgumentNullException.ThrowIfNull(term1);
         ArgumentNullException.ThrowIfNull(term2);
 
-        if (form != NetworkForm.Bandpass)
+        if (bandCount >= 2)
         {
-            bool bothReactive = term1.HasReactance && term2.HasReactance;
-            return bothReactive && term1.Topology == term2.Topology ? [] : [2, 3, 4, 5, 6];
+            if (form != NetworkForm.Bandpass) return [];
+            return bandCount >= 3
+                ? [1, 2, 3, 4, 5, 6]
+                : [1, 2, 3];
         }
+
+        // Lowpass and highpass now serve a like pair too, through the weighted family's odd element
+        // count (§18.5) — the empty list this used to return is gone, and the element count is 2n or
+        // 2n + 1 depending on the pair rather than the order.
+        if (form != NetworkForm.Bandpass) return [2, 3, 4, 5, 6];
 
         if (!term1.HasReactance || !term2.HasReactance)
             return [2, 3, 4, 5, 6];
 
         bool like = term1.Topology == term2.Topology;
         return like ? [3, 5] : [2, 4, 6];
+    }
+
+    /// <summary>
+    /// True when the two ends need an <b>odd</b> element count to be absorbed together — a like
+    /// topology pair, both reactive (match.md §16.4 item 2, §18.2, §18.5).
+    /// </summary>
+    /// <remarks>
+    /// <b>The one question that decides which prototype family a multiband or lowpass-form design
+    /// takes.</b> Arms (bandpass) and elements (lowpass) alternate orientation, so an even count has
+    /// ends of opposite orientation and an odd count has ends of the same one; a pair that is both
+    /// parallel or both series can only be absorbed by the latter. Either end resistive frees the
+    /// parity, and the even family is then preferred because it has a closed form.
+    /// </remarks>
+    public static bool NeedsOddCount(Termination term1, Termination term2)
+    {
+        ArgumentNullException.ThrowIfNull(term1);
+        ArgumentNullException.ThrowIfNull(term2);
+        return term1.HasReactance && term2.HasReactance && term1.Topology == term2.Topology;
     }
 }

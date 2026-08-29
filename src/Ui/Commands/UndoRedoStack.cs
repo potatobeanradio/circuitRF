@@ -69,25 +69,53 @@ public sealed partial class UndoRedoStack : ObservableObject
         Refresh();
     }
 
+    /// <summary>
+    /// Moves one entry from the undo side to the redo side, then undoes it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The entry moves BEFORE the command runs, and that ordering is the fix to a real corruption</b>
+    /// (owner-reported, 2026-08-28: undoing repeatedly, or alternating undo and redo quickly,
+    /// eventually loses the history).
+    ///
+    /// <para><c>cmd.Undo()</c> raises the model's <c>Changed</c> event, which every open editor
+    /// listens to — so arbitrary view-model code runs in the middle of this method. Popping the
+    /// command, running it, and only then pushing it and its stamp left a window in which the four
+    /// stacks disagreed with each other, and anything that reached <see cref="Execute"/> from inside
+    /// that window pushed a stamp this method then POPPED as though it were its own. One such event
+    /// and <c>_undoStack</c> and <c>_undoStamps</c> are permanently out of lockstep:
+    /// <see cref="TopUndoStamp"/> starts naming the wrong entry, which is what the Match Designer's
+    /// one-gesture-one-entry amend reads to decide whether to call this method at all.</para>
+    ///
+    /// <para>Doing the whole move first makes every observable state consistent for the duration. A
+    /// nested <see cref="Execute"/> then clears a redo stack this entry is already on — which is the
+    /// ordinary meaning of "an edit was made after an undo", not a corruption — and the stamps stay
+    /// paired with their commands whatever happens.</para>
+    ///
+    /// <para><b>The try/finally is the other half.</b> A handler that throws — Avalonia catches it and
+    /// the application carries on — used to leave the popped command on neither stack, gone for good,
+    /// with the stamps short by one. Now the move stands and only the command's own effect is
+    /// incomplete.</para>
+    /// </remarks>
     public void Undo()
     {
         if (!_undoStack.TryPop(out var cmd)) return;
-        cmd.Undo();
         _redoStack.Push(cmd);
         // The entry keeps the stamp it was recorded with: undo MOVES a cursor through history, it
         // does not add to it. Re-stamping here would make the next Ctrl+Z pick this same history
         // again forever.
         _redoStamps.Push(_undoStamps.Count > 0 ? _undoStamps.Pop() : 0);
-        Refresh();
+        try { cmd.Undo(); }
+        finally { Refresh(); }
     }
 
+    /// <inheritdoc cref="Undo"/>
     public void Redo()
     {
         if (!_redoStack.TryPop(out var cmd)) return;
-        cmd.Execute();
         _undoStack.Push(cmd);
         _undoStamps.Push(_redoStamps.Count > 0 ? _redoStamps.Pop() : 0);
-        Refresh();
+        try { cmd.Execute(); }
+        finally { Refresh(); }
     }
 
     /// <summary>Clear both stacks — called when a workspace is opened or new'd.</summary>

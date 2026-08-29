@@ -92,6 +92,37 @@ public sealed partial class MatchSolutionFilterViewModel : ObservableObject
     /// <summary>One line per network form — match.md §16.7. All three on by default.</summary>
     public ObservableCollection<MatchSolutionFilterToggle> Forms { get; } = [];
 
+    /// <summary>
+    /// Whether the three form toggles are shown at all — <b>false while the design is multiband</b>.
+    /// </summary>
+    /// <remarks>
+    /// match.md §18.6/§18.7: a multiband search produces bandpass rows and nothing else, so two of
+    /// the three lines would hide nothing and the third would hide everything. The group is replaced
+    /// by <see cref="FormGroupNote"/>, which says why in one line rather than listing forms that
+    /// produce no rows.
+    /// </remarks>
+    public bool ShowFormToggles => !_multiband;
+
+    /// <summary>The one line shown in place of the form toggles while multiband, or empty.</summary>
+    public string FormGroupNote =>
+        _multiband ? "Multiband networks are bandpass only." : "";
+
+    private bool _multiband;
+
+    /// <summary>
+    /// Tells the filter whether the design is multiband. <b>Does not raise
+    /// <see cref="Changed"/></b>: nothing about which rows are ACCEPTED moves, and a band-count
+    /// change restarts the search anyway (it is a <c>MatchSpecKey</c> input), so re-filtering a list
+    /// that is about to be cleared would be work for nothing.
+    /// </summary>
+    internal void SetMultiband(bool multiband)
+    {
+        if (multiband == _multiband) return;
+        _multiband = multiband;
+        OnPropertyChanged(nameof(ShowFormToggles));
+        OnPropertyChanged(nameof(FormGroupNote));
+    }
+
     /// <summary>One line per order the termination pair permits.</summary>
     public ObservableCollection<MatchSolutionFilterToggle> Orders { get; } = [];
 

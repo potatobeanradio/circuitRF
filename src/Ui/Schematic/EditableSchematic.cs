@@ -1,5 +1,6 @@
 using System.Linq;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Matching;
 using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Schematic;
@@ -443,8 +444,8 @@ public sealed class EditableComponent
     internal (string Name, float LocalX, float LocalY)[] GetEffectiveSnpPortDefs()
     {
         bool refNode = GetBoolParam("RefNode");
-        SnpPinConfig cfg = GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
-        SnpPitch pitch   = GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose);
+        SnpPinConfig cfg = GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
+        SnpPitch pitch   = GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose);
         return SymbolPortDefs.GenerateSnpPorts(PortCount, refNode, cfg, pitch);
     }
 
@@ -456,12 +457,50 @@ public sealed class EditableComponent
         return p is not null && p.Expression.Equals("true", StringComparison.OrdinalIgnoreCase);
     }
 
-    private T GetSnpEnum<T>(string name, T defaultVal) where T : struct, Enum
+    /// <summary>Reads an enum-valued instance param by name. Used by SnP (PinConfig/Pitch) and by
+    /// Match (Form).</summary>
+    private T GetEnumParam<T>(string name, T defaultVal) where T : struct, Enum
     {
         var p = Parameters.FirstOrDefault(q => q.Name == name);
         if (p is not null && Enum.TryParse<T>(p.Expression, ignoreCase: true, out var v)) return v;
         return defaultVal;
     }
+
+    /// <summary>
+    /// The network form the <c>Match</c> glyph draws — the <c>Form</c> ECHO parameter, which the
+    /// Designer rewrites on every commit (match.md §7.2). A design saved before forms existed carries
+    /// no <c>Form</c> at all and reads as <see cref="NetworkForm.Bandpass"/>, which is what it is.
+    ///
+    /// <para>The echo, not the <c>Design</c> payload: this runs on every model rebuild, for every
+    /// component, and base64-decoding a JSON document to choose a glyph is not what that path is for.
+    /// The echo cannot become a second INPUT here — the engine reads the payload and only the payload —
+    /// and it is not hand-editable, because a Match exposes no generic parameter rows
+    /// (<c>ParameterEditorViewModel.IsMatchPanelParameter</c>).</para>
+    /// </summary>
+    private NetworkForm MatchGlyphForm() => GetEnumParam("Form", NetworkForm.Bandpass);
+
+    /// <summary>The band count the <c>Match</c> glyph draws — the <c>Bands</c> echo (match.md §18).</summary>
+    private int MatchGlyphBands()
+    {
+        var p = Parameters.FirstOrDefault(q => q.Name == "Bands");
+        return p is not null && int.TryParse(p.Expression, out int n) && n >= 1 ? n : 1;
+    }
+
+    /// <summary>
+    /// The parameters this component renders as schematic labels, in display order — the single
+    /// definition every label consumer reads, so the renderer, the bounding box and the label-offset
+    /// bookkeeping cannot disagree about how many labels there are.
+    ///
+    /// <para><b>A <c>Match</c> renders NONE of its parameters</b> (owner, 2026-08-28). Its own
+    /// parameters are a design payload plus the echoes of it, and the two questions the schematic
+    /// used to answer with "F1 = 1.8 GHz, F2 = 2.2 GHz, Order = 4" — what band, how big — are now
+    /// answered by the GLYPH itself (form and band count, match.md §8.4) and, in full, by the Match
+    /// Designer, which is the only place any of them can be edited. This is enforced here and not
+    /// only by the registry defaults, because an instance placed before this change carries
+    /// <c>ShowOnSchematic = true</c> on three of them in its own file.</para>
+    /// </summary>
+    public IEnumerable<EditableParameter> LabelParameters()
+        => Symbol == SymbolKind.Match ? [] : Parameters.Where(p => p.ShowOnSchematic);
 
     /// <summary>
     /// Number of schematic ports on this symbol.
@@ -522,19 +561,24 @@ public sealed class EditableComponent
         IReadOnlyList<SymbolPrimitive>? cellRefPrimitives = null;
         Symbol? instanceSymbol = null;
 
-        // Per-instance glyph: SnP varies by RefNode/PinConfig/Pitch; the Tuner family varies by ShowBias.
+        // Per-instance glyph: SnP varies by RefNode/PinConfig/Pitch; the Tuner family varies by
+        // ShowBias; Match varies by Form and Bands (match.md §8.4).
         if (cellRefResolution is null)
         {
             if (Symbol == SymbolKind.Snp)
             {
                 bool refNode   = GetBoolParam("RefNode");
-                SnpPinConfig cfg = GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
-                SnpPitch pitch   = GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose);
+                SnpPinConfig cfg = GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
+                SnpPitch pitch   = GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose);
                 instanceSymbol = BuiltInSymbols.PrimitivesForSnp(PortCount, refNode, cfg, pitch);
             }
             else if (Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
             {
                 instanceSymbol = BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias"));
+            }
+            else if (Symbol == SymbolKind.Match)
+            {
+                instanceSymbol = BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands());
             }
         }
 
@@ -609,9 +653,9 @@ public sealed class EditableComponent
             typeLabel,
             ShowInstanceName ? InstanceName : "",
         };
-        foreach (var p in Parameters)
+        foreach (var p in LabelParameters())
         {
-            if (!p.ShowOnSchematic || string.IsNullOrEmpty(p.Expression)) continue;
+            if (string.IsNullOrEmpty(p.Expression)) continue;
             string val = string.IsNullOrEmpty(p.Unit) ? p.Expression : $"{p.Expression} {p.Unit}";
             labels.Add(string.IsNullOrEmpty(p.Name) ? val : $"{p.Name} = {val}");
         }
@@ -684,10 +728,12 @@ public sealed class EditableComponent
         else if (Symbol == SymbolKind.Snp)
             prims = BuiltInSymbols.PrimitivesForSnp(PortCount,
                 GetBoolParam("RefNode"),
-                GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
-                GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose)).Primitives;
+                GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
+                GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose)).Primitives;
         else if (Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
             prims = BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias")).Primitives;
+        else if (Symbol == SymbolKind.Match)
+            prims = BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands()).Primitives;
         else
             prims = BuiltInSymbols.Primitives(Symbol, PortCount).Primitives;
 

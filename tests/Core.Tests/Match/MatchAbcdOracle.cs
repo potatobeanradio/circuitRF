@@ -100,6 +100,51 @@ internal static class MatchAbcdOracle
         return (net, qFar);
     }
 
+    /// <summary>
+    /// The same §4.4 transformation written for an ARBITRARY analysis end and arm count — what the
+    /// multiband tests score a member with.
+    /// </summary>
+    /// <remarks>
+    /// <b>An independent construction, not a call into the synthesis.</b> The one above is written
+    /// for the golden problem's own orientation (series analysis end at termination 2) and cannot
+    /// express a shunt-first ladder driven from termination 1, which is what match.md §18.4's problem
+    /// is. Both read the design's <c>Omega0</c> and <c>W</c> — those are the SPEC, not the answer —
+    /// and do the frequency-scale, impedance-scale and resonate steps themselves.
+    /// </remarks>
+    internal static (MatchNetwork Net, double RFar, double QFar) LadderFromG(
+        MatchDesign d, double[] g, int arms, Termination ana, bool anaIsTerm1)
+    {
+        double om0 = d.Omega0, w = d.W, rAna = ana.R;
+
+        var s = new bool[arms + 2];
+        s[0] = s[1] = ana.Topology == TerminationTopology.Series;
+        for (int j = 2; j <= arms; j++) s[j] = !s[j - 1];
+        s[arms + 1] = s[arms];
+
+        var elements = new List<MatchElement>();
+        for (int j = 1; j <= arms; j++)
+        {
+            double gi = s[j] ? g[j] / (w * om0) * rAna : g[j] / (w * om0) / rAna;
+            double l = s[j] ? gi : 1.0 / (om0 * om0 * gi);
+            double c = s[j] ? 1.0 / (om0 * om0 * gi) : gi;
+            elements.Add(new MatchElement { Name = $"L{j}", Type = ElementType.L, IsShunt = !s[j], Value = l });
+            elements.Add(new MatchElement { Name = $"C{j}", Type = ElementType.C, IsShunt = !s[j], Value = c });
+        }
+        if (!anaIsTerm1) elements.Reverse();
+
+        double rFar = s[arms + 1] ? rAna / g[arms + 1] : g[arms + 1] * rAna;
+        double qFar = g[arms] * g[arms + 1] / w;
+        if (s[arms + 1]) qFar = 1.0 / qFar;
+
+        var net = new MatchNetwork
+        {
+            R1 = anaIsTerm1 ? rAna : rFar,
+            R2 = anaIsTerm1 ? rFar : rAna,
+        };
+        net.Elements.AddRange(elements);
+        return (net, rFar, qFar);
+    }
+
     /// <summary>The design doc's §4.9 interstage problem — the acceptance anchor.</summary>
     internal static MatchDesign GoldenDesign() => new()
     {

@@ -1,5 +1,161 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Flatten to Cell wrote 15 significant digits, whatever the Designer was showing (2026-08-28)
+
+Owner-reported: an inductor the Match Designer showed as `1.201 pH` reached the flattened cell as
+`1.20099999999… pH`. Nothing was corrupting the number — `MatchFlatten.Exact` formatted every value
+with `"G15"` **on purpose**, and the double really does carry that many digits. The Designer's own
+`Significant digits` setting (default 3) was reaching the pane and the value grid and nothing else,
+so the two drawings of the same ladder disagreed on every value.
+
+**The 15 digits were load-bearing, and giving them up was the owner's call** (asked, 2026-08-28,
+against the alternative of a fixed 6): `MatchFlattenTests` gates the flattened cell against the
+`Match` component at **1e-12 in S-parameters**, and that tolerance is only reachable because the
+written values round-trip the double. At three digits the flattened cell is a rounded copy and
+agrees to roughly one part in a thousand — the response shift IS the rounding, and it is now stated
+in the user reference so nobody reads it as drift.
+
+- `MatchFlatten.Exact` → `MatchFlatten.Value(value, quantity, digits)`, formatting through
+  `MatchValueFormat.Significant` — the same helper the pane formats with, so one number, one
+  spelling. The Auto unit choice and the `fH`→`pH` substitution are unchanged.
+- `digits` is threaded `MatchDesignerViewModel.Flatten` → `MatchFlattenService.Run` /
+  `RunStandalone` → `MatchFlatten.BuildSchematic`, and applied to the ladder elements, the annexes'
+  absorbed reactances and the disabled `Term`s' `Z` alike. The schematic's own context menu has no
+  Designer open, so it takes `MatchDesignerSettings.DefaultSignificantDigits`.
+- **The five exactness tests now ask for 15 digits explicitly** (`MatchFlattenTests.ExactDigits`)
+  rather than being relaxed to the rounding. They were written to catch a placement or wiring bug,
+  which moves |ΔS| by O(1); relaxing them to ~1e-3 would have thrown that resolution away for no
+  reason, and the rounding is a display choice they have no business measuring.
+- The one new test — `TheFlattenedCell_WritesItsValues_AtTheDesignersOwnSignificantDigits` — drives
+  the real `MatchDesignerViewModel.Flatten` at **4** digits (not the default, so a coincidence of
+  the default cannot satisfy it) and checks the WRITTEN TEXT: at most 4 significant digits, and
+  within 5e-4 relative of the design's own value so a truncation or a different number fails too.
+  Re-deriving the expected string from the same formatter the writer uses would have passed at any
+  digit count.
+
+## Undo/redo in the Match Designer — every undo was adding an entry (2026-08-28)
+
+Owner-reported: clicking Undo repeatedly and very fast, or alternating Undo and Redo quickly,
+eventually loses undo/redo altogether.
+
+**It is not a timing problem and the UI was keeping up fine.** Every undo that moved a transform's
+slider range put a NEW entry on the schematic's stack, so the history grew as fast as it was being
+unwound. Measured on 5 Ω ∥ 1 pF into 50 Ω at order 4: **8 real edits took 14 undos to unwind**, 6 of
+them phantom; with the `Undo` loop capped, it never reached the bottom at all.
+
+### The chain
+
+```
+UndoRedoStack.Undo -> cmd.Undo -> SetParametersCommand.Apply -> SchematicEditModel.Changed
+  -> MatchDesignerViewModel.OnModelChanged -> Refresh -> RefreshTransformRows
+  -> MatchTransformRowViewModel.Refresh raises "N", then "NMin", "NMax"
+  -> the Slider clamps its Value into the range it is holding, and the TwoWay binding writes it back
+  -> MatchTransformRowViewModel.N (no guard of any kind)
+  -> SetTransformN -> Commit -> SchematicViewModel.Execute
+```
+
+Avalonia's `RangeBase` re-clamps `Value` on **every** set — its own, `Minimum`'s and `Maximum`'s —
+and a two-way binding sends each clamp back to the source. The rack's slider is
+`Minimum="{Binding NMin}" Maximum="{Binding NMax}" Value="{Binding N, Mode=TwoWay}"`, and `Refresh`
+published the VALUE BEFORE THE BOUNDS, so the new N was clamped against the *previous* row's range
+before that range had been updated. Every sibling setter in the Designer already guarded itself
+(`Kind`, `Topology`, `Locked`, `Form`, `OrderChoice`, `SelectedResponseOption`); `N` was the one that
+did not, and it is the only one wired to a control that coerces.
+
+**An ordinary edit hid it completely.** Those same refreshes happen inside `AsOneEdit` with
+`_commitSuppressed` up, which absorbs the extra commit into the gesture's single entry. An undo has
+no gesture around it — which is why the report is about undo and redo and nothing else.
+
+### What it cost, beyond the phantom entries
+
+`Execute` clears the redo stack, so redo vanished on the first undo that clamped. And because the
+commit landed *inside* `UndoRedoStack.Undo`, between the pop and the push, the stamps came out one
+place away from the commands they were issued for: `TopUndoStamp` then names a different entry, and
+that is exactly what the termination auto-solve's one-gesture-one-entry amend reads to decide whether
+to call `Undo` — on the wrong answer it undoes an edit it has nothing to do with.
+
+### The fix, in two layers
+
+1. **`MatchTransformRowViewModel`** — `N` drops a write that changes nothing, and a write that
+   arrives while the view-model is PUBLISHING its own state
+   (`MatchDesignerViewModel.IsPublishing`, a depth raised in `MatchTransformRowViewModel.Refresh`,
+   which is the one place those notifications leave the view-model). `Refresh` also publishes
+   `Range`/`Reachable`/`NMin`/`NMax` **before** `N`, so the common case produces no clamp at all. A
+   user's own drag is untouched — it does not arrive during a publish.
+2. **`UndoRedoStack.Undo`/`Redo`** — the entry and its stamp move between the stacks **before** the
+   command runs, inside a `try`/`finally`. `cmd.Undo()` raises the model's `Changed` event, so
+   arbitrary editor code runs in the middle of both methods; doing the move first means every
+   observable state is consistent for the duration, a nested `Execute` then means the ordinary "an
+   edit was made after an undo" (redo branch discarded), and a handler that throws — Avalonia catches
+   it at the dispatcher and the application carries on — no longer takes the entry with it.
+
+Layer 2 is not redundant once layer 1 lands: `ParameterEditorViewModel.OnModelChanged` reaches
+`SyncVerilogAFromModelFile`, which executes a command, and that has the same shape.
+
+### Gates
+
+`tests/Ui.Tests/Match/MatchDesignerUndoTests.cs` and
+`tests/Ui.Tests/UndoRedoStackReentrancyTests.cs`. The Slider is **stood in for** rather than
+instantiated — this test project may not call Avalonia runtime APIs — so `SliderStandIn` reproduces
+`RangeBase`'s coercion exactly, and a source scan asserts the AXAML still binds the way the stand-in
+assumes. Six of the nine fail against the pre-fix source, including "8 edits, 200 undos".
+
+## Match Designer — the Specification pane sizes itself, and the refusal is said once (2026-08-28)
+
+Two owner asks in the multiband Designer, both about how much of the window a state that says
+"nothing here" is allowed to take.
+
+### 1. The synthesis refusal was rendered three times
+
+A tri-band design that reaches nothing covered the window in warning text. The reason was not three
+different messages — it was **one string rendered three times**: `MatchDesignerViewModel.RefreshStatus`
+takes `Status.Refusal` from `_rebuild`, `UpdatePlots` took `ResponseError` from the same `_rebuild`,
+and the Solutions panel states it a third time in `SolutionsRefusal`. The two under the plots were
+therefore always identical to each other, and they pushed the Q / return-loss / gap / ratio readouts
+down the card.
+
+Both copies under the plots are gone. The refusal is stated in the **Solutions panel only**, which is
+the panel entitled to say it: it is the one that lists what the whole cross-product found, so it is
+the one that can say nothing was found.
+
+- `ResponseError` **survives**, and its `TextBlock` with it. It carries what the Solutions panel
+  cannot know: an element that came out infinite because a transform is parked on its positivity
+  bound, an engine failure on a network that DID synthesise, and an export failure. None of those is
+  "no solution".
+- `MatchStatus.Refusal` survives too, and nothing about it changed — `IsRefused` still blanks the
+  numeric lines rather than quoting numbers computed from a network that does not exist, and
+  `FlaggedEnd` still turns the affected termination red. **The red termination is the signal that
+  replaces the sentence**: it points at the end the refusal is about, which the sentence did too, in
+  a third of a card's height instead of four lines of it.
+
+### 2. Dual and Tri now expand the Specification pane instead of scrolling it
+
+The specification cards live in an `Auto` row over the Solutions list's `*` row, capped by the
+scroller's `MaxHeight` — an Auto row takes what it wants first, so **the cap on the cards IS the
+floor under the list**. It was a fixed 300, which had been lowered from 392 earlier in the same round
+to give the list room. Dual adds the f3/f4 rows, Tri adds f5/f6 on top, and both can add the
+effective-band note, so the pane the user is *typing into* went behind a scrollbar.
+
+`MatchDesignerWindow.SyncSpecificationCap` computes the cap instead: the pane's own height, less its
+heading, less `SolutionsFloor`. Re-taken on the pane's `SizeChanged`, because a narrower column wraps
+the notes onto more lines.
+
+- **Raising the cap is the whole of "expand minimally".** A `ScrollViewer` in an `Auto` row already
+  asks for exactly its content's height; the cap only bounds it. So each band count takes its own
+  rows and notes and nothing more, with no per-row height written down anywhere — a per-band-count
+  height would be wrong the first time a note wrapped to two lines.
+- **The floor was measured, not guessed.** Laid out headlessly at the window's own 1199 x 741, the
+  pane is 641 px with a 21 px heading, and the three specifications ask for **351 px (Single), 411
+  (Dual), 455 (Tri with the effective-band note)**. `SolutionsFloor = 120` is the largest floor at
+  which the tri-band case still fits at the window's `MinHeight` of 700, and is chosen to be exactly
+  that rather than to be round.
+- **The old 300 was already scrolling a SINGLE band** (351 against 300), which nobody had noticed —
+  it is what the fixed cap cost, not something the extra bands introduced. The AXAML literal stays as
+  the resting value until the first layout pass reaches the method, mirrored by
+  `SpecificationFloor`; `MatchRound9Tests.TheSpecificationCards_GaveTheirFreedHeightToTheSolutionsList`
+  was rewritten around the pair rather than deleted, since the ask it holds — the specification
+  cannot take the whole pane — is still true.
+
 ## Match Designer round 8 — the Solutions panel becomes the specification (2026-08-28)
 
 **Owner's ask, in one sentence:** stop making the user *specify* an order and a response family and
@@ -13057,3 +13213,330 @@ end to name. The single-end spelling stays, because *which* end is the half a re
 looking at the row. `RippleTooltip` opens with the sentence that came off, so it is still the first
 thing said on the row it is about, and the row still dims — which is what the round-6 bug the note was
 originally written for actually needed.
+
+## Match Designer — dual-band (MN-MB1, 2026-08-28)
+
+match.md §18 in the window. The Core-side findings (every §18.4 golden reproducing, the search's own
+K, the Butterworth figure, why order 1 lists nothing) are in `src/Core/Match/RESOLVED.md` §MN-MB1;
+what follows is only what the Designer itself turned up.
+
+**The band count is a specification input, not a solution-list coordinate — the opposite of `Form`.**
+It is in `MatchSpecKey`, so changing it restarts the search rather than re-filtering what is listed,
+which is right: a different band set is a different problem, not another cell of the same one. `F5`
+and `F6` are in the key already, so MN-MB2's tri-band touches nothing in
+`MatchDesignerViewModel.Analysis.cs`.
+
+**Moving to Dual SEEDS f3/f4 when they are empty.** Without it the mode change is instantly a refusal
+about a second band of 0–0 Hz, and stays one until two more numbers are typed — a control that breaks
+the design the moment it is touched. The seed is the geometric mirror of band 1 an octave up, which
+is the one second band that needs no widening, so the mode opens on a design that synthesises and the
+effective-band note is (correctly) silent until the user types real frequencies.
+
+**The f3/f4 rows are HIDDEN, not disabled.** They are not inputs to a single-band design at all, and
+this window has been bitten once already by a disabled row reading as live: the Ripple field
+(owner, 2026-08-20 — an `InlineEditText` rests as a bare `TextBlock` and Avalonia does not dim a
+disabled one, so it swallowed the double-click).
+
+**The filter's Form group is REPLACED, not emptied.** While multiband every row is bandpass
+(match.md §18.6), so two of the three toggles would hide nothing and the third would hide everything.
+`ShowFormToggles` collapses the group and `FormGroupNote` says why in one line.
+`SetMultiband` deliberately does NOT raise `Changed`: nothing about which rows are accepted moves,
+and the search is restarting anyway.
+
+**The card's middle word is the band count, not the form.** `Chebyshev · dual-band · order 2`. With
+one form on offer the form word is the same on every card and says nothing; and the single/double
+Chebyshev qualifier is dropped for the same reason it is dropped in lowpass and highpass form — the
+double-match family is not offered over two bands, so the contrast would be with an option that does
+not exist there.
+
+**No band shading on the |S11| plot.** `PlotControl`/`Plot` have no region primitive (see the Core
+RESOLVED entry); per the brief nothing was added. The plot band default did move to the effective
+OUTER pair, so both bands and the gap are visible, which is what §18.7 actually needs.
+
+**Insertion loss stays quoted over the FIRST band.** It is one number and a ripple, and computing it
+across a gap the network deliberately reflects would report the gap's rejection as loss. The worst
+return loss and the new gap line are the two figures that are band-set-aware.
+
+### Three follow-ups the owner found on the dual-band round (2026-08-28)
+
+**1. A band-count change left the design on no solution.** Switching Single ↔ Dual rebuilds the
+LADDER, not merely the target: a dual-band network has twice the arms and different element names, so
+every stored `TransformRecord` names an element that no longer exists. The rack is dropped, Π N² lands
+on 1 against a target of several, and the design sat on nothing while the panel filled with dozens of
+rows that would have reached.
+
+The auto-solve already existed for exactly this shape — a topology change at a termination does the
+same thing to the same records — and the band count did not reach it. **The reason is worth keeping:
+the request was spelled as an int, "which END is this about", with 0 meaning "no request".** A
+band-count change has no honest value to pass, so it passed none and asked for nothing. The end was
+only ever tested against zero; nothing downstream needed to know which input moved, only that the
+design may now be on a rack that no longer reaches. It is a `bool` now, and both edits go through one
+`CommitSpecChangeWithAutoSolve` — which also carries the deferral-and-amend dance, so a band-count
+change with an auto-solve behind it is still ONE undo entry.
+
+**2. After an undo or redo the wrong card was highlighted.** The card's own badge was never wrong —
+`RebadgeSolutions` runs on every refresh and an undo refreshes. **The window keeps a SECOND highlight
+on the same list**, the ListBox's selection, and it moved only on a click or on a collection change.
+An undo is neither: it touches nothing in `MatchSpecKey`, so the search is not restarted and the
+collection is not rebuilt. So the selection stayed on the row the user last clicked while the green
+border moved back to the row the design is now on — two highlights, two cards, and the right one
+usually scrolled out of view.
+
+`MatchDesignerViewModel.AppliedSolutionMoved` now fires when the design lands on a *different* row by
+a path the user did not click (an undo, a redo, an edit elsewhere in the schematic, a band-count
+change, the auto-solve), and the window answers it with `SyncSolutionSelection` + `ScrollToApplied`.
+**A click deliberately does not raise it** — the row is already under the pointer, and scrolling to it
+is the yank `ScrollToAppliedOnce` exists to avoid. That is enforced by `ApplyingByClick`, set for the
+duration of the public `ApplySolution`, and `MatchRound9Tests.NoApplyPath_ScrollsTheList` now asserts
+the suppression rather than counting call sites alone.
+
+**3. Two UI-text rules, both owner-stated.**
+- **No design-note section references anywhere the user reads** ("the user doesn't read those"). The
+  easy half to forget is the refusals: MN-1 writes them in `src/Core/Match` and the status strip
+  renders them verbatim, so a `§` added there reaches the screen without passing through any file in
+  `src/Ui`. `MatchMultibandDesignerTests.NoUserVisibleStringInTheDesigner_QuotesADesignNoteSection`
+  scans both sides, with comments and XML doc stripped — those keep their references.
+- **`OrderNote` is gone entirely — both halves of it.** *"Order 3 cannot absorb both ends now…"* after
+  a band-count change is clutter: the order moved BECAUSE a different card is applied, that card is
+  the bold green-bordered row, and it names its own order. And the dead-end half — the terminations
+  permit no order at all — was a second copy of MN-1's own refusal, which the status strip already
+  renders verbatim with the parity reason and the form that does absorb both ends. The note predates
+  the Solutions panel becoming the specification, when the order was a control the user set by hand
+  and nothing else on screen reported that it had moved. **The parity rule is now expressed by
+  `OrderOptions` offering what it offers, and by the refusal when it can offer nothing** — the
+  property, its AXAML binding and every write of it are removed, and `MatchRound8Tests` asserts the
+  binding cannot come back. `QAdjustNote` beside it STAYS, and the difference is worth keeping: a
+  cleared Q-adjust is a number the user typed, and nothing else on screen says it is gone.
+
+### A fourth thing the dual-band round exposed: check-then-lock in the search's generation guard
+
+**Pre-existing, and the Single ↔ Dual switch is what made it easy to hit.** `QueueSolutionSearch`'s
+`Publish` read `_searchGeneration` **outside** `RefreshGate` and only then took the gate. A batch of
+the OLD search passes the check, blocks on the gate the superseding edit is holding mid-`Refresh`, and
+lands after that edit has bumped the generation and cleared the list — so rows from a search that no
+longer exists arrive in a list that was just emptied for the new one.
+
+Measured, on a Single → Dual switch under full-suite load: **112 rows in a list whose search yields
+62**, one of the strays badged current, and the auto-solve then dragging the design back to that
+stray's **order 6** — an order the dual-band picker does not offer. The order adjust had run correctly
+(the diagnostic read `immediately=3, after=6`), which is what pointed at the list rather than at
+`AdjustOrderForParity`.
+
+**Only reproducible where the result scheduler is the thread pool.** In the application both the
+generation bump and the landing are UI-thread work and the gate is uncontended, so the interleave
+cannot happen; in a test — and in any headless host — `TaskScheduler.FromCurrentSynchronizationContext`
+falls back to `TaskScheduler.Default` and it can. That is exactly why it needs a test to hold it shut:
+`MatchMultibandDesignerTests.SwitchingToDual_RevalidatesTheOrder_AndSaysNothingAboutIt` now asserts
+that every listed row belongs to the search in force, not merely that the order is valid.
+
+Both guards moved inside the lock — the batch one and the completion one, which had the same shape and
+could mark the LIVE search complete on behalf of a superseded one. Two full-suite runs green after the
+fix; it reproduced on the second of two before it.
+
+## MN-MB2 — the Designer's tri-band mode and the parity-driven element count (2026-08-28)
+
+match.md §18.5/§18.7 and brief `brief-match-multiband-tri-remez.md`. The Core findings — the Remez
+exchange, the unreachable overlap refusal, the odd count's real purpose, the parity trap in the
+terminating value — are in `src/Core/Match/RESOLVED.md` §MN-MB2. What follows is what the Designer
+needed that the design note did not say.
+
+### **Dual → Tri moves the user's second band OUT, and seeds a new middle one**
+
+The obvious seeding — append a third band above the second — is wrong, and silently so. §18.3 keeps
+the MIDDLE band and mirrors the outer pair about it, so a band appended at f5–f6 would immediately be
+mirrored onto whatever sat at f3–f4 and the user's own second band would be the one that moved. The
+seed therefore promotes f3–f4 to f5–f6 and puts a fresh ±10 % middle band at the geometric centre of
+the resulting gap, so the first thing the mode shows is a design that synthesises and whose bands are
+where the user put them. `MatchTribandDesignerTests.SwitchingToTri_MovesTheSecondBandOutAndSeedsAMiddleOne`
+holds it.
+
+### **The element-count hint had to become a formula, not a multiplication**
+
+It read `4n` for multiband and `2n` otherwise. Since MN-MB2 the count depends on the TERMINATIONS —
+a like-topology pair takes the weighted family's odd ladder — so the same order buys 4n or 4n + 2
+elements, and 2n or 2n + 1 in lowpass and highpass form. The hint states both the numbers and the
+formula (`6, 10, 14 elements (4n + 2)`), because a user who changes a termination's topology and sees
+the count jump needs the reason on screen. The order picker itself does **not** change: order is match
+points in either family, so the same 1…3 (or 2…6) is offered either way.
+
+### The order-parity note stayed gone, and this is where that pays
+
+MN-MB1 removed `OrderNote` on the owner's instruction. Parity is now decided by the terminations
+rather than by the order, so an edit that would once have moved the order and explained itself now
+moves only the element count — which the hint states — and the applied solution card names its own
+order. Nothing needed adding back.
+
+### Two gap lines, not one line naming both
+
+Tri-band has two gaps and they are independent numbers: mirroring makes them equal on a symmetric spec
+and unequal the moment the middle band is off centre, which is the first thing to read when the
+response is not what was wanted. `MatchStatus` carries a second gap triple and `GapText2` renders it
+on its own row; `Text` — what the tooltip and the tests read — joins whichever of the two are
+non-empty, so a single-band or dual-band strip is unchanged.
+
+### The solutions search enumerates fewer cells, twice over
+
+Tri-band is Chebyshev-only (Butterworth has no member on a union of intervals) and so is any LIKE
+termination pair (its family comes out of a Remez exchange, which is equiripple by construction).
+Both are filtered out of `Combinations` rather than searched and refused, because a column of
+identical one-line refusals in the panel is worse than an absence the filter's own note explains.
+
+### Band edges out of order are SORTED, not refused (owner-reported, 2026-08-28)
+
+*"When user enters wrong freq order, nothing works."* It made nothing work for a real reason: the
+synthesis refuses a spec that is not `0 < f1 < f2 < …`, and `MatchBands.Symmetrise`/`Symmetrise3` hand
+back their inputs untouched rather than guessing, so every downstream number goes blank at once and
+the only thing on screen naming the cause is the status strip — which cannot say WHICH of six fields
+is out of place.
+
+`MatchDesignerViewModel.SortBandEdges` now puts them back in order on every committed band edit.
+Three decisions worth keeping:
+
+- **Sorted, not rejected.** f1…f6 are one ordered list and nothing else — the passband boundaries in
+  increasing frequency — so a user who types 1.65 GHz into f3 when f5 already holds 0.9 has said what
+  they mean unambiguously, and sorting is the only interpretation that keeps every number they typed.
+- **In the view-model, not in `MatchBands`.** Those are pure functions called by `MatchDesign`'s
+  derived properties on every access, including halfway through a keystroke; one that reordered its
+  inputs would make the stored design disagree with the fields the user is looking at.
+- **Only the edges the current band count uses take part**, so a single-band design's stale (or zero)
+  f3–f6 cannot be sorted in front of its real band — and `CommitBand` sorts once more after its batch,
+  because two edges committed together can each be in order against what was there and out of order
+  against each other.
+
+It says nothing. The fields visibly renumber, which is the same reasoning that removed the order note
+in MN-MB1. Two equal edges are left alone: sorting cannot separate them, and the synthesis's own
+refusal is the honest answer to a zero-width band.
+
+## MN-FH — the feasibility hints in the Designer (2026-08-28)
+
+Three new pieces of read-only text: the status strip's Fano ceiling line, the Frequency Band card's
+gap-rise note, and the loosen hints under the solutions panel. The physics is in
+`src/Core/Match/MatchFanoBound.cs` and the findings about it are in `src/Core/Match/RESOLVED.md`
+§MN-FH; what follows is only what the Designer contributed.
+
+### The ceiling line has to survive a refusal, so it cannot come from the rebuild
+
+`MatchStatus.Text` drops every line but Q on a refusal, and rightly: the numeric readouts describe a
+network that does not exist. **The ceiling is not one of them.** It is arithmetic on `_design` — four
+multiplications on the terminations and the bands — and a refusal is precisely when a user needs to be
+told that the best any lossless network could do here is −3 dB. So `RefreshStatus` computes the whole
+feasibility block BEFORE the `network is null` branch and passes it into both constructions, and
+`Text`'s refusal arm joins `QText` and `CeilingText` before the message.
+
+### The hint belongs to the finished solution list, not to the rebuild
+
+`RefreshFeasibilityHint` reads `SolutionsComplete` and returns empty while the cross-product is still
+filling — "nothing reached it" is a statement about a finished list, and a hint that appeared mid-search
+and then vanished would be worse than none. It is therefore called from **two** places:
+`RefreshStatus` (so a specification edit clears a stale one immediately) and `LandSearchComplete` (so
+it appears when the list settles). Neither call alone is sufficient.
+
+### The −10 dB floor is what keeps it from being noise
+
+A ceiling only earns a hint when it is what is actually stopping the design. §4.9's interstage problem
+has a ceiling of −20.8 dB and reaches −16.7 — physics is not its problem, and a Fano lecture there is
+noise. `HintCeilingFloorDb = -10.0` is the line; the owner's fixture at −6.4 dB is well above it.
+
+### The applied solution was invisible on a first open, and the cause was a spent flag
+
+Owner-reported, 2026-08-28: opening the Designer on a design that already has a solution picked shows
+that solution unhighlighted.
+
+**The view-model was never wrong.** The row is badged `Current` on the first landing and the card's
+green border follows `IsCurrent`; a reopened design badges the right row every time
+(`MatchSolutionScrollTests`). What the user could not see was the CARD. The list's own selection
+highlight is deliberately invisible — `ListBoxItem:selected` paints a transparent background, because
+a selection highlight beside the card's accent border would be a second, contradictory mark — so the
+green border is the ONLY mark of the applied row, and a green border scrolled out of view is
+indistinguishable from no selection at all.
+
+**Why only the first open.** `MatchDesignerWindow.Show` calls `vm.SetTarget(...)` — which starts the
+solution search — BEFORE the window is constructed, and the design's own combination is searched
+first precisely so it lands fast. So the rows are usually already in `Solutions` by the time `Loaded`
+fires: `OnSolutionsCollectionChanged` never sees them, and the only scroll attempt is the one
+`WireSolutionsList` makes itself. That attempt runs before the ListBox has been arranged — and note
+that `WireSolutionsList` also runs BEFORE `SyncSpecificationCap`, which is what gives the Solutions
+list its height at all — so `ScrollIntoView` scrolled nowhere and reported nothing. Every later path
+worked, because by then the list had been laid out.
+
+**The fix is one line of sequencing: spend the once-only flag when the scroll LANDS, not when it is
+attempted.** `ScrollToApplied` now checks that the list has an items panel and a non-zero height, and
+re-posts itself (bounded, 20 frames) when it does not. Posting at `Background` was right and is kept —
+it is below layout, so one post suffices once the list exists; what it could not do was conjure a
+layout pass that had not been scheduled yet.
+
+### The Response readout became too big, and the cause was app-wide, not local
+
+Owner, 2026-08-28, right after the card was made selectable. `src/Ui/Styles/CircuitRfStyles.axaml`
+carries the application's global font defaults on `Style Selector="TextBlock"` — **an exact-type
+selector, which `SelectableTextBlock` has never matched.** The FontSize rarely shows, because most
+selectable readouts set their own; the other two setters do, because nothing sets those by hand:
+`VerticalAlignment` and `HorizontalAlignment` fall back to Avalonia's own `Stretch`, and a vertically
+stretched line in a StackPanel claims more height than a centred one. Seven of them grow a card
+visibly.
+
+Fixed **once, globally**, with a matching `Style Selector="SelectableTextBlock"` beside the existing
+one — which also repairs the same latent defect in the five other panes that already used the control
+(Messages, Properties, the marker editor, the plot inspector, harmonicaRF's readout strip), none of
+which had ever received the global defaults.
+
+**It is targeted at `SelectableTextBlock` rather than widening the first selector to `:is(TextBlock)`,
+and that distinction is load-bearing:** `TextPresenter` also derives from `TextBlock`, so `:is()`
+would reach inside the template of every `TextBox`, `ComboBox` and `AutoCompleteBox` in the
+application and restyle their editable text. `MatchSolutionScrollTests` holds both halves.
+
+### The readout card is selectable now (owner, 2026-08-28)
+
+Every line in the Response pane's card is a number someone copies into a note or a message, and a
+`TextBlock` offers no way to get one out but to retype it. They are `SelectableTextBlock` now, the
+same as the solution cards.
+
+**The `:is(TextBlock)` trap does not bite here, but only by accident.** The readout lines carry
+`FontSize` inline and never depended on a type selector; the `note` and `warn` classes they share with
+the notes list were already widened to `:is(TextBlock)` when the solution cards became selectable
+(2026-08-28). **The other classes in this window are still exact-type selectors** — `cardhdr`,
+`detailLabel`, `detailValue`, `lbl`, `panelhdr` — so anything else that becomes selectable must widen
+its own selector or it will silently fall back to the inherited font size.
+
+The solutions list's `e.Handled`/pointer-capture problem does not apply: this card sits in a plain
+`ScrollViewer` and nothing in it is a click target, so no tunnelling handler is needed.
+
+### The Match symbol draws the design, and the Match shows no parameters (owner, 2026-08-28)
+
+Two halves of one request, and the second is what makes the first safe.
+
+**The glyph follows form and band count.** `BuiltInSymbols.PrimitivesForMatch(form, bandCount)` builds
+and caches five variants of the filter glyph; `EditableComponent` picks one per instance in
+`ToRenderComponent` and `ComputeGlyphBb`, exactly as SnP does for `RefNode`/`PinConfig`/`Pitch` and the
+Tuner family for `ShowBias`. The three stacked waves read as a frequency axis, highest at the top, so
+bandpass strikes the outer two, lowpass the top two and highpass the bottom two; a multiband design is
+bandpass in every band, so it is drawn as two or three SMALLER bandpass stacks instead — side by side,
+or two-below-one — because how many passbands there are is the question one stack of three waves cannot
+answer. Same body, same two pins at the same places, whatever the glyph: nothing a wire is attached to
+moves.
+
+**The 4-unit nudge off each wave's own centre is why a lowpass glyph works at all.** A slash centred
+exactly on a wave passes through a point the wave itself passes through, and two segments meeting at a
+shared point do not strictly cross — which the strike-through test, correctly, reads as "not struck".
+That was invisible while only the outer waves were ever struck (they were already nudged inward); the
+middle wave is nudged downward for the same reason, and the tests check the real geometry rather than
+the coordinates.
+
+**Nothing a Match carries is drawn on the schematic any more.** `F1`, `F2` and `Order` used to be, and
+what they were saying — which band, how big — the glyph now says itself. Three places had to agree, or
+a legacy instance would have kept its labels or kept a clickable zone where no text is: the registry
+defaults (`ShowOnSchematic: false` on all thirteen), `EditableComponent.LabelParameters` — the single
+definition the renderer, the label-offset bookkeeping and `SchematicHitTest` now all read — and the
+Designer's own `CommitCore`, which clears the flag on an EXISTING parameter and not only on one it
+creates, so an instance placed before this change is tidied for good on its next edit.
+
+**`IsMatchPanelParameter` now covers every parameter the registry declares for a Match**, not just
+`Design`. That is not tidiness: the glyph reads the `Form` and `Bands` ECHOES (the payload is base64
+JSON, and decoding one per component per model rebuild to choose a glyph is not what that path is for),
+so a generic row offering `Form` would be an edit box that makes the symbol describe a network the
+component does not contain. With no rows, that state is unreachable — the Designer writes the echoes,
+and it is the only thing that does. The echo still is not a second INPUT: the engine reads the payload
+and only the payload, so the glyph can no more change the circuit than the old text label could.
+
+`MatchFlatten` writes the instance's own glyph into the generated cell's `.csym`, so flattening a
+lowpass ladder no longer hands back a cell wearing a bandpass symbol.

@@ -92,13 +92,18 @@
                      a band, two terminations and a rack of linked sliders; none of that fits in a
                      420 px column of text rows, and a second place to type them is how the design and
                      the label come to disagree. The `Design` blob is filtered out of the generic rows
-                     above (IsMatchPanelParameter); the six ECHO rows stay, because they are what a
+                     above (IsMatchPanelParameter); the ECHO rows stay, because they are what a
                      user reads on the schematic page itself. -->
                 <StackPanel IsVisible="{Binding IsMatch}" Margin="6,4" Spacing="4">
                     <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Band" FontSize="11"/>
+                        <!-- The band line shows the EFFECTIVE bands of match.md §18.3; when
+                             symmetrisation moved one of them, the tooltip carries the requested pair
+                             and the reason, so the line stays one line and nothing is hidden. -->
                         <SelectableTextBlock Grid.Row="0" Grid.Column="1" FontSize="11"
-                                             Text="{Binding MatchBandSummary}"/>
+                                             TextWrapping="Wrap"
+                                             Text="{Binding MatchBandSummary}"
+                                             ToolTip.Tip="{Binding MatchBandTooltip}"/>
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Network" FontSize="11"/>
                         <SelectableTextBlock Grid.Row="1" Grid.Column="1" FontSize="11" TextWrapping="Wrap"
                                              Text="{Binding MatchOrderSummary}"/>

@@ -111,7 +111,10 @@ public static class MatchFormPrototype
     /// </remarks>
     public static double[]? GvaluesAt(ResponseShape shape, int n, double a, double k, double eps2)
     {
-        if (n < MatchOrders.MinOrder || n > MatchOrders.MaxOrder) return null;
+        // n = 1 is not reachable from a lowpass or highpass design (their order picker starts at
+        // MinOrder = 2) but IS a dual-band order: match.md §18.2's order counts match points PER
+        // BAND, so n = 1 is a four-element network and the family's smallest useful member.
+        if (n < 1 || n > MatchOrders.MaxOrder) return null;
         if (!(a >= 0.0) || a >= 1.0) return null;
         if (!(k > 0.0) || k >= 1.0) return null;
         if (!(eps2 > 0.0) || !double.IsFinite(eps2)) return null;
@@ -131,6 +134,150 @@ public static class MatchFormPrototype
         double[] p = MatchPoly.Add(den, num);
         double[] q = MatchPoly.Sub(den, num)[1..];
         return Extract(p, q, m);
+    }
+
+    /// <summary>
+    /// The general-polynomial twin of <see cref="GvaluesAt"/> — match.md §18.5's
+    /// <c>Phi(u) = p(u)^2</c>, where p is any polynomial with <c>max|p| = 1</c> on the passband.
+    /// </summary>
+    /// <remarks>
+    /// <b>The roots are found in u, never in s</b>, exactly as the closed-form path finds them. The
+    /// numerator and denominator are both <c>c + eps^2 p(u)^2</c>, so their roots solve
+    /// <c>p(u) = -/+ j sqrt(c)/eps</c> — two degree-n COMPLEX polynomials in u at n &lt;= 6, well
+    /// conditioned — and each u is carried to <c>s = -/+ j sqrt(u)</c> by exact arithmetic. The
+    /// degree-4n polynomial in s that <c>RESOLVED.md</c> §MN-LP could not factor is never formed.
+    ///
+    /// <para><b>The second complex solve is free.</b> p has real coefficients, so
+    /// <c>p(u) = +j y</c> and <c>p(u) = -j y</c> have conjugate root sets; one Durand-Kerner run and
+    /// a conjugation give both, which also makes the 2n-point set exactly conjugate-symmetric rather
+    /// than symmetric to within two independent iterations' error.</para>
+    /// </remarks>
+    /// <param name="p">The minimax polynomial, in the scaled variable it was solved in.</param>
+    /// <param name="k">The response floor K, in (0, 1).</param>
+    /// <param name="eps2">The ripple parameter.</param>
+    /// <returns><c>2n</c> element values followed by the terminating ratio, or null.</returns>
+    public static double[]? GvaluesAtPolynomial(MatchPrototypePolynomial p, double k, double eps2)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        int n = p.Degree;
+        if (n < 1 || n > MatchOrders.MaxOrder) return null;
+        if (!(k > 0.0) || k >= 1.0) return null;
+        if (!(eps2 > 0.0) || !double.IsFinite(eps2)) return null;
+        if (!(p.Alpha > 0.0) || !double.IsFinite(p.Beta)) return null;
+        foreach (double c in p.Scaled) if (!double.IsFinite(c)) return null;
+
+        double eps = Math.Sqrt(eps2);
+        int m = 2 * n;
+
+        double[] den = LeftHalfPlane(RootsInSFromPolynomial(p, eps, 1.0), m);
+        double[] num = LeftHalfPlane(RootsInSFromPolynomial(p, eps, k), m);
+        if (den.Length != m + 1 || num.Length != m + 1) return null;
+
+        return Extract(MatchPoly.Add(den, num), MatchPoly.Sub(den, num)[1..], m);
+    }
+
+    /// <inheritdoc cref="GvaluesAtPolynomial(MatchPrototypePolynomial, double, double)"/>
+    /// <remarks>
+    /// <b>The unscaled entry point, kept because match.md §18.5 names this signature</b> — and
+    /// deliberately not the one the synthesis calls. Handing coefficients in u is the identity map,
+    /// which is exactly the case <see cref="MatchPrototypePolynomial"/>'s own remark measures at
+    /// 2.5e-4 relative by order 6. It is correct to four or five digits and no more; use it for a
+    /// low-degree polynomial that has no scaling of its own, and the scaled overload otherwise.
+    /// </remarks>
+    /// <param name="p">Descending coefficients in u, <c>max|p| = 1</c> on the passband union.</param>
+    /// <param name="k">The response floor K, in (0, 1).</param>
+    /// <param name="eps2">The ripple parameter.</param>
+    public static double[]? GvaluesAtPolynomial(double[] p, double k, double eps2)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        return GvaluesAtPolynomial(new MatchPrototypePolynomial(p, 1.0, 0.0), k, eps2);
+    }
+
+    /// <summary>
+    /// The WEIGHTED family — match.md §16.3/§18.5's <c>Phi(u) = (u + uR) R_k(u)^2</c>, whose degree in
+    /// u is <b>2k + 1</b> and which therefore extracts an <b>odd</b> element count.
+    /// </summary>
+    /// <remarks>
+    /// <b>Here the roots CANNOT be split into two conjugate degree-k solves</b>, because Phi is not a
+    /// square: <c>c + eps^2 (u + uR) R(u)^2</c> is an ordinary real polynomial of degree 2k + 1 in u
+    /// and is factored as one. That is still nothing like §MN-LP's failure — degree 7 at k = 3 in a
+    /// variable of order 1, against degree 24 in s with coefficients spanning decades.
+    ///
+    /// <para><b>No root of it lies on the positive real u axis</b>, which is what makes
+    /// <c>s = -/+ j sqrt(u)</c> safe: with <c>uR &gt;= 0</c>, Phi is non-negative for
+    /// <c>u &gt;= 0</c>, so <c>c + eps^2 Phi &gt;= c &gt; 0</c> there and the polynomial has no zero
+    /// to find. A negative real u gives a conjugate pair of REAL s, one in each half plane, which the
+    /// spectral factor splits correctly.</para>
+    /// </remarks>
+    /// <param name="r">R_k, in the scaled variable, normalised so <c>max (u + uR) R_k^2 = 1</c>.</param>
+    /// <param name="uR">The extra pole's position, <c>&gt;= 0</c>.</param>
+    /// <param name="k">The response floor K, in (0, 1).</param>
+    /// <param name="eps2">The ripple parameter.</param>
+    /// <returns><c>2k + 1</c> element values followed by the terminating ratio, or null.</returns>
+    public static double[]? GvaluesAtWeighted(
+        MatchPrototypePolynomial r, double uR, double k, double eps2)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+        int kk = r.Degree;
+        if (kk < 1 || kk > MatchOrders.MaxOrder) return null;
+        if (!(uR >= 0.0) || !double.IsFinite(uR)) return null;
+        if (!(k > 0.0) || k >= 1.0) return null;
+        if (!(eps2 > 0.0) || !double.IsFinite(eps2)) return null;
+        if (!(r.Alpha > 0.0) || !double.IsFinite(r.Beta)) return null;
+        foreach (double c in r.Scaled) if (!double.IsFinite(c)) return null;
+
+        int m = 2 * kk + 1;
+        // Phi in the SCALED variable: (alpha t + beta + uR) . R~(t)^2, degree 2k + 1 in t.
+        double[] phi = MatchPoly.Mul(
+            [r.Alpha, r.Beta + uR], MatchPoly.Mul(r.Scaled, r.Scaled));
+
+        double[] den = LeftHalfPlane(RootsInSFromPhi(phi, r, eps2, 1.0), m);
+        double[] num = LeftHalfPlane(RootsInSFromPhi(phi, r, eps2, k), m);
+        if (den.Length != m + 1 || num.Length != m + 1) return null;
+
+        return Extract(MatchPoly.Add(den, num), MatchPoly.Sub(den, num)[1..], m);
+    }
+
+    /// <summary>The 4n roots in s of <c>c + eps^2 p(u)^2</c>, through the two complex solves in t.</summary>
+    private static Complex[] RootsInSFromPolynomial(
+        MatchPrototypePolynomial p, double eps, double c)
+    {
+        var shifted = new Complex[p.Scaled.Length];
+        for (int i = 0; i < p.Scaled.Length; i++) shifted[i] = p.Scaled[i];
+        shifted[^1] -= Complex.ImaginaryOne * (Math.Sqrt(c) / eps);
+
+        var ts = MatchPoly.Roots(shifted);
+        var us = new List<Complex>(2 * ts.Length);
+        foreach (var t in ts)
+        {
+            var u = p.Alpha * t + p.Beta;
+            us.Add(u);
+            us.Add(Complex.Conjugate(u));
+        }
+        return ToS(us);
+    }
+
+    /// <summary>The roots in s of <c>c + eps^2 Phi</c>, Phi being a real polynomial in t.</summary>
+    private static Complex[] RootsInSFromPhi(
+        double[] phi, MatchPrototypePolynomial map, double eps2, double c)
+    {
+        var poly = (double[])phi.Clone();
+        for (int i = 0; i < poly.Length; i++) poly[i] *= eps2;
+        poly[^1] += c;
+        return ToS(MatchPoly.Roots(poly).Select(t => map.Alpha * t + map.Beta));
+    }
+
+    /// <summary>Carries each root in u to the pair <c>s = -/+ j sqrt(u)</c>.</summary>
+    private static Complex[] ToS(IEnumerable<Complex> us)
+    {
+        var ss = new List<Complex>();
+        foreach (var u in us)
+        {
+            var w = Complex.Sqrt(u);
+            ss.Add(Complex.ImaginaryOne * w);
+            ss.Add(-Complex.ImaginaryOne * w);
+        }
+        return [.. ss];
     }
 
     /// <summary>Phi(0) — the DC value the pin is written against.</summary>
@@ -219,11 +366,26 @@ public static class MatchFormPrototype
     }
 
     /// <summary>The monic left-half-plane factor of a root set, as a real polynomial of degree m.</summary>
+    /// <remarks>
+    /// <b>The set is SORTED before the product is accumulated, and that is not cosmetic.</b>
+    /// <see cref="MatchPoly.FromRoots"/> multiplies linear factors in the order it is given them, and
+    /// at degree 12 the partial products span decades — so two orderings of the SAME root set produce
+    /// coefficients differing in their last bits, which <see cref="Extract"/>'s twelve steps of
+    /// cancellation amplify into the fifth digit of the g-vector. Measured over §MN-LP's 360-cell
+    /// sweep: the closed-form and general-polynomial routes, whose roots agree to 4e-16, disagreed by
+    /// <b>1.4e-4</b> in g purely because one emits roots by arccosine and the other by Durand-Kerner.
+    /// Sorting makes the accumulation a function of the SET rather than of how it was found.
+    /// </remarks>
     private static double[] LeftHalfPlane(Complex[] roots, int m)
     {
         var lhp = roots.Where(z => z.Real < 0.0).ToList();
         if (lhp.Count != m)
             lhp = [.. roots.OrderBy(z => z.Real).ThenBy(z => z.Imaginary).Take(m)];
+        lhp.Sort((x, y) =>
+        {
+            int c = x.Real.CompareTo(y.Real);
+            return c != 0 ? c : x.Imaginary.CompareTo(y.Imaginary);
+        });
         return MatchPoly.FromRoots(lhp);
     }
 
@@ -334,6 +496,21 @@ public static class MatchFormSynthesis
     /// </remarks>
     private const double AbsorbTolerance = 1e-9;
 
+    /// <summary>
+    /// The pole positions the ODD family's <c>uR</c> is scanned on — the same wide log grid the
+    /// multiband search uses, and for the same reason: nothing is known to be monotone in it.
+    /// </summary>
+    /// <remarks>
+    /// <b>The top of the range is where the odd member degenerates onto the even member below it</b>
+    /// (match.md §16.3, and measured in <c>MatchFormPrototypeTests</c>: the drift falls as
+    /// <c>1/sqrt(uR)</c> and the extraction stops being conditioned past ~1e7). The bottom is where
+    /// the extra element is largest and the return loss worst. The odd family is never BETTER than
+    /// the even count below it — see <c>RESOLVED.md</c> §MN-MB2 — so the grid is there to find the
+    /// member that ABSORBS, not to squeeze the response.
+    /// </remarks>
+    private static readonly double[] UrSamples =
+        [0.02, 0.06, 0.15, 0.4, 1.0, 2.5, 6.0, 15.0, 40.0, 150.0, 600.0];
+
     /// <summary>Synthesises the basis ladder of a lowpass- or highpass-form design.</summary>
     /// <remarks>
     /// Reached from <see cref="MatchSynthesis.Synthesize"/>, which memoises it, and only after that
@@ -363,7 +540,7 @@ public static class MatchFormSynthesis
                 MatchRefusalKind.InvalidOrder,
                 $"Both terminations are {Topology(design.Term1)}; a {Word(design.Form)} network needs "
                 + "an ODD element count to absorb two ends of the same topology, which this form does "
-                + "not offer yet (match.md §16.3). Bandpass form absorbs both.",
+                + "not offer yet. Bandpass form absorbs both.",
                 null, ("order", design.Order)));
         if (!valid.Contains(design.Order))
             return MatchSynthesisResult.Refuse(MatchRefusal.Create(
@@ -376,11 +553,19 @@ public static class MatchFormSynthesis
                 MatchRefusalKind.ResponseInfeasible,
                 $"{design.Response} is not offered in {Word(design.Form)} form: the impedance ratio is "
                 + "pinned at DC, so the family has ONE free parameter and there is neither a second "
-                + "prescribed Q to spend it on nor a delay target to shape (match.md §16.2). "
+                + "prescribed Q to spend it on nor a delay target to shape. "
                 + "Chebyshev and Butterworth are.",
                 null, ("order", design.Order)));
 
-        int n = design.Order, m = 2 * n;
+        // ── Which parity of ladder the terminations need (match.md §16.4 item 2, §18.5) ──
+        //
+        // Elements alternate orientation, so an EVEN count has ends of opposite orientation and an
+        // ODD one has ends of the same. A like pair — the classic shunt-C-to-shunt-C interstage — can
+        // only be absorbed by the latter, which is the weighted family Phi = (u + uR) R_n(u)^2. Order
+        // is in-band match points in both (R_n has n zeros in the band and the extra pole is at
+        // u = -uR, outside it), so the picker offers the same list and only the count moves.
+        bool odd = MatchOrders.NeedsOddCount(design.Term1, design.Term2);
+        int n = design.Order, m = odd ? 2 * n + 1 : 2 * n;
         var family = design.Response == ResponseShape.Butterworth
             ? ResponseShape.Butterworth
             : ResponseShape.ChebyshevFano;
@@ -398,15 +583,37 @@ public static class MatchFormSynthesis
         // The low-impedance port takes the series element; the high-impedance port the shunt one.
         // With 2n elements the two ends are always of opposite orientation, so this one flag decides
         // the whole ladder. See the class remark for why it is not the analysis end's topology.
+        //
+        // ── AND WITH AN ODD COUNT THE FAR END KEEPS THE NEAR END'S ORIENTATION ──
+        //
+        // 2k + 1 elements alternate to the SAME orientation they started in, so both ends are shunt
+        // or both series — which is exactly what absorbs a like pair, and which means the L-match
+        // rule ("the low-impedance port takes the series element") cannot hold at both ends and does
+        // not decide anything here. What still decides is the ratio, unchanged: a shunt-ended odd
+        // ladder steps DOWN and a series-ended one steps UP. So a like pair of PARALLEL ends needs
+        // the analysis end to be the HIGHER resistance and a like pair of SERIES ends the lower;
+        // CheckAbsorbable names the remedy when it is the other way round.
         bool shuntFirst = ratio < 1.0;
+        bool farIsShunt = odd ? shuntFirst : !shuntFirst;
 
         // ── Can this form hold what the terminations supply? (match.md §16.4 item 1, corrected) ──
-        var refusal = CheckAbsorbable(design, ana, anaEnd, shuntFirst, lowpass, ratio)
-                      ?? CheckAbsorbable(design, far, farEnd, !shuntFirst, lowpass, ratio);
+        var refusal = CheckAbsorbable(design, ana, anaEnd, shuntFirst, lowpass, ratio, odd)
+                      ?? CheckAbsorbable(design, far, farEnd, farIsShunt, lowpass, ratio, odd);
         if (refusal is not null) return MatchSynthesisResult.Refuse(refusal);
 
+        // ── BOTH ends normalise at R_ANA, and the far one used to normalise at its own ──
+        //
+        // Every element this form builds is denormalised at R_ana — that is the lowpass prototype's
+        // own convention, in which the terminating resistance is a RATIO and the element values do
+        // not rescale at the far port. So a termination's reactance has to be brought into the same
+        // units to be compared with the element that would absorb it, and the far end was being
+        // brought into ITS OWN, which is a different scale by exactly the ratio. Measured on a
+        // 50 ohm ‖ 0.4 pF to 10 ohm + 1 nH lowpass design: the far element comes out at 1.4755 nH
+        // and the termination supplies 1 nH, which absorbs — and it was refused. `WithEndSplits` was
+        // never affected, because it reads BOTH sides at the end's own resistance and the pair is
+        // consistent; only this feasibility test compared one scale against the other.
         double gNearActual = Normalise(design.Form, ana, shuntFirst, rAna, wRef);
-        double gFarActual = Normalise(design.Form, far, !shuntFirst, rFarTarget, wRef);
+        double gFarActual = Normalise(design.Form, far, farIsShunt, rAna, wRef);
 
         // ── The one free parameter ───────────────────────────────────────────
         double gamma0 = (ratio - 1.0) / (ratio + 1.0);
@@ -421,32 +628,88 @@ public static class MatchFormSynthesis
         double epsNominal2 = (1e-4 - MatchFormPrototype.KFloor) / (1.0 - 1e-4);
         double kHi = pinned ? g02 * (1.0 - 1e-12) : MatchFormPrototype.KFloor;
 
-        double[]? Member(double k) => pinned
-            ? MatchFormPrototype.Gvalues(family, n, a, ratio, k)
-            : MatchFormPrototype.GvaluesAt(family, n, a, k, epsNominal2);
-
         bool Feasible(double[] g) => g[0] >= gNearActual && g[m - 1] >= gFarActual;
 
         double[]? chosen = null;
-        double chosenK = MatchFormPrototype.KFloor, lastBad = double.NaN;
+        double chosenK = MatchFormPrototype.KFloor;
         double maxNear = 0.0, maxFarGivenNear = 0.0;
         bool anyMember = false;
+        double bestScore = double.PositiveInfinity;
 
-        int samples = pinned ? ScanSamples : 0;
-        for (int i = 0; i <= samples; i++)
+        // ── The pole positions the ODD family's extra parameter is scanned on ──
+        //
+        // The even family has one free parameter, K, and the answer is the smallest K whose two end
+        // elements both reach their terminations (match.md §16.4 item 3). The weighted family has a
+        // second, uR, and no closed form to solve it from, so it is scanned on the same wide log grid
+        // the multiband search uses and each position runs the very same K scan. The even family is
+        // this loop with ONE pass at uR = 0, which is what keeps its answers bit-identical.
+        foreach (double uR in odd ? UrSamples : (double[])[0.0])
         {
-            double k = samples == 0
-                ? MatchFormPrototype.KFloor
-                : MatchFormPrototype.KFloor + (kHi - MatchFormPrototype.KFloor) * i / samples;
-            var g = Member(k);
-            if (g is null) { lastBad = k; continue; }
+            var weighted = odd ? MatchRemez.MinimaxWeightedScaled(n, uR, [(a * a, 1.0)]) : null;
+            if (odd && weighted is null) continue;
 
-            anyMember = true;
-            maxNear = Math.Max(maxNear, g[0]);
-            if (g[0] >= gNearActual) maxFarGivenNear = Math.Max(maxFarGivenNear, g[m - 1]);
+            // Phi(0), which the DC pin is written against: T_n(x0)^2 for the even family and
+            // uR . R_n(0)^2 for the weighted one, since the extra factor is (u + uR).
+            double r0 = weighted?.At(0.0) ?? 0.0;
+            double phi0 = odd ? uR * r0 * r0 : MatchFormPrototype.PhiAtDc(family, n, a);
+            if (!(phi0 > 0.0) || !double.IsFinite(phi0)) continue;
 
-            if (Feasible(g)) { chosen = g; chosenK = k; break; }
-            lastBad = k;
+            double[]? Member(double k)
+            {
+                if (!odd) return pinned
+                    ? MatchFormPrototype.Gvalues(family, n, a, ratio, k)
+                    : MatchFormPrototype.GvaluesAt(family, n, a, k, epsNominal2);
+                double e2 = pinned ? (g02 - k) / (phi0 * (1.0 - g02)) : epsNominal2;
+                return e2 > 0.0 && double.IsFinite(e2)
+                    ? MatchFormPrototype.GvaluesAtWeighted(weighted!, uR, k, e2)
+                    : null;
+            }
+
+            double[]? here = null;
+            double hereK = MatchFormPrototype.KFloor, lastBad = double.NaN;
+
+            int samples = pinned ? ScanSamples : 0;
+            for (int i = 0; i <= samples; i++)
+            {
+                double k = samples == 0
+                    ? MatchFormPrototype.KFloor
+                    : MatchFormPrototype.KFloor + (kHi - MatchFormPrototype.KFloor) * i / samples;
+                var g = Member(k);
+                if (g is null) { lastBad = k; continue; }
+
+                anyMember = true;
+                maxNear = Math.Max(maxNear, g[0]);
+                if (g[0] >= gNearActual) maxFarGivenNear = Math.Max(maxFarGivenNear, g[m - 1]);
+
+                if (Feasible(g)) { here = g; hereK = k; break; }
+                lastBad = k;
+            }
+
+            if (here is null) continue;
+
+            // Refine the boundary the scan bracketed. Geometric, because K_min routinely sits decades
+            // below the first grid step and a linear bisection would spend its whole budget above it.
+            if (!double.IsNaN(lastBad) && hereK > lastBad)
+            {
+                double lo = lastBad, hi = hereK;
+                for (int it = 0; it < 80; it++)
+                {
+                    double mid = Math.Sqrt(lo * hi);
+                    if (!double.IsFinite(mid) || mid <= lo || mid >= hi) break;
+                    var g = Member(mid);
+                    if (g is not null && Feasible(g)) { hi = mid; here = g; hereK = mid; }
+                    else lo = mid;
+                }
+            }
+
+            // The score is the family's own worst in-band |Gamma|^2 at the member that was kept. For
+            // one pass it changes nothing; across pole positions it is what picks between them.
+            double eps2 = pinned ? (g02 - hereK) / (phi0 * (1.0 - g02)) : epsNominal2;
+            double score = MatchFormPrototype.WorstInBand(hereK, eps2);
+            if (score >= bestScore) continue;
+            bestScore = score;
+            chosen = here;
+            chosenK = hereK;
         }
 
         if (chosen is null)
@@ -480,24 +743,19 @@ public static class MatchFormSynthesis
                 ("order", n)));
         }
 
-        // Refine the boundary the scan bracketed. Geometric, because K_min routinely sits decades
-        // below the first grid step and a linear bisection would spend its whole budget above it.
-        if (!double.IsNaN(lastBad) && chosenK > lastBad)
-        {
-            double lo = lastBad, hi = chosenK;
-            for (int it = 0; it < 80; it++)
-            {
-                double mid = Math.Sqrt(lo * hi);
-                if (!double.IsFinite(mid) || mid <= lo || mid >= hi) break;
-                var g = Member(mid);
-                if (g is not null && Feasible(g)) { hi = mid; chosen = g; chosenK = mid; }
-                else lo = mid;
-            }
-        }
-
         // ── Build ────────────────────────────────────────────────────────────
-        double rFarSynth = shuntFirst ? rAna / chosen[m] : chosen[m] * rAna;
-        var net = Build(design, chosen, n, shuntFirst, rAna, rFarSynth, anaIsTerm1, ana, far);
+        // ── The terminating value is read against the FAR element's orientation ──
+        //
+        // Measured, and it is a parity trap rather than a preference. Each Cauer removal swaps
+        // impedance for admittance, so after m of them the remainder is a resistance ratio when m is
+        // EVEN and a conductance ratio when m is ODD — the extraction returns min(r, 1/r) for an odd
+        // count where it returns max(r, 1/r) for an even one. Reading an odd ladder with the even
+        // rule inverts the far resistance and turns a -14.3 dB match into -0.5 dB with every element
+        // value correct, which is exactly how this was found. Keying on the FAR element's own
+        // orientation states it once for both parities: for an even count that orientation is the
+        // opposite of shuntFirst and the expression is bit-identical to what it always was.
+        double rFarSynth = farIsShunt ? chosen[m] * rAna : rAna / chosen[m];
+        var net = Build(design, chosen, m, shuntFirst, rAna, rFarSynth, anaIsTerm1, ana, far);
 
         double gNearSynth = chosen[0], gFarSynth = chosen[m - 1];
         bool needsExcess =
@@ -512,7 +770,7 @@ public static class MatchFormSynthesis
         if (!pinned)
             notes.Add(
                 "The two port resistances are equal, so there is no DC pin to spend the family's free "
-                + "parameter on; a nominal -40 dB in-band member was used (match.md §16.3).");
+                + "parameter on; a nominal -40 dB in-band member was used.");
 
         return new MatchSynthesisResult
         {
@@ -610,7 +868,8 @@ public static class MatchFormSynthesis
             : (TerminationTopology.Series, lowpass ? ReactanceKind.L : ReactanceKind.C);
 
     private static MatchRefusal? CheckAbsorbable(
-        MatchDesign design, Termination term, int end, bool isShunt, bool lowpass, double ratio)
+        MatchDesign design, Termination term, int end, bool isShunt, bool lowpass, double ratio,
+        bool odd = false)
     {
         if (!term.HasReactance) return null;
         var (topology, kind) = Holds(lowpass, isShunt);
@@ -622,10 +881,19 @@ public static class MatchFormSynthesis
         // The form holds this kind SOMEWHERE — just at the other end, because the low-impedance port
         // always takes the series element and the high-impedance port the shunt one (see the class
         // remark). That is the ratio constraint, and only bandpass form is free of it.
+        //
+        // With an ODD count the two ends share one orientation, so "the other end" is not a remedy at
+        // all and the ratio is: swapping the analysis end inverts it, which flips both ends together.
         var (otherTopology, otherKind) = Holds(lowpass, !isShunt);
         bool otherEndHolds = term.Topology == otherTopology && term.Kind == otherKind;
 
-        string why = otherEndHolds
+        string why = otherEndHolds && odd
+            ? $"and at a ratio of {ratio:0.####} : 1 BOTH ends of this {Word(design.Form)} ladder are "
+              + $"its {wants}s — a like termination pair takes an odd element count, whose two ends "
+              + "share one orientation. Analyse from the "
+              + $"{(isShunt ? "LOWER" : "HIGHER")} resistance instead, which flips both, or use "
+              + "bandpass form."
+            : otherEndHolds
             ? $"but at a ratio of {ratio:0.####} : 1 that end of a {Word(design.Form)} ladder is its "
               + $"{wants}: the LOW-impedance port always takes the series element and the "
               + "high-impedance port the shunt one. Bandpass form carries both at every arm."
@@ -669,13 +937,13 @@ public static class MatchFormSynthesis
 
     // ── Build ─────────────────────────────────────────────────────────────────
 
+    /// <param name="m">The ELEMENT count — 2n for the even family, 2n + 1 for the weighted one.</param>
     private static MatchNetwork Build(
-        MatchDesign design, double[] g, int n, bool shuntFirst,
+        MatchDesign design, double[] g, int m, bool shuntFirst,
         double rAna, double rFar, bool anaIsTerm1, Termination ana, Termination far)
     {
         bool lowpass = design.Form == NetworkForm.Lowpass;
         double wRef = 2.0 * Math.PI * (lowpass ? design.F2 : design.F1);
-        int m = 2 * n;
 
         // In ANALYSIS-END order first: element 0 sits against the analysis port.
         var built = new List<(bool IsShunt, ElementType Type, double Value)>(m);

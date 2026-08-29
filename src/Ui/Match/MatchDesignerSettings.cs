@@ -58,7 +58,14 @@ public sealed partial class MatchDesignerSettings : ObservableObject
     /// three digits a 12.345 GHz band edge redisplays as 12.3 and the next commit would silently
     /// write that back. Rounding a READOUT is a display choice; rounding an INPUT is data loss.
     /// </remarks>
-    [ObservableProperty] private int _significantDigits = 3;
+    [ObservableProperty] private int _significantDigits = DefaultSignificantDigits;
+
+    /// <summary>
+    /// The readout digit count a Designer starts at — and the count a flatten falls back to when it
+    /// is run from the schematic's own context menu, where no Designer (and so no chosen number) is
+    /// open. See <c>MatchFlatten.Value</c> for why the flattened cell rounds at all.
+    /// </summary>
+    public const int DefaultSignificantDigits = 3;
 
     /// <summary>
     /// Digits the specification pane's editable fields render with — enough that a typed value

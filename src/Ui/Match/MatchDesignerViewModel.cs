@@ -313,15 +313,15 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     ///
     /// <para>The six beside <c>Design</c> are ECHOES and nothing reads them back
     /// (<c>MatchComponentTests.TheEchoParameters_AreNeverReadBack</c> pins that). They exist because
-    /// an instance has to CARRY a value to be able to show one: F1, F2 and Order are drawn beside the
-    /// symbol, and all six make the <c>.cnl</c> line legible, where the payload is still a base64
-    /// token. The design stays authoritative (match.md §7.2), so an echo can never become a second
-    /// input.</para>
+    /// an instance has to CARRY a value to be able to show one: they make the <c>.cnl</c> line
+    /// legible, where the payload is still a base64 token, and <c>Form</c> and <c>Bands</c> are what
+    /// the symbol draws itself from (match.md §8.4). The design stays authoritative (match.md §7.2),
+    /// so an echo can never become a second input.</para>
     ///
     /// <para><b>What changed on 2026-08-20 is that the payload became readable and therefore
-    /// EDITABLE by hand</b>, and a hand-edited band leaves the echoes behind — so the schematic would
-    /// go on drawing "F1 = 1.8 GHz" beside a design that says 2.4. That was unreachable while the
-    /// payload was base64 and it is reachable now, so it is stated. It is deliberately not fixed by
+    /// EDITABLE by hand</b>, and a hand-edited band leaves the echoes behind — so the <c>.cnl</c>
+    /// line would go on saying "F1=1.8 GHz" for a design that says 2.4. That was unreachable while
+    /// the payload was base64 and it is reachable now, so it is stated. It is deliberately not fixed by
     /// writing the echoes here: a commit on load would put an edit on the schematic's undo stack that
     /// nobody made and mark the document dirty the moment it is opened. The next edit refreshes them,
     /// and this line says so.</para>
@@ -338,9 +338,9 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
         if (stale.Count > 0)
             EchoNote =
-                $"The {string.Join(" and ", stale)} shown beside this component on the schematic "
+                $"The {string.Join(" and ", stale)} carried on this component "
                 + $"{(stale.Count == 1 ? "does" : "do")} not match the design — the design is what "
-                + "counts, and the label will catch up on the next edit here.";
+                + "counts, and the echo will catch up on the next edit here.";
 
         void Check(string name, double expected)
         {
@@ -561,41 +561,63 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         AdjustQAdjustForAnalysisEnd();
 
         // Re-declaring an end moves the ratio the rack has to reach, and the stored N's are what they
-        // were. RelinkAfterSpecChange absorbs that whenever it can; when it cannot, this asks the
-        // solution search for a rack that does reach it. See AutoApplyAReachingSolution.
-        //
-        // The flag lives for the DURATION OF THIS EDIT and no longer. Every analysis pass this edit
-        // queues copies it — there can be two, because RelinkAfterSpecChange refreshes again — and
-        // whichever of them lands acts on it. A pass queued by any LATER edit copies nothing, so an
-        // edit whose own pass was superseded before it landed is dropped rather than carried forward
-        // to fire under an unrelated change. (Round 6's fixture is exactly that: two terminations set,
-        // then three transforms added, with no wait in between.)
-        // ── ONE UNDO ENTRY FOR THE WHOLE GESTURE (owner, 2026-08-28) ──
-        //
-        // A termination edit can write the design TWICE: once for the edit itself, and once more when
-        // the auto-solve moves it onto a rack that reaches the new target. Which of the two lands
-        // first — and whether the second happens at all — depends on whether the background solution
-        // search has finished, so the naive shape put a nondeterministic NUMBER of entries on the
-        // schematic's undo stack for one gesture. Both halves are covered, because the search can
-        // land on either side of this method returning:
-        //
-        //  * SYNCHRONOUSLY, from inside CommitSpecChange's own Refresh — a cached or fast search
-        //    lands its batch there and the auto-solve runs before this method's commit. Deferring
-        //    every commit for the duration and making exactly one at the end collapses that, and it
-        //    also absorbs RelinkAfterSpecChange's own commit on the way.
-        //  * LATER, on the dispatcher, after this returns. There is nothing to defer by then, so the
-        //    entry made here is remembered by its stamp and the auto-solve's commit AMENDS it. See
-        //    CommitCore.
-        //
-        // UNDER THE EDIT GATE, which is what makes the two cases a CHOICE rather than a race — see
-        // AsOneEdit. The auto-solve either runs inside this block, where the suppression catches it,
-        // or after it, by which time the entry it should amend exists and has been recorded.
+        // were. RelinkAfterSpecChange absorbs that whenever it can; when it cannot, the auto-solve
+        // this asks for finds a rack that does. See CommitSpecChangeWithAutoSolve.
+        CommitSpecChangeWithAutoSolve();
+    }
+
+    /// <summary>
+    /// Commits a specification change that can leave the design on a rack which no longer reaches,
+    /// asking the solution search to move it onto one that does — as <b>one</b> undo entry.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two edits need this, and the second one is why it is a method rather than a block inside
+    /// <see cref="SetTermination"/>.</b> Re-declaring a termination moves the ratio the rack has to
+    /// reach; changing the BAND COUNT rebuilds the ladder underneath the stored transform records
+    /// entirely (match.md §18 — a multiband ladder has twice the arms or more, and the elements the
+    /// records name are gone). Both leave a design carrying transforms that answer a question it is no longer
+    /// asking, and in both cases the panel is holding a row that does reach.
+    ///
+    /// <para>Owner-reported, 2026-08-28: <i>changing Single/Dual left no solution selected, and a
+    /// solution must be selected when one exists.</i> The band-count case was the one that did not go
+    /// through here.</para>
+    ///
+    /// <para>The request lives for the DURATION OF THIS EDIT and no longer. Every analysis pass this
+    /// edit queues copies it — there can be two, because <c>RelinkAfterSpecChange</c> refreshes again
+    /// — and whichever of them lands acts on it. A pass queued by any LATER edit copies nothing, so
+    /// an edit whose own pass was superseded before it landed is dropped rather than carried forward
+    /// to fire under an unrelated change. (Round 6's fixture is exactly that: two terminations set,
+    /// then three transforms added, with no wait in between.)</para>
+    ///
+    /// <h3>One undo entry for the whole gesture (owner, 2026-08-28)</h3>
+    /// <para>Such an edit can write the design TWICE: once for the edit itself, and once more when the
+    /// auto-solve moves it onto a rack that reaches. Which of the two lands first — and whether the
+    /// second happens at all — depends on whether the background solution search has finished, so the
+    /// naive shape put a nondeterministic NUMBER of entries on the schematic's undo stack for one
+    /// gesture. Both halves are covered, because the search can land on either side of this method
+    /// returning:</para>
+    /// <list type="bullet">
+    /// <item>SYNCHRONOUSLY, from inside <c>CommitSpecChange</c>'s own <c>Refresh</c> — a cached or
+    /// fast search lands its batch there and the auto-solve runs before this method's commit.
+    /// Deferring every commit for the duration and making exactly one at the end collapses that, and
+    /// it also absorbs <c>RelinkAfterSpecChange</c>'s own commit on the way.</item>
+    /// <item>LATER, on the dispatcher, after this returns. There is nothing to defer by then, so the
+    /// entry made here is remembered by its stamp and the auto-solve's commit AMENDS it. See
+    /// <c>CommitCore</c>.</item>
+    /// </list>
+    /// <para>UNDER THE EDIT GATE, which is what makes the two cases a CHOICE rather than a race — see
+    /// <see cref="AsOneEdit"/>. The auto-solve either runs inside this block, where the suppression
+    /// catches it, or after it, by which time the entry it should amend exists and has been
+    /// recorded.</para>
+    /// </remarks>
+    private void CommitSpecChangeWithAutoSolve()
+    {
         AsOneEdit(() =>
         {
-            _autoSolveEnd = end;
+            _autoSolveRequested = true;
             _commitSuppressed++;
             try { CommitSpecChange(); }
-            finally { _autoSolveEnd = 0; _commitSuppressed--; }
+            finally { _autoSolveRequested = false; _commitSuppressed--; }
 
             if (_commitDeferred)
             {
@@ -729,40 +751,44 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     });
 
     /// <summary>
-    /// match.md §9.2: the Order picker offers only the parities §4.2 permits, and a topology change
-    /// that invalidates the current order ADJUSTS it — <b>and says so in one line</b>, because a
-    /// control that silently changes another control is worse than one that explains itself.
+    /// The Order picker offers only the parities the terminations permit, and an edit that
+    /// invalidates the current order ADJUSTS it — <b>silently</b>.
     /// </summary>
+    /// <remarks>
+    /// <b>There is no note here at all any more</b> (owner-reported, 2026-08-28: changing Dual back to
+    /// Single produced <i>"Order 3 cannot absorb both ends now: …"</i> — <i>"I can clearly see the
+    /// order changed because a different solution card is now selected, so cluttering the UI with this
+    /// message is bad UX"</i>, and then: remove the dead-end line too).
+    ///
+    /// <para>It used to say so in one line, on the reasoning that a control which silently changes
+    /// another control is worse than one that explains itself. That reasoning was written before the
+    /// Solutions panel became the specification. Both halves of it have since been answered by
+    /// something already on screen:</para>
+    /// <list type="bullet">
+    /// <item><b>An adjusted order</b> moves BECAUSE a different card is applied, and that card is the
+    /// bold green-bordered row in the list naming its own order.</item>
+    /// <item><b>No valid order at all</b> is a refusal, and MN-1's refusal — which names the parity
+    /// and points at the form that does absorb both ends — is rendered verbatim in the status strip.
+    /// The note was a second copy of it in the narrow specification column, where height is the
+    /// scarce thing.</item>
+    /// </list>
+    /// <para>So the parity rule is now expressed by the picker offering what it offers, and by the
+    /// refusal when it can offer nothing.</para>
+    /// </remarks>
     private void AdjustOrderForParity()
     {
-        var valid = MatchOrders.ValidOrders(_design.Term1, _design.Term2, _design.Form);
-        if (valid.Contains(_design.Order)) { OrderNote = ""; return; }
+        var valid = MatchOrders.ValidOrders(
+            _design.Term1, _design.Term2, _design.Form, _design.BandCount);
 
-        // A like-topology pair has NO valid order in lowpass or highpass form (match.md §16.4 item
-        // 2), so there is nothing to move the order to. The order is left where it is — MN-1's own
-        // refusal names the reason, and the Solutions panel still lists the bandpass rows, which is
-        // where the user is going to go.
-        if (valid.Count == 0)
-        {
-            OrderNote =
-                $"Both terminations are {(_design.Term1.Topology == TerminationTopology.Parallel ? "parallel" : "series")}, "
-                + $"and a {MatchSolutionRowViewModel.FormName(_design.Form)} network needs an odd "
-                + "element count to absorb two ends of the same topology. Bandpass form absorbs both.";
-            return;
-        }
+        // Since MN-MB2 every termination pair has orders in every form — parity is the pair's, not
+        // the order's — so the empty list is only reachable for a form/band-count combination that
+        // offers nothing at all (multiband lowpass, match.md §18.6). There is then nothing to move
+        // the order to; it is left where it is and the synthesis refuses, which the status strip
+        // shows.
+        if (valid.Count == 0 || valid.Contains(_design.Order)) return;
 
-        int old = _design.Order;
-        int chosen = valid.OrderBy(o => Math.Abs(o - old)).ThenBy(o => o).First();
-        _design.Order = chosen;
-        bool like = _design.Term1.Topology == _design.Term2.Topology;
-        OrderNote =
-            $"Order {old} cannot absorb both ends now: with a {(like ? "like" : "mixed")} termination "
-            + $"pair the arms alternate, so only {string.Join(", ", valid)} fit. The order moved to "
-            + $"{chosen}.";
+        _design.Order = valid.OrderBy(o => Math.Abs(o - _design.Order)).ThenBy(o => o).First();
     }
-
-    /// <summary>The one line explaining an automatic order change, or empty.</summary>
-    [ObservableProperty] private string _orderNote = "";
 
     /// <summary>
     /// Clears a stored <c>QAdjust</c> that the terminations have overtaken — <b>and says so in one
@@ -808,7 +834,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
     /// <summary>The orders <c>MatchOrders.ValidOrders</c> permits for the current pair AND form.</summary>
     public IReadOnlyList<int> OrderOptions =>
-        MatchOrders.ValidOrders(_design.Term1, _design.Term2, _design.Form);
+        MatchOrders.ValidOrders(_design.Term1, _design.Term2, _design.Form, _design.BandCount);
 
     /// <summary>
     /// Every order that any form permits for the current pair — what the solutions FILTER offers.
@@ -820,8 +846,10 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     /// and 5, and <c>Accepts</c> shows a row whose order has no line — so every one of them would be
     /// unhideable. The filter is a view over what was FOUND, and what was found spans the forms.
     /// </remarks>
-    public IReadOnlyList<int> FilterOrderOptions =>
-        [.. new[] { NetworkForm.Bandpass, NetworkForm.Lowpass, NetworkForm.Highpass }
+    public IReadOnlyList<int> FilterOrderOptions => _design.BandCount >= 2
+        // Multiband lists bandpass rows only (match.md §18.6), so the union is that one form's.
+        ? MatchOrders.ValidOrders(_design.Term1, _design.Term2, NetworkForm.Bandpass, _design.BandCount)
+        : [.. new[] { NetworkForm.Bandpass, NetworkForm.Lowpass, NetworkForm.Highpass }
              .SelectMany(f => MatchOrders.ValidOrders(_design.Term1, _design.Term2, f))
              .Distinct()
              .Order()];
@@ -834,7 +862,6 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.Order) return;
             _design.Order = value;
-            OrderNote = "";
             CommitSpecChange();
         }
     }
@@ -964,7 +991,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         : (BothEndsReactive ? "The terminations' reactances set this. " : "")
           + $"{WhichEnd(lower: false)} carr{(BothEndsReactive ? "y" : "ies")} a reactance, so the "
           + "prototype is the singly- or doubly-prescribed one and the ripple is set by the "
-          + "terminations rather than by hand (match.md §6.6). Clear the reactance to – to set it here.";
+          + "terminations rather than by hand. Clear the reactance to – to set it here.";
 
     private bool BothEndsReactive => _design.Term1.HasReactance && _design.Term2.HasReactance;
 
@@ -1051,6 +1078,7 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.F1 || !(value > 0)) return;
             _design.F1 = value;
+            SortBandEdges();
             CommitSpecChange();
         }
     }
@@ -1063,6 +1091,205 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         {
             if (value == _design.F2 || !(value > 0)) return;
             _design.F2 = value;
+            SortBandEdges();
+            CommitSpecChange();
+        }
+    }
+
+    /// <summary>Lower edge of the second band, Hz (match.md §18).</summary>
+    public double F3
+    {
+        get => _design.F3;
+        set
+        {
+            if (value == _design.F3 || !(value > 0)) return;
+            _design.F3 = value;
+            SortBandEdges();
+            CommitSpecChange();
+        }
+    }
+
+    /// <summary>Upper edge of the second band, Hz (match.md §18).</summary>
+    public double F4
+    {
+        get => _design.F4;
+        set
+        {
+            if (value == _design.F4 || !(value > 0)) return;
+            _design.F4 = value;
+            SortBandEdges();
+            CommitSpecChange();
+        }
+    }
+
+    /// <summary>The band-count choices the selector offers — match.md §18.7.</summary>
+    public static IReadOnlyList<string> BandsOptions { get; } = ["Single", "Dual", "Tri"];
+
+    /// <summary>How many bands the network is matched over (match.md §18).</summary>
+    /// <remarks>
+    /// <b>Moving up a band count seeds the edges it has just revealed</b>, because a band of 0-0 Hz
+    /// is a refusal the user did not ask for and cannot read: the spec would be invalid the instant
+    /// the mode changed and stay invalid until two more numbers were typed. The seed is the next
+    /// octave up, geometrically mirrored, which is the one band that needs no widening — so the first
+    /// thing the mode shows is a design that synthesises.
+    ///
+    /// <para><b>Tri seeds the MIDDLE band, not the third one</b>, and that is the shape of §18.3's
+    /// rule rather than an arbitrary choice: a tri-band spec's f3-f4 is the band that is kept and
+    /// defines omega0, and the outer pair are its mirrors. Going Dual -&gt; Tri therefore moves the
+    /// user's existing second band OUT to f5-f6 and puts a new middle band between them, rather than
+    /// hanging a third band off the end where it would immediately be mirrored on top of the second.
+    /// Going Tri -&gt; Dual is the inverse and leaves f1-f2 and f3-f4 standing.</para>
+    /// </remarks>
+    public int BandCount
+    {
+        get => _design.BandCount;
+        set
+        {
+            int n = Math.Clamp(value, 1, 3);
+            if (n == _design.BandCount) return;
+            int was = _design.BandCount;
+            _design.BandCount = n;
+            SeedBands(was, n);
+            AdjustOrderForParity();
+
+            // ── AND IT ASKS FOR AN AUTO-SOLVE (owner-reported, 2026-08-28) ────
+            //
+            // "when user changes the Single/Dual combobox selection, no solution is selected. A
+            // solution (if it exists) must be selected."
+            //
+            // A band-count change rebuilds the LADDER, not just the target: a multiband network has
+            // twice the arms and different element names, so every stored TransformRecord names an
+            // element that no longer exists. The rack is dropped, Pi N^2 lands on 1 against a target
+            // of several, and the design sits on nothing while the panel fills with dozens of rows
+            // that would reach. This is the same shape as a topology change at a termination — which
+            // already asked for the auto-solve — and it goes through the same path.
+            CommitSpecChangeWithAutoSolve();
+        }
+    }
+
+    /// <summary>
+    /// Puts the band edges back into ascending order after an edit that broke it.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner-reported, 2026-08-28: typing the frequencies in the wrong order made nothing work.</b>
+    /// It made nothing work for a real reason — the synthesis refuses a spec that is not
+    /// <c>0 &lt; f1 &lt; f2 &lt; … </c>, and <c>MatchBands.Symmetrise</c>/<c>Symmetrise3</c> hand back
+    /// their inputs untouched rather than guessing — so every downstream number went blank at once
+    /// and the only thing on screen naming the cause was the status strip. Which of six fields was
+    /// out of place it could not say.
+    ///
+    /// <para><b>The edges are SORTED rather than rejected</b>, because they are one ordered list and
+    /// nothing else: <c>f1…f6</c> are the passband boundaries in increasing frequency, and a user who
+    /// types 5.15 into f3 when f5 already holds 0.9 has said what they mean unambiguously. Sorting is
+    /// the only interpretation that keeps every number the user typed. It is done HERE and not in
+    /// <c>MatchBands</c>, which is called by <c>MatchDesign</c>'s derived properties on every access,
+    /// including halfway through a keystroke — a pure function that reordered its inputs would make
+    /// the design record disagree with the fields the user is looking at.</para>
+    ///
+    /// <para><b>Only the edges the current band count uses take part</b>, so a single-band design's
+    /// stale (or zero) f3–f6 cannot be sorted in front of its real band. And <b>it says nothing</b>:
+    /// the fields themselves visibly renumber, which is the same reasoning that removed the order
+    /// note in MN-MB1 — a line explaining a change the user can see is clutter.</para>
+    ///
+    /// <para>Equal edges are left alone. Sorting cannot separate <c>f1 == f2</c>, that is a spec with
+    /// a zero-width band, and the synthesis's own refusal is the honest answer to it.</para>
+    /// </remarks>
+    /// <returns>True when an edge actually moved.</returns>
+    private bool SortBandEdges()
+    {
+        int edges = _design.BandCount switch { >= 3 => 6, 2 => 4, _ => 2 };
+        double[] f =
+        [
+            _design.F1, _design.F2, _design.F3, _design.F4, _design.F5, _design.F6,
+        ];
+
+        var active = f[..edges];
+        if (active.Any(v => !(v > 0))) return false;
+
+        var sorted = (double[])active.Clone();
+        Array.Sort(sorted);
+        if (sorted.SequenceEqual(active)) return false;
+
+        _design.F1 = sorted[0];
+        _design.F2 = sorted[1];
+        if (edges >= 4) { _design.F3 = sorted[2]; _design.F4 = sorted[3]; }
+        if (edges >= 6) { _design.F5 = sorted[4]; _design.F6 = sorted[5]; }
+        return true;
+    }
+
+    /// <summary>Fills in whichever band edges the new count has just made meaningful.</summary>
+    private void SeedBands(int was, int now)
+    {
+        if (now >= 2 && (!(_design.F3 > 0) || !(_design.F4 > _design.F3)))
+        {
+            _design.F3 = _design.F2 * 2.0;
+            _design.F4 = _design.F2 * 2.0 * (_design.F2 / _design.F1);
+        }
+        if (now < 3) return;
+
+        // Dual -> Tri: the existing second band becomes the OUTER one and a new middle band is put
+        // between them, because the middle band is the one §18.3 keeps.
+        if (was == 2 && !(_design.F5 > 0))
+        {
+            (_design.F5, _design.F6) = (_design.F3, _design.F4);
+            double lo = _design.F2, hi = _design.F5;
+            double centre = Math.Sqrt(lo * hi);
+            _design.F3 = centre / 1.1;
+            _design.F4 = centre * 1.1;
+        }
+        if (!(_design.F5 > _design.F4) || !(_design.F6 > _design.F5))
+        {
+            _design.F5 = _design.F4 * 1.5;
+            _design.F6 = _design.F4 * 1.5 * (_design.F4 / _design.F3);
+        }
+    }
+
+    /// <summary>The band count as one of <see cref="BandsOptions"/>.</summary>
+    public string BandsChoice
+    {
+        get => BandCount switch { >= 3 => "Tri", 2 => "Dual", _ => "Single" };
+        set => BandCount = value switch { "Tri" => 3, "Dual" => 2, _ => 1 };
+    }
+
+    /// <summary>True while the design is multiband — what the f3/f4 row is shown by.</summary>
+    public bool IsDualBand => BandCount >= 2;
+
+    /// <summary>True while the design is tri-band — what the f5/f6 row is shown by.</summary>
+    public bool IsTriBand => BandCount >= 3;
+
+    /// <summary>
+    /// match.md §18.3's one-line effective-band note, or empty when the requested bands already
+    /// mirror each other.
+    /// </summary>
+    /// <remarks>
+    /// <b>Shown, never hidden.</b> The synthesis designs to the SYMMETRISED bands, so a user whose
+    /// spec was stretched has to be able to see that it was and by how much — designing silently to a
+    /// spec nobody typed is the one thing §18.3 forbids.
+    /// </remarks>
+    public string EffectiveBandNote => IsDualBand ? _design.Effective.Note ?? "" : "";
+
+    /// <summary>Lower edge of the third band, Hz (match.md §18.5).</summary>
+    public double F5
+    {
+        get => _design.F5;
+        set
+        {
+            if (value == _design.F5 || !(value > 0)) return;
+            _design.F5 = value;
+            SortBandEdges();
+            CommitSpecChange();
+        }
+    }
+
+    /// <summary>Upper edge of the third band, Hz (match.md §18.5).</summary>
+    public double F6
+    {
+        get => _design.F6;
+        set
+        {
+            if (value == _design.F6 || !(value > 0)) return;
+            _design.F6 = value;
+            SortBandEdges();
             CommitSpecChange();
         }
     }
@@ -1092,15 +1319,60 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     }
     private string? _f2Staged;
 
+    /// <summary>f3 as typed.</summary>
+    public string F3Text
+    {
+        get => _f3Staged ?? MatchValueFormat.Format(
+            F3, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
+        set { _f3Staged = value; OnPropertyChanged(); }
+    }
+    private string? _f3Staged;
+
+    /// <summary>f4 as typed.</summary>
+    public string F4Text
+    {
+        get => _f4Staged ?? MatchValueFormat.Format(
+            F4, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
+        set { _f4Staged = value; OnPropertyChanged(); }
+    }
+    private string? _f4Staged;
+
+    /// <summary>f5 as typed.</summary>
+    public string F5Text
+    {
+        get => _f5Staged ?? MatchValueFormat.Format(
+            F5, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
+        set { _f5Staged = value; OnPropertyChanged(); }
+    }
+    private string? _f5Staged;
+
+    /// <summary>f6 as typed.</summary>
+    public string F6Text
+    {
+        get => _f6Staged ?? MatchValueFormat.Format(
+            F6, MatchQuantity.Frequency, BandUnit, MatchDesignerSettings.EntryDigits).Text;
+        set { _f6Staged = value; OnPropertyChanged(); }
+    }
+    private string? _f6Staged;
+
     /// <summary>Parses and commits the staged band edges.</summary>
     public void CommitBand()
     {
-        string? f1 = _f1Staged, f2 = _f2Staged;
-        _f1Staged = _f2Staged = null;
+        string? f1 = _f1Staged, f2 = _f2Staged, f3 = _f3Staged, f4 = _f4Staged;
+        string? f5 = _f5Staged, f6 = _f6Staged;
+        _f1Staged = _f2Staged = _f3Staged = _f4Staged = _f5Staged = _f6Staged = null;
         if (f1 is not null && MatchValueFormat.TryParse(f1, BandUnit, out double v1)) F1 = v1;
         if (f2 is not null && MatchValueFormat.TryParse(f2, BandUnit, out double v2)) F2 = v2;
-        OnPropertyChanged(nameof(F1Text));
-        OnPropertyChanged(nameof(F2Text));
+        if (f3 is not null && MatchValueFormat.TryParse(f3, BandUnit, out double v3)) F3 = v3;
+        if (f4 is not null && MatchValueFormat.TryParse(f4, BandUnit, out double v4)) F4 = v4;
+        if (f5 is not null && MatchValueFormat.TryParse(f5, BandUnit, out double v5)) F5 = v5;
+        if (f6 is not null && MatchValueFormat.TryParse(f6, BandUnit, out double v6)) F6 = v6;
+
+        // Once more after the batch: two edges committed together can each be in order against what
+        // was there and out of order against each other, and the per-setter sort above sees only one
+        // of them at a time.
+        if (SortBandEdges()) CommitSpecChange();
+        RaiseBandChanged();
     }
 
     // ── Inline-editor entry text (owner, 2026-08-19) ──────────────────────────
@@ -1113,31 +1385,91 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     public string F1Entry
     {
         get => $"{F1Text} {BandUnit}";
-        set => SetBandEntry(value, isF1: true);
+        set => SetBandEntry(value, 1);
     }
 
     /// <summary>The upper band edge as "2 GHz".</summary>
     public string F2Entry
     {
         get => $"{F2Text} {BandUnit}";
-        set => SetBandEntry(value, isF1: false);
+        set => SetBandEntry(value, 2);
     }
 
-    private void SetBandEntry(string? text, bool isF1)
+    /// <summary>The second band's lower edge as "5.15 GHz" (match.md §18).</summary>
+    public string F3Entry
+    {
+        get => $"{F3Text} {BandUnit}";
+        set => SetBandEntry(value, 3);
+    }
+
+    /// <summary>The second band's upper edge as "5.85 GHz" (match.md §18).</summary>
+    public string F4Entry
+    {
+        get => $"{F4Text} {BandUnit}";
+        set => SetBandEntry(value, 4);
+    }
+
+    /// <summary>The third band's lower edge (match.md §18.5).</summary>
+    public string F5Entry
+    {
+        get => $"{F5Text} {BandUnit}";
+        set => SetBandEntry(value, 5);
+    }
+
+    /// <summary>The third band's upper edge (match.md §18.5).</summary>
+    public string F6Entry
+    {
+        get => $"{F6Text} {BandUnit}";
+        set => SetBandEntry(value, 6);
+    }
+
+    private void SetBandEntry(string? text, int edge)
     {
         if (!MatchValueFormat.TryParseWithUnit(
                 text, MatchQuantity.Frequency, BandUnit, out double f, out string unit))
         {
-            OnPropertyChanged(isF1 ? nameof(F1Entry) : nameof(F2Entry));
+            OnPropertyChanged(EntryName(edge));
             return;
         }
-        // Both edges share ONE display unit, so a unit typed into either moves both.
+        // All four edges share ONE display unit, so a unit typed into any of them moves them all.
         if (unit != BandUnit) BandUnit = unit;
-        if (isF1) F1 = f; else F2 = f;
+        switch (edge)
+        {
+            case 1: F1 = f; break;
+            case 2: F2 = f; break;
+            case 3: F3 = f; break;
+            case 4: F4 = f; break;
+            case 5: F5 = f; break;
+            default: F6 = f; break;
+        }
+        RaiseBandChanged();
+    }
+
+    private static string EntryName(int edge) => edge switch
+    {
+        1 => nameof(F1Entry),
+        2 => nameof(F2Entry),
+        3 => nameof(F3Entry),
+        4 => nameof(F4Entry),
+        5 => nameof(F5Entry),
+        _ => nameof(F6Entry),
+    };
+
+    private void RaiseBandChanged()
+    {
         OnPropertyChanged(nameof(F1Text));
         OnPropertyChanged(nameof(F2Text));
+        OnPropertyChanged(nameof(F3Text));
+        OnPropertyChanged(nameof(F4Text));
+        OnPropertyChanged(nameof(F5Text));
+        OnPropertyChanged(nameof(F6Text));
         OnPropertyChanged(nameof(F1Entry));
         OnPropertyChanged(nameof(F2Entry));
+        OnPropertyChanged(nameof(F3Entry));
+        OnPropertyChanged(nameof(F4Entry));
+        OnPropertyChanged(nameof(F5Entry));
+        OnPropertyChanged(nameof(F6Entry));
+        OnPropertyChanged(nameof(EffectiveBandNote));
     }
 
     /// <summary>The equal-ripple level as "0.1 dB".</summary>
@@ -1201,9 +1533,39 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
     }
 
     /// <summary>What the order field's tooltip states — the orders this pair actually permits.</summary>
-    public string OrderTooltip =>
-        $"Only the parities the two terminations permit: {string.Join(", ", OrderOptions)}. "
-        + "An order that cannot absorb both ends is refused.";
+    public string OrderTooltip => _design.BandCount >= 2
+        ? $"Match points PER BAND: {string.Join(", ", OrderOptions)} — {ElementCountHint}."
+        : $"Only the parities the two terminations permit: {string.Join(", ", OrderOptions)}. "
+          + "An order that cannot absorb both ends is refused.";
+
+    /// <summary>
+    /// How many elements each offered order buys — <b>and the formula, because it depends on the
+    /// terminations rather than on the order</b> (match.md §18.5).
+    /// </summary>
+    /// <remarks>
+    /// A like termination pair takes the weighted family's ODD count, whose two ends share one
+    /// orientation and can therefore both be absorbed; a mixed pair, or a pair with a resistive end,
+    /// takes the even one. So the same order buys 4n or 4n + 2 elements over multiple bands, and 2n
+    /// or 2n + 1 in lowpass and highpass form, and the hint states which.
+    /// </remarks>
+    public string ElementCountHint
+    {
+        get
+        {
+            bool multiband = _design.BandCount >= 2;
+            bool odd = _design.Form != NetworkForm.Bandpass || multiband
+                ? MatchOrders.NeedsOddCount(_design.Term1, _design.Term2)
+                : false;
+            int perOrder = multiband ? 4 : 2;
+            int extra = odd ? (multiband ? 2 : 1) : 0;
+            string formula = $"({perOrder}n{(extra > 0 ? $" + {extra}" : "")})";
+            return string.Join(
+                       ", ",
+                       OrderOptions.Select(
+                           o => (perOrder * o + extra).ToString(CultureInfo.InvariantCulture)))
+                   + $" elements {formula}";
+        }
+    }
 
     // ── Revert ────────────────────────────────────────────────────────────────
     //
@@ -1329,13 +1691,19 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
         OnPropertyChanged(nameof(AnalysisEnd));
         OnPropertyChanged(nameof(F1));
         OnPropertyChanged(nameof(F2));
-        OnPropertyChanged(nameof(F1Text));
-        OnPropertyChanged(nameof(F2Text));
-        OnPropertyChanged(nameof(F1Entry));
-        OnPropertyChanged(nameof(F2Entry));
+        OnPropertyChanged(nameof(F3));
+        OnPropertyChanged(nameof(F4));
+        OnPropertyChanged(nameof(F5));
+        OnPropertyChanged(nameof(F6));
+        OnPropertyChanged(nameof(BandCount));
+        OnPropertyChanged(nameof(BandsChoice));
+        OnPropertyChanged(nameof(IsDualBand));
+        OnPropertyChanged(nameof(IsTriBand));
+        RaiseBandChanged();
         OnPropertyChanged(nameof(RippleEntry));
         OnPropertyChanged(nameof(OrderChoice));
         OnPropertyChanged(nameof(OrderTooltip));
+        OnPropertyChanged(nameof(ElementCountHint));
         OnPropertyChanged(nameof(LinkTransforms));
     }
 
@@ -1410,14 +1778,25 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
                 _schematicVm.UndoRedo.Undo();
 
             var updated = _target.Parameters.Select(p => p.Clone()).ToList();
-            Set(updated, MatchEmbedding.DesignParameter, MatchEmbedding.Encode(_design), "", UnitDimension.None, false);
-            Set(updated, "F1", Echo(_design.F1 / 1e9), "GHz", UnitDimension.Frequency, true);
-            Set(updated, "F2", Echo(_design.F2 / 1e9), "GHz", UnitDimension.Frequency, true);
-            Set(updated, "Order", _design.Order.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None, true);
-            Set(updated, "Response", _design.Response.ToString(), "", UnitDimension.None, false);
-            Set(updated, "Form", _design.Form.ToString(), "", UnitDimension.None, false);
-            Set(updated, "R1", Echo(_design.Term1.R), "Ω", UnitDimension.Resistance, false);
-            Set(updated, "R2", Echo(_design.Term2.R), "Ω", UnitDimension.Resistance, false);
+            Set(updated, MatchEmbedding.DesignParameter, MatchEmbedding.Encode(_design), "", UnitDimension.None);
+            Set(updated, "F1", Echo(_design.F1 / 1e9), "GHz", UnitDimension.Frequency);
+            Set(updated, "F2", Echo(_design.F2 / 1e9), "GHz", UnitDimension.Frequency);
+            // The second and third bands are echoed always, at 0 when unused — the parameters
+            // exist on the component type either way, and a value that appears and disappears is
+            // harder to read than one that says zero.
+            Set(updated, "Bands", _design.BandCount.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None);
+            Set(updated, "F3", Echo(_design.F3 / 1e9), "GHz", UnitDimension.Frequency);
+            Set(updated, "F4", Echo(_design.F4 / 1e9), "GHz", UnitDimension.Frequency);
+            Set(updated, "F5", Echo(_design.F5 / 1e9), "GHz", UnitDimension.Frequency);
+            Set(updated, "F6", Echo(_design.F6 / 1e9), "GHz", UnitDimension.Frequency);
+            Set(updated, "Order", _design.Order.ToString(CultureInfo.InvariantCulture), "", UnitDimension.None);
+            Set(updated, "Response", _design.Response.ToString(), "", UnitDimension.None);
+            // Form and Bands are the two the SYMBOL reads: they choose which waves carry a slash and
+            // how many wave stacks there are (match.md §8.4). They are written here like every other
+            // echo, so the glyph turns over on the same commit the ladder does.
+            Set(updated, "Form", _design.Form.ToString(), "", UnitDimension.None);
+            Set(updated, "R1", Echo(_design.Term1.R), "Ω", UnitDimension.Resistance);
+            Set(updated, "R2", Echo(_design.Term2.R), "Ω", UnitDimension.Resistance);
 
             _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
 
@@ -1440,20 +1819,26 @@ public sealed partial class MatchDesignerViewModel : ObservableObject, IDisposab
 
         static string Echo(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
 
+        // NONE of them shows on the schematic (owner, 2026-08-28): a Match puts no parameter text on
+        // the page at all, and what F1/F2/Order used to say there the glyph now says itself. Cleared
+        // on an EXISTING parameter too, not only on one this commit creates — an instance placed
+        // before the change carries ShowOnSchematic = true in its own file, and this is where that
+        // gets tidied for good rather than being filtered out on every render forever.
         static void Set(List<EditableParameter> list, string name, string expression, string unit,
-                        UnitDimension dim, bool showOnSchematic)
+                        UnitDimension dim)
         {
             var existing = list.FirstOrDefault(p => p.Name == name);
             if (existing is not null)
             {
                 existing.Expression = expression;
                 if (existing.Unit.Length == 0) existing.Unit = unit;
+                existing.ShowOnSchematic = false;
                 return;
             }
             list.Add(new EditableParameter
             {
                 Name = name, Expression = expression, Unit = unit,
-                Dimension = dim, ShowOnSchematic = showOnSchematic,
+                Dimension = dim, ShowOnSchematic = false,
             });
         }
     }

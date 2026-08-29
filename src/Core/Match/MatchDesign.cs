@@ -199,6 +199,30 @@ public sealed class MatchDesign
     /// <summary>Upper band edge, Hz.</summary>
     public double F2 { get; set; } = 5.0e9;
 
+    /// <summary>
+    /// How many bands the network is matched over (match.md §18). 1 is the single band of §4; 2 is
+    /// dual-band — f1-f2 and f3-f4, mirrored about the gap centre (§18.3), with the gap between them
+    /// deliberately unmatched; 3 is tri-band (§18.5), a kept middle band with a mirrored outer pair
+    /// and TWO deliberately unmatched gaps.
+    /// </summary>
+    /// <remarks>
+    /// <b>Additive</b>: a payload written before rev 3 carries no band count at all and decodes to 1,
+    /// so <c>Version</c> stays 1 and every existing design rebuilds to the identical ladder.
+    /// </remarks>
+    public int BandCount { get; set; } = 1;
+
+    /// <summary>Lower edge of the second band, Hz (<see cref="BandCount"/> &gt;= 2). 0 when unused.</summary>
+    public double F3 { get; set; }
+
+    /// <summary>Upper edge of the second band, Hz (<see cref="BandCount"/> &gt;= 2). 0 when unused.</summary>
+    public double F4 { get; set; }
+
+    /// <summary>Lower edge of the third band, Hz (<see cref="BandCount"/> = 3). 0 when unused.</summary>
+    public double F5 { get; set; }
+
+    /// <inheritdoc cref="F5"/>
+    public double F6 { get; set; }
+
     /// <summary>Network order, 2..6.</summary>
     public int Order { get; set; } = 4;
 
@@ -258,13 +282,98 @@ public sealed class MatchDesign
     /// <inheritdoc cref="Term1Conjugate"/>
     public bool Term2Conjugate { get; set; }
 
-    /// <summary>Band centre, rad/s: omega0 = sqrt(omega1*omega2).</summary>
+    /// <summary>
+    /// The bands the synthesis actually designs to — the requested ones for a single band, and
+    /// match.md §18.3's symmetrised pair for a dual-band design.
+    /// </summary>
+    /// <remarks>
+    /// <b>Recomputed on every access, never stored</b> (§18.8), for the reason the whole record is
+    /// inputs-only: an effective band written into the file could disagree with the requested one it
+    /// was derived from, and there would be no way to tell which of the two the ladder came from.
+    ///
+    /// <para>A single-band design reports <c>(F1, F2, F2, F2)</c>, which is what makes
+    /// <see cref="Omega0"/> and <see cref="W"/> below read the same in both cases: the outer pair is
+    /// then (F1, F2) and the gap (F2, F3) is empty.</para>
+    /// </remarks>
     [JsonIgnore]
-    public double Omega0 => 2.0 * Math.PI * Math.Sqrt(F1 * F2);
+    public EffectiveBands Effective => BandCount switch
+    {
+        >= 3 => MatchBands.Symmetrise3(F1, F2, F3, F4, F5, F6),
+        2 => MatchBands.Symmetrise(F1, F2, F3, F4),
+        _ => new EffectiveBands(F1, F2, F2, F2, false, 0, null, F2, F2, 1),
+    };
 
-    /// <summary>Fractional bandwidth w = (omega2 - omega1)/omega0.</summary>
+    /// <summary>The in-band spans, in frequency order — one, two or three of them.</summary>
     [JsonIgnore]
-    public double W => (F2 - F1) / Math.Sqrt(F1 * F2);
+    public IReadOnlyList<(double Lo, double Hi)> Bands
+    {
+        get
+        {
+            var e = Effective;
+            return BandCount switch
+            {
+                >= 3 => [(e.F1, e.F2), (e.F3, e.F4), (e.F5, e.F6)],
+                2 => [(e.F1, e.F2), (e.F3, e.F4)],
+                _ => [(e.F1, e.F2)],
+            };
+        }
+    }
+
+    /// <summary>
+    /// The spans BETWEEN the bands — none for a single band, one for dual, two for tri.
+    /// </summary>
+    /// <remarks>
+    /// <b>The deliberately unmatched frequencies</b> (match.md §18.1). They are reported rather than
+    /// hidden: a finite ladder buys its in-band return loss by leaving these alone, and the gap
+    /// maximum rising with order is the reclaim happening.
+    /// </remarks>
+    [JsonIgnore]
+    public IReadOnlyList<(double Lo, double Hi)> Gaps
+    {
+        get
+        {
+            var e = Effective;
+            return BandCount switch
+            {
+                >= 3 => [(e.F2, e.F3), (e.F4, e.F5)],
+                2 => [(e.F2, e.F3)],
+                _ => [],
+            };
+        }
+    }
+
+    /// <summary>
+    /// Band centre, rad/s: <c>omega0 = 2 pi sqrt(f_lowest * f_highest)</c> of the EFFECTIVE outer
+    /// pair — which is <c>sqrt(F1*F2)</c> for a single band and the gap centre for a dual one
+    /// (match.md §18.9: the terminations' Q is read there, and every arm is transparent there).
+    /// </summary>
+    [JsonIgnore]
+    public double Omega0 => Effective.Omega0;
+
+    /// <summary>Fractional bandwidth w = (omega_high - omega_low)/omega0, of the effective OUTER pair.</summary>
+    [JsonIgnore]
+    public double W => Effective.W;
+
+    /// <summary>
+    /// The prototype's inner band edge <c>a = (f3 - f2)/(f4 - f1)</c> — the half-width of the gap in
+    /// the mapped variable (match.md §18.2). Zero for a single band, where the prototype has no gap.
+    /// </summary>
+    /// <remarks>
+    /// <b>Dual-band only.</b> A tri-band prototype's passband is a UNION of intervals in u and no
+    /// single number describes it (match.md §18.5); <see cref="EffectiveBands.Intervals"/> is what
+    /// that path reads, and it reduces to <c>[A^2, 1]</c> here.
+    /// </remarks>
+    [JsonIgnore]
+    public double A
+    {
+        get
+        {
+            if (BandCount != 2) return 0.0;
+            var e = Effective;
+            double span = e.F4 - e.F1;
+            return span > 0 ? (e.F3 - e.F2) / span : 0.0;
+        }
+    }
 
     /// <summary>A deep copy — the rebuild and the solution search both mutate working copies.</summary>
     public MatchDesign Clone() => new()
@@ -272,6 +381,11 @@ public sealed class MatchDesign
         Version = Version,
         F1 = F1,
         F2 = F2,
+        BandCount = BandCount,
+        F3 = F3,
+        F4 = F4,
+        F5 = F5,
+        F6 = F6,
         Order = Order,
         Response = Response,
         Form = Form,

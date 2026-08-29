@@ -89,7 +89,8 @@ public static class MatchSynthesis
     /// </remarks>
     private readonly record struct SynthesisKey(
         double F1, double F2, int Order, ResponseShape Response, NetworkForm Form, double RippleDb,
-        double QAdjust, AnalysisEndChoice AnalysisEnd, Termination Term1, Termination Term2);
+        double QAdjust, AnalysisEndChoice AnalysisEnd, Termination Term1, Termination Term2,
+        int BandCount, double F3, double F4, double F5, double F6);
 
     /// <summary>
     /// A bounded memo of recent syntheses.
@@ -154,7 +155,8 @@ public static class MatchSynthesis
 
         var key = new SynthesisKey(
             design.F1, design.F2, design.Order, design.Response, design.Form, design.RippleDb,
-            design.QAdjust, design.AnalysisEnd, design.Term1, design.Term2);
+            design.QAdjust, design.AnalysisEnd, design.Term1, design.Term2,
+            design.BandCount, design.F3, design.F4, design.F5, design.F6);
         if (Memo.TryGetValue(key, out var cached)) return Copy(cached);
 
         var fresh = SynthesizeUncached(design);
@@ -203,6 +205,23 @@ public static class MatchSynthesis
             var bad = ValidateTermination(t, which);
             if (bad is not null) return MatchSynthesisResult.Refuse(bad);
         }
+        // ── Multiband comes BEFORE the form dispatch, and refuses the other two forms ────────
+        //
+        // match.md §18.6: lowpass and highpass multiband is route B — the multi-interval Remez run
+        // directly in u — and is recorded rather than designed. Dispatching on Form first would send
+        // a dual-band lowpass design into a synthesis that has never heard of a second band and would
+        // quietly produce a single-band ladder for it.
+        if (design.BandCount >= 2)
+        {
+            if (design.Form != NetworkForm.Bandpass)
+                return MatchSynthesisResult.Refuse(MatchRefusal.Create(
+                    MatchRefusalKind.ResponseInfeasible,
+                    "Lowpass and highpass multiband networks are not offered; use "
+                    + "bandpass form.",
+                    null, ("bandCount", design.BandCount)));
+            return MatchMultibandSynthesis.Synthesize(design);
+        }
+
         if (design.Form != NetworkForm.Bandpass) return MatchFormSynthesis.Synthesize(design);
 
         if (!(design.F1 > 0) || !(design.F2 > design.F1))
@@ -258,8 +277,8 @@ public static class MatchSynthesis
                 $"The Q-adjust of {design.QAdjust:0.####} is BELOW termination "
                 + $"{(anaIsTerm1 ? 1 : 2)}'s own Q of {qAnaActual:0.####}, so the ladder's end arm "
                 + "would be smaller than the reactance that termination already supplies — and a "
-                + "parasitic cannot be subtracted. Q-adjust inflates an analysis end's Q "
-                + "(match.md §4.6); it cannot reduce one. Clear it, or set it to at least "
+                + "parasitic cannot be subtracted. Q-adjust inflates an analysis end's Q; "
+                + "it cannot reduce one. Clear it, or set it to at least "
                 + $"{qAnaActual:0.####}.",
                 anaIsTerm1 ? 1 : 2,
                 ("qAdjust", design.QAdjust), ("qActual", qAnaActual),
@@ -604,7 +623,13 @@ public static class MatchSynthesis
     /// match.md §4.4: frequency-scale, impedance-scale, resonate — and mark what the terminations
     /// supply. Built from the analysis end and reversed so index 0 is always the Term1 side.
     /// </summary>
-    private static (MatchNetwork Network, double RFar, double QFar) Build(
+    /// <remarks>
+    /// <b>Internal rather than private because the multiband synthesis is the same Build.</b>
+    /// match.md §18.2's dual-band ladder is this method applied to a different g-vector with an arm
+    /// count of 2n — there is no second bandpass transformation anywhere in the library, and adding
+    /// one so that this could stay private would be the mistake.
+    /// </remarks>
+    internal static (MatchNetwork Network, double RFar, double QFar) Build(
         double[] g, int n, Termination ana, Termination far, MatchDesign design, bool anaIsTerm1)
     {
         double om0 = design.Omega0, w = design.W, rAna = ana.R;

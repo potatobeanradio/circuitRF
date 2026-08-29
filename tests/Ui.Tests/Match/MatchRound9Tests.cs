@@ -171,10 +171,13 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// once — so the only thing that moves the list after an apply is the user.
     /// </summary>
     /// <remarks>
-    /// The two AXAML switches above stop the framework scrolling. This is the other half: nothing on
-    /// our own side may scroll either. <c>ScrollToApplied</c> keeps exactly two callers — the header's
-    /// target button, and the once-per-list automatic scroll that fires when the list first has an
-    /// applied row to show — and the view-model's <c>ApplySolution</c> touches no view state at all.
+    /// The two AXAML switches above stop the framework scrolling. This is the other half: no APPLY on
+    /// our own side may scroll either. <c>ScrollToApplied</c> keeps exactly three callers — the
+    /// header's target button, the once-per-list automatic scroll that fires when the list first has
+    /// an applied row to show, and (owner-reported, 2026-08-28) the move the user did NOT make: an
+    /// undo, a redo, a band-count change, the auto-solve. That third one cannot be an apply path,
+    /// because the view-model suppresses its own event for the duration of a click
+    /// (<c>ApplyingByClick</c>) — which is what the assertions below check rather than assume.
     /// </remarks>
     [Fact]
     public void NoApplyPath_ScrollsTheList()
@@ -186,13 +189,26 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
         Assert.DoesNotContain("ScrollTo", Between(code, "private void OnSolutionSelectionChanged("),
                               StringComparison.Ordinal);
 
-        // Two callers, and only two: the button's wiring and the once-only arm. Three occurrences,
-        // the third being the declaration itself.
-        Assert.Equal(3, Regex.Matches(code, @"ScrollToApplied\(\)").Count);
+        // Three callers, and only three: the button's wiring, the once-only arm, and the applied-row
+        // move. Four occurrences, the fourth being the declaration itself.
+        Assert.Equal(4, Regex.Matches(code, @"ScrollToApplied\(\)").Count);
         Assert.Contains("private void ScrollToApplied()", code, StringComparison.Ordinal);
         Assert.Contains("ScrollToApplied()", Between(code, "private void ScrollToAppliedOnce()"),
                         StringComparison.Ordinal);
         Assert.Contains("WireButton(\"ScrollToAppliedButton\"", code, StringComparison.Ordinal);
+        Assert.Contains("ScrollToApplied();", Between(code, "private void OnAppliedSolutionMoved("),
+                        StringComparison.Ordinal);
+
+        // …and the third caller is not reachable from a click: the view-model refuses to report a
+        // move it made on the user's behalf while applying the card they clicked.
+        string vm = Src("src", "Ui", "Match", "MatchDesignerViewModel.Network.cs");
+        Assert.Contains("ApplyingByClick = true;",
+                        Between(vm, "public void ApplySolution(MatchSolutionRowViewModel row)"),
+                        StringComparison.Ordinal);
+        Assert.Contains("&& !ApplyingByClick",
+                        Between(Src("src", "Ui", "Match", "MatchDesignerViewModel.Analysis.cs"),
+                                "private void RebadgeSolutions()"),
+                        StringComparison.Ordinal);
 
         // …and the once-only guard is still a guard.
         Assert.Contains("if (_scrolledToApplied", Between(code, "private void ScrollToAppliedOnce()"),
@@ -479,20 +495,35 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// <remarks>
     /// The specification cards are an <c>Auto</c> row over the list's <c>*</c> row, so the cap on the
     /// cards' scroller IS the floor under the list — an Auto row takes what it wants first. Lowering
-    /// the cap is therefore the whole mechanism, and it has to be lowered rather than left to track
-    /// the content: a cap that merely followed the cards would hand the saving straight back the
-    /// first time one of the pane's four notes appeared.
+    /// the cap is therefore the whole mechanism.
+    ///
+    /// <para><b>The cap is no longer a fixed number, and this test moved with it</b> (owner,
+    /// 2026-08-28: a Dual or Tri specification is to expand minimally, at this list's expense, so
+    /// that every band edge is readable without scrolling). What the AXAML declares is now the
+    /// pane's RESTING cap — what it shows until the first layout pass reaches
+    /// <c>SyncSpecificationCap</c> — and the number that decides how much reaches the list is
+    /// <c>SolutionsFloor</c>, which the method keeps below the specification whatever the band count
+    /// asks for. Both are asserted, because it is still the pair that makes the owner's earlier ask
+    /// true: the specification cannot take the whole pane, and what it does not take is the list's.
+    /// The shape of the computation is held by
+    /// <c>MatchMultibandDesignerTests.TheSpecificationPane_TakesItsCapFromThePaneHeight…</c>.</para>
     /// </remarks>
     [Fact]
     public void TheSpecificationCards_GaveTheirFreedHeightToTheSolutionsList()
     {
-        var cap = Regex.Match(Xaml(), @"<ScrollViewer Grid\.Row=""1"" MaxHeight=""(\d+)""");
+        var cap = Regex.Match(Xaml(), @"<ScrollViewer Grid\.Row=""1"" [^>]*MaxHeight=""(\d+)""");
         Assert.True(cap.Success, "the specification pane's scroller no longer declares a MaxHeight");
 
         double max = double.Parse(cap.Groups[1].Value, CultureInfo.InvariantCulture);
-        output.WriteLine($"specification cards capped at {max} px");
+        output.WriteLine($"specification cards rest at {max} px");
         Assert.True(max < 392, $"the cap is still {max} — the freed height did not reach the list");
         Assert.InRange(max, 240, 340);
+
+        // And the list keeps a floor of its own once the cap is being computed, or a tri-band
+        // specification would grow until there was no list under it at all.
+        var floor = Regex.Match(Code(), @"SolutionsFloor = (\d+);");
+        Assert.True(floor.Success, "nothing reserves any height for the Solutions list");
+        Assert.InRange(double.Parse(floor.Groups[1].Value, CultureInfo.InvariantCulture), 100, 260);
     }
     // ══ 5 — the card IS the button ══════════════════════════════════════════
 
@@ -659,7 +690,15 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     {
         string src = Src("src", "Ui", "Match", "MatchDesignerViewModel.cs");
 
-        var set = Between(src, "internal void SetTermination(");
+        // The block lives in CommitSpecChangeWithAutoSolve now, because a SECOND edit needs it: a
+        // band-count change rebuilds the ladder underneath the stored transform records exactly as a
+        // topology change does, and it asks for the same auto-solve (owner-reported, 2026-08-28).
+        Assert.Contains("CommitSpecChangeWithAutoSolve();",
+                        Between(src, "internal void SetTermination("), StringComparison.Ordinal);
+        Assert.Contains("CommitSpecChangeWithAutoSolve();",
+                        Between(src, "public int BandCount"), StringComparison.Ordinal);
+
+        var set = Between(src, "private void CommitSpecChangeWithAutoSolve()");
         Assert.Contains("_commitSuppressed++", set, StringComparison.Ordinal);
         Assert.Contains("_commitDeferred", set, StringComparison.Ordinal);
         Assert.Contains("AsOneEdit(() =>", set, StringComparison.Ordinal);
@@ -1058,7 +1097,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
         Assert.Contains("TryPendingAutoSolve(lastChance: true);", complete, StringComparison.Ordinal);
 
         var trypend = Between(src, "private void TryPendingAutoSolve(bool lastChance = false)");
-        Assert.Contains("AutoApplyAReachingSolution(request.End, request.Epoch) || lastChance", trypend,
+        Assert.Contains("AutoApplyAReachingSolution(epoch) || lastChance", trypend,
                         StringComparison.Ordinal);
 
         // "Settled" is the return, and "nothing to move onto YET" is the one false.

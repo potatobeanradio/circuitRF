@@ -27,8 +27,10 @@ internal sealed record MatchAnalysis(IReadOnlyList<MatchAnalysis.OptionVerdict> 
 /// <param name="Response">The family it was searched under.</param>
 /// <param name="Set">MN-1's own result for that cell.</param>
 /// <param name="IsCurrent">True for the combination the design is on — the one searched FIRST.</param>
+/// <param name="BandCount">How many bands the cell was searched over (match.md §18).</param>
 internal sealed record MatchSolutionBatch(
-    NetworkForm Form, int Order, ResponseShape Response, MatchSolutionSet Set, bool IsCurrent);
+    NetworkForm Form, int Order, ResponseShape Response, MatchSolutionSet Set, bool IsCurrent,
+    int BandCount = 1);
 
 /// <summary>
 /// Everything about a design that changes WHAT SOLUTIONS EXIST — and nothing that only changes which
@@ -43,12 +45,20 @@ internal sealed record MatchSolutionBatch(
 /// </remarks>
 internal sealed record MatchSpecKey(
     double F1, double F2, double RippleDb, AnalysisEndChoice AnalysisEnd,
-    Termination Term1, Termination Term2, double QMin)
+    Termination Term1, Termination Term2, double QMin,
+    int BandCount, double F3, double F4, double F5, double F6)
 {
     /// <summary>The key of one design under one Qmin.</summary>
+    /// <remarks>
+    /// <b>The band set IS a specification input</b> — the opposite of <c>Form</c> (match.md §18.7).
+    /// A different band count is a different PROBLEM, not another coordinate of the same answer, so
+    /// changing it restarts the search rather than re-filtering what is already listed. F5 and F6
+    /// carry the third band (§18.5).
+    /// </remarks>
     internal static MatchSpecKey From(MatchDesign design, double qMin) =>
         new(design.F1, design.F2, design.RippleDb, design.AnalysisEnd,
-            design.Term1, design.Term2, qMin);
+            design.Term1, design.Term2, qMin,
+            design.BandCount, design.F3, design.F4, design.F5, design.F6);
 }
 
 /// <summary>
@@ -205,11 +215,12 @@ public sealed partial class MatchDesignerViewModel
         // values until the pass lands — stale for a moment, never blank.
         foreach (var option in ResponseOptions) option.IsSelected = option.Shape == _design.Response;
         Filter.SetOrders(FilterOrderOptions);
+        Filter.SetMultiband(_design.BandCount >= 2);
 
-        // A termination edit asks for an auto-solve, and the answer is a solution for the design's
-        // OWN combination — which is the first cell the search runs. Recorded as a pending request
-        // rather than acted on here: nothing has been searched yet at this point.
-        _pendingAutoSolve = _autoSolveEnd == 0 ? null : (_autoSolveEnd, _designEpoch);
+        // A termination or band-count edit asks for an auto-solve, and the answer is a solution for
+        // the design's OWN combination — which is the first cell the search runs. Recorded as a
+        // pending request rather than acted on here: nothing has been searched yet at this point.
+        _pendingAutoSolve = _autoSolveRequested ? _designEpoch : null;
 
         QueueResponseVerdicts();
         QueueSolutionSearch();
@@ -271,6 +282,9 @@ public sealed partial class MatchDesignerViewModel
 
         _allSolutions.Clear();
         Solutions.Clear();
+        // The remembered row belonged to the list just dropped. Left in place it would make the first
+        // landing of the new search read as a move away from a row that no longer exists.
+        _currentRow = null;
         SolutionsComplete = false;
         SolutionsRefusal = "";
         RefreshSolutionsSummary();
@@ -280,10 +294,26 @@ public sealed partial class MatchDesignerViewModel
         var token = cts.Token;
         var publisher = new BatchPublisher(_resultScheduler);
 
+        // ── The generation check is INSIDE the gate, and it has to be ────────
+        //
+        // Check-then-lock is the classic shape of this bug and it bit exactly as written: a batch of
+        // the OLD search reads _searchGeneration, passes, and then BLOCKS on RefreshGate because the
+        // edit that supersedes it is mid-Refresh holding that gate. The edit bumps the generation and
+        // clears the list; the blocked batch then acquires the gate and lands rows from a search that
+        // no longer exists into a list that has already been emptied for the new one.
+        //
+        // Caught by MatchMultibandDesignerTests under full-suite load, on a Single -> Dual switch:
+        // 112 rows in a list whose search yields 62, one of the strays badged current, and the design
+        // dragged back to that stray's order 6 by the auto-solve. Only reproducible where the result
+        // scheduler is the thread pool — in the application both the bump and the landing are UI-
+        // thread work and the gate is uncontended — which is precisely why it needs a test to hold it.
         void Publish(MatchSolutionBatch batch) => publisher.Post(() =>
         {
-            if (generation != _searchGeneration) return;
-            lock (RefreshGate) LandBatch(batch);
+            lock (RefreshGate)
+            {
+                if (generation != _searchGeneration) return;
+                LandBatch(batch);
+            }
         });
 
         IsSearchingSolutions = true;
@@ -296,9 +326,11 @@ public sealed partial class MatchDesignerViewModel
                 t => publisher.Chain.ContinueWith(
                     _ =>
                     {
-                        if (generation != _searchGeneration) return;
+                        // Inside the gate, for the reason Publish's own note gives: a superseded
+                        // search that checked outside it could mark the LIVE one complete.
                         lock (RefreshGate)
                         {
+                            if (generation != _searchGeneration) return;
                             IsSearchingSolutions = false;
                             if (t.Status != TaskStatus.RanToCompletion) return;
                             SolutionsComplete = true;
@@ -389,7 +421,7 @@ public sealed partial class MatchDesignerViewModel
             bool isCurrent = form == design.Form && order == design.Order && shape == design.Response;
             if (isCurrent) here = set.Refusal;
 
-            publish(new MatchSolutionBatch(form, order, shape, set, isCurrent));
+            publish(new MatchSolutionBatch(form, order, shape, set, isCurrent, design.BandCount));
         }
 
         return here;
@@ -421,6 +453,36 @@ public sealed partial class MatchDesignerViewModel
     private static IEnumerable<(NetworkForm Form, int Order, ResponseShape Shape)> Combinations(
         MatchDesign design)
     {
+        // ── Multiband is bandpass-only, and tri-band is Chebyshev-only ────────
+        //
+        // match.md §18.6: lowpass and highpass multiband is route B, recorded and not designed, so
+        // those cells would spend two thirds of the cross-product producing the same one-line
+        // refusal. §18.2: the double-match Chebyshev is a 2-D solve in (K, eps^2) and Bessel has no
+        // prototype in this family, so neither is offered either.
+        //
+        // THREE bands drops Butterworth as well, and the reason is structural rather than a
+        // restriction (§18.5): the maximally-flat member is flat at the centre of ONE interval, and
+        // the passband is a union of two. Searching it would list a column of identical refusals.
+        if (design.BandCount >= 2)
+        {
+            var multiOrders =
+                MatchOrders.ValidOrders(design.Term1, design.Term2, NetworkForm.Bandpass, design.BandCount);
+            // A LIKE pair is Chebyshev-only for a second, unrelated reason (§18.5): its ladder has
+            // an odd arm count, which only the weighted Remez family produces, and a Remez exchange
+            // is equiripple by construction.
+            ResponseShape[] shapes =
+                design.BandCount >= 3 || MatchOrders.NeedsOddCount(design.Term1, design.Term2)
+                    ? [ResponseShape.ChebyshevFano]
+                    : FormShapes;
+            bool ownOk = multiOrders.Contains(design.Order) && shapes.Contains(design.Response);
+            if (ownOk) yield return (NetworkForm.Bandpass, design.Order, design.Response);
+            foreach (int order in multiOrders)
+                foreach (var shape in shapes)
+                    if (!ownOk || order != design.Order || shape != design.Response)
+                        yield return (NetworkForm.Bandpass, order, shape);
+            yield break;
+        }
+
         var forms = (NetworkForm[])[NetworkForm.Bandpass, NetworkForm.Lowpass, NetworkForm.Highpass];
         var ownOrders = MatchOrders.ValidOrders(design.Term1, design.Term2, design.Form);
         bool ownIsValid = ownOrders.Contains(design.Order)
@@ -430,7 +492,14 @@ public sealed partial class MatchDesignerViewModel
 
         foreach (var form in forms)
         {
-            var shapes = form == NetworkForm.Bandpass ? AllShapes : FormShapes;
+            // Lowpass and highpass offer Chebyshev and Butterworth — except for a like termination
+            // pair, whose odd element count comes only from the weighted Remez family (§18.5), which
+            // is equiripple. Bandpass offers all four.
+            var shapes = form == NetworkForm.Bandpass
+                ? AllShapes
+                : MatchOrders.NeedsOddCount(design.Term1, design.Term2)
+                    ? [ResponseShape.ChebyshevFano]
+                    : FormShapes;
             foreach (int order in MatchOrders.ValidOrders(design.Term1, design.Term2, form))
                 foreach (var shape in shapes)
                     if (!ownIsValid || form != design.Form || order != design.Order
@@ -490,7 +559,8 @@ public sealed partial class MatchDesignerViewModel
 
         foreach (var solution in batch.Set.Solutions)
             _allSolutions.Add(new MatchSolutionRowViewModel(
-                this, solution, BadgeFor(solution, current), batch.Order, batch.Response, batch.Form));
+                this, solution, BadgeFor(solution, current), batch.Order, batch.Response, batch.Form,
+                batch.BandCount));
 
         ReapplyFilter();
         RefreshSolutionsSummary();
@@ -536,6 +606,11 @@ public sealed partial class MatchDesignerViewModel
               + "terminations are too far apart for a network this Designer can synthesise.";
 
         RefreshSolutionsSummary();
+
+        // The feasibility hint is a statement about the finished list — "nothing reached it" or
+        // "what did reach it is against the wall" — so it is landed here rather than guessed at
+        // while the cross-product is still filling (match.md §18.10).
+        RefreshFeasibilityHint();
 
         // The last cell has landed, so a request still outstanding is one nothing in the whole
         // cross-product could answer. Dropped here rather than left to be picked up by an unrelated
@@ -602,6 +677,36 @@ public sealed partial class MatchDesignerViewModel
         while (Solutions.Count > i) Solutions.RemoveAt(Solutions.Count - 1);
     }
 
+    /// <summary>
+    /// Raised when the design lands on a <b>different</b> solution row by a path the user did not
+    /// click — an undo, a redo, an edit elsewhere in the schematic, or the auto-solve.
+    /// </summary>
+    /// <remarks>
+    /// <b>The window keeps TWO highlights on this list and they were free to disagree</b>
+    /// (owner-reported, 2026-08-28: after an undo or redo "the previous solution card is not
+    /// highlighted"). The card's own green border is driven by <c>IsCurrent</c>, which the re-badge
+    /// below has always got right; the LIST's selection is the ListBox's, and it moved only when a
+    /// user clicked or when the collection changed. An undo changes neither — it does not touch
+    /// <c>MatchSpecKey</c>, so the search is not restarted and the collection is not rebuilt — so the
+    /// selection stayed on the row the user last clicked while the border moved back to the row the
+    /// design is now on. Two highlights, two different cards, and the one that is right is usually
+    /// scrolled off screen.
+    ///
+    /// <para><b>A click does NOT raise this</b>, and that is deliberate: the row the user just
+    /// clicked is already under their pointer and already selected, and scrolling to it is the yank
+    /// <c>ScrollToAppliedOnce</c> exists to avoid. Only a move the user did not make needs showing.</para>
+    /// </remarks>
+    public event EventHandler? AppliedSolutionMoved;
+
+    /// <summary>The row the design was on as of the last re-badge — what a MOVE is measured against.</summary>
+    private MatchSolutionRowViewModel? _currentRow;
+
+    /// <summary>
+    /// True while a user's own click on a card is being applied, so the re-badge it causes is not
+    /// reported as a move. See <see cref="AppliedSolutionMoved"/>.
+    /// </summary>
+    internal bool ApplyingByClick { get; set; }
+
     /// <summary>Re-decides every row's badge against the design as it now stands.</summary>
     private void RebadgeSolutions()
     {
@@ -612,6 +717,11 @@ public sealed partial class MatchDesignerViewModel
 
         ReapplyFilter();
         RefreshSolutionsSummary();
+
+        var was = _currentRow;
+        _currentRow = _allSolutions.FirstOrDefault(r => r.Badge == MatchSolutionBadge.Current);
+        if (!ReferenceEquals(was, _currentRow) && _currentRow is not null && !ApplyingByClick)
+            AppliedSolutionMoved?.Invoke(this, EventArgs.Empty);
     }
 
     private void RefreshSolutionsSummary()
@@ -641,13 +751,20 @@ public sealed partial class MatchDesignerViewModel
     // ── The termination auto-solve ────────────────────────────────────────────
 
     /// <summary>
-    /// Which end the auto-solve in progress is about — 1, 2, or 0 for "no termination edit". Set for
-    /// the duration of one <c>SetTermination</c>. See <c>SetTermination</c> for why it is not read live.
+    /// True for the duration of one edit that has asked for an auto-solve — a termination change or a
+    /// band-count change. See <c>CommitSpecChangeWithAutoSolve</c> for why it is not read live.
     /// </summary>
-    private int _autoSolveEnd;
+    /// <remarks>
+    /// <b>A flag rather than "which end", which is what it used to be.</b> The end was only ever
+    /// tested against zero: nothing downstream needs to know WHICH input moved, only that the design
+    /// may now be sitting on a rack that no longer reaches. Keeping it as an end number meant the
+    /// band-count change had no honest value to pass and so did not ask at all (owner-reported,
+    /// 2026-08-28).
+    /// </remarks>
+    private bool _autoSolveRequested;
 
-    /// <summary>The auto-solve this edit asked for, with the epoch it was asked in, or null.</summary>
-    private (int End, int Epoch)? _pendingAutoSolve;
+    /// <summary>The epoch the outstanding auto-solve was asked in, or null when none is.</summary>
+    private int? _pendingAutoSolve;
 
     /// <summary>
     /// The undo stamp of the entry the termination edit already pushed, so the auto-solve's own commit
@@ -680,8 +797,8 @@ public sealed partial class MatchDesignerViewModel
     /// </param>
     private void TryPendingAutoSolve(bool lastChance = false)
     {
-        if (_pendingAutoSolve is not { } request) return;
-        if (AutoApplyAReachingSolution(request.End, request.Epoch) || lastChance)
+        if (_pendingAutoSolve is not { } epoch) return;
+        if (AutoApplyAReachingSolution(epoch) || lastChance)
             _pendingAutoSolve = null;
     }
 
@@ -719,9 +836,10 @@ public sealed partial class MatchDesignerViewModel
     /// <para><b>It says nothing</b> (owner, 2026-08-28). Re-declaring an end is a change to the
     /// problem, and a user who has just made one is already expecting the network to be different —
     /// they can see the new schematic. A line explaining it would spend some of the specification
-    /// pane's small column on something nobody needed told, which is why <c>OrderNote</c> and
-    /// <c>QAdjustNote</c> beside it are not the precedent here: those two change a control the user
-    /// did NOT touch, and this changes the one thing they were looking at.</para>
+    /// pane's small column on something nobody needed told, which is why <c>QAdjustNote</c> beside it
+    /// is not the precedent here: that one changes a control the user did NOT touch, and this changes
+    /// the one thing they were looking at. (The order's own note was removed outright for the same
+    /// reason this path is silent — see <c>AdjustOrderForParity</c>.)</para>
     ///
     /// <para>It fires at most once per edit: the request is cleared when it is taken, and the apply's
     /// own refresh queues the passes that render the result. A design that is already on target, one
@@ -732,9 +850,9 @@ public sealed partial class MatchDesignerViewModel
     /// is nothing to move onto <em>yet</em>, which is the one case worth waiting for another cell of
     /// the search to land. See <see cref="TryPendingAutoSolve"/>.
     /// </returns>
-    private bool AutoApplyAReachingSolution(int end, int epoch)
+    private bool AutoApplyAReachingSolution(int epoch)
     {
-        if (end == 0 || IsOrphaned) return true;
+        if (IsOrphaned) return true;
 
         // The design has been rebuilt since this request was made — the user went on editing while
         // the search ran, and the solutions in hand are answers to a question that has moved. Round

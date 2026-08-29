@@ -462,7 +462,7 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         if (targets.Count == 0) return;
 
-        int LabelCount(EditableComponent c) => 2 + c.Parameters.Count(p => p.ShowOnSchematic);
+        int LabelCount(EditableComponent c) => 2 + c.LabelParameters().Count();
 
         var snaps = targets.Select(c =>
         {
@@ -2669,7 +2669,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY, modifiers);
         var snaps = _moveLabelComps.Select(c =>
         {
-            int labelCount = 2 + c.Parameters.Count(p => p.ShowOnSchematic);
+            int labelCount = 2 + c.LabelParameters().Count();
             var oldOffsets = new List<(double DX, double DY)>(c.LabelOffsets);
             while (oldOffsets.Count < labelCount) oldOffsets.Add((0, 0));
             var newOffsets = oldOffsets.Select(o => (o.DX + dx, o.DY + dy)).ToList();

@@ -96,8 +96,13 @@ public static class MatchFlatten
     /// <param name="design">The design, for the annotation and the echo parameters.</param>
     /// <param name="instanceName">The <c>Match</c> being flattened, named in the annotation.</param>
     /// <param name="stamped">When supplied, the timestamp the annotation quotes (UTC).</param>
+    /// <param name="significantDigits">
+    /// The Designer's own readout digit count (<c>MatchDesignerSettings.SignificantDigits</c>) — every
+    /// element value is written at it. See <see cref="Value"/> for why.
+    /// </param>
     public static SchematicEditModel BuildSchematic(
-        MatchRebuildResult rebuild, MatchDesign design, string instanceName, DateTime? stamped = null)
+        MatchRebuildResult rebuild, MatchDesign design, string instanceName, DateTime? stamped = null,
+        int significantDigits = MatchDesignerSettings.DefaultSignificantDigits)
     {
         ArgumentNullException.ThrowIfNull(rebuild);
         ArgumentNullException.ThrowIfNull(design);
@@ -126,7 +131,7 @@ public static class MatchFlatten
                     model.Wires.Add(Wire((cursor, 0), (cursor + ShuntPitch, 0)));
                     cursor += ShuntPitch;
                 }
-                model.Components.Add(Element(e, cursor, ShuntY, SymbolRotation.R0,
+                model.Components.Add(Element(e, cursor, ShuntY, SymbolRotation.R0, significantDigits,
                                              shuntGroundOffsetY: ShuntGroundY - ShuntY));
                 model.Wires.Add(Wire((cursor, 0), (cursor, 200)));
                 model.Components.Add(Ground(cursor, ShuntGroundY));
@@ -137,7 +142,7 @@ public static class MatchFlatten
             {
                 model.Wires.Add(Wire((cursor, 0), (cursor + LeadRun, 0)));
                 model.Components.Add(Element(e, cursor + SeriesPitch / 2.0, 0.0,
-                                             MatchSchematicModel.SeriesRotation));
+                                             MatchSchematicModel.SeriesRotation, significantDigits));
                 model.Wires.Add(Wire((cursor + SeriesPitch - LeadRun, 0), (cursor + SeriesPitch, 0)));
                 cursor += SeriesPitch;
                 shuntAtNode = 0;
@@ -147,8 +152,9 @@ public static class MatchFlatten
         model.Components.Add(Pin(2, cursor + LeadRun, 0.0, SymbolRotation.R180));
 
         // ── the two terminations, every part of them Open ─────────────────────
-        AddTermination(model, plan.Terminations[0], design.Term1, -AnnexGap, -1.0, 0.0);
-        AddTermination(model, plan.Terminations[1], design.Term2, cursor + AnnexGap, +1.0, cursor);
+        AddTermination(model, plan.Terminations[0], design.Term1, -AnnexGap, -1.0, 0.0, significantDigits);
+        AddTermination(model, plan.Terminations[1], design.Term2, cursor + AnnexGap, +1.0, cursor,
+                       significantDigits);
 
         // ── the design record ─────────────────────────────────────────────────
         model.CanvasObjects.Add(new EditableText
@@ -173,7 +179,7 @@ public static class MatchFlatten
     /// <param name="xPort">Where on the spine the lead leaves.</param>
     private static void AddTermination(
         SchematicEditModel model, FlattenedTermination t, Termination declared,
-        double xa, double dir, double xPort)
+        double xa, double dir, double xPort, int digits)
     {
         // Up from the spine and across — the one route that cannot cross a shunt leg.
         model.Wires.Add(Wire((xPort, 0), (xPort, -AnnexLift), (xa, -AnnexLift)));
@@ -183,15 +189,16 @@ public static class MatchFlatten
             // SERIES: the reactance sits between the interface net and the reference resistance,
             // which is where the synthesis assumes it — enabling both reproduces the Designer's own
             // response, not a resistively-terminated approximation of it.
-            model.Components.Add(Disabled(Element(absorbed, xa, -AnnexLift + 200.0, SymbolRotation.R0)));
-            model.Components.Add(Disabled(Term(t.End, t.R, xa, 400.0)));
+            model.Components.Add(Disabled(
+                Element(absorbed, xa, -AnnexLift + 200.0, SymbolRotation.R0, digits)));
+            model.Components.Add(Disabled(Term(t.End, t.R, xa, 400.0, digits)));
             model.Wires.Add(Wire((xa, 0), (xa, 200)));
             model.Components.Add(Disabled(Ground(xa, 700.0)));
             model.Wires.Add(Wire((xa, 600), (xa, 700)));
             return;
         }
 
-        model.Components.Add(Disabled(Term(t.End, t.R, xa, -AnnexLift + 200.0)));
+        model.Components.Add(Disabled(Term(t.End, t.R, xa, -AnnexLift + 200.0, digits)));
         model.Components.Add(Disabled(Ground(xa, 100.0)));
         model.Wires.Add(Wire((xa, 0), (xa, 100)));
 
@@ -200,7 +207,8 @@ public static class MatchFlatten
             // PARALLEL: a second column beside the Term, on the same interface net.
             double xb = xa + dir * ShuntPitch;
             model.Wires.Add(Wire((xa, -AnnexLift), (xb, -AnnexLift)));
-            model.Components.Add(Disabled(Element(shunt, xb, -AnnexLift + 200.0, SymbolRotation.R0)));
+            model.Components.Add(Disabled(
+                Element(shunt, xb, -AnnexLift + 200.0, SymbolRotation.R0, digits)));
             model.Components.Add(Disabled(Ground(xb, 100.0)));
             model.Wires.Add(Wire((xb, 0), (xb, 100)));
         }
@@ -231,7 +239,7 @@ public static class MatchFlatten
     private static EditableComponent Ground(double x, double y) =>
         new() { Symbol = SymbolKind.Ground, X = x, Y = y, ShowTypeLabel = false, ShowInstanceName = false };
 
-    private static EditableComponent Term(int num, double r, double x, double y)
+    private static EditableComponent Term(int num, double r, double x, double y, int digits)
     {
         var c = new EditableComponent
         {
@@ -240,7 +248,7 @@ public static class MatchFlatten
             X = x, Y = y,
         };
         c.Parameters.Add(new EditableParameter { Name = "Num", Expression = num.ToString(CultureInfo.InvariantCulture) });
-        var (text, unit) = Exact(r, MatchQuantity.Resistance);
+        var (text, unit) = Value(r, MatchQuantity.Resistance, digits);
         c.Parameters.Add(new EditableParameter
         {
             Name = "Z", Expression = text, Unit = unit, Dimension = UnitDimension.Resistance,
@@ -261,7 +269,8 @@ public static class MatchFlatten
     /// distance away, so the rule has nothing to measure there.
     /// </param>
     private static EditableComponent Element(
-        MatchElement e, double x, double y, SymbolRotation rot, double? shuntGroundOffsetY = null)
+        MatchElement e, double x, double y, SymbolRotation rot, int digits,
+        double? shuntGroundOffsetY = null)
     {
         bool isL = e.Type == ElementType.L;
         var c = new EditableComponent
@@ -272,7 +281,7 @@ public static class MatchFlatten
         };
 
         var quantity = isL ? MatchQuantity.Inductance : MatchQuantity.Capacitance;
-        var (text, unit) = Exact(e.Value, quantity);
+        var (text, unit) = Value(e.Value, quantity, digits);
         string type = isL ? "L" : "C";
         c.Parameters.Add(new EditableParameter
         {
@@ -293,9 +302,9 @@ public static class MatchFlatten
         // … including the fallback: a block too wide for the gap to the next column goes UNDER the
         // arm's ground instead (owner, same round: "the flatten to cell should also do this"). Each
         // drawing measures the rows IT draws, which is why the strings below are built the way
-        // EditableComponent.BuildRenderModel will build them — the cell writes its values at 15
-        // significant digits, so its value row is genuinely wider than the pane's three-digit one and
-        // genuinely does bleed at the same pitch.
+        // EditableComponent.BuildRenderModel will build them — at the Designer's own digit count the
+        // two rows are the same width, and a flatten asked for more digits than the pane shows has a
+        // genuinely wider value row that genuinely does bleed at the same pitch.
         if (rot == SymbolRotation.R0)
         {
             var (dx, dy) = shuntGroundOffsetY is { } groundDy
@@ -319,24 +328,30 @@ public static class MatchFlatten
     // ── Values ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// A value in an engineering unit, at <b>15 significant digits</b>.
+    /// A value in an engineering unit, at the <b>Designer's own significant digits</b>.
     /// </summary>
     /// <remarks>
-    /// <b>The digit count is load-bearing, not a display choice.</b> The gate on this feature is that
-    /// the flattened cell and the component agree to 1e-12 in S-parameters; the Designer's own six
-    /// significant digits would carry a relative 1e-7 into every element and miss it by five orders
-    /// of magnitude. Fifteen round-trips a double to well within one part in 10^14, which the unit
-    /// scaling (a power of ten, and therefore not exact in binary) then perturbs by an ulp — total
-    /// error around 1e-15, and the measured S-parameter agreement is ~1e-15 as a result.
+    /// <b>The flattened cell reads exactly as the Designer's pane did</b> (owner, 2026-08-28: an
+    /// inductor shown as 1.201 pH must not land in the cell as 1.20099999999304 pH). The digit count
+    /// is the readout setting, and the same <see cref="MatchValueFormat.Significant"/> the pane and
+    /// the value grid format with — so the two drawings show one number, not two spellings of it.
+    ///
+    /// <para><b>This is a deliberate trade against exactness, made by the owner.</b> The values
+    /// written are ROUNDED ones, so the flattened cell no longer reproduces the <c>Match</c>
+    /// component's S-parameters to machine precision — at the default three digits it agrees to
+    /// roughly one part in a thousand, which is the rounding and nothing else. The earlier writer
+    /// used 15 digits precisely to hold that agreement at 1e-12; <c>MatchFlattenTests</c> still
+    /// gates it there by asking for 15 digits explicitly, which is what separates a placement or
+    /// wiring bug (orders of magnitude) from the rounding (relative 10^−digits).</para>
     /// </remarks>
-    private static (string Text, string Unit) Exact(double value, MatchQuantity quantity)
+    private static (string Text, string Unit) Value(double value, MatchQuantity quantity, int digits)
     {
         string unit = MatchValueFormat.AutoUnitFor(value, quantity);
         // The Designer's Auto ladder has one rung the Parameter Editor's unit picker does not offer;
         // writing it would give the user a unit they could read but not re-select.
         if (unit == "fH") unit = "pH";
         double scaled = value / MatchValueFormat.Scale(unit);
-        return (scaled.ToString("G15", CultureInfo.InvariantCulture), unit);
+        return (MatchValueFormat.Significant(scaled, digits), unit);
     }
 
     // ── The annotation ────────────────────────────────────────────────────────
@@ -352,15 +367,22 @@ public static class MatchFlatten
         ArgumentNullException.ThrowIfNull(design);
 
         var network = rebuild.Network!;
-        double worst = MatchResponse.WorstReturnLossDb(network, design.F1, design.F2);
-        var (il, ripple) = MatchResponse.InsertionLoss(network, design.F1, design.F2);
+        var eff = design.Effective;
+        double worst = MatchResponse.WorstReturnLossDb(network, design.Bands);
+        var (il, ripple) = MatchResponse.InsertionLoss(network, eff.F1, eff.F2);
 
-        string band = $"{Ghz(design.F1)} – {Ghz(design.F2)} GHz";
+        // The EFFECTIVE bands (match.md §18.3), because they are what the ladder in the cell was
+        // built to; the requested pair follows on its own line when symmetrisation moved one, so the
+        // record states both and a reader can see which is which.
+        string band = design.BandCount >= 2
+            ? string.Join(" & ", design.Bands.Select(b => $"{Ghz(b.Lo)} – {Ghz(b.Hi)}")) + " GHz"
+            : $"{Ghz(design.F1)} – {Ghz(design.F2)} GHz";
         var lines = new List<string>
         {
             $"Matching network flattened from {instanceName}.",
             $"Band {band} · order {design.Order.ToString(CultureInfo.InvariantCulture)} · "
-            + $"{FormName(design.Form)} · {ResponseName(design.Response)}",
+            + $"{BandWord(design)} · "
+            + $"{ResponseName(design.Response)}",
             $"Termination 1 (pin 1): {TerminationLine(design, design.Term1)}",
             $"Termination 2 (pin 2): {TerminationLine(design, design.Term2)}",
             $"Worst in-band return loss {F(-worst, "0.00")} dB · insertion loss {F(il, "0.000")} dB · "
@@ -368,6 +390,17 @@ public static class MatchFlatten
             $"Π N² {F(rebuild.Achieved, "0.#####")} / {F(rebuild.Required, "0.#####")}"
                 + (rebuild.OnTarget ? "" : "  (not reached)"),
         };
+
+        if (design.BandCount >= 2 && eff.Widened)
+        {
+            var requested = design.BandCount >= 3
+                ? new[] { (design.F1, design.F2), (design.F3, design.F4), (design.F5, design.F6) }
+                : [(design.F1, design.F2), (design.F3, design.F4)];
+            lines.Insert(2,
+                "Requested "
+                + string.Join(" & ", requested.Select(b => $"{Ghz(b.Item1)} – {Ghz(b.Item2)}"))
+                + " GHz. " + eff.Note);
+        }
 
         // The Terms carry the LADDER's own port resistances, because reproducing the Designer's plot
         // is what they are for and that is what the plot is referenced to. In a finished design the
@@ -402,6 +435,18 @@ public static class MatchFlatten
                + (t.Probed ? ", probed from the schematic" : "");
     }
 
+    /// <summary>What a record calls the network: its FORM, or its band count while multiband.</summary>
+    /// <remarks>
+    /// Every multiband row is bandpass (match.md §18.6), so the form word would say nothing there and
+    /// the band count is what distinguishes the design.
+    /// </remarks>
+    private static string BandWord(MatchDesign design) => design.BandCount switch
+    {
+        >= 3 => "tri-band",
+        2 => "dual-band",
+        _ => FormName(design.Form),
+    };
+
     private static string FormName(NetworkForm form) => form switch
     {
         NetworkForm.Lowpass  => "lowpass",
@@ -435,8 +480,24 @@ public static class MatchFlatten
     /// generated cell's symbol aliased to the application's own glyph. The round-trip through the
     /// <c>.csym</c> serializer is the deep copy, and it is the same bytes the file gets.
     /// </remarks>
-    public static Symbol MatchSymbolCopy() =>
-        SymbolPersistence.Deserialize(SymbolPersistence.Serialize(BuiltInSymbols.Primitives(SymbolKind.Match)));
+    public static Symbol MatchSymbolCopy() => MatchSymbolCopy(NetworkForm.Bandpass, 1);
+
+    /// <summary>
+    /// The glyph <paramref name="design"/> renders as — the flattened cell wears the same symbol the
+    /// Match wore, so the in-place replacement of §11.2 changes what the component IS and not what it
+    /// looks like. A lowpass ladder that flattened into a bandpass glyph would be the schematic
+    /// telling a reader something untrue about the cell it just gained.
+    /// </summary>
+    /// <inheritdoc cref="MatchSymbolCopy()"/>
+    public static Symbol MatchSymbolCopy(MatchDesign design)
+    {
+        ArgumentNullException.ThrowIfNull(design);
+        return MatchSymbolCopy(design.Form, design.BandCount);
+    }
+
+    private static Symbol MatchSymbolCopy(NetworkForm form, int bandCount) =>
+        SymbolPersistence.Deserialize(
+            SymbolPersistence.Serialize(BuiltInSymbols.PrimitivesForMatch(form, bandCount)));
 
     // ── Writing ───────────────────────────────────────────────────────────────
 
@@ -494,7 +555,7 @@ public static class MatchFlatten
             string symbolFile = cellName + CellFolder.ViewExtension(ViewType.Symbol);
             string symbolPath = Path.Combine(
                 CellFolder.SubFolderPath(cellDir, ViewType.Symbol), symbolFile);
-            SymbolPersistence.SaveToFile(symbolPath, MatchSymbolCopy());
+            SymbolPersistence.SaveToFile(symbolPath, MatchSymbolCopy(design));
             written.Add(symbolPath);
 
             string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);

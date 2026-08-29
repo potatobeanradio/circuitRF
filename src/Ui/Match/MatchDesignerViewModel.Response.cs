@@ -150,13 +150,24 @@ public sealed partial class MatchDesignerViewModel
         }
     }
 
-    /// <summary>The plotted frequency grid: the design band widened by <see cref="PlotBandFraction"/>.</summary>
+    /// <summary>
+    /// The plotted frequency grid: the design's EFFECTIVE outer band widened by
+    /// <see cref="PlotBandFraction"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Outer, so a multiband design shows every band AND every gap</b> (match.md §18.7) — the gap
+    /// mismatch is the design working, and a plot that cropped to one band would hide it. For a
+    /// single band the effective outer pair IS (F1, F2), so nothing about the single-band plot moves.
+    /// </remarks>
     public double[] PlotFrequencies()
     {
-        double span = _design.F2 - _design.F1;
+        // EffectiveBands.Outer, not (F1, F4): a tri-band design's outer edge is F6, and cropping to
+        // F4 would leave the third band off the plot entirely.
+        var (outerLo, outerHi) = _design.Effective.Outer;
+        double span = outerHi - outerLo;
         double pad = span * Math.Max(0.0, _design.PlotBandFraction);
-        double lo = Math.Max(_design.F1 - pad, span * 1e-6);
-        double hi = _design.F2 + pad;
+        double lo = Math.Max(outerLo - pad, span * 1e-6);
+        double hi = outerHi + pad;
         int n = Math.Max(2, _design.PlotPoints);
 
         var f = new double[n];
@@ -177,7 +188,23 @@ public sealed partial class MatchDesignerViewModel
             ResponseSnp = null;
             MagnitudePlot.Traces.Clear();
             PhasePlot.Traces.Clear();
-            ResponseError = _rebuild?.Refusal is { } r ? r.Message : "";
+            // ── A SYNTHESIS REFUSAL IS NOT REPORTED HERE ─────────────────────
+            //
+            // Owner-reported, 2026-08-28: a tri-band design that reaches nothing covers the window in
+            // warning text — the same refusal was rendered THREE times, in the Solutions panel and
+            // twice under the plots (this line, and the status card's own Status.Refusal.Message,
+            // which is the identical string because RefreshStatus takes it from the same _rebuild).
+            //
+            // The Solutions panel is where a refusal belongs: it is the panel that lists what the
+            // whole cross-product found, so it is the one that can say nothing was found AND what to
+            // change (see MatchAdvice). Under the plots the sentence is pure repetition of a fact the
+            // empty plots already state, and it pushes the numeric readouts off screen.
+            //
+            // ResponseError itself stays — it still carries the things the Solutions panel cannot
+            // know about: an infinite element from a transform on its bound, an engine failure on a
+            // network that DID synthesise, and an export failure. Those are not "no solution".
+            // The refused end still turns red, which is the signal that survives.
+            ResponseError = "";
             AnnounceRebuiltPlots();
             return;
         }

@@ -535,12 +535,13 @@
                  filter as a view over the result. What stays here is what genuinely specifies the
                  PROBLEM rather than the search: what is at each end, over what band, to what ripple.
 
-                 The two automatic-change notes those cards carried (OrderNote, QAdjustNote) moved to
-                 the top of the pane rather than going with them. They are not about a control — they
-                 say that the design changed underneath the user, which is still true and still worth
-                 saying when there is no longer a control to say it beside. -->
+                 The automatic-change note those cards carried (QAdjustNote) moved to the top of the
+                 pane rather than going with them. It is not about a control — it says that the design
+                 changed underneath the user, which is still true and still worth saying when there is
+                 no longer a control to say it beside. The ORDER's note went entirely; see the note
+                 beside QAdjustNote for why. -->
             <Border Grid.Column="0" Classes="pane">
-                <Grid RowDefinitions="Auto,Auto,*">
+                <Grid Name="SpecificationPane" RowDefinitions="Auto,Auto,*">
                     <TextBlock Classes="panelhdr" Text="Specification"/>
 
                     <!-- MaxHeight, so the solutions list below always has room. An Auto row over a
@@ -558,8 +559,26 @@
                          left, so what this cap actually decides is the FLOOR under the Solutions
                          list, which is the half of the pane the owner asked to grow — a cap that
                          merely tracked the content would have handed the saving straight back the
-                         first time a note appeared. -->
-                    <ScrollViewer Grid.Row="1" MaxHeight="300"
+                         first time a note appeared.
+
+                         300 IS NOW THE FLOOR UNDER THE CAP, NOT THE CAP (owner, 2026-08-28: when
+                         Dual or Tri is selected the Specification group is to expand just enough,
+                         at the Solutions group's expense, that every f-row and every note is
+                         readable without scrolling this pane). Dual adds the f3 and f4 rows and Tri
+                         adds f5 and f6 on top, and both can add the effective-band note as well —
+                         which is more than a single band's content and therefore more than 300. A
+                         fixed cap answered that by scrolling, which puts the band edges the user is
+                         editing behind a scrollbar in the one pane whose whole content is inputs.
+
+                         SyncSpecificationCap raises the cap to whatever the pane can spare above
+                         its SolutionsFloor, and never below this 300 — which is now only what the
+                         pane rests at until the first layout pass reaches that method. The growth
+                         is MINIMAL because a ScrollViewer in an Auto row asks for its CONTENT's
+                         height and the cap merely bounds it: each band count takes exactly its own
+                         rows and notes and nothing more (351 px Single, 411 Dual, 455 Tri, measured
+                         at this window's own size). The literal is mirrored by
+                         MatchDesignerWindow.SpecificationFloor. -->
+                    <ScrollViewer Grid.Row="1" Name="SpecificationScroll" MaxHeight="300"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
@@ -579,12 +598,18 @@
                              reported and not rewritten. -->
                         <TextBlock Classes="note" Text="{Binding EchoNote}"
                                    IsVisible="{Binding EchoNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                        <!-- An order the terminations no longer permit is MOVED, and a Q-adjust they
-                             have overtaken is CLEARED. Both used to sit inside the card whose control
-                             they were about; both cards are gone and both changes still happen, so
-                             they say so here. See AdjustOrderForParity and AdjustQAdjustForAnalysisEnd. -->
-                        <TextBlock Classes="note" Text="{Binding OrderNote}"
-                                   IsVisible="{Binding OrderNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <!-- A Q-adjust the terminations have overtaken is CLEARED, and says so: it
+                             is a number the user typed, and nothing else on screen reports that it is
+                             gone. See AdjustQAdjustForAnalysisEnd.
+
+                             THE ORDER'S NOTE IS NOT HERE, and that is deliberate (owner-reported,
+                             2026-08-28: "I don't want to see messages like this after I make changes
+                             just because the order changed. I can clearly see the order changed
+                             because a different solution card is now selected, so cluttering the UI
+                             with this message is bad UX", and then to drop the dead-end line too).
+                             An adjusted order is visible on the applied card, which names its own
+                             order; a pair that permits NO order refuses, and the refusal is in the
+                             status strip. Both were second copies of something already on screen. -->
                         <TextBlock Classes="note" Text="{Binding QAdjustNote}"
                                    IsVisible="{Binding QAdjustNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
@@ -629,19 +654,96 @@
                              be told to. -->
                         <Border Classes="card">
                             <StackPanel Spacing="3">
-                                <TextBlock Classes="cardhdr" Text="Frequency Band &amp; Ripple"/>
+                                <!-- The band-count selector sits in the HEADER row, beside the card's
+                                     own title, because it decides what the rows below it mean rather
+                                     than being one of them (match.md §18.7). Same IconSelectButton
+                                     the termination card uses for topology and kind, so the three
+                                     segmented pickers in this pane are one control.
+
+                                     Single · Dual · Tri. Tri keeps its MIDDLE band and mirrors the
+                                     outer pair about it (match.md §18.3), so switching Dual -> Tri
+                                     moves the existing second band out to f5-f6 and seeds a new
+                                     middle band between them — see BandCount. -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="cardhdr" Text="Frequency Band &amp; Ripple"
+                                               VerticalAlignment="Center"/>
+                                    <ddc:IconSelectButton Grid.Column="1" Width="66" Height="19"
+                                                          HorizontalAlignment="Right"
+                                                          Background="{DynamicResource ButtonBackground}"
+                                                          ItemsSource="{x:Static mvm:MatchDesignerViewModel.BandsOptions}"
+                                                          SelectedItem="{Binding BandsChoice, Mode=TwoWay}"
+                                                          ToolTip.Tip="How many bands to match over. Dual matches f1–f2 and f3–f4 at once and Tri adds f5–f6, leaving the gaps between them deliberately unmatched — which is what buys the in-band return loss.">
+                                        <ddc:IconSelectButton.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontSize="10"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </ddc:IconSelectButton.ItemTemplate>
+                                    </ddc:IconSelectButton>
+                                </Grid>
                                 <Grid ColumnDefinitions="Auto,*">
                                     <TextBlock Classes="detailLabel" Text="f1"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                         Text="{Binding F1Entry, Mode=TwoWay}"
-                                                        ToolTip.Tip="Lower band edge. Double-click to edit; a typed unit (2.4 GHz, 900 MHz) moves BOTH edges' display unit."/>
+                                                        ToolTip.Tip="Lower band edge. Double-click to edit; a typed unit (2.4 GHz, 900 MHz) moves EVERY edge's display unit."/>
                                 </Grid>
                                 <Grid ColumnDefinitions="Auto,*">
                                     <TextBlock Classes="detailLabel" Text="f2"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val"
                                                         Text="{Binding F2Entry, Mode=TwoWay}"
-                                                        ToolTip.Tip="Upper band edge. Double-click to edit; a typed unit moves BOTH edges' display unit."/>
+                                                        ToolTip.Tip="Upper band edge. Double-click to edit; a typed unit moves EVERY edge's display unit."/>
                                 </Grid>
+
+                                <!-- HIDDEN when Single, not disabled: f3 and f4 are not inputs to a
+                                     single-band design at all, and a dimmed pair of frequencies reads
+                                     as "set these later" rather than "these do not exist here". -->
+                                <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsDualBand}">
+                                    <TextBlock Classes="detailLabel" Text="f3"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding F3Entry, Mode=TwoWay}"
+                                                        ToolTip.Tip="Second band's lower edge. The gap f2–f3 is deliberately left unmatched."/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsDualBand}">
+                                    <TextBlock Classes="detailLabel" Text="f4"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding F4Entry, Mode=TwoWay}"
+                                                        ToolTip.Tip="Second band's upper edge."/>
+                                </Grid>
+
+                                <!-- The third band, hidden unless Tri, for the same reason f3/f4 are
+                                     hidden unless Dual. In tri-band the MIDDLE band (f3–f4) is the
+                                     one kept exactly; f1–f2 and f5–f6 are widened onto each other's
+                                     mirror image about its centre (match.md §18.3). -->
+                                <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsTriBand}">
+                                    <TextBlock Classes="detailLabel" Text="f5"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding F5Entry, Mode=TwoWay}"
+                                                        ToolTip.Tip="Third band's lower edge. The gap f4–f5 is deliberately left unmatched."/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsTriBand}">
+                                    <TextBlock Classes="detailLabel" Text="f6"/>
+                                    <ctl:InlineEditText Grid.Column="1" Classes="val"
+                                                        Text="{Binding F6Entry, Mode=TwoWay}"
+                                                        ToolTip.Tip="Third band's upper edge."/>
+                                </Grid>
+
+                                <!-- The effective-band note (match.md §18.3). The two bands must be
+                                     geometric mirrors about the gap centre, four typed frequencies
+                                     will not be, and the wider band is kept while the narrower one is
+                                     widened AWAY from the gap. Designing silently to a spec nobody
+                                     typed is the one thing that rule forbids, so this line is shown
+                                     whenever anything moved — plain text, no icon, no colour. -->
+                                <TextBlock Classes="note" Text="{Binding EffectiveBandNote}"
+                                           IsVisible="{Binding EffectiveBandNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                                <!-- The gap-rise note (match.md §18.10). A prototype whose gap rise
+                                     is 1 does not exclude the gaps at all — the "multiband" design is
+                                     a single wide match over the outer span, which is exactly what a
+                                     tri-band spec with a narrow middle band produces at order 1 or 2.
+                                     Nothing is refused: at that degree no polynomial does better.
+                                     The note says so, and names the order that would. -->
+                                <TextBlock Classes="note" Text="{Binding GapRiseNote}"
+                                           IsVisible="{Binding GapRiseNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                 <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding RippleEnabled}">
                                     <TextBlock Classes="detailLabel" Text="Ripple, dB"/>
                                     <ctl:InlineEditText Grid.Column="1" Classes="val" MinWidth="46"
@@ -729,7 +831,8 @@
                                                  compare like with like: three bandpass rows and
                                                  three lowpass rows at the same order are two
                                                  different networks answering the same question. -->
-                                            <ItemsControl ItemsSource="{Binding Filter.Forms}">
+                                            <ItemsControl ItemsSource="{Binding Filter.Forms}"
+                                                          IsVisible="{Binding Filter.ShowFormToggles}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="mvm:MatchSolutionFilterToggle">
                                                         <CheckBox IsChecked="{Binding IsOn}"
@@ -737,6 +840,13 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
+                                            <!-- While the design is multiband every row is bandpass
+                                                 (match.md §18.6), so the three toggles are replaced
+                                                 by the one line that says why — rather than listing
+                                                 two forms that can produce nothing. -->
+                                            <TextBlock Text="{Binding Filter.FormGroupNote}" FontSize="11"
+                                                       MaxWidth="220" TextWrapping="Wrap"
+                                                       IsVisible="{Binding Filter.FormGroupNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                             <Separator/>
                                             <ItemsControl ItemsSource="{Binding Filter.Orders}">
                                                 <ItemsControl.ItemTemplate>
@@ -758,7 +868,7 @@
                                             <Separator/>
                                             <CheckBox IsChecked="{Binding Filter.ShowQAdjusted}"
                                                       Content="Q-adjusted" FontSize="12"
-                                                      ToolTip.Tip="§4.6's deliberately inflated analysis-end Q — an ordinary network with one more element at that end. Listed by default."/>
+                                                      ToolTip.Tip="A deliberately inflated analysis-end Q — an ordinary network with one more element at that end. Listed by default."/>
                                             <CheckBox IsChecked="{Binding Filter.ShowNegativeComponents}"
                                                       Content="Allow negative components" FontSize="12"
                                                       ToolTip.Tip="Solutions carrying an element at or below zero — exact, and only buildable by absorbing it into a neighbour. Hidden by default."/>
@@ -769,8 +879,17 @@
                         </Grid>
                         <TextBlock Grid.Row="1" Classes="note" Text="{Binding SolutionsProgressNote}"
                                    IsVisible="{Binding IsSearchingSolutions}"/>
-                        <TextBlock Grid.Row="2" Classes="warn" Text="{Binding SolutionsRefusal}"
-                                   IsVisible="{Binding SolutionsRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <StackPanel Grid.Row="2" Spacing="2">
+                            <TextBlock Classes="warn" Text="{Binding SolutionsRefusal}"
+                                       IsVisible="{Binding SolutionsRefusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <!-- The loosen hints (match.md §18.10). A HINT, never a refusal: it
+                                 appears beside solutions that exist, and it says what the wall is,
+                                 which termination and which band set it, and the four one-variable
+                                 changes that would move it. Every clause is a closed form solved for
+                                 -15 dB — nothing here searches. -->
+                            <TextBlock Classes="warn" Text="{Binding FeasibilityHint}"
+                                       IsVisible="{Binding FeasibilityHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
                         <!-- ── APPLYING A SOLUTION MUST NOT MOVE THE LIST ────────────────
                              Owner-reported, 2026-08-28: applying a solution — by double-clicking a
                              card, or by its Apply button — nudges the scroll view. It should not move
@@ -1168,20 +1287,58 @@
                         <TextBox Grid.Column="3" Classes="num" Name="PlotPointsBox"/>
                     </Grid>
 
+                    <!-- ── The readout card is SELECTABLE (owner, 2026-08-28) ──
+                         Every line here is a number a user copies into a note, a message or another
+                         tool, and a TextBlock offers no way to get one out but to retype it. Same
+                         rule the solution cards, the Messages pane and the harmonicaRF readout strip
+                         already follow.
+
+                         The `note` and `warn` classes are already `:is(TextBlock)` selectors (see the
+                         styles above), so the notes keep their size and colour; the readout lines
+                         carry their FontSize inline and never depended on a type selector at all.
+
+                         Unlike the solutions list, nothing here is a click target: this card sits in
+                         a plain ScrollViewer, so SelectableTextBlock's pointer capture takes no
+                         gesture away and no tunnelling handler is needed. -->
                     <Border Grid.Row="4" Classes="card">
                         <StackPanel Spacing="2">
-                            <TextBlock Text="{Binding Status.QText}" FontSize="11"/>
-                            <TextBlock Text="{Binding Status.ReturnLossText}" FontSize="11"/>
-                            <TextBlock Text="{Binding Status.LossText}" FontSize="11"/>
-                            <TextBlock Text="{Binding Status.RatioText}" FontSize="11"/>
-                            <TextBlock Classes="warn" Text="{Binding Status.Refusal.Message}"
-                                       IsVisible="{Binding Status.IsRefused}"/>
-                            <TextBlock Classes="warn" Text="{Binding ResponseError}"
-                                       IsVisible="{Binding ResponseError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <SelectableTextBlock Text="{Binding Status.QText}" FontSize="11"/>
+                            <SelectableTextBlock Text="{Binding Status.ReturnLossText}" FontSize="11"/>
+                            <!-- The Fano ceiling (match.md §18.10) — the best any lossless network
+                                 could do with these terminations over these bands. It is arithmetic
+                                 on the specification, so it is here before any synthesis has run and
+                                 it is still here when one refuses. The tooltip carries both ends,
+                                 both other band sets, and what §18.3's mirror widening cost. -->
+                            <SelectableTextBlock Text="{Binding Status.CeilingText}" FontSize="11"
+                                                 IsVisible="{Binding Status.CeilingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                                 ToolTip.Tip="{Binding Status.CeilingTip}"/>
+                            <!-- The gap mismatch (match.md §18.4) — the number that says the design
+                                 is working, so it sits beside the in-band figure rather than behind a
+                                 tooltip. Empty, and therefore zero-width, for a single band. -->
+                            <SelectableTextBlock Text="{Binding Status.GapText}" FontSize="11"
+                                                 IsVisible="{Binding Status.GapText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <!-- Tri-band has TWO gaps, and they are independent numbers: mirroring
+                                 makes them equal on a symmetric spec and unequal the moment the
+                                 middle band is off centre. -->
+                            <SelectableTextBlock Text="{Binding Status.GapText2}" FontSize="11"
+                                                 IsVisible="{Binding Status.GapText2, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <SelectableTextBlock Text="{Binding Status.LossText}" FontSize="11"/>
+                            <SelectableTextBlock Text="{Binding Status.RatioText}" FontSize="11"/>
+                            <!-- NO REFUSAL LINE HERE (owner, 2026-08-28: a tri-band design that
+                                 reaches nothing puts too much warning text on screen). The synthesis
+                                 refusal used to be rendered twice in this card — once from
+                                 Status.Refusal.Message and once from ResponseError, which
+                                 RefreshStatus and UpdatePlots both took from the same rebuild — and
+                                 a third time in the Solutions panel. It is stated once now, in the
+                                 Solutions panel, which is also where the advice about what to change
+                                 can go. Status.IsRefused still blanks the numeric readouts and
+                                 Status.FlaggedEnd still turns the affected termination red. -->
+                            <SelectableTextBlock Classes="warn" Text="{Binding ResponseError}"
+                                                 IsVisible="{Binding ResponseError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                             <ItemsControl ItemsSource="{Binding Notes}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBlock Classes="note" Text="{Binding}"/>
+                                        <SelectableTextBlock Classes="note" Text="{Binding}"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

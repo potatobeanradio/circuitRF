@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CircuitRF.Core.Matching;
@@ -25,22 +26,33 @@ public partial class ParameterEditorViewModel
 
     /// <summary>
     /// The parameters that must NOT appear as generic text rows — the same mechanism, and the same
-    /// reason, as <c>IsWBondPanelParameter</c>.
+    /// reason, as <c>IsWBondPanelParameter</c>. For a <c>Match</c> that is <b>every parameter it
+    /// has</b> (owner, 2026-08-28).
     ///
     /// <para><c>Design</c> is the whole matching-network design, base64 of its JSON (match.md §7.2).
     /// It is documented as a HIDDEN parameter and was never meant to be a row: shown as text it is a
     /// screenful of characters nobody can read, act on, or safely edit — and editing it by hand is
     /// the one way to produce a component that refuses at elaboration.</para>
     ///
-    /// <para><b>The ECHO parameters are deliberately NOT on this list.</b> <c>F1</c>, <c>F2</c>,
-    /// <c>Order</c>, <c>Response</c>, <c>R1</c> and <c>R2</c> exist precisely so the design can be
-    /// read — on the schematic and here — and hiding them would remove the only description of the
-    /// network a user has on the page itself. Nothing reads them back (the model takes <c>Design</c>
-    /// and only <c>Design</c>), so an edit to one changes the label and not the circuit; the Designer
-    /// rewrites all six on every committed edit, which is what keeps the label honest.</para>
+    /// <para><b>The ECHO parameters joined it.</b> <c>F1</c>, <c>F2</c>, <c>Bands</c>,
+    /// <c>F3</c>-<c>F6</c>, <c>Order</c>, <c>Response</c>, <c>Form</c>, <c>R1</c> and <c>R2</c> are
+    /// written by the Designer and read back by nothing, so a row offering one is an edit box that
+    /// changes a label and not the circuit — and since the glyph began drawing itself from
+    /// <c>Form</c> and <c>Bands</c>, one that could silently make the symbol describe a network the
+    /// component does not contain. Nothing is hidden by dropping them: the panel above states the
+    /// band, the order, the form, the response and both terminations, and the Designer — the only
+    /// place a Match is edited at all — states the rest.</para>
+    ///
+    /// <para>Read from the registry rather than listed here, so a parameter added to the component
+    /// type is covered the day it is added. A name the registry does not declare is NOT one of ours
+    /// and still gets a row.</para>
     /// </summary>
-    internal static bool IsMatchPanelParameter(string name) =>
-        string.Equals(name, MatchEmbedding.DesignParameter, StringComparison.Ordinal);
+    internal static bool IsMatchPanelParameter(string name) => MatchOwnParameters.Contains(name);
+
+    private static readonly HashSet<string> MatchOwnParameters =
+        ComponentTypeRegistry.DefaultParameters(SymbolKind.Match, 0)
+                             .Select(p => p.Name)
+                             .ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
     /// Raised by <see cref="OpenMatchDesignerCommand"/>. The view opens the window: only it knows
@@ -56,15 +68,46 @@ public partial class ParameterEditorViewModel
         if (_target is { Symbol: SymbolKind.Match }) OpenMatchDesignerRequested?.Invoke(_target);
     }
 
-    /// <summary>The band, "3.3 – 5 GHz".</summary>
-    public string MatchBandSummary => _matchDesign is not { } d
-        ? ""
-        : $"{Ghz(d.F1)} – {Ghz(d.F2)} GHz";
+    /// <summary>
+    /// The band, "3.3 – 5 GHz" — or every EFFECTIVE band for a multiband design, "2.201 – 2.5 &amp;
+    /// 5.15 – 5.85 GHz" (match.md §18.3).
+    /// </summary>
+    /// <remarks>
+    /// <b>The effective bands, not the requested ones</b>, because they are what the network was
+    /// built to; <see cref="MatchBandTooltip"/> carries the requested pair when the two differ, so
+    /// nothing is hidden and the line stays one line.
+    /// </remarks>
+    public string MatchBandSummary
+    {
+        get
+        {
+            if (_matchDesign is not { } d) return "";
+            if (d.BandCount < 2) return $"{Ghz(d.F1)} – {Ghz(d.F2)} GHz";
+            return string.Join(" & ", d.Bands.Select(b => $"{Ghz(b.Lo)} – {Ghz(b.Hi)}")) + " GHz";
+        }
+    }
+
+    /// <summary>The requested bands, when symmetrisation moved one of them; otherwise empty.</summary>
+    public string MatchBandTooltip
+    {
+        get
+        {
+            if (_matchDesign is not { } d || d.BandCount < 2 || !d.Effective.Widened) return "";
+            var requested = d.BandCount >= 3
+                ? new[] { (d.F1, d.F2), (d.F3, d.F4), (d.F5, d.F6) }
+                : [(d.F1, d.F2), (d.F3, d.F4)];
+            return "Requested "
+                   + string.Join(" & ", requested.Select(b => $"{Ghz(b.Item1)} – {Ghz(b.Item2)}"))
+                   + " GHz. " + d.Effective.Note;
+        }
+    }
 
     /// <summary>"order 4 · Chebyshev — Fano optimum".</summary>
     public string MatchOrderSummary => _matchDesign is not { } d
         ? ""
-        : $"order {d.Order} · {FormName(d.Form)} · {ResponseName(d.Response)}";
+        : $"order {d.Order} · "
+          + $"{d.BandCount switch { >= 3 => "tri-band", 2 => "dual-band", _ => FormName(d.Form) }}"
+          + $" · {ResponseName(d.Response)}";
 
     /// <summary>Termination 1, as one line.</summary>
     public string MatchTerm1Summary => _matchDesign is { } d ? TerminationLine(d, d.Term1) : "";
@@ -116,7 +159,7 @@ public partial class ParameterEditorViewModel
                 var rebuild = MatchRebuild.Rebuild(design);
                 if (rebuild.Network is { } network)
                 {
-                    double worst = MatchResponse.WorstReturnLossDb(network, design.F1, design.F2);
+                    double worst = MatchResponse.WorstReturnLossDb(network, design.Bands);
                     _matchSummary = $"worst in-band RL {(-worst).ToString("0.00", CultureInfo.InvariantCulture)} dB"
                                     + (rebuild.OnTarget ? "" : " · Π N² not reached");
                     _matchRefused = !rebuild.OnTarget;

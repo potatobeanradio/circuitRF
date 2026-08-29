@@ -47,7 +47,7 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
 
     internal MatchSolutionRowViewModel(
         MatchDesignerViewModel owner, MatchSolution solution, MatchSolutionBadge badge,
-        int order, ResponseShape response, NetworkForm form)
+        int order, ResponseShape response, NetworkForm form, int bandCount = 1)
     {
         _owner = owner;
         Solution = solution;
@@ -55,6 +55,7 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
         Order = order;
         Response = response;
         Form = form;
+        BandCount = bandCount;
         // Read once from the network the search produced, not recomputed per binding read: a solution
         // is immutable, and this is what the "allow negative components" filter is keyed on.
         HasNegativeComponents = solution.Network?.Elements.Any(e => e.Value <= 0) ?? false;
@@ -71,6 +72,9 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
 
     /// <summary>The network form it was found in (match.md §16).</summary>
     public NetworkForm Form { get; }
+
+    /// <summary>How many bands it was found over (match.md §18). 1 for every single-band row.</summary>
+    public int BandCount { get; }
 
     /// <summary>
     /// True when some element of the finished network is zero or negative.
@@ -131,10 +135,26 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
     /// the unnamed ones were a different KIND of answer.
     /// </remarks>
     public string TitleText =>
-        $"{ResponseName} · {FormName(Form)} · order {Order.ToString(CultureInfo.InvariantCulture)}";
+        $"{ResponseName} · {ShapeWord} · order {Order.ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// The word in the middle of the heading: the FORM for a single-band row, "dual-band" or
+    /// "tri-band" for a multiband one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not both.</b> While the design is multiband every row is bandpass (match.md §18.6), so the
+    /// form word would be the same on every card and would say nothing; the band count is the thing
+    /// that distinguishes this list from the single-band one.
+    /// </remarks>
+    public string ShapeWord => BandCount switch
+    {
+        >= 3 => "tri-band",
+        2 => "dual-band",
+        _ => FormName(Form),
+    };
 
     /// <summary>The response family, short enough for a card in the specification column.</summary>
-    public string ResponseName => FamilyName(Response, Form);
+    public string ResponseName => FamilyName(Response, Form, BandCount);
 
     /// <summary>The form, lower-case, as the card and the footer spell it.</summary>
     public static string FormName(NetworkForm form) => form switch
@@ -168,9 +188,22 @@ public sealed partial class MatchSolutionRowViewModel : ObservableObject
     /// reading "Chebyshev (single-match)" would be drawing a contrast with an option that is not on
     /// offer there.
     /// </remarks>
-    public static string FamilyName(ResponseShape shape, NetworkForm form) => shape switch
+    public static string FamilyName(ResponseShape shape, NetworkForm form) =>
+        FamilyName(shape, form, 1);
+
+    /// <inheritdoc cref="FamilyName(ResponseShape, NetworkForm)"/>
+    /// <param name="shape">The family.</param>
+    /// <param name="form">The form the row was found in.</param>
+    /// <param name="bandCount">How many bands it was found over (match.md §18).</param>
+    /// <remarks>
+    /// <b>Multiband drops the qualifier for the same reason the other two forms do</b>: match.md
+    /// §18.2 does not offer the double-match Chebyshev over two or three bands (it is a 2-D solve in
+    /// (K, eps^2) for both end elements), so a card reading "Chebyshev (single-match)" would be
+    /// drawing a contrast with an option that is not on offer there.
+    /// </remarks>
+    public static string FamilyName(ResponseShape shape, NetworkForm form, int bandCount) => shape switch
     {
-        ResponseShape.ChebyshevFano when form != NetworkForm.Bandpass => "Chebyshev",
+        ResponseShape.ChebyshevFano when form != NetworkForm.Bandpass || bandCount >= 2 => "Chebyshev",
         ResponseShape.ChebyshevFano     => "Chebyshev (single-match)",
         ResponseShape.ChebyshevTwoEnded => "Chebyshev (double-match)",
         ResponseShape.Butterworth       => "Butterworth",

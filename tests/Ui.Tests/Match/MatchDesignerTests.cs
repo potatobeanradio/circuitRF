@@ -413,11 +413,23 @@ public class MatchDesignerTests(ITestOutputHelper output)
 
     /// <summary>
     /// Switching a termination's topology changes the parity the order has to have; the Designer
-    /// adjusts it and SAYS SO, because a control that silently changes another control is worse than
-    /// one that explains itself (match.md §9.2).
+    /// adjusts it, <b>silently</b>, and stores what it adjusted to.
     /// </summary>
+    /// <remarks>
+    /// <b>This test used to demand an explanatory line, and now demands that there is none</b>
+    /// (owner-reported, 2026-08-28: <i>"I don't want to see messages like this after I make changes
+    /// just because the order changed. I can clearly see the order changed because a different
+    /// solution card is now selected, so cluttering the UI with this message is bad UX"</i>).
+    ///
+    /// <para>The line was written before the Solutions panel became the specification, when the order
+    /// was a control the user set by hand and nothing else on screen said it had moved. It now moves
+    /// BECAUSE a card is applied, that card is the bold green-bordered row in the list, and it names
+    /// its own order — so the sentence restated something already on screen, in the one column where
+    /// height is scarce. The parity rule is expressed by <see cref="MatchDesignerViewModel.OrderOptions"/>
+    /// offering what it offers, which is what the assertions below check.</para>
+    /// </remarks>
     [Fact]
-    public void ATopologyChange_AdjustsTheOrderAndEmitsTheExplanatoryLine()
+    public void ATopologyChange_AdjustsTheOrder_AndSaysNothingAboutIt()
     {
         var (_, comp, designer) = Open(Golden());
         Assert.Equal(4, designer.Order);                                  // mixed pair -> even
@@ -427,10 +439,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
 
         Assert.Equal([3, 5], designer.OrderOptions);
         Assert.Contains(designer.Order, designer.OrderOptions);
-        Assert.Contains("cannot absorb both ends", designer.OrderNote);
-        Assert.Contains($"moved to {designer.Order}", designer.OrderNote);
         Assert.Equal(designer.Order, StoredDesign(comp).Order);
-        output.WriteLine(designer.OrderNote);
 
         designer.Dispose();
     }

@@ -1,8 +1,10 @@
 # circuitRF — Match: the absorbing impedance-matching component
 
-**Status:** Proposal — rev 2 · **Date:** 2026-08-19, rev 2 2026-08-28 (§6.8–§6.9, §16–§17: response
-families excluded, family naming, lowpass/highpass forms) · **Phase:** MN0 (design layer); the
-lowpass/highpass form is **MN-LP** (`docs/sonnet-briefs/brief-match-lowpass-highpass-form.md`)
+**Status:** Proposal — rev 3 · **Date:** 2026-08-19, rev 2 2026-08-28 (§6.8–§6.9, §16–§17: response
+families excluded, family naming, lowpass/highpass forms), rev 3 2026-08-28 (§18–§19: multiband) ·
+**Phase:** MN0 (design layer); the lowpass/highpass form is **MN-LP**
+(`docs/sonnet-briefs/brief-match-lowpass-highpass-form.md`); dual-band is **MN-MB1** and tri-band +
+Remez is **MN-MB2** (`docs/sonnet-briefs/brief-match-multiband-{dual,tri-remez}.md`)
 
 **Match** is a two-port schematic component that synthesises a bandpass LC matching network which
 matches **both** of its ports simultaneously to the external network — and which **absorbs each
@@ -52,6 +54,8 @@ supplies them, which is what makes the match real.
   **series or shunt** topology, plus purely resistive terminations.
 - Selectable response: **Chebyshev (Fano-optimum)**, **Chebyshev (fixed ripple)**, **Butterworth**, and
   **Bessel** where feasible (§6). **Elliptic and inverse Chebyshev are excluded, with reasons** (§6.8).
+- **Multiband — dual and tri-band** (§18, rev 3): the same bandpass ladder matched over two or three
+  bands at once, geometrically mirrored about the gap centre, with the gap deliberately unmatched.
 - **Three network forms — bandpass, lowpass and highpass** (§16, rev 2). Bandpass is §4's synthesis;
   lowpass and highpass are ladders of single elements matched between F1 and F2, with their own
   absorption rules and no Norton degrees of freedom.
@@ -630,6 +634,8 @@ One serializable object, the single source of truth:
     F1, F2                        double, Hz
     Order                         int  (2…6)   — n in-band match points; 2n elements in every form (§16.2)
     Form                          enum { Bandpass, Lowpass, Highpass }   (rev 2, §16; default Bandpass, additive)
+    BandCount                     int  (1, 2 or 3; rev 3, §18.8; default 1, additive)
+    F3, F4, F5, F6                double, Hz  (the second and third bands; 0 when unused; additive)
     Response                      enum { ChebyshevFano, ChebyshevTwoEnded, Butterworth, Bessel }
     RippleDb                      double        (real-to-real prototype only; default 0.1)
     Term1, Term2                  Termination { R, Kind{None,C,L}, Topology{Series,Parallel}, Value,
@@ -662,9 +668,19 @@ for `N_min > N_max`, which is the symptom of exactly this staleness.)
 
 - **`Design`** — hidden string parameter, base64 of the JSON, exactly the `wBond` `Design` pattern. This
   is authoritative and complete.
-- **`F1`, `F2`, `Order`, `Response`, `R1`, `R2`** — *echo* parameters, written **only** by the Designer,
-  read-only in the generic parameter editor, existing so the user can display them on the schematic.
-  This mirrors `wBond`'s `Arrays`: bookkeeping maintained by the editor, never a second input.
+- **`F1`, `F2`, `Order`, `Response`, `Form`, `Bands`, `F3`-`F6`, `R1`, `R2`** — *echo* parameters,
+  written **only** by the Designer, existing so the design can be READ: they are what makes the `.cnl`
+  line legible where the payload is still a base64 token, and `Form` and `Bands` are what the symbol
+  draws itself from (§8.4). This mirrors `wBond`'s `Arrays`: bookkeeping maintained by the editor,
+  never a second input.
+- **A `Match` exposes NO parameter to the schematic, and offers no generic parameter row** (owner,
+  2026-08-28). `F1`, `F2` and `Order` used to be drawn beside the symbol; what they were saying —
+  which band, how big — the glyph now says itself, and the compact panel of §9.8 says in words. Every
+  default is `ShowOnSchematic: false`, `EditableComponent.LabelParameters` enforces the same on an
+  instance placed before the change (whose file still says true), and `IsMatchPanelParameter` covers
+  every parameter the registry declares, so the Designer is the only place a Match is edited at all.
+  That also closes the one way the glyph could have been made to lie: nobody can type `Form=Lowpass`
+  beside a bandpass ladder.
 - A `Match` whose `Design` fails to decode refuses at elaboration with a message naming the instance and
   telling the user to re-open the Designer — it does not silently fall back to a default network.
 
@@ -770,10 +786,33 @@ those nodes** keyed on the instance path — the mechanism `Tuner`, `P1Tone` and
 
 ### 8.4 The symbol
 
-A square body carrying the standard bandpass glyph: **three stacked full-cycle sine waves**, with a
-**slash across the top and bottom** ones. Built from three `SinePrimitive`s (`Cycles = 1`,
-`Axis = Horizontal`) plus two `LinePrimitive` slashes and a `RectPrimitive` body, with pins left and
+A square body carrying the standard filter glyph: **three stacked full-cycle sine waves**, with a
+**slash struck through every wave the network blocks**. Built from `SinePrimitive`s (`Cycles = 1`,
+`Axis = Horizontal`) plus `LinePrimitive` slashes and a `RectPrimitive` body, with pins left and
 right. The sine primitive already exists and already rotates and scales correctly.
+
+**The glyph follows the design** (owner, 2026-08-28). The three waves read as a frequency axis with
+the highest at the top, so which two carry a slash says what the network is:
+
+| Design | Slashes | Reads as |
+|---|---|---|
+| Bandpass | top and bottom | the middle band passes |
+| Lowpass | the top **two** | only the lowest band passes |
+| Highpass | the bottom **two** | only the highest band passes |
+| Dual-band | two smaller bandpass stacks, side by side | two passbands |
+| Tri-band | three smaller bandpass stacks, two below one | three passbands |
+
+A multiband design (§18) is bandpass in every one of its bands, so its form is not the question its
+glyph has to answer — *how many passbands* is, and one stack of three waves cannot say. It is drawn
+as one smaller stack per band instead, inside the same body, at the same two pins.
+
+`BuiltInSymbols.PrimitivesForMatch(form, bandCount)` builds and caches the variants, and
+`EditableComponent` selects one per instance exactly as SnP does for `RefNode`/`PinConfig`/`Pitch` and
+the Tuner family does for `ShowBias`. It reads the `Form` and `Bands` **echo** parameters (§7.2), not
+the `Design` payload: this runs on every model rebuild for every component, and base64-decoding a JSON
+document to choose a glyph is not what that path is for. The echo does not become a second input by
+being read here — the engine still reads the payload and only the payload, so the glyph can no more
+change the circuit than the old text label could.
 
 Registry entry: `ComponentTypeRegistry` — display name `Match`, prefix `MN` (`M` is taken by
 `Mutual`), `IsCommon: true`, and a **new** `ComponentCategory.Matching` (owner, 2026-08-19). Search
@@ -1030,7 +1069,8 @@ A new cell folder — `.ccell`, `schematic/<name>.csch`, `symbol/<name>.csym` �
 - **The `Design` blob**, carried onto the cell so `Re-open in Match Designer…` can reconstruct the
   original design later. A flattened cell that has forgotten what it was is a dead end.
 
-The symbol is a **copy of the `Match` symbol** (the bandpass glyph), written to the cell's `.csym`.
+The symbol is a **copy of the `Match` symbol** — the glyph that instance was wearing, form and band
+count included (§8.4) — written to the cell's `.csym`.
 
 ### 11.2 Replacing in place
 
@@ -1113,6 +1153,20 @@ belongs in `src/Core` alongside the rest of the design layer. The firewall is un
 | **No Norton pairs in a single-element ladder** — `NortonTransform.Discover` returns nothing for every lowpass/highpass basis, and `RequiredTransformRatio` is 1 | §16.5; this must fall out of the existing scan, not be special-cased |
 | **Highpass is the dual** — a highpass design over [F1, F2] has the lowpass design's g-values over [1/F2, 1/F1] with L↔C, and the same worst return loss | §16.6 |
 | **Old blobs decode as bandpass** — a `Design` payload written before `Form` existed rebuilds to the identical ladder | §16.8 |
+| **Dual-band golden member (§18.4)** — `GvaluesAt(ChebyshevFano, 2, 0.7261974, 3.654984e-5, 6.255720e-4)` reproduces the stated g to 1e-6 and, resonated, the stated pH/pF to 1e-6 relative; the ABCD oracle gives −31.79 dB worst in both effective bands and a gap maximum of 0.445 ± 0.002 | rev 3; the whole mechanism in one number |
+| **Dual-band beats single-band at equal count** — for §18.4's problem, the dual-band n = 2 design's worst in-band \|S11\| is at least 10 dB better than `FanoG(4, Q, w)`'s over the same two bands | the reason the feature exists, pinned |
+| **Symmetrisation** — 2.4–2.5 / 5.15–5.85 GHz widens band 1 to 2.2009–2.5 (to 1e-6 relative), never band 2, and bands that already mirror are untouched; the mirror identity f1·f4 = f2·f3 holds to 1e-12 on the effective bands | §18.3, the one rule that changes a user's spec |
+| **Absorption identity, dual-band** — the first shunt C equals the termination's own 2.5 pF to 1e-12 relative and carries `AbsorbedEnd`; a far-end surplus is an `IsExcess` element; a like-topology pair is refused naming parity | §18.2 |
+| **Norton invariance and reach, dual-band** — every discovered transform leaves S11/S21 unchanged to 1e-9, and the solution search reaches R2 = 50 Ω from R_far = 7.6746 Ω (Π N² = 6.515) | §18.2 — the transforms are the unchanged machinery, and this proves it on the new ladder |
+| **Old blobs decode as single-band** — a payload without `BandCount` rebuilds to the identical ladder | §18.8 |
+| **Remez ≡ the closed forms** — the exchange on one interval `[a², 1]` reproduces `T_n(x(u))` to 4e-16 relative for n = 1…6 and a ∈ {0, 0.5, 0.73}, and on two equal-length intervals reproduces `T_m(q(u))` to 2e-15 | rev 4, §18.5; the alternation theorem says the answer is unique, so reproducing the two cases that HAVE a formula is the statement that it found the answer rather than an answer |
+| **Equioscillation on a union** — on every band set with no closed form, exactly n + 1 alternating extrema of magnitude 1 ± 1e-9 | rev 4, §18.5; the defining property used as the oracle, which is the only one available there |
+| **General polynomial ≡ closed form** — `GvaluesAtPolynomial` and `GvaluesAt` agree over MN-LP's whole 360-cell sweep: all 360 extract, g to 1e-9 at n ≤ 4, and the two ladders' response to 1e-3 dB at n = 5, 6 | rev 4, §18.9; the g-vectors diverge to 7e-5 at order 6 and cannot do better — the roots agree to 2e-16 and the extraction amplifies by 1e11. See RESOLVED §MN-MB2 |
+| **Tri-band golden members (§18.5)** — 0.5–0.6 / 0.9–1.1 / 1.65–1.98 GHz into 50 Ω ‖ 4 pF gives −8.941 / −11.997 / −14.473 dB at 4 / 8 / 12 elements with R_far 23.679 / 29.918 / 34.107 Ω, and all three bands come out equal to 0.01 dB | rev 4, §18.5; the note's own targets, and the equiripple property surviving the resonating transform |
+| **Mirroring never reaches the middle band** — over a wide random sweep of ordered six-frequency specs, `Overlaps` is never true and the union in u is always two disjoint intervals inside [0, 1] | rev 4, §18.3; this is a theorem (`f₀²/f₅ < f₃`), so the test asserts it rather than producing a refusal |
+| **Odd counts absorb a like pair** — a parallel/parallel pair gives 2n + 1 elements in lowpass form and 4n + 2 in multiband, both ends carrying `AbsorbedEnd`, both shunt, each at least the termination's own value | rev 4, §16.4/§18.2; the gap those sections recorded, closed |
+| **The odd rung sits under the even one** — at order n the odd member is 0.002 dB worse than the even member at the same n and better than the even member below it | rev 4, §16.3 corrected; the odd count buys absorption, never return loss |
+| **The odd terminating value is a conductance ratio** — inverting the far port on an odd ladder costs more than 5 dB with every element value unchanged | rev 4; the parity trap, kept as a gate because the failure is a plausible network with a hopeless response |
 
 ### 13.3 Cost
 
@@ -1265,9 +1319,18 @@ element, the same convention `Build` uses today) and comes out **equal to the ta
 
 **Only even element counts have this closed form.** An odd-count ladder between unequal resistances
 needs `Φ(u) = (u + u_r)·R_k(u)²` — a *weighted* Chebyshev polynomial with one more free parameter,
-solvable by a Remez exchange but not by a formula, and its best member approaches the even count below
-it as the extra element vanishes. **v1 offers 2n elements for n = 2…6 (4–12), and odd counts are a
-recorded follow-up**, not a silent gap. The consequence for absorption is in §16.4.
+solvable by a Remez exchange but not by a formula. The consequence for absorption is in §16.4.
+
+> **Built in MN-MB2 (rev 4, 2026-08-28), and the "best member" sentence above was the wrong way
+> round.** `Φ(0) = u_r · R_k(0)²` is what the DC pin is written against, and it rises *monotonically*
+> in u_r toward the even family's own `T_k(x₀)²` without ever reaching it — so the odd member at order
+> k sits **0.002 dB under the even member at the same k** (measured, a = 0.5, r = 5: −14.303 against
+> −14.304 dB at 5 against 4 elements) and comfortably above the even member one order below. The odd
+> count is therefore **not a finer grain of performance; it is the only ladder whose two ends share an
+> orientation**, which is what absorbs a like termination pair. Parity is decided by the
+> TERMINATIONS, never by the user: order still means in-band match points, and the element count is
+> 2n or 2n + 1 according to `MatchOrders.NeedsOddCount`. The full measurement is in
+> `src/Core/Match/RESOLVED.md` §MN-MB2, including the parity trap in the terminating value.
 
 ### 16.4 Absorption in lowpass and highpass form
 
@@ -1280,13 +1343,15 @@ the resonating transformation. So absorption works the same way, with three diff
    both an L and a C, which is exactly what these forms lack. The refusal names the kind: *"A parallel
    R ‖ L cannot be absorbed by a lowpass network — there is no shunt inductor to absorb it into. Use
    highpass or bandpass form."*
-2. **The end elements are always of opposite orientation** (even count, alternating), so **only a mixed
-   pair — one series, one shunt — can have both ends absorbed.** A like pair (shunt C to shunt C, the
-   classic interstage) needs an odd count and is refused in these forms in v1, with the reason: *"Both
-   terminations are parallel; a lowpass network needs an odd element count to absorb both, which this
-   form does not offer yet. Bandpass form absorbs both."* `MatchOrders.ValidOrders` takes the form and
-   returns the empty list for that case. The common single-ended cases — a transistor's shunt-C output
-   into a 50 Ω load, a series-L drain feed — are exactly the ones that work.
+2. **The end elements are of opposite orientation for an even count and the SAME orientation for an
+   odd one**, so a mixed pair takes 2n elements and a like pair (shunt C to shunt C, the classic
+   interstage) takes 2n + 1. **Both are offered since MN-MB2** — `MatchOrders.ValidOrders` returns
+   2…6 for either pair and `NeedsOddCount` decides the parity — and the v1 refusal this paragraph used
+   to describe is gone. One constraint replaces it: an odd ladder's two ends flip together, and a
+   shunt-ended one steps DOWN, so **a like pair of parallel ends must be analysed from the higher
+   resistance and a like pair of series ends from the lower.** The other way round is a refusal naming
+   the analysis end rather than the form. The common single-ended cases — a transistor's shunt-C
+   output into a 50 Ω load, a series-L drain feed — are unaffected and still take the even count.
 3. **K is chosen by both ends at once, and it is a 1-D monotone problem.** With the DC pin used, the
    one free parameter moves the two end elements in opposite directions (verified, a = 0.5, 4 elements,
    r = 10: K from 0 to 0.6 takes `g₁` from 2.49 to 10.6 and `g_far` from 0.248 to 0.069, and the worst
@@ -1361,3 +1426,516 @@ stays 1. The `Form` echo parameter joins `F1, F2, Order, Response, R1, R2` on th
 3. **The two Chebyshev families are renamed** per §6.9 — *single-match (optimum)* and *double-match
    (exact)* — as a display change only; enum members and saved designs are untouched. *(Recommended in
    rev 2; the owner has not yet confirmed the exact wording.)*
+
+---
+
+## 18. Multiband matching — dual-band, tri-band, and the asymmetric case (rev 3, 2026-08-28)
+
+**The owner asked whether a "multi-band" Match can be built — two bands, f1–f2 and f3–f4, matched
+together, with the region between them deliberately *not* matched so that no Fano budget is spent
+there — and whether the idea extends to three bands. Answer: yes to both, and the dual-band case is
+two pieces of code this document already specifies, connected.** Everything below was checked
+numerically while writing it (the §16.3 prototype resonated by §4.4, against an independent ABCD sweep
+of the resulting L/C ladder); closed form and simulation agree to 0.01 dB in every case, and the
+numbers are quoted so they can become golden values.
+
+### 18.1 The principle — Fano over a union of bands
+
+Fano's bound is an integral over *all* frequency: for a parallel R‖C load, `∫₀^∞ ln(1/|Γ|) dω ≤ π/(RC)`.
+A single wide match from f1 to f4 spends that budget across the whole span, gap included. If the
+application only needs f1–f2 and f3–f4, everything spent between f2 and f3 is wasted — so the ideal
+multiband network leaves `|Γ| = 1` in the gap and spends the whole budget in the bands. For a flat
+match the ideal return loss is `π/(RC · Δω)` nepers with Δω the **sum of the band widths**, and the
+difference is not small: the example of §18.4 has an ideal of 24 dB over the union and **87 dB** over
+the two bands alone.
+
+A finite lossless ladder cannot put `|Γ| = 1` in the gap — it reaches the ideal only asymptotically
+with order — but it can leave the gap *mostly* unmatched, and doing so is what buys the in-band
+return loss. **The gap mismatch is the feature, not a defect**, and the Designer reports it as a number
+rather than hiding it.
+
+### 18.2 Route A — the resonated multiband network
+
+§16.3's band-shifted prototype is a lowpass-form family whose passband **excludes DC**:
+`Φ(u) = T_n(x(u))²` (or `x(u)^{2n}`) is equiripple on `u ∈ [a², 1]` and large on `[0, a²)`. Today that
+family is *used directly* as a ladder of single elements. **Resonate it instead** — push its g-vector
+through §4.4's bandpass transformation, `Ω = (ω/ω₀ − ω₀/ω)/w` — and its passband `|Ω| ∈ [a, 1]`
+lands on **two** frequency bands, one either side of ω₀, with the prototype's own stopband `|Ω| < a`
+becoming the gap. That is the classical dual-band frequency transformation, and here it is nothing
+more than a different g-vector fed to the existing `Build`:
+
+```
+  ω₀ = 2π √(f1·f4)          w = (f4 − f1) / √(f1·f4)          a = (f3 − f2) / (f4 − f1)
+  prototype:  MatchFormPrototype.GvaluesAt(family, n, a, K, ε²)   → 2n elements + ratio
+  ladder:     MatchSynthesis.Build(g, 2n, …)                        → 2n resonant arms, 4n elements
+```
+
+`Ω = ±1` map to f1 and f4, `Ω = ±a` to f2 and f3, and `Ω = 0` to ω₀, the gap centre, where every arm is
+transparent. Consequences, all of which fall out rather than being designed in:
+
+- **Order keeps its meaning per band.** `T_n` has n zeros in `[a², 1]`, so the network has **n match
+  points in each band** and **4n elements** — the same count as a single-band bandpass network of
+  order 2n, which is the fair comparison (§18.4).
+- **Norton transforms, absorption, the excess-element rule, Flatten and the stamp are unchanged.**
+  The ladder is the alternating two-element-arm ladder of §4.4, in the flat `MatchNetwork` list; every
+  arm has an L and a C, so §4.7's pair scan finds its pairs, the far resistance is reached by Norton as
+  in every bandpass design, and `RequiredTransformRatio` means what it means today. Unlike the elliptic
+  case §6.8 excluded, **no branch with an internal node appears**.
+- **The design rule is §4.3's, with a different prototype.** The near end's absorbed element is fixed,
+  `g₁ = Q_ana · w` (Q at ω₀, w the *outer* fractional bandwidth), which pins one of the family's two
+  parameters (K, ε²); the other is chosen to minimise the worst in-band `|Γ|² = (K + ε²)/(1 + ε²)`
+  (Φ's in-band maximum is 1). The far end is then reconciled by §4.5 — surplus becomes an excess
+  element, deficit is a refusal naming both numbers — and the ratio by Norton. This is exactly the
+  shape of `FanoG` (one end prescribed, one free parameter, optimum root), so it is the **single-match
+  (optimum)** member and is labelled as such. Butterworth is the same with `x^{2n}`. With **neither
+  end reactive** there is no g₁ to prescribe: K sits on its floor and ε² comes from `RippleDb`, as the
+  real-to-real bandpass case does today. **Bessel and the double-match Chebyshev are not offered** in
+  v1 (the first has no prototype defined here; the second is a 2-D solve in (K, ε²) for both end
+  elements — feasible, and recorded as a follow-up rather than designed).
+- **The DC pin of §16.3 becomes the gap-centre pin, and Norton frees it.** Before any transform the
+  network is transparent at ω₀, so `|Γ(ω₀)| = |(r − 1)/(r + 1)|` for the *prototype's* ratio — but the
+  prototype's ratio is an output here, not the target, so the pin costs nothing. This is why the
+  resonated form does not pay §16.1's ratio penalty.
+
+**Parity.** The family has an even element count — Φ is a polynomial in u, so the prototype has 2n
+elements — and therefore **2n arms, whose ends have opposite orientation**. Both ends can be absorbed
+only for a **mixed** termination pair (one series, one shunt) or when at least one end is resistive.
+A like pair — the classic shunt-C-to-shunt-C interstage — needs an odd arm count, which this family
+cannot produce.
+
+> **Closed in MN-MB2 (rev 4, 2026-08-28).** §18.5's weighted family produces exactly that: 2n + 1
+> arms, both ends carrying the analysis end's own orientation, **4n + 2 elements**. Order still means
+> match points per band — `R_n` has n zeros in u and the extra pole sits at `u = −u_r`, off the axis
+> — so the picker offers the same 1…3 for either pair and only the element count moves. The refusal
+> this paragraph described is gone; what remains is that the odd family is **equiripple by
+> construction** (a Remez exchange produces nothing else), so a like pair is Chebyshev-only and
+> Butterworth is refused by name.
+
+### 18.3 The one real constraint — geometric symmetry, and how the Designer meets it
+
+A real network's `|Γ(jΩ)|²` is an even function of Ω, so the two bands are mirror images about ω₀ in
+*log* frequency: **f1 · f4 = f2 · f3**, equivalently equal fractional (ratio) bandwidths `f2/f1 =
+f4/f3`. A user will not type four frequencies that satisfy this, and the Designer must not silently
+design to a different spec, so the rule is:
+
+> **Keep the wider band exactly. Widen the narrower band *away from the gap* until its ratio equals
+> the wider band's, and design to the widened pair. Show both the requested and the effective bands.**
+
+Away from the gap, because the gap is the budget saving; a widening toward it would spend budget on
+frequencies the user did not ask for *and* shrink the reclaim. For 2.4–2.5 / 5.15–5.85 GHz the upper
+band's ratio is 1.136, so band 1 becomes **2.201–2.5 GHz** (ω₀ = 3.588 GHz) and the network over-delivers
+below 2.4 GHz at a cost of ~6–11 % of the budget in the example below — small, because both bands are
+narrow. Where the two bands' ratios differ greatly (0.9–1.0 GHz and 3–6 GHz, say) the stretch is
+severe, the design would match 0.5–1.0 GHz to serve a 0.9–1.0 spec, and this route is the wrong tool:
+that is the asymmetric case, §18.6.
+
+The same rule generalises: for N bands the **effective** band set is each requested band unioned
+with the log-mirror of its partner about ω₀. For tri-band (§18.5) the middle band must be centred on ω₀
+— it is kept, `ω₀ = 2π√(f3·f4)` — and the outer pair are mirrored: f1·f6 = f2·f5 = f3·f4, each outer
+band widened outward to cover both itself and its partner's image.
+
+### 18.4 What it buys — measured
+
+Load 20 Ω ‖ 2.5 pF (Q = 1.1273 at ω₀) into 50 Ω, effective bands 2.2009–2.5 and 5.15–5.85 GHz
+(`w = 1.01699`, `a = 0.72620`, `g₁ = Q·w = 1.14641`), Chebyshev single-match optimum. Same element count
+on each row; the single-band column is the classical Fano-optimum Chebyshev over the whole span
+2.2009–5.85 GHz computed by the same route at `a = 0`:
+
+| elements | dual-band, worst in either band | single band over the span | gap max \|Γ\| | Fano budget in the gap |
+|---|---|---|---|---|
+| 4 (n = 1) | **−19.48 dB** | −13.7 dB | 0.319 | 38 % |
+| 8 (n = 2) | **−31.79 dB** | −18.8 dB | 0.445 | 38 % |
+| 12 (n = 3) | **−41.51 dB** | −20.8 dB | 0.712 | 31 % |
+
+Two things to read off it. The gain is large and grows with order, because a higher-order polynomial
+is bigger in the gap — the rising gap |Γ| column is the reclaim happening, and a status strip that
+showed only in-band numbers would hide the mechanism. And the finite ladder still leaks a third of
+the budget into the gap, so the achieved 32 dB is far from the 87 dB ideal; that is the nature of an
+all-pole ladder, not a defect to tune out.
+
+The optimum is **insensitive to K**: a decade either side of the optimum costs 0.1–1 dB, so a coarse
+scan followed by a bounded 1-D refinement is sufficient and no root-finding subtlety exists. The
+8-element ladder is manufacturable as it stands (L 364–815 pH, C 2.41–5.41 pF at 20 Ω before any
+transform).
+
+**Golden values** (the 8-element member, computed at the K and ε² stated — a member is exact at its
+parameters, the optimum over K is only defined to the search's tolerance):
+
+```
+  n = 2, a = 0.7261974, K = 3.654984e-5, ε² = 6.255720e-4
+  g = [1.1464128, 0.9341372, 2.4818781, 0.4175330, 2.6060058]         (2n elements + ratio)
+  shunt-first at R_ana = 20 Ω, ω₀/2π = 3.5881750 GHz, w = 1.0169920:
+      shunt   L = 786.96065 pH   C = 2.5000000 pF   ← the load's own 2.5 pF, exactly
+      series  L = 814.83495 pH   C = 2.4144787 pF
+      shunt   L = 363.50768 pH   C = 5.4122698 pF
+      series  L = 364.20823 pH   C = 5.4018594 pF
+  R_far = 7.674580 Ω  →  required Π N² = 6.515014 to reach 50 Ω
+  worst |S11| in 2.2009–2.5 and 5.15–5.85 GHz: −31.793 dB;  max |S11| in 2.5–5.15 GHz: 0.4454
+  4-element member for the same problem:  K = 6.039617e-4, ε² = 1.079797e-2,
+      g = [1.1464128, 0.5512576, 1.9376596], R_far = 10.321731 Ω, worst −19.477 dB, gap max 0.3192
+```
+
+### 18.5 Tri-band and beyond — a union of prototype intervals, and the Remez family
+
+Three bands are a middle band centred on ω₀ plus a symmetric outer pair. In the prototype variable
+`u = Ω²` the passband is then a **union of two intervals**, `[0, a²] ∪ [b², 1]` with `a = Ω(f4)` and
+`b = Ω(f5)`; N bands are ⌈N/2⌉ intervals. The equiripple polynomial on a union of intervals is the
+*Akhiezer* polynomial: it has a closed form only when the intervals have equal length in u (a quadratic
+mapping onto one interval), and in general it is produced by a **multi-interval Remez exchange** — a
+deterministic approximation with a unique answer (the alternation theorem holds on any compact set),
+not a tune-to-spec optimiser, and so within §2.2's rule. The polynomial decides for itself how its
+zeros divide between the intervals; the user chooses the total degree n (4n elements) and reads the
+per-band match points off the response.
+
+Two changes follow for the numerical route, and both are smaller than the lowpass-form work was:
+
+- **Roots.** `RootsInS` writes the Chebyshev roots down by one arccosine; a Remez polynomial has no
+  such form. Solve `p(u) = ±j·√c/ε` instead — two degree-n *complex* polynomials in u (n ≤ 6), not the
+  degree-4n polynomial in s whose conditioning failed in MN-LP (`src/Core/Match/RESOLVED.md`) — and
+  carry each u through `s = ±j√u` exactly as today. The extraction is unchanged.
+- **The same Remez, weighted, gives the odd element counts** §16.3 could not: `Φ(u) = (u + u_r)·R_k(u)²`
+  is the minimax problem for `R_k` with weight `√(u + u_r)`, one more free parameter, and closes the
+  like-pair parity gap of §18.2 and of §16.4 item 2 with one routine.
+
+Measured (scratch Remez, bands 0.5–0.6 / 0.9–1.1 / 1.65–1.98 GHz, 50 Ω ‖ 4 pF, Q = 1.25): **8 elements
+−12.0 dB, 12 elements −14.5 dB** across all three bands, ladder values 2.5–7 nH and 3.6–10.5 pF. Those
+are illustrative — the scratch exchange was not hardened past degree 4, and the brief's own gates
+measure it — but they show the structure carrying three bands at the same part count as a single-band
+order-4 network.
+
+> **Built in MN-MB2 (rev 4, 2026-08-28). The figures above reproduced to 0.03 dB** — −11.997 dB at 8
+> elements with `R_far = 29.918 Ω`, −14.473 dB at 12, and −8.941 dB at the 4-element order this
+> paragraph did not quote — and they are the goldens from here on. Four things this section did not
+> say, all of them measured and all of them recorded in full in `src/Core/Match/RESOLVED.md` §MN-MB2:
+>
+> - **Butterworth has no tri-band member, structurally.** The maximally-flat member is flat at the
+>   centre of ONE interval and a union has no such point; on a union the equiripple polynomial is the
+>   only member of the family. Tri-band is **Chebyshev only**, and says so rather than failing.
+> - **The overlap refusal §18.3 asks for is unreachable.** `f₂' = max(f₂, f₀²/f₅)` and
+>   `f₀²/f₅ < f₀²/f₄ = f₃` because `f₅ > f₄`, so both arguments are already below f₃: the mirror image
+>   of a band above f₄ always lands below f₃. The guard exists for a spec that is not yet ordered.
+> - **All three bands come out at the same worst return loss** (0.01 dB), which is the equiripple
+>   property surviving the resonating transform, and the two gaps come out equal on a symmetric spec.
+> - **An odd extraction's terminating value is a conductance ratio, not an impedance one** — the Cauer
+>   remainder inverts with parity. Reading an odd ladder with the even rule inverts the far port and
+>   turns a −14.3 dB match into −0.5 dB with every element value correct.
+
+### 18.6 Route B — asymmetric bands: wanted, recorded, and deliberately not designed yet
+
+**Users will want bands that are not geometric mirrors of each other, and the widening rule of §18.3
+serves them badly when the ratios differ a lot.** The general answer exists and is recorded here so the
+future investigation starts from it rather than from zero:
+
+- **Lowpass-form multiband.** Run the multi-interval Remez polynomial directly in `u = ω²` over the
+  *requested* intervals — arbitrary, any number, no symmetry — and use it as §16 uses its family: a
+  ladder of single elements, ratio pinned at DC, K chosen by §16.4's rule. The machinery is §18.5's
+  Remez plus §16's synthesis, nothing else. Its limits are §16's limits, all of which bind harder here:
+  the ratio is paid out of the budget; there are no Norton pairs; each form absorbs half the kinds and
+  **a shunt capacitance on the low-impedance side is not absorbable at all** (the orientation rule,
+  `MatchFormSynthesis`'s remarks) — which is the common PA-output case, and which is why the scratch
+  attempt at 20 Ω ‖ 2.5 pF → 50 Ω found no member at any degree. Measured where it does apply,
+  50 Ω ‖ 1 pF → 20 Ω at the *exact* 2.4–2.5 / 5.15–5.85 GHz: 4 elements −15.1 dB; purely resistive
+  50 → 20 Ω: 8 elements −37 dB. The scratch exchange lost robustness past degree 4, so the higher rows
+  are not quoted.
+- **The genuinely general form** is a bandpass ladder that is *not* resonant arm by arm: `|S21|²` with
+  its transmission zeros split unequally between DC and ∞, whose Hurwitz factor extracts to a ladder
+  of single L's and C's in which series L's and series C's both occur. Its `|Γ|²` is an even function
+  of ω but not of `(ω/ω₀ − ω₀/ω)`, so it carries asymmetric bands, and it has Norton pairs wherever
+  two like-kind elements sit in opposite orientation. `MatchNetwork`'s flat list can *express* such a
+  ladder; `Build`'s arm pairing, the arm-indexed absorption marks and the pair scan's alternation
+  assumption cannot *produce or transform* one. This is a real design effort — the extraction with
+  zeros at both ends (a two-sided Cauer, removing poles at DC and at ∞ in a chosen order) and a rewrite
+  of the pair scan — and it is the right thing to investigate when the asymmetric case is taken up.
+  It would also subsume §16's forms as the all-zeros-at-one-end special case.
+
+Neither is in MB1 or MB2. The Designer states the widened effective bands plainly (§18.3) so a user
+whose spec has been stretched can see it, and that is the extent of v1's asymmetric support.
+
+### 18.7 What the user sees
+
+- **The specification pane's Frequency Band card gains a band-count selector** — *Single · Dual · Tri*
+  — and, for Dual, a second row `f3, f4` (Tri: `f5, f6`). Rows must be increasing, `0 < f1 < f2 < f3 <
+  f4` (`< f5 < f6`). The card shows a one-line **effective-band note** whenever widening changed
+  anything: *"Band 1 widened to 2.201–2.5 GHz to mirror band 2 about 3.588 GHz."*, and for three
+  bands *"Widened band 1 to … and band 3 to … to mirror about … GHz (band 2 is kept and sets the
+  centre)."* — and nothing when the bands already mirror. **Dual → Tri moves the existing second band
+  out to f5–f6 and seeds a new middle band between them**, because the middle band is the one §18.3
+  keeps; hanging a third band off the end would mirror it straight onto the second.
+- **Order is match points per band**, and the picker's element count reads `(4n)` for a mixed
+  termination pair and `(4n + 2)` for a like one — parity is decided by the terminations, not by the
+  order (rev 4; the "no order at all" rule this bullet used to state is gone with §18.2's own
+  correction). A like pair is Chebyshev-only, because its family comes out of a Remez exchange.
+- **Multiband is a specification input, not a solution-list coordinate** (the opposite of `Form`,
+  §16.7): the band set changes the problem, so it lives in `MatchSpecKey` and the search runs over
+  (order × family) for the design's own band count. While the band count is above one, **only bandpass
+  rows exist** — lowpass and highpass multiband is §18.6's route B — and the Form filter group shows
+  why in one line rather than listing forms that produce nothing.
+- **The status strip gains the Fano ceiling line and the gap mismatch.** The ceiling (§18.10) sits
+  between the worst-RL line and the gap lines and is computed from the design alone, so it is there
+  before any synthesis and still there when one refuses. The gap line reads
+  *"gap 2.5–5.15 GHz: max |S11| 0.445 (−7.0 dB) · prototype rise ×19.89"*, beside
+  the worst in-band return loss, because §18.4 says that number is the design working. **Tri-band
+  shows two such lines**, one per gap, on separate rows — they are independent numbers a user compares
+  against each other, equal on a symmetric spec and unequal the moment the middle band is off centre. The response
+  plots' default band is `f1 … f4 ± 10 %`, so both bands and the gap are visible; the in-band
+  spans are shaded on the |S11| plot so the eye separates them.
+- Cards read **"Chebyshev · dual-band · order 2"**; the footer and the Properties summary carry the
+  band count and both bands.
+- Probe (§10) and Flatten (§11) need nothing: the terminations are read at ω₀ exactly as today, and
+  the flattened cell is the ladder.
+
+### 18.8 Persistence
+
+`MatchDesign` gains **additive** fields `BandCount` (int, default 1) and `F3, F4, F5, F6` (Hz, default
+0), all omitted-when-absent and read as single-band when absent, so every existing payload rebuilds to
+the identical ladder and `Version` stays 1. `F5`/`F6` join the echo parameters alongside `F3`/`F4`
+(rev 4), so a tri-band design reads off the schematic page as well as a dual one. `Omega0` and `W` are derived from the *effective outer*
+pair — `√(f1·f4)` for dual, `√(f3·f4)` (= the mirror centre) for tri — and `A` (the inner-edge ratio)
+is derived too; the effective bands are recomputed at load, never stored. `F3`/`F4` join the echo
+parameters on the instance (§7.2); `BandCount` is echoed as `Bands`.
+
+### 18.9 Numerical notes
+
+- **Dual-band needs no new numerics.** `GvaluesAt` writes its roots down (§16.9, MN-LP's finding), so
+  the degree-4n-in-s conditioning problem never arises; the only new arithmetic is the symmetrisation
+  of §18.3 and the search of §18.2, whose members are microseconds each.
+- **The search is a scan over K with a bracketed solve in ε² inside it.** For fixed K, `g₁` was
+  monotone in ε² in every case measured, and the bracket is found on a log grid; K is *not* monotone
+  in g₁ (MN-LP found the near element rises then falls with K), so scan K rather than bisecting on it.
+  `KFloor = 1e-12` applies; the optimum K here sits at 1e-6…1e-3 and the worst return loss moves by
+  ≤ 0.1 dB across a decade of K, so 64 scan points and a bounded refinement are ample.
+- **Q is taken at ω₀, the gap centre**, exactly as `Termination.QAt(om0)` does today; the absorbed
+  element then comes out equal to the termination's own to machine precision (the identity is
+  §13's test, and it held: 2.5000000 pF).
+- The tri-band roots come from two degree-n complex polynomial solves in u (`MatchPoly.Roots` with
+  complex coefficients, or a companion-matrix eigen-solve); at n ≤ 6 this is well conditioned, and
+  the brief's gate is the same "every cell extracts" sweep MN-LP ran.
+- **The polynomial must carry the affine map it was solved in** (rev 4, MN-MB2). Coefficients in raw u
+  are not good enough to root-find from past order 4: a degree-6 polynomial whose roots cluster in
+  [0.53, 1] has coefficients spanning five decades and Horner's rule cancels four of them.
+  `MatchPrototypePolynomial` carries `(scaled coefficients, α, β)` and the roots are found in the
+  scaled variable, then mapped back exactly. With that, the general-polynomial and closed-form routes'
+  roots agree to **2–5e-16** over MN-LP's whole 360-cell sweep — every cell — and what separates their
+  g-vectors at orders 5 and 6 (7.3e-5) is the **extraction's** own conditioning, which amplifies an
+  incoherent one-ulp root perturbation by ~1e11 there. Their *responses* agree to 6.7e-6 dB. The
+  multiband path asks for n ≤ 3, where the g-vectors agree to 1e-10.
+
+### 18.10 Feasibility hints — the Fano ceiling and the gap rise (rev 5, 2026-08-28)
+
+**The owner ran a tri-band spec — 100 Ω ‖ 0.125 pF into 1.25 Ω + 5 pF series, bands 2.5–3 / 4.5–5 /
+9–10 GHz — and got two solutions, both a flat −2.6…−3.0 dB from 2.25 to 10 GHz: a single wideband
+match with no trace of three bands. The synthesis was correct.** Two things were true that nothing on
+screen said, and both are closed-form arithmetic on the specification. Neither needs a synthesis to
+run.
+
+#### The two integrals, in Q
+
+Fano's bound comes in two weights, and which one applies is decided by the termination's kind and
+topology together. In terms of `Q = Termination.QAt(ω₀)` — the one number everything downstream
+already reads:
+
+| termination | integral | bound | `α_max`, nepers |
+|---|---|---|---|
+| parallel R‖C | `∫ ln(1/\|Γ\|) dω` | `π/(RC)` | `π ω₀ / (Q · Σ (ω_hi − ω_lo))` |
+| series R+L | `∫ ln(1/\|Γ\|) dω` | `πR/L` | same |
+| series R+C | `∫ ln(1/\|Γ\|) dω/ω²` | `πRC` | `π / (Q · ω₀ · Σ (1/ω_lo − 1/ω_hi))` |
+| parallel R‖L | `∫ ln(1/\|Γ\|) dω/ω²` | `πL/R` | same |
+
+The identities hold because a parallel C has `Q = ω₀RC`, so `π/(RC) = πω₀/Q`, and a series C has
+`Q = 1/(ω₀RC)`, so `πRC = π/(ω₀Q)`; the two inductive cases follow through `CeqAt`. `ceiling_dB =
+−8.686·α_max`, quoted negative like an achieved return loss so the two are directly comparable. A
+resistive end has no ceiling at all and never binds.
+
+**The consequence the hints exploit: the 1/ω² class is limited by its LOWEST band edge and the Δω
+class by its TOTAL bandwidth.** That is what lets a remedy name a specific edge rather than say
+"narrow the bands".
+
+**`ω₀` is inert** — the bound depends on the termination only through `R·C` (or `L/R`) — which is why
+reading Q is legitimate and why `MatchFanoBoundTests` asserts invariance over a decade either side
+rather than assuming it.
+
+#### The owner's fixture, measured
+
+Effective bands (§18.3's mirror rule) are 2.25–3 / 4.5–5 / 7.5–10 GHz. Termination 2 has RC = 6.25 ps
+and is the wall; termination 1 is 86 dB away over the same bands and irrelevant.
+
+| band set | ceiling (term 2) |
+|---|---|
+| the outer span 2.25–10 GHz | **−3.1 dB** |
+| the three effective bands | **−6.4 dB** |
+| the three bands as typed | **−10.7 dB** |
+| band 1 alone (2.5–3) | −16.1 dB |
+| bands 2 + 3 alone (4.5–5, 9–10 — already mirrored) | −32.1 dB |
+
+**The mirror widening cost 4.3 dB of ceiling by itself** (9–10 → 7.5–10, dragging 2.5–3 → 2.25–3),
+which is the largest single number in the picture and was invisible. The achieved −2.60 dB is 3.8 dB
+short of the band ceiling and **0.5 dB short of the outer-span one** — the network is at a wall, just
+not the one the spec was written for.
+
+#### The gap rise
+
+The second half is the prototype, not the terminations. The middle band maps to `u ∈ [0, 0.0042]` and
+the Remez polynomial runs on `[0, 0.0042] ∪ [0.337, 1]`. Its largest value in the gap, against the
+level 1 it holds on the passband:
+
+| order | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| rise | 0.99 | 0.97 | 1.16 | 2.90 | 8.77 | 18.0 |
+
+**At orders 1 and 2 the polynomial never exceeds 1 in the gap: it IS the single-band hull
+Chebyshev**, and the design is a wideband match spending the outer-span budget. The gap first rises
+at order 3 and opens at 4/5/6 — orders `ValidOrders` does not offer for three bands. That, not the
+synthesis, is why the owner saw one band where three were asked for.
+
+`GapOpensAtOrder` is the smallest order at which **every** gap's rise exceeds **2.0**. The threshold
+has a reason: a rise of `r` puts the gap's `|Γ|²` at `(K + ε²r²)/(1 + ε²r²)`, and below r ≈ 2 the gap
+sits within a few dB of the passband — the design is spending budget there as though it were band,
+which is the one thing a multiband spec exists to avoid.
+
+**One code path serves both band counts.** A dual-band passband is the single interval `[a², 1]`, on
+which the exchange returns the shifted Chebyshev polynomial, and its rise is the closed form
+`cosh(n·arccosh((1+a²)/(1−a²)))` — asserted to 1e-9 against §18.4's own fixture. The two frequency
+gaps of a tri-band design map onto the SAME interval in u (they are log-mirror images), so their
+factors are equal by construction; both are reported because the frequency spans are not.
+
+#### The four remedies
+
+`MatchFanoBound.Remedies(design, targetDb)` solves `α_target = −targetDb/8.686` for one variable with
+everything else held. **Four closed forms, in this order, and nothing here searches** — an entry whose
+formula has no solution, or whose solution points the unphysical way, is absent rather than clamped.
+
+1. **The reactance.** Δω class: `C ≤ π/(R·α_t·ΣΔω)`, `L ≤ πR/(α_t·ΣΔω)`. 1/ω² class:
+   `C ≥ α_t·Σ(1/ω_lo − 1/ω_hi)/(πR)`, `L ≥ α_t·R·Σ(…)/π`. Offered only in the loosening direction —
+   a parallel-C end asked for a LARGER C is a hint to make the match worse, and is not offered.
+2. **The dominant band's inner edge.** The band with the largest `BandShare`, the others held. 1/ω²
+   class: its `f_lo`, if one exists below `f_hi`. Δω class: its width, narrowed symmetrically about
+   its own centre.
+3. **Dropping the dominant band** — the ceiling the rest give, *whether or not* it meets the target,
+   because "how much is this band costing me" is worth answering either way. The remaining bands are
+   **re-symmetrised** first: dropping one band of three leaves a dual spec with its own mirror rule.
+4. **Un-widening the mirror**, multiband only and only when `Effective.Widened`. Two candidates, and
+   the **deeper** ceiling wins. Tri, with `f₀² = f3·f4`: either `f5 = f₀²/f2, f6 = f₀²/f1` or
+   `f1 = f₀²/f6, f2 = f₀²/f5`. Dual: hold the narrower band and shrink the wider one onto its image,
+   from above or from below.
+
+On the owner's fixture at −15 dB they read:
+
+```
+  termination 2's capacitance at or above 11.7 pF;
+  or band 1 starting at 2.86 GHz instead of 2.25;
+  or without band 1 the ceiling over bands 2 and 3 is -32.1 dB;
+  or band 1 as 2.25–2.5 GHz mirrors band 3 without widening (ceiling -13.8 dB)
+```
+
+The fourth beats its alternative (2.5–3 / 4.5–5 / 7.5–9 GHz at −9.6 dB), and both are worse than the
+typed bands' −10.7 dB only because the typed bands are not a spec any network can have.
+
+**−15 dB is a constant** (`MatchFanoBound.HintTargetDb`), not a user setting: it is a usable match by
+any ordinary standard, and every remedy being solved for the SAME number is what makes the four
+clauses comparable to each other.
+
+#### The ceiling is a theorem, so it is an invariant
+
+**A synthesised network's worst in-band return loss can never be better than the ceiling over the same
+bands.** That is the acceptance test of the formula and it is free — every existing golden is a
+fixture. `MatchFanoBoundTests.NoSynthesisedNetwork_BeatsItsOwnFanoCeiling` runs §4.9's interstage
+problem, §16.2's Golden B and its inductive highpass dual, §18.4's dual-band problem at both orders,
+§18.5's tri-band problem at both orders and the owner's own fixture through the ABCD oracle; the
+smallest headroom measured is 3.83 dB. **If it ever fails, the weight class is wrong for that
+termination kind — not the fixture.**
+
+#### What the user sees
+
+- **The status strip gains a ceiling line**, between the worst-RL line and the gap lines: *"Fano
+  ceiling 6.4 dB (termination 2, over the bands)"*, quoted positive like the RL line. Computed from
+  the design alone, so it does not wait for the rebuild and **it survives a refusal** — the strip
+  drops every other line but Q there, and a refusal is exactly when a ceiling of −3 dB is the answer.
+  Its tooltip carries both ends, the typed-band ceiling, the outer-span ceiling and the widening cost.
+- **"— at the ceiling" fires against EITHER ceiling**, the band one or the outer-span one, within
+  1.0 dB. A network can be at a wall in two ways: nothing lossless beats the band ceiling, and nothing
+  that fails to exclude the gaps beats the span one. The owner's fixture sits at −2.60 against −3.11
+  and −6.43, and calling that "not at the ceiling" because it missed the unreachable number would be
+  the wrong half of the truth. The gap-rise note says which of the two it is. The 1.0 dB slack is
+  §18.4's own K-insensitivity (0.1–1 dB): anything closer is not a search shortfall.
+- **Each gap line carries the prototype rise**: *"gap 3–4.5 GHz: max |S11| 0.71 (−3.0 dB) · prototype
+  rise ×0.97"*. The two numbers answer different questions — the |S11| says how much is reflected
+  there, the rise says whether the polynomial excludes the gap at all.
+- **The Frequency Band card gains a second note**, below the effective-band note, whenever any gap's
+  rise is ≤ 1 at the current order:
+
+  > *"At order 2 the tri-band prototype does not exclude the gaps — this is a single-band match over
+  > 2.25–10 GHz (ceiling −3.1 dB). The gaps open at order 4 (rise ×2.9)."*
+
+  or, when no offered order opens them, *"… No offered order opens them for this band geometry; widen
+  the middle band or move the outer bands closer."*
+- **The loosen hints sit under the solutions panel**, in the same slot and class as the refusal, shown
+  when the search landed either empty or against a ceiling above −10 dB. **A hint, never a refusal:**
+  solutions that exist still list. Below −10 dB a ceiling has stopped being an explanation and started
+  being an excuse — a design whose ceiling is −20 dB and whose search reached −16 has not been stopped
+  by physics.
+
+#### Cost
+
+Nothing here is measurable. The ceiling is four multiplications; the rise table is `MatchRemez` at
+n ≤ 6 on a 4,000-point scan, memoised on the interval edges exactly as the synthesis memoises its own
+exchange, so a specification edit runs at most six exchanges once and none thereafter.
+
+## 19. Owner decisions — 2026-08-28 (rev 3)
+
+1. **Dual-band matching is added as §18.2–§18.4 specify** — the §16.3 prototype resonated through
+   §4.4, bands symmetrised by §18.3's widen-away-from-the-gap rule, bandpass form only, Chebyshev
+   single-match and Butterworth (plus the ripple prototype for resistive ends). Brief **MN-MB1**.
+2. **Tri-band follows in a second brief** (**MN-MB2**) together with the multi-interval and weighted
+   Remez families, which also deliver the odd element counts §16.3 deferred and the like-pair parity
+   case §18.2 refuses.
+3. **Route B — arbitrary asymmetric bands — is recorded in §18.6 and not designed.** It is wanted;
+   the general non-resonant bandpass ladder is the path to investigate when it is taken up.
+
+## 20. Owner decisions — 2026-08-28 (rev 4)
+
+1. **Tri-band is added as §18.5 specifies**, on a multi-interval Remez exchange (`MatchRemez`) whose
+   equiripple polynomial on a union of prototype intervals replaces the shifted Chebyshev one. Bands
+   are mirrored about the KEPT middle band; the selector gains *Tri*, the card an f5/f6 row and the
+   status strip a second gap line. **Chebyshev only** — Butterworth's maximal flatness needs one
+   interval to be flat in the middle of, and a union has none.
+2. **Odd element counts are added**, from the same exchange in its weighted form
+   `Φ(u) = (u + u_r)·R_k(u)²`. They close §16.4 item 2's and §18.2's like-pair gaps at once: **parity
+   is decided by the terminations**, order keeps meaning match points, and the element count reads
+   2n / 2n + 1 (lowpass, highpass) or 4n / 4n + 2 (multiband). They buy **absorption, not return
+   loss** — §16.3's claim to the contrary is corrected in place.
+3. **Route B is still §18.6's**, untouched. `MatchRemez` is written in a scaled variable so route B
+   can call it with bands in Hz² unchanged, and nothing here does.
+
+## 21. Owner decisions — 2026-08-28 (rev 5)
+
+1. **Feasibility hints are added as §18.10 specifies, and they are CLOSED FORM.** The ceiling, the
+   gap-rise table and all four remedies are formulas evaluated once; **none of them searches**, and
+   none of them may become an optimiser. "The best spec for these terminations" is a different
+   question and is not asked here — each remedy solves for one named variable with everything else
+   held, and an entry whose formula has no solution is absent rather than approximated.
+2. **The hint target is the constant −15 dB** (`MatchFanoBound.HintTargetDb`), not a user setting.
+   Every remedy solved for the same number is what makes the four clauses comparable; four clauses
+   each answering a different question would be worse than none. Likewise the two thresholds have
+   reasons and not preferences: 1.0 dB of "at the ceiling" slack is §18.4's own K-insensitivity, and
+   the ×2 gap-rise threshold is where `(K + ε²r²)/(1 + ε²r²)` stops sitting within a few dB of the
+   passband.
+3. **"At the ceiling" is judged against either ceiling** — the one over the bands or the one over the
+   outer span — because a network can be at a wall in two ways, and the owner's own fixture is at the
+   second one. §18.10 states the case; the gap-rise note is what tells the two apart.
+4. **Milestone 3 is done: tri-band now offers orders 1 to 6, and dual-band still stops at 3.** The
+   asymmetry is the point, not an oversight. A dual-band prototype's passband is the single interval
+   `[a², 1]` and it excludes its gap from the very first order (rise 3.2 at n = 1 on §18.4's fixture),
+   so there is no low-order failure mode to escape and the twelve-element comparison against a
+   single-band order 6 stands. A **tri-band** prototype with a narrow middle band excludes its gaps at
+   no order below 4 — §18.10's rise table, ×0.97 at order 2 against ×2.90 at order 4 — so orders 4, 5
+   and 6 are the only ones at which such a spec is three bands at all. The price is parts: **16 / 20 /
+   24** elements for a mixed termination pair (18 / 22 / 26 for a like one) against order 3's 12, and
+   the picker says so.
+
+   **It was raised on a measurement, not on a constant.** `GvaluesAtPolynomial` was proven to degree 6
+   on a single interval only; all eighteen cells of §18.5's three band sets × orders 1–6 were run
+   through the ABCD oracle before the cap moved. Every cell extracts, every cell puts all three bands
+   at the same depth, and the extraction reaches `(K + ε²)/(1 + ε²)` at every degree on a union.
+   **Higher order is not monotonically better** — see `src/Core/Match/RESOLVED.md` §MN-FH — so the
+   solutions list, which spans every order and ranks by return loss, is the right way to choose one
+   and the picker must not be read as "more is better".

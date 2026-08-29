@@ -147,6 +147,42 @@ public class MatchComponentTests
     }
 
     /// <summary>
+    /// <b>The same two claims on a DUAL-BAND design</b> (match.md §18): the component contains the
+    /// ladder minus what the terminations supply, and no absorbed element is stamped.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not skipped on the grounds that "the ladder is the same".</b> That the multiband ladder is
+    /// an ordinary bandpass ladder of 2n arms — so the stamp, the elaborator and the absorption marks
+    /// needed nothing — is §18.2's central structural claim, and a claim nothing tests is a claim
+    /// nobody has checked.
+    /// </remarks>
+    [Fact]
+    public void ADualBandDesign_StampsItsLadderMinusTheAbsorbedReactance()
+    {
+        var design = new MatchDesign
+        {
+            BandCount = 2,
+            F1 = 2.4e9, F2 = 2.5e9, F3 = 5.15e9, F4 = 5.85e9,
+            Order = 2,
+            Response = ResponseShape.ChebyshevFano,
+            Term1 = new Termination(20.0, ReactanceKind.C, TerminationTopology.Parallel, 2.5e-12),
+            Term2 = Termination.Resistive(50.0),
+            AnalysisEnd = AnalysisEndChoice.Term1,
+        };
+
+        var rebuilt = MatchRebuild.Rebuild(design);
+        Assert.NotNull(rebuilt.Network);
+
+        // 4n = 8 elements at order 2, one of them the load's own 2.5 pF.
+        Assert.Equal(8, rebuilt.Network!.Elements.Count);
+        Assert.Equal(1, rebuilt.Network.Elements.Count(e => e.IsAbsorbed));
+
+        var model = ModelOf(design);
+        Assert.Equal(7, model.StampedElements.Count);
+        Assert.DoesNotContain(model.StampedElements, e => e.IsAbsorbed);
+    }
+
+    /// <summary>
     /// Two series arms in the stamped ladder, so one internal net. Worth pinning as a NUMBER because
     /// it is the thing the elaborator mints against: derived from the finished ladder, not from
     /// <see cref="MatchDesign.Order"/> — the surplus element here is proof the two differ.

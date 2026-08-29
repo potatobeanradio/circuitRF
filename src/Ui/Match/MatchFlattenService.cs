@@ -112,9 +112,14 @@ public static class MatchFlattenService
     /// <param name="cellName">The user's chosen name.</param>
     /// <param name="replaceInPlace">The dialog's checkbox, on by default (§11.2).</param>
     /// <param name="stampedUtc">The date the annotation quotes; defaults to now.</param>
+    /// <param name="significantDigits">
+    /// The digit count the cell's element values are written at — the owning Designer's readout
+    /// setting. The schematic's context menu has no Designer open and so takes the default.
+    /// </param>
     public static RunResult Run(
         SchematicViewModel vm, EditableComponent comp, string parentDir, string cellName,
-        bool replaceInPlace, DateTime? stampedUtc = null)
+        bool replaceInPlace, DateTime? stampedUtc = null,
+        int significantDigits = MatchDesignerSettings.DefaultSignificantDigits)
     {
         ArgumentNullException.ThrowIfNull(vm);
         ArgumentNullException.ThrowIfNull(comp);
@@ -134,7 +139,8 @@ public static class MatchFlattenService
 
         var design = MatchFlatten.TryReadDesign(comp)!;
         var rebuild = MatchRebuild.Rebuild(design);
-        var cellSchematic = MatchFlatten.BuildSchematic(rebuild, design, comp.InstanceName, stampedUtc);
+        var cellSchematic = MatchFlatten.BuildSchematic(
+            rebuild, design, comp.InstanceName, stampedUtc, significantDigits);
 
         EditableComponent? replacement = null;
         if (replaceInPlace)
@@ -201,9 +207,11 @@ public static class MatchFlattenService
     /// a standalone Designer has no stack, and inventing one that could delete a folder the user has
     /// since edited would be a worse answer than "the cell is on disk now".</para>
     /// </remarks>
+    /// <inheritdoc cref="Run" path="/param[@name='significantDigits']"/>
     public static RunResult RunStandalone(
         MatchRebuildResult? rebuild, MatchDesign design, string instanceName,
-        string parentDir, string cellName, DateTime? stampedUtc = null)
+        string parentDir, string cellName, DateTime? stampedUtc = null,
+        int significantDigits = MatchDesignerSettings.DefaultSignificantDigits)
     {
         ArgumentNullException.ThrowIfNull(design);
 
@@ -222,7 +230,8 @@ public static class MatchFlattenService
 
         try
         {
-            var cellSchematic = MatchFlatten.BuildSchematic(rebuild!, design, instanceName, stampedUtc);
+            var cellSchematic = MatchFlatten.BuildSchematic(
+                rebuild!, design, instanceName, stampedUtc, significantDigits);
             MatchFlatten.Write(parentDir, cellName, cellSchematic, design);
 
             int elements = cellSchematic.Components.Count(

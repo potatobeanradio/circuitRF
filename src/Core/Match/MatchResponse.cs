@@ -61,6 +61,52 @@ public static class MatchResponse
         return 20.0 * Math.Log10(worst);
     }
 
+    /// <summary>
+    /// Worst |S11| in dB over a SET of bands — match.md §18's dual-band figure, and the single-band
+    /// one when the set has one member.
+    /// </summary>
+    /// <remarks>
+    /// <b>Points are per band, not shared across them</b>, so a dual-band figure samples each band as
+    /// densely as the single-band overload samples its one. The gap between bands is deliberately not
+    /// sampled: it is where the Fano budget is being SAVED (§18.1), and including it would report the
+    /// design working as though it were failing.
+    /// </remarks>
+    public static double WorstReturnLossDb(
+        MatchNetwork network, IReadOnlyList<(double Lo, double Hi)> bands, int points = 201)
+    {
+        ArgumentNullException.ThrowIfNull(bands);
+        double worst = 0.0;
+        foreach (var (lo, hi) in bands)
+        {
+            for (int i = 0; i < points; i++)
+            {
+                double f = lo + (hi - lo) * i / (points - 1.0);
+                double m = At(network, f).S11.Magnitude;
+                if (m > worst) worst = m;
+            }
+        }
+        return 20.0 * Math.Log10(worst);
+    }
+
+    /// <summary>The largest |S11| between two bands — the gap mismatch of match.md §18.4.</summary>
+    /// <remarks>
+    /// <b>Reported as a number rather than hidden</b>, because it is the mechanism working: a finite
+    /// ladder buys its in-band return loss by leaving the gap unmatched, and the gap maximum RISING
+    /// with order is the reclaim happening (§18.1).
+    /// </remarks>
+    public static double GapMaxS11(MatchNetwork network, double f2, double f3, int points = 201)
+    {
+        if (!(f3 > f2)) return 0.0;
+        double worst = 0.0;
+        for (int i = 0; i < points; i++)
+        {
+            double f = f2 + (f3 - f2) * i / (points - 1.0);
+            double m = At(network, f).S11.Magnitude;
+            if (m > worst) worst = m;
+        }
+        return worst;
+    }
+
     /// <summary>Insertion loss (dB, positive) and its in-band ripple.</summary>
     public static (double LossDb, double RippleDb) InsertionLoss(
         MatchNetwork network, double f1, double f2, int points = 401)

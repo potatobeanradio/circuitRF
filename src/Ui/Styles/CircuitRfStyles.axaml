@@ -199,6 +199,27 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
+        <!-- ── AND THE SELECTABLE ONE, which the block above has never reached ──
+             Owner-reported, 2026-08-28, against the Match Designer's Response readout: text that
+             became selectable so its numbers could be copied "is now rendered too big".
+
+             `SelectableTextBlock` derives from `TextBlock`, and an Avalonia type selector matches its
+             type EXACTLY — so the defaults above stop at the base class. The FontSize is usually not
+             what shows, because most selectable readouts set their own; the ALIGNMENTS are, because
+             nothing sets those by hand and Avalonia's own default is Stretch on both axes. A
+             vertically stretched line in a StackPanel claims more height than a centred one, and a
+             card of seven of them grows visibly. It is the same defect as the Button note further
+             down, on a different control, and it is fixed the same way: ONCE, here.
+
+             Targeted at SelectableTextBlock rather than widened to `:is(TextBlock)` on the block
+             above, and that distinction is load-bearing: `TextPresenter` also derives from
+             `TextBlock`, so `:is()` would reach inside the template of every TextBox, ComboBox and
+             AutoCompleteBox in the application and restyle their editable text. -->
+        <Style Selector="SelectableTextBlock">
+            <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
         <Style Selector="Button">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
             <!-- Owner-reported 3 times now (ScaleDialog, FlattenToPolygonDialog, ...): a Button wider

@@ -158,6 +158,91 @@ public static class MatchPoly
         return result;
     }
 
+    /// <summary>
+    /// All roots of a polynomial with <b>complex</b> coefficients, by the same Durand-Kerner
+    /// iteration on a geometric-mean-scaled variable, followed by a Newton polish.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why a second copy rather than a widening of the real one.</b> The real overload peels roots
+    /// at the origin off the trailing zeros exactly and trims by a real tolerance; both are written
+    /// against <c>double</c> arrays that four other call sites hand it. The iteration itself is
+    /// identical and short, and duplicating it costs less than making every existing caller allocate
+    /// a complex copy of coefficients it already has as reals.
+    ///
+    /// <para>Its only caller is <see cref="MatchFormPrototype.GvaluesAtPolynomial"/>, where the
+    /// polynomial is <c>p(u) -/+ j sqrt(c)/eps</c> at degree at most 6 — match.md §18.5's whole point
+    /// being that the roots are found in <b>u</b> and never in s, where the degree would be 4n and the
+    /// conditioning is what defeated the polynomial route in <c>RESOLVED.md</c> §MN-LP.</para>
+    /// </remarks>
+    public static Complex[] Roots(Complex[] descending)
+    {
+        ArgumentNullException.ThrowIfNull(descending);
+        int lead = 0;
+        double scaleAll = descending.Max(z => z.Magnitude);
+        if (!(scaleAll > 0.0)) return [];
+        while (lead < descending.Length - 1 && descending[lead].Magnitude < 1e-14 * scaleAll) lead++;
+        Complex[] a = descending[lead..];
+        if (a.Length <= 1) return [];
+
+        int n = a.Length - 1;
+        double scale = Math.Pow((a[^1] / a[0]).Magnitude, 1.0 / n);
+        if (!double.IsFinite(scale) || scale <= 0.0) scale = 1.0;
+
+        var c = new Complex[a.Length];
+        Complex inv = Complex.One / a[0];
+        double pw = 1.0;
+        for (int i = 0; i <= n; i++) { c[i] = a[i] * inv * pw; pw /= scale; }
+
+        var z = new Complex[n];
+        var seed = new Complex(0.4, 0.9);
+        Complex acc = Complex.One;
+        for (int i = 0; i < n; i++) { acc *= seed; z[i] = acc; }
+
+        for (int iter = 0; iter < 200; iter++)
+        {
+            double move = 0.0;
+            for (int i = 0; i < n; i++)
+            {
+                Complex denom = Complex.One;
+                for (int j = 0; j < n; j++) if (j != i) denom *= z[i] - z[j];
+                if (denom == Complex.Zero) continue;
+                Complex d = EvalComplex(c, z[i]) / denom;
+                z[i] -= d;
+                double mag = z[i].Magnitude;
+                move = Math.Max(move, d.Magnitude / (mag > 1e-300 ? mag : 1e-300));
+            }
+            if (move < 1e-14) break;
+        }
+
+        var result = new Complex[n];
+        for (int i = 0; i < n; i++) result[i] = PolishComplex(a, z[i] * scale);
+        return result;
+    }
+
+    /// <summary>Evaluates a complex-coefficient polynomial at a complex point (Horner).</summary>
+    public static Complex EvalComplex(Complex[] a, Complex x)
+    {
+        Complex v = Complex.Zero;
+        foreach (var co in a) v = v * x + co;
+        return v;
+    }
+
+    private static Complex PolishComplex(Complex[] a, Complex x)
+    {
+        int n = a.Length - 1;
+        var d = new Complex[n];
+        for (int i = 0; i < n; i++) d[i] = a[i] * (n - i);
+        for (int k = 0; k < 30; k++)
+        {
+            Complex f = EvalComplex(a, x), fp = EvalComplex(d, x);
+            if (fp == Complex.Zero) break;
+            Complex step = f / fp;
+            x -= step;
+            if (step.Magnitude < 1e-16 * Math.Max(1.0, x.Magnitude)) break;
+        }
+        return x;
+    }
+
     private static Complex Polish(double[] a, Complex x)
     {
         var d = new double[a.Length - 1];

@@ -490,6 +490,22 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         var solutions = Vm.Solutions;
         solutions.CollectionChanged += OnSolutionsCollectionChanged;
         Closed += (_, _) => solutions.CollectionChanged -= OnSolutionsCollectionChanged;
+
+        // ── A move the user did not make brings its card into view ────────────
+        //
+        // Owner-reported, 2026-08-28: after an undo or redo the previous solution card is not
+        // highlighted, and the list should scroll to whichever card the design is now on.
+        //
+        // An undo does not change the collection — it touches nothing in MatchSpecKey, so the search
+        // is not restarted — which is why neither handler below was reached and the ListBox's
+        // selection stayed on the row the user last clicked while the card's own border moved back.
+        // The view-model raises this for exactly the moves the user did not make: an undo, a redo, an
+        // edit elsewhere in the schematic, a band-count change, the termination auto-solve. A click
+        // does not raise it, so applying a card still leaves the panel where it is.
+        var vm = Vm;
+        vm.AppliedSolutionMoved += OnAppliedSolutionMoved;
+        Closed += (_, _) => vm.AppliedSolutionMoved -= OnAppliedSolutionMoved;
+
         ScrollToAppliedOnce();
         SyncSolutionSelection();
     }
@@ -507,14 +523,23 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         SyncSolutionSelection();
     }
 
-    private void ScrollToAppliedOnce()
+    private void OnAppliedSolutionMoved(object? sender, EventArgs e)
     {
-        if (_scrolledToApplied || _solutionsList is null || Vm is null) return;
-        if (!Vm.Solutions.Any(r => r.IsCurrent)) return;
-
-        _scrolledToApplied = true;
+        SyncSolutionSelection();
         ScrollToApplied();
     }
+
+    /// <summary>
+    /// How many frames the automatic scroll will wait for the list to be laid out before giving up.
+    /// </summary>
+    /// <remarks>
+    /// Bounded so a Solutions pane that is never arranged — collapsed, or a window closed while the
+    /// search was still landing — cannot leave a callback re-posting itself for the life of the
+    /// session. Twenty frames is far more than the one or two the first layout actually takes.
+    /// </remarks>
+    private const int MaxScrollToAppliedAttempts = 20;
+
+    private void ScrollToAppliedOnce() => ScrollToApplied(once: true);
 
     /// <summary>
     /// Brings the applied solution into view — the header's own button, and what the once-only
@@ -527,14 +552,62 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
     /// way back once they have scrolled a long list looking for something better — which is what this
     /// button is. Both go through here, so there is one behaviour and not two.
     /// </remarks>
-    private void ScrollToApplied()
+    private void ScrollToApplied() => ScrollToApplied(once: false);
+
+    /// <summary>
+    /// <b>The once-only flag is spent when the scroll LANDS, never when it is merely attempted</b>
+    /// (owner-reported, 2026-08-28: opening the Designer on a design that already has a solution
+    /// applied shows the list unscrolled, so the one card with the green border is off screen and the
+    /// panel reads as though nothing were selected).
+    /// </summary>
+    /// <remarks>
+    /// <b>Why the first open is the case that broke, and only the first open.</b>
+    /// <see cref="Show"/> calls <c>SetTarget</c> — which starts the solution search — BEFORE the
+    /// window is constructed, and the design's own combination is searched first precisely so it
+    /// lands fast. So on a first open the rows are usually already in <c>Solutions</c> by the time
+    /// <c>Loaded</c> fires: <see cref="OnSolutionsCollectionChanged"/> never sees them, and the only
+    /// attempt is <see cref="WireSolutionsList"/>'s own. That attempt ran at <c>Loaded</c>, before the
+    /// ListBox had ever been arranged — <c>ItemsPanelRoot</c> is still null there, so
+    /// <c>ScrollIntoView</c> scrolled nowhere and reported nothing — and the flag was set anyway, so
+    /// nothing retried. Every LATER path worked, because by then the list had been laid out, which is
+    /// why this only ever showed up on the first open of a window.
+    ///
+    /// <para>Posting at <c>Background</c> was the right instinct and is kept: it is below layout, so
+    /// one post is enough once the list exists. What it cannot do is conjure a layout pass that has
+    /// not been scheduled, so the callback now CHECKS that the list has been arranged and re-posts
+    /// itself if it has not — bounded by <see cref="MaxScrollToAppliedAttempts"/>. The applied row is
+    /// re-read on each attempt rather than captured, because more of the search lands in between and
+    /// the row the design is on can be re-badged while we wait.</para>
+    /// </remarks>
+    /// <param name="once">True for the automatic scroll, which happens one time per list.</param>
+    /// <param name="attempt">How many frames have already been spent waiting for a layout.</param>
+    private void ScrollToApplied(bool once, int attempt = 0)
     {
         if (_solutionsList is null || Vm is null) return;
+        if (once && _scrolledToApplied) return;
+        if (Vm.Solutions.FirstOrDefault(r => r.IsCurrent) is null) return;
 
-        var applied = Vm.Solutions.FirstOrDefault(r => r.IsCurrent);
-        if (applied is null) return;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (_solutionsList is null || Vm is null) return;
+                if (once && _scrolledToApplied) return;
 
-        Dispatcher.UIThread.Post(() => _solutionsList?.ScrollIntoView(applied), DispatcherPriority.Background);
+                var applied = Vm.Solutions.FirstOrDefault(r => r.IsCurrent);
+                if (applied is null) return;
+
+                // Not laid out yet: a ListBox with no items panel, or one that has never been given a
+                // height, cannot scroll and does not say so. Wait a frame rather than spend the flag.
+                if (_solutionsList.ItemsPanelRoot is null || !(_solutionsList.Bounds.Height > 0))
+                {
+                    if (attempt < MaxScrollToAppliedAttempts) ScrollToApplied(once, attempt + 1);
+                    return;
+                }
+
+                _solutionsList.ScrollIntoView(applied);
+                if (once) _scrolledToApplied = true;
+            },
+            DispatcherPriority.Background);
     }
 
     private void OnSortGrid(object? sender, RoutedEventArgs e)
@@ -587,6 +660,15 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
         vm.PropertyChanged += OnVmPropertyChanged;
         Closed += (_, _) => vm.PropertyChanged -= OnVmPropertyChanged;
         SyncPaneLayout();
+
+        // The Specification scroller's cap is the pane's height less the Solutions floor, so it is
+        // re-taken whenever the pane is resized — a window resize, and the pane-expander columns
+        // above, which change the width and therefore how many note lines wrap.
+        if (this.FindControl<Grid>("SpecificationPane") is { } specPane)
+        {
+            specPane.SizeChanged += (_, _) => SyncSpecificationCap();
+            SyncSpecificationCap();
+        }
 
         BindNumericBox(
             "BandFractionBox",
@@ -644,6 +726,68 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
 
     /// <summary>The response pane's resting width. Matches the AXAML's own literal.</summary>
     private const double ResponseColumnWidth = 380;
+
+    // ── The Specification pane's cap (owner, 2026-08-28) ──────────────────────
+
+    /// <summary>
+    /// The smallest the Specification scroller's cap is ever set to. <b>Matches the AXAML's own
+    /// literal</b>, which is what the pane rests at before the first layout pass reaches here.
+    /// </summary>
+    private const double SpecificationFloor = 300;
+
+    /// <summary>
+    /// The height kept for the Solutions list below it. The Specification pane may grow into
+    /// everything above this and no further.
+    /// </summary>
+    /// <remarks>
+    /// <b>Measured, not guessed.</b> The three specifications ask for 351 px (Single), 411 (Dual)
+    /// and 455 (Tri, with the effective-band note showing) — laid out headlessly at this window's
+    /// own 1199 x 741, where the pane is 641 px and its heading 21. The tri-band figure is what
+    /// sets this number: 641 - 21 - 455 = 165, and the same specification at the window's
+    /// <c>MinHeight</c> of 700 leaves 124. So 120 is the largest floor at which the owner's ask
+    /// holds all the way down to the smallest window the Designer opens at, and it is chosen to be
+    /// exactly that rather than to be round.
+    ///
+    /// <para><b>It is a floor, not the usual case.</b> It binds only where the specification is at
+    /// its tallest; a single-band pane leaves the list 269 px at the resting size, which is what it
+    /// has now (the old fixed 300 px cap scrolled even a single band, whose content is 351).</para>
+    /// </remarks>
+    private const double SolutionsFloor = 120;
+
+    /// <summary>
+    /// Raises the Specification scroller's cap to whatever the pane can spare, so a Dual or Tri
+    /// specification is readable without scrolling.
+    /// </summary>
+    /// <remarks>
+    /// <b>Owner, 2026-08-28:</b> selecting Dual or Tri is to expand the Specification group
+    /// minimally, at the Solutions group's expense, so that every band edge and every note in it is
+    /// on screen with no scrolling.
+    ///
+    /// <para><b>The cap is raised; the pane is not resized.</b> The scroller sits in an <c>Auto</c>
+    /// row, so it already asks for exactly its content's height — the only thing that ever made it
+    /// scroll was the cap being below that. Raising the cap is therefore the whole of "expand
+    /// minimally": each band count takes exactly its own content and no more, so Dual grows by the
+    /// two rows it added and Tri by four rows and the effective-band note. Setting a per-band-count
+    /// HEIGHT instead would have to know what a row measures, and would be wrong the first time a
+    /// note wrapped to two lines.</para>
+    ///
+    /// <para><b>Why code rather than a binding.</b> The cap is the pane's own height less a floor,
+    /// and there is no arithmetic in a <c>{Binding}</c> — <c>Bounds.Height</c> can be bound but not
+    /// reduced by a constant without a converter written for this one sum. The pane's height is set
+    /// by the window, not by these children, so reading it here cannot feed back into the measure
+    /// that produced it.</para>
+    /// </remarks>
+    private void SyncSpecificationCap()
+    {
+        if (this.FindControl<Grid>("SpecificationPane") is not { } pane) return;
+        if (this.FindControl<ScrollViewer>("SpecificationScroll") is not { } scroll) return;
+
+        // Row 0 is the "Specification" heading, which is above the scroller and not available to it.
+        double heading = pane.RowDefinitions.Count > 0 ? pane.RowDefinitions[0].ActualHeight : 0;
+        double spare = pane.Bounds.Height - heading - SolutionsFloor;
+
+        scroll.MaxHeight = Math.Max(SpecificationFloor, spare);
+    }
 
     /// <summary>
     /// <b>F re-frames the network schematic</b>, the same key the schematic editor uses for the same

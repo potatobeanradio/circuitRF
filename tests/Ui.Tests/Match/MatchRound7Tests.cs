@@ -604,9 +604,14 @@ public sealed class MatchRound7Tests(ITestOutputHelper output)
             Assert.Contains("CommitSpecChange();", tail, StringComparison.Ordinal);
         }
 
-        // SetTermination shares it now rather than owning a copy.
+        // The two edits that also ask for an auto-solve reach it through one wrapper rather than
+        // owning a copy — a termination change and, since 2026-08-28, a band-count change.
+        foreach (string signature in new[] { "internal void SetTermination(", "public int BandCount" })
+            Assert.Contains("CommitSpecChangeWithAutoSolve();",
+                            Between(src, signature), StringComparison.Ordinal);
         Assert.Contains("CommitSpecChange();",
-                        Between(src, "internal void SetTermination("), StringComparison.Ordinal);
+                        Between(src, "private void CommitSpecChangeWithAutoSolve()"),
+                        StringComparison.Ordinal);
 
         // ...and LOADING a design still must not rewrite it.
         foreach (string signature in new[]
@@ -645,7 +650,7 @@ public sealed class MatchRound7Tests(ITestOutputHelper output)
         Assert.Contains("Termination 2", d.RippleNote, StringComparison.Ordinal);
         Assert.Contains("reactance", d.RippleNote, StringComparison.OrdinalIgnoreCase);
 
-        Assert.Contains("6.6", d.RippleTooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("§", d.RippleTooltip, StringComparison.Ordinal);
         Assert.True(d.RippleTooltip.Length > d.RippleNote.Length * 3,
             "the explanation did not move anywhere, it just got shorter");
 

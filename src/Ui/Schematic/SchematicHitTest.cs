@@ -301,11 +301,15 @@ public static class SchematicHitTest
         // so the clickable zone always tracks the rendered text (Bug A fix — single source of truth).
         // SubIndex in the returned HitResult is the index in the FULL Parameters list (not filtered).
 
+        // EditableComponent.LabelParameters is the single definition of WHICH parameters are drawn
+        // (a Match draws none of its own); this path needs each one's index in the full list as well,
+        // so it filters against that list rather than deciding again and drifting from the renderer.
+        var labelled = comp.LabelParameters().ToList();
         var shownParams = new List<(int FullIndex, EditableParameter Param)>();
         for (int pi = 0; pi < comp.Parameters.Count; pi++)
         {
             var p = comp.Parameters[pi];
-            if (p.ShowOnSchematic && !string.IsNullOrEmpty(p.Expression))
+            if (labelled.Contains(p) && !string.IsNullOrEmpty(p.Expression))
                 shownParams.Add((pi, p));
         }
 

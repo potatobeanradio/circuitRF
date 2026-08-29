@@ -16,6 +16,7 @@ lede: Direct synthesis of a bandpass matching network that absorbs both terminat
 <li><a href="#probe">Probe: reading the terminations off your own circuit</a></li>
 <li><a href="#transforms">Norton transforms: moving values without moving the response</a></li>
 <li><a href="#solutions">The solutions list</a></li>
+<li><a href="#feasibility">Feasibility: what is possible before you synthesise anything</a></li>
 <li><a href="#worked">Worked example: a two-stage FET interstage match</a></li>
 <li><a href="#flatten">Flatten to Cell</a></li>
 <li><a href="#refs">References</a></li>
@@ -36,6 +37,25 @@ numbers rather than left watching an optimiser fail to converge.
 The component **stamps the ladder element by element on internal nodes** — not as a lumped ABCD block —
 so it behaves correctly at DC and in harmonic balance, and it is identical by construction to the cell
 that [Flatten to Cell](#flatten) writes.
+
+### The symbol tells you what it is
+
+A Match puts **no parameter text on the schematic** — no `F1`, no `F2`, no `Order`. Everything about it
+is edited in the Match Designer, and everything about it is read there or in the Properties panel, so
+three numbers beside the symbol were three numbers that could not be acted on where they stood.
+
+The **glyph** says the part you need at a glance. Its three stacked waves are a frequency axis, highest
+at the top, and a slash means that band is blocked:
+
+| The symbol shows | The network is |
+|---|---|
+| slashes top and bottom | **bandpass** — the middle band passes |
+| slashes on the top two waves | **lowpass** |
+| slashes on the bottom two waves | **highpass** |
+| two smaller bandpass glyphs, side by side | **dual-band** |
+| three smaller bandpass glyphs, two below one | **tri-band** |
+
+It follows the design: apply a lowpass solution and the symbol on the page becomes a lowpass symbol.
 
 ## Absorption, and why it is the whole point {#absorption}
 
@@ -129,8 +149,11 @@ ordinary circuitRF value-and-unit pair, so [unit entry](units.html) works exactl
 | **Topology** | Series or parallel. This is a physical statement about the network you are matching, and it changes which order parities are available. |
 | **R**, **X kind**, **Value** | The termination. `X = –` means purely resistive. |
 | **Conjugate** | Targets Z* instead of Z — which flips the reactance sign, and so turns a measured parallel R‖C into a parallel R‖L target. |
+| **Bands** | Single, Dual or Tri. Dual and Tri match two or three bands at once — see [Multiband](#dualband). |
 | **Band f1, f2** | The passband. Everything is computed at ω₀ = √(ω₁ω₂) with fractional bandwidth *w*. |
-| **Order** | Number of in-band match points, 2–6, restricted to the parities the terminations permit. The element count is **2n in every form**. |
+| **Band f3, f4** | The second band, when Bands is Dual — or the **middle** band, when it is Tri. |
+| **Band f5, f6** | The third band, when Bands is Tri. |
+| **Order** | Number of in-band match points, 2–6, restricted to the parities the terminations permit in bandpass form. Multiband counts match points **per band** and offers 1–3. The element count depends on your two terminations: **2n** (or **4n** multiband) for a mixed or resistive pair, and one arm more — **2n + 1**, or **4n + 2** — when both ends are the same topology. The tooltip beside the picker states which. |
 | **Response** | Chebyshev — single-match (optimum), Chebyshev — double-match (exact), Butterworth, or Bessel where feasible. |
 | **Form** | Bandpass, lowpass or highpass. Not a control — you choose it by applying a solution, and every solution card names its form. |
 | **Q-adjust** | Offers solutions synthesised at a raised Q, which trades a little bandwidth for element values that may be easier to build. |
@@ -237,8 +260,8 @@ is the element values you would have to build.
 The list covers **three network forms**, and the filter's first group turns each on and off. A bandpass
 network is two-element arms resonant at band centre. A **lowpass** network is series inductors in the
 through path and shunt capacitors to ground; a **highpass** network is the other way round. All three
-are matched between f1 and f2, and all three use 2n elements at order n — the lowpass form is not the
-cheaper one.
+are matched between f1 and f2, and all three use 2n elements at order n (2n + 1 when both terminations
+are the same topology) — the lowpass form is not the cheaper one.
 
 What the lowpass and highpass forms buy is **tame element values at wide bandwidth** — there are no
 resonators, so the L's and C's stay within a factor of a few of each other instead of spreading over
@@ -259,6 +282,148 @@ Two consequences worth knowing before you go looking for them:
   capacitor against the *higher*-impedance one. So a shunt capacitance on the high side of a step-down
   absorbs; the same capacitance on the low side of a step-up does not, and the refusal says so and
   points you at bandpass form.
+- **Two terminations of the same topology are fine here too, at one element more.** The ladder then has
+  an odd element count, both of its ends face the same way, and both are absorbed. Its two ends flip
+  together, so a parallel pair has to be analysed from the *higher* resistance and a series pair from
+  the lower; if you have it the other way round the refusal says which end to analyse from. Odd counts
+  are Chebyshev only.
+
+### Multiband: two or three bands at once, and the gaps left alone {#dualband}
+
+Set **Bands** to *Dual* and a second pair of edges appears. The network is then matched over **f1–f2
+and f3–f4 together**, and the region between them is deliberately *not* matched. *Tri* adds a third
+pair, f5–f6, and two such gaps.
+
+That is the whole idea rather than a compromise. The Fano bound is a fixed budget spread over all
+frequency; a single wide match from f1 to f4 spends it across the whole span, gap included, and
+everything spent between f2 and f3 is wasted if your application does not use those frequencies. A
+dual-band network spends the budget in the two bands and leaves the gap reflecting. For 20 Ω ‖ 2.5 pF
+into 50 Ω over 2.4 GHz and 5 GHz Wi-Fi, eight elements reach **−31.8 dB in both bands**, against
+−18.8 dB for a single-band eight-element network covering the whole span.
+
+**The gap mismatch is the design working, so the status strip states it.** Beside the worst in-band
+return loss you get a line like *gap 2.5–5.15 GHz: max |S11| 0.445 (−7.0 dB)*, and that number **rises
+with order** — a higher-order network is bigger in the gap, and that is exactly where the extra in-band
+return loss comes from.
+
+Three things to know before you type four frequencies:
+
+- **Type the edges in any order.** f1…f6 are one ordered list of passband boundaries, so if you put a
+  number in the wrong field the Designer sorts them back into increasing order and renumbers the
+  fields in front of you. What it cannot fix is two edges that are equal — a zero-width band — and
+  that stays a refusal.
+- **The bands must be geometric mirrors of each other** — `f1·f4 = f2·f3`, which is the same as
+  equal ratio bandwidths `f2/f1 = f4/f3`. Yours will not be. circuitRF keeps the wider band exactly,
+  **widens the narrower one away from the gap** until the ratios match, and says so in one line under
+  the fields: *"Band 1 widened to 2.201–2.5 GHz to mirror band 2 about 3.588 GHz."* The design is
+  always to the effective bands, never silently to the ones you typed. Where the two ratio bandwidths
+  differ a lot the stretch is severe and this is the wrong tool — a 0.9–1.0 GHz band paired with
+  3–6 GHz would be designed as 0.5–1.0 GHz, which is not what you asked for.
+- **Order is match points per band**, so orders 1, 2 and 3 give 4, 8 and 12 elements for a mixed
+  termination pair — the same twelve a single-band order-6 network gives, which is the fair comparison.
+  Two bands stop there. **Three bands go on to orders 4, 5 and 6** — 16, 20 and 24 elements — for the
+  reason the Feasibility section below explains: a tri-band spec with a narrow middle band is not
+  three bands at all until order 4. Higher is not automatically better; the solutions list spans every
+  order and ranks by return loss, so pick by the number on the card rather than by the order.
+- **Two terminations of the same topology get one arm more**, not a refusal. A shunt-C-to-shunt-C
+  interstage needs a ladder whose two ends face the same way, which is an odd number of arms, so those
+  orders give 6, 10 and 14 elements instead. You do not choose this — your terminations do, and the
+  order picker's tooltip says which count you are getting. The extra arm buys the absorption, not
+  return loss: at the same order the odd ladder measures within 0.01 dB of the even one.
+
+Everything else is unchanged. The terminations are read at ω₀ — which is now the gap centre, where
+every arm of the ladder is transparent — the ladder is an ordinary bandpass ladder with twice as many
+arms, so Norton transforms, absorption, the excess-element rule, the solutions list and Flatten all
+work exactly as they do for a single band.
+
+#### Three bands
+
+*Tri* works the same way with one difference in the rule above: **the middle band is the one that is
+kept**, because a three-band response has to be symmetric about its own centre and only the middle band
+can straddle it. Bands 1 and 3 are widened onto each other's mirror image about ω₀ = √(f3·f4), and the
+note names every band that moved. Switching from *Dual* to *Tri* therefore moves your existing second
+band out to f5–f6 and seeds a new middle band between them, rather than hanging a third band off the
+end where it would immediately be mirrored on top of the second.
+
+The status strip shows **two gap lines**, one per gap. On a spec that already mirrors they come out
+equal; they separate as soon as the middle band sits off centre.
+
+Three bands are **Chebyshev only**. Butterworth means maximally flat at the middle of one passband, and
+three bands do not have a single middle to be flat at — the equal-ripple answer is the only one there
+is, so that is what is offered. For 50 Ω ‖ 4 pF over 0.5–0.6, 0.9–1.1 and 1.65–1.98 GHz, eight elements
+reach **−12.0 dB in all three bands**, twelve reach −14.5 dB and sixteen reach **−18.9 dB**.
+
+**Multiband is bandpass only**, and the solutions filter says so in place of its form group: the
+lowpass and highpass forms of the previous section have no multiband version yet. Nor do asymmetric
+bands — bands whose ratio bandwidths are genuinely different, matched as requested rather than
+widened. Both are recorded as future work.
+
+## Feasibility: what is possible before you synthesise anything {#feasibility}
+
+A lossless network cannot match a reactive termination arbitrarily well over an arbitrary bandwidth.
+There is a hard ceiling, it depends only on the terminations and the bands, and the Designer shows it
+**beside** every result and **before** any of them — the status strip's line reads
+
+> Fano ceiling 6.4 dB (termination 2, over the bands)
+
+quoted positive like the return loss above it, and naming which of the two ends is the one setting it.
+Hover it for both ends, the ceiling over the bands as you typed them, the ceiling over the whole span
+from your lowest edge to your highest, and — for a multiband spec — how much of the ceiling the
+mirror widening cost. **The line is there even when the synthesis refuses**, which is when it usually
+matters most: a refusal and a ceiling of −3 dB are the same fact, and only one of them tells you what
+to change.
+
+When the line ends **"— at the ceiling"**, the design is within a dB of what physics allows and no
+amount of searching will improve it. Anything else is headroom.
+
+### Which end limits you, and what makes it worse
+
+Two of the four terminations are limited by **total bandwidth**, and two by your **lowest band edge**:
+
+| your termination | what costs you |
+|---|---|
+| R ‖ C (shunt capacitance) | total bandwidth — the sum of all your band widths |
+| R + L (series inductance) | total bandwidth |
+| R + C (series capacitance) | the **lowest** frequency you ask for |
+| R ‖ L (shunt inductance) | the **lowest** frequency you ask for |
+
+That difference matters. With a series capacitance, moving your lowest band edge up by a few hundred
+megahertz can be worth more than everything else put together; with a shunt capacitance it is the
+total width that counts and where the bands sit hardly matters at all.
+
+### The hints
+
+When the ceiling is genuinely what is stopping you — the search came back empty, or what it found is
+already against the wall — a line appears under the solutions list saying so and offering up to four
+one-variable changes that would reach −15 dB:
+
+> The best any lossless network can do here is -6.4 dB, set by termination 2 (1.25 Ω + 5 pF series)
+> over 2.25–3 / 4.5–5 / 7.5–10 GHz. To reach -15 dB: termination 2's capacitance at or above 11.7 pF;
+> or band 1 starting at 2.86 GHz instead of 2.25; or without band 1 the ceiling over bands 2 and 3 is
+> -32.1 dB; or band 1 as 2.25–2.5 GHz mirrors band 3 without widening (ceiling -13.8 dB).
+
+Each clause holds everything else fixed and solves for the one thing it names, so they are alternatives
+rather than a recipe. **They are ceilings, not designs**: reaching one still needs an order and a
+family that fit, and the ladder that gets there may be a longer one than you wanted. It is a hint and
+never a refusal — solutions that exist are still listed beside it.
+
+### Does your order actually use the gaps?
+
+A multiband network buys its in-band return loss by leaving the gaps alone. **At low order and with a
+narrow middle band, the prototype may not exclude them at all** — the equal-ripple polynomial on your
+bands turns out to be the same polynomial as a single wide match over the whole span, and the result is
+one broad mediocre match instead of two or three good ones. This is not a fault in the synthesis; at
+that order no polynomial does better.
+
+The Frequency Band card says so when it happens:
+
+> At order 2 the tri-band prototype does not exclude the gaps — this is a single-band match over
+> 2.25–10 GHz (ceiling -3.1 dB). The gaps open at order 4 (rise ×2.9).
+
+and each gap line in the status strip carries the same measurement as a **prototype rise** factor: ×1
+means the gap is not being excluded, and the larger it grows the more of the budget is being reclaimed
+from the gap and spent in your bands. If the note says no offered order opens them, the band geometry
+itself is the problem — widen the middle band, or move the outer bands closer together.
 
 ## Worked example: a two-stage FET interstage match {#worked}
 
@@ -304,6 +469,12 @@ stamps and the same values [Flatten to Cell](#flatten) writes out.
   loss, insertion loss, ripple, Π N², and the date.
 - **The design record itself**, carried onto the cell, so *Re-open in Match Designer…* can reconstruct
   it later. A flattened cell that has forgotten what it was is a dead end.
+
+**The values are the ones you were looking at.** Every element is written at the **significant digits**
+set in *Settings* — an inductor the pane showed as 1.201 pH lands in the cell as 1.201 pH, not as a
+fifteen-digit rendering of the double behind it. Raise that setting before flattening when you want the
+network carried at full precision; the flattened cell is a rounded copy of the design, and at three
+digits its response differs from the `Match` component's by about one part in a thousand.
 
 A checkbox, on by default, **replaces the instance in place** with one of the new cell. The symbol and
 pin positions are identical, so the wires stay connected and the schematic is immediately runnable. The

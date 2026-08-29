@@ -295,7 +295,8 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Matching,
             SearchTerms: ["impedance matching", "filter", "filter design", "transform", "Chebyshev",
                           "Butterworth", "Bessel", "match", "matching", "interstage", "Fano", "Norton",
-                          "absorb", "Cgs", "Cds", "Ropt", "bandpass", "lowpass", "highpass"],
+                          "absorb", "Cgs", "Cds", "Ropt", "bandpass", "lowpass", "highpass",
+                          "dual-band", "tri-band", "multiband"],
             IsCommon: true),
         // Tuner: general programmable RF termination (loadpull.md §1). Single DUT-facing pin;
         // the reference net is hard-coded ground at extraction. Appears under Terminals + Sources.
@@ -859,23 +860,39 @@ public static class ComponentTypeRegistry
 
             // Match: `Design` is the WHOLE design, base64 of its JSON (match.md §7.2) — hidden, never
             // a text row (ParameterEditorViewModel.IsMatchPanelParameter), and the only input the
-            // model reads. The rest are ECHO parameters: the Designer writes them so the user can
-            // display the design on the schematic, and NOTHING reads them back. That is why they are
-            // duplicated here at all rather than derived at render time — an instance has to carry
-            // them to be able to show them, and match.md §7.2 makes the design authoritative so the
-            // echo cannot become a second input.
+            // model reads. The rest are ECHO parameters: the Designer writes them so the design can be
+            // READ — in the `.cnl` line, where the payload is still a base64 token, and by the glyph,
+            // which draws itself from `Form` and `Bands` — and NOTHING reads them back. That is why
+            // they are duplicated here at all rather than derived at render time; match.md §7.2 makes
+            // the design authoritative, so an echo can never become a second input.
+            //
+            // EVERY ONE OF THEM IS ShowOnSchematic: false (owner, 2026-08-28). A Match exposes no
+            // parameters to the page: `F1`, `F2` and `Order` used to be drawn beside it, and what
+            // they were saying — which band, how big — the glyph now says itself, without three text
+            // rows nobody can edit there anyway. The Designer is the only place a Match is edited, so
+            // it is the only place its numbers belong. `EditableComponent.LabelParameters` enforces
+            // the same rule on instances placed before this change, whose files still say true.
             //
             // The default payload is a REAL design (1.8–2.2 GHz, order 4, 50 Ω to 10 Ω,
             // Chebyshev-Fano) and not a blank: a freshly dropped Match must simulate immediately. The
-            // seven ECHO parameters below MUST agree with MatchEmbedding.DefaultDesign — they are what
-            // a reader sees on the page before the Designer has ever rewritten them, and a set that
+            // ECHO parameters below MUST agree with MatchEmbedding.DefaultDesign — they are what a
+            // reader (and the glyph) sees before the Designer has ever rewritten them, and a set that
             // disagrees with the payload describes a component that does not exist. Same rule wBond
             // follows in shipping a default wire rather than an empty array.
             case SymbolKind.Match:
                 return [new("Design",   MatchEmbedding.DefaultPayload, "", false, UnitDimension.None),
-                        new("F1",       "1.8",           "GHz", true,  UnitDimension.Frequency),
-                        new("F2",       "2.2",           "GHz", true,  UnitDimension.Frequency),
-                        new("Order",    "4",             "",    true,  UnitDimension.None),
+                        new("F1",       "1.8",           "GHz", false, UnitDimension.Frequency),
+                        new("F2",       "2.2",           "GHz", false, UnitDimension.Frequency),
+                        // Multiband (match.md §18). Bands is 1 and the second and third bands are 0
+                        // in the default, which is the single-band design every existing Match
+                        // already is; the Designer rewrites all five together whenever the band count
+                        // moves.
+                        new("Bands",    "1",             "",    false, UnitDimension.None),
+                        new("F3",       "0",             "GHz", false, UnitDimension.Frequency),
+                        new("F4",       "0",             "GHz", false, UnitDimension.Frequency),
+                        new("F5",       "0",             "GHz", false, UnitDimension.Frequency),
+                        new("F6",       "0",             "GHz", false, UnitDimension.Frequency),
+                        new("Order",    "4",             "",    false, UnitDimension.None),
                         new("Response", "ChebyshevFano", "",    false, UnitDimension.None),
                         new("Form",     "Bandpass",      "",    false, UnitDimension.None),
                         new("R1",       "50",            "Ω",   false, UnitDimension.Resistance),

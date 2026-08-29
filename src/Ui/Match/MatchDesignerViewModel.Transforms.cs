@@ -311,6 +311,38 @@ public sealed partial class MatchDesignerViewModel
         }
     }
 
+    /// <summary>
+    /// Non-zero while the view-model is PUBLISHING its own state to the view — a rebuild's
+    /// notifications on their way out, not a user's edit on its way in.
+    /// </summary>
+    /// <remarks>
+    /// <b>A control can write back, and a control's write-back is not an edit</b> (owner-reported,
+    /// 2026-08-28). Avalonia's <c>RangeBase</c> clamps a slider's <c>Value</c> into its current
+    /// <c>Minimum</c>/<c>Maximum</c> whenever any of the three is set, and a two-way binding sends
+    /// every clamp back to the source — so a rebuild that moves a transform's range produced a
+    /// <c>SetTransformN</c> nobody asked for, and therefore an undo entry nobody made. On the undo
+    /// path that entry landed WHILE <c>UndoRedoStack.Undo</c> was still moving the entry it had popped,
+    /// which wiped redo and desynchronised the stamp stack. <c>MatchTransformRowViewModel.N</c> carries
+    /// the full account.
+    ///
+    /// <para>Raised at the one place those notifications leave the view-model —
+    /// <c>MatchTransformRowViewModel.Refresh</c> — rather than at each of its callers, so a fourth
+    /// caller cannot be added without it. It is a DEPTH, not a flag: a rebuild refreshes every row,
+    /// and <see cref="SetTransformN"/> refreshes them again inside its own edit.</para>
+    ///
+    /// <para>Not a thread-safety mechanism and it does not need to be: every refresh runs under
+    /// <c>RefreshGate</c>, and so does every analysis landing that could start one.</para>
+    /// </remarks>
+    internal bool IsPublishing => _publishDepth > 0;
+
+    private int _publishDepth;
+
+    /// <inheritdoc cref="IsPublishing"/>
+    internal void BeginPublish() => _publishDepth++;
+
+    /// <inheritdoc cref="IsPublishing"/>
+    internal void EndPublish() => _publishDepth--;
+
     private void RefreshTransformRows()
     {
         while (Transforms.Count > _design.Transforms.Count) Transforms.RemoveAt(Transforms.Count - 1);

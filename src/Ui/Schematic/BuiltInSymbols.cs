@@ -7,6 +7,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using CircuitRF.Core.Matching;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -73,6 +74,8 @@ public static class BuiltInSymbols
     private static readonly Dictionary<int, Symbol> _verilogACache = new();
     // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
     private static readonly Dictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
+    // Match cache key: (form, bandCount) — per-instance glyph variant (match.md §8.4).
+    private static readonly Dictionary<(NetworkForm, int), Symbol> _matchCache = new();
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.
@@ -657,36 +660,123 @@ public static class BuiltInSymbols
         L( -60,   0,   60,   0),            // centre conductor line through the body
     ], SymbolKind.Tline);
 
-    // ── Match — the standard BANDPASS glyph: three stacked sine waves in a square body, ──────
-    // with a slash struck through the top one and through the bottom one (match.md §8.4).
+    // ── Match — the standard filter glyph: three stacked sine waves in a square body, with a ─────
+    // slash struck through every wave the network BLOCKS (match.md §8.4).
     // Pins: (−200,0) left = port 1 = Termination 1 side / (+200,0) right, matching TLIN's own
     // horizontal 2-port convention.
     //
-    // The two slashes are PLAIN LINES while the waves are SinePrimitives, and the primitive is the
+    // **The three waves read as a frequency axis, high at the top.** Which two carry a slash is
+    // therefore the whole content of the glyph, and it follows the network's form (owner, 2026-08-28):
+    //   Bandpass — top and bottom struck, the middle wave passes.
+    //   Lowpass  — the top TWO struck; the lowest frequency passes.
+    //   Highpass — the bottom TWO struck; the highest frequency passes.
+    // A multiband design (match.md §18) is bandpass in every band, so it is drawn as two or three
+    // SMALLER bandpass glyphs instead — side by side for dual-band, and two-below-one for tri-band,
+    // which says "several passbands" in the one place a single stack of three waves cannot.
+    //
+    // The slashes are PLAIN LINES while the waves are SinePrimitives, and the primitive is the
     // only one of the two that knows anything about the glyph — so the strikethrough reads as a
     // strikethrough only if the lines are drawn to cross the waves geometrically, at every rotation
-    // and mirrored. They are therefore centred on their own wave (y = ∓55 / +55, the same centres
-    // the sines use) and just long enough (±14 in x, against the waves' ±60) to overhang the
-    // wave's own local amplitude at both ends — owner, 2026-08-19: "much shorter", then "make them
-    // half as long" (±28 x 50 -> ±14 x 26, half the length, same slope and same centre). Both run the
-    // same way, DOWNWARD from left to right, so the pair reads as one annotation rather than as a
-    // cross.
+    // and mirrored. They are therefore centred on their own wave and just long enough (±14 in x,
+    // against the waves' ±60) to overhang the wave's own local amplitude at both ends — owner,
+    // 2026-08-19: "much shorter", then "make them half as long" (±28 x 50 -> ±14 x 26, half the
+    // length, same slope and same centre). Every slash runs the same way, DOWNWARD from left to
+    // right, so a pair reads as one annotation rather than as a cross.
     //
-    // The y offset off the wave's own centre is load-bearing, not cosmetic: a slash
-    // centred exactly on its wave's own centre passes THROUGH the point (0, ∓55) that the wave
-    // itself passes through, and two segments meeting at a shared point do not strictly cross —
-    // which MatchComponentPlacementTests.TheSlashesCrossTheOuterWaves_AndNotTheMiddleOne, quite
-    // correctly, reads as "not struck through".
-    private static Symbol BuildMatch() => Sym([
-        L(-200,   0, -110,   0),                                   // left lead
-        L( 110,   0,  200,   0),                                   // right lead
-        RRect( 0,  0,  220, 220,  18),                             // square body
-        Sine(  0, -55,  16, 1, 120, SineAxis.Horizontal),          // top wave (blocked)
-        Sine(  0,   0,  16, 1, 120, SineAxis.Horizontal),          // passband wave
-        Sine(  0,  55,  16, 1, 120, SineAxis.Horizontal),          // bottom wave (blocked)
-        L( -14, -64,   14, -38),                                   // strike through the top wave
-        L( -14,  38,   14,  64),                                   // strike through the bottom wave
-    ], SymbolKind.Match);
+    // The 4-unit offset off the wave's own centre is load-bearing, not cosmetic: a slash centred
+    // exactly on its wave's own centre passes THROUGH the point the wave itself passes through, and
+    // two segments meeting at a shared point do not strictly cross — which
+    // MatchComponentPlacementTests' strike-through check, quite correctly, reads as "not struck
+    // through". Outer waves are nudged toward the middle and the middle wave downward, which is the
+    // only choice that has to be made and the one that keeps a lowpass's two slashes parallel.
+
+    /// <summary>Centre-to-centre spacing of the three stacked waves, symbol-local units.</summary>
+    private const double MatchWaveGap    = 55;
+    private const double MatchWaveAmp    = 16;
+    private const double MatchWaveLength = 120;
+    private const double MatchSlashHalfX = 14;
+    private const double MatchSlashHalfY = 13;
+    private const double MatchSlashNudge = 4;
+
+    private static Symbol BuildMatch() => BuildMatchVariant(NetworkForm.Bandpass, 1);
+
+    /// <summary>
+    /// Per-instance <c>Match</c> symbol: the wave stack follows <paramref name="form"/>, and a
+    /// <paramref name="bandCount"/> above 1 replaces it with that many smaller bandpass stacks
+    /// (match.md §8.4, §18). Cached per (form, bandCount), mirroring the Tuner and SnP paths.
+    ///
+    /// <para>DISPLAY-ONLY, like <c>ShowBias</c>: the engine reads the <c>Design</c> payload and
+    /// nothing else, so the glyph is a second RENDERING of the design, never a second input to it.
+    /// It is driven by the <c>Form</c> and <c>Bands</c> echo parameters the Designer rewrites on
+    /// every commit — the same echoes that used to be drawn as text beside the symbol.</para>
+    /// </summary>
+    public static Symbol PrimitivesForMatch(NetworkForm form, int bandCount)
+    {
+        int bands = bandCount < 1 ? 1 : bandCount > 3 ? 3 : bandCount;
+        if (bands == 1 && form == NetworkForm.Bandpass) return _match;   // the cached default
+        var key = (form, bands);
+        if (!_matchCache.TryGetValue(key, out var sym))
+            _matchCache[key] = sym = BuildMatchVariant(form, bands);
+        return sym;
+    }
+
+    private static Symbol BuildMatchVariant(NetworkForm form, int bandCount)
+    {
+        var prims = new List<SymbolPrimitive>
+        {
+            L(-200,   0, -110,   0),                 // left lead
+            L( 110,   0,  200,   0),                 // right lead
+            RRect( 0,  0,  220, 220,  18),           // square body
+        };
+
+        // Scale and placement of each wave stack inside the 220 × 220 body. A stack is
+        // ±(gap + amp) tall and ±length/2 wide before scaling, so at these three scales every group
+        // clears the body wall and, for the multiband cases, its neighbours.
+        switch (bandCount)
+        {
+            case 2:
+                MatchWaveStack(prims, NetworkForm.Bandpass, 0.5,  -55, 0);
+                MatchWaveStack(prims, NetworkForm.Bandpass, 0.5,   55, 0);
+                break;
+            case 3:
+                MatchWaveStack(prims, NetworkForm.Bandpass, 0.45,   0, -45);
+                MatchWaveStack(prims, NetworkForm.Bandpass, 0.45, -52,  45);
+                MatchWaveStack(prims, NetworkForm.Bandpass, 0.45,  52,  45);
+                break;
+            default:
+                MatchWaveStack(prims, form, 1.0, 0, 0);
+                break;
+        }
+
+        return Sym(prims, SymbolKind.Match);
+    }
+
+    /// <summary>
+    /// One stack of three waves centred at (cx, cy) and scaled by <paramref name="s"/>, with the
+    /// blocked waves of <paramref name="form"/> struck through.
+    /// </summary>
+    private static void MatchWaveStack(List<SymbolPrimitive> prims, NetworkForm form,
+                                       double s, double cx, double cy)
+    {
+        // Index 0 = top = the highest frequency the glyph depicts, 2 = bottom = the lowest.
+        bool[] struck = form switch
+        {
+            NetworkForm.Lowpass  => [true,  true,  false],
+            NetworkForm.Highpass => [false, true,  true ],
+            _                    => [true,  false, true ],
+        };
+
+        for (int i = 0; i < 3; i++)
+        {
+            double wy = cy + (i - 1) * MatchWaveGap * s;
+            prims.Add(Sine(cx, wy, MatchWaveAmp * s, 1, MatchWaveLength * s, SineAxis.Horizontal));
+            if (!struck[i]) continue;
+            // Toward the middle for the outer waves; downward for the middle one.
+            double nudge = (i == 2 ? -MatchSlashNudge : MatchSlashNudge) * s;
+            prims.Add(L(cx - MatchSlashHalfX * s, wy + nudge - MatchSlashHalfY * s,
+                        cx + MatchSlashHalfX * s, wy + nudge + MatchSlashHalfY * s));
+        }
+    }
 
     // ── Microstrip built-ins (brief-L5a-pcell-contract-and-microstrip.md) ──────────
     // Every body element below is an UNFILLED RoundedRectPrimitive (RRect never sets Filled, which

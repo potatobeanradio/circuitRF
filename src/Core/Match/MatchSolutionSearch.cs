@@ -258,7 +258,11 @@ public static class MatchSolutionSearch
             Network = network,
             Achieved = run.Achieved,
             Required = required,
-            WorstReturnLossDb = MatchResponse.WorstReturnLossDb(network, design.F1, design.F2),
+            // Over the design's EFFECTIVE bands, which for a single band is exactly (F1, F2) at the
+            // same 201 points it has always been, and for a dual-band design is both bands with the
+            // gap between them left out — the gap is where the Fano budget is saved (match.md §18.1),
+            // and scoring a solution on it would rank the design working as though it were failing.
+            WorstReturnLossDb = MatchResponse.WorstReturnLossDb(network, design.Bands),
             ImplausibleValues = run.GuardFired,
             PairPositions = [.. set.Select(i => (pairs[i].IndexA, pairs[i].IndexB))],
         };

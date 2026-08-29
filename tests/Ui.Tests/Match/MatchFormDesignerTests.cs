@@ -583,7 +583,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void ALikeTopologyPair_ListsOnlyBandpassRows_ButKeepsItsOrderLines()
+    public void ALikeTopologyPair_NowListsLowpassAndHighpassRowsToo()
     {
         var design = Problem();
         design.Term2 = new Termination(25.0, ReactanceKind.C, TerminationTopology.Parallel, 2e-12);
@@ -591,11 +591,18 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
         var (_, _, d) = Open(design);
         d.WaitForAnalysis();
 
-        Assert.All(d.AllSolutions, r => Assert.Equal(NetworkForm.Bandpass, r.Form));
+        // MN-MB2: the weighted family gives these forms an ODD element count, whose two ends share
+        // one orientation, so a like pair is no longer bandpass-only. It IS Chebyshev-only — the odd
+        // family comes out of a Remez exchange, which is equiripple by construction.
+        var forms = d.AllSolutions.Select(r => r.Form).Distinct().ToList();
+        output.WriteLine(string.Join(", ", forms));
+        Assert.Contains(NetworkForm.Bandpass, forms);
+        Assert.All(
+            d.AllSolutions.Where(r => r.Form != NetworkForm.Bandpass),
+            r => Assert.Equal(ResponseShape.ChebyshevFano, r.Response));
 
-        // The order lines are still the pair's own bandpass parity — a filter with no lines at all
-        // would leave every row unhideable.
-        Assert.Equal([3, 5], d.Filter.Orders.Select(o => o.Order));
+        // The filter's order lines span every form the search covered, which is now all three.
+        Assert.Equal([2, 3, 4, 5, 6], d.Filter.Orders.Select(o => o.Order));
         d.Dispose();
     }
 
