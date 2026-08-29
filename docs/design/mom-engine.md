@@ -730,6 +730,26 @@ the mesh. Build it only when the kernel that needs it exists; v1 does not.
 > per-point crossover is now nearer **N = 1,000**: the fill is 1.25 s against an LU of ≈ 18 s at
 > N = 3,731. `HISTORY.md` §P5.
 >
+> **Built at P6 (`brief-em-p6-aim-frequency-independent-state.md`, 2026-08-29).** The AIM accelerator
+> rebuilt its stencils, its near set and — through a fresh per-entry fill — every near pair's singular
+> cores at every frequency, where the dense path builds its cores once per mesh (D6). It is now two
+> objects: `PlanarAimGeometry`, once per mesh (grid, stencils as `double`, near-set CSR, and the
+> near cores warmed over the near set at build), and `PlanarAimOperator`, per frequency over it (grid
+> kernels and their FFT hats, the near entries' remainders and assembly, the AIM correction, the
+> sparse LU). Two things the brief did not anticipate. First, its premise was two phases stale — the
+> "25 s per frequency at N = 3,731" is §12's pre-P4 number and the build was 1.75 s on the tree P6
+> started from — so the per-point saving is **1.2–1.4×** (579–623 → 392–476 ms at N = 552;
+> 1,751–1,791 → 1,380–1,435 ms at 3,731; 4.7–4.9 → 3.9–4.1 s at 11,959), with the geometry paid once
+> (0.24 / 0.5 / 1.1 s). Second, the mirror index it listed for the geometry costs 4 B per near entry —
+> 18 MB at N = 11,959, taking the accelerated working set to 214 MB — to save a 17 ms binary-search
+> rebuild, so it is not held; the resident set is 195.8 MB there (196.2 before), the halved stencils
+> covering the 2.5 MB class-keyed core store (the brief's per-cell-pair estimate would have been
+> ~130 MB; P5's classes are why it is not). Measured directly, one dense point against one
+> accelerated point is 0.24 / 0.54 / 2.03 s vs 0.37 / 0.71 / 0.96 s at N = 552 / 994 / 1,912: **the
+> time crossover is N ≈ 1,100**, and the accelerated point is ~13× faster at N = 3,731. Splitting the
+> near fill's timer showed the AIM correction is now the largest per-frequency term (43–46% at
+> N ≥ 3,731), ahead of the sparse LU; a 5× restructuring of it is recorded for P7/P8. `HISTORY.md` §P6.
+>
 > **Reviewed 2026-08-28 — two statements in this section are wrong today, and a brief series exists
 > to act on them (`docs/sonnet-briefs/brief-em-perf-series.md`, P1–P12).** First, *"cost is the fill,
 > not the LU"* holds for a whole sweep only because the once-per-sweep core build is folded into

@@ -444,6 +444,25 @@ public sealed class PlanarCoreBuildCounter
         Interlocked.Increment(ref _pairTotal);
         Interlocked.Increment(ref _pair.GetOrAdd(mesh, static _ => new StrongBox<int>()).Value);
     }
+
+    private readonly ConcurrentDictionary<PlanarMesh, StrongBox<int>> _aim = new(new ByReference());
+    private int _aimTotal;
+
+    /// <summary><b>P6</b> — every <see cref="PlanarAimGeometry"/> build. The accelerator's
+    /// frequency-independent state — stencils, near set, and the near pairs' singular cores — is
+    /// built once per mesh, so over a sweep of any length this is the number of accelerated meshes,
+    /// exactly as <see cref="PairCoreTotal"/> is for the dense path's cores.</summary>
+    public int AimGeometryTotal => Volatile.Read(ref _aimTotal);
+
+    /// <summary>P6 — geometry builds for one mesh; 1 is the gate.</summary>
+    public int AimGeometryBuildsFor(PlanarMesh mesh) =>
+        _aim.TryGetValue(mesh, out var b) ? Volatile.Read(ref b.Value) : 0;
+
+    internal void ObserveAimGeometry(PlanarMesh mesh)
+    {
+        Interlocked.Increment(ref _aimTotal);
+        Interlocked.Increment(ref _aim.GetOrAdd(mesh, static _ => new StrongBox<int>()).Value);
+    }
 }
 
 /// <summary>P4's fill meter — see <see cref="PlanarFillSettings.Counters"/>. Thread-safe; each
@@ -3489,6 +3508,209 @@ internal sealed class RampTopology
 }
 
 /// <summary>
+/// <b>P6 — the frequency-independent half of <see cref="PlanarEntryFill"/>, built once per mesh.</b>
+/// Everything the per-entry fill reads that does not carry ω: the basis halves, the per-basis
+/// moments, the class table, and — the part that costs — the singular cores of every cell pair the
+/// near field asks for, memoised by translation class (P5) or, for a pair with a cut cell or a cut
+/// basis, per pair.
+///
+/// <para>Until P6 all of this lived on <see cref="PlanarEntryFill"/>, which
+/// <see cref="PlanarAimOperator"/> constructed afresh at every frequency — so the clustered-panel
+/// singular quadrature behind every near entry ran once per FREQUENCY, while the dense path ran it
+/// once per MESH (D6, <c>CoreFillCount == 1</c>). <see cref="PlanarAimGeometry"/> owns one of these
+/// and warms it over the whole near set when the geometry is built; the per-frequency fill then
+/// finds every core it needs already here, and <see cref="CorePasses"/> is the counter that says
+/// so (<c>PlanarP6AimGeometryTests</c>).</para>
+///
+/// <para><b>The class cores live in a flat array, not in dictionary nodes.</b> The index is a
+/// <see cref="ConcurrentDictionary{TKey,TValue}"/> from class key to slot; the seven primitives sit
+/// in chunked <see cref="PlanarFill.CellPairMoments"/> arrays those slots address. A dictionary
+/// holding the values themselves would keep 168 B per class inside nodes that no memory walk
+/// counts — P1's own gate (<c>P1_3</c>) adds up the arrays an operator holds, and a store it cannot
+/// see is a store the accounting cannot be checked against.</para>
+///
+/// <para>Thread-safe: the value factories are pure functions of the key, so a race to insert
+/// produces the same bits either way; slot allocation is the one write that serialises, and it is
+/// a counter increment.</para>
+/// </summary>
+public sealed class PlanarEntryCores
+{
+    private const int ChunkShift = 9;                // 512 classes per chunk
+    private const int ChunkSize  = 1 << ChunkShift;
+
+    internal readonly PlanarMesh         Mesh;
+    internal readonly PlanarFillSettings Settings;
+    internal readonly bool               WantRad;
+
+    internal readonly (RooftopHalf A, RooftopHalf B)[]                        DivHalves;
+    internal readonly (PlanarFill.CellWeight A, PlanarFill.CellWeight B)[]    RampHalves;
+    internal readonly double[]       Moments;
+    internal readonly PairClassifier Classifier;
+    internal readonly bool[]         Memoised;
+
+    private readonly ConcurrentDictionary<long, int> _classSlot = new();
+    private readonly object _grow = new();
+    private PlanarFill.CellPairMoments[][] _chunks = new PlanarFill.CellPairMoments[4][];
+    private int _slots;
+
+    private readonly ConcurrentDictionary<(int, int), (double C0, double CLog, double CRad)> _cutScalar = new();
+    private readonly ConcurrentDictionary<(int, int), (double T, double L, double R)>        _cutVector = new();
+    private long _passes;
+
+    /// <summary>The geometry this was built from.</summary>
+    public PlanarFillCores Cores { get; }
+
+    /// <summary>How many distinct translation classes have been integrated.</summary>
+    public int ClassCount => _classSlot.Count;
+
+    /// <summary>Per-pair scalar cores held for pairs the class table cannot serve (a cut cell).</summary>
+    public int CutScalarPairs => _cutScalar.Count;
+
+    /// <summary>Per-pair vector cores held for same-direction basis pairs with a cut half.</summary>
+    public int CutVectorPairs => _cutVector.Count;
+
+    /// <summary>
+    /// <b>The P6 counter.</b> Outer-quadrature passes of the singular cores run through this object:
+    /// a class counts 1, a cut scalar pair 1, a cut vector pair 4 (its four-call path). Over a sweep
+    /// of any length on one geometry this must stop growing after the geometry is built —
+    /// <c>PlanarP6AimGeometryTests</c> asserts exactly that, the way <c>CoreFillCount</c> asserts
+    /// D6's once-per-mesh core build.
+    /// </summary>
+    public long CorePasses => Volatile.Read(ref _passes);
+
+    /// <summary>Bytes this holds: the class store at 168 B per class plus ~40 B of index node, the
+    /// cut caches at ~72 B per entry, and the two per-basis half arrays.</summary>
+    public long Bytes =>
+        (long)_classSlot.Count * (Unsafe.SizeOf<PlanarFill.CellPairMoments>() + 40)
+      + (long)(_cutScalar.Count + _cutVector.Count) * 72
+      + (long)DivHalves.Length * Unsafe.SizeOf<(RooftopHalf, RooftopHalf)>()
+      + (long)Moments.Length * 0;                    // Moments and RampHalves are the cores' own arrays
+
+    public PlanarEntryCores(PlanarFillCores cores)
+    {
+        ArgumentNullException.ThrowIfNull(cores);
+        Cores      = cores;
+        Mesh       = cores.Mesh;
+        Settings   = cores.Settings;
+        WantRad    = Settings.Order >= PlanarExtractionOrder.Linear;
+        Moments    = cores.VMoment;
+        Classifier = cores.Classifier;
+        Memoised   = cores.Memoised;
+        // P6: read straight off the topology rather than copied — it is the same array of the same
+        // structs, and a copy per frequency was N × 2 × sizeof(CellWeight) of pure duplication.
+        RampHalves = cores.Topology.Halves;
+
+        int n = Mesh.Bases.Count;
+        DivHalves = new (RooftopHalf, RooftopHalf)[n];
+        for (int i = 0; i < n; i++) DivHalves[i] = PlanarBasisFunctions.Halves(Mesh, Mesh.Bases[i]);
+    }
+
+    /// <summary>The seven primitives of a class, integrated on its synthetic representative the
+    /// first time any pair of the class is asked for, and read from the store after.</summary>
+    internal PlanarFill.CellPairMoments ClassCores(long key)
+    {
+        int slot = _classSlot.GetOrAdd(key, static (k, self) => self.Integrate(k), this);
+        return _chunks[slot >> ChunkShift][slot & (ChunkSize - 1)];
+    }
+
+    private int Integrate(long key)
+    {
+        var (a, b) = Classifier.Representative(key);
+        var (nodes, panels) = PairClassifier.CoreRule(key, Settings);
+        var cores = PlanarFill.CellPairCores(a, b, nodes, panels, WantRad);
+        Interlocked.Increment(ref _passes);
+
+        lock (_grow)
+        {
+            int slot = _slots++;
+            int chunk = slot >> ChunkShift;
+            if (chunk >= _chunks.Length) Array.Resize(ref _chunks, _chunks.Length * 2);
+            _chunks[chunk] ??= new PlanarFill.CellPairMoments[ChunkSize];
+            _chunks[chunk][slot & (ChunkSize - 1)] = cores;
+            return slot;
+        }
+    }
+
+    /// <summary>D4's area-normalised pulse×pulse cores of a cell pair the class table cannot
+    /// serve, per pair — the pulse path's own four-call arithmetic, unchanged since P4.</summary>
+    internal (double C0, double CLog, double CRad) CutScalarCores(int cellA, int cellB)
+        => _cutScalar.GetOrAdd((cellA, cellB), static (key, self) =>
+        {
+            var wa = PlanarFill.PulseAt(self.Mesh, key.Item1);
+            var wb = PlanarFill.PulseAt(self.Mesh, key.Item2);
+            var r  = PlanarFill.PairCoresOf(self.Mesh, wa, wb, PlanarBasisDirection.X, self.WantRad, self.Settings);
+            Interlocked.Increment(ref self._passes);
+            return r;
+        }, this);
+
+    /// <summary>The summed cores of a same-direction basis pair with a cut half — the four-call
+    /// path's <c>t00 + t01 + t10 + t11</c> (and the log and radius sums), in that order, so the
+    /// assembled entry is bit-for-bit what the per-frequency four-call path produced.</summary>
+    internal (double T, double L, double R) CutVectorCores(int a, int b, PlanarBasisDirection dir)
+        => _cutVector.GetOrAdd((a, b), static (key, self) =>
+        {
+            var (ra, rb) = self.RampHalves[key.Item1];
+            var (sa, sb) = self.RampHalves[key.Item2];
+            var dir = self.Mesh.Bases[key.Item1].Direction;
+            var (t00, l00, r00) = PlanarFill.PairCoresOf(self.Mesh, ra, sa, dir, self.WantRad, self.Settings);
+            var (t01, l01, r01) = PlanarFill.PairCoresOf(self.Mesh, ra, sb, dir, self.WantRad, self.Settings);
+            var (t10, l10, r10) = PlanarFill.PairCoresOf(self.Mesh, rb, sa, dir, self.WantRad, self.Settings);
+            var (t11, l11, r11) = PlanarFill.PairCoresOf(self.Mesh, rb, sb, dir, self.WantRad, self.Settings);
+            Interlocked.Add(ref self._passes, 4);
+            return (t00 + t01 + t10 + t11, l00 + l01 + l10 + l11, r00 + r01 + r10 + r11);
+        }, this);
+
+    /// <summary>The cores-only source <see cref="PlanarFill.WholeVectorCore{T}"/> reads while the
+    /// geometry warms the store — its <c>Remainder</c> is never called there.</summary>
+    internal readonly struct CoreSource(PlanarEntryCores owner) : PlanarFill.IPairSource
+    {
+        private readonly PlanarEntryCores _o = owner;
+
+        public void Get(int outer, int inner, out PlanarFill.CellPairMoments cores, out bool rotated)
+        {
+            long key = _o.Classifier.Key(_o.Mesh.Cells[outer], _o.Mesh.Cells[inner], _o.Settings, out rotated);
+            cores = _o.ClassCores(key);
+        }
+
+        public PlanarFill.CellPairRemainders Remainder(int outer, int inner)
+            => throw new InvalidOperationException("The cores-only source carries no remainder.");
+    }
+
+    /// <summary>
+    /// Every singular core <see cref="PlanarEntryFill.At"/> will need for <c>(i, j)</c>, computed
+    /// now if it is not already held — the same lookups <c>At</c> makes, through the same functions,
+    /// with the frequency-dependent remainders left out. <see cref="PlanarAimGeometry"/> runs this
+    /// over its near set once, which is what makes the per-frequency near fill core-free.
+    /// </summary>
+    internal void Prepare(int i, int j)
+    {
+        int a = Math.Min(i, j), b = Math.Max(i, j);
+
+        var (ma, mb) = DivHalves[a];
+        var (na, nb) = DivHalves[b];
+        PrepareScalar(ma.CellIndex, na.CellIndex);
+        PrepareScalar(ma.CellIndex, nb.CellIndex);
+        PrepareScalar(mb.CellIndex, na.CellIndex);
+        PrepareScalar(mb.CellIndex, nb.CellIndex);
+
+        var dirA = Mesh.Bases[a].Direction;
+        if (dirA != Mesh.Bases[b].Direction) return;
+
+        if (!Memoised[a] || !Memoised[b]) { _ = CutVectorCores(a, b, dirA); return; }
+        _ = PlanarFill.WholeVectorCore(new CoreSource(this), Mesh, RampHalves[a], RampHalves[b],
+                                       dirA == PlanarBasisDirection.X);
+    }
+
+    private void PrepareScalar(int cellA, int cellB)
+    {
+        int a = Math.Min(cellA, cellB), b = Math.Max(cellA, cellB);
+        var ok = Classifier.Classifiable;
+        if (!ok[a] || !ok[b]) { _ = CutScalarCores(a, b); return; }
+        _ = ClassCores(Classifier.Key(Mesh.Cells[a], Mesh.Cells[b], Settings, out _));
+    }
+}
+
+/// <summary>
 /// <b>M5 — ONE entry of the Galerkin matrix, computed on demand.</b> The dense fill's own arithmetic,
 /// in the dense fill's own order, for a single <c>(i, j)</c>: <see cref="At"/> is asserted BIT-IDENTICAL
 /// against <see cref="PlanarFill.Fill"/> entry by entry, which is what lets AIM's near-field correction
@@ -3506,10 +3728,15 @@ internal sealed class RampTopology
 /// representative — the SAME representative the dense build uses, which is what keeps
 /// <see cref="At"/> bit-identical to <see cref="PlanarFill.Fill"/> now that both read a class rather
 /// than the pair itself, and what keeps R-fil-11 under a row-parallel near fill (a first-visitor
-/// representative would depend on the scheduler; a pure function of the key does not). The three
-/// caches hold the cores, the vector remainder and the scalar (pulse) remainder per class; a pair
+/// representative would depend on the scheduler; a pure function of the key does not). A pair
 /// with a cut basis takes the four-call path exactly as the dense fill does, and a scalar pair with
 /// a cut cell is memoised per pair as it was.</para>
+///
+/// <para><b>P6: this object is now the PER-FREQUENCY half only.</b> The cores — every singular
+/// quadrature — live on a <see cref="PlanarEntryCores"/> that outlives it, built once per mesh; what
+/// is constructed here per frequency is the two radial remainder tables, the ω scales, and the
+/// per-class remainder memos. The four-argument constructor still exists for a caller with no
+/// geometry to share (the gates), and builds a private <see cref="PlanarEntryCores"/>.</para>
 ///
 /// <para>Thread-safe: every field is read-only after construction, the remainder evaluators are the
 /// same shared radial tables the parallel dense fill already uses, and the caches are
@@ -3518,22 +3745,13 @@ internal sealed class RampTopology
 /// </summary>
 public sealed class PlanarEntryFill
 {
+    private readonly PlanarEntryCores   _g;
     private readonly PlanarMesh         _mesh;
     private readonly PlanarFillSettings _st;
     private readonly PlanarKernelTerms  _termsA, _termsQ;
     private readonly Func<double, Complex> _remA, _remQ;
     private readonly Complex _scalarScale, _vectorScale;
-    private readonly bool    _wantRad;
 
-    private readonly (RooftopHalf A, RooftopHalf B)[]            _divHalves;
-    private readonly (PlanarFill.CellWeight A, PlanarFill.CellWeight B)[] _rampHalves;
-    private readonly double[] _moments;
-
-    private readonly PairClassifier _classifier;
-    private readonly bool[]         _memo;
-    private readonly RampTopology   _topo;
-
-    private readonly ConcurrentDictionary<long, PlanarFill.CellPairMoments>    _cores = new();
     private readonly ConcurrentDictionary<long, PlanarFill.CellPairRemainders> _remA7 = new();
     private readonly ConcurrentDictionary<long, Complex>                       _remQ1 = new();
     private readonly ConcurrentDictionary<(int, int), Complex>                 _pCut  = new();
@@ -3545,17 +3763,27 @@ public sealed class PlanarEntryFill
 
     /// <summary>P5 — how many distinct translation classes the vector block has integrated (one
     /// seven-primitive core pass and one seven-sum remainder pass each).</summary>
-    public int VectorPairCount => _cores.Count;
+    public int VectorPairCount => _remA7.Count;
+
+    /// <summary>P6 — the frequency-independent cores this fill reads.</summary>
+    public PlanarEntryCores Geometry => _g;
 
     public PlanarEntryFill(PlanarFillCores cores, PlanarKernelTerms termsA, PlanarKernelTerms termsQ,
                            double omega)
+        : this(new PlanarEntryCores(cores), termsA, termsQ, omega) { }
+
+    /// <summary>P6 — the per-frequency fill over a shared, already-built core store.</summary>
+    public PlanarEntryFill(PlanarEntryCores geometry, PlanarKernelTerms termsA, PlanarKernelTerms termsQ,
+                           double omega)
     {
-        ArgumentNullException.ThrowIfNull(cores);
+        ArgumentNullException.ThrowIfNull(geometry);
         ArgumentNullException.ThrowIfNull(termsA);
         ArgumentNullException.ThrowIfNull(termsQ);
 
-        _mesh = cores.Mesh;
-        _st   = cores.Settings;
+        _g    = geometry;
+        _mesh = geometry.Mesh;
+        _st   = geometry.Settings;
+        var cores = geometry.Cores;
 
         // The dense path re-floors the terms for this mesh in exactly these two places
         // (ScalarPotentialMatrix and Fill), so the entry evaluator does the same rather than trusting
@@ -3567,26 +3795,6 @@ public sealed class PlanarEntryFill
 
         _scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
         _vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
-        _wantRad     = _st.Order >= PlanarExtractionOrder.Linear;
-
-        int n = _mesh.Bases.Count;
-        _divHalves  = new (RooftopHalf, RooftopHalf)[n];
-        _rampHalves = new (PlanarFill.CellWeight, PlanarFill.CellWeight)[n];
-
-        // P2/M1 — the per-basis ∫w dS now lives on the cores (O(N), so the geometry-only build this
-        // accelerator uses carries it too). This class derived the identical array for itself before
-        // P2; reading the cores' leaves one derivation of it rather than two that can drift.
-        _moments    = cores.VMoment;
-        _topo       = cores.Topology;
-        _classifier = cores.Classifier;
-        _memo       = cores.Memoised;
-
-        for (int i = 0; i < n; i++)
-        {
-            var basis = _mesh.Bases[i];
-            _divHalves[i]  = PlanarBasisFunctions.Halves(_mesh, basis);
-            _rampHalves[i] = _topo.Halves[i];
-        }
     }
 
     /// <summary>The on-demand class source <see cref="PlanarFill.WholeVectorEntry{T}"/> reads.</summary>
@@ -3596,28 +3804,20 @@ public sealed class PlanarEntryFill
 
         public void Get(int outer, int inner, out PlanarFill.CellPairMoments cores, out bool rotated)
         {
-            long key = _o._classifier.Key(_o._mesh.Cells[outer], _o._mesh.Cells[inner], _o._st, out rotated);
-            cores = _o.Cores(key);
+            long key = _o._g.Classifier.Key(_o._mesh.Cells[outer], _o._mesh.Cells[inner], _o._st, out rotated);
+            cores = _o._g.ClassCores(key);
         }
 
         public PlanarFill.CellPairRemainders Remainder(int outer, int inner)
         {
-            long key = _o._classifier.Key(_o._mesh.Cells[outer], _o._mesh.Cells[inner], _o._st, out _);
+            long key = _o._g.Classifier.Key(_o._mesh.Cells[outer], _o._mesh.Cells[inner], _o._st, out _);
             return _o._remA7.GetOrAdd(key, static (k, self) =>
             {
-                var (a, b) = self._classifier.Representative(k);
+                var (a, b) = self._g.Classifier.Representative(k);
                 return PlanarFill.CellPairRemainder(a, b, PairClassifier.RemainderNodes(k, self._st), self._remA);
             }, _o);
         }
     }
-
-    private PlanarFill.CellPairMoments Cores(long key)
-        => _cores.GetOrAdd(key, static (k, self) =>
-        {
-            var (a, b) = self._classifier.Representative(k);
-            var (nodes, panels) = PairClassifier.CoreRule(k, self._st);
-            return PlanarFill.CellPairCores(a, b, nodes, panels, self._wantRad);
-        }, this);
 
     /// <summary>
     /// <c>Z[i, j]</c>. Symmetric by construction, exactly as the dense fill is: the work is done on the
@@ -3629,8 +3829,8 @@ public sealed class PlanarEntryFill
         int a = Math.Min(i, j), b = Math.Max(i, j);
 
         // ── the scalar block: the same signed sum of four cell-pair potentials (D4) ───────────
-        var (ma, mb) = _divHalves[a];
-        var (na, nb) = _divHalves[b];
+        var (ma, mb) = _g.DivHalves[a];
+        var (na, nb) = _g.DivHalves[b];
         Complex s = ma.Sign * na.Sign * P(ma.CellIndex, na.CellIndex)
                   + ma.Sign * nb.Sign * P(ma.CellIndex, nb.CellIndex)
                   + mb.Sign * na.Sign * P(mb.CellIndex, na.CellIndex)
@@ -3641,21 +3841,19 @@ public sealed class PlanarEntryFill
         var dirA = _mesh.Bases[a].Direction;
         if (dirA != _mesh.Bases[b].Direction) return z;
 
-        var (ra, rb) = _rampHalves[a];
-        var (sa, sb) = _rampHalves[b];
+        var ramps = _g.RampHalves;
+        var (ra, rb) = ramps[a];
+        var (sa, sb) = ramps[b];
 
-        if (!_memo[a] || !_memo[b])
+        if (!_g.Memoised[a] || !_g.Memoised[b])
         {
             // The four-call path, exactly as the dense row pass takes it on a pair with a cut half.
-            var (t00, l00, r00) = PlanarFill.PairCoresOf(_mesh, ra, sa, dirA, _wantRad, _st);
-            var (t01, l01, r01) = PlanarFill.PairCoresOf(_mesh, ra, sb, dirA, _wantRad, _st);
-            var (t10, l10, r10) = PlanarFill.PairCoresOf(_mesh, rb, sa, dirA, _wantRad, _st);
-            var (t11, l11, r11) = PlanarFill.PairCoresOf(_mesh, rb, sb, dirA, _wantRad, _st);
+            // P6: the four cores are summed once, on the geometry; the remainders are per frequency.
+            var (t, l, r) = _g.CutVectorCores(a, b, dirA);
 
-            Complex vc = _termsA.Inverse * (t00 + t01 + t10 + t11)
-                       + _termsA.Log     * (l00 + l01 + l10 + l11);
-            if (_termsA.ExtractsConstant) vc += _termsA.Constant * (_moments[a] * _moments[b]);
-            if (_termsA.ExtractsLinear)   vc += _termsA.Linear   * (r00 + r01 + r10 + r11);
+            Complex vc = _termsA.Inverse * t + _termsA.Log * l;
+            if (_termsA.ExtractsConstant) vc += _termsA.Constant * (_g.Moments[a] * _g.Moments[b]);
+            if (_termsA.ExtractsLinear)   vc += _termsA.Linear   * r;
 
             Complex rc = PlanarFill.PairRemainderOf(_mesh, ra, sa, dirA, _remA, _st)
                        + PlanarFill.PairRemainderOf(_mesh, ra, sb, dirA, _remA, _st)
@@ -3667,8 +3865,8 @@ public sealed class PlanarEntryFill
 
         // ── P5: the dense build's own assembly, from the class cache ─────────────────────────
         return z + _vectorScale * PlanarFill.WholeVectorEntry(
-            new ClassSource(this), _mesh, _rampHalves[a], _rampHalves[b],
-            dirA == PlanarBasisDirection.X, _termsA, _moments[a], _moments[b]);
+            new ClassSource(this), _mesh, ramps[a], ramps[b],
+            dirA == PlanarBasisDirection.X, _termsA, _g.Moments[a], _g.Moments[b]);
     }
 
     /// <summary>D4's area-averaged scalar-potential coefficient for one CELL pair — the dense path's
@@ -3676,18 +3874,18 @@ public sealed class PlanarEntryFill
     private Complex P(int cellA, int cellB)
     {
         int a = Math.Min(cellA, cellB), b = Math.Max(cellA, cellB);
-        var ok = _classifier.Classifiable;
+        var ok = _g.Classifier.Classifiable;
         if (!ok[a] || !ok[b])
             return _pCut.GetOrAdd((a, b), static (key, self) => self.ComputeP(key.Item1, key.Item2), this);
 
-        long key = _classifier.Key(_mesh.Cells[a], _mesh.Cells[b], _st, out _);
-        var core = Cores(key).Pulse;
+        long key = _g.Classifier.Key(_mesh.Cells[a], _mesh.Cells[b], _st, out _);
+        var core = _g.ClassCores(key).Pulse;
         Complex v = _termsQ.Inverse * core.Inverse + _termsQ.Log * core.Log;
         if (_termsQ.ExtractsConstant) v += _termsQ.Constant;          // area-normalised ⇒ core = 1
         if (_termsQ.ExtractsLinear)   v += _termsQ.Linear * core.Radius;
         v += _remQ1.GetOrAdd(key, static (k, self) =>
         {
-            var (oa, ob) = self._classifier.Representative(k);
+            var (oa, ob) = self._g.Classifier.Representative(k);
             return PlanarFill.CellPairPulseRemainder(oa, ob, PairClassifier.RemainderNodes(k, self._st), self._remQ);
         }, this);
         return v;
@@ -3697,8 +3895,7 @@ public sealed class PlanarEntryFill
     {
         var wa = PlanarFill.PulseAt(_mesh, a);
         var wb = PlanarFill.PulseAt(_mesh, b);
-        var (c0, cl, cr) =
-            PlanarFill.PairCoresOf(_mesh, wa, wb, PlanarBasisDirection.X, _wantRad, _st);
+        var (c0, cl, cr) = _g.CutScalarCores(a, b);
 
         Complex v = _termsQ.Inverse * c0 + _termsQ.Log * cl;
         if (_termsQ.ExtractsConstant) v += _termsQ.Constant;          // area-normalised ⇒ core = 1

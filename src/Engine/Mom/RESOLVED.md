@@ -829,3 +829,72 @@ brief names `Fill` and `PlanarEntryFill`. No quadrature rule, panel or closed fo
 mesher's end asymmetry (finding 6) is recorded, not touched — the brief forbids changing the mesher
 to increase reuse. The 256 mm line's LU was not re-timed; the per-point crossover is scaled from
 P1's measurement and says so.
+
+# P6 — AIM's frequency-independent state, built once per mesh (2026-08-29)
+
+`docs/sonnet-briefs/brief-em-p6-aim-frequency-independent-state.md`. Measured tables in
+`HISTORY.md` §P6; this is what was learned.
+
+**1. The brief's premise was stale by two phases, and the measurement was taken before the code was
+touched.** It quotes §12's "25 s per frequency at N = 3,731"; on the tree P6 started from that build
+was 1.75 s, because P4 and P5 had already taken the near fill from 23.7 s to 1.07 s. What P6 could
+remove per frequency was therefore the projection (0.14 s), the near set (in the 0.15 s "tables"
+figure) and the singular-core share of the near fill — measured afterwards at 0.3 s of the 1.07 —
+not twenty seconds. The structural claim stood (the dense path runs its singular quadrature once per
+mesh, the accelerator ran it once per frequency), and the honest result is **1.2–1.4× per point**,
+recorded as such rather than as the order of magnitude the premise implied.
+
+**2. The mirror index the brief listed for the geometry was measured and left out.** At 4 B per near
+entry it is 18.2 MB at N = 11,959 and took the resident set from 196.2 to 214 MB — past the "under
+200 MB at the ceiling" sentence `CLAUDE.md` §8 stands on — to save a rebuild that is one binary
+search per lower-triangle entry: 1 / 5 / 17 ms per frequency at the three N. The transpose position
+is found inline instead. A memory series should not spend 18 MB to buy 17 ms.
+
+**3. The near cores' store is a flat array, not dictionary nodes, because the memory gate would not
+have seen them otherwise.** `P1_3` counts the arrays an operator holds by walking its object graph;
+values held in `ConcurrentDictionary` nodes are invisible to it, and its element sizing put every
+struct at 0 bytes. The store is chunked arrays of 168-byte `CellPairMoments` addressed through a
+key-to-slot index, the walker now sizes a struct element with `Unsafe.SizeOf`, and the report's
+208 B per class is checked rather than asserted. The count itself is the P5 compounding the brief
+anticipated: ~9–10 thousand classes at N = 552 and at N = 11,959 alike, 2–2.5 MB, against the
+~130 MB the brief's per-cell-pair arithmetic would give at the ceiling.
+
+**4. Splitting the near fill's timer showed that the AIM correction, not the remainder quadrature,
+is now the largest per-frequency term** — 43–46% of the build at N ≥ 3,731, ahead of the sparse LU.
+`AimEntry` does `(M+1)⁴ = 256` complex multiply-adds per near pair per block; only the kernel values
+depend on frequency, and two stencils share at most `(2M+1)² = 49` distinct grid offsets, so the sum
+could be 256 real products into 49 offset weights and 49 complex multiplies. Recorded for P7/P8;
+not built here.
+
+**5. The time crossover is N ≈ 1,100, measured, not the 3,700 of §12 or a scaled estimate.** One
+dense point (P5 fill + LU) against one accelerated point at N = 552 / 994 / 1,912: 0.24 / 0.54 / 2.03 s
+against 0.37 / 0.71 / 0.96 s. Below the crossover the accelerator is 1.3–1.5× slower and the dense
+path stays the shipped default.
+
+## How the gates were made
+
+Before any code changed, a throwaway test on the committed tree dumped the whole accelerated matrix,
+every near exact entry, the solved current and the iteration count at three frequencies on the
+coarse fixture; the same test on the finished tree produced a byte-identical file. That is what
+licenses storing the stencils as `double` and moving the cores across the seam without a tolerance.
+The permanent gates are bit-identity between the four-argument `Build` (still geometry-and-operator
+from scratch) and an operator over a shared geometry at five frequencies, the same through
+`PlanarSolveContext`, the once-per-sweep counters, and the report's accounting reconstructed term by
+term. The timings are one Benchmark method, run twice per rung, both readings recorded.
+
+## What changed, for a reader who only wants the code
+
+`PlanarAimGeometry` (new) holds the grid, the stencils, the near set and a `PlanarEntryCores` (new,
+the frequency-independent half of `PlanarEntryFill`) warmed over the near set; `PlanarAimOperator`
+is built per frequency over it and holds the grid kernels, the near entries' remainders and assembly,
+the correction and the sparse LU. `PlanarSolveContext.AimGeometry` is lazy beside `Cores`.
+`PlanarAimOperator.Build(cores, …)` still works and builds both, so every existing caller and gate is
+unchanged.
+
+## Not done, on purpose
+
+The mirror index (finding 2). The correction's restructuring (finding 4). The projection order,
+pitch, near radius, tolerance and preconditioner are untouched, as the brief requires; the
+multi-level refusal moved to `PlanarAimGeometry.Build` with its text unchanged. `AimAccuracyTests`
+was not re-run: it reads only the four-argument `Build`, shown bit-identical, and the owner asked
+that the Benchmark tier not be spent where a cheaper measurement answers.

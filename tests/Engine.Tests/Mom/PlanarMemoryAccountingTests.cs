@@ -229,7 +229,9 @@ public sealed class PlanarMemoryAccountingTests
             measuredBytes.Add(measured);
 
             var r = aim.Report;
-            long stencils = 32L * (r.ProjectionOrder + 1) * (r.ProjectionOrder + 1) * r.UnknownCount;
+            // P6: 16 B per stencil node (double), and the whole geometry — stencils, CSR index, mirror
+            // and the near cores' store — is one term, built once per mesh.
+            long stencils = r.GeometryBytes;
             long gridFft  = 16L * r.GridNodesX * r.GridNodesY * 2 + 16L * r.PaddedGridNodes * 5;
             long nearCsr  = 20L * r.NearEntries + 4L * (r.UnknownCount + 1);
             long luBytes  = 20L * r.FactorNonZeros + 8L * (r.UnknownCount + 1);
@@ -319,7 +321,11 @@ public sealed class PlanarMemoryAccountingTests
         var aim = PlanarAimOperator.Build(geom, pair.VectorPotential, pair.Scalar, 2.0 * Math.PI * 10e9);
 
         var r = aim.Report;
-        long walked = ArrayBytesReachableFrom(aim);
+        // P6: the operator holds its geometry, and the geometry holds the geometry-only cores it was
+        // built from. Those cores are PlanarFillCores.CoreBytes' own accounting (P1_5 gates it) and
+        // are reported beside the accelerator in every table rather than inside ResidentBytes, so the
+        // walk stops at them.
+        long walked = ArrayBytesReachableFrom(aim) - ArrayBytesReachableFrom(aim.Geometry.Cores);
         double ratio = (double)r.ResidentBytes / walked;
 
         _out.WriteLine($"N = {n}: reported {Mb(r.ResidentBytes)} MB, every array the operator holds " +
@@ -430,12 +436,18 @@ public sealed class PlanarMemoryAccountingTests
         }
         return total;
 
+        // P6: a struct element is sized as the runtime lays it out (Unsafe.SizeOf), not as 0 — the
+        // near cores' store is an array of 168-byte structs, and a walk that sized it at nothing
+        // would let the report claim them unchecked.
         static int ElementBytes(Type el)
             => el == typeof(Complex) ? 16
              : el == typeof(double) || el == typeof(long) ? 8
              : el == typeof(int) || el == typeof(float) ? 4
              : el == typeof(bool) || el == typeof(byte) ? 1
-             : el.IsValueType ? 0 : IntPtr.Size;
+             : el.IsValueType
+                 ? (int)typeof(System.Runtime.CompilerServices.Unsafe).GetMethod("SizeOf")!
+                       .MakeGenericMethod(el).Invoke(null, null)!
+                 : IntPtr.Size;
     }
 
     [Fact]

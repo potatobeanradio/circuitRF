@@ -5375,6 +5375,17 @@ So **the time crossover is at N ≈ 3,700**, and up to R17's 5,000-unknown ceili
 frequency point is of order 1.4×, not the order of magnitude an entry count suggests. Anyone reading
 the near-% column as a speed-up will be wrong by ten.
 
+> **Superseded at P4–P6 (2026-08-29) — see §P6's own table below for the numbers.** Every figure in
+> the table above was measured when the near field's singular cores were integrated per PAIR and per
+> FREQUENCY. P5 keys them by translation class (the 1,074 ms near fill at N = 3,731 in this table's
+> 25.18 s build was 8.3 s after P4 and 1.2 s after P5), and P6 builds the accelerator's
+> frequency-independent state — stencils, near set, and every singular core — ONCE per mesh. Measured
+> directly rather than scaled, one dense point (P5 fill + LU) against one accelerated point is
+> 0.24 / 0.54 / 2.03 s against 0.37 / 0.71 / 0.96 s at N = 552 / 994 / 1,912, so **the time crossover
+> is now N ≈ 1,100**, and at N = 3,731 the accelerated point (1.4 s + 0.1 s solve) is an order of
+> magnitude under the dense one (1.25 s fill + ≈ 18 s LU). The memory column is unchanged in kind and
+> within ±2 MB in value (§P6).
+
 **The MEMORY win is real, it is measured rather than counted from the entry table, and it is the one
 to quote.** The last two columns are the accelerator's WHOLE working set — sparse near field, grid
 kernels, the padded FFT arrays and the per-basis stencils — against the dense matrix alone:
@@ -6560,3 +6571,154 @@ classifier's grid-bounded tables.
   frequency (its cores come from the class table); the brief names `Fill` and `PlanarEntryFill`.
 - **The mesher's end asymmetry** is recorded, not fixed.
 - **The 256 mm line's LU was not re-timed.**
+
+## P6 — AIM's frequency-independent state is built once per mesh (brief-em-p6-aim-frequency-independent-state.md, 2026-08-29)
+
+Files: `PlanarAim.cs` (`PlanarAimGeometry`, new; `PlanarAimOperator` now per frequency over it),
+`PlanarFill.cs` (`PlanarEntryCores`, new — the frequency-independent half of `PlanarEntryFill`;
+`PlanarCoreBuildCounter.AimGeometryTotal`), `PlanarSolve.cs` (`PlanarSolveContext.AimGeometry`, lazy
+beside the cores). Gates: `PlanarP6AimGeometryTests` (**3 routine, ~1 s**: bit-identity across the
+seam, the once-per-sweep counter, the report's accounting) and `P6_4` (`Category=Benchmark`, ~1 min:
+the tables below). `AimAcceleratorTests` unchanged and green; `AimAccuracyTests` was not re-run —
+see "Bit-identity" for why its numbers cannot have moved.
+
+### The premise, corrected before anything was built
+
+The brief opens from §12's table: "AIM's per-frequency build at N = 3,731 is 25 s". That was true
+when §12 was written and false on the tree P6 started from — P4 and P5 had already taken the near
+fill from 23.7 s to 1.07 s. Measured on the committed tree (`b373b2f`) the same morning, one
+`PlanarAimOperator.Build` at the shipping mesh:
+
+| N | projection | grid kernel | remainder tables (+ near set) | near fill | sparse LU | **whole build** | resident |
+|---|---|---|---|---|---|---|---|
+| 552 | 22–25 ms | 3–6 ms | 54 ms | 407–434 ms | 94–101 ms | **579–623 ms** | 9.7 MB |
+| 3,731 | 143–145 ms | 11–12 ms | 141–162 ms | 1,074–1,082 ms | 371–399 ms | **1,751–1,791 ms** | 60.1 MB |
+| 11,959 | 461–465 ms | 31–34 ms | 144–148 ms | 2,955–3,161 ms | 1,112–1,114 ms | **4,707–4,918 ms** | 196.2 MB |
+
+(FR-4 line, 20 mm at 10 GHz / 256 mm at 6 GHz / 832 mm at 6 GHz — the fixtures of §P1's tables;
+two builds each, both shown. "Near fill" here is cores + remainders + AIM correction + the lower
+copy, undivided, because the pre-P6 report timed them as one.)
+
+So what P6 could remove per frequency was the projection, the near set, and whatever fraction of the
+near fill was the singular cores — not the twenty-odd seconds the brief's premise implied. The
+structural claim stands regardless: the dense path runs its singular quadrature once per mesh
+(D6, `CoreFillCount == 1`) and the accelerator ran it once per frequency.
+
+### Table 1 — the same three builds after P6, split as the brief asks
+
+| N | **geometry, ONCE** (projection / near set / cores) | grid kernel | remainder tables | near remainders | **AIM correction** | lower copy | sparse LU | **per frequency** | resident (geometry / per-freq) |
+|---|---|---|---|---|---|---|---|---|---|
+| 552 | **243 ms** (25 / 3 / 215) | 3–6 ms | 43–52 ms | 150–214 ms | 75–115 ms | 1 ms | 95 ms | **349–424 ms** | 11.5 MB (2.8 / 8.7) |
+| 3,731 | **470–510 ms** (145 / 15–29 / 295–337) | 12–13 ms | 132–136 ms | 345–347 ms | 539–576 ms | 5 ms | 342–359 ms | **1,248–1,299 ms** | 61.0 MB (8.4 / 52.6) |
+| 11,959 | **1,100–1,120 ms** (445–453 / 25–39 / 630–635) | 31–34 ms | 112–115 ms | 880–966 ms | 1,768–1,861 ms | 17 ms | 1,121–1,139 ms | **3,820–3,992 ms** | 195.8 MB (23.7 / 172.2) |
+
+"Per frequency" is grid kernel + near remainders + correction + copy + LU, the remainder tables
+excluded as every AIM table here excludes them (the dense path builds the same two). Against the
+whole pre-P6 build, a second and later point now costs **1.4× / 1.25× / 1.2× less** at the three N
+(579–623 → 392–476 ms; 1,751–1,791 → 1,380–1,435 ms; 4,707–4,918 → 3,932–4,107 ms, tables included),
+and the first point pays the geometry once on top: +0.24 / +0.5 / +1.1 s. Through the shipped
+driver, a 5-point sweep at N = 3,731 is **8.3 s**: 2.05 s for the first point (0.46 s of it the
+geometry) and 1.56 s for each of the other four, the GMRES solve and excitation included.
+
+**What the split shows that the undivided number hid: the AIM correction is now the largest
+per-frequency term** — 43% of the build at N = 3,731 and 46% at 11,959, ahead of the LU (28%) and
+the remainders (23–27%). `AimEntry` runs `(M+1)⁴ = 256` complex kernel lookups and products per
+near pair for each of the two blocks; the products of the two stencils' coefficients are
+frequency-independent, the kernel values are not, and there are at most `(2M+1)² = 49` distinct
+grid offsets between two stencils — so the same sum can be written as 256 real products into 49
+offset weights and 49 complex multiplies, roughly a fifth of the arithmetic. Recorded here for
+P7/P8; not built, because it is neither a milestone of this brief nor a memory question.
+
+### Table 2 — the time crossover, measured rather than scaled
+
+One dense point is the P5 fill plus NumFlat's LU and one back-substitution; one accelerated point
+is the per-frequency build over an already-built geometry plus GMRES. Shipping mesh, one core build
+of each kind untimed:
+
+| N | dense fill | dense LU + solve | **dense point** | AIM per-frequency build | AIM solve (iters) | **AIM point** |
+|---|---|---|---|---|---|---|
+| 552 | 0.20 s | 0.04 s | **0.24 s** | 0.35 s | 0.02 s (5) | **0.37 s** |
+| 994 | 0.36 s | 0.18 s | **0.54 s** | 0.69 s | 0.03 s (5) | **0.71 s** |
+| 1,912 | 0.52 s | 1.51 s | **2.03 s** | 0.91 s | 0.05 s (5) | **0.96 s** |
+
+**The crossover is at N ≈ 1,100** (between the 64 mm and 128 mm rungs; §12 put it at 3,700, and
+§8's P5 correction had already moved the dense LU's own dominance to about 1,000). Above it the
+dense point grows as N³ in the LU while the accelerated point grows close to linearly, so at
+N = 1,912 the accelerated point is 2.1× faster and at N = 3,731 roughly 13× (1.4 s + 0.1 s against
+1.25 s + ≈ 18 s, the LU scaled from P1's 42.8 s at N = 4,933 as §8 does). Below it the accelerator is
+still 1.3–1.5× slower and the dense path is the right default, which is what ships.
+
+### Memory — what the geometry adds, and what it does not (milestone 5)
+
+| N | stencils (16 B/node, was 32) | CSR column index | near cores | **geometry** | per-frequency | **resident** | **pre-P6** |
+|---|---|---|---|---|---|---|---|
+| 552 | 0.14 MB | 0.74 MB | 2.0 MB (9,706 classes) | 2.8 MB | 8.7 MB | **11.5 MB** | 9.7 MB |
+| 3,731 | 0.96 MB | 5.6 MB | 1.9 MB (8,606 classes) | 8.4 MB | 52.6 MB | **61.0 MB** | 60.1 MB |
+| 11,959 | 3.06 MB | 18.2 MB | 2.5 MB (9,966 classes) | 23.7 MB | 172.2 MB | **195.8 MB** | 196.2 MB |
+
+- **The near cores cost 2–2.5 MB at every N, not the 112 B × ~200/row × m the brief budgeted.** That
+  arithmetic is per near CELL PAIR (P4's primitives); P5 keys them by translation class, and the
+  number of classes a near field draws on is ~9–10 thousand at N = 552 and at N = 11,959 alike. Held
+  as a flat array of 168-byte structs (seven `CoreTriple`s) plus a key-to-slot index, they are
+  **~208 B per class** — at the ceiling 2.5 MB against the ~130 MB the per-pair form would have been.
+- **The stencils halve** (they were `Complex` holding real numbers; now `double`), which is what
+  makes the ceiling figure come out at 195.8 MB rather than up: the halving (−3.1 MB at 11,959)
+  covers the cores (+2.5 MB).
+- **The mirror index is NOT held, though the brief listed it.** Measured first with it held: 4 B per
+  near entry is 0.7 / 5.6 / **18.2 MB**, and the resident set at N = 11,959 read **214 MB** — over the
+  "under 200 MB at the ceiling" line §8 states — to save a rebuild that is one binary search per
+  lower-triangle entry per frequency: **1 / 5 / 17 ms** (the "lower copy" column of Table 1).
+  `PlanarAimGeometry.TransposePosition` does the search inline.
+- The geometry-only cores (`PlanarFillCores.CoreBytes`: 8·N plus the classifier's grid tables) are
+  reported beside these, as before, not inside `ResidentBytes`; `P1_3`'s walk stops at them.
+
+### Bit-identity — what was compared, and why the accuracy tier was not re-run
+
+Before a line changed, a throwaway test on the committed tree dumped, for the coarse 16 mm fixture at
+6, 10 and 3 GHz: the whole accelerated matrix (every column by a unit probe through `Multiply`), every
+near exact entry, the solved current and the GMRES iteration count. The same test on the P6 tree
+produced the same 196,576 bytes, `cmp`-identical — the `double` stencils, the geometry split, the
+flat class store and the inline transpose search change no arithmetic. `P6_1` holds the same claim
+permanently on the operator API (the four-argument `Build`, which still constructs geometry and
+operator from scratch, against an operator over a shared geometry, at five frequencies), and `P6_2`
+through `PlanarSolveContext`. `AimAccuracyTests` reads only `PlanarAimOperator.Build(cores, …)`, which
+is bit-identical by that measurement, so its tables cannot have moved; it was not spent five minutes
+on, per the owner's instruction to avoid the Benchmark tier where a cheaper measurement answers.
+
+### The counter (milestone 3)
+
+`PlanarCoreBuildCounter.AimGeometryTotal` (and `AimGeometryBuildsFor(mesh)`) counts geometry builds
+the way `PairCoreTotal` counts dense core builds; `PlanarEntryCores.CorePasses` counts singular-core
+passes (a class 1, a cut scalar pair 1, a cut vector pair 4). `P6_2` runs a 5-point sweep through
+`PlanarSolveContext` and asserts `AimGeometryTotal == 1`, `Total == 1` (one geometry-only core build,
+no pair-core build), and `CorePasses` unchanged from the first point to the fifth — and, the stronger
+form, unchanged from the geometry build itself, because the geometry warms every near pair's cores at
+build (`PlanarEntryCores.Prepare` over the upper triangle, row-parallel).
+
+### What was changed in code
+
+- `PlanarAimGeometry` (new, `PlanarAim.cs`): grid, stencils, near set CSR, and a `PlanarEntryCores`
+  warmed over the near set. `Build(cores, settings)` validates and refuses the ẑ basis by name (the
+  refusal moved here from the operator). Reports `ProjectionMs` / `NearSetMs` / `NearCoreMs` and `Bytes`.
+- `PlanarAimOperator`: constructed over a geometry; `Build(geometry, termsA, termsQ, ω)` is the sweep's
+  overload and `Build(cores, …)` builds both. `AimStencil.Current`/`Charge` are `double[]`.
+  `PlanarAimReport` gains `GeometryMs`, `NearSetMs`, `NearCoreMs`, `NearRemainderMs`, `CorrectionMs`,
+  `LowerCopyMs`, `GeometryBytes`, `NearCoreClasses`, `PerFrequencyMs`, `PerFrequencyBytes`;
+  `ResidentBytes` carries the geometry as one term.
+- `PlanarEntryCores` (new, `PlanarFill.cs`): the frequency-independent half of `PlanarEntryFill` —
+  halves, moments, classifier, and the class / cut-pair core stores with `CorePasses`.
+  `PlanarEntryFill` takes one (its four-argument constructor builds a private one) and keeps only
+  the ω-dependent remainder memos.
+- `PlanarSolveContext.AimGeometry`, lazy beside `Cores`; `SolveAt` builds the per-frequency operator
+  over it. `PlanarCoreBuildCounter.AimGeometryTotal`.
+- `PlanarMemoryAccountingTests`: the walk sizes a struct element with `Unsafe.SizeOf` (it sized one
+  at 0, which would have let the class store go uncounted) and stops at the geometry-only cores.
+
+### What P6 deliberately did NOT do
+
+- **The mirror index** — measured and left out (above).
+- **The AIM correction's restructuring** — recorded as the largest per-frequency term, not built.
+- **Projection order, pitch, near radius, tolerance, preconditioner** — untouched (P8 owns the
+  radius). **The multi-level refusal** — untouched (P12); it moved from the operator to the geometry
+  with its text unchanged.
+- **`AimAccuracyTests`** — not re-run, for the reason given under bit-identity.

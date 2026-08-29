@@ -122,7 +122,7 @@ public static class SurfaceMesher
     /// and |Δcurrent| 1.6e-6 to 5.5e-5 across N = 1,538 to 2,232 — so this ceiling does not depend on
     /// <see cref="PlanarBoundaryCells"/>.</para>
     ///
-    /// <para><b>Never applied to a multi-level or via-bearing mesh</b> — <c>PlanarAimOperator.Build</c>
+    /// <para><b>Never applied to a multi-level or via-bearing mesh</b> — <c>PlanarAimGeometry.Build</c>
     /// refuses that class by name regardless, so the effective ceiling for such a mesh is always
     /// <see cref="UnknownCeiling"/> even when the accelerator is requested. See
     /// <c>SurfaceMesher.Mesh</c>'s own <c>accelerated</c> parameter and
@@ -193,7 +193,7 @@ public static class SurfaceMesher
     /// never the mesh itself, which is identical either way. Ignored (falls back to
     /// <see cref="UnknownCeiling"/>) whenever <c>problem.RequiresGeneralKernel</c>, because the
     /// accelerator refuses a multi-level or via-bearing mesh by name regardless of this flag
-    /// (<c>PlanarAimOperator.Build</c>) — asking for the wider ceiling there would promise a run that
+    /// (<c>PlanarAimGeometry.Build</c>) — asking for the wider ceiling there would promise a run that
     /// cannot start.
     /// </param>
     /// <param name="lengthFormat">Owner request, 2026-08-15 — every distance this report's notes and

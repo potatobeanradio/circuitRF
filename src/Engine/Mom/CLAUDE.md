@@ -519,7 +519,7 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | `PlanarSolveSettings.Adaptive` | `null` (off) | OFF is bit-identical |
 | `PlanarSolveSettings.CurrentDensityPortNumber` / `…FrequencyHz` | null | captured during the existing sweep, no second factorisation |
 | `PlanarFillSettings.DirectVerticalKernel` | `false` | ẑẑ from `SommerfeldIntegral.EvaluateInterior`; skips the ρ/λ refusal and says so |
-| **`PlanarFillSettings.Aim`** | **`null` = OFF, but REACHABLE from the panel since 2026-08-14** | `EmSetup.AcceleratedSolve`, persisted in the `.cem`. **It MOVES the ceiling** (`brief-em-aim-ceiling.md`, 2026-08-14) — see `SurfaceMesher.AcceleratedUnknownCeiling` below — on a single-level mesh; a multi-level/via problem is refused by name regardless (`PlanarAimOperator.Build`), so the effective ceiling there is still the dense one. The refusal names turning it on as the first remedy whenever doing so would let the mesh run. |
+| **`PlanarFillSettings.Aim`** | **`null` = OFF, but REACHABLE from the panel since 2026-08-14** | `EmSetup.AcceleratedSolve`, persisted in the `.cem`. **It MOVES the ceiling** (`brief-em-aim-ceiling.md`, 2026-08-14) — see `SurfaceMesher.AcceleratedUnknownCeiling` below — on a single-level mesh; a multi-level/via problem is refused by name regardless (`PlanarAimGeometry.Build`, P6 — `PlanarAimOperator.Build` before), so the effective ceiling there is still the dense one. The refusal names turning it on as the first remedy whenever doing so would let the mesh run. |
 | `PlanarFillDiagnostics` / `ConformalDiagnostics` | `null` | instruments; fill is bit-identical with them attached |
 | `SurfaceMesher.PlanarRimGrading` | `None` | a **measurement seam, not a user control** — do not promote it |
 | `DefaultSliverAreaFraction` | 0.05 | conservative, on a plateau (0.005…0.05 identical at cells/λ = 130); **no conditioning cliff was located** |
@@ -724,7 +724,8 @@ premise was tested before it was built and its ceiling is 1.09–1.15×), **M4 i
 (290 → 392 entries per row over 12× N) and GMRES stays flat (2 → 6 iterations) on the accelerated
 product, but the FILL time falls far more slowly than the entry count, because AIM's near field keeps
 exactly the pairs L8c's singular-extraction machinery makes expensive. Time crossover N ≈ 3,700;
-58 MB against 223 MB there. **What M5 owed — measurement above N = 3,731, on a via-bearing or cut
+58 MB against 223 MB there. *(Time figures superseded at P4–P6 — see §8's AIM paragraph: the
+crossover is now N ≈ 1,100, measured.)* **What M5 owed — measurement above N = 3,731, on a via-bearing or cut
 mesh, and a decision on whether R17's ceiling moves — is PAID, by `brief-em-aim-ceiling.md`
 (2026-08-14).** The ceiling moves, to **12,000, for the accelerated solve on a single-level mesh
 only**; see §8's own AIM paragraph for the number and §12's own closing subsection in `HISTORY.md`
@@ -763,6 +764,21 @@ for the two ladders, the conformal check and the calibration-standard limit that
   *time* crossover is much later (≈ N 3,700) and even past it the saving is only ~1.4× up to R17's
   5,000-unknown ceiling — because AIM's near field keeps exactly the pairs L8c's singular-extraction
   machinery already makes expensive, not the cheap far-field ones an entry-count reduction implies.
+  > **Corrected at P6 (2026-08-29): the time half of that sentence is no longer true, and the
+  > explanation is only half of why.** The expensive pairs are still the near ones, but their
+  > singular quadrature is no longer paid per frequency at all: P5 keys it by translation class and
+  > P6 builds the accelerator's frequency-independent state ONCE per mesh (`PlanarAimGeometry` —
+  > stencils, near set, and every near pair's singular cores, warmed at build; `PlanarAimOperator`
+  > is per frequency over it, holding only the grid kernels, the near entries' remainders, the
+  > correction and the sparse LU). Measured, not scaled: one dense point (P5 fill + LU) against one
+  > accelerated point is 0.24 / 0.54 / 2.03 s vs 0.37 / 0.71 / 0.96 s at N = 552 / 994 / 1,912, so
+  > **the time crossover is N ≈ 1,100** and the accelerated point is ~13× faster at N = 3,731. What
+  > is left per frequency is, largest first, the AIM correction itself (43–46% at N ≥ 3,731 —
+  > `AimEntry`'s 256 lookups per near pair, restructurable to 49; recorded for P7/P8), the sparse LU
+  > and the remainder quadrature. The memory sentence stands: 195.8 MB at N = 11,959, the `double`
+  > stencils (−3 MB) covering the class-keyed core store (+2.5 MB); the brief's mirror index was
+  > measured at 18 MB there and is NOT held. Counters: `PlanarCoreBuildCounter.AimGeometryTotal`,
+  > `PlanarEntryCores.CorePasses`. `HISTORY.md` §P6.
   **These are two different measurements in two different units, and CLAUDE.md used to state them as
   if they were one — corrected 2026-08-14 (brief-em-aim-ceiling.md §3).** §11's decision gate (the
   question of whether an iterative solve converges AT ALL, run before a line of AIM existed) measured

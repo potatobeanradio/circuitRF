@@ -63,8 +63,18 @@
 // The MULTI-LEVEL / via path (L9c/L9d). A vertical basis's current is ẑ-directed, its kernel is
 // G_A^zz plus a MIXED ẑx̂ component whose dyadic entry is a ∂/∂x rather than a value, and its sources
 // sit at a different height — which is a different Toeplitz kernel per height pairing and a projection
-// with a derivative in it. That is a second phase, not a widening; `PlanarAimOperator.Build` refuses
+// with a derivative in it. That is a second phase, not a widening; `PlanarAimGeometry.Build` refuses
 // it by name rather than producing a plausible number for a structure it does not model.
+//
+// ── P6 (brief-em-p6-aim-frequency-independent-state.md, 2026-08-29): TWO OBJECTS, NOT ONE ────────
+//
+// `PlanarAimGeometry` is built ONCE per mesh: the auxiliary grid, every stencil, the near set as CSR,
+// its mirror, and — through `PlanarEntryCores` — the singular cores of every near pair, warmed over the
+// near set at build. `PlanarAimOperator` is built per FREQUENCY over it and holds only what carries ω:
+// the grid kernel tables and their FFT hats, the remainders and assembly of the near entries, the AIM
+// correction, and the sparse LU. Before P6 one object did both at every frequency, so the near
+// field's clustered-panel singular quadrature ran once per frequency where the dense path runs it
+// once per mesh (D6); `PlanarEntryCores.CorePasses` is the counter that says it no longer does.
 
 using System.Collections.Concurrent;
 using System.Numerics;
@@ -223,8 +233,21 @@ public sealed record PlanarAimReport(
     double PreconditionerMs,
     long   PreconditionerNonZeros,
     long   FactorNonZeros = 0,
-    bool   NearExactRetained = false)
+    bool   NearExactRetained = false,
+    double GeometryMs = 0,
+    double NearSetMs = 0,
+    double NearCoreMs = 0,
+    double NearRemainderMs = 0,
+    double CorrectionMs = 0,
+    double LowerCopyMs = 0,
+    long   GeometryBytes = 0,
+    int    NearCoreClasses = 0)
 {
+    /// <summary><b>P6 — what one FREQUENCY costs to build</b>, the geometry excluded: grid kernel,
+    /// near remainders and assembly, AIM correction, and the sparse LU. The radial remainder tables
+    /// are excluded for the reason <see cref="RemainderTableMs"/> gives.</summary>
+    public double PerFrequencyMs => GridKernelMs + NearRemainderMs + CorrectionMs + LowerCopyMs + PreconditionerMs;
+
     /// <summary>Near entries as a fraction of the dense matrix — the number that says whether the
     /// near field is genuinely O(N) or merely a smaller O(N²).</summary>
     public double NearFillFraction => (double)NearEntries / UnknownCount / UnknownCount;
@@ -245,12 +268,15 @@ public sealed record PlanarAimReport(
     /// the near matrix, and, until P1 freed it, <c>_nearExact</c>.</para>
     ///
     /// <list type="bullet">
-    /// <item>the near set's CSR: values (exact, when retained, and correction) at 16 B, the column
-    /// index at 4 B, the row pointer at 4·(N+1);</item>
+    /// <item>the near set's values (exact, when retained, and correction) at 16 B;</item>
     /// <item>the two grid kernel tables, and the five padded FFT arrays (two transformed kernels and
     /// three scratch fields) — NOT negligible at a fine pitch, and exactly what a "the near field is
     /// only 10% of the matrix" reading forgets;</item>
-    /// <item>the per-basis stencils, 32·(M+1)²·N;</item>
+    /// <item><b>P6: the geometry</b> (<see cref="GeometryBytes"/>) — the per-basis stencils at
+    /// 16·(M+1)²·N (P6 stores them as <c>double</c>; they were 32 as <c>Complex</c>), the CSR column
+    /// index at 4 B per near entry, the row pointer, and the near cores' store
+    /// (168 B per translation class plus its index node) — held once per mesh, shared by every
+    /// frequency's operator, and counted here because one operator's working set includes it;</item>
     /// <item>the preconditioner's L and U together (<see cref="FactorNonZeros"/> entries at 16 B of
     /// value plus 4 B of row index, plus two column pointers of 4·(N+1)), and the AMD permutation.</item>
     /// </list>
@@ -261,12 +287,15 @@ public sealed record PlanarAimReport(
     /// </summary>
     public long ResidentBytes =>
         (NearExactRetained ? 32L : 16L) * NearEntries        // correction (+ exact, when retained)
-      + 4L * NearEntries + 4L * (UnknownCount + 1)           // the CSR index
       + 16L * GridNodesX * GridNodesY * 2
       + 16L * PaddedGridNodes * 5
-      + 32L * (ProjectionOrder + 1) * (ProjectionOrder + 1) * UnknownCount
       + 20L * FactorNonZeros + 8L * (UnknownCount + 1)       // the sparse LU's L and U
-      + 8L * UnknownCount;                                   // AMD permutation + its inverse
+      + 8L * UnknownCount                                    // AMD permutation + its inverse
+      + GeometryBytes;                                       // P6: stencils, CSR index, cores
+
+    /// <summary>P6 — the per-frequency operator's own arrays alone: <see cref="ResidentBytes"/>
+    /// less the geometry a sweep holds once for all of them.</summary>
+    public long PerFrequencyBytes => ResidentBytes - GeometryBytes;
 
     /// <summary>Bytes the accelerator's BUILD peaks at — <see cref="ResidentBytes"/> plus the
     /// transient CSC copy of the near matrix that <c>FactorNear</c> hands to CSparse (values at 16 B,
@@ -277,7 +306,10 @@ public sealed record PlanarAimReport(
 
 /// <summary>
 /// One basis's projection onto the auxiliary grid: where its stencil sits, and the coefficients that
-/// reproduce its moments there.
+/// reproduce its moments there. <b>P6: the coefficients are <c>double</c></b> — they always were real
+/// (a moment match of a real weight against real monomials), and storing them as <c>Complex</c> was
+/// 16 B per stencil node of zeros. The products they enter are bit-for-bit what the complex form
+/// gave: <c>(a + 0i)·z</c> and <c>a·z</c> take the same two multiplies.
 /// </summary>
 internal sealed class AimStencil
 {
@@ -288,88 +320,80 @@ internal sealed class AimStencil
     /// <summary>Current-density coefficients, row-major over the stencil. The basis has exactly one
     /// flow direction, so there is one of these and the direction says which grid field it lands
     /// in.</summary>
-    public required Complex[] Current { get; init; }
+    public required double[] Current { get; init; }
 
     /// <summary>Charge coefficients — <c>∇·f</c>'s moments, which are what the scalar block sees.</summary>
-    public required Complex[] Charge { get; init; }
+    public required double[] Charge { get; init; }
 
     public required PlanarBasisDirection Direction { get; init; }
 }
 
 /// <summary>
-/// <b>M5's accelerated operator.</b> Holds no <c>N×N</c> anything: a uniform-grid kernel pair, one
-/// stencil per basis, and the exact matrix restricted to the near set. <see cref="Multiply"/> is the
-/// accelerated product; <see cref="Solve"/> runs right-preconditioned GMRES against it with the near
-/// field's own sparse factorisation as the preconditioner — which §11 measured as the one that makes
-/// the iteration count flat, and which AIM gets for free because it computes those entries anyway.
+/// <b>P6 — everything the accelerator holds that does not depend on frequency, built once per
+/// mesh.</b> The auxiliary grid (origin, pitch, extent), every basis's stencil, the near set as CSR,
+/// the mirror index that makes the lower triangle a copy of the upper, and — through
+/// <see cref="EntryCores"/> — the singular cores of every near pair, warmed over the near set here so
+/// that no frequency ever runs a singular quadrature.
 ///
-/// <para><b>Not thread-safe for concurrent products</b> — the FFT plans and their scratch buffers are
-/// per-operator, and one operator belongs to one mesh at one frequency. M2's fan-out gives each solve
-/// its own, which is the shape it already has.</para>
+/// <para>Until P6 <see cref="PlanarAimOperator"/> rebuilt all of this at every frequency: the
+/// projection, the near set, and (decisively) the near fill's clustered-panel singular cores, which
+/// the dense path computes once per mesh (D6). A <see cref="PlanarSolveContext"/> with
+/// <see cref="PlanarFillSettings.Aim"/> set now builds one of these beside its geometry-only cores
+/// and hands it to every <see cref="PlanarAimOperator.Build(PlanarAimGeometry, PlanarKernelTerms,
+/// PlanarKernelTerms, double)"/>.</para>
+///
+/// <para>Read-only after construction, so one geometry can serve concurrent operators; the core
+/// store's own insertions are the one mutation and they are idempotent.</para>
 /// </summary>
-public sealed class PlanarAimOperator : IPlanarOperator
+public sealed class PlanarAimGeometry
 {
-    private readonly int _n;
-    private readonly PlanarAimSettings _st;
-    private readonly AimStencil[] _stencils;
-    private readonly int _m;                                  // projection order
-    private readonly int _side;                               // m + 1
-    private readonly int _nx, _ny;                            // auxiliary grid nodes
+    internal readonly int N, M, Side, Nx, Ny, Px, Py;
+    internal readonly double H, NearRadiusM;
+    internal readonly AimStencil[] Stencils;
+    internal readonly int[] RowPtr, ColIdx;
 
-    // Grid kernels, indexed by ABSOLUTE offset — G depends only on |Δ|, so this is the whole table.
-    private readonly Complex[] _ga, _gq;                      // [|dp| * _ny + |dq|]
+    public PlanarFillCores   Cores      { get; }
+    public PlanarAimSettings Settings   { get; }
+    /// <summary>The singular cores of every near pair, and the counter that says they were
+    /// computed once.</summary>
+    public PlanarEntryCores  EntryCores { get; }
 
-    // The FFT'd circulant embeddings, and the scratch the product runs in.
-    private readonly int _px, _py;
-    private readonly Complex[] _hatA, _hatQ;
-    private readonly Complex[] _bufX, _bufY, _bufQ;
-    private readonly FastFourierTransform _fftX, _fftY;
-    private readonly Complex[] _rowScratch;
+    public int    UnknownCount => N;
+    public long   NearEntries  => ColIdx.LongLength;
+    public double GridPitchM   => H;
+    public int    GridNodesX   => Nx;
+    public int    GridNodesY   => Ny;
+    public long   PaddedGridNodes => (long)Px * Py;
 
-    // The near field: CSR over the FULL matrix (both triangles), holding the exact entries and the
-    // correction (exact − AIM). The correction is what the product adds; the exact is what the
-    // preconditioner factors.
-    private readonly int[]     _rowPtr;
-    private readonly int[]     _colIdx;
-    private readonly Complex[] _nearCorrection;
+    /// <summary>The three phases of the build, so a sweep can see what it paid once.</summary>
+    public double ProjectionMs { get; }
+    public double NearSetMs    { get; }
+    public double NearCoreMs   { get; }
+    public double TotalMs => ProjectionMs + NearSetMs + NearCoreMs;
 
-    // P1: LIVE ONLY UNTIL FactorNear HAS RUN, unless PlanarAimSettings.KeepNearExact asked for it.
-    // The product reads _nearCorrection; nothing else in a solve reads this.
-    private Complex[]? _nearExact;
-
-    private readonly SparseLU? _preconditioner;
-
-    // The two ω-dependent block scales, resolved once at construction.
-    private readonly Complex _scalarScale, _vectorScale;
-
-    public int Size => _n;
-
-    /// <summary>What it cost and how big it is.</summary>
-    public PlanarAimReport Report { get; }
-
-    /// <summary>Iterations the last <see cref="Solve"/> took, and the residual it reached. Read by the
-    /// gates; §11's whole finding is about the first of these.</summary>
-    public int LastIterations { get; private set; }
-
-    /// <inheritdoc cref="LastIterations"/>
-    public double LastResidual { get; private set; }
-
-    // ══════════════════════════════════════════════════════════════════════════════════════════
-    // Build
-    // ══════════════════════════════════════════════════════════════════════════════════════════
+    /// <summary>Bytes this holds: the stencils at <c>16·(M+1)²</c> per basis, the CSR column index
+    /// at 4 B per near entry, the row pointer, and the core store.
+    ///
+    /// <para><b>The mirror index is deliberately NOT here</b>, although the brief listed it. It is
+    /// 4 B per near entry — 18.2 MB at N = 11,959, which took the accelerated working set from
+    /// 196.2 MB to 214 MB, over the "under 200 MB at the ceiling" line §8 states — to save a rebuild
+    /// that is a binary search per lower-triangle entry and costs tens of milliseconds per frequency
+    /// (measured with the near set: 89 ms at N = 11,959, against a 3.8 s point). The operator finds
+    /// each transpose position inline instead (<see cref="PlanarAimOperator"/>'s lower-triangle copy).</para>
+    /// </summary>
+    public long Bytes =>
+        16L * Side * Side * N
+      + 4L * ColIdx.LongLength + 4L * (N + 1)
+      + EntryCores.Bytes;
 
     /// <summary>
-    /// Builds the accelerator for one mesh at one frequency. <paramref name="cores"/> may be — and for
-    /// the cost claim to mean anything SHOULD be — <see cref="PlanarFill.BuildGeometryOnlyCores"/>'
-    /// O(N) shape.
+    /// Builds the geometry for one mesh. <paramref name="cores"/> may be — and for the cost claim to
+    /// mean anything SHOULD be — <see cref="PlanarFill.BuildGeometryOnlyCores"/>' O(N) shape. Refuses
+    /// a via-bearing mesh by name, exactly as the operator did.
     /// </summary>
-    public static PlanarAimOperator Build(PlanarFillCores cores, PlanarKernelTerms termsA,
-                                          PlanarKernelTerms termsQ, double omega,
-                                          PlanarAimSettings? settings = null)
+    public static PlanarAimGeometry Build(PlanarFillCores cores, PlanarAimSettings? settings = null)
     {
         ArgumentNullException.ThrowIfNull(cores);
-        ArgumentNullException.ThrowIfNull(termsA);
-        ArgumentNullException.ThrowIfNull(termsQ);
         var st = settings ?? PlanarAimSettings.Default;
         st.Validate();
 
@@ -382,17 +406,18 @@ public sealed class PlanarAimOperator : IPlanarOperator
                     "grid kernel per height pairing and a projection with a derivative in it. That is " +
                     "its own phase, not a widening of this one. Solve a via-bearing mesh densely.");
 
-        return new PlanarAimOperator(cores, termsA, termsQ, omega, st);
+        cores.Settings.CoreBuilds?.ObserveAimGeometry(cores.Mesh);
+        return new PlanarAimGeometry(cores, st);
     }
 
-    private PlanarAimOperator(PlanarFillCores cores, PlanarKernelTerms termsA,
-                              PlanarKernelTerms termsQ, double omega, PlanarAimSettings st)
+    private PlanarAimGeometry(PlanarFillCores cores, PlanarAimSettings st)
     {
         var mesh = cores.Mesh;
-        _n  = mesh.Bases.Count;
-        _st = st;
-        _m  = st.ProjectionOrder;
-        _side = _m + 1;
+        Cores    = cores;
+        Settings = st;
+        N    = mesh.Bases.Count;
+        M    = st.ProjectionOrder;
+        Side = M + 1;
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -402,8 +427,8 @@ public sealed class PlanarAimOperator : IPlanarOperator
         foreach (var s in spans) maxSpan = Math.Max(maxSpan, s);
         if (!(maxSpan > 0)) maxSpan = cores.MinCellEdgeM > 0 ? cores.MinCellEdgeM : 1.0;
 
-        double h        = st.GridSpacingFactor * maxSpan;
-        double nearM    = st.NearRadiusFactor  * maxSpan;
+        H           = st.GridSpacingFactor * maxSpan;
+        NearRadiusM = st.NearRadiusFactor  * maxSpan;
 
         double x0 = double.PositiveInfinity, y0 = double.PositiveInfinity;
         double x1 = double.NegativeInfinity, y1 = double.NegativeInfinity;
@@ -415,122 +440,44 @@ public sealed class PlanarAimOperator : IPlanarOperator
 
         // Padded by (M+1) pitches on every side, which is exactly what makes the stencil placement
         // below need no clamping and therefore no "what if it was clamped" accuracy caveat.
-        double pad = (_m + 1) * h;
+        double pad = (M + 1) * H;
         double gx0 = x0 - pad, gy0 = y0 - pad;
-        _nx = (int)Math.Ceiling((x1 + pad - gx0) / h) + 1;
-        _ny = (int)Math.Ceiling((y1 + pad - gy0) / h) + 1;
+        Nx = (int)Math.Ceiling((x1 + pad - gx0) / H) + 1;
+        Ny = (int)Math.Ceiling((y1 + pad - gy0) / H) + 1;
+        Px = NextPow2(2 * Nx);
+        Py = NextPow2(2 * Ny);
 
         // ── the projection ────────────────────────────────────────────────────────────────────
-        var vInv = InverseVandermonde(_m, h);
-        _stencils = new AimStencil[_n];
-        for (int i = 0; i < _n; i++)
-            _stencils[i] = Project(mesh, i, centres[i], gx0, gy0, h, vInv);
-        double projectionMs = sw.Elapsed.TotalMilliseconds;
+        var vInv = InverseVandermonde(M, H);
+        Stencils = new AimStencil[N];
+        for (int i = 0; i < N; i++)
+            Stencils[i] = Project(mesh, i, centres[i], gx0, gy0, H, vInv);
+        ProjectionMs = sw.Elapsed.TotalMilliseconds;
 
-        // ── the grid kernels, and their circulant embeddings ──────────────────────────────────
+        // ── the near set, and its mirror ──────────────────────────────────────────────────────
         sw.Restart();
-        var termsAr = termsA.With(cores.Settings.Order, cores.RhoFloorM);
-        var termsQr = termsQ.With(cores.Settings.Order, cores.RhoFloorM);
-        double selfRho = st.SelfKernelFactor * h;
+        (RowPtr, ColIdx) = NearSet(centres, spans, NearRadiusM, H);
+        NearSetMs = sw.Elapsed.TotalMilliseconds;
 
-        _ga = new Complex[(long)_nx * _ny];
-        _gq = new Complex[(long)_nx * _ny];
-        for (int dp = 0; dp < _nx; dp++)
-            for (int dq = 0; dq < _ny; dq++)
-            {
-                double rho = h * Math.Sqrt((double)dp * dp + (double)dq * dq);
-                double at  = dp == 0 && dq == 0 ? selfRho : rho;
-                _ga[dp * _ny + dq] = termsAr.Evaluate(at);
-                _gq[dp * _ny + dq] = termsQr.Evaluate(at);
-            }
-
-        _px = NextPow2(2 * _nx);
-        _py = NextPow2(2 * _ny);
-        _fftX = new FastFourierTransform(_px);
-        _fftY = new FastFourierTransform(_py);
-        _rowScratch = new Complex[Math.Max(_px, _py)];
-        _hatA = EmbedAndTransform(_ga);
-        _hatQ = EmbedAndTransform(_gq);
-        _bufX = new Complex[(long)_px * _py];
-        _bufY = new Complex[(long)_px * _py];
-        _bufQ = new Complex[(long)_px * _py];
-        double gridMs = sw.Elapsed.TotalMilliseconds;
-
-        // ── the near set, and the exact entries in it ─────────────────────────────────────────
+        // ── the singular cores of every near pair, ONCE ───────────────────────────────────────
+        // Row-parallel over the upper triangle, the same loop the per-frequency fill runs; every
+        // core it will ask for is in the store when this returns, and PlanarEntryCores.CorePasses
+        // stops moving here.
         sw.Restart();
-        double radius = nearM;
-        var (rowPtr, colIdx) = NearSet(centres, spans, radius, h);
-        _rowPtr = rowPtr; _colIdx = colIdx;
-
-        // Timed apart from the near fill on purpose: constructing the entry filler builds the two
-        // per-frequency radial remainder tables, and THE DENSE PATH BUILDS THE SAME TWO. Charging them
-        // to the accelerator would make every cost comparison below flatter the dense path by a fixed
-        // amount that has nothing to do with either.
-        var entry = new PlanarEntryFill(cores, termsA, termsQ, omega);
-        double tableMs = sw.Elapsed.TotalMilliseconds;
-
-        sw.Restart();
-        Complex scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
-        Complex vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
-        _scalarScale = scalarScale;
-        _vectorScale = vectorScale;
-
-        var nearExact   = new Complex[colIdx.Length];
-        _nearExact      = nearExact;
-        _nearCorrection = new Complex[colIdx.Length];
-
-        // R-fil-2, one level down: BOTH criteria for nearness are symmetric, so the near set is, and
-        // the lower triangle is COPIED from the upper rather than recomputed. Not a micro-optimisation
-        // — it is half the build, and it is also what keeps Z[i,j] and Z[j,i] bit-identical here for
-        // the same reason the dense fill mirrors instead of computing both.
-        var mirror = MirrorIndex();
-
-        PlanarFill.ForRowsOf(cores.Settings, _n, i =>
+        EntryCores = new PlanarEntryCores(cores);
+        var entry = EntryCores;
+        PlanarFill.ForRowsOf(cores.Settings, N, i =>
         {
-            for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
+            for (int k = RowPtr[i]; k < RowPtr[i + 1]; k++)
             {
-                int j = _colIdx[k];
-                if (j < i) continue;
-                Complex exact = entry.At(i, j);
-                nearExact[k]       = exact;
-                _nearCorrection[k] = exact - AimEntry(i, j, scalarScale, vectorScale);
+                int j = ColIdx[k];
+                if (j >= i) entry.Prepare(i, j);
             }
         });
-
-        PlanarFill.ForRowsOf(cores.Settings, _n, i =>
-        {
-            for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
-            {
-                int j = _colIdx[k];
-                if (j >= i) continue;
-                int t = mirror[k];
-                nearExact[k]       = nearExact[t];
-                _nearCorrection[k] = _nearCorrection[t];
-            }
-        });
-        double nearMs = sw.Elapsed.TotalMilliseconds;
-
-        // ── the preconditioner: the near field's own sparse LU ────────────────────────────────
-        sw.Restart();
-        var (lu, nnz, factorNnz) = FactorNear(nearExact);
-        _preconditioner = lu;
-        double precondMs = sw.Elapsed.TotalMilliseconds;
-
-        // P1 — the exact entries have served their only non-diagnostic purpose. Dropping them here
-        // rather than at the end of Build is deliberate: the CSC copy FactorNear made is still
-        // collectable at this point too, so the operator's steady state is reached in one collection.
-        if (!st.KeepNearExact) _nearExact = null;
-
-        Report = new PlanarAimReport(
-            UnknownCount: _n, GridNodesX: _nx, GridNodesY: _ny, GridPitchM: h,
-            ProjectionOrder: _m, NearRadiusM: radius,
-            NearEntries: colIdx.LongLength, NearCellPairs: entry.CellPairCount,
-            PaddedGridNodes: (long)_px * _py,
-            ProjectionMs: projectionMs, GridKernelMs: gridMs, RemainderTableMs: tableMs,
-            NearFillMs: nearMs,
-            PreconditionerMs: precondMs, PreconditionerNonZeros: nnz,
-            FactorNonZeros: factorNnz, NearExactRetained: st.KeepNearExact);
+        NearCoreMs = sw.Elapsed.TotalMilliseconds;
     }
+
+    internal static int NextPow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The projection
@@ -612,13 +559,13 @@ public sealed class PlanarAimOperator : IPlanarOperator
     {
         var basis = mesh.Bases[i];
 
-        int p0 = (int)Math.Round((centre.X - gx0) / h - 0.5 * _m);
-        int q0 = (int)Math.Round((centre.Y - gy0) / h - 0.5 * _m);
-        p0 = Math.Clamp(p0, 0, _nx - 1 - _m);
-        q0 = Math.Clamp(q0, 0, _ny - 1 - _m);
+        int p0 = (int)Math.Round((centre.X - gx0) / h - 0.5 * M);
+        int q0 = (int)Math.Round((centre.Y - gy0) / h - 0.5 * M);
+        p0 = Math.Clamp(p0, 0, Nx - 1 - M);
+        q0 = Math.Clamp(q0, 0, Ny - 1 - M);
 
-        double xs = gx0 + (p0 + 0.5 * _m) * h;
-        double ys = gy0 + (q0 + 0.5 * _m) * h;
+        double xs = gx0 + (p0 + 0.5 * M) * h;
+        double ys = gy0 + (q0 + 0.5 * M) * h;
 
         var (mJ, mQ) = Moments(mesh, basis, xs, ys);
 
@@ -632,9 +579,9 @@ public sealed class PlanarAimOperator : IPlanarOperator
     }
 
     /// <summary><c>λ = V⁻¹ m V⁻ᵀ</c>, flattened row-major over the stencil.</summary>
-    private Complex[] Coefficients(double[,] moments, double[,] vInv)
+    private double[] Coefficients(double[,] moments, double[,] vInv)
     {
-        int s = _side;
+        int s = Side;
         var tmp = new double[s, s];
         for (int k = 0; k < s; k++)
             for (int b = 0; b < s; b++)
@@ -644,7 +591,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
                 tmp[k, b] = acc;
             }
 
-        var lam = new Complex[s * s];
+        var lam = new double[s * s];
         for (int k = 0; k < s; k++)
             for (int l = 0; l < s; l++)
             {
@@ -662,7 +609,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
     private (double[,] Current, double[,] Charge) Moments(PlanarMesh mesh, PlanarBasis basis,
                                                           double xs, double ys)
     {
-        int s = _side;
+        int s = Side;
         var mJ = new double[s, s];
         var mQ = new double[s, s];
 
@@ -671,7 +618,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
 
         // Enough nodes that the rule is exact on the polynomial part: a whole rectangle's integrand is
         // degree (1 + a + b) ≤ 2M+1, and a strip's bilinear map roughly doubles that.
-        int nodes = 2 * _m + 6;
+        int nodes = 2 * M + 6;
 
         Accumulate(mJ, mesh.Cells[ra.CellIndex], ra, basis.Direction, 1.0, xs, ys, nodes);
         Accumulate(mJ, mesh.Cells[rb.CellIndex], rb, basis.Direction, 1.0, xs, ys, nodes);
@@ -687,7 +634,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
     private void Accumulate(double[,] target, PlanarCell cell, PlanarFill.CellWeight weight,
                             PlanarBasisDirection dir, double sign, double xs, double ys, int nodes)
     {
-        int s = _side;
+        int s = Side;
         foreach (var (x, y, w) in PlanarFill.WeightNodes(cell, weight, dir, 1, nodes))
         {
             double dx = x - xs, dy = y - ys;
@@ -720,29 +667,29 @@ public sealed class PlanarAimOperator : IPlanarOperator
     {
         // A stencil spans M pitches; two stencils overlap only if their centres are within about
         // (M+1)·h on each axis, so this bound cannot miss one.
-        double stencilReach = (_m + 1.5) * h;
+        double stencilReach = (M + 1.5) * h;
         double search = Math.Max(radius, stencilReach * 1.5);
         double maxSpan = 0;
         foreach (double s in spans) maxSpan = Math.Max(maxSpan, s);
         search = Math.Max(search, maxSpan);
 
         var buckets = new Dictionary<(int, int), List<int>>();
-        for (int i = 0; i < _n; i++)
+        for (int i = 0; i < N; i++)
         {
             var key = ((int)Math.Floor(centres[i].X / search), (int)Math.Floor(centres[i].Y / search));
             if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = [];
             list.Add(i);
         }
 
-        var rows = new List<int>[_n];
+        var rows = new List<int>[N];
         double r2 = radius * radius;
 
-        PlanarFill.ForRowsOf(PlanarFillSettings.Default, _n, i =>
+        PlanarFill.ForRowsOf(PlanarFillSettings.Default, N, i =>
         {
             var mine = new List<int>();
             int bx = (int)Math.Floor(centres[i].X / search);
             int by = (int)Math.Floor(centres[i].Y / search);
-            var si = _stencils[i];
+            var si = Stencils[i];
 
             for (int ox = -1; ox <= 1; ox++)
                 for (int oy = -1; oy <= 1; oy++)
@@ -755,8 +702,8 @@ public sealed class PlanarAimOperator : IPlanarOperator
                         bool near = dx * dx + dy * dy <= r2;
                         if (!near)
                         {
-                            var sj = _stencils[j];
-                            near = Math.Abs(si.P0 - sj.P0) <= _m && Math.Abs(si.Q0 - sj.Q0) <= _m;
+                            var sj = Stencils[j];
+                            near = Math.Abs(si.P0 - sj.P0) <= M && Math.Abs(si.Q0 - sj.Q0) <= M;
                         }
                         if (near) mine.Add(j);
                     }
@@ -765,41 +712,272 @@ public sealed class PlanarAimOperator : IPlanarOperator
             rows[i] = mine;
         });
 
-        var rowPtr = new int[_n + 1];
-        for (int i = 0; i < _n; i++) rowPtr[i + 1] = rowPtr[i] + rows[i].Count;
-        var colIdx = new int[rowPtr[_n]];
-        for (int i = 0; i < _n; i++) rows[i].CopyTo(colIdx, rowPtr[i]);
+        var rowPtr = new int[N + 1];
+        for (int i = 0; i < N; i++) rowPtr[i + 1] = rowPtr[i] + rows[i].Count;
+        var colIdx = new int[rowPtr[N]];
+        for (int i = 0; i < N; i++) rows[i].CopyTo(colIdx, rowPtr[i]);
         return (rowPtr, colIdx);
     }
 
     /// <summary>
-    /// For every stored position, the position holding its transpose. The near set is symmetric
-    /// because both of its criteria are, so this always exists — and the assertion below says so
-    /// rather than silently leaving a zero where an entry belongs.
+    /// The stored position of <c>(j, i)</c> for a stored <c>(i, j)</c>. The near set is symmetric
+    /// because both of its criteria are, so this always exists — and the assertion says so rather
+    /// than silently leaving a zero where an entry belongs. A binary search over row <c>j</c>, run
+    /// per lower-triangle entry per frequency rather than tabulated (see <see cref="Bytes"/>).
     /// </summary>
-    private int[] MirrorIndex()
+    internal int TransposePosition(int i, int j)
     {
-        var mirror = new int[_colIdx.Length];
-        for (int i = 0; i < _n; i++)
+        int lo = RowPtr[j], hi = RowPtr[j + 1] - 1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (ColIdx[mid] == i) return mid;
+            if (ColIdx[mid] < i) lo = mid + 1; else hi = mid - 1;
+        }
+        throw new InvalidOperationException(
+            $"The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. " +
+            "Both nearness criteria are symmetric, so this is a bug in the near-set " +
+            "construction rather than a configuration.");
+    }
+
+    /// <summary>True when <c>(i, j)</c> is in the near set — what the near-set completeness gate asks.</summary>
+    public bool IsNear(int i, int j)
+    {
+        for (int k = RowPtr[i]; k < RowPtr[i + 1]; k++) if (ColIdx[k] == j) return true;
+        return false;
+    }
+
+    /// <summary>The two stencils' node index boxes — the overlap gate reads these rather than
+    /// re-deriving them from the settings.</summary>
+    public (int P0, int Q0) StencilOrigin(int i) => (Stencils[i].P0, Stencils[i].Q0);
+}
+
+/// <summary>
+/// <b>M5's accelerated operator.</b> Holds no <c>N×N</c> anything: a uniform-grid kernel pair, one
+/// stencil per basis, and the exact matrix restricted to the near set. <see cref="Multiply"/> is the
+/// accelerated product; <see cref="Solve"/> runs right-preconditioned GMRES against it with the near
+/// field's own sparse factorisation as the preconditioner — which §11 measured as the one that makes
+/// the iteration count flat, and which AIM gets for free because it computes those entries anyway.
+///
+/// <para><b>P6: one of these per FREQUENCY, over a <see cref="PlanarAimGeometry"/> built once per
+/// mesh.</b> What is built here is exactly what carries ω: the two grid kernel tables and their FFT
+/// hats, the radial remainder tables, the near entries' remainders and assembly, the AIM correction,
+/// and the sparse LU. The stencils, the near set, the mirror and every singular core are the
+/// geometry's and are read, not rebuilt.</para>
+///
+/// <para><b>Not thread-safe for concurrent products</b> — the FFT plans and their scratch buffers are
+/// per-operator, and one operator belongs to one mesh at one frequency. M2's fan-out gives each solve
+/// its own, which is the shape it already has.</para>
+/// </summary>
+public sealed class PlanarAimOperator : IPlanarOperator
+{
+    private readonly PlanarAimGeometry _g;
+    private readonly int _n;
+    private readonly PlanarAimSettings _st;
+    private readonly AimStencil[] _stencils;
+    private readonly int _side;                               // m + 1
+    private readonly int _nx, _ny;                            // auxiliary grid nodes
+
+    // Grid kernels, indexed by ABSOLUTE offset — G depends only on |Δ|, so this is the whole table.
+    private readonly Complex[] _ga, _gq;                      // [|dp| * _ny + |dq|]
+
+    // The FFT'd circulant embeddings, and the scratch the product runs in.
+    private readonly int _px, _py;
+    private readonly Complex[] _hatA, _hatQ;
+    private readonly Complex[] _bufX, _bufY, _bufQ;
+    private readonly FastFourierTransform _fftX, _fftY;
+    private readonly Complex[] _rowScratch;
+
+    // The near field: CSR over the FULL matrix (both triangles), holding the exact entries and the
+    // correction (exact − AIM). The correction is what the product adds; the exact is what the
+    // preconditioner factors. The index arrays are the geometry's.
+    private readonly int[]     _rowPtr;
+    private readonly int[]     _colIdx;
+    private readonly Complex[] _nearCorrection;
+
+    // P1: LIVE ONLY UNTIL FactorNear HAS RUN, unless PlanarAimSettings.KeepNearExact asked for it.
+    // The product reads _nearCorrection; nothing else in a solve reads this.
+    private Complex[]? _nearExact;
+
+    private readonly SparseLU? _preconditioner;
+
+    // The two ω-dependent block scales, resolved once at construction.
+    private readonly Complex _scalarScale, _vectorScale;
+
+    public int Size => _n;
+
+    /// <summary>The per-mesh state this operator reads.</summary>
+    public PlanarAimGeometry Geometry => _g;
+
+    /// <summary>What it cost and how big it is.</summary>
+    public PlanarAimReport Report { get; }
+
+    /// <summary>Iterations the last <see cref="Solve"/> took, and the residual it reached. Read by the
+    /// gates; §11's whole finding is about the first of these.</summary>
+    public int LastIterations { get; private set; }
+
+    /// <inheritdoc cref="LastIterations"/>
+    public double LastResidual { get; private set; }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // Build
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Builds the geometry AND the operator for one mesh at one frequency — the pre-P6 shape, kept
+    /// for a caller with one frequency (the gates). A sweep builds the geometry once with
+    /// <see cref="PlanarAimGeometry.Build"/> and calls the other overload.
+    /// </summary>
+    public static PlanarAimOperator Build(PlanarFillCores cores, PlanarKernelTerms termsA,
+                                          PlanarKernelTerms termsQ, double omega,
+                                          PlanarAimSettings? settings = null)
+        => Build(PlanarAimGeometry.Build(cores, settings), termsA, termsQ, omega);
+
+    /// <summary>P6 — the per-frequency operator over a geometry built once per mesh.</summary>
+    public static PlanarAimOperator Build(PlanarAimGeometry geometry, PlanarKernelTerms termsA,
+                                          PlanarKernelTerms termsQ, double omega)
+    {
+        ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentNullException.ThrowIfNull(termsA);
+        ArgumentNullException.ThrowIfNull(termsQ);
+        return new PlanarAimOperator(geometry, termsA, termsQ, omega);
+    }
+
+    private PlanarAimOperator(PlanarAimGeometry g, PlanarKernelTerms termsA, PlanarKernelTerms termsQ,
+                              double omega)
+    {
+        var cores = g.Cores;
+        var st    = g.Settings;
+        _g        = g;
+        _n        = g.N;
+        _st       = st;
+        _side     = g.Side;
+        _nx       = g.Nx;
+        _ny       = g.Ny;
+        _stencils = g.Stencils;
+        _rowPtr   = g.RowPtr;
+        _colIdx   = g.ColIdx;
+        double h  = g.H;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        // ── the grid kernels, and their circulant embeddings ──────────────────────────────────
+        var termsAr = termsA.With(cores.Settings.Order, cores.RhoFloorM);
+        var termsQr = termsQ.With(cores.Settings.Order, cores.RhoFloorM);
+        double selfRho = st.SelfKernelFactor * h;
+
+        int nx = g.Nx, ny = g.Ny;
+        _ga = new Complex[(long)nx * ny];
+        _gq = new Complex[(long)nx * ny];
+        for (int dp = 0; dp < nx; dp++)
+            for (int dq = 0; dq < ny; dq++)
+            {
+                double rho = h * Math.Sqrt((double)dp * dp + (double)dq * dq);
+                double at  = dp == 0 && dq == 0 ? selfRho : rho;
+                _ga[dp * ny + dq] = termsAr.Evaluate(at);
+                _gq[dp * ny + dq] = termsQr.Evaluate(at);
+            }
+
+        _px = g.Px;
+        _py = g.Py;
+        _fftX = new FastFourierTransform(_px);
+        _fftY = new FastFourierTransform(_py);
+        _rowScratch = new Complex[Math.Max(_px, _py)];
+        _hatA = EmbedAndTransform(_ga);
+        _hatQ = EmbedAndTransform(_gq);
+        _bufX = new Complex[(long)_px * _py];
+        _bufY = new Complex[(long)_px * _py];
+        _bufQ = new Complex[(long)_px * _py];
+        double gridMs = sw.Elapsed.TotalMilliseconds;
+
+        // ── the radial remainder tables ───────────────────────────────────────────────────────
+        // Timed apart from the near fill on purpose: constructing the entry filler builds the two
+        // per-frequency radial remainder tables, and THE DENSE PATH BUILDS THE SAME TWO. Charging them
+        // to the accelerator would make every cost comparison below flatter the dense path by a fixed
+        // amount that has nothing to do with either.
+        sw.Restart();
+        var entry = new PlanarEntryFill(g.EntryCores, termsA, termsQ, omega);
+        double tableMs = sw.Elapsed.TotalMilliseconds;
+
+        // ── the near set's exact entries: remainders + assembly over the geometry's cores ─────
+        sw.Restart();
+        Complex scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
+        Complex vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
+        _scalarScale = scalarScale;
+        _vectorScale = vectorScale;
+
+        var nearExact   = new Complex[_colIdx.Length];
+        _nearExact      = nearExact;
+        _nearCorrection = new Complex[_colIdx.Length];
+
+        PlanarFill.ForRowsOf(cores.Settings, _n, i =>
+        {
             for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
             {
                 int j = _colIdx[k];
-                if (j >= i) { mirror[k] = k; continue; }
-                int lo = _rowPtr[j], hi = _rowPtr[j + 1] - 1, found = -1;
-                while (lo <= hi)
-                {
-                    int mid = (lo + hi) >> 1;
-                    if (_colIdx[mid] == i) { found = mid; break; }
-                    if (_colIdx[mid] < i) lo = mid + 1; else hi = mid - 1;
-                }
-                if (found < 0)
-                    throw new InvalidOperationException(
-                        $"The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. " +
-                        "Both nearness criteria are symmetric, so this is a bug in the near-set " +
-                        "construction rather than a configuration.");
-                mirror[k] = found;
+                if (j < i) continue;
+                nearExact[k] = entry.At(i, j);
             }
-        return mirror;
+        });
+        double remainderMs = sw.Elapsed.TotalMilliseconds;
+
+        // ── the AIM correction: exact − what the grid product claims for the pair ────────────
+        sw.Restart();
+        PlanarFill.ForRowsOf(cores.Settings, _n, i =>
+        {
+            for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
+            {
+                int j = _colIdx[k];
+                if (j < i) continue;
+                _nearCorrection[k] = nearExact[k] - AimEntry(i, j, scalarScale, vectorScale);
+            }
+        });
+
+        double correctionMs = sw.Elapsed.TotalMilliseconds;
+
+        // R-fil-2, one level down: BOTH criteria for nearness are symmetric, so the near set is, and
+        // the lower triangle is COPIED from the upper rather than recomputed. Not a micro-optimisation
+        // — it is half the build, and it is also what keeps Z[i,j] and Z[j,i] bit-identical here for
+        // the same reason the dense fill mirrors instead of computing both. P6: the transpose
+        // position is found by binary search here rather than read from a held index — see
+        // PlanarAimGeometry.Bytes for the 18 MB that decided it.
+        sw.Restart();
+        PlanarFill.ForRowsOf(cores.Settings, _n, i =>
+        {
+            for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
+            {
+                int j = _colIdx[k];
+                if (j >= i) continue;
+                int t = g.TransposePosition(i, j);
+                nearExact[k]       = nearExact[t];
+                _nearCorrection[k] = _nearCorrection[t];
+            }
+        });
+        double copyMs = sw.Elapsed.TotalMilliseconds;
+
+        // ── the preconditioner: the near field's own sparse LU ────────────────────────────────
+        sw.Restart();
+        var (lu, nnz, factorNnz) = FactorNear(nearExact);
+        _preconditioner = lu;
+        double precondMs = sw.Elapsed.TotalMilliseconds;
+
+        // P1 — the exact entries have served their only non-diagnostic purpose. Dropping them here
+        // rather than at the end of Build is deliberate: the CSC copy FactorNear made is still
+        // collectable at this point too, so the operator's steady state is reached in one collection.
+        if (!st.KeepNearExact) _nearExact = null;
+
+        Report = new PlanarAimReport(
+            UnknownCount: _n, GridNodesX: nx, GridNodesY: ny, GridPitchM: h,
+            ProjectionOrder: g.M, NearRadiusM: g.NearRadiusM,
+            NearEntries: _colIdx.LongLength, NearCellPairs: entry.CellPairCount,
+            PaddedGridNodes: (long)_px * _py,
+            ProjectionMs: g.ProjectionMs, GridKernelMs: gridMs, RemainderTableMs: tableMs,
+            NearFillMs: remainderMs + correctionMs + copyMs,
+            PreconditionerMs: precondMs, PreconditionerNonZeros: nnz,
+            FactorNonZeros: factorNnz, NearExactRetained: st.KeepNearExact,
+            GeometryMs: g.TotalMs, NearSetMs: g.NearSetMs, NearCoreMs: g.NearCoreMs,
+            NearRemainderMs: remainderMs, CorrectionMs: correctionMs, LowerCopyMs: copyMs,
+            GeometryBytes: g.Bytes, NearCoreClasses: g.EntryCores.ClassCount);
     }
 
     /// <summary>What the accelerated product produces for one pair — i.e. what the near-field
@@ -816,9 +994,9 @@ public sealed class PlanarAimOperator : IPlanarOperator
         for (int k = 0; k < s; k++)
             for (int l = 0; l < s; l++)
             {
-                Complex ca = a.Charge[k * s + l];
-                Complex ja = a.Current[k * s + l];
-                if (ca == Complex.Zero && ja == Complex.Zero) continue;
+                double ca = a.Charge[k * s + l];
+                double ja = a.Current[k * s + l];
+                if (ca == 0.0 && ja == 0.0) continue;
                 int p = a.P0 + k, qq = a.Q0 + l;
 
                 for (int mm = 0; mm < s; mm++)
@@ -953,8 +1131,6 @@ public sealed class PlanarAimOperator : IPlanarOperator
     // The grid FFT
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
-    private static int NextPow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
-
     /// <summary>Wraps the absolute-offset kernel table into the <c>Px×Py</c> circulant and transforms
     /// it. Negative offsets land in the upper half of each axis, which is what makes the cyclic
     /// convolution agree with the linear one over the sub-block the grid actually occupies.</summary>
@@ -1069,14 +1245,9 @@ public sealed class PlanarAimOperator : IPlanarOperator
         return Complex.Zero;
     }
 
-    /// <summary>True when <c>(i, j)</c> is in the near set — what the near-set completeness gate asks.</summary>
-    public bool IsNear(int i, int j)
-    {
-        for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++) if (_colIdx[k] == j) return true;
-        return false;
-    }
+    /// <inheritdoc cref="PlanarAimGeometry.IsNear"/>
+    public bool IsNear(int i, int j) => _g.IsNear(i, j);
 
-    /// <summary>The two stencils' node index boxes — the overlap gate reads these rather than
-    /// re-deriving them from the settings.</summary>
-    public (int P0, int Q0) StencilOrigin(int i) => (_stencils[i].P0, _stencils[i].Q0);
+    /// <inheritdoc cref="PlanarAimGeometry.StencilOrigin"/>
+    public (int P0, int Q0) StencilOrigin(int i) => _g.StencilOrigin(i);
 }

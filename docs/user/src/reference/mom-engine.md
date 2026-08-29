@@ -770,10 +770,12 @@ Two numbers that surprise people, both measured on 1.6 mm FR-4 at 10 GHz:
 That is the arithmetic behind [adaptive sampling](#adaptive) being on by default: the per-point cost went
 up 4.4× and the number of points did not.
 
-The **accelerated solve** option changes the memory picture rather than the time one: roughly 4× less
-working set past about 900 unknowns, with the time crossover much later, around 3,700 unknowns. It is
-**single-metal-level only, with no vias** — and within that, it raises the ceiling from 5,000 unknowns
-to 12,000.
+The **accelerated solve** option buys memory first and time second: roughly 4× less working set past
+about 900 unknowns, and a faster frequency point past about 1,100 — its frequency-independent state
+is built once per structure and the dense factorisation's cost grows as the cube of the unknown count,
+so the gap widens with size (about 2× at 1,900 unknowns, an order of magnitude at 3,700). Below the
+crossover it is somewhat slower than the dense solve. It is **single-metal-level only, with no vias**
+— and within that, it raises the ceiling from 5,000 unknowns to 12,000.
 
 <div class="callout warn">
 <span class="label">One thing it does not reach, and it costs real minutes when it bites</span>

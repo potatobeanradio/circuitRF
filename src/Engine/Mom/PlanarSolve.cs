@@ -104,6 +104,7 @@ public sealed class PlanarSolveContext
     public PlanarFillSettings                    Settings { get; }
 
     private readonly Lazy<PlanarFillCores> _cores;
+    private readonly Lazy<PlanarAimGeometry>? _aimGeometry;
 
     /// <summary>
     /// D6's geometric core for this mesh — <b>P2/M4: built on first use, not in the constructor.</b>
@@ -170,7 +171,34 @@ public sealed class PlanarSolveContext
             CoreBuildMs = sw.Elapsed.TotalMilliseconds;
             return built;
         });
+
+        // P6 — the accelerator's frequency-independent state, once per mesh, on the same lazy
+        // footing as the cores it is built from (and for the same M4 reason: a standard the sweep
+        // never selects must not pay for a projection and a near-field core pass either).
+        if (Settings.Aim is { } aim)
+            _aimGeometry = new Lazy<PlanarAimGeometry>(() =>
+            {
+                var sw = Stopwatch.StartNew();
+                var built = PlanarAimGeometry.Build(Cores, aim);
+                AimGeometryBuildMs = sw.Elapsed.TotalMilliseconds;
+                return built;
+            });
     }
+
+    /// <summary>
+    /// <b>P6 — the accelerator's per-mesh geometry</b>: stencils, near set, mirror index and the near
+    /// pairs' singular cores, built on first use and shared by every frequency's
+    /// <see cref="PlanarAimOperator"/>. Null on the dense path. Until P6 all of it was rebuilt inside
+    /// every <see cref="SolveAt(PlanarKernelPair, double)"/>.
+    /// </summary>
+    public PlanarAimGeometry? AimGeometry => _aimGeometry?.Value;
+
+    /// <summary>Whether <see cref="AimGeometry"/> has been built yet — the sweep-level counter's
+    /// per-context form, beside <see cref="PlanarCoreBuildCounter.AimGeometryTotal"/>.</summary>
+    public bool AimGeometryBuilt => _aimGeometry?.IsValueCreated ?? false;
+
+    /// <summary>How long this mesh's AIM geometry took, or 0 while it has not been built.</summary>
+    public double AimGeometryBuildMs { get; private set; }
 
     /// <summary>Fill, factor, excite — the raw admittance at one frequency.</summary>
     public PlanarPortSolution SolveAt(PlanarKernelPair kernel, double fHz)
@@ -178,9 +206,9 @@ public sealed class PlanarSolveContext
         var k = kernel.For(Cores, Settings.Order);
         double omega = 2.0 * Math.PI * fHz;
 
-        if (Settings.Aim is { } aim)
+        if (_aimGeometry is not null)
         {
-            LastAccelerator = PlanarAimOperator.Build(Cores, k.VectorPotential, k.Scalar, omega, aim);
+            LastAccelerator = PlanarAimOperator.Build(_aimGeometry.Value, k.VectorPotential, k.Scalar, omega);
             return PlanarExcitation.Solve(LastAccelerator, Ports);
         }
 
