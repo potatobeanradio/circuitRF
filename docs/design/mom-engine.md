@@ -668,6 +668,18 @@ the mesh. Build it only when the kernel that needs it exists; v1 does not.
 > rooftops share cells, so the same cell pair is currently integrated up to four times. See
 > `src/Engine/Mom/CLAUDE.md` §L8c for both.
 >
+> **Reviewed 2026-08-28 — two statements in this section are wrong today, and a brief series exists
+> to act on them (`docs/sonnet-briefs/brief-em-perf-series.md`, P1–P12).** First, *"cost is the fill,
+> not the LU"* holds for a whole sweep only because the once-per-sweep core build is folded into
+> "fill"; **per frequency the LU dominates from about N = 3,000** (42.8 s against 21.8 s at N = 4,933
+> in the table above), and NumFlat's LU runs on one core while the fill runs on all of them (P7).
+> Second, the memory column and the refusal's "381 MB" quote `16·N²` alone; **the resident peak of one
+> frequency point is roughly four times that** — NumFlat holds `L` and `U` as two further full
+> matrices beside the one `PlanarSystem` keeps, plus the cached cores and the transient m×m `P`
+> (measured: a 137 MB matrix at N = 3,000, and `.Lu()` added 530 MB). P1 measures and re-words; P2
+> and P7 recover it. Each brief in that series updates the paragraph it changes here with its own
+> `> Built at Px` note, in this same style; nothing else in §10.7 has been rewritten in advance.
+
 > **Measured again at L8d (2026-08-05), with ports and de-embedding on, and the multiplier is 4.4×.**
 > The table above is the cost of filling and factoring the DUT alone. A de-embedded answer also solves
 > the calibration standards at every frequency, and they are not small — on the same hero they measure
