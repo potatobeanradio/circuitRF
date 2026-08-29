@@ -96,6 +96,7 @@ public sealed class MatchRound1Tests
     /// <b>The entry fields do NOT round to three.</b> A field the user types into has to round-trip
     /// what was typed; a readout does not.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheEntryFields_KeepEnoughDigitsToRoundTrip()
     {
@@ -185,6 +186,7 @@ public sealed class MatchRound1Tests
     /// The ladder's series elements sit a full lead-length apart from the ports, which is what lets
     /// the renderer draw the spine in the GAPS rather than through the symbol bodies.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void SeriesElements_DoNotOverlapEachOtherOrThePorts()
     {
@@ -220,6 +222,7 @@ public sealed class MatchRound1Tests
     /// duplicated in a round-4 file: it is the same fact — where each end's termination is — and two
     /// tests disagreeing about it is how one of them goes stale unnoticed.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheProjection_PutsAGroundedTerminationOnEachEnd_AndNoPins()
     {
@@ -257,6 +260,7 @@ public sealed class MatchRound1Tests
     /// own GND component"). <c>Ground</c>'s pin is at its local origin, so one placed a lead-length
     /// below a shunt element's centre sits ON that element's lower pin — there is nothing to wire.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void EveryShuntArm_CarriesItsOwnGround_WithNoWireBelowIt()
     {
@@ -290,6 +294,7 @@ public sealed class MatchRound1Tests
     /// label roles are the schematic's by construction rather than by a second implementation
     /// agreeing with the first.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheProjection_IsARealSchematicModel()
     {
@@ -323,6 +328,7 @@ public sealed class MatchRound1Tests
     /// carries its own leads out to ±200, so a port-to-port line would lay a second wire across every
     /// series body.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheProjection_LeavesNoWireUnderASeriesBody()
     {
@@ -382,6 +388,7 @@ public sealed class MatchRound1Tests
     // ── The specification pane ────────────────────────────────────────────────
 
     /// <summary>Termination 1's resistor is on the LEFT branch of a parallel pictogram, 2's on the right.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ThePictogram_PutsTermination1sResistorOnTheLeft()
     {
@@ -391,6 +398,7 @@ public sealed class MatchRound1Tests
     }
 
     /// <summary>The inline editor's entry string carries the unit, and a typed unit is honoured.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheResistanceEntry_CarriesItsUnit_AndAcceptsATypedOne()
     {
@@ -407,6 +415,7 @@ public sealed class MatchRound1Tests
     }
 
     /// <summary>A unit that belongs to a different dimension is refused, not silently reinterpreted.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AWrongDimensionUnit_IsRefused()
     {
@@ -417,6 +426,7 @@ public sealed class MatchRound1Tests
     }
 
     /// <summary>Both band edges share one display unit, so a unit typed into either moves both.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ABandUnitTypedIntoOneEdge_MovesBoth()
     {
@@ -477,6 +487,7 @@ public sealed class MatchRound1Tests
     /// The Response selector is a ComboBox now; picking an infeasible family is refused and SAYS so
     /// rather than reverting in silence.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void SelectingAnInfeasibleResponse_IsRefusedOutLoud()
     {
@@ -506,6 +517,7 @@ public sealed class MatchRound1Tests
     /// "The default settings need to show solutions and not have any immediate dead ends for the user
     /// to play with the UI."
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheShippedDefault_OpensWithSolutions_AndNoRefusalAnywhere()
     {
@@ -532,6 +544,7 @@ public sealed class MatchRound1Tests
     /// <b>And every order the picker offers is a live one.</b> The former default's own first entry
     /// (order 2) returned nothing, which is the dead end the owner hit.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheShippedDefault_HasSolutionsAtEveryOrderItOffers()
     {

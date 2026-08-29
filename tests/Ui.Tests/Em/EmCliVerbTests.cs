@@ -201,6 +201,7 @@ public sealed class EmCliVerbTests(ITestOutputHelper output) : IDisposable
         File.Delete(stashed);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void MinusO_MovesTheTouchstoneAndNothingElse()
     {

@@ -288,6 +288,7 @@ public class PlanarFeedExtensionTests(ITestOutputHelper output)
         Assert.NotNull(loud);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void APassiveSweepSaysNothingAboutPassivity()
     {

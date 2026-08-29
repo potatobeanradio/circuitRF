@@ -101,6 +101,24 @@
                          No Height. A fixed one was what left the label sitting against the top of the
                          button; the fix for that is global (see CircuitRfStyles' Button style) and a
                          button sized by its own padding does not raise the question at all. -->
+                    <!-- ── The DC block toggle (match.md §22.5) ──────────────────
+                         In the header row's ONE EMPTY COLUMN, right-aligned so it reads as Probe's
+                         neighbour: [Termination 1        Block  Probe ⚑]. It costs no height (the row
+                         exists), no width the card does not already have, and it sits on the card of
+                         the END IT ACTS ON — the one placement where "which end?" needs no label.
+
+                         Disabled when this end's arm is not a shunt inductor, with a tooltip that
+                         names WHICH reason it is: a series end arm's own capacitor already blocks DC,
+                         and a lowpass ladder passes DC end to end (where the block would have to be a
+                         series capacitor in the through path — a highpass pole, a different
+                         compensation, and deliberately not offered). Saying so beats offering nothing
+                         silently. -->
+                    <ToggleButton Grid.Column="1" Content="DC Block" FontSize="10"
+                                  Padding="8,1" MinHeight="0" Margin="8,0,0,2"
+                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  IsChecked="{Binding HasDcBlock, Mode=TwoWay}"
+                                  IsEnabled="{Binding DcBlockEnabled}"
+                                  ToolTip.Tip="{Binding DcBlockTooltip}"/>
                     <Button Grid.Column="2" Content="Probe" FontSize="10"
                             Padding="8,1" MinHeight="0" Margin="8,0,0,2"
                             VerticalAlignment="Center"
@@ -1312,6 +1330,27 @@
                             <SelectableTextBlock Text="{Binding Status.CeilingText}" FontSize="11"
                                                  IsVisible="{Binding Status.CeilingText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                                  ToolTip.Tip="{Binding Status.CeilingTip}"/>
+                            <!-- ── The DC block, one line per end (match.md §22.5) ──
+                                 Directly under the ceiling line. The value, the compensated inductor
+                                 and what it came from, the branch's own series resonance, the band
+                                 spread, and the feed-through rule — which is stated here because
+                                 nothing else on screen would say it and the alternative topology puts
+                                 an undamped pole in the baseband that no lossless network can remove
+                                 (§22.3).
+
+                                 `warn` above f_s > f₀/5, and a HINT rather than a refusal: the
+                                 compensation is exact at ω₀ for any positive capacitance. The
+                                 stored-but-not-applied case renders here too, in the same place —
+                                 nothing is wrong, the block simply has nowhere to be. -->
+                            <ItemsControl ItemsSource="{Binding Status.DcBlocks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="mvm:MatchDcBlockLine">
+                                        <SelectableTextBlock Text="{Binding Text}" FontSize="11"
+                                                             TextWrapping="Wrap"
+                                                             Classes.warn="{Binding Warn}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <!-- The gap mismatch (match.md §18.4) — the number that says the design
                                  is working, so it sits beside the in-band figure rather than behind a
                                  tooltip. Empty, and therefore zero-width, for a single band. -->

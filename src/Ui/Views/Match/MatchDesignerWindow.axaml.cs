@@ -1360,6 +1360,7 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
                      () => s.ResistanceUnit, v => s.ResistanceUnit = v),
             DigitsMenu(),
             QMinMenu(),
+            DcBlockCapMenu(),
         };
 
         var menu = new ContextMenu { ItemsSource = items };
@@ -1398,6 +1399,32 @@ public partial class MatchDesignerWindow : Window, ICrfMenuWindow
                     Icon = s.SignificantDigits == d ? new TextBlock { Text = "✓" } : null,
                 };
                 item.Click += (_, _) => s.SignificantDigits = captured;
+                children.Add(item);
+            }
+            parent.ItemsSource = children;
+            return parent;
+        }
+
+        // match.md §22.2's seed cap. It bounds the DEFAULT the Block toggle offers and nothing else —
+        // any value typed into L1blk afterwards is accepted, whatever this says. The f0/10 rule alone
+        // reaches tens of nanofarads at a low band with a small end inductor, which a board builds and
+        // an MMIC cannot, and the Designer has no way to know which flow it is in.
+        MenuItem DcBlockCapMenu()
+        {
+            var parent = new MenuItem { Header = "DC block default: f₀/10, at most" };
+            var children = new List<MenuItem>();
+            foreach (double f in new[] { 100e-12, 1e-9, 10e-9, 100e-9, 1e-6 })
+            {
+                double captured = f;
+                var item = new MenuItem
+                {
+                    Header = MatchValueFormat.FormatWithUnit(
+                        f, MatchQuantity.Capacitance, MatchValueFormat.AutoUnit, 3),
+                    Icon = Math.Abs(s.DcBlockMaxFarads / f - 1.0) < 1e-9
+                        ? new TextBlock { Text = "✓" }
+                        : null,
+                };
+                item.Click += (_, _) => s.DcBlockMaxFarads = captured;
                 children.Add(item);
             }
             parent.ItemsSource = children;

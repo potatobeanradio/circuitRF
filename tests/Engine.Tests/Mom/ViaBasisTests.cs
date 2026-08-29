@@ -437,6 +437,7 @@ public sealed class ViaBasisTests
     // M5 — THE MULTI-LEVEL FILL.
     // =========================================================================================
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M5_1_OnAOneLevelMeshWithNoVias_TheMultiLevelFill_ReproducesL8csOwnAnswer()
     {
@@ -579,6 +580,7 @@ public sealed class ViaBasisTests
                        $"{report.UnknownCount} ({growth:F2}×) — gridlines only, no graded fan.");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M6_2_RgV7_ReciprocityIsSTRUCTURAL_WithAnAttachmentANDAnInteriorViaInOneMesh()
     {
@@ -620,6 +622,7 @@ public sealed class ViaBasisTests
                        $"largest attachment↔horizontal ẑx̂ {mixed:E3} Ω — both non-zero.");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M6_3_D7_AProblemWithNOGroundVia_IsBITIDENTICAL_ToBeforeTheAttachmentBasisExisted()
     {
@@ -737,6 +740,7 @@ public sealed class ViaBasisTests
         _out.WriteLine(no.Reason!);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M5_6_RvIz1_AProblemWithNoVERTICALBasis_IsBITIDENTICALUnderTheZQuadraturesSETTING()
     {

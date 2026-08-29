@@ -176,6 +176,7 @@ public class EmAcceptanceBudgetTests(Xunit.Abstractions.ITestOutputHelper output
     /// because it has no uniform cross-section — costs the user NO analysis-kind interaction, because
     /// Auto refuses A and picks B by itself (D2). The Ports row is the only addition.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void R18_ABendReachesKernelB_WithinTheThirtySecondBudget_AndNoKernelChoiceInteraction()
     {
@@ -292,6 +293,7 @@ public class EmAcceptanceBudgetTests(Xunit.Abstractions.ITestOutputHelper output
     /// Auto correctly picks kernel A — so a user who specifically wants the full-wave answer for that
     /// geometry pays ONE extra interaction to say so. The budget still closes, with 2 s of slack.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void R18_AUniformLine_CostsOneExtraInteractionToReachKernelB_AndStillFits()
     {

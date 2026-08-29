@@ -127,6 +127,7 @@ public class MatchOddCountTests(Xunit.Abstractions.ITestOutputHelper output)
     /// A like pair over two or three bands gives <c>4n + 2</c> elements, both ends absorbed — the
     /// parity gap match.md §18.2 recorded, closed.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AMultibandLikePair_GivesFourNPlusTwoElementsWithBothEndsAbsorbed()
     {

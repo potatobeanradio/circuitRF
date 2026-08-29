@@ -63,6 +63,7 @@ public sealed class AdaptiveSweepTests
     // Tier 0 — structural, free.
     // =========================================================================================
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T0_1_WithAdaptiveOFF_TheSweepIsBitIdenticalRunToRun()
     {
@@ -84,6 +85,7 @@ public sealed class AdaptiveSweepTests
                        $"S21(2 GHz) = {a.Points[0].S[1, 0]}");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T0_2_ThePublishedGridIsTheREQUESTEDGrid_AndTheSolvedCountIsReported()
     {
@@ -109,6 +111,7 @@ public sealed class AdaptiveSweepTests
         _out.WriteLine(run.Notes.First(n => n.Contains("Adaptive frequency sampling")));
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T0_3_TwoAdaptiveRunsOfTheSameProblem_AreIdenticalToTheBit()
     {
@@ -180,6 +183,7 @@ public sealed class AdaptiveSweepTests
         Assert.NotEqual(values[2][0, 0].Real, got[mid][0, 0].Real);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T0_6_TheCALIBRATORReplaysWithoutResolving_WhichIsHowTheOrderingCollisionIsPaidFor()
     {
@@ -210,6 +214,7 @@ public sealed class AdaptiveSweepTests
                        $"{cal.SolveCount} solve(s) — the replay is free.");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T0_7_ARestartedContinuationReproducesTheSequentialAnswerExactly()
     {
@@ -243,6 +248,7 @@ public sealed class AdaptiveSweepTests
     // Tier 1 — the DENSE reduction, and the scheme's own error.
     // =========================================================================================
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T1_1_ATOLERANCEOfZero_SolvesEveryPoint_AndIsBitIdenticalToTheNonAdaptiveSweep()
     {
@@ -294,6 +300,7 @@ public sealed class AdaptiveSweepTests
         }
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T1_3_ASOLVEDPointCarriesTheSolversOwnMatrix_AModelledOneDoesNot()
     {

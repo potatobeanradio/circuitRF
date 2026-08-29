@@ -31,6 +31,21 @@ public enum MatchInlineEditKind
     /// is a number the user owns exactly as much as they own the <c>TermG</c> beside it.</para>
     /// </remarks>
     TerminationReactance,
+
+    /// <summary>
+    /// match.md §22's DC-blocking capacitor — likewise a specification input, written straight to
+    /// <c>MatchDesign.Term1DcBlock</c>/<c>Term2DcBlock</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>No slider and no transform.</b> The block is a value the user owns: nothing in the synthesis
+    /// chose it, no Norton transform can move it, and the compensation is exact at ω₀ for whatever it
+    /// is set to. Aiming the transform rack at it — the <see cref="ElementValue"/> path — would
+    /// truthfully answer "no transform in this rack moves it", which is the right answer to the wrong
+    /// question, exactly as it was for an absorbed element before <see cref="TerminationReactance"/>
+    /// existed. <b>Typing 0 clears the block</b>, which is the same gesture the reactance field uses
+    /// to clear a termination to "–".
+    /// </remarks>
+    DcBlock,
 }
 
 /// <summary>
@@ -130,6 +145,11 @@ public sealed partial class MatchDesignerViewModel
             return EditTarget(MatchInlineEditKind.TerminationReactance, element.Name, element.AbsorbedEnd,
                           quantity, element.Value);
 
+        // ...and a DC block is that end's Term<N>DcBlock, for the same reason.
+        if (element.DcBlockEnd is 1 or 2)
+            return EditTarget(MatchInlineEditKind.DcBlock, element.Name, element.DcBlockEnd,
+                          quantity, element.Value);
+
         return EditTarget(MatchInlineEditKind.ElementValue, element.Name, 0, quantity, element.Value);
     }
 
@@ -173,9 +193,18 @@ public sealed partial class MatchDesignerViewModel
             return false;
         }
 
-        if (!(value > 0))
+        // Zero is a legal value for a DC BLOCK and only for one: it is how the block is cleared from
+        // the network pane, the same gesture that clears a termination's reactance to "–". Everywhere
+        // else a zero element is unstampable — see MatchModel's constructor guard.
+        if (!(value > 0) && target.Kind != MatchInlineEditKind.DcBlock)
         {
             InlineEditNote = "The value must be greater than zero.";
+            return false;
+        }
+
+        if (value < 0)
+        {
+            InlineEditNote = "A DC block must be positive, or 0 to remove it.";
             return false;
         }
 
@@ -201,6 +230,7 @@ public sealed partial class MatchDesignerViewModel
         {
             MatchInlineEditKind.TerminationResistance => SetTerminationResistance(target.End, value),
             MatchInlineEditKind.TerminationReactance  => SetTerminationReactance(target.End, value),
+            MatchInlineEditKind.DcBlock               => SetDcBlockFromEdit(target.End, value),
             _                                         => SetElementValue(target.Name, value),
         };
     }
@@ -267,6 +297,25 @@ public sealed partial class MatchDesignerViewModel
         // A reactance has no natural scale, so the only defensible tolerance is a relative one.
         if (Math.Abs(v - term.Value) <= 1e-12 * Math.Abs(term.Value)) return false;
         SetTermination(end, term with { Value = v });
+        InlineEditNote = "";
+        return true;
+    }
+
+    /// <summary>
+    /// Writes one end's DC block from the network pane. <b>0 removes it</b>, which also unchecks the
+    /// termination card's toggle — the toggle reads the design and there is no second copy of the
+    /// state to keep in step.
+    /// </summary>
+    /// <remarks>
+    /// Purely relative tolerance, for the reason <see cref="SetTerminationReactance"/> gives: a
+    /// capacitance has no natural scale, and an absolute floor borrowed from a resistance's rounding
+    /// tolerance would swallow real edits.
+    /// </remarks>
+    private bool SetDcBlockFromEdit(int end, double farads)
+    {
+        double current = DcBlockOf(end);
+        if (Math.Abs(farads - current) <= 1e-12 * Math.Abs(current)) return false;
+        SetDcBlock(end, farads);
         InlineEditNote = "";
         return true;
     }

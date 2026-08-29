@@ -33,6 +33,7 @@ public class PlanarSolveProgressTests
         return PlanarLineFixtures.EndPorts(p);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ASweep_TicksOncePerFrequencyPoint()
     {
@@ -47,6 +48,7 @@ public class PlanarSolveProgressTests
         Assert.Equal(freqs.Length, control.Completed);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheStageLabelNamesWhatIsRunning_AndItsBarMovesInsideOnePoint()
     {
@@ -78,6 +80,7 @@ public class PlanarSolveProgressTests
         Assert.Contains(collector.Seen, p => p.Stage.Contains("GHz", StringComparison.Ordinal));
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheStageCounterNeverGoesBackwardsWithinAPoint()
     {
@@ -104,6 +107,7 @@ public class PlanarSolveProgressTests
         }
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheStageCounterNeverExceedsItsOwnTotal_WithDeembeddingOn()
     {
@@ -128,6 +132,7 @@ public class PlanarSolveProgressTests
                     $"stage counter overran its total in '{p.Stage}': {p.StageCompleted} / {p.StageTotal}");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheStageCounterNeverExceedsItsOwnTotal_OnThePlainSweep()
     {
@@ -144,6 +149,7 @@ public class PlanarSolveProgressTests
                     $"stage counter overran its total in '{p.Stage}': {p.StageCompleted} / {p.StageTotal}");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void Cancelling_StopsTheSweep_RatherThanRunningToCompletion()
     {

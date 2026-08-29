@@ -76,6 +76,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     // ══ 1 — the ceiling line ════════════════════════════════════════════════
 
     /// <summary>The strip names the wall, which termination sets it, and that the design is on it.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheStatusStrip_QuotesTheFanoCeilingAndSaysWhenTheDesignIsOnIt()
     {
@@ -100,6 +101,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     }
 
     /// <summary>The tooltip carries both ends, both other band sets, and the widening's own cost.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheCeilingTooltip_CarriesBothEndsTheOtherBandSetsAndTheWideningCost()
     {
@@ -121,6 +123,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     /// <summary>
     /// A design whose ceiling is nowhere near what it achieved says the number and stops there.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ADesignWithHeadroom_QuotesTheCeilingWithoutClaimingToBeOnIt()
     {
@@ -137,6 +140,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     /// <summary>
     /// <b>The ceiling line survives a refusal</b> — which is exactly when it is worth the most.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheCeilingLine_IsStillShownOnARefusedDesign()
     {
@@ -157,6 +161,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     }
 
     /// <summary>Two resistive ends have no ceiling, and the line is absent rather than infinite.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TwoResistiveEnds_ShowNoCeilingLine()
     {
@@ -180,6 +185,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     /// <summary>
     /// At order 2 the owner's tri-band prototype does not exclude the gaps, and the card says so.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheGapRiseNote_SaysTheGapsAreNotExcludedAndNamesTheOrderThatWouldOpenThem()
     {
@@ -219,6 +225,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     }
 
     /// <summary>Switching back to Single clears the gap note and keeps the ceiling line.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void SwitchingToSingle_ClearsTheGapNoteAndKeepsTheCeilingLine()
     {
@@ -239,6 +246,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     // ══ 3 — the loosen hints ════════════════════════════════════════════════
 
     /// <summary>The hint states the wall, what set it, and the four one-variable ways out.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheFeasibilityHint_NamesTheWallAndTheFourRemedies()
     {
@@ -274,6 +282,7 @@ public sealed class MatchFeasibilityHintTests(ITestOutputHelper output)
     }
 
     /// <summary>A design with headroom gets no hint — the ceiling is not what is stopping it.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ADesignWhoseCeilingIsNotInItsWay_GetsNoHint()
     {

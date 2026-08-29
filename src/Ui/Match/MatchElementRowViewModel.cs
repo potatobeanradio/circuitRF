@@ -140,6 +140,7 @@ public sealed partial class MatchElementRowViewModel : ObservableObject
         MatchElementRole.Absorbed   => "absorbed",
         MatchElementRole.Excess     => "surplus",
         MatchElementRole.Detune     => "detune",
+        MatchElementRole.DcBlock    => "DC block",
         MatchElementRole.OutOfRange => "out of range",
         _                           => "",
     };

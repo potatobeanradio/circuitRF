@@ -154,6 +154,7 @@ public class WBondCapacitancePanelTests
     /// hopeless, so not one frame of such a drag pays for the matrix — and the exact answer arrives
     /// on release.</para>
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData(EditorView.Layout)]
     [InlineData(EditorView.Profile)]

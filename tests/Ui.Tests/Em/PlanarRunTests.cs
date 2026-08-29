@@ -308,6 +308,7 @@ public class PlanarRunTests(PlanarRunFixture fixture) : IClassFixture<PlanarRunF
 
     /// <summary>The WIRING — R-em-20's "compare BEFORE overwriting", on the real run path. One
     /// end-to-end case, because the matrix above already pins the mechanism.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ARunAgainstAnSnpFromDifferentGeometry_WarnsBeforeOverwritingIt()
     {

@@ -52,6 +52,11 @@ public static class MatchFlatten
     private const double ShuntPitch  = 700.0;   // two shunt elements sharing one node
     private const double ShuntY      = 400.0;   // a shunt element's centre, below the spine
     private const double ShuntGroundY = 700.0;  // where that arm's own Ground sits
+    // match.md §22: a blocked arm is an inductor ABOVE its blocking capacitor on one vertical, so the
+    // capacitor takes a second row in the SAME column and the ground moves down under it. One full
+    // symbol lower, which puts the capacitor's upper pin exactly on the inductor's lower one.
+    private const double BlockY       = 1000.0;
+    private const double BlockGroundY = 1300.0;
     private const double LeadRun     = 100.0;   // wire stub between a node and a pin
     private const double AnnexGap    = 500.0;   // interface pin to the first termination column
     private const double AnnexLift   = 400.0;   // how far above the spine the annex lead runs
@@ -124,6 +129,19 @@ public static class MatchFlatten
         foreach (var placed in plan.Elements)
         {
             var e = placed.Element;
+
+            // A DC block shares its inductor's column — it is the lower half of one shunt arm, not a
+            // second arm — so it takes no pitch and the arm's single ground goes underneath IT.
+            if (placed.IsDcBlock)
+            {
+                model.Components.Add(Element(e, cursor, BlockY, SymbolRotation.R0, significantDigits,
+                                             shuntGroundOffsetY: BlockGroundY - BlockY));
+                model.Wires.Add(Wire((cursor, ShuntY + 200), (cursor, BlockY - 200)));
+                model.Components.Add(Ground(cursor, BlockGroundY));
+                model.Wires.Add(Wire((cursor, BlockY + 200), (cursor, BlockGroundY)));
+                continue;
+            }
+
             if (e.IsShunt)
             {
                 if (shuntAtNode > 0)
@@ -131,11 +149,15 @@ public static class MatchFlatten
                     model.Wires.Add(Wire((cursor, 0), (cursor + ShuntPitch, 0)));
                     cursor += ShuntPitch;
                 }
+                bool blocked = e.DcBlock > 0.0;
                 model.Components.Add(Element(e, cursor, ShuntY, SymbolRotation.R0, significantDigits,
-                                             shuntGroundOffsetY: ShuntGroundY - ShuntY));
+                                             shuntGroundOffsetY: (blocked ? BlockGroundY : ShuntGroundY) - ShuntY));
                 model.Wires.Add(Wire((cursor, 0), (cursor, 200)));
-                model.Components.Add(Ground(cursor, ShuntGroundY));
-                model.Wires.Add(Wire((cursor, 600), (cursor, 700)));
+                if (!blocked)
+                {
+                    model.Components.Add(Ground(cursor, ShuntGroundY));
+                    model.Wires.Add(Wire((cursor, 600), (cursor, 700)));
+                }
                 shuntAtNode++;
             }
             else
@@ -157,11 +179,14 @@ public static class MatchFlatten
                        significantDigits);
 
         // ── the design record ─────────────────────────────────────────────────
+        // A blocked arm reaches BlockGroundY plus its label block, so the record moves down under it
+        // rather than being written across the drawing it documents.
+        double recordY = plan.Elements.Any(x => x.IsDcBlock) ? 2500.0 : 1900.0;
         model.CanvasObjects.Add(new EditableText
         {
             Text = Annotation(rebuild, design, instanceName, stamped ?? DateTime.UtcNow),
             X = cursor / 2.0,
-            Y = 1900.0,
+            Y = recordY,
             Width = Math.Max(2600.0, cursor + 1600.0),
             Height = 900.0,
             FontSize = 11f,
@@ -407,6 +432,23 @@ public static class MatchFlatten
         // two are the same number — the transforms exist precisely to bring the ladder's end up to
         // the termination's. In an unfinished one they are not, and a user reading 1.68 Ω beside a
         // 200 Ω termination deserves the sentence rather than the puzzle.
+        // The block is a real component in this cell and a real change to the inductor beside it, and
+        // neither is derivable from the design's own numbers by anyone reading the drawing later.
+        foreach (var b in rebuild.DcBlocks.Where(b => b.Applied))
+            lines.Add(
+                $"DC block at termination {b.End.ToString(CultureInfo.InvariantCulture)}: "
+                + $"{MatchValueFormat.FormatWithUnit(b.Farads, MatchQuantity.Capacitance, MatchValueFormat.AutoUnit, 5)}"
+                + $" ({b.ElementName}{MatchDcBlock.NameSuffix}) in series with {b.ElementName}, which "
+                + $"carries {MatchValueFormat.FormatWithUnit(b.InductanceAfter, MatchQuantity.Inductance, MatchValueFormat.AutoUnit, 5)}"
+                + $" rather than {MatchValueFormat.FormatWithUnit(b.InductanceBefore, MatchQuantity.Inductance, MatchValueFormat.AutoUnit, 5)}"
+                + " so the branch's reactance at band centre is unchanged."
+                + (b.Path.Count == 0
+                    ? $" Feed the bias through {b.ElementName}, not through a separate choke."
+                    : $" The DC path from termination {b.End.ToString(CultureInfo.InvariantCulture)} "
+                      + $"reaches {b.ElementName} through {string.Join(", ", b.Path)}; feed the bias through "
+                      + $"{b.ElementName} — it reaches the termination through {string.Join(", ", b.Path)}, "
+                      + "not through a separate choke."));
+
         if (!rebuild.OnTarget)
             lines.Add(
                 $"The Terms carry the ladder's own reference — {Ohms(network.R1)} and "

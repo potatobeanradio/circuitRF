@@ -555,6 +555,7 @@ public sealed class LayeredGreensFunctionTests
         }
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T4_3_TheDcimFitResidual_ImprovesMonotonicallyWithOrder_AndNeverWanders()
     {

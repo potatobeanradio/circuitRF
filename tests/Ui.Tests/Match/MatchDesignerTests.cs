@@ -86,6 +86,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// link on, a Q-adjusted solution applied — close the window, open a NEW one on the same
     /// component, and every one of those is back.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ASessionRoundTrip_BringsBackEveryTransform_ItsForm_ItsLock_TheLinkStateAndTheBadges()
     {
@@ -149,6 +150,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// Every committed edit writes <c>Design</c>. Asserted by making one edit of each kind and reading
     /// the component's own parameter back — never the view-model's copy.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void EveryCommittedEdit_WritesTheDesignParameter()
     {
@@ -198,6 +200,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// lesser of the two evils: the alternative is a commit — an undo entry, and a dirty document —
     /// produced by nothing more than looking at a component.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheEchoParameters_FollowTheDesign_FromTheFirstCommittedEdit()
     {
@@ -220,6 +223,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
 
     // ── §1 — undo goes to the schematic's own stack ───────────────────────────
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ADesignerEdit_UndoesFromTheSchematicsOwnStack()
     {
@@ -242,6 +246,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     // ── §5 — the transform rack ───────────────────────────────────────────────
 
     /// <summary>With link on and exactly one transform, N is fully determined (match.md §4.8).</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void LinkWithOneTransform_DisablesTheSliderAndTheNumericBox()
     {
@@ -268,6 +273,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// <summary>
     /// Dragging one slider leaves <c>Π N²</c> on target and never writes a locked row.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void LinkRedistributes_KeepsTheProductOnTarget_AndNeverWritesALockedRow()
     {
@@ -352,6 +358,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// two-port's transfer function alone. Same S-parameters, from the same engine, either side of a
     /// slider move.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheResponseDoesNotMoveWhenASliderDoes()
     {
@@ -428,6 +435,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// height is scarce. The parity rule is expressed by <see cref="MatchDesignerViewModel.OrderOptions"/>
     /// offering what it offers, which is what the assertions below check.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ATopologyChange_AdjustsTheOrder_AndSaysNothingAboutIt()
     {
@@ -448,6 +456,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// A response that cannot absorb both ends at the current order is shown DISABLED with the
     /// numeric reason in its tooltip, never silently missing (match.md §6.6).
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AnInfeasibleResponse_IsDisabledWithItsNumbersInTheTooltip()
     {
@@ -533,6 +542,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// because of it. <c>SolutionsRefusal</c> is now reserved for the case where the WHOLE
     /// cross-product came back empty — see <c>LandSearchComplete</c>.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void WhenAFamilyFindsNothing_ItSaysSo_AndTheListIsNotEmptyForIt()
     {
@@ -564,6 +574,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// the same elements</b>, the legend NAMES them rather than asking the user to spot a brightness
     /// difference, and every glyph is drawn in the one symbol colour.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AbsorbedElements_AreNamedByTheLegend_AndDrawnLikeEverythingElse()
     {
@@ -720,6 +731,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// survived both — <b>a disabled control in this window states a condition the user can act
     /// on</b>. The full sets live in <c>MatchProbeTests</c> and <c>MatchFlattenTests</c>.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ADisabledFooterControl_NamesAConditionTheUserCanActOn_NeverABriefItWaitsOn()
     {
@@ -744,6 +756,7 @@ public class MatchDesignerTests(ITestOutputHelper output)
     /// The plotted netlist contains the absorbed elements and terminates in R1 and R2 — it is the
     /// response the user is judging, not the component's own (match.md §9.6).
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ThePlottedNetlist_IsTheFullDesign_TerminatedInR1AndR2()
     {

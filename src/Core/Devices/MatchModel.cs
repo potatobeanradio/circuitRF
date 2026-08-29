@@ -48,7 +48,13 @@ public sealed class MatchModel : ComponentModel, IReportsWarnings
 
     /// <summary>One shunt element hanging off node <paramref name="Slot"/>: an inductor branch to
     /// ground, or a capacitive admittance.</summary>
-    private readonly record struct ShuntElement(int Slot, double Value, bool IsInductor);
+    /// <param name="BlockFarads">
+    /// match.md §22's DC-blocking capacitor in series with the inductor, or 0. It adds
+    /// <c>1/(jwC)</c> to the branch impedance and makes it an OPEN at DC — no internal node, because
+    /// a two-terminal branch has a driving-point admittance and that is what MNA stamps.
+    /// </param>
+    private readonly record struct ShuntElement(
+        int Slot, double Value, bool IsInductor, double BlockFarads);
 
     private readonly SeriesArm[] _series;
     private readonly ShuntElement[] _shunt;
@@ -101,7 +107,8 @@ public sealed class MatchModel : ComponentModel, IReportsWarnings
         {
             if (stamped[i].IsShunt)
             {
-                shunt.Add(new ShuntElement(current, stamped[i].Value, stamped[i].Type == ElementType.L));
+                shunt.Add(new ShuntElement(
+                    current, stamped[i].Value, stamped[i].Type == ElementType.L, stamped[i].DcBlock));
                 i++;
                 continue;
             }
@@ -205,12 +212,26 @@ public sealed class MatchModel : ComponentModel, IReportsWarnings
                 continue;
             }
 
-            // A bare inductor to ground: a branch carrying jwL, an exact short at DC.
+            // An inductor to ground: a branch carrying jwL, an exact short at DC — unless it carries
+            // match.md §22's DC block, which makes the SAME branch jw*L' + 1/(jw*C) and an exact open
+            // at DC. That is the physics the block exists for, and it is the series arm's own stamp
+            // one branch down; no internal node is minted for it, because a two-terminal branch has a
+            // driving-point admittance and the internal node would be unobservable anyway.
+            bool blocked = el.BlockFarads > 0.0;
             int br = mna.AddBranch();
             mna.AddBranchCurrent(br, node, 0);
+
+            if (blocked && omega == 0.0)
+            {
+                mna.AddBranchConstraint(br, br, new Complex(-1.0, 0.0));
+                continue;
+            }
+
             mna.AddConstraint(br, node, +Complex.One);
             mna.AddConstraint(br, 0, -Complex.One);
-            var diag = new Complex(0.0, -omega * el.Value);
+            double imag = -omega * el.Value;
+            if (blocked) imag += 1.0 / (omega * el.BlockFarads);
+            var diag = new Complex(0.0, imag);
             if (diag != Complex.Zero) mna.AddBranchConstraint(br, br, diag);
         }
     }

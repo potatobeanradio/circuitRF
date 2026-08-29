@@ -24,18 +24,15 @@ public static class MatchResponse
         Complex a = Complex.One, b = Complex.Zero, c = Complex.Zero, d = Complex.One;
         foreach (var e in network.Elements)
         {
-            Complex z = e.Type == ElementType.L
-                ? new Complex(0.0, om * e.Value)
-                : Complex.One / new Complex(0.0, om * e.Value);
-
             if (e.IsShunt)
             {
-                Complex y = Complex.One / z;
+                Complex y = ShuntAdmittance(e, om);
                 a += b * y;
                 c += d * y;
             }
             else
             {
+                Complex z = Impedance(e, om);
                 b += a * z;
                 d += c * z;
             }
@@ -47,6 +44,30 @@ public static class MatchResponse
         Complex s21 = 2.0 * Math.Sqrt(z1 * z2) / den;
         return (s11, s21);
     }
+
+    private static Complex Impedance(MatchElement e, double om) => e.Type == ElementType.L
+        ? new Complex(0.0, om * e.Value)
+        : Complex.One / new Complex(0.0, om * e.Value);
+
+    /// <summary>
+    /// One shunt branch's admittance — <b>including its DC block</b> when it has one (match.md §22.2).
+    /// </summary>
+    /// <remarks>
+    /// A blocked shunt inductor is a two-terminal series L-C branch to ground, so its impedance is
+    /// <c>j(omega L' - 1/(omega C))</c> and its effective inductance <c>L' - 1/(omega^2 C)</c>. At
+    /// omega = 0 the branch is an OPEN — which is the whole purpose of the block — and the division
+    /// that would say so is guarded rather than performed: 1/(j*0) is not a number this cascade can
+    /// carry, and the answer it stands for is exactly zero admittance.
+    /// </remarks>
+    private static Complex ShuntAdmittance(MatchElement e, double om)
+    {
+        if (e.Type == ElementType.L && e.DcBlock > 0.0)
+            return om == 0.0 ? Complex.Zero : Complex.One / BlockedBranch(e, om);
+        return Complex.One / Impedance(e, om);
+    }
+
+    private static Complex BlockedBranch(MatchElement e, double om) =>
+        new(0.0, om * e.Value - 1.0 / (om * e.DcBlock));
 
     /// <summary>Worst in-band |S11| in dB (a number near 0 is a bad match; -20 is a good one).</summary>
     public static double WorstReturnLossDb(MatchNetwork network, double f1, double f2, int points = 201)

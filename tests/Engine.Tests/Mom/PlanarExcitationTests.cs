@@ -85,6 +85,7 @@ public class PlanarExcitationTests(ITestOutputHelper output)
         Assert.Equal(sol.Y[0, 0].Imaginary, atPort.Imaginary, 12);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T1_5_BetaConvergesUnderMeshRefinement_WhichIsWhatJustifiesTheCoarseFixture()
     {

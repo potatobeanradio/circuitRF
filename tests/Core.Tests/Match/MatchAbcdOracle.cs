@@ -26,6 +26,12 @@ internal static class MatchAbcdOracle
                 ? Complex.ImaginaryOne * om * e.Value
                 : Complex.One / (Complex.ImaginaryOne * om * e.Value);
 
+            // match.md §22's DC block: the shunt branch is a series L-C pair to ground, so its
+            // impedance is the SUM of the two — added here from the two-terminal definitions rather
+            // than by the closed form MatchResponse uses, which is what makes this an oracle.
+            if (e.DcBlock > 0.0)
+                imp += Complex.One / (Complex.ImaginaryOne * om * e.DcBlock);
+
             Complex[,] step = e.IsShunt
                 ? new[,] { { Complex.One, Complex.Zero }, { Complex.One / imp, Complex.One } }
                 : new[,] { { Complex.One, imp }, { Complex.Zero, Complex.One } };

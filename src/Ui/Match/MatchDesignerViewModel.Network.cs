@@ -39,6 +39,7 @@ namespace CircuitRF.Ui.Matching;
 /// <param name="GapRise">How far the prototype rises above its passband level in each gap at the
 /// design's order, in gap order. Empty for a single band.</param>
 /// <param name="GapOpensAtOrder">The smallest offered order at which every gap opens, or 0.</param>
+/// <param name="DcBlockLines">One line per end carrying a DC block (match.md §22.5), or empty.</param>
 public sealed record MatchStatus(
     double Q1, double Q2, double WorstReturnLossDb, double InsertionLossDb, double RippleDb,
     double Achieved, double Required, bool OnTarget, MatchRefusal? Refusal,
@@ -48,7 +49,8 @@ public sealed record MatchStatus(
     double Ceiling1Db = double.NegativeInfinity, double Ceiling2Db = double.NegativeInfinity,
     double CeilingTypedDb = double.NegativeInfinity,
     double CeilingOverSpanDb = double.NegativeInfinity,
-    IReadOnlyList<double>? GapRise = null, int GapOpensAtOrder = 0)
+    IReadOnlyList<double>? GapRise = null, int GapOpensAtOrder = 0,
+    IReadOnlyList<MatchDcBlockLine>? DcBlockLines = null)
 {
     /// <summary>Nothing to say yet.</summary>
     public static MatchStatus Empty { get; } = new(0, 0, 0, 0, 0, 1, 1, true, null);
@@ -160,6 +162,23 @@ public sealed record MatchStatus(
         }
     }
 
+    /// <summary>
+    /// The DC block lines, in end order — one per end that carries a block, applied or not.
+    /// </summary>
+    /// <remarks>
+    /// <b>The stored-but-not-applied case is rendered here too, not swallowed</b> — nothing is wrong,
+    /// the block simply has nowhere to be, and the user may be mid-way through changing the order or
+    /// the form.
+    ///
+    /// <para><b>Empty on a REFUSAL</b>, unlike <see cref="CeilingText"/>. The ceiling is arithmetic on
+    /// the specification and survives having no network; a block is attached to whichever shunt
+    /// inductor sits at an end node, so with no ladder there is no end node and nothing true to say
+    /// about it. <c>MatchRebuild.Rebuild</c> returns before <c>MatchDcBlock.Apply</c> in that case, so
+    /// this is a property of where the step sits rather than a decision made here. The design keeps
+    /// the value, and the line reappears the moment the design synthesises again.</para>
+    /// </remarks>
+    public IReadOnlyList<MatchDcBlockLine> DcBlocks => DcBlockLines ?? [];
+
     /// <summary>The loss line.</summary>
     public string LossText => IsRefused
         ? ""
@@ -194,11 +213,14 @@ public sealed record MatchStatus(
     /// of them: it is arithmetic on the specification and it is at its most useful precisely here.
     /// </remarks>
     public string Text => IsRefused
-        ? string.Join("   ", new[] { QText, CeilingText }.Where(t => t.Length > 0))
+        ? string.Join("   ", new[] { QText, CeilingText }
+                                 .Concat(DcBlocks.Select(b => b.Text)).Where(t => t.Length > 0))
           + $"   —   {Refusal!.Message}"
         : string.Join(
             "   ",
-            new[] { QText, ReturnLossText, CeilingText, GapText, GapText2, LossText, RatioText }
+            new[] { QText, ReturnLossText, CeilingText }
+                .Concat(DcBlocks.Select(b => b.Text))
+                .Concat([GapText, GapText2, LossText, RatioText])
                 .Where(t => t.Length > 0));
 }
 
@@ -263,9 +285,16 @@ public sealed partial class MatchDesignerViewModel
         // this used to, would destroy the ItemsControl container holding the very editor that was
         // mid-commit. So the collection is resized and each row is overwritten in place, exactly as
         // RefreshTransformRows does with the rack for the same reason.
-        var display = network is not null
-            ? MatchLadderLayout.DisplayOrder(network.Elements).ToList()
-            : [];
+        //
+        // ── The rows are the LAYOUT's elements, not the network's ─────────────
+        //
+        // They were MatchLadderLayout.DisplayOrder(network.Elements) until match.md §22's DC block,
+        // which is a real capacitor in the drawing and a real instance in the flattened cell but is
+        // NOT an element of MatchNetwork — it is one property on the inductor it sits in series with,
+        // because the flat list cannot spell a series pair to ground. The layout is where the two are
+        // brought together, so reading it here is what puts L1blk in the grid beside L1, in the same
+        // order and with the same role, instead of re-deriving both.
+        var display = Ladder.Elements;
 
         while (Elements.Count > display.Count) Elements.RemoveAt(Elements.Count - 1);
         while (Elements.Count < display.Count) Elements.Add(new MatchElementRowViewModel(this));
@@ -282,9 +311,7 @@ public sealed partial class MatchDesignerViewModel
             // both views at once is this pane, where two names for one element is just a puzzle.
             // The same order the schematic draws in, so the two views of one network read down the
             // page together — see MatchLadderLayout.DisplayOrder for why that is not ladder order.
-            Elements[i].Update(
-                e.Name, e.Name, e.Type, e.IsShunt, e.Value,
-                MatchLadderLayout.RoleOf(e), text, unit);
+            Elements[i].Update(e.Name, e.Name, e.Type, e.IsShunt, e.Value, e.Role, text, unit);
         }
 
         // The payload error is NOT repeated here: it has its own line at the top of the
@@ -417,6 +444,8 @@ public sealed partial class MatchDesignerViewModel
 
         RefreshGapRiseNote(effective, rise, opensAt, span);
 
+        var blocks = BuildDcBlockLines();
+
         if (network is null)
         {
             Status = new MatchStatus(
@@ -424,7 +453,7 @@ public sealed partial class MatchDesignerViewModel
                 CeilingDb: ceilingDb, CeilingEnd: ceilingEnd,
                 Ceiling1Db: c1.CeilingDb, Ceiling2Db: c2.CeilingDb,
                 CeilingTypedDb: typed.CeilingDb, CeilingOverSpanDb: span.CeilingDb,
-                GapRise: rise, GapOpensAtOrder: opensAt);
+                GapRise: rise, GapOpensAtOrder: opensAt, DcBlockLines: blocks);
         }
         else
         {
@@ -448,7 +477,7 @@ public sealed partial class MatchDesignerViewModel
                 gaps.Count > 0 ? MatchResponse.GapMaxS11(network, g1Lo, g1Hi) : 0.0, g1Lo, g1Hi,
                 gaps.Count > 1 ? MatchResponse.GapMaxS11(network, g2Lo, g2Hi) : 0.0, g2Lo, g2Hi,
                 ceilingDb, ceilingEnd, c1.CeilingDb, c2.CeilingDb,
-                typed.CeilingDb, span.CeilingDb, rise, opensAt);
+                typed.CeilingDb, span.CeilingDb, rise, opensAt, blocks);
         }
 
         RefreshFeasibilityHint();

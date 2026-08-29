@@ -43,6 +43,76 @@ public class MatchFlattenPlanTests(ITestOutputHelper output)
         Term2 = new Termination(1.25, ReactanceKind.C, TerminationTopology.Series, 10e-12),
     };
 
+    private static MatchDesign Fixture(string which) => which switch
+    {
+        "default"          => MatchEmbedding.DefaultDesign(),
+        "dcblock"          => Blocked(),
+        "dcblock-series-rc" => BlockedSeriesRc(),
+        "dcblock-t"        => BlockedAfterT(),
+        _                  => Golden(),
+    };
+
+    /// <summary>
+    /// MN-DCB2: §4.9's design with the block on termination 2 — the series-RC end, whose host is the
+    /// shunt inductor one series inductor in (<c>L3</c>, reached through <c>L4</c>).
+    /// </summary>
+    private static MatchDesign BlockedSeriesRc()
+    {
+        var design = Golden();
+        var free = Ladder(design);
+        var host = MatchDcBlock.ResolveHost(free, 2);
+        Assert.True(host.Index >= 0);
+        Assert.Single(host.Path);
+        design.Term2DcBlock = MatchDcBlock.DefaultFor(free.Elements[host.Index].Value, design.Omega0, 10e-9);
+        return design;
+    }
+
+    /// <summary>
+    /// MN-DCB2: match.md §22's drain network with a Norton T on (L1, L2) and the block on termination
+    /// 1 — the host is the T's shunt product, reached through its first series product.
+    /// </summary>
+    private static MatchDesign BlockedAfterT()
+    {
+        var design = new MatchDesign
+        {
+            F1 = 1.8e9, F2 = 2.2e9, Order = 4, Response = ResponseShape.ChebyshevFano,
+            Term1 = new Termination(4.0, ReactanceKind.C, TerminationTopology.Parallel, 30e-12),
+            Term2 = Termination.Resistive(50.0),
+        };
+        var rebuilt = MatchRebuild.Rebuild(design);
+        var pair = NortonTransform.Discover(rebuilt.Network!).First(p => p.NameA == "L1" && p.NameB == "L2");
+        var range = NortonTransform.Range(rebuilt.Network!, pair, rebuilt.Basis.AnalysisIsTerm1, false);
+        design.Transforms = [new TransformRecord("L1", "L2", TransformForm.T, 0.5 * (range.Min + range.Max), false)];
+
+        var free = Ladder(design);
+        var host = MatchDcBlock.ResolveHost(free, 1);
+        Assert.True(host.Index >= 0);
+        Assert.Single(host.Path);
+        design.Term1DcBlock = MatchDcBlock.DefaultFor(free.Elements[host.Index].Value, design.Omega0, 10e-9);
+        return design;
+    }
+
+    /// <summary>
+    /// §4.9's design with match.md §22's DC block on termination 1's end shunt inductor.
+    /// </summary>
+    /// <remarks>
+    /// <b>The one element the network model cannot spell.</b> <c>MatchNetwork</c>'s flat list makes
+    /// every shunt element node-to-ground, so the block travels as a PROPERTY on the inductor and the
+    /// stamp contributes it as one two-terminal branch admittance with no internal node — while the
+    /// CELL writes two real components on a minted node between them. The equality gated above is
+    /// therefore not a restatement of one expression: it is a driving-point admittance compared
+    /// against the pair of components it stands for.
+    /// </remarks>
+    private static MatchDesign Blocked()
+    {
+        var design = Golden();
+        var free = Ladder(design);
+        int idx = MatchDcBlock.ResolveHost(free, 1).Index;
+        Assert.True(idx >= 0);
+        design.Term1DcBlock = MatchDcBlock.DefaultFor(free.Elements[idx].Value, design.Omega0, 10e-9);
+        return design;
+    }
+
     private static MatchNetwork Ladder(MatchDesign design)
     {
         var rebuilt = MatchRebuild.Rebuild(design);
@@ -126,11 +196,14 @@ public class MatchFlattenPlanTests(ITestOutputHelper output)
     /// break.
     /// </summary>
     [Theory]
-    [InlineData(false)]   // §4.9's interstage design — two absorbed ends, a CFano, two series arms
-    [InlineData(true)]    // the shipped default — 50/50 resistive, nothing absorbed
-    public void TheComponent_AndTheFlattenPlan_AgreeToOnePartInATrillion(bool useDefault)
+    [InlineData("golden")]   // §4.9's interstage design — two absorbed ends, a CFano, two series arms
+    [InlineData("default")]  // the shipped default — 50/50 resistive, nothing absorbed
+    [InlineData("dcblock")]  // MN-DCB: §4.9's design with a DC block on termination 1's shunt inductor
+    [InlineData("dcblock-series-rc")]  // MN-DCB2: the block on the series-RC end, one series inductor in
+    [InlineData("dcblock-t")]          // MN-DCB2: the block after a Norton T on the end pair
+    public void TheComponent_AndTheFlattenPlan_AgreeToOnePartInATrillion(string which)
     {
-        var design = useDefault ? MatchEmbedding.DefaultDesign() : Golden();
+        var design = Fixture(which);
         var plan = MatchFlattenPlan.Build(Ladder(design));
 
         var component = Sweep($"""
@@ -189,11 +262,14 @@ public class MatchFlattenPlanTests(ITestOutputHelper output)
     /// after flattening is to run the cell alone and see the plot they designed to.
     /// </summary>
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void EnablingTheTerminations_ReproducesTheDesignersOwnResponse(bool useDefault)
+    [InlineData("golden")]
+    [InlineData("default")]
+    [InlineData("dcblock")]
+    [InlineData("dcblock-series-rc")]
+    [InlineData("dcblock-t")]
+    public void EnablingTheTerminations_ReproducesTheDesignersOwnResponse(string which)
     {
-        var design = useDefault ? MatchEmbedding.DefaultDesign() : Golden();
+        var design = Fixture(which);
         var ladder = Ladder(design);
         var plan = MatchFlattenPlan.Build(ladder);
 
@@ -244,6 +320,108 @@ public class MatchFlattenPlanTests(ITestOutputHelper output)
             $"end 1: Term on {parallelEnd.TermHighNet}; " +
             $"end 2: {seriesEnd.Absorbed.Name} {seriesEnd.AbsorbedNetA}→{seriesEnd.AbsorbedNetB}, " +
             $"Term on {seriesEnd.TermHighNet}");
+    }
+
+    // ── MN-DCB: the block as two instances, and the DC open ───────────────────
+
+    /// <summary>
+    /// <b>A blocked shunt inductor is TWO instances on one minted node.</b> The plan is the topology
+    /// the cell is laid out from, so this is where "an L from the node to <c>b1</c>, a C from
+    /// <c>b1</c> to ground, named <c>L1</c> and <c>L1blk</c>" is pinned. The block follows its
+    /// inductor immediately, which is what lets the drawing put the two in one column.
+    /// </summary>
+    [Fact]
+    public void ABlockedShuntInductor_BecomesTwoInstancesAndOneMintedNode()
+    {
+        var design = Blocked();
+        var ladder = Ladder(design);
+        var plan = MatchFlattenPlan.Build(ladder);
+
+        var host = ladder.Elements.Single(e => e.DcBlock > 0);
+        int i = plan.Elements.ToList().FindIndex(fe => fe.Element.Name == host.Name);
+        Assert.True(i >= 0);
+
+        var inductor = plan.Elements[i];
+        var block = plan.Elements[i + 1];
+
+        Assert.False(inductor.IsDcBlock);
+        Assert.True(block.IsDcBlock);
+        Assert.Equal(host.Name + MatchDcBlock.NameSuffix, block.Element.Name);
+        Assert.Equal(ElementType.C, block.Element.Type);
+        Assert.Equal(host.DcBlock, block.Element.Value, 15);
+
+        // The inductor no longer reaches ground: it reaches the minted node the capacitor grounds.
+        Assert.Equal(plan.Port1Net, inductor.NetA);
+        Assert.NotEqual(MatchFlattenPlan.GroundNet, inductor.NetB);
+        Assert.Equal(inductor.NetB, block.NetA);
+        Assert.Equal(MatchFlattenPlan.GroundNet, block.NetB);
+
+        // And nothing else in the plan touches that node — a minted block node joins exactly two pins.
+        Assert.Equal(2, plan.Elements.Count(fe => fe.NetA == inductor.NetB || fe.NetB == inductor.NetB));
+
+        output.WriteLine($"{inductor.Element.Name} {inductor.NetA}->{inductor.NetB}, "
+                         + $"{block.Element.Name} {block.NetA}->{block.NetB} ({block.Element.Value:E4} F)");
+    }
+
+    /// <summary>
+    /// <b>At DC the blocked branch is an OPEN, which is the whole reason the block exists.</b> A bare
+    /// shunt inductor is a dead short to ground and a biased node behind one sits at 0 V; with the
+    /// block in series the same node holds whatever is driving it.
+    /// </summary>
+    /// <remarks>
+    /// Run through the STAMP rather than the flattened cell, because the stamp is the half with no
+    /// internal node to carry the open — <c>MatchModel</c> contributes the whole branch as one
+    /// two-terminal admittance and has to spell the DC case itself, exactly as its series arms do.
+    /// The unblocked case is asserted beside it: a short is the CURRENT behaviour and stays.
+    /// </remarks>
+    [Fact]
+    public void WithABlock_TheDcAnalysisSeesTheBranchOpen()
+    {
+        double shorted = BiasedNode(Golden(), 1);
+        double open = BiasedNode(Blocked(), 1);
+        output.WriteLine($"drain node: {shorted:0.########} V without a block, {open:0.########} V with one");
+
+        // Without the block, the end shunt inductor shorts the drain to ground through the 1 ohm feed.
+        Assert.True(Math.Abs(shorted) < 1e-9, $"a bare shunt inductor is a DC short; the node sat at {shorted} V");
+
+        // With it, the branch carries no DC at all and the node sits at the supply, less the drop
+        // across the 1 ohm feed into a 1 Mohm load.
+        Assert.Equal(5.0, open, 4);
+    }
+
+    /// <summary>
+    /// <b>MN-DCB2: the series-RC end.</b> Termination 2's own capacitor is absorbed and NOT stamped,
+    /// so the port reaches L4 directly, L4 passes DC, and L3 shorts the gate bias — the node sits at
+    /// 0 V exactly as a shunt end arm would. With the block on L3 the same node is OPEN through L4
+    /// and holds the bias. The through-path inductor is the feed's route, not an isolation.
+    /// </summary>
+    [Fact]
+    public void WithABlockOnTheSeriesRcEnd_TheTerminationNodeIsOpenThroughTheSeriesInductor()
+    {
+        double shorted = BiasedNode(Golden(), 2);
+        double open = BiasedNode(BlockedSeriesRc(), 2);
+        output.WriteLine($"gate node: {shorted:0.########} V without a block, {open:0.########} V with one on L3");
+
+        Assert.True(Math.Abs(shorted) < 1e-9, $"L4 passes DC and L3 shorts it; the node sat at {shorted} V");
+        Assert.Equal(5.0, open, 4);
+    }
+
+    /// <summary>
+    /// Biases one of the Match's ports through 1 Ω from 5 V, with the other port on 1 MΩ, and reads
+    /// the biased node. Run through the STAMP rather than the flattened cell, because the stamp is
+    /// the half with no internal node to carry the open.
+    /// </summary>
+    private static double BiasedNode(MatchDesign design, int port)
+    {
+        string biased = port == 1 ? "p1" : "p2", other = port == 1 ? "p2" : "p1";
+        string cnl = "V:VDD  bias 0  V=5\n"
+                   + $"R:RS   bias {biased}  R=1 Ohm\n"
+                   + $"Match:MN1  p1 p2  Design={MatchEmbedding.EncodeToken(design)}\n"
+                   + $"R:RL   {other} 0  R=1e6 Ohm\n";
+        var nl = Elaborate(cnl);
+        var dc = NonlinearDcEngine.Run(nl);
+        Assert.True(dc.Converged, "the DC solve did not converge");
+        return dc.NodeVoltages[nl.Nodes.IndexOf(biased) - 1];
     }
 
     /// <summary>

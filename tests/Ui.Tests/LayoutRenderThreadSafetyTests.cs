@@ -75,6 +75,7 @@ public class LayoutRenderThreadSafetyTests
 
     // ── The reported crash ────────────────────────────────────────────────────
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void QueryingWhileEditing_NeverCorruptsTheSpatialIndex()
     {

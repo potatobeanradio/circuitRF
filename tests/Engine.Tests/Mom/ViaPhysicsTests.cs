@@ -263,6 +263,7 @@ public sealed class ViaPhysicsTests
     // TIER 2 — the via against a closed form.
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T2_0_TheORACLESAreCheckedBeforeAnythingIsConcludedFromThem()
     {
@@ -394,6 +395,7 @@ public sealed class ViaPhysicsTests
         Assert.True(worstMinus > 0.1, "a negative image must be decisively excluded");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T2_2_TheViasOwnINDUCTANCE_MatchesAnIndependentlyIntegratedClosedForm()
     {
@@ -427,6 +429,7 @@ public sealed class ViaPhysicsTests
             $"the ẑẑ entry must reproduce the exact partial inductance: worst relative {worst:E3}");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T2_3_TheINPLANEAreaIntegral_IsInvariantUnderSubdivision_ToTheFillsOwnQuadrature()
     {
@@ -656,6 +659,7 @@ public sealed class ViaPhysicsTests
         Assert.Equal(2, PlanarFillSettings.Default.ViaZNodes);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T3_2_TheQUADRATUREAndTheFITAreRefinedSEPARATELY_AndNeitherIsTheError()
     {

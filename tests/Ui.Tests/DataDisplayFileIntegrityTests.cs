@@ -95,6 +95,7 @@ public sealed class DataDisplayFileIntegrityTests
     // and wrote straight into it, so this save would have "succeeded" and the
     // original content assertion below would fail.
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public async Task SaveThatFailsPartway_LeavesThePreviousFileIntact()
     {

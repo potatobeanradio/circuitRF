@@ -63,6 +63,7 @@ public class CalibrationStandardSelectionTests(ITestOutputHelper output)
                        string.Join(", ", set.Select(s => $"{s.LengthM * 1e3:F2} mm / N={s.Mesh.Bases.Count}")));
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T1_SelectiveSolving_ReproducesTheFullSetsCalibration_BitForBit()
     {
@@ -118,6 +119,7 @@ public class CalibrationStandardSelectionTests(ITestOutputHelper output)
                        $"{freqs.Length * set.Length}.");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T2_EveryFrequencyFillsExactlyTwoStandards_HoweverManyTheBandBuilt()
     {
@@ -157,6 +159,7 @@ public class CalibrationStandardSelectionTests(ITestOutputHelper output)
                        $"of {delta.Length}");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T4_ARestartedContinuationStillCostsNoRepeatSolveOfASolvedFrequency()
     {
@@ -188,6 +191,7 @@ public class CalibrationStandardSelectionTests(ITestOutputHelper output)
                        $"({fillsAfterFirstPass} on the first pass).");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T5_ADeembeddedSweepIsUnchangedAndStillDeterministic()
     {

@@ -25,6 +25,18 @@ public enum MatchElementRole
     /// <summary>match.md §4.6's detune element (CDetune/LDetune) at the analysis end. Ours.</summary>
     Detune,
 
+    /// <summary>
+    /// match.md §22's DC-blocking capacitor, in series with an end shunt inductor. Ours, stamped, and
+    /// a SPECIFICATION INPUT the user owns — its value is edited in this pane like a termination's.
+    /// </summary>
+    /// <remarks>
+    /// <b>A role of its own rather than borrowing <see cref="Detune"/>'s.</b> They are drawn the same
+    /// way, but the grid's one-word note has to be able to say which is which — a detune element is
+    /// something the synthesis chose and a block is something the user asked for, and the two sit in
+    /// the same arm.
+    /// </remarks>
+    DcBlock,
+
     /// <summary>A negative or out-of-range value: exact, response-preserving and unbuildable.</summary>
     OutOfRange,
 }
@@ -58,6 +70,17 @@ public sealed record MatchLadderElement(
     /// the record's existing call sites — and its tests — are unchanged.
     /// </remarks>
     public int AbsorbedEnd { get; init; }
+
+    /// <summary>
+    /// 1 or 2 when this element is one END's DC-blocking capacitor (match.md §22), 0 otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Like <see cref="AbsorbedEnd"/>, and for the same reason: the block is a SPECIFICATION INPUT
+    /// wearing a ladder element's clothes — its value is <c>MatchDesign.TermNDcBlock</c>, no transform
+    /// can move it, and the inline editor has to know which end to write. It also tells the drawing
+    /// that this capacitor shares its inductor's column instead of claiming one of its own.
+    /// </remarks>
+    public int DcBlockEnd { get; init; }
 
     /// <summary>
     /// The theme role the element's SYMBOL is drawn in — the single mapping from meaning to colour.
@@ -175,6 +198,20 @@ public sealed class MatchLadderLayout
     /// </remarks>
     public const double ShuntGroundY = ShuntY + MatchSchematicGeometry.LeadHalf;
 
+    /// <summary>
+    /// A DC-blocking capacitor's centre y — one full symbol below the inductor it blocks, so its upper
+    /// pin lands exactly on that inductor's lower pin and, again, there is no wire to draw.
+    /// </summary>
+    /// <remarks>
+    /// <b><see cref="ShuntGroundY"/> is a shared constant, not a per-column one</b>, so the arm's
+    /// ground moves down for this column alone rather than for every column: a blocked arm's ground is
+    /// <c>BlockY + LeadHalf</c> and every other arm's stays where it was. The alternative the brief
+    /// offered — drawing the block at half scale between the inductor and an unmoved ground — needs a
+    /// second glyph scale the schematic renderer does not have, and would put a capacitor at a size no
+    /// other capacitor in the drawing is.
+    /// </remarks>
+    public const double BlockY = ShuntY + 2.0 * MatchSchematicGeometry.LeadHalf;
+
     /// <summary>The first bracket row's y.</summary>
     public const double BracketY = 900.0;
 
@@ -276,6 +313,32 @@ public sealed class MatchLadderLayout
                 AbsorbedEnd = e.AbsorbedEnd,
             });
             xByName[e.Name] = x;
+
+            // ── The DC block shares its inductor's COLUMN (match.md §22.5) ────
+            //
+            // It is the lower half of one shunt arm, not a second arm, so it takes no pitch of its own
+            // and gets no bracket: a transform cannot move it, and its name is not one any
+            // TransformRecord resolves through. Placing it here — rather than making it an element of
+            // the network — is the whole of what "one property on the element" costs the drawing.
+            if (e.IsShunt && e.DcBlock > 0.0)
+            {
+                var block = new MatchElement
+                {
+                    Name = MatchDcBlock.BlockName(e.Name),
+                    Type = ElementType.C,
+                    IsShunt = true,
+                    Value = e.DcBlock,
+                };
+                var role = RoleOf(block);
+                placed.Add(new MatchLadderElement(
+                    block.Name, ElementType.C, true, e.DcBlock,
+                    role == MatchElementRole.OutOfRange ? role : MatchElementRole.DcBlock,
+                    x, BlockY, valueText(block))
+                {
+                    DcBlockEnd = DcBlockEndOf(network, e),
+                });
+            }
+
             x += Pitch;
         }
 
@@ -340,6 +403,45 @@ public sealed class MatchLadderLayout
         }
 
         return order;
+    }
+
+    /// <summary>
+    /// Which END a blocked shunt inductor belongs to — 1 or 2.
+    /// </summary>
+    /// <remarks>
+    /// Read off the DC-path WALK, exactly as <see cref="MatchDcBlock.Apply"/> resolved it in the
+    /// first place, so the inline editor writes the same <c>TermNDcBlock</c> the rebuild read. Under
+    /// MN-DCB this was read off the net ("on p1 → end 1, else 2"), which was right while a host could
+    /// only be an end node; a series-RC end's host and a Norton π's second shunt product are interior
+    /// and both belong to the end whose walk reached them (MN-DCB2).
+    /// </remarks>
+    private static int DcBlockEndOf(MatchNetwork network, MatchElement element)
+    {
+        int i = network.Elements.IndexOf(element);
+        if (i < 0) return 1;
+        int end = MatchDcBlock.EndOf(network, i);
+        return end == 0 ? 1 : end;
+    }
+
+    /// <summary>
+    /// Where one shunt element's own <c>Ground</c> glyph sits, or null when the element below it in
+    /// the same column carries the ground instead.
+    /// </summary>
+    /// <remarks>
+    /// A blocked arm is an inductor ABOVE a capacitor on one vertical, so exactly one ground is drawn
+    /// for the two of them — under the lower symbol. Derived from the placed geometry rather than
+    /// carried as a flag: the rule is "the lowest shunt symbol in a column grounds it", which is true
+    /// of every column whether or not it has a block.
+    /// </remarks>
+    public static double? GroundYFor(MatchLadderLayout layout, MatchLadderElement element)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(element);
+        if (!element.IsShunt) return null;
+        foreach (var other in layout.Elements)
+            if (other.IsShunt && other.X == element.X && other.Y > element.Y)
+                return null;
+        return element.Y + MatchSchematicGeometry.LeadHalf;
     }
 
     /// <summary>

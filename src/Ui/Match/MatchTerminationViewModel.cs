@@ -612,6 +612,37 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         ? $"probed {t.ToLocalTime():yyyy-MM-dd HH:mm}"
         : "";
 
+    // ── The DC block (match.md §22) ───────────────────────────────────────────
+
+    /// <summary>
+    /// Whether this end's shunt inductor carries a DC-blocking capacitor.
+    /// </summary>
+    /// <remarks>
+    /// <b>The toggle is on the CARD of the end it acts on</b> (match.md §22.5), in the header row's
+    /// one empty column beside Probe — which is the single placement where "which end?" needs no label
+    /// and costs no height, because the row is already there.
+    ///
+    /// <para><b>Reading the design and nothing else.</b> A block IS
+    /// <c>MatchDesign.TermNDcBlock &gt; 0</c>, so typing 0 into <c>L1blk</c> in the network pane
+    /// unchecks this with no second copy of the state to keep in step. The value an uncheck takes away
+    /// is shadowed on the DESIGNER, not on the design — see
+    /// <c>MatchDesignerViewModel.SetDcBlockEnabled</c>.</para>
+    /// </remarks>
+    public bool HasDcBlock
+    {
+        get => _owner.DcBlockOf(End) > 0;
+        set => _owner.SetDcBlockEnabled(End, value);
+    }
+
+    /// <summary>
+    /// False when no real shunt inductor lies on this end's DC path (match.md §22.1), in which case
+    /// the toggle is disabled with a tooltip naming the reason rather than silently offering nothing.
+    /// </summary>
+    public bool DcBlockEnabled => _owner.CanDcBlock(End);
+
+    /// <summary>What the DC Block toggle offers, or the one thing standing in its way.</summary>
+    public string DcBlockTooltip => _owner.DcBlockTooltip(End);
+
     // ── The pictogram ─────────────────────────────────────────────────────────
 
     /// <summary>What the little R-and-reactance drawing shows. The view draws it; this decides it.</summary>
@@ -656,6 +687,9 @@ public sealed partial class MatchTerminationViewModel : ObservableObject
         OnPropertyChanged(nameof(ProbeProvenance));
         OnPropertyChanged(nameof(Conjugate));
         OnPropertyChanged(nameof(Pictogram));
+        OnPropertyChanged(nameof(HasDcBlock));
+        OnPropertyChanged(nameof(DcBlockEnabled));
+        OnPropertyChanged(nameof(DcBlockTooltip));
         NotifyEntryText();
     }
 }

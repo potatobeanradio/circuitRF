@@ -1,5 +1,174 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MN-DCB2 — the DC block follows the DC path, in the Designer (2026-08-28)
+
+Core's findings — the walk, the π's two hosts, the measured costs, the Ui test that ran for minutes
+— are in `src/Core/Match/RESOLVED.md` §MN-DCB2. Designer-side:
+
+### The toggle is `DC Block`, and it follows the walk
+
+Renamed from `Block` (owner, 2026-08-28) as a hint to the user; the AXAML source-scan test names the
+new content. `CanDcBlock`/`DcBlockTooltip`/`DcBlockDefault` read `MatchDcBlock.ResolveHost` off the
+current rebuild, so the toggle stays enabled across π ↔ T on the end pair and on a series-RC end. The
+sentence "this end's arm is a series arm — its capacitor already blocks DC" is gone from the
+view-model, the tests, match.md and the user reference; it was false. The enabled tooltip names the
+host and the series inductor(s) the bias reaches it through — or, for a π, "each of L1_N1_1 and
+L1_N1_3 (reached through L1_N1_2 …)"; the disabled one names the real series capacitor and says to
+feed that termination's bias on its own side of it.
+
+### The status line and the flattened record name the route
+
+When `Path` is non-empty: *"… in series with L3 (…, from …) — the DC path from termination 2 reaches
+L3 through L4; … Feed the bias through L3; it reaches the termination through L4, not through a
+separate choke."* The flattened cell's design record says the same, because the record exists for
+the reader who has only the drawing. One line per host, so a π end has two.
+
+### Copy grounded every shunt ELEMENT; the pane grounds every shunt COLUMN
+
+Owner-reported: pasting a Designer copy with a block gave two grounds on the shunt inductor and none
+on the block capacitor. `MatchSchematicCopy.Build` added a `Ground` at the shared `ShuntGroundY` for
+each shunt layout element, and a blocked arm has two in one column — so both grounds landed on the
+inductor's lower lead. It now asks `MatchLadderLayout.GroundYFor`, the pane's own per-column rule
+(one ground under the lowest shunt symbol), and passes `LeadHalf` to the label offsets as the pane
+does. `Copy_GroundsABlockedArmOnce_UnderTheBlockCapacitor` holds it for an end-node host and an
+interior one, and the π test for two blocked columns.
+
+### The inline editor wrote the WRONG end's value for an interior block
+
+`MatchLadderLayout.DcBlockEndOf` read the end off the net; a π's second shunt product is on `n1`, so
+`L1_N1_3blk` resolved to termination 2 and typing into it changed nothing, silently. It now asks
+`MatchDcBlock.EndOf`. Found by the π test's "typing 0 into either block clears both" step, not by
+inspection.
+
+### Nothing in the drawing needed an interior host
+
+`GroundYFor` is per column, `BlockY` is a constant below `ShuntY`, and the block takes its host's
+column — an interior host draws exactly as an end one does, with the end column's ground unmoved.
+Pinned by `TheDrawing_PutsTheBlockUnderAnInteriorHost_AndLeavesTheEndColumnAlone`.
+
+### The deleted tri-band test, and one that is still slow
+
+`MatchTribandDesignerTests.ALikePair_StillSynthesisesOverThreeBands` was deleted at the owner's
+suggestion: it waited on the Designer's full solution search for a tri-band like pair, which is
+minutes of real CPU (Core RESOLVED §MN-DCB2 has the numbers), and its only claim beyond the
+synchronous rebuild was the search's family. **`MatchMultibandDesignerTests.SwitchingToDualWithALikePair_KeepsItsOrders_AndTakesTheOddArmCount`
+measured 1 m 43 s in the same run** for the same reason (a dual-band like pair, waited on) and is
+left as the owner's call; the next five slowest tests in `Ui.Tests` are ~30 s each and all wait on a
+multiband search.
+
+### Test-time cut: every Ui test measured over ~5 s is now `Category=Benchmark` (owner, 2026-08-28)
+
+The owner's rule: no long test in the routine `dotnet test`. Tagged mechanically from two TRX runs —
+115 methods in `Ui.Tests`, nearly all Match Designer tests that `Open()` a design and then
+`WaitForAnalysis()` on the full background solution search (multiband like pairs are the worst:
+74 s, 43 s, 35 s …). One deliberate exception, left untagged: `LayoutSpatialIndexPerfTests.
+Gated500k_CullingCountersStayCorrect` measured 7.9 s under parallel load, but it is the counter test
+that catches an O(n) scan past the spatial index and the repo's own note says it stays in the gate.
+Two caveats: durations under xunit's parallel classes are inflated by contention (a test that reads
+12 s in a full run is often 3 s alone), so the tagging errs on the side of the owner's rule rather
+than the ~5 s letter; and the list of what is "over 5 s" moved between passes as the load changed —
+a third pass would tag more Designer tests for the same reason, and the right fix there is the
+search cost itself, not more tags. Measured: `Ui.Tests` 10,059 tests in **2 m 01 s** wall, clean
+exit (was ~3 min of tests plus a host that never exited); `Core.Tests` 2 s; `Engine.Tests` 19 s.
+
+### The "host never exits" was one test still running, not a linger
+
+After every other test finished, `dotnet test` sat until killed. A mini hang dump of the idle host
+(`--blame-hang-dump-type mini`, read with `dotnet-dump analyze … clrstack -all`) showed one test
+thread in `WaitForAnalysis` — `MatchTribandDesignerTests.TheElementCountHint_FollowsTheTerminationPairsParity`,
+which switches to a tri-band like pair and waits for its whole search — with the search thread busy
+in `MatchMultibandSynthesis.SearchOdd`. It never completed in any run, so it never had a TRX
+duration and no duration-based tagging could see it. The hint and the order options it asserts are
+computed from the design synchronously, so the wait is gone; the test now fails on a DIFFERENT,
+pre-existing assertion (below).
+
+### Two tri-band tests asserted a ceiling the design had already raised — tests fixed
+
+`TheOrderPicker_CountsMatchPointsPerBand` and `TheElementCountHint_FollowsTheTerminationPairsParity`
+asserted `OrderOptions == [1, 2, 3]` for a tri-band design. match.md §19 item 4 records the owner's
+decision that tri-band offers orders 1 to 6 while dual-band stops at 3, and `MatchOrders.ValidOrders`
+does exactly that; the tests predate the milestone and had never run to completion (their class
+always died on the like-pair test ahead of them), so the mismatch was invisible. Both now assert
+1–6 and the 4/8/12/16/20/24 (mixed) and 6/10/14/18/22/26 (like) element counts the hint states;
+`ValidOrders`' own remark, which still said "the ceiling is 3", says the asymmetry.
+
+## MN-DCB — the DC block in the Match Designer (2026-08-28)
+
+match.md §22.5. The `Block` toggle, the block capacitor as an element of the network pane, the status
+line, the flattened cell, and the Settings cap. Core's own findings — including the three corrections
+made to match.md §22.2 — are in `src/Core/Match/RESOLVED.md` §MN-DCB.
+
+### The toggle costs zero height because the row it needs already existed
+
+The termination card's header is `Grid ColumnDefinitions="Auto,*,Auto,Auto"` — heading, an empty
+stretch column, Probe, flag — put there when round 9 moved Probe off its own row. The `Block`
+ToggleButton goes in column 1, right-aligned, with Probe's exact padding and margin, so it reads as
+Probe's neighbour and sits on the card of the end it acts on. That placement is the one where "which
+end?" needs no label, which is the whole reason not to put it in the specification pane (which has no
+room left anyway).
+
+### The grid rows now come from the LAYOUT, not from the network
+
+`RefreshLadderAndGrid` walked `MatchLadderLayout.DisplayOrder(network.Elements)` to build the value
+grid, and separately built the drawing from the layout. A DC block is a real capacitor in the drawing
+and a real instance in the flattened cell but is **not** an element of `MatchNetwork` — it is one
+property on the inductor, because the flat list cannot spell a series pair to ground. The layout is
+where the two are brought together, so the grid reads `Ladder.Elements`: one loop, one order, one
+role, and `L1blk` appears in the grid beside `L1` with nothing to keep in step. This also removed a
+duplicated `DisplayOrder` call.
+
+### The arm's ground is derived from the geometry, not carried as a flag
+
+`MatchLadderLayout.ShuntGroundY` is a shared constant, so a blocked arm — an inductor above a
+capacitor on one vertical — needed the ground moved for that column alone. Rather than a per-element
+flag, `MatchLadderLayout.GroundYFor` answers "the lowest shunt symbol in a column grounds it, at
+`Y + LeadHalf`", which is true of every column whether or not it has a block and reduces to the old
+constant for all the others. The brief's alternative — drawing the block at half scale between the
+inductor and an unmoved ground — needs a second glyph scale `SchematicRenderer` has not got.
+
+Two consequences worth stating, because both are the kind of thing that renders wrong rather than
+erroring: the junction dot on the spine is emitted only for elements with `DcBlockEnd == 0` (the two
+symbols share an X, so a dot per element draws the same dot twice), and `MatchShuntLabels.Offsets` is
+now passed `MatchSchematicGeometry.LeadHalf` rather than `ShuntGroundY − e.Y`, which is the same
+number for an ordinary arm and the right one for a block.
+
+### Zero is a legal inline-edit value for exactly one kind
+
+`CommitInlineEdit` refuses `value <= 0` for every element, because a zero element is unstampable
+(`MatchModel`'s constructor guard). A DC block is the exception: typing `0` into `L1blk` is how it is
+REMOVED, the same gesture that clears a termination's reactance to `–`, and the toggle unchecks
+because it reads `MatchDesign.TermNDcBlock > 0` and there is no second copy of the state. A negative
+value gets its own sentence rather than the generic one.
+
+### The uncheck shadow is on the view-model, deliberately
+
+Unchecking has to leave the design holding 0 — that is what "no block" IS, and a stored non-zero with
+a "disabled" flag beside it would be two ways to say one thing. But re-checking should give the user
+their own value back rather than the f₀/10 seed, so the value an uncheck took away is shadowed in
+`MatchDesignerViewModel._dcBlockShadow`. It means something only between two clicks of one session,
+which is exactly the shape of state that must not be persisted.
+
+### The seed is sized from the UNCOMPENSATED inductance
+
+`DcBlockDefault` runs `MatchDcBlock.Uncompensate` on the host element before calling `DefaultFor`. If
+a block is already on, the element's value is L′, and seeding from that would compound the
+compensation every time the toggle was cycled — a slow drift with nothing on screen to show it.
+
+### `SetDcBlock` refreshes with `specChanged: false`
+
+The block is applied after the transforms and is no part of `MatchSpecKey`, so the background solution
+search is not restarted and the listed solutions do not move. That is the Designer-side statement of
+Core's "the block never enters the synthesis": a user toggling one must not see their solutions list
+rebuild underneath them.
+
+### f_s is formatted at AutoUnit, not at the Designer's frequency unit
+
+The band edges are read in GHz and the Designer's frequency unit is GHz by default, which renders a
+489 MHz baseband resonance as "0.489 GHz" — the one number in the line nobody wants in that unit. The
+capacitance and both inductances stay in the user's own chosen units, so a 10 nF block does read
+"10000 pF" on a default Designer; that is consistent with every other value in the pane and is the
+user's own setting to change.
+
 ## Flatten to Cell wrote 15 significant digits, whatever the Designer was showing (2026-08-28)
 
 Owner-reported: an inductor the Match Designer showed as `1.201 pH` reached the flattened cell as

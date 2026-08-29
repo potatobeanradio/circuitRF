@@ -43,6 +43,7 @@ public class PlanarCurrentDensityTests
     /// — so this pins the reduction against a quantity computed by a different function, to machine
     /// precision, rather than against itself.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AColumnsCentreCurrent_IsExactlyTheMeanOfItsTwoEdgeCurrents()
     {
@@ -92,6 +93,7 @@ public class PlanarCurrentDensityTests
     /// end cell is covered by one rooftop, whose ramp is at half height at the cell's own centre.
     /// Pinned so nobody "fixes" it into a full port current later.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheOutermostCell_CarriesHalfThePortCurrent_ByConstruction()
     {
@@ -115,6 +117,7 @@ public class PlanarCurrentDensityTests
     /// the two transverse edges — the 1/√d edge current the edge mesh exists to resolve. A map that
     /// came out flat across the width would mean the edge mesh is not doing what L8b measured.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AUniformLinesMap_IsFlatAlongTheLine_AndPeaksAtItsEdges()
     {
@@ -181,6 +184,7 @@ public class PlanarCurrentDensityTests
     /// <summary>The counterpart, and the reason the previous test is not vacuous: with the edge mesh
     /// OFF the transverse profile is far flatter, because a uniform mesh cannot resolve the
     /// singularity at all.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void WithTheEdgeMeshOff_TheEdgePeakIsMarkedlyWeaker()
     {
@@ -204,6 +208,7 @@ public class PlanarCurrentDensityTests
 
     // ── R-res-8: the scale is SHOWN, with its units and its normalisation ─────────────────────
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheScaleCaption_StatesUnitsNormalisationPortAndFrequency()
     {

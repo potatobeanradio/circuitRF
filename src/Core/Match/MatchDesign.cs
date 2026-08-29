@@ -283,6 +283,25 @@ public sealed class MatchDesign
     public bool Term2Conjugate { get; set; }
 
     /// <summary>
+    /// The DC-blocking capacitor in series with termination 1's end shunt inductor, farads;
+    /// 0 for none (match.md §22).
+    /// </summary>
+    /// <remarks>
+    /// <b>Additive</b>: a payload written before rev 6 carries neither field and decodes to 0, so
+    /// <c>Version</c> stays 1, no toggle lights and every existing design rebuilds to the identical
+    /// ladder.
+    ///
+    /// <para><b>Kept even when this end's arm has no shunt inductor to sit in.</b> Changing the order
+    /// or the form can move a shunt end arm to a series one and back, and silently zeroing the value
+    /// in between would lose a number the user typed; <see cref="MatchDcBlock.Apply"/> reports it as
+    /// stored-not-applied instead.</para>
+    /// </remarks>
+    public double Term1DcBlock { get; set; }
+
+    /// <inheritdoc cref="Term1DcBlock"/>
+    public double Term2DcBlock { get; set; }
+
+    /// <summary>
     /// The bands the synthesis actually designs to — the requested ones for a single band, and
     /// match.md §18.3's symmetrised pair for a dual-band design.
     /// </summary>
@@ -403,5 +422,7 @@ public sealed class MatchDesign
         PlotPoints = PlotPoints,
         Term1Conjugate = Term1Conjugate,
         Term2Conjugate = Term2Conjugate,
+        Term1DcBlock = Term1DcBlock,
+        Term2DcBlock = Term2DcBlock,
     };
 }

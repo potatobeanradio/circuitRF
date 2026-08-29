@@ -387,6 +387,7 @@ public class ConformalFillOracleTests(ITestOutputHelper output)
     // T3 — D5 and D6 still hold on a cut mesh
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T3_BlockDiagonalityAndTheFrequencyIndependentCore()
     {

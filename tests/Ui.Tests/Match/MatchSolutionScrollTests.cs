@@ -62,6 +62,7 @@ public sealed class MatchSolutionScrollTests(ITestOutputHelper output)
     /// a solution already applied badges that row Current, and the row is listed whatever the filter
     /// says — so the green border is on the right card. What the user could not see was the card.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AReopenedDesign_BadgesItsAppliedSolutionCurrent()
     {

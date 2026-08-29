@@ -4,7 +4,19 @@ namespace CircuitRF.Core.Matching;
 /// <param name="Element">The element itself — its own name is the component's instance name.</param>
 /// <param name="NetA">The net at the element's first terminal.</param>
 /// <param name="NetB">The net at its second terminal; <c>"0"</c> (ground) for a shunt element.</param>
-public sealed record FlattenedElement(MatchElement Element, string NetA, string NetB);
+public sealed record FlattenedElement(MatchElement Element, string NetA, string NetB)
+{
+    /// <summary>
+    /// True when this is match.md §22's DC-blocking capacitor rather than a ladder element of its own.
+    /// </summary>
+    /// <remarks>
+    /// <b>It shares its inductor's column in the drawing</b> — it is the lower half of one shunt arm,
+    /// not a second arm — so the Ui has to be able to tell without re-deriving it from the name. The
+    /// entry immediately before it in <see cref="MatchFlattenPlan.Elements"/> is always the inductor it
+    /// blocks, and <see cref="FlattenedElement.NetA"/> is the node between the two.
+    /// </remarks>
+    public bool IsDcBlock { get; init; }
+}
 
 /// <summary>
 /// One end's termination as flatten writes it — <b>always disabled</b> (match.md §11.3). The
@@ -88,8 +100,39 @@ public sealed class MatchFlattenPlan
 
         var nets = stamped.AssignNets();
         var elements = new List<FlattenedElement>(stamped.Elements.Count);
+        int minted = 0;
         for (int i = 0; i < stamped.Elements.Count; i++)
-            elements.Add(new FlattenedElement(stamped.Elements[i], nets[i].A, nets[i].B));
+        {
+            var e = stamped.Elements[i];
+
+            // ── A DC block is TWO instances and one minted node (match.md §22.2) ──
+            //
+            // The network model cannot spell a series pair to ground — AssignNets derives every net
+            // from the flat list and a shunt element is node-to-ground, full stop — so the block
+            // travels as a property on the inductor. A CELL has no such constraint: it is real
+            // components on real nets, so the branch is written out the way it is built, an L from the
+            // node to a minted node and a C from there to ground. The flattened cell's S-parameters
+            // therefore equal MatchResponse.At's, which is the gate.
+            if (e.IsShunt && e.DcBlock > 0.0)
+            {
+                string mid = $"b{(++minted).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                elements.Add(new FlattenedElement(e, nets[i].A, mid));
+                elements.Add(new FlattenedElement(
+                    new MatchElement
+                    {
+                        Name = MatchDcBlock.BlockName(e.Name),
+                        Type = ElementType.C,
+                        IsShunt = true,
+                        Value = e.DcBlock,
+                        ArmIndex = e.ArmIndex,
+                    },
+                    mid, GroundNet)
+                { IsDcBlock = true });
+                continue;
+            }
+
+            elements.Add(new FlattenedElement(e, nets[i].A, nets[i].B));
+        }
 
         string port1 = "p1";
         string port2 = stamped.Elements.Count == 0 ? port1 : stamped.RightPortNet();

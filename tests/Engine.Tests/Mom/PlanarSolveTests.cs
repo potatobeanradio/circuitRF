@@ -19,6 +19,7 @@ public class PlanarSolveTests(ITestOutputHelper output)
     // R-prt-11 / R-prt-14 — the counter and determinism
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T7_1_TheGeometricCoreIsBuiltOncePerMesh_WhateverTheSweepLength()
     {
@@ -47,6 +48,7 @@ public class PlanarSolveTests(ITestOutputHelper output)
         foreach (var n in three.Notes) _out.WriteLine($"  · {n}");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T7_2_TheSweepIsBitIdenticalAcrossTwoRunsInOneProcess()
     {
@@ -95,6 +97,7 @@ public class PlanarSolveTests(ITestOutputHelper output)
     // R-prt-10 — reciprocity and passivity are gates; LOSSLESSNESS IS NOT
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T6_1_TheDeembeddedAnswerIsReciprocalAndPassive_AndDeliberatelyNotLossless()
     {
@@ -190,6 +193,7 @@ public class PlanarSolveTests(ITestOutputHelper output)
     // R-prt-13 — the DCIM validated range is a decision now, and the note says so
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T6_3_TheValidatedRangeIsReportedAsANote_NotAsARefusal()
     {

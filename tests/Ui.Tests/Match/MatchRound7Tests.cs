@@ -525,6 +525,7 @@ public sealed class MatchRound7Tests(ITestOutputHelper output)
     /// re-driving a transform at the N it already has must now change nothing, because there is
     /// nothing left for it to absorb.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData("response")]
     [InlineData("order")]

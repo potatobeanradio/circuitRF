@@ -965,6 +965,7 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
     /// work. A transform edit reaches the same state and triggers nothing: it is a change to the rack
     /// the user made deliberately, which is exactly the case this line exists for.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void WhenTheRatioIsNotReached_TheStripSaysByHowMuch()
     {
@@ -998,6 +999,7 @@ public sealed class MatchRound6Tests(ITestOutputHelper output)
     /// the two zeros met and the sentence said nothing. The two cases are separate messages now,
     /// told apart by <c>AnyMember</c>.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AnInfeasibleFamily_SaysWhichKindOfInfeasible()
     {

@@ -100,6 +100,7 @@ public class PlanarGammaTests(ITestOutputHelper output)
     // Tier 2 — γ two ways
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T2_3_TwoLineGammaAgreesWithTheTravellingWaveOracle_WhichSharesNoAlgebraWithIt()
     {

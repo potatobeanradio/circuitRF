@@ -40,6 +40,7 @@ public class AimAcceleratorTests(ITestOutputHelper output)
     // T1 — the seam AIM's near field is built on IS the dense fill, to the last bit
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T1_PerEntryFillIsBitIdenticalToTheDenseFill()
     {

@@ -65,6 +65,7 @@ public class ParallelBudgetTests(ITestOutputHelper output)
     // R-emp-8 — the fill, entry by entry
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void REmp8_TheSameMatrixFilledAtCap1_2_AndUnbounded_IsBitIdentical()
     {

@@ -42,6 +42,18 @@ public sealed class MatchRebuildResult
     /// <summary>Anything the caller should be told but that is not a refusal.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
 
+    /// <summary>
+    /// One entry per end carrying a DC block (match.md §22), applied or not. Empty for a design with
+    /// no block, which is every design written before rev 6.
+    /// </summary>
+    /// <remarks>
+    /// <b>Separate from <see cref="Notes"/> on purpose.</b> Notes are things that went wrong-ish — a
+    /// dropped transform, a clamped N, a stale fingerprint — and a component reports them as warnings
+    /// through <c>IReportsWarnings</c>. A block is a design input working as asked, and what it has to
+    /// say is a line of numbers the Designer's status strip renders in the user's own units.
+    /// </remarks>
+    public IReadOnlyList<DcBlockNote> DcBlocks { get; init; } = [];
+
     /// <summary>Non-null when the design could not be synthesised at all.</summary>
     public MatchRefusal? Refusal => Basis.Refusal;
 }
@@ -74,10 +86,21 @@ public static class MatchRebuild
 
         var network = MatchSynthesis.WithEndSplits(seq.Network, basis, design);
 
+        // ── The DC block, LAST (match.md §22.2) ──────────────────────────────
+        //
+        // After the transforms and after the end splits, because the block attaches to whichever
+        // shunt inductor sits at the end node once both have run — a Norton pi on the first pair
+        // replaces L1 by a product that is still a shunt inductor there, and WithEndSplits can insert
+        // a Fano or detune element beside it. Resolving by NODE rather than by name is what makes
+        // that work with nothing to keep in step, and it is why the synthesis, the solution search
+        // and both fingerprints never see the block at all.
+        network = MatchDcBlock.Apply(network, design, design.Omega0, out var blocks);
+
         return new MatchRebuildResult
         {
             Basis = basis,
             Network = network,
+            DcBlocks = blocks,
             Applied = seq.Applied,
             Dropped = seq.Dropped,
             FingerprintMismatch = mismatch,

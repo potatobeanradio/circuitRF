@@ -284,6 +284,7 @@ public sealed class HarmonicaDragTests(ITestOutputHelper output)
             "engaging (every move is reaching the pool, which is the starvation §3 exists to fix)");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public async Task TheSameSequenceWithAnOverBudgetFrameTiming_WalksTheLadderDown_AndStillSnaps()
     {

@@ -243,6 +243,7 @@ public class InternalDeltaGapPortTests(ITestOutputHelper output)
         Assert.Contains(on.Notes, n => n.Contains("are internal delta gaps") && n.Contains("NOT de-embedded"));
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AGapAtTheCENTREOfASymmetricLine_IsANTIsymmetricAboutItsOwnCut()
     {

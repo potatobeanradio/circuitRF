@@ -44,6 +44,27 @@ public sealed class MatchElement
     /// <summary>Which basis arm this came from, or -1 for a Norton product.</summary>
     public int ArmIndex { get; init; } = -1;
 
+    /// <summary>
+    /// A DC-blocking capacitor in SERIES with this element, farads; 0 for none (match.md §22.2).
+    /// </summary>
+    /// <remarks>
+    /// <b>Only ever set on a non-absorbed SHUNT INDUCTOR — the first real one on a termination's DC
+    /// path</b> (match.md §22.1: at the end node, or one real series inductor in, never beyond a real
+    /// series capacitor), and only by <see cref="MatchDcBlock.Apply"/> — after the transforms, after
+    /// <c>WithEndSplits</c>, and never by the synthesis. <see cref="Value"/> is the COMPENSATED inductance when this is non-zero, so
+    /// the branch's reactance at the band centre is what the synthesis asked for.
+    ///
+    /// <para><b>One property rather than an element of its own</b>, because
+    /// <see cref="MatchNetwork.AssignNets"/> derives every net from the flat list and a shunt element
+    /// is node-to-ground, full stop — there is no way to spell a series pair to ground in this list,
+    /// and match.md §6.8 excluded branches with internal nodes on exactly that ground. The four
+    /// consumers that compute a shunt admittance honour it (<see cref="MatchResponse.At"/>,
+    /// <c>MatchModel</c>'s stamp, <see cref="MatchFlattenPlan"/> and the Designer's drawing);
+    /// everything else — the transforms, the pair scan, the linkage, both fingerprints — sees an
+    /// ordinary shunt inductor, which is exactly right.</para>
+    /// </remarks>
+    public double DcBlock { get; set; }
+
     /// <summary>A copy — the transform pipeline works on clones so a caller's network is never mutated.</summary>
     public MatchElement Clone() => new()
     {
@@ -55,6 +76,7 @@ public sealed class MatchElement
         IsExcess = IsExcess,
         IsDetune = IsDetune,
         ArmIndex = ArmIndex,
+        DcBlock = DcBlock,
     };
 }
 
@@ -256,10 +278,12 @@ public static class MatchOrders
     /// <param name="form">Which network form the orders are being asked about (match.md §16.4).</param>
     /// <param name="bandCount">How many bands (match.md §18.2). 1 is the single-band rule above.</param>
     /// <remarks>
-    /// <b>Multiband order is MATCH POINTS PER BAND, and the ceiling is 3</b> rather than
+    /// <b>Multiband order is MATCH POINTS PER BAND. Dual-band stops at 3</b> rather than
     /// <see cref="MaxOrder"/>, because the element count is <b>4n</b>: order 3 is the same twelve
     /// elements order 6 gives single-band, which is the fair comparison and the same manufacturing
-    /// limit.
+    /// limit. <b>Tri-band offers 1 to 6</b> (match.md §19 item 4): a narrow middle band excludes its
+    /// gaps at no order below 4, so 4–6 are the only orders at which such a spec is three bands at
+    /// all, and the 16 / 20 / 24 parts are the price the picker states.
     ///
     /// <h3>Parity is decided by the TERMINATIONS, not by the order (match.md §18.5)</h3>
     /// <para><b>Every order now serves every termination pair, and the like-pair empty list is

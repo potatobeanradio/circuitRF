@@ -71,8 +71,10 @@ public static class MatchSchematicModel
             comps.Add(Element(e));
 
             // Every shunt arm carries its OWN ground, sitting exactly on the element's lower pin —
-            // no rail, no drop wire, and no reference pin standing in for one.
-            if (e.IsShunt) comps.Add(Ground(e.Name, e.X, MatchLadderLayout.ShuntGroundY));
+            // no rail, no drop wire, and no reference pin standing in for one. A blocked arm is TWO
+            // symbols on one vertical (match.md §22.5), so the ground goes under the lower of them and
+            // the inductor above it gets none — which is what MatchLadderLayout.GroundYFor answers.
+            if (MatchLadderLayout.GroundYFor(layout, e) is { } gy) comps.Add(Ground(e.Name, e.X, gy));
         }
 
         // The two ends: a grounded termination each, never an interface pin (owner, 2026-08-20).
@@ -87,8 +89,10 @@ public static class MatchSchematicModel
         // genuine T-junction, and the reason a drop reads as a connection rather than as a wire that
         // happens to cross. There is no second dot at the bottom any more: the arm's GND is a
         // component sitting on the pin, not a wire meeting a rail.
+        // A DC block does not tap the spine — its inductor does, and the two share a column, so a dot
+        // per element would draw the same dot twice.
         var dots = new List<SchematicDot>();
-        foreach (var s in layout.Elements.Where(e => e.IsShunt))
+        foreach (var s in layout.Elements.Where(e => e.IsShunt && e.DcBlockEnd == 0))
             dots.Add(new SchematicDot(s.X, MatchLadderLayout.SpineY));
 
         Bounds(comps, wires, out double minX, out double minY, out double maxX, out double maxY);
@@ -139,7 +143,7 @@ public static class MatchSchematicModel
         var offsets = e.IsShunt
             ? Enumerable.Repeat(
                   MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
-                                           MatchLadderLayout.ShuntGroundY - e.Y),
+                                           MatchSchematicGeometry.LeadHalf),
                   labels.Count).ToList()
             : [];
 

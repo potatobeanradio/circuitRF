@@ -155,6 +155,7 @@ public sealed class SummaryTablePickerTests
         finally { File.Delete(npy); }
     }
 
+    [Trait("Category", "Benchmark")]
     [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task Summary_SingleAnalysis_PickerHidden()
     {

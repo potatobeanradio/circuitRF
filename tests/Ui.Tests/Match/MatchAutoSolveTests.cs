@@ -82,6 +82,7 @@ public sealed class MatchAutoSolveTests(ITestOutputHelper output)
     /// A resistance edit the rack cannot absorb leaves the design MATCHED, on a solution that reaches
     /// the new target — not on the old transforms with a red termination beside them.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ChangingAResistanceTheRackCannotAbsorb_MovesOntoASolutionThatReachesTheTarget()
     {
@@ -106,6 +107,7 @@ public sealed class MatchAutoSolveTests(ITestOutputHelper output)
     }
 
     /// <summary>A reactance edit is the same edit, and gets the same treatment.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ChangingAReactance_AlsoMovesOntoASolutionThatReachesTheTarget()
     {
@@ -124,6 +126,7 @@ public sealed class MatchAutoSolveTests(ITestOutputHelper output)
     /// Parallel ↔ series is the other edit named in the ask, and it is the harder one: the ladder is
     /// re-synthesised, so the stored records may not even name elements that still exist.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ChangingTheTopology_AlsoMovesOntoASolutionThatReachesTheTarget()
     {
@@ -217,6 +220,7 @@ public sealed class MatchAutoSolveTests(ITestOutputHelper output)
     /// leave exactly the unmatched network this behaviour exists to stop presenting. Applying a
     /// solution from the panel by hand has always replaced the records the same way.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void EveryTransformLocked_IsStillMovedOntoAReachingSolution()
     {
@@ -334,6 +338,7 @@ public sealed class MatchAutoSolveTests(ITestOutputHelper output)
     /// The auto-applied solution is COMMITTED — the component carries it, so the schematic, a save
     /// and an undo all see the same design the window is showing.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheAutoAppliedSolution_IsWrittenBackToTheComponent()
     {
@@ -362,6 +367,7 @@ public sealed class MatchAutoSolveTests(ITestOutputHelper output)
     /// It fires once per edit, not once per analysis pass: the pass the apply itself queues must not
     /// apply again. A loop here would be invisible except as a window that never stops working.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ItFiresOncePerEdit_NotOncePerPass()
     {
@@ -389,6 +395,7 @@ public sealed class MatchAutoSolveTests(ITestOutputHelper output)
     /// running; running a second search inside the edit would undo what
     /// <c>MatchDesignerSpecEditCostTests</c> holds shut, and a termination edit is typed.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ATerminationEdit_StillDoesNotBlockOnTheSolutionSearch()
     {

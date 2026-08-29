@@ -441,6 +441,7 @@ public sealed class VerticalCurrentTests
             Termination.OpenTo(mat));
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T3_1_TheInteriorOracle_ReproducesTheEXACTUniformMediumAnswer_AndItsIntegralIsZERO()
     {

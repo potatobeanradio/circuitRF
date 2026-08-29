@@ -22,6 +22,7 @@ public class PlanarDeembedTests(ITestOutputHelper output)
     // R-prt-7 — a THIRD line, not used in the calibration, is the de-embedding's own gate
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData(2e9)]
     [InlineData(10e9)]
@@ -69,6 +70,7 @@ public class PlanarDeembedTests(ITestOutputHelper output)
             $"{c.Box.RejectedResidual:E2}) — the sign was decided by noise");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T4_2_TheCascadeIdentityHolds_ALineOfTwoLIsTwoLinesOfL()
     {

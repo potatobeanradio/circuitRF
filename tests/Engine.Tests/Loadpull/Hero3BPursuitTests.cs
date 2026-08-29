@@ -405,6 +405,7 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
     // Verifies the new method also lands within 1.20 VSWR of the brute-force grid MXP.
     // Reports walk trajectory and query count vs SteepestAscent for diagnostic purposes.
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void Hero3BPursuit_BruteForceAgreement_IteratedQuadratic()
     {
@@ -599,6 +600,7 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
     ///   - All stop codes in range 0-3
     /// Also verifies: those cubes are absent when CreateLoadpullResult=false.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void Hero3BPursuit_FollowOnLoadpullResult_WhenCreateOn_DataPresent()
     {

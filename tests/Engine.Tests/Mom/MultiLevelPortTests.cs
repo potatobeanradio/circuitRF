@@ -70,6 +70,7 @@ public sealed class MultiLevelPortTests
     // M1 / R-mlp-1 — the one-level path is BIT-IDENTICAL, and it is pinned by reconstruction.
     // =========================================================================================
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M1_1_TheOneLevelPath_IsBitIdentical_ToAHandReconstructionOfL8dsOwnSweep()
     {
@@ -369,6 +370,7 @@ public sealed class MultiLevelPortTests
     // M3 / Tier 3 — de-embedding, through the new code path, against L8d's own numbers.
     // =========================================================================================
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M3_1_TierThree_TheGENERALPathReproducesTheShippedOne_OnAUniformSingleLevelLine()
     {
@@ -807,6 +809,7 @@ public sealed class MultiLevelPortTests
         Assert.True(heroRuns);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M0_2_TIER1_TheFillNeverAsksGAzzAboutMoreThanTheRefusalUSED()
     {
@@ -867,6 +870,7 @@ public sealed class MultiLevelPortTests
         foreach (var n in okB.Notes) _out.WriteLine("  " + n);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void M0_4_TIER4_RzZ5_NoStructureAcceptedTodayMOVED_ByOneUlp()
     {
@@ -1149,6 +1153,7 @@ public sealed class MultiLevelPortTests
     // otherwise fail silently.
     // =========================================================================================
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ZzM2_2_RzZ3_DirectVerticalKernel_ChangesNOTHING_WithoutAVerticalBasis()
     {
@@ -1177,6 +1182,7 @@ public sealed class MultiLevelPortTests
         }
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ZzM2_3_ASettingThatWouldSilentlyZeroTheViaBlock_IsRefused_NotObeyed()
     {

@@ -78,6 +78,22 @@ public sealed partial class MatchDesignerSettings : ObservableObject
     [ObservableProperty] private double _qMin = MatchSolutionSearch.DefaultQMin;
 
     /// <summary>
+    /// The largest capacitance the <c>Block</c> toggle's default will seed (match.md §22.2).
+    /// </summary>
+    /// <remarks>
+    /// <b>A cap on the SEED, never on the value</b> (owner, 2026-08-28: too big a capacitor can be
+    /// impossible to build). The f₀/10 rule alone reaches tens of nanofarads at a low band with a
+    /// small end inductor — fine on a board, absurd on an MMIC — and there is no way for the Designer
+    /// to know which flow it is in, which is exactly the shape of every other entry in this class. Any
+    /// positive value the user types afterwards is accepted, compensated exactly at ω₀, and reported
+    /// with the spread it costs; nothing here refuses one.
+    /// </remarks>
+    [ObservableProperty] private double _dcBlockMaxFarads = DefaultDcBlockMaxFarads;
+
+    /// <summary>10 nF — the seed cap a Designer starts at.</summary>
+    public const double DefaultDcBlockMaxFarads = 10e-9;
+
+    /// <summary>
     /// match.md §14.5 — the mean |ΔΓ| above which a probed termination is applied but flagged.
     /// </summary>
     /// <remarks>

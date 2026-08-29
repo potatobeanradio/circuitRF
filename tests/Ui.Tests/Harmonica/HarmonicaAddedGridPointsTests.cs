@@ -176,6 +176,7 @@ public sealed class HarmonicaAddedGridPointsTests(ITestOutputHelper output)
 
     // ══ end to end — a scheduled request really carries AddedGridPoints ═════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public async System.Threading.Tasks.Task RequestScheduledFrame_CarriesAddedGridPoints_ThroughOptionsFor()
     {
@@ -248,6 +249,7 @@ public sealed class HarmonicaAddedGridPointsTests(ITestOutputHelper output)
 
     // ══ §5's own gate 3 — the cost of a re-solve after Add Point ═══════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void MeasuredCost_AddPointReSolvesTheWholeGrid_RoughlyTheCostOfAFullGrid()
     {

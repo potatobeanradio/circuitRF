@@ -146,6 +146,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// <summary>
     /// Dual-band order is match points PER BAND, so the picker offers 1, 2, 3 and the hint counts 4n.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheOrderPicker_OffersOneTwoThreeWhileDual_AndCountsFourNElements()
     {
@@ -170,6 +171,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// card is now applied, and that card names its own order. The order picker and the green-bordered
     /// card are the two places the answer is already visible.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void SwitchingToDual_RevalidatesTheOrder_AndSaysNothingAboutIt()
     {
@@ -212,6 +214,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// buys 4n + 2 elements instead of 4n, and the order picker offers the same 1..3 either way,
     /// because order means match points per band in both families.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void SwitchingToDualWithALikePair_KeepsItsOrders_AndTakesTheOddArmCount()
     {
@@ -301,6 +304,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// The gap mismatch is the design working (match.md §18.4), so it is stated as a number beside
     /// the in-band figure — and it is absent, not zero, for a single band.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheStatusStrip_CarriesTheGapLineWhileDual_AndNothingWhenSingle()
     {
@@ -329,6 +333,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// The response plots span the EFFECTIVE outer pair, so both bands and the gap are on screen —
     /// a plot cropped to one band would hide the mechanism.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ThePlotBand_SpansBothBandsAndTheGap()
     {
@@ -348,6 +353,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// The band count is an ordinary specification edit, so ONE undo puts the single-band design back
     /// — nothing new was needed for it, which is the claim.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void OneUndo_RestoresSingleBand()
     {
@@ -372,6 +378,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// <c>Bands</c>, <c>F3</c> and <c>F4</c> join the echoes beside <c>F1</c>/<c>F2</c>, so a
     /// dual-band design can be read off the schematic page itself.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheEchoParameters_CarryTheBandCountAndTheSecondBand()
     {
@@ -446,6 +453,7 @@ public sealed class MatchMultibandDesignerTests(ITestOutputHelper output)
     /// The whole switch is still ONE undo entry, auto-solve included — the amend that
     /// <c>CommitSpecChangeWithAutoSolve</c> exists for.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void SwitchingToDual_IsOneUndoEntry_EvenWithTheAutoSolve()
     {

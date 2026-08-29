@@ -59,6 +59,7 @@ public sealed class LayoutSnapPerfTests : IDisposable
 
     // ── Gate 12a: 500k shapes — features examined near the cursor stays far below the design total ──
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void Query500k_FeaturesExaminedIsBoundedNearCursor_NotProportionalToDesignSize()
     {

@@ -51,7 +51,11 @@ public static class MatchSchematicCopy
         foreach (var e in layout.Elements)
         {
             model.Components.Add(Element(e));
-            if (e.IsShunt) model.Components.Add(Ground(e.X, MatchLadderLayout.ShuntGroundY));
+            // One ground per COLUMN, under its lowest shunt symbol — the pane's own rule. A blocked
+            // arm is an inductor above its block capacitor on one vertical, so a ground per shunt
+            // element at the shared ShuntGroundY put two grounds on the inductor's lower lead and
+            // none on the capacitor (owner-reported, 2026-08-28).
+            if (MatchLadderLayout.GroundYFor(layout, e) is { } gy) model.Components.Add(Ground(e.X, gy));
         }
 
         foreach (var t in layout.Terminations)
@@ -84,13 +88,15 @@ public static class MatchSchematicCopy
             Dimension = isL ? UnitDimension.Inductance : UnitDimension.Capacitance,
         });
 
-        // The pane's own label decision, made by the same method, so the copy is the same drawing —
-        // including whether this arm's block sits beside the symbol or under its ground.
+        // The pane's own label decision, made by the same method and the same argument (the lead
+        // below the symbol, which is the same length for an ordinary arm and for a block), so the
+        // copy is the same drawing — including whether this arm's label sits beside the symbol or
+        // under its ground.
         if (e.IsShunt)
         {
             var (dx, dy) = MatchShuntLabels.Offsets(
                 [type, e.Name, $"{type} = {e.ValueText}"],
-                MatchLadderLayout.Pitch, MatchLadderLayout.ShuntGroundY - e.Y);
+                MatchLadderLayout.Pitch, MatchSchematicGeometry.LeadHalf);
             for (int i = 0; i < 3; i++) c.LabelOffsets.Add((dx, dy));
         }
 

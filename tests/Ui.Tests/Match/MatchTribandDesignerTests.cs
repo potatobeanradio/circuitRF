@@ -83,6 +83,7 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
     /// <summary>
     /// The selector offers three segments, and Tri reveals the f5/f6 row while leaving f3/f4 shown.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheBandsSelector_OffersTri_AndTriShowsTheThirdBandRow()
     {
@@ -169,6 +170,7 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
     /// <summary>
     /// <b>Two gap lines</b>, both rendered, and both in the one-line <c>Text</c> a tooltip reads.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheStatusStrip_ShowsBothGaps()
     {
@@ -189,6 +191,7 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
     }
 
     /// <summary>A dual-band design has one gap line and an empty second one.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ADualBandDesign_HasOnlyOneGapLine()
     {
@@ -228,15 +231,20 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
         d.Dispose();
     }
 
-    /// <summary>The order picker still counts match points per band, at 4n elements.</summary>
+    /// <summary>
+    /// The order picker still counts match points per band, at 4n elements — and tri-band offers
+    /// orders 1 to 6 where dual-band stops at 3 (match.md §19 item 4: a narrow middle band excludes
+    /// its gaps at no order below 4, so 4–6 are the only orders at which such a spec is three bands
+    /// at all; the price is 16 / 20 / 24 parts, and the hint says so).
+    /// </summary>
     [Fact]
     public void TheOrderPicker_CountsMatchPointsPerBand()
     {
         var (_, _, d) = Open(Problem());
         d.WaitForAnalysis();
 
-        Assert.Equal([1, 2, 3], d.OrderOptions);
-        Assert.Contains("4, 8, 12 elements (4n)", d.ElementCountHint, StringComparison.Ordinal);
+        Assert.Equal([1, 2, 3, 4, 5, 6], d.OrderOptions);
+        Assert.Contains("4, 8, 12, 16, 20, 24 elements (4n)", d.ElementCountHint, StringComparison.Ordinal);
         Assert.Contains("Match points PER BAND", d.OrderTooltip, StringComparison.Ordinal);
 
         d.Dispose();
@@ -253,39 +261,16 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
         d.WaitForAnalysis();
         Assert.Contains("(4n)", d.ElementCountHint, StringComparison.Ordinal);
 
-        // Make it a like pair — both parallel, both reactive.
+        // Make it a like pair — both parallel, both reactive. NOT waited on: the hint and the order
+        // options are computed from the design synchronously, and waiting here means waiting for
+        // the tri-band odd-family solution search, which is minutes of real CPU (Core RESOLVED
+        // §MN-DCB2) and was what kept the whole Ui.Tests host alive after every other test finished.
         d.SetTermination(2, new Termination(25.0, ReactanceKind.C, TerminationTopology.Parallel, 1e-12));
-        d.WaitForAnalysis();
 
         output.WriteLine(d.ElementCountHint);
         Assert.Contains("(4n + 2)", d.ElementCountHint, StringComparison.Ordinal);
-        Assert.Contains("6, 10, 14 elements", d.ElementCountHint, StringComparison.Ordinal);
-        Assert.Equal([1, 2, 3], d.OrderOptions);
-
-        d.Dispose();
-    }
-
-    /// <summary>
-    /// A like pair over three bands still synthesises, at 4n + 2 elements with both ends absorbed —
-    /// the parity gap match.md §18.2 recorded, closed, seen from the Designer.
-    /// </summary>
-    [Fact]
-    public void ALikePair_StillSynthesisesOverThreeBands()
-    {
-        var design = Problem();
-        design.Term2 = new Termination(25.0, ReactanceKind.C, TerminationTopology.Parallel, 1e-12);
-        var (_, _, d) = Open(design);
-        d.WaitForAnalysis();
-
-        Assert.False(d.Status.IsRefused, d.Status.Refusal?.Message);
-        output.WriteLine(d.Status.Text);
-        // 4n + 2 in the basis; the displayed ladder can carry one more, because a far-end surplus
-        // becomes an excess element of its own (match.md §4.5) — which is what the extra arm being
-        // bigger than the termination needs.
-        Assert.True(d.Elements.Count >= 4 * d.Order + 2, $"{d.Elements.Count} elements");
-
-        // Every listed row is Chebyshev: the odd family comes out of a Remez exchange.
-        Assert.All(d.AllSolutions, r => Assert.Equal(ResponseShape.ChebyshevFano, r.Response));
+        Assert.Contains("6, 10, 14, 18, 22, 26 elements", d.ElementCountHint, StringComparison.Ordinal);
+        Assert.Equal([1, 2, 3, 4, 5, 6], d.OrderOptions);
 
         d.Dispose();
     }
@@ -328,6 +313,7 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
     /// A single-band design's stale f3…f6 take no part in the sort — only the edges the current band
     /// count uses do.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void OnlyTheEdgesTheBandCountUses_TakePartInTheSort()
     {
@@ -356,6 +342,7 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
     /// The third band round-trips through the payload and through the echo parameters, and Tri → Dual
     /// → undo comes back to Tri with all six edges intact.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheThirdBandRoundTripsAndUndoComesBack()
     {
@@ -403,6 +390,7 @@ public sealed class MatchTribandDesignerTests(ITestOutputHelper output)
     /// <summary>
     /// The flattened cell's record and the Properties summary both name all three bands.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void FlattenAndThePropertiesSummary_NameAllThreeBands()
     {

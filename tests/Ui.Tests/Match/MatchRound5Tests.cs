@@ -576,6 +576,7 @@ public sealed class MatchRound5Tests(ITestOutputHelper output)
     /// hand with Link off, and moving the order with every transform locked. Both are below, and both
     /// are what <c>OhmsTextFor</c> exists for.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void WhenTheLadderCannotReachIt_TheGlyphNamesBothNumbers()
     {

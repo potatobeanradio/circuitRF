@@ -227,6 +227,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// <b>Every permitted order and every response family, in one list</b> (owner: "I want the
     /// Solutions panel to list all the solutions for every filter response and order").
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheList_SpansEveryPermittedOrder_AndMoreThanOneFamily()
     {
@@ -255,6 +256,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// Q-adjusted or if it has a negative component"). <b>And nothing else</b> — "if the solution is
     /// not Q-adjusted then the Solution card should say nothing about it. Same with negative values."
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ACard_NamesItsFamilyAndOrder_AndOnlyTheExceptions()
     {
@@ -288,6 +290,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// widens a transform's positivity range and one pass therefore finds what two would. That makes
     /// "which pass found it" useless as an answer and the finished network the only honest one.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheNegativeFlag_IsWhatTheNetworkContains()
     {
@@ -362,6 +365,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// <b>The applied solution is listed whatever the filter says.</b> A panel whose job is to make
     /// "which one am I looking at?" obvious cannot answer it by hiding the answer.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheAppliedSolution_SurvivesEveryFilter()
     {
@@ -429,6 +433,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// The order lines follow the termination pair, and an order the user turned off <b>stays off</b>
     /// across a change that keeps it.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheOrderLines_FollowTheTerminations_AndRememberWhatWasTurnedOff()
     {
@@ -546,6 +551,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// with no negative element is unaffected either way, since the clamp is a no-op on a rack that
     /// is already inside its ranges — so the flag can be, and is, set from what the row contains.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void EveryAppliedRow_RebuildsToTheNetworkItPromised()
     {
@@ -576,6 +582,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// analysis end and Qmin — and Apply writes none of those. Asserted by object identity of the
     /// rows: a re-search clears the list and builds new ones.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void Apply_DoesNotRestartTheSearch()
     {
@@ -660,6 +667,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// <para>What is asserted is the property that makes that impossible: a prefix of the list, once
     /// taken, is still the same prefix afterwards.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ARowThatHasLanded_NeverMoves()
     {
@@ -718,6 +726,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// working correctly. What made it look like a bug was the list moving under the pointer, which
     /// is <see cref="ARowThatHasLanded_NeverMoves"/>.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ASiblingSolution_HasTheSameResponse_AndAnotherCombinationDoesNot()
     {
@@ -855,6 +864,7 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
     /// Q-adjusted solutions from the Settings button menu") — <b>and gone from the settings object
     /// with it</b>, because a setting nothing can reach is state that silently does nothing.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void Settings_NoLongerOffersTheQAdjustSwitch()
     {

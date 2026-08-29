@@ -240,6 +240,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// it simply had no caller on this side. Asserted by SUBSCRIBING to that event and applying a
     /// solution, which is the same thing the live control does.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ApplyingASolution_AsksBothPlotsToRepaint()
     {
@@ -270,6 +271,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// resulting S11 is compared point for point: a family change has to move it somewhere in the
     /// band, or the list is offering two names for one network.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TwoFamiliesAtOneOrder_PlotDifferentResponses()
     {
@@ -537,6 +539,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// click and an arrow key into a selection. A Click handler on the card would have satisfied the
     /// first ask and left the second needing its own implementation to diverge from.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheCardIsTheButton_AndSelectingARowAppliesIt()
     {
@@ -642,6 +645,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// the design back the way it was, and a count could be right while the entries spanned the wrong
     /// states.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ATerminationEdit_IsOneUndoEntry()
     {
@@ -741,6 +745,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// derived-parameter table, so the Designer's group delay and the Data Display's are not two
     /// differently-spelled quantities.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheGroupDelayTrace_IsNamedWithItsUnit()
     {
@@ -778,6 +783,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// already trying to ask. Both halves are asserted: that the extent really is identical across the
     /// switch, and that the canvas gates on the extent rather than on the elements.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void APiToTSwitch_DrawsIntoTheSameRectangle_AndTheCanvasGatesOnThat()
     {
@@ -825,6 +831,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// Asserted to bind those commands rather than to do anything of their own — a button that undid
     /// something local would be the bug this names.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheTitleStrip_CarriesUndoAndRedo_LeftOfSettings()
     {
@@ -862,6 +869,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// the filter's own summary of what it is hiding. The flag behind it stays for that reason and is
     /// asserted to still answer, so this is a rendering change and not a loss of the distinction.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheFilterButton_CarriesNoDot_AndSaysItInWordsInstead()
     {
@@ -959,6 +967,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// <para>And the candidate set had to widen, or there would still have been nothing to move onto:
     /// see <see cref="TheCandidates_WidenPastTheDesignsOwnFamily_NearestFirst"/>.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ATerminationEditItsOwnFamilyCannotAnswer_StillEndsMatched()
     {
@@ -989,6 +998,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// <b>A reactance edit is the edit the owner reported</b>, and it gets the same treatment as a
     /// resistance edit — including from a probe, which writes its termination through the same door.
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AReactanceEdit_AndAProbedTermination_BothEndMatched()
     {
@@ -1033,6 +1043,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// <c>AllowNegativeComponents</c> is what says whether this user has asked for such a network,
     /// even though the search finds them in every cell.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheCandidates_WidenPastTheDesignsOwnFamily_NearestFirst()
     {
@@ -1084,6 +1095,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// one: consuming the request on the first landing looks correct on every design whose own cell
     /// has solutions, which is most of them.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheAutoSolveRequest_SurvivesACellThatOffersNothing()
     {
@@ -1135,6 +1147,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// button reads <c>HasAppliedSolution</c>), so these two do too rather than introducing a second
     /// mechanism beside it. The commands are still notified, so the keyboard path stays right.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void UndoAndRedo_AreEnabledWhenThereIsSomethingToUndo()
     {
@@ -1188,6 +1201,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// termination, and "supplied by the external termination" already says the component has not
     /// got it.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheAbsorbedElementLegend_IsOneClause()
     {
@@ -1222,6 +1236,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// it. In the application both run on the UI thread and cannot interleave; a host whose result
     /// scheduler falls back to the thread pool is where it was caught, and where this test runs.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AnEditIsHeldAgainstTheLandings_ForItsWholeReadModifyWrite()
     {
@@ -1290,6 +1305,7 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
     /// it from the row that was applied — so gating candidates on it was gating on the auto-solve's
     /// own output.</para>
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheCandidates_AreTheFilteredListAndOnlyIt()
     {

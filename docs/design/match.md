@@ -1,10 +1,13 @@
 # circuitRF — Match: the absorbing impedance-matching component
 
-**Status:** Proposal — rev 3 · **Date:** 2026-08-19, rev 2 2026-08-28 (§6.8–§6.9, §16–§17: response
-families excluded, family naming, lowpass/highpass forms), rev 3 2026-08-28 (§18–§19: multiband) ·
+**Status:** Proposal — rev 7 · **Date:** 2026-08-19, rev 2 2026-08-28 (§6.8–§6.9, §16–§17: response
+families excluded, family naming, lowpass/highpass forms), rev 3 2026-08-28 (§18–§19: multiband), rev 6 2026-08-28 (§22–§23: the DC block on an end shunt
+inductor; baseband impedance investigated and recorded), rev 7 2026-08-28 (§22.1, §22.5 corrected: the
+block follows the DC PATH, not the end node) ·
 **Phase:** MN0 (design layer); the lowpass/highpass form is **MN-LP**
 (`docs/sonnet-briefs/brief-match-lowpass-highpass-form.md`); dual-band is **MN-MB1** and tri-band +
-Remez is **MN-MB2** (`docs/sonnet-briefs/brief-match-multiband-{dual,tri-remez}.md`)
+Remez is **MN-MB2** (`docs/sonnet-briefs/brief-match-multiband-{dual,tri-remez}.md`); the DC block is **MN-DCB**
+(`docs/sonnet-briefs/brief-match-dc-block.md`)
 
 **Match** is a two-port schematic component that synthesises a bandpass LC matching network which
 matches **both** of its ports simultaneously to the external network — and which **absorbs each
@@ -1939,3 +1942,251 @@ exchange, so a specification edit runs at most six exchanges once and none there
    **Higher order is not monotonically better** — see `src/Core/Match/RESOLVED.md` §MN-FH — so the
    solutions list, which spans every order and ranks by return loss, is the right way to choose one
    and the picker must not be read as "more is better".
+
+## 22. The DC block on a termination's first shunt inductor — and the baseband it belongs to (rev 6, 2026-08-28; §22.1 and §22.5 corrected rev 7)
+
+**The owner asked two things: whether a shunt inductor's DC-blocking capacitor can be compensated
+for in the passband by the Designer, and whether the same block can disturb the baseband impedance a
+power-amplifier designer is trying to keep small.** Yes to the first, in one line of arithmetic; yes
+to the second, and the disturbance has a topology rule, not a network fix. Everything below was
+measured on a scratch ABCD sweep of a ladder synthesised by §4.3's own formula, and the numbers are
+quoted so the brief's tests can reproduce them.
+
+### 22.1 Where a block is needed — the first real shunt inductor on each termination's DC path (rev 7)
+
+A shunt inductor at a biased node is a short across the supply. Rev 6 stated the rule as *"the ends,
+and only the ends — applicable when that end's arm is a shunt inductor, its capacitor already blocks
+DC otherwise"*. **That premise was wrong in two ways the owner hit immediately** (2026-08-28):
+
+1. **A series-RC termination is a FET input.** The end arm is a series arm whose capacitor is
+   *absorbed* — it is the device's own C_gs, inside the package, which §11.3 rightly flattens as a
+   disabled instance. Nothing on the board blocks DC there. The physical path from the gate terminal
+   is the arm's series **inductor** to the first internal node, where the ladder's first shunt
+   inductor shorts the gate bias to ground. The toggle was disabled for exactly the end that needed
+   it most — §4.9's own golden ladder (Term2 series-RC) is the case.
+2. **A Norton T on the end pair makes a series arm with no capacitor at all.** The T of two
+   inductors is series-L / shunt-L / series-L, so after "π → T" the end arm is a series inductor and
+   the T's shunt product behind it still shorts the termination.
+
+Both are one fact: **DC does not stop at an arm boundary, it stops at a real series capacitor.**
+Whether the end node's arm is series or shunt is irrelevant; what matters is what a DC current
+starting at the termination meets first. The corrected rule:
+
+> **The block is needed on every real shunt inductor a termination's DC current can reach through
+> real series inductors, up to the next real series capacitor, which ends the path.** In the bandpass
+> and highpass BASES that is one inductor per end; a Norton π of inductors on the end pair
+> (shunt-L / series-L / shunt-L) makes it two, because the π's series product passes DC between them
+> and a block on the first alone sends the bias straight through to the second (owner, 2026-08-28).
+
+The walk (`MatchDcBlock.ResolveHost`) runs inward from the termination over the element list — which
+is the DC path, since §4.7's nets are derived from exactly that order — and at each element:
+
+- **absorbed** (the termination's own reactance, not on the board) → transparent; the ladder-side
+  node of an absorbed series element IS the device terminal.
+- **shunt L** → a host, recorded with the path so far. The walk **continues** — the next real
+  series capacitor ends the path, not the host.
+- **shunt C** → invisible to DC; continue.
+- **series L** → passes DC; its name joins the *path* (the bias feed's own route) and the walk
+  continues.
+- **series C** → a real capacitor isolates this end. `CFano` and `CDetune` (§4.5, §4.6) are **ours
+  and real**, so they stop the walk exactly as a synthesised series-arm capacitor does.
+- end of list → no shunt inductor on this end's path (the lowpass form).
+
+So the host sits at the end node when the end arm is shunt (rev 6's case), or one real series
+inductor in when it is a series-RC end or a Norton T's series product (series-L / shunt-L /
+series-L, then the arm's capacitor — one host); a Norton π has two hosts, the second one series
+product in from the first — and never beyond a real series capacitor, because in the bandpass form
+every series arm contains one and in the highpass form the whole through path is capacitors. **The
+compensation of §22.2 does not care where the host is, or how many there are**: `L′ = L + 1/(ω₀²C)`
+keeps each *branch's* reactance at ω₀, a branch one series inductor in from the port is compensated
+identically, and with several hosts each inductor gets a capacitor of the end's one value and its
+own compensation (the seed is sized from the smallest host, so no branch resonates above f₀/10). The
+through-path inductor between the termination and a host is simply where the bias current flows, and
+the status line — one per host — names it.
+
+**Withholding the block behind a real series capacitor is deliberate, and it is said.** With a real
+`Cx` between the termination and the first shunt inductor, a block on that inductor protects
+nothing — the termination is already isolated, and its bias has to be fed on its own side of `Cx`
+(a choke at the terminal, with §22.3's caveat). The tooltip and the note name `Cx` rather than
+offering a block that does nothing for the device. **Assumption, recorded for the owner to
+overrule:** if the block should be offered anyway in that case, the walk's series-capacitor stop
+becomes a warning instead of a withhold — one branch, one test.
+
+Verified rather than restated (MN-DCB2): across every golden fixture × {none, π, T} on the first and
+last discoverable pair × {no split, Fano, detune}, **no node carries two real shunt inductors**, so
+one block per host is always the whole answer. A ladder whose two walks reach ONE inductor (order 3
+between two series-RC ends: series / shunt / series) blocks it once, for termination 1, and says so
+for the second end.
+
+- Lowpass (§16): no shunt inductor at all. It passes DC end to end, and blocking that is a *series*
+  capacitor in the through path — a highpass pole, a different compensation, and **not offered**.
+
+### 22.2 The compensation — exact at ω₀, second order elsewhere
+
+The block turns the branch `jωL` into `j(ωL − 1/ωC_blk)`. Enlarge the inductor so the branch's
+reactance at the band centre is what the synthesis asked for:
+
+```
+  L' = L + 1/(ω₀² C_blk)                              exact at ω₀
+  f_s = 1/(2π √(L' C_blk))                            the branch's series resonance, below the band
+  L_eff(ω)/L = (1 − ω_s²/ω²)/(1 − ω_s²/ω₀²)           spread ≈ ±2 (f_s/f₀)² (Δf_half/f₀)
+```
+
+Measured on a 4 Ω ‖ 30 pF drain, 1.8–2.2 GHz, end inductor 99.5 pH (a Q-adjusted member — §22.4).
+**Corrected in place 2026-08-28 against MN-DCB's own tests**, which are the first independent
+reproduction of this table; the spread column now carries both numbers, because the section originally
+quoted only the second-order estimate:
+
+| C_blk | L' | f_s | L_eff across 1.8 / **1.98997** / 2.2 GHz | spread: exact half-range (estimate) | worst RL (block-free 21.6 dB) |
+|---|---|---|---|---|---|
+| 500 pF | 112.29 pH | 671.7 MHz | 96.657 / 99.500 / 101.826 pH | **±2.60 %** (±2.29 %) | 18.8 dB |
+| 1 nF | 105.90 pH | 489.1 MHz | 98.079 / 99.500 / 100.663 pH | **±1.30 %** (±1.21 %) | 20.1 dB (uncompensated: 13.6 dB) |
+| 10 nF | 100.14 pH | 159.0 MHz | 99.358 / 99.500 / 99.616 pH | **±0.13 %** (±0.13 %) | 21.4 dB |
+
+Three corrections, all from `tests/Core.Tests/Match/MatchDcBlockTests.cs` (details in
+`src/Core/Match/RESOLVED.md` §MN-DCB):
+
+- **The middle L_eff column is at ω₀, not at 2.0 GHz.** ω₀ = 2π√(1.8·2.2) GHz = 1.98997 GHz, where
+  L_eff is 99.5 pH exactly by construction; at a literal 2.0 GHz the 500 pF row reads 99.628 pH.
+- **The parenthesised spread was the ESTIMATE, not the half-range of the values printed beside it.**
+  `2 (f_s/f₀)² (Δf_half/f₀)` tracks the UPPER band edge closely and understates the lower one, because
+  the 1/ω² term is not symmetric about ω₀ — the 500 pF row runs −2.86 % / +2.34 %.
+  `MatchDcBlock.BandSpread` and the status line quote the exact half-range. Note also that the Δf in
+  the formula is the HALF-bandwidth; with the full one the estimate is twice what the table says.
+- **"< 0.1 %" at ≥ 10 nF was optimistic**: 10 nF measures ±0.13 %. The rule of thumb that holds is
+  "under a percent", which the f₀/10 default delivers with an order of magnitude to spare.
+
+The **worst-RL column is not reproducible from this document's own synthesis** and is left as the
+scratch measurement it was: at L₁ = 99.5 pH (Q-adjust 3.2152) the Chebyshev/Fano order-4 ladder into
+50 Ω comes out at 30.7 dB block-free, not 21.6 dB, so the scratch ladder was not this one. The
+DIFFERENCES the column exists to show do reproduce, and more starkly — 30.7 → 23.6 dB at 500 pF
+(uncompensated 9.9), 30.7 → 26.6 dB at 1 nF (uncompensated 15.6), 30.7 → 30.2 dB at 10 nF.
+
+**Default `C_blk = 100/(ω₀² L)`** — `f_s = f₀/√101 ≈ f₀/10`, spread under 1 % — **capped by a Settings value
+(default 10 nF)** because a low band and a small end inductor push the rule to tens of nF, which a
+board builds and an MMIC cannot; **the value is the user's after that**, any positive capacitance is
+accepted and compensated exactly at ω₀, and the Designer **warns above `f_s > f₀/5`** rather than
+refusing. The `√101` is not a slip: the compensation enlarges L as well, so `C = k/(ω₀²L)` resonates at
+`f₀/√(k+1)` and not at `f₀/√k` — which is why `k = 25` lands at f₀/5.099 and does NOT trip the f₀/5
+warning, and why the threshold is read off the branch's own resonance rather than off k.
+An exact treatment would take the three-element branch as a finite transmission zero at f_s, the
+extraction §6.8 excluded on structural grounds; for a second-order residual the status line already
+reports, it is not worth having.
+
+**The block is a post-rebuild step, not a synthesis input.** It attaches to whichever shunt inductor
+sits at the end node *after* the transforms have run (a Norton π on the first pair replaces L1 by a
+product that is still a shunt inductor at that node), so `MatchSynthesis`, `NortonTransform`, the
+solution search and both fingerprints never see it. `MatchNetwork`'s flat list cannot express a series
+pair to ground — `AssignNets` derives every net from the list, a shunt element is node-to-ground —
+and §6.8 excluded internal-node branches for exactly that reason; so the block is **one property on the
+element** (`MatchElement.DcBlock`, farads, 0 = none), honoured by the four consumers that compute a
+shunt admittance: the ABCD sweep, the stamp (a two-terminal branch admittance, no internal node; open
+at DC, which is the physics), Flatten (two instances and one minted node, `L1` / `L1blk`), and the
+drawing.
+
+### 22.3 What the block does to the baseband — a topology rule
+
+A power-amplifier output network wants a small |Z| at the drain from ~0.5 MHz up to a few hundred MHz
+(the even-order distortion voltage), and the block is where that is won or lost. The block moves the
+branch's transmission zero from DC to f_s; **above f_s it helps** (the branch is smaller than ωL), and
+everything that hurts is a **pole** — a parallel resonance between the block and whatever inductance
+sits behind it. Two topologies, measured on the same ladder, lossless:
+
+| topology | what resonates | measured |
+|---|---|---|
+| block in the branch, a **separate** bias choke at the drain | C_blk against the choke, through the drain node | 100 nH choke: 290 Ω at 1.6 MHz (100 nF), **30 kΩ at 5 MHz** (10 nF), 3 kΩ at 16 MHz (1 nF) |
+| the end inductor **is** the bias feed; the block is its far-end decoupling; supply through L_bias | ideal capacitors: nothing in band. Real ones: the RF-short capacitor against the next capacitor's ESL | 500 pF vs 1 nH: 1.2 kΩ at 217 MHz undamped; 4–14 Ω with 0.2–0.5 Ω in the large capacitor's branch; 2.3 Ω at 340 MHz with a damped 22 nF mid-capacitor |
+
+The first is unrecoverable: the pole sits inside the baseband, its height is set only by loss, and
+the only place to put loss is a branch that also carries RF current. The second is what in-package
+shunt-L is, and its residual poles — `1/(2π√(ESL·C_rf))` between adjacent capacitors — are damped on
+capacitors that carry no RF, at the price of a resistive floor. The bottom decade is a plain rule,
+`C ≥ 1/(ω_lo Z_max)` (≈ 640 nF for 0.5 Ω at 0.5 MHz) plus the bias line's own inductance.
+
+**Hence the rule the status line states: feed the bias through the compensated inductor, never
+through a separate choke at the drain.** Below f_s the baseband curve is a damped-Foster-ladder design
+of the decoupling bank — outside Fano's lossless framework and outside anything Match should
+synthesise; the authoritative check is a schematic sweep of Z at the drain node, which circuitRF
+already does. Match owns the inductor and the block; the schematic owns the poles.
+
+### 22.4 Baseband impedance — investigated, recorded, deliberately not built
+
+The owner asked whether the multiband machinery could synthesise a match with a guaranteed small
+baseband |Z| out to a stated frequency. **The insight carries over — the baseband is a region where
+|Γ| = 1 costs nothing from Fano's Δω integral — but the baseband is not a band to be matched. It is a
+reactance-slope specification, and it collapses to one number.** Referenced to R_opt, |Z| ≤ Z_max means
+Γ sits in a small disc about −1; a short at DC is a transmission zero the network makes with its shunt
+inductance; near it any PR impedance is `jωL_eff` (axis zeros are simple). Two classical results then
+pin everything:
+
+- **Foster.** In the baseband the load resistor must be invisible (below), so Z_bb is a reactance and
+  `X(ω)/ω` is non-decreasing up to its first pole: **|Z_bb(ω)| ≥ ωL_eff**. The straight inductor line
+  is the best possible baseband curve; ripples cannot help, because between two zeros of a lossless
+  reactance there is always a pole. So `Z_max ≥ ω_b L_eff`.
+- **Fano's DC-zero integral** — §18.10's R‖L row with `L = L_eff`: `∫ ln(1/|Γ|) dω/ω² ≤ πL_eff/R`.
+  Spent entirely on the passband:
+
+```
+  α_pass ≤ π (Z_max/R_opt) · f₁f₂ / (f_b · Δf)   nepers;   ceiling_dB = 27.29 · (Z_max/R_opt) · f₁f₂/(f_b Δf)
+```
+
+The ratio **Z_max/R_opt** is the whole story. Verified: Levy-synthesised ladders at the raised Q use
+58–94 % of the DC integral and never exceed it; a free-topology optimiser (10 reactive elements, any
+branch kind) converged to `L_eff = 101 pH` against `Z_max/ω_b = 99.5 pH`; finite ladders reach about
+half the ceiling in dB, the headroom pattern §18.10 measured.
+
+| spec | order 4 achieves | ceiling |
+|---|---|---|
+| 4 Ω‖30 pF, 1.8–2.2 GHz, 0.5 Ω to 800 MHz | 21.6 dB | 42.2 dB |
+| same, 0.5 Ω to 500 MHz | 34.1 dB | 67.5 dB |
+| 8 Ω‖15 pF, 0.8–1.0 GHz, 0.5 Ω to 300 MHz | 9.2 dB | 22.7 dB |
+| same, 1.0 Ω | 23.4 dB | 45.5 dB |
+| 20 Ω‖5 pF, 1.8–2.2 GHz, 0.5 Ω to 800 MHz | 1.0 dB | 8.4 dB |
+
+**The design route is §4.6's Q-adjust with Q chosen by a formula** — `Q_adj = R_opt ω_b/(ω₀ Z_max)`,
+floored at the load's own Q — and the network is the ordinary single-band bandpass Chebyshev with
+`L₁ = Z_max/ω_b` (÷ the 3–18 % Foster excess measured) and `C_add = 1/(ω₀²L₁) − C_ds`. For a resonant
+arm the Δω-class and 1/ω²-class ceilings coincide, so there is no hidden second wall. No new
+prototype.
+
+Refuted alternatives, each measured: a dual-band network with band 1 = "baseband matched to a small r"
+spends `(2/π)·atan(ω_b L/r)` of the DC budget below f_b (87 % at ω_bL/r = 5) — the worst possible
+use of §18; the lowpass form passes DC (`Z_bb(0) = R_load`); a separate RF-open/baseband-short leg at
+the drain needs ~3 Ω of its own inductance at 800 MHz to stay open across the band; a damped
+baseband-termination one-port relaxes L₁ by ×1.45 at a 0.5 Ω resistive floor — bounded, not
+structural. L₁ ≈ 100 pH for 0.5 Ω at 800 MHz is below a bond wire, which is why in-package shunt-L
+exists.
+
+**Owner decision: not built as a feature** — the decoupling bank, poles, ESL and the bias line make a
+UI that cannot be good, and the schematic sweep already answers it. What remains cheap is one optional
+status line under the ceiling (brief MN-DCB §6, owner-gated): the end inductor's `ωL` at a chosen
+baseband frequency, which is a number the design already has.
+
+### 22.5 What the user sees
+
+- **A `DC Block` toggle in each termination card's header row**, in the column that is empty today
+  between the heading and Probe — zero height, on the card of the end it acts on. Enabled exactly
+  when §22.1's walk finds a host on the current rebuild — so it stays enabled across π ↔ T on the end
+  pair and on a series-RC end; the enabled tooltip names the host and the series inductor(s) the bias
+  reaches it through; the disabled tooltip names the reason (a real series capacitor, by name, with
+  where to feed the bias instead; or the lowpass form; or no shunt inductor on the path). (rev 7)
+- **The block capacitor is an element** in the network pane (`L1blk`), drawn under its inductor and
+  edited by double-click like the absorbed elements are; the inductor shows its compensated value.
+  Typing 0 clears the block.
+- **One status line per active block — per host, so two for a π end**, under the ceiling line: the value, the compensated inductor
+  (from what), the route when the host is not on the end node (*"the DC path from termination 2
+  reaches L3 through L4"*), f_s, the band spread, and the feed-through rule — which then says the
+  bias reaches the termination through the named inductor — `warn` class above `f_s > f₀/5`.
+- **Persistence:** `MatchDesign.Term1DcBlock` / `Term2DcBlock`, farads, 0 = none, additive. Edits go
+  through `Commit`, so they undo from either window.
+
+## 23. Owner decisions — 2026-08-28 (rev 6)
+
+1. **The DC block is added as §22.1–§22.2 and §22.5 specify**, per end, as a post-rebuild step
+   with one element property and no change to the synthesis, the transforms or the solution search.
+   Brief **MN-DCB**.
+2. **Baseband impedance is investigated and recorded in §22.3–§22.4, and not built.** The theory is
+   one line and the design route is Q-adjust; the part a UI would need — the decoupling bank and the
+   bias line — belongs to the schematic and its sweep. The one-line hint is optional and owner-gated.
+3. **The feed-through rule is stated in the UI**, because the alternative topology puts an undamped
+   pole in the baseband that no lossless network can remove, and nothing else on screen would say so.

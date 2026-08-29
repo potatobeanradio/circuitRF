@@ -165,6 +165,7 @@ public sealed class Z0NonUniformOverrideTests : IDisposable
             Assert.Equal(0.0, Math.Sqrt(pt.X * pt.X + pt.Y * pt.Y), precision: 9);
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public async Task CubeTrace_OverrideOn_RenormalizesAllPortsFromPerPortSource()
     {

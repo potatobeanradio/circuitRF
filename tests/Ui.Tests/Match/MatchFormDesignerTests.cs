@@ -141,6 +141,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
         Assert.True(orders < responses, "the groups are out of order");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TurningLowpassOff_HidesItsRows_AndLeavesTheOthers()
     {
@@ -166,6 +167,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
         d.Dispose();
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheAppliedRow_SurvivesItsOwnFormBeingTurnedOff()
     {
@@ -186,6 +188,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
 
     // ══ 2 — the cards ═══════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void EveryCardNamesItsForm_BandpassIncluded()
     {
@@ -222,6 +225,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
             MatchSolutionRowViewModel.FamilyName(ResponseShape.ChebyshevTwoEnded));
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void NeitherBesselNorDoubleMatchChebyshev_IsSearchedInTheseForms()
     {
@@ -236,6 +240,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
 
     // ══ 3 — applying a solution ═════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ApplyingALowpassRow_SetsTheForm_AndOneUndoPutsTheBandpassDesignBack()
     {
@@ -264,6 +269,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
         d.Dispose();
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheFormEchoParameter_FollowsTheDesign()
     {
@@ -396,6 +402,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
         d.Dispose();
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void WithOneEndReactive_TheNoteStillNamesThatEnd()
     {
@@ -414,6 +421,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
 
     // ══ 4 — the transform rack's empty state ════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ALowpassBasis_EmptiesTheRack_WithANoteRatherThanAFault()
     {
@@ -449,6 +457,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
 
     // ══ 5 — the ladder, the flatten and the stamp all take single-element arms ══
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void TheLadderLayout_PlacesASingleElementLadder()
     {
@@ -481,6 +490,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
     /// <c>MatchFlattenTests.AMatchInEitherNewForm_AndItsFlattenedCell_AlsoAgree</c>, which needs a
     /// real cell folder on disk and lives with the rest of the flatten harness.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData(NetworkForm.Lowpass)]
     [InlineData(NetworkForm.Highpass)]
@@ -564,6 +574,7 @@ public sealed class MatchFormDesignerTests(ITestOutputHelper output)
         d.Dispose();
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void AResistivePair_ListsAllThreeForms()
     {

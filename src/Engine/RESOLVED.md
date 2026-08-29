@@ -230,3 +230,16 @@ exactly lexicographic-descending under the half-space rule ("first nonzero compo
 `MixingLattice(2, O)` matches `MixingGrid(O)` element for element (pinned, orders 0–6). That is what
 let the generalization avoid renumbering an index map the measurement library and every existing
 two-tone cube already depend on.
+
+## Test-time cut: 61 more `Engine.Tests` methods tagged `Category=Benchmark` (2026-08-28)
+
+Owner's rule: no long test in the routine `dotnet test`. Tagged mechanically from one full-run TRX
+— every method over ~5 s, 61 of them summing 1,695 of the run's 1,889 test-seconds, almost all MoM
+(`PlanarStaticLimitTests`, `PlanarDeembedTests`, `CalibrationStandardSelectionTests`, `ViaBasisTests`,
+`LayeredDcimTests`, `PlanarSolveProgressTests`, …) plus two `Hero3BPursuitTests`. Routine
+`Engine.Tests` went from ~3.5–6 min to **19 s** (1,291 tests). Caveat, recorded rather than hidden:
+that TRX was taken while `Ui.Tests` ran concurrently, so some durations near the threshold are
+inflated (the run read 6 m 12 s against the ~3.5 min it takes alone); a few tagged tests may be 3–4 s
+alone. They are all still run by `dotnet test --settings circuitrf.benchmark.runsettings`, and the
+counts in the root notes ("122 test methods repo-wide") are now stale by ~176.
+

@@ -99,6 +99,7 @@ public class PlanarStaticLimitTests(ITestOutputHelper output)
     // Tier 5 — the static limit, and a real capacitance
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T5_1_APlateOverGroundConvergesToEpsilonZeroAOverH_WithTheFringingFalling()
     {
@@ -167,6 +168,7 @@ public class PlanarStaticLimitTests(ITestOutputHelper output)
     // Tier 6 — convergence, with the two error sources SEPARATED
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T6_1_PIsEXACTLYInvariantUnderSubdivision_WhichIsWhyRawEntriesCannotBeTheTest()
     {
@@ -268,6 +270,7 @@ public class PlanarStaticLimitTests(ITestOutputHelper output)
         Assert.True(Math.Abs(seq[3].C - seq[2].C) < Math.Abs(seq[2].C - seq[1].C));
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T6_3_TheAnswerConvergesUnderQUADRATUREOrderIndependentlyOfTheMesh()
     {
@@ -293,6 +296,7 @@ public class PlanarStaticLimitTests(ITestOutputHelper output)
             "not separable from the discretisation error");
     }
 
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void T6_4_ExtractionOrderIsAMeasurement_NotAPreference()
     {

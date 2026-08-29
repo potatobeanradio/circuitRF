@@ -1120,3 +1120,198 @@ Its rises are 0.98 / 0.93 / 0.84 / 0.90 / 1.02 / 1.38 — never above the ×2 th
 plateaus at −9.95 dB against a −13.5 dB ceiling: **twenty-four elements buy 0.7 dB over twelve there**,
 which is the case the note exists to stop someone paying for. Its bands are far apart in ratio
 bandwidth, so §18.3's mirroring widens them heavily and the union's two intervals nearly merge.
+
+---
+
+## MN-DCB — the DC block on an end shunt inductor (2026-08-28)
+
+match.md §22, implemented as specified: one property (`MatchElement.DcBlock`), one post-rebuild step
+(`MatchDcBlock.Apply`, called only from `MatchRebuild.Rebuild`, after `WithEndSplits`), and four
+consumers taught to honour it — `MatchResponse.At`, `MatchModel`'s stamp, `MatchFlattenPlan.Build` and
+the Designer's drawing. `MatchSynthesis`, `NortonTransform`, `MatchSolutionSearch`, `MatchElementSolve`
+and both fingerprints are untouched and see an ordinary shunt inductor, which is verified rather than
+asserted: `SettingABlock_ChangesNothingButTheHostInductor` compares the two rebuilds element by
+element.
+
+### §22.2's table reproduces — except for the spread column, which was the ESTIMATE
+
+The section's own numbers were cross-checked against `MatchDcBlockTests` as the brief asked. L′, f_s
+and the L_eff values all come out; three things did not, and §22.2 has been corrected in place.
+
+- **The parenthesised spread is the second-order estimate, not the half-range of the L_eff values
+  printed beside it.** `2 (f_s/f₀)² (Δf_half/f₀)` gives ±2.29 % / ±1.21 % / ±0.13 % where the exact
+  half-range of the same rows is ±2.60 % / ±1.30 % / ±0.13 %. The estimate is not merely low, it is
+  **asymmetric-blind**: the 500 pF row actually runs **−2.86 % at 1.8 GHz and +2.34 % at 2.2 GHz**,
+  because `1/(ω²C)` is not symmetric about ω₀, and the estimate happens to track the upper edge. The
+  status line and `MatchDcBlock.BandSpread` quote the exact half-range — a single "±" number for a
+  range is its half-range, and reporting the smaller of the two edge deviations would understate the
+  cost at exactly the edge where it is worst. The `Δf` in the section's formula is also the HALF
+  bandwidth; with the full one it is twice what the table says.
+- **The middle L_eff column is at ω₀ (1.98997 GHz), not at the 2.0 GHz it is labelled.** L_eff is
+  99.5 pH there by construction; at a literal 2.0 GHz the 500 pF row reads 99.628 pH.
+- **"< 0.1 % at ≥ 10 nF" is optimistic** — 10 nF measures ±0.13 %.
+
+### The worst-RL column is not reproducible, and that is recorded rather than tuned away
+
+At L₁ = 99.5 pH (which this synthesis reaches at Q-adjust **3.2152** on the §22.4 drain spec) the
+Chebyshev/Fano order-4 ladder into 50 Ω is **30.73 dB** block-free, not the 21.6 dB §22.2 quotes — so
+the scratch ladder that produced the RL column was not the one this repo synthesises. The
+DIFFERENCES, which is what the column exists to show, reproduce and are starker:
+
+| C_blk | compensated | uncompensated |
+|---|---|---|
+| 500 pF | 23.60 dB | 9.87 dB |
+| 1 nF | 26.60 dB | 15.57 dB |
+| 10 nF | 30.24 dB | 27.55 dB |
+
+### `f_s = f₀/√(k+1)`, not `f₀/√k` — the brief's warn-threshold expectation was off by that factor
+
+For `C = k/(ω₀²L)` the compensation enlarges L to `L(1 + 1/k)`, so the branch resonates at
+`f₀/√(k+1)`. The brief's test 2 expected `k = 25` to fire the `f_s > f₀/5` warning; it lands at
+**f₀/5.099** and does not. The threshold stays where it is and the expectation moved: the status line
+must quote the branch's REAL resonance, which is the number a user would measure. `k = 4` gives
+f₀/√5 = f₀/2.236 and warns, as the brief's third row expects. The default `k = 100` is f₀/10.05.
+
+### The brief's 0.05 dB tolerance for test 2 is a §22.2-fixture number, not a general one
+
+On §4.9's ladder a default block costs **0.169 dB** of worst return loss, not under 0.05. Nothing is
+wrong: §22.2's measurements are on a 20 %-bandwidth drain network and §4.9's band is 3.3–5.0 GHz — a
+**42 % fractional bandwidth**, where the second-order residual has twice as far to run — and the
+design sits at 16.66 dB, where a tenth of a dB is a small absolute change in |S11|. The test asserts
+0.25 dB with every figure printed. Measured on the same ladder: `k = 25` costs 0.70 dB, `k = 4` costs
+4.26 dB.
+
+### At a very good match, dB is the wrong ruler for "unchanged"
+
+`ANortonTransformOnTheFirstPair_DoesNotLoseTheBlock` was written against the brief's 0.05 dB and
+failed at 0.78 dB — on a network matched to **−52 dB**, where |S11| is 0.0024 and three ten-thousandths
+of a unit move the dB figure by a whole decibel. The comparison is in linear |S11|: block-free 0.002434
+either side of the π (identical to 1e-12, since a Norton transform is exactly response-preserving —
+asserted); with the default block, 0.003486 before and 0.003187 after. The block's residual is simply
+computed against a differently-split inductor. The test also gates that the block **re-attaches to the
+product** (`L1_N1_1`), which is the claim it exists for.
+
+### §4.9's golden ladder offers no Norton pair that names L1
+
+Its `CFano` and its absorbed `C1` both hang off `p1` between `L1` and `L2`, and a pair is two like-type
+elements in adjacent arms — so `Discover` returns `L2/L3`, `C2/C3`, `L3/L4` and nothing touching the
+end shunt inductor. The transform-survival test uses §22's own drain network (4 Ω ‖ 30 pF into 50 Ω),
+which does offer `L1/L2`.
+
+### Two shunt inductors on one node did not occur
+
+`EndShuntInductorIndex` takes the first, as the brief allows. Across every fixture exercised — bandpass
+(with and without a Fano/detune element), highpass, dual-band, and after a π on the first pair — no end
+node ever carried two, which is what the ladder's own construction predicts: two shunt inductors on one
+node would combine. The one collision that IS representable is the degenerate ladder whose two port
+nets are the same node (a single shunt arm, no through element); `Apply` resolves both ends up front
+and reports the second as stored-not-applied rather than overwriting the first's compensation.
+
+### A highpass block needs an end arm the TERMINATION does not supply
+
+In highpass form each arm is one element, so if the end shunt inductor is the termination's own
+absorbed L there is nothing left at that node for a block to sit in and `EndShuntInductorIndex`
+correctly returns −1. It is not a gap: the block belongs in OUR inductor, never in the external
+network's. Where `WithEndSplits` has inserted an `LExcess1` beside the absorbed one, that is found and
+used — which is the right answer and is why the resolution is "first non-absorbed shunt L on the node"
+rather than "first shunt L".
+
+## MN-DCB2 — the DC block follows the DC PATH, not the end node (2026-08-28)
+
+match.md §22.1 and §22.5 corrected (rev 7). `MatchDcBlock.EndShuntInductorIndex` — "the shunt
+inductor at this end's node" — is replaced by `ResolveHost`, a walk inward from the termination over
+the element list (which IS the DC path, since `AssignNets` derives the topology from that order):
+absorbed elements are transparent, a shunt L is a host, a shunt C is invisible, a series L joins the
+path, a series C stops the walk. `DcBlockNote` gains `Path` and `StopElementName`; nothing about the
+compensation changed. The owner's two cases — §4.9's series-RC Term2 (host `L3` through `L4`) and a
+Norton T on the drain network's (L1, L2) (host `L1_N1_2` through `L1_N1_1`) — are the fixtures.
+
+### The brief's "at most one host per end" was wrong too — a π of inductors has two
+
+The owner's third case, found on the first build: a Norton **π** on (L1, L2) is shunt `L1_N1_1` /
+series `L1_N1_2` / shunt `L1_N1_3`, then `C2`. The series product passes DC, so blocking `L1_N1_1`
+alone sends the bias straight through to `L1_N1_3`, which shorts it. The walk therefore does NOT stop
+at a host: it records every real shunt inductor it reaches until a real series capacitor, and `Apply`
+blocks each of them with the end's one value, each compensated on its own inductance, one note per
+host (the Designer renders one status line per host and the flattened record one sentence per host).
+`DcBlockHost` carries `Hosts` (outermost first) with `Index`/`Path` as the outermost's for the callers
+that only need one; `DcBlockStop` is now why the walk ENDED (`SeriesCapacitor` / `EndOfLadder`) and
+means "withheld" only when `Hosts` is empty. The T has one host (series / shunt / series, then the
+arm's capacitor); the bases have one per end; the π has two; a chain of transforms could have more.
+Test 9's "no node carries two real shunt inductors" still holds and still matters — it is what makes
+one block per host the whole answer.
+
+**The end a block belongs to must be read off the walk, not the net.** `MatchLadderLayout.DcBlockEndOf`
+said "on `p1` → end 1, else 2", which was right while a host could only be an end node. The π's
+second product is on `n1`, so typing into `L1_N1_3blk` wrote `Term2DcBlock` (which was 0) and the
+edit was silently a no-op. `MatchDcBlock.EndOf(network, index)` answers from the two walks, with
+termination 1 owning a shared host exactly as `Apply` claims it. The seed (`DcBlockDefault`) is sized
+from the SMALLEST host so every branch resonates at or below f₀/10.
+
+### Test 9's verification: no node carries two real shunt inductors — 43 ladders, none
+
+Every golden fixture (§4.9, the §22 drain, §16.6 highpass, §18.4 dual-band, and a both-series-ends
+ladder at orders 3 and 5) × {none, π, T} on the first and the last discoverable pair × the split
+cases they reach. The sweep asserts it actually SAW a shunt `CFano`, a series `CFano`, a shunt
+`CDetune` and a series `CDetune` (plus the highpass form's series `CExcess2`), so a synthesis change
+cannot silently empty it. No node ever carried two — including after a T on the end pair, whose
+shunt product lands on a NEW node between two series products, and after a π, whose two shunt
+products are on two different nodes (which is exactly why both need a block — see above). The brief's
+"two on one node → block both" branch was not needed; "two on one PATH → block both" was.
+
+### The one collision that IS representable is now interior
+
+Two series-RC ends at order 3 give series / shunt / series, so both walks land on the ONE shunt
+inductor. Resolved as MN-DCB resolved the degenerate single-arm ladder: both ends up front, the first
+end's block applied, the second end's note says "both ends of this ladder reach the same shunt
+inductor". At order 5 the same terminations host two distinct interior blocks (`L2` through `L1`,
+`L4` through `L5`).
+
+### What the T costs, and why the test gates the residual's ORDER rather than a number
+
+The brief's test 2 asks for 0.05 dB; MN-DCB already found dB the wrong ruler on the −52 dB drain
+fixture. Measured, worst |S11| in band: block-free 0.002434 (52.27 dB) either side of the T;
+with the default (f₀/10) block 0.004216 (47.50 dB) — a deviation of 1.8e-3, against 1.1e-3 on the
+untransformed `L1` and 0.8e-3 after the π. The T's host is a LARGER inductor (131 pH vs 99.5) at a
+node the response is more sensitive to, so the same second-order residual costs more. What proves
+the block is correctly attached and compensated is that the residual is second order in the block:
+**ten times the capacitance gives 0.002605 (51.68 dB), a deviation of 1.7e-4 — 10.4× smaller.** The
+test asserts the ω₀ identity to 1e-12, the 10× shrink (≥ 5×), and that the network is still matched.
+
+### The series-RC end, measured
+
+§4.9's Term2: host `L3` 18.516 → 18.702 pH with the default 8.29 nF, f_s 404 MHz, spread ±0.43 %;
+worst RL 16.66 → 15.82 dB (−0.84 dB, on a 42 % band — the same fixture effect MN-DCB recorded for
+Term1's −0.17 dB, here on a smaller host inductor). The ABCD oracle, carrying the branch as an
+explicit series L-C at the INTERIOR node, agrees with `MatchResponse.At` to 0 (bit-identical) at
+401 points. At DC, the stamp shows the termination node open through `L4` (5.0 V) with the block and
+shorted (0 V) without — `WithABlockOnTheSeriesRcEnd_TheTerminationNodeIsOpenThroughTheSeriesInductor`.
+
+### A highpass series-C end names its excess `CExcess2`, not `CFano`
+
+`MatchFormSynthesis.WithEndSplits` names the lowpass/highpass surplus element `CExcess{end}`; the
+bandpass split names it `CFano`/`CDetune`. The walk does not care (it stops on any real series C),
+but a test looking for the bandpass name in a highpass ladder would miss it — recorded so the next
+reader does not.
+
+### Found in passing: a Ui test that ran for minutes, not a deadlock
+
+`MatchTribandDesignerTests.ALikePair_StillSynthesisesOverThreeBands` sat 10+ minutes in the owner's
+run and reproduced alone. A hang dump (`dotnet test --blame-hang`, read with `dotnet-dump analyze
+… clrstack -all`) showed no lock: the test thread was in `WaitForAnalysis` and the search thread was
+BUSY in `MatchMultibandSynthesis.SearchOdd → Search → SolveEps → MatchPoly.Roots`. Measured on the
+fixture (tri-band, both ends parallel-RC — the odd, weighted-Remez family): one
+`MatchSolutionSearch.Search` costs **6.2 s at order 1, 16.2 s at order 2, 38.4 s at order 3** (a
+single synthesis is 0.4 / 1.0 / 2.3 s and `FindQAdjust` runs fifteen of them), and the Designer's
+`SearchEveryCombination` fans that out over every valid order before `WaitForAnalysis` returns. Not
+introduced by MN-DCB — nothing on that stack was touched — it dates from the multiband commit. The
+owner chose to drop the test (its only claim the synchronous rebuild does not already prove was the
+search's family); the cost itself is unchanged and is a real wait for a user opening such a design.
+
+### Test-time cut (2026-08-28)
+
+`MatchOddCountTests.AMultibandLikePair_GivesFourNPlusTwoElementsWithBothEndsAbsorbed` measured
+36.5 s — a tri-band like-pair synthesis, the same odd-family cost as above — and is now
+`Category=Benchmark`; routine `Core.Tests` is 2 s. The Ui side, the host that never exited, and
+the pre-existing tri-band order-ceiling failures are in `src/Ui/RESOLVED.md`.
+

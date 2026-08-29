@@ -222,6 +222,7 @@ public sealed class LayeredDcimTests
     /// oracle</i> must match the shipped path's. This test pins the input identity — which is what a
     /// regression would actually break — and reports the output divergence rather than hiding it.</para>
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void R1_2_TheOneLayerReduction_FeedsTheFitIdenticalSamples_ThoughTheFitItselfDiverges()
     {
@@ -289,6 +290,7 @@ public sealed class LayeredDcimTests
     /// exactly at ρ/λ = 1e-4 at 10 GHz. <b>Above ρ/λ ≈ 3 it is the far field</b>, where R4's own
     /// curve puts G_q's accuracy at 6e-3–2e-2 anyway.</para>
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void R2_1_SplittingALayer_DoesNotMoveTheFittedAnswer()
     {
@@ -356,6 +358,7 @@ public sealed class LayeredDcimTests
     /// mean the ORACLE is wrong</b> — that has happened five times in this area, most recently a
     /// static series that needed a COMPLEX K and read exactly like a convergence floor without it.</para>
     /// </summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void R3_1_AsFrequencyFalls_TheFittedModel_ConvergesQuadraticallyOntoTheStaticSolver()
     {
@@ -457,6 +460,7 @@ public sealed class LayeredDcimTests
 
     /// <summary>The routine gate: one grounded multilayer stack, coarse ρ grid. The full reported
     /// curve is <see cref="R4_2_TheFullErrorCurve_EveryStackAcrossTheBand"/> and is opt-in.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void R4_1_TheDcimError_AgainstDirectIntegration_OnAMultilayerStack() =>
         MeasureErrorCurve("PCB 3-layer 0.8/0.5/0.1 mm", LayerStacks.Pcb3Layer, 10e9, step: 0.5);

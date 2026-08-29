@@ -60,6 +60,7 @@ public class MatchDesignerSpecEditCostTests(ITestOutputHelper output)
     }
 
     /// <summary>An order change hands the message loop back promptly, whatever the search then costs.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ChangingTheOrder_DoesNotBlockOnTheLowpassPrototypeSearch()
     {
@@ -98,6 +99,7 @@ public class MatchDesignerSpecEditCostTests(ITestOutputHelper output)
     }
 
     /// <summary>The same for the response family, which is the other edit that reaches the search.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ChangingTheResponseFamily_DoesNotBlockOnTheLowpassPrototypeSearch()
     {
@@ -139,6 +141,7 @@ public class MatchDesignerSpecEditCostTests(ITestOutputHelper output)
     /// already moved off — with nothing anywhere saying so. Each pass carries a generation and only
     /// the newest is allowed to write.
     /// </remarks>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void ASequenceOfEdits_LeavesTheLastEditsAnswerOnScreen()
     {
@@ -188,6 +191,7 @@ public class MatchDesignerSpecEditCostTests(ITestOutputHelper output)
     }
 
     /// <summary>Disposing while a pass is in flight cancels it and writes nothing afterwards.</summary>
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void DisposingMidAnalysis_IsSafe()
     {

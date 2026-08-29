@@ -14,6 +14,7 @@ lede: Direct synthesis of a bandpass matching network that absorbs both terminat
 <li><a href="#designer">The Match Designer</a></li>
 <li><a href="#spec">The specification pane</a></li>
 <li><a href="#probe">Probe: reading the terminations off your own circuit</a></li>
+<li><a href="#dcblock">DC Block: a DC-blocking capacitor on a biased end</a></li>
 <li><a href="#transforms">Norton transforms: moving values without moving the response</a></li>
 <li><a href="#solutions">The solutions list</a></li>
 <li><a href="#feasibility">Feasibility: what is possible before you synthesise anything</a></li>
@@ -148,6 +149,7 @@ ordinary circuitRF value-and-unit pair, so [unit entry](units.html) works exactl
 |---|---|
 | **Topology** | Series or parallel. This is a physical statement about the network you are matching, and it changes which order parities are available. |
 | **R**, **X kind**, **Value** | The termination. `X = –` means purely resistive. |
+| **DC Block** | Inserts a DC-blocking capacitor in series with the first shunt inductor on this end's DC path, and enlarges the inductor to compensate — see [DC Block](#dcblock). Available whenever there is such an inductor; greyed out, with the reason, otherwise. |
 | **Conjugate** | Targets Z* instead of Z — which flips the reactance sign, and so turns a measured parallel R‖C into a parallel R‖L target. |
 | **Bands** | Single, Dual or Tri. Dual and Tri match two or three bands at once — see [Multiband](#dualband). |
 | **Band f1, f2** | The passband. Everything is computed at ω₀ = √(ω₁ω₂) with fractional bandwidth *w*. |
@@ -198,6 +200,76 @@ action.
 The button is greyed out, with a reason, when the pin is unconnected, when its net has nothing else on
 it, when the schematic has unresolved errors, or when the `Match` is inside a cell rather than in a
 test bench — there is no external network to look at from inside a definition.
+
+## DC Block: a DC-blocking capacitor on a biased end {#dcblock}
+
+**A shunt inductor at a biased node is a short across the supply.** If the end of your ladder is a shunt
+inductor and the termination behind it carries DC — a drain, a gate — the network as synthesised puts
+your supply on ground. The **DC Block** toggle on that termination's card fixes it, and fixes the thing
+people normally get wrong afterwards.
+
+Click it and two things happen:
+
+- **A capacitor goes in series with that inductor.** It appears in the network pane as an element of its
+  own, named after the inductor it blocks — `L1` blocks with `L1blk` — and it is written into the
+  flattened cell as a real component.
+- **The inductor is enlarged so the branch is unchanged at band centre.** The branch's reactance is now
+  `ωL′ − 1/ωC` instead of `ωL`, so `L′ = L + 1/(ω₀²C)` makes it exactly what the synthesis asked for at
+  ω₀. That is the number the ladder shows: `L1` reads its *compensated* value, and the status line says
+  what it was before.
+
+The compensation is **exact at band centre and second-order away from it**. The branch's own series
+resonance sits below the band at `f_s = 1/(2π√(L′C))`, and between the two band edges the effective
+inductance runs a little either side of what the synthesis wanted. The status line states all of it:
+
+> DC block at termination 1: 1 nF in series with L1 (105.9 pH, from 99.5); branch resonates at
+> 489.1 MHz; inductance ±1.3 % across the band. Feed the bias through L1, not through a separate choke.
+
+**Bigger is better, and the default is chosen for you.** The seed puts `f_s` at about one tenth of band
+centre, which keeps the spread under a percent — and it is capped, because at a low band with a small
+end inductor that rule alone asks for tens of nanofarads: fine on a board, impossible on an MMIC. The
+cap is in **Settings ▸ DC block default**. Past that, the value is yours: type anything positive into
+`L1blk` and it is compensated exactly at ω₀ whatever it is. Above `f_s > f₀/5` the line turns to a
+warning and tells you what a ten-times-larger part would buy — measured on a 20 % band, a 500 pF block
+costs about 3 dB of worst-case return loss where 10 nF costs none. Typing `0` removes the block.
+
+<div class="callout warn">
+<span class="label">Feed the bias through the compensated inductor, not through a separate choke</span>
+<p>This is the half that no amount of RF design catches. Put the block in the branch and then feed the
+drain through a <em>separate</em> choke, and the block resonates against that choke <em>through the
+drain node</em> — a parallel pole in the middle of the baseband, tens of kilohms at a few megahertz, and
+no lossless network can remove it. Feed the supply <em>through</em> the compensated inductor instead,
+with the block as its far-end decoupling, and the residual poles are between your decoupling capacitors,
+where a small series resistance on a capacitor carrying no RF damps them. Check it the ordinary way: an
+S-parameter or AC sweep of Z at the drain node in the schematic.</p>
+</div>
+
+**The block goes on the first shunt inductor your bias current would reach.** A series inductor in
+the way doesn't stop it, a real series capacitor does, and your FET's own input capacitance is not a
+real capacitor on the board. So a termination whose end arm is a *series* arm — a gate modelled as R in
+series with C_gs — still gets a block: the arm's capacitor is the device's own and is left out of the
+flattened cell, the arm's inductor passes DC, and the ladder's next shunt inductor is what would short
+the gate bias. The toggle names that inductor and the one the bias reaches it through, and the status
+line's feed rule says the same: *feed the bias through L3; it reaches the termination through L4*. A
+Norton T on the end pair, which turns the end arm into a series inductor, moves the block one product
+in the same way — and a Norton **π** of inductors, whose series product passes DC between its two
+shunt products, gets a block on *each* of them, with your one value and each inductor compensated on
+its own.
+
+**Where the toggle is greyed out, it says why.** When Match has put a **real** capacitor of its own in
+that end's through path — a `CFano` or `CDetune` from a termination whose Q is far below what the
+synthesis needs — that capacitor already isolates the termination, and a block on a shunt inductor
+beyond it would protect nothing; feed that termination's bias on its own side of the named capacitor
+instead. A **lowpass** ladder has no shunt inductor at all — it passes DC end to end, and blocking that
+would need a series capacitor in the through path, which is a different network and a different
+compensation; Match does not offer it. Shunt inductors beyond the next real series capacitor never
+need one: that capacitor ends the DC path.
+
+A block is a specification input, not something the synthesis chose. It is applied **after** the
+transforms, attached by *node* rather than by name, so a Norton transform that replaces `L1` with a
+product still leaves the block on whatever shunt inductor is first on that end's DC path — and
+switching the end pair between π and T keeps your value and moves the block to the new host. Nothing
+in the solutions list, the transform ranges or the feasibility numbers changes when you set one.
 
 ## Norton transforms: moving values without moving the response {#transforms}
 
