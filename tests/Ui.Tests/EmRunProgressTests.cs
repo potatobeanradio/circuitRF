@@ -224,6 +224,36 @@ public sealed class EmRunProgressTests
         Assert.Contains("101", text);
     }
 
+    [Fact]
+    public void WithAdaptiveSamplingOn_TheFinishedRow_SaysHowMANYPointsWereSOLVED()
+    {
+        // P9's own gate. A run that publishes 101 points but solved 27 of them is reporting 74
+        // MODELLED values, and a user who cannot tell which is which cannot tell whether the curve
+        // is credible. The count is in the result (SolvedFrequencies); this is what puts it on
+        // screen, and the non-adaptive case above never exercised this branch.
+        var solve = new CircuitRF.Engine.Mom.PlanarSolveResult
+        {
+            Points        = [],
+            CoreFillCount = 0,
+            UnknownCount  = 0,
+            StandardCount = 0,
+            CoreBuildMs   = 0,
+            Notes         = [],
+            SolvedPointCount  = 27,
+            SolvedFrequencies = [.. Enumerable.Range(0, 27).Select(i => 1e9 + i * 1e8)],
+        };
+
+        string text = WorkspaceViewModel.EmRunSummary(
+            new CircuitRF.Design.Layout.Em.EmRunResult(
+                CircuitRF.Design.Layout.Em.EmRunStatus.Ok, null, null, null, null, null, null, [],
+                PlanarSolve: solve),
+            adaptive: true, requestedPoints: 101);
+
+        Assert.Contains("101", text);
+        Assert.Contains("27", text);
+        Assert.Contains("modelled", text, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Stop (owner request: "we need a Stop simulation for EM… perhaps Simulate changes to Cancel?")
 
     [Fact]

@@ -1104,3 +1104,130 @@ never finish. `PlanarP8NearRadiusFloorTests` is where the shipped behaviour is m
 `EmRunService` only ever passes `PlanarAimSettings.Default`. That is deliberate: it is a derived
 physical quantity, not a knob a user should be tuning, and its one non-default use in the tree is the
 `0` that turns the floor off so a test can measure the pre-P8 behaviour.
+
+---
+
+# P9 — adaptive frequency sampling on by default: measured, and the recommendation (2026-08-29)
+
+**A decision brief. Nothing was flipped, and one thing turned out already to have been.**
+
+## What was asked, and what turned out to be true
+
+The brief asks whether `PlanarAdaptiveSettings` should be on by default, on the premise that the
+feature ships off. **That premise was two days stale in the half that matters.** The ENGINE default
+is still `PlanarSolveSettings.Adaptive = null`, but the shipping USER default was flipped on
+2026-08-26: `EmSetupModel.AdaptiveSampling = true`, translated by `EmRunService` into
+`PlanarAdaptiveSettings.Default`. Every EM run a user starts today already samples adaptively. So
+the live question is not "should it be turned on" but **"was turning it on right, and are 1e-3 and
+5 the right numbers"**. The measurements answer both.
+
+## The recommendation
+
+**Leave it on. Keep `Tolerance = 1e-3` and `InitialPoints = 5`. Leave the ENGINE default null.**
+Four reasons, each measured:
+
+1. **It never costs accuracy that matters.** On the panel's own default grid the realised worst
+   |ΔS| against a fully-solved sweep is at worst **1.42e-3** across five fixtures. The one deep
+   feature in the set — a −7.2 dB notch — was recovered **exactly, in all 33 configurations run**,
+   at every tolerance and every seed count.
+2. **It costs about 1% when it saves nothing.** Two of five fixtures solve every point anyway and
+   read 0.99× — the overhead is the probes' interpolant evaluations, and the calibration replays are
+   cache hits by construction.
+3. **`InitialPoints = 5` is right and raising it is a pure loss.** From 5 to 17 seeds the realised
+   error is unchanged to two figures; from 33 up the solved count climbs and the error does not.
+4. **`Tolerance = 1e-3` is the right point on the curve.** 1e-2 saves more but its realised error
+   reaches 5.6e-3, which is visible on a −40 dB return-loss plot; 1e-4 gives back most of the saving
+   (1.72× where 1e-3 gets 3.67×) for an error nobody is reading.
+
+**The engine default stays `null`, deliberately.** It is not the user-facing default and never was;
+it is what makes every measured number in L8c/L8d/L9d and P1–P8 reproducible at full precision, and
+R-adf-1's bit-identity gate is written against it. Flipping it would change what every engine test
+measures and buy a user nothing.
+
+## What the owner should know before agreeing, because it is not what the design note promises
+
+**§10.7's "typically cuts solve count by 5–10×" is not what the shipped default sweep gets. On
+1–20 GHz at 101 points the saving is between 1.0× and 1.73×**, and on two of five fixtures it is
+exactly nothing. The explanatory number is one column wide: **adjacent points of that grid already
+differ by 0.13 to 0.63 in |ΔS| — 130× to 630× the tolerance.** Adaptive sampling can skip a point
+only when the interpolant predicts it inside the tolerance, and a grid whose neighbours are that far
+apart is not oversampled with respect to a 1e-3 criterion at all.
+
+**The lever that actually delivers the 5–10× is a FINER grid, which inverts the usual advice.** On
+the FR-4 hero, a **401-point** adaptive sweep costs **3.01 s** and solves 81 points; a **101-point**
+non-adaptive sweep of the same band costs **4.25 s** and solves 101. Four times the frequency
+resolution, in less time. With adaptive sampling on, the solved count is set by the STRUCTURE and
+not by the grid, so **asking for more points is close to free and asking for fewer buys almost
+nothing**. The user documentation currently advises the opposite ("the useful move when in doubt …
+is to reduce the number of requested points"); that sentence is now measurably backwards.
+
+## Four things worth keeping
+
+**1. The narrow-resonance failure mode the brief names could not be constructed, and the reason is
+structural — it is the same fact as the small saving.** For a distributed structure the transmission
+phase rotates at `2π√ε_eff·L/c` per Hz. For a resonance of quality factor Q to be under-resolved the
+grid step must exceed about `f₀/2Q`, and at that step the background's own adjacent-point difference
+is `≈ π·(L/λ_g)/Q` — below a tolerance τ only when `L/λ_g < τ·Q/π`, i.e. shorter than λ/45 at
+τ = 1e-3 and the measured Q ≈ 70. A structure that short cannot host a distributed resonance.
+**Whenever a resonance is sharp enough to fall between two solved points, the background is already
+forcing refinement to the grid floor, and the resonance is bracketed on the way down.** Read the
+other way, that is exactly why so few points can be skipped. Both halves were measured across two
+grids, three tolerances and six seed counts; the argument is supported by the measurements, not
+proved by them.
+
+**2. The real accuracy caveat is a magnitude one, not a missed-feature one: `Tolerance` is a LOCAL
+stopping test, not a global error bound.** On a 1001-point grid at tol 1e-3 the realised worst |ΔS|
+is **1.01e-2 — ten times what was asked for**. L9e's `T1_2` already gates this at `worst < 10 × tol`;
+these numbers sit at that gate rather than inside it. Anyone quoting the tolerance to a user as an
+error bar would be overstating it by up to an order of magnitude.
+
+**3. Adaptive sampling cannot rescue a notch that falls between two REQUESTED frequencies, and the
+user doc's own framing of "the problem it solves" says that it can.** R-adf-2 publishes exactly the
+grid the user asked for and never inserts a point. The measured fixture makes this concrete: its
+notch is 80 MHz wide (Q ≈ 70 — and sweeping tanδ over 1e-5…2e-2 and the coupling gap over
+0.15…2.4 mm moves the depth but not the width, so 80 MHz is what this structure class produces), and
+the panel's default grid steps 190 MHz. On that grid the notch is lost with the feature on or off;
+what the published curve reports as its deepest point is a different feature 5.6 GHz away.
+
+**4. The memory the adaptive branch retains is real but never the binding term.** It keeps every
+solved point's kernel, raw matrix and per-port basis currents alive at once, because the calibration
+is replayed from a fresh branch state after each insertion — `16·N·P` bytes per solved point, ~4 MB
+at N = 1,278 and ~16 MB at N = 5,000. Measured peak managed heap on the taper was **217 MB adaptive
+against 227 MB off**: the transient fill and factorisation dominate by two orders of magnitude, and
+the difference is GC timing. It is worth knowing about only if the retention ever meets a mesh where
+the matrix itself is not the peak.
+
+## How the gates were made
+
+**No new engine test.** The brief gates a flip, and nothing was flipped; `AdaptiveSweepTests` is
+unchanged. Every number above came from a standalone Release harness run one fixture at a time —
+`dotnet test` builds Debug, which would have inverted the timings, and the benchmark tier's own
+warning is that these measurements read ~2× slow alongside each other.
+
+**One UI gate was missing and is now there.** Milestone 3 requires that the panel show a point was
+modelled rather than solved. `WorkspaceViewModel.EmRunSummary` already does — but its only test
+covered the `adaptive: false` path, so the branch that reports the solved count was ungated.
+`EmRunProgressTests.WithAdaptiveSamplingOn_TheFinishedRow_SaysHowMANYPointsWereSOLVED` now asserts
+the requested count, the solved count and the word "modelled" all reach the row.
+
+## What changed, for a reader who only wants the code
+
+```
+tests/Ui.Tests/EmRunProgressTests.cs   + the adaptive branch of the run-summary row
+docs/design/mom-engine.md              §10.7's "rational" and "5-10x" corrected in place
+docs/user/src/reference/mom-engine.md  the interpolant, what a notch between samples does, the advice
+src/Engine/Mom/HISTORY.md              §P9 — every table
+```
+
+No engine source was touched.
+
+## Not done, on purpose
+
+**The default was not flipped in either direction** — the brief forbids it before the owner answers,
+and the user-facing default is already where the recommendation says it should be.
+
+**`PlanarAdaptiveSettings` is still reachable only as a whole.** `EmSetup.AdaptiveSampling` is a
+bool; `Tolerance`, `Interpolant` and `InitialPoints` are not persisted and no panel exposes them.
+Given that `InitialPoints` measurably buys nothing and `Interpolant` was decided by measurement at
+L9e, exposing them would be offering knobs whose right settings are already known. If anything here
+deserves a control it is the tolerance, and only alongside a plainer statement of what it is not.

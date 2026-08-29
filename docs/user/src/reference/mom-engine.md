@@ -605,40 +605,51 @@ prevent, and what the passivity check exists to catch if anything like it ever h
 ### The problem it solves
 
 Fill is O(N²) and solve is O(N³) **per frequency**, because the Green's function is frequency-dependent.
-So a sweep costs the number of points times the cost of a point, and a resonant structure needs a lot of
-points to look right. Sample a resonance on a coarse uniform grid and you get a plot that is *wrong* —
-the notch lands between two samples and vanishes. Sample it finely enough everywhere and you have paid
-for resolution across the whole band to get it in one place.
+So a sweep costs the number of points times the cost of a point. Sample finely enough to see every
+feature and you have paid for that resolution across the whole band; sample coarsely and the sweep is
+cheap but thin. Adaptive sampling breaks that link: it lets you **ask for a fine grid and pay closer to
+what a coarse one costs**, because it solves only where the response is actually doing something.
 
 ### How it works
 
 1. Solve a sparse subset of the requested frequencies.
-2. Fit a **rational interpolant** to what has been solved.
+2. Fit a **complex cubic spline** to what has been solved.
 3. Solve a **midpoint** and compare it with what the model predicted.
 4. Where they disagree, add samples there and refit. Where they agree, stop.
 
-The tolerance is agreement to 10<sup>-3</sup> in |S|. Two properties are worth knowing:
+The tolerance is agreement to 10<sup>-3</sup> in |S|. Three properties are worth knowing:
 
 - **The published sweep is always exactly the grid you asked for.** Adaptive sampling changes which
   points are *solved*, never which are *reported*.
 - **Every solved point carries the solver's own result, unchanged.** Nothing that was actually solved is
   replaced by the model.
+- **It never adds a frequency you did not ask for.** So it cannot rescue a feature that falls *between*
+  two of your requested points — a resonance narrower than your frequency step is lost with the setting
+  on or off. Resolving a feature is the grid's job; adaptive sampling only makes a fine grid affordable.
 
 ### What the tolerance trades
 
 Tighter tolerance means more solved points, so more time, and a curve that tracks the true response more
 closely between the ones you asked for. Looser means fewer solves and a curve that may smooth a feature
-the solver would have found. Because the trade is *entirely* between solve count and fidelity in the
-un-solved gaps, the useful move when in doubt is not to loosen the tolerance — it is to reduce the
-number of requested points.
+the solver would have found.
+
+Two things to know before turning either knob. The tolerance is a **local stopping test, not an error
+bar**: it is checked at the midpoints the refinement probes, and the worst realised difference against a
+fully-solved sweep can be up to about ten times it. And **reducing the number of requested points is
+usually the wrong move** — with adaptive sampling on, how many points get solved is set by the structure
+rather than by your grid, so a coarser grid mostly costs you resolution without saving much time. On a
+20 mm microstrip over 1–20 GHz, asking for 401 points and letting it sample adaptively is *faster* than
+asking for 101 and solving them all.
 
 ### How to tell it converged, and what to do if it did not
 
 The run reports how many points it solved out of how many you requested. Two checks:
 
-- **Solve fraction.** A smooth response converges after solving a small fraction of the grid. A run that
-  solved nearly every point is telling you the response is not smooth on that grid — which is
-  information, not a failure.
+- **Solve fraction.** A response that is smooth *on the grid you asked for* converges after solving a
+  fraction of it. A run that solved nearly every point is telling you the response is not smooth on that
+  grid — which is information, not a failure, and on a wide band over an electrically long structure it
+  is the normal answer, because the transmission phase alone rotates a long way between neighbouring
+  points.
 - **Re-run with the sampling off.** If the curve does not move, it converged. This is the direct test and
   it costs one full sweep; it is worth doing once per new class of structure, not once per run.
 

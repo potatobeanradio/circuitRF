@@ -717,6 +717,18 @@ frequency sampling** (solve sparsely, rational-interpolate, refine where the mod
 essential at L9 — it typically cuts solve count by 5–10× and is the best performance investment after
 the mesh. Build it only when the kernel that needs it exists; v1 does not.
 
+> **Two corrections at P9 (`brief-em-p9-adaptive-sweep-default.md`, 2026-08-29), both measured.**
+> *"rational-interpolate"* is not what shipped: L9e's `T4_2` measured the Floater-Hormann rational
+> form against a complex cubic spline on the one structure here with a real notch, the **spline won**
+> (the rational scheme accepted no modelled point anywhere — strictly more cost, zero saving), and
+> `PlanarAdaptiveSettings.Interpolant` defaults to `CubicSpline`. And *"typically cuts solve count by
+> 5–10×"* is not what the shipped default sweep gets: on the EM panel's own 1–20 GHz / 101-point
+> default the saving is **1.0× to 1.73×** across five fixtures, and on two of them it is nothing,
+> because adjacent points of that grid already differ by 0.13–0.63 in |ΔS| — 130–630× the 1e-3
+> tolerance, so there is nothing an interpolant may skip. The 5–10× is real but it needs a **finer**
+> grid: the same hero at 401 points solves 81 of them in 3.01 s, against 4.25 s for a non-adaptive
+> 101-point sweep of the same band. `HISTORY.md` §P9 carries the tables.
+
 > **Measured at L8c (2026-08-05), on the fill and factorisation as built.** At 10 GHz on FR-4, per
 > frequency, with the frequency-independent geometric core built once:
 >

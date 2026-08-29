@@ -7221,3 +7221,181 @@ make it.
 `AimAcceleratorTests.T2` is the one existing test that had to opt OUT (`NearRadiusMinM: 0`): it sets
 `NearRadiusFactor: 0` deliberately so the radius criterion cannot mask stencil overlap, and a floor in
 metres would have re-widened it and made the test vacuous.
+
+---
+
+# P9 — should adaptive frequency sampling be on by default? (brief-em-p9-adaptive-sweep-default.md, 2026-08-29)
+
+**A decision brief. Nothing was flipped.** Every table below was taken with a standalone Release
+harness, one fixture at a time, never alongside another benchmark — HISTORY's own 2× distortion
+warning. The mesh is deliberately **coarse (cells/λ = 10, edge mesh off)** throughout: the quantity
+under study is the SHAPE of S(f), which is what decides where refinement goes and how well the
+interpolant covers the gaps. Mesh density sets the COST of a point; it does not change that shape's
+spectral content, so it does not change the decision. Every sweep is de-embedded, as a real run is.
+
+**The brief's premise was two days stale, and it matters.** It says the feature "ships
+`PlanarSolveSettings.Adaptive = null` — off". That is still true of the ENGINE default, but the
+shipping USER default was flipped on 2026-08-26 (`An EM setup now runs from the command line`):
+`EmSetupModel.AdaptiveSampling = true`, and `EmRunService` turns that into
+`PlanarAdaptiveSettings.Default`. So the question this brief asks was already answered in the
+affirmative for every run a user starts; what follows measures whether that was right, and what it
+actually buys.
+
+## M1 — what the default DOES, on the EM panel's own default grid
+
+1–20 GHz, **101 points**, de-embedded — the panel's shipped frequency spec.
+`adj |ΔS|` is the largest entry-wise difference between **adjacent points of the requested grid** on
+the fully-solved curve; it is the explanatory number, and the reason it is in the same table as the
+result is that it predicts the result.
+
+| fixture | N | adj \|ΔS\| median | full solve | tol | solved/101 | speed-up | worst stopped | max \|ΔS\| vs full |
+|---|---|---|---|---|---|---|---|---|
+| FR-4 hero line, 20 mm | 94 | 1.29e-1 | 4.25 s | 1e-2 | 39 | **2.94×** | 9.70e-3 | 2.56e-3 |
+| | | | | **1e-3** | **68** | **1.73×** | 3.65e-3 | 1.42e-3 |
+| | | | | 1e-4 | 85 | 1.38× | 3.65e-3 | 1.80e-4 |
+| FR-4 line, 256 mm | 752 | 6.34e-1 | 7.85 s | 1e-2 | 101 | **0.99×** | 1.01e+0 | 0 |
+| | | | | **1e-3** | **101** | **0.99×** | 1.01e+0 | 0 |
+| | | | | 1e-4 | 101 | 0.99× | 1.01e+0 | 0 |
+| taper 60 mm, 2.9→0.5 mm | 1,278 | 3.36e-1 | 15.63 s | 1e-2 | 101 | 0.99× | 8.69e-2 | 0 |
+| | | | | **1e-3** | **101** | **0.99×** | 8.69e-2 | 0 |
+| | | | | 1e-4 | 101 | 0.99× | 8.69e-2 | 0 |
+| open stub (λ_g/4 notch) | 304 | 1.73e-1 | 4.48 s | 1e-2 | 70 | 1.45× | 7.13e-3 | 1.03e-3 |
+| | | | | **1e-3** | **87** | **1.16×** | 5.78e-3 | 3.99e-4 |
+| | | | | 1e-4 | 101 | 1.00× | 5.78e-3 | 0 |
+| coupled λ_g/2 resonator | 160 | 2.95e-1 | 4.22 s | 1e-2 | 89 | 1.14× | 4.18e-1 | 1.06e-3 |
+| | | | | **1e-3** | **101** | **1.00×** | 4.18e-1 | 0 |
+| | | | | 1e-4 | 101 | 1.00× | 4.18e-1 | 0 |
+
+**Read the `0` in the last column as "solved every point", not as "more accurate"** — L9e's own
+warning, and three of the five fixtures land there at the default tolerance.
+
+**On the shipped default grid, at the shipped default tolerance, the saving is between nothing and
+1.73×.** §10.7's "typically cuts solve count by 5–10×" is not what this grid gets on any fixture
+measured. The adjacent-|ΔS| column says why in one number: consecutive points of the requested grid
+already differ by **0.13 to 0.63**, i.e. **130× to 630× the tolerance**. Adaptive sampling can skip a
+point only when the interpolant predicts it to within the tolerance; a grid whose neighbours are that
+far apart is not oversampled at all with respect to a 1e-3 criterion, and there is nothing to skip.
+
+**Where the disagreement is huge, the run says so.** `WorstAdaptiveDisagreement` reads **1.01** on the
+256 mm line — near the largest an s-parameter difference can be. That is refinement reporting "I ran
+out of grid", not "I converged", and it is already published on `PlanarSolveResult` and in the run's
+own note.
+
+## M1b — the saving is a function of how OVERSAMPLED the requested grid is
+
+Same fixtures, same band, more points. This is the measurement that reconciles §10.7 with M1.
+
+| fixture / grid | step | adj \|ΔS\| median | tol | solved | speed-up | max \|ΔS\| vs full |
+|---|---|---|---|---|---|---|
+| hero, 1–20 GHz, 101 pts | 190 MHz | 1.29e-1 | 1e-3 | 68/101 | 1.73× | 1.42e-3 |
+| hero, 1–20 GHz, **201 pts** | 95 MHz | 6.48e-2 | 1e-2 | 39/201 | 5.33× | 2.36e-3 |
+| | | | **1e-3** | **77/201** | **2.80×** | 7.75e-4 |
+| | | | 1e-4 | 134/201 | 1.61× | 4.49e-4 |
+| hero, 1–20 GHz, **401 pts** | 48 MHz | 3.24e-2 | 1e-2 | 39/401 | 10.16× | 2.88e-3 |
+| | | | **1e-3** | **81/401** | **4.94×** | 1.25e-3 |
+| | | | 1e-4 | 170/401 | 2.33× | 7.09e-4 |
+| hero, **1–5 GHz**, 101 pts | 40 MHz | 2.62e-2 | 1e-3 | 29/101 | 3.48× | 2.37e-4 |
+| | | | 1e-4 | 49/101 | 2.06× | 9.78e-5 |
+| taper 60 mm, 1–20 GHz, 201 pts | 95 MHz | 1.68e-1 | 1e-3 | 200/201 | 1.00× | 9.49e-4 |
+
+**The consequence is counter-intuitive and it is measured, not argued.** On the hero, a **401-point**
+adaptive sweep costs **3.01 s** and solves 81 points; a **101-point** non-adaptive sweep of the same
+band costs **4.25 s** and solves 101. Four times the frequency resolution, for less time. With
+adaptive sampling on, **asking for more points is close to free and asking for fewer buys almost
+nothing** — the solved count is set by the structure, not by the grid. The taper row is the limit
+case: at 95 MHz its neighbours still differ by 0.17, so even 201 points is not oversampled and it
+solves 200 of them.
+
+## M2 — the narrow-resonance failure mode, and what `InitialPoints` buys
+
+The fixture is a side-coupled open-ended λ_g/2 resonator beside a 40 mm through line (resonator
+13.8 mm, gap 0.6 mm, εr 4.4, tanδ 1e-5, coarse mesh, N = 160). Measured on a 5 MHz scan: the notch is
+at **5.63 GHz, −7.2 dB, 80 MHz wide at half depth (Q ≈ 70)**. Sweeping tanδ over 1e-5…2e-2 and the gap
+over 0.15…2.4 mm moves the depth but **not the width** — 80 MHz throughout — so that is the narrowest
+feature this structure class produces at this mesh.
+
+**First, the honest boundary: on the shipping default grid the notch is invisible to the REQUESTED
+grid, adaptive or not.** 101 points over 1–20 GHz is a 190 MHz step against an 80 MHz feature.
+R-adf-2 publishes exactly the grid the user asked for and never inserts a point, so **adaptive
+sampling cannot rescue a resonance that falls between two requested frequencies** — that is a
+property of the requested grid alone. (M1's last row shows the symptom: its deepest published |S21|
+is −6.5 dB at 11.26 GHz, a different feature entirely.)
+
+On grids that DO resolve it:
+
+| grid | step | notch width | tol | init | solved | speed-up | max \|ΔS\| | notch error |
+|---|---|---|---|---|---|---|---|---|
+| 4–7 GHz, 501 pts | 6 MHz | ~13 pts | 1e-2 | 5 | 61/501 | 8.12× | 9.75e-4 | **0.0 dB** |
+| | | | 1e-2 | 17 | 63/501 | 8.07× | 9.67e-4 | 0.0 dB |
+| | | | 1e-2 | 65 | 137/501 | 3.71× | 1.13e-4 | 0.0 dB |
+| | | | **1e-3** | **5** | **95/501** | **5.34×** | 2.53e-4 | **0.0 dB** |
+| | | | 1e-3 | 17 | 95/501 | 5.32× | 2.53e-4 | 0.0 dB |
+| | | | 1e-3 | 65 | 149/501 | 3.41× | 8.25e-5 | 0.0 dB |
+| | | | 1e-4 | 5 | 136/501 | 3.75× | 3.53e-5 | 0.0 dB |
+| 1–20 GHz, 1001 pts | 19 MHz | ~4 pts | 1e-2 | 5 | 162/1001 | 6.19× | 5.55e-3 | **0.0 dB** |
+| | | | 1e-2 | 129 | 285/1001 | 3.51× | 4.77e-3 | 0.0 dB |
+| | | | **1e-3** | **5** | **272/1001** | **3.67×** | **1.01e-2** | **0.0 dB** |
+| | | | 1e-3 | 17 | 277/1001 | 3.59× | 5.85e-3 | 0.0 dB |
+| | | | 1e-3 | 129 | 343/1001 | 2.92× | 5.85e-3 | 0.0 dB |
+| | | | 1e-4 | 5 | 582/1001 | 1.72× | 1.58e-3 | 0.0 dB |
+
+**The notch depth and frequency are recovered EXACTLY in all 33 configurations run** — every
+tolerance, every seed count, both grids. No configuration was found in which the interpolant loses
+the resonance.
+
+**`InitialPoints` buys nothing and should not be raised.** From 5 to 17 seeds the realised error is
+unchanged to two figures on both grids; from 33 upward the solved count climbs and the error does
+not fall in proportion. Its only visible effect is cost.
+
+**The one real accuracy caveat, and it is a magnitude caveat rather than a missed-feature one: the
+tolerance is a LOCAL stopping test, not a global error bound.** On the 1001-point grid at tol 1e-3
+the realised worst |ΔS| against the fully-solved answer is **1.01e-2 — ten times the number asked
+for**. On the default 101-point grid the overshoot is milder (1.42e-3 against 1e-3, 1.4×), because
+there refinement runs to the grid floor almost everywhere. L9e's `T1_2` already gates this at
+`worst < 10 × tol`; these numbers sit right at that gate rather than comfortably inside it.
+
+## M3 — what it costs when it saves nothing
+
+**Time: about 1%.** The 256 mm line and the 60 mm taper both solve all 101 points under adaptive
+sampling and both read **0.99×** — the overhead is the interpolant evaluations at each probe plus the
+calibration replays, and the replays are cache hits by construction (R-adf-3).
+
+**Memory: real in principle, unmeasurable at this size.** The adaptive branch keeps every solved
+point's kernel, raw matrix and per-port basis-current vectors alive simultaneously, because the
+calibration is replayed from a fresh branch state after every insertion; the plain loop keeps one
+point's worth. The dominant term is the currents, **16·N·P bytes per solved point** — 4.1 MB at
+N = 1,278 with 101 points and 2 ports, and ~16 MB at N = 5,000. Against the run's own peak managed
+heap this does not show: **217 MB adaptive against 227 MB off** on the taper (polled at 25 ms, peak
+`GC.GetGCMemoryInfo().HeapSizeBytes`), the difference being GC timing rather than retention. The
+transient fill and factorisation dominate by two orders of magnitude.
+
+## Why the saving is small and the resonance is never lost — the same fact, stated once
+
+For a distributed structure the transmission phase rotates at `dφ/df = 2π√ε_eff·L/c`, so one grid
+step of `Δf` already moves S by roughly that much regardless of what else is in the band. For a
+resonance of quality factor Q at `f₀` to be under-resolved — narrower than about two grid steps —
+the step must satisfy `Δf ≳ f₀/2Q`. At that step the background's own adjacent-point difference is
+
+    |ΔS|_background ≈ (2π√ε_eff·L/c)·(f₀/2Q) = π·(L/λ_g)/Q
+
+which is below a tolerance τ only when `L/λ_g < τ·Q/π`. For τ = 1e-3 and the measured Q ≈ 70 that is
+`L/λ_g < 0.022` — a structure shorter than λ/45, which cannot host a distributed resonance in the
+first place. **So whenever a resonance is sharp enough to fall between two solved points, the
+background is already forcing refinement down to the grid floor, and the resonance gets bracketed on
+the way down.** The measurements are consistent with this at every point tested; it is an argument
+supported by them, not a proof.
+
+The same sentence read the other way is M1's result: refinement is driven to the grid floor by the
+background, which is exactly why so few points can be skipped.
+
+## Two sentences elsewhere in the tree that these numbers make false
+
+Both corrected in place with a dated note, per the series convention:
+
+- **`docs/design/mom-engine.md` §10.7** — "rational-interpolate" (L9e's `T4_2` measured the spline
+  as the winner and `PlanarAdaptiveSettings.Interpolant` defaults to `CubicSpline`) and "typically
+  cuts solve count by 5–10×" (1.0×–1.7× on the shipped default grid; 5–10× needs 2–4× the points).
+- **`docs/user/src/reference/mom-engine.md` §Adaptive frequency sampling** — the same "rational
+  interpolant" error; a "problem it solves" framing that implies adaptive sampling rescues a notch
+  falling between two samples (it cannot — it never adds a published point); and tuning advice to
+  **reduce** the requested point count, which is backwards for the shipped scheme.
