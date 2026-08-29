@@ -241,10 +241,16 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
     public IReadOnlyList<Trace> OtherTraces =>
         Container.PlotVM.Plot.Traces.Where(t => t != Trace).ToList();
 
+    /// <summary>Every trace in this box's plot, in placement order — what
+    /// <see cref="Trace.BuildMarkerBoxLines"/> needs to add the multi-marker rows and, for a
+    /// contour marker, one row per contour trace. Null for a plain marker so the box keeps
+    /// its single-trace shape.</summary>
+    public IReadOnlyList<Trace>? PlotTraces =>
+        Marker.IsMulti || Trace.IsContourTrace ? Container.PlotVM.Plot.Traces.ToList() : null;
+
     private void RefreshSize()
     {
-        var otherTraces = Marker.IsMulti ? OtherTraces : null;
-        var (w, h) = MarkerRenderer.MeasureInfoBox(Marker, Trace, _getFreqUnit(), ShowFilePrefix, otherTraces);
+        var (w, h) = MarkerRenderer.MeasureInfoBox(Marker, Trace, _getFreqUnit(), ShowFilePrefix, PlotTraces);
         _logicalBoxWidth  = w;
         _logicalBoxHeight = h;
         OnPropertyChanged(nameof(BoxWidth));

@@ -264,24 +264,24 @@ public partial class MarkerEditorViewModel : ViewModelBase
     {
         if (_parent is null || !_parent.Trace.IsContourTrace) return;
         var pos = _marker.PositionStatic;
-        Complex shown = _parent.PlotType == PlotType.Rect
-            ? new Complex(pos.X, pos.Y)
-            : RfHelpers.G2Z(new Complex(pos.X, pos.Y)) * RealZ0();
-        ImpedanceText = ComplexStringHelper.Format(shown, "G6");
+        // Trace.ContourImpedance is the single Γ→Z conversion — the info box's "Z=" row reads the
+        // same call, so this field and that row cannot state different terminations for one marker.
+        ImpedanceText = ComplexStringHelper.Format(
+            _parent.Trace.ContourImpedance(new Complex(pos.X, pos.Y),
+                                           gammaPlane: _parent.PlotType != PlotType.Rect), "G6");
     }
 
     public void CommitImpedance()
     {
-        System.Console.WriteLine($"[CommitImpedance] entered. live={MarkerIsLive} parentNull={_parent is null} contour={_parent?.Trace.IsContourTrace} text='{ImpedanceText}'");
         if (!MarkerIsLive || _parent is null || !_parent.Trace.IsContourTrace) return;
-        if (!ComplexStringHelper.TryParse(ImpedanceText, out Complex z)) { System.Console.WriteLine("[CommitImpedance] PARSE FAILED"); SyncImpedanceText(); return; }
+        // An unparseable entry is not an error to report — the field simply snaps back to the
+        // marker's actual impedance, which is the correction the user needs to see.
+        if (!ComplexStringHelper.TryParse(ImpedanceText, out Complex z)) { SyncImpedanceText(); return; }
         Complex posC = _parent.PlotType == PlotType.Rect
             ? z
             : RfHelpers.Z2G(z / RealZ0());
         var world = new System.Numerics.Vector2((float)posC.Real, (float)posC.Imaginary);
-        var resolved = _parent.Trace.ResolveContourMarkerPosition(_marker, world);
-        System.Console.WriteLine($"[CommitImpedance] plot={_parent.PlotType} z={z} posC={posC} world={world} resolved={resolved} snapped={_marker.ContourSnapped} before={_marker.PositionStatic}");
-        _marker.PositionStatic = resolved;
+        _marker.PositionStatic = _parent.Trace.ResolveContourMarkerPosition(_marker, world);
         SyncImpedanceText();
         NotifyParent();
         _parent.Container.RequestPlotRedraw();
@@ -419,17 +419,43 @@ public partial class MarkerEditorViewModel : ViewModelBase
     public string OwnZ0Line => _parent is null ? "Z0=50 Ω"
         : $"Z0={ComplexStringHelper.Format(_parent.Trace.MarkerZ0)} Ω";
 
-    /// <summary>True when the multi-trace section should be visible.</summary>
-    public bool HasMultiLines => _parent is not null && IsMulti && _parent.PlotType == PlotType.Rect;
+    /// <summary>True when the extra-trace section should be visible: a multi-marker on a Rect plot,
+    /// or a contour marker with sibling contour traces to read out beside its own.</summary>
+    public bool HasMultiLines =>
+        _parent is not null &&
+        ((IsMulti && _parent.PlotType == PlotType.Rect) || SiblingContours.Count > 0);
+
+    /// <summary>The OTHER contour traces in this marker's plot, in placement order. Empty unless the
+    /// marker sits on a contour — the readout only makes sense between loadpull surfaces.</summary>
+    private IReadOnlyList<Trace> SiblingContours =>
+        _parent is null || !_parent.Trace.IsContourTrace
+            ? Array.Empty<Trace>()
+            : _parent.Container.PlotVM.Plot.Traces
+                     .Where(t => t.IsContourTrace && t != _parent.Trace).ToList();
 
     /// <summary>
     /// One item per other trace in the plot.  Values are absolute or delta depending on IsDelta.
+    /// For a contour marker these are the plot's other contour metrics at the SAME termination —
+    /// the same rows, in the same order, that the info box shows under the marker's own.
     /// </summary>
     public IReadOnlyList<MultiTraceLineItem> MultiLines
     {
         get
         {
             if (!HasMultiLines) return Array.Empty<MultiTraceLineItem>();
+
+            if (_parent!.Trace.IsContourTrace)
+            {
+                var coord = new Complex(_marker.PositionStatic.X, _marker.PositionStatic.Y);
+                return SiblingContours
+                    .Select(t => new MultiTraceLineItem
+                    {
+                        DataText = t.ContourMetricLine(_marker, coord),
+                        Z0Text   = "",
+                    })
+                    .ToList();
+            }
+
             var result = new List<MultiTraceLineItem>();
             foreach (var t in _parent.Container.PlotVM.Plot.Traces)
             {

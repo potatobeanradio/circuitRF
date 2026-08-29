@@ -618,12 +618,12 @@ namespace CircuitRF.Ui.DataDisplay
             Trace    trace,
             FreqUnit freqUnit,
             bool     showFilePrefix = true,
-            IReadOnlyList<Trace>? otherTraces = null)
+            IReadOnlyList<Trace>? plotTraces = null)
         {
             float ts      = InfoBoxTextSize(marker);
             float padding = ts * 0.3f;
 
-            var lines = trace.BuildMarkerBoxLines(marker, freqUnit, showFilePrefix, otherTraces);
+            var lines = trace.BuildMarkerBoxLines(marker, freqUnit, showFilePrefix, plotTraces);
 
             // Use fallback-aware measure so lines containing ∠ (U+2220) are sized correctly.
             // Each line MUST be measured with the same weight DrawInfoBox renders it in — the
@@ -662,9 +662,9 @@ namespace CircuitRF.Ui.DataDisplay
             bool                 transparentBackground = false,
             bool                 isSelected            = false,
             SKColor              selectionColor        = default,
-            IReadOnlyList<Trace>? otherTraces          = null)
+            IReadOnlyList<Trace>? plotTraces           = null)
         {
-            var lines = trace.BuildMarkerBoxLines(marker, freqUnit, showFilePrefix, otherTraces);
+            var lines = trace.BuildMarkerBoxLines(marker, freqUnit, showFilePrefix, plotTraces);
 
             // Derive font size from the actual control height so the text scales
             // correctly when the info box is zoomed (BoxHeight = logical * zoom).

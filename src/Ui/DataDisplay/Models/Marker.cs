@@ -176,6 +176,26 @@ namespace CircuitRF.Ui.DataDisplay
             };
         }
 
+        /// <summary>
+        /// Formats an IMPEDANCE. Reads in rectangular ohms (R+jX) rather than in the marker's
+        /// Γ/S-parameter format, because a termination written "133.3∠26.6°" is not the number that
+        /// goes into a matching network — and it is the same spelling the marker editor's Impedance
+        /// field uses, so the info box and the popup agree. Honours <see cref="MatrixFormatImpedance"/>,
+        /// which was carried and copied but never read until this readout existed.
+        /// </summary>
+        public string FormatImpedanceComplex(Complex c)
+        {
+            string fmt = $"{FormatString.ToString()}{MaximumFractionDigits}";
+            return MatrixFormatImpedance switch
+            {
+                MatrixFormat.MA =>
+                    $"{c.Magnitude.ToString(fmt)}∠{(c.Phase * 180 / Math.PI).ToString(fmt)}°",
+                MatrixFormat.DB =>
+                    $"{(20 * Math.Log10(c.Magnitude + 1e-300)).ToString(fmt)} dB ∠{(c.Phase * 180 / Math.PI).ToString(fmt)}°",
+                _ => FormatRI(c, fmt)
+            };
+        }
+
         // Inlined from splotRF.ViewModels.ComplexStringHelper.Format.
         // Engineering convention: j precedes the (unsigned) imaginary magnitude, e.g.
         // "50+j5" / "50-j5" (not "50+5j").

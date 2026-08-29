@@ -245,7 +245,7 @@ namespace CircuitRF.Ui.DataDisplay
                             boxVm.Marker, boxVm.Trace, boxVm.FreqUnit,
                             theme, showFilePrefix,
                             transparentBackground: appSettings.MarkerBoxTransparentBackground,
-                            otherTraces: boxVm.Marker.IsMulti ? boxVm.OtherTraces : null);
+                            plotTraces: boxVm.PlotTraces);
                         canvas.Restore();
                     }
                 }
@@ -514,7 +514,7 @@ namespace CircuitRF.Ui.DataDisplay
                         boxVm.Marker, boxVm.Trace, boxVm.FreqUnit,
                         theme, showFilePrefix,
                         transparentBackground: appSettings.MarkerBoxTransparentBackground,
-                        otherTraces: boxVm.Marker.IsMulti ? boxVm.OtherTraces : null);
+                        plotTraces: boxVm.PlotTraces);
                     canvas.Restore();
                 }
             }

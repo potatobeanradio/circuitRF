@@ -712,7 +712,7 @@ public sealed class PanAndMarkerLabelTests
         var marker = new Marker(t1, Freqs[1], isMulti: true, isDelta: false, index: 1);
         t1.Markers.Add(marker);
 
-        var boxLines = t1.BuildMarkerBoxLines(marker, FreqUnit.GHz, showFilePrefix: false, otherTraces: [t2]);
+        var boxLines = t1.BuildMarkerBoxLines(marker, FreqUnit.GHz, showFilePrefix: false, plotTraces: [t1, t2]);
         Assert.Contains(boxLines, l => l.Text.StartsWith("S(1,1) dB20="));
         Assert.Contains(boxLines, l => l.Text.StartsWith("S(2,1) dB20="));
         Assert.DoesNotContain(boxLines, l => l.Text.Contains("dB(S("));

@@ -246,7 +246,7 @@ public partial class MarkerInfoBoxView : UserControl
             AppSettingsViewModel.Instance.MarkerBoxTransparentBackground,
             isSelected,
             selColor,
-            Vm.Marker.IsMulti ? Vm.OtherTraces : null));
+            Vm.PlotTraces));
     }
 
     private sealed class InfoBoxDrawOperation : ICustomDrawOperation
@@ -260,13 +260,13 @@ public partial class MarkerInfoBoxView : UserControl
         private readonly bool        _transparentBackground;
         private readonly bool        _isSelected;
         private readonly SKColor     _selectionColor;
-        private readonly IReadOnlyList<Trace>? _otherTraces;
+        private readonly IReadOnlyList<Trace>? _plotTraces;
 
         public InfoBoxDrawOperation(
             Rect bounds, Marker marker, Trace trace,
             FreqUnit freqUnit, RenderTheme theme, bool showFilePrefix,
             bool transparentBackground, bool isSelected = false,
-            SKColor selectionColor = default, IReadOnlyList<Trace>? otherTraces = null)
+            SKColor selectionColor = default, IReadOnlyList<Trace>? plotTraces = null)
         {
             _bounds                = bounds;
             _marker                = marker;
@@ -277,7 +277,7 @@ public partial class MarkerInfoBoxView : UserControl
             _transparentBackground = transparentBackground;
             _isSelected            = isSelected;
             _selectionColor        = selectionColor;
-            _otherTraces           = otherTraces;
+            _plotTraces            = plotTraces;
         }
 
         public bool   Equals(ICustomDrawOperation? other) => false;
@@ -294,7 +294,7 @@ public partial class MarkerInfoBoxView : UserControl
                 (W: _bounds.Width, H: _bounds.Height),
                 _marker, _trace, _freqUnit, _theme, _showFilePrefix,
                 _transparentBackground, _isSelected, _selectionColor,
-                _otherTraces);
+                _plotTraces);
         }
 
         public void Dispose() { }

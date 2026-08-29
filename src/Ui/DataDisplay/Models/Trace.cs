@@ -2022,7 +2022,7 @@ namespace CircuitRF.Ui.DataDisplay
         /// harmonic-stem InfoBox); otherwise a single "&lt;axis&gt;=&lt;value&gt;" row. Then the X-axis
         /// row (swept variable name + value + unit), then the cube value.</summary>
         private List<(string, bool)> BuildCubeMarkerBoxLines(Marker m, FreqUnit freqUnit, bool showFilePrefix,
-            IReadOnlyList<Trace>? otherTraces = null)
+            IReadOnlyList<Trace>? plotTraces = null)
         {
             var lines = new List<(string, bool)> { (m.MarkerString, true) };
 
@@ -2163,9 +2163,9 @@ namespace CircuitRF.Ui.DataDisplay
             // Multi-marker rows: the same X sample read on every other trace in the plot.
             // Cube traces are keyed by X-index, not frequency, so this uses the cube path.
             // When the other trace's X axis is incompatible (different length), the value is NaN.
-            if (m.IsMulti && otherTraces != null)
-                foreach (var other in otherTraces)
-                    lines.Add((GetMultiMarkerLine(m, other), false));
+            if (m.IsMulti && plotTraces != null)
+                foreach (var other in plotTraces)
+                    if (!Equals(other)) lines.Add((GetMultiMarkerLine(m, other), false));
 
             return lines;
         }
@@ -2302,19 +2302,48 @@ namespace CircuitRF.Ui.DataDisplay
             return $"{desc}={val}";
         }
 
+        /// <summary>
+        /// "metric=value unit" for THIS contour trace, evaluated at a marker's coordinate.
+        /// One formatter for the marker's own row, for the sibling-contour rows the info box adds
+        /// beside it, and for the editor popup — a second copy is a second chance for the box and
+        /// the popup to disagree about the same point.
+        /// </summary>
+        internal string ContourMetricLine(Marker m, Complex coord)
+        {
+            if (ContourData is not { } cd) return "";
+            double val    = cd.EvaluateMetric?.Invoke(coord, m.ContourSnapped) ?? double.NaN;
+            string metric = string.IsNullOrEmpty(cd.MetricName) ? "value" : cd.MetricName;
+            string fmt    = $"{m.FormatString}{m.MaximumFractionDigits}";
+            string valStr = double.IsFinite(val) ? val.ToString(fmt) : "NaN";
+            string unit   = string.IsNullOrEmpty(cd.MetricUnitString) ? "" : $" {cd.MetricUnitString}";
+            return $"{metric}={valStr}{unit}";
+        }
+
+        /// <summary>
+        /// The physical termination (Ω) a contour marker's coordinate stands for.
+        /// <para>On the Γ plane the coordinate is a reflection coefficient against THIS trace's own
+        /// <see cref="Z0"/> — the reference <c>RebuildContour</c> fits the surface in — so
+        /// Z = Z0·(1+Γ)/(1−Γ), the loadpull surface's own convention. That is deliberately NOT the
+        /// power-wave form <c>FormatImpedance</c> uses for S-parameter readouts: reporting a
+        /// termination the fitted surface does not agree with would be worse than reporting none.</para>
+        /// <para>On a Rect (Z-plane) contour the coordinate already IS the impedance.</para>
+        /// <param name="gammaPlane">Overrides which plane the coordinate is in. Callers that know the
+        /// PLOT type should pass it: <c>ContourData.GammaPlane</c> is set by the fit and falls back to
+        /// false when a fit fails, which on a Smith plot would read a Γ out as if it were ohms.</param>
+        /// </summary>
+        public Complex ContourImpedance(Complex coord, bool? gammaPlane = null)
+        {
+            if (ContourData is not { } cd) return coord;
+            if (!(gammaPlane ?? cd.GammaPlane)) return coord;
+            var z0 = Z0 == Complex.Zero ? new Complex(50, 0) : Z0;
+            return RfHelpers.G2Z(coord) * z0;
+        }
+
         /// <summary>The marker value line for the compact editor readout, by kind.</summary>
         public string GetEditorDataLine(Marker m, bool showFilePrefix)
         {
-            if (IsContourTrace && ContourData is { } cd)
-            {
-                var coord   = new Complex(m.PositionStatic.X, m.PositionStatic.Y);
-                double val  = cd.EvaluateMetric?.Invoke(coord, m.ContourSnapped) ?? double.NaN;
-                string metric = string.IsNullOrEmpty(cd.MetricName) ? "value" : cd.MetricName;
-                string fmt    = $"{m.FormatString}{m.MaximumFractionDigits}";
-                string valStr = double.IsFinite(val) ? val.ToString(fmt) : "NaN";
-                string unit   = string.IsNullOrEmpty(cd.MetricUnitString) ? "" : $" {cd.MetricUnitString}";
-                return $"{metric}={valStr}{unit}";
-            }
+            if (IsContourTrace)
+                return ContourMetricLine(m, new Complex(m.PositionStatic.X, m.PositionStatic.Y));
             if (IsHarmonicStem) return GetStemValString(m, showFilePrefix);
             if (IsCubeXMarker)
             {
@@ -2738,26 +2767,39 @@ namespace CircuitRF.Ui.DataDisplay
             return FormatImpedance(temp[Row, Col], refZ0, m);
         }
 
+        /// <param name="plotTraces">Every trace in the plot the info box belongs to, in the order they
+        /// were placed — including the marker's own. Multi-markers read the others; a CONTOUR marker
+        /// reads all of them, because comparing power against efficiency at one termination is the
+        /// whole point of the readout. Null when the caller has no plot context (tests, design time),
+        /// in which case only this trace is reported.</param>
         public List<(string Text, bool Bold)> BuildMarkerBoxLines(Marker m, FreqUnit freqUnit,
-            bool showFilePrefix = true, IReadOnlyList<Trace>? otherTraces = null)
+            bool showFilePrefix = true, IReadOnlyList<Trace>? plotTraces = null)
         {
             if (IsContourTrace && ContourData is { } cd)
             {
                 var lines = new List<(string, bool)> { (m.MarkerString, true) };
 
                 var coord = new Complex(m.PositionStatic.X, m.PositionStatic.Y);
-                double val = cd.EvaluateMetric?.Invoke(coord, m.ContourSnapped) ?? double.NaN;
 
-                string metric = string.IsNullOrEmpty(cd.MetricName) ? "value" : cd.MetricName;
-                string fmt    = $"{m.FormatString}{m.MaximumFractionDigits}";
-                string valStr = double.IsFinite(val) ? val.ToString(fmt) : "NaN";
-                string unit   = string.IsNullOrEmpty(cd.MetricUnitString) ? "" : $" {cd.MetricUnitString}";
-                lines.Add(($"{metric}={valStr}{unit}", false));
+                // One row per contour trace in the plot, in placement order: a loadpull marker is
+                // placed to ask "what do I get at THIS termination", and the answer is every plotted
+                // metric at once, not just the trace that happens to own the marker. Every contour in
+                // one plot is fitted in that plot's own plane (Γ on Smith/Polar, Z on Rect), so the
+                // marker's single coordinate evaluates all of their surfaces.
+                var contours = plotTraces is null
+                    ? new List<Trace>()
+                    : plotTraces.Where(t => t.IsContourTrace).ToList();
+                if (!contours.Contains(this)) contours.Insert(0, this);
+                foreach (var ct in contours)
+                    lines.Add((ct.ContourMetricLine(m, coord), false));
 
-                string coordLbl = cd.GammaPlane ? "Γ" : "Z";
-                // Impedance readout carries an Ω unit; the reflection-coefficient (Γ) readout is unitless.
-                string coordUnit = cd.GammaPlane ? "" : " Ω";
-                lines.Add(($"{coordLbl}={m.FormatComplex(coord)}{coordUnit}", false));
+                // Impedance is always reported — the termination in ohms is what leaves the plot and
+                // goes into a matching network. Γ follows it only on a Γ plane (Smith/Polar), where it
+                // is a second reading of the same point; on a Rect contour the coordinate IS the
+                // impedance and a Γ row would just repeat the row above.
+                lines.Add(($"Z={m.FormatImpedanceComplex(ContourImpedance(coord))} Ω", false));
+                if (cd.GammaPlane)
+                    lines.Add(($"Γ={m.FormatComplex(coord)}", false));
                 return lines;
             }
 
@@ -2772,7 +2814,7 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             if (IsCubeXMarker)
-                return BuildCubeMarkerBoxLines(m, freqUnit, showFilePrefix, otherTraces);
+                return BuildCubeMarkerBoxLines(m, freqUnit, showFilePrefix, plotTraces);
 
             var standardLines = new List<(string, bool)>
             {
@@ -2785,9 +2827,9 @@ namespace CircuitRF.Ui.DataDisplay
             if (IsStabilityCircle)
                 standardLines.Add((MuString(m), false));
 
-            if (m.IsMulti && otherTraces != null)
-                foreach (var other in otherTraces)
-                    standardLines.Add((GetMultiMarkerLine(m, other), false));
+            if (m.IsMulti && plotTraces != null)
+                foreach (var other in plotTraces)
+                    if (!Equals(other)) standardLines.Add((GetMultiMarkerLine(m, other), false));
 
             return standardLines;
         }

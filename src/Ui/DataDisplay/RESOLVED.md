@@ -5,6 +5,51 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## Contour markers read out the whole plot, not just their own trace (GitHub #2, 2026-08-29)
+
+**Reported:** a user asked for a loadpull marker to show complex impedance, P3dB and efficiency
+together, so that picking Zmod/Zopt off the plot is one reading rather than three markers.
+
+A marker on a contour now builds its info box (and the editor popup's readout block) from **every
+contour trace in the plot**, in placement order, then the impedance, then Γ. Only contour markers
+change; every other marker's box is byte-identical.
+
+- **The plot context had to reach the builder.** `BuildMarkerBoxLines`'s last parameter was
+  `otherTraces`, supplied only when `Marker.IsMulti` — four call sites each repeated that gate. It is
+  now `plotTraces`: **every** trace in the plot, in order, including the marker's own, supplied by the
+  one new `MarkerInfoBoxViewModel.PlotTraces`. Placement order is not recoverable from an
+  "everything except me" list, and the requested row order is the plot's order, not owner-first. The
+  multi-marker paths skip `this` themselves, so their output is unchanged.
+- **The Γ→Z conversion is the loadpull surface's, NOT `FormatImpedance`'s.** `Trace.ContourImpedance`
+  uses `Z = Z0·(1+Γ)/(1−Γ)` — what `LoadpullSurface.RenormGamma` and `RebuildContour` fit in, via the
+  trace's own `Z0`. `FormatImpedance`, which every S-parameter readout uses, is the power-wave form
+  `z0·(z̄0/z0 + s)/(1 − s)`; the two agree only for a real reference. Reporting a termination the
+  fitted surface itself does not agree with would be worse than reporting none, so this is a second
+  formula on purpose, not a missed reuse. The marker editor's Impedance field now calls the same
+  method, so the field and the "Z=" row cannot drift.
+- **`ContourData.GammaPlane` is not a safe sole plane oracle.** `ClearContourGrid` sets it to *false*
+  when a fit fails, which on a Smith plot would read a Γ out as if it were ohms. `ContourImpedance`
+  therefore takes an optional `gammaPlane` override, and the editor — which knows the real
+  `PlotType` — passes it. The info box keeps `GammaPlane`, which is what it already used to pick its
+  Γ-vs-Z label.
+- **`Marker.MatrixFormatImpedance` was dead** — declared, copy-constructed, never read. It is now the
+  impedance row's format (default `RI`), because the marker's own `MatrixFormat` is `MA` or `DB` on
+  these plots and "133.3∠26.6°" is not the number that goes into a matching network. Γ still uses
+  `MatrixFormat`, so one marker shows polar Γ beside rectangular ohms, which is the conventional pair.
+- Non-contour traces sharing the plot contribute no rows: nothing else in a plot is sliceable by
+  termination.
+
+Tests: `ContourMarkerReadoutTests.cs` (10) — placement order, the five-row order, the Z0 arithmetic
+at two references, rectangular-vs-polar spelling, the Rect/Z-plane no-Γ case, non-contour traces
+ignored, the null-plot-context fallback, an ordinary marker unchanged, and the VM-supplies-the-plot
+wiring end to end (a correct builder fed a null plot list would still have shipped the old one-row
+box).
+
+**Also removed:** three `System.Console.WriteLine` debug lines left in
+`MarkerEditorViewModel.CommitImpedance` by an earlier round, which fired on every impedance commit in
+the shipped GUI.
+
+
 ## A damaged `.cdd` opened blank, silently, and then overwrote itself (2026-08-26)
 
 **Reported:** *"somehow i managed to get the data display to get corrupted .. i had to make a new
