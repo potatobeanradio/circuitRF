@@ -812,7 +812,11 @@ for the two ladders, the conformal check and the calibration-standard limit that
   worth spending. **`NearRadiusFactor = 6.0` in code is correct and was never the discrepancy; the
   prose was the bug**, conflating the pre-build viability check's "8" with R-emp-17's shipped "6" as
   though they were the same knob. Shipped defaults where it's turned on: projection order 3,
-  auxiliary-grid pitch 0.5 of the largest basis support, near radius 6 supports.
+  auxiliary-grid pitch 0.5 of the largest basis support, near radius **`max(6 supports, 2h)`** — P8
+  put a floor on it in METRES, because a radius measured in supports shrinks when the mesh is refined
+  and the slab's image at depth 2h does not move (see the ceiling bullet below, and
+  `PlanarAimSettings.NearRadiusMinM`). **The PITCH is deliberately NOT floored**: it sizes the
+  stencil's own resolution of the kernel and has nothing to do with the slab.
   **The "working set under 200 MB at the ceiling" figure above is P1-corrected and it is now tight**:
   honestly counted at N = 11,959 it is 196.2 MB, and it fits only because P1 releases the near set's
   EXACT entries once the preconditioner has been factored from them
@@ -836,9 +840,19 @@ for the two ladders, the conformal check and the calibration-standard limit that
   brief's own trap check for a ladder that changes the mesh's CHARACTER rather than only its size — is
   a genuinely different regime and broke: GMRES climbed 21 → 143 → 372 iterations as cells/λ went
   80 → 100 → 120 (still converging), then FAILED to converge at cells/λ = 140 (N = 13,967). 12,000 sits
-  at the healthy construction's own top rung, with margin under the one that failed, and leans on
-  `PlanarAimOperator.Solve`'s own non-convergence throw as the backstop for the residual risk an
-  over-refined mesh still carries. A CONFORMALLY CUT mesh carries no penalty of its own (measured: 4-5
+  at the healthy construction's own top rung, with margin under the one that failed. **P8 fixed that
+  breakage and the ceiling did not move — but what it has margin under is now a different thing**
+  (`brief-em-p8-aim-near-radius-floor.md`, 2026-08-29): the near radius is floored at 2h
+  (`PlanarAimSettings.NearRadiusMinM`), the resolution ladder runs 21 → 28 → 36 instead, and the wall
+  past the ceiling is no longer a GMRES that will not converge but a near matrix — 8.9% dense at
+  N = 13,967 — whose exact sparse LU will not FACTOR in useful time. So `PlanarAimOperator.Solve`'s
+  non-convergence throw is no longer the only backstop an over-refined mesh leans on, and **N alone no
+  longer bounds the accelerated working set** (426 MB at N = 10,708 on a refined mesh against 188 MB at
+  N = 12,894 on a coarse one). Moving 12,000 would need a check on near entries per row rather than a
+  bigger integer; `RESOLVED.md` §P8 and `HISTORY.md` §P8 §M5 carry that sentence, written out and not
+  applied. The floor is inert on every mesh either starter technology produces at a shipped resolution,
+  so none of this changed an answer anyone already had. A CONFORMALLY CUT mesh carries no penalty of
+  its own (measured: 4-5
   GMRES iterations, `|Δcurrent|` 1.6e-6 to 5.5e-5 across N = 1,538 to 2,232), so the ceiling does not
   depend on `PlanarBoundaryCells`. **A de-embedded run's calibration-standard capacitance step is a
   SEPARATE, always-DENSE m×m cell system** (`PlanarDeembed.StaticCapacitance`, out of this brief's
