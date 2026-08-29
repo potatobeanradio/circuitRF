@@ -29,6 +29,17 @@ namespace CircuitRF.Engine.Tests.External;
 /// <c>CompiledModelValidationTests</c> for the licensing posture: the compiler is the user's, the
 /// sources are the kit's, and the artifact is never committed.</para>
 /// </summary>
+// Serialises this class against every other one that mutates the process-wide static
+// ExternalDeviceRegistry. Six sibling classes in this directory already carry this attribute and
+// two did not, which is the whole of the intermittent "External device provider '...' is not
+// available: no providers are registered" ExternalDeviceLifetimeTests hit under full-suite load on
+// 2026-08-29 — xUnit runs test classes in parallel, so a sibling's Clear() landed between that
+// class's Register and its use. THIS class has not been seen to fail; it mutates the same static
+// (ResetResolved) from outside the collection, so it has the identical exposure and has only been
+// lucky. Added at the same time for that reason. There is deliberately no
+// [CollectionDefinition] for this name: a bare [Collection] still groups the classes, and two
+// collections never run in parallel with one another.
+[Collection("ExternalDeviceRegistry")]
 public sealed class VerilogATransistorSanityTests : IDisposable
 {
     private const string ModelDirVariable = "CIRCUITRF_OSDI_MODELS";

@@ -21,6 +21,15 @@ namespace CircuitRF.Engine.Tests.External;
 /// with a message about the 4,097th. Nothing about that failure names a sweep, a leak, or a
 /// lifetime.</para>
 /// </summary>
+// Serialises this class against every other one that mutates the process-wide static
+// ExternalDeviceRegistry. Six sibling classes in this directory already carry this attribute; this
+// one did not, and that is the whole of the intermittent "External device provider '...' is not
+// available: no providers are registered" seen under full-suite load on 2026-08-29 — xUnit runs
+// test classes in parallel, so a sibling's Clear() landed between this class's Register and its
+// use. Both failing methods passed in isolation, which is the signature. There is deliberately no
+// [CollectionDefinition] for this name: a bare [Collection] still groups the classes, and two
+// collections never run in parallel with one another.
+[Collection("ExternalDeviceRegistry")]
 public sealed class ExternalDeviceLifetimeTests : IDisposable
 {
     public void Dispose() => ExternalDeviceRegistry.Clear();

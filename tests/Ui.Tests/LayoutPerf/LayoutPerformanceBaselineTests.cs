@@ -5,8 +5,10 @@
 // note (src/Ui/CLAUDE.md) was produced — run with `dotnet test --filter FullyQualifiedName~LayoutPerf
 // --logger "console;verbosity=detailed"` to reproduce it.
 //
-// Only 1k (Baseline_1k) runs in the routine default pass now. 50k (Baseline_50k) and 500k
-// (Baseline_500k) are both [Trait("Category","Benchmark")] — opt-in only
+// NOTHING in this file runs in the routine default pass any more (2026-08-29). 1k joined 50k and
+// 500k in Category=Benchmark when it flapped against its own loose ceiling under full-suite load —
+// see Baseline_1k's own note; it is tagged for wall-clock SENSITIVITY, not for cost. 50k
+// (Baseline_50k) and 500k (Baseline_500k) are [Trait("Category","Benchmark")] for cost — opt-in only
 // (docs/sonnet-briefs/brief-test-default-fast.md: tag by measured per-test cost against a ~5s
 // threshold, not by subject matter; 50k's CurveHeavy/Mixed cases measure 6-11s). Both still ran during
 // this phase's own development to produce the baseline table; the routine default is Category!=Benchmark
@@ -47,8 +49,24 @@ public class LayoutPerformanceBaselineTests : System.IDisposable
         _         => new SweepConfig(1, 2, 3),
     };
 
-    // ── 1k — every commit (all well under the ~5s per-test threshold) ────────────
+    // ── 1k — Benchmark since 2026-08-29, and NOT because it is slow ──────────────
+    //
+    // It is fast: ~0.8 s for all three profiles together. It is tagged for the OTHER reason the tag
+    // is applied in this repo (root CLAUDE.md's own note on RfCore.Tests' Rbf2DPerfTests): a test
+    // that is fast but WALL-CLOCK-SENSITIVE cannot survive the parallel-start burst of a
+    // full-solution run. Measured 2026-08-29: the Mixed profile read a p95 of 128.1 ms against this
+    // file's own loose 120 ms catastrophe ceiling during a full `dotnet test`, and 3 of 3 cases
+    // passed when the same method was run alone seconds later.
+    //
+    // The ceiling it flapped against is the 3x-headroom backstop this file's header describes, not a
+    // performance target — so what flapped is a diagnostic, and R-L2a-3's real per-commit gate is
+    // untouched: the COUNTER coverage stays in the routine pass
+    // (LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect and its 1k siblings), which
+    // is the part that actually catches an algorithmic regression. Do not untag this on the grounds
+    // that it runs quickly — it is tagged for the purpose the mechanism serves, not the letter of
+    // the ~5 s rule.
 
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData(GeneratorProfile.Manhattan, 1_000)]
     [InlineData(GeneratorProfile.CurveHeavy, 1_000)]
