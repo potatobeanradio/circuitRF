@@ -2249,7 +2249,7 @@ public static class PlanarFill
     /// order, which is deterministic; the fits themselves are memoised pure functions of their key,
     /// so the order cannot move a bit — R-emp-8 on this path is <c>P3_3</c>.</para>
     /// </summary>
-    private sealed class MultiLevelPairings
+    internal sealed class MultiLevelPairings
     {
         /// <summary>The scalar kernel's terms and remainder per (layer, layer); null where the mesh
         /// has no such cell pairing.</summary>
@@ -3362,6 +3362,30 @@ public static class PlanarFill
     internal static Func<double, Complex> RemainderOf(PlanarKernelTerms terms, PlanarFillCores cores)
         => Remainder(terms, cores);
 
+    // ── P12's per-entry seam onto the VIA arms ────────────────────────────────────────────────
+    // PlanarBorderedAimOperator is the only caller. Wrappers rather than a widening of the helpers'
+    // own visibility, for the same reason M5's are: FillMultiLevel's call sites read as L9 wrote
+    // them, and the bordered operator's border is THE SAME ARITHMETIC rather than a second reading
+    // of it — which is what the |ΔI| gates against the dense via solve are actually measuring.
+
+    /// <inheritdoc cref="SingularPrismPart"/>
+    internal static Complex SingularPrismPartOf(PlanarMesh mesh,
+                                                LayeredSpectralGreens.InteriorAsymptote asym,
+                                                int cellA, int cellB,
+                                                ViaZIntegral.Span si, ViaZIntegral.Span sj,
+                                                PlanarFillSettings st)
+        => SingularPrismPart(mesh, asym, cellA, cellB, si, sj, st);
+
+    /// <inheritdoc cref="MixedEntry"/>
+    internal static Complex MixedEntryOf(PlanarMesh mesh, PlanarBasis vertical, PlanarBasis horizontal,
+                                         (CellWeight A, CellWeight B) horizontalHalves,
+                                         Func<double, Complex> dG, double rhoFloor,
+                                         PlanarFillSettings st)
+        => MixedEntry(mesh, vertical, horizontal, horizontalHalves, dG, rhoFloor, st);
+
+    /// <inheritdoc cref="CellPairSpan"/>
+    internal static double CellPairSpanOf(PlanarCell a, PlanarCell b) => CellPairSpan(a, b);
+
     /// <summary>
     /// <b>M5's projection reads the basis through the FILL'S OWN weight evaluation</b>, cut cells and
     /// all, rather than re-deriving the rooftop from its geometry. A projection built on a second
@@ -3814,10 +3838,20 @@ public sealed class PlanarEntryFill
     /// <summary>P6 — the per-frequency fill over a shared, already-built core store.</summary>
     public PlanarEntryFill(PlanarEntryCores geometry, PlanarKernelTerms termsA, PlanarKernelTerms termsQ,
                            double omega)
+        : this(geometry, termsA, new PlanarPulsePotential(geometry, termsQ), omega) { }
+
+    /// <summary>
+    /// <b>P12 — the same, over a scalar block the caller already owns.</b> A multi-level accelerated
+    /// operator holds one <see cref="PlanarPulsePotential"/> per (level, level) pairing and reads it
+    /// from BOTH the horizontal near field and the via border; constructing a second one inside this
+    /// would give the two halves separate remainder memos of the same function.
+    /// </summary>
+    public PlanarEntryFill(PlanarEntryCores geometry, PlanarKernelTerms termsA,
+                           PlanarPulsePotential pulse, double omega)
     {
         ArgumentNullException.ThrowIfNull(geometry);
         ArgumentNullException.ThrowIfNull(termsA);
-        ArgumentNullException.ThrowIfNull(termsQ);
+        ArgumentNullException.ThrowIfNull(pulse);
 
         _g    = geometry;
         _mesh = geometry.Mesh;
@@ -3830,7 +3864,7 @@ public sealed class PlanarEntryFill
         // the same call on the same two arguments.
         _termsA = termsA.With(_st.Order, cores.RhoFloorM);
         _remA   = PlanarFill.RemainderOf(_termsA, cores);
-        _pulse  = new PlanarPulsePotential(geometry, termsQ);
+        _pulse  = pulse;
 
         _scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
         _vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
@@ -3952,7 +3986,16 @@ public sealed class PlanarPulsePotential
     /// has to build its grid kernel table from the SAME floored terms the near entries use.</summary>
     public PlanarKernelTerms Terms => _termsQ;
 
-    public PlanarPulsePotential(PlanarEntryCores geometry, PlanarKernelTerms termsQ)
+    /// <param name="remainder">
+    /// <b>P12 — the remainder evaluator, when the caller already has the one the dense path built.</b>
+    /// Null (the default) derives it here exactly as the dense path does. The ẑẑ block is the one
+    /// caller that supplies its own: under <c>PlanarFillSettings.DirectVerticalKernel</c> its terms
+    /// are ALREADY a radial table (<c>ViaZIntegral.AveragedTermsDirect</c>) and re-tabulating them
+    /// would interpolate an interpolation — which is the reason the dense fill's <c>ZzTerms</c> makes
+    /// the same distinction.
+    /// </param>
+    public PlanarPulsePotential(PlanarEntryCores geometry, PlanarKernelTerms termsQ,
+                                Func<double, Complex>? remainder = null)
     {
         ArgumentNullException.ThrowIfNull(geometry);
         ArgumentNullException.ThrowIfNull(termsQ);
@@ -3964,7 +4007,7 @@ public sealed class PlanarPulsePotential
         // The dense path re-floors the terms for this mesh inside ScalarPotentialMatrix, so this does
         // the same rather than trusting the caller to have done it.
         _termsQ = termsQ.With(_st.Order, geometry.Cores.RhoFloorM);
-        _remQ   = PlanarFill.RemainderOf(_termsQ, geometry.Cores);
+        _remQ   = remainder ?? PlanarFill.RemainderOf(_termsQ, geometry.Cores);
     }
 
     /// <summary><c>P[cellA, cellB]</c>, symmetric by construction.</summary>

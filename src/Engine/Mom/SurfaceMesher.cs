@@ -131,6 +131,32 @@ public static class SurfaceMesher
     /// </summary>
     public const int AcceleratedUnknownCeiling = 12_000;
 
+    /// <summary>
+    /// <b>Whether a run is judged against <see cref="AcceleratedUnknownCeiling"/> rather than
+    /// <see cref="UnknownCeiling"/> — asked in exactly ONE place, so the pre-solve verdict and the
+    /// solve cannot disagree about it.</b>
+    ///
+    /// <para><b>P12 (2026-08-29) made this a function because the two HAD disagreed.</b>
+    /// <c>PlanarKernel.Solve</c> and the EM panel passed <c>Aim is not null</c> with no level
+    /// condition, while <c>PlanarSolveContext</c>'s constructor asked <c>Aim is not null &amp;&amp;
+    /// levels is null</c> — so a via-bearing mesh between the two ceilings passed the report the
+    /// user reads before pressing Simulate and was then refused by the run, quoting the DENSE
+    /// ceiling. Invisible until P12 only because the accelerator refused a via mesh outright a few
+    /// lines later and that refusal was the message the user saw.</para>
+    ///
+    /// <para><b>The multi-level exclusion is the conservative half of an OPEN owner decision, not a
+    /// technical limit.</b> P12 removed the refusal — a via-bearing mesh runs accelerated
+    /// (<c>PlanarBorderedAimOperator</c>) — and measured the ladder that would justify widening the
+    /// ceiling to it: healthy to N = 15,192, near entries per row flat, GMRES 4 → 6, a whole point
+    /// ~2.5 s and 327 MB against 4,927 MB dense. Widening it is <c>return aimOn;</c> here and
+    /// nothing else. It is not taken because the border's TIME is set by N_z rather than by N, so a
+    /// ceiling stated in N alone promises something a via FIELD does not deliver — see
+    /// <c>RESOLVED.md</c> §P12.</para>
+    /// </summary>
+    /// <param name="aimOn">Whether <c>PlanarFillSettings.Aim</c> is set for this run.</param>
+    /// <param name="multiLevel">Whether the problem needs the general (multi-level) kernel.</param>
+    public static bool UsesAcceleratedCeiling(bool aimOn, bool multiLevel) => aimOn && !multiLevel;
+
     /// <summary>Warn — do not refuse — from this fraction of the ceiling upward.</summary>
     public const double WarnFraction = 0.6;
 

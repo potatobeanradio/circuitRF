@@ -160,11 +160,12 @@ public sealed class PlanarSolveContext
 
         // R-fil-10, before the core allocates. The accelerator holds no N×N anything, so the DENSE
         // ceiling is the wrong question to ask of it — brief-em-aim-ceiling.md answered what the
-        // right one is (AcceleratedUnknownCeiling), and it applies only on a single-level mesh: a
-        // multi-level/via problem carries a non-null Levels and the accelerator refuses it by name
-        // regardless of Settings.Aim (PlanarSolveContext.SolveAt), so asking for the wider ceiling
-        // there would promise a run that cannot start.
-        bool accelerated = Settings.Aim is not null && levels is null;
+        // right one is (AcceleratedUnknownCeiling). P12: the multi-level exclusion is no longer
+        // "the accelerator refuses this class anyway" — it does not, since P12 — it is an OPEN owner
+        // decision, and SurfaceMesher.UsesAcceleratedCeiling is the one place it is stated so this
+        // and the pre-solve mesh verdict cannot answer it differently (they did).
+        bool accelerated = SurfaceMesher.UsesAcceleratedCeiling(
+            Settings.Aim is not null, levels is not null);
         SurfaceMesher.GuardCeiling(mesh.Bases.Count, accelerated, mesh.Cells.Count);
 
         // P2/M4 — LazyThreadSafetyMode.ExecutionAndPublication (the default): a de-embedded run fans
@@ -238,19 +239,18 @@ public sealed class PlanarSolveContext
     /// </summary>
     public PlanarAimOperator? LastAccelerator { get; private set; }
 
+    /// <summary>
+    /// <b>P12 — the bordered accelerator the last general-kernel <see cref="SolveAt(PlanarFrequencyKernel,
+    /// double)"/> built</b>, or null on the dense path. Carries <see cref="PlanarBorderedAimReport"/>
+    /// and the iteration count, on <see cref="LastAccelerator"/>'s own terms.
+    /// </summary>
+    public PlanarBorderedAimOperator? LastBorderedAccelerator { get; private set; }
+
     /// <summary>The same, for whichever kernel this frequency actually has (L9d/M1).</summary>
     public PlanarPortSolution SolveAt(PlanarFrequencyKernel kernel, double fHz)
     {
         ArgumentNullException.ThrowIfNull(kernel);
         if (kernel.Pair is { } pair) return SolveAt(pair, fHz);
-
-        if (Settings.Aim is not null)
-            throw new NotSupportedException(
-                "This problem needs the GENERAL (multi-level) kernel, and M5's accelerator models the " +
-                "single-level horizontal basis family only — a via's ẑ current needs its own grid " +
-                "kernel per height pairing and a projection carrying a ∂/∂x. Clear " +
-                "PlanarFillSettings.Aim to solve it densely, which is what every published " +
-                "multi-level number in this area was produced by.");
 
         if (Levels is null)
             throw new InvalidOperationException(
@@ -258,6 +258,17 @@ public sealed class PlanarSolveContext
                 "evaluate its Green's function at. Construct the PlanarSolveContext with the " +
                 "PlanarLevels its cells sit on — for a calibration standard that is the single z of " +
                 "the level its port is on (D3).");
+
+        // P12 — the multi-level/via refusal that stood here is retired. The accelerator projects the
+        // HORIZONTAL PREFIX per (level, level) pairing over one shared auxiliary grid and carries the
+        // ẑ unknowns as a dense border; nothing about a via basis is projected, which is what the old
+        // refusal was actually about. See PlanarAimBordered.cs's header.
+        if (_aimGeometry is not null)
+        {
+            LastBorderedAccelerator = PlanarBorderedAimOperator.Build(
+                _aimGeometry.Value, kernel.Set!.For(Cores), Levels, 2.0 * Math.PI * fHz);
+            return PlanarExcitation.Solve(LastBorderedAccelerator, Ports);
+        }
 
         var system = PlanarSystem.BuildMultiLevel(Cores, kernel.Set!.For(Cores), Levels,
                                                   2.0 * Math.PI * fHz);

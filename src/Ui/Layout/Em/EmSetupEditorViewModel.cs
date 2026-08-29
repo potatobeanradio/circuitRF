@@ -1556,7 +1556,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <paramref name="problem"/> is an already-extracted snapshot.</summary>
     public PlanarMeshReport ComputePlanarMesh(PlanarProblem problem, RunControl? control)
         => SurfaceMesher.Mesh(problem, Working.PlanarMesh, PlanarEdgeReference.ConductorWidth, control,
-                              accelerated: Working.AcceleratedSolve,
+                              accelerated: SurfaceMesher.UsesAcceleratedCeiling(
+                                  Working.AcceleratedSolve, problem.RequiresGeneralKernel),
                               lengthFormat: EmLengthFormat.For(_pendingDisplayUnit, _pendingDbuPerMicron));
 
     /// <summary>The UI-THREAD half again: adopt the report and everything that follows from it.</summary>

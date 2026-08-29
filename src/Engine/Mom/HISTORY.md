@@ -7681,3 +7681,100 @@ tests/Ui.Tests/Em/EmCeilingRefusalTests.cs             Gate1 inverted: no longer
 ```
 
 `Aim = null` is bit-identical and asserted as exact equality.
+
+# P12 — multi-level and vias under AIM, as a bordered system (brief-em-p12-aim-bordered-vias.md, 2026-08-29)
+
+`PlanarAimGeometry.Build` refused any mesh with a ẑ basis and `PlanarSolveContext.SolveAt` refused
+the general kernel under `Aim`, so every board with a ground via was capped at the dense 5,000
+however much of it was ordinary horizontal metal. The refusal's reason — "a projection with a
+derivative in it" — is true of PROJECTING the ẑ bases and was never a reason to project them.
+`PlanarBorderedAimOperator` projects the HORIZONTAL PREFIX (R-via-5 already makes it a prefix) with
+one grid kernel table per (level, level) pairing over the SAME auxiliary grid, and carries the ẑ
+unknowns as a dense border filled by `PlanarFill`'s own via arms. The narrative, the negative results
+and the ceiling recommendation are in `RESOLVED.md` §P12; the tables are here.
+
+Every rung is `PlanarP12BorderedAimTests`, Release, ten cores.
+
+## Table 1 — M1: the multi-level block, against the dense multi-level solve
+
+Two conductor levels, no vias, so there is no border at all and what is measured is the per-pairing
+grid kernel and the per-level scatter/gather. `|ΔZ|` is entry-wise against
+`PlanarFill.FillMultiLevel`'s matrix, scaled by that matrix's largest entry; `|ΔI|` is the solved
+current vector, which is what an s-parameter is read from.
+
+| fixture | N | near/row | near % | worst \|ΔZ\| | iters | \|ΔI\| | dense | aim |
+|---|---|---|---|---|---|---|---|---|
+| MMIC 400 µm, shipping mesh | 424 | 424 | 100.0% | **1.88e-15** | 1 | **7.42e-11** | 0.78 s | 0.22 s |
+| MMIC 2 mm, cells/λ 80 | 272 | 231 | 84.9% | 5.60e-9 | 2 | 3.73e-6 | 0.26 s | 0.04 s |
+
+Both carry **3 level pairings on one grid**. The first row has no far field — every pair is near —
+so it is the EXACTNESS statement rather than an accuracy one: the accelerated product reproduces the
+dense multi-level matrix to round-off, with no tolerance in the claim.
+
+## Table 2 — M2: the border, against the dense via solve
+
+Two fixtures because the mesher makes two kinds of vertical basis: an INTERIOR via between two meshed
+levels (`ViaPhysicsTests`' MMIC fixture) and a GROUND ATTACHMENT spanning the plane to the metal
+(`InternalPortTests`' backside via).
+
+| fixture | N | N_z | near/row | near % | worst \|ΔZ\| | iters | \|ΔI\| |
+|---|---|---|---|---|---|---|---|
+| MMIC + via, shipping mesh (all near) | 514 | 2 | 512 | 100.0% | **1.09e-15** | 1 | **1.38e-10** |
+| MMIC + via, 2 mm cells/λ 80 | 452 | 2 | 386 | 85.8% | 2.39e-9 | 2 | 3.30e-6 |
+| …the same, near radius 12 supports | 452 | 2 | 450 | 100.0% | **3.48e-15** | 1 | **3.97e-11** |
+| FR-4 hero + ground via, shipping mesh | 374 | 4 | 346 | 93.4% | 1.09e-9 | 2 | **3.97e-7** |
+
+De-embedded S through `PlanarSolve.Run` itself, N = 100, two calibration standards, 5 and 10 GHz:
+worst `|ΔS|` **1.62e-14** de-embedded and 3.64e-15 raw.
+
+## Table 3 — the control that makes Table 2 readable
+
+The SHIPPED single-level accelerator against the SHIPPED single-level dense fill, on the FR-4 hero at
+6 GHz, 16 mm, at the two mesh characters Table 2 uses. **No P12 code runs in this table.**
+
+| mesh | N | near/row | near % | worst \|ΔZ\| | iters | \|ΔI\| |
+|---|---|---|---|---|---|---|
+| cells/λ 20, edge mesh ON (shipping) | 314 | 290 | 92.2% | 1.27e-9 | 2 | **4.90e-7** |
+| cells/λ 40, edge mesh OFF | 238 | 166 | 69.6% | 2.14e-7 | 4 | **2.71e-5** |
+
+**55× of spread from the MESH alone**, on a path P12 does not touch — which is what says Table 2's
+3.3e-6 rung is the projection's number for that mesh and not the border's. The brief's own 8.7e-7 is
+`AimAccuracyTests`' figure for the 32 mm FR-4 hero AT THE SHIPPING MESH; quoting it at a different
+fixture would be grading P12 on somebody else's mesh.
+
+## Table 4 — M4: the ceiling ladder, growing by LENGTH
+
+`brief-em-aim-ceiling.md`'s own healthy construction — grow the part at a fixed resolution, which is
+how a real board gets big. Two-level GaAs line at 10 GHz, cells/λ = 80, **one 40 µm via**, so `N_z`
+is fixed at 2. Seconds are per FREQUENCY unless the column says geometry (which is per MESH).
+
+| L | N | N_z | near/row | near % | geom | grid | near | border | precond | solve | iters | resid | MB | dense MB |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2 mm | 452 | 2 | 386 | 85.8% | 0.02 s | 0.00 | 0.02 | 0.43 | 0.05 | 0.00 | 2 | 3.9e-9 | 8.4 | 4 |
+| 8 mm | 1,728 | 2 | 488 | 28.3% | 0.04 s | 0.00 | 0.07 | 0.45 | 1.19 | 0.03 | 4 | 6.4e-11 | 59.5 | 64 |
+| 24 mm | 5,072 | 2 | 510 | 10.1% | 0.09 s | 0.01 | 0.18 | 0.54 | 0.64 | 0.04 | 4 | 5.2e-9 | 107.0 | 549 |
+| 48 mm | 10,132 | 2 | 515 | 5.1% | 0.18 s | 0.02 | 0.39 | 0.56 | 1.32 | 0.11 | 5 | 5.4e-9 | 215.3 | 2,192 |
+| 72 mm | **15,192** | 2 | **517** | 3.4% | 0.26 s | 0.04 | 0.51 | 0.46 | 2.01 | 0.21 | **6** | 3.6e-9 | **327.1** | **4,927** |
+
+"dense MB" is `PlanarSystem.ResidentBytes` — what a dense point of the same N actually holds, not
+16N². §11's two findings both survive the border: **near entries per row are flat** (488 → 517 over
+8.8× N) and **GMRES does not walk** (4 → 6). The whole point at N = 15,192 is ~2.5 s and 327 MB.
+
+## Table 5 — the same ladder with the via footprint growing WITH the part
+
+The construction nobody builds, run because it is the one that decides what "cheap while N_z ≪ N_h"
+is a statement about. Identical in every other respect; the via is 10% of the line's length.
+
+| L | N | N_z | near fill | **border** | precond | resident MB | border MB |
+|---|---|---|---|---|---|---|---|
+| 2 mm | 432 | 4 | 0.17 s | 1.51 s | 0.06 s | 7.1 | 0.0 |
+| 8 mm | 1,720 | 16 | 0.23 s | 3.85 s | 1.21 s | 59.6 | 0.4 |
+| 24 mm | 5,140 | 48 | 0.26 s | 10.25 s | 0.75 s | 121.8 | 3.8 |
+| 48 mm | 10,268 | 94 | 0.36 s | 19.27 s | 1.94 s | 273.0 | 14.9 |
+| 72 mm | 15,352 | 140 | 0.62 s | **28.56 s** | 3.31 s | 454.7 | 33.1 |
+
+**The border's MEMORY is `16·N_h·N_z` and stays negligible either way; its TIME is `N_h × N_z` graded
+4-D quadratures and is not negligible at all.** At `N_z` = 140 it is 28.6 s of a 34 s point, against
+0.5 s at `N_z` = 2 and the same N. The dense path pays the same `N_h × N_z` mixed entries, so this is
+not a regression against it — but it is the term that decides whether the ceiling can be widened for
+a mesh with a via FIELD rather than a via.

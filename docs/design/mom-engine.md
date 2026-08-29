@@ -726,6 +726,38 @@ allocate 12 GB is not lightweight.
 > guard, no user ever saw, because that refusal was unreachable. `src/Engine/Mom/RESOLVED.md` §P11 and
 > `HISTORY.md` §P11 carry the knob ladders, the tolerance measurement and the taper's tables.
 
+> **Built at P12 (`brief-em-p12-aim-bordered-vias.md`, 2026-08-29) — "a multi-level or via-bearing
+> problem is refused by name regardless" is no longer true, and the note four above is the one this
+> corrects. The CEILING sentence in it still is.** A via-bearing mesh runs accelerated as a BORDERED
+> system: R-via-5 already orders every horizontal rooftop before every ẑ basis, so
+> `Z = [Z_hh Z_hz; Z_zh Z_zz]` with `N_z` in the tens, and only `Z_hh` is projected — one grid kernel
+> table per (level, level) pairing over the SAME auxiliary grid, `L(L+1)/2` of them, with the scatter
+> and the gather per level. The border is filled densely by `PlanarFill`'s own via arms and the
+> preconditioner is the near LU with it folded in exactly, through an `N_z × N_z` Schur complement.
+> **Nothing about a ẑ basis is projected** — which is what the original refusal was about, and why
+> lifting it needed no new physics.
+>
+> Measured against the dense multi-level solve on the fixtures L9 was built on. The claim that
+> matters is exactness rather than a tolerance: widen the near radius until every pair is in the near
+> set and the bordered operator has to reproduce `PlanarFill.FillMultiLevel`'s matrix to round-off —
+> it does, at **1.1e-15** entry-wise and **1.4e-10** in the solved current, on the MMIC two-level
+> fixture with its via and on the FR-4 hero with a backside ground via alike. At the shipped radius
+> what is left is the PROJECTION's error and it is M5's, untouched: **3.97e-7** on the ground-via
+> fixture at the shipping mesh, inside `AimAccuracyTests`' own 8.7e-7, and 3.3e-6 on a deliberately
+> un-edge-meshed cells/λ = 80 rung whose single-level control — the same mesh character with no via
+> in it at all — reads 2.7e-5. De-embedded S through the whole sweep driver agrees to **1.6e-14**.
+>
+> **The ceiling did NOT move, and that is a deliberate hand-back.** The length ladder is healthy well
+> past 12,000 — near entries per row 488 → 517 and GMRES 4 → 6 iterations from N = 1,728 to
+> **N = 15,192**, converging to 3.6e-9, a whole point costing ~2.5 s and 327 MB against 4.9 GB for a
+> dense one of the same size — so the case for applying `AcceleratedUnknownCeiling` to via meshes is
+> made. Applying it is two lines (`PlanarSolveContext`'s `levels is null` and
+> `SurfaceMesher.GuardCeiling`'s `accelerated` argument) and is the owner's decision;
+> `src/Engine/Mom/RESOLVED.md` §P12 carries them written out and not applied, together with the
+> caveat that decides the answer — **the border's cost is set by `N_z`, not by `N`**, and a fixture
+> whose via footprint grows with the part (`N_z` = 140 at N = 15,352) spends 28.6 s of a 34 s point
+> in the mixed block, against 0.5 s when the vias stay the size real vias are.
+
 Sanity check on the hero: 50 Ω microstrip on 1.6 mm FR-4 is W ≈ 2.9 mm; a 20 mm line at 10 GHz has
 λ_g ≈ 16.5 mm, so λ_g/20 ≈ 0.8 mm → ~24 cells long × ~6 across with edge refinement → **N of a few
 hundred**. Genuinely fast. A spiral inductor lands at 1–3k. The scope is realistic.

@@ -1500,3 +1500,154 @@ solve.
 **`AimEntry`'s `(M+1)⁴` lookups per near pair were not restructured.** §8's own P6 note records the
 same hotspot on M5's operator; here it is 93-354 ms against a sparse LU of 1.6-9.2 s, so it is not
 what to fix first on this path.
+
+# P12 — multi-level and vias under AIM, as a bordered system (2026-08-29)
+
+`brief-em-p12-aim-bordered-vias.md`. The tables are in `HISTORY.md` §P12; what is here is the
+narrative, the two findings that are not in a table, and the ceiling sentence the brief hands back
+to the owner.
+
+## What was refused, and what the obstacle actually was
+
+`PlanarAimGeometry.Build` threw on any mesh carrying a ẑ basis and `PlanarSolveContext.SolveAt` threw
+on the general kernel whenever `Aim` was set, so a board with one ground via ran at the **dense**
+5,000-unknown ceiling however much of it was ordinary horizontal metal. The refusal's stated reason
+— "a different grid kernel per height pairing and a projection with a derivative in it" — is a true
+statement about PROJECTING the ẑ bases. It was never an argument for projecting them.
+
+R-via-5 already orders every horizontal rooftop before every vertical one, so the matrix is
+`Z = [Z_hh Z_hz; Z_zh Z_zz]` with `N_z` in the tens, and the three blocks have different economics:
+
+- **`Z_hh`** is the operator M5 already accelerates, one pairing at a time. Every level shares the
+  SAME auxiliary grid — the grid is in-plane and the levels differ only in z — so a second level
+  costs one more kernel table and one more FFT hat pair per component, `L(L+1)/2` for L levels. The
+  scatter and the gather become per level. **The stencils, the moments and the near set are unchanged
+  objects**: they are in-plane, and the near-set rule (radius ∪ stencil overlap) is in-plane too, so
+  it is a valid superset for a cross-level pair with no argument needed.
+- **`Z_hz`, `Z_zh`, `Z_zz`** are dense, filled through a new internal seam onto `PlanarFill`'s own
+  `MixedEntry`, `SingularPrismPart` and cell-pulse potential. Not a re-derivation — the same
+  functions, called per entry instead of per row.
+
+## Findings
+
+1. **The gate that means something is EXACTNESS, not a tolerance — and the near radius is the knob
+   that produces it.** Every `|ΔI|` against a dense solve mixes two things: whether the border and
+   the multi-level near assembly are the dense fill's arithmetic, and how good the projection is on
+   that mesh. Widening `NearRadiusFactor` until every pair is in the near set removes the second
+   entirely, and the bordered operator then has to reproduce `FillMultiLevel`'s matrix to round-off.
+   It does: **1.1e-15** entry-wise, **4e-11** in the solved current, on the MMIC two-level fixture
+   with its via and on the FR-4 hero with a backside ground via. That is the claim worth making, and
+   it needs no tolerance.
+
+2. **The brief's "8.7e-7 at the shipped defaults" is not transferable, and quoting it at a different
+   fixture would have graded P12 on somebody else's mesh.** It is `AimAccuracyTests`' figure for the
+   32 mm FR-4 hero at the SHIPPING mesh. Measured on a cells/λ = 80, un-edge-meshed two-level rung
+   the bordered operator reads 3.3e-6 — and the **single-level control**, the same mesh character
+   with no via in it at all, going through the shipped `PlanarAimOperator` against the shipped
+   single-level dense fill, reads **2.7e-5** where the shipping mesh reads 4.9e-7. **55× of spread
+   from the mesh alone, on a path P12 does not touch.** On the shipping mesh the ground-via fixture
+   reads **3.97e-7**, inside the brief's number. Every accuracy figure in `HISTORY.md` §P12 is
+   therefore printed with its mesh, and the control table is printed beside it.
+
+3. **`N_z ≪ N_h` keeps the border cheap in MEMORY unconditionally and cheap in TIME only
+   conditionally, and the two must not be stated together.** `Z_hz` is `16·N_h·N_z` bytes — 0.5 MB at
+   N = 15,192 — and stays negligible however the fixture grows. Its BUILD is `N_h × N_z` graded 4-D
+   quadratures, and at a fixed via count that is flat in N (0.43 → 0.56 s across an 8.8× N ladder).
+   Grow the via footprint WITH the part and `N_z` reaches 140, at which point the border is **28.6 s
+   of a 34 s point** while the accelerated near fill is 0.62 s. The dense path pays the same
+   `N_h × N_z` mixed entries, so this is not a regression against it — but it is what a claim about
+   a via FIELD would have to be measured on, and the brief's "later brief with its own measurement"
+   is the right disposition.
+
+4. **`N_hh⁻¹ Z_hz` must not be stored, and that decides the preconditioner's shape.** §11's flat
+   iteration count is a finding about the horizontal operator; a preconditioner with nothing at all
+   in its `N_z` rows would be steering GMRES past a short circuit, so the border is folded in
+   EXACTLY, by block elimination on an `N_z × N_z` Schur complement `S = Z_zz − Z_zh N_hh⁻¹ Z_hz`.
+   The obvious implementation keeps `W = N_hh⁻¹ Z_hz` and applies the inverse with one sparse solve;
+   `W` is 38 MB at N_h = 12,000, N_z = 200, on a working set whose whole point is to be small. So `S`
+   is built one column at a time and discarded, and the apply pays a SECOND sparse substitution
+   instead — a fraction of a percent of an iteration that already runs three FFTs over the padded
+   grid. Measured: GMRES 4 → 6 iterations from N = 1,728 to 15,192.
+
+5. **A (level, level) pairing can legitimately have no vector kernel at all, and the null must be
+   handled rather than asserted away.** `MultiLevelPairings.Resolve` fills `TermsA[la, lb]` only when
+   some direction has bases on BOTH levels, so a level carrying only x̂ rooftops paired with one
+   carrying only ŷ has a scalar kernel and no vector one. D5 makes the vector block identically zero
+   there, so the entry is the scalar half alone — which is exactly what `PlanarEntryFill.At` would
+   have returned had it existed for that pairing. The bordered operator computes it directly rather
+   than dereferencing a null it "cannot" reach.
+
+## The ceiling — the brief's own hand-back, written out and NOT applied
+
+`SurfaceMesher.AcceleratedUnknownCeiling` = 12,000 is still **single-level only**. The measurement
+that would justify widening it is made (`HISTORY.md` §P12 Table 4): the length ladder is healthy to
+**N = 15,192**, near entries per row 488 → 517, GMRES 4 → 6, residual 3.6e-9, a whole frequency point
+~2.5 s and 327 MB against 4,927 MB for a dense point of the same size. Two lines change:
+
+```csharp
+// src/Engine/Mom/PlanarSolve.cs — PlanarSolveContext's constructor
+-        bool accelerated = Settings.Aim is not null && levels is null;
++        bool accelerated = Settings.Aim is not null;
+```
+
+…except that it is not that line any more, and finding out why turned up a live defect. The brief
+names `SurfaceMesher.GuardCeiling`'s `accelerated` argument as the second place; its three callers
+(`PlanarKernel.Solve`, `PlanarKernel.SolveWithReport`, and `EmSetupEditorViewModel`'s pre-solve mesh)
+all passed `Aim is not null` with **no level condition at all**, while `PlanarSolveContext`'s
+constructor asked `Aim is not null && levels is null`. **So the report a user reads before pressing
+Simulate has been judging a via-bearing accelerated mesh against 12,000, and the run then refused it
+at 5,000** — quoting the dense ceiling, which is neither the number the report used nor a remedy.
+Reachable before P12 and reachable after it; invisible only because the accelerator refused a via
+mesh outright a few lines later and THAT was the message the user saw.
+
+The two are now one function, and the owner's decision is one line in one place:
+
+```csharp
+// src/Engine/Mom/SurfaceMesher.cs
+    public static bool UsesAcceleratedCeiling(bool aimOn, bool multiLevel) => aimOn && !multiLevel;
+//                                                                        => aimOn;   ← the flip
+```
+
+`PlanarSolveContext`, `PlanarKernel`'s two mesh calls and the EM panel all read it. **Making them
+agree does not pre-empt the decision** — it keeps today's shipped behaviour (a via mesh judged at
+5,000) exactly as it is, and removes a report that contradicts the run.
+
+**The reason it is not taken here is finding 3, not doubt about the ladder.** A ceiling stated in N
+alone is a promise about a mesh whose `N_z` is unstated, and the border's time is set by `N_z`. A
+board with one ground via at N = 15,192 costs 2.5 s a point; the same N with a 140-basis via field
+costs 34 s, of which 28.6 s is the border — legitimate, converging, and not what "12,000 accelerated
+unknowns" would lead anyone to expect. Widening the ceiling on a bound in N alone, or on a bound in
+N and `N_z` together, is the owner's call.
+
+(P8's own caveat still stands beside this one: N no longer bounds the accelerated working set on a
+REFINED mesh, and moving 12,000 for either reason wants a check on near entries per row rather than
+a bigger integer.)
+
+## Not done, on purpose
+
+- **The ẑ bases are not projected and the mixed kernel is not projected.** The brief forbids it and
+  nothing measured here argues for it: at a real via count the border is 2% of a point.
+- **`Z_zh` is not stored.** Z is complex-symmetric bit for bit, so the transpose is read out of
+  `Z_hz` rather than held.
+- **No mirror index for the near set.** P6's own 18 MB decision is unchanged; the bordered operator
+  finds each transpose position by the same binary search.
+- **The dense multi-level path is untouched.** `Aim = null` reaches `PlanarSystem.BuildMultiLevel`
+  exactly as before, and every published multi-level number stands.
+
+## What was changed in the code
+
+```
+src/Engine/Mom/PlanarAimBordered.cs   NEW — PlanarBorderedAimOperator, PlanarBorderedAimReport
+src/Engine/Mom/PlanarAim.cs           PlanarAimGeometry gains the horizontal/vertical split and
+                                      asserts R-via-5's prefix instead of refusing a via mesh;
+                                      PlanarAimOperator now carries the refusal and names the
+                                      bordered operator
+src/Engine/Mom/PlanarFill.cs          MultiLevelPairings + Resolve made internal; SingularPrismPartOf,
+                                      MixedEntryOf, CellPairSpanOf wrappers; PlanarPulsePotential
+                                      takes an explicit remainder; PlanarEntryFill takes a prebuilt
+                                      PlanarPulsePotential
+src/Engine/Mom/PlanarSolve.cs         the general-kernel refusal replaced by the bordered operator;
+                                      LastBorderedAccelerator
+tests/Engine.Tests/Mom/PlanarP12BorderedAimTests.cs   NEW — 3 routine tests (3 s), 5 Benchmark (31 s)
+tests/Firewall.Tests/user-facing-text-allowlist.txt   two retired messages out, five new ones in
+```

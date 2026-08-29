@@ -288,11 +288,15 @@ src/Engine/Mom/ModalDecomposition.cs|The even/odd decomposition is defined for e
 src/Engine/Mom/PlanarAdaptiveSweep.cs|at least one node
 src/Engine/Mom/PlanarAdaptiveSweep.cs|one value per node
 src/Engine/Mom/PlanarAim.cs|Expected a vector of length {_n}, got {x.Length}.
-src/Engine/Mom/PlanarAim.cs|The AIM accelerator models the horizontal (x̂/ŷ) basis family only. A ẑ-directed 
+src/Engine/Mom/PlanarAim.cs|Basis {i} is horizontal but follows the vertical basis at {nh}. The accelerator 
+src/Engine/Mom/PlanarAim.cs|This mesh carries {g.VerticalCount} ẑ-directed (via) unknown(s). 
 src/Engine/Mom/PlanarAim.cs|The accelerated solve did not converge: {iterations} iteration(s) reached a relative 
 src/Engine/Mom/PlanarAim.cs|The exact near-field entries were released after the preconditioner was factored from 
 src/Engine/Mom/PlanarAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarAim.cs|The stencil's Vandermonde matrix is singular, which can only happen if the grid 
+src/Engine/Mom/PlanarAimBordered.cs|Expected a vector of length {_n}, got {x.Length}.
+src/Engine/Mom/PlanarAimBordered.cs|The accelerated multi-level solve did not converge: {iterations} iteration(s) 
+src/Engine/Mom/PlanarAimBordered.cs|The exact near-field entries were released after the preconditioner was factored from 
 src/Engine/Mom/PlanarStaticAim.cs|Expected a vector of length {_m}, got {x.Length}.
 src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve did not converge: {iterations} iteration(s) 
 src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve models a SINGLE conductor level over the 
@@ -320,7 +324,6 @@ src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number}'s calibration standard need
 src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at 
 src/Engine/Mom/PlanarSolve.cs|The sweep's lowest frequency is {SurfaceMesher.Eng(fLo)}Hz. 
 src/Engine/Mom/PlanarSolve.cs|This mesh was built without a level list, so the general kernel has no height to 
-src/Engine/Mom/PlanarSolve.cs|This problem needs the GENERAL (multi-level) kernel, and M5's accelerator models the 
 src/Engine/Mom/PlanarSystem.cs|This geometry needs {n:N0} unknowns, which is past the 
 src/Engine/Mom/QuasiStaticKernel.cs|{Name} cannot solve this problem. {ok.Reason}
 src/Engine/Mom/RlgcExtractor.cs|MoM: [C₀] is singular — the conductor set has no reference.

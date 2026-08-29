@@ -273,7 +273,9 @@ public sealed class PlanarKernel
         // Meshing is fast next to the sweep but is not instant, and it is the first thing that
         // happens after the user presses Simulate — so it gets its own named stage rather than
         // leaving the row saying nothing until the first frequency lands.
-        var report = Mesh(meshed, meshSettings, control, accelerated: st.Fill?.Aim is not null,
+        var report = Mesh(meshed, meshSettings, control,
+                          accelerated: SurfaceMesher.UsesAcceleratedCeiling(
+                              st.Fill?.Aim is not null, meshed.RequiresGeneralKernel),
                           lengthFormat: lengthFormat);
         if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
 
@@ -345,7 +347,9 @@ public sealed class PlanarKernel
         var meshed = PlanarFeedExtension.Extend(
             PlanarGroundPath.Extend(problem, ports).Problem, ports, st0.Calibration, lengthFormat).Problem;
 
-        var report   = Mesh(meshed, meshSettings, accelerated: st0.Fill?.Aim is not null,
+        var report   = Mesh(meshed, meshSettings,
+                            accelerated: SurfaceMesher.UsesAcceleratedCeiling(
+                                st0.Fill?.Aim is not null, meshed.RequiresGeneralKernel),
                             lengthFormat: lengthFormat);
         if (!report.CanSolve) throw new PlanarMeshRefusedException(report);
 

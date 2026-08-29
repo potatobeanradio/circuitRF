@@ -519,7 +519,7 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | `PlanarSolveSettings.Adaptive` | `null` (off) | OFF is bit-identical |
 | `PlanarSolveSettings.CurrentDensityPortNumber` / `…FrequencyHz` | null | captured during the existing sweep, no second factorisation |
 | `PlanarFillSettings.DirectVerticalKernel` | `false` | ẑẑ from `SommerfeldIntegral.EvaluateInterior`; skips the ρ/λ refusal and says so |
-| **`PlanarFillSettings.Aim`** | **`null` = OFF, but REACHABLE from the panel since 2026-08-14** | `EmSetup.AcceleratedSolve`, persisted in the `.cem`. **It MOVES the ceiling** (`brief-em-aim-ceiling.md`, 2026-08-14) — see `SurfaceMesher.AcceleratedUnknownCeiling` below — on a single-level mesh; a multi-level/via problem is refused by name regardless (`PlanarAimGeometry.Build`, P6 — `PlanarAimOperator.Build` before), so the effective ceiling there is still the dense one. The refusal names turning it on as the first remedy whenever doing so would let the mesh run. |
+| **`PlanarFillSettings.Aim`** | **`null` = OFF, but REACHABLE from the panel since 2026-08-14** | `EmSetup.AcceleratedSolve`, persisted in the `.cem`. **It MOVES the ceiling** (`brief-em-aim-ceiling.md`, 2026-08-14) — see `SurfaceMesher.AcceleratedUnknownCeiling` below — on a single-level mesh. **Since P12 a multi-level/via mesh is no longer refused** (`PlanarBorderedAimOperator`) — but the WIDER CEILING is still not applied to one, and **that question is now asked in exactly one place — `SurfaceMesher.UsesAcceleratedCeiling(aimOn, multiLevel)`**, because the pre-solve mesh verdict and `PlanarSolveContext` had been answering it DIFFERENTLY (the report judged a via mesh at 12,000 and the run then refused it at 5,000, quoting the dense ceiling). P12 measured the ladder that would move it (healthy to N = 15,192, past the 12,000) and left the behaviour alone: **owner's decision**, and it is now `=> aimOn;` in one function. See `RESOLVED.md` §P12 for why it was not taken (the border's TIME is set by N_z, not by N). The refusal names turning it on as the first remedy whenever doing so would let the mesh run. |
 | **`PlanarFillSettings.UseSymmetricFactorization`** | **`true` = P7's in-place complex-symmetric LDLᵀ** | Z is complex-symmetric bit for bit, so the dense solve is an `SymmetricFactorization`, not an LU: half the arithmetic, parallel over the trailing update under the SAME one cap the fill spends, and written INTO the matrix — `PlanarSystem.Matrix` throws after `Factor()`. `false` restores NumFlat's general LU, kept reachable as the oracle exactly as `UseRadialTable = false` is. **Unpivoted, which is standard for MoM matrices and is not a theorem** — the gate is a residual, and `SymmetricFactorization.GrowthFactor` / `SmallestPivotRatio` are computed on every factorisation at no cost. |
 | **`PlanarFillSettings.TrackFactorizationResidual`** | **`false`** | Keeps a copy of Z so every solve reports `‖Zx − b‖/‖b‖` on `PlanarSystem.LastResidual`. That copy is a whole N×N matrix — the memory P7 removed — so it is a diagnostic, never a default. |
 | `PlanarFillDiagnostics` / `ConformalDiagnostics` | `null` | instruments; fill is bit-identical with them attached |
@@ -527,7 +527,7 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | `DefaultSliverAreaFraction` | 0.05 | conservative, on a plateau (0.005…0.05 identical at cells/λ = 130); **no conditioning cliff was located** |
 | `PlanarLevels.MaxElectricalLength` | **0.30** | bounds the **BASIS** (one z-rooftop per gap ⇒ uniform current), not the quadrature |
 | `SurfaceMesher.UnknownCeiling` | **5,000** | R17's per-mesh N ceiling for the DENSE path, checked in three places. **A COMPILE-TIME CONSTANT, not a probe of the machine** — say so when it refuses; the megabytes it quotes read as a RAM limit and a 2026-08-14 owner report asked exactly that. **Still 5,000 after P7, and the reason it did not move has changed**: the memory argument behind it is largely gone (one point now holds 527 MB at the ceiling, not 1,290 — the same 1 GB would buy **N ≈ 6,968**), but nothing has re-measured the FILL time or the accuracy of a mesh that size, and moving it is an owner decision the brief explicitly reserves. `HISTORY.md` §P7 carries the sentence that would change. |
-| **`SurfaceMesher.AcceleratedUnknownCeiling`** | **12,000** | R17's ceiling for the ACCELERATED solve, single-level meshes only (`brief-em-aim-ceiling.md`, 2026-08-14) — see §8's own AIM paragraph and `HISTORY.md` §12's closing subsection for the measurement. **Since P11 the calibration standards' static capacitance solve is accelerated too** (`PlanarStaticAim`), so a de-embedded run's standards are judged against this same ceiling — that was the last always-dense step, and until 2026-08-29 it could refuse a wide-port run whose DUT would have succeeded. |
+| **`SurfaceMesher.AcceleratedUnknownCeiling`** | **12,000** | R17's ceiling for the ACCELERATED solve, single-level meshes only (`brief-em-aim-ceiling.md`, 2026-08-14) — **still single-level only after P12, on purpose: the multi-level REFUSAL went, this CEILING did not. Who gets it is `SurfaceMesher.UsesAcceleratedCeiling`, ONE function read by the mesh verdict, `PlanarSolveContext` and the EM panel alike — they disagreed before P12 — and widening it is the owner's call (`RESOLVED.md` §P12)** — see §8's own AIM paragraph and `HISTORY.md` §12's closing subsection for the measurement. **Since P11 the calibration standards' static capacitance solve is accelerated too** (`PlanarStaticAim`), so a de-embedded run's standards are judged against this same ceiling — that was the last always-dense step, and until 2026-08-29 it could refuse a wide-port run whose DUT would have succeeded. |
 | `QuasiStaticKernel` K-J dispersion | off | opt-in ctor flag, single microstrip only |
 
 - **`MaxLengthOverWidth` is RETIRED** (with `PlanarKernel.NarrowestViaFootprint`). Retiring it
@@ -826,11 +826,18 @@ for the two ladders, the conformal check and the calibration-standard limit that
   `PlanarAimReport.ApproximateBytes` is now **`ResidentBytes`** and carries the sparse LU's own
   fill-in, which `PreconditionerNonZeros` never did — that field is the NEAR MATRIX's nnz under a
   name that reads like the factor's; **`FactorNonZeros` is the factor's**. See `HISTORY.md` §P1.
-  **Multi-level/via
-  meshes are refused by
-  name** — a ẑ basis needs a different grid kernel per height pairing, a separate phase. A
-  non-converged GMRES throws rather than returning a smooth-but-wrong current distribution. Turning
-  it on changes no provenance hash, same reasoning as the parallelism cap above.
+  ~~**Multi-level/via meshes are refused by name**~~ — **retired at P12
+  (brief-em-p12-aim-bordered-vias.md, 2026-08-29). A multi-level and/or via-bearing mesh now runs
+  accelerated, as a BORDERED system** (`PlanarBorderedAimOperator`): the horizontal prefix — R-via-5
+  already makes it a prefix — is projected onto ONE shared auxiliary grid with a kernel table per
+  (level, level) pairing, and the ẑ unknowns are a DENSE BORDER filled by `PlanarFill`'s own via arms.
+  Nothing about a ẑ basis is projected, which is what the old refusal was actually about. The
+  preconditioner is the near-field LU with the border folded in exactly, by block elimination on an
+  `N_z × N_z` Schur complement; `N_hh⁻¹ Z_hz` is deliberately not stored. `PlanarAimOperator` still
+  refuses a via mesh and now names the bordered one — it holds ONE grid kernel pair, i.e. one height
+  pairing. A non-converged GMRES throws rather than returning a smooth-but-wrong current
+  distribution. Turning it on changes no provenance hash, same reasoning as the parallelism cap
+  above.
 - **The ceiling MOVES for the accelerated solve, to `SurfaceMesher.AcceleratedUnknownCeiling` =
   12,000, single-level meshes only** (`brief-em-aim-ceiling.md`, 2026-08-14 — the decision M5 left
   open). Grown from N = 3,731 by two ladder constructions that told two different stories: growing a

@@ -387,8 +387,11 @@ findings live there; do not re-derive or duplicate that detail here. Ordered rou
   nothing idle to overlap.
 - **M5 — the AIM accelerator.** `PlanarFillSettings.Aim` (null/off by default — the dense path is
   untouched). Its win is **memory**, not time, at practical unknown counts under R17's ceiling — a
-  time win only shows up well past where memory already limits a run. The multi-level/via path is
-  refused by name (a ẑ basis needs a different grid kernel and is a separate phase).
+  time win only shows up well past where memory already limits a run. **P12 (2026-08-29) removed the
+  multi-level/via refusal**: such a mesh runs as a BORDERED system — the horizontal prefix projected
+  per (level, level) pairing on one shared grid, the ẑ unknowns a dense border
+  (`PlanarBorderedAimOperator`). The wider accelerated CEILING is still not applied to one; that is
+  a separate owner decision.
 - **`PlanarFeedExtension` — the solver grows its own calibration feed.** A taper's oblique flanks
   broke the assumption behind a uniform-line calibration standard's diagonal term, producing a
   passivity-violating de-embedded result on ordinary artwork. The solver now extends a short,

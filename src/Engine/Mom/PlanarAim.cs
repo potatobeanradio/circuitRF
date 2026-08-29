@@ -424,6 +424,7 @@ internal sealed class AimStencil
 public sealed class PlanarAimGeometry
 {
     internal readonly int N, M, Side, Nx, Ny, Px, Py;
+    internal readonly int Nz;
     internal readonly double H;
     internal readonly AimStencil[] Stencils;
     internal readonly int[] RowPtr, ColIdx;
@@ -455,6 +456,24 @@ public sealed class PlanarAimGeometry
     public PlanarEntryCores  EntryCores { get; }
 
     public int    UnknownCount => N;
+
+    /// <summary>
+    /// <b>P12 — how many HORIZONTAL unknowns this geometry projects</b>, i.e. the size of the block
+    /// AIM accelerates. Equal to <see cref="UnknownCount"/> by definition; named separately because
+    /// on a via-bearing mesh it is a PREFIX of the mesh's unknowns rather than all of them, and every
+    /// index arithmetic in <see cref="PlanarBorderedAimOperator"/> turns on that.
+    /// </summary>
+    public int HorizontalCount => N;
+
+    /// <summary>
+    /// <b>P12 — how many ẑ-directed (via) unknowns follow the horizontal prefix.</b> Zero on a
+    /// single-level mesh, which is what <see cref="PlanarAimOperator"/> requires. These are NOT
+    /// projected: they are the dense border of <see cref="PlanarBorderedAimOperator"/>'s system.
+    /// </summary>
+    public int VerticalCount => Nz;
+
+    /// <summary>The mesh's own unknown count — <c>HorizontalCount + VerticalCount</c>.</summary>
+    public int TotalUnknowns => N + Nz;
     public long   NearEntries  => ColIdx.LongLength;
     public double GridPitchM   => H;
     public int    GridNodesX   => Nx;
@@ -484,8 +503,14 @@ public sealed class PlanarAimGeometry
 
     /// <summary>
     /// Builds the geometry for one mesh. <paramref name="cores"/> may be — and for the cost claim to
-    /// mean anything SHOULD be — <see cref="PlanarFill.BuildGeometryOnlyCores"/>' O(N) shape. Refuses
-    /// a via-bearing mesh by name, exactly as the operator did.
+    /// mean anything SHOULD be — <see cref="PlanarFill.BuildGeometryOnlyCores"/>' O(N) shape.
+    ///
+    /// <para><b>P12 — a via-bearing mesh is no longer refused here, and the reason it once was is
+    /// worth keeping straight.</b> The refusal was about PROJECTING a ẑ basis, which is still not
+    /// done: this projects the HORIZONTAL PREFIX only (R-via-5 guarantees it is a prefix), and the
+    /// ẑ unknowns become <see cref="PlanarBorderedAimOperator"/>'s dense border. What IS asserted
+    /// here is that ordering — a mesh whose vertical bases are interleaved would give a projection
+    /// silently indexed onto the wrong basis.</para>
     /// </summary>
     public static PlanarAimGeometry Build(PlanarFillCores cores, double slabHeightM,
                                           PlanarAimSettings? settings = null)
@@ -504,32 +529,41 @@ public sealed class PlanarAimGeometry
                 "slab height, so it has to be handed in. Pass the problem's own Slab.HeightM; to run " +
                 "without the floor, pass the height anyway and set NearRadiusMinM: 0.");
 
-        foreach (var b in cores.Mesh.Bases)
-            if (b.Direction == PlanarBasisDirection.Z)
+        // R-via-5 — every horizontal basis before every vertical one. The mesher produces that
+        // ordering and three tests already assert it; this is the accelerator's own check, because
+        // what it costs to be wrong here is not an exception but a projection indexed onto a basis
+        // that is not the one it was built for.
+        var bases = cores.Mesh.Bases;
+        int nh = 0;
+        while (nh < bases.Count && bases[nh].Direction != PlanarBasisDirection.Z) nh++;
+        for (int i = nh; i < bases.Count; i++)
+            if (bases[i].Direction != PlanarBasisDirection.Z)
                 throw new NotSupportedException(
-                    "The AIM accelerator models the horizontal (x̂/ŷ) basis family only. A ẑ-directed " +
-                    "via basis carries G_A^zz plus a MIXED component whose dyadic entry is a ∂/∂x " +
-                    "rather than a value, and its sources sit at a different height — a different " +
-                    "grid kernel per height pairing and a projection with a derivative in it. That is " +
-                    "its own phase, not a widening of this one. Solve a via-bearing mesh densely.");
+                    $"Basis {i} is horizontal but follows the vertical basis at {nh}. The accelerator " +
+                    "projects the HORIZONTAL PREFIX of the unknowns and borders the system with the " +
+                    "vertical tail (P12), so the two families have to be contiguous — R-via-5's own " +
+                    "ordering, which SurfaceMesher produces. An interleaved mesh would be projected " +
+                    "onto the wrong bases and would produce a smooth, plausible, wrong answer.");
 
         cores.Settings.CoreBuilds?.ObserveAimGeometry(cores.Mesh);
-        return new PlanarAimGeometry(cores, st, slabHeightM);
+        return new PlanarAimGeometry(cores, st, slabHeightM, nh);
     }
 
-    private PlanarAimGeometry(PlanarFillCores cores, PlanarAimSettings st, double slabHeightM)
+    private PlanarAimGeometry(PlanarFillCores cores, PlanarAimSettings st, double slabHeightM,
+                              int horizontalCount)
     {
         var mesh = cores.Mesh;
         Cores    = cores;
         Settings = st;
-        N    = mesh.Bases.Count;
+        N    = horizontalCount;
+        Nz   = mesh.Bases.Count - horizontalCount;
         M    = st.ProjectionOrder;
         Side = M + 1;
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         // ── the auxiliary grid ────────────────────────────────────────────────────────────────
-        var (centres, spans) = SupportBoxes(mesh);
+        var (centres, spans) = SupportBoxes(mesh, N);
         double maxSpan = 0;
         foreach (var s in spans) maxSpan = Math.Max(maxSpan, s);
         if (!(maxSpan > 0)) maxSpan = cores.MinCellEdgeM > 0 ? cores.MinCellEdgeM : 1.0;
@@ -607,9 +641,8 @@ public sealed class PlanarAimGeometry
     /// <summary>Each basis's support bounding box: its centre, and its larger dimension. The box is the
     /// GRID rectangles of the two cells — a cut cell's metal is inside its rectangle, so this bounds
     /// the support in every case, which is what the stencil guard needs.</summary>
-    private static ((double X, double Y)[] Centres, double[] Spans) SupportBoxes(PlanarMesh mesh)
+    private static ((double X, double Y)[] Centres, double[] Spans) SupportBoxes(PlanarMesh mesh, int n)
     {
-        int n = mesh.Bases.Count;
         var c = new (double, double)[n];
         var s = new double[n];
         for (int i = 0; i < n; i++)
@@ -810,6 +843,19 @@ public sealed class PlanarAimOperator : IPlanarOperator
     private PlanarAimOperator(PlanarAimGeometry g, PlanarKernelTerms termsA, PlanarKernelTerms termsQ,
                               double omega)
     {
+        // P12 — the ẑ family is not modelled HERE, and the sentence now names where it is. This
+        // operator carries ONE grid kernel pair, which is a statement that every source and every
+        // observer sits at one height; a via mesh is a bordered system with a kernel per height
+        // pairing (PlanarBorderedAimOperator), not a wider version of this.
+        if (g.VerticalCount > 0)
+            throw new NotSupportedException(
+                $"This mesh carries {g.VerticalCount} ẑ-directed (via) unknown(s). " +
+                "PlanarAimOperator holds ONE grid kernel pair, i.e. one height pairing, and a via " +
+                "basis needs its own G_A^zz plus a MIXED component whose dyadic entry is a ∂/∂x " +
+                "rather than a value. Build PlanarBorderedAimOperator instead: it accelerates the " +
+                "same horizontal block per (level, level) pairing and carries the vertical unknowns " +
+                "as a DENSE BORDER, which is what P12 measured as cheap while N_z ≪ N_h.");
+
         var cores = g.Cores;
         var st    = g.Settings;
         _g        = g;
