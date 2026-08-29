@@ -763,10 +763,12 @@ same afternoon.
   set past N ≈ 900), the time crossover is much later (N ≈ 3,700), and **it DOES raise the unknown
   ceiling, on a single-level mesh** — from 5,000 to 12,000 (`SurfaceMesher.AcceleratedUnknownCeiling`,
   `docs/sonnet-briefs/brief-em-aim-ceiling.md`, 2026-08-14, the decision M5 left open). A multi-level
-  or via-bearing mesh is refused by name regardless, so the ceiling there is still 5,000; a de-embedded
+  or via-bearing mesh is refused by name regardless, so the ceiling there is still 5,000. ~~a de-embedded
   run's calibration-standard capacitance step is a separate, always-dense computation this flag does
-  not reach and can still refuse a wide-port DUT past 5,000 — see that brief's own closing subsection
-  in `HISTORY.md`.
+  not reach and can still refuse a wide-port DUT past 5,000~~ — **no longer true since P11
+  (`brief-em-p11-accelerated-static-capacitance.md`, 2026-08-29)**: that step is accelerated too
+  (`PlanarStaticAim`), so an accelerated run's standards are judged against the same 12,000, and the
+  wide-port taper this flag could not rescue now runs. See `src/Engine/Mom/RESOLVED.md` §P11.
 - **Disabled by name on the cross-section kernel and on any multi-level/via layout** — the second is
   the engine's own refusal (`PlanarSolve.SolveAt`), asked here as `PlanarProblem.RequiresGeneralKernel`
   so the panel declines to arm a run that cannot start. It is not a second copy of the judgement.

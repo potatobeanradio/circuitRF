@@ -293,6 +293,10 @@ src/Engine/Mom/PlanarAim.cs|The accelerated solve did not converge: {iterations}
 src/Engine/Mom/PlanarAim.cs|The exact near-field entries were released after the preconditioner was factored from 
 src/Engine/Mom/PlanarAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarAim.cs|The stencil's Vandermonde matrix is singular, which can only happen if the grid 
+src/Engine/Mom/PlanarStaticAim.cs|Expected a vector of length {_m}, got {x.Length}.
+src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve did not converge: {iterations} iteration(s) 
+src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve models a SINGLE conductor level over the 
+src/Engine/Mom/PlanarStaticAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no in-plane ramp: its current crosses the shared FOOTPRINT 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no shared EDGE — its unit current crosses the shared 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis spans two cells at the same (x, y) on DIFFERENT levels, so 
@@ -301,6 +305,7 @@ src/Engine/Mom/PlanarCalibration.cs|Each long standard needs its own Δℓ.
 src/Engine/Mom/PlanarCalibration.cs|Port {port.Number}'s feed is only {port.LongitudinalRunM.Count} cell(s) long, and the 
 src/Engine/Mom/PlanarCurrentDensity.cs|The solution has {basisCurrents.Count} unknowns and the mesh has 
 src/Engine/Mom/PlanarDeembed.cs|The two calibration standards have the same length.
+src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance solve (D7's reference impedance) 
 src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance solve (D7's reference impedance) needs 
 src/Engine/Mom/PlanarDeembed.cs|{p} ports need {p} error boxes, not {boxes.Count}.
 src/Engine/Mom/PlanarExcitation.cs|A solve needs at least one port.
@@ -311,7 +316,7 @@ src/Engine/Mom/PlanarFill.cs|This mesh has {n:N0} unknowns, which is past the {S
 src/Engine/Mom/PlanarKernel.cs|A planar solve needs at least one port. Place port labels on the conductor ends in 
 src/Engine/Mom/PlanarKernel.cs|This layout has no port {drivenPortNumber} to drive; it has 
 src/Engine/Mom/PlanarSolve.cs|A sweep needs at least one frequency.
-src/Engine/Mom/PlanarSolve.cs|Port {owners[ci].Number}'s calibration standard needs {nStd:N0} unknowns to 
+src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number}'s calibration standard needs {nStd:N0} unknowns 
 src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at 
 src/Engine/Mom/PlanarSolve.cs|The sweep's lowest frequency is {SurfaceMesher.Eng(fLo)}Hz. 
 src/Engine/Mom/PlanarSolve.cs|This mesh was built without a level list, so the general kernel has no height to 

@@ -707,6 +707,25 @@ allocate 12 GB is not lightweight.
 > rather than a bigger integer. `HISTORY.md` §P8 carries both ladders and the sentence that would move
 > the constant, written out and not applied.
 
+> **Built at P11 (`brief-em-p11-accelerated-static-capacitance.md`, 2026-08-29) — de-embedding's own
+> reference-impedance step is NO LONGER "a separate, always-dense cell system the accelerator does not
+> reach", and that sentence two notes above is the one this corrects.** `PlanarDeembed.StaticCapacitance`
+> solves `P q = ε₀·1` over a standard's CELLS, and `P` is exactly the scalar block the AIM accelerator
+> already projects — the same cell-pulse potential with the static kernel. `PlanarStaticAim` therefore
+> solves it with the same projection, near set, grid FFT and sparse-LU-preconditioned GMRES, so an
+> accelerated run's calibration standards are judged against `AcceleratedUnknownCeiling` like
+> everything else and **a wide port's standard no longer refuses a run whose DUT would have
+> succeeded**. Gated at **1e-6 relative** against the dense solve on `C_pul` itself — the DIFFERENCED
+> quantity, which is what the published s-parameters are referenced to — and measured at 1.04e-7
+> (FR-4 hero's standards) and 2.02e-9 (GaAs). The 2026-08-14 owner report's own taper, reconstructed:
+> its wide port's standards mesh at N = 1,498 / 7,603 / 4,273, the dense run is still refused at setup
+> and the accelerated de-embedded run completes in **107 s for 3 points**, the N = 7,603 standard's
+> static solve costing 9.7 s and 222 MB against 683 MB dense. The dense path is untouched and
+> bit-identical; its refusal now names turning the accelerator on as the first remedy, which it could
+> not before — and which, until P11 moved the check ahead of `PlanarSolveContext`'s own eager ceiling
+> guard, no user ever saw, because that refusal was unreachable. `src/Engine/Mom/RESOLVED.md` §P11 and
+> `HISTORY.md` §P11 carry the knob ladders, the tolerance measurement and the taper's tables.
+
 Sanity check on the hero: 50 Ω microstrip on 1.6 mm FR-4 is W ≈ 2.9 mm; a 20 mm line at 10 GHz has
 λ_g ≈ 16.5 mm, so λ_g/20 ≈ 0.8 mm → ~24 cells long × ~6 across with edge refinement → **N of a few
 hundred**. Genuinely fast. A spiral inductor lands at 1–3k. The scope is realistic.

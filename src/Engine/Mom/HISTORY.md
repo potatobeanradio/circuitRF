@@ -7556,3 +7556,128 @@ tests/Engine.Tests/Mom/ParallelBudgetTests.cs
 No change to `ForRows`, to `PlanarFanOut`, to the budget's semantics or to any answer. §6's M3
 paragraph is untouched, because nothing in it became false — the fall-off it attributes to hardware
 is not the permit scheme, which is what this phase set out to check.
+
+---
+
+# P11 — the calibration standards' static capacitance, accelerated (brief-em-p11-accelerated-static-capacitance.md, 2026-08-29)
+
+`PlanarDeembed.StaticCapacitance` solved `P q = ε₀·1` on each calibration standard with a dense m×m
+complex LU, whatever the run's settings said. `P` is exactly the scalar block M5 already projects, so
+`PlanarStaticAim` now solves it accelerated — same projection, same near-set rule, same grid FFT,
+same sparse-LU-preconditioned GMRES, over CELLS with one grid kernel and no ω. The narrative,
+the negative results and the wiring are in `RESOLVED.md` §P11; the tables are here.
+
+## Table 1 — the knob ladder, against the dense solve on the same meshes
+
+Relative error in `C_pul = (C₂ − C₁)/Δℓ`. FR-4 hero's own 30.84 mm / 90.89 mm standards
+(m = 279 / 738, differencing amplification `C₂/(C₂ − C₁)` = 1.54) and the GaAs hero's 1.14 mm /
+3.02 mm (m = 117 / 198, amplification 1.64), both at the shipping mesh. One knob moved at a time from
+the shipped defaults. Release build, standalone harness.
+
+| knob | FR-4 | GaAs | near entries/row (FR-4) |
+|---|---|---|---|
+| `GridSpacingFactor` 0.125 cell spans | 1.19e-7 | 2.00e-9 | 196 |
+| 0.25 | 1.11e-7 | 2.00e-9 | 196 |
+| **0.5 (shipped)** | **1.04e-7** | **2.02e-9** | 196 |
+| 0.75 | 1.60e-7 | 2.11e-9 | 196 |
+| 1.0 | 3.32e-7 | 2.56e-9 | 196 |
+| `NearRadiusFactor` 3 basis supports | 2.69e-7 | 8.88e-7 | 99 |
+| 4 | 3.69e-7 | 1.61e-7 | 132 |
+| 5 | 1.98e-7 | 2.89e-8 | 164 |
+| **6 (shipped)** | **1.04e-7** | **2.02e-9** | 196 |
+| 8 | 3.39e-8 | 7.07e-15 | 256 |
+| `ProjectionOrder` 2 | 1.05e-7 | 2.15e-9 | 196 |
+| **3 (shipped)** | **1.04e-7** | **2.02e-9** | 196 |
+| 4 | 1.08e-7 | 2.00e-9 | 196 |
+| 5 | 1.08e-7 | 2.00e-9 | 196 |
+
+**The radius is the only knob that acts.** The order is inert across the whole reachable range, and
+the pitch is flat below 0.5 and degrades above it. The radius is read in BASIS supports — M5's own
+unit and M5's own number — not in cell spans; reading it in cell spans halves it (a basis spans two
+cells) and leaves GaAs at 8.88e-7, inside the 1e-6 gate by 12%.
+
+**The pitch and the radius are not independent when the radius is too small.** At a radius of 3
+supports the pitch ladder has the opposite sign: `0.5 → 2.69e-7`, `0.25 → 1.31e-6`,
+`0.125 → 2.45e-6`. Refining the grid cannot compensate for a near field too narrow to hold the
+coupling.
+
+## Table 2 — the GMRES tolerance, on the DIFFERENCED answer
+
+FR-4 standards as above.
+
+| `StaticTolerance` | relative error in `C_pul` | iterations |
+|---|---|---|
+| 1e-6 | 9.88e-8 | 2 / 2 |
+| 1e-8 | 1.04e-7 | 3 / 3 |
+| **1e-10 (shipped)** | **1.04e-7** | 3 / 3 |
+| 1e-12 | 1.04e-7 | 4 / 4 |
+| 1e-14 | 1.04e-7 | 5 / 5 |
+
+Identical in every printed digit from 1e-8 down: **the projection's error is what is being measured,
+not the solve's.** 1e-10 is two decades under where it stopped moving, so a standard pair whose
+lengths are close (a larger amplification than the 1.5-1.9 here) still has the residual's own
+contribution well under the projection's — and not tighter than that, because a tolerance GMRES
+cannot reach becomes a refusal.
+
+## Table 3 — the owner's taper, re-run (M4)
+
+Reconstructed at the reported geometry (13.1 mm into 299 µm over 28.575 mm, 20 mil RO4350B,
+cells/λ 5, edge 3, mesh frequency 500 MHz), straight-flanked rather than Klopfenstein, landing at
+N = 4,239 against the reported 7,749 — the width RATIO is what reproduces the failure, and it does:
+the WIDE port's standards mesh at **N = 1,498 / 7,603 / 4,273**.
+
+Each standard's static capacitance, accelerated, Release:
+
+| standard | m (cells) | n (bases) | time | resident | dense working set | near/row | fill |
+|---|---|---|---|---|---|---|---|
+| 3.67 mm | 784 | 1,498 | 0.34 s | 14 MB | 28 MB | 435 | 55.5% |
+| 13.66 mm | 2,184 | 4,273 | 2.08 s | 82 MB | 218 MB | 575 | 26.3% |
+| **25.66 mm** | **3,864** | **7,603** | **9.69 s** | **222 MB** | **683 MB** | 607 | 15.7% |
+
+The dense route does not allocate that 683 MB — it is refused. Of the 9.69 s, **9.24 s is the sparse
+LU** of the near matrix and 72 ms is the GMRES solve (4 iterations); the near fill is 219 ms and the
+AIM correction 93 ms.
+
+The whole run, 3 points at 1 / 3 / 5 GHz, de-embedded:
+
+| | before P11 | after |
+|---|---|---|
+| dense | refused at setup | refused at setup; the sentence now names the accelerator and quotes its ceiling |
+| **accelerated** | **refused at setup** | **107 s**, 7 concurrent solves per point across 10 cores |
+
+| f | \|S₁₁\| | \|S₂₁\| | \|S₁₁\|²+\|S₂₁\|² | port 1 Z_c | port 2 Z_c |
+|---|---|---|---|---|---|
+| 1 GHz | −1.24 dB | −6.10 dB | 0.998 | 6.59 Ω | 82.2 Ω |
+| 3 GHz | −2.13 dB | −4.22 dB | 0.991 | 6.93 Ω | 83.7 Ω |
+| 5 GHz | −1.23 dB | −6.28 dB | 0.990 | 7.00 Ω | 84.1 Ω |
+
+Port 1's `Z_c` against the 6.92 Ω the taper was drawn for is the interesting column. Port 2's 82-84 Ω
+against 100 Ω is not a P11 result: that port resolves to **2 basis functions** across 468 µm and the
+run raises its own feed-clearance note about it.
+
+## The refusal that could not fire
+
+`brief-em-deembed-ceiling-closeout.md`'s C1 put the de-embedding-specific ceiling check in
+`PlanarSolve.Run` after the calibrators were constructed. `PlanarPortCalibrator`'s constructor builds
+one `PlanarSolveContext` per standard, and that constructor's eager `SurfaceMesher.GuardCeiling`
+throws first — so on the dense path the informative sentence was **unreachable**, and the message a
+user actually got was "This mesh has 7,603 unknowns…", which names neither de-embedding, nor which
+port, nor a remedy. Verified directly on the taper before the fix. The check now runs before the
+calibrator is built (which is handed the standard set rather than rebuilding it) and two tests assert
+its text.
+
+## What was changed in the code
+
+```
+src/Engine/Mom/PlanarStaticAim.cs   NEW — PlanarStaticAim, PlanarStaticAimReport
+src/Engine/Mom/PlanarAim.cs         + AimProjection, AimGridFft (MOVED out of the two AIM classes,
+                                      not copied) + PlanarAimSettings.StaticTolerance
+src/Engine/Mom/PlanarFill.cs        + PlanarPulsePotential (carved out of PlanarEntryFill.P whole)
+src/Engine/Mom/PlanarDeembed.cs     the accelerated route, its ceiling, the slabHeightM parameter
+src/Engine/Mom/PlanarSolve.cs       the standards' ceiling refusal moved before the calibrator
+tests/Engine.Tests/Mom/PlanarP11StaticAimTests.cs      NEW — 12 routine tests, 0.93 s
+tests/Engine.Tests/Mom/EmDeembedCeilingTests.cs        + the two setup-refusal gates
+tests/Ui.Tests/Em/EmCeilingRefusalTests.cs             Gate1 inverted: no longer refuses
+```
+
+`Aim = null` is bit-identical and asserted as exact equality.

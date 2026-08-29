@@ -790,14 +790,16 @@ so the gap widens with size (about 2× at 1,900 unknowns, an order of magnitude 
 crossover it is somewhat slower than the dense solve. It is **single-metal-level only, with no vias**
 — and within that, it raises the ceiling from 5,000 unknowns to 12,000.
 
-<div class="callout warn">
-<span class="label">One thing it does not reach, and it costs real minutes when it bites</span>
-<p>De-embedding's own reference-impedance step is a <strong>separate, always-dense</strong> computation
-on each calibration standard, and the accelerator does not touch it. A standard reproduces your port's
-own cross-section, so a <em>wide</em> port's standard can be as large as the whole structure — and such
-a run is refused up front, at setup time, even though the DUT's own accelerated solve would have
-succeeded. Turn de-embedding off to read the raw solve, knowing those S-parameters include the port
-discontinuity and are for diagnostics only.</p>
+<div class="callout note">
+<span class="label">It now covers de-embedding's own reference-impedance step too</span>
+<p>Working out a de-embedded result's reference impedance needs a separate static calculation on each
+calibration standard, and a standard reproduces your port's own cross-section — so a <em>wide</em>
+port's standard can be as large as the whole structure. That step used to stay dense whatever this
+option said, which meant a run could be refused up front even though the structure's own accelerated
+solve would have succeeded. It is accelerated as well now, and judged against the same 12,000-unknown
+ceiling as everything else. If a run is still refused because a calibration standard is too large,
+the remaining options are a coarser mesh, or turning de-embedding off and reading the raw solve —
+knowing those S-parameters include the port discontinuity and are for diagnostics only.</p>
 </div>
 
 ## What the engine refuses, and why a refusal is better {#refusals}

@@ -217,14 +217,45 @@ public static class PlanarDeembed
     /// (or a geometry-only core, which the accelerator's contexts carry) falls back to building them,
     /// which is what this method always did.
     /// </param>
+    /// <param name="slabHeightM">
+    /// <b>P11 — required whenever <paramref name="settings"/> asks for the accelerator</b>, and
+    /// ignored on the dense path (which is why it is optional rather than positional): the
+    /// accelerated static solve's near radius has a floor of 2h under it and h is not derivable from
+    /// a mesh. Omitting it on an accelerated call throws rather than quietly solving densely, because
+    /// a silent dense fallback is exactly the ceiling this phase exists to remove.
+    /// </param>
     public static double StaticCapacitance(PlanarMesh mesh, PlanarKernelTerms staticScalar,
                                            PlanarFillSettings? settings = null,
-                                           PlanarFillCores? cores = null)
+                                           PlanarFillCores? cores = null,
+                                           double slabHeightM = 0)
     {
         ArgumentNullException.ThrowIfNull(mesh);
-        GuardCapacitanceCeiling(mesh);
-
         var st = settings ?? PlanarFillSettings.Default;
+
+        // ── P11 — the accelerated route ───────────────────────────────────────────────────────
+        //
+        // P IS the operator M5 already projects (the scalar block, with the static kernel), so an
+        // accelerated run's reference impedance no longer needs a dense m×m LU. The dense branch
+        // below is untouched and is what a null Aim still runs, bit for bit.
+        if (st.Aim is { } aim)
+        {
+            if (!(slabHeightM > 0))
+                throw new ArgumentOutOfRangeException(nameof(slabHeightM), slabHeightM,
+                    "An ACCELERATED static capacitance solve needs the slab height: P8's near-radius " +
+                    "floor is 2h and h cannot be read off a mesh. Pass the problem's own Slab.HeightM.");
+
+            GuardCapacitanceCeiling(mesh, accelerated: true);
+
+            // Geometry-only cores are the right shape here and are what an accelerated context holds
+            // — the O(m²) pair cores are exactly the build this route exists to skip.
+            var gc = cores is not null && ReferenceEquals(cores.Mesh, mesh)
+                   ? cores
+                   : PlanarFill.BuildGeometryOnlyCores(mesh, st);
+
+            return PlanarStaticAim.Build(gc, staticScalar, slabHeightM, aim).TotalCapacitance();
+        }
+
+        GuardCapacitanceCeiling(mesh, accelerated: false);
 
         // The mesh identity is checked rather than assumed: the cores carry their own Mesh, and a
         // core built for a DIFFERENT mesh would index a packed triangle of the wrong length and give
@@ -272,9 +303,31 @@ public static class PlanarDeembed
     /// <see cref="StaticCapacitance"/> would otherwise see with one describing what this call site
     /// actually allocates.</para>
     /// </summary>
-    private static void GuardCapacitanceCeiling(PlanarMesh mesh)
+    /// <param name="accelerated">
+    /// <b>P11 — which ceiling this call site is judged against.</b> Public, and public for the reason
+    /// this area already states about its instruments: the decision it makes is the whole of what
+    /// changed here, and a test that had to run the SOLVE to observe it would be paying minutes to
+    /// read one comparison. <see cref="StaticCapacitance"/> calls it with its own route's flag.
+    /// </param>
+    public static void GuardCapacitanceCeiling(PlanarMesh mesh, bool accelerated)
     {
         int n = mesh.Bases.Count;
+
+        // P11 — the accelerated route holds no m×m anything, so the DENSE ceiling is the wrong
+        // question to ask of it, exactly as PlanarSolveContext's constructor already reasons about
+        // the DUT's own system. The threshold is the same one the accelerated DUT is judged against.
+        if (accelerated)
+        {
+            if (n <= SurfaceMesher.AcceleratedUnknownCeiling) return;
+            throw new InvalidOperationException(
+                $"This calibration standard's static capacitance solve (D7's reference impedance) " +
+                $"needs {mesh.Cells.Count:N0} cells ({n:N0} basis functions), past the " +
+                $"{SurfaceMesher.AcceleratedUnknownCeiling:N0}-unknown ACCELERATED ceiling this " +
+                "kernel is built for (brief-em-aim-ceiling.md). The static solve is accelerated too " +
+                "(P11), so it is not what bounds this run — the DUT's own mesh is judged against the " +
+                "same number.");
+        }
+
         if (n <= SurfaceMesher.UnknownCeiling) return;
 
         int m = mesh.Cells.Count;
@@ -305,8 +358,8 @@ public static class PlanarDeembed
                                              PlanarFillCores? longCores = null)
     {
         var terms = PlanarKernelTerms.StaticScalar(slab);
-        double c1 = StaticCapacitance(shortStd.Mesh, terms, settings, shortCores);
-        double c2 = StaticCapacitance(longStd.Mesh,  terms, settings, longCores);
+        double c1 = StaticCapacitance(shortStd.Mesh, terms, settings, shortCores, slab.HeightM);
+        double c2 = StaticCapacitance(longStd.Mesh,  terms, settings, longCores, slab.HeightM);
         double dl = longStd.LengthM - shortStd.LengthM;
 
         if (!(dl > 0))

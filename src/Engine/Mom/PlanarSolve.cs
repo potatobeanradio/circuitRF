@@ -328,12 +328,15 @@ public sealed class PlanarPortCalibrator
                                 double fLoHz, double fHiHz,
                                 PlanarCalibrationSettings? calibration = null,
                                 PlanarFillSettings? fill = null,
-                                double standardLevelZ = double.NaN)
+                                double standardLevelZ = double.NaN,
+                                IReadOnlyList<PlanarStandard>? standards = null)
     {
         _slab = slab;
         _standardLevels = double.IsNaN(standardLevelZ) ? null : new PlanarLevels([standardLevelZ]);
 
-        var set = PlanarCalibration.BuildSet(port, slab, fLoHz, fHiHz, calibration);
+        var set = standards is null
+                ? PlanarCalibration.BuildSet(port, slab, fLoHz, fHiHz, calibration)
+                : [.. standards];
         Standards = set;
 
         _standards   = new PlanarSolveContext[set.Length];
@@ -964,9 +967,72 @@ public static class PlanarSolve
                             "on the slab, or turn de-embedding off and read the raw solve.");
 
                     sw.Restart();
+
+                    // ── R-dcl-1..4 (brief-em-deembed-ceiling-closeout.md), RE-POINTED AT P11 —
+                    // refuse a de-embedded run AT SETUP, honestly, rather than let it succeed here
+                    // and throw real minutes later out of PlanarDeembed.CapacitancePerMetre.
+                    //
+                    // **It has to happen HERE, before the calibrator is constructed, and P11 found
+                    // out the hard way that it did not.** The calibrator builds one
+                    // PlanarSolveContext per standard, and that constructor's own eager
+                    // SurfaceMesher.GuardCeiling throws first — with a correct sentence about a
+                    // mesh, which says nothing about de-embedding, about which port, or about the
+                    // remedy. The check that used to sit after this loop was therefore unreachable
+                    // on the dense path and no test had ever seen its message.
+                    //
+                    // Until P11 the static capacitance solve was ALWAYS dense whatever the run's
+                    // settings said, so this was judged against the DENSE ceiling even on an
+                    // accelerated run and the sentence had to say the accelerator would not help.
+                    // **It now does**: P is exactly the scalar block M5 projects, PlanarStaticAim
+                    // solves it accelerated, and a standard is judged against the same ceiling as
+                    // the DUT. What is left is the DENSE run's refusal, whose first remedy is now
+                    // turning the accelerator on rather than turning de-embedding off.
+                    //
+                    // A standard reproduces the DUT's own transverse gridlines VERBATIM (D4), so a
+                    // wide-port DUT's standard can be larger than the DUT itself — which is why the
+                    // mesh remedies §0 of the parent brief measured inert on this class of geometry
+                    // are not offered here either.
+                    bool accStd = fillSt.Aim is not null && !general;
+                    int  stdCeiling = accStd ? SurfaceMesher.AcceleratedUnknownCeiling
+                                             : SurfaceMesher.UnknownCeiling;
+                    var stdSet = PlanarCalibration.BuildSet(ports[i], slab, fLo, fHi, st.Calibration);
+                    foreach (var std in stdSet)
+                    {
+                        int nStd = std.Mesh.Bases.Count;
+                        if (nStd <= stdCeiling) continue;
+
+                        var stdSizes = stdSet.Select(z => z.Mesh.Bases.Count.ToString("N0"));
+                        throw new InvalidOperationException(
+                            $"Port {ports[i].Number}'s calibration standard needs {nStd:N0} unknowns " +
+                            $"to solve for its reference impedance, past the {stdCeiling:N0}-unknown " +
+                            (accStd ? "ACCELERATED " : "") + "ceiling. This is de-embedding's OWN " +
+                            "standard, not the DUT's mesh — a standard reproduces the DUT's " +
+                            "transverse gridlines verbatim, so a wide port's standard can be larger " +
+                            "than the DUT itself. " +
+                            (accStd
+                                ? "Both the standards' frequency-domain solves and their static " +
+                                  "capacitance solve (Z_c = γ/(jωC_pul)) are accelerated, so this is " +
+                                  "the same ceiling the DUT is judged against and there is no further " +
+                                  "switch to turn on. Coarsen the mesh, or turn de-embedding off and " +
+                                  "read the raw solve — those s-parameters include the port " +
+                                  "discontinuity rather than being the structure's own response, and " +
+                                  "are for diagnostics only."
+                                : "Turn ON the accelerated solve (the EM setup's Accelerated solve, " +
+                                  "PlanarFillSettings.Aim): since P11 it covers the standards' static " +
+                                  "capacitance solve (Z_c = γ/(jωC_pul)) as well as every " +
+                                  "frequency-domain system, and its ceiling is " +
+                                  $"{SurfaceMesher.AcceleratedUnknownCeiling:N0} unknowns. Failing " +
+                                  "that, turn de-embedding off and read the raw solve instead: those " +
+                                  "s-parameters include the port discontinuity rather than being the " +
+                                  "structure's own response, and are for diagnostics only.") +
+                            $" The DUT's own mesh is N = {mesh.Bases.Count:N0}; this port's " +
+                            $"standard(s) are N = {string.Join(" / ", stdSizes)}.");
+                    }
+
                     var cal = new PlanarPortCalibrator(
                         ports[i], slab, fLo, fHi, st.Calibration, fillSt,
-                        standardLevelZ: general ? problem.LevelZ(ports[i].LayerIndex) : double.NaN);
+                        standardLevelZ: general ? problem.LevelZ(ports[i].LayerIndex) : double.NaN,
+                        standards: stdSet);
                     setupMs += sw.Elapsed.TotalMilliseconds;
                     cores  += cal.MeshCount;
                     standards += cal.MeshCount;
@@ -984,36 +1050,6 @@ public static class PlanarSolve
                 foreach (var s in cal.Standards) sizes.Add(s.Mesh.Bases.Count);
             int totalN = 0;
             foreach (int n in sizes) totalN += n;
-
-            // ── R-dcl-1..4 (brief-em-deembed-ceiling-closeout.md) — refuse a de-embedded run AT
-            // SETUP, honestly, rather than let it succeed here and throw twenty real minutes later
-            // out of PlanarDeembed.CapacitancePerMetre. D7's reference impedance needs a static
-            // ω → 0 capacitance solve on EACH calibration standard (PlanarDeembed.StaticCapacitance
-            // → PlanarFill.BuildCores), and that solve is ALWAYS dense: it is a structurally
-            // different m×m system over CELLS, not the N×N frequency-domain basis system the
-            // accelerated solve covers, so turning the accelerator on does not move THIS ceiling
-            // even when it moved the DUT's. A calibration standard reproduces the DUT's own
-            // transverse gridlines VERBATIM (D4), so a wide-port DUT's standard can be as large as
-            // the DUT itself or larger — the mesh remedies §0 of the parent brief already measured
-            // inert on this class of geometry are not offered here either, for the same reason.
-            for (int ci = 0; ci < calibrators.Count; ci++)
-                foreach (var std in calibrators[ci].Standards)
-                {
-                    int nStd = std.Mesh.Bases.Count;
-                    if (nStd <= SurfaceMesher.UnknownCeiling) continue;
-
-                    throw new InvalidOperationException(
-                        $"Port {owners[ci].Number}'s calibration standard needs {nStd:N0} unknowns to " +
-                        $"solve for its reference impedance, past the {SurfaceMesher.UnknownCeiling:N0}-" +
-                        "unknown ceiling. This is de-embedding's OWN static capacitance solve " +
-                        "(Z_c = γ/(jωC_pul)), not the DUT's frequency-domain system — it is always " +
-                        "dense, so turning on the accelerated solve will NOT help here even though it " +
-                        "let the DUT's own mesh through. Turn de-embedding off and read the raw solve " +
-                        "instead: those s-parameters include the port discontinuity rather than being " +
-                        "the structure's own response, and are for diagnostics only. The DUT's own " +
-                        $"mesh is N = {mesh.Bases.Count:N0}; the calibration standard(s) this run " +
-                        $"needs are N = {string.Join(" / ", sizes)}.");
-                }
 
             int deembedded = 0;
             var uncalibrated = new List<int>();

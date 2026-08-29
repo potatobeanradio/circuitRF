@@ -204,4 +204,96 @@ public class EmDeembedCeilingTests(ITestOutputHelper output)
         Assert.True(ratio > 1e-4,
             "StaticCapacitance discards this every call; C3 needs it measured, not assumed away");
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // P11 — the SETUP refusal: it is reachable, and it now names the accelerator
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// <b>The 2026-08-14 owner report's own shape</b> — a wide-to-narrow taper, 13.1 mm into 299 µm
+    /// over 28.575 mm on 20 mil RO4350B (brief-em-aim-ceiling.md §0). The DUT's mesh is comfortably
+    /// under the ceiling; the WIDE port's calibration standards are not, because the transverse pitch
+    /// is set by the NARROW end and the standard reproduces the wide port's gridlines verbatim over a
+    /// length the band chooses. That combination is the only shape in which this refusal fires — a
+    /// uniform wide line does not produce it, because there is no narrow end to set the pitch.
+    ///
+    /// <para>The run is refused at SETUP, before any fill, so this costs milliseconds.</para>
+    /// </summary>
+    private static readonly GroundedSlab Ro4350 = new(0.508e-3, new EmMaterial(3.66, 0.0037));
+
+    private static readonly PlanarMeshSettings TaperMesh =
+        new(Auto: false, CellsPerWavelength: 5, EdgeMesh: true, EdgeCells: 3, MeshFrequencyHz: 500e6);
+
+    /// <inheritdoc cref="Ro4350"/>
+    private static (PlanarProblem Problem, PlanarMesh Mesh, IReadOnlyList<PlanarPortResolution> Ports)
+        WidePortFixture()
+    {
+        var problem = PlanarLineFixtures.Taper(Ro4350, 13.1e-3, 299e-6, 28.575e-3, 5e9, segments: 16);
+        var (mesh, ports) = PlanarLineFixtures.MeshAndPorts(problem, TaperMesh);
+        return (problem, mesh, ports);
+    }
+
+    /// <summary>
+    /// <b>P11 — the refusal a dense de-embedded run gets, and it has to be THIS one.</b>
+    ///
+    /// <para>The check used to sit after the calibrators were constructed, which made it
+    /// unreachable: <c>PlanarSolveContext</c>'s own eager <c>SurfaceMesher.GuardCeiling</c> throws
+    /// first, with a correct sentence about a mesh that says nothing about de-embedding, about which
+    /// port, or about the remedy. Nothing had ever asserted the message, so nothing caught it. It now
+    /// runs before the calibrator is built, and this is what says so.</para>
+    /// </summary>
+    [Fact]
+    public void P11_ADenseDeembeddedRun_IsRefusedAtSetup_AndTheRefusalNamesTheAccelerator()
+    {
+        var (problem, mesh, ports) = WidePortFixture();
+        _out.WriteLine($"DUT N = {mesh.Bases.Count:N0} (under the {SurfaceMesher.UnknownCeiling:N0} ceiling)");
+        Assert.True(mesh.Bases.Count <= SurfaceMesher.UnknownCeiling,
+            "the fixture's own DUT must be solvable, or this tests the wrong refusal");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => PlanarSolve.Run(
+            problem, mesh, ports, [1e9, 5e9],
+            new PlanarSolveSettings(Fill: PlanarFillSettings.Default, Deembed: true)));
+
+        _out.WriteLine(ex.Message);
+        Assert.Contains("calibration standard needs", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Turn ON the accelerated solve", ex.Message, StringComparison.Ordinal);
+        Assert.Contains($"{SurfaceMesher.AcceleratedUnknownCeiling:N0} unknowns", ex.Message,
+                        StringComparison.Ordinal);
+        Assert.Contains($"N = {mesh.Bases.Count:N0}", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The same fixture with the accelerator on gets PAST setup — which is the whole of P11 as a
+    /// user sees it. The run is not carried out here (that is the taper measurement in
+    /// <c>HISTORY.md</c>); what is asserted is that the refusal is gone and that the standards are
+    /// judged against the accelerated ceiling.
+    /// </summary>
+    [Fact]
+    public void P11_TheSameRunAccelerated_IsNotRefusedAtSetup()
+    {
+        var (_, mesh, ports) = WidePortFixture();
+        var slab = Ro4350;
+
+        int endRun = PlanarCalibration.EndRunCellsFor(ports[0], slab);
+        var set = PlanarCalibration.BuildSet(ports[0], slab, 1e9, 5e9);
+        var sizes = set.Select(s => s.Mesh.Bases.Count).ToArray();
+        _out.WriteLine($"end run {endRun}; standards N = {string.Join(" / ", sizes.Select(n => n.ToString("N0")))}");
+
+        Assert.True(sizes.Any(n => n > SurfaceMesher.UnknownCeiling),
+            "the fixture must have a standard past the DENSE ceiling, or the dense refusal above is vacuous");
+        Assert.All(sizes, n => Assert.True(n <= SurfaceMesher.AcceleratedUnknownCeiling,
+            $"standard N = {n:N0} is past the accelerated ceiling too; the fixture is too big"));
+
+        // The setup-time decision, taken directly: an accelerated de-embedded run is judged against
+        // the accelerated ceiling at BOTH places that ask — the standards' own solve contexts and
+        // the static capacitance solve.
+        foreach (var std in set)
+        {
+            var aim = PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default };
+            Assert.Null(Record.Exception(() =>
+                new PlanarSolveContext(std.Mesh, std.Ports, aim, null, slab.HeightM)));
+            Assert.Null(Record.Exception(() =>
+                PlanarDeembed.GuardCapacitanceCeiling(std.Mesh, accelerated: true)));
+        }
+    }
 }

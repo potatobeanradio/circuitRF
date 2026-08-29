@@ -527,7 +527,7 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | `DefaultSliverAreaFraction` | 0.05 | conservative, on a plateau (0.005…0.05 identical at cells/λ = 130); **no conditioning cliff was located** |
 | `PlanarLevels.MaxElectricalLength` | **0.30** | bounds the **BASIS** (one z-rooftop per gap ⇒ uniform current), not the quadrature |
 | `SurfaceMesher.UnknownCeiling` | **5,000** | R17's per-mesh N ceiling for the DENSE path, checked in three places. **A COMPILE-TIME CONSTANT, not a probe of the machine** — say so when it refuses; the megabytes it quotes read as a RAM limit and a 2026-08-14 owner report asked exactly that. **Still 5,000 after P7, and the reason it did not move has changed**: the memory argument behind it is largely gone (one point now holds 527 MB at the ceiling, not 1,290 — the same 1 GB would buy **N ≈ 6,968**), but nothing has re-measured the FILL time or the accuracy of a mesh that size, and moving it is an owner decision the brief explicitly reserves. `HISTORY.md` §P7 carries the sentence that would change. |
-| **`SurfaceMesher.AcceleratedUnknownCeiling`** | **12,000** | R17's ceiling for the ACCELERATED solve, single-level meshes only (`brief-em-aim-ceiling.md`, 2026-08-14) — see §8's own AIM paragraph and `HISTORY.md` §12's closing subsection for the measurement. **A de-embedded run's calibration-standard capacitance step is NOT accelerated** (`PlanarDeembed.StaticCapacitance` is always dense, out of this brief's scope) and can still refuse on a wide port even when the DUT's own solve would succeed — see that subsection's own limitation note. |
+| **`SurfaceMesher.AcceleratedUnknownCeiling`** | **12,000** | R17's ceiling for the ACCELERATED solve, single-level meshes only (`brief-em-aim-ceiling.md`, 2026-08-14) — see §8's own AIM paragraph and `HISTORY.md` §12's closing subsection for the measurement. **Since P11 the calibration standards' static capacitance solve is accelerated too** (`PlanarStaticAim`), so a de-embedded run's standards are judged against this same ceiling — that was the last always-dense step, and until 2026-08-29 it could refuse a wide-port run whose DUT would have succeeded. |
 | `QuasiStaticKernel` K-J dispersion | off | opt-in ctor flag, single microstrip only |
 
 - **`MaxLengthOverWidth` is RETIRED** (with `PlanarKernel.NarrowestViaFootprint`). Retiring it
@@ -854,13 +854,30 @@ for the two ladders, the conformal check and the calibration-standard limit that
   so none of this changed an answer anyone already had. A CONFORMALLY CUT mesh carries no penalty of
   its own (measured: 4-5
   GMRES iterations, `|Δcurrent|` 1.6e-6 to 5.5e-5 across N = 1,538 to 2,232), so the ceiling does not
-  depend on `PlanarBoundaryCells`. **A de-embedded run's calibration-standard capacitance step is a
-  SEPARATE, always-DENSE m×m cell system** (`PlanarDeembed.StaticCapacitance`, out of this brief's
-  scope) that can still refuse on a wide port even when the DUT's own accelerated solve would succeed
-  — measured on the owner's own reported taper (§0), where the wide port's calibration standard alone
-  meshed at N = 6,466. `SurfaceMesher.Mesh`'s own `accelerated` parameter and `PlanarSolveContext`'s
-  constructor are the two places this is enforced, alongside the dense path's unchanged three
-  (`SurfaceMesher.Mesh`'s verdict, `PlanarSystem.GuardCeiling`, `PlanarFill.cs`'s own copy).
+  depend on `PlanarBoundaryCells`. ~~**A de-embedded run's calibration-standard capacitance step is a
+  SEPARATE, always-DENSE m×m cell system**~~ — **corrected at P11
+  (brief-em-p11-accelerated-static-capacitance.md, 2026-08-29): it is not dense any more.** It was
+  the last step of a de-embedded run that ignored the run's own settings, and it could refuse a whole
+  run on a wide port even when the DUT's own accelerated solve would have succeeded — measured on the
+  owner's own reported taper (§0), where the wide port's calibration standard alone meshed at
+  N = 6,466. `P` is exactly the scalar block M5 projects (the same cell-pulse potential, with
+  `PlanarKernelTerms.StaticScalar`), so `PlanarStaticAim` solves `P q = ε₀·1` over CELLS with the same
+  projection, near set, grid FFT and sparse-LU-preconditioned GMRES, and an accelerated run's
+  standards are judged against the SAME ceiling as its DUT. That taper now runs de-embedded
+  (`HISTORY.md` §P11 Table 3: 3 points in 107 s; the N = 7,603 standard's static solve is 9.7 s and
+  222 MB against 683 MB for the dense route's three m×m matrices). **The dense path is untouched and
+  bit-identical**, and its refusal now names turning the accelerator on as the first remedy — which
+  it could not before, and which nothing had ever asserted, because that refusal was unreachable
+  behind `PlanarSolveContext`'s own eager ceiling guard until P11 moved it (`RESOLVED.md` §P11).
+  **The near radius is read in BASIS supports there too, deliberately** — the same quantity and the
+  same 6 — because the near/far boundary is a property of the KERNEL rather than of what is being
+  projected; the PITCH is sized from the largest CELL span, which is that operator's own source
+  support. `PlanarAimSettings.StaticTolerance` (1e-10) is the static solve's own GMRES tolerance and
+  is measured rather than shared with `Tolerance`: `C_pul` DIFFERENCES two totals, so the residual's
+  contribution is amplified. `SurfaceMesher.Mesh`'s own `accelerated` parameter and
+  `PlanarSolveContext`'s constructor are the two places the ceiling is enforced, alongside the dense
+  path's unchanged three (`SurfaceMesher.Mesh`'s verdict, `PlanarSystem.GuardCeiling`,
+  `PlanarFill.cs`'s own copy) and, since P11, `PlanarDeembed.GuardCapacitanceCeiling`.
 
 Full derivations, every measured table, and the M3/Jacobi/3-cell negative results behind these
 numbers are in `HISTORY.md` §"Sections 8–12" — grep `AIM`, `MaxDegreeOfParallelism`, or

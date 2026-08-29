@@ -26,6 +26,7 @@
 // stackup: what reproduces the failure is the width RATIO, which is what a taper into a low Z1 has on
 // any substrate.
 
+using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
@@ -365,17 +366,30 @@ public class EmCeilingRefusalTests
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// The owner's OWN taper, de-embedding ON, accelerated ON, through the actual entry point
-    /// (<see cref="PlanarSolve.Run"/>). Before this brief this call sequence appeared to succeed
-    /// (mesh, DUT accelerated Z-matrix) and only threw twenty real minutes later, from inside
+    /// <b>The owner's OWN taper, de-embedding ON, accelerated ON, through the actual entry point
+    /// (<see cref="PlanarSolve.Run"/>) — and since P11 it is NOT REFUSED.</b>
+    ///
+    /// <para>The history in one paragraph. Originally this call sequence appeared to succeed (mesh,
+    /// DUT accelerated Z-matrix) and threw twenty real minutes later from inside
     /// <c>PlanarDeembed.CapacitancePerMetre</c>, once a calibration standard's own always-dense
-    /// static-capacitance solve finally ran. R17's own contract has never been "there is a ceiling"
-    /// — it is <i>surface the predicted N before solving, and refuse politely above it</i>. This
-    /// gates that it now refuses AT SETUP, in seconds, naming the standards' own N and a remedy the
-    /// user can act on, rather than succeeding past the point it can and failing later.
+    /// static-capacitance solve finally ran; <c>brief-em-deembed-ceiling-closeout.md</c>'s C1 turned
+    /// that into an honest refusal at setup, which is what this test used to assert.
+    /// <c>brief-em-p11-accelerated-static-capacitance.md</c> then removed the reason for the refusal:
+    /// the static system <c>P q = ε₀·1</c> is EXACTLY the scalar block M5 already projects, so it is
+    /// accelerated too and a standard is judged against the accelerated ceiling like everything
+    /// else. R17's contract is unchanged — surface the predicted N before solving, refuse politely
+    /// above it — but this file's N is no longer above it.</para>
+    ///
+    /// <para><b>The run is CANCELLED rather than carried out</b>, with a pre-cancelled
+    /// <see cref="RunControl"/>: the first cancellation checkpoint is one Green's-function fit into
+    /// the first frequency, i.e. immediately after all of setup. So an
+    /// <see cref="OperationCanceledException"/> is positive proof that setup completed, at a cost of
+    /// a fraction of a second — where actually solving this taper de-embedded is ~40 s per point and
+    /// belongs in the opt-in tier. What the completed run produces is recorded in
+    /// <c>src/Engine/Mom/HISTORY.md</c>'s P11 section.</para>
     /// </summary>
     [Fact]
-    public void Gate1_TheOwnersReportedTaper_DeembedOn_AcceleratedOn_RefusesAtSetup_NotAfterADenseFill()
+    public void Gate1_TheOwnersReportedTaper_DeembedOn_AcceleratedOn_NoLongerRefusesAtSetup()
     {
         var tech = StarterTechnologies.Pcb2Layer();
         var x = PlanarExtractor.Extract(Klopf(tech, 6.92, 0.028575), tech, Dbu, 5e9);
@@ -405,48 +419,54 @@ public class EmCeilingRefusalTests
             Fill = PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default },
         };
 
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var control = new RunControl { Token = cts.Token };
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => PlanarSolve.Run(x.Problem!, report.Mesh, resolved, [5e9], settings));
+        Assert.Throws<OperationCanceledException>(
+            () => PlanarSolve.Run(x.Problem!, report.Mesh, resolved, [5e9], settings, control));
         sw.Stop();
 
-        // "In seconds", not twenty real minutes — the whole point of C1.
+        // Cancellation is checked one Green's-function fit into the first frequency, so reaching it
+        // at all means every setup-time refusal — the ceiling included — was passed.
         Assert.True(sw.Elapsed.TotalSeconds < 30,
-            $"the refusal must fire at SETUP, before any dense fill; took {sw.Elapsed.TotalSeconds:F1} s");
+            $"setup plus one kernel fit should be seconds; took {sw.Elapsed.TotalSeconds:F1} s");
 
-        // R-dcl-2 — names WHY the accelerator does not help here, rather than reading as a
-        // contradiction of the panel telling this same user to turn it on thirty seconds earlier.
-        Assert.Contains("static capacitance", ex.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("will NOT help", ex.Message, StringComparison.Ordinal);
+        // …and the DENSE form of the same run is still refused at setup — here by the DUT's OWN mesh
+        // (N = 6,581 is past the dense ceiling before any standard is looked at), which is the
+        // ordinary R17 refusal and not de-embedding's. The de-embedding-specific sentence, and the
+        // fact that it now names the accelerator as the remedy, needs a fixture whose DUT fits while
+        // its wide port's standards do not; that is
+        // Engine.Tests' EmDeembedCeilingTests.P11_ADenseDeembeddedRun_IsRefusedAtSetup_… .
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => PlanarSolve.Run(x.Problem!, report.Mesh, resolved, [5e9],
+                                  settings with { Fill = PlanarFillSettings.Default }));
+        Assert.Contains(SurfaceMesher.UnknownCeiling.ToString("N0"), ex.Message, StringComparison.Ordinal);
 
-        // R-dcl-3 — a remedy a user can act on, and what turning de-embedding off costs (§10.6).
-        Assert.Contains("Turn de-embedding off", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("port discontinuity", ex.Message, StringComparison.Ordinal);
-
-        // §0 of the parent brief's own finding: mesh remedies are inert on this class of geometry,
-        // so they must not be offered here either.
+        // §0's own finding: mesh remedies are inert on this class of geometry, so they must not be
+        // offered here either.
         Assert.DoesNotContain("Lower Cells per wavelength", ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("edge mesh off", ex.Message, StringComparison.OrdinalIgnoreCase);
-
-        // R-dcl-4 — both the DUT's own N and the standard's own N are named.
-        Assert.Contains($"N = {report.Mesh.Bases.Count:N0}", ex.Message, StringComparison.Ordinal);
-        Assert.Contains(SurfaceMesher.UnknownCeiling.ToString("N0"), ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
     /// The same taper's OWN Z-matrix, actually SOLVED with the accelerator — not merely meshed.
     ///
     /// <para><b>Deliberately the DUT's raw solve, not a full de-embedded <c>PlanarKernel.Solve</c>.</b>
-    /// A first attempt drove the whole panel path (mesh → calibrate → de-embed) and found a SEPARATE,
-    /// genuine limit this brief does not fix: <c>PlanarDeembed.StaticCapacitance</c> computes a
+    /// A first attempt drove the whole panel path (mesh → calibrate → de-embed) and found a SEPARATE
+    /// limit the AIM-ceiling brief did not fix: <c>PlanarDeembed.StaticCapacitance</c> computed a
     /// calibration standard's DC capacitance through <see cref="PlanarFill.BuildCores"/> — an entirely
     /// different, always-DENSE m×m cell system, not the accelerated N×N basis system — and a WIDE-port
     /// standard reproduces the DUT's own wide transverse gridlines (D4), so it can be large enough to
     /// hit <see cref="SurfaceMesher.UnknownCeiling"/> on its own. On this exact taper the short/long
     /// standard meshed at N = 6,466 and the de-embedded run used to throw from inside
     /// <c>PlanarDeembed.CapacitancePerMetre</c>, twenty real minutes into a dense fill+LU nobody asked
-    /// for — closed by <c>brief-em-deembed-ceiling-closeout.md</c>'s C1, which now refuses that same
-    /// run AT SETUP instead (see <see cref="Gate1_TheOwnersReportedTaper_DeembedOn_AcceleratedOn_RefusesAtSetup_NotAfterADenseFill"/>).</para>
+    /// for. <c>brief-em-deembed-ceiling-closeout.md</c>'s C1 turned that into a refusal at setup, and
+    /// <c>brief-em-p11-accelerated-static-capacitance.md</c> then removed the refusal by accelerating
+    /// that solve too — so the de-embedded run now completes (see
+    /// <see cref="Gate1_TheOwnersReportedTaper_DeembedOn_AcceleratedOn_NoLongerRefusesAtSetup"/>).
+    /// This test keeps measuring the DUT's own accelerated solve mechanics on their own.</para>
     ///
     /// <para><b>Raw is not this user's success case, and this test's own gate must not be read as
     /// though it were.</b> §10.6 of <c>docs/design/layout-view.md</c>: "A raw port excitation includes

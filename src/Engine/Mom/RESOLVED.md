@@ -1339,3 +1339,164 @@ range of it.
 no permit, and they cost about a thread stack each. If that is ever worth reclaiming it is a memory
 argument on a host that already runs a large pool, not a performance one, and this phase measured no
 evidence for it.
+
+---
+
+# P11 — the calibration standards' static capacitance, accelerated (2026-08-29)
+
+`brief-em-p11-accelerated-static-capacitance.md`. **The last step of a de-embedded run that was
+always dense is not any more.**
+
+D7 references every de-embedded s-parameter to the line's own `Z_c = γ/(jωC_pul)`, and `C_pul` comes
+from differencing two calibration standards' static capacitances. Each of those solved `P q = ε₀·1`
+over CELLS with a dense m×m complex LU. Turning the accelerator on moved the DUT's ceiling and left
+that one where it was, so a wide-port run whose DUT solved comfortably could still be refused —
+measured on the 2026-08-14 owner report, whose wide port's calibration standard meshed at N = 6,466
+against a 5,000-unknown dense ceiling.
+
+**`P` is exactly the scalar block M5 already projects.** The accelerated charge stencil is a ± pair of
+cell pulses per basis; a cell-pulse operator is the same stencil with one cell and `sign = +1`. So
+this is not a second accelerator — `PlanarStaticAim` is the same projection, the same near-set rule,
+the same grid FFT and the same sparse-LU-preconditioned GMRES, over CELLS, with one grid kernel and
+no ω.
+
+## What was found
+
+1. **The near RADIUS is the only knob that acts, and it must be read in M5's unit, not the natural
+   one.** Sizing it from the CELL span — the obvious choice for a cell-pulse operator — halves M5's
+   radius on the same mesh, because a basis spans two cells. Measured against the dense solve as the
+   relative error in `C_pul` (FR-4 hero's 30.8/90.9 mm standards / GaAs hero's 1.14/3.02 mm), with
+   `NearRadiusFactor` in BASIS supports: `3 → 2.69e-7 / 8.88e-7`, `4 → 3.69e-7 / 1.61e-7`,
+   `5 → 1.98e-7 / 2.89e-8`, **`6 → 1.04e-7 / 2.02e-9`**, `8 → 3.39e-8 / 7.07e-15`, at 99 / 132 / 164 /
+   196 / 256 near entries per row. The cell-span reading would have left GaAs at 8.88e-7 — inside the
+   brief's 1e-6 gate by 12%, which is not a margin. So the pitch is sized from the largest CELL span
+   (the source support, which is what a stencil has to enclose) and the radius from the largest BASIS
+   support (the kernel's own range, which is what P8's 2h floor is about); the file header derives
+   both.
+
+2. **The projection ORDER is inert here.** M = 2 / 3 / 4 / 5 give `1.05e-7 / 1.04e-7 / 1.08e-7 /
+   1.08e-7` on FR-4 and `2.15e-9 / 2.02e-9 / 2.00e-9 / 2.00e-9` on GaAs. Raising it is not a remedy
+   for this operator; widening the near field is, and the non-convergence refusal names both in that
+   order.
+
+3. **The GMRES tolerance is not what limits this — the projection is.** The brief asked for the
+   tolerance that delivers 1e-6 on the DIFFERENCED result to be measured and set from the
+   measurement. It is: `1e-6 → 9.88e-8`, then `1e-8`, `1e-10`, `1e-12` and `1e-14` give `1.04e-7`
+   **identically in every printed digit**. `StaticTolerance` ships at **1e-10**, two decades under
+   where the answer stopped moving so a standard pair whose lengths are close (a larger
+   `C/(C₂ − C₁)` than the 1.5-1.9 these fixtures measure) still has the solve's own contribution well
+   under the projection's — and deliberately not tighter, because a tolerance GMRES cannot reach
+   turns into a refusal. Cost at the shipped value: 3-4 iterations.
+
+4. **A finer auxiliary grid buys nothing here, which is the opposite of M5's own N-ladder — and the
+   two knobs are not independent.** At the shipped radius the pitch ladder is flat below 0.5 cell
+   spans (`0.125 → 1.19e-7`, `0.25 → 1.11e-7`, `0.5 → 1.04e-7`) and degrades above it
+   (`0.75 → 1.60e-7`, `1.0 → 3.32e-7`). At a radius of 3 supports the SAME ladder has the opposite
+   sign (`0.5 → 2.69e-7`, `0.25 → 1.31e-6`, `0.125 → 2.45e-6`). What that says is that refining the
+   grid cannot compensate for a near field too narrow to hold the coupling — P8's finding in another
+   coordinate.
+
+5. **The setup refusal this brief was told to re-word was UNREACHABLE, and no test had ever seen its
+   message.** `brief-em-deembed-ceiling-closeout.md`'s C1 put a de-embedding-specific ceiling check in
+   `PlanarSolve.Run` AFTER the calibrators were constructed — but `PlanarPortCalibrator`'s constructor
+   builds one `PlanarSolveContext` per standard, and that constructor's own eager
+   `SurfaceMesher.GuardCeiling` throws first, with a correct sentence about a mesh that names neither
+   de-embedding, nor which port, nor a remedy. (`EmDeembedCeilingTests` gates C2's `StaticCapacitance`
+   guard message, which is a different one; the brief's "EmDeembedCeilingTests asserts the sentence"
+   was not the case.) The check now runs BEFORE the calibrator is built, on a standard set the
+   calibrator is then handed rather than rebuilding, and two tests assert it —
+   `EmDeembedCeilingTests.P11_ADenseDeembeddedRun_IsRefusedAtSetup_AndTheRefusalNamesTheAccelerator`
+   and its accelerated counterpart.
+
+6. **The dense refusal's first remedy is now the accelerator, not turning de-embedding off.** It used
+   to have to say the accelerated solve "will NOT help here"; since the standards' static solve is
+   accelerated too, it does help, and the sentence says so and quotes the accelerated ceiling.
+
+## The taper, re-run (the brief's M4)
+
+Reconstructed at the reported geometry (13.1 mm into 299 µm over 28.575 mm on 20 mil RO4350B,
+cells/λ 5, edge 3, mesh frequency 500 MHz, 1-5 GHz), straight-flanked rather than Klopfenstein, which
+lands at N = 4,239 rather than the reported 7,749 — the exact count was never the point, the width
+RATIO is, and the failure mode reproduces exactly: **the WIDE port's calibration standards mesh at
+N = 1,498 / 7,603 / 4,273**, one of them past the dense ceiling on its own.
+
+| | before P11 | after |
+|---|---|---|
+| dense + de-embedded | refused at setup | refused at setup, and the sentence now names the accelerator |
+| **accelerated + de-embedded** | **refused at setup** | **runs**: 3 points (1 / 3 / 5 GHz) in **107 s** |
+
+The wide standard's static solve on its own (m = 3,864 cells, n = 7,603): **9.7 s and 222 MB**, at
+607 near entries per row and 15.7% fill, against **683 MB** for the three m×m complex matrices the
+dense route holds — which the ceiling refuses outright rather than allocating. 9.24 s of the 9.7 s is
+the sparse LU of the near matrix; the GMRES solve itself is 72 ms at 4 iterations.
+
+What the user now gets, at the published planes: `|S₁₁|` −1.24 / −2.13 / −1.23 dB and `|S₂₁|`
+−6.10 / −4.22 / −6.28 dB at 1 / 3 / 5 GHz, `|S₁₁|² + |S₂₁|²` = 0.998 / 0.991 / 0.990 (passive), with
+port 1's `Z_c` measured at 6.59 → 7.00 Ω against the 6.92 Ω the taper was drawn for and port 2's at
+82 → 84 Ω against 100 Ω. The port-2 figure is not a P11 result: that port is 2 basis functions wide
+and the run raises its own feed-clearance note about it.
+
+## What the gates are
+
+`PlanarP11StaticAimTests`, 12 tests, **0.93 s together** — all routine, none tagged. Deliberately on
+the COARSE standards and small uniform plates: every claim is that the accelerated OPERATOR agrees
+with the dense one on the same mesh, which a coarse mesh tests exactly as hard.
+
+- the accelerated PRODUCT against `PlanarFill.ScalarPotentialMatrix`'s own `P x` (asked of the
+  operator, not only of the solved capacitance, because a solve can absorb a product error into a
+  charge vector whose SUM still looks right);
+- `C_pul` and each standard's total against the dense solve, to 1e-6;
+- the tolerance ladder, kept as a test rather than a note so the default's justification is re-run;
+- the self-kernel sentinel moved ×0.1 and ×4 — the near-set completeness gate, since G(0) is
+  arbitrary and only legitimately so if every overlapping-stencil pair is near;
+- `PlanarStaticLimitTests`' plate-over-ground oracle and its quadrature-separability oracle, through
+  the accelerated path, plus the sharper form of the first (accelerated vs dense at each spacing);
+- `Aim = null` is today's code asserted as EXACT equality, not to a tolerance;
+- an accelerated call with no slab height refuses (a silent dense fallback would reinstate the
+  ceiling invisibly);
+- the near field is O(m) in entries per row — a COUNTER, not a stopwatch.
+
+`EmDeembedCeilingTests` gains the two setup-refusal gates in item 5 above, on the owner's own taper
+shape. `EmCeilingRefusalTests.Gate1_…` is inverted from "refuses at setup" to "no longer refuses at
+setup", proved with a **pre-cancelled `RunControl`**: the first cancellation checkpoint is one
+Green's-function fit into the first frequency, so an `OperationCanceledException` is positive proof
+that setup completed, at a fraction of a second where solving that taper de-embedded is ~40 s per
+point.
+
+## No second implementation
+
+The shared parts were MOVED, not copied: `AimProjection` (the Vandermonde inverse, the moment match,
+the moment quadrature, the near set) and `AimGridFft` (the circulant embedding and the cyclic
+convolution) came out of `PlanarAim.cs` unchanged, and `PlanarAimGeometry`/`PlanarAimOperator` call
+them. The near set's exact entries are `PlanarPulsePotential`, which is `PlanarEntryFill`'s own
+`P(a, b)` carved out whole — same class-keyed memo, same singular cores — so the near field is
+literally the dense path's arithmetic rather than a second formulation of it.
+
+## What changed, for a reader who only wants the code
+
+```
+src/Engine/Mom/PlanarStaticAim.cs   NEW — PlanarStaticAim, PlanarStaticAimReport
+src/Engine/Mom/PlanarAim.cs         + AimProjection, AimGridFft (moved out of the two AIM classes)
+                                    + PlanarAimSettings.StaticTolerance (1e-10, measured)
+src/Engine/Mom/PlanarFill.cs        + PlanarPulsePotential (carved out of PlanarEntryFill.P)
+                                    + PlanarEntryCores.PrepareScalarPair
+src/Engine/Mom/PlanarDeembed.cs     StaticCapacitance: + the accelerated route and a slabHeightM
+                                    parameter; GuardCapacitanceCeiling is now public and takes the
+                                    route's flag
+src/Engine/Mom/PlanarSolve.cs       the standards' ceiling refusal moved BEFORE the calibrator is
+                                    built (it was unreachable) and re-worded;
+                                    PlanarPortCalibrator takes a pre-built standard set
+```
+
+## Not done, on purpose
+
+**The static accelerator does not share the DUT's `PlanarAimGeometry`.** It builds its own
+`PlanarEntryCores`, so a mesh that has both pays two class-core warm-ups. Sharing would force the
+LONGEST standard's basis geometry to be built even when no frequency ever selects it — which is
+exactly the lazy build M4 of the sweep-performance brief put in — and the class store is cheap.
+Measured cost of the duplicate on the taper's wide standard: the near fill is 219 ms of a 9.7 s
+solve.
+
+**`AimEntry`'s `(M+1)⁴` lookups per near pair were not restructured.** §8's own P6 note records the
+same hotspot on M5's operator; here it is 93-354 ms against a sparse LU of 1.6-9.2 s, so it is not
+what to fix first on this path.

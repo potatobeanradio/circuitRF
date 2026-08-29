@@ -157,6 +157,28 @@ namespace CircuitRF.Engine.Mom;
 /// <param name="Tolerance">GMRES's relative residual target. L8c puts the fill's own accuracy at
 /// 5.0e-6 against an independent oracle and L8d measured de-embedding amplifying a raw-S error ~22×,
 /// so a solve stopped at 1e-4 has thrown the fill away.</param>
+/// <param name="StaticTolerance">
+/// <b>P11 — GMRES's relative residual target for the STATIC capacitance solve</b>
+/// (<see cref="PlanarStaticAim"/>), which is a different system with a different error budget and
+/// therefore does not share <see cref="Tolerance"/>.
+///
+/// <para><b>Tighter, and the differencing is why.</b> D7's C_pul is
+/// <c>(C₂ − C₁)/Δℓ</c>: the two standards are the same cross-section and differ only in the bulk
+/// cells between the reference planes, so their totals agree to several digits and an error in
+/// either is amplified by <c>C/(C₂ − C₁)</c> in the answer. The DUT's residual is sized for a
+/// current vector read directly; this one is sized for a difference.</para>
+///
+/// <para><b>1e-10, and the ladder is why.</b> Against the dense solve on the FR-4 hero's own
+/// 30.8 mm / 90.9 mm standards, the differenced C_pul error is <c>9.88e-8</c> at a tolerance of
+/// 1e-6 and <c>1.04e-7</c> at 1e-8, 1e-10, 1e-12 and 1e-14 alike — <b>identical in every printed
+/// digit from 1e-8 down</b>, because what is left at that point is the PROJECTION's error and not
+/// the solve's. So the tolerance is not what limits this; it is set two decades under where the
+/// answer stopped moving, so that a standard pair whose lengths are close (a larger
+/// <c>C/(C₂ − C₁})</c> than the 1.5-1.9 those fixtures measure) still has the solve's own
+/// contribution well under the projection's. It is not set tighter than that on purpose: a
+/// tolerance GMRES cannot reach on an ill-conditioned system turns into a REFUSAL, and
+/// 1e-12 was reachable on these fixtures in one extra iteration but is not a promise.</para>
+/// </param>
 /// <param name="MaxIterations">A cap, not a target. Reaching it throws rather than returning a
 /// half-converged current distribution that would produce a smooth, plausible, wrong s-parameter.</param>
 /// <param name="Restart">GMRES restart length; 0 is full GMRES. Full is what §11 measured, and at the
@@ -189,7 +211,8 @@ public sealed record PlanarAimSettings(
     int     Restart           = 0,
     double  SelfKernelFactor  = 0.5,
     bool    KeepNearExact     = false,
-    double? NearRadiusMinM    = null)
+    double? NearRadiusMinM    = null,
+    double  StaticTolerance   = 1e-10)
 {
     public static readonly PlanarAimSettings Default = new();
 
@@ -222,6 +245,9 @@ public sealed record PlanarAimSettings(
         if (!(Tolerance > 0) || Tolerance >= 1)
             throw new ArgumentOutOfRangeException(nameof(Tolerance), Tolerance,
                 "The GMRES tolerance is a relative residual in (0, 1).");
+        if (!(StaticTolerance > 0) || StaticTolerance >= 1)
+            throw new ArgumentOutOfRangeException(nameof(StaticTolerance), StaticTolerance,
+                "The static solve's GMRES tolerance is a relative residual in (0, 1).");
         if (MaxIterations < 1)
             throw new ArgumentOutOfRangeException(nameof(MaxIterations), MaxIterations,
                 "An iteration cap below 1 runs no iterations and returns the zero vector.");
@@ -540,7 +566,7 @@ public sealed class PlanarAimGeometry
         Py = NextPow2(2 * Ny);
 
         // ── the projection ────────────────────────────────────────────────────────────────────
-        var vInv = InverseVandermonde(M, H);
+        var vInv = AimProjection.InverseVandermonde(M, H);
         Stencils = new AimStencil[N];
         for (int i = 0; i < N; i++)
             Stencils[i] = Project(mesh, i, centres[i], gx0, gy0, H, vInv);
@@ -548,7 +574,10 @@ public sealed class PlanarAimGeometry
 
         // ── the near set, and its mirror ──────────────────────────────────────────────────────
         sw.Restart();
-        (RowPtr, ColIdx) = NearSet(centres, spans, NearRadiusM, H);
+        var sp0 = new int[N];
+        var sq0 = new int[N];
+        for (int i = 0; i < N; i++) { sp0[i] = Stencils[i].P0; sq0[i] = Stencils[i].Q0; }
+        (RowPtr, ColIdx) = AimProjection.NearSet(N, M, centres, spans, sp0, sq0, NearRadiusM, H);
         NearSetMs = sw.Elapsed.TotalMilliseconds;
 
         // ── the singular cores of every near pair, ONCE ───────────────────────────────────────
@@ -596,56 +625,6 @@ public sealed class PlanarAimGeometry
         return (c, s);
     }
 
-    /// <summary>
-    /// <c>V⁻¹</c> where <c>V[a,k] = ξ_k^a</c> and <c>ξ_k = (k − M/2)·h</c> — the stencil's own
-    /// coordinates about its centre. Uniform grid ⇒ one inverse serves every basis, which is what makes
-    /// the projection O(N) with a tiny constant instead of an <c>(M+1)³</c> solve per basis.
-    /// </summary>
-    private static double[,] InverseVandermonde(int m, double h)
-    {
-        int s = m + 1;
-        var v = new double[s, s];
-        for (int k = 0; k < s; k++)
-        {
-            double xi = (k - 0.5 * m) * h;
-            double p = 1.0;
-            for (int a = 0; a < s; a++) { v[a, k] = p; p *= xi; }
-        }
-
-        // Gauss-Jordan with partial pivoting. s is 1..7, so this is a handful of flops and does not
-        // want a library dependency.
-        var inv = new double[s, s];
-        for (int i = 0; i < s; i++) inv[i, i] = 1.0;
-
-        for (int col = 0; col < s; col++)
-        {
-            int piv = col;
-            for (int r = col + 1; r < s; r++)
-                if (Math.Abs(v[r, col]) > Math.Abs(v[piv, col])) piv = r;
-            if (Math.Abs(v[piv, col]) < 1e-300)
-                throw new InvalidOperationException(
-                    "The stencil's Vandermonde matrix is singular, which can only happen if the grid " +
-                    "pitch collapsed to zero. That is a mesh with no extent, not a settings error.");
-            if (piv != col)
-                for (int c2 = 0; c2 < s; c2++)
-                {
-                    (v[col, c2], v[piv, c2]) = (v[piv, c2], v[col, c2]);
-                    (inv[col, c2], inv[piv, c2]) = (inv[piv, c2], inv[col, c2]);
-                }
-
-            double d = v[col, col];
-            for (int c2 = 0; c2 < s; c2++) { v[col, c2] /= d; inv[col, c2] /= d; }
-            for (int r = 0; r < s; r++)
-            {
-                if (r == col) continue;
-                double f = v[r, col];
-                if (f == 0) continue;
-                for (int c2 = 0; c2 < s; c2++) { v[r, c2] -= f * v[col, c2]; inv[r, c2] -= f * inv[col, c2]; }
-            }
-        }
-        return inv;
-    }
-
     private AimStencil Project(PlanarMesh mesh, int i, (double X, double Y) centre,
                                double gx0, double gy0, double h, double[,] vInv)
     {
@@ -664,34 +643,10 @@ public sealed class PlanarAimGeometry
         return new AimStencil
         {
             P0 = p0, Q0 = q0,
-            Current   = Coefficients(mJ, vInv),
-            Charge    = Coefficients(mQ, vInv),
+            Current   = AimProjection.Coefficients(Side, mJ, vInv),
+            Charge    = AimProjection.Coefficients(Side, mQ, vInv),
             Direction = basis.Direction,
         };
-    }
-
-    /// <summary><c>λ = V⁻¹ m V⁻ᵀ</c>, flattened row-major over the stencil.</summary>
-    private double[] Coefficients(double[,] moments, double[,] vInv)
-    {
-        int s = Side;
-        var tmp = new double[s, s];
-        for (int k = 0; k < s; k++)
-            for (int b = 0; b < s; b++)
-            {
-                double acc = 0;
-                for (int a = 0; a < s; a++) acc += vInv[k, a] * moments[a, b];
-                tmp[k, b] = acc;
-            }
-
-        var lam = new double[s * s];
-        for (int k = 0; k < s; k++)
-            for (int l = 0; l < s; l++)
-            {
-                double acc = 0;
-                for (int b = 0; b < s; b++) acc += tmp[k, b] * vInv[l, b];
-                lam[k * s + l] = acc;
-            }
-        return lam;
     }
 
     /// <summary>
@@ -712,104 +667,21 @@ public sealed class PlanarAimGeometry
         // degree (1 + a + b) ≤ 2M+1, and a strip's bilinear map roughly doubles that.
         int nodes = 2 * M + 6;
 
-        Accumulate(mJ, mesh.Cells[ra.CellIndex], ra, basis.Direction, 1.0, xs, ys, nodes);
-        Accumulate(mJ, mesh.Cells[rb.CellIndex], rb, basis.Direction, 1.0, xs, ys, nodes);
+        int side = Side;
+        AimProjection.Accumulate(side, mJ, mesh.Cells[ra.CellIndex], ra, basis.Direction, 1.0, xs, ys, nodes);
+        AimProjection.Accumulate(side, mJ, mesh.Cells[rb.CellIndex], rb, basis.Direction, 1.0, xs, ys, nodes);
 
-        Accumulate(mQ, mesh.Cells[da.CellIndex], PlanarFill.PulseAt(mesh, da.CellIndex),
-                   PlanarBasisDirection.X, da.Sign, xs, ys, nodes);
-        Accumulate(mQ, mesh.Cells[db.CellIndex], PlanarFill.PulseAt(mesh, db.CellIndex),
-                   PlanarBasisDirection.X, db.Sign, xs, ys, nodes);
+        AimProjection.Accumulate(side, mQ, mesh.Cells[da.CellIndex], PlanarFill.PulseAt(mesh, da.CellIndex),
+                                 PlanarBasisDirection.X, da.Sign, xs, ys, nodes);
+        AimProjection.Accumulate(side, mQ, mesh.Cells[db.CellIndex], PlanarFill.PulseAt(mesh, db.CellIndex),
+                                 PlanarBasisDirection.X, db.Sign, xs, ys, nodes);
 
         return (mJ, mQ);
-    }
-
-    private void Accumulate(double[,] target, PlanarCell cell, PlanarFill.CellWeight weight,
-                            PlanarBasisDirection dir, double sign, double xs, double ys, int nodes)
-    {
-        int s = Side;
-        foreach (var (x, y, w) in PlanarFill.WeightNodes(cell, weight, dir, 1, nodes))
-        {
-            double dx = x - xs, dy = y - ys;
-            double px = 1.0;
-            for (int a = 0; a < s; a++)
-            {
-                double py = 1.0;
-                for (int b = 0; b < s; b++)
-                {
-                    target[a, b] += sign * w * px * py;
-                    py *= dy;
-                }
-                px *= dx;
-            }
-        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The near set
     // ══════════════════════════════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Every pair that is either within <paramref name="radius"/> or whose stencils OVERLAP, as CSR
-    /// over the full matrix. <b>The second criterion is not belt-and-braces</b>: it is what makes the
-    /// grid kernel's value at zero separation cancel exactly, and therefore what makes it legitimate
-    /// for that value to be arbitrary. See the file header.
-    /// </summary>
-    private (int[] RowPtr, int[] ColIdx) NearSet((double X, double Y)[] centres, double[] spans,
-                                                 double radius, double h)
-    {
-        // A stencil spans M pitches; two stencils overlap only if their centres are within about
-        // (M+1)·h on each axis, so this bound cannot miss one.
-        double stencilReach = (M + 1.5) * h;
-        double search = Math.Max(radius, stencilReach * 1.5);
-        double maxSpan = 0;
-        foreach (double s in spans) maxSpan = Math.Max(maxSpan, s);
-        search = Math.Max(search, maxSpan);
-
-        var buckets = new Dictionary<(int, int), List<int>>();
-        for (int i = 0; i < N; i++)
-        {
-            var key = ((int)Math.Floor(centres[i].X / search), (int)Math.Floor(centres[i].Y / search));
-            if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = [];
-            list.Add(i);
-        }
-
-        var rows = new List<int>[N];
-        double r2 = radius * radius;
-
-        PlanarFill.ForRowsOf(PlanarFillSettings.Default, N, i =>
-        {
-            var mine = new List<int>();
-            int bx = (int)Math.Floor(centres[i].X / search);
-            int by = (int)Math.Floor(centres[i].Y / search);
-            var si = Stencils[i];
-
-            for (int ox = -1; ox <= 1; ox++)
-                for (int oy = -1; oy <= 1; oy++)
-                {
-                    if (!buckets.TryGetValue((bx + ox, by + oy), out var list)) continue;
-                    foreach (int j in list)
-                    {
-                        double dx = centres[i].X - centres[j].X;
-                        double dy = centres[i].Y - centres[j].Y;
-                        bool near = dx * dx + dy * dy <= r2;
-                        if (!near)
-                        {
-                            var sj = Stencils[j];
-                            near = Math.Abs(si.P0 - sj.P0) <= M && Math.Abs(si.Q0 - sj.Q0) <= M;
-                        }
-                        if (near) mine.Add(j);
-                    }
-                }
-            mine.Sort();
-            rows[i] = mine;
-        });
-
-        var rowPtr = new int[N + 1];
-        for (int i = 0; i < N; i++) rowPtr[i + 1] = rowPtr[i] + rows[i].Count;
-        var colIdx = new int[rowPtr[N]];
-        for (int i = 0; i < N; i++) rows[i].CopyTo(colIdx, rowPtr[i]);
-        return (rowPtr, colIdx);
-    }
 
     /// <summary>
     /// The stored position of <c>(j, i)</c> for a stored <c>(i, j)</c>. The near set is symmetric
@@ -877,8 +749,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
     private readonly int _px, _py;
     private readonly Complex[] _hatA, _hatQ;
     private readonly Complex[] _bufX, _bufY, _bufQ;
-    private readonly FastFourierTransform _fftX, _fftY;
-    private readonly Complex[] _rowScratch;
+    private readonly AimGridFft _fft;
 
     // The near field: CSR over the FULL matrix (both triangles), holding the exact entries and the
     // correction (exact − AIM). The correction is what the product adds; the exact is what the
@@ -973,11 +844,9 @@ public sealed class PlanarAimOperator : IPlanarOperator
 
         _px = g.Px;
         _py = g.Py;
-        _fftX = new FastFourierTransform(_px);
-        _fftY = new FastFourierTransform(_py);
-        _rowScratch = new Complex[Math.Max(_px, _py)];
-        _hatA = EmbedAndTransform(_ga);
-        _hatQ = EmbedAndTransform(_gq);
+        _fft  = new AimGridFft(_nx, _ny, _px, _py);
+        _hatA = _fft.EmbedAndTransform(_ga);
+        _hatQ = _fft.EmbedAndTransform(_gq);
         _bufX = new Complex[(long)_px * _py];
         _bufY = new Complex[(long)_px * _py];
         _bufQ = new Complex[(long)_px * _py];
@@ -1175,9 +1044,9 @@ public sealed class PlanarAimOperator : IPlanarOperator
         }
 
         // ── convolve on the grid ─────────────────────────────────────────────────────────────
-        Convolve(_bufX, _hatA);
-        Convolve(_bufY, _hatA);
-        Convolve(_bufQ, _hatQ);
+        _fft.Convolve(_bufX, _hatA);
+        _fft.Convolve(_bufY, _hatA);
+        _fft.Convolve(_bufQ, _hatQ);
 
         // ── gather: grid potentials → basis reactions ────────────────────────────────────────
         var y = new Complex[_n];
@@ -1224,55 +1093,6 @@ public sealed class PlanarAimOperator : IPlanarOperator
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The grid FFT
     // ══════════════════════════════════════════════════════════════════════════════════════════
-
-    /// <summary>Wraps the absolute-offset kernel table into the <c>Px×Py</c> circulant and transforms
-    /// it. Negative offsets land in the upper half of each axis, which is what makes the cyclic
-    /// convolution agree with the linear one over the sub-block the grid actually occupies.</summary>
-    private Complex[] EmbedAndTransform(Complex[] g)
-    {
-        var c = new Complex[(long)_px * _py];
-        for (int u = 0; u < _px; u++)
-        {
-            int dp = u < _nx ? u : u - _px;
-            if (Math.Abs(dp) >= _nx) continue;
-            int adp = Math.Abs(dp);
-            for (int v = 0; v < _py; v++)
-            {
-                int dq = v < _ny ? v : v - _py;
-                if (Math.Abs(dq) >= _ny) continue;
-                c[(long)u * _py + v] = g[(long)adp * _ny + Math.Abs(dq)];
-            }
-        }
-        Transform2(c, forward: true);
-        return c;
-    }
-
-    private void Convolve(Complex[] buf, Complex[] hat)
-    {
-        Transform2(buf, forward: true);
-        for (long i = 0; i < buf.LongLength; i++) buf[i] *= hat[i];
-        Transform2(buf, forward: false);
-    }
-
-    /// <summary>Separable 2-D transform over the <c>Px×Py</c> buffer, row-major. FftFlat's
-    /// <c>Inverse</c> carries the 1/N per axis, so the pair round-trips without a rescale.</summary>
-    private void Transform2(Complex[] buf, bool forward)
-    {
-        // rows (along y, contiguous)
-        for (int u = 0; u < _px; u++)
-        {
-            var row = buf.AsSpan(u * _py, _py);
-            if (forward) _fftY.Forward(row); else _fftY.Inverse(row);
-        }
-        // columns (along x, strided)
-        var col = _rowScratch.AsSpan(0, _px);
-        for (int v = 0; v < _py; v++)
-        {
-            for (int u = 0; u < _px; u++) col[u] = buf[(long)u * _py + v];
-            if (forward) _fftX.Forward(col); else _fftX.Inverse(col);
-            for (int u = 0; u < _px; u++) buf[(long)u * _py + v] = col[u];
-        }
-    }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // The solve
@@ -1344,4 +1164,259 @@ public sealed class PlanarAimOperator : IPlanarOperator
 
     /// <inheritdoc cref="PlanarAimGeometry.StencilOrigin"/>
     public (int P0, int Q0) StencilOrigin(int i) => _g.StencilOrigin(i);
+}
+
+/// <summary>
+/// <b>P11 — the parts of AIM that are not about WHAT is being projected</b>: the stencil's Vandermonde
+/// inverse and moment match, the moment quadrature, and the near set. Extracted from
+/// <see cref="PlanarAimGeometry"/> unchanged when the accelerated static capacitance solve
+/// (<see cref="PlanarStaticAim"/>) needed the same three over CELL PULSES rather than over basis
+/// functions — one projection, two things projected, rather than two implementations that agree by
+/// inspection.
+/// </summary>
+internal static class AimProjection
+{
+    /// <summary>
+    /// <c>V⁻¹</c> where <c>V[a,k] = ξ_k^a</c> and <c>ξ_k = (k − M/2)·h</c> — the stencil's own
+    /// coordinates about its centre. Uniform grid ⇒ one inverse serves every basis, which is what makes
+    /// the projection O(N) with a tiny constant instead of an <c>(M+1)³</c> solve per basis.
+    /// </summary>
+    internal static double[,] InverseVandermonde(int m, double h)
+    {
+        int s = m + 1;
+        var v = new double[s, s];
+        for (int k = 0; k < s; k++)
+        {
+            double xi = (k - 0.5 * m) * h;
+            double p = 1.0;
+            for (int a = 0; a < s; a++) { v[a, k] = p; p *= xi; }
+        }
+
+        // Gauss-Jordan with partial pivoting. s is 1..7, so this is a handful of flops and does not
+        // want a library dependency.
+        var inv = new double[s, s];
+        for (int i = 0; i < s; i++) inv[i, i] = 1.0;
+
+        for (int col = 0; col < s; col++)
+        {
+            int piv = col;
+            for (int r = col + 1; r < s; r++)
+                if (Math.Abs(v[r, col]) > Math.Abs(v[piv, col])) piv = r;
+            if (Math.Abs(v[piv, col]) < 1e-300)
+                throw new InvalidOperationException(
+                    "The stencil's Vandermonde matrix is singular, which can only happen if the grid " +
+                    "pitch collapsed to zero. That is a mesh with no extent, not a settings error.");
+            if (piv != col)
+                for (int c2 = 0; c2 < s; c2++)
+                {
+                    (v[col, c2], v[piv, c2]) = (v[piv, c2], v[col, c2]);
+                    (inv[col, c2], inv[piv, c2]) = (inv[piv, c2], inv[col, c2]);
+                }
+
+            double d = v[col, col];
+            for (int c2 = 0; c2 < s; c2++) { v[col, c2] /= d; inv[col, c2] /= d; }
+            for (int r = 0; r < s; r++)
+            {
+                if (r == col) continue;
+                double f = v[r, col];
+                if (f == 0) continue;
+                for (int c2 = 0; c2 < s; c2++) { v[r, c2] -= f * v[col, c2]; inv[r, c2] -= f * inv[col, c2]; }
+            }
+        }
+        return inv;
+    }
+
+    /// <summary><c>λ = V⁻¹ m V⁻ᵀ</c>, flattened row-major over the stencil.</summary>
+    internal static double[] Coefficients(int side, double[,] moments, double[,] vInv)
+    {
+        int s = side;
+        var tmp = new double[s, s];
+        for (int k = 0; k < s; k++)
+            for (int b = 0; b < s; b++)
+            {
+                double acc = 0;
+                for (int a = 0; a < s; a++) acc += vInv[k, a] * moments[a, b];
+                tmp[k, b] = acc;
+            }
+
+        var lam = new double[s * s];
+        for (int k = 0; k < s; k++)
+            for (int l = 0; l < s; l++)
+            {
+                double acc = 0;
+                for (int b = 0; b < s; b++) acc += tmp[k, b] * vInv[l, b];
+                lam[k * s + l] = acc;
+            }
+        return lam;
+    }
+
+    /// <summary>
+    /// <c>∫ w (x−x_s)^a (y−y_s)^b dS</c> accumulated over one cell, <b>through the FILL'S OWN weight
+    /// evaluation</b> (<see cref="PlanarFill.WeightNodes"/>) — cut cells, strips and all. A projection
+    /// built on a second reading of what a weight is would approximate a different operator, and the
+    /// residual would look like an accuracy floor with no cause.
+    /// </summary>
+    internal static void Accumulate(int side, double[,] target, PlanarCell cell,
+                                    PlanarFill.CellWeight weight,
+                                    PlanarBasisDirection dir, double sign, double xs, double ys, int nodes)
+    {
+        int s = side;
+        foreach (var (x, y, w) in PlanarFill.WeightNodes(cell, weight, dir, 1, nodes))
+        {
+            double dx = x - xs, dy = y - ys;
+            double px = 1.0;
+            for (int a = 0; a < s; a++)
+            {
+                double py = 1.0;
+                for (int b = 0; b < s; b++)
+                {
+                    target[a, b] += sign * w * px * py;
+                    py *= dy;
+                }
+                px *= dx;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Every pair that is either within <paramref name="radius"/> or whose stencils OVERLAP, as CSR
+    /// over the full matrix. <b>The second criterion is not belt-and-braces</b>: it is what makes the
+    /// grid kernel's value at zero separation cancel exactly, and therefore what makes it legitimate
+    /// for that value to be arbitrary. See the file header.
+    /// </summary>
+    /// <param name="n">How many unknowns — basis functions for M5's operator, CELLS for P11's.</param>
+    /// <param name="m">The projection order, i.e. the stencil is <c>(m+1)×(m+1)</c> nodes.</param>
+    /// <param name="p0">Each unknown's stencil origin, x. <paramref name="q0"/> is the same in y.</param>
+    internal static (int[] RowPtr, int[] ColIdx) NearSet(int n, int m,
+                                                        (double X, double Y)[] centres, double[] spans,
+                                                        int[] p0, int[] q0, double radius, double h)
+    {
+        // Aliased to the names the body was written in, so the arithmetic below reads exactly as it
+        // did inside PlanarAimGeometry and a reader can diff the two by eye.
+        int M = m, N = n;
+        // A stencil spans M pitches; two stencils overlap only if their centres are within about
+        // (M+1)·h on each axis, so this bound cannot miss one.
+        double stencilReach = (M + 1.5) * h;
+        double search = Math.Max(radius, stencilReach * 1.5);
+        double maxSpan = 0;
+        foreach (double s in spans) maxSpan = Math.Max(maxSpan, s);
+        search = Math.Max(search, maxSpan);
+
+        var buckets = new Dictionary<(int, int), List<int>>();
+        for (int i = 0; i < N; i++)
+        {
+            var key = ((int)Math.Floor(centres[i].X / search), (int)Math.Floor(centres[i].Y / search));
+            if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = [];
+            list.Add(i);
+        }
+
+        var rows = new List<int>[N];
+        double r2 = radius * radius;
+
+        PlanarFill.ForRowsOf(PlanarFillSettings.Default, N, i =>
+        {
+            var mine = new List<int>();
+            int bx = (int)Math.Floor(centres[i].X / search);
+            int by = (int)Math.Floor(centres[i].Y / search);
+            int siP0 = p0[i], siQ0 = q0[i];
+
+            for (int ox = -1; ox <= 1; ox++)
+                for (int oy = -1; oy <= 1; oy++)
+                {
+                    if (!buckets.TryGetValue((bx + ox, by + oy), out var list)) continue;
+                    foreach (int j in list)
+                    {
+                        double dx = centres[i].X - centres[j].X;
+                        double dy = centres[i].Y - centres[j].Y;
+                        bool near = dx * dx + dy * dy <= r2;
+                        if (!near)
+                            near = Math.Abs(siP0 - p0[j]) <= M && Math.Abs(siQ0 - q0[j]) <= M;
+                        if (near) mine.Add(j);
+                    }
+                }
+            mine.Sort();
+            rows[i] = mine;
+        });
+
+        var rowPtr = new int[N + 1];
+        for (int i = 0; i < N; i++) rowPtr[i + 1] = rowPtr[i] + rows[i].Count;
+        var colIdx = new int[rowPtr[N]];
+        for (int i = 0; i < N; i++) rows[i].CopyTo(colIdx, rowPtr[i]);
+        return (rowPtr, colIdx);
+    }
+}
+
+/// <summary>
+/// <b>P11 — the auxiliary grid's own FFT</b>: the circulant embedding of an absolute-offset kernel
+/// table, and the cyclic convolution the accelerated product runs in. Extracted from
+/// <see cref="PlanarAimOperator"/> unchanged, because <see cref="PlanarStaticAim"/> needs exactly the
+/// same three methods on exactly the same padded grid with one kernel instead of two.
+///
+/// <para><b>Not thread-safe</b> — the FFT plans and the strided-column scratch are per-instance, and
+/// one instance belongs to one operator. That is the constraint <see cref="PlanarAimOperator"/>
+/// already documented for itself.</para>
+/// </summary>
+internal sealed class AimGridFft
+{
+    private readonly int _nx, _ny, _px, _py;
+    private readonly FastFourierTransform _fftX, _fftY;
+    private readonly Complex[] _rowScratch;
+
+    public AimGridFft(int nx, int ny, int px, int py)
+    {
+        _nx = nx; _ny = ny; _px = px; _py = py;
+        _fftX = new FastFourierTransform(px);
+        _fftY = new FastFourierTransform(py);
+        _rowScratch = new Complex[Math.Max(px, py)];
+    }
+
+    /// <summary>Wraps the absolute-offset kernel table into the <c>Px×Py</c> circulant and transforms
+    /// it. Negative offsets land in the upper half of each axis, which is what makes the cyclic
+    /// convolution agree with the linear one over the sub-block the grid actually occupies.</summary>
+    public Complex[] EmbedAndTransform(Complex[] g)
+    {
+        var c = new Complex[(long)_px * _py];
+        for (int u = 0; u < _px; u++)
+        {
+            int dp = u < _nx ? u : u - _px;
+            if (Math.Abs(dp) >= _nx) continue;
+            int adp = Math.Abs(dp);
+            for (int v = 0; v < _py; v++)
+            {
+                int dq = v < _ny ? v : v - _py;
+                if (Math.Abs(dq) >= _ny) continue;
+                c[(long)u * _py + v] = g[(long)adp * _ny + Math.Abs(dq)];
+            }
+        }
+        Transform2(c, forward: true);
+        return c;
+    }
+
+    public void Convolve(Complex[] buf, Complex[] hat)
+    {
+        Transform2(buf, forward: true);
+        for (long i = 0; i < buf.LongLength; i++) buf[i] *= hat[i];
+        Transform2(buf, forward: false);
+    }
+
+    /// <summary>Separable 2-D transform over the <c>Px×Py</c> buffer, row-major. FftFlat's
+    /// <c>Inverse</c> carries the 1/N per axis, so the pair round-trips without a rescale.</summary>
+    public void Transform2(Complex[] buf, bool forward)
+    {
+        // rows (along y, contiguous)
+        for (int u = 0; u < _px; u++)
+        {
+            var row = buf.AsSpan(u * _py, _py);
+            if (forward) _fftY.Forward(row); else _fftY.Inverse(row);
+        }
+        // columns (along x, strided)
+        var col = _rowScratch.AsSpan(0, _px);
+        for (int v = 0; v < _py; v++)
+        {
+            for (int u = 0; u < _px; u++) col[u] = buf[(long)u * _py + v];
+            if (forward) _fftX.Forward(col); else _fftX.Inverse(col);
+            for (int u = 0; u < _px; u++) buf[(long)u * _py + v] = col[u];
+        }
+    }
+
 }

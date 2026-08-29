@@ -3732,6 +3732,10 @@ public sealed class PlanarEntryCores
                                        dirA == PlanarBasisDirection.X);
     }
 
+    /// <summary>P11 — <see cref="PrepareScalar"/> for a near set built over CELLS. Same warm-up, same
+    /// store; the basis-pair form calls it four times.</summary>
+    internal void PrepareScalarPair(int cellA, int cellB) => PrepareScalar(cellA, cellB);
+
     private void PrepareScalar(int cellA, int cellB)
     {
         int a = Math.Min(cellA, cellB), b = Math.Max(cellA, cellB);
@@ -3779,18 +3783,22 @@ public sealed class PlanarEntryFill
     private readonly PlanarEntryCores   _g;
     private readonly PlanarMesh         _mesh;
     private readonly PlanarFillSettings _st;
-    private readonly PlanarKernelTerms  _termsA, _termsQ;
-    private readonly Func<double, Complex> _remA, _remQ;
+    private readonly PlanarKernelTerms  _termsA;
+    private readonly Func<double, Complex> _remA;
     private readonly Complex _scalarScale, _vectorScale;
 
     private readonly ConcurrentDictionary<long, PlanarFill.CellPairRemainders> _remA7 = new();
-    private readonly ConcurrentDictionary<long, Complex>                       _remQ1 = new();
-    private readonly ConcurrentDictionary<(int, int), Complex>                 _pCut  = new();
+
+    /// <summary><b>P11 — the scalar block's cell-pulse potential, as its own object</b>, because the
+    /// accelerated static capacitance solve needs exactly this and nothing else of a fill. See
+    /// <see cref="PlanarPulsePotential"/>; this class's <c>P</c> is that object's <c>At</c>.</summary>
+    public PlanarPulsePotential Pulse => _pulse;
+    private readonly PlanarPulsePotential _pulse;
 
     /// <summary>How many distinct translation CLASSES the scalar block has integrated (plus any
     /// per-pair entries for pairs with a cut cell) — the counter that says the near field really is
     /// O(N) and that the memo is doing what it is here for. Until P5 this counted cell pairs.</summary>
-    public int CellPairCount => _remQ1.Count + _pCut.Count;
+    public int CellPairCount => _pulse.CellPairCount;
 
     /// <summary>P5 — how many distinct translation classes the vector block has integrated (one
     /// seven-primitive core pass and one seven-sum remainder pass each).</summary>
@@ -3818,11 +3826,11 @@ public sealed class PlanarEntryFill
 
         // The dense path re-floors the terms for this mesh in exactly these two places
         // (ScalarPotentialMatrix and Fill), so the entry evaluator does the same rather than trusting
-        // the caller to have done it.
+        // the caller to have done it. The scalar half re-floors inside PlanarPulsePotential, which is
+        // the same call on the same two arguments.
         _termsA = termsA.With(_st.Order, cores.RhoFloorM);
-        _termsQ = termsQ.With(_st.Order, cores.RhoFloorM);
         _remA   = PlanarFill.RemainderOf(_termsA, cores);
-        _remQ   = PlanarFill.RemainderOf(_termsQ, cores);
+        _pulse  = new PlanarPulsePotential(geometry, termsQ);
 
         _scalarScale = 1.0 / (Complex.ImaginaryOne * omega * EmConstants.Eps0);
         _vectorScale = Complex.ImaginaryOne * omega * EmConstants.Mu0;
@@ -3901,8 +3909,66 @@ public sealed class PlanarEntryFill
     }
 
     /// <summary>D4's area-averaged scalar-potential coefficient for one CELL pair — the dense path's
-    /// <c>P[a, b]</c>, memoised per class (per pair when a cell is cut).</summary>
-    private Complex P(int cellA, int cellB)
+    /// <c>P[a, b]</c>. <b>P11: one line, because the arithmetic moved to
+    /// <see cref="PlanarPulsePotential"/> whole</b>, so the accelerated static solve and this share
+    /// one implementation rather than agreeing by inspection.</summary>
+    private Complex P(int cellA, int cellB) => _pulse.At(cellA, cellB);
+}
+
+/// <summary>
+/// <b>P11 — D4's <c>P[a, b]</c>: the area-averaged scalar-potential coefficient of ONE CELL PAIR,
+/// on demand.</b> Carved out of <see cref="PlanarEntryFill"/> unchanged, because
+/// <see cref="PlanarStaticAim"/> needs exactly this operator and nothing else of a fill: the static
+/// capacitance system is <c>P q = ε₀·1</c> over CELLS, with no vector block, no ω and no basis
+/// functions in it at all.
+///
+/// <para>The memo shape is P5's, unchanged: keyed by TRANSLATION CLASS for a classifiable pair and
+/// per pair for one with a cut cell, so a near field asks for a class once however many pairs are
+/// its translates.</para>
+///
+/// <para>Thread-safe on the same terms <see cref="PlanarEntryFill"/> is: every field is read-only
+/// after construction and both caches are <see cref="ConcurrentDictionary{TKey,TValue}"/>s whose
+/// value factories are pure functions of the key.</para>
+/// </summary>
+public sealed class PlanarPulsePotential
+{
+    private readonly PlanarEntryCores   _g;
+    private readonly PlanarMesh         _mesh;
+    private readonly PlanarFillSettings _st;
+    private readonly PlanarKernelTerms  _termsQ;
+    private readonly Func<double, Complex> _remQ;
+
+    private readonly ConcurrentDictionary<long, Complex>       _remQ1 = new();
+    private readonly ConcurrentDictionary<(int, int), Complex> _pCut  = new();
+
+    /// <summary>How many distinct translation CLASSES this has integrated, plus any per-pair entries
+    /// for pairs with a cut cell.</summary>
+    public int CellPairCount => _remQ1.Count + _pCut.Count;
+
+    /// <summary>The frequency-independent cores this reads.</summary>
+    public PlanarEntryCores Geometry => _g;
+
+    /// <summary>The re-floored scalar terms this evaluates — read by the static accelerator, which
+    /// has to build its grid kernel table from the SAME floored terms the near entries use.</summary>
+    public PlanarKernelTerms Terms => _termsQ;
+
+    public PlanarPulsePotential(PlanarEntryCores geometry, PlanarKernelTerms termsQ)
+    {
+        ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentNullException.ThrowIfNull(termsQ);
+
+        _g    = geometry;
+        _mesh = geometry.Mesh;
+        _st   = geometry.Settings;
+
+        // The dense path re-floors the terms for this mesh inside ScalarPotentialMatrix, so this does
+        // the same rather than trusting the caller to have done it.
+        _termsQ = termsQ.With(_st.Order, geometry.Cores.RhoFloorM);
+        _remQ   = PlanarFill.RemainderOf(_termsQ, geometry.Cores);
+    }
+
+    /// <summary><c>P[cellA, cellB]</c>, symmetric by construction.</summary>
+    public Complex At(int cellA, int cellB)
     {
         int a = Math.Min(cellA, cellB), b = Math.Max(cellA, cellB);
         var ok = _g.Classifier.Classifiable;
@@ -3921,6 +3987,11 @@ public sealed class PlanarEntryFill
         }, this);
         return v;
     }
+
+    /// <summary>Warms this pair's singular cores without evaluating the frequency-dependent
+    /// remainder — the pulse half of <see cref="PlanarEntryCores.Prepare"/>, for a near set built
+    /// over CELLS rather than over bases.</summary>
+    internal void PrepareCells(int cellA, int cellB) => _g.PrepareScalarPair(cellA, cellB);
 
     private Complex ComputeP(int a, int b)
     {
