@@ -1003,7 +1003,13 @@ public static class PlanarSolve
                     // wide-port DUT's standard can be larger than the DUT itself — which is why the
                     // mesh remedies §0 of the parent brief measured inert on this class of geometry
                     // are not offered here either.
-                    bool accStd = fillSt.Aim is not null && !general;
+                    //
+                    // P12 — asked through SurfaceMesher.UsesAcceleratedCeiling like every other
+                    // site rather than spelled out again here. The answer is the same one today;
+                    // the point is that it stays the same one if the multi-level half of that
+                    // decision is ever settled differently, since a standard judged against a
+                    // ceiling the DUT is not judged against is the same defect P12 fixed.
+                    bool accStd = SurfaceMesher.UsesAcceleratedCeiling(fillSt.Aim is not null, general);
                     int  stdCeiling = accStd ? SurfaceMesher.AcceleratedUnknownCeiling
                                              : SurfaceMesher.UnknownCeiling;
                     var stdSet = PlanarCalibration.BuildSet(ports[i], slab, fLo, fHi, st.Calibration);
@@ -1475,13 +1481,23 @@ public static class PlanarSolve
                 capturedF = freqs[near];
             }
 
+            // The "rest" clause is CONDITIONAL: refinement runs to the grid floor whenever adjacent
+            // requested points differ by more than the tolerance, and then there is no remainder to
+            // model. Saying there is one sends a user looking for interpolated values that the file
+            // does not contain (owner report, 2026-08-29).
             notes.Add($"Adaptive frequency sampling: {solved.Count} of {freqs.Length} point(s) were " +
-                      $"SOLVED; the rest are modelled by a " +
-                      $"{(ad.Interpolant == PlanarInterpolant.Rational ? "barycentric rational" : "complex cubic spline")} " +
-                      $"interpolant through them. The worst disagreement refinement stopped at is " +
+                      (solved.Count >= freqs.Length
+                          ? "SOLVED — every requested point, because no interval agreed with the " +
+                            "interpolant closely enough to be skipped, so nothing is modelled. "
+                          : "SOLVED; the rest are modelled by a " +
+                            $"{(ad.Interpolant == PlanarInterpolant.Rational ? "barycentric rational" : "complex cubic spline")} " +
+                            "interpolant through them. ") +
+                      $"The worst disagreement refinement stopped at is " +
                       $"|ΔS| = {worstStopped:G3} against a tolerance of {ad.Tolerance:G3}" +
-                      (solved.Count >= budget ? ", and the solve budget was reached before every " +
-                       "interval converged — treat the modelled points with that in mind." : ".") +
+                      (solved.Count >= budget && budget < freqs.Length
+                          ? ", and the solve budget was reached before every interval converged — " +
+                            "treat the modelled points with that in mind."
+                          : ".") +
                       " Every published frequency is the one you asked for; a solved point carries " +
                       "the solver's own matrix exactly, and its per-port calibration diagnostics are " +
                       "carried from the nearest solved frequency rather than interpolated.");

@@ -451,25 +451,45 @@ public class EmPanelDeclutterTests
     [Fact]
     public void RunStartText_NamesThePointCount_AndWhetherAdaptiveActuallyApplies()
     {
-        var planar = new EmSetup { Name = "x", AnalysisKind = EmAnalysisKind.Planar, AdaptiveSampling = true };
-        var cross  = new EmSetup { Name = "x", AnalysisKind = EmAnalysisKind.CrossSection, AdaptiveSampling = true };
-        var off    = new EmSetup { Name = "x", AnalysisKind = EmAnalysisKind.Planar, AdaptiveSampling = false };
-        var auto   = new EmSetup { Name = "x", AnalysisKind = EmAnalysisKind.Auto, AdaptiveSampling = true };
+        var on  = new EmSetup { Name = "x", AdaptiveSampling = true };
+        var off = new EmSetup { Name = "x", AdaptiveSampling = false };
 
-        string p = ViewModels.WorkspaceViewModel.EmRunStartText(planar, 101, true);
+        string p = ViewModels.WorkspaceViewModel.EmRunStartText(on, 101, EmAnalysisKind.Planar);
         Assert.Contains("101", p, StringComparison.Ordinal);
         Assert.Contains("solves a subset", p, StringComparison.OrdinalIgnoreCase);
 
+        Assert.Contains("is off", ViewModels.WorkspaceViewModel.EmRunStartText(off, 101, EmAnalysisKind.Planar),
+                        StringComparison.OrdinalIgnoreCase);
+
         // The cross-section kernel is closed-form per point, so claiming adaptive sampling is in play
         // would be false — it says so instead.
-        Assert.Contains("does not apply", ViewModels.WorkspaceViewModel.EmRunStartText(cross, 101, false),
+        Assert.Contains("does not apply",
+                        ViewModels.WorkspaceViewModel.EmRunStartText(off, 101, EmAnalysisKind.CrossSection),
                         StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("is off", ViewModels.WorkspaceViewModel.EmRunStartText(off, 101, false),
-                        StringComparison.OrdinalIgnoreCase);
-        // Auto does not know which kernel will run until the registry has seen both extractors, so it
-        // hedges rather than claiming something that may turn out to be false.
-        Assert.Contains("if the full-wave analysis is chosen",
-                        ViewModels.WorkspaceViewModel.EmRunStartText(auto, 101, true),
-                        StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Owner report, 2026-08-29: the started line hedged with "will be used if the full-wave analysis
+    /// is chosen" on a run that was already under way. The kernel is RESOLVED by the time the line is
+    /// posted, so the line states an outcome — and where that outcome contradicts the checkbox, it
+    /// gives the reason in the same sentence.
+    /// </summary>
+    [Fact]
+    public void RunStartText_NeverHedges_AndSaysWhyWhenItContradictsTheCheckbox()
+    {
+        var auto = new EmSetup { Name = "x", AnalysisKind = EmAnalysisKind.Auto, AdaptiveSampling = true };
+
+        string planar = ViewModels.WorkspaceViewModel.EmRunStartText(auto, 101, EmAnalysisKind.Planar);
+        Assert.Contains("is on", planar, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("if the full-wave analysis is chosen", planar, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("will be used if", planar, StringComparison.OrdinalIgnoreCase);
+
+        // Ticked, but the registry chose kernel A: say so, say every point is solved, and say why.
+        string cross = ViewModels.WorkspaceViewModel.EmRunStartText(auto, 101, EmAnalysisKind.CrossSection);
+        Assert.Contains("is on", cross, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("full-wave analysis only", cross, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cross-section", cross, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("every point is solved", cross, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("if the full-wave analysis is chosen", cross, StringComparison.OrdinalIgnoreCase);
     }
 }

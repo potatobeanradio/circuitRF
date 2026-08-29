@@ -5649,13 +5649,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // complaint this addresses. The sweep row answers "how far through the run"; the stage row
         // answers "what is it doing right now", and moves within a single point.
         int pointCount = ResolveEmPointCount(setup);
-        bool adaptive  = setup.AnalysisKind != Engine.Mom.EmAnalysisKind.CrossSection && setup.AdaptiveSampling;
+
+        // THE RESOLVED KERNEL, NOT THE SETUP'S REQUEST (owner report, 2026-08-29). The setup may say
+        // Auto, but the panel has already run both extractors and put the registry's answer in
+        // SelectedKernel — it is the kernel name the panel is showing the user at the moment they
+        // press Simulate. Reading the request instead made two things wrong at once: the start line
+        // could only hedge about a choice that was in fact already made, and an Auto setup that
+        // resolves to the CROSS-SECTION kernel counted as adaptive here, which drove the sweep row
+        // indeterminate for a run that solves every point against a perfectly good denominator.
+        var kernel     = vm.SelectedKernel;
+        bool adaptive  = kernel == Engine.Mom.EmAnalysisKind.Planar && setup.AdaptiveSampling;
 
         // Owner request, 2026-08-11: say what is starting BEFORE anything long begins. A full-wave
         // point costs tens of seconds, so the first thing a user sees after pressing Simulate must
         // not be an empty bar — the point count and whether adaptive sampling is in play are the two
         // facts that tell them how long to expect and how to read the result.
-        Messages.Info(EmRunStartText(setup, pointCount, adaptive));
+        Messages.Info(EmRunStartText(setup, pointCount, kernel));
 
         var sweepLive = Messages.BeginProgress($"EM '{setup.Name}'");
         var stageLive = Messages.BeginProgress($"EM '{setup.Name}' — starting");
@@ -5971,27 +5980,35 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// The line posted the moment Simulate is pressed (owner request, 2026-08-11) — before the first
     /// long piece of work, so it is genuinely immediate.
     ///
-    /// <para><b>Whether adaptive sampling is ACTUALLY used is not simply the checkbox.</b> It applies
-    /// to the full-wave kernel only, and on <see cref="EmAnalysisKind.Auto"/> which kernel runs is not
-    /// settled until the registry has seen both extractors — so this deliberately hedges in that one
-    /// case rather than claiming something that may turn out to be false.</para>
+    /// <para><b>It states what WILL happen, and never hedges (owner report, 2026-08-29).</b> The
+    /// earlier wording said adaptive sampling "will be used if the full-wave analysis is chosen",
+    /// which reads as the solver not knowing its own mind at the moment it starts. It does know:
+    /// <paramref name="kernel"/> is the registry's answer, already resolved by the panel's own
+    /// Refresh from both extractors' verdicts, and it is the kernel name the panel is displaying
+    /// when the button is pressed. <see cref="EmAnalysisKind.Auto"/> is a request, never an outcome,
+    /// so it never reaches here.</para>
+    ///
+    /// <para><b>Where the answer contradicts the checkbox, the sentence says WHY.</b> Adaptive
+    /// sampling is a property of the full-wave sweep — it models the points it does not solve — and
+    /// the cross-section kernel has nothing to model, so a setup with the box ticked that resolves
+    /// to kernel A is told that, rather than being told something it will not do.</para>
     /// </summary>
-    internal static string EmRunStartText(EmSetup setup, int pointCount, bool adaptive)
+    internal static string EmRunStartText(EmSetup setup, int pointCount, EmAnalysisKind kernel)
     {
         string points = pointCount > 0
             ? $"{pointCount.ToString("N0", CultureInfo.CurrentCulture)} frequency point(s)"
             : "a frequency sweep whose point count could not be resolved";
 
-        string sampling = setup.AnalysisKind == Engine.Mom.EmAnalysisKind.CrossSection
-            ? "adaptive frequency sampling does not apply to the cross-section analysis"
-            : !setup.AdaptiveSampling
-                ? "adaptive frequency sampling is off — every point is solved"
-                : setup.AnalysisKind == Engine.Mom.EmAnalysisKind.Auto
-                    ? "adaptive frequency sampling is on, and will be used if the full-wave analysis " +
-                      "is chosen — it solves a subset and models the rest"
-                    : "adaptive frequency sampling is on — it solves a subset and models the rest";
+        string sampling = kernel != Engine.Mom.EmAnalysisKind.Planar
+            ? setup.AdaptiveSampling
+                ? "adaptive frequency sampling is on, but it applies to the full-wave analysis only " +
+                  "and this run is the cross-section analysis — every point is solved"
+                : "adaptive frequency sampling does not apply to the cross-section analysis — every " +
+                  "point is solved"
+            : setup.AdaptiveSampling
+                ? "adaptive frequency sampling is on — it solves a subset and models the rest"
+                : "adaptive frequency sampling is off — every point is solved";
 
-        _ = adaptive;   // the caller's own precomputed flag; the wording above is the finer answer
         return $"EM analysis started: '{setup.Name}' over {points}. {sampling}.";
     }
 
@@ -6005,9 +6022,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Adaptive publishes the user's whole grid but only SOLVES some of it, and saying so is the
         // difference between a number a user can trust and one they have to go looking for.
+        //
+        // "AND THE REST" IS NOT ALWAYS A NON-EMPTY SET (owner report, 2026-08-29). Adaptive sampling
+        // skips a point only when the interpolant already predicts it inside the tolerance, so on a
+        // grid whose neighbouring points differ by far more than that — the panel's own default
+        // sweep is routinely one — refinement runs to the grid floor and every requested point is
+        // solved. That is the feature working, not failing, and the row now says which of the two
+        // happened rather than promising a modelled remainder that does not exist.
         if (adaptive && result.PlanarSolve is { } ps && ps.SolvedFrequencies.Count > 0)
-            return $"solved — {points}, {ps.SolvedFrequencies.Count:N0} solved by the full-wave " +
-                   "kernel and the rest modelled from those";
+            return ps.SolvedFrequencies.Count >= requestedPoints && requestedPoints > 0
+                ? $"solved — {points}, every one solved by the full-wave kernel: adjacent points of " +
+                  "this sweep differ by more than the adaptive tolerance, so none could be modelled " +
+                  "from its neighbours. A finer sweep is where adaptive sampling saves time"
+                : $"solved — {points}, {ps.SolvedFrequencies.Count:N0} solved by the full-wave " +
+                  "kernel and the rest modelled from those";
 
         // Adaptive was ASKED for but the run did not report a solved set — which is what happens when
         // the registry picked the cross-section kernel, where every point is closed-form anyway.

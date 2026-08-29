@@ -254,6 +254,39 @@ public sealed class EmRunProgressTests
         Assert.Contains("modelled", text, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Owner report, 2026-08-29: a 51-point sweep with adaptive sampling on solved all 51, and the
+    /// row still promised that "the rest" were modelled. There is no rest. Refinement runs to the
+    /// grid floor whenever adjacent requested points differ by more than the tolerance — which the
+    /// panel's own default sweep routinely does — so the row has to distinguish the two outcomes and
+    /// say which lever changes it.
+    /// </summary>
+    [Fact]
+    public void WhenAdaptiveSolvedEveryRequestedPoint_TheRowSaysSo_AndDoesNotPromiseModelledPoints()
+    {
+        var solve = new CircuitRF.Engine.Mom.PlanarSolveResult
+        {
+            Points        = [],
+            CoreFillCount = 0,
+            UnknownCount  = 0,
+            StandardCount = 0,
+            CoreBuildMs   = 0,
+            Notes         = [],
+            SolvedPointCount  = 51,
+            SolvedFrequencies = [.. Enumerable.Range(0, 51).Select(i => 5e8 + i * 1.9e8)],
+        };
+
+        string text = WorkspaceViewModel.EmRunSummary(
+            new CircuitRF.Design.Layout.Em.EmRunResult(
+                CircuitRF.Design.Layout.Em.EmRunStatus.Ok, null, null, null, null, null, null, [],
+                PlanarSolve: solve),
+            adaptive: true, requestedPoints: 51);
+
+        Assert.Contains("51", text);
+        Assert.Contains("every one solved", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("the rest modelled", text, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Stop (owner request: "we need a Stop simulation for EM… perhaps Simulate changes to Cancel?")
 
     [Fact]

@@ -760,3 +760,55 @@ An edge port's marker belongs at the end **because it is an edge port**; the por
 retype it. The two reports compound: before the staleness fix above, a port added in the layout had
 **no row in the panel to set its type on**, so the type could not be changed and the marker could
 never stop being an edge one.
+
+## The Simulate line hedged about a choice already made, and "the rest" was sometimes empty (2026-08-29)
+
+Owner report, two halves of one message: the started line reads *"adaptive frequency sampling is on,
+and will be used if the full-wave analysis is chosen"* on a run that is already under way, and a
+51-point sweep with adaptive sampling on solved all 51 points.
+
+### Half one — the hedge was never necessary
+
+`WorkspaceViewModel.EmRunStartText` branched on `EmSetup.AnalysisKind`, which is a REQUEST. On `Auto`
+it cannot say which kernel runs, so it hedged. But the kernel is not unknown at that moment: the
+panel's own `Refresh()` has already run **both** extractors and put `EmKernelRegistry.Choose`'s answer
+in `EmSetupEditorViewModel.SelectedKernel` — it is the kernel name the panel is displaying when the
+button is pressed. The start line now takes that resolved kind (`EmAnalysisKind`, never `Auto`) and
+states an outcome, and where the outcome contradicts the checkbox it gives the reason in the same
+sentence: *"adaptive frequency sampling is on, but it applies to the full-wave analysis only and this
+run is the cross-section analysis — every point is solved."*
+
+**One live bug fell out of the same read.** `RunEmSetupAsync`'s `adaptive` flag was
+`AnalysisKind != CrossSection && AdaptiveSampling`, so an `Auto` setup that resolves to kernel A
+counted as adaptive: `RunControl.Total` was set to 0 and the sweep row ran INDETERMINATE for a run
+with a perfectly good denominator. It now reads `kernel == Planar && AdaptiveSampling`.
+
+### Half two — all 51 points solved because the grid is coarse, not because the feature failed
+
+Measured on the reported run (0.5–10 GHz, 51 points, 190 MHz step, a coupled planar structure):
+**adjacent points of
+the published sweep differ by |ΔS| = 0.43 to 0.63 — 430× to 630× the 1e-3 tolerance, and not one of
+the 50 intervals is under it.** Adaptive sampling skips a point only when the interpolant already
+predicts it inside the tolerance, so refinement bisects to the grid floor and solves everything.
+That is P9's measured conclusion (`src/Engine/Mom/RESOLVED.md`) reproduced exactly on a user file:
+the saving tracks how OVERSAMPLED the grid is, and a 190 MHz grid on a resonant structure is not
+oversampled at all.
+
+**Both messages promised a modelled remainder that did not exist**, which is what sent the owner
+looking for a saving that was never available:
+
+- `EmRunSummary` said *"51 solved by the full-wave kernel and the rest modelled from those"*. When the
+  solved count reaches the requested count it now says every point was solved, why none could be
+  modelled, and that a FINER sweep is where the saving is — the lever really is inverted from the
+  usual advice (P9: 401 adaptive points cost less than 101 non-adaptive ones).
+- `PlanarSolve`'s own note said *"51 of 51 point(s) were SOLVED; the rest are modelled by a complex
+  cubic spline"*. Same conditional. Its budget clause was wrong in the same case for the same reason
+  — `budget = min(MaxSolves, freqs.Length)`, so solving the whole grid always tripped
+  `solved.Count >= budget` and appended *"the solve budget was reached before every interval
+  converged"*, blaming a ceiling that was not binding. Now guarded on `budget < freqs.Length`.
+
+### Gates
+
+`EmPanelDeclutterTests.RunStartText_NeverHedges_AndSaysWhyWhenItContradictsTheCheckbox` (the hedge
+cannot come back, and the contradiction case must carry its reason) and
+`EmRunProgressTests.WhenAdaptiveSolvedEveryRequestedPoint_TheRowSaysSo_AndDoesNotPromiseModelledPoints`.

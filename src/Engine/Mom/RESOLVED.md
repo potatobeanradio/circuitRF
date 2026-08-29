@@ -1612,6 +1612,17 @@ The two are now one function, and the owner's decision is one line in one place:
 agree does not pre-empt the decision** — it keeps today's shipped behaviour (a via mesh judged at
 5,000) exactly as it is, and removes a report that contradicts the run.
 
+**A fifth site was found by asking the same question of the whole file rather than of the four the
+defect named**: de-embedding's setup-time refusal in `PlanarKernel.Solve` sized a port's calibration
+STANDARDS against `fillSt.Aim is not null && !general` — the same decision, spelled out a second
+time. It agrees with the function today, which is why nothing was visibly wrong with it, and it is
+latent rather than reachable (a via mesh between the two ceilings is refused by the mesh verdict
+before de-embedding is reached at all). It is now the function call too, for the reason the function
+exists: the flip above must not leave a standard judged against a ceiling its own DUT is not judged
+against. `PlanarDeembed.GuardCapacitanceCeiling` is NOT a sixth — it takes `accelerated` as an
+argument stating which ROUTE ran (P11: the accelerated static solve holds no m x m), and its caller
+`PlanarDeembed.StaticCapacitance` is inside the `Aim is { }` branch that already settled it.
+
 **The reason it is not taken here is finding 3, not doubt about the ladder.** A ceiling stated in N
 alone is a promise about a mesh whose `N_z` is unstated, and the border's time is set by `N_z`. A
 board with one ground via at N = 15,192 costs 2.5 s a point; the same N with a 140-basis via field
@@ -1647,7 +1658,8 @@ src/Engine/Mom/PlanarFill.cs          MultiLevelPairings + Resolve made internal
                                       takes an explicit remainder; PlanarEntryFill takes a prebuilt
                                       PlanarPulsePotential
 src/Engine/Mom/PlanarSolve.cs         the general-kernel refusal replaced by the bordered operator;
-                                      LastBorderedAccelerator
+                                      LastBorderedAccelerator; the standards' ceiling decision reads
+                                      SurfaceMesher.UsesAcceleratedCeiling instead of restating it
 tests/Engine.Tests/Mom/PlanarP12BorderedAimTests.cs   NEW — 3 routine tests (3 s), 5 Benchmark (31 s)
 tests/Firewall.Tests/user-facing-text-allowlist.txt   two retired messages out, five new ones in
 ```
