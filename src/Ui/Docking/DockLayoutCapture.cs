@@ -316,6 +316,32 @@ public static class DockLayoutCapture
         }
     }
 
+    /// <summary>
+    /// Depth-first walk of every document PANE under <paramref name="dockable"/> — every dock that
+    /// directly holds a document, whatever its concrete type.
+    ///
+    /// <para>Type is deliberately not the test, for the reason <see cref="BuildRegion"/> spells out:
+    /// a pane the user makes by dragging a document to an edge is a plain <c>ProportionalDock</c>,
+    /// not an <c>IDocumentDock</c>, because <c>FactoryBase.CreateSplitLayout</c> wraps a
+    /// non-<c>IDock</c> dockable in <c>CreateProportionalDock()</c>. Only the original strip and the
+    /// panes rebuilt from a saved <c>.cws</c> are <c>IDocumentDock</c>s.</para>
+    ///
+    /// <para>Follows <c>VisibleDockables</c> only, never a root's <c>Windows</c> — a torn-off
+    /// document's own root is a different tree and is resolved separately.</para>
+    /// </summary>
+    public static IEnumerable<IDock> EnumerateDocumentPanes(IDockable dockable)
+    {
+        if (dockable is not IDock dock || dock.VisibleDockables is not { } children) yield break;
+
+        if (children.Any(c => c is IDocument)) yield return dock;
+
+        foreach (var child in children)
+        {
+            if (child is null) continue;
+            foreach (var found in EnumerateDocumentPanes(child)) yield return found;
+        }
+    }
+
     /// <summary>Depth-first walk of every <see cref="IDocumentDock"/> under <paramref name="dockable"/>.</summary>
     public static IEnumerable<IDocumentDock> EnumerateDocumentDocks(IDockable dockable)
     {

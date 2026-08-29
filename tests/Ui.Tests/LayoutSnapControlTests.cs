@@ -311,6 +311,50 @@ public class LayoutSnapControlTests
         Assert.False(vm.GeometrySnapEnabled);
     }
 
+    /// <summary>
+    /// Owner report, 2026-08-29: ⌘S in a FLOATING layout document toggled geometry snap instead of
+    /// saving the .clay. Bare 's' is this editor's geometry-snap toggle, and it was matched on the
+    /// KEY alone — so every Ctrl/Cmd/Alt combination on that letter toggled snap too.
+    ///
+    /// <para>It only SHOWED while floating because Avalonia processes KeyBindings from the focused
+    /// element up to the root BEFORE the routed KeyDown is raised at all: docked, WorkspaceWindow's
+    /// own Ctrl/Meta+S claimed the key and marked it handled, so this handler never ran. A torn-off
+    /// document lives in a CrfHostWindow, which had no Save binding, so the keystroke arrived here.
+    /// The host window now binds Save (WorkspaceViewModel.WireWindowUndo — see
+    /// FileMenuRestructureTests), and this guard is the other half of the fix: a KeyBinding whose
+    /// CanExecute is false neither executes nor marks the key handled, so a clean document's ⌘S
+    /// still reaches this handler and must do nothing.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(KeyModifiers.Control)]
+    [InlineData(KeyModifiers.Meta)]
+    [InlineData(KeyModifiers.Alt)]
+    [InlineData(KeyModifiers.Control | KeyModifiers.Shift)]
+    [InlineData(KeyModifiers.Meta | KeyModifiers.Shift)]
+    public void ModifiedSKey_LeavesGeometrySnapAlone_SoSaveIsNeverStolen(KeyModifiers mods)
+    {
+        var vm = Vm(FreshModel());
+        vm.ActiveTool = LayoutEditorViewModel.Tool.Select;
+        Assert.True(vm.GeometrySnapEnabled);
+
+        vm.OnKeyDown(Key.S, mods);
+
+        Assert.True(vm.GeometrySnapEnabled);
+    }
+
+    /// <summary>Shift+S alone is still the bare toggle — only Ctrl/Meta/Alt are excluded, exactly as
+    /// the D (ruler) and M (mirror) keys in the same handler already are.</summary>
+    [Fact]
+    public void ShiftS_StillTogglesGeometrySnap()
+    {
+        var vm = Vm(FreshModel());
+        vm.ActiveTool = LayoutEditorViewModel.Tool.Select;
+
+        vm.OnKeyDown(Key.S, KeyModifiers.Shift);
+
+        Assert.False(vm.GeometrySnapEnabled);
+    }
+
     [Fact]
     public void IncludeIntersectionsEnabled_DefaultsOff()
     {

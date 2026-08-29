@@ -61,6 +61,11 @@ public partial class SchematicView : UserControl
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
 
+        // Mirrors LayoutEditorView and SymbolEditorView: a click into this canvas is the signal that
+        // THIS document is the one being worked on, which is the only signal there is when it was
+        // already the active tab of its own pane (a side-by-side document split, 2026-08-29).
+        SchematicCanvasCtrl.GotFocus += (_, _) => _subscribedDoc?.NotifyCanvasInteracted();
+
         // Clipboard shortcuts (async; must be handled here, not in the canvas)
         SchematicCanvasCtrl.ClipboardCopyRequested  += async (_, _) => await OnClipboardCopy();
         SchematicCanvasCtrl.ClipboardCutRequested   += async (_, _) => await OnClipboardCut();

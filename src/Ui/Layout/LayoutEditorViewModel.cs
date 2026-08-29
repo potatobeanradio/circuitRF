@@ -2984,8 +2984,25 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // distance on/off (AutoCAD's grid-snap toggle). R-snp-6: F3 and 's' both toggle geometry snap
         // (confirmed free — no existing single-letter tool shortcut in this editor). None of these are
         // gated on ActiveTool — they are view toggles, not tool state.
+        //
+        // BARE 's' ONLY, guarded exactly like D and M below. Owner report, 2026-08-29: ⌘S in a
+        // FLOATING layout window toggled geometry snap instead of saving. Ctrl/Cmd+S is claimed by a
+        // window KeyBinding, and Avalonia processes KeyBindings from the focused element up to the
+        // root BEFORE the routed KeyDown event is raised at all — so while docked, WorkspaceWindow's
+        // own Ctrl/Meta+S marked the key handled and this line never ran. A torn-off document lives
+        // in a CrfHostWindow, which had no Save binding, so the keystroke reached here instead and
+        // the snap toggle was the only thing that happened. The host window now binds Save
+        // (WorkspaceViewModel.WireWindowUndo), and this guard is the other half: a KeyBinding whose
+        // CanExecute is false neither executes NOR marks the key handled, so without it ⌘S on a
+        // clean document would still fall through and toggle snap. Alt is excluded for the same
+        // reason it is on D — Alt arms a duplicate drag.
         if (key == Key.F9) { ToggleSnapDbuEnabled(); return; }
-        if (key == Key.F3 || key == Key.S) { GeometrySnapEnabled = !GeometrySnapEnabled; return; }
+        if (key == Key.F3
+            || (key == Key.S && (mods & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Alt)) == 0))
+        {
+            GeometrySnapEnabled = !GeometrySnapEnabled;
+            return;
+        }
 
         // ── D ARMS THE RULER TOOL ───────────────────────────────────────────────────────────
         //

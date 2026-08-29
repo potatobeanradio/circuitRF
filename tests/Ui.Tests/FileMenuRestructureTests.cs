@@ -566,6 +566,44 @@ public class FileMenuRestructureTests
     }
 
     /// <summary>
+    /// Owner report, 2026-08-29: a FLOATING layout document did not save on ⌘S — the layout editor's
+    /// geometry-snap toggle ran instead.
+    ///
+    /// <para>Two halves, and this is the one that makes Save work: Ctrl/Meta+S was bound on
+    /// WorkspaceWindow only, plus (by two views that had already hit this) on DataDisplayView and
+    /// EmSetupEditorView themselves. A torn-off document is a separate TopLevel that shares none of
+    /// the shell's KeyBindings, so a floating .clay — and a floating schematic, symbol or technology
+    /// — had no Save gesture at all. Injected in <c>WireWindowUndo</c> beside the Ctrl+W the same
+    /// window already gets, rather than on each view, because the gap was every document's, not one
+    /// view's; the window is passed as the CommandParameter so the command's own per-window
+    /// resolution (R-menu-4) names the document that window is showing.</para>
+    ///
+    /// <para>The two views that bind Save themselves are unaffected: Avalonia walks KeyBindings from
+    /// the focused element UP to the root and stops at the first that handles, so a binding on the
+    /// view is reached before the window's.</para>
+    /// </summary>
+    [Fact]
+    public void Save_IsBoundOnTornOffDocumentWindows_NotOnlyOnTheShell()
+    {
+        var vm = ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs"));
+
+        Assert.Contains("new KeyGesture(Key.S, KeyModifiers.Control)", vm);
+        Assert.Contains("new KeyGesture(Key.S, KeyModifiers.Meta)", vm);
+
+        // Both must reach the same command the shell's own Ctrl+S runs, with THIS window handed to it
+        // — the injected binding lives in the same method as the Ctrl+W one, so scan that method only.
+        int start = vm.IndexOf("private void WireWindowUndo(", StringComparison.Ordinal);
+        Assert.True(start > 0, "WireWindowUndo is gone — the torn-off window key injection moved");
+        int end = vm.IndexOf("// ---- Tab-close prompt", start, StringComparison.Ordinal);
+        string method = vm[start..end];
+
+        foreach (var modifier in (string[])["Control", "Meta"])
+            Assert.Matches(
+                $@"new KeyGesture\(Key\.S, KeyModifiers\.{modifier}\),\s*Command = SaveAllDocumentsCommand, CommandParameter = window",
+                method);
+    }
+
+    /// <summary>
     /// Owner request, 2026-08-25: <b>Close Window</b> sits directly above <b>Close Workspace</b> and
     /// carries Ctrl+W / ⌘+W, on all three platforms.
     ///

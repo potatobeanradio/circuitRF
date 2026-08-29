@@ -193,8 +193,88 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // whether the closing window was the one that owns the current override.
     private readonly Dictionary<Window, IDockable?> _focusTrackedWindowDocs = new();
 
+    // ── The document pane the user is actually working in (side-by-side splits) ──────────────────
+    //
+    // Owner report, 2026-08-29: with a .clay and a .csch docked SIDE BY SIDE, ⌘S saved the layout and
+    // never the schematic. `_factory.DocumentDock` is the PRIMARY pane and only the primary — a split
+    // document area is several IDocumentDocks (CircuitRfDockFactory.BuildDocumentArea builds one per
+    // restored region, and Dock's own drag/drop makes more at runtime), and nothing ever re-pointed
+    // that field or subscribed to the other panes. So "the active document" was pinned to whatever
+    // pane 0 happened to show, and every command that resolves through here — Save, Close Window, Run
+    // Analysis, Generate Netlist, Check Design Rules, the exports, the undo target — targeted it.
+    //
+    // Tracked as the DOCK rather than the document so the answer stays right when the user switches
+    // tabs inside that pane without touching the other one. Cleared whenever it is no longer part of
+    // the shell's own layout (a pane collapses when its last document closes), which falls back to the
+    // primary — never to a dangling dock that is no longer on screen.
+    //
+    // Typed IDock, not IDocumentDock, and that is not defensive: a pane the user makes by DRAGGING a
+    // document to an edge is a plain ProportionalDock holding the document, because
+    // FactoryBase.CreateSplitLayout wraps a non-IDock dockable in CreateProportionalDock(). Only a
+    // pane rebuilt from a saved .cws is a real DocumentDock. DockLayoutCapture.BuildRegion already
+    // documents this trap — it shipped broken once for exactly this reason — so a pane is identified
+    // here the same way it is there: by what it HOLDS, not by its type.
+    private IDock? _activeDocumentPane;
+
+    // Document docks currently subscribed to OnDocumentDockPropertyChanged. A HashSet because a
+    // re-scan runs after every layout rebuild and every dock/undock, and re-subscribing a dock twice
+    // would run the whole activation fan-out twice per tab change.
+    private readonly HashSet<System.ComponentModel.INotifyPropertyChanged> _subscribedDocumentDocks = [];
+
     private IDockable? ResolveActiveDocumentForCommands()
-        => _focusedWindowDocument ?? _factory.DocumentDock?.ActiveDockable;
+        => _focusedWindowDocument
+        ?? ActiveDocumentPaneInShell?.ActiveDockable
+        ?? _factory.DocumentDock?.ActiveDockable;
+
+    /// <summary>
+    /// The tracked pane, but only while it is still part of the shell's own layout — a pane that
+    /// collapsed (Dock removes an <c>IsCollapsable</c> document dock when its last tab closes) would
+    /// otherwise go on naming a document nothing can show.
+    /// </summary>
+    private IDock? ActiveDocumentPaneInShell
+        => _activeDocumentPane is { } pane && EnumerateDocumentPanes().Contains(pane) ? pane : null;
+
+    /// <summary>
+    /// Every document pane in the shell's own layout — every dock that DIRECTLY holds a document,
+    /// which is the same rule <c>DockLayoutCapture.BuildRegion</c> uses to find the panes it writes to
+    /// the .cws, so "which panes exist" gets one answer in both places. Follows <c>VisibleDockables</c>
+    /// only, never a root's <c>Windows</c>, so a torn-off document's own root is out of scope — those
+    /// are resolved by <see cref="_focusedWindowDocument"/> instead.
+    /// </summary>
+    private IEnumerable<IDock> EnumerateDocumentPanes()
+        => Layout is { } root ? Docking.DockLayoutCapture.EnumerateDocumentPanes(root) : [];
+
+    /// <summary>
+    /// Subscribes <see cref="OnDocumentDockPropertyChanged"/> to EVERY document pane in the shell,
+    /// not just <c>_factory.DocumentDock</c>. Idempotent, and safe to call after any layout change:
+    /// panes that have gone are dropped, panes that are new are added.
+    /// </summary>
+    private void SubscribeToDocumentPanes()
+    {
+        var live = EnumerateDocumentPanes()
+            .OfType<System.ComponentModel.INotifyPropertyChanged>()
+            .ToHashSet();
+
+        foreach (var gone in _subscribedDocumentDocks.Where(d => !live.Contains(d)).ToList())
+        {
+            gone.PropertyChanged -= OnDocumentDockPropertyChanged;
+            _subscribedDocumentDocks.Remove(gone);
+        }
+
+        foreach (var pane in live.Where(_subscribedDocumentDocks.Add))
+            pane.PropertyChanged += OnDocumentDockPropertyChanged;
+    }
+
+    /// <summary>
+    /// Records which pane a document lives in, for the split-document-area resolution above. Called
+    /// from every path that makes a document current WITHOUT changing any dock's
+    /// <c>ActiveDockable</c> — clicking back into the canvas of a tab that was already active in its
+    /// own pane is the everyday one, and it is exactly the case a side-by-side layout produces.
+    /// </summary>
+    private void MarkActiveDocumentPane(IDockable document)
+    {
+        if (document.Owner is IDock pane) _activeDocumentPane = pane;
+    }
 
     // Through the DOCUMENT, not its command stack: with two histories in play the label has to describe
     // the entry Undo would really take, or it names a shape move while Ctrl+Z undoes a wire drag.
@@ -333,8 +413,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SubscribeToTreeSelection();
 
         // Notify PropertiesTool when the active document tab changes (active schematic tracking).
-        if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged npc)
-            npc.PropertyChanged += OnDocumentDockPropertyChanged;
+        // EVERY document pane, not just the primary — see _activeDocumentPane for what subscribing
+        // only _factory.DocumentDock cost in a side-by-side split.
+        SubscribeToDocumentPanes();
         WireAnalysesRun();
 
         // Wire close-tab prompt: before a dockable is removed, show Save/Don't Save/Cancel
@@ -356,6 +437,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // nudge automatic instead of something the user has to trigger by hand.
         _factory.DockableDocked += (_, _) =>
         {
+            // A document dropped BESIDE another creates a document pane Dock builds itself, which no
+            // earlier scan can have seen. Without this, splitting the document area at runtime leaves
+            // the new pane unsubscribed and its documents unreachable by every active-document command.
+            SubscribeToDocumentPanes();
+
             if (Avalonia.Application.Current?.ApplicationLifetime
                     is not IClassicDesktopStyleApplicationLifetime desktop) return;
             foreach (var window in desktop.Windows)
@@ -364,6 +450,31 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 window.InvalidateArrange();
                 window.InvalidateVisual();
             }
+        };
+
+        // Dock's own focus signal, which is the ONE notification that fires for every document type
+        // when the user clicks into a pane whose active tab did not change — DocumentControl adds a
+        // TUNNEL PointerPressed handler that calls SetFocusedDockable for whatever its dock has
+        // active. A side-by-side split needs exactly that, and it is why UNDO went to the wrong
+        // document: a pane made by dragging a document to an edge holds one document, so its
+        // ActiveDockable never changes and OnDocumentDockPropertyChanged — the only thing that called
+        // SetActiveUndoTarget for the shell — never fired when the user moved between the panes.
+        // Clicking the TAB of a single-document pane is the same story, which is why the editors'
+        // own CanvasInteracted hooks were not enough on their own.
+        //
+        // Routed through the SAME ActivateDocument the tab change uses, so a pane switch and a tab
+        // switch leave the shell in identical states rather than in two nearly-identical ones.
+        //
+        // Guarded on the pane AND the document: SetFocusedDockable runs inside SetActiveDockable,
+        // which the CanvasInteracted handlers call, so an unguarded fan-out here would re-enter.
+        _factory.FocusedDockableChanged += (_, args) =>
+        {
+            if (args.Dockable is not IDocument document || document.Owner is not IDock pane) return;
+            if (ReferenceEquals(pane, _activeDocumentPane)
+                && ReferenceEquals(document, _lastActivatedDocument)) return;
+
+            _activeDocumentPane = pane;
+            ActivateDocument(document, requestActivationFocus: false);
         };
 
         // A newly floated window needs its per-window wiring — focus tracking, undo key bindings, and
@@ -1136,9 +1247,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             SubscribeToTreeSelection();
             _factory.ProjectTreeTool?.SetWorkspace(workspaceDir);
 
-            // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
-            if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
-                newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
+            // Re-subscribe to the new document panes (instances replaced by CreateDefaultLayout).
+            SubscribeToDocumentPanes();
             WireAnalysesRun();
 
             ApplyOnLaunchActionForNewWorkspace();
@@ -1706,9 +1816,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SubscribeToTreeSelection();
         _factory.ProjectTreeTool?.SetWorkspace(workspaceDir);
 
-        // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
-        if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
-            newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
+        // Re-subscribe to the new document panes (instances replaced by CreateDefaultLayout).
+        SubscribeToDocumentPanes();
         WireAnalysesRun();
 
         var cws = TryLoadCws(cwsPath);
@@ -2152,8 +2261,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SubscribeToFilterState();
         SubscribeToTreeSelection();
 
-        if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
-            newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
+        SubscribeToDocumentPanes();
         WireAnalysesRun();
 
         Messages.Clear();
@@ -2469,6 +2577,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var newLayout = _factory.CreateLayoutPreservingContent(state);
         _factory.InitLayout(newLayout);
         Layout = newLayout;
+        // A preserved-content rebuild re-hosts the document area, and a saved split brings back panes
+        // this view model has never seen — the primary is carried over, the others are built fresh.
+        SubscribeToDocumentPanes();
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         // Same reason as the MRU push: CreateLayoutPreservingContent hands back a NEW PaletteTool, so
@@ -3030,6 +3141,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.DocumentName                 = title;   // no file yet; the tab's title is what it is called
         // filePath = null → scratch; IsScratch = true, IsDirty = false (starts clean), Title = "<title>"
         var doc   = new SchematicDocument(title, vm) { Messages = Messages, Hierarchy = this };
+        HookSchematicCanvasFocus(doc);
 
         _scratchDocs.Add(doc);
         _factory.OpenDocument(doc);
@@ -7428,6 +7540,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var vm    = GetOrCreateSession(absolutePath);
             var title = Path.GetFileName(absolutePath);
             var doc   = new SchematicDocument(title, vm, absolutePath) { Messages = Messages, Hierarchy = this };
+            HookSchematicCanvasFocus(doc);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             Messages.Info("Opened", absolutePath);
@@ -8365,10 +8478,36 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// its VM — clicking a pin or a primitive then changes nothing on screen.</summary>
     private void OnSymbolCanvasInteracted(SymbolEditorDocument doc)
     {
+        MarkActiveDocumentPane(doc);
         _factory.SetActiveDockable(doc);
         _factory.PropertiesTool?.SetActiveSymbolEditor(doc.ViewModel);
         SetActiveUndoTarget(doc);
         ActiveSaveScope = SaveScope.SingleDoc;
+    }
+
+    /// <summary>
+    /// Subscribes a schematic document's canvas-focus signal — the counterpart of
+    /// <see cref="OnLayoutCanvasInteracted"/> and <see cref="OnSymbolCanvasInteracted"/>, which the
+    /// schematic never had. Called from every path that opens one.
+    /// </summary>
+    private void HookSchematicCanvasFocus(SchematicDocument doc)
+        => doc.CanvasInteracted += () => OnSchematicCanvasInteracted(doc);
+
+    /// <summary>The user just clicked into this schematic's own canvas. Deliberately narrower than the
+    /// layout and symbol handlers: those exist to repair a Properties panel a project-tree click had
+    /// re-routed, and the schematic's Properties routing has no such hole. What it must do is say
+    /// which document PANE is current, because with a side-by-side split that is not something any
+    /// dock's ActiveDockable will report — the tab was already active in its own pane.</summary>
+    private void OnSchematicCanvasInteracted(SchematicDocument doc)
+    {
+        MarkActiveDocumentPane(doc);
+        _factory.SetActiveDockable(doc);
+        SetActiveUndoTarget(doc);
+
+        // Sets ActiveSaveScope from the newly-resolved document AND refreshes every File-menu
+        // predicate — which matters beyond appearance on macOS, where a stale-disabled NativeMenu
+        // item swallows its own ⌘S rather than letting the key reach the window's binding.
+        RaiseFileMenuEnablementChanged();
     }
 
     /// <summary>
@@ -8407,6 +8546,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// layout context too) even though this document was never actually deactivated.</summary>
     private void OnLayoutCanvasInteracted(LayoutDocument doc)
     {
+        MarkActiveDocumentPane(doc);
         _factory.SetActiveDockable(doc);
         ActivateLayoutDocumentForProperties(doc);
         SetActiveUndoTarget(doc);
@@ -9649,6 +9789,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var vm  = BuildSessionVm(model);
             RegisterSession(filePath, vm);
             var doc = new SchematicDocument(fileNameWithoutExt + ext, vm, filePath) { Messages = Messages, Hierarchy = this };
+            HookSchematicCanvasFocus(doc);
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
 
@@ -10340,12 +10481,47 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (e.PropertyName != "ActiveDockable") return;
 
-        var activeDockable = _factory.DocumentDock?.ActiveDockable;
+        // From the pane that RAISED it, not from _factory.DocumentDock — with a side-by-side split
+        // those are different docks, and reading the primary made a tab change in the second pane
+        // re-route every panel to whatever the FIRST pane happened to be showing.
+        var pane = sender as IDock ?? _factory.DocumentDock;
+        if (pane is not null) _activeDocumentPane = pane;
+
+        ActivateDocument(pane?.ActiveDockable);
+    }
+
+    // The document ActivateDocument last ran for. A tab change and Dock's focus signal can both
+    // report the same document — the second is what makes a pane switch visible when the pane holds
+    // one document and its ActiveDockable therefore never changes — and the routing below is not
+    // cheap enough to run twice for one gesture.
+    private IDockable? _lastActivatedDocument;
+
+    /// <summary>
+    /// Everything that follows "this document is now the one being worked on": the Properties, DRC
+    /// and wBond panels, the Analyses panel, the harmonicaRF menu takeover, the UNDO TARGET, the save
+    /// scope, and every enablement predicate gated on the active document type.
+    ///
+    /// <para>Carved out of <see cref="OnDocumentDockPropertyChanged"/> so a PANE change can run it
+    /// too. A dock's ActiveDockable is not a complete signal: a pane holding one document — which is
+    /// exactly what dragging a document to an edge produces — never changes it, so clicking between
+    /// two side-by-side panes routed nothing at all, and Undo went on targeting the pane the user had
+    /// left (owner, 2026-08-29).</para>
+    /// </summary>
+    /// <param name="requestActivationFocus">
+    /// Whether the document's view should grab keyboard focus. True for a TAB change, which is what
+    /// that behaviour is for — the newly-shown editor takes the keyboard so shortcuts work without a
+    /// preliminary click. False when the user's own click is what raised this: they have already put
+    /// focus somewhere deliberately, and pulling it to the canvas would take the caret out of a
+    /// toolbar field on first click.
+    /// </param>
+    private void ActivateDocument(IDockable? activeDockable, bool requestActivationFocus = true)
+    {
+        _lastActivatedDocument = activeDockable;
 
         // The activated editor view should grab keyboard focus so shortcuts (Select All, nudges, …)
         // work without a preliminary click on the canvas. The view focuses its canvas on the event, or
         // — if it binds after this fires (first open) — by consuming the pending flag on DataContext change.
-        (activeDockable as IActivatableDocument)?.RequestActivationFocus();
+        if (requestActivationFocus) (activeDockable as IActivatableDocument)?.RequestActivationFocus();
 
         // L5b: the violations panel follows the active LAYOUT and nothing else. Cleared FIRST and set
         // again only by the two branches that HAVE a layout — a LayoutDocument's own, and a
@@ -10796,6 +10972,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Control | KeyModifiers.Shift),  Command = redoCmd });
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta    | KeyModifiers.Shift),  Command = redoCmd });
         window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Y, KeyModifiers.Control),                       Command = redoCmd });
+
+        // Ctrl+S / Cmd+S saves THIS torn-off window's own document — the same command the shell's
+        // own Ctrl+S runs, with this window handed to it explicitly so its R-menu-4 per-window
+        // resolution names the document the user is actually looking at. Owner report, 2026-08-29:
+        // a floating layout document did not save on ⌘S; it toggled geometry snap instead, because
+        // Ctrl/Meta+S was bound ONLY on WorkspaceWindow (and, for the two document views that had
+        // already hit this, on the view itself). Avalonia processes KeyBindings from the focused
+        // element up to the root BEFORE raising the routed KeyDown, so in a CrfHostWindow the
+        // keystroke met no binding and reached LayoutEditorViewModel.OnKeyDown, whose 's' toggle
+        // then claimed it.
+        //
+        // Bound HERE rather than on each view, because this is not one view's problem: EVERY torn-off
+        // document was missing the gesture, and the two views that bound it themselves
+        // (DataDisplayView, EmSetupEditorView) still win — a binding nearer the focused element is
+        // processed first and stops the walk, so their document-specific Save is unaffected.
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Control), Command = SaveAllDocumentsCommand, CommandParameter = window });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.S, KeyModifiers.Meta),    Command = SaveAllDocumentsCommand, CommandParameter = window });
 
         // Ctrl+W / Cmd+W closes THIS torn-off window's own document. A MenuItem's InputGesture is
         // display-only in Avalonia, so the TornOffFileMenuView copy of the File menu shows the
@@ -11729,6 +11922,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.CellResolverProvider  = () => this;
                 vm.DocumentName          = name;
                 var doc = new SchematicDocument(name, vm) { Messages = Messages, Hierarchy = this };
+                HookSchematicCanvasFocus(doc);
                 _scratchDocs.Add(doc);
                 _factory.OpenDocument(doc);
             }

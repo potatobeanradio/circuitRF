@@ -1,5 +1,142 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A side-by-side split pinned "the active document" to pane 0 (2026-08-29)
+
+Owner report: with a `.clay` and a `.csch` docked side by side, ⌘S saved the layout and never the
+schematic. Not a Save bug and not schematic-specific — the schematic was simply the document in the
+pane that could never be current.
+
+### The active document was resolved from the PRIMARY pane only
+
+`ResolveActiveDocumentForCommands()` was `_focusedWindowDocument ?? _factory.DocumentDock?.ActiveDockable`,
+and `_factory.DocumentDock` is pane 0: assigned in `BuildLayout`/`BuildDocumentArea` and never
+re-pointed. Only that one dock was subscribed for `ActiveDockable` changes. A split document area is
+several panes, so everything resolving through there — Save, Close Window, Run Analysis, Generate
+Netlist, Check Design Rules, the exports, and the undo target — targeted whatever pane 0 showed.
+
+Now tracked as `_activeDocumentPane`, the pane the user last worked in, consulted ahead of the
+primary and ignored once it is no longer part of the shell's layout (a pane collapses when its last
+document closes, and a stale one would name a document nothing can display).
+
+### A pane is identified by what it HOLDS, not by its type
+
+`FactoryBase.CreateSplitLayout` wraps a non-`IDock` dockable in a plain `CreateProportionalDock()`, so
+**a pane the user makes by dragging a document to an edge is a ProportionalDock, not an
+`IDocumentDock`.** Only the original strip and panes rebuilt from a saved `.cws` are document docks.
+`DockLayoutCapture.BuildRegion` already documents this — it shipped broken once for exactly this
+reason — so the walk added here (`DockLayoutCapture.EnumerateDocumentPanes`, beside the existing
+type-based `EnumerateDocumentDocks`) uses the same rule: any `IDock` that directly holds an
+`IDocument`. `_activeDocumentPane` is typed `IDock` for the same reason. A first attempt typed on
+`IDocumentDock` would have missed precisely the case reported.
+
+### Clicking a document changes no ActiveDockable, so two signals report the pane
+
+In a split, moving between panes by clicking the documents themselves alters nothing any dock
+notifies about — the tab was already active in its own pane. Two signals now cover it:
+
+- **`_factory.FocusedDockableChanged`**, which works for every document type: Dock's `DocumentControl`
+  adds a **tunnel** `PointerPressed` handler that calls `SetFocusedDockable` for its dock's active
+  dockable, so any press inside a pane reports it. Guarded on the pane actually changing —
+  `SetFocusedDockable` runs inside `SetActiveDockable`, which the canvas handlers call, so an
+  unguarded fan-out re-enters.
+- **`CanvasInteracted`**, which the layout and symbol editors already raised on canvas focus and now
+  also record the pane through. **The schematic had no such hook at all** — that asymmetry is why the
+  report named the schematic while the layout appeared to behave.
+
+### Avalonia routing, confirmed rather than assumed
+
+`KeyboardDevice.ProcessRawEvent` (Avalonia.Base 12.0.3, decompiled) runs `KeyBindings` from the
+focused element up to the root **before** `RaiseEvent`, stopping at the first that sets `Handled`;
+`KeyBinding.TryHandle` sets `Handled` only when `CanExecute` is true. So ⌘S reached
+`SaveAllDocumentsCommand` all along — it simply resolved the wrong document, and a `CanExecute` of
+false (nothing dirty in pane 0) let the key fall through to the editors instead.
+
+Held by `SplitDocumentAreaActiveDocumentTests`, which drives Dock's own `SplitToDock` rather than
+hand-building a two-dock tree — the correction `SplitDocumentAreaLayoutTests` records at length.
+
+### Undo needed one more step: a pane change is not an ActiveDockable change
+
+Owner, same day: undo still did not follow the focused document. `SetActiveUndoTarget` for the shell
+was reached from exactly one place — the ActiveDockable change — and **a pane holding one document
+never changes it.** A pane made by dragging a document to an edge holds exactly one, so clicking
+between two side-by-side panes (or clicking such a pane's own tab) retargeted nothing at all, and
+Ctrl+Z went on editing the pane the user had left. The editors' `CanvasInteracted` hooks covered a
+click on the CANVAS and nothing else.
+
+`OnDocumentDockPropertyChanged`'s body is now `ActivateDocument(...)` — the Properties/DRC/wBond
+panels, the Analyses panel, the harmonicaRF menu takeover, the undo target, the save scope and every
+active-document enablement predicate — and Dock's `FocusedDockableChanged` runs the same method, so a
+pane switch and a tab switch leave the shell in one state rather than two nearly-identical ones. The
+guard is on the pane AND the document, because `SetFocusedDockable` runs inside `SetActiveDockable`,
+which the canvas handlers call.
+
+**One thing is deliberately not shared.** `RequestActivationFocus` — the newly-shown editor grabbing
+the keyboard so shortcuts work without a preliminary click — runs on the TAB path only. On the focus
+path the user's own click is what raised the event, so pulling focus to the canvas would take the
+caret out of a toolbar field on the first click into a pane.
+
+### Still open, deliberately
+
+A data display, wBond, technology or EM setup in a second pane relies on `FocusedDockableChanged`
+alone; none of them raises a canvas-focus signal of its own. That is believed sufficient (the tunnel
+handler is on `DocumentControl`), but it has not been exercised in the app for those types.
+
+## ⌘S in a floating layout window toggled snap instead of saving (2026-08-29)
+
+Owner report: a torn-off `.clay` was not saved by ⌘S — geometry snap toggled instead. Two
+independent defects, either of which alone would have been invisible.
+
+### Avalonia processes KeyBindings before the routed event, focused element → root
+
+`KeyboardDevice.ProcessRawEvent` (verified by decompiling Avalonia.Base 12.0.3, not assumed) walks
+from the focused element up the visual tree running each element's `KeyBindings` **before**
+`RaiseEvent` is called at all, and stops at the first that sets `Handled`. Three consequences the
+codebase depends on:
+
+- A window-level binding runs before any tunnel or bubble `KeyDown` handler — which is why
+  `LayoutEditorView`'s Escape handler had to be a tunnel registered `handledEventsToo: true`.
+- A binding on a **view** is reached *before* the window's, not after. `EmSetupEditorView`'s comment
+  says the opposite ("while docked the window-level Ctrl+S is processed first"); the outcome it
+  describes is right — one save, not two — but the reason is that its own binding wins in both
+  hosts.
+- `KeyBinding.TryHandle` sets `Handled` **only when `CanExecute` is true**. A binding that cannot
+  execute is invisible: the key carries on to the routed event as though nothing were bound.
+
+### Defect 1 — the snap toggle matched the key, not the gesture
+
+`LayoutEditorViewModel.OnKeyDown` had `if (key == Key.F3 || key == Key.S)`, with no modifier guard,
+while every other bare letter in the same handler (D, M, R, W) excludes Ctrl/Meta/Alt explicitly.
+So ⌘S, ⌃S, ⌥S and ⌘⇧S all toggled geometry snap. Docked this never showed, because
+`WorkspaceWindow`'s own Ctrl/Meta+S claimed the key first and marked it handled. Now guarded on
+`(mods & (Control | Meta | Alt)) == 0`; Shift+S is still the toggle.
+
+### Defect 2 — no torn-off document window had a Save gesture
+
+Ctrl/Meta+S existed on `WorkspaceWindow` and, added piecemeal by two views that had already hit
+this, on `DataDisplayView` and `EmSetupEditorView`. A floated document lives in a `CrfHostWindow`,
+which shares none of the shell's bindings and into which `WorkspaceViewModel.WireWindowUndo` injected
+only undo/redo and Ctrl+W — so a floating layout, schematic, symbol and technology had no Save key at
+all. (A `MenuItem`'s `InputGesture` is display text, so the torn-off File menu could not supply it,
+and on macOS that menu is hidden entirely.) Save is now injected in `WireWindowUndo` beside Ctrl+W,
+bound to `SaveAllDocumentsCommand` with the window as `CommandParameter` so the command's per-window
+resolution names the document that window is showing — the same route, and the same workspace-level
+follow-through (sub-cell sessions, tree refresh, `.cws` write), as the docked ⌘S. Binding to
+`LayoutEditorViewModel.SaveLayoutCommand` instead was rejected for exactly that reason: it writes the
+base `.clay` and nothing else.
+
+Fixed at the window rather than per view because the gap belonged to every document type; the two
+views that bind Save themselves keep winning, being nearer the focused element.
+
+### Why both halves were needed
+
+Fixing only the window binding would still leave ⌘S toggling snap whenever `CanSaveAllDocuments` is
+false (nothing dirty) — the binding declines, does not mark the key handled, and the keystroke
+reaches the canvas. Fixing only the guard would make ⌘S do nothing at all in a floating window.
+
+Held by `LayoutSnapControlTests.ModifiedSKey_LeavesGeometrySnapAlone_SoSaveIsNeverStolen` /
+`ShiftS_StillTogglesGeometrySnap` and
+`FileMenuRestructureTests.Save_IsBoundOnTornOffDocumentWindows_NotOnlyOnTheShell`.
+
 ## MN-DCB2 — the DC block follows the DC path, in the Designer (2026-08-28)
 
 Core's findings — the walk, the π's two hosts, the measured costs, the Ui test that ran for minutes
