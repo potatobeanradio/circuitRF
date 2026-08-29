@@ -7399,3 +7399,160 @@ Both corrected in place with a dated note, per the series convention:
   interpolant" error; a "problem it solves" framing that implies adaptive sampling rescues a notch
   falling between two samples (it cannot — it never adds a published point); and tuning advice to
   **reduce** the requested point count, which is backwards for the shipped scheme.
+
+# P10 — is M2's fan-out starving the thread pool? (brief-em-p10-fanout-starvation.md, 2026-08-29)
+
+**A hypothesis, tested and refuted at milestone 1. Nothing in the solver's parallelism was
+changed.** Milestones 2 and 3 are conditional on the instrument showing a stall (`"If it stalls"`),
+and it does not, so the shared row queue was not built.
+
+The hypothesis: `PlanarFill.ForRows` takes a semaphore permit in `Parallel.For`'s `localInit`, so
+when `PlanarFanOut` runs K solves concurrently each inner loop asks for up to `cap` workers, K·cap
+pool threads are requested, and (K−1)·cap of them sit blocked in `Enter()` while the pool injects
+replacements at ~1–2 per second — stalling the run for seconds at every frequency.
+
+**Every measurement below is a standalone Release harness**, one fixture at a time, on the 10-core
+box (4 performance + 6 efficiency) every other number in this file was taken on. `dotnet test` builds
+Debug and would have changed the arithmetic's cost relative to the scheduling under study.
+
+## The instrument
+
+`PlanarParallelBudget` gained four counters, kept: `WaitingThreads` (threads parked inside `Enter()`
+right now), `HeldPermits` (permits handed out right now — the fill's own progress, since a permit is
+held only while a worker is doing fill arithmetic), `EnterCount` and `TotalWaitSeconds`. They are
+**process-wide statics on purpose**: a run creates exactly one budget, so "any budget" and "the
+budget" are the same set, and a static needs no handle on an object `PlanarSolve` owns privately.
+Two interlocked adds and a `Stopwatch.GetTimestamp` pair per worker **per loop** — not per row; a
+whole de-embedded point of the 80 mm line makes ~700–800 `Enter()` calls.
+
+## Table 1 — the brief's own measurement, sampled every 100 ms
+
+FR-4 80 mm line, 10 GHz, shipping mesh. **N = 1,980** (1,053 cells), de-embedded, standards fanned
+out: **5 independent solves** — the DUT plus 4 calibration standards of N = 297 / 382 / 331 / 416.
+`cap = 10 = ProcessorCount`; the pool's minimum worker count is therefore also 10. One point,
+**1.31 s**.
+
+| t (s) | pool threads | pending work items | blocked in `Enter()` | permits held (of 10) |
+|---|---|---|---|---|
+| 0.00 | 11 | 0 | 0 | 0 |
+| 0.10 | 11 | 0 | 0 | 0 |
+| 0.20 | 12 | 4 | 3 | **10** |
+| 0.31 | 12 | 3 | 1 | **10** |
+| 0.41 | 12 | 5 | 3 | **10** |
+| 0.51 | 12 | 5 | 3 | **10** |
+| 0.61 | 12 | 0 | 0 | 0 |
+| 0.71 | 12 | 3 | 0 | **10** |
+| 0.82 | 12 | 0 | 0 | **10** |
+| 0.92 | 12 | 0 | 0 | **10** |
+| 1.02 | 12 | 0 | 0 | **10** |
+| 1.12 | 12 | 0 | 0 | 5 |
+| 1.22 | 12 | 0 | 0 | 0 |
+
+**Peak blocked in `Enter()`: 3.** The hypothesis predicts (K−1)·cap = **40**. Pool thread count
+11 → 12 across the whole point; the pool never had to grow to let the fill reach its cap, because the
+cap equals the pool's own minimum. Parked time over the point is **1.49 thread-seconds = 11.4% of the
+13.1 core-seconds the budget could have spent**, and none of it is on the critical path (Table 3).
+
+The two zero rows are not stalls: t = 0.00–0.10 is the Green's-function fit, which is sequential by
+design and takes no permits (`KernelFitMs` = 0.11 s, exactly the two rows), and the later ones are
+`SymmetricFactorization`'s serial panel steps between its parallel trailing updates.
+
+## Table 2 — the same point at 20 ms, which is where the ramp is visible
+
+61 samples. The fill reaches the cap **within one sample of starting**: permits held are 0 through
+t = 0.09 (the kernel fit), **8** at 0.11, **10** at 0.13, and stay at 10 through t = 0.88 apart from
+four dips to 8–9. Blocked in `Enter()` never exceeds **2**. Pending work items sit at 3–5 for the
+whole fill phase.
+
+That last number is the mechanism. **`Parallel.For` does not eagerly spawn `MaxDegreeOfParallelism`
+workers.** It is a replicating task: a worker queues one replica when it starts and work remains, and
+a replica becomes a thread only when the pool has one to give. So the K·cap request materialises as
+**queued work items**, not as blocked threads — the brief's multiplication never happens on a pool
+whose thread count is near the cap. Mean permits held over the point is 7.87/10 (**78.7%
+utilisation**); the shortfall is the sequential kernel fit and the factorisation's serial panels, not
+the permits.
+
+## Table 3 — the control that settles it: give the pool the threads first
+
+If thread injection were the stall, starting with a large pool would remove it. `SetMinThreads(64)`
+before the same run, three repetitions of each:
+
+| configuration | pool threads | peak blocked in `Enter()` | thread-seconds parked | **wall clock, one point** |
+|---|---|---|---|---|
+| default pool (min = 10) | 11 → 12 | 2–3 | 0.76 / 1.27 / 1.34 | **1.37 / 1.23 / 1.33 s** |
+| `SetMinThreads(64)` | 30 → 50 | 34 | 12.93 / 19.98 / 20.34 | **1.25 / 1.47 / 1.32 s** |
+
+**15× the parked thread-seconds, and the same wall clock.** With the big pool the brief's predicted
+picture appears in full — 34 threads parked in `Enter()` at once, 20 thread-seconds of parking, 151%
+of the budget's own core-seconds — and utilisation goes *up*, to 84.6% from 78.7%, because the cap
+stays saturated either way. Parked threads burn no CPU and hold no permit; what they cost is a pool
+thread each, not time.
+
+## Table 4 — caps below the machine, where the surplus threads are most numerous
+
+Same point, same fixture, one run each:
+
+| cap | wall clock | pool threads | peak blocked | thread-seconds parked | parked / (cap × wall clock) |
+|---|---|---|---|---|---|
+| 2 | 1.98 s | 4 | 2 | 3.14 | 79% |
+| 4 | 1.42 s | 12 | 8 | 6.34 | 111% |
+| 10 | 1.31 s | 12 | 3 | 1.10 | 8% |
+
+A cap *below* `ProcessorCount` is the configuration that parks the most threads, because the pool's
+minimum is 10 whatever the cap is — at cap 4, eight surplus threads exist and block. The wall clock
+is still monotone in the cap and matches §6's own cap-4-to-cap-10 story on this box.
+
+## Table 5 — a five-point sweep, because the pool grows over one and a single point cannot show it
+
+Same fixture, 5 frequencies, 20 ms sampling, **3.01 s** total:
+
+| t (s) | pool threads | blocked (max in bucket) | permits held (mean) |
+|---|---|---|---|
+| 0.0–0.6 | 11 | 2 | 6.3 |
+| 0.8–1.6 | 12 | 2 | 7.6 |
+| 1.8–2.4 | **24** | **13** | 8.0 |
+| 2.6–3.0 | 24 | 8 | 7.3 |
+
+The pool does grow across a sweep — 11 → 12 → **24** in one jump near t = 1.8 s — and the blocked
+count spikes with it, exactly as it does when the pool is inflated by hand. It changes nothing:
+**3.01 s against 3.05 s** for the identical sweep started at `SetMinThreads(64)` (pool 30 → 51, peak
+blocked **40**, 19.3 thread-seconds parked against 1.86). Parked over the whole sweep is 6.2% of the
+budget's core-seconds; mean utilisation 75%.
+
+## The finding
+
+**Refuted, and precisely: the mechanism is real, its consequence is not.** Threads do park in
+`Enter()`, and on a pool that is already larger than the cap they park in exactly the numbers the
+brief predicts. But the fill reaches its full cap within ~30 ms of starting in every configuration
+measured, from a pool of 11 threads or one of 50, and the wall clock is invariant to how many threads
+are parked. There is no stall to remove, so there is no overlap for a shared row queue to recover —
+`cap` long-lived workers draining one queue would arrive at the same 10 permits' worth of arithmetic
+that the present scheme already keeps busy.
+
+Two facts make it work, and neither is obvious from reading `ForRows`:
+
+1. **The cap is bounded by `ProcessorCount`, and so is the pool's minimum thread count.** The fill
+   never needs an injected thread to reach its cap; it needs at most `cap` of the threads the pool
+   already has, plus a handful more for the workers that will park.
+2. **`Parallel.For`'s unmet demand queues rather than blocks.** A replica that has no thread is a
+   pending work item, not a parked thread, so K concurrent loops do not produce K·cap parked threads
+   unless something else has already grown the pool past the cap.
+
+**What would change the answer:** a machine or host where the pool's minimum worker count is *below*
+the cap the user asks for (then the fill genuinely waits on injection to reach it), or a cap that is
+allowed to exceed `ProcessorCount`. Neither is reachable through the shipped settings —
+`PlanarSolve` materialises a null cap as `Environment.ProcessorCount`.
+
+## What was changed in the code
+
+```
+src/Engine/Mom/PlanarParallel.cs           + WaitingThreads / HeldPermits / EnterCount /
+                                             TotalWaitSeconds / ResetCounters — the instrument, kept
+tests/Engine.Tests/Mom/ParallelBudgetTests.cs
+                                           + P10_TheBudgetsCounters_SeeTheFillTheyExistToMeasure
+                                           + P10_APermitAlwaysComesBack_SoOneBudgetSurvivesASecondFill
+```
+
+No change to `ForRows`, to `PlanarFanOut`, to the budget's semantics or to any answer. §6's M3
+paragraph is untouched, because nothing in it became false — the fall-off it attributes to hardware
+is not the permit scheme, which is what this phase set out to check.

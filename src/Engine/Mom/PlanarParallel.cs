@@ -31,7 +31,29 @@
 // on PlanarKernelSet's fit gate (the multi-level fill asks for terms from inside a row) — that
 // wastes a permit for the duration of one fit and is not a cycle, because the fitting thread needs
 // no permit of its own.
+//
+// ── DOES THE FAN-OUT STARVE THE THREAD POOL? MEASURED, AND NO (P10) ─────────────────────────────
+//
+// The obvious worry about the scheme above is that K concurrent solves each ask Parallel.For for up
+// to `cap` workers, so K*cap pool threads are requested and (K-1)*cap of them park in Enter() while
+// the pool injects replacements a thread or two per second. brief-em-p10-fanout-starvation.md
+// instrumented exactly that (the counters below) and REFUTED it; HISTORY.md's five §P10 tables are
+// the evidence, and RESOLVED.md §P10 is the write-up. Two facts make it work, neither visible from
+// reading ForRows:
+//
+//   * `cap` never exceeds Environment.ProcessorCount (PlanarSolve materialises a null cap as
+//     exactly that), and the pool's MINIMUM worker count is also ProcessorCount. A fill therefore
+//     needs no injected thread to reach its cap, and in fact reaches it within ~30 ms of starting.
+//   * Parallel.For's unmet demand QUEUES; it does not block. It is a replicating task, so a replica
+//     becomes a thread only when the pool has one to give. K concurrent loops produce K*cap pending
+//     work items, not K*cap parked threads.
+//
+// Threads DO park once the pool is already bigger than the cap — force it and 34 of them park at
+// once — and it costs nothing: the same point takes the same time either way, because a parked
+// thread burns no CPU and holds no permit. Do not "fix" this with a shared row queue, a second cap,
+// or by sizing the pool; all three were measured or forbidden and none buys anything.
 
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,9 +87,65 @@ public sealed class PlanarParallelBudget
 
     /// <summary>Take one permit, blocking until one is free. Held for as long as a worker
     /// participates in one <c>Parallel.For</c> over fill rows.</summary>
-    internal void Enter() => _permits.Wait();
+    internal void Enter()
+    {
+        Interlocked.Increment(ref _waiting);
+        long t0 = Stopwatch.GetTimestamp();
+        try { _permits.Wait(); }
+        finally
+        {
+            Interlocked.Add(ref _waitTicks, Stopwatch.GetTimestamp() - t0);
+            Interlocked.Increment(ref _enters);
+            Interlocked.Decrement(ref _waiting);
+        }
+        Interlocked.Increment(ref _held);
+    }
 
-    internal void Exit() => _permits.Release();
+    internal void Exit()
+    {
+        Interlocked.Decrement(ref _held);
+        _permits.Release();
+    }
+
+    // ── The instrument (P10). Four process-wide counters and nothing else. ─────────────────────
+    private static int  _waiting;
+    private static int  _held;
+    private static long _enters;
+    private static long _waitTicks;
+
+    /// <summary>
+    /// <b>P10's instrument, and it is deliberately PROCESS-WIDE.</b> Threads parked inside
+    /// <see cref="Enter"/> right now — pool threads a fill loop has consumed and that are doing no
+    /// arithmetic at all. A run creates exactly one budget, so "any budget" and "the budget" are the
+    /// same set; a static needs no handle on an object <see cref="PlanarSolve"/> owns privately.
+    ///
+    /// <para>Zero throughout a run means the permit scheme is never what makes a fill wait. A number
+    /// that grows with the pool's own thread count is the fan-out starving the pool, which is the
+    /// hypothesis P10 exists to test. Two interlocked adds per worker per LOOP (not per row), so it
+    /// is free enough to leave switched on.</para>
+    /// </summary>
+    public static int WaitingThreads => Volatile.Read(ref _waiting);
+
+    /// <summary>Permits handed out right now — threads actually doing fill arithmetic. Never exceeds
+    /// the live budget's <see cref="Cap"/>, which is the whole point of the object.</summary>
+    public static int HeldPermits => Volatile.Read(ref _held);
+
+    /// <summary>How many times a worker has joined a budgeted fill loop — once per worker per loop,
+    /// NOT once per row.</summary>
+    public static long EnterCount => Interlocked.Read(ref _enters);
+
+    /// <summary>Thread-seconds spent parked in <see cref="Enter"/>, summed over every worker. This is
+    /// the number the starvation hypothesis is actually about: set against a point's wall clock
+    /// × cap it is the fraction of the budget the permit scheme itself throws away.</summary>
+    public static double TotalWaitSeconds =>
+        Interlocked.Read(ref _waitTicks) / (double)Stopwatch.Frequency;
+
+    /// <summary>Zeroes the cumulative counters so a measurement can bracket one run.</summary>
+    public static void ResetCounters()
+    {
+        Interlocked.Exchange(ref _enters, 0);
+        Interlocked.Exchange(ref _waitTicks, 0);
+    }
 }
 
 /// <summary>

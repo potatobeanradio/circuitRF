@@ -1231,3 +1231,111 @@ bool; `Tolerance`, `Interpolant` and `InitialPoints` are not persisted and no pa
 Given that `InitialPoints` measurably buys nothing and `Interpolant` was decided by measurement at
 L9e, exposing them would be offering knobs whose right settings are already known. If anything here
 deserves a control it is the tolerance, and only alongside a plainer statement of what it is not.
+
+# P10 — M2's fan-out is not starving the thread pool (2026-08-29)
+
+`brief-em-p10-fanout-starvation.md` was written as a hypothesis to test, not a finding, and the test
+refutes it at milestone 1. **Nothing in the solver's parallelism was changed.** Milestones 2 (one
+shared row queue drained by `cap` long-lived workers) and 3 (re-measure the overlap) are conditional
+on the instrument showing a stall — it does not — so neither was built. Every table lives in
+`HISTORY.md` §P10.
+
+## What was asked
+
+`PlanarFill.ForRows` takes a permit from `PlanarParallelBudget` in `Parallel.For`'s `localInit`. When
+`PlanarFanOut` runs K solves at one frequency, each inner loop asks for up to `cap` workers, so K·cap
+pool threads are requested and (K−1)·cap of them should sit blocked in `Enter()`. The .NET pool
+injects threads at ~1–2 per second once its minimum is exhausted, so the run should stall for seconds
+at every frequency while the pool grows — and if it does, part of the 1.09–1.15× ceiling §6 attributes
+to hardware is really scheduling.
+
+## Findings
+
+1. **The consequence does not happen, and the wall clock is the proof.** On the brief's own fixture
+   (FR-4 80 mm line, N = 1,980, de-embedded — 5 solves, `cap` = `ProcessorCount` = 10) the fill
+   reaches all 10 permits **within ~30 ms of starting** and holds them for the whole fill phase. Peak
+   threads parked in `Enter()`: **3**, against the 40 the hypothesis predicts. Pool thread count
+   11 → 12 over the point.
+
+2. **The mechanism IS real — it is simply gated by the pool's size, and it costs nothing.** Force the
+   pool large first (`SetMinThreads(64)`) and the predicted picture appears in full: 34 threads parked
+   at once, 20 thread-seconds parked, 151% of the budget's own core-seconds. **The point still takes
+   1.25–1.47 s, exactly as it does with the default pool (1.23–1.37 s), and utilisation goes UP
+   (84.6% against 78.7%).** A parked thread burns no CPU and holds no permit; what it costs is a pool
+   thread, not time. **This is the measurement that settles the phase** — if injection were the stall,
+   pre-supplying the threads would have removed it.
+
+3. **`Parallel.For`'s unmet demand queues; it does not block.** This is why the brief's
+   multiplication never materialises on a healthy pool, and it is not obvious from reading `ForRows`.
+   `Parallel.For` is a replicating task: a worker queues one replica when it starts and work remains,
+   and a replica becomes a thread only when the pool has one to give. The trace shows this directly —
+   `PendingWorkItemCount` sits at 3–5 through the entire fill phase while parked threads stay at 0–2.
+   K concurrent loops produce K·cap **queued work items**, not K·cap parked threads.
+
+4. **The cap can never outrun the pool's minimum, which is the structural reason it works.**
+   `PlanarSolve` materialises a null cap as `Environment.ProcessorCount`, and the pool's minimum
+   worker count is also `ProcessorCount`. The fill therefore needs no injected thread to reach its
+   cap. **A cap BELOW `ProcessorCount` parks the most threads** (at cap 4: pool 12, eight surplus
+   threads, 8 parked, 111% of the budget's core-seconds) and still costs no time.
+
+5. **The pool does grow across a sweep, and it is still not the fan-out's doing.** Over five points
+   the pool went 11 → 12 → **24** in one jump, with parked threads spiking to 13. The same sweep
+   started with a 64-thread minimum ran **3.05 s** against **3.01 s**. Utilisation over the sweep is
+   75%, and the shortfall is the sequential Green's-function fit (0.11 s per point, which the trace
+   resolves exactly) and `SymmetricFactorization`'s serial panel steps between its parallel trailing
+   updates — both visible in the trace as permits-held-zero with an empty queue.
+
+6. **§6's M3 paragraph did not become false and was not touched.** Its fall-off is attributed to core
+   heterogeneity on a 4 + 6 box, and P10 removes the one competing explanation that was still open.
+
+## How the gates were made
+
+**No new timing test.** These are machine measurements; a threshold on them would measure the box.
+What is gated instead is the instrument itself, in `ParallelBudgetTests`, both routine and together
+under half a second:
+
+- `P10_TheBudgetsCounters_SeeTheFillTheyExistToMeasure` — the counters are wired to the **budgeted**
+  branch of `ForRows`, so a future re-measurement is not measuring nothing. It asserts only that they
+  MOVE: they are process-wide, another test's fill can touch them at any instant, and an equality
+  against zero would be a race against the runner rather than a statement about this code.
+- `P10_APermitAlwaysComesBack_SoOneBudgetSurvivesASecondFill` — `PlanarParallel.cs`'s header claims a
+  permit always comes back, which is what makes the scheme deadlock-free, and nothing tested it. A
+  leaked permit is invisible in one fill and fatal in the next, so the gate is a second fill through
+  the same **cap-1** budget, on a background thread with a 60 s join, so a regression fails rather
+  than hangs.
+
+`REmp8_TheBudgetPath_IsBitIdenticalToTheOrdinaryCappedPath` and R-emp-13's two sweep tests are
+unchanged and still pass — the brief requires bit-identity to survive, and since `ForRows` was not
+touched it survives by construction rather than by measurement.
+
+Everything else came from a standalone Release harness, one fixture at a time. `dotnet test` builds
+Debug, which changes the cost of the arithmetic relative to the scheduling under study.
+
+## What changed, for a reader who only wants the code
+
+```
+src/Engine/Mom/PlanarParallel.cs               PlanarParallelBudget: + WaitingThreads, HeldPermits,
+                                               EnterCount, TotalWaitSeconds, ResetCounters
+tests/Engine.Tests/Mom/ParallelBudgetTests.cs  + the two P10 gates above
+src/Engine/Mom/HISTORY.md                      §P10 — the five tables
+```
+
+`ForRows`, `PlanarFanOut` and the budget's semantics are untouched. No answer moved and no
+provenance hash changed.
+
+## Not done, on purpose
+
+**The shared row queue was not built.** It is milestone 2, conditional on a stall, and there is none
+to remove: `cap` long-lived workers draining one queue would arrive at the same `cap` permits' worth
+of arithmetic the present scheme already keeps busy from ~30 ms in. It would also have to re-earn
+R-emp-13's bit-identity, which the current scheme gets for free because a row is still written once
+by one worker.
+
+**No second cap, and no attempt to size the pool.** Both were forbidden by the brief, and the
+measurements say neither would buy anything: the run is invariant to the pool's size across a 5×
+range of it.
+
+**The parked threads were not eliminated for their own sake.** They are surplus pool threads holding
+no permit, and they cost about a thread stack each. If that is ever worth reclaiming it is a memory
+argument on a host that already runs a large pool, not a performance one, and this phase measured no
+evidence for it.

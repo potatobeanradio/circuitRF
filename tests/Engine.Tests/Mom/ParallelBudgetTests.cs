@@ -111,6 +111,58 @@ public class ParallelBudgetTests(ITestOutputHelper output)
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
+    // P10 — the budget's own instrument, and that its permits come back
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void P10_TheBudgetsCounters_SeeTheFillTheyExistToMeasure()
+    {
+        // brief-em-p10-fanout-starvation.md's milestone 1 needed to know how many threads sit parked
+        // in Enter() while a fanned-out point runs; the counters that answered it are kept, so the
+        // question can be re-asked without re-instrumenting the solver. What is gated here is only
+        // that they are WIRED TO THE BUDGETED PATH — a counter measuring nothing is the failure mode
+        // an instrument actually has.
+        //
+        // They are process-wide by design (a run creates exactly one budget, so "any budget" and
+        // "the budget" are the same set), which means another test's fill can move them at any
+        // moment. So this asserts that they MOVE, never that they hold a particular value: an
+        // equality against zero would be a race against the runner, not a statement about this code.
+        long before = PlanarParallelBudget.EnterCount;
+
+        FillAt(2, new PlanarParallelBudget(2));
+
+        Assert.True(PlanarParallelBudget.EnterCount > before,
+            "no worker took a permit — the fill did not go down the budgeted branch of ForRows");
+        Assert.True(PlanarParallelBudget.TotalWaitSeconds >= 0);
+        Assert.True(PlanarParallelBudget.WaitingThreads  >= 0);
+        _out.WriteLine($"{PlanarParallelBudget.EnterCount - before} worker(s) joined a budgeted loop; "
+                     + $"{PlanarParallelBudget.TotalWaitSeconds:F3} thread-seconds parked process-wide so far");
+    }
+
+    [Fact]
+    public void P10_APermitAlwaysComesBack_SoOneBudgetSurvivesASecondFill()
+    {
+        // PlanarParallel.cs's header claims a permit always comes back, which is what makes the
+        // scheme deadlock-free. A LEAKED permit is invisible in a single fill and fatal in the next
+        // one: at cap 1 the second fill's first worker would park forever. So the gate is a second
+        // fill through the SAME budget, with a wall-clock guard so a regression fails the test
+        // rather than hanging the run.
+        var         budget = new PlanarParallelBudget(1);
+        Exception?  failure = null;
+        var runner = new Thread(() =>
+        {
+            try { FillAt(1, budget); FillAt(1, budget); }
+            catch (Exception ex) { failure = ex; }
+        }) { IsBackground = true };   // background, so a parked worker cannot outlive the run
+
+        runner.Start();
+        Assert.True(runner.Join(TimeSpan.FromSeconds(60)),
+            "the second fill never finished — a worker is parked on a permit the first fill kept");
+        Assert.Null(failure);
+        _out.WriteLine("one cap-1 budget drove two fills back to back: every permit was returned");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════════════
     // R-emp-13 — a whole DE-EMBEDDED sweep, which is where M2's fan-out actually lives
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
