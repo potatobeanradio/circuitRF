@@ -65,6 +65,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _termG         = BuildTermG();
     private static readonly Symbol _diode         = BuildDiode();
     private static readonly Symbol _fet           = BuildFet();
+    private static readonly Symbol _bjtNpn        = BuildBjt(npn: true);
+    private static readonly Symbol _bjtPnp        = BuildBjt(npn: false);
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
@@ -155,6 +157,11 @@ public static class BuiltInSymbols
             case SymbolKind.FetStatz:
             case SymbolKind.FetMaterka:
             case SymbolKind.FetAngelov:  return _fet;
+            // The two BJT polarities do NOT share a glyph, unlike the five FET laws above. The
+            // emitter arrow is the only thing that distinguishes an n-p-n from a p-n-p on a
+            // schematic, and it is the first thing a reader looks for.
+            case SymbolKind.BjtNpn:      return _bjtNpn;
+            case SymbolKind.BjtPnp:      return _bjtPnp;
             default:                    return _generic;
         }
     }
@@ -331,6 +338,26 @@ public static class BuiltInSymbols
         L( -30,   80,    0,   80),                    // source arm off the channel
         L(   0,   80,    0,  200),                    // source lead
     ], SymbolKind.FetCurtice);
+
+    // ── BJT — base bar, collector and emitter arms, arrow on the emitter ──────
+    // Pins: base (-200,0) LEFT, collector (0,-200) TOP, emitter (0,+200) BOTTOM. Same envelope and
+    // the same lead lengths as the FET glyph, so the two families sit at one scale in the palette.
+    //
+    // The ARROW IS THE POLARITY and there is no other cue: it sits on the emitter arm and points
+    // away from the base for an n-p-n, into it for a p-n-p — conventional current, out of the
+    // emitter of an n-p-n. The arm runs from (-80,55) to (0,110); the arrowhead is built along that
+    // direction rather than axis-aligned, so it lies ON the lead instead of beside it.
+
+    private static Symbol BuildBjt(bool npn) => Sym([
+        L(-200,    0,  -80,    0),                    // base lead
+        L( -80, -110,  -80,  110),                    // base bar
+        L( -80,  -55,    0, -110),                    // collector arm
+        L(   0, -110,    0, -200),                    // collector lead
+        L( -80,   55,    0,  110),                    // emitter arm
+        L(   0,  110,    0,  200),                    // emitter lead
+        npn ? Poly(true, -54,  95, -34,  65, -16,  99)    // n-p-n: tip toward the emitter
+            : Poly(true, -46, 100, -26,  70, -64,  66),   // p-n-p: tip toward the base
+    ], npn ? SymbolKind.BjtNpn : SymbolKind.BjtPnp);
 
     private static Symbol BuildNonlinearC() => Sym([
         L(   0, -200,   0,  -12),            // top lead

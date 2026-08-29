@@ -100,6 +100,11 @@ public static class SymbolArtworkGenerator
         (SymbolKind.FetStatz,        "fet-statz",         3),
         (SymbolKind.FetMaterka,      "fet-materka",       3),
         (SymbolKind.FetAngelov,      "fet-angelov",       3),
+        // The two bipolar polarities get two figures because they get two GLYPHS — unlike the FET
+        // laws above, the arrow is the only thing that tells them apart, so one shared figure would
+        // document exactly the wrong half.
+        (SymbolKind.BjtNpn,          "bjt-npn",           3),
+        (SymbolKind.BjtPnp,          "bjt-pnp",           3),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

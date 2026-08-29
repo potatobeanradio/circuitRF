@@ -6,12 +6,78 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## The bipolar transistor: six things that were not obvious (2026-08-29)
+
+`BjtModel` — the charge-control BJT, both polarities, added as `BJT_NPN`/`BJT_PNP`. The equations are
+the published ones and hold no surprises; these seven do.
+
+**1. The reverse Early voltage moves the current the OTHER way, and it is not a sign slip.** `Vaf`
+enters through `Vbc` and `Var` through `Vbe`, both inside `q1 = 1/(1 − Vbc/Vaf − Vbe/Var)` — and `q1`
+ends up in the DENOMINATOR of the transport current through `qb`. A reverse-biased collector junction
+therefore RAISES `Ict` (the familiar Early slope) while a forward-biased emitter junction LOWERS it.
+A model that made both raise it would have `Var` backwards and would still look completely plausible
+on an output-characteristic plot, because nothing there varies `Vbe`. `T5` in `BjtModelTests` pins the
+ratio at `1 − Vbe/Var` exactly, not merely the direction.
+
+**2. A few-millivolt `Vtf` turns the transit-time enhancement into a step, at every bias.** The term is
+`Xtf·(Icc/(Icc+Itf))²·exp(Vbc/(1.44·Vtf))`. With `Vtf` around 4 mV — which is what an extraction
+returns when the fit found no `Vbc` dependence worth naming — the exponent is about −550 anywhere in
+forward active (underflows to zero, so the parameter is inert) and about +130 anywhere in saturation
+(e^130, so the stored charge and its derivative reach values that wreck the conditioning of the whole
+matrix). Neither is a bias a user would consider unusual. Hence `MaxTransitEnhancement = 1e4`, which
+holds the factor in value AND slope: base pushout multiplies a transit time by tens, not thousands, so
+it never binds on a card that means something by the term. **The same shape is why the palette-wiring
+test's activation table uses `Vtf = 0.5 V` rather than the shipped default** — at the default there is
+no bias at which a perturbation test can tell the parameter from an unwired one.
+
+**3. `Xcjc`'s split needed no conditional port, because two ports across the SAME node pair simply
+add.** The fraction `Xcjc` of `Cjc` belongs on the internal base node and the rest from the external
+base to the internal collector. The obvious design is a fourth intrinsic port present only when `Rb`
+is non-zero — and it is unnecessary: when `Rb` is zero the elaborator gives that port the same two
+nets as the internal one, the engine stamps both, and `Xcjc·Qjc + (1 − Xcjc)·Qjc` is `Qjc`. The port
+is therefore unconditional and the conditional code does not exist. (This is the same reason
+`FetModelBase` can put two ports on a shared source net.)
+
+**4. The Jacobian is polarity-invariant everywhere except the ohmic base port.** Writing the p-n-p as
+"every internal voltage and current negated" makes `dI/dv` carry one factor of the sign from each,
+and `s² = 1` — so `Dg` and `Dc` are literally the same matrices for both polarities. The one exception
+is the base-resistance port: its current is ohmic and does NOT flip, while the junction voltages that
+modulate its resistance do, so those two cross terms carry a single factor of `s`. Getting that wrong
+is invisible in any test that only ever builds an n-p-n.
+
+**5. The same node voltages are not the same operating point for the two polarities.** An n-p-n and a
+p-n-p biased identically are in forward-active and reverse-active respectively, and in reverse-active
+everything that lives in forward conduction — `Tf` most obviously — reads as an unwired parameter.
+Any probe over the family has to MIRROR its bias grid; `BjtModel.IsNpn` exists for that and for
+nothing else.
+
+**6. `TerminalNames` is ONE name per port, and two older models in this directory say otherwise.**
+The base class's own default is `Enumerable.Range(1, PortCount)` and both consumers — the HB branch-
+current key builder (`I:Q1:collector`) and harmonicaRF's port axis — index it by PORT.
+`MicrostripTeeModel` and `MicrostripCrossModel` agree. `DiodeModel` and `FetModelBase` return TWO
+entries per port (`["gate","source","drain","source"]`), which predates both consumers; the second
+entry of each pair is simply never read, so a FET's port-1 branch key reads `source`. Copying that
+shape for the BJT — the obvious move, since the ports genuinely span named net pairs — would have
+mislabelled every published trace. The BJT's ports are therefore named for what they CARRY
+(`ibe`, `ibc`, `ic`, `icx`) with only the three ohmic ports named for a terminal, because those
+alone carry the external terminal current exactly.
+
+**7. Package parasitics are not part of the transistor, and `Eg` is read as the 0 K bandgap.** A
+published model for a packaged part typically wraps the intrinsic device in lead inductances and
+package capacitances; those are ordinary components a user places around it, exactly as they are for
+the diode and the FET family, and folding them in would make the component a packaged part rather
+than a transistor. Separately, circuitRF's shared junction relations (`Temperature`) read `Eg` as
+`Eg(0)` — the value Varshni narrowing subtracts from — while several parameter tables quote a
+room-temperature figure there. It costs nothing at `Temp == Tnom`, where every relation is the
+identity; it shifts the SLOPE of the saturation currents away from it. Same reading as the diode and
+the FET family, so at least the three cannot disagree.
+
 ## An SnP with no Touchstone file named neither itself nor its problem (2026-08-26)
 
 Owner-reported. A schematic with an unset `File` on an SnP failed the run with:
 
 ```
-Running 'S-Param_Test.csch' 0 / 101 - 'SP1': SnP: Touchstone file not found: '/…/Documents/damon2'
+Running 'S-Param_Test.csch' 0 / 101 - 'SP1': SnP: Touchstone file not found: '/…/Documents/<workspace>'
 ```
 
 Two independent defects, one line.

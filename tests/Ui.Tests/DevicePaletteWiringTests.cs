@@ -10,7 +10,8 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Palette wiring for the built-in semiconductor devices: the diode and the five FET laws.
+/// Palette wiring for the built-in semiconductor devices: the diode, the five FET laws, and the
+/// two bipolar polarities.
 ///
 /// <para><b>The load-bearing test here is P4</b> — every parameter name the registry offers the
 /// user is proven to REACH the model, by perturbing it and requiring the device's behaviour to
@@ -35,7 +36,11 @@ public class DevicePaletteWiringTests
         SymbolKind.FetStatz, SymbolKind.FetMaterka, SymbolKind.FetAngelov,
     ];
 
-    private static SymbolKind[] AllDevices() => [SymbolKind.Diode, .. Fets];
+    /// <summary>The two bipolar tiles. Unlike the FET laws these share one parameter list and one
+    /// set of equations — see <see cref="SymbolKind.BjtNpn"/> for why they are still two kinds.</summary>
+    private static readonly SymbolKind[] Bjts = [SymbolKind.BjtNpn, SymbolKind.BjtPnp];
+
+    private static SymbolKind[] AllDevices() => [SymbolKind.Diode, .. Fets, .. Bjts];
 
     // ── P1 ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +65,12 @@ public class DevicePaletteWiringTests
             Assert.True(LibraryCatalog.Search(q).Count(i => Fets.Contains(i.Kind)) == Fets.Length,
                 $"search '{q}' must reach all five FET laws");
         Assert.Contains(LibraryCatalog.Search("diode"), i => i.Kind == SymbolKind.Diode);
+
+        // Either polarity's name finds BOTH bipolar tiles — somebody who types "PNP" is looking
+        // for the pair, and the two sit next to each other in the palette.
+        foreach (var q in new[] { "BJT", "bipolar", "NPN", "PNP" })
+            Assert.True(LibraryCatalog.Search(q).Count(i => Bjts.Contains(i.Kind)) == Bjts.Length,
+                $"search '{q}' must reach both bipolar polarities");
     }
 
     // ── P2 ────────────────────────────────────────────────────────────────────
@@ -82,9 +93,25 @@ public class DevicePaletteWiringTests
             Assert.Equal(3, ports.Select(p => (p.LocalX, p.LocalY)).Distinct().Count());
         }
 
+        foreach (var kind in Bjts)
+        {
+            var ports = SymbolPortDefs.For(kind);
+            // Order IS the contract the elaborator reads: collector, base, emitter.
+            Assert.Equal(["c", "b", "e"], ports.Select(p => p.Name));
+            Assert.Equal(3, ports.Select(p => (p.LocalX, p.LocalY)).Distinct().Count());
+        }
+
         // Every device has a glyph; none falls through to the generic placeholder.
         foreach (var kind in AllDevices())
             Assert.NotEmpty(BuiltInSymbols.Primitives(kind).Primitives);
+
+        // The two bipolar polarities do NOT share a glyph. The emitter arrow is the only cue that
+        // separates them on a schematic, so a shared glyph would draw one of them wrongly — this is
+        // the assertion that stops a future "they're the same topology" tidy-up.
+        Assert.NotEqual(BuiltInSymbols.Primitives(SymbolKind.BjtNpn).Primitives.Count,
+                        0);
+        Assert.False(ReferenceEquals(BuiltInSymbols.Primitives(SymbolKind.BjtNpn),
+                                     BuiltInSymbols.Primitives(SymbolKind.BjtPnp)));
     }
 
     // ── P3 ────────────────────────────────────────────────────────────────────
@@ -98,6 +125,13 @@ public class DevicePaletteWiringTests
         Assert.Equal(refs.Count, refs.Distinct().Count());   // five laws, five components
         foreach (var r in refs)
             Assert.True(ComponentModelFactory.IsPrimitive(r), $"engine reference '{r}' is not a primitive");
+
+        // One law, two components — the polarity is in the NETLIST, not in a parameter that a later
+        // edit could leave disagreeing with the symbol on screen.
+        Assert.Equal("BJT_NPN", ComponentTypeRegistry.EngineReference(SymbolKind.BjtNpn));
+        Assert.Equal("BJT_PNP", ComponentTypeRegistry.EngineReference(SymbolKind.BjtPnp));
+        foreach (var k in Bjts)
+            Assert.True(ComponentModelFactory.IsPrimitive(ComponentTypeRegistry.EngineReference(k)));
     }
 
     // ── P4 ────────────────────────────────────────────────────────────────────
@@ -152,10 +186,35 @@ public class DevicePaletteWiringTests
                 ["Ipk"] = 0.1, ["Vpk"] = -1.0, ["P1"] = 1.0, ["P2"] = 0.2, ["P3"] = 0.05,
                 ["Alpha"] = 2.0, ["Lambda"] = 0.05, ["Alphatc"] = -1.2, ["Vtotc"] = 1e-3,
             },
+            // One list for both polarities — they ARE one parameter list. Temp is deliberately far
+            // from Tnom so Xtb, Xti and Eg are live rather than collapsed to the identity, and Rbm
+            // sits below Rb so the base-resistance modulation is switched on.
+            SymbolKind.BjtNpn or SymbolKind.BjtPnp => new()
+            {
+                ["Is"] = 9.57e-17, ["Bf"] = 131.1, ["Nf"] = 1.0,
+                ["Vaf"] = 71.02, ["Ikf"] = 0.09745, ["Ise"] = 1.618e-15, ["Ne"] = 1.692,
+                ["Br"] = 3.287, ["Nr"] = 0.959, ["Var"] = 4.081, ["Ikr"] = 0.07617,
+                ["Isc"] = 5.969e-15, ["Nc"] = 1.974,
+                ["Rb"] = 9.72444, ["Irb"] = 3.017e-6, ["Rbm"] = 6.94667,
+                ["Re"] = 0.7979, ["Rc"] = 2.089,
+                ["Cje"] = 8.287e-14, ["Vje"] = 0.8281, ["Mje"] = 0.7138,
+                ["Cjc"] = 8.781e-14, ["Vjc"] = 0.7715, ["Mjc"] = 0.7552,
+                ["Xcjc"] = 0.6209, ["Fc"] = 0.6275,
+                // Vtf is deliberately NOT the shipped default here. That default is a few
+                // millivolts, which makes exp(Vbc/(1.44*Vtf)) a step: it underflows to zero
+                // everywhere in forward active and hits the model's transit-time ceiling anywhere
+                // in saturation, so at every bias a probe could use the parameter reads as unwired
+                // when it is doing exactly what it says. Half a volt puts the term in its own range
+                // and is an ordinary value for it.
+                ["Tf"] = 1.72653e-11, ["Xtf"] = 0.07, ["Vtf"] = 0.5, ["Itf"] = 0.027024,
+                ["Tr"] = 1.71536e-8,
+                ["Area"] = 1.0, ["Xti"] = 6.548, ["Xtb"] = 1.303, ["Eg"] = 1.11,
+                ["Temp"] = 80.0, ["Tnom"] = 25.0,
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
-        if (kind == SymbolKind.Diode) return own;
+        if (kind is SymbolKind.Diode or SymbolKind.BjtNpn or SymbolKind.BjtPnp) return own;
         foreach (var (k, v) in shared) own.TryAdd(k, v);
         return own;
     }
@@ -167,7 +226,17 @@ public class DevicePaletteWiringTests
     /// </summary>
     private static double[] Probe(CircuitRF.Core.ComponentModel m)
     {
-        var vs = m is DiodeModel { HasSeriesResistance: true }
+        var vs = m is BjtModel bjt
+            // Seven ports: the four intrinsic ones then Rc, Rb, Re — see BjtModel's port indices.
+            // Forward active, then SATURATION (both junctions forward, which is the only place the
+            // reverse parameters are anything but a rounding error), then sub-threshold and cut-off.
+            // A grid without the saturation row makes Br, Nr, Ikr, Isc and Nc all look unwired.
+            //
+            // MIRRORED for a p-n-p, and that is not cosmetic: the same node voltages leave it
+            // reverse-active, where Tf and everything else that lives in forward conduction reads
+            // as an unwired parameter.
+            ? BjtBiases(bjt.IsNpn)
+            : m is DiodeModel { HasSeriesResistance: true }
             ? new[] { new[] { 0.1, 0.3 }, [0.1, 0.6], [0.1, -1.0], [0.1, -6.0] }
             : m is DiodeModel
                 ? [[0.3], [0.6], [-1.0], [-6.0]]
@@ -189,6 +258,28 @@ public class DevicePaletteWiringTests
         return probe.ToArray();
     }
 
+    /// <summary>The bipolar bias grid, in each polarity's own forward sense. The three ohmic ports
+    /// keep their sign either way — a resistor has no polarity.</summary>
+    private static double[][] BjtBiases(bool npn)
+    {
+        double s = npn ? 1.0 : -1.0;
+        double[][] junction =
+        [
+            [0.75, -3.0, 3.75, -3.0],
+            [0.85,  0.70, 0.15,  0.70],
+            [0.30, -1.0,  1.30, -1.0],
+            [-0.5, -5.0,  4.50, -5.0],
+        ];
+        double[][] ohmic =
+        [
+            [0.20, 0.004, 0.10],
+            [0.30, 0.006, 0.15],
+            [0.01, 0.001, 0.01],
+            [0.00, 0.000, 0.00],
+        ];
+        return junction.Zip(ohmic, (j, o) => j.Select(x => s * x).Concat(o).ToArray()).ToArray();
+    }
+
     private static CircuitRF.Core.ComponentModel Build(SymbolKind kind, IReadOnlyDictionary<string, double> pars)
     {
         var vals = pars.ToDictionary(kv => kv.Key, kv => new Value(kv.Value));
@@ -204,6 +295,8 @@ public class DevicePaletteWiringTests
     [InlineData(SymbolKind.FetStatz)]
     [InlineData(SymbolKind.FetMaterka)]
     [InlineData(SymbolKind.FetAngelov)]
+    [InlineData(SymbolKind.BjtNpn)]
+    [InlineData(SymbolKind.BjtPnp)]
     public void P4_EveryRegistryParameterNameActuallyReachesTheModel(SymbolKind kind)
     {
         var registryNames = ComponentTypeRegistry.DefaultParameters(kind, 0)
@@ -243,6 +336,8 @@ public class DevicePaletteWiringTests
     [InlineData(SymbolKind.FetCurticeCubic)]
     [InlineData(SymbolKind.FetStatz)]
     [InlineData(SymbolKind.FetMaterka)]
+    [InlineData(SymbolKind.BjtNpn)]
+    [InlineData(SymbolKind.BjtPnp)]
     [InlineData(SymbolKind.FetAngelov)]
     public void P5_AFreshlyPlacedDeviceIsAWorkingDevice(SymbolKind kind)
     {
@@ -259,9 +354,20 @@ public class DevicePaletteWiringTests
         foreach (var x in Probe(m))
             Assert.True(double.IsFinite(x), $"{kind}: default parameters give a non-finite result");
 
-        // And the FET defaults must actually conduct somewhere — a device that is off at every
-        // bias would pass every finiteness check and still be useless.
-        if (kind != SymbolKind.Diode)
+        // And the defaults must actually conduct somewhere — a device that is off at every bias
+        // would pass every finiteness check and still be useless.
+        if (kind is SymbolKind.BjtNpn or SymbolKind.BjtPnp)
+        {
+            // Forward active in the device's OWN polarity: an n-p-n and a p-n-p biased with the
+            // same raw voltages are not the same operating point, and only one of them is on.
+            double s = ((BjtModel)m).IsNpn ? 1.0 : -1.0;
+            var on = m.Evaluate(new PortVoltages(
+                [s * 0.80, s * -3.0, s * 3.80, s * -3.0, 0.0, 0.0, 0.0]));
+            Assert.True(Math.Abs(on.I[2]) > 1e-6, $"{kind}: default device draws no collector current");
+            Assert.True(Math.Abs(on.I[2]) > 20.0 * Math.Abs(on.I[0]),
+                $"{kind}: default device has no usable current gain");
+        }
+        else if (kind != SymbolKind.Diode)
         {
             var on = m.Evaluate(new PortVoltages([-0.5, 3.0]));
             Assert.True(Math.Abs(on.I[1]) > 1e-6, $"{kind}: default device draws no drain current");

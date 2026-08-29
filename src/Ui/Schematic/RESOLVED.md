@@ -2,6 +2,37 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## The bipolar transistor: two kinds, one law — and what that costs elsewhere (2026-08-29)
+
+`SymbolKind.BjtNpn` / `BjtPnp`, engine references `BJT_NPN` / `BJT_PNP`. Both place the SAME model
+(`BjtModel`) with the SAME parameter list; only a sign differs. That is the inverse of the FET family
+sitting beside them in the palette, where five kinds denote five different drain-current laws, and the
+inversion is worth stating because it makes two rules in this directory read the wrong way round.
+
+**Why not one kind with a polarity parameter.** Because the two DRAW differently, and the emitter
+arrow is the entire cue a reader has. A parameter would leave the drawing and the netlist free to
+disagree — an n-p-n on screen, a p-n-p in the run — with nothing reporting it. `EngineReference` puts
+the polarity in the NETLIST for the same reason. This is also why they are the one place in
+`BuiltInSymbols` where two kinds of one family do NOT share a glyph, and `DevicePaletteWiringTests`
+now asserts that they don't, so a later "same topology, share the glyph" tidy-up fails loudly.
+
+**Both polarity names are search terms on BOTH tiles.** Somebody typing "PNP" is looking for the pair,
+not for one of them.
+
+**The two are not interchangeable at a bias point, which broke the palette-wiring test's own probe.**
+`DevicePaletteWiringTests.P4` perturbs every registry parameter and requires the device's behaviour to
+move. Applied to a p-n-p with the n-p-n's bias grid it reports `Tf` — and anything else that only
+lives in forward conduction — as an unwired parameter, because at those voltages the p-n-p is
+reverse-active. The grid is therefore mirrored by polarity (`BjtBiases`), which is what
+`BjtModel.IsNpn` exists for. The same trap is waiting for any future probe over this family.
+
+**The saturation row of that grid is load-bearing.** `Br`, `Nr`, `Ikr`, `Isc` and `Nc` do essentially
+nothing with the collector junction reverse-biased — their contribution is 1e-20-ish and lands under
+the test's own change threshold. Without a bias with BOTH junctions forward, five real parameters
+read as unwired. (And the shipped `Vtf` default cannot be probed at any bias at all — see
+`src/Core/RESOLVED.md`'s own note for why, and why the test's activation value differs from it.)
+
+
 ## Four PDK defects: two kits' models crossing, an empty part-to-cell map, and a symbol that vanished when zoomed out (2026-08-19)
 
 Four owner reports, three unrelated root causes and one shared lesson: **each failure looked like the

@@ -815,6 +815,36 @@ public sealed class Elaborator
                     resolvedNodes = [resolvedNodes[0], resolvedNodes[2],   // gate, source
                                      resolvedNodes[1], resolvedNodes[2]];  // drain, source
 
+                // BJT family: the user draws three terminals (collector, base, emitter) but the
+                // model is FOUR intrinsic ports plus one per parasitic resistance, because each
+                // non-zero Rb/Re/Rc puts the junctions on an internal node of their own. Minted
+                // here, keyed on the instance path, and given ordinary matrix rows for the same
+                // reason the diode's Rs node is: collapsing them locally is exact at DC and wrong
+                // in HB, where an internal node carries its own harmonic content.
+                //
+                // The parasitic ports follow the intrinsic four in the order collector, base,
+                // emitter — BjtModel states the same order beside its own port indices, and the
+                // two must be read together.
+                if (model is BjtModel bjt && resolvedNodes.Length == 3)
+                {
+                    int nc = resolvedNodes[0], nb = resolvedNodes[1], ne = resolvedNodes[2];
+                    int ci = bjt.HasCollectorResistance ? netlist.Nodes.GetOrAssign($"__bjt_{childPath}_ci") : nc;
+                    int bi = bjt.HasBaseResistance      ? netlist.Nodes.GetOrAssign($"__bjt_{childPath}_bi") : nb;
+                    int ei = bjt.HasEmitterResistance   ? netlist.Nodes.GetOrAssign($"__bjt_{childPath}_ei") : ne;
+
+                    var pins = new List<int>(8 + 2 * bjt.InternalNodeCount)
+                    {
+                        bi, ei,   // emitter junction
+                        bi, ci,   // collector junction, the Xcjc share
+                        ci, ei,   // transport current
+                        nb, ci,   // the (1 - Xcjc) share, across the base resistance
+                    };
+                    if (bjt.HasCollectorResistance) { pins.Add(nc); pins.Add(ci); }
+                    if (bjt.HasBaseResistance)      { pins.Add(nb); pins.Add(bi); }
+                    if (bjt.HasEmitterResistance)   { pins.Add(ne); pins.Add(ei); }
+                    resolvedNodes = pins.ToArray();
+                }
+
                 // ExtDevice: the provider reports currents per NODE, so every node becomes its own
                 // ground-referenced port — [n, 0] per node — and the internal nodes are minted here
                 // exactly like any other internal net. They therefore get ordinary rows in the

@@ -95,8 +95,9 @@ public class PaletteFilterOrderingTests
     {
         var nonlinear = LibraryCatalog.ByCategory(ComponentCategory.Nonlinear);
 
-        // NonlinearC, VerilogA, Diode, the 5 FETs, and every SDD row (plain SDD + SDD1/SDD2/SDD3).
-        Assert.Equal(12, nonlinear.Count);
+        // NonlinearC, VerilogA, Diode, the 5 FETs, the 2 BJT polarities, and every SDD row
+        // (plain SDD + SDD1/SDD2/SDD3).
+        Assert.Equal(14, nonlinear.Count);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.NonlinearC);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.VerilogA);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Diode);
@@ -105,6 +106,8 @@ public class PaletteFilterOrderingTests
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.FetStatz);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.FetMaterka);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.FetAngelov);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.BjtNpn);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.BjtPnp);
         Assert.Equal(4, nonlinear.Count(i => i.Kind == SymbolKind.Sdd));   // SDD, SDD1, SDD2, SDD3
 
         // Nothing else leaks in — no lumped R/L/C, no terminals.

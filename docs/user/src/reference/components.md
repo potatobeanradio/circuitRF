@@ -473,6 +473,107 @@ The Angelov (Chalmers) law: `Ipk`, `Vpk`, `P1`–`P3`, `Alpha` and `Lambda`.
 
 {{table: components/FetAngelov}}
 
+### The bipolar transistor {#bjt}
+
+Two components — **NPN** and **PNP** — over **one** set of equations and one parameter list. This is
+the opposite arrangement from the FET family above, and for the opposite reason: there the five names
+denote five different drain-current laws, while here the parameter list is identical and only a sign
+differs. It is still two components rather than one with a polarity setting, because the two **draw
+differently**: the emitter arrow is the whole of what tells a reader which transistor is on the
+schematic, and a setting would leave the drawing and the netlist free to disagree.
+
+**Terminals.** Three pins — collector top, base left, emitter bottom. The base is an ordinary pin and
+so is the emitter: these are not hard-wired to any configuration.
+
+**Rb, Re and Rc are model parameters, not separately placed resistors.** When one of them is non-zero
+the elaborator mints the internal node itself, so the schematic shows one device either way. They are
+not optional detail at RF — `Rb` sets the input match and the noise, `Re` degenerates the
+transconductance, and all three are shunted by the junction capacitances — which is why the internal
+nodes are genuine unknowns rather than being folded away. Folding them would be exact at DC and wrong
+in harmonic balance, where an internal node carries its own harmonic content.
+
+#### What is modelled {#bjt-equations}
+
+The standard charge-control model. `Vt` is kT/q at the device temperature; primed voltages are taken
+at the internal nodes, inside the parasitic resistances.
+
+```
+Icc  = Is·(exp(Vb'e'/(Nf·Vt)) − 1)                    forward transport
+Iec  = Is·(exp(Vb'c'/(Nr·Vt)) − 1)                    reverse transport
+Ibe  = Icc/Bf + Ise·(exp(Vb'e'/(Ne·Vt)) − 1)          base current, emitter junction
+Ibc  = Iec/Br + Isc·(exp(Vb'c'/(Nc·Vt)) − 1)          base current, collector junction
+Ict  = (Icc − Iec)/qb                                 collector-to-emitter transport
+
+q1   = 1 / (1 − Vb'c'/Vaf − Vb'e'/Var)                base-width modulation (the Early effect)
+q2   = Icc/Ikf + Iec/Ikr                              high-level injection
+qb   = q1/2 · (1 + sqrt(1 + 4·q2))
+
+Qbe  = Qj(Vb'e'; Cje,Vje,Mje) + Tff·Icc/qb            depletion + diffusion charge
+Qbc  = Xcjc·Qj(Vb'c'; Cjc,Vjc,Mjc) + Tr·Iec
+Tff  = Tf·(1 + Xtf·(Icc/(Icc+Itf))²·exp(Vb'c'/(1.44·Vtf)))
+```
+
+Every derivative of every one of those is computed **analytically** rather than by finite differences,
+which matters inside a Newton loop precisely where the device is most nonlinear.
+
+<div class="callout note">
+<span class="label">Zero means "not modelled"</span>
+<p><code>Vaf</code> and <code>Var</code> at zero mean the Early effect is switched off — never "the Early
+voltage is zero volts". The same rule applies to <code>Ikf</code>/<code>Ikr</code> (no high-level
+injection), <code>Ise</code>/<code>Isc</code> (no low-bias leakage) and to each of the three parasitic
+resistances. This is the same convention the diode's <code>Bv</code> follows.</p>
+</div>
+
+**The base resistance is current-dependent.** With `Irb` given it follows the standard
+conductivity-modulation relation, falling from `Rb` at zero base current towards `Rbm` at high current;
+with `Irb` zero it follows `Rbm + (Rb − Rbm)/qb` instead, which is the same physics stated through the
+base charge. Both are in the published model, and which one applies is decided by the parameter set.
+
+**`Xcjc` splits the collector junction across the base resistance.** That fraction of `Cjc` sits on the
+internal base node and the remainder runs from the *external* base to the internal collector — a real
+distributed effect, and the reason a device's feedback capacitance does not simply see `Rb`. When `Rb`
+is zero the two nodes are the same net and the halves add back to `Cjc`, so nothing special happens.
+
+<div class="callout warn">
+<span class="label">What is NOT modelled — read this before choosing a model</span>
+<p><strong>The substrate junction</strong> (<code>Cjs</code>/<code>Vjs</code>/<code>Mjs</code>) — a
+discrete RF transistor has no substrate terminal to attach it to, and adding a fourth pin would change
+what the symbol means. <strong>Excess phase</strong> (<code>Ptf</code>) — it is a delay, and circuitRF's
+weighting functions carry 1 and jω, not exp(−jωτ), so accepting the parameter would be accepting a value
+that does nothing. <strong>Flicker noise</strong> (<code>Kf</code>/<code>Af</code>) — there is no noise
+analysis for it to feed. <strong>Self-heating</strong> — the device temperature is a parameter, not a
+solved node, so there is no electrothermal feedback. <strong>Package parasitics</strong> — the lead
+inductances and package capacitances of a real part are separate components you place around the
+transistor, not parameters of it. A parameter this model does not read is not offered in the palette.
+If your application depends on any of the above, use a compiled model through
+<a href="#veriloga">VerilogA</a> instead.</p>
+</div>
+
+<div class="callout note">
+<span class="label">The defaults are a working device, not a placeholder</span>
+<p>A freshly dragged transistor carries a complete small-signal RF silicon parameter set, so it
+simulates at gigahertz frequencies before you have edited anything. Treat it as a <strong>starting
+point</strong>: it is a generic device, not a model of any particular part, and the numbers should be
+replaced with the ones for the transistor you actually have.</p>
+</div>
+
+#### n-p-n (BJT_NPN) {#bjtnpn}
+
+{{symbol: bjt-npn}}
+
+The emitter arrow points **out of** the base — conventional current leaving the emitter.
+
+{{table: components/BjtNpn}}
+
+#### p-n-p (BJT_PNP) {#bjtpnp}
+
+{{symbol: bjt-pnp}}
+
+The emitter arrow points **into** the base. Same equations, same parameter names, every voltage and
+current negated — so a parameter set written for one polarity is used unchanged for the other.
+
+{{table: components/BjtPnp}}
+
 ### Compiled Verilog-A model (VerilogA) {#veriloga}
 
 {{symbol: verilog-a}}

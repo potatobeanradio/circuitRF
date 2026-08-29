@@ -110,6 +110,14 @@ public static class SymbolPortDefs
             case SymbolKind.FetMaterka:
             case SymbolKind.FetAngelov:
                 return [("g", -200f, 0f), ("d", 0f, -200f), ("s", 0f, 200f)];
+            // BJT family: base LEFT, collector TOP, emitter BOTTOM. Pin ORDER is the contract the
+            // elaborator reads when it builds the model's four intrinsic ports and mints an
+            // internal net per non-zero parasitic resistance — [0] = collector, [1] = base,
+            // [2] = emitter. Collector first, matching the order the model card states its
+            // terminals in; the on-screen order is the FET's, so the two families read alike.
+            case SymbolKind.BjtNpn:
+            case SymbolKind.BjtPnp:
+                return [("c", 0f, -200f), ("b", -200f, 0f), ("e", 0f, 200f)];
             // Tuner: 1-port termination, single DUT-facing pin on the LEFT. The reference net is
             // hard-coded to ground "0" at extraction (NOT a pin) — exposing it as a pin is DEFERRED
             // (loadpull.md §1; can add a 2nd pin later if users need a non-ground reference).

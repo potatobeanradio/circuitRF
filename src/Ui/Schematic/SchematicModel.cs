@@ -145,6 +145,24 @@ public enum SymbolKind
     /// so the built-in symbol and geometry serve every design.</para>
     /// </summary>
     Match,
+
+    // ── Built-in bipolar transistor ───────────────────────────────────────────
+    // TWO kinds over ONE set of equations, which is the opposite of the FET family above: there the
+    // five names denote five different drain-current laws with five different parameter sets, while
+    // here the parameter list is identical and only a sign differs. Polarity is still two kinds
+    // rather than one with a selector, because the two DRAW differently — the emitter arrow is the
+    // whole of what a reader uses to tell them apart — and a selector would leave the schematic
+    // showing an n-p-n while the netlist carried a p-n-p.
+    //
+    // Both are 3-pin: collector TOP, base LEFT, emitter BOTTOM. Rb/Re/Rc are MODEL parameters, not
+    // separately placed resistors — a non-zero one moves the junctions onto an internal node the
+    // elaborator mints, so the schematic shows one device either way.
+
+    /// <summary>n-p-n bipolar transistor (engine "BJT_NPN"). Emitter arrow points OUT of the base.</summary>
+    BjtNpn,
+
+    /// <summary>p-n-p bipolar transistor (engine "BJT_PNP"). Emitter arrow points INTO the base.</summary>
+    BjtPnp,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

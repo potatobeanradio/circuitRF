@@ -38,6 +38,7 @@ public static class ComponentModelFactory
             "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone",
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
+            "BJT_NPN", "BJT_PNP",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             "ExtDevice", "wBond", "Match",
         };
@@ -91,6 +92,8 @@ public static class ComponentModelFactory
             return CreateSemiCapacitorModel(parameters, ambientC);
         if (typeName.StartsWith("FET_", StringComparison.OrdinalIgnoreCase))
             return CreateFetModel(typeName, parameters, ambientC);
+        if (typeName.StartsWith("BJT_", StringComparison.OrdinalIgnoreCase))
+            return CreateBjtModel(typeName, parameters, ambientC);
         if (typeName.Equals("TLIN", StringComparison.OrdinalIgnoreCase))
             return CreateTLineModel(parameters);
         if (typeName.Equals("MLIN", StringComparison.OrdinalIgnoreCase))
@@ -794,6 +797,86 @@ public static class ComponentModelFactory
 
             _ => null,
         };
+    }
+
+    // ── BJT family ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The built-in bipolar transistor, in both polarities. <c>BJT_NPN</c> and <c>BJT_PNP</c> are
+    /// two components over ONE set of equations and one parameter list — unlike the FET family,
+    /// where the five type names denote five different drain-current laws. Polarity is not a law:
+    /// it is a sign, and a single type with a polarity parameter would be one silent edit away from
+    /// a transistor that is not the one on the schematic (the symbol shows the arrow either way).
+    ///
+    /// Every parameter is optional and takes a conventional default, so a freshly placed transistor
+    /// is a working device the user can then edit.
+    /// </summary>
+    private static ComponentModel? CreateBjtModel(
+        string typeName, IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        BjtModel.Polarity polarity = typeName.ToUpperInvariant() switch
+        {
+            "BJT_NPN" => BjtModel.Polarity.Npn,
+            "BJT_PNP" => BjtModel.Polarity.Pnp,
+            _         => (BjtModel.Polarity)0,
+        };
+        if (polarity == 0) return null;
+
+        // Every call is by NAME. The constructor carries three dozen optional parameters whose
+        // types are all `double`, so positional binding would compile silently after a reorder and
+        // feed a grading coefficient where a transit time belongs.
+        return new BjtModel(
+            polarity:                       polarity,
+            saturationCurrent:              P("Is",   9.57e-17),
+            forwardBeta:                    P("Bf",   131.1),
+            forwardEmission:                P("Nf",   1.0),
+            forwardEarlyVoltage:            P("Vaf",  71.02),
+            forwardKneeCurrent:             P("Ikf",  0.09745),
+            emitterLeakageCurrent:          P("Ise",  1.618e-15),
+            emitterLeakageEmission:         P("Ne",   1.692),
+            reverseBeta:                    P("Br",   3.287),
+            reverseEmission:                P("Nr",   0.959),
+            reverseEarlyVoltage:            P("Var",  4.081),
+            reverseKneeCurrent:             P("Ikr",  0.07617),
+            collectorLeakageCurrent:        P("Isc",  5.969e-15),
+            collectorLeakageEmission:       P("Nc",   1.974),
+            baseResistance:                 P("Rb",   9.72444),
+            baseResistanceKneeCurrent:      P("Irb",  3.017e-6),
+            minimumBaseResistance:          P("Rbm",  6.94667),
+            emitterResistance:              P("Re",   0.7979),
+            collectorResistance:            P("Rc",   2.089),
+            emitterJunctionCap:             P("Cje",  8.287e-14),
+            emitterJunctionPotential:       P("Vje",  0.8281),
+            emitterGradingCoefficient:      P("Mje",  0.7138),
+            collectorJunctionCap:           P("Cjc",  8.781e-14),
+            collectorJunctionPotential:     P("Vjc",  0.7715),
+            collectorGradingCoefficient:    P("Mjc",  0.7552),
+            internalBaseCapFraction:        P("Xcjc", 0.6209),
+            forwardBiasCapCoeff:            P("Fc",   0.6275),
+            forwardTransitTime:             P("Tf",   1.72653e-11),
+            transitTimeBiasCoeff:           P("Xtf",  0.07),
+            transitTimeBiasVoltage:         P("Vtf",  0.00381019),
+            transitTimeHighCurrent:         P("Itf",  0.027024),
+            reverseTransitTime:             P("Tr",   1.71536e-8),
+            area:                           P("Area", 1.0),
+            // `Temp`/`Dtemp`/ambient resolve through the ONE shared rule the diode and the FET
+            // family use, so three device families in one design cannot disagree about what
+            // temperature they are at. Tnom does NOT: it is the parameter set's own extraction
+            // temperature, a property of the model card rather than of the run, and moving it with
+            // ambient would cancel the very ΔT being asked for.
+            tempC:                          Temperature.ResolveDeviceC(parameters, ambientC),
+            tnomC:                          P("Tnom", Temperature.NominalC),
+            saturationTempExponent:         P("Xti",  6.548),
+            betaTempExponent:               P("Xtb",  1.303),
+            // circuitRF reads `Eg` as the bandgap at 0 K, which is what the Varshni relation in
+            // Temperature subtracts from — the same reading the diode and the FET family use. A
+            // parameter table quoting a room-temperature figure here is stating a slightly
+            // different quantity; it costs nothing at Temp == Tnom, where the relation is the
+            // identity, and only shifts the SLOPE of the saturation currents away from it.
+            bandgapAtZeroK:                 P("Eg",   1.11));
     }
 
     // ── Diode ─────────────────────────────────────────────────────────────────

@@ -279,6 +279,22 @@ public static class ComponentTypeRegistry
             SearchTerms: ["Angelov", "Chalmers", "HEMT", "FET", "MESFET", "pHEMT", "transistor", "nonlinear", "device"],
             IsCommon: false,
             ExtraCategories: [ComponentCategory.Nonlinear]),
+        // Two tiles, one law — the opposite arrangement from the five FET tiles above, and for the
+        // opposite reason: there the names denote different equations, here they denote the same
+        // equations with one sign changed. Both spellings of the polarity are search terms on both
+        // tiles ("PNP" finds the n-p-n too), because a user looking for one is looking for the pair.
+        [SymbolKind.BjtNpn]        = new("NPN", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["NPN", "BJT", "bipolar", "transistor", "Gummel", "Poon", "PNP", "Q",
+                          "silicon", "SiGe", "HBT", "nonlinear", "device"],
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.BjtPnp]        = new("PNP", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["PNP", "BJT", "bipolar", "transistor", "Gummel", "Poon", "NPN", "Q",
+                          "silicon", "SiGe", "HBT", "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.Mutual]        = new("M",   "M",
             Category: ComponentCategory.Lumped,
             SearchTerms: ["Mutual", "mutual", "M", "coupling", "inductance", "transformer"],
@@ -445,6 +461,10 @@ public static class ComponentTypeRegistry
         SymbolKind.FetStatz        => "FET_Statz",
         SymbolKind.FetMaterka      => "FET_Materka",
         SymbolKind.FetAngelov      => "FET_Angelov",
+        // Two engine components over one model, so the netlist says which transistor it is rather
+        // than leaving it to a parameter that a later edit could silently disagree with the symbol.
+        SymbolKind.BjtNpn          => "BJT_NPN",
+        SymbolKind.BjtPnp          => "BJT_PNP",
         _                        => Get(kind).DisplayName,
     };
 
@@ -848,6 +868,69 @@ public static class ComponentTypeRegistry
                     new("Vtotc",   "0", "", false, UnitDimension.None),
                 ];
 
+            // Both polarities share ONE parameter list, because they are one set of equations with
+            // one sign changed. The defaults are a real, published small-signal RF silicon n-p-n
+            // parameter set carried through verbatim, so a freshly dragged transistor is a working
+            // GHz device rather than a shape waiting for numbers. They are a STARTING POINT, not a
+            // claim about any particular part — edit them for the transistor you actually have.
+            case SymbolKind.BjtNpn:
+            case SymbolKind.BjtPnp:
+                return [
+                    // Transport and forward gain.
+                    new("Is",   "9.57e-17",  "A", true,  UnitDimension.Current),
+                    new("Bf",   "131.1",     "",  true,  UnitDimension.None),
+                    new("Nf",   "1",         "",  false, UnitDimension.None),
+                    // Vaf/Var = 0 means the Early effect is NOT MODELLED, never "zero volts".
+                    new("Vaf",  "71.02",     "V", true,  UnitDimension.Voltage),
+                    new("Ikf",  "0.09745",   "A", false, UnitDimension.Current),
+                    new("Ise",  "1.618e-15", "A", false, UnitDimension.Current),
+                    new("Ne",   "1.692",     "",  false, UnitDimension.None),
+                    // Reverse (the transistor upside down) — it is what sets saturation behaviour.
+                    new("Br",   "3.287",     "",  false, UnitDimension.None),
+                    new("Nr",   "0.959",     "",  false, UnitDimension.None),
+                    new("Var",  "4.081",     "V", false, UnitDimension.Voltage),
+                    new("Ikr",  "0.07617",   "A", false, UnitDimension.Current),
+                    new("Isc",  "5.969e-15", "A", false, UnitDimension.Current),
+                    new("Nc",   "1.974",     "",  false, UnitDimension.None),
+                    // Parasitic resistances. MODEL parameters, not separately placed resistors —
+                    // a non-zero one moves the junctions onto an internal node the elaborator
+                    // mints, so the schematic shows one device either way. Rb modulates with base
+                    // current between Rb and Rbm; Irb sets where.
+                    new("Rb",   "9.72444",   "Ω", false, UnitDimension.Resistance),
+                    new("Irb",  "3.017e-6",  "A", false, UnitDimension.Current),
+                    new("Rbm",  "6.94667",   "Ω", false, UnitDimension.Resistance),
+                    new("Re",   "0.7979",    "Ω", false, UnitDimension.Resistance),
+                    new("Rc",   "2.089",     "Ω", false, UnitDimension.Resistance),
+                    // Junction charge. Xcjc is the fraction of Cjc on the INTERNAL base node; the
+                    // rest sits across Rb, which is why it matters at RF and not at DC.
+                    new("Cje",  "82.87",     "fF", false, UnitDimension.Capacitance),
+                    new("Vje",  "0.8281",    "V",  false, UnitDimension.Voltage),
+                    new("Mje",  "0.7138",    "",   false, UnitDimension.None),
+                    new("Cjc",  "87.81",     "fF", false, UnitDimension.Capacitance),
+                    new("Vjc",  "0.7715",    "V",  false, UnitDimension.Voltage),
+                    new("Mjc",  "0.7552",    "",   false, UnitDimension.None),
+                    new("Xcjc", "0.6209",    "",   false, UnitDimension.None),
+                    new("Fc",   "0.6275",    "",   false, UnitDimension.None),
+                    // Transit time — the parameter that sets fT, and the reason this device is
+                    // usable above a gigahertz at all.
+                    new("Tf",   "1.72653e-11", "", true,  UnitDimension.None),
+                    new("Xtf",  "0.07",        "", false, UnitDimension.None),
+                    new("Vtf",  "0.00381019",  "V", false, UnitDimension.Voltage),
+                    new("Itf",  "0.027024",    "A", false, UnitDimension.Current),
+                    new("Tr",   "1.71536e-8",  "", false, UnitDimension.None),
+                    // Geometry, then temperature. Temp and Tnom are in DEGREES CELSIUS and
+                    // unitless here, for the same reason the diode's are — there is no temperature
+                    // UnitDimension, and a "C" unit token would collide with capacitance in the
+                    // .cnl parameter tokenizer. Both default to the same value, so a device the
+                    // user never sets a temperature on sits exactly at its extraction point.
+                    new("Area", "1",     "", false, UnitDimension.None),
+                    new("Xti",  "6.548", "", false, UnitDimension.None),
+                    new("Xtb",  "1.303", "", false, UnitDimension.None),
+                    new("Eg",   "1.11",  "V", false, UnitDimension.Voltage),
+                    new("Temp", "26.85", "", false, UnitDimension.None),
+                    new("Tnom", "26.85", "", false, UnitDimension.None),
+                ];
+
             case SymbolKind.NonlinearC:
                 return [new("C0", "1", "pF", true, UnitDimension.Capacitance)];
 
@@ -1100,6 +1183,10 @@ public static class ComponentTypeRegistry
             // "FET"/"FETSDD" are deliberately NOT mapped here (R-hk-19: the library FET was hard-
             // removed with no compatibility alias) — they fall through to Enum.TryParse below,
             // which fails since "FetSdd" no longer exists, so a typed "FET" correctly does not parse.
+            case "NPN":
+            case "BJT_NPN": kind = SymbolKind.BjtNpn;       return true;
+            case "PNP":
+            case "BJT_PNP": kind = SymbolKind.BjtPnp;       return true;
             case "SDD":    kind = SymbolKind.Sdd;            return true;  // bare SDD → portCount=0 (2-port default)
             case "WBOND":
             case "WB":     kind = SymbolKind.WBond;         return true;
