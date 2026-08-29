@@ -85,9 +85,15 @@ public sealed class PlanarBudgetTests
         long projected = (long)(perUnknownSq * SurfaceMesher.UnknownCeiling *
                                 (double)SurfaceMesher.UnknownCeiling);
 
-        _out.WriteLine($"\nR17's own ceiling is {SurfaceMesher.UnknownCeiling:N0} unknowns and its " +
-                       $"message quotes {Mb(PlanarSystem.MatrixBytes(SurfaceMesher.UnknownCeiling))} " +
-                       "of dense complex matrix — which is exactly right, and is ONLY the matrix.");
+        _out.WriteLine($"\nR17's own ceiling is {SurfaceMesher.UnknownCeiling:N0} unknowns. Its " +
+                       "message quoted " +
+                       $"{Mb(PlanarSystem.MatrixBytes(SurfaceMesher.UnknownCeiling))} of dense complex " +
+                       "matrix — exactly right, and ONLY the matrix — until P1 " +
+                       "(brief-em-p1-honest-memory-accounting.md, 2026-08-29) re-pointed all three " +
+                       $"refusals at {Mb(PlanarSystem.ResidentBytes(SurfaceMesher.UnknownCeiling))}, " +
+                       "the resident peak of one frequency point (matrix + BOTH LU factors + cached " +
+                       "cores). The run-level point below is unchanged and still stands on top of it: " +
+                       "the ceiling polices a MESH, and a de-embedded run holds several.");
         _out.WriteLine($"Measured here, the largest de-embedded run holds {Mb(peak)} live at " +
                        $"N = {n:N0}; scaled quadratically to the ceiling that is ~{Mb(projected)}.");
         _out.WriteLine("\nSO: THE CONSTANT IS DEFENSIBLE AND ITS MESSAGE IS NOT. The number 5,000 is " +

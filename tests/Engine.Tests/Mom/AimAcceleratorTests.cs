@@ -89,10 +89,19 @@ public class AimAcceleratorTests(ITestOutputHelper output)
         Assert.Equal(dense.UnknownCount, geom.UnknownCount);
         Assert.True(dense.HasPairCores);
         Assert.False(geom.HasPairCores);
-        Assert.Equal(0, geom.CoreBytes);
+        // P2/M1 — a geometry-only core is no longer EMPTY: it carries the per-basis ∫w dS vector,
+        // which is O(N) and is what replaced the two packed O(N²) triangles of its outer product.
+        // The gate is therefore that it holds nothing QUADRATIC IN N, which is the claim that matters.
+        // P5: the classifier's tables ride along too — O(n_x² + n_y²) over the GRID axes, not over
+        // the pairs — so the equality is 8·N plus exactly those, and the tables are bounded by the
+        // grid rather than by the basis count.
+        Assert.Equal(8L * geom.UnknownCount + geom.ClassifierBytes, geom.CoreBytes);
+        int nx = mesh.GridX.Count - 1, ny = mesh.GridY.Count - 1;
+        Assert.True(geom.ClassifierBytes <= 4L * (nx * nx + ny * ny) + 64L * (nx + ny) + geom.UnknownCount + 256,
+            $"classifier holds {geom.ClassifierBytes} bytes on a {nx} × {ny} grid");
 
-        // And the O(N²) memory really is not there.
-        Assert.True(dense.CoreBytes > 0);
+        // This says the dense core really does hold the band and the class table beside it.
+        Assert.True(dense.CoreBytes > geom.CoreBytes);
 
         var ex = Assert.Throws<InvalidOperationException>(
             () => PlanarFill.Fill(geom, k.VectorPotential, k.Scalar, omega));

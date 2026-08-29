@@ -189,11 +189,18 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
         Assert.DoesNotContain("ScrollTo", Between(code, "private void OnSolutionSelectionChanged("),
                               StringComparison.Ordinal);
 
-        // Three callers, and only three: the button's wiring, the once-only arm, and the applied-row
-        // move. Four occurrences, the fourth being the declaration itself.
-        Assert.Equal(4, Regex.Matches(code, @"ScrollToApplied\(\)").Count);
-        Assert.Contains("private void ScrollToApplied()", code, StringComparison.Ordinal);
-        Assert.Contains("ScrollToApplied()", Between(code, "private void ScrollToAppliedOnce()"),
+        // Two callers of the parameterless arm, and only two: the button's wiring and the
+        // applied-row move. Three occurrences, the third being the declaration itself — which is a
+        // one-line forward into the shared ScrollToApplied(bool once, int attempt), as is the
+        // once-only automatic arm (its flag differs, nothing else). The forward is where the
+        // first-open retry lives (owner-reported, 2026-08-28): the flag is spent when the scroll
+        // LANDS, and the callback re-posts itself, bounded, until the list has been laid out.
+        Assert.Equal(3, Regex.Matches(code, @"ScrollToApplied\(\)").Count);
+        Assert.Contains("private void ScrollToApplied() => ScrollToApplied(once: false);", code,
+                        StringComparison.Ordinal);
+        Assert.Contains("private void ScrollToAppliedOnce() => ScrollToApplied(once: true);", code,
+                        StringComparison.Ordinal);
+        Assert.Contains("private void ScrollToApplied(bool once, int attempt = 0)", code,
                         StringComparison.Ordinal);
         Assert.Contains("WireButton(\"ScrollToAppliedButton\"", code, StringComparison.Ordinal);
         Assert.Contains("ScrollToApplied();", Between(code, "private void OnAppliedSolutionMoved("),
@@ -210,9 +217,12 @@ public sealed class MatchRound9Tests(ITestOutputHelper output)
                                 "private void RebadgeSolutions()"),
                         StringComparison.Ordinal);
 
-        // …and the once-only guard is still a guard.
-        Assert.Contains("if (_scrolledToApplied", Between(code, "private void ScrollToAppliedOnce()"),
-                        StringComparison.Ordinal);
+        // …and the once-only guard is still a guard, checked both before the post and inside it,
+        // and only ever SPENT by a scroll that landed — never by one that was merely attempted.
+        string shared = Between(code, "private void ScrollToApplied(bool once, int attempt = 0)");
+        Assert.Equal(2, Regex.Matches(shared, @"if \(once && _scrolledToApplied\) return;").Count);
+        Assert.Contains("_scrolledToApplied = true;", shared, StringComparison.Ordinal);
+        Assert.Contains("MaxScrollToAppliedAttempts", shared, StringComparison.Ordinal);
 
         // The view-model half applies a design and nothing else.
         Assert.DoesNotContain("Scroll", Between(Network(), "public void ApplySolution("), StringComparison.Ordinal);

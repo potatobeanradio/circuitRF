@@ -5701,3 +5701,862 @@ accelerated solve on: meshes, and the DUT's own Z-matrix actually solves — `Pl
 .RawScatteringAt` returns a real 2×2 raw S with a positive GMRES iteration count. **The sentence this
 user gets now**: turn on Accelerated solve (Solver options); it is named first in the refusal, and it
 is the one thing that actually works for this class of part.
+
+
+---
+
+## P1 — honest memory accounting (brief-em-p1-honest-memory-accounting.md, 2026-08-29)
+
+**This phase measured and re-worded. It changed no arithmetic in any kernel** — no fill, no
+factorisation, no Green's function, no s-parameter moved by a bit. What changed is what the code
+SAYS about its own size, in the three ceiling refusals and in `PlanarAimReport`.
+
+The three `GuardCeiling` bodies (`SurfaceMesher`, `PlanarSystem`, `PlanarFill`) all quoted `16·N²`
+— "381 MB at the ceiling". That number is exactly right about the dense matrix and silent about
+everything live beside it. §7 already carried "381 MB quoted against ~607 MB real — owner's call";
+**607 was itself an underestimate, and this phase replaces both numbers with a measured one.**
+
+### Table 1 — one DENSE frequency point, COUNTED
+
+FR-4 hero cross-section at 10 GHz, shipping mesh (cells/λ = 20, edge grading on, staircase), lines
+of 20 / 80 / 200 mm. Every term is an array the code allocates, at its element size — nothing here
+is a profile or a fit. `PlanarMemoryAccountingTests.P1_1` (`Category=Benchmark`, 2 m 3 s).
+
+| N | cells | cores | matrix | L + U | P (transient) | **quoted (16·N²)** | **RESIDENT PEAK** | ratio |
+|---|---|---|---|---|---|---|---|---|
+| 552 | 297 | 2.4 MB | 4.6 MB | 9.3 MB | 1.3 MB | 4.6 MB | **16.4 MB** | **3.52×** |
+| 1,980 | 1,053 | 30.9 MB | 59.8 MB | 119.6 MB | 16.9 MB | 59.8 MB | **210.4 MB** | **3.52×** |
+| 4,836 | 2,565 | 184.1 MB | 356.9 MB | 713.7 MB | 100.4 MB | 356.9 MB | **1,254.7 MB** | **3.52×** |
+
+At the ceiling itself (N = 5,000) the same arithmetic gives **1,338 MB**, which is the number every
+refusal now quotes in place of 381.
+
+**The ratio is 3.52× and it is FLAT**, which is what says it is structural rather than a size
+effect: every term is O(N²) with a fixed coefficient. The split is
+
+- **the matrix, 16·N²** — kept alive by `PlanarSystem.Matrix` for the whole life of the point;
+- **the factors, 32·N²** — `NumFlat.LuDecompositionComplex` holds `L` and `U` as two SEPARATE full
+  `Mat<Complex>` of stride n (verified by reflection AND by measurement). **This is not a packed
+  in-place LU**, and it is the single largest term in the table;
+- **the cached geometric cores, ≈ 0.52 × 16·N²** — L8c's own "+51% on top of the matrix", which
+  `PlanarSystem.CoreBytes(n, cellCount)` now reconstructs from N and the cell count to within 1%
+  (measured 0.988-1.000× against `PlanarFillCores.CoreBytes` on real meshes, gated routinely by
+  `P1_5`).
+
+**The transient m×m `P` is real and is NOT the peak.** `PlanarFill.Fill` builds the scalar-potential
+matrix over CELLS, uses it, and drops it before anything is factored; at m ≈ N/1.95 it is a quarter
+of a matrix against the factorisation's two, so the fill's own high-water mark is below the
+factorisation's. Measured at N = 552: counted 1.3 MB, measured 1.4 MB.
+
+### Table 2 — the same three points, MEASURED
+
+Cumulative live heap from one baseline (`GC.GetTotalMemory(true)` with LOH compaction requested),
+with `GC.GetTotalAllocatedBytes` beside it.
+
+| N | live after cores | live after fill | live after LU | allocated by fill | allocated by LU | counted peak | live / counted |
+|---|---|---|---|---|---|---|---|
+| 552 | 3.1 MB | 7.6 MB | 25.0 MB | 8.3 MB | 17.3 MB | 16.4 MB | 1.52 |
+| 1,980 | 31.0 MB | 83.8 MB | 250.1 MB | 83.0 MB | 183.7 MB | 210.4 MB | 1.19 |
+| 4,836 | 120.6 MB | 386.6 MB | 1,492.8 MB | 463.8 MB | 1,225.9 MB | 1,254.7 MB | 1.19 |
+
+Process working set at the end of the run: **1,433.6 MB**. (`Process.PeakWorkingSet64` reads 0 on
+macOS — the platform does not track it — so `WorkingSet64` is what this row can say.)
+
+**So the machine sees about 1.19× the counted peak, i.e. ≈ 4.2× the 16·N² that was quoted.** The
+extra 19% is the factorisation's own released scratch, still committed on the large object heap: the
+LU ALLOCATES ~3.64 × 16·N² and RETAINS 2 × 16·N². Only the retained part belongs in a refusal — a
+refusal that quoted the transient would be quoting the GC's collection policy — but a user watching
+a memory meter sees both, which is why both are recorded here.
+
+**A measurement trap this phase paid for, and the reason Table 2 is cumulative rather than
+per-phase.** The LOH does not compact by default, so a released n×n matrix leaves committed space
+that the next allocation lands in. A per-phase live DELTA therefore reads the matrix LOW (it lands
+in the transient `P`'s grave) and the factorisation HIGH, and a ladder measuring several N in one
+process reads the second rung's matrix at half its size. The first version of this table showed
+"cores −4.1 MB" at N = 2,932. **Cumulative live from one baseline, plus the allocation counter, are
+both exact; a per-phase delta of live bytes is not.** The same trap explains the brief's own opening
+scratch measurement ("a 3,000×3,000 matrix is 137 MB and `.Lu()` added 530 MB", i.e. 3.87×): 530 MB
+is the live figure with the scratch still committed. Retained is 2×; the reading was not wrong, it
+was measuring a different thing than it named.
+
+### The AIM report — what it had omitted
+
+`PlanarAimReport.ApproximateBytes` counted the accelerator's own arrays and stopped there. Three
+things were missing, and one of them was large:
+
+1. **The sparse LU's own fill-in.** The preconditioner is a `CSparse.SparseLU` of the near matrix,
+   and its factors are several times the matrix they come from.
+2. **The name `PreconditionerNonZeros` was never the fill-in.** It is `csc.NonZerosCount` — the near
+   matrix's own non-zero count, which (every near pair being stored exactly once) is the near ENTRY
+   count again, under a name that reads like the factor's. The brief expected this field to be the
+   fill-in "reported but never added"; it is not, and the honest number needed a new field.
+   `FactorNonZeros` is `SparseLU.NonZerosCount` — L and U together.
+3. **`_nearExact`**, held for the operator's whole life to serve one diagnostic.
+
+### Table 3 — one ACCELERATED frequency point
+
+FR-4 hero cross-section at 6 GHz, shipping mesh, at M5's own top rung and at the accelerated
+ceiling. `PlanarMemoryAccountingTests.P1_2` (`Category=Benchmark`).
+
+| line | N | near/row | stencils | grid + FFT | near CSR | sparse LU | **REPORTED** | measured | ratio | dense resident at the same N |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 256 mm | 3,731 | 392 | 1.8 MB | 1.3 MB | 27.9 MB | 29.0 MB | **60.1 MB** | 63.6 MB | 0.94 | 746.9 MB |
+| 832 mm | 11,959 | 399 | 5.8 MB | 5.3 MB | 90.9 MB | 94.1 MB | **196.2 MB** | 205.0 MB | 0.96 | 7,671.7 MB |
+
+**The sparse LU is very nearly half of it**, and it had never been counted. The near field itself is
+as flat in N as M5 said it was (392 → 399 entries per row over a 3.2× N range); what grows with it
+is the factorisation of that near field.
+
+| N | near nnz (`PreconditionerNonZeros`) | L+U nnz (`FactorNonZeros`) | old `ApproximateBytes` | honest, `_nearExact` KEPT | **honest, released — what ships** |
+|---|---|---|---|---|---|
+| 3,731 | 1,461,553 | 1,518,133 | 53.3 MB | 82.4 MB | **60.1 MB** |
+| 11,959 | 4,765,871 | 4,927,957 | 174.7 MB | 268.9 MB | **196.2 MB** |
+
+**Two things fall out of the last two columns.**
+
+*First*, `CLAUDE.md` §8's "the accelerator's own working set stays under 200 MB even at that
+ceiling", and the identical sentence in `SurfaceMesher`'s accelerated refusal, **was false as
+shipped**: honestly counted with the exact near entries still held, the operator at N = 11,959 holds
+268.9 MB. Releasing them after the factorisation brings it to 196.2 MB and the sentence is true
+again — *because of* this brief rather than in spite of it, and now tight rather than comfortable.
+
+*Second*, the old number was low by coincidence rather than by construction: it over-counted the
+near set (36 B/entry, the exact and the correction and the index) by almost exactly what it
+under-counted the factorisation. Two errors of opposite sign is not an accounting.
+
+**AIM still wins the comparison it was built to win, and against the honest dense number it wins by
+more** — the dense side grew 3.52× at P1 and the accelerated side grew 13%.
+
+*A measurement note, because the first run of this table was wrong.* The two rungs must be measured
+with EVERY earlier operator still reachable. Collect the 256 mm operator before building the 832 mm
+one and the large object heap hands its 60 MB straight to the next build, which then measures ~40%
+below what it holds (141.7 MB against a real 205.0 MB). Same trap as Table 2, one level up.
+
+### The gate had to change tier, and the reason is the instrument
+
+The brief asks for "the reported bytes within 20% of the measured resident delta" as a routine test.
+**`GC.GetTotalMemory` is process-wide and xUnit runs test classes concurrently in one process**, so
+another class's collection lands inside the measurement window: the first version of that test read
+**0.925 measured alone and −0.245 under full-suite load.** That is not a flake to re-run — it is the
+wrong instrument for a parallel suite.
+
+So the resident comparison is asserted inside the `Category=Benchmark` measurement above, which
+carries a "measure this one alone" note (the same precedent §10 already sets for the L8d cost
+table), and the ROUTINE gate counts the same quantity a different way: it **walks the operator's own
+object graph and adds up every array it holds**. That is load-immune, and it is independent of the
+report's arithmetic in the way that matters — it counts the arrays that EXIST rather than
+re-deriving them from the report's own fields, which is exactly the check that would have caught the
+omission P1 fixed. **It agrees to 0.3%**: 9.7 MB reported against 9.7 MB walked at N = 552, where
+the same count with the sparse LU removed is 4.1 MB, i.e. 0.425 of what is there.
+
+### What was changed in code
+
+- **`PlanarSystem.CoreBytes` / `FactorBytes` / `ResidentBytes` / `ResidentPhrase`** — new, and the
+  ONE place the three refusals now get their megabytes from, so they cannot drift apart again.
+  `ResidentBytes(n, cellCount)` takes the cell count where a caller has one and derives it from
+  N/1.95 where it does not (`PlanarSystem.Wrap` holds a bare matrix). The cores term states two
+  assumptions and both make it a FLOOR: the shipped extraction order (`Constant` — `Linear` adds a
+  fourth radial array per family) and an even x̂/ŷ split (which minimises the vector term).
+- **The three refusals** — `SurfaceMesher.BuildRefusal`, `SurfaceMesher.GuardCeiling`,
+  `PlanarSystem.GuardCeiling`, `PlanarFill.GuardCeiling`, plus the WARN note — now say
+  "*N MB resident at the peak of one frequency point (matrix + factors + cached cores), against
+  1,338 MB at the ceiling*". The megabytes stay where the 2026-08-14 owner report put them (after
+  the unknown count, never leading), and they now say what they ARE, because a bare figure beside a
+  ceiling is what read as a RAM limit the first time.
+- **`PlanarAimReport.ApproximateBytes` → `ResidentBytes`**, renamed because it no longer
+  approximates: every term is an allocation at its element size. It gained the sparse LU's factors,
+  the CSR row pointer, and the AMD permutation; `PeakBuildBytes` adds the transient CSC copy the
+  factorisation is built from. `FactorNonZeros` and `NearExactRetained` are new report fields.
+- **`_nearExact` is released once `FactorNear` has run**, unless
+  `PlanarAimSettings.KeepNearExact` (new, default false) asks for it. The accelerated PRODUCT reads
+  the CORRECTION (exact − AIM); nothing in a solve reads the exact entries. `NearExactAt` THROWS
+  when they were not kept rather than returning zero — a silent zero there is indistinguishable
+  from "not near", which is the question the caller is asking.
+
+  *The brief suggested reading them back out of CSparse's CSC instead. That was measured against and
+  not taken: the CSC's row index costs 4 B per entry MORE than the array it would replace, for the
+  same numbers, so keeping the CSC to serve a diagnostic is strictly worse than keeping the array.*
+- **`tests/Engine.Tests/Mom/PlanarMemoryAccountingTests.cs`** — new. Two `Category=Benchmark`
+  measurements (the three tables above, plus the brief's own resident-delta assertion) and four
+  routine COUNTER gates: the report against every array the operator holds and not vacuously so; the
+  exact entries released by default, with the solved current vector bit-identical either way;
+  `CoreBytes` reproducing `PlanarFillCores.CoreBytes`; and all three refusals quoting one sentence.
+- `EmCeilingRefusalTests.TheRefusal_SaysTheCeilingIsTheKERNELS_NotTheMACHINES` — its expected
+  sentence updated and still asserted, now pinned against `PlanarSystem.ResidentPhrase` itself so the
+  gate cannot drift away from the code. `docs/design/mom-engine.md` §10.7, `CLAUDE.md` §7/§8 and
+  `docs/user/src/reference/mom-engine.md`'s own budget table corrected in place.
+- One small refactor that removed a throw rather than allow-listing it:
+  `FactorNear` now takes the exact entries as an argument instead of reading the (now nullable)
+  field, so "this runs once, while they are still live" is a signature rather than a sentence.
+  `tests/Firewall.Tests`' user-facing-text allow-list gains exactly one line, for `NearExactAt`.
+
+### What P1 deliberately did NOT do
+
+`UnknownCeiling` and `AcceleratedUnknownCeiling` are untouched — that decision is P7's (dense) and
+P8's (accelerated), once the memory is what it will be. `PlanarSystem`'s factorisation is untouched
+— P7. **The 3.52× is a fact about the code as it stands today, and P2 and P7 exist to move it.**
+
+
+---
+
+## P2 — four mechanical memory wins on the dense path (brief-em-p2-cheap-memory-wins.md, 2026-08-29)
+
+**P1 measured; P2 removes.** Four allocations came out. None of them changes what any entry of any
+matrix *is*: three are bit-identical, measured rather than argued, and the fourth (M2) replaces one
+rounding with a different one and is pinned at ≤ 1 ulp.
+
+| | what came out | where it shows |
+|---|---|---|
+| **M1** | the `VXArea`/`VYArea` packed triangles — two O(N²) arrays of the outer product of an O(N) vector | **24% off the cached cores at every N**, i.e. 3.5% off a whole dense frequency point |
+| **M2** | `StaticCapacitance`'s copy of `P`, built only to divide every entry by ε₀ | one m×m off the calibration standards' static solve |
+| **M3** | `StaticCapacitance` re-coring a mesh whose `PlanarSolveContext` already held its cores | 7 → 5 `BuildCores` calls on a 4-standard de-embedded sweep |
+| **M4** | `PlanarPortCalibrator` coring every standard of its band in its constructor | 2 of 4 standards cored on a wide band stepped narrowly; **0 of 4** at construction |
+
+### M1 — an O(N²) array of an outer product
+
+`BuildDirectionCores` stored `cArea[p] = mMom * nMom` for every same-direction basis pair: the
+extracted CONSTANT term's vector core is `∫w_m dS · ∫w_n dS`, which factors. The other two cores in
+that family — `∫∫ w w /R` and `∫∫ w w ln r` — genuinely do not, which is why they are cached and
+this one need never have been. The per-basis moments are now one `double[N]` on `PlanarFillCores`
+(`VMoment`) and the product is formed at the point of use, one multiply per entry.
+
+**Bit-identity is not an argument here, it is a hash.** A git worktree at the commit before P2 ran
+the same fixture and printed the SHA-256 of the whole assembled `Z`:
+
+```
+N = 552, cells = 297, FR-4 hero at 10 GHz, shipping mesh
+before  04F078DD4765A83EC4D068F20691BCD2A7CCF86943FCC680D40E620090B84D99
+after   04F078DD4765A83EC4D068F20691BCD2A7CCF86943FCC680D40E620090B84D99
+```
+
+The digest is a literal in `PlanarP2MemoryWinsTests.P2_1`, which is the only form a bit-identity
+claim can take — no single tree holds both builds, and a test that recomputed its expected value
+from the code under test would assert nothing.
+
+**What it saves.** Counted from the arrays (`P2_7`), on P1's own three rungs:
+
+| N | cells | cores before | cores after | resident before | resident after | off a whole point |
+|---|---|---|---|---|---|---|
+| 552 | 297 | 2.43 MB | **1.85 MB** | 16.38 MB | **15.80 MB** | 3.5% |
+| 1,980 | 1,053 | 30.92 MB | **23.45 MB** | 210.39 MB | **202.92 MB** | 3.6% |
+| 4,836 | 2,565 | 184.09 MB | **139.50 MB** | 1,254.68 MB | **1,210.09 MB** | 3.6% |
+
+The fraction is fixed at ~24% of the cores because the term removed was one of three O(N²) vector
+triangles; the O(N) vector that replaced it is 15.5 kB at N = 1,980 against the 7.51 MB it replaced.
+**P1's flat 3.52× resident-to-matrix ratio is now 3.39×**, and the three ceiling refusals quote
+**1,290 MB** at N = 5,000 rather than 1,338.
+
+*The geometry-only core the AIM accelerator builds is no longer literally empty — it carries the
+same `VMoment` vector, 8·N bytes — and `PlanarEntryFill` now reads that instead of deriving its own
+copy of the identical array. `AimAcceleratorTests.T1b`'s "`CoreBytes == 0`" became "`== 8·N`", which
+is the same claim stated exactly: nothing QUADRATIC.*
+
+### M2 — the copy of P that existed to divide by ε₀
+
+`StaticCapacitance` solved `(P/ε₀) q = 1` by building a second m×m complex matrix and dividing every
+entry into it. It now solves `P q = ε₀·1`. Same system; one fewer m×m, and one fewer rounding —
+`ε₀·1` is exact, so the matrix that gets factored is now the fill's own `P` bit for bit.
+
+**This is the one milestone that is not bit-identical end to end, and the size of the move is
+measured rather than bounded.** On `P2_3`'s own 32-cell standard the two forms agree *exactly*
+(`1.4951676979500528E-12` F both ways). On the swept fixture the published S moves in its last bit
+or two — isolated by running the pre-P2 worktree twice, once with M2's six lines alone:
+
+```
+5-point de-embedded sweep, N = 94, S21 at 20 GHz
+pre-P2                 0.6208172551602424 − 1.14559600691411 j
+pre-P2 + M2 only       0.6208172551602426 − 1.1455960069141098 j
+P2 (all four)          0.6208172551602426 − 1.1455960069141098 j     ← identical to M2-only
+```
+
+**So M1, M3 and M4 together move not one bit of a published s-parameter**, and M2 is the only
+arithmetic P2 changed. Both digests are literals in `P2_6`.
+
+*Consequence for the refusal text.* `GuardCapacitanceCeiling` said "the two m×m complex matrices this
+solve holds at once (the potential-coefficient matrix and its own copy)". The copy is gone, and the
+sentence was in any case an undercount — P1 established that NumFlat's LU holds `L` and `U` as two
+further full matrices. It now says **three** (P, L, U) and quotes 3·16·m² rather than 2·16·m².
+
+### M3 — a mesh cored twice
+
+`PlanarDeembed.CapacitancePerMetre` called `PlanarFill.BuildCores` on the two extreme standards'
+meshes — meshes whose `PlanarSolveContext` was already holding cores built from the same mesh and
+the same `PlanarFillSettings`. Both now take the context's own cores; a caller with none, or with a
+geometry-only core (the accelerator's contexts carry those), falls back to building them exactly as
+before, and the mesh identity is checked rather than assumed.
+
+**R-prt-11's counter was blind to this, and that is the interesting part.**
+`PlanarSolveResult.CoreFillCount` is derived from the number of standard MESHES (`1 + standards`),
+not from the number of builds — so it read 5 both before and after, while the code was doing 7
+builds. `PlanarCoreBuildCounter` is new and counts the builds themselves: an INSTANCE threaded
+through `PlanarFillSettings` beside `Budget`, never a static, for the reason `PlanarSweepResult`'s
+own note already gives (a static counter is flaky the moment two fill tests run concurrently, which
+xUnit does by default).
+
+```
+4 standards + DUT, 5-point de-embedded sweep, 1-20 GHz
+CoreFillCount   5  →  5     (unchanged, as the brief requires)
+BuildCores      7  →  5     (max 1 per mesh, over 5 distinct meshes)
+```
+
+### M4 — a standard the sweep never selects is never cored
+
+`PlanarPortCalibrator`'s constructor built a `PlanarSolveContext` per standard, and each of those
+built its cores. `NeededAt` fills exactly two per frequency: the short line and the ONE long line
+the β prediction selects. `PlanarSolveContext.Cores` is now a thread-safe `Lazy`; the R17 ceiling
+check stays eager, because a refusal has to happen at setup and is a decision about N.
+
+**And here is the honest finding, which is smaller than the brief assumed.** Through
+`PlanarSolve.Run` the calibration band IS the sweep's own frequency range, so over a full sweep
+every separation gets selected at some point and M4 saves *nothing*:
+
+| band, stepping | standards | cored, before | cored, after |
+|---|---|---|---|
+| 1–20 GHz, 5 pts | 4 | 4 | **4** |
+| 1–20 GHz, 21 pts | 4 | 4 | **4** |
+| 9–11 GHz, 5 pts | 2 | 2 | **2** |
+
+The saving is real only when the band is wider than the frequencies actually stepped — the shape a
+single-frequency check, an interrupted or cancelled run, and a direct `PlanarPortCalibrator` caller
+all have:
+
+```
+calibrator built for 1-20 GHz, stepped at 9 / 10 / 11 GHz
+standards N = [52, 143, 87, 66]     cores 19.6 / 137.9 / 52.5 / 30.9 kB
+cored: 2 of 4 — 50.5 kB of 240.8 kB, i.e. 79% of the standards' cores never built
+```
+
+At the shipping mesh those four standards are N = 297 / 739 / 467 / 365 and their cores are
+0.5 / 3.3 / 1.3 / 0.8 MB, so the same case leaves 4.6 of 6.0 MB unbuilt. **At construction the
+number cored is now 0 of 4 rather than 4 of 4**, which is the part that is unconditional.
+
+**Interaction with M3, and it is a real cost.** `CapacitancePerMetre` uses `Standards[0]` and
+`Standards[^1]`, so handing it the contexts' cores BUILDS the longest standard's whether or not any
+frequency selected it. That is correct — D7 differences the two EXTREME lengths, not the one this
+frequency solved — and it is why the table above shows 2 cored rather than 1. P11 changes that
+solve; until then the longest standard is cored on every de-embedded run.
+
+### What was changed in code
+
+- **`PlanarFillCores.VXArea`/`VYArea` → `VMoment`** (one `double[N]`, per BASIS rather than per
+  direction-position, because both readers already have a basis index). `BuildDirectionCores` returns
+  three arrays instead of four; the moment derivation moved to a shared `PlanarFill.BasisMoments`
+  that both core builders call. `CoreBytes` counts the new vector — it is O(N) and P1's whole point
+  is that this number is what the object HOLDS.
+- **`PlanarSystem.CoreBytes`** — `8·(2·scalarPairs + 3·vectorPairs)` → `8·(2·scalarPairs +
+  2·vectorPairs + n)`. Its own doc comment's two stated assumptions are unchanged and still make it
+  a floor.
+- **`PlanarDeembed.StaticCapacitance`** — solves `P q = ε₀·1`; takes an optional `PlanarFillCores`.
+  **`CapacitancePerMetre`** takes two. `GuardCapacitanceCeiling` says three m×m, not two.
+- **`PlanarCoreBuildCounter`** — new; `PlanarFillSettings.CoreBuilds` carries one, outside the
+  positional list beside `Budget` and `Aim`.
+- **`PlanarSolveContext.Cores` is a `Lazy`**, plus `CoresBuilt` and `CoreBuildMs`;
+  `PlanarPortCalibrator` gained `CoredMeshCount` and `CoreBuildMs`. `PlanarSolve.Run` now SUMS the
+  run's core time from the contexts that actually built one, since it can no longer be measured
+  around a constructor.
+- **`tests/Engine.Tests/Mom/PlanarP2MemoryWinsTests.cs`** — new, 7 routine tests: the two pinned
+  digests, the core-byte composition, the capacitance value and its allocation, the two counters, and
+  the resident table above.
+- `AimAcceleratorTests.T1b` and `EmDeembedCeilingTests.C2` updated for the two claims that genuinely
+  changed (8·N bytes on a geometry-only core; three m×m in the capacitance refusal).
+- `docs/design/mom-engine.md` §10.7, `src/Engine/Mom/CLAUDE.md` §7 and `PlanarSystem.ResidentBytes`'
+  own comment carry the new 3.39× / 1,290 MB in place.
+
+### What P2 deliberately did NOT do
+
+The brief's fifth candidate — **storing `P` packed** (it halves a transient 4N² bytes) — was not
+taken. It touches every `p[a, b]` reader in three fills and is a milestone with its own bit-identity
+gate, not a few lines. `PlanarAim.cs`, the LU and every quadrature are untouched, as instructed.
+
+## P3 — the multi-level fill's scaling, measured, and what the hoist actually bought (brief-em-p3-multilevel-fill-scalability.md, 2026-08-29)
+
+**The brief's premise was that `FillMultiLevel`'s shape — a kernel-set lookup under a lock and a
+fresh `PlanarKernelTerms` per pair, three more locked caches per entry, an array per horizontal
+entry — would scale "far worse" than the single-level fill's 5.4× on ten cores. Milestone 1 measured
+it before anything was changed, and the premise is false:** the multi-level fill already scaled
+5.5–5.9× at cap 10, i.e. exactly like `Fill`. The hoist was done anyway (it is the right shape, it
+is bit-identical, and it removes ~8× the allocation per fill), and it bought something the brief did
+not name: **19–24% off every via-bearing fill at every cap**, from an arm that is not O(N²) at all.
+
+All timings are one fill (the second on a warm kernel set — fits and tables already built), alone on
+the machine, on a 10-core box with **4 performance + 6 efficiency cores** (which is the whole story
+of the cap-10 column; see below). Caps 1/2/4/10 as the brief asked.
+
+### Table 1 — the multi-level fill BEFORE P3 (pre-P3 worktree: P1 and P2 applied, P3 not)
+
+| fixture | N (vertical) | cap 1 | cap 2 | cap 4 | cap 10 |
+|---|---|---|---|---|---|
+| two-level MMIC line + via, 10 GHz | 514 (2) | 63.35 s | 32.02 s · 1.98× · 99% | 17.74 s · 3.57× · 89% | 10.86 s · 5.83× · 58% |
+| two-level MMIC line, no via | 424 (0) | 22.14 s | 11.56 s · 1.92× · 96% | 5.94 s · 3.73× · 93% | 3.77 s · 5.88× · 59% |
+| FR-4 hero on two levels, 3 vias | 1,175 (3) | 64.36 s | 32.82 s · 1.96× · 98% | 16.87 s · 3.82× · 95% | 11.61 s · 5.54× · 55% |
+
+### Table 2 — the same three fills AFTER P3
+
+| fixture | N (vertical) | cap 1 | cap 2 | cap 4 | cap 10 |
+|---|---|---|---|---|---|
+| two-level MMIC line + via, 10 GHz | 514 (2) | **51.16 s** | 26.49 s · 1.93× · 97% | 14.24 s · 3.59× · 90% | **9.12 s** · 5.61× · 56% |
+| two-level MMIC line, no via | 424 (0) | 22.07 s | 11.57 s · 1.91× · 95% | 5.92 s · 3.73× · 93% | 4.22 s · 5.23× · 52% |
+| FR-4 hero on two levels, 3 vias | 1,175 (3) | **54.31 s** | 27.64 s · 1.96× · 98% | 14.23 s · 3.82× · 95% | **9.03 s** · 6.01× · 60% |
+
+Reading the two together:
+
+- **The no-via fill did not move** (22.14 → 22.07 s serial). Every lock the brief listed was a HIT
+  on a small dictionary — ~100 ns uncontended, and rarely contended, because between two lookups a
+  thread spends ~200 µs in the pair's remainder quadrature. Removing them is correct and is
+  invisible. `.With()`'s allocation per pair was likewise ~150 bytes against 200 µs of arithmetic.
+- **The via-bearing fills got 19% (N = 514) and 16% (N = 1,175) faster serially, and 16–22% at
+  cap 10.** Neither number comes from an O(N²) arm. It is the MIXED block (`MixedEntry`, one entry per
+  via basis × horizontal basis): per via quadrature node it enumerated the horizontal cell's nodes
+  through an iterator, so every one of ~1,500 outer nodes on a near or intermediate pair allocated an
+  enumerator — 236 MB of them per fill on the N = 514 fixture, and ~30 s of its 58 s vector phase.
+  The nodes are now enumerated inline (same nodes, same weights, same nesting order; bit-identical).
+  The block is O(N·N_z), but a via cell is large enough that most horizontal cells count as near or
+  intermediate to it and take the full graded rule, so on a fixture with two vertical unknowns it
+  cost as much as the whole horizontal block.
+- **The scaling shape is the same before and after, on every fixture, and it is the single-level
+  fill's shape** — 95–99% at 2, 89–95% at 4, 52–60% at 10.
+
+### Table 3 — the SINGLE-level fill's scaling on the 256 mm line, before and after milestone 4
+
+`Fill` at N = 3,731 (FR-4, 6 GHz, HISTORY §12's top rung) — the fixture where `CLAUDE.md` §6's
+98 / 81 / 74 / 53% was recorded:
+
+| | cap 1 | cap 2 | cap 4 | cap 10 |
+|---|---|---|---|---|
+| before (upper triangle written, row-strided) | 70.90 s | 36.51 s · 1.94× · 97% | 18.78 s · 3.77× · 94% | 12.09 s · 5.86× · 59% |
+| after (lower triangle written, contiguous; column-wise mirror) | 71.32 s | 36.53 s · 1.95× · 98% | 18.82 s · 3.79× · 95% | 11.10 s · 6.43× · 64% |
+
+**The fall-off did not move.** The serial time is identical (71 s, so a strided write is nowhere in
+the cost), and the cap-10 figure's 59 → 64% is one run each on a machine whose efficiency cores get
+scheduled differently run to run — not a result. **This retires the "memory bandwidth" half of
+§6's sentence.** The arithmetic: 25 M cache-missing writes at ~100 ns is ~2.5 s of a 71 s serial
+fill spread over ten threads — even if every one of them stalled, it could not produce a 40% loss.
+
+**What DOES produce it is written on the box.** An M4 has 4 performance and 6 efficiency cores.
+Efficiency is 89–95% at cap 4 (four performance cores) on every fixture, before and after; the drop
+appears only when the cap admits efficiency cores. If an efficiency core runs this fill at a
+fraction f of a performance core's rate, the ideal speedup at cap 10 is 4 + 6f, and every cap-10
+measurement here (5.2–6.4×) solves to **f ≈ 0.2–0.4** — which is what an efficiency core is. That
+is also why §6's Amdahl fit gave three different serial fractions: there is no serial fraction; the
+"lost" cores are slow ones. §6's "hardware, not scheduling" stands; the "memory bandwidth" candidate
+is struck. On a box with homogeneous cores this fill should scale near-linearly, which is what §6
+already listed as the thing that would change M3's answer.
+
+### Table 4 — allocation per fill, serial (`GC.GetAllocatedBytesForCurrentThread`, exact)
+
+| fixture | N | before | after | beyond the two matrices, after |
+|---|---|---|---|---|
+| two-level MMIC line + via, 400 µm | 514 | 269.9 MB (1,540 B/pair) | 32.6 MB | 27.1 MB — 12.6 MB of radial tables (built per fill, 9 pairings), 14.4 MB from the THREE ẑẑ entries' prism integrals |
+| two-level MMIC line, no via, 100 µm | 288 | 13.1 MB (207 B/pair) | 3.2 MB | 1.45 MB — the six radial tables |
+
+Attributed per arm on the N = 514 fixture with a temporary per-arm counter: after P3 the horizontal
+arm allocates **0 bytes** and the mixed arm **0 bytes** across the whole fill. What remains beyond the
+matrices is the per-pairing radial tables (which `Fill` also builds per call) and
+`ViaZIntegral.PrismCore`'s own node arrays — **~4.8 MB per ẑẑ entry**, O(N_z²) entries, the via
+z-integral's quadrature and out of P3's scope. It is the reason the routine allocation gate
+(`P3_4`) runs on the no-via fixture: its allowance is computed from the settings — one
+`MaxTableSamples`-capped table per (kernel, level, level) plus O(N) — and the pre-P3 tree fails it by
+2.7× (11.35 MB against 4.22 MB allowed) while the P3 tree sits at 1.45 MB.
+
+### Bit-identity — six digests, all literals
+
+SHA-256 over every entry of the assembled `Z`, printed by `PlanarP3MultiLevelFillTests` in the
+pre-P3 worktree and re-printed by the same test on the P3 tree:
+
+```
+two-level MMIC line + via, 100 µm (N = 324)      8E97C4ADC350AA1E33208FC054FBE3D9CFBBDA40C9B40E64193D8BFCDDDAABDE   routine
+two-level MMIC line, no via, 100 µm (N = 288)    BA5557F07B4E64CB2581D6C8F0500C75D72A813F4D2EE2CDDF348C44A6CEFD3A   routine
+two-level MMIC line + via, 400 µm (N = 514)      BEEBDDBEAEC69CA62EAEEA54D39F5FA1E8BE9842370286E041D51F72D906DC0E   Benchmark
+two-level MMIC line, no via, 400 µm (N = 424)    F9F755E1D114703BE4DFD6C63D7731F5E71A2989B39FB80C7F5CEDCF1F34A3A0   Benchmark
+FR-4 hero on two levels, 3 vias (N = 1,175)      4A1D16DDE421E310655A73237BA46929670D1CED86979148FBA7D503692A8210   Benchmark
+two-level MMIC line + via, Order = Linear         A7B5D8C8415ECE92AE4CD4F5E7FCF07B811E0FED6685D885DDCE985A4CB2B832   Benchmark
+FR-4 hero, single-level Fill (N = 552, P2_1's)   04F078DD4765A83EC4D068F20691BCD2A7CCF86943FCC680D40E620090B84D99   routine
+```
+
+Identical in every case, at caps 1, 2 and unbounded (`P3_3`). The single-level digest is the one P2
+pinned, re-asserted after milestone 4 swapped the written triangle. `PlanarKernelSet.FitCount` is
+unchanged on every fixture (13 / 6 / 13 / 13), which is the other thing the hoist had to preserve:
+exactly the pairings the loops visit are resolved, and no others.
+
+### What was changed in code
+
+- `src/Engine/Mom/PlanarFill.cs` — `MultiLevelPairings` (private): resolves, serially and before
+  `ForRows`, the scalar and vector terms + remainder per (layer, layer), the ẑẑ z-averaged terms +
+  remainder + asymptote per ordered span pair, the mixed derivative per (span, horizontal layer),
+  `RampHalves` per horizontal basis and `Pulse` per cell. `FillMultiLevel`'s three row loops read
+  those tables and nothing else; the four dictionaries, their locks and `RemFor`/`ZzTermsFor`/
+  `MixedDerivativeFor` are gone. `HorizontalVectorEntry` takes cached halves and adds its four
+  remainders sequentially (the array is gone; the association is the one the digests were taken on).
+  `MixedEntry` → `MixedHalf` enumerates a whole-rectangle half's nodes inline; a cut half still uses
+  `OuterNodes`. `SingularPrismPart` takes the pair's asymptote rather than asking the set per entry.
+  Milestone 4: `ScalarPotentialMatrix`, `Fill`, `AddDirectionBlock` and both multi-level loops write
+  the LOWER triangle (contiguous in NumFlat's column-major `Mat<T>`) and `MirrorLowerToUpper` copies
+  it column-wise; R-fil-2 and R-fil-11 are intact.
+- `tests/Engine.Tests/Mom/PlanarP3MultiLevelFillTests.cs` — new. Routine: `P3_1` (two digests),
+  `P3_2` (the hero's single-level digest + exact symmetry), `P3_3` (bit-identity at every cap),
+  `P3_4` (the allocation allowance). Benchmark: `P3_1b` (four larger digests, ~80 s), `P3_5` and
+  `P3_6` (the scaling tables above).
+
+### What P3 deliberately did NOT do
+
+- **No quadrature rule, table spacing or kernel evaluation changed**, and no second `Parallel.For`
+  shape was added — `ForRows` is still the one loop, as the brief's Must-Not list requires.
+- **`ViaZIntegral.PrismCore`'s per-entry allocation** (~4.8 MB per ẑẑ entry) was left alone: it is the
+  via z-integral's own rule, O(N_z²), and outside the O(N²) loops this brief is about.
+- **The mixed block's COST** — a full graded 4-D quadrature at near/mid order for most horizontal
+  cells, because the via cell is large — is a quadrature-selection question and therefore out of
+  scope by instruction. It remains the dominant cost of a via-bearing fill at small N (half the
+  vector phase on N = 514) and is worth its own brief.
+- **The `CrossFrequencyParallelismTests` numbers in §6 were not re-run** — Table 3 is the same
+  measurement on the same fixture family and supersedes their INTERPRETATION, not their values.
+
+
+---
+
+## P4 — per-cell-pair moment caching in the vector block (brief-em-p4-vector-block-moment-cache.md, 2026-08-29)
+
+**The quadrature count fell 6–7× and the wall clock 3–4×; the cached cores did not grow by a byte.**
+Every measurement below is one run alone on the machine (10-core M4, 4 performance + 6 efficiency
+cores), the second of two so the kernel fit and the radial tables are warm, at the shipping mesh
+unless stated. "Before" is the P3 tree; "after" is this one. The pass counts are exact
+(`PlanarFillCores.QuadraturePasses`, `PlanarFillCounters.RemainderPasses`), and are what the
+routine gate asserts; the seconds are what a user waits for.
+
+### Table 1 — the once-per-mesh core build
+
+| fixture | N | cells m | passes before | passes after | ratio | before | after | speed-up |
+|---|---|---|---|---|---|---|---|---|
+| FR-4 hero, 20 mm, 10 GHz | 552 | 297 | 3.975 m² | **0.601 m²** | 6.6× | 2.81 s | **0.78 s** | **3.6×** |
+| 60 mm 2.9 → 0.5 mm taper, 10 GHz | 1,891 | 1,000 | 4.085 m² | **0.563 m²** | 7.3× | 14.76 s | **3.70 s** | **4.0×** |
+| 256 mm FR-4 line, 6 GHz (§12's top rung) | 3,731 | 1,980 | 4.064 m² | **0.599 m²** | 6.8× | 26.57 s | **6.75 s** | **3.9×** |
+| 16 mm 1.0 → 6.71 mm taper, CONFORMAL, 6 GHz | 1,538 | 871 | 3.629 m² | 1.129 m² | 3.2× | 9.82 s | 4.81 s | 2.0× |
+
+"Passes" is outer quadratures: before P4, one per unordered cell pair for the scalar block
+(0.5 m²) plus four per same-direction basis pair for the vector block (≈ 3.5 m², two directions of
+≈ m bases each); after, one per ORDERED cell pair in the band `c ≥ a − n_x` serving the scalar block
+and both directions at once, plus four per basis pair that touches a cut half. The conformal
+fixture is the last row's whole story: 1,538 unknowns of which a third sit on cut cells, and every
+pair touching one takes the four-call path unchanged (milestone 5), so its count sits between.
+
+**Why 6.6× in passes is 3.6× in seconds.** A seven-primitive pass evaluates six inner closed forms
+per node (`Inverse`, `Log`, and the U and V first moments of each) where a ramp×ramp call evaluated
+four; and the closed forms are the cost. The pass is therefore ~1.5× a call, and 6.6 / 1.5 ≈ 4.4
+is the ceiling the seconds approach on the two long lines.
+
+### Table 2 — the per-frequency fill (`PlanarFill.Fill`, one point)
+
+| fixture | N | remainder passes before | after | ratio | fill before | fill after | speed-up |
+|---|---|---|---|---|---|---|---|
+| FR-4 hero | 552 | 3.473 m² | **0.601 m²** | 5.8× | 1.52 s | **0.51 s** | **3.0×** |
+| 60 mm taper | 1,891 | 3.585 m² | **0.563 m²** | 6.4× | 6.93 s | **2.48 s** | **2.8×** |
+| 256 mm line | 3,731 | 3.564 m² | **0.599 m²** | 5.9× | 11.08 s | **4.12 s** | **2.7×** |
+| 16 mm conformal taper | 1,538 | 3.129 m² | 0.987 m² | 3.2× | 5.11 s | 3.20 s | 1.6× |
+
+"Remainder passes" counts the VECTOR block's outer×inner quadratures of `rem(ρ)` — the scalar
+block's own remainder (0.5 m² of the OTHER kernel, `G_q`) is unchanged by P4 and is why the fill's
+factor sits below the vector count's: at N = 3,731 the vector remainder went from ~9.5 s to ~1.6 s
+and the scalar block, the radial tables and the row passes are the ~2.5 s that remain. A
+seven-sum pass costs about one call (the `rem` evaluation dominates; the three inner complex sums
+are cheap beside it), which is why the fill's speed-up tracks the count more closely than the core
+build's does.
+
+**Where a dense frequency point's time now goes.** At N = 3,731 the fill is 4.1 s against an LU of
+≈ 18 s (scaled by N³ from P1's 42.8 s at N = 4,933; the LU was not re-measured here). The
+per-frequency crossover `CLAUDE.md` §8 put at "about N = 3,000" is nearer **N = 2,000** — the 60 mm
+taper's 2.5 s fill against a scaled ≈ 2.4 s LU — and the sentence has been corrected in place.
+
+### Table 3 — AIM's near field (`PlanarEntryFill`, milestone 4)
+
+| fixture | N | near fill before | after | speed-up |
+|---|---|---|---|---|
+| 256 mm FR-4 line, 6 GHz | 3,731 | 23.68 s | **9.34 s** | **2.5×** |
+
+`PlanarEntryFill.At` used to run four `PairCores` and four `PairRemainder` per same-direction pair
+with no reuse across the ~400 pairs of a near-field row; it now memoises the seven primitives (cores
+and remainder together) per ORDERED cell pair and assembles with the dense build's own `Combine`.
+The factor is smaller than the dense fill's because a near-field row visits each cell pair from
+fewer neighbouring rooftops than a full triangle does, and because the scalar `P` memo it always
+had is unchanged. `AimAcceleratorTests.T1`'s bit-identity against `Fill` holds, and the routine
+`P4_3` holds the same assertion at N = 24.
+
+### Table 4 — the assembled matrix against the four-call reference
+
+The pre-P4 arithmetic is kept as `PlanarFill.BuildCoresByHalves` / `FillByHalves` (a reference,
+not a production path), so the agreement is a runnable gate rather than a digest printed once.
+Compared entry by entry, `|Δ|/|reference|`, over the whole matrix:
+
+| fixture | N | max relative difference | entries touching a cut basis | S0 / SLog |
+|---|---|---|---|---|
+| FR-4 hero, shipping | 552 | **1.03e-13** | none | bit-identical |
+| 60 mm taper, shipping | 1,891 | **7.98e-13** | none | bit-identical |
+| 16 mm conformal taper | 1,538 | **6.57e-13** | bit-identical, every one | bit-identical |
+
+Also checked against a binary dump of the P3 tree's own `Fill` on the same three meshes (the
+same three numbers to the digit) and: zero cross-direction entries moved — the scalar block is
+untouched — and the largest difference relative to the matrix's largest entry is 1e-16.
+
+### Memory — what the primitives cost, and why they are not stored
+
+The brief's storage arithmetic ("7 × 2 doubles per cell pair against today's 2 + 3 + 3 — roughly
+the same bytes") does not hold: the vector cores are per BASIS pair and there are ≈ 2 basis pairs
+per unordered cell pair, so holding the primitives would be 14 doubles per cell pair against the
+≈ 6 the P2 layout holds — **2.3× the cached cores, ≈ +250 MB at the ceiling**, in a series whose
+P1 and P2 exist to take memory off. So the primitives are transient: each outer cell's pass
+scatters them straight into P2's per-basis-pair triangles, the B-half contributions through a second
+triangle of the same size (98 MB at N = 4,933, alive only during the build) that the row pass adds
+in and drops. Resident cores are byte-for-byte the P2 layout — `P1_5`'s `CoreBytes` reconstruction
+and `P2_2`'s triangle count pass unchanged. The per-frequency fill likewise scatters its seven
+remainder sums into four transient `Complex` triangles (≈ 195 MB at N = 4,933) that die with the
+fill; P1's Table 2 puts the fill phase's high-water mark well under the factorisation's (which
+retains 2 × 16·N² = 778 MB there), so the point's resident peak is unmoved.
+
+### Bit-identity — what moved, what did not, and the re-pinned digests
+
+Four combinations of seven primitives are not the same floating-point operations as four
+quadratures summed, so the vector block's last bits move (the brief said so; Table 4 bounds it).
+What does NOT move: `S0`/`SLog` (the pulse×pulse primitive is accumulated with the pulse path's
+own expressions — asserted exactly), every entry touching a cut basis (never left the four-call
+path — asserted exactly), and `PlanarEntryFill.At` against `Fill` (both assemble with the same
+function in the same order — asserted exactly). Digest literals from P2 and P3 therefore had to be
+re-printed on this tree, and were, with a note at each: `P2_1`/`P3_2`'s hero
+`04F078DD…B84D99` → `C30C787B…F90263`; `P2_6`'s sweep `8DC00C54…96DD97` → `4634B313…9839CD`;
+`P3_1`'s `8E97C4AD…AABDE` → `C2A6E966…7EC7B4` and `BA5557F0…CEFD3A` → `2D4D1583…B1CC02`; the four
+`P3_1b` benchmark digests likewise (values in the test). The 1e-12 gate is the bridge between the
+old literals and the new.
+
+### Tiering, on the owner's instruction (2026-08-29)
+
+`P3_1` (9 s), `P3_3` (48 s) and `P3_4` (24 s) measured under full-suite load and were moved to
+`Category=Benchmark` — the latter two were that slow before P4 (the via fixture's mixed block); P4's
+own routine gates run 0.6–3.6 s (the four-call reference is the slow half of each), and its series
+timings are `P4_4`, Benchmark.
+
+### What was changed in code
+
+- `src/Engine/Mom/PlanarFill.cs` — the P4 header (derivation, (P4.1)/(P4.2), the orientation and
+  one-writer arguments). `RampTopology` (internal, O(N), on both core builders): per-basis halves and
+  cut flags, per-direction CSR of (basis position, half) per cell, `MinInner` (the band's lower
+  edge) and `HasWholeRamp`. `CellPairCores` / `CellPairRemainder`: the seven-primitive passes,
+  L8c's own rules and node order. `Combine` (double and `Complex`): the (P4.2) map. `Scatter`:
+  one ordered pair into every basis pair it serves, A half to the entry / B half to the transient.
+  `BuildCores`: one cell-parallel pass (scalar + both directions) then `FinishDirectionCores` per
+  direction (B triangle added; cut pairs by four calls). `Fill`: `ScalarBlock` (so `P` dies early)
+  then `VectorBlock` (one remainder pass per ordered pair, both directions) and `AddDirectionBlock`
+  reading the slots (cut pairs by four calls). `BuildCoresByHalves` / `FillByHalves`: the pre-P4
+  arithmetic, kept as the reference. `PlanarFillCores.QuadraturePasses`, `.IsCutBasis`;
+  `PlanarFillSettings.Counters` / `PlanarFillCounters.RemainderPasses`. `PlanarEntryFill`: `_vCache`
+  of ordered-pair primitives, `VectorPairCount`, `At` assembling in the dense order; the four-call
+  path retained for cut pairs.
+- `tests/Engine.Tests/Mom/PlanarP4MomentCacheTests.cs` — new. Routine: `P4_1` (hero coarse: 1e-12,
+  S0 bit-identity, the pass-count ratios under 30%), `P4_1b` (Order = Linear reaches the radius
+  primitives), `P4_2` (a cut mesh: cut pairs bit-identical, whole pairs 1e-12), `P4_3` (per-entry
+  fill bit-identical to the dense one, cache smaller than the four-call count). Benchmark: `P4_4`
+  (the three series fixtures with timings).
+- `PlanarP2MemoryWinsTests`, `PlanarP3MultiLevelFillTests` — digests re-pinned with notes; three
+  P3 tests re-tiered.
+- `docs/design/mom-engine.md` §10.7 — `> Built at P4`; `CLAUDE.md` §8's "cost is the fill" bullet
+  corrected in place.
+
+### What P4 deliberately did NOT do
+
+- **No quadrature rule, panel clustering or closed form changed**; the ẑ blocks were not touched
+  (they are pulse×pulse and share `S0`, which is bit-identical).
+- **The multi-level fill's horizontal remainder** (`HorizontalVectorEntry`) still runs four
+  `PairRemainder` per pair per frequency. It reads P4's cores (so its core build got the full
+  factor) but its per-(layer, layer) remainder tables would need the cell pass to pick a `rem` per
+  pair; the brief names `AddDirectionBlock` and `PlanarEntryFill` only, and this is recorded for the
+  follow-up rather than widened into.
+- **AIM's per-frequency rebuild of the primitives** — `_vCache` lives one frequency, like the
+  operator that owns it. P6 is the frequency-independent AIM state.
+- **The 256 mm line's LU was not re-timed**; the crossover statement above is scaled from P1's
+  measured 42.8 s at N = 4,933 and says so.
+
+## P5 — translation classes: one integral per class of cell pairs (brief-em-p5-translation-class-memo.md, 2026-08-29)
+
+**The brief's class table reproduced to the pair; the core build fell 3.7–41× and the per-frequency
+fill 2.8–5.8× beyond P4; the cores shrank up to 5× where reuse is high and grew slightly where it is
+not.** Every measurement below is one run alone on the machine (10-core M4), the P4 arithmetic
+(`BuildCoresByPairs`/`FillByPairs`, retained as the reference) and the P5 arithmetic timed in the
+same test (`PlanarP5TranslationClassTests.P5_6`), fills the second of two so the tables are warm.
+Counts are exact and are what the routine gate asserts.
+
+### Table 1 — the classes, counted two ways
+
+The brief's count (unordered pairs, canonical orientation, quantisation 1e-6 · smallest edge) is
+reproduced exactly on all seven fixtures — including the coupled pair, which the brief did not
+specify beyond its name and which a gap of one line width reproduces to the cell (1,098 / 2,056 /
+106,608). The classifier's count is over P4's ORDERED band (≈ 20% more pairs than the unordered
+triangle), with the 180° rotation folded and the τ band in the key (see PlanarPairClasses.cs).
+
+| structure | N | cells | brief: pairs / classes | reuse | classifier: band pairs / classes | reuse |
+|---|---|---|---|---|---|---|
+| FR-4 hero 2.9 × 20 mm, 10 GHz | 552 | 297 | 44,253 / 18,036 | 2.5× | 52,997 / 21,056 | 2.5× |
+| FR-4 line 80 mm, 10 GHz | 1,980 | 1,053 | 554,931 / 70,494 | 7.9× | 664,559 / 82,264 | 8.1× |
+| FR-4 line 256 mm, 6 GHz | 3,731 | 1,980 | 1,961,190 / 118,188 | 16.6× | 2,348,609 / 137,688 | 17.1× |
+| FR-4 taper 2.9 → 0.5 mm, 20 mm | 1,371 | 728 | 265,356 / 10,430 | 25.4× | 298,576 / 11,298 | 26.4× |
+| FR-4 taper 60 mm | 1,891 | 1,000 | 500,500 / 16,888 | 29.6× | 563,266 / 18,252 | 30.9× |
+| GaAs line 72 µm × 2 mm, 20 GHz | 773 | 414 | 85,905 / 40,656 | 2.1× | 102,878 / 47,632 | 2.2× |
+| two coupled 40 mm lines | 2,056 | 1,098 | 603,351 / 106,608 | 5.7× | 663,007 / 115,287 | 5.8× |
+
+**Spacing classes, and why they are quantised.** Exact `==` on the gridline differences does not
+hold on any of the seven: the hero's x axis has 15 exactly-distinct spacings for 6 classes at 1e-12
+relative (the 80 mm line 20 for 7, the 60 mm taper 18 for 6), and the in-class spread reaches
+4.0e-13 (GaAs x) and 3.7e-13 (60 mm taper x). The mesher writes a bulk line as `a + len·i/n` and the
+graded runs through the marcher's rescale, so the classifier quantises at 1e-12 relative and
+represents a class by its smallest member. The y axes of every FR-4 line have 6 classes in 9 cells
+(three graded cells each side of a bulk of three); the tapers' y axis is ONE class of 5 (19 cells at
+one pitch, since the taper's flanks are oblique and contribute no gridline).
+
+### Table 2 — the once-per-mesh core build
+
+| structure | passes P4 → P5 | P4 | P5 | speed-up | cores P4 → P5 |
+|---|---|---|---|---|---|
+| FR-4 hero | 52,997 → 21,056 | 0.91 s | **0.24 s** | 3.8× | 1.9 → 2.6 MB |
+| FR-4 line 80 mm | 664,559 → 82,264 | 3.50 s | **0.32 s** | 10.8× | 23.6 → 12.1 MB |
+| FR-4 line 256 mm | 2,348,609 → 137,688 | 7.51 s | **0.46 s** | **16.2×** | 83.5 → **25.0 MB** |
+| taper 20 mm | 298,576 → 11,298 | 2.15 s | **0.05 s** | 39.4× | 11.3 → 2.5 MB |
+| taper 60 mm | 563,266 → 18,252 | 3.72 s | **0.09 s** | **40.8×** | 21.4 → **4.3 MB** |
+| GaAs line 2 mm | 102,878 → 47,632 | 3.26 s | 0.88 s | 3.7× | 3.6 → 5.9 MB |
+| coupled 40 mm lines | 663,007 → 115,287 | 3.35 s | **0.43 s** | 7.8× | 25.4 → 15.8 MB |
+
+"Passes" is seven-primitive outer quadratures: P4 ran one per ordered band pair, P5 runs one per
+class — the counts are the reuse factors of Table 1. The seconds lag the counts on the short
+structures (hero 2.5× in count, 3.8× in seconds only because P4's own pass count includes the band's
+extra 20%) and lead them nowhere: classification of the band (a key per pair, a sort of the distinct
+keys, a binary search per pair) is 0.1–0.2 s at N = 3,731 and is most of the P5 build there.
+
+**Memory.** The class layout holds 4 bytes per ordered band pair plus 112 bytes per class (seven
+primitives × two kernels), where P4's triangles held ≈ 24 m² bytes; the two meet at a reuse of ≈ 3×.
+The long line and the tapers are 3.3–5× smaller; the hero (2.5×) and the GaAs line (2.2×) are
+1.4–1.6× LARGER, both under 6 MB. A mesh with no translation reuse at all would hold up to 2.9× P4's
+bytes — the brief's premise that reuse grows with the structures that get big is what the layout
+rests on, and it is stated as a break-even rather than as a win. The a-priori figure the ceiling
+refusals quote (`PlanarSystem.CoreBytes`) is P4's formula, kept as a conservative quote.
+
+### Table 3 — the per-frequency fill (`PlanarFill.Fill`, one point)
+
+| structure | N | vector remainder passes P4 → P5 | P4 | P5 | speed-up |
+|---|---|---|---|---|---|
+| FR-4 hero | 552 | 52,997 → 21,056 | 0.59 s | **0.21 s** | 2.8× |
+| FR-4 line 80 mm | 1,980 | 664,559 → 82,264 | 1.95 s | **0.64 s** | 3.1× |
+| FR-4 line 256 mm | 3,731 | 2,348,609 → 137,688 | 4.66 s | **1.25 s** | 3.7× |
+| taper 20 mm | 1,371 | 298,576 → 11,298 | 1.43 s | **0.29 s** | 4.9× |
+| taper 60 mm | 1,891 | 563,266 → 18,252 | 2.36 s | **0.41 s** | **5.8×** |
+| GaAs line 2 mm | 773 | 102,878 → 47,632 | 2.03 s | 0.72 s | 2.8× |
+| coupled 40 mm lines | 2,056 | 663,007 → 115,287 | 2.14 s | **0.56 s** | 3.9× |
+
+The remainder is now evaluated once per class — the vector block's seven sums and the scalar
+block's pulse sum, the latter a saving P4 never had — and every entry is assembled from its cell
+pairs' class values by one function (`WholeVectorEntry`, shared with `PlanarEntryFill.At`). The
+transient per-basis-pair `Complex` triangles P4 scattered into (≈ 195 MB at N = 4,933) are gone; the
+per-class remainder tables are 112 bytes per class. What remains of the fill at N = 3,731 is the
+O(N²) assembly itself (the scalar block's m×m `P`, the basis-pair loops, the mirror) and the two
+radial tables — the fill's floor without a change of formulation.
+
+**Where a dense point's time goes now.** At N = 3,731 the fill is 1.25 s against an LU of ≈ 18 s
+(scaled by N³ from P1's 42.8 s at N = 4,933, not re-timed); at N = 1,891 it is 0.41 s against ≈ 2.4 s.
+The per-point crossover P4 put at "roughly N = 2,000" is now nearer **N = 1,000**, and the sweep-level
+statement "cost is the fill, not the LU" no longer holds anywhere the core build is amortised over
+more than a handful of points. P7 (the factorisation) is where the time is.
+
+### Table 4 — AIM's near field (`PlanarEntryFill`, milestone 5)
+
+| structure | N | near fill P4 | P5 | speed-up | memo entries P4 → P5 |
+|---|---|---|---|---|---|
+| FR-4 line 256 mm, 6 GHz | 3,731 | 8.34 s | **1.22 s** | **6.8×** | 219,879 cell pairs → 7,434 scalar classes |
+
+P4's figure was measured on the P4 tree on the same box the same morning (`PlanarAimReport.NearFillMs`).
+The per-entry fill classifies each near pair on demand and integrates a class once, on the same
+synthetic representative the dense build uses, so `At` stays bit-identical to `Fill`
+(`AimAcceleratorTests.T1`, `P4_3`); the 1,461,553 near entries of this operator draw on 7,434 classes.
+
+### Table 5 — the assembled matrix against P4's arithmetic
+
+Compared entry by entry against `BuildCoresByPairs`/`FillByPairs` in the tree (and, before the code
+changed, against binary dumps of the P4 tree's own `Fill` on the same seven meshes — the same
+numbers).
+
+| structure | max |Δ| / √(|Z_ii||Z_jj|) | max |Δ| / |Z_max| | relative, entries ≥ 1e-6·|Z_max| | relative, all entries |
+|---|---|---|---|---|
+| FR-4 hero | 6.1e-14 | 3.1e-14 | 2.1e-8 | 1.0e-6 |
+| FR-4 line 80 mm | 2.2e-13 | 1.1e-13 | 6.7e-8 | 3.5e-5 |
+| FR-4 line 256 mm | **4.7e-13** | 1.8e-13 | 1.2e-8 | 2.0e-3 |
+| taper 20 mm | 8.5e-14 | 3.8e-14 | 1.8e-8 | 1.3e-5 |
+| taper 60 mm | 2.6e-13 | 1.5e-13 | 3.0e-8 | 1.4e-4 |
+| GaAs line 2 mm | 3.0e-13 | 3.0e-13 | 7.2e-9 | **1.2e-1** |
+| coupled 40 mm lines | 4.6e-13 | 1.6e-13 | 1.2e-7 | 6.8e-6 |
+
+**The brief's "1e-12 relative per entry" is the last column, and it is not attainable — by the
+reference, not by P5.** The closed forms evaluated at absolute coordinates lose ~1e-16·(x/w) of their
+own value: on the P4 tree, before any P5 code, the self core of a 0.5 mm cell moved 2e-13 relative
+between x = 0 and x = 1 m, and the far core of two cells 0.25 m apart 5e-13. A class value is computed
+with the outer cell at the origin — the more stable of the two — and D4's signed second differences
+turn a fixed ~1e-13·|Z_ii| disagreement into O(1) relative on an aligned x̂/ŷ far pair whose true
+entry is cancellation residue (the GaAs worst entry is 1.2e-14 of the largest). The gate is the first
+column, per entry, at 1e-12 — the scale on which the LU reads the entry — and the solved currents of
+`Z x = e_k` on the coarse hero agree through the factorisation to ~1e-12 relative (`P5_2b`). The
+third column is the same disagreement seen on entries that are not residue.
+
+### The mesher finding the brief asked for (milestone 6)
+
+The GaAs line's x grid, printed: −x end 2.16, 6.47, 19.4, 58.3, 175 µm into a 208 µm bulk of 8 cells;
++x end **32 cells of 2.16 µm** — no graded fan at all, 69 µm of a 2 mm line at the edge-cell pitch.
+The hero's x axis is asymmetric in a milder form (86.6, 174.8, 352.7 → 711.6 µm left; 538.9, 173.2,
+86.6, 86.6 right), which is what §3.5's "end grading is not exactly mirror-symmetric" already records.
+So the GaAs line's 2.1× is not a short-line effect alone: its two ends are different meshes. Recorded
+for a mesher brief; the brief forbids changing the mesher here.
+
+### Bit-identity — what moved, and the re-pinned digests
+
+Every core and remainder is now the integral on its class's representative, so the last bits of
+every entry move, the scalar block included (P4 had left it untouched). What stays bit-identical:
+`PlanarEntryFill.At` against `Fill` (`T1`, `P4_3`), and the scalar core of every pair with a cut cell
+(its own row, the same conformal call in the same orientation). An entry that touches a cut BASIS is
+no longer bit-identical to P4's, because its scalar block sums whole-cell pairs; P4's own bit-identity
+claims are therefore held on P4's own retained arithmetic (`PlanarP4MomentCacheTests` runs on
+`BuildCoresByPairs`/`FillByPairs`). Re-pinned with a note at each literal: `P2_1`/`P3_2`'s hero
+`C30C787B…F90263` → `BF177C91…7EC34B`; `P2_6`'s sweep `4634B313…9839CD` → `713EFE3B…D4FE0B`; all six
+multi-level digests of `P3_1`/`P3_1b`/`P3_3`. `P1_5` and `P2_2` re-pin the cores' COMPOSITION
+(band + class table + row starts + moments + classifier tables) and treat `PlanarSystem.CoreBytes` as
+an a-priori figure rather than a reconstruction; `T1b` re-pins the geometry-only core as 8·N plus the
+classifier's grid-bounded tables.
+
+### What was changed in code
+
+- `src/Engine/Mom/PlanarPairClasses.cs` — new. `PairClassifier`: per axis, spacing classes at 1e-12
+  relative and hash-consed spacing LISTS (`ListId`, `Count × Count`, forward and backward reads sharing
+  ids); the 63-bit key (τ band, sign pattern, x list id, y list id); `Representative(key)` — the
+  synthetic pair; `CoreRule`/`RemainderNodes` from the band. `CutRows`: per-index rows for what no
+  class serves.
+- `src/Engine/Mom/PlanarFill.cs` — `PlanarCoreLayout` (Classes / Triangles). `PlanarFillCores`: the
+  band (`BandStart`, `BandClass` = `(class << 1) | rotated`), `ClassKey`, `ClassCores` (stride 7 ×
+  kernels), `CutScalar`/`CutX`/`CutY`, `Memoised`, accessors `ScalarCoreOf`/`VectorCoreOf`/`ClassMoments`,
+  `ClassCount`/`BandPairs`/`SpacingClasses`/`ExactlyDistinctSpacings`/`ClassifierBytes`; the
+  triangle arrays nullable, for the references. `BuildCores`: classify (parallel keys, sorted distinct
+  keys, ranks), one `CellPairCores` per class on its representative, cut rows. `Fill`: per-class
+  remainders (`ClassRemainders`, `ClassPulseRemainders`), `AddDirectionBlockFromClasses` pulling
+  through `IPairSource`/`BandSource`/`WholeVectorEntry`. `ScalarPotentialMatrix` layout-aware.
+  `CellPairCores`/`CellPairRemainder` overloads on two cells with an explicit rule;
+  `CellPairPulseRemainder`. `BuildCoresByPairs`/`FillByPairs`: P4's build and fill, verbatim, the
+  reference; `RequireLayout`. `FillMultiLevel`'s readers go through the accessors.
+  `PlanarEntryFill`: three class-keyed caches (`_cores`, `_remA7`, `_remQ1`) plus a per-pair one for
+  pairs with a cut cell; `ClassSource`; `At` shares `WholeVectorEntry`.
+- `PlanarSystem.CoreBytes` doc (a-priori figure); `PlanarAimReport.NearCellPairs` doc.
+- `tests/Engine.Tests/Mom/PlanarP5TranslationClassTests.cs` — new. Routine: `P5_1` (the brief's counts
+  and the classifier's, literals, hero + 60 mm taper), `P5_2` (coarse hero, the diagonal-scale gate,
+  one pass per class), `P5_2b` (solved currents), `P5_3` (Order = Linear), `P5_4` (a cut mesh: rows,
+  scalar cut cores bit-identical), `P5_5` (a uniform square grid — the τ = 4 family). Benchmark:
+  `P5_6` (all seven: counts, gate, timings), `P5_7` (AIM near fill, 256 mm).
+- `PlanarP4MomentCacheTests` re-pointed at `BuildCoresByPairs`/`FillByPairs`; digests re-pinned in
+  `PlanarP2MemoryWinsTests`, `PlanarP3MultiLevelFillTests`; `P1_5`, `P2_2`, `T1b` re-pinned.
+- `docs/design/mom-engine.md` §10.7 — `> Built at P5`.
+
+### What P5 deliberately did NOT do
+
+- **No hybrid layout** for low-reuse meshes (scatter the class table into P4's triangles when the
+  count is unfavourable): a second production layout in every reader, for a case none of the seven
+  fixtures approaches. Recorded with the break-even.
+- **The multi-level fill's horizontal remainder** still runs four `PairRemainder` per pair per
+  frequency (its cores come from the class table); the brief names `Fill` and `PlanarEntryFill`.
+- **The mesher's end asymmetry** is recorded, not fixed.
+- **The 256 mm line's LU was not re-timed.**

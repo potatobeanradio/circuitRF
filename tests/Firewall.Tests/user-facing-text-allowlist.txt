@@ -290,6 +290,7 @@ src/Engine/Mom/PlanarAdaptiveSweep.cs|one value per node
 src/Engine/Mom/PlanarAim.cs|Expected a vector of length {_n}, got {x.Length}.
 src/Engine/Mom/PlanarAim.cs|The AIM accelerator models the horizontal (x̂/ŷ) basis family only. A ẑ-directed 
 src/Engine/Mom/PlanarAim.cs|The accelerated solve did not converge: {iterations} iteration(s) reached a relative 
+src/Engine/Mom/PlanarAim.cs|The exact near-field entries were released after the preconditioner was factored from 
 src/Engine/Mom/PlanarAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarAim.cs|The stencil's Vandermonde matrix is singular, which can only happen if the grid 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no in-plane ramp: its current crosses the shared FOOTPRINT 
@@ -497,3 +498,4 @@ src/WBond/WireTableCsv.cs|Line {lineNumber}: the wire's two feet are at the same
 src/WBond/WireTableCsv.cs|Line {lineNumber}: the wirebond table header is missing required column(s) 
 src/WBond/WireTableCsv.cs|Line {lineNumber}: wire diameter must be positive, got {diameter} nm.
 src/WBond/WireTableCsv.cs|The wirebond table has no header row. Expected a line naming at least: 
+src/Engine/Mom/PlanarFill.cs|{caller} needs cores in the {layout} layout and these are {cores.Layout}. 

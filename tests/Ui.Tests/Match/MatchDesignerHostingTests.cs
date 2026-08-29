@@ -210,19 +210,36 @@ public sealed class MatchDesignerHostingTests(ITestOutputHelper output)
         editor.Dispose();
     }
 
-    /// <summary>Only <c>Design</c> is hidden from the generic rows; the six echoes stay readable.</summary>
+    /// <summary>
+    /// Every parameter the registry declares for a Match is hidden from the generic rows — the
+    /// <c>Design</c> blob AND the echoes (owner, 2026-08-28: the echoes are written by the Designer
+    /// and read back by nothing, so a row offering one is an edit box that changes a label, not the
+    /// circuit; see <c>ParameterEditorViewModel.IsMatchPanelParameter</c>). What keeps this a FILTER
+    /// rather than a blanket suppression is the other half: a parameter the registry does not
+    /// declare is not one of ours and still gets its row.
+    /// </summary>
     [Fact]
     public void OnlyTheDesignBlob_IsHiddenFromTheGenericRows()
     {
-        var (_, _, editor) = SelectAMatch(Golden());
+        var (_, comp, editor) = SelectAMatch(Golden());
         var names = editor.Rows.Select(r => r.Name).ToList();
         output.WriteLine(string.Join(", ", names));
 
         Assert.DoesNotContain("Design", names);
         foreach (string echo in new[] { "F1", "F2", "Order", "Response", "R1", "R2" })
-            Assert.Contains(echo, names);
-
+            Assert.DoesNotContain(echo, names);
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Match, 0))
+            Assert.True(ParameterEditorViewModel.IsMatchPanelParameter(dp.Name), dp.Name);
         editor.Dispose();
+
+        // …and a name of the user's own is not swallowed by the filter.
+        comp.Parameters.Add(new EditableParameter { Name = "Note", Expression = "1" });
+        var editor2 = new ParameterEditorViewModel();
+        editor2.SetTargetDirect(new SchematicViewModel(new SchematicEditModel { Components = { comp } }),
+                                comp, showClose: false);
+        Assert.Contains("Note", editor2.Rows.Select(r => r.Name));
+        Assert.False(ParameterEditorViewModel.IsMatchPanelParameter("Note"));
+        editor2.Dispose();
     }
 
     // ── The theme roles ───────────────────────────────────────────────────────

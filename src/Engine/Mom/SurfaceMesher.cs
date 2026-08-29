@@ -151,7 +151,7 @@ public static class SurfaceMesher
     /// <see cref="Mesh"/>'s own refusal would have used, minus the mesh-specific "why" clause, which
     /// this call site has no mesh geometry left to derive.
     /// </summary>
-    public static void GuardCeiling(int n, bool accelerated)
+    public static void GuardCeiling(int n, bool accelerated, int cellCount = 0)
     {
         int ceiling = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
         if (n <= ceiling) return;
@@ -159,10 +159,9 @@ public static class SurfaceMesher
             $"This mesh has {n:N0} unknowns, which is past the {ceiling:N0}-unknown " +
             (accelerated ? "ACCELERATED " : "") + "ceiling this kernel is built for" +
             (accelerated
-                ? $" (brief-em-aim-ceiling.md; the accelerator's own working set stays under 200 MB " +
+                ? " (brief-em-aim-ceiling.md; the accelerator's own working set stays under 200 MB " +
                   "even at this ceiling — it is not a memory limit either)."
-                : $" ({MatrixMegabytes(n):N0} MB of dense complex matrix, against " +
-                  $"{MatrixMegabytes(ceiling):N0} MB at the ceiling)."));
+                : $" ({PlanarSystem.ResidentPhrase(n, cellCount)})."));
     }
 
     /// <summary>
@@ -685,7 +684,7 @@ public static class SurfaceMesher
 
         string? refusal = null;
         if (verdict == PlanarBudgetVerdict.Refused)
-            refusal = BuildRefusal(n, s, narrowX, narrowY, hx, hy, hWave, x1 - x0, y1 - y0,
+            refusal = BuildRefusal(n, cells.Count, s, narrowX, narrowY, hx, hy, hWave, x1 - x0, y1 - y0,
                                    accelerated: accel,
                                    acceleratedWouldFit: !accel && n <= AcceleratedUnknownCeiling
                                                       && !problem.RequiresGeneralKernel,
@@ -697,8 +696,9 @@ public static class SurfaceMesher
                   "will solve much faster, and GMRES's own iteration count grows well before this " +
                   "ceiling on a mesh refined mainly by resolution rather than by extent."
                 : $"{n:N0} unknowns is within {1 - WarnFraction:P0} of the {ceiling:N0} " +
-                  $"ceiling ({MatrixMegabytes(n):N0} MB of dense complex matrix). It will solve, " +
-                  "but a coarser mesh will solve much faster.");
+                  $"ceiling ({PlanarSystem.ResidentBytes(n, cells.Count) / (1024.0 * 1024.0):N0} MB " +
+                  "resident at the peak of one frequency point: matrix + factors + cached cores). " +
+                  "It will solve, but a coarser mesh will solve much faster.");
 
         return new PlanarMeshReport(
             Mesh:                          mesh,
@@ -759,7 +759,7 @@ public static class SurfaceMesher
     /// own number instead of the dense path's.</para>
     /// </summary>
     private static string BuildRefusal(
-        int n, PlanarMeshSettings s,
+        int n, int cellCount, PlanarMeshSettings s,
         double narrowX, double narrowY, double hx, double hy, double hWave,
         double extentX, double extentY, bool accelerated, bool acceleratedWouldFit,
         PlanarLengthFormat fmt)
@@ -827,16 +827,15 @@ public static class SurfaceMesher
               ? // The remedy above already says what to do; this says WHY it works, in the same terms
                 // the dense-only sentence used, so a user comparing the two ceilings sees real numbers.
                 $"(The dense path's {UnknownCeiling:N0}-unknown ceiling is a fixed property of this " +
-                $"kernel, not of your machine — {n:N0} unknowns is {MatrixMegabytes(n):N0} MB of dense " +
-                $"complex matrix against {MatrixMegabytes(UnknownCeiling):N0} MB at the ceiling, and " +
+                $"kernel, not of your machine — {n:N0} unknowns is " +
+                $"{PlanarSystem.ResidentPhrase(n, cellCount)}, and " +
                 "the same geometry refuses identically everywhere. The accelerated solve's own ceiling " +
                 $"is higher — {AcceleratedUnknownCeiling:N0} unknowns, measured — because its working " +
                 "set is a near-field sparse correction plus a uniform auxiliary grid rather than the " +
                 "full N×N matrix, which is why turning it on is the first remedy above rather than a " +
                 "change to this mesh.)"
               : $"(The ceiling is a fixed property of this kernel, not of your machine — {n:N0} " +
-                $"unknowns is {MatrixMegabytes(n):N0} MB of dense complex matrix against " +
-                $"{MatrixMegabytes(UnknownCeiling):N0} MB at the ceiling, and the same geometry " +
+                $"unknowns is {PlanarSystem.ResidentPhrase(n, cellCount)}, and the same geometry " +
                 "refuses identically everywhere. Solving a mesh this size directly needs matrix " +
                 "compression, which is not built; the accelerated solve would not help either — this " +
                 $"mesh is past its {AcceleratedUnknownCeiling:N0}-unknown ceiling too.)";

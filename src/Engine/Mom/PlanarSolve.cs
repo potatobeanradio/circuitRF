@@ -100,9 +100,34 @@ public sealed class PlanarFrequencyKernel
 public sealed class PlanarSolveContext
 {
     public PlanarMesh                            Mesh  { get; }
-    public PlanarFillCores                       Cores { get; }
     public IReadOnlyList<PlanarPortResolution>   Ports { get; }
     public PlanarFillSettings                    Settings { get; }
+
+    private readonly Lazy<PlanarFillCores> _cores;
+
+    /// <summary>
+    /// D6's geometric core for this mesh — <b>P2/M4: built on first use, not in the constructor.</b>
+    ///
+    /// <para>A <see cref="PlanarPortCalibrator"/> owns one context per calibration standard of the
+    /// band, and <c>NeededAt</c> fills exactly TWO of them at any frequency: the short line and the
+    /// one long line the β prediction selects. Coring all of them up front built an O(m²) pair
+    /// triangle for every separation the sweep would never touch — the largest standards are several
+    /// times the DUT's own size, so on a wide band that was the single largest piece of memory in the
+    /// run held for nothing. The build itself is unchanged and so is its answer; only WHEN it happens
+    /// moved.</para>
+    ///
+    /// <para>The R17 ceiling is still checked in the constructor, eagerly: a refusal has to happen at
+    /// setup (R-dcl-1), which is a decision about N and needs no cores to make.</para>
+    /// </summary>
+    public PlanarFillCores Cores => _cores.Value;
+
+    /// <summary>Whether <see cref="Cores"/> has actually been built yet — M4's own counter, per
+    /// context, beside the per-mesh one on <see cref="PlanarCoreBuildCounter"/>.</summary>
+    public bool CoresBuilt => _cores.IsValueCreated;
+
+    /// <summary>How long this mesh's core build took, or 0 while it has not happened. Summed into a
+    /// run's reported <c>CoreBuildMs</c>, which before M4 was measured around the constructor.</summary>
+    public double CoreBuildMs { get; private set; }
 
     /// <summary>
     /// <b>L9d — the z of every conductor level this mesh's cells sit on</b>, needed only on the
@@ -131,11 +156,20 @@ public sealed class PlanarSolveContext
         // regardless of Settings.Aim (PlanarSolveContext.SolveAt), so asking for the wider ceiling
         // there would promise a run that cannot start.
         bool accelerated = Settings.Aim is not null && levels is null;
-        SurfaceMesher.GuardCeiling(mesh.Bases.Count, accelerated);
+        SurfaceMesher.GuardCeiling(mesh.Bases.Count, accelerated, mesh.Cells.Count);
 
-        Cores = Settings.Aim is null
-            ? PlanarFill.BuildCores(mesh, Settings)
-            : PlanarFill.BuildGeometryOnlyCores(mesh, Settings);
+        // P2/M4 — LazyThreadSafetyMode.ExecutionAndPublication (the default): a de-embedded run fans
+        // the standards out across workers, so two of them can reach the same context at once and the
+        // core must be built exactly once whichever wins.
+        _cores = new Lazy<PlanarFillCores>(() =>
+        {
+            var sw = Stopwatch.StartNew();
+            var built = Settings.Aim is null
+                ? PlanarFill.BuildCores(mesh, Settings)
+                : PlanarFill.BuildGeometryOnlyCores(mesh, Settings);
+            CoreBuildMs = sw.Elapsed.TotalMilliseconds;
+            return built;
+        });
     }
 
     /// <summary>Fill, factor, excite — the raw admittance at one frequency.</summary>
@@ -223,6 +257,22 @@ public sealed class PlanarPortCalibrator
 
     /// <summary>How many meshes this calibrator owns — R-prt-11's counter counts these.</summary>
     public int MeshCount => _standards.Length;
+
+    /// <summary><b>P2/M4 — how many of those meshes have actually had their cores built.</b> Every one
+    /// of them, before M4; since M4, only the ones some frequency selected, plus the shortest and the
+    /// longest, which D7's static differencing needs whether or not they were ever solved.</summary>
+    public int CoredMeshCount
+    {
+        get { int k = 0; foreach (var c in _standards) if (c.CoresBuilt) k++; return k; }
+    }
+
+    /// <summary>The core-build time of every standard that has been cored. Zero at construction — M4
+    /// moved the build out of the constructor, so a run's reported core time has to be summed after
+    /// the sweep rather than measured around the constructor call.</summary>
+    public double CoreBuildMs
+    {
+        get { double ms = 0; foreach (var c in _standards) ms += c.CoreBuildMs; return ms; }
+    }
 
     /// <summary>
     /// <b>L9d/D3 — the z of the level this port's standards live on</b>, or null on the one-level
@@ -318,9 +368,20 @@ public sealed class PlanarPortCalibrator
                                               _shortLength + _deltas[pick], g.Gamma, _prevA21);
         _prevA21 = box.A21;
 
+        // ── P2/M3 — the two standards' cores are already built; do not build them a second time ──
+        //
+        // StaticCapacitance's own O(m²) core build was a duplicate of one this calibrator's contexts
+        // already hold for the SAME mesh and the SAME fill settings. It is handed them instead.
+        //
+        // P2/M4's own note: the cores are lazy now, so this call is what BUILDS the longest
+        // standard's if no frequency in the band ever selected it. That is correct rather than a
+        // leak — the static differencing needs the two EXTREME lengths, not the one this frequency
+        // solved — but it does mean the longest standard is cored on every de-embedded run.
         if (double.IsNaN(_cPerMetre))
             _cPerMetre = PlanarDeembed.CapacitancePerMetre(Standards[0], Standards[^1], _slab,
-                                                           _standards[0].Settings);
+                                                           _standards[0].Settings,
+                                                           _standards[0].Cores,
+                                                           _standards[^1].Cores);
 
         return new PlanarPortCalibration(
             portNumber, g, box,
@@ -742,8 +803,8 @@ public static class PlanarSolve
 
         var sw    = Stopwatch.StartNew();
         var dut   = new PlanarSolveContext(mesh, ports, fillSt, levels);
-        double coreMs = sw.Elapsed.TotalMilliseconds;
-        int    cores  = 1;
+        double setupMs = sw.Elapsed.TotalMilliseconds;
+        int    cores   = 1;
 
         // ── R-prt-2/3: what the ports resolved to, and whether their feeds are clear ─────────────
         foreach (var p in ports)
@@ -863,7 +924,7 @@ public static class PlanarSolve
                     var cal = new PlanarPortCalibrator(
                         ports[i], slab, fLo, fHi, st.Calibration, fillSt,
                         standardLevelZ: general ? problem.LevelZ(ports[i].LayerIndex) : double.NaN);
-                    coreMs += sw.Elapsed.TotalMilliseconds;
+                    setupMs += sw.Elapsed.TotalMilliseconds;
                     cores  += cal.MeshCount;
                     standards += cal.MeshCount;
                     owners.Add(ports[i]);
@@ -1345,13 +1406,20 @@ public static class PlanarSolve
                       $"calibration is well conditioned over — first at {SurfaceMesher.Eng(flaggedBand[0])}Hz. " +
                       "Narrow the sweep, or accept that those points carry a larger de-embedding error.");
 
+        // ── P2/M4 — the cores are built lazily now, so the run's core time is SUMMED from the
+        //    contexts that actually built one rather than measured around their constructors. The
+        //    setup time those constructors do still cost (meshing the standards, resolving their
+        //    ports) is carried with it, so the reported number still covers the same work.
+        double coreBuildMs = setupMs + dut.CoreBuildMs;
+        foreach (var cal in calibrators) coreBuildMs += cal.CoreBuildMs;
+
         return new PlanarSolveResult
         {
             Points        = points,
             CoreFillCount = cores,
             UnknownCount  = mesh.Bases.Count,
             StandardCount = standards,
-            CoreBuildMs   = coreMs,
+            CoreBuildMs   = coreBuildMs,
             Notes         = notes,
             CapturedCurrents    = captured,
             CapturedFrequencyHz = capturedF,

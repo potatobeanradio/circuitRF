@@ -842,7 +842,12 @@ public sealed class MatchRound8Tests(ITestOutputHelper output)
         Assert.Contains("<mi:MaterialIcon", block, StringComparison.Ordinal);
 
         Assert.Contains("WireButton(\"ScrollToAppliedButton\"", code, StringComparison.Ordinal);
-        Assert.Contains("ScrollToApplied()", Between(code, "private void ScrollToAppliedOnce()"),
+        // One behaviour, not two: the button's arm and the once-only automatic arm are both
+        // one-line forwards into the shared ScrollToApplied(bool once, int attempt) — which is where
+        // the first-open retry lives (owner-reported, 2026-08-28) — differing only in the flag.
+        Assert.Contains("private void ScrollToAppliedOnce() => ScrollToApplied(once: true);", code,
+                        StringComparison.Ordinal);
+        Assert.Contains("private void ScrollToApplied() => ScrollToApplied(once: false);", code,
                         StringComparison.Ordinal);
 
         // …and the flag it is enabled by says what it claims.

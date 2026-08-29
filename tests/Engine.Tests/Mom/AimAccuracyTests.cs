@@ -155,12 +155,14 @@ public class AimAccuracyTests(ITestOutputHelper output)
         _out.WriteLine("");
         _out.WriteLine($"  grid {reference.Report.GridNodesX} × {reference.Report.GridNodesY} nodes at " +
                        $"a pitch of {reference.Report.GridPitchM * 1e3:F3} mm; " +
-                       $"dense matrix {PlanarSystem.MatrixBytes(n) / 1024.0 / 1024.0:F1} MB, " +
-                       $"accelerator ≈ {reference.Report.ApproximateBytes / 1024.0 / 1024.0:F1} MB");
+                       $"dense point {PlanarSystem.ResidentBytes(n, b.Mesh.Cells.Count) / 1048576.0:F1} MB " +
+                       $"resident (of which matrix {PlanarSystem.MatrixBytes(n) / 1048576.0:F1} MB), " +
+                       $"accelerator {reference.Report.ResidentBytes / 1048576.0:F1} MB");
         var r = reference.Report;
         _out.WriteLine($"  build breakdown at the default: projection {r.ProjectionMs:F0} ms, grid kernel " +
                        $"{r.GridKernelMs:F0} ms, near fill {r.NearFillMs:F0} ms, preconditioner " +
-                       $"{r.PreconditionerMs:F0} ms ({r.PreconditionerNonZeros:N0} nnz) — plus " +
+                       $"{r.PreconditionerMs:F0} ms ({r.PreconditionerNonZeros:N0} near nnz -> " +
+                       $"{r.FactorNonZeros:N0} in L+U) — plus " +
                        $"{r.RemainderTableMs:F0} ms of radial remainder table, WHICH THE DENSE PATH " +
                        "BUILDS TOO and is therefore excluded from every comparison below.");
 
@@ -295,7 +297,7 @@ public class AimAccuracyTests(ITestOutputHelper output)
                            $"{aim.Report.NearFillFraction * 100,5:F1}%  {buildS,7:F2}  " +
                            $"{aim.LastIterations,6}  {aim.LastResidual,8:E1}  " +
                            $"{swS.Elapsed.TotalSeconds,7:F2}  {swD.Elapsed.TotalSeconds,7:F2}   " +
-                           $"{Math.Sqrt(num / den),10:E2}  {aim.Report.ApproximateBytes / 1048576.0,6:F1}  " +
+                           $"{Math.Sqrt(num / den),10:E2}  {aim.Report.ResidentBytes / 1048576.0,6:F1}  " +
                            $"{PlanarSystem.MatrixBytes(n) / 1048576.0,8:F1}");
             _ = swB;
         }

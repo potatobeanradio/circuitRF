@@ -621,6 +621,31 @@ forever.
 | 5,000 | 400 MB | The practical ceiling for "lightweight". |
 | 10,000 | 1.6 GB | Out of scope without ACA/MLFMM compression. |
 
+> **Built at P1 (`brief-em-p1-honest-memory-accounting.md`, 2026-08-29) — the column above is the
+> MATRIX, and the matrix is under a third of a frequency point.** The resident peak of one dense
+> point is the matrix PLUS both LU factors (`NumFlat` holds `L` and `U` as two separate full
+> matrices, not a packed in-place factorisation) PLUS the cached frequency-independent cores. The
+> ratio is **3.5×**, flat, because every term is O(N²) with a fixed coefficient — measured at
+> N = 552, 1,980 and 4,836 and recorded in `src/Engine/Mom/HISTORY.md` §P1.
+>
+> | N | matrix (above) | + L and U | + cached cores | **resident peak** |
+> |---|---|---|---|---|
+> | 500 | 3.8 MB | 7.6 MB | 1.9 MB | **13.4 MB** |
+> | 2,000 | 61.0 MB | 122.1 MB | 31.0 MB | **214.1 MB** |
+> | 5,000 | 381.5 MB | 763.0 MB | 193.3 MB | **1.31 GB** |
+> | 10,000 | 1.49 GB | 2.98 GB | 773.0 MB | **5.23 GB** |
+>
+> `PlanarSystem.ResidentBytes(n, cellCount)` is the one function that computes this, and all three
+> ceiling refusals quote it. A machine additionally sees about **1.19×** the peak above while the
+> factorisation runs — NumFlat allocates ~0.6 of a matrix of scratch that it releases again, and the
+> large object heap does not hand it straight back. The transient m×m scalar-potential matrix `P`
+> the fill builds is a quarter of a matrix and is released before the factorisation, so it is not
+> the peak.
+>
+> **What this does NOT change: the ceiling itself.** `UnknownCeiling` stays at 5,000 and
+> `AcceleratedUnknownCeiling` at 12,000 — moving either belongs to P7 and P8, once P2's and P7's
+> reductions have landed and the memory is what it will be.
+
 **R17. Declare a hard N ceiling (~5000), surface the predicted N before solving, and refuse politely
 above it** with a message pointing at mesh coarsening. A "lightweight" simulator that silently tries to
 allocate 12 GB is not lightweight.
@@ -668,6 +693,43 @@ the mesh. Build it only when the kernel that needs it exists; v1 does not.
 > rooftops share cells, so the same cell pair is currently integrated up to four times. See
 > `src/Engine/Mom/CLAUDE.md` §L8c for both.
 >
+> **Built at P4 (`brief-em-p4-vector-block-moment-cache.md`, 2026-08-29).** The two ramps a cell can
+> carry are linearly dependent through its pulse (`w_B = Δ·p − w_A`), so ONE outer pass per ordered
+> cell pair yields seven primitives per kernel from which every (half, half) combination of both
+> flow directions is a linear map — `PlanarFill.cs`'s P4 header has the derivation. Measured alone
+> on the three series fixtures, quadrature passes fell from ≈ 4.0 m² to ≈ 0.6 m² (**6.6×**) for the
+> core build and from ≈ 3.5 m² to ≈ 0.6 m² (**5.9×**) for the per-frequency vector remainder; wall
+> clock followed at **3.6–4.0× on the core build and 2.7–3.0× on the per-frequency fill** (hero 2.81
+> → 0.78 s and 1.52 → 0.51 s; N = 3,731: 26.6 → 6.8 s and 11.1 → 4.1 s), and AIM's near fill at
+> N = 3,731 at 2.5× (23.7 → 9.3 s). Two things the paragraph above did not anticipate: the primitives
+> are computed per ORDERED pair over a band `c ≥ a − n_x`, because the ŷ block integrates the same
+> cell pair in both orientations and the two are not interchangeable to 1e-12; and they are not
+> stored — holding them would be 2.3× the cached cores — but assembled straight into P2's layout
+> through a transient second triangle, so resident memory is unchanged. The assembled matrix agrees
+> with the retained four-call path to 8e-13 relative per entry (S0/SLog and every cut-cell pair
+> bit-identical); the per-frequency fill at N = 3,731 is now 4.1 s against an LU of ≈ 18 s (scaled
+> by N³ from the 42.8 s in the table above), so **the LU dominates a dense frequency point from
+> roughly N = 2,000 rather than 3,000**. `HISTORY.md` §P4.
+>
+> **Built at P5 (`brief-em-p5-translation-class-memo.md`, 2026-08-29).** Every kernel is a function of
+> separation alone and the grid is tensor-product, so two cell pairs that are translates of each
+> other have the same seven primitives; the fill now keys every ordered band pair on GRID INDICES
+> (spacing classes at 1e-12 relative — exact equality does not hold, the mesher's bulk lines are
+> `a + len·i/n` — hash-consed spacing lists, the τ band, the 180° rotation folded) and integrates one
+> synthetic representative per class. Reuse is 2.5× on the hero and 17–31× on the long line and the
+> tapers, and the brief's own class table reproduced exactly. Measured alone against P4's retained
+> arithmetic: core build **3.7–41×** faster (256 mm line 7.5 → 0.46 s; 60 mm taper 3.7 → 0.09 s),
+> per-frequency fill **2.8–5.8×** (256 mm 4.66 → 1.25 s), AIM's near fill on the 256 mm line 6.8×
+> (8.3 → 1.2 s); the cached cores 83.5 → 25 MB at N = 3,731 and 21 → 4.3 MB on the taper, with a stated
+> break-even at reuse ≈ 3× below which the class table is slightly larger than P4's triangles. Two
+> things the brief did not anticipate: the rule must be in the class key (equal cells offset (4, 4)
+> sit exactly on τ = FarRatio), and "1e-12 relative per entry" is not a property the reference has —
+> P4's own closed forms carry ~1e-13·|Z_ii| of absolute-coordinate roundoff that D4's second
+> differences turn into O(1) relative on cancellation-residue entries — so the gate is
+> |Δ| ≤ 1e-12·√(|Z_ii||Z_jj|) per entry (measured ≤ 4.7e-13) and the solved currents. The
+> per-point crossover is now nearer **N = 1,000**: the fill is 1.25 s against an LU of ≈ 18 s at
+> N = 3,731. `HISTORY.md` §P5.
+>
 > **Reviewed 2026-08-28 — two statements in this section are wrong today, and a brief series exists
 > to act on them (`docs/sonnet-briefs/brief-em-perf-series.md`, P1–P12).** First, *"cost is the fill,
 > not the LU"* holds for a whole sweep only because the once-per-sweep core build is folded into
@@ -679,6 +741,28 @@ the mesh. Build it only when the kernel that needs it exists; v1 does not.
 > (measured: a 137 MB matrix at N = 3,000, and `.Lu()` added 530 MB). P1 measures and re-words; P2
 > and P7 recover it. Each brief in that series updates the paragraph it changes here with its own
 > `> Built at Px` note, in this same style; nothing else in §10.7 has been rewritten in advance.
+>
+> **P1 is done (2026-08-29) — see the `> Built at P1` note under the N table above for the numbers.**
+> Two refinements to the sentence immediately above: the honest multiplier for what is RETAINED is
+> **3.52×**, not four (four is what a machine sees, once the factorisation's released scratch on the
+> large object heap is counted); and the transient `P` is not part of the peak at all, because the
+> fill drops it before the factorisation starts.
+>
+> **P2 is done (2026-08-29).** Four mechanical allocations came out, none of them changing an entry:
+> the largest was one of the three O(N²) same-direction vector core triangles, which held nothing but
+> the outer product of an O(N) per-basis vector and is now formed at the point of use. That is **24%
+> off the cached cores at every N** (2.43 → 1.85 MB at N = 552; 184 → 140 MB at N = 4,836), so the
+> multiplier above is now **3.39×** and the ceiling refusal quotes **1,290 MB**. The other three are
+> off the de-embedding path rather than off a frequency point — see `HISTORY.md` §P2. The 51%-on-top-of-the-matrix core figure three
+> paragraphs above is confirmed exactly — `PlanarSystem.CoreBytes` reproduces
+> `PlanarFillCores.CoreBytes` to within 1% on real meshes.
+>
+> **P3 is done (2026-08-29).** Its premise — that the multi-level fill's per-entry locks and
+> allocations would make it scale far worse than the single-level one — was measured false before
+> anything changed (5.5–5.9× at ten cores, the same as `Fill`). The hoist was done anyway and is
+> bit-identical; what it bought is **16–24% off every via-bearing fill**, from the ẑx̂ mixed block's
+> per-node iterator, not from any O(N²) arm. The strided-write hypothesis for the fill's parallel
+> fall-off is retired: the loss is the box's efficiency cores. `HISTORY.md` §P3.
 
 > **Measured again at L8d (2026-08-05), with ports and de-embedding on, and the multiplier is 4.4×.**
 > The table above is the cost of filling and factoring the DUT alone. A de-embedded answer also solves

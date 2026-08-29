@@ -596,7 +596,12 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   solver. **The fall-off is HARDWARE, not scheduling:** fill efficiency is 98% at 2 cores and 81% at
   4, then 74% at 6 and 53% at 10; solving for an Amdahl serial fraction gives 5.9% / 3.3% / 9.6% at
   caps 2 / 4 / 10 — not one number, so it is core heterogeneity or memory bandwidth, and running
-  more fills at once cannot invent either. `CrossFrequencyParallelismTests` keeps both measurements.
+  more fills at once cannot invent either. **P3 (2026-08-29) struck "memory bandwidth":** writing
+  the contiguous triangle instead of the strided one left the 256 mm fill's serial time unchanged
+  (70.9 → 71.3 s) and its fall-off unmoved; efficiency is 89–95% at cap 4 on every fixture and drops
+  only when the cap admits the box's 6 efficiency cores beside its 4 performance cores — every
+  cap-10 speedup solves 4 + 6f to f ≈ 0.2–0.4. There is no serial fraction; the extra cores are
+  slow ones. `HISTORY.md` §P3. `CrossFrequencyParallelismTests` keeps both measurements.
   **What would change the answer:** a machine whose fill scales near-linearly to a high core count
   (then there is still nothing to overlap), or a fill that turns out to be limited by a genuine
   serial PHASE (then fix that phase — it is a smaller change and it helps every run, including
@@ -700,8 +705,17 @@ intermediate levels instead).
 
 **Open items on the record:** R-gv-8's ω → 0 capacitance gate against `PlanarStaticLimitTests` — not
 run. §11's L9 gate sentence — a proposal to strike "agreement with published reference structures" is
-on the record, **owner's ruling pending**. `SurfaceMesher.UnknownCeiling`'s message quotes 381 MB
-against a real run cost of ~607 MB at the ceiling — **owner's call**. Of
+on the record, **owner's ruling pending**. ~~`SurfaceMesher.UnknownCeiling`'s message quotes 381 MB
+against a real run cost of ~607 MB at the ceiling — owner's call.~~ **CLOSED at P1
+(brief-em-p1-honest-memory-accounting.md, 2026-08-29): 607 was itself an underestimate. One dense
+frequency point holds 3.52× the 16·N² all three refusals quoted — a flat, structural ratio measured
+at N = 552, 1,980 and 4,836 alike — because NumFlat keeps `L` and `U` as two SEPARATE full matrices
+beside the one `PlanarSystem` holds, and the cached cores add another half again. All three refusals
+now quote `PlanarSystem.ResidentBytes` (1,338 MB at the ceiling, not 381) through one shared
+function, so they cannot drift apart. The ceiling CONSTANT is untouched — that is P7's decision.
+Tables in `HISTORY.md` §P1. **P2 (2026-08-29) then took ~24% off the cores term** — one of the three
+O(N²) vector triangles held an outer product of an O(N) vector — so the flat ratio is now **3.39×**
+and the refusals quote **1,290 MB** at the ceiling. `HISTORY.md` §P2.** Of
 `brief-em-sweep-performance`: **M0–M2 are done** (§9), **the calibration standards' own saving is
 done** (§10 — 1.52× off a wide-port point, bit-identically), **M3 is a MEASURED DEFERRAL** (§6 — its
 premise was tested before it was built and its ceiling is 1.09–1.15×), **M4 is not started**, and
@@ -723,6 +737,12 @@ for the two ladders, the conformal check and the calibration-standard limit that
 
 - **Cost is the fill, not the LU**, right up to R17's ceiling (114× the LU at N = 552, still 1.8× at
   N = 4,933).
+  > **Corrected at P4, and again at P5 (2026-08-29):** no longer true even of a whole sweep once
+  > the core build is amortised over more than a handful of points. P4 cut the per-frequency fill
+  > 2.7–3× and P5's translation-class memo a further 2.8–5.8× (and the core build 3.7–41×), so per
+  > frequency point the LU dominates from roughly **N = 1,000**: at N = 1,891 the fill is 0.41 s
+  > against an LU of ≈ 2.4 s, at N = 3,731 1.25 s against ≈ 18 s (LU scaled by N³ from P1's 42.8 s at
+  > N = 4,933, not re-timed). P7 (the factorisation) is where the time is. `HISTORY.md` §P4, §P5.
 - **A de-embedded point fills only the TWO calibration standards `GammaBest` actually reads**
   (`PlanarCalibration.SelectSeparation`, computable before any fill), not every standard built for the
   band — 1.23–1.80× faster across a band, smallest saving at the band's bottom (structural: the
@@ -756,7 +776,17 @@ for the two ladders, the conformal check and the calibration-standard limit that
   worth spending. **`NearRadiusFactor = 6.0` in code is correct and was never the discrepancy; the
   prose was the bug**, conflating the pre-build viability check's "8" with R-emp-17's shipped "6" as
   though they were the same knob. Shipped defaults where it's turned on: projection order 3,
-  auxiliary-grid pitch 0.5 of the largest basis support, near radius 6 supports. **Multi-level/via
+  auxiliary-grid pitch 0.5 of the largest basis support, near radius 6 supports.
+  **The "working set under 200 MB at the ceiling" figure above is P1-corrected and it is now tight**:
+  honestly counted at N = 11,959 it is 196.2 MB, and it fits only because P1 releases the near set's
+  EXACT entries once the preconditioner has been factored from them
+  (`PlanarAimSettings.KeepNearExact`, new, default false — the accelerated product reads the
+  CORRECTION, never the exact). With those entries still held, which is what shipped until
+  2026-08-29, the same operator holds 269 MB and the sentence was false.
+  `PlanarAimReport.ApproximateBytes` is now **`ResidentBytes`** and carries the sparse LU's own
+  fill-in, which `PreconditionerNonZeros` never did — that field is the NEAR MATRIX's nnz under a
+  name that reads like the factor's; **`FactorNonZeros` is the factor's**. See `HISTORY.md` §P1.
+  **Multi-level/via
   meshes are refused by
   name** — a ẑ basis needs a different grid kernel per height pairing, a separate phase. A
   non-converged GMRES throws rather than returning a smooth-but-wrong current distribution. Turning

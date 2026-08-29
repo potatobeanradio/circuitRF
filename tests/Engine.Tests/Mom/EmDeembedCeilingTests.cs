@@ -103,14 +103,16 @@ public class EmDeembedCeilingTests(ITestOutputHelper output)
         var ex = Assert.Throws<InvalidOperationException>(
             () => PlanarDeembed.StaticCapacitance(mesh, terms));
 
-        double realMb = 2.0 * m * (double)m * 16.0 / (1024 * 1024);
+        // P2/M2 removed the scaled COPY of P that used to be the second of the two matrices this
+        // message named; what is left at the peak is P plus the general LU's own L and U.
+        double realMb = 3.0 * m * (double)m * 16.0 / (1024 * 1024);
         double sharedGuardMb = (double)n * n * 16.0 / (1024 * 1024);
         _out.WriteLine($"m = {m:N0}, n = {n:N0} — this call site's real MB = {realMb:F1}, " +
                        $"the shared n×n guard's own MB would have been {sharedGuardMb:F1}");
 
         Assert.Contains($"{m:N0} cells", ex.Message, StringComparison.Ordinal);
         Assert.Contains($"{realMb:N0} MB", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("two m×m complex matrices", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("three m×m complex matrices", ex.Message, StringComparison.Ordinal);
         Assert.True(realMb < sharedGuardMb,
             "the whole point: this call site's real working set is smaller than the shared " +
             "guard's n×n proxy would claim");

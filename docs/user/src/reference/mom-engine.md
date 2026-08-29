@@ -735,14 +735,20 @@ cell and the truncation extent are all visible before you commit to a run. Use i
 
 ## What makes a run infeasible {#budget}
 
-The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes.
+The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes. **The matrix is about a
+third of what a frequency point actually costs** — its LU factorisation is two more matrices of the
+same size, and the frequency-independent geometry cache is another half — so the figure the refusal
+quotes, and the one below, is all three together.
 
-| N | Matrix memory | Character |
-|---|---|---|
-| 500 | 4 MB | A short line or a bend lives here |
-| 2,000 | 64 MB | Interactive: seconds per frequency |
-| 5,000 | 400 MB | The practical ceiling for a lightweight tool |
-| 10,000 | 1.6 GB | Out of scope |
+| N | Matrix | **Held while one frequency solves** | Character |
+|---|---|---|---|
+| 500 | 4 MB | **13 MB** | A short line or a bend lives here |
+| 2,000 | 61 MB | **206 MB** | Interactive: seconds per frequency |
+| 5,000 | 381 MB | **1.26 GB** | The practical ceiling for a lightweight tool |
+| 10,000 | 1.5 GB | **5.0 GB** | Out of scope |
+
+A de-embedded run holds more again — every calibration standard's geometry cache is live alongside
+the structure's own.
 
 **There is a hard ceiling at 5,000 unknowns for the dense solve, the predicted N is shown before you
 solve, and a mesh above it is refused** with a message pointing at the remedies that actually bind. A

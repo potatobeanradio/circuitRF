@@ -12,11 +12,13 @@
 // A3 asks a different question: does the accelerator work at all on a CONFORMALLY CUT mesh, which M5
 // never measured (it ships off, and every M5 number above is staircased).
 //
-// 'MB' figures are the same APPROXIMATE-BYTES accounting R-emp-12 and the existing M5 table already
-// use (PlanarSystem.MatrixBytes / PlanarAimReport.ApproximateBytes) — a counted, not profiled,
-// working set, for the same reason R-emp-12's own projection was: it is what a user's machine will
-// actually hold, in the terms the code itself already tracks, and it is reproducible without a
-// profiler attached.
+// 'MB' figures are COUNTED, not profiled — for the same reason R-emp-12's own projection was: it is
+// what a user's machine will actually hold, in the terms the code itself already tracks, and it is
+// reproducible without a profiler attached. P1 (2026-08-29) re-pointed both columns at the two
+// honest accountings — PlanarSystem.ResidentBytes for the dense point (matrix + LU factors + cached
+// cores, not the bare 16·N² this file used to print) and PlanarAimReport.ResidentBytes for the
+// accelerator (which now carries its sparse LU's own fill-in). The ratios below therefore differ
+// from the ones recorded when this file was written; the measured behaviour does not.
 
 using System.Diagnostics;
 using System.Numerics;
@@ -93,7 +95,7 @@ public class AimCeilingTests(ITestOutputHelper output)
             var exact = system.Solve(rhs);
             swD.Stop();
             denseS  = swD.Elapsed.TotalSeconds.ToString("F2");
-            denseMB = (PlanarSystem.MatrixBytes(n) / 1048576.0).ToString("F1");
+            denseMB = (PlanarSystem.ResidentBytes(n, b.Mesh.Cells.Count) / 1048576.0).ToString("F1");
             current = got is null ? "no conv" : RelNorm(exact, got.Value, n).ToString("E2");
         }
 
@@ -102,7 +104,7 @@ public class AimCeilingTests(ITestOutputHelper output)
         _out.WriteLine($"  {label,10} {n,7}  {aim.Report.NearEntriesPerRow,8:F0}  " +
                        $"{aim.Report.NearFillFraction * 100,5:F1}%  {buildS,7:F2}  {iters,6}  " +
                        $"{resid,8:E1}  {swS.Elapsed.TotalSeconds,7:F2}  {denseS,7}  {current,10}  " +
-                       $"{aim.Report.ApproximateBytes / 1048576.0,6:F1}  {denseMB,8}");
+                       $"{aim.Report.ResidentBytes / 1048576.0,6:F1}  {denseMB,8}");
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

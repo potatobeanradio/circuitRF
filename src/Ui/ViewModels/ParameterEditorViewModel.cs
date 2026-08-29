@@ -442,10 +442,10 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
                 // A Match's `Design` is the WHOLE design, base64 of its JSON (match.md §7.2) — the
                 // same "gibberish row" wBond's own `Design` was, and hidden for the same reason. The
-                // ECHO parameters (F1/F2/Order/Response/R1/R2) DO stay as ordinary rows: they exist
-                // precisely so the user can read and show the design on the schematic. They are
-                // read-only in the sense that nothing reads them BACK — the Designer writes them —
-                // and MN-3 is what enforces that at the control level.
+                // ECHO parameters (F1/F2/Bands/F3-F6/Order/Response/Form/R1/R2) went with it on
+                // 2026-08-28: the Designer writes them and nothing reads them back, so a row is an
+                // edit box that changes a label and not the circuit — see IsMatchPanelParameter for
+                // the reasoning. A name the registry does not declare still gets its row.
                 if (comp.Symbol == SymbolKind.Match && IsMatchPanelParameter(param.Name)) continue;
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;

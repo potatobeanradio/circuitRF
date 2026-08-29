@@ -125,6 +125,20 @@ namespace CircuitRF.Engine.Mom;
 /// is arbitrary and it must stay arbitrary</b> — see the file header. Exposed only so the gate can
 /// move it and assert the answer does not.
 /// </param>
+/// <param name="KeepNearExact">
+/// <b>P1 — whether the near set's EXACT entries stay live after the preconditioner has been factored
+/// from them.</b> They are read by exactly two things: <c>FactorNear</c>, which runs once at build
+/// time, and the <see cref="PlanarAimOperator.NearExactAt"/> diagnostic. The accelerated PRODUCT uses
+/// the correction (exact − AIM), never the exact, so holding both for the life of the operator was
+/// 16 B per near entry of pure diagnostic weight — 27 MB at N = 12,894, on a working set the whole
+/// point of which is to be small.
+///
+/// <para>Default false: the array is released the moment the factorisation is done. Set it true in a
+/// test that reads <see cref="PlanarAimOperator.NearExactAt"/>; that method says so by name rather
+/// than returning a silent zero. (Reading the entries back out of CSparse's CSC instead was the other
+/// option and is worse: the CSC's own row index costs 4 B per entry MORE than the array it would
+/// replace, for the same numbers.)</para>
+/// </param>
 public sealed record PlanarAimSettings(
     int    ProjectionOrder   = 3,
     double GridSpacingFactor = 0.5,
@@ -132,7 +146,8 @@ public sealed record PlanarAimSettings(
     double Tolerance         = 1e-8,
     int    MaxIterations     = 400,
     int    Restart           = 0,
-    double SelfKernelFactor  = 0.5)
+    double SelfKernelFactor  = 0.5,
+    bool   KeepNearExact     = false)
 {
     public static readonly PlanarAimSettings Default = new();
 
@@ -168,6 +183,29 @@ public sealed record PlanarAimSettings(
 
 /// <summary>What the accelerator cost and how big it turned out to be — the numbers R-emp-17's table
 /// and the cost gate report, taken from the object rather than re-derived by a test.</summary>
+/// <param name="PreconditionerNonZeros">
+/// <b>The NEAR MATRIX's non-zero count, not the factor's</b> — <c>csc.NonZerosCount</c>, which (each
+/// near pair being stored exactly once) is <see cref="NearEntries"/> a second time. The name predates
+/// P1 and reads like the fill-in; it is kept because the existing R-emp-17 tables print it under this
+/// name. <see cref="FactorNonZeros"/> is the fill-in.
+/// </param>
+/// <param name="FactorNonZeros">
+/// <b>P1</b> — <c>SparseLU.NonZerosCount</c>, L and U together, or 0 when the factorisation failed and
+/// GMRES is running unpreconditioned. At the accelerated ceiling this is nearly half of everything the
+/// operator holds, and until P1 nothing counted it.
+/// </param>
+/// <param name="NearCellPairs">
+/// <b>P5</b> — how many distinct translation CLASSES the near field's scalar block integrated (plus
+/// any per-pair entries for pairs with a cut cell), i.e. what the on-demand memo actually computed.
+/// Until P5 this counted distinct cell pairs; a class serves every pair that is its translate, so the
+/// number is now a small fraction of those.
+/// </param>
+/// <param name="NearExactRetained">
+/// <b>P1</b> — whether the near set's exact entries are still live
+/// (<see cref="PlanarAimSettings.KeepNearExact"/>). They are released after the preconditioner is
+/// factored from them unless a diagnostic asked for them, and <see cref="ResidentBytes"/> charges for
+/// them exactly when they are held.
+/// </param>
 public sealed record PlanarAimReport(
     int    UnknownCount,
     int    GridNodesX,
@@ -183,7 +221,9 @@ public sealed record PlanarAimReport(
     double RemainderTableMs,
     double NearFillMs,
     double PreconditionerMs,
-    long   PreconditionerNonZeros)
+    long   PreconditionerNonZeros,
+    long   FactorNonZeros = 0,
+    bool   NearExactRetained = false)
 {
     /// <summary>Near entries as a fraction of the dense matrix — the number that says whether the
     /// near field is genuinely O(N) or merely a smaller O(N²).</summary>
@@ -194,20 +234,45 @@ public sealed record PlanarAimReport(
     public double NearEntriesPerRow => (double)NearEntries / Math.Max(1, UnknownCount);
 
     /// <summary>
-    /// Bytes the accelerator holds, against <c>16·N²</c> for the dense path — <b>which is the
-    /// comparison M5 is actually won on</b>, R17 being a memory ceiling rather than a time one.
+    /// <b>Bytes the accelerator holds once it is built</b>, against
+    /// <see cref="PlanarSystem.ResidentBytes"/> for the dense path — which is the comparison M5 is
+    /// actually won on, R17 being a memory ceiling rather than a time one.
     ///
-    /// <para>Counted rather than estimated: the two sparse complex copies (exact and correction) at
-    /// 16 bytes each plus their column index at 4; the two grid kernel tables; and the five padded
-    /// FFT arrays (two transformed kernels and three scratch fields), which are NOT negligible at a
-    /// fine pitch and are exactly what a "the near field is only 10% of the matrix" reading would
-    /// forget. The per-basis stencils are 32·(M+1)²·N and are folded in for the same reason.</para>
+    /// <para><b>Renamed from <c>ApproximateBytes</c> at P1 (2026-08-29), because it no longer
+    /// approximates anything</b> — every term below is an array this class allocated, at its actual
+    /// element size. It had omitted three things: the sparse LU's own factors (its fill-in is several
+    /// times the near set it was built from — see <see cref="FactorNonZeros"/>), CSparse's CSC copy of
+    /// the near matrix, and, until P1 freed it, <c>_nearExact</c>.</para>
+    ///
+    /// <list type="bullet">
+    /// <item>the near set's CSR: values (exact, when retained, and correction) at 16 B, the column
+    /// index at 4 B, the row pointer at 4·(N+1);</item>
+    /// <item>the two grid kernel tables, and the five padded FFT arrays (two transformed kernels and
+    /// three scratch fields) — NOT negligible at a fine pitch, and exactly what a "the near field is
+    /// only 10% of the matrix" reading forgets;</item>
+    /// <item>the per-basis stencils, 32·(M+1)²·N;</item>
+    /// <item>the preconditioner's L and U together (<see cref="FactorNonZeros"/> entries at 16 B of
+    /// value plus 4 B of row index, plus two column pointers of 4·(N+1)), and the AMD permutation.</item>
+    /// </list>
+    ///
+    /// <para>The CSC copy the factorisation is built FROM is transient — it is released with the
+    /// factorisation's own scratch — so it is not counted here; <c>HISTORY.md</c>'s P1 table measures
+    /// the build's peak, which does hold it.</para>
     /// </summary>
-    public long ApproximateBytes =>
-        36L * NearEntries
+    public long ResidentBytes =>
+        (NearExactRetained ? 32L : 16L) * NearEntries        // correction (+ exact, when retained)
+      + 4L * NearEntries + 4L * (UnknownCount + 1)           // the CSR index
       + 16L * GridNodesX * GridNodesY * 2
       + 16L * PaddedGridNodes * 5
-      + 32L * (ProjectionOrder + 1) * (ProjectionOrder + 1) * UnknownCount;
+      + 32L * (ProjectionOrder + 1) * (ProjectionOrder + 1) * UnknownCount
+      + 20L * FactorNonZeros + 8L * (UnknownCount + 1)       // the sparse LU's L and U
+      + 8L * UnknownCount;                                   // AMD permutation + its inverse
+
+    /// <summary>Bytes the accelerator's BUILD peaks at — <see cref="ResidentBytes"/> plus the
+    /// transient CSC copy of the near matrix that <c>FactorNear</c> hands to CSparse (values at 16 B,
+    /// row index at 4 B, column pointer at 4·(N+1)).</summary>
+    public long PeakBuildBytes =>
+        ResidentBytes + 20L * NearEntries + 4L * (UnknownCount + 1);
 }
 
 /// <summary>
@@ -266,8 +331,11 @@ public sealed class PlanarAimOperator : IPlanarOperator
     // preconditioner factors.
     private readonly int[]     _rowPtr;
     private readonly int[]     _colIdx;
-    private readonly Complex[] _nearExact;
     private readonly Complex[] _nearCorrection;
+
+    // P1: LIVE ONLY UNTIL FactorNear HAS RUN, unless PlanarAimSettings.KeepNearExact asked for it.
+    // The product reads _nearCorrection; nothing else in a solve reads this.
+    private Complex[]? _nearExact;
 
     private readonly SparseLU? _preconditioner;
 
@@ -407,7 +475,8 @@ public sealed class PlanarAimOperator : IPlanarOperator
         _scalarScale = scalarScale;
         _vectorScale = vectorScale;
 
-        _nearExact      = new Complex[colIdx.Length];
+        var nearExact   = new Complex[colIdx.Length];
+        _nearExact      = nearExact;
         _nearCorrection = new Complex[colIdx.Length];
 
         // R-fil-2, one level down: BOTH criteria for nearness are symmetric, so the near set is, and
@@ -423,7 +492,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
                 int j = _colIdx[k];
                 if (j < i) continue;
                 Complex exact = entry.At(i, j);
-                _nearExact[k]      = exact;
+                nearExact[k]       = exact;
                 _nearCorrection[k] = exact - AimEntry(i, j, scalarScale, vectorScale);
             }
         });
@@ -435,7 +504,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
                 int j = _colIdx[k];
                 if (j >= i) continue;
                 int t = mirror[k];
-                _nearExact[k]      = _nearExact[t];
+                nearExact[k]       = nearExact[t];
                 _nearCorrection[k] = _nearCorrection[t];
             }
         });
@@ -443,9 +512,14 @@ public sealed class PlanarAimOperator : IPlanarOperator
 
         // ── the preconditioner: the near field's own sparse LU ────────────────────────────────
         sw.Restart();
-        var (lu, nnz) = FactorNear();
+        var (lu, nnz, factorNnz) = FactorNear(nearExact);
         _preconditioner = lu;
         double precondMs = sw.Elapsed.TotalMilliseconds;
+
+        // P1 — the exact entries have served their only non-diagnostic purpose. Dropping them here
+        // rather than at the end of Build is deliberate: the CSC copy FactorNear made is still
+        // collectable at this point too, so the operator's steady state is reached in one collection.
+        if (!st.KeepNearExact) _nearExact = null;
 
         Report = new PlanarAimReport(
             UnknownCount: _n, GridNodesX: _nx, GridNodesY: _ny, GridPitchM: h,
@@ -454,7 +528,8 @@ public sealed class PlanarAimOperator : IPlanarOperator
             PaddedGridNodes: (long)_px * _py,
             ProjectionMs: projectionMs, GridKernelMs: gridMs, RemainderTableMs: tableMs,
             NearFillMs: nearMs,
-            PreconditionerMs: precondMs, PreconditionerNonZeros: nnz);
+            PreconditionerMs: precondMs, PreconditionerNonZeros: nnz,
+            FactorNonZeros: factorNnz, NearExactRetained: st.KeepNearExact);
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -760,25 +835,36 @@ public sealed class PlanarAimOperator : IPlanarOperator
         return scalarScale * q + (sameDir ? vectorScale * v : Complex.Zero);
     }
 
-    private (SparseLU? Lu, long Nnz) FactorNear()
+    /// <summary>
+    /// The near field's own sparse LU. <b><c>Nnz</c> is the near matrix's — the CSC copy's — non-zero
+    /// count, which is the near ENTRY count; <c>FactorNnz</c> is the FACTOR's, L and U together, and
+    /// the two are not remotely the same number</b> (P1 measured the fill-in at several times the
+    /// matrix it comes from). The report used to carry only the first, under a name that reads like
+    /// the second.
+    /// </summary>
+    /// <param name="exact">The near set's exact entries, passed rather than read from
+    /// <c>_nearExact</c> so that this cannot be called after P1 releases them — the field is nullable
+    /// from here on and an argument is a cheaper guarantee than a null check with a sentence in it.</param>
+    private (SparseLU? Lu, long Nnz, long FactorNnz) FactorNear(Complex[] exact)
     {
         var tri = new CoordinateStorage<Complex>(_n, _n, Math.Max(1, _colIdx.Length));
         for (int i = 0; i < _n; i++)
             for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
-                tri.At(i, _colIdx[k], _nearExact[k]);
+                tri.At(i, _colIdx[k], exact[k]);
 
         var csc = SparseMatrix.OfIndexed(tri);
         try
         {
             var perm = AMD.Generate(csc, ColumnOrdering.MinimumDegreeAtPlusA);
-            return (SparseLU.Create(csc, perm, 1.0), csc.NonZerosCount);
+            var lu = SparseLU.Create(csc, perm, 1.0);
+            return (lu, csc.NonZerosCount, lu.NonZerosCount);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // A failed near-field factorisation is not fatal — GMRES still runs unpreconditioned, and
             // §11 measured what that costs (129 -> 341 iterations over the same span) rather than
             // leaving it as a guess. Reporting it as "no preconditioner" beats refusing the solve.
-            return (null, csc.NonZerosCount);
+            return (null, csc.NonZerosCount, 0);
         }
     }
 
@@ -965,11 +1051,21 @@ public sealed class PlanarAimOperator : IPlanarOperator
     /// <summary>The exact entry held for <c>(i, j)</c>, or zero when the pair is not near. A
     /// DIAGNOSTIC — the gates read it, and it is public for the same reason
     /// <see cref="PlanarFillDiagnostics"/> is: an instrument that cannot be reached from a test is not
-    /// an instrument.</summary>
+    /// an instrument.
+    ///
+    /// <para>P1: the exact entries are released once the preconditioner is factored from them, so this
+    /// needs <see cref="PlanarAimSettings.KeepNearExact"/>. It THROWS when they were not kept rather
+    /// than returning zero — a silent zero here is indistinguishable from "not near", which is exactly
+    /// the question a caller is asking.</para></summary>
     public Complex NearExactAt(int i, int j)
     {
+        var exact = _nearExact ?? throw new InvalidOperationException(
+            "The exact near-field entries were released after the preconditioner was factored from " +
+            "them — the accelerated product reads the CORRECTION (exact − AIM), never the exact, so " +
+            "holding both costs 16 bytes per near entry for a diagnostic nothing in a solve reads. " +
+            "Build the operator with PlanarAimSettings { KeepNearExact = true } to read them.");
         for (int k = _rowPtr[i]; k < _rowPtr[i + 1]; k++)
-            if (_colIdx[k] == j) return _nearExact[k];
+            if (_colIdx[k] == j) return exact[k];
         return Complex.Zero;
     }
 

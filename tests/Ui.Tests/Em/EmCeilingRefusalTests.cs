@@ -149,8 +149,21 @@ public class EmCeilingRefusalTests
         Assert.Contains("not of your machine", refusal, StringComparison.Ordinal);
         Assert.Contains("refuses identically everywhere", refusal, StringComparison.Ordinal);
         Assert.True(refusal.IndexOf("unknowns, past the", StringComparison.Ordinal)
-                  < refusal.IndexOf("MB of dense complex matrix", StringComparison.Ordinal),
+                  < refusal.IndexOf("MB resident at the peak", StringComparison.Ordinal),
             "the unknown count must precede the megabytes; leading with MB is what read as a RAM limit");
+
+        // brief-em-p1-honest-memory-accounting.md, 2026-08-29 — the megabytes are now the RESIDENT
+        // peak of one frequency point rather than the bare 16·N² matrix, which was right about the
+        // matrix and silent about the two factor matrices and the cached cores beside it (measured
+        // 3.52× at N = 552, 1,980 and 4,836 alike, and 3.39× since P2 took a core triangle out).
+        // All three refusals derive it from the one function
+        // PlanarSystem.ResidentPhrase, so this sentence cannot drift away from the other two, and it
+        // has to SAY what the number is — a bare figure beside a ceiling is what read as a RAM limit
+        // the first time.
+        Assert.Contains("resident at the peak of one frequency point", refusal, StringComparison.Ordinal);
+        Assert.Contains("matrix + factors + cached cores", refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("MB of dense complex matrix", refusal, StringComparison.Ordinal);
+        Assert.Contains(PlanarSystem.ResidentPhrase(n, r.CellCount), refusal, StringComparison.Ordinal);
 
         // brief-em-aim-ceiling.md, 2026-08-14: this fixture's N sits UNDER the accelerated ceiling
         // (12,000), so — unlike the dense-only claim this test used to pin — the accelerated solve is

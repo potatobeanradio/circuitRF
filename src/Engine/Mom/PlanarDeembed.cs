@@ -210,26 +210,43 @@ public static class PlanarDeembed
     /// harness promoted from the test project, because D7 needs it in production — it is assembled
     /// from <see cref="PlanarFill.ScalarPotentialMatrix"/>, which was already a product surface.
     /// </summary>
+    /// <param name="cores">
+    /// <b>P2/M3 — this mesh's already-built cores, when the caller has them.</b> A calibration
+    /// standard's <c>PlanarSolveContext</c> holds cores for exactly this mesh and exactly these fill
+    /// settings, and rebuilding them here is a second O(m²) core build of a mesh already cored. Null
+    /// (or a geometry-only core, which the accelerator's contexts carry) falls back to building them,
+    /// which is what this method always did.
+    /// </param>
     public static double StaticCapacitance(PlanarMesh mesh, PlanarKernelTerms staticScalar,
-                                           PlanarFillSettings? settings = null)
+                                           PlanarFillSettings? settings = null,
+                                           PlanarFillCores? cores = null)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         GuardCapacitanceCeiling(mesh);
 
-        var st    = settings ?? PlanarFillSettings.Default;
-        var cores = PlanarFill.BuildCores(mesh, st);
-        var p     = PlanarFill.ScalarPotentialMatrix(cores, staticScalar.With(st.Order, cores.RhoFloorM));
+        var st = settings ?? PlanarFillSettings.Default;
 
+        // The mesh identity is checked rather than assumed: the cores carry their own Mesh, and a
+        // core built for a DIFFERENT mesh would index a packed triangle of the wrong length and give
+        // a plausible wrong capacitance rather than an exception.
+        var c = cores is { HasPairCores: true } && ReferenceEquals(cores.Mesh, mesh)
+              ? cores
+              : PlanarFill.BuildCores(mesh, st);
+
+        var p = PlanarFill.ScalarPotentialMatrix(c, staticScalar.With(st.Order, c.RhoFloorM));
+
+        // ── P2/M2 — SOLVE P q = ε₀·1, rather than copying P into an m×m scaled by 1/ε₀ ──────────
+        //
+        // The system being solved is (P/ε₀) q = 1. Dividing every entry of P allocated a SECOND m×m
+        // complex matrix — at the de-embedding ceiling that is the same size as the one the fill just
+        // built — to express a scaling that the right-hand side carries for free. It is also one
+        // rounding per entry that this form does not do at all: ε₀·1 is exact, so the factored matrix
+        // is now the fill's own P bit for bit and only the SOLVE's own arithmetic differs.
         int m = mesh.Cells.Count;
-        var a   = new Mat<Complex>(m, m);
         var rhs = new Vec<Complex>(m);
-        for (int i = 0; i < m; i++)
-        {
-            rhs[i] = Complex.One;
-            for (int j = 0; j < m; j++) a[i, j] = p[i, j] / EmConstants.Eps0;
-        }
+        for (int i = 0; i < m; i++) rhs[i] = EmConstants.Eps0;
 
-        var q = a.Lu().Solve(rhs);
+        var q = p.Lu().Solve(rhs);
         Complex total = Complex.Zero;
         for (int i = 0; i < m; i++) total += q[i];
         return total.Real;
@@ -239,9 +256,10 @@ public static class PlanarDeembed
     /// C2 (brief-em-deembed-ceiling-closeout.md) — <see cref="PlanarFill.BuildCores"/>'s own shared
     /// guard asks about <c>mesh.Bases.Count</c> and quotes an n×n DENSE COMPLEX MATRIX, because that
     /// is what its OTHER callers (<see cref="PlanarFill.Fill"/> / <c>PlanarSystem.Build</c>) go on to
-    /// allocate. <see cref="StaticCapacitance"/> never does: its own working set is TWO m×m complex
-    /// matrices over CELLS (<see cref="PlanarFill.ScalarPotentialMatrix"/>'s own P, then the copy this
-    /// method builds and factors) — a different, and materially smaller, number, because a mesh's
+    /// allocate. <see cref="StaticCapacitance"/> never does: its own working set is THREE m×m complex
+    /// matrices over CELLS (<see cref="PlanarFill.ScalarPotentialMatrix"/>'s own P, plus the L and U
+    /// the general LU builds beside it — P1's own <c>PlanarSystem.FactorBytes</c> measurement) — a
+    /// different, and materially smaller, number, because a mesh's
     /// basis count runs roughly 2× its cell count (an ordinary tensor grid, same ratio §L8b's own N
     /// report states generally). Measured, not estimated, on a real standard —
     /// <c>EmDeembedCeilingTests</c> carries the ratio — exactly like §7's own "381 MB vs 607 MB"
@@ -260,13 +278,17 @@ public static class PlanarDeembed
         if (n <= SurfaceMesher.UnknownCeiling) return;
 
         int m = mesh.Cells.Count;
-        double mb = 2.0 * m * (double)m * 16.0 / (1024.0 * 1024.0);
+        // P2/M2 removed the scaled COPY of P this used to count as its second matrix; what is left
+        // at the peak is P and the general LU's own L and U, which P1 measured as two further full
+        // matrices rather than a packed in-place factorisation.
+        double mb = 3.0 * m * (double)m * 16.0 / (1024.0 * 1024.0);
         throw new InvalidOperationException(
             $"This calibration standard's static capacitance solve (D7's reference impedance) needs " +
             $"{m:N0} cells ({n:N0} basis functions), past the {SurfaceMesher.UnknownCeiling:N0}-" +
-            $"unknown ceiling — {mb:N0} MB for the two m×m complex matrices this solve holds at once " +
-            "(the potential-coefficient matrix and its own copy, factored by a general LU), not the " +
-            "n×n matrix PlanarFill's shared fill guard describes, because this solve never builds one.");
+            $"unknown ceiling — {mb:N0} MB for the three m×m complex matrices this solve holds at " +
+            "once (the potential-coefficient matrix, and the L and U a general LU builds beside it), " +
+            "not the n×n matrix PlanarFill's shared fill guard describes, because this solve never " +
+            "builds one.");
     }
 
     /// <summary>
@@ -274,12 +296,17 @@ public static class PlanarDeembed
     /// lines are identical except for the bulk cells in the middle, so both end effects — the open
     /// ends and the port neighbourhoods — cancel EXACTLY rather than being neglected.
     /// </summary>
+    /// <param name="shortCores">The short standard's already-built cores — see
+    /// <see cref="StaticCapacitance"/>'s own parameter. <b>P2/M3.</b></param>
+    /// <param name="longCores">The long standard's, likewise.</param>
     public static double CapacitancePerMetre(PlanarStandard shortStd, PlanarStandard longStd,
-                                             GroundedSlab slab, PlanarFillSettings? settings = null)
+                                             GroundedSlab slab, PlanarFillSettings? settings = null,
+                                             PlanarFillCores? shortCores = null,
+                                             PlanarFillCores? longCores = null)
     {
         var terms = PlanarKernelTerms.StaticScalar(slab);
-        double c1 = StaticCapacitance(shortStd.Mesh, terms, settings);
-        double c2 = StaticCapacitance(longStd.Mesh,  terms, settings);
+        double c1 = StaticCapacitance(shortStd.Mesh, terms, settings, shortCores);
+        double c2 = StaticCapacitance(longStd.Mesh,  terms, settings, longCores);
         double dl = longStd.LengthM - shortStd.LengthM;
 
         if (!(dl > 0))
