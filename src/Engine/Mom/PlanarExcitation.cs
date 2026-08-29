@@ -20,8 +20,10 @@
 //
 // SAY THE STRENGTH OF THE RECIPROCITY PRECISELY, as L7b-b's own note insists: Z is symmetric BIT FOR
 // BIT (L8c computes m ≤ n and mirrors), so Y is symmetric because BᵀZ⁻¹B is — but it passes through
-// an LU, so it is symmetric to that routine's tolerance and NOT bit for bit. Claiming otherwise
-// would be the overclaim L7b-b explicitly warns against.
+// a factorisation, so it is symmetric to that routine's tolerance and NOT bit for bit. Claiming
+// otherwise would be the overclaim L7b-b explicitly warns against. P7 (2026-08-29) changed WHICH
+// factorisation — a complex-symmetric LDLᵀ that exploits the bit-for-bit symmetry above rather than
+// a general LU that ignores it — and changed nothing about the strength of the claim.
 //
 // THE SAME B IS USED FOR THE EXCITATION AND FOR READING THE CURRENT BACK. That is not tidiness: it
 // is what makes Y the actual admittance matrix (the pair (v, i) has to be energy-conjugate). A code
@@ -56,7 +58,7 @@ public static class PlanarExcitation
 
     /// <summary>
     /// <c>Y = BᵀZ⁻¹B</c> — one factorisation, P back-substitutions (D8). The factorisation is
-    /// <see cref="PlanarSystem.Lu"/>'s, which is computed once and cached on the system.
+    /// <see cref="PlanarSystem.Factor"/>'s, computed once and cached on the system.
     /// </summary>
     public static PlanarPortSolution Solve(PlanarSystem system, IReadOnlyList<PlanarPortResolution> ports)
         => Solve((IPlanarOperator)system, ports);
@@ -79,9 +81,12 @@ public static class PlanarExcitation
         if (ports.Count == 0) throw new ArgumentException("A solve needs at least one port.", nameof(ports));
 
         int p = ports.Count;
-        var currents = new Vec<Complex>[p];
-        for (int j = 0; j < p; j++)
-            currents[j] = system.Solve(RightHandSide(system.Size, ports[j]));
+        var rhs = new Vec<Complex>[p];
+        for (int j = 0; j < p; j++) rhs[j] = RightHandSide(system.Size, ports[j]);
+
+        // P7 — ONE call, so an operator that can stream its factor once for all P vectors does.
+        // The default implementation on IPlanarOperator is the per-port loop this replaced.
+        var currents = system.Solve(rhs);
 
         var y = new Mat<Complex>(p, p);
         for (int j = 0; j < p; j++)

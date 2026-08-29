@@ -6722,3 +6722,235 @@ build (`PlanarEntryCores.Prepare` over the upper triangle, row-parallel).
   radius). **The multi-level refusal** — untouched (P12); it moved from the operator to the geometry
   with its text unchanged.
 - **`AimAccuracyTests`** — not re-run, for the reason given under bit-identity.
+
+---
+
+## P7 — an in-place, blocked, parallel complex-symmetric factorisation (brief-em-p7-symmetric-inplace-factorisation.md, 2026-08-29)
+
+The dense path's factorisation was `NumFlat.LuDecompositionComplex`: a general LU that knows nothing
+about Z's symmetry, does 2N³/3 complex multiply-adds, runs on **one core** (P1 measured CPU/wall =
+1.00 on ten), and stores `L` and `U` as two further full N×N matrices beside the one `PlanarSystem`
+already holds. P4 and P5 had cut the fill 8–17×, so by the time this brief started a dense frequency
+point near R17's ceiling was mostly a single-threaded factorisation sitting next to a fill that
+parallelises 3.7× and 32·N² of factor storage that nothing but the back-substitution ever reads.
+
+**Z is complex-symmetric BIT FOR BIT** — `PlanarFill.Fill` and `FillMultiLevel` both compute the
+lower triangle and `MirrorLowerToUpper` copies it, so `Z[i,j]` and `Z[j,i]` are the same bits
+(R-fil-2). `SymmetricFactorization` is an unpivoted `A = L·D·Lᵀ` written into that same lower
+triangle: half the arithmetic, no second matrix, and a right-looking blocked form (64 columns) whose
+trailing update is one independent write per destination column, so it goes through
+`PlanarFill.ForRowsOf` and spends the run's ONE parallel cap exactly as the fill does.
+
+### Table 1 — factorisation time, the SHIPPED (Release) configuration
+
+FR-4 hero cross-section at 10 GHz, shipping mesh, lines of 20 / 80 / 200 mm — the same three rungs
+P1's memory table used. Each factorisation on its own copy of one filled Z (the shipped one consumes
+its input), copies outside the timer.
+
+| N | cells | cap 1 | cap 2 | cap 4 | cap 10 | NumFlat LU | **LU ÷ cap 10** | cap 1 ÷ cap 10 |
+|---|---|---|---|---|---|---|---|---|
+| 552 | 297 | 0.04 s | 0.02 s | 0.02 s | **0.01 s** | 0.04 s | **2.7×** | 3.1× |
+| 1,980 | 1,053 | 0.91 s | 0.49 s | 0.41 s | **0.26 s** | 1.92 s | **7.3×** | 3.5× |
+| 4,836 | 2,565 | 13.14 s | 6.88 s | 5.83 s | **3.59 s** | 41.21 s | **11.5×** | 3.7× |
+
+Two independent factors, and it is worth keeping them apart. **Single-threaded, the new
+factorisation is already 3.1× the LU at the top rung** (13.14 s against 41.21 s) — that is the
+halved flop count plus the blocking, not the cores. **The cores then add 3.7×**, and 3.7 is the
+number P3 predicted for this box: ten cores of which four are performance and six efficiency, so a
+cap-10 speed-up solving as 4 + 6f gives f ≈ 0.2–0.4 exactly as every fill measurement here does.
+The LU's 41.21 s reproduces P1's 42.8 s at N = 4,933 to within the size difference, which is what
+says the two measurements are comparable.
+
+### The measurement trap this phase paid for, and it is not a small one
+
+**`dotnet test` builds DEBUG.** Every other timing in this area compares managed code against
+managed code, so the build configuration has always cancelled and nobody has had to think about it.
+**This comparison does not cancel**: NumFlat's LU is native and barely moves between configurations,
+while `SymmetricFactorization` is ordinary C# and runs about ten times slower unoptimised. The first
+run of the benchmark, in Debug, produced
+
+| N | cap 1 | cap 2 | cap 4 | cap 10 | NumFlat LU |
+|---|---|---|---|---|---|
+| 552 | 0.22 s | 0.14 s | 0.10 s | 0.08 s | 0.04 s |
+| 1,980 | 10.10 s | 5.38 s | 3.09 s | 2.25 s | 1.99 s |
+| 4,836 | 143.81 s | 74.13 s | 42.62 s | 28.31 s | 40.72 s |
+
+i.e. **"the new factorisation is 3.5× slower single-threaded than the one it replaces"** — and it is
+the same code that is 3.1× faster in Release. The Debug/Release ratio is **11×** for the managed
+factorisation and **0.99×** for the LU. `PlanarP7FactorCostTests` now prints its own build configuration
+above its table and asserts only what is true in both (cap 10 beats cap 1; the allocation counts);
+"faster than the LU" is a Release statement and lives here.
+
+**A second, smaller trap, recorded because it wasted a run.** A synthetic complex-symmetric matrix
+with a `1/(1+|i−j|)` decay is NOT a stand-in for Z when the thing being timed is NumFlat's LU: the
+same N = 4,836 reads **97.0 s** on the synthetic (twice, reproducibly) against **41.2 s** on a real
+filled Z, while `SymmetricFactorization` reads 13.1 s on both. The synthetic is fine for the
+correctness tests, which is where it is used; it is not fine for the cost table.
+
+### Table 2 — memory, counted
+
+`PlanarSystem`'s own arithmetic. `LuFactorBytes` is the pre-P7 term, kept and named as such;
+`SymmetricFactorBytes` is `16·N` — the diagonal D, and nothing else.
+
+| N | matrix | L + U (pre-P7) | D (P7) | cached cores | **peak pre-P7** | **peak P7** | ratio |
+|---|---|---|---|---|---|---|---|
+| 500 | 3.8 MB | 7.6 MB | 7.8 kB | 1.5 MB | 12.9 MB | **5.3 MB** | 2.44× |
+| 2,000 | 61.0 MB | 122.1 MB | 31.3 kB | 23.3 MB | 206.4 MB | **84.4 MB** | 2.45× |
+| 5,000 | 381.5 MB | 763.0 MB | 78.1 kB | 145.6 MB | 1,290.0 MB | **527.2 MB** | 2.45× |
+| 10,000 | 1.49 GB | 2.98 GB | 156.3 kB | 582.3 MB | 5.04 GB | **2.06 GB** | 2.45× |
+
+**2.45×, flat**, for the reason P1's 3.39× was flat: every term is O(N²) with a fixed coefficient.
+All three ceiling refusals go through `PlanarSystem.ResidentPhrase` as before and now quote **527 MB**
+at the ceiling in place of 1,290. P1's own multiplier over the bare 16·N² the refusals printed before
+that phase falls from 3.39× to **1.39×**.
+
+### Table 3 — memory, measured
+
+Around the FACTORISATION alone, on identical copies of one filled Z, with the baseline taken
+immediately before the copy. **Scoping matters and this table is where P1's own trap was paid
+again**: a first version measured a whole frequency point (cores → fill → factor) cumulatively and
+read a **negative 188 MB** at the largest rung, because the large object heap hands a released
+matrix's committed space to the next allocation instead of giving it back. Scoped to one
+factorisation, it is exact to the last megabyte.
+
+| N | live, LDLᵀ | live, general LU | ratio | 16·N² | allocated, LDLᵀ | allocated, LU |
+|---|---|---|---|---|---|---|
+| 552 | 5.3 MB | 14.0 MB | 2.6× | 4.6 MB | 0.9 MB | 9.3 MB |
+| 1,980 | 59.9 MB | 179.5 MB | 3.0× | 59.8 MB | 0.2 MB | 119.7 MB |
+| 4,836 | **357.0 MB** | **1,070.6 MB** | **3.0×** | 356.9 MB | 0.6 MB | 713.8 MB |
+
+**The two large rungs land on 1× and exactly 3× the matrix** — the in-place factorisation leaves the
+matrix it consumed and nothing else; the LU leaves the matrix plus two further full ones. The
+smallest rung's 2.6× is the same statement with a megabyte of test-host noise on it.
+
+The ALLOCATION counter is reported beside the live one and is the more striking of the two — the LU
+allocates 2 × 16·N² where the in-place form allocates a length-N diagonal — but it is
+**process-wide and counts every thread**, so the LDLᵀ column picks up the trailing update's own
+`Parallel.For` task objects and whatever else the host allocated in that window: 0.2 to 0.9 MB,
+**independent of N**, which is what says it is noise rather than the factorisation. It is therefore
+reported and not gated on.
+
+### Accuracy — milestone 2, and where the gate had to change shape
+
+`x` against NumFlat's LU solution on the same Z, and `‖Zx − b‖/‖b‖` for both. The coarse mesh
+throughout: the factorisation is a property of the MATRIX and cannot tell a coarse mesh's Z from a
+shipping mesh's, so a finer mesh is a bigger matrix rather than a harder question (`PlanarLineFixtures`'
+own two-tier note makes exactly this argument for the port algebra).
+
+| fixture | N | \|x − x_LU\|/\|x_LU\| | residual LDLᵀ | residual LU | growth max\|L\| | min\|D\|/max\|Z\| |
+|---|---|---|---|---|---|---|
+| FR-4 hero 2.9 × 20 mm, 10 GHz | 94 | 1.07e-14 | 1.14e-14 | 7.52e-15 | 4.45 | 1.72e-1 |
+| FR-4 line 80 mm, 10 GHz | 388 | 1.64e-14 | 2.23e-14 | 1.30e-14 | 4.45 | 1.72e-1 |
+| FR-4 taper 2.9 → 0.5 mm, 20 mm | 1,278 | 5.42e-13 | 6.56e-13 | 3.34e-13 | 1.49 | 8.96e-3 |
+| **FR-4 hero at 20 GHz** (remainder-stressed) | 247 | 1.01e-14 | 1.46e-14 | 7.10e-15 | 1.69 | 3.89e-1 |
+| **FR-4 hero at 120 MHz** (`Dcim.CanFitAtFrequency`'s floor + 20%) | 24 | 1.49e-12 | 5.47e-12 | 3.81e-12 | 1.00 | 1.63e-4 |
+
+**The brief's 1e-8 stop is not approached anywhere — the worst residual on any fixture is 5.5e-12,
+three and a half decades inside it — so no pivoted alternative is needed and none was built.**
+
+**But the brief's 1e-12 residual gate cannot be applied to the two stress fixtures, and the reason is
+the fixture rather than the factorisation.** At 120 MHz the GENERAL LU's own residual on the same
+matrix is 3.81e-12. That is the MPIE's low-frequency breakdown — the vector term vanishing like ω
+against a scalar term growing like 1/ω — and it is a property of Z that a pivoted factorisation
+misses by the same margin. Holding an unpivoted LDLᵀ to a bound the pivoted reference also misses
+would be measuring the fixture, which is the oracle trap this area has now paid for ten times. So
+the gate is in two parts: the three SERIES fixtures keep the brief's 1e-10 relative / 1e-12 residual
+verbatim, and every fixture including the two stressed ones is held to **1e-8 absolute AND to within
+10× of the general LU's own residual on the same matrix** — which is the question the brief is
+actually asking. The measured ratio is **1.4–2.0× on all five**.
+
+`GrowthFactor` (max |L| over the strict lower triangle) is the matrix-free half of the answer and it
+is the reassuring one: **1.0 to 4.5 across every fixture**, where element growth is exactly what
+pivoting exists to bound. It costs one O(N²) pass and it survives the matrix, so it is available on
+runs where the residual is not.
+
+### Milestone 4 — the published s-parameters
+
+De-embedded and renormalised S — the answer that ships, through two calibration standards per port
+cross-section, the T-matrix cascade, both branch resolutions and the renormalisation — against the
+same run with `UseSymmetricFactorization = false`, 5 points, worst |ΔS| over every entry:
+
+| fixture | N | worst \|ΔS\| |
+|---|---|---|
+| FR-4 hero 20 mm | 94 | 1.04e-14 |
+| FR-4 line 80 mm | 388 | 3.56e-14 |
+| FR-4 taper 2.9 → 1.5 mm, 20 mm | 392 | 7.36e-13 |
+
+Against the brief's **1e-9 absolute**, with three decades to spare on the worst of them. The taper is
+2.9 → 1.5 mm rather than the series' own 2.9 → 0.5: the narrow end sets the transverse pitch, so the
+shipped taper meshes to N = 1,278 even coarse and a five-point de-embedded sweep of it costs 19 s
+twice over. What this gate needs from a taper is its oblique flanks, and a 2:1 taper has them.
+
+### The whole-sweep digest, and why it was not simply re-pinned
+
+`PlanarP2MemoryWinsTests.P2_6` hashes the published S of a 5-point de-embedded sweep against a
+literal, and P4 and P5 each re-pinned it when they moved the last bits. P7 moves them too, by
+construction. **A bare re-pin would prove nothing** — it accepts any change, including a real one —
+so the test now runs the SAME sweep twice, once through each factorisation, and asserts:
+
+- through NumFlat's general LU: `713EFE3B…D0D4FE0B`, **P5's own literal, bit for bit**;
+- through the shipped LDLᵀ: `D788322C…6A25BA27`.
+
+The first is the load-bearing one. It says P7 moved the factorisation and **nothing else** — not the
+fill, not the cores, not the calibration, not the peel, not the renormalisation — which is a stronger
+statement than any tolerance on the second.
+
+### Milestone 5 — R17 re-asked, and NOT acted on
+
+**1 GB of resident peak now buys N = 6,968, against 4,454 with the general LU — 1.56× the unknowns.**
+The sentence that would change, written out and deliberately not applied:
+
+> `SurfaceMesher.UnknownCeiling` | 5,000 → 6,968 | R17's per-mesh N ceiling for the DENSE path, at
+> the same 1 GB the 5,000 was sized against.
+
+**What has NOT been measured, and would have to be first:** the FILL's own wall clock at that N (the
+factorisation is 3.59 s at 4,836 and scales as N³, so ~10 s at 6,968 — but the fill and the once-per-
+mesh core build are the other half and neither was re-timed there), and whether a mesh that large is
+accurate enough to be worth running. Memory stopped being what binds; time has not been re-asked.
+`PlanarP7SymmetricFactorTests.P7_9` prints all of this and asserts the constant is still 5,000, so a
+well-meaning follow-up cannot move it by accident.
+
+### What was changed in code
+
+- **`SymmetricFactorization.cs`** (new). In-place blocked LDLᵀ for a complex-symmetric matrix;
+  `Factor(Mat<Complex>, PlanarFillSettings?, blockSize)`, `Solve` for one and for P right-hand sides,
+  `Residual(z, x, b)` as a static taking the original matrix, and the two matrix-free instruments
+  `GrowthFactor` / `SmallestPivotRatio`. NumFlat's `Mat<T>` is column-major with element (i,j) at
+  `memory[i + j·stride]` — verified directly, and it is why every inner loop runs over `i`.
+- **`PlanarFillSettings.UseSymmetricFactorization`** (default true) and
+  **`TrackFactorizationResidual`** (default false), both init-only outside the positional list for
+  the reason `Aim` is: they select a solver and a diagnostic, not a quantity.
+- **`PlanarSystem`** now holds its matrix privately and **throws from `Matrix` once factored** — the
+  factorisation is in place and the upper triangle survives it untouched, so a stale read would
+  return plausible numbers from the wrong frequency. `Factor()` replaces `_ = system.Lu` as the way
+  to force and time it; `Lu` stays and refuses by name on the symmetric path. `Wrap` takes optional
+  settings and does NOT copy.
+- **`IPlanarOperator` gained a default `Solve(IReadOnlyList<Vec<Complex>>)`** — the per-vector loop
+  every operator did — which `PlanarSystem` overrides with a substitution that reads each column of
+  L once for all P vectors. `PlanarExcitation.Solve` makes one call instead of P.
+- `MatrixBytes` / `CoreBytes` unchanged; `FactorBytes` now means the shipped path and
+  `LuFactorBytes` is the old body under its own name.
+
+### What P7 deliberately did NOT do
+
+- **No native BLAS.** Root `CLAUDE.md` requires asking first, and the brief forbids it outright.
+- **No pivoting.** Nothing measured came within three decades of the brief's stop, and Bunch–Kaufman
+  stays the named follow-up rather than a silent fallback — `FactorPanel` refuses by name on an
+  exactly zero pivot and points at the setting.
+- **No packed storage.** Packing the lower triangle would halve the steady state to 8·N², but the
+  matrix arrives as a full N×N array from the fill and packing it needs a transient 24·N² — a HIGHER
+  peak than the 16·N² in-place form, and the peak is what a refusal is about. Building the fill
+  packed is a fill change, which the brief forbids.
+- **No vectorisation of the inner loop.** The trailing update is scalar managed C# and NumFlat's
+  native LU still beats it per flop; a `Vector128`/`Vector256` complex multiply-add and destination-
+  column register blocking are the obvious next 2–4×. Recorded for a later phase — the brief's own
+  target was already met by 11.5×.
+- **`PlanarDeembed.StaticCapacitance` and `ChargeSolver` are untouched**, though both factor a
+  symmetric matrix over CELLS and would take the same treatment. Out of the brief's scope, and worth
+  a line in a later one: the de-embedding path's own dense solve is now the only general LU left on a
+  planar run.
+- **The mirror is still written.** `MirrorLowerToUpper` copies the lower triangle to the upper on
+  every fill, and the factorisation reads only the lower one. Nothing else on the dense path reads
+  the upper triangle either, so that O(N²) write is now arguably dead — but `PlanarEntryFill`, the
+  AIM path and several tests do read `Z[i,j]` for arbitrary (i,j), and establishing that none of
+  them needs it is its own piece of work.

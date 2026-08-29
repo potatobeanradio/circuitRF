@@ -646,6 +646,32 @@ forever.
 > `AcceleratedUnknownCeiling` at 12,000 — moving either belongs to P7 and P8, once P2's and P7's
 > reductions have landed and the memory is what it will be.
 
+> **Built at P7 (`brief-em-p7-symmetric-inplace-factorisation.md`, 2026-08-29) — the "+ L and U"
+> column above is gone, because there is no second matrix any more.** Z is complex-symmetric bit for
+> bit (the fill computes the lower triangle and mirrors), so the dense solve is an unpivoted
+> LDLᵀ written INTO Z's own lower triangle — `SymmetricFactorization`, blocked at 64 columns, its
+> trailing update parallel over destination columns under the same one cap the fill spends. The only
+> new array is the diagonal D, 16·N bytes.
+>
+> | N | matrix | + L and U (pre-P7) | + D (P7) | + cached cores | **peak pre-P7** | **peak P7** |
+> |---|---|---|---|---|---|---|
+> | 500 | 3.8 MB | 7.6 MB | 7.8 kB | 1.5 MB | 12.9 MB | **5.3 MB** |
+> | 2,000 | 61.0 MB | 122.1 MB | 31.3 kB | 23.3 MB | 206.4 MB | **84.4 MB** |
+> | 5,000 | 381.5 MB | 763.0 MB | 78.1 kB | 145.6 MB | 1,290.0 MB | **527.2 MB** |
+> | 10,000 | 1.49 GB | 2.98 GB | 156.3 kB | 582.3 MB | 5.04 GB | **2.06 GB** |
+>
+> **2.45×, flat**, for the same reason P1's 3.39× was flat: every term is O(N²) with a fixed
+> coefficient. `PlanarSystem.ResidentBytes` is still the one function all three refusals quote and it
+> now quotes **527 MB** at the ceiling rather than 1,290. `PlanarFillSettings.UseSymmetricFactorization
+> = false` puts NumFlat's general LU and the old number back; it is the oracle every P7 accuracy gate
+> compares against, kept reachable exactly as `UseRadialTable = false` is.
+>
+> **The ceiling still does not move, and the reason has changed.** R17 re-asked: 1 GB of resident peak
+> now buys **N = 6,968** against 4,454 with the general LU — 1.56× the unknowns. Memory is no longer
+> what binds at 5,000. What has NOT been re-measured is the FILL's time and a mesh's accuracy at that
+> size, so moving `UnknownCeiling` stays a separate owner decision; `HISTORY.md` §P7 carries the
+> sentence that would change, written out and not applied.
+
 **R17. Declare a hard N ceiling (~5000), surface the predicted N before solving, and refuse politely
 above it** with a message pointing at mesh coarsening. A "lightweight" simulator that silently tries to
 allocate 12 GB is not lightweight.
@@ -750,11 +776,46 @@ the mesh. Build it only when the kernel that needs it exists; v1 does not.
 > near fill's timer showed the AIM correction is now the largest per-frequency term (43–46% at
 > N ≥ 3,731), ahead of the sparse LU; a 5× restructuring of it is recorded for P7/P8. `HISTORY.md` §P6.
 >
+> **Built at P7 (`brief-em-p7-symmetric-inplace-factorisation.md`, 2026-08-29) — and this is where
+> the paragraph below stops being true.** *"Cost is the fill, not the LU"* was already false per
+> frequency (P4 and P5 cut the fill 8–17× and left the LU untouched at 42.8 s at N = 4,933); what
+> P7 changes is the other side. **The dense factorisation is no longer an LU and no longer runs on
+> one core.** Measured in the SHIPPED configuration, on the same three meshes P1's memory table used,
+> the factorisation alone:
+>
+> | N | cap 1 | cap 2 | cap 4 | cap 10 | NumFlat LU | **LU ÷ cap 10** | cap 1 ÷ cap 10 |
+> |---|---|---|---|---|---|---|---|
+> | 552 | 0.04 s | 0.02 s | 0.02 s | **0.01 s** | 0.04 s | **2.7×** | 3.1× |
+> | 1,980 | 0.91 s | 0.49 s | 0.41 s | **0.26 s** | 1.92 s | **7.3×** | 3.5× |
+> | 4,836 | 13.14 s | 6.88 s | 5.83 s | **3.59 s** | 41.21 s | **11.5×** | 3.7× |
+>
+> Half of that is arithmetic — LDLᵀ is N³/3 complex multiply-adds against an LU's 2N³/3, and the
+> blocked form gets 3.1× of it single-threaded — and the rest is the ten cores, which the LU never
+> used. The scaling tops out at 3.7× for P3's own reason: this box's ten cores are four performance
+> and six efficiency ones. **So a dense frequency point at the ceiling is now roughly a 2 s fill and
+> a 3.6 s factorisation rather than a 2 s fill and a 41 s one**, and adaptive frequency sampling —
+> which the paragraph below calls "the best performance investment after the mesh" — is now worth
+> proportionally less on the dense path than it was this morning, not more.
+>
+> **A measurement trap this cost real time, recorded so the next phase does not pay it again.**
+> `dotnet test` builds **Debug**, and every other timing in this area compares managed code against
+> managed code, so the configuration has always cancelled. This comparison does not: NumFlat's LU is
+> native and barely moves, while `SymmetricFactorization` is ordinary C# and runs ~10× slower
+> unoptimised. The same N = 4,836 rung reads **139 s / 33.7 s (cap 1 / cap 10) against an LU of
+> 40 s in Debug** — i.e. "the new factorisation is 3.5× SLOWER than the one it replaces" — and
+> 13.1 s / 3.6 s against 41.2 s in Release. The table above is Release; `PlanarP7FactorCostTests`
+> prints its own build configuration beside its table and asserts only what is true in both.
+>
 > **Reviewed 2026-08-28 — two statements in this section are wrong today, and a brief series exists
 > to act on them (`docs/sonnet-briefs/brief-em-perf-series.md`, P1–P12).** First, *"cost is the fill,
 > not the LU"* holds for a whole sweep only because the once-per-sweep core build is folded into
 > "fill"; **per frequency the LU dominates from about N = 3,000** (42.8 s against 21.8 s at N = 4,933
 > in the table above), and NumFlat's LU runs on one core while the fill runs on all of them (P7).
+> *(**P7 is done, 2026-08-29** — see its own note above. The sentence is now wrong in the other
+> direction and in a way that will not come back: the dense factorisation is 3.59 s at N = 4,836 on
+> ten cores, against a fill of the same order, so neither dominates. Nothing here is "the fill, not
+> the LU" any more; the per-point cost is simply the two of them, both parallel, both O(N²)–O(N³)
+> with small coefficients.)*
 > Second, the memory column and the refusal's "381 MB" quote `16·N²` alone; **the resident peak of one
 > frequency point is roughly four times that** — NumFlat holds `L` and `U` as two further full
 > matrices beside the one `PlanarSystem` keeps, plus the cached cores and the transient m×m `P`

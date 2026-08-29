@@ -342,7 +342,8 @@ public class MomIterativeSolverDecisionTests(ITestOutputHelper output)
 
         var rhs = new Vec<Complex>(s.N);
         for (int i = 0; i < s.N; i++) rhs[i] = s.B[i];
-        var exact = PlanarSystem.Wrap(s.Dense).Solve(rhs);
+        // P7 — Wrap CONSUMES its matrix, and s.Dense is what s.A's product reads below.
+        var exact = PlanarSystem.Wrap(s.Dense.Copy()).Solve(rhs);
 
         var res = GmresResiduals(s.A, s.N, s.B, Identity(), Cap(s.N), Stop);
 
@@ -531,8 +532,8 @@ public class MomIterativeSolverDecisionTests(ITestOutputHelper output)
             // The number the LU column has to be judged against: what the DIRECT solve of the whole
             // dense system costs. A near-field factorisation approaching this buys nothing.
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            _ = PlanarSystem.Wrap(s.Dense).Lu;
-            _out.WriteLine($"                          dense LU  {sw.Elapsed.TotalSeconds,5:F2} s");
+            PlanarSystem.Wrap(s.Dense.Copy()).Factor();
+            _out.WriteLine($"                          dense factor  {sw.Elapsed.TotalSeconds,5:F2} s");
         }
     }
 }

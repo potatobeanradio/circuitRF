@@ -318,6 +318,37 @@ public sealed record PlanarFillSettings(
     public PlanarFillCounters? Counters { get; init; }
 
     /// <summary>
+    /// <b>P7 — which dense factorisation the planar system uses.</b> True (the default) is the
+    /// in-place blocked complex-symmetric LDLᵀ, <see cref="SymmetricFactorization"/>. False falls
+    /// back to NumFlat's general LU, which is what every published number in this area was produced
+    /// by up to P6 and is kept reachable for exactly that reason — the same way
+    /// <see cref="UseRadialTable"/> keeps the directly-evaluated remainder reachable as its own
+    /// oracle.
+    ///
+    /// <para>The two do not agree bit for bit and cannot: they are different factorisations of the
+    /// same matrix. What they agree to is measured — <c>PlanarP7SymmetricFactorTests</c> carries the
+    /// numbers, and <c>PlanarP7FactorCostTests</c> the time and memory.</para>
+    ///
+    /// <para>Outside the positional list for the reason <see cref="Aim"/> is: it selects a SOLVER,
+    /// not a quantity, and two settings objects that differ only in how their matrix was factored
+    /// are not two different fills.</para>
+    /// </summary>
+    public bool UseSymmetricFactorization { get; init; } = true;
+
+    /// <summary>
+    /// <b>P7 — keep a copy of Z so every solve can report ‖Zx − b‖/‖b‖.</b> Off by default, and
+    /// deliberately: the factorisation is IN PLACE, so this hands back a whole N×N matrix — 381 MB
+    /// at the ceiling — which is the memory the phase exists to recover. It is a diagnostic for a
+    /// gate or a support question, not a safety net.
+    ///
+    /// <para>The matrix-free instruments are always on and cost nothing:
+    /// <see cref="SymmetricFactorization.GrowthFactor"/> and
+    /// <see cref="SymmetricFactorization.SmallestPivotRatio"/> are computed during the
+    /// factorisation and survive the matrix.</para>
+    /// </summary>
+    public bool TrackFactorizationResidual { get; init; }
+
+    /// <summary>
     /// <b>Refuse a setting that would silently produce a WRONG answer rather than an exception.</b>
     ///
     /// <para>These are not defensive checks against nonsense for its own sake — each one guards a

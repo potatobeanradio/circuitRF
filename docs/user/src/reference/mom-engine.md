@@ -170,8 +170,10 @@ is numerical, and it sees a continuous function with a kink, which is a quadratu
 Against an ε<sub>r</sub> = 1 reduction where the kernel is exact, the assembled matrix is right to
 **5.0 × 10<sup>-6</sup>**.
 
-**The solve.** Dense complex LU per frequency, or — optionally — an iterative solve against a
-grid-accelerated matrix–vector product. The accelerated path computes the same answer a different way,
+**The solve.** A dense complex factorisation per frequency, or — optionally — an iterative solve
+against a grid-accelerated matrix–vector product. The dense one exploits the fact that the matrix is
+symmetric: it factors it **in place**, in half the arithmetic a general solver would use, across
+every core your core-count setting allows. The accelerated path computes the same answer a different way,
 to its own accuracy gates; its win is **working-set memory**, roughly 4× less past about 900 unknowns,
 while the *time* crossover is much later, around 3,700 unknowns. Below that the dense path is faster.
 **It does raise the unknown ceiling — from 5,000 to 12,000 — but only on a single-metal-level structure
@@ -735,17 +737,17 @@ cell and the truncation extent are all visible before you commit to a run. Use i
 
 ## What makes a run infeasible {#budget}
 
-The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes. **The matrix is about a
-third of what a frequency point actually costs** — its LU factorisation is two more matrices of the
-same size, and the frequency-independent geometry cache is another half — so the figure the refusal
-quotes, and the one below, is all three together.
+The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes. **The matrix is most of what
+a frequency point costs, and the frequency-independent geometry cache is the rest** — so the figure
+the refusal quotes, and the one below, is both together. The factorisation itself is free of charge:
+it is written into the matrix rather than beside it.
 
 | N | Matrix | **Held while one frequency solves** | Character |
 |---|---|---|---|
-| 500 | 4 MB | **13 MB** | A short line or a bend lives here |
-| 2,000 | 61 MB | **206 MB** | Interactive: seconds per frequency |
-| 5,000 | 381 MB | **1.26 GB** | The practical ceiling for a lightweight tool |
-| 10,000 | 1.5 GB | **5.0 GB** | Out of scope |
+| 500 | 4 MB | **5 MB** | A short line or a bend lives here |
+| 2,000 | 61 MB | **84 MB** | Interactive: under a second per frequency |
+| 5,000 | 381 MB | **527 MB** | The practical ceiling for a lightweight tool |
+| 10,000 | 1.5 GB | **2.1 GB** | Out of scope |
 
 A de-embedded run holds more again — every calibration standard's geometry cache is live alongside
 the structure's own.

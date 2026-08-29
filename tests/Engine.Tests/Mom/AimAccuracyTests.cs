@@ -103,7 +103,9 @@ public class AimAccuracyTests(ITestOutputHelper output)
         var problem = PlanarLineFixtures.Fr4Line(32e-3, 6e9);
         var b = Build(problem, PlanarLineFixtures.Shipping, 6e9);
         var z = PlanarFill.Fill(b.Dense, b.K.VectorPotential, b.K.Scalar, b.Omega);
-        var system = PlanarSystem.Wrap(z);
+        // P7 — the factorisation consumes its matrix in place, and `z` is the dense reference every
+        // row below is measured against. The copy is the test's to take.
+        var system = PlanarSystem.Wrap(z.Copy());
         int n = b.Mesh.Bases.Count;
 
         var rhs = PlanarExcitation.RightHandSide(n, b.Ports[0]);
@@ -387,7 +389,9 @@ public class AimAccuracyTests(ITestOutputHelper output)
         var problem = PlanarLineFixtures.Fr4Line(64e-3, 6e9);
         var b = Build(problem, PlanarLineFixtures.Shipping, 6e9);
         var z = PlanarFill.Fill(b.Dense, b.K.VectorPotential, b.K.Scalar, b.Omega);
-        var system = PlanarSystem.Wrap(z);
+        // P7 — the factorisation consumes its matrix in place, and `z` is the dense reference every
+        // row below is measured against. The copy is the test's to take.
+        var system = PlanarSystem.Wrap(z.Copy());
         int n = b.Mesh.Bases.Count;
         var rhs = PlanarExcitation.RightHandSide(n, b.Ports[0]);
         var exact = system.Solve(rhs);

@@ -520,11 +520,13 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
 | `PlanarSolveSettings.CurrentDensityPortNumber` / `…FrequencyHz` | null | captured during the existing sweep, no second factorisation |
 | `PlanarFillSettings.DirectVerticalKernel` | `false` | ẑẑ from `SommerfeldIntegral.EvaluateInterior`; skips the ρ/λ refusal and says so |
 | **`PlanarFillSettings.Aim`** | **`null` = OFF, but REACHABLE from the panel since 2026-08-14** | `EmSetup.AcceleratedSolve`, persisted in the `.cem`. **It MOVES the ceiling** (`brief-em-aim-ceiling.md`, 2026-08-14) — see `SurfaceMesher.AcceleratedUnknownCeiling` below — on a single-level mesh; a multi-level/via problem is refused by name regardless (`PlanarAimGeometry.Build`, P6 — `PlanarAimOperator.Build` before), so the effective ceiling there is still the dense one. The refusal names turning it on as the first remedy whenever doing so would let the mesh run. |
+| **`PlanarFillSettings.UseSymmetricFactorization`** | **`true` = P7's in-place complex-symmetric LDLᵀ** | Z is complex-symmetric bit for bit, so the dense solve is an `SymmetricFactorization`, not an LU: half the arithmetic, parallel over the trailing update under the SAME one cap the fill spends, and written INTO the matrix — `PlanarSystem.Matrix` throws after `Factor()`. `false` restores NumFlat's general LU, kept reachable as the oracle exactly as `UseRadialTable = false` is. **Unpivoted, which is standard for MoM matrices and is not a theorem** — the gate is a residual, and `SymmetricFactorization.GrowthFactor` / `SmallestPivotRatio` are computed on every factorisation at no cost. |
+| **`PlanarFillSettings.TrackFactorizationResidual`** | **`false`** | Keeps a copy of Z so every solve reports `‖Zx − b‖/‖b‖` on `PlanarSystem.LastResidual`. That copy is a whole N×N matrix — the memory P7 removed — so it is a diagnostic, never a default. |
 | `PlanarFillDiagnostics` / `ConformalDiagnostics` | `null` | instruments; fill is bit-identical with them attached |
 | `SurfaceMesher.PlanarRimGrading` | `None` | a **measurement seam, not a user control** — do not promote it |
 | `DefaultSliverAreaFraction` | 0.05 | conservative, on a plateau (0.005…0.05 identical at cells/λ = 130); **no conditioning cliff was located** |
 | `PlanarLevels.MaxElectricalLength` | **0.30** | bounds the **BASIS** (one z-rooftop per gap ⇒ uniform current), not the quadrature |
-| `SurfaceMesher.UnknownCeiling` | **5,000** | R17's per-mesh N ceiling for the DENSE path, checked in three places. **A COMPILE-TIME CONSTANT, not a probe of the machine** — say so when it refuses; the megabytes it quotes read as a RAM limit and a 2026-08-14 owner report asked exactly that. **Does not move** — 16N² plus the LU's own cost is real. |
+| `SurfaceMesher.UnknownCeiling` | **5,000** | R17's per-mesh N ceiling for the DENSE path, checked in three places. **A COMPILE-TIME CONSTANT, not a probe of the machine** — say so when it refuses; the megabytes it quotes read as a RAM limit and a 2026-08-14 owner report asked exactly that. **Still 5,000 after P7, and the reason it did not move has changed**: the memory argument behind it is largely gone (one point now holds 527 MB at the ceiling, not 1,290 — the same 1 GB would buy **N ≈ 6,968**), but nothing has re-measured the FILL time or the accuracy of a mesh that size, and moving it is an owner decision the brief explicitly reserves. `HISTORY.md` §P7 carries the sentence that would change. |
 | **`SurfaceMesher.AcceleratedUnknownCeiling`** | **12,000** | R17's ceiling for the ACCELERATED solve, single-level meshes only (`brief-em-aim-ceiling.md`, 2026-08-14) — see §8's own AIM paragraph and `HISTORY.md` §12's closing subsection for the measurement. **A de-embedded run's calibration-standard capacitance step is NOT accelerated** (`PlanarDeembed.StaticCapacitance` is always dense, out of this brief's scope) and can still refuse on a wide port even when the DUT's own solve would succeed — see that subsection's own limitation note. |
 | `QuasiStaticKernel` K-J dispersion | off | opt-in ctor flag, single microstrip only |
 
@@ -715,7 +717,12 @@ now quote `PlanarSystem.ResidentBytes` (1,338 MB at the ceiling, not 381) throug
 function, so they cannot drift apart. The ceiling CONSTANT is untouched — that is P7's decision.
 Tables in `HISTORY.md` §P1. **P2 (2026-08-29) then took ~24% off the cores term** — one of the three
 O(N²) vector triangles held an outer product of an O(N) vector — so the flat ratio is now **3.39×**
-and the refusals quote **1,290 MB** at the ceiling. `HISTORY.md` §P2.** Of
+and the refusals quote **1,290 MB** at the ceiling. `HISTORY.md` §P2. **P7 (2026-08-29) took both
+FACTOR matrices out**: the complex-symmetric LDLᵀ overwrites Z, so the flat ratio is **1.39×** and
+the refusals quote **527 MB**. R17 was re-asked and NOT acted on — 1 GB now buys N = 6,968 against
+4,454, so memory no longer binds at 5,000, but nothing has re-measured the fill's time or a mesh's
+accuracy at that size and moving the constant stays the owner's decision. `HISTORY.md` §P7 carries
+the sentence that would change, written out and not applied.** Of
 `brief-em-sweep-performance`: **M0–M2 are done** (§9), **the calibration standards' own saving is
 done** (§10 — 1.52× off a wide-port point, bit-identically), **M3 is a MEASURED DEFERRAL** (§6 — its
 premise was tested before it was built and its ceiling is 1.09–1.15×), **M4 is not started**, and
@@ -736,14 +743,27 @@ for the two ladders, the conformal check and the calibration-standard limit that
 
 ## 8. Performance — current shipped state
 
-- **Cost is the fill, not the LU**, right up to R17's ceiling (114× the LU at N = 552, still 1.8× at
-  N = 4,933).
+- **~~Cost is the fill, not the LU~~ — neither, since P7. Both halves of a dense frequency point are
+  now parallel and of the same order** (at N = 4,836, ten cores: a fill of a couple of seconds and a
+  factorisation of 3.59 s). The original claim ("114× the LU at N = 552, still 1.8× at N = 4,933")
+  was true of L8c and has been overturned twice — by P4/P5 cutting the fill, and by P7 replacing the
+  LU.
   > **Corrected at P4, and again at P5 (2026-08-29):** no longer true even of a whole sweep once
   > the core build is amortised over more than a handful of points. P4 cut the per-frequency fill
   > 2.7–3× and P5's translation-class memo a further 2.8–5.8× (and the core build 3.7–41×), so per
   > frequency point the LU dominates from roughly **N = 1,000**: at N = 1,891 the fill is 0.41 s
   > against an LU of ≈ 2.4 s, at N = 3,731 1.25 s against ≈ 18 s (LU scaled by N³ from P1's 42.8 s at
   > N = 4,933, not re-timed). P7 (the factorisation) is where the time is. `HISTORY.md` §P4, §P5.
+  > **Built at P7 (2026-08-29), and the whole sentence is retired rather than re-pointed.** There is
+  > no LU on the dense path any more: Z is complex-symmetric bit for bit, so
+  > `SymmetricFactorization` does an unpivoted blocked LDLᵀ **in place**, in half the arithmetic, with
+  > the trailing update parallel over destination columns under the same one cap the fill spends.
+  > Measured in Release on the three shipping-mesh rungs: **0.01 / 0.26 / 3.59 s at cap 10** for
+  > N = 552 / 1,980 / 4,836, against NumFlat's **0.04 / 1.92 / 41.21 s** — 2.7× / 7.3× / **11.5×**,
+  > of which 3.1–3.7× is the cores and the rest is the arithmetic. Neither half of a dense point
+  > dominates now. **`dotnet test` builds DEBUG and that inverts this comparison** (139 s / 33.7 s
+  > against an LU of 40 s at N = 4,836) because the LU is native and this is not — see §8's own
+  > paragraph. `HISTORY.md` §P7.
 - **A de-embedded point fills only the TWO calibration standards `GammaBest` actually reads**
   (`PlanarCalibration.SelectSeparation`, computable before any fill), not every standard built for the
   band — 1.23–1.80× faster across a band, smallest saving at the band's bottom (structural: the

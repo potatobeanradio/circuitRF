@@ -157,10 +157,13 @@ public class PlanarFillCostTests(ITestOutputHelper output)
         // D6's reuse is not free: it is an extra allocation that §10.7's table does not account for.
         _out.WriteLine($"   §10.7 predicts {PlanarSystem.MatrixBytes(5000) / (1024.0 * 1024.0):F0} MB at N = 5,000; " +
                        $"D6's cached cores add {c.CoreBytes * 100.0 / c.MatrixBytes:F0}% on top of the matrix.");
-        _out.WriteLine("   …and the LU adds two more matrices beside them, which is why P1 " +
-                       "(2026-08-29) re-pointed the refusals at PlanarSystem.ResidentBytes: " +
+        _out.WriteLine("   …which is why P1 (2026-08-29) re-pointed the refusals at " +
+                       "PlanarSystem.ResidentBytes: " +
                        $"{PlanarSystem.ResidentBytes(5000) / (1024.0 * 1024.0):N0} MB resident at the " +
-                       "peak of one frequency point, against the 400 MB §10.7's table quotes.");
+                       "peak of one frequency point, against the 400 MB §10.7's table quotes. " +
+                       "P1's own number was 1,290 MB because NumFlat's LU held two further full " +
+                       "matrices; P7 factors in place, so what is left beside the matrix is the " +
+                       "cores and a length-N diagonal.");
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

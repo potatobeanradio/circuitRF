@@ -270,7 +270,9 @@ public class AimAcceleratorTests(ITestOutputHelper output)
         var (mesh, dense, _, k, omega, ports) = Fixture();
 
         var z = PlanarFill.Fill(dense, k.VectorPotential, k.Scalar, omega);
-        var system = PlanarSystem.Wrap(z);
+        // P7 — the factorisation runs IN PLACE, and `z` is read below as the GMRES product's own
+        // matrix. The copy is the test's to take, deliberately: PlanarSystem.Wrap does not hide it.
+        var system = PlanarSystem.Wrap(z.Copy());
         int n = mesh.Bases.Count;
 
         var rhsV = PlanarExcitation.RightHandSide(n, ports[0]);

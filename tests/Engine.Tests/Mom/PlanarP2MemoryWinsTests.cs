@@ -286,10 +286,33 @@ public sealed class PlanarP2MemoryWinsTests
         foreach (var p in run.Points)
             _out.WriteLine($"  {p.FrequencyHz:E3} Hz  S21 = {p.S[1, 0]}");
 
+        // ── P7 re-pinned this literal, and did NOT simply move it ─────────────────────────────
+        //
+        // P7 replaced the dense LU with an in-place complex-symmetric LDLᵀ, so the published S moves
+        // in its last bits by construction — a different factorisation of the same matrix does
+        // different arithmetic, and the brief says outright that bit-identity is not available.
+        // A bare re-pin would therefore prove nothing: it would accept ANY change, including a real
+        // one. So the same sweep is run through the factorisation P7 REPLACED, and that one must
+        // still reproduce P5's literal bit for bit. Between them the two assertions say exactly what
+        // P7 claims — the factorisation moved, and nothing else did.
+        var throughTheOldLu = PlanarSolve.Run(
+            mesh, ports, slab, [1e9, 5e9, 10e9, 15e9, 20e9],
+            PlanarSolveSettings.Default with
+            {
+                Deembed = true,
+                Fill = PlanarFillSettings.Default with { UseSymmetricFactorization = false },
+            });
+        string luDigest = Digest([.. throughTheOldLu.Points.Select(p => p.S)]);
+        _out.WriteLine($"the same sweep through NumFlat's general LU = {luDigest}");
+
         // P4 re-pinned this literal (was 8DC00C54…96DD97): see P2_1's note — the same last-bit
         // motion, seen through a de-embedded sweep. The pre-P2 NotEqual below still holds.
         // P5 re-pinned it (was 4634B313…9839CD): see P2_1's P5 note.
-        Assert.Equal("713EFE3B9C6866B76F7EEA221D57C10DBAD2B06A785227A7E599E0D9D0D4FE0B", digest);
+        Assert.Equal("713EFE3B9C6866B76F7EEA221D57C10DBAD2B06A785227A7E599E0D9D0D4FE0B", luDigest);
+
+        // P7's own literal — the shipped path. The two differ; PlanarP7SymmetricFactorTests measures
+        // BY HOW MUCH on this same class of fixture, and it is 1.0e-14 absolute on the published S.
+        Assert.Equal("D788322CBB403246B8B9B816133B1C5C19209FB2C763E05CE70CC2686A25BA27", digest);
 
         // …and the pre-P2 digest, which differs. Recorded so the claim "M2 moves the last bits" is a
         // measurement in the tree rather than a sentence in a write-up.

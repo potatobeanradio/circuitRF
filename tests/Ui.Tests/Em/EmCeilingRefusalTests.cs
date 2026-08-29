@@ -156,12 +156,16 @@ public class EmCeilingRefusalTests
         // peak of one frequency point rather than the bare 16·N² matrix, which was right about the
         // matrix and silent about the two factor matrices and the cached cores beside it (measured
         // 3.52× at N = 552, 1,980 and 4,836 alike, and 3.39× since P2 took a core triangle out).
+        // P7 (2026-08-29) then took the two FACTOR matrices out of the peak entirely — the
+        // complex-symmetric LDLᵀ overwrites Z in place — so the phrase names the matrix, its
+        // diagonal and the cores, and the ratio is 1.39×. Only "cached cores" is pinned by name
+        // here; the whole sentence is pinned below, against the one function all three share.
         // All three refusals derive it from the one function
         // PlanarSystem.ResidentPhrase, so this sentence cannot drift away from the other two, and it
         // has to SAY what the number is — a bare figure beside a ceiling is what read as a RAM limit
         // the first time.
         Assert.Contains("resident at the peak of one frequency point", refusal, StringComparison.Ordinal);
-        Assert.Contains("matrix + factors + cached cores", refusal, StringComparison.Ordinal);
+        Assert.Contains("cached cores", refusal, StringComparison.Ordinal);
         Assert.DoesNotContain("MB of dense complex matrix", refusal, StringComparison.Ordinal);
         Assert.Contains(PlanarSystem.ResidentPhrase(n, r.CellCount), refusal, StringComparison.Ordinal);
 

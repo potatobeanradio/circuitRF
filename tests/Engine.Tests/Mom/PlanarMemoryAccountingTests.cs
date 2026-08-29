@@ -70,7 +70,11 @@ public sealed class PlanarMemoryAccountingTests
         _out.WriteLine("size; nothing here is a profile or an estimate. 'quoted' is the 16·N² the three");
         _out.WriteLine("ceiling refusals printed until P1.");
         _out.WriteLine("");
-        _out.WriteLine("      N  cells    cores      matrix       L+U   P (transient)      quoted   " +
+        _out.WriteLine("P7 (2026-08-29) changed one column and one total: the factorisation is now IN");
+        _out.WriteLine("PLACE, so 'L+U' is what the pre-P7 general LU held BESIDE the matrix and is no");
+        _out.WriteLine("longer part of the peak — what is, is 16n of diagonal.");
+        _out.WriteLine("");
+        _out.WriteLine("      N  cells    cores      matrix   L+U (pre-P7)   P (transient)      quoted   " +
                        "RESIDENT PEAK   x quoted");
 
         var meshes = new List<PlanarMesh>();
@@ -84,7 +88,7 @@ public sealed class PlanarMemoryAccountingTests
             int n = report.Mesh.Bases.Count, cells = report.Mesh.Cells.Count;
             long cores  = PlanarSystem.CoreBytes(n, cells);
             long matrix = PlanarSystem.MatrixBytes(n);
-            long lu     = PlanarSystem.FactorBytes(n);
+            long lu     = PlanarSystem.LuFactorBytes(n);   // pre-P7, for the column above
             long pMat   = 16L * cells * cells;
             counted.Add((n, cells, cores, matrix, lu, pMat));
 
@@ -128,7 +132,7 @@ public sealed class PlanarMemoryAccountingTests
             long afterFill = Live() - b0;
 
             long allocBeforeLu = GC.GetTotalAllocatedBytes(true);
-            _ = system.Lu;
+            system.Factor();                                   // P7's in-place LDLᵀ, the shipped path
             long allocLu = GC.GetTotalAllocatedBytes(true) - allocBeforeLu;
             long afterLu = Live() - b0;
 
@@ -177,9 +181,19 @@ public sealed class PlanarMemoryAccountingTests
         _out.WriteLine("what is genuinely RETAINED is 2× the matrix, and the extra ~0.6× is real but");
         _out.WriteLine("transient. Both matter to a machine; only the first belongs in a refusal.");
 
-        Assert.True(PlanarSystem.ResidentBytes(SurfaceMesher.UnknownCeiling)
-                  > 3 * PlanarSystem.MatrixBytes(SurfaceMesher.UnknownCeiling),
-            "if the honest number is not several times the quoted one there was nothing to fix");
+        int ceiling = SurfaceMesher.UnknownCeiling;
+        long shipped = PlanarSystem.ResidentBytes(ceiling);
+        long preP7   = PlanarSystem.MatrixBytes(ceiling) + PlanarSystem.LuFactorBytes(ceiling)
+                     + PlanarSystem.CoreBytes(ceiling);
+
+        // The cores are real and must still be counted — 16·N² alone was never the honest number.
+        Assert.True(shipped > PlanarSystem.MatrixBytes(ceiling),
+            "the cached cores are part of a frequency point and the peak has to say so");
+
+        // And P7's own claim: taking both factor matrices out more than halves the peak.
+        Assert.True(2 * shipped < preP7,
+            $"P7 removed L and U from the peak; if {Mb(shipped)} MB is not less than half of the " +
+            $"{Mb(preP7)} MB the general LU held, it did not");
     }
 
     // =========================================================================================
@@ -523,7 +537,7 @@ public sealed class PlanarMemoryAccountingTests
         // limit, which is the defect the 2026-08-14 owner report already caught once.
         Assert.Contains("resident at the peak of one frequency point", report.Refusal!,
                         StringComparison.Ordinal);
-        Assert.Contains("matrix + factors + cached cores", report.Refusal!, StringComparison.Ordinal);
+        Assert.Contains("cached cores", report.Refusal!, StringComparison.Ordinal);
         Assert.DoesNotContain("MB of dense complex matrix", report.Refusal!, StringComparison.Ordinal);
     }
 }
