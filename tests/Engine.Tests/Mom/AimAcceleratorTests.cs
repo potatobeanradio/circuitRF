@@ -20,6 +20,10 @@ public class AimAcceleratorTests(ITestOutputHelper output)
 {
     private readonly ITestOutputHelper _out = output;
 
+    /// <summary>P8 — every fixture in this file is on the FR-4 starter slab, and the accelerator's
+    /// near-radius floor is derived from its height.</summary>
+    private static readonly double SlabH = GroundedSlab.Fr4Starter.HeightM;
+
     /// <summary>Small enough that the dense matrix exists to compare against, and still carrying both
     /// basis directions and a real de-embedding-grade kernel.</summary>
     private static (PlanarMesh Mesh, PlanarFillCores Dense, PlanarFillCores Geom, PlanarKernelPair K,
@@ -123,8 +127,10 @@ public class AimAcceleratorTests(ITestOutputHelper output)
         var (mesh, _, geom, k, omega, _) = Fixture();
 
         // A deliberately NARROW radius, so the radius criterion cannot mask the overlap criterion.
-        var st = new PlanarAimSettings(ProjectionOrder: 2, NearRadiusFactor: 0.0);
-        var aim = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega, st);
+        // P8's floor is switched OFF here on purpose (NearRadiusMinM: 0): a floor in metres would
+        // re-widen the radius and mask exactly the criterion this test isolates.
+        var st = new PlanarAimSettings(ProjectionOrder: 2, NearRadiusFactor: 0.0, NearRadiusMinM: 0);
+        var aim = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega, SlabH, st);
 
         int n = mesh.Bases.Count;
         int overlaps = 0;
@@ -156,9 +162,9 @@ public class AimAcceleratorTests(ITestOutputHelper output)
         // corrected exactly. A failure here is a hole in the near set, not a tuning problem.
         var (mesh, _, geom, k, omega, _) = Fixture();
 
-        var a = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega,
+        var a = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega, SlabH,
                                         new PlanarAimSettings(SelfKernelFactor: 0.5));
-        var b = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega,
+        var b = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega, SlabH,
                                         new PlanarAimSettings(SelfKernelFactor: 0.05));
 
         int n = mesh.Bases.Count;
@@ -197,7 +203,7 @@ public class AimAcceleratorTests(ITestOutputHelper output)
         var (mesh, dense, geom, k, omega, _) = Fixture();
 
         var z = PlanarFill.Fill(dense, k.VectorPotential, k.Scalar, omega);
-        var aim = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega);
+        var aim = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega, SlabH);
 
         int n = mesh.Bases.Count;
         var x = Probe(n);
@@ -237,7 +243,7 @@ public class AimAcceleratorTests(ITestOutputHelper output)
         var (mesh, dense, geom, k, omega, ports) = Fixture();
 
         var system = PlanarSystem.Build(dense, k.VectorPotential, k.Scalar, omega);
-        var aim    = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega);
+        var aim    = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, omega, SlabH);
 
         var rhs = PlanarExcitation.RightHandSide(mesh.Bases.Count, ports[0]);
         var exact = system.Solve(rhs);
@@ -340,7 +346,8 @@ public class AimAcceleratorTests(ITestOutputHelper output)
         Assert.Null(dense.LastAccelerator);
 
         var accel = new PlanarSolveContext(
-            mesh, ports, PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default });
+            mesh, ports, PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default },
+            slabHeightM: SlabH);
         Assert.False(accel.Cores.HasPairCores);
 
         var k = PlanarLineFixtures.Kernel(problem.Slab, 6e9);

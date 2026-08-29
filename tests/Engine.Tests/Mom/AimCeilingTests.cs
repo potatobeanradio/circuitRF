@@ -34,7 +34,7 @@ public class AimCeilingTests(ITestOutputHelper output)
     private readonly ITestOutputHelper _out = output;
 
     private sealed record Built(PlanarMesh Mesh, PlanarFillCores Geom,
-                                PlanarKernelPair K, double Omega,
+                                PlanarKernelPair K, double Omega, double SlabH,
                                 IReadOnlyList<PlanarPortResolution> Ports);
 
     // Geometry-only cores ONLY — the dense N×N cores are past R17's ceiling on most of this file's
@@ -47,8 +47,19 @@ public class AimCeilingTests(ITestOutputHelper output)
         return new Built(report.Mesh,
                          PlanarFill.BuildGeometryOnlyCores(report.Mesh),
                          PlanarLineFixtures.Kernel(problem.Slab, fHz),
-                         2.0 * Math.PI * fHz, ports);
+                         2.0 * Math.PI * fHz, problem.Slab.HeightM, ports);
     }
+
+    /// <summary>
+    /// <b>P8 (2026-08-29) — A1b below is PINNED to the pre-P8 near radius, and it has to be.</b> This
+    /// file's job is to record the ladder the accelerated ceiling was set from, and P8 put a 2h floor
+    /// under that radius, so run with the shipped default A1b would no longer measure what its own
+    /// table says it measures. It would also not finish: at cells/λ = 140 the floored near set is 8.9%
+    /// dense at N = 13,967 and CSparse's sparse LU over it had not returned after 8 minutes of CPU,
+    /// where the unfloored one factors in 5 s. P8's own ladder — <c>PlanarP8NearRadiusFloorTests</c> —
+    /// is where the shipped behaviour is measured; this one is the "before".
+    /// </summary>
+    private static readonly PlanarAimSettings PreP8 = PlanarAimSettings.Default with { NearRadiusMinM = 0 };
 
     private static double RelNorm(Vec<Complex> a, Vec<Complex> b, int n)
     {
@@ -65,13 +76,13 @@ public class AimCeilingTests(ITestOutputHelper output)
     /// <paramref name="withDense"/> — the top rungs of each ladder are past where a dense reference is
     /// affordable, per the brief's own note that "past ~N = 8,000 there may not be one".</summary>
     private void Rung(string label, PlanarProblem problem, PlanarMeshSettings mesh, double fHz,
-                      bool withDense)
+                      bool withDense, PlanarAimSettings? aim0 = null)
     {
         var b = Build(problem, mesh, fHz);
         int n = b.Mesh.Bases.Count;
 
         var swB = Stopwatch.StartNew();
-        var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega);
+        var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH, aim0);
         swB.Stop();
         var rhs = PlanarExcitation.RightHandSide(n, b.Ports[0]);
 
@@ -170,7 +181,7 @@ public class AimCeilingTests(ITestOutputHelper output)
             var problem = PlanarLineFixtures.Fr4Line(64e-3, 6e9);
             var mesh = new PlanarMeshSettings(Auto: false, CellsPerWavelength: cpl, EdgeMesh: true,
                                               EdgeCells: 3, BoundaryCells: PlanarBoundaryCells.Staircase);
-            Rung($"c/λ={cpl}", problem, mesh, 6e9, dense);
+            Rung($"c/λ={cpl}", problem, mesh, 6e9, dense, PreP8);
         }
     }
 
@@ -200,7 +211,7 @@ public class AimCeilingTests(ITestOutputHelper output)
             var b = Build(problem, mesh, 6e9);
             int n = b.Mesh.Bases.Count;
 
-            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega);
+            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH);
             var rhs = PlanarExcitation.RightHandSide(n, b.Ports[0]);
 
             var denseCores = PlanarFill.BuildCores(b.Mesh);

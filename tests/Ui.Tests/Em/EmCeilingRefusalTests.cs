@@ -487,7 +487,8 @@ public class EmCeilingRefusalTests
         var resolved = PlanarPorts.ResolveAll(report.Mesh, ports);
 
         var ctx = new PlanarSolveContext(report.Mesh, resolved,
-            PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default });
+            PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default },
+            slabHeightM: x.Problem!.Slab.HeightM);
         var kernel = PlanarKernelPair.Fit(x.Problem!.Slab, 5e9);
         var raw = ctx.RawScatteringAt(kernel, 5e9);
 

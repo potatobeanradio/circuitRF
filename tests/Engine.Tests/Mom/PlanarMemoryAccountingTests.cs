@@ -237,7 +237,7 @@ public sealed class PlanarMemoryAccountingTests
 
             long b0 = Live();
             var aim = PlanarAimOperator.Build(geom, pair.VectorPotential, pair.Scalar,
-                                              2.0 * Math.PI * 6e9);
+                                              2.0 * Math.PI * 6e9, problem.Slab.HeightM);
             long measured = Live() - b0;
             kept.Add(aim);
             measuredBytes.Add(measured);
@@ -332,7 +332,8 @@ public sealed class PlanarMemoryAccountingTests
         var geom = PlanarFill.BuildGeometryOnlyCores(mesh);
         var pair = PlanarLineFixtures.Kernel(problem.Slab, 10e9)
                                      .For(geom, PlanarFillSettings.Default.Order);
-        var aim = PlanarAimOperator.Build(geom, pair.VectorPotential, pair.Scalar, 2.0 * Math.PI * 10e9);
+        var aim = PlanarAimOperator.Build(geom, pair.VectorPotential, pair.Scalar, 2.0 * Math.PI * 10e9,
+                                          problem.Slab.HeightM);
 
         var r = aim.Report;
         // P6: the operator holds its geometry, and the geometry holds the geometry-only cores it was
@@ -378,7 +379,8 @@ public sealed class PlanarMemoryAccountingTests
                                         .For(geom, PlanarFillSettings.Default.Order);
         double omega = 2.0 * Math.PI * 10e9;
 
-        var shipped = PlanarAimOperator.Build(geom, pair.VectorPotential, pair.Scalar, omega);
+        var shipped = PlanarAimOperator.Build(geom, pair.VectorPotential, pair.Scalar, omega,
+                                              problem.Slab.HeightM);
         Assert.False(shipped.Report.NearExactRetained);
 
         // It THROWS rather than returning zero: a silent zero is indistinguishable from "not near",
@@ -387,6 +389,7 @@ public sealed class PlanarMemoryAccountingTests
         Assert.Contains("KeepNearExact", ex.Message, StringComparison.Ordinal);
 
         var kept = PlanarAimOperator.Build(geom, pair.VectorPotential, pair.Scalar, omega,
+                                           problem.Slab.HeightM,
                                            PlanarAimSettings.Default with { KeepNearExact = true });
         Assert.True(kept.Report.NearExactRetained);
         Assert.NotEqual(Complex.Zero, kept.NearExactAt(0, 0));

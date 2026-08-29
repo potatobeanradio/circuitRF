@@ -122,6 +122,37 @@ namespace CircuitRF.Engine.Mom;
 ///
 /// <para>The near set is the UNION of this radius and stencil overlap, so correctness does not depend
 /// on it — accuracy and cost do, and it is the knob that costs.</para>
+///
+/// <para><b>P8 — it is a factor, not the radius. The radius is
+/// <c>max(NearRadiusFactor·maxSpan, NearRadiusMinM)</c></b>, and that floor is the whole of P8; see
+/// <see cref="NearRadiusMinM"/> for why a radius measured in supports alone breaks on a refined
+/// mesh.</para>
+/// </param>
+/// <param name="NearRadiusMinM">
+/// <b>P8 — a floor on the near radius IN METRES, because the physics has a length of its own and the
+/// basis support is not it.</b> Null (the default) derives it as
+/// <see cref="DerivedNearRadiusImageDepths"/>·h from the slab height handed to
+/// <see cref="PlanarAimGeometry.Build"/>; a positive value overrides that; 0 disables the floor and
+/// restores the pre-P8 behaviour, which is what the P8 ladder's "before" column runs.
+///
+/// <para><b>Why 2h, derived rather than picked.</b> The scalar (charge) kernel over a grounded slab
+/// is <c>1/ρ − 1/√(ρ² + 4h²)</c> plus smooth terms: the conductor's charge and its image at depth
+/// 2h very nearly cancel, and beyond ρ ≈ 2h the residue falls like <c>2h²/ρ³</c> rather than like
+/// <c>1/ρ</c>. <b>2h is therefore where the coupling stops being long-ranged</b>, and a near field
+/// narrower than it is missing the dominant coupling — both in the preconditioner GMRES is steered
+/// by, which is what makes the iteration count climb, and in the OPERATOR, because the radius is
+/// also the boundary between the entries computed exactly and the entries the projection
+/// approximates. Measured against the dense solve on the identical mesh: <c>|ΔI|</c> is 4.90e-7 at
+/// the shipping cells/λ = 20 and 5.93e-4 at cells/λ = 140, of which the floor recovers 17×.</para>
+///
+/// <para><b>And a radius measured in supports walks straight into it.</b> Refining the mesh at a
+/// fixed footprint shrinks the largest basis support, so the shipped 6 supports shrink in metres too:
+/// on the FR-4 hero cross-section it is 8.9h at the shipping cells/λ = 20 and 1.28h at cells/λ = 140.
+/// Measured on a 16 mm line at 6 GHz, GMRES's iteration count over cells/λ 20…140 goes
+/// <c>2, 4, 6, 12, 46, 144, 273</c> without the floor and <c>2, 4, 6, 12, 14, 10, 10</c> with it —
+/// and the same ladder at 64 mm did not converge at all at its top rung
+/// (<c>HISTORY.md</c>'s A1b table). Growing the geometry at fixed resolution never triggers it,
+/// which is why the length ladder never saw this.</para>
 /// </param>
 /// <param name="Tolerance">GMRES's relative residual target. L8c puts the fill's own accuracy at
 /// 5.0e-6 against an independent oracle and L8d measured de-embedding amplifying a raw-S error ~22×,
@@ -150,16 +181,29 @@ namespace CircuitRF.Engine.Mom;
 /// replace, for the same numbers.)</para>
 /// </param>
 public sealed record PlanarAimSettings(
-    int    ProjectionOrder   = 3,
-    double GridSpacingFactor = 0.5,
-    double NearRadiusFactor  = 6.0,
-    double Tolerance         = 1e-8,
-    int    MaxIterations     = 400,
-    int    Restart           = 0,
-    double SelfKernelFactor  = 0.5,
-    bool   KeepNearExact     = false)
+    int     ProjectionOrder   = 3,
+    double  GridSpacingFactor = 0.5,
+    double  NearRadiusFactor  = 6.0,
+    double  Tolerance         = 1e-8,
+    int     MaxIterations     = 400,
+    int     Restart           = 0,
+    double  SelfKernelFactor  = 0.5,
+    bool    KeepNearExact     = false,
+    double? NearRadiusMinM    = null)
 {
     public static readonly PlanarAimSettings Default = new();
+
+    /// <summary><b>P8 — the derived near-radius floor, in slab heights: 2, i.e. the image depth.</b>
+    /// Named rather than written as a literal because the number is the depth of the ground plane's
+    /// image and not a tuning constant — see <see cref="NearRadiusMinM"/> for the derivation and for
+    /// the ladder that measured it.</summary>
+    public const double DerivedNearRadiusImageDepths = 2.0;
+
+    /// <summary>The floor this settings object asks for on a slab of height <paramref name="slabHeightM"/>
+    /// — the explicit <see cref="NearRadiusMinM"/> when it is set, otherwise
+    /// <see cref="DerivedNearRadiusImageDepths"/>·h.</summary>
+    public double NearRadiusFloorFor(double slabHeightM) =>
+        NearRadiusMinM ?? DerivedNearRadiusImageDepths * slabHeightM;
 
     /// <summary>Refuse a setting whose bad case is a complete, plausible, wrong answer — the same rule
     /// <see cref="PlanarFillSettings.Validate"/> is written to.</summary>
@@ -184,6 +228,10 @@ public sealed record PlanarAimSettings(
         if (Restart < 0)
             throw new ArgumentOutOfRangeException(nameof(Restart), Restart,
                 "Use 0 for full (non-restarted) GMRES.");
+        if (NearRadiusMinM is { } min && !(min >= 0))
+            throw new ArgumentOutOfRangeException(nameof(NearRadiusMinM), min,
+                "The near-radius floor is a length in metres; 0 disables it and null derives it from " +
+                "the slab. A negative floor would silently mean the same as 0 rather than saying so.");
         if (!(SelfKernelFactor > 0))
             throw new ArgumentOutOfRangeException(nameof(SelfKernelFactor), SelfKernelFactor,
                 "The self-kernel sentinel is evaluated at this fraction of the grid pitch and must be " +
@@ -234,6 +282,8 @@ public sealed record PlanarAimReport(
     long   PreconditionerNonZeros,
     long   FactorNonZeros = 0,
     bool   NearExactRetained = false,
+    double NearRadiusFromSupportM = 0,
+    double NearRadiusFloorM = 0,
     double GeometryMs = 0,
     double NearSetMs = 0,
     double NearCoreMs = 0,
@@ -348,12 +398,32 @@ internal sealed class AimStencil
 public sealed class PlanarAimGeometry
 {
     internal readonly int N, M, Side, Nx, Ny, Px, Py;
-    internal readonly double H, NearRadiusM;
+    internal readonly double H;
     internal readonly AimStencil[] Stencils;
     internal readonly int[] RowPtr, ColIdx;
 
     public PlanarFillCores   Cores      { get; }
     public PlanarAimSettings Settings   { get; }
+
+    /// <summary>The slab height this geometry's near-radius floor was derived from (P8).</summary>
+    public double SlabHeightM { get; }
+
+    /// <summary><b>The near field's radius, in metres, as actually applied</b> —
+    /// <c>max(NearRadiusFromSupportM, NearRadiusFloorM)</c>.</summary>
+    public double NearRadiusM { get; }
+
+    /// <summary>What <see cref="PlanarAimSettings.NearRadiusFactor"/> alone asked for: 6 largest basis
+    /// supports at the shipped default. Below <see cref="NearRadiusFloorM"/> exactly when the floor
+    /// bound, which is the one number that says whether P8 changed this mesh at all.</summary>
+    public double NearRadiusFromSupportM { get; }
+
+    /// <summary><b>P8's floor</b> — <see cref="PlanarAimSettings.NearRadiusFloorFor"/> on this
+    /// geometry's slab.</summary>
+    public double NearRadiusFloorM { get; }
+
+    /// <summary>Whether the floor is what set the radius on this mesh.</summary>
+    public bool NearRadiusIsFloored => NearRadiusFloorM > NearRadiusFromSupportM;
+
     /// <summary>The singular cores of every near pair, and the counter that says they were
     /// computed once.</summary>
     public PlanarEntryCores  EntryCores { get; }
@@ -391,11 +461,22 @@ public sealed class PlanarAimGeometry
     /// mean anything SHOULD be — <see cref="PlanarFill.BuildGeometryOnlyCores"/>' O(N) shape. Refuses
     /// a via-bearing mesh by name, exactly as the operator did.
     /// </summary>
-    public static PlanarAimGeometry Build(PlanarFillCores cores, PlanarAimSettings? settings = null)
+    public static PlanarAimGeometry Build(PlanarFillCores cores, double slabHeightM,
+                                          PlanarAimSettings? settings = null)
     {
         ArgumentNullException.ThrowIfNull(cores);
         var st = settings ?? PlanarAimSettings.Default;
         st.Validate();
+
+        // P8 — the slab height is REQUIRED rather than defaulted, because the failure it guards
+        // against is silent: a geometry built with no h would take the pre-P8 near radius and produce
+        // a complete, plausible answer that GMRES merely takes 20x longer to reach (or does not reach
+        // at all, on a refined mesh). A caller that genuinely wants no floor says so in the settings.
+        if (!(slabHeightM > 0))
+            throw new ArgumentOutOfRangeException(nameof(slabHeightM), slabHeightM,
+                "The near radius has a floor of 2h (PlanarAimSettings.NearRadiusMinM) and h is the " +
+                "slab height, so it has to be handed in. Pass the problem's own Slab.HeightM; to run " +
+                "without the floor, pass the height anyway and set NearRadiusMinM: 0.");
 
         foreach (var b in cores.Mesh.Bases)
             if (b.Direction == PlanarBasisDirection.Z)
@@ -407,10 +488,10 @@ public sealed class PlanarAimGeometry
                     "its own phase, not a widening of this one. Solve a via-bearing mesh densely.");
 
         cores.Settings.CoreBuilds?.ObserveAimGeometry(cores.Mesh);
-        return new PlanarAimGeometry(cores, st);
+        return new PlanarAimGeometry(cores, st, slabHeightM);
     }
 
-    private PlanarAimGeometry(PlanarFillCores cores, PlanarAimSettings st)
+    private PlanarAimGeometry(PlanarFillCores cores, PlanarAimSettings st, double slabHeightM)
     {
         var mesh = cores.Mesh;
         Cores    = cores;
@@ -427,8 +508,19 @@ public sealed class PlanarAimGeometry
         foreach (var s in spans) maxSpan = Math.Max(maxSpan, s);
         if (!(maxSpan > 0)) maxSpan = cores.MinCellEdgeM > 0 ? cores.MinCellEdgeM : 1.0;
 
-        H           = st.GridSpacingFactor * maxSpan;
-        NearRadiusM = st.NearRadiusFactor  * maxSpan;
+        H = st.GridSpacingFactor * maxSpan;
+
+        // ── P8 — the near radius, and the floor under it ──────────────────────────────────────
+        //
+        // The PITCH stays sized from the largest support: it is the stencil's own resolution of the
+        // kernel and has nothing to do with the slab. The RADIUS does not, because what the near
+        // field has to span is the range over which the coupling is long-ranged, and on a grounded
+        // slab that range is set by the image at depth 2h — not by how finely the metal happens to
+        // be diced. See PlanarAimSettings.NearRadiusMinM for the derivation and the measurement.
+        SlabHeightM            = slabHeightM;
+        NearRadiusFromSupportM = st.NearRadiusFactor * maxSpan;
+        NearRadiusFloorM       = st.NearRadiusFloorFor(slabHeightM);
+        NearRadiusM            = Math.Max(NearRadiusFromSupportM, NearRadiusFloorM);
 
         double x0 = double.PositiveInfinity, y0 = double.PositiveInfinity;
         double x1 = double.NegativeInfinity, y1 = double.NegativeInfinity;
@@ -830,8 +922,9 @@ public sealed class PlanarAimOperator : IPlanarOperator
     /// </summary>
     public static PlanarAimOperator Build(PlanarFillCores cores, PlanarKernelTerms termsA,
                                           PlanarKernelTerms termsQ, double omega,
+                                          double slabHeightM,
                                           PlanarAimSettings? settings = null)
-        => Build(PlanarAimGeometry.Build(cores, settings), termsA, termsQ, omega);
+        => Build(PlanarAimGeometry.Build(cores, slabHeightM, settings), termsA, termsQ, omega);
 
     /// <summary>P6 — the per-frequency operator over a geometry built once per mesh.</summary>
     public static PlanarAimOperator Build(PlanarAimGeometry geometry, PlanarKernelTerms termsA,
@@ -975,6 +1068,7 @@ public sealed class PlanarAimOperator : IPlanarOperator
             NearFillMs: remainderMs + correctionMs + copyMs,
             PreconditionerMs: precondMs, PreconditionerNonZeros: nnz,
             FactorNonZeros: factorNnz, NearExactRetained: st.KeepNearExact,
+            NearRadiusFromSupportM: g.NearRadiusFromSupportM, NearRadiusFloorM: g.NearRadiusFloorM,
             GeometryMs: g.TotalMs, NearSetMs: g.NearSetMs, NearCoreMs: g.NearCoreMs,
             NearRemainderMs: remainderMs, CorrectionMs: correctionMs, LowerCopyMs: copyMs,
             GeometryBytes: g.Bytes, NearCoreClasses: g.EntryCores.ClassCount);

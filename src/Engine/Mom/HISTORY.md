@@ -6954,3 +6954,270 @@ well-meaning follow-up cannot move it by accident.
   the upper triangle either, so that O(N²) write is now arguably dead — but `PlanarEntryFill`, the
   AIM path and several tests do read `Z[i,j]` for arbitrary (i,j), and establishing that none of
   them needs it is its own piece of work.
+
+# P8 — a physical floor on AIM's near radius (brief-em-p8-aim-near-radius-floor.md, 2026-08-29)
+
+**The whole change is one `Math.Max`.** `PlanarAimGeometry.NearRadiusM` was
+`NearRadiusFactor · maxSpan`; it is now `max(NearRadiusFactor · maxSpan, NearRadiusMinM)`, and
+`NearRadiusMinM` defaults to **2·h**, the depth of the ground plane's image.
+
+## Why a radius measured in supports had to break, and where
+
+`brief-em-aim-ceiling.md`'s A1b ladder — refine the RESOLUTION at a fixed 64 mm footprint — climbed
+GMRES 21 → 143 → 372 iterations over cells/λ 80 → 120 and then did not converge at all at 140. A1a,
+the LENGTH ladder at the shipping resolution, was flat over the same N range. Two ladders, two
+stories, and the difference is a unit:
+
+`NearRadiusFactor` is **6 largest basis supports**. Refining the mesh at a fixed footprint shrinks the
+largest support, so the exact near field shrinks IN METRES while the geometry it sits on does not.
+Measured on the FR-4 hero cross-section (2.9 mm on 1.6 mm FR-4, 6 GHz), and **independent of the
+board's length to four figures** — 8.92 h at 64 mm and 8.93 h at 16, 24 and 32 mm:
+
+| cells/λ | largest support | near radius | in units of h |
+|---|---|---|---|
+| 20 | 2.380 mm | 14.28 mm | **8.93** |
+| 40 | 1.190 mm | 7.14 mm | 4.46 |
+| 60 | 0.793 mm | 4.76 mm | 2.98 |
+| 80 | 0.595 mm | 3.57 mm | 2.23 |
+| 100 | 0.476 mm | 2.85 mm | 1.78 |
+| 120 | 0.397 mm | 2.38 mm | 1.49 |
+| 140 | 0.340 mm | 2.04 mm | **1.28** |
+
+The scalar (charge) kernel over a grounded slab is `1/ρ − 1/√(ρ² + 4h²)` plus smooth terms: the charge
+and its image very nearly cancel, and past ρ ≈ 2h what is left falls like `2h²/ρ³` rather than like
+`1/ρ`. **2h is where the coupling stops being long-ranged.** A near-field preconditioner narrower than
+that is missing the dominant coupling — and the table above is a ladder walking straight through it.
+The iteration climb starts at cells/λ = 80, which is the first rung under 2.5 h.
+
+## M1 — the failing ladder, reproduced exactly
+
+A1b's construction on the P8 tree with the floor OFF (`NearRadiusMinM: 0`), Release, one port's RHS.
+`nearNNZ` is the near matrix, `factorNNZ` the sparse LU's own fill-in (P1's field), MB
+`PlanarAimReport.ResidentBytes`:
+
+| cells/λ | N | near/row | nearNNZ | factorNNZ | R/h | build s | iters | resid | solve s | MB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20 | 994 | 365 | 363,102 | 673,206 | 8.92 | 1.0 | 5 | 1.2e-10 | 0.02 | 22 |
+| 40 | 1,895 | 379 | 718,159 | 754,343 | 4.46 | 0.3 | 5 | 5.7e-9 | 0.01 | 31 |
+| 60 | 3,454 | 465 | 1,605,470 | 1,720,650 | 2.98 | 0.6 | 8 | 5.4e-9 | 0.04 | 69 |
+| 80 | 5,437 | 539 | 2,929,671 | 3,241,905 | 2.23 | 1.2 | 21 | 1.0e-8 | 0.18 | 124 |
+| 100 | 7,873 | 597 | 4,701,995 | 5,465,368 | 1.78 | 2.2 | **143** | 9.8e-9 | 1.89 | 205 |
+| 120 | 10,708 | 630 | 6,746,950 | 8,519,323 | 1.49 | 3.6 | **372** | 9.9e-9 | 7.42 | 303 |
+| 140 | 13,967 | 656 | 9,163,153 | 12,537,093 | 1.28 | 5.7 | **400** | **9.1e-5** | 10.88 | 426 |
+
+Iteration counts and near/row reproduce `brief-em-aim-ceiling.md`'s own A1b table to the digit
+(5, 5, 8, 21, 143, 372, 400 and 365 … 656), so this is the same ladder and not a lookalike. The build
+and solve seconds are much lower than that table's because P6 moved the geometry and the near cores
+out of the per-frequency build, and because this is Release rather than a test host.
+
+**`factorNNZ` is non-zero on every rung, including the one that fails.** That rules out the obvious
+alternative explanation — a preconditioner that silently failed to factor, leaving GMRES unpreconditioned.
+The factorisation succeeds throughout; it is simply a factorisation of the wrong operator's near field.
+
+## M2 — the floor, and the same ladder with it
+
+`NearRadiusMinM = 2h` (the shipped default). Rungs 20 through 80 carry the identical near set,
+factorisation and answer — the floor is 3.2 mm and their radius is 3.57 mm and up, so it does not bind
+there at all; only the seconds jitter:
+
+| cells/λ | N | near/row | nearNNZ | factorNNZ | R/h | build s | iters | resid | solve s | MB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 20 | 994 | 365 | 363,102 | 673,206 | 8.92 | 1.0 | 5 | 1.2e-10 | 0.02 | 22 |
+| 40 | 1,895 | 379 | 718,159 | 754,343 | 4.46 | 0.3 | 5 | 5.7e-9 | 0.01 | 31 |
+| 60 | 3,454 | 465 | 1,605,470 | 1,720,650 | 2.98 | 0.7 | 8 | 5.4e-9 | 0.04 | 69 |
+| 80 | 5,437 | 539 | 2,929,671 | 3,241,905 | 2.23 | 1.2 | 21 | 1.0e-8 | 0.18 | 124 |
+| 100 | 7,873 | 690 | 5,435,173 | 5,939,938 | **2.00** | 2.4 | **28** | 6.8e-9 | 0.40 | 228 |
+| 120 | 10,708 | 951 | 10,180,244 | 11,458,849 | **2.00** | 6.2 | **36** | 8.0e-9 | 0.89 | 426 |
+| 140 | 13,967 | 1,246 | 17,399,109 | — | **2.00** | **did not finish** | — | — | — | — |
+
+**The blow-up is gone where the rung can be built at all**: 143 → 28 and 372 → 36. It is not perfectly
+flat, and the residual climb is attributable: the peak of the floored ladder is the cells/λ = 80 rung
+at 21 iterations, where the radius is 2.23 h and **the floor does not bind at all**. Everything the
+floor reaches sits below that peak.
+
+**The top rung swapped one wall for another, and this is the P8 finding that matters most.** At
+cells/λ = 140 the floored near set is **8.9% dense at N = 13,967** (near/row 656 → 1,246, 9.2M → 17.4M
+entries) and **CSparse's sparse LU over it had not returned after 8 minutes of CPU and 1.43 GB of
+resident memory still growing**, where the unfloored one factors in 5.0 s. It was stopped there, so 8
+minutes is a lower bound and not a measurement. It is not a convergence failure any more; it is a
+preconditioner that cannot be built. The geometry itself is unbothered (0.6 s), so this is `FactorNear`
+alone — `SparseLU.Create(csc, AMD(…), 1.0)` is an EXACT sparse LU with full partial pivoting, and its
+fill-in is superlinear in the near set's density. The same density at N = 10,708 factors in 5.3 s with
+1.13× fill-in, so the wall is between those two rungs and it is sharp.
+
+This is the one rung of the ladder that is past `AcceleratedUnknownCeiling = 12,000` and therefore
+unreachable through the shipped API — which is why it is a note here rather than a defect. It is also
+why `AimCeilingTests.A1_LadderByResolution` is now **pinned to the pre-P8 radius**: that test exists to
+record the "before", and left on the shipped default its top rung would never finish.
+
+### The 16 mm ladder, which is where this was actually developed — and it IS flat
+
+The pathology is set by the cell size against h, not by the footprint (see the R/h table above: it is
+the same at every length). So the same ladder at 16 mm reproduces it faithfully at a fifth of the cost,
+and its top rung stays under the DENSE ceiling, which is what makes M4's `|ΔI|` measurable at all.
+This is the fixture `PlanarP8NearRadiusFloorTests.P8_5` runs:
+
+| cells/λ | N | R/h off → on | near/row off → on | **iters off → on** | resid off | resid on |
+|---|---|---|---|---|---|---|
+| 20 | 314 | 8.93 → 8.93 | 290 → 290 | 2 → 2 | 1.4e-9 | 1.4e-9 |
+| 40 | 518 | 4.46 → 4.46 | 327 → 327 | 4 → 4 | 1.7e-10 | 1.7e-10 |
+| 60 | 913 | 2.97 → 2.97 | 421 → 421 | 6 → 6 | 5.3e-9 | 5.3e-9 |
+| 80 | 1,412 | 2.23 → 2.23 | 501 → 501 | 12 → 12 | 4.1e-9 | 4.1e-9 |
+| 100 | 2,015 | 1.78 → **2.00** | 563 → 646 | **46 → 14** | 7.3e-9 | 5.1e-9 |
+| 120 | 2,722 | 1.49 → **2.00** | 600 → 888 | **144 → 10** | 9.1e-9 | 9.2e-9 |
+| 140 | 3,533 | 1.28 → **2.00** | 629 → 1,160 | **273 → 10** | 9.8e-9 | 9.8e-9 |
+
+**2, 4, 6, 12, 14, 10, 10** — flat, in the sense A1a's length ladder is flat. `4h` was therefore never
+tried: the brief's own stopping rule is "flat at 2h, stop", and 2h is where the physics puts it.
+
+## M3 — what the floor costs, and where it costs nothing
+
+**On the LENGTH ladder it changes NOTHING, and that is asserted rather than argued.** At the shipping
+cells/λ = 20 the radius is 8.9 h at every length, so the floor is unreachable. Measured at 6 GHz,
+cells/λ = 20, floor off and on:
+
+| L | N | near/row | nearNNZ | factorNNZ | R/h | build s | iters | resid | MB |
+|---|---|---|---|---|---|---|---|---|---|
+| 64 mm | 994 | 365 | 363,102 | 673,206 | 8.92 | 1.0 | 5 | 1.2e-10 | 22 |
+| 128 mm | 1,912 | 383 | 732,414 | 790,873 | 8.93 | 0.4 | 5 | 1.6e-9 | 32 |
+| 256 mm | 3,731 | 392 | 1,461,553 | 1,518,133 | 8.93 | 0.5 | 6 | 1.2e-9 | 61 |
+| 384 mm | 5,584 | 396 | 2,208,760 | 2,288,258 | 8.93 | 0.8 | 6 | 6.1e-9 | 92 |
+
+Every column above is identical with the floor and without — one table, not two.
+`PlanarP8NearRadiusFloorTests.P8_2` asserts it pair by pair (`IsNear(i,j)` over the whole N×N, not
+merely equal entry counts) at 16, 32 and 64 mm, and then asserts the solved current is bit-identical.
+
+**And it binds on NO mesh either starter technology produces at a shipped resolution** — which is the
+question that decides whether P8 changes an answer a user already has. It does not:
+
+| technology | h | conductor | fixture | cells/λ | N | radius from supports | floor | R/h | floored? |
+|---|---|---|---|---|---|---|---|---|---|
+| FR-4 | 1.6 mm | 2.9 mm | 20 mm at 10 GHz | 20 | 552 | 8,538.7 µm | 3,200 µm | 5.34 | no |
+| FR-4 | 1.6 mm | 2.9 mm | 20 mm at 10 GHz | 40 | 1,345 | 4,286.1 µm | 3,200 µm | 2.68 | no |
+| FR-4 | 1.6 mm | 2.9 mm | 64 mm at 6 GHz | 20 | 994 | 14,278.5 µm | 3,200 µm | 8.92 | no |
+| FR-4 | 1.6 mm | 2.9 mm | 64 mm at 6 GHz | 40 | 1,895 | 7,137.1 µm | 3,200 µm | 4.46 | no |
+| GaAs | 100 µm | 72 µm | 2 mm at 10 GHz | 20 | 705 | 5,003.1 µm | 200 µm | **50.03** | no |
+| GaAs | 100 µm | 72 µm | 2 mm at 40 GHz | 20 | 654 | 1,251.3 µm | 200 µm | 12.51 | no |
+| GaAs | 100 µm | 72 µm | 2 mm at 40 GHz | 40 | 756 | 626.0 µm | 200 µm | 6.26 | no |
+| GaAs | 100 µm | 72 µm | 1 mm at 60 GHz | 40 | 569 | 416.6 µm | 200 µm | 4.17 | no |
+
+**The MMIC case is not close and could not be**: a 72 µm conductor on a 100 µm slab has cells that are
+large against h by construction, so its near radius is tens of image depths even at 60 GHz. It is the
+PCB case, where the conductor is nearly twice the slab height, that can be walked into the floor — and
+only by asking for a resolution several times past the default.
+
+**Where it does bind, it is a NET WIN at scale and a net loss on a stubby board**, and the difference
+is the sparse LU's fill-in rather than the near set:
+
+| fixture | build+solve off | build+solve on | nearNNZ → | factorNNZ → | fill-in ratio |
+|---|---|---|---|---|---|
+| 64 mm, cells/λ = 120 (N = 10,708) | 3.6 + 7.4 = **11.0 s** | 6.2 + 0.9 = **7.1 s** | 6.7M → 10.2M | 8.5M → 11.5M | 1.13× |
+| 16 mm, cells/λ = 140 (N = 3,533) | 9.1 + 3.0 = **12.1 s** | 18.8 + 0.2 = **19.0 s** | 2.2M → 4.1M | 8.4M → 12.0M | **2.93×** |
+
+On the 16 mm board the 3.2 mm floor spans the whole 2.9 mm width and a fifth of the length, so the
+"sparse" near matrix is a wide band on a small N and CSparse's LU fills in nearly 3×. That is a
+short-board artefact, not the general shape: at 64 mm the same radius is a small part of the extent and
+the floor pays for itself several times over. The memory price is real either way — 303 → 426 MB at
+N = 10,708.
+
+## M4 — accuracy, against the dense solve
+
+`|ΔI|`, the relative 2-norm of the solved current against the DENSE LU on the identical mesh (16 mm, so
+the top rung is N = 3,533 and a dense reference still exists):
+
+| cells/λ | N | R/h off → on | **\|ΔI\| off** | **\|ΔI\| on** |
+|---|---|---|---|---|
+| 20 | 314 | 8.93 → 8.93 | 4.90e-7 | 4.90e-7 |
+| 100 | 2,015 | 1.78 → 2.00 | 1.58e-4 | 4.64e-5 |
+| 140 | 3,533 | 1.28 → 2.00 | **5.93e-4** | **3.58e-5** |
+
+**The brief's premise was half right and the measurement corrects it.** It said "nothing about the AIM
+projection's accuracy is at stake — the preconditioner is what degraded". The preconditioner is indeed
+what makes GMRES climb, but the near radius is also the boundary between the entries computed EXACTLY
+and the entries the projection approximates, so shrinking it degrades the OPERATOR too: 4.9e-7 at the
+shipping mesh becomes 5.9e-4 seven times finer, a 1,200× loss that the floor recovers 17× of. Both
+numbers converge at the same GMRES residual (9.8e-9), so this is the operator and not the stopping
+rule. It remains true that the accelerator is not the error budget at the shipping resolution.
+
+## M5 — re-asking the ceiling: the number does not move here, and the QUESTION has changed
+
+`SurfaceMesher.AcceleratedUnknownCeiling = 12,000` was set at "the top of A1a's healthy rung with
+margin under A1b's failing one (13,967)". After P8:
+
+- **A1a, the healthy construction, is untouched** — the floor never binds there, so its own basis for
+  12,000 (flat near/row, flat iterations, linear memory to N = 12,894 at 188 MB) stands exactly as
+  measured.
+- **A1b no longer fails to converge below 12,000**, so the margin argument that set 12,000 has lost
+  its subject. Every rung inside the ceiling now converges in 36 iterations or fewer.
+- **But N stopped predicting the working set on a refined mesh.** At N = 10,708 the accelerator holds
+  426 MB with the floor against 303 MB without, and its build peaks at 620 MB — against the 188 MB
+  §8 quotes at N = 12,894 on the length ladder. Same N, 2.3× the memory, because near/row is 951
+  instead of 399.
+- **And the first rung past the ceiling is where the preconditioner stops being buildable at all**
+  (above): N = 13,967, 8.9% near density, no factorisation after 8 minutes of CPU. The old failure was
+  a GMRES that did not converge and threw; the new one would be a build that does not return.
+
+**The recommendation is therefore to LEAVE 12,000 where it is, and the reason has changed** — it is no
+longer "with margin under a ladder that fails to converge", it is "with margin under the density at
+which the near field's exact LU stops factoring". The sentence that would move it, written out and not
+applied:
+
+> `SurfaceMesher.AcceleratedUnknownCeiling` could move above 12,000 only together with a check on the
+> NEAR SET rather than on N — near entries per row, or the near matrix's density — because with a
+> radius floor those are what bound the build, and a fine mesh at 14,000 unknowns has a near matrix
+> the exact sparse LU does not factor in useful time where a coarse one at the same N factors in
+> seconds.
+
+Left alone here on purpose. Moving it is a second decision, and the thing that would have to carry it
+is a density/working-set guard on the accelerated path, not a bigger integer.
+
+## Beside the brief: where dense and accelerated actually cross now (asked by the owner, 2026-08-29)
+
+The owner asked whether the accelerator should be ON by default. That turns on one number the tree
+still states from before P6 and P7 — `EmSetupModel.AcceleratedSolve`'s own doc comment says "the win is
+memory, not time, and the time crossover is much later, around N ≈ 3,700". **P6 moved the geometry and
+the near cores out of the per-frequency build, and P7 made the DENSE factorisation 11.5× faster; both
+sides moved, so it was re-measured.** Everything a user waits for at ONE frequency and one port —
+cores, fill, factor, solve — on the shipping mesh at 6 GHz, Release:
+
+| L | N | dense cores | dense fill+solve | **dense total** | dense MB | AIM geom | AIM build | AIM solve | **AIM total** | AIM MB | AIM/dense |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 8 mm | 195 | 0.13 | 0.17 | **0.30 s** | 1 | 0.15 | 0.22 | 0.01 | **0.37 s** | 3 | 1.24× |
+| 20 mm | 365 | 0.12 | 0.16 | **0.28 s** | 3 | 0.28 | 0.25 | 0.01 | **0.53 s** | 7 | 1.90× |
+| 64 mm | 994 | 0.10 | 0.14 | **0.24 s** | 21 | 0.11 | 0.40 | 0.01 | **0.53 s** | 22 | 2.19× |
+| 128 mm | 1,912 | 0.13 | 0.35 | **0.48 s** | 78 | 0.12 | 0.30 | 0.01 | **0.43 s** | 32 | 0.91× |
+| 200 mm | 2,932 | 0.13 | 0.95 | **1.08 s** | 183 | 0.11 | 0.42 | 0.02 | **0.55 s** | 48 | 0.51× |
+| 256 mm | 3,731 | 0.16 | 1.77 | **1.93 s** | 296 | 0.13 | 0.52 | 0.03 | **0.67 s** | 61 | 0.35× |
+
+**The crossover is now N ≈ 1,900, not 3,700**, and past it the accelerator wins on BOTH axes (2.9× the
+speed and 4.9× less memory at N = 3,731). Below it the accelerator costs up to **2.19×** the time for a
+memory saving that does not exist yet — 22 MB against 21 MB at N = 994 — because the near set is most
+of the matrix at small N and the FFT grid is charged in full regardless. The doc comment's number is
+stale and its CONCLUSION ("off by default") is unaffected by the correction; both are recorded here
+rather than edited, because changing a shipped default is the owner's call and P8 was not briefed to
+make it.
+
+## What changed in the code
+
+- `PlanarAimSettings` gained **`double? NearRadiusMinM = null`** — null derives `2·h`
+  (`DerivedNearRadiusImageDepths`, named rather than a literal because it is the image depth), a
+  positive value overrides, **0 disables the floor** and is the pre-P8 behaviour every "off" column
+  above was measured with. `NearRadiusFloorFor(h)` is the one place the derivation lives.
+- `PlanarAimGeometry.Build` **requires the slab height**, and refuses a non-positive one by name. It is
+  not defaulted, because the bad case is silent: a geometry built with no h takes the pre-P8 radius and
+  returns a complete, plausible answer that merely takes 20× as long to reach. The compiler found all
+  six call sites. `PlanarSolveContext` takes it as a trailing optional (the dense path has no near
+  radius to floor) and throws when `Fill.Aim` is set without one.
+- The geometry publishes `NearRadiusM`, `NearRadiusFromSupportM`, `NearRadiusFloorM`,
+  `NearRadiusIsFloored` and `SlabHeightM`; `PlanarAimReport` carries the first three, so a ladder table
+  is printable from the report.
+- `PlanarAimOperator.Build(cores, …)`'s one-frequency overload gained `slabHeightM` before `settings`,
+  which is what turned every stale call site into a compile error rather than a silent behaviour change.
+- **Nothing else moved**: not the projection order, not the pitch rule (`GridSpacingFactor` is still
+  sized from the largest support — the stencil's job is to resolve the kernel across its own width and
+  has nothing to do with the slab), not the preconditioner's factorisation, not
+  `AcceleratedUnknownCeiling`.
+
+`AimAcceleratorTests.T2` is the one existing test that had to opt OUT (`NearRadiusMinM: 0`): it sets
+`NearRadiusFactor: 0` deliberately so the radius criterion cannot mask stencil overlap, and a floor in
+metres would have re-widened it and made the test vacuous.

@@ -1018,3 +1018,89 @@ a symmetric matrix over CELLS and would take the same treatment; they are outsid
 and are now the only general LUs left on a planar run. **`UnknownCeiling` was re-asked and NOT
 moved** — 1 GB now buys N = 6,968 against 4,454, so memory no longer binds at 5,000, but the fill's
 time and a mesh's accuracy at that size have not been measured and the constant is the owner's.
+
+# P8 — AIM's near radius had no physical floor (2026-08-29)
+
+**Symptom.** `brief-em-aim-ceiling.md`'s A1b ladder — refine the mesh at a fixed 64 mm footprint —
+climbed GMRES 21 → 143 → 372 iterations over cells/λ 80 → 120 and did not converge at all at 140
+(N = 13,967, residual 9.1e-5 against a 1e-8 tolerance). The A1a ladder, growing the board's LENGTH at
+the shipping resolution, was flat over the same N range. `AcceleratedUnknownCeiling = 12,000` was set
+with margin under A1b's failure.
+
+**Cause, in one sentence.** `PlanarAimSettings.NearRadiusFactor` measures the exact near field in
+**largest basis supports**, and refining a mesh shrinks the largest support — so the near field
+shrinks in METRES (8.93 h at cells/λ = 20, 1.28 h at 140, and the same at every board length to four
+figures) while the coupling it has to span does not, because the grounded slab's image sits at a fixed
+depth 2h. The scalar kernel is `1/ρ − 1/√(ρ² + 4h²)` plus smooth terms: past ρ ≈ 2h the residue falls
+like `2h²/ρ³` rather than `1/ρ`, so **2h is where the coupling stops being long-ranged** and a near
+field narrower than it is missing the dominant part.
+
+**Fix.** `PlanarAimGeometry.NearRadiusM = max(NearRadiusFactor · maxSpan, NearRadiusMinM)`, where
+`NearRadiusMinM` is null by default and derives `2·h`. The A1b ladder becomes 21 → 28 → 36 and the
+failing rung converges; the same ladder at 16 mm is 2, 4, 6, 12, 14, 10, 10 against 2, 4, 6, 12, 46,
+144, 273. `4h` was never needed — the brief's own stopping rule is "flat at 2h".
+
+## Four things worth keeping
+
+**1. It is not only the preconditioner — the brief's premise was half right.** The brief said "nothing
+about the AIM projection's accuracy is at stake; the preconditioner is what degraded". But the near
+radius is also the boundary between entries computed EXACTLY and entries the projection approximates,
+so shrinking it degrades the OPERATOR as well. `|ΔI|` against the dense solve on the same mesh:
+4.90e-7 at cells/λ = 20, **5.93e-4** at 140 — a 1,200× loss, of which the floor recovers 17×
+(3.58e-5). Both measured at the same converged GMRES residual, so it is the operator and not the
+stopping rule. A ladder that only watched iteration counts would have missed this.
+
+**2. The obvious alternative explanation was checked and ruled out, cheaply.** A preconditioner that
+silently failed to factor would leave GMRES unpreconditioned and produce exactly this iteration
+climb. `PlanarAimReport.FactorNonZeros` (P1's field) is non-zero on every rung including the one that
+fails, so the factorisation succeeds throughout — it is a good factorisation of a near field that is
+too narrow. Printing that one existing column cost nothing and settled it before any code changed.
+
+**3. The floor's real cost is the sparse LU's FILL-IN, not the near set, and it is
+aspect-ratio-dependent.** Widening the radius grows the near matrix ~1.5× at the top rung; what it
+does to the factor depends on how much of the board the radius spans. On a 64 mm line the fill-in
+ratio is 1.13× and the floor is a NET WIN (build + solve 11.0 s → 7.1 s, because the solve collapses).
+On a 16 mm line the 3.2 mm radius covers the whole 2.9 mm width and a fifth of the length, the band is
+wide against a small N, fill-in is 2.93× and the same change is a net LOSS (12.1 s → 19.0 s). Both are
+correct answers; the short board is the artefact. Memory grows either way — 303 → 426 MB at
+N = 10,708.
+
+**4. The slab height is a REQUIRED argument, on purpose.** `PlanarAimGeometry.Build` refuses a
+non-positive `slabHeightM` by name rather than defaulting to "no floor", because the failure of a
+forgotten plumb is silent: the geometry takes the pre-P8 radius and returns a complete, plausible
+answer that merely takes 20× longer to reach, or does not converge. Making it required turned all six
+call sites into compile errors. `PlanarSolveContext` takes it as a trailing optional — the DENSE path
+has no near radius to floor, and 35 dense call sites should not have to carry it — and throws when
+`Fill.Aim` is set without one.
+
+**5. It changes no answer anyone currently gets.** The floor binds on no mesh either starter
+technology produces at a shipped resolution — R/h is 2.68 to 8.92 on the FR-4 hero at cells/λ 20 and
+40, and **4.17 to 50.03 on the GaAs starter**, where a 72 µm conductor on a 100 µm slab has cells that
+are large against h by construction. Only the PCB case, whose conductor is nearly twice its slab
+height, can be walked into the floor, and only by asking for several times the default resolution.
+`HISTORY.md` §P8 §M3 carries the table.
+
+## What the ceiling question became
+
+`AcceleratedUnknownCeiling = 12,000` is **untouched** (the brief forbids moving it, and the decision is
+the owner's) — but its basis has changed, and the recommendation is to leave it there for a NEW reason.
+A1a, the healthy construction it was set from, is unaffected by the floor and stands exactly as
+measured. A1b, the failing construction it took its margin from, no longer fails to converge. What
+replaced the convergence risk is a BUILD one: at N = 10,708 the accelerator holds 426 MB on a refined
+mesh against 188 MB at N = 12,894 on a coarse one, and one rung further — N = 13,967, the near matrix
+8.9% dense — **CSparse's exact sparse LU had not returned after 8 minutes of CPU and 1.43 GB, and was
+stopped there**, where the unfloored one factors in 5 s. So the old failure was a GMRES that did not converge and threw; the new one would
+be a preconditioner that never finishes building. **N alone no longer bounds the accelerated path** —
+near entries per row does. `HISTORY.md` §P8 §M5 carries the sentence that would move the constant,
+written out and not applied, together with the density guard it would need beside it.
+
+That is also why `AimCeilingTests.A1_LadderByResolution` is now pinned to the pre-P8 radius
+(`NearRadiusMinM: 0`): it exists to record the "before", and on the shipped default its top rung would
+never finish. `PlanarP8NearRadiusFloorTests` is where the shipped behaviour is measured.
+
+## Not done
+
+`NearRadiusMinM` is exposed on `PlanarAimSettings` and reachable from no UI — nothing persists it and
+`EmRunService` only ever passes `PlanarAimSettings.Default`. That is deliberate: it is a derived
+physical quantity, not a knob a user should be tuning, and its one non-default use in the tree is the
+`0` that turns the floor off so a test can measure the pre-P8 behaviour.

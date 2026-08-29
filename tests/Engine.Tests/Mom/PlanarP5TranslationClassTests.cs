@@ -348,7 +348,8 @@ public sealed class PlanarP5TranslationClassTests(ITestOutputHelper output)
         double w    = 2 * Math.PI * 6e9;
         var geom = PlanarFill.BuildGeometryOnlyCores(mesh);
         var gp   = pair0.For(geom, PlanarExtractionOrder.Constant);
-        var aim  = PlanarAimOperator.Build(geom, gp.VectorPotential, gp.Scalar, w, PlanarAimSettings.Default);
+        var aim  = PlanarAimOperator.Build(geom, gp.VectorPotential, gp.Scalar, w, problem.Slab.HeightM,
+                                           PlanarAimSettings.Default);
         _out.WriteLine($"N = {mesh.Bases.Count:N0}: AIM near fill {aim.Report.NearFillMs / 1000.0:F2} s, " +
                        $"{aim.Report.NearEntries:N0} near entries from {aim.Report.NearCellPairs:N0} scalar classes");
         Assert.True(aim.Report.NearCellPairs > 0);

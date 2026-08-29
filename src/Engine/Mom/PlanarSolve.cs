@@ -140,8 +140,16 @@ public sealed class PlanarSolveContext
     /// </summary>
     public PlanarLevels? Levels { get; }
 
+    /// <param name="slabHeightM">
+    /// <b>P8 — required whenever <see cref="PlanarFillSettings.Aim"/> is set</b>, and ignored on the
+    /// dense path (which is why it is optional rather than positional): the accelerator's near radius
+    /// has a floor of 2h under it, and h is not derivable from a mesh. Omitting it on an accelerated
+    /// context throws rather than quietly building the pre-P8 near field, whose bad case is a slow or
+    /// non-converging solve rather than an error.
+    /// </param>
     public PlanarSolveContext(PlanarMesh mesh, IReadOnlyList<PlanarPortResolution> ports,
-                              PlanarFillSettings? settings = null, PlanarLevels? levels = null)
+                              PlanarFillSettings? settings = null, PlanarLevels? levels = null,
+                              double slabHeightM = 0)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(ports);
@@ -176,13 +184,19 @@ public sealed class PlanarSolveContext
         // footing as the cores it is built from (and for the same M4 reason: a standard the sweep
         // never selects must not pay for a projection and a near-field core pass either).
         if (Settings.Aim is { } aim)
+        {
+            if (!(slabHeightM > 0))
+                throw new ArgumentOutOfRangeException(nameof(slabHeightM), slabHeightM,
+                    "An ACCELERATED context needs the slab height: P8 floors the near radius at 2h " +
+                    "and h cannot be read off a mesh. Pass the problem's own Slab.HeightM.");
             _aimGeometry = new Lazy<PlanarAimGeometry>(() =>
             {
                 var sw = Stopwatch.StartNew();
-                var built = PlanarAimGeometry.Build(Cores, aim);
+                var built = PlanarAimGeometry.Build(Cores, slabHeightM, aim);
                 AimGeometryBuildMs = sw.Elapsed.TotalMilliseconds;
                 return built;
             });
+        }
     }
 
     /// <summary>
@@ -324,7 +338,8 @@ public sealed class PlanarPortCalibrator
 
         _standards   = new PlanarSolveContext[set.Length];
         for (int i = 0; i < set.Length; i++)
-            _standards[i] = new PlanarSolveContext(set[i].Mesh, set[i].Ports, fill, _standardLevels);
+            _standards[i] = new PlanarSolveContext(set[i].Mesh, set[i].Ports, fill, _standardLevels,
+                                                   slab.HeightM);
 
         _shortLength = set[0].LengthM;
         _deltas      = new double[set.Length - 1];
@@ -830,7 +845,7 @@ public static class PlanarSolve
         };
 
         var sw    = Stopwatch.StartNew();
-        var dut   = new PlanarSolveContext(mesh, ports, fillSt, levels);
+        var dut   = new PlanarSolveContext(mesh, ports, fillSt, levels, slab.HeightM);
         double setupMs = sw.Elapsed.TotalMilliseconds;
         int    cores   = 1;
 

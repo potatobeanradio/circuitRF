@@ -686,6 +686,27 @@ allocate 12 GB is not lightweight.
 > accelerator does not reach — a wide port's calibration standard can refuse a run whose DUT would have
 > succeeded. `src/Engine/Mom/CLAUDE.md` §4 and §8 carry the measurements.
 
+> **Built at P8 (`brief-em-p8-aim-near-radius-floor.md`, 2026-08-29) — the accelerated ceiling's own
+> failure mode had a physical cause and it is fixed; the number 12,000 is unchanged and the case for
+> moving it is now the owner's to take.** The ladder that broke it was refining the RESOLUTION at a
+> fixed footprint, and the reason was that `NearRadiusFactor` measures the near field in BASIS
+> SUPPORTS: refining the mesh shrinks the largest support, so the exact near field shrinks in metres
+> — from 8.9 slab heights at the shipping cells/λ = 20 to 1.28 at cells/λ = 140 — while the coupling
+> it has to span does not, because the grounded slab's image sits at a fixed depth 2h.
+> `PlanarAimGeometry` now floors the radius at `2h` (`PlanarAimSettings.NearRadiusMinM`, null =
+> derived), and the same 64 mm ladder that climbed 21 → 143 → 372 GMRES iterations and then failed to
+> converge at cells/λ = 140 runs 21 → 28 → 36 instead. **The floor is inert on every mesh at the
+> shipping resolution** — the LENGTH ladder's near set is identical pair for pair with it and without
+> — so it costs the meshes users actually run nothing at all. What it does change is what BINDS at the
+> ceiling on a refined mesh: N no longer predicts the working set there. The accelerator holds 426 MB
+> at N = 10,708 with the floor against 303 MB without, and one rung further — N = 13,967, near matrix
+> 8.9% dense — CSparse's exact sparse LU had not returned after 8 minutes of CPU where the unfloored one
+> factors in 5 s. **The recommendation is to leave 12,000 alone, and the reason has changed**: it is no
+> longer "margin under a ladder that fails to converge" but "margin under the near-set density at which
+> the preconditioner stops being buildable", and moving it would need a check on near entries per row
+> rather than a bigger integer. `HISTORY.md` §P8 carries both ladders and the sentence that would move
+> the constant, written out and not applied.
+
 Sanity check on the hero: 50 Ω microstrip on 1.6 mm FR-4 is W ≈ 2.9 mm; a 20 mm line at 10 GHz has
 λ_g ≈ 16.5 mm, so λ_g/20 ≈ 0.8 mm → ~24 cells long × ~6 across with edge refinement → **N of a few
 hundred**. Genuinely fast. A spiral inductor lands at 1–3k. The scope is realistic.

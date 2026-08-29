@@ -54,7 +54,8 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
     {
         var (mesh, geom, ports, slab) = Fixture();
         int n = mesh.Bases.Count;
-        var shared = PlanarAimGeometry.Build(geom, PlanarAimSettings.Default with { KeepNearExact = true });
+        var shared = PlanarAimGeometry.Build(geom, slab.HeightM,
+                                              PlanarAimSettings.Default with { KeepNearExact = true });
         long passesAfterBuild = shared.EntryCores.CorePasses;
         Assert.True(passesAfterBuild > 0, "the geometry warmed no cores, so the per-frequency gate below is vacuous");
 
@@ -68,7 +69,7 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
             double w = 2 * Math.PI * f;
 
             // The pre-P6 shape: geometry AND operator, from scratch, at this one frequency.
-            var fresh = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, w,
+            var fresh = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, w, slab.HeightM,
                                                 PlanarAimSettings.Default with { KeepNearExact = true });
             // P6's shape: the operator alone, over the geometry built once above.
             var over  = PlanarAimOperator.Build(shared, k.VectorPotential, k.Scalar, w);
@@ -118,7 +119,7 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
         var st = PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default, CoreBuilds = counter };
         // The fixture's own cores carry no counter; the context's build is the one that is counted.
         var (mesh, geom, ports, slab) = Fixture();
-        var ctx = new PlanarSolveContext(mesh, ports, st);
+        var ctx = new PlanarSolveContext(mesh, ports, st, slabHeightM: slab.HeightM);
 
         // Lazy, like the cores: nothing is built until a frequency asks (P2/M4's own rule).
         Assert.False(ctx.AimGeometryBuilt);
@@ -149,7 +150,8 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
         for (int p = 0; p < Sweep.Length; p++)
         {
             var k = PlanarLineFixtures.Kernel(slab, Sweep[p]);
-            var fresh = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, 2 * Math.PI * Sweep[p]);
+            var fresh = PlanarAimOperator.Build(geom, k.VectorPotential, k.Scalar, 2 * Math.PI * Sweep[p],
+                                                slab.HeightM);
             var yf = PlanarExcitation.Solve(fresh, ports).Y;
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 2; j++)
@@ -170,7 +172,7 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
     public void P6_3_TheReportSplitsGeometryFromPerFrequencyBytes_AndTheStencilsAreDoubles()
     {
         var (mesh, geom, _, slab) = Fixture();
-        var shared = PlanarAimGeometry.Build(geom);
+        var shared = PlanarAimGeometry.Build(geom, slab.HeightM);
         var k = PlanarLineFixtures.Kernel(slab, 6e9);
         var a = PlanarAimOperator.Build(shared, k.VectorPotential, k.Scalar, 2 * Math.PI * 6e9);
         var b = PlanarAimOperator.Build(shared, k.VectorPotential, k.Scalar, 2 * Math.PI * 10e9);
@@ -234,7 +236,7 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
             var pair = PlanarLineFixtures.Kernel(problem.Slab, fGHz * 1e9).For(geom, PlanarFillSettings.Default.Order);
             double w = 2 * Math.PI * fGHz * 1e9;
 
-            var g = PlanarAimGeometry.Build(geom);
+            var g = PlanarAimGeometry.Build(geom, problem.Slab.HeightM);
             for (int rep = 0; rep < 2; rep++)
             {
                 var aim = PlanarAimOperator.Build(g, pair.VectorPotential, pair.Scalar, w);
@@ -271,7 +273,7 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
             double luS = swF.Elapsed.TotalSeconds;
 
             var geom = PlanarFill.BuildGeometryOnlyCores(mesh);
-            var g = PlanarAimGeometry.Build(geom);
+            var g = PlanarAimGeometry.Build(geom, problem.Slab.HeightM);
             var swA = Stopwatch.StartNew();
             var aim = PlanarAimOperator.Build(g, k.VectorPotential, k.Scalar, w);
             double buildS = swA.Elapsed.TotalSeconds;
@@ -289,7 +291,7 @@ public sealed class PlanarP6AimGeometryTests(ITestOutputHelper output)
             var problem = PlanarLineFixtures.Fr4Line(256e-3, 6e9);
             var (mesh, ports) = PlanarLineFixtures.MeshAndPorts(problem, PlanarLineFixtures.Shipping);
             var st = PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default };
-            var ctx = new PlanarSolveContext(mesh, ports, st);
+            var ctx = new PlanarSolveContext(mesh, ports, st, slabHeightM: problem.Slab.HeightM);
             double[] freqs = [2e9, 3e9, 4e9, 5e9, 6e9];
             foreach (double f in freqs) _ = PlanarLineFixtures.Kernel(problem.Slab, f);   // fits out of the timing
 

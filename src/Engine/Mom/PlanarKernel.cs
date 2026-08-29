@@ -361,7 +361,8 @@ public sealed class PlanarKernel
         var st      = st0;
         var context = new PlanarSolveContext(
             report.Mesh, resolved, st.Fill,
-            meshed.RequiresGeneralKernel ? PlanarLevels.From(meshed) : null);
+            meshed.RequiresGeneralKernel ? PlanarLevels.From(meshed) : null,
+            meshed.Slab.HeightM);
         var kernel  = PlanarFrequencyKernel.Fit(
             meshed, fHz, (st.Fill ?? PlanarFillSettings.Default).Order, st.Dcim);
 

@@ -36,7 +36,7 @@ public class AimAccuracyTests(ITestOutputHelper output)
     private readonly ITestOutputHelper _out = output;
 
     private sealed record Built(PlanarMesh Mesh, PlanarFillCores Dense, PlanarFillCores Geom,
-                                PlanarKernelPair K, double Omega,
+                                PlanarKernelPair K, double Omega, double SlabH,
                                 IReadOnlyList<PlanarPortResolution> Ports);
 
     private static Built Build(PlanarProblem problem, PlanarMeshSettings mesh, double fHz,
@@ -48,7 +48,7 @@ public class AimAccuracyTests(ITestOutputHelper output)
                          dense ? PlanarFill.BuildCores(report.Mesh) : PlanarFill.BuildGeometryOnlyCores(report.Mesh),
                          PlanarFill.BuildGeometryOnlyCores(report.Mesh),
                          PlanarLineFixtures.Kernel(problem.Slab, fHz),
-                         2.0 * Math.PI * fHz, ports);
+                         2.0 * Math.PI * fHz, problem.Slab.HeightM, ports);
     }
 
     /// <summary>Worst entry-wise deviation, relative to the LARGEST entry of the dense matrix rather
@@ -127,10 +127,14 @@ public class AimAccuracyTests(ITestOutputHelper output)
         foreach (int order in new[] { 1, 2, 3, 4 })
             foreach (double radius in new[] { 2.0, 3.0, 4.0, 6.0, 8.0 })
             {
+                // P8's floor is off here (NearRadiusMinM: 0) so this sweeps the FACTOR and nothing
+                // else. It does not bind on this fixture at any radius in the list — the shipping
+                // mesh's smallest rung is 2 supports = 2.98 h — but a radius sweep whose low end is
+                // silently clamped measures nothing, and the next fixture might be finer.
                 var st = new PlanarAimSettings(ProjectionOrder: order, NearRadiusFactor: radius,
-                                               GridSpacingFactor: 0.5);
+                                               GridSpacingFactor: 0.5, NearRadiusMinM: 0);
                 var sw = Stopwatch.StartNew();
-                var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, st);
+                var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH, st);
                 sw.Stop();
                 var (worst, rms) = EntryError(z, aim, ss, vs);
 
@@ -153,7 +157,7 @@ public class AimAccuracyTests(ITestOutputHelper output)
                                $"{worst,11:E2}  {rms,9:E2}  {iters,6}   {current}");
             }
 
-        var reference = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega);
+        var reference = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH);
         _out.WriteLine("");
         _out.WriteLine($"  grid {reference.Report.GridNodesX} × {reference.Report.GridNodesY} nodes at " +
                        $"a pitch of {reference.Report.GridPitchM * 1e3:F3} mm; " +
@@ -279,7 +283,7 @@ public class AimAccuracyTests(ITestOutputHelper output)
             swD.Stop();
 
             var swB = Stopwatch.StartNew();
-            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega);
+            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH);
             swB.Stop();
 
             var swS = Stopwatch.StartNew();
@@ -346,7 +350,7 @@ public class AimAccuracyTests(ITestOutputHelper output)
             swD.Stop();
 
             var swB = Stopwatch.StartNew();
-            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega);
+            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH);
             swB.Stop();
 
             var swS = Stopwatch.StartNew();
@@ -409,7 +413,7 @@ public class AimAccuracyTests(ITestOutputHelper output)
             const int order = 3;
             var st = new PlanarAimSettings(ProjectionOrder: order, GridSpacingFactor: pitch,
                                            NearRadiusFactor: 6.0);
-            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, st);
+            var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH, st);
             double h = aim.Report.GridPitchM;
 
             string current;
@@ -439,8 +443,8 @@ public class AimAccuracyTests(ITestOutputHelper output)
             foreach (double radius in new[] { 2.0, 3.0, 4.0, 6.0 })
             {
                 var st = new PlanarAimSettings(ProjectionOrder: 3, GridSpacingFactor: pitch,
-                                               NearRadiusFactor: radius);
-                var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, st);
+                                               NearRadiusFactor: radius, NearRadiusMinM: 0);
+                var aim = PlanarAimOperator.Build(b.Geom, b.K.VectorPotential, b.K.Scalar, b.Omega, b.SlabH, st);
                 string cur;
                 try { cur = $"{RelNorm(exact, aim.Solve(rhs), n):E2}"; }
                 catch (InvalidOperationException) { cur = "no conv"; }
