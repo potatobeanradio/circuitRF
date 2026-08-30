@@ -1174,7 +1174,11 @@ geometry* — the old wording would have excluded a solver that requires none of
 
 ### 10.12 Thin-film (MIM) capacitors — plan
 
-**Status: in progress. MIM-1 (region vias) is built, 2026-08-30; MIM-2 … MIM-5 remain proposals.**
+**Status: in progress. MIM-1 (region vias), MIM-2 (the shipped exemplar) and MIM-6 (the level
+reference surface) are built, 2026-08-30; MIM-3 … MIM-5 remain proposals.** MIM-6 is not in the
+original four-gap plan below — it is the fifth gap MIM-2's own measurement surfaced, and it is
+folded into gap 2's finding (a) rather than given a numbered gap of its own, because it is that
+finding's fix and nothing else.
 The work is staged as the `docs/sonnet-briefs/brief-em-mim-series.md` series (MIM-1 … MIM-5); the authoritative record of
 what lands is, as always, `src/Engine/Mom/CLAUDE.md` and the per-area `RESOLVED.md` files, and each
 brief corrects this section in place with a `> Built at MIM-x` note as it ships.
@@ -1208,11 +1212,44 @@ and is built (MIM-1, 2026-08-30).
    staircase), every region on one stackup entry groups into one `PlanarVia`, and nothing on a
    via-bound layer falls into `ignoredOther` any more. The engine and every §7 via refusal were
    untouched. Write-up: `src/Design/RESOLVED.md`.
-2. **A shipped exemplar (MIM-2).** The GaAs starter technology gains a plate conductor, a thin
-   capacitor dielectric and a plate-via entry (its `Cap Dielectric`/`Nitride` drawing layers have
-   existed, unbound, since the starter shipped), so both capacitor forms have an in-tree fixture.
-3. **Thin-layer numerics (MIM-3).** Two meshed levels 0.05–0.5 µm apart is a regime nothing has
-   measured: §L8c's images-closer-than-a-cell quadrature failure mode is reproduced deliberately by
+2. **A shipped exemplar (MIM-2). > Built 2026-08-30, as a SECOND technology rather than as three
+   entries on the starter.** `mmic-GaAs_2LM_100um_MIM` is the GaAs starter plus a plate conductor
+   (`MIM Metal`, 0.25 µm), a thin capacitor dielectric (`MIM Dielectric`, 0.2 µm, εr 6.8, never
+   drawn — the starter's `Cap Dielectric`/`Nitride` drawing layers stay unbound) and a plate-via
+   entry (`MIM Via`), with the air gap absorbing the 0.45 µm so Metal2 still sits 3 µm above Metal1.
+   Both capacitor forms and the two-caps-on-a-line acceptance shape extract, and nothing in the
+   extractor turned out to be per-capacitor.
+
+   **The brief asked for these three entries to be ADDED to the starter, and measurement refuted its
+   premise that "a 50-300 nm sheet perturbs an interconnect-scale stack negligibly".** A capacitor
+   dielectric between Metal1 and Metal2 makes every Metal1-Metal2 airbridge post cross a dielectric
+   interface, which `PlanarKernel.CanSolve` refuses BY NAME — a whole-run refusal, not a dropped
+   shape — and moves a Metal1 microstrip's ε_eff by ~1.7% and Z₀ by ~2.8% (49.62 → 48.25 Ω on the
+   acceptance line). Neither may happen silently to the technology every existing MMIC workspace
+   already copied, so the plain starter is byte-identical and the MIM stack is its own file.
+
+   **Two findings on the physics, and the second is the important one.** (a) A level is a sheet at
+   the BOTTOM of its conductor band, so the modelled plate separation is the dielectric PLUS the
+   lower plate's own metal thickness — 3.2 µm, not 0.2 µm. **> Built at MIM-6 (2026-08-30): a
+   conductor entry now names which SURFACE of its band its sheet sits on (`StackupLayer.SheetAt`),
+   with the absorption direction PAIRED to that choice so every sheet still lands on an interface of
+   the medium by construction. `Bottom`/unset is the old behaviour bit-identical; the shipped MIM
+   technology sets `Metal1 = Top`, and the three levels extract at 103 / 103.2 / 106 µm with the
+   between-plates region at its stated 0.2 µm of εᵣ 6.8. Stated cost, taken deliberately: the region
+   under Metal1 is 103 µm of GaAs rather than 100 (~3%), and `SubstrateResolver` — the closed-form
+   path — is NOT taught the field, so on that technology it and the extractor differ by one metal
+   thickness (100 vs 103 µm; teaching it would move a 70 µm line's static Z₀ 49.42 → 50.06 Ω, and its
+   h is the physical substrate while the extractor's is a sheet POSITION). Write-up:
+   `src/Design/RESOLVED.md`, `src/Ui/RESOLVED.md` §MIM-6.** (b) **The plate capacitance is not in the
+   answer at all**: on a one-port 10 × 10 µm shunt cap the solver returns 0.30 fF at modelled gaps of
+   3.2 / 1.2 / 0.25 / 0.1 µm — constant to 1% across a 32× change, where ε₀εᵣA/d spans 1.88 to
+   60.2 fF. Ruled out by the measurement itself: not the feeds (one port, 10 µm feed,
+   frequency-independent from 2 to 20 GHz), not (a) (changing the gap directly changes nothing), not
+   the mesh (identical N). Write-up: `src/Ui/RESOLVED.md`.
+3. **Thin-layer numerics (MIM-3). > MIM-2 measured the premise and it is UNDERSTATED — the
+   cross-level plate term is absent at SEVERAL µm, not only sub-µm; see MIM-2's finding (b) above,
+   which is now this brief's first order of business.** Two meshed levels 0.05–0.5 µm apart is a
+   regime nothing has measured: §L8c's images-closer-than-a-cell quadrature failure mode is reproduced deliberately by
    plate spacing, cross-level kernels still carry logarithms (§3.5 of the engine record), and
    `LayerStack` accepts any positive thickness without evidence. Measurement-first: kernel / fill /
    physics ladders against direct Sommerfeld integration and the parallel-plate closed form, ending
@@ -1225,13 +1262,33 @@ and is built (MIM-1, 2026-08-30).
    poles, so this is tamer than DCIM, but it is research-grade and staged oracle-first, with the
    shipped on-slab-top path kept bit-identical.
 
+> **Learned at MIM-2 (2026-08-30).** MIM-1 and MIM-2 are built; three amendments, full record in
+> `src/Ui/RESOLVED.md` §MIM-2. (1) The MIM stack ships as a SECOND technology beside the plain GaAs
+> starter, because the capacitor dielectric is not the free addition the plan above assumed: an
+> airbridge post between the interconnect metals then crosses a dielectric interface and is refused
+> by `PlanarKernel.CanSolve` — a whole-run refusal — and the upper-metal line's substrate resolution
+> shifts. (2) A FIFTH gap surfaced: the extractor places a level's sheet at the BOTTOM of its
+> conductor band and absorbs the band into the dielectric above, so a plate pair solves at the
+> capacitor dielectric PLUS the lower plate's metal thickness — 3.2 µm where the process states
+> 0.2 µm. That was **brief MIM-6** (a per-conductor reference-surface field), sequenced before
+> MIM-3's physics tier so the ladder measures the true regime; **it is BUILT (2026-08-30) and the
+> shipped MIM capacitor now solves at 0.2 µm** — so MIM-3's physics tier may run, and must not be
+> run against a pre-MIM-6 build. (3) An initial claim that the plate
+> capacitance was absent from the kernel was RETRACTED as a measurement artifact — it read raw,
+> un-de-embedded S, which is the port discontinuity (a ~0.3 fF series element), not the structure;
+> the L9 gate's own bridged-vs-open record (|S₂₁| 0.9993 vs 0.0502) stands. Corollary for every
+> measurement in this section's briefs: never read a small element's value off raw S — compare
+> with/without on the same artwork, or measure de-embedded.
+
 A fifth brief (MIM-5) closes the import loop: a process stack description that omits an optional
 capacitor module imports faithfully and silently, so the technology-import report learns to name
 the conductors its via list cannot reach and the layer-table rows nothing binds, and the user docs
 gain the three-row hand-add recipe.
 
 **What a MIM run looks like at each stage.** After MIM-1 + MIM-2: a runnable RAW solve (internal
-ports, or de-embedding off), with accuracy at plate separations resting on MIM-3's verdict. After
+ports, or de-embedding off) that is STRUCTURALLY right and whose capacitance is not usable — MIM-2
+measured it as independent of the plate separation, so "accuracy resting on MIM-3's verdict" was
+optimistic: there is a missing term to find first. After
 MIM-4: ordinary de-embedded S-parameters with the feed on any level. **The acceptance topology is a
 NETWORK — several capacitors joined by transmission lines in one run — because that is what an MMIC
 matching section is.** Nothing in the plan is per-capacitor: the extractor takes every shape on the

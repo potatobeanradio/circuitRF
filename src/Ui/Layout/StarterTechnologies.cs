@@ -1,6 +1,7 @@
 // The shipped starter technologies (docs/design/layout-view.md §2.4). Pcb2Layer/MmicGaAs differ
 // only in data, never in code path — if a per-market branch ever appears here, something is
-// modelled in the wrong place. Empty() (added for L0d's "New Technology…" picker) is deliberately
+// modelled in the wrong place. MmicGaAsMim is MmicGaAs plus three stackup entries, built by
+// DERIVING from it rather than by restating it, so the shared part cannot drift. Empty() (added for L0d's "New Technology…" picker) is deliberately
 // bare — a starting point for a from-scratch process, not a third market preset.
 
 using CircuitRF.Ui.Theming;
@@ -231,6 +232,103 @@ public static class StarterTechnologies
                 new DrcRule { Name = "Metal2 Min Spacing", Kind = DrcRuleKind.MinSpacing, Layer = metal2, ValueDbu = Um(4) },
             ],
         };
+
+        return tech;
+    }
+
+    /// <summary>
+    /// <b>The MMIC starter WITH thin-film (MIM) capacitor support</b> — docs/sonnet-briefs/
+    /// brief-em-mim-2-gaas-starter-mim.md. Built from <see cref="MmicGaAs"/> and three added stackup
+    /// entries, so the two can never disagree about the parts they share.
+    ///
+    /// <para><b>Why this is a SEPARATE technology rather than three entries added to the starter,
+    /// which is what MIM-2 originally asked for.</b> The capacitor dielectric is a real layer of the
+    /// medium, and putting one between Metal1 and Metal2 has two measured consequences that the
+    /// brief's "a 50-300 nm sheet perturbs an interconnect-scale stack negligibly" does not survive:
+    /// </para>
+    /// <list type="number">
+    ///   <item><b>Every Metal1-Metal2 airbridge post stops solving.</b> The post now spans two
+    ///   regions of the medium (the capacitor dielectric, then the air above the plate metal), and
+    ///   <c>PlanarKernel.CanSolve</c> refuses a via that crosses a dielectric interface — its
+    ///   closed-form z-integral is written in one region's asymptotic coefficients. That is a whole-run
+    ///   REFUSAL, not a dropped shape.</item>
+    ///   <item><b>A Metal1 microstrip moves.</b> The 0.2 µm εr 6.8 sheet sits directly on the metal, so
+    ///   ε_eff rises ~1.7% and Z₀ falls ~2.8% (49.62 → 48.25 Ω on the acceptance line).</item>
+    /// </list>
+    /// <para>Both are fine in a technology whose whole point is capacitors, and neither is acceptable
+    /// as a silent change to the technology every existing MMIC workspace already copied. So the
+    /// airbridge starter stays exactly as it was, and this is the one to pick when a design has MIM
+    /// capacitors in it. <b>Do not mix airbridges and capacitors in one EM run on it</b> — see the
+    /// user documentation's Stackup page.</para>
+    /// </summary>
+    public static Technology MmicGaAsMim()
+    {
+        var mimMetal = new LayerKey(9, 0);
+        var mimVia   = new LayerKey(10, 0);
+
+        var tech = MmicGaAs();
+        tech.Name = "MMIC GaAs + MIM";
+
+        // The capacitor's own two drawing layers, appended. Nothing existing is renumbered: a design
+        // drawn on the plain starter opens on this one with every layer meaning what it did.
+        //
+        // The plate metal draws ABOVE both interconnect metals (ZOrder 10) because a capacitor's top
+        // plate is a small patch sitting on a Metal1 bottom plate that is usually larger — under it,
+        // it would be invisible in the one view where it matters. Its via takes the one free ZOrder
+        // slot below the metals (3), beside the other connection layers.
+        tech.Layers.Add(new LayerDef { Key = mimMetal, Name = "MIM Metal", Color = new Rgba(0xD0, 0x60, 0x70), ZOrder = 10, Purpose = "drawing" });
+        tech.Layers.Add(new LayerDef { Key = mimVia,   Name = "MIM Via",   Color = new Rgba(0x70, 0x30, 0x38), ZOrder = 3,  Purpose = "drawing" });
+
+        // 2.55 µm, not 3 — the plate metal (0.25) and its dielectric (0.2) take the difference out of
+        // the air gap, so Metal2 still sits exactly 3 µm above Metal1.
+        var air = tech.Stackup.Layers.Single(l => l.Name == "Air");
+        air.ThicknessDbu = Um(2.55m);
+
+        int metal1Index = tech.Stackup.Layers.FindIndex(l => l.Name == "Metal1");
+        tech.Stackup.Layers.InsertRange(metal1Index,
+        [
+            new StackupLayer
+            {
+                Kind = StackupKind.Conductor, Name = "MIM Metal",
+                ThicknessDbu = Um(0.25m), SigmaSm = 4.1e7,
+                DrawingLayers = [mimMetal],
+            },
+            new StackupLayer
+            {
+                // Named "MIM Dielectric" and deliberately NOT "Cap Dielectric". The starter has always
+                // carried "Cap Dielectric" and "Nitride" DRAWING layers, unbound and ignored — mask
+                // documentation a process deck carries — and they stay exactly that. A stackup
+                // DIELECTRIC is a different kind of thing: never drawn, no artwork, and laterally
+                // infinite by the 2.5D premise (docs/design/mom-engine.md §10.12). Two names is what
+                // stops the next reader asking which one the solver reads.
+                Kind = StackupKind.Dielectric, Name = "MIM Dielectric",
+                ThicknessDbu = Um(0.2m), Epsr = 6.8, TanD = 0.001,
+            },
+        ]);
+
+        // ── MIM-6 — Metal1's EM sheet sits on the TOP of its band, not the bottom ────────────────
+        //
+        // This is the ONE field that makes the shipped capacitor solve at the separation the process
+        // states. A level is a zero-thickness sheet and its band's thickness is absorbed into a
+        // neighbouring dielectric; with the default (bottom / absorb upward) Metal1's own 3 µm of
+        // metal lands INSIDE the plate gap, and the solver sees 3.2 µm where the process says 0.2 —
+        // 16x. With the sheet on the top surface the gap is the MIM Dielectric alone, and Metal1's
+        // band is absorbed into the GaAs below it.
+        //
+        // The stated cost, taken deliberately: a Metal1 microstrip's EM substrate on THIS technology
+        // is 103 µm of GaAs rather than 100 — ~3%, bought against a 16x capacitance error. The plain
+        // starter says nothing here and is untouched.
+        tech.Stackup.Layers.Single(l => l.Name == "Metal1").SheetAt = ConductorSheetSurface.Top;
+
+        // The top plate's connection up to the routing metal. Drawn as a REGION (MIM-1) rather than a
+        // point via — a plate connection is a patch nearly as large as the plate, not a barrel.
+        tech.Stackup.Layers.Add(new StackupLayer
+        {
+            Kind = StackupKind.Via, Name = "MIM Via",
+            DrawingLayers = [mimVia],
+            Fill = ViaFillKind.Solid,
+            SpanFromLayer = "MIM Metal", SpanToLayer = "Metal2",
+        });
 
         return tech;
     }

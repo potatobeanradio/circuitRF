@@ -91,6 +91,14 @@ not general 3D.
   medium is stratified, so a dielectric is a slab spanning the whole plane or it is not representable.
 - **Magnetic materials beyond a scalar µ<sub>r</sub> per layer.** No ferrites, no anisotropy.
 - **Non-linearity of any kind.** This solves a linear problem and returns S-parameters.
+- **The capacitance read off a thin-film (MIM) capacitor run**, though its network, its feeds and
+  its vias are solved normally, and for reasons of geometry and calibration rather than field
+  physics: each metal level is a zero-thickness sheet placed at the **bottom** of its stackup band,
+  so the two plate sheets end up separated by the capacitor dielectric *plus the whole thickness of
+  the lower plate's metal*; and a MIM's feed arrives on upper metal, where a port cannot yet be
+  de-embedded — and an un-de-embedded port's own discontinuity is a fraction-of-a-femtofarad series
+  element that masks any small capacitance behind it. See
+  [A thin-film (MIM) capacitor](stackup.html#mim).
 - **Conductor loss, in the full-wave kernel.** Its metal is a **perfect conductor**: the conductivity
   and thickness you set in the stackup are carried but not used in the field solve. Dielectric loss
   (tanδ) *is* modelled, and it dominates on ordinary substrates — measured on 1.6 mm FR-4, the missing

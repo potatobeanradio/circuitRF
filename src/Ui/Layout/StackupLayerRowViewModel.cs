@@ -199,6 +199,31 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
 
     public bool IsPlatedVia => IsVia && SelectedFill == ViaFillKind.Plated;
 
+    // ── MIM-6 — which surface of its own band a conductor's analysis sheet sits on ─────────────
+    //
+    // A ComboBox rather than the "Ground reference" checkbox beside it, for one reason: the two
+    // values are not a flag and its absence. Both are real, named modelling choices a process author
+    // picks between — and a capacitor's LOWER plate wants Top while the metal directly above it
+    // wants Bottom, so the same technology carries both and the row has to SAY which it is rather
+    // than leave it to an unticked box. It commits immediately and undoably, exactly as that
+    // checkbox and the via Fill combo do.
+    public static IReadOnlyList<ConductorSheetSurface> SheetAtChoices { get; } =
+        Enum.GetValues<ConductorSheetSurface>();
+
+    private ConductorSheetSurface _selectedSheetAt = ConductorSheetSurface.Bottom;
+    public ConductorSheetSurface SelectedSheetAt
+    {
+        get => _selectedSheetAt;
+        set
+        {
+            if (!SetProperty(ref _selectedSheetAt, value) || _isRefreshing) return;
+            if (Layer.SheetAt == value) return;
+            var before = _owner.SnapshotJson();
+            Layer.SheetAt = value;
+            _owner.CommitEdit(before, $"Put {Layer.Name}'s analysis sheet at the {value.ToString().ToLowerInvariant()} of its band");
+        }
+    }
+
     [ObservableProperty] private string _stagedWallThickness = "";
 
     public IRelayCommand RemoveCommand   { get; }
@@ -235,6 +260,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         StagedMur            = Layer.Mur.ToString("0.####", Inv);
         StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0", Inv);
         IsGroundReference    = Layer.IsGroundReference;
+        SelectedSheetAt      = Layer.SheetAt ?? ConductorSheetSurface.Bottom;
 
         DrawingLayerOptions.Clear();
         foreach (var l in _owner.Working.Layers)

@@ -447,6 +447,38 @@ public class TechEditorDocumentTests
         Assert.True(vm.Working.Stackup.Layers[0].IsGroundReference);
     }
 
+    // ── MIM-6: the conductor row's analysis-sheet surface ─────────────────────────────────────
+
+    /// <summary>
+    /// A ComboBox rather than a checkbox, because the two values are both real modelling choices
+    /// rather than a flag and its absence — but the COMMIT behaviour is the checkbox's: immediate,
+    /// undoable, one entry per change. A row whose technology says nothing shows Bottom, which is
+    /// what that technology means, and showing it does not write it.
+    /// </summary>
+    [Fact]
+    public void ConductorRow_ChoosingASheetSurface_CommitsUndoably()
+    {
+        var tech = FreshTech();
+        tech.Stackup.Layers.Add(new StackupLayer { Kind = StackupKind.Conductor, Name = "Plate", ThicknessDbu = 1000, SigmaSm = 1e7 });
+        var vm = new TechEditorViewModel(TempPath(), tech);
+        var row = vm.StackupLayers[0];
+
+        // Displaying the default is not an edit.
+        Assert.Equal(ConductorSheetSurface.Bottom, row.SelectedSheetAt);
+        Assert.Null(vm.Working.Stackup.Layers[0].SheetAt);
+        Assert.False(vm.UndoRedo.CanUndo);
+
+        row.SelectedSheetAt = ConductorSheetSurface.Top;
+        Assert.Equal(ConductorSheetSurface.Top, vm.Working.Stackup.Layers[0].SheetAt);
+        Assert.True(vm.UndoRedo.CanUndo);
+
+        vm.UndoRedo.Undo();
+        Assert.Null(vm.Working.Stackup.Layers[0].SheetAt);
+
+        vm.UndoRedo.Redo();
+        Assert.Equal(ConductorSheetSurface.Top, vm.Working.Stackup.Layers[0].SheetAt);
+    }
+
     [Theory]
     [InlineData(StackupKind.Via)]
     [InlineData(StackupKind.Dielectric)]

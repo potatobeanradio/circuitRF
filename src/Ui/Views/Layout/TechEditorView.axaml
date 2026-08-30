@@ -518,6 +518,23 @@
                                                           ToolTip.Tip="Marks this conductor as a ground-reference plane for microstrip substrate resolution."/>
                                             </StackPanel>
 
+                                            <!-- MIM-6. The full-wave planar kernel solves a conductor
+                                                 as a zero-thickness sheet, and this says which surface
+                                                 of its own band that sheet sits on; the band's
+                                                 thickness is absorbed into the dielectric on the other
+                                                 side. Bottom is the default and what every technology
+                                                 authored before this field meant. Top is what a
+                                                 capacitor's LOWER plate wants, so the modelled plate
+                                                 gap is the capacitor dielectric alone. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsConductor}">
+                                                <TextBlock Text="EM sheet at:" Width="70" FontSize="11"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <ComboBox Classes="cell" MinWidth="90"
+                                                          ItemsSource="{Binding SheetAtChoices}"
+                                                          SelectedItem="{Binding SelectedSheetAt, Mode=TwoWay}"
+                                                          ToolTip.Tip="Which surface of this conductor's band the full-wave planar solver puts its zero-thickness sheet on. Bottom (the default) absorbs the band into the dielectric above and is what makes a microstrip's height come out as the substrate thickness. Top absorbs it into the dielectric below, which is what a thin-film capacitor's lower plate needs."/>
+                                            </StackPanel>
+
                                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsDielectric}">
                                                 <StackPanel Orientation="Horizontal" Spacing="3">
                                                     <TextBlock Text="εr:" FontSize="11" VerticalAlignment="Center"/>

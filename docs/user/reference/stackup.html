@@ -40,8 +40,10 @@ every port in the run at once.</strong></p>
 <li><a href="#anatomy">Anatomy of a stackup</a></li>
 <li><a href="#ground">Where your port's negative terminal is</a></li>
 <li><a href="#levels">Which conductors get simulated</a></li>
+<li><a href="#sheet-surface">Which surface a conductor's sheet sits on</a></li>
 <li><a href="#slab">The slab, and what makes one solvable</a></li>
 <li><a href="#vias">Vias</a></li>
+<li><a href="#mim">A thin-film (MIM) capacitor</a></li>
 <li><a href="#ignored">What the EM engine does not read</a></li>
 <li><a href="#check">Checking what it resolved to</a></li>
 </ol>
@@ -204,6 +206,17 @@ conditions for what is above and below the whole sandwich.</p>
 <li><strong>Bottom</strong> — <code>Ground</code> (the usual case) or <code>Open</code>.</li>
 </ul>
 <div class="callout note">
+<span class="label">A dielectric is never drawn, and it is laterally infinite</span>
+<p>A conductor entry has drawing layers; a <strong>dielectric entry has none</strong>. It is a sheet
+of material spanning the whole problem at its stated thickness, everywhere, because that is what the
+solver's Green's function is built on — a stratified medium, uniform in x and y.</p>
+<p>This matters most for a <em>thin</em> dielectric that a real process only leaves under and just
+beyond a structure — a capacitor dielectric, say. The model carries it as a full sheet at its true
+height. That is the standard trade in this class of tool, and it is a good one where the structure
+is; it is <em>not</em> free everywhere else, and <a href="#mim">A thin-film (MIM) capacitor</a> gives
+the measured cost.</p>
+</div>
+<div class="callout note">
 <span class="label">A drawing layer is not a conductor</span>
 <p>What you draw on is a <em>drawing layer</em> — a GDSII layer/datatype pair with a name and a
 colour. What gets simulated is a <em>stackup conductor</em>. The link between them is the conductor
@@ -255,6 +268,49 @@ conductor with artwork on it is an <strong>analysis level</strong>.</p>
 named, every signal conductor that actually carries artwork is included.</li>
 <li>Levels are ordered <strong>bottom to top</strong>, and the lowest one sits on the slab's top surface.</li>
 </ul>
+<h2 id="sheet-surface">Which surface a conductor's sheet sits on</h2>
+<p>The full-wave solver models a conductor as a <strong>zero-thickness sheet at one height</strong>, so its band's
+thickness has to go somewhere: it is absorbed into the dielectric on the other side of the sheet.
+Which side is a per-conductor setting — <strong>EM sheet at</strong> on the conductor's row in the Stackup tab.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>The sheet sits</th>
+<th>The band's thickness goes</th>
+<th>Height of a line on it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bottom</strong> (default)</td>
+<td>on the band's bottom surface</td>
+<td>into the dielectric <strong>above</strong></td>
+<td>the substrate under it</td>
+</tr>
+<tr>
+<td><strong>Top</strong></td>
+<td>on the band's top surface</td>
+<td>into the dielectric <strong>below</strong></td>
+<td>the substrate <strong>plus its own metal</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bottom is what you want almost everywhere</strong>, and it is what a conductor that says nothing means: a
+trace deposited on a substrate and encapsulated by whatever comes next, whose height above the ground
+plane comes out as the substrate thickness.</p>
+<p><strong>Top is for the lower plate of a capacitor.</strong> With the sheet at the bottom of its band, that plate's
+whole metal thickness lands inside the plate gap, and the solver separates the two sheets by the
+capacitor dielectric <em>plus that metal</em> — 3.2 µm rather than 0.2 on a typical MMIC metal. Setting
+<strong>Top</strong> on the lower plate's entry puts the gap back to the dielectric alone, and gives the metal's
+thickness to the substrate below instead. The shipped <em>MMIC GaAs + MIM</em> technology does exactly this
+on <code>Metal1</code>.</p>
+<p>The trade is stated rather than hidden: on that technology a <code>Metal1</code> microstrip's EM substrate is
+103 µm of GaAs rather than 100 — a ~3% height shift, against a 16× error in the modelled plate
+separation. The <strong>closed-form</strong> microstrip models are unaffected either way; they model real metal of
+real thickness and measure their height to the metal's underside, so on a technology using <strong>Top</strong>
+they and an EM run differ by up to one metal thickness. The run's notes name each level's z <em>and</em> the
+surface it sits on, which is where you read back what was actually solved.</p>
 <h2 id="slab">The slab, and what makes one solvable</h2>
 <p>The solver works on the <strong>dielectric between the ground plane and the lowest analysis level</strong>. Two
 stackup mistakes are refused by name rather than solved around:</p>
@@ -269,8 +325,17 @@ own ε<sub>r</sub> and tanδ. Layers <em>above</em> the top conductor are not pa
 boundary is what is above, and it is <code>Open</code> unless you say otherwise.</p>
 <h2 id="vias">Vias</h2>
 <p>A via entry is not a layer — it is a <strong>connection between two conductor entries, named by name</strong> in
-its <code>Span from</code> / <code>Span to</code> fields. Draw a via shape on the drawing layer the entry is bound to, and
-the EM extractor turns it into a real vertical current path.</p>
+its <code>Span from</code> / <code>Span to</code> fields. Draw on the drawing layer the entry is bound to, and the EM
+extractor turns what you drew into a real vertical current path.</p>
+<p><strong>Two kinds of artwork count</strong>, and both go through the same rules below:</p>
+<ul>
+<li>a <strong>via primitive</strong>, the pad-and-drill point you place with the Via tool;</li>
+<li>a <strong>filled region</strong> — a rectangle or a polygon, holes included. This is what a thin-film
+capacitor's plate connection is: a patch nearly as large as the plate itself, rather than a point.
+Several regions on one via entry are several footprints of the same connection.</li>
+</ul>
+<p>A <strong>path</strong> on a via layer is ignored, with a note — a path is a centreline and encloses no area, so
+there is no footprint to mesh. Draw the region instead.</p>
 <p>Three rules the extractor applies, each reported when it bites:</p>
 <ul>
 <li><strong>The two conductors must be adjacent in the stack.</strong> A via that skips a level is not built, because
@@ -279,9 +344,11 @@ there is nothing to connect it to in between.</li>
 named conductor is the ground-designated one, so the via runs from a signal level down to the plane.
 A via naming some <em>other</em> non-analysis conductor is ignored with a note — it would otherwise silently
 model a structure you did not draw.</li>
-<li><strong>The footprint is squared.</strong> A round barrel staircased onto the mesh grid would cost a gridline per
-facet for no physics, so it is replaced by the <strong>equal-area square</strong>, which preserves the conducting
-cross-section. The run reports that it did.</li>
+<li><strong>A via primitive's footprint is squared.</strong> A round barrel staircased onto the mesh grid would cost
+a gridline per facet for no physics, so it is replaced by the <strong>equal-area square</strong>, which preserves
+the conducting cross-section. The run reports that it did. <strong>A drawn region is not squared</strong> — the
+substitution exists so a circle nobody drew does not staircase, and an outline you drew already is
+the footprint, so it is meshed as it stands.</li>
 </ul>
 <div class="callout note">
 <span class="label">An internal port does not need you to draw one</span>
@@ -292,6 +359,90 @@ technology declares none, a quarter of the substrate height), reported by size i
 That path is real metal and its inductance is in the answer, which is why you can override it simply
 by drawing the via you want.</p>
 </div>
+<h2 id="mim">A thin-film (MIM) capacitor</h2>
+<p>A MIM capacitor is a thin dielectric between two metal plates inside the interlayer dielectric. In a
+stackup it is <strong>three entries</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Entry</th>
+<th>Kind</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MIM Metal</code></td>
+<td>Conductor</td>
+<td>The top plate — a thin metal with its own drawing layer</td>
+</tr>
+<tr>
+<td><code>MIM Dielectric</code></td>
+<td>Dielectric</td>
+<td>The capacitor dielectric: thin, higher ε<sub>r</sub>, <strong>no drawing layer</strong></td>
+</tr>
+<tr>
+<td><code>MIM Via</code></td>
+<td>Via</td>
+<td>The plate's connection up to the routing metal above it</td>
+</tr>
+</tbody>
+</table>
+<p>The bottom plate is the interconnect metal underneath — no fourth entry. You draw the two plates and
+the plate connection; the dielectric is never drawn. <strong>A <code>Cap Dielectric</code> or <code>Nitride</code> layer in a
+layer table is mask documentation, not this.</strong></p>
+<p>Both capacitor forms are ordinary multi-level artwork:</p>
+<ul>
+<li><strong>Shunt</strong> — bottom plate on the lower metal over one or more backside vias, top plate on the plate
+metal, feed landing on the upper metal through a plate-via region.</li>
+<li><strong>Series</strong> — feed in on the lower metal, which <em>is</em> the bottom plate, and out on the upper metal
+through the plate via.</li>
+</ul>
+<h3 id="mim-separate">It is a separate technology, and that is not filing</h3>
+<p>circuitRF ships <strong>two</strong> MMIC technologies: the plain one, and <em>MMIC GaAs + MIM</em>. They are identical
+apart from the three entries above. The reason they are two files rather than one is that a capacitor
+dielectric between the two interconnect metals is <strong>not</strong> a free addition:</p>
+<ul>
+<li><strong>Airbridge posts stop solving.</strong> A post between the two metals now crosses a dielectric interface,
+and a via that crosses one is refused by name — the closed-form integral along a via is written in
+one region's coefficients. <strong>This refuses the whole run</strong>, it does not drop a shape. So on the
+MIM technology, do not mix airbridge posts and capacitor plates in one EM setup.</li>
+<li><strong>A line on the upper metal moves.</strong> The 0.2 µm ε<sub>r</sub> 6.8 sheet sits in its substrate, and
+a line on the <em>lower</em> metal sees it as superstrate: measured on the acceptance line,
+ε<sub>eff</sub> rises ~1.7% and Z₀ falls ~2.8%.</li>
+</ul>
+<p>Neither is acceptable as a silent change to the technology existing designs already use, and both
+are fine in a technology whose purpose is capacitors. Pick the plain starter for airbridge work and
+the MIM one for capacitor work.</p>
+<p>There is also a <strong>plate level makes a post non-adjacent</strong> rule on top of the refusal above: a via
+must span two conductors that are adjacent <em>in the analysis</em>, and with the plate metal in the level
+list a post between the two interconnect metals skips a level and is dropped with a note.</p>
+<h3 id="mim-accuracy">Do not take a capacitance off a MIM run yet</h3>
+<div class="callout warn">
+<span class="label">The separation is now right; the read-out path is not</span>
+<p>The solver models the plate separation the process states — 0.2 µm on the shipped MIM technology,
+the capacitor dielectric and nothing else. (It used to model 3.2 µm: a conductor is solved as a
+zero-thickness sheet, and with that sheet at the bottom of its own band the lower plate's whole metal
+thickness fell inside the gap. The lower plate's entry now says its sheet sits on the
+<strong>top</strong> of its band — see <a href="#sheet-surface">Which surface a conductor's sheet
+sits on</a>.) The run's notes print every level's z <em>and</em> the surface it sits on, so you can
+always read back the separation it used.</p>
+<p><strong>What still stands between a run and a capacitance: a MIM's feed arrives on upper metal,
+where a port cannot yet be de-embedded</strong> — so a MIM run is read through internal ports or as a
+raw solve. A raw solve's s-parameters include each port's own discontinuity, and that discontinuity is
+a fraction-of-a-femtofarad series element: read a small capacitance through it and you read the port,
+not the capacitor, whatever the plates do. (An earlier revision of this page said the plate
+capacitance was "not modelled", on a measurement taken through exactly that raw path — retracted: the
+same solver's calibrated path transmits a via-bridged two-level structure at |S21| = 0.999, and the
+constant value that measurement returned is the port discontinuity itself.)</p>
+<p>So treat a MIM run as a <em>structural</em> answer for now — the network, the feeds and the vias
+around the capacitor are solved normally — and take the capacitance itself from the process's own
+fF/µm².</p>
+</div>
+<p><strong>The shunt form's backside via sets an upper frequency.</strong> A vertical basis carries uniform current
+along its whole run, so a via is refused above k·ℓ = 0.3. Through 100 µm of GaAs that ceiling is just
+under 40 GHz; the refusal says so and names the number it computed. The series form has no such via
+and no such bound.</p>
 <h2 id="ignored">What the EM engine does not read</h2>
 <p>Stated plainly, because a field that is carried but unused is worse than one that is absent:</p>
 <ul>
@@ -299,7 +450,11 @@ by drawing the via you want.</p>
 conductor loss is not in the answer. The <strong>cross-section (uniform-line) kernel</strong> does use it, for
 its Wheeler-incremental-inductance surface resistance.</li>
 <li><strong>Conductor thickness is not modelled by the full-wave kernel either</strong> — it solves a zero-thickness
-sheet. It is used by the cross-section kernel and by interchange.</li>
+sheet, placed on one surface of the conductor's own band. The thickness itself is used by the
+cross-section kernel and by interchange. Which surface the sheet sits on is normally invisible
+(3 µm of metal under a 100 µm substrate moves nothing), and matters exactly once: between the two
+plates of a <a href="#mim">thin-film capacitor</a>. It is a per-conductor setting — see
+<a href="#sheet-surface">Which surface a conductor's sheet sits on</a>.</li>
 <li><strong>A via's fill and wall thickness are carried for thermal work</strong>, not read by the RF solve: a plated
 wall a few µm thick is many skin depths at RF, so plated and solid behave the same.</li>
 </ul>

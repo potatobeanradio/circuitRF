@@ -116,6 +116,21 @@ public sealed class LayerDef
 public enum StackupKind { Dielectric, Conductor, Via }
 public enum BoundaryCondition { Open, Ground }
 
+/// <summary>
+/// Which SURFACE of a conductor's own stackup band its zero-thickness analysis sheet sits on
+/// (brief-em-mim-6-level-reference-surface.md).
+///
+/// <para><b>The pairing with the absorption direction is the whole point, and it is not a
+/// preference.</b> A planar solver meshes a conductor as a sheet at one z, and the band's own
+/// thickness has to be given to a neighbouring dielectric — the stackup does not say what fills a
+/// metal band where no metal is drawn. Placing the sheet at the BOTTOM and giving the band to the
+/// dielectric ABOVE is what makes a microstrip's height come out as the substrate thickness;
+/// placing it at the TOP and giving the band to the dielectric BELOW is what makes a capacitor's
+/// plate gap come out as the capacitor dielectric. Either way the sheet lands on an interface of
+/// the resulting medium by construction, which <c>PlanarProblem.CanSolve</c> requires.</para>
+/// </summary>
+public enum ConductorSheetSurface { Bottom, Top }
+
 /// <summary>docs/sonnet-briefs/brief-via-primitive-and-stackup.md R-via-2: a via's fill model is a
 /// PROCESS parameter (a fab plates or fills a whole board to one specification), so it lives here on
 /// the stackup, never on <see cref="ViaShape"/> — nobody configures fill/wall thickness per via just to
@@ -151,6 +166,20 @@ public sealed class StackupLayer
     /// ground. Additive, default false, no <c>.ctech</c> <c>FormatVersion</c> bump. Meaningless
     /// (ignored) on a non-Conductor entry.</summary>
     public bool IsGroundReference { get; set; }
+
+    /// <summary>
+    /// brief-em-mim-6-level-reference-surface.md: which surface of this conductor's band the
+    /// full-wave planar extractor puts its zero-thickness sheet on. <b>Null (and
+    /// <see cref="ConductorSheetSurface.Bottom"/>) is the behaviour every technology had before this
+    /// field existed, bit-identical</b>; <see cref="ConductorSheetSurface.Top"/> is what a
+    /// capacitor's LOWER plate needs, so the modelled plate separation is the capacitor dielectric
+    /// alone rather than that dielectric plus the plate's own metal thickness (16x on the shipped
+    /// MIM technology). Additive, nullable, no <c>.ctech</c> <c>FormatVersion</c> bump — the
+    /// <see cref="Fill"/>/<see cref="SpanFromLayer"/> pattern. Meaningless (ignored) on a
+    /// non-Conductor entry, and read by the PLANAR extractor only: the cross-section kernel models
+    /// real metal thickness and has no sheet to place.
+    /// </summary>
+    public ConductorSheetSurface? SheetAt { get; set; }
 
     // ── Via (Kind == StackupKind.Via only) — additive, nullable, no .ctech FormatVersion bump ──────
 

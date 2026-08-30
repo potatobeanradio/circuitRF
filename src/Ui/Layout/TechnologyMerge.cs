@@ -167,7 +167,11 @@ public static class TechnologyMerge
     private static string RuleKeyOf(string n)      => $"DrcRules|{n}";
 
     private static string Describe(StackupLayer s) =>
-        $"{s.Kind}, {s.ThicknessDbu} DBU" + (s.IsGroundReference ? ", ground" : "");
+        $"{s.Kind}, {s.ThicknessDbu} DBU" + (s.IsGroundReference ? ", ground" : "") +
+        // MIM-6: named in the conflict description because it MOVES the conductor — two entries
+        // agreeing on every number and differing only here solve at different heights, and a
+        // conflict dialog that showed them as identical would be lying about what it is replacing.
+        (s.SheetAt is { } surf ? $", sheet at {surf.ToString().ToLowerInvariant()}" : "");
 
     private static string Describe(DrcRule r)
     {
@@ -529,6 +533,7 @@ public static class TechnologyMerge
         Kind = s.Kind, Name = s.Name, ThicknessDbu = s.ThicknessDbu,
         Epsr = s.Epsr, TanD = s.TanD, Mur = s.Mur, SigmaSm = s.SigmaSm,
         DrawingLayers = [.. s.DrawingLayers], IsGroundReference = s.IsGroundReference,
+        SheetAt = s.SheetAt,
         Fill = s.Fill, WallThicknessDbu = s.WallThicknessDbu,
         SpanFromLayer = s.SpanFromLayer, SpanToLayer = s.SpanToLayer,
     };

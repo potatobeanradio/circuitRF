@@ -1,5 +1,209 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MIM-6 — the shipped MIM technology's plate gap is the process's 0.2 µm (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-6-level-reference-surface.md`, the fix for §MIM-2's FINDING 1
+below. The extractor half — the `SheetAt` field, the paired absorption, and the deliberate decision
+NOT to teach `SubstrateResolver` — is written up in `src/Design/RESOLVED.md`. This is the editor,
+the starter and the shipped `.ctech`.
+
+### The technology
+
+`mmic-GaAs_2LM_100um_MIM` sets **one field**: `Metal1.SheetAt = Top`. That is the whole opt-in, in
+both representations — the authored `.ctech` and `StarterTechnologies.MmicGaAsMim()` — and the
+existing field-by-field test grew a `SheetAt` comparison so they cannot drift apart on it.
+
+**The plain starter says nothing and is untouched**, asserted rather than assumed
+(`Assert.All(MmicGaAs().Stackup.Layers, l => Assert.Null(l.SheetAt))`): an existing MMIC workspace's
+microstrips must not move because a capacitor technology exists beside them. That is the same rule
+MIM-2 took when it made this a second technology rather than three entries on the starter.
+
+Levels go from 100 / 103.2 / 106 µm to **103 / 103.2 / 106**, and the region between the plates from
+3.2 µm of εᵣ 6.8 to **0.2 µm** — the number the process states. The stated cost, in the technology's
+own source comment and asserted in `MimCapacitorTests`: the region under Metal1 becomes 103 µm of
+GaAs instead of 100, ~3%, bought against a 16× capacitance error.
+
+### The editor row: a ComboBox, not a checkbox, and the reason is not style
+
+`StackupLayerRowViewModel` gained `SheetAtChoices`/`SelectedSheetAt` with the commit behaviour of the
+`IsGroundReference` checkbox beside it — immediate, undoable, one entry per change — but a ComboBox
+as the control, because **the two values are not a flag and its absence**. Both are real, named
+modelling choices, and the same technology legitimately carries both: a capacitor's lower plate wants
+`Top` while the metal directly above it wants `Bottom`. An unticked box would say "nobody chose"
+where the row has to say which.
+
+**Displaying the default is not an edit.** A row whose technology says nothing shows `Bottom` — which
+is what that technology means — and showing it writes nothing, so opening the editor on any existing
+`.ctech` and closing it leaves the file untouched. `TechEditorDocumentTests.ConductorRow_ChoosingA
+SheetSurface_CommitsUndoably` asserts the no-edit state before it asserts the edit.
+
+### The merge names it in a conflict
+
+`TechnologyMerge.Clone` carries the field, and `Describe` appends `, sheet at top` — because two
+stackup entries agreeing on every number and differing only here **solve at different heights**, and
+a conflict dialog that showed them as identical would be lying about what it is replacing.
+
+### The user docs
+
+`stackup.md` gained a section (`#sheet-surface`) — the two settings, what each absorbs, and that
+`Top` is for a capacitor's lower plate — and `#mim-accuracy` lost its separation caveat. What stays
+there is MIM-4's: a MIM's feed arrives on upper metal where a port cannot yet be de-embedded, so a
+raw solve's numbers are read through each port's own ~0.3 fF discontinuity.
+
+
+
+## MIM-2 — a shipped technology that can state a MIM capacitor (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-2-gaas-starter-mim.md`, gap 2 of the MIM series. Technology data,
+fixtures and documentation; no engine change and no extractor change (MIM-1 had already built the one
+capability this needs — a via drawn as a REGION).
+
+### The brief asked for three entries on the GaAs starter. Measurement said no.
+
+The brief's premise is that the starter "already carries everything a shunt MIM needs except the
+plate itself", and that a thin capacitor dielectric "perturbs an interconnect-scale stack
+negligibly". Both were tried, and both are false on this stack:
+
+- **Every Metal1-Metal2 airbridge post stops solving.** With a 0.2 µm εr 6.8 band between the metals,
+  the post spans two regions of the medium (3.2 µm at εr 6.8, then 2.8 µm at εr 1), and
+  `PlanarKernel.CanSolve` refuses a via that crosses a dielectric interface — its closed-form
+  z-integral is written in ONE region's asymptotic coefficients. **That is a whole-run refusal, not a
+  dropped shape**, and it took out the L9 phase gate's own airbridge fixture.
+- **A Metal1 microstrip moves.** The sheet lands directly on the metal as superstrate:
+  Z₀ 49.62 → 48.25 Ω (−2.8%) and ε_eff to 8.543, just past the 8.5 an existing acceptance test
+  already asserted.
+
+Ten tests went red, four of them for these two reasons rather than for restating an old stackup.
+Neither may happen silently to the technology every existing MMIC workspace copied at creation, so
+**the plain starter is byte-identical and the MIM stack ships as its own file** —
+`mmic-GaAs_2LM_100um_MIM.ctech`, "MMIC GaAs (2 Layer Metal + MIM, 100um)". Owner's call, taken on the
+measurements above.
+
+### What the MIM technology is
+
+The plain starter plus three stackup entries and two drawing layers; nothing renamed or renumbered,
+so a design drawn on one opens on the other with every layer meaning what it did:
+
+| Entry | Kind | Value |
+|---|---|---|
+| `MIM Metal` | Conductor | 0.25 µm, σ 4.1e7, bound to a new drawing layer `MIM Metal` (9,0) |
+| `MIM Dielectric` | Dielectric | 0.2 µm, εr 6.8, tanδ 0.001 — **no drawing layer** |
+| `MIM Via` | Via | solid, `MIM Metal` → `Metal2`, bound to a new drawing layer `MIM Via` (10,0) |
+
+`Air` is 2.55 µm rather than 3, so Metal2 still sits exactly 3 µm above Metal1; the test asserts the
+SUM rather than the air thickness, which makes it a statement about the structure.
+
+**The entry is `MIM Dielectric` and deliberately not `Cap Dielectric`.** The starter's `Cap
+Dielectric` and `Nitride` DRAWING layers have been present and unbound since it shipped — mask
+documentation — and stay exactly that on both technologies. A stackup dielectric is a different kind
+of thing: never drawn, no artwork, laterally infinite by the 2.5D premise. Two names is what stops
+the next reader asking which one the solver reads.
+
+`StarterTechnologies.MmicGaAsMim()` DERIVES from `MmicGaAs()` rather than restating it, so the shared
+part cannot drift; the authored `.ctech` and the code builder are held together field by field by
+`MimCapacitorTests.TheAuthoredCtechAndTheInCodeStarter_StateTheSameTechnology` (the two were compared
+before anything was touched, and there was **no pre-existing drift** — the only difference is `Name`,
+long and descriptive in the file, short in code, exactly as the plain starter already does it).
+
+### FINDING 1 — the modelled plate separation is 3.2 µm, not 0.2 µm — **CLOSED at MIM-6 (2026-08-30)**
+
+> **Fixed.** A conductor entry now names which SURFACE of its band its sheet sits on
+> (`StackupLayer.SheetAt`), with the absorption direction paired to that choice; the shipped MIM
+> technology sets `Metal1 = Top` and the levels extract at 103 / 103.2 / 106 µm with the
+> between-plates region at its stated 0.2 µm. See §MIM-6 at the top of this file and
+> `src/Design/RESOLVED.md`. The diagnosis below is kept as written, because it is what identified
+> the remedy.
+
+**A level is a zero-thickness sheet placed at the BOTTOM of its conductor band** (`PlanarExtractor`'s
+`levelZ[i] = levels[i].BottomM - groundTopM`), and a conductor band's own z range is absorbed into
+the dielectric ABOVE it. Both rules are right for every case that came before: they are what makes a
+microstrip's height come out as the substrate thickness.
+
+For a capacitor they are not. The three levels come out at **z = 100 / 103.2 / 106 µm** above the
+ground plane, so the separation the solver uses is Metal1's own 3 µm of metal PLUS the 0.2 µm
+dielectric — 16× what the process data describes.
+
+It is not fixable by authoring: the gap is `Metal1.Thickness + MIMDielectric.Thickness`,
+`TechValidation` requires a positive thickness on every band, and Metal1's sheet is pinned 100 µm
+above ground by the microstrip case. Two candidate remedies, both outside this brief — the level's z
+learns which SURFACE of its band to sit on, or a conductor entry gains an explicit reference-surface
+field that the stackup states. **MIM-6 took the two together: they are one field, because the
+absorption direction has to be paired with the surface or the sheet stops landing on an interface of
+its own medium.**
+
+### FINDING 2 — RETRACTED (2026-08-30): the constant 0.30 fF was the PORT DISCONTINUITY
+
+This section originally concluded that "the cross-level plate-to-plate term is missing or negligible
+in the full-wave planar kernel". **That conclusion is wrong, and the defect was in the measurement,
+not the kernel.** The original table is kept because it is real data — it just measures a different
+thing than it claimed:
+
+One-port shunt capacitor, 10 × 10 µm plates, a 10 µm Metal2 feed, 2 GHz, N = 132, C read off
+Im(Y11) of a **RAW, un-de-embedded solve** (forced: a Metal2 port is off the slab top, so
+de-embedding it is MIM-4's business), with the technology's `Metal1` and `MIM Dielectric`
+thicknesses varied to move the separation the extractor models:
+
+| modelled gap | C from Im(Y11) | ε₀εᵣA/d | ratio |
+|---|---|---|---|
+| **3.2 µm (as shipped)** | **0.29911 fF** | 1.8815 fF | 0.159 |
+| 1.2 µm | 0.30046 fF | 5.0174 fF | 0.0599 |
+| 0.25 µm | 0.30267 fF | 24.083 fF | 0.0126 |
+| 0.1 µm | 0.30160 fF | 60.208 fF | 0.0050 |
+
+**What that constant actually is: the port's own discontinuity.** A raw edge port's discontinuity is
+a fraction-of-a-femtofarad SERIES element standing in front of everything behind it, and
+series(0.3 fF, C_plate) ≈ 0.3 fF for every C_plate ≫ 0.3 fF — which is exactly the table, including
+its slight upward trend toward the 0.3 fF limit as the plate capacitance grows. The original "not
+the feeds" argument did not discriminate: a port discontinuity's capacitance is every bit as
+frequency-independent as the plate's. The engine's own refusal text states the general rule the
+measurement fell over: raw s-parameters "include the port discontinuity rather than being the
+structure's own response, and are for diagnostics only."
+
+**Two controls pin it** (2026-08-30, scratch-harness solves):
+
+- Engine-direct, a one-level 400 µm line at 10 GHz through `PlanarSolve.Run`: **de-embedded
+  |S21| = 0.9858 — and the SAME solve's raw |S21| = 0.0000.** Raw S measures the port, full stop.
+- The engine's own L9 phase-gate record (`src/Engine/Mom/HISTORY.md` §L9): a via-bridged two-level
+  structure transmits **de-embedded |S21| = 0.9993 against 0.0502** with the posts removed, at
+  N = 1,023. Vias conduct and cross-level coupling is present through the calibrated path.
+- MIM-1's region vias are not implicated either: the same shunt fixture rebuilt from point
+  `ViaShape`s (the L9-validated path) reads 0.204 fF against the region form's 0.199 fF —
+  identical, and both are the port discontinuity.
+
+**What remains true.** A raw solve cannot read a femtofarad-scale element behind its own ~0.3 fF
+port discontinuity — true of ANY structure, not of MIM capacitors specifically. A properly
+de-embedded MIM measurement needs the feed brought out on the slab-top level, or MIM-4. Whether the
+plate capacitance is ACCURATE at thin separations is exactly MIM-3's ladder, whose premise stands as
+written — it was NOT understated. Finding 1 (above) is real, is the defect that matters, and is now
+its own brief (`brief-em-mim-6-level-reference-surface.md`), sequenced ahead of MIM-3's physics tier
+so that tier measures the true 0.2 µm regime rather than a false 3.2 µm one.
+
+### The rest of the brief, as built
+
+- **Three fixtures** in `tests/Ui.Tests/Em/MimCapacitorTests.cs`, built in code on the real shipped
+  technology: a shunt cap (grounded bottom plate over a backside-via region), a series cap (fed on
+  Metal1, out on Metal2), and the two-caps-joined-by-a-Metal1-line acceptance shape.
+- **Nothing in the extractor is per-capacitor, confirmed rather than assumed.** The two-cap shape's
+  two plate connections are two regions on ONE stackup entry, so they group into ONE `PlanarVia`
+  carrying two footprints — MIM-1's grouping rule doing what it was built for, and also what stops
+  two overlapping drawn regions doubling the metal in a shared cell.
+- **The milestone-3 raw solve runs** — a compact series fixture, `Category=Benchmark` — and gates
+  passivity, reciprocity and capacitive sign. **It carries no magnitude band**, and the finding-2
+  retraction sharpened the reason: a raw solve's numbers are dominated by the port's own ~0.3 fF
+  discontinuity, so ANY band on them gates the port, not the capacitor. Its original
+  "connectedness" assertions (`C > 0`, `|S21| > 1e-6`) were measured to pass with the plate via
+  DELETED — the port discontinuity satisfies both — so the gate was re-pointed at the L9-gate
+  comparison shape: **|S21| with the plate via against |S21| of the same artwork without it**, which
+  the discontinuity cannot fake because it is common to both runs. Costs a second solve.
+- **A second, unbriefed bound, found by measurement:** the shunt form's backside via is 100 µm long
+  through the GaAs, so `PlanarLevels.MaxElectricalLength` refuses the run above k·ℓ = 0.3 — just
+  under 40 GHz. A 60 GHz probe threw exactly that, with its own sentence. The series form has no such
+  via and no such bound. Recorded in the user docs.
+- **Both costs of the capacitor dielectric are asserted, not just documented** — the airbridge
+  refusal on the MIM technology (and that the same artwork still SOLVES on the plain starter, which
+  is the property that must not be lost), and the Metal2 substrate shift 103.0 → 102.75 µm. A Metal1
+  line is unaffected on both, and the ground reference is Backside Metal on both.
+
 ## Release Notes on first launch of a new version (2026-08-29)
 
 Owner request: after an update, open a Release Notes dialog over the workspace showing that version's

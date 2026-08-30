@@ -19,6 +19,7 @@ public sealed class ShippedTechnologiesTests
             new[]
             {
                 "mmic-GaAs_2LM_100um",
+                "mmic-GaAs_2LM_100um_MIM",
                 "pcb-2layer_FR-4_70mil_1oz",
                 "pcb-2layer_RO4350B_20mil_1oz",
                 "pcb-2layer_RO4350B_30mil_1oz",
@@ -37,6 +38,7 @@ public sealed class ShippedTechnologiesTests
     // problems — the actual gate a malformed shipped file must fail.
     [Theory]
     [InlineData("mmic-GaAs_2LM_100um")]
+    [InlineData("mmic-GaAs_2LM_100um_MIM")]
     [InlineData("pcb-2layer_FR-4_70mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_20mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_30mil_1oz")]
@@ -150,6 +152,56 @@ public sealed class ShippedTechnologiesTests
         Assert.Equal(ViaFillKind.Solid, post.Fill);
         Assert.Equal("Metal1", post.SpanFromLayer);
         Assert.Equal("Metal2", post.SpanToLayer);
+    }
+
+    /// <summary>
+    /// <b>The MIM technology is the plain MMIC starter plus three stackup entries, and the plain
+    /// starter is UNTOUCHED by it.</b> That separation is the whole point of shipping two files
+    /// (brief-em-mim-2-gaas-starter-mim.md, and <see cref="StarterTechnologies.MmicGaAsMim"/>'s own
+    /// note for the two measurements behind it): a capacitor dielectric between Metal1 and Metal2
+    /// makes every airbridge post refuse to solve and moves a Metal1 microstrip's Z₀ by 2.8%, and
+    /// neither may happen silently to the technology existing MMIC workspaces already copied.
+    /// </summary>
+    [Fact]
+    public void MimTechnology_IsThePlainMmicStarterPlusThreeEntries_AndLeavesItAlone()
+    {
+        var plain = ShippedTechnologies.Load("mmic-GaAs_2LM_100um");
+        var mim   = ShippedTechnologies.Load("mmic-GaAs_2LM_100um_MIM");
+
+        Assert.NotEqual(plain.Name, mim.Name);
+
+        // The plain starter has NO MIM anything — asserted here rather than trusted, because the two
+        // files are edited together and the whole safety property is that one of them did not change.
+        Assert.DoesNotContain(plain.Stackup.Layers, l => l.Name.StartsWith("MIM", StringComparison.Ordinal));
+        Assert.DoesNotContain(plain.Layers,         l => l.Name.StartsWith("MIM", StringComparison.Ordinal));
+        Assert.Equal(3000, plain.Stackup.Layers.Single(l => l.Name == "Air").ThicknessDbu);
+
+        // …and the MIM one is that plus exactly three stackup entries and two drawing layers.
+        Assert.Equal(plain.Stackup.Layers.Count + 3, mim.Stackup.Layers.Count);
+        Assert.Equal(plain.Layers.Count + 2,         mim.Layers.Count);
+        Assert.Equal(plain.DrcRules.Count,           mim.DrcRules.Count);
+
+        var plate = Assert.Single(mim.Stackup.Layers, l => l.Name == "MIM Metal" && l.Kind == StackupKind.Conductor);
+        var thin  = Assert.Single(mim.Stackup.Layers, l => l.Name == "MIM Dielectric");
+        var via   = Assert.Single(mim.Stackup.Layers, l => l.Name == "MIM Via" && l.Kind == StackupKind.Via);
+        Assert.Equal(6.8, thin.Epsr, 6);
+        Assert.Empty(thin.DrawingLayers);
+        Assert.Equal("MIM Metal", via.SpanFromLayer);
+        Assert.Equal("Metal2",    via.SpanToLayer);
+
+        // Metal2 still sits 3 µm above Metal1: the air gap paid for both new bands.
+        var air = mim.Stackup.Layers.Single(l => l.Name == "Air");
+        Assert.Equal(2550, air.ThicknessDbu);
+        Assert.Equal(3000, air.ThicknessDbu + plate.ThicknessDbu + thin.ThicknessDbu);
+
+        // MIM-6 — the fourth difference, and the only one that is a FIELD rather than an entry:
+        // Metal1's EM sheet sits on the TOP of its band on the MIM technology, so the plate gap is
+        // the capacitor dielectric alone. The plain starter says nothing anywhere, which is the same
+        // safety property as the three entries above and is asserted the same way.
+        Assert.Equal(ConductorSheetSurface.Top,
+                     mim.Stackup.Layers.Single(l => l.Name == "Metal1").SheetAt);
+        Assert.All(mim.Stackup.Layers.Where(l => l.Name != "Metal1"), l => Assert.Null(l.SheetAt));
+        Assert.All(plain.Stackup.Layers, l => Assert.Null(l.SheetAt));
     }
 
     [Fact]

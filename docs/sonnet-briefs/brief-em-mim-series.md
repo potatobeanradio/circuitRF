@@ -43,7 +43,8 @@ ignored, by design. MIM-2's starter states this in its own documentation note.
 |---|---|---|---|---|
 | MIM-1 | `brief-em-mim-1-region-vias.md` | code, extraction + UI verify | — | drawn rectangles/polygons on via-bound layers become `PlanarVia` footprints; the silent drop becomes a note |
 | MIM-2 | `brief-em-mim-2-gaas-starter-mim.md` | authored data | MIM-1 (to RUN, not to author) | the shipped GaAs `.ctech` gains a MIM plate level, capacitor dielectric and plate-via entry; shunt, series, and two-caps-joined-by-a-line fixtures |
-| MIM-3 | `brief-em-mim-3-thin-layer-gate.md` | measure, then maybe code | — | the error-vs-separation ladder for closely spaced levels; a validated range or a named refusal |
+| MIM-6 | `brief-em-mim-6-level-reference-surface.md` | code, extraction + editor | MIM-2 (its fixtures) | a conductor entry states which surface its sheet sits on; the shipped MIM gap becomes the 0.2 µm the process states, not 3.2 µm |
+| MIM-3 | `brief-em-mim-3-thin-layer-gate.md` | measure, then maybe code | MIM-6 (physics tier) | the error-vs-separation ladder for closely spaced levels; a validated range or a named refusal |
 | MIM-4 | `brief-em-mim-4-interior-static-greens.md` | code, the big one | — | the interior-height static Green's function: de-embedded ports off the slab top, stratified sub-feed dielectrics |
 | MIM-5 | `brief-em-mim-5-import-coverage-note.md` | wording + docs | — | the technology import says which conductors its via list cannot reach; the user page documents adding MIM rows by hand |
 
@@ -60,6 +61,25 @@ lowest analysis level until MIM-4 — a Metal1-fed network is fine today, a Meta
 and the unknown budget: the shared tensor grid means each small plate's fine gridlines extend
 across the whole domain, so a long line between caps grows N quickly — the AIM path and P12's
 bordered-via machinery are the existing mitigations, and the ceiling refusal names them.
+
+**Learned at MIM-2 (2026-08-30), and binding on the rest of the series.** MIM-2 shipped, with two
+deviations and one retraction on the record (`src/Ui/RESOLVED.md` §MIM-2):
+
+- It shipped as a SECOND technology rather than three entries on the starter — measured, not filed:
+  a capacitor dielectric between the interconnect metals makes every airbridge-post via refuse
+  (`PlanarKernel.CanSolve`, via crossing a dielectric interface — a whole-run refusal) and shifts
+  the upper-metal line's substrate resolution.
+- Its FINDING 1 is real and became **MIM-6**, which is **BUILT (2026-08-30)**: a conductor entry now
+  states which surface of its band its sheet sits on, with the absorption direction paired to that
+  choice, and the shipped MIM technology's levels extract at 103 / 103.2 / 106 µm with a 0.2 µm plate
+  gap. **MIM-3's physics tier is therefore unblocked and must be run against a post-MIM-6 build** —
+  on an earlier one it validates a 3.2 µm regime while the true 0.2 µm one, the risky one, stays
+  unmeasured. `src/Design/RESOLVED.md` §MIM-6.
+- Its FINDING 2 ("the plate capacitance is not in the answer") is RETRACTED: the measurement read
+  RAW, un-de-embedded S, and a raw edge port's own ~0.3 fF series discontinuity masks any small
+  element behind it. Hence a convention for every brief here: **never read a small element's value
+  off raw S.** Gate a with/without COMPARISON on the same artwork (the discontinuity is common and
+  cancels — the L9 phase gate's own shape), or measure de-embedded.
 
 **Conventions that bind every brief here** (same as `brief-em-perf-series.md`):
 

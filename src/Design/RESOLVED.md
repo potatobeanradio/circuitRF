@@ -1,5 +1,110 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## MIM-6 — the level reference surface: a conductor's sheet learns which surface of its band it sits on (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-6-level-reference-surface.md`, the fifth gap of the MIM series —
+MIM-2's own finding 1. Extraction only; `src/Engine` untouched (a level's `ZM` is already arbitrary
+there), and kernel A's cross-section path untouched (it models real metal thickness and has no sheet
+to place).
+
+### The problem
+
+`PlanarExtractor` placed every conductor level's zero-thickness sheet at the BOTTOM of its stackup
+band and absorbed the band's own z range into the dielectric ABOVE it. Both rules are right for
+everything that came before — together they are what makes a microstrip's height come out as the
+substrate thickness. Between two capacitor plates they are wrong: the lower plate's whole metal
+thickness lands INSIDE the gap. The shipped MIM technology extracted its levels at
+z = 100 / 103.2 / 106 µm, so the solver saw a **3.2 µm plate separation where the process states
+0.2 µm — 16×** — with the whole 3.2 µm carrying the capacitor dielectric's εᵣ.
+
+Not fixable by authoring: the gap is `Metal1.Thickness + MIMDielectric.Thickness`, `TechValidation`
+requires a positive thickness on every band, and Metal1's sheet was pinned 100 µm above ground by
+the microstrip case.
+
+### The shape, and why the two halves are ONE choice
+
+`StackupLayer` gains `SheetAt` (`ConductorSheetSurface?` — `Bottom`/`Top`), additive and nullable,
+no `.ctech` `FormatVersion` bump, meaningless on a non-Conductor entry: the `Fill`/`SpanFromLayer`
+pattern already in `TechModel.cs`.
+
+**The absorption direction is not a second setting — it follows the surface, and that pairing is
+load-bearing.** `PlanarProblem.CanSolve` refuses a level that is not on an interface of its own
+medium (L9c's first earned refusal). Sheet at the bottom + band absorbed upward puts the sheet on an
+interface; sheet at the top + band absorbed downward puts it on an interface. Either half alone does
+not: a sheet moved to the top of its band while the band still went to the dielectric above would
+land 3 µm inside a region, and every MIM extraction would refuse.
+
+`Band` gained a `SheetM` alongside `BottomM`/`TopM`, and every z decision in the file — level z, the
+ground-band query, the slab height, the slab-band window, the medium's cut set, `topOfInterest`, the
+level ordering, the ungrounded refusal's "dielectric under this level" — reads `SheetM`.
+`BottomM`/`TopM` stay the band's own extent, which is what the absorption arithmetic and the
+conductor's reported `ThicknessM` are written in. **`SheetAt` chooses where the sheet is, never how
+thick the metal is.**
+
+`BuildMediumStack`'s absorption is one added branch: when an interval's midpoint is inside no
+dielectric, find the CONDUCTOR band it is inside and ask its surface — `Top` takes the dielectric
+whose top is this interval's bottom, anything else keeps the pre-existing "dielectric whose bottom is
+this interval's top". That is why `Bottom` and unset are bit-identical rather than merely equivalent:
+the old expression is still literally the else branch.
+
+### The gate, measured
+
+On the shipped MIM technology (`Metal1 = Top`), the series capacitor:
+
+| | Before | After |
+|---|---|---|
+| Levels (Metal1 / MIM Metal / Metal2) | 100 / 103.2 / 106 µm | **103 / 103.2 / 106 µm** |
+| Region between the plates | 3.2 µm at εᵣ 6.8 | **0.2 µm at εᵣ 6.8** |
+| Region under Metal1 | 100 µm GaAs | **103 µm GaAs** |
+| Slab height | 100 µm | 103 µm |
+
+The airbridge post's kernel refusal is UNCHANGED and was re-measured, not assumed: the post now runs
+z = 103 → 106 µm rather than 100 → 106, and it still straddles the plate dielectric's upper interface
+at 103.2, so `PlanarKernel.CanSolve` refuses it by the same sentence with a different z in it.
+
+### The notes now name the surface, and that is not decoration
+
+A level at 103 µm on a conductor whose band runs 100–103 is either a mistake or a deliberate
+reference-surface choice, and the run notes are the only place a user can tell which — the panel's
+own stackup readback is bound to the CROSS-SECTION readback, which a full-wave run does not produce.
+The multi-level note now reads `103 µm (top of 'Metal1'), 103.2 µm (bottom of 'MIM Metal'), …`.
+
+### `SubstrateResolver` is deliberately NOT taught the field — the decision, with its measurement
+
+The closed-form microstrip path sums dielectric thicknesses. On the MIM technology it and the EM
+extractor now disagree about a Metal1 line's substrate by exactly one metal thickness: **100 µm
+against 103**. Measured cost of teaching it the field instead: a 70 µm line's static Z₀ would go
+**49.42 → 50.06 Ω, +1.3%**.
+
+**Not taught, because the two numbers answer different questions.** Hammerstad-Jensen models real,
+finite-thickness metal and takes that thickness as its own parameter `t`; its h is the physical
+substrate — ground plane to the underside of the metal — which is what the process states. The
+extractor's h is where a ZERO-thickness sheet was placed, a discretisation position rather than a
+dimension. Feeding the sheet position to the closed form would count Metal1's 3 µm twice and move
+every Metal1 microstrip on this technology to agree with a discretisation artifact. The discrepancy
+is bounded by one metal thickness by construction and the run prints the number it used. Recorded in
+`MimCapacitorTests.AMetal1Microstrip_ResolvesDifferentlyOnTheTwoTechnologies_ButAgainstTheSamePlane`,
+which asserts both heights side by side so the divergence stays deliberate.
+
+### What this brief does NOT claim
+
+**No capacitance accuracy.** A 0.2 µm gap against micron cells is exactly MIM-3's unmeasured regime;
+this fixes the geometry so MIM-3's ladder measures the real one. The raw-solve gate is still a
+with-via/without-via comparison carrying no magnitude band (|S21| 3.92e-4 with the plate via against
+1.49e-4 without, ratio 2.64 — re-measured at the new geometry), because a raw port's own
+discontinuity dominates any absolute number, which is MIM-2's finding-2 retraction.
+
+### Tests
+
+`tests/Ui.Tests/Em/SheetReferenceSurfaceTests.cs` is the mechanism: unset ≡ explicit `Bottom` as a
+WHOLE-EXTRACTION identity (levels, medium regions, slab, vias, polygon count and every note) over all
+three shipped technologies; clearing the shipped `Top` restores 100 / 103.2 / 106 exactly; a purpose-
+built stackup where the intervening dielectric is THINNER than the metal below it, so the absorption
+direction is visible rather than a rounding difference; `SheetAt` on a non-conductor entry ignored;
+`.ctech` round trip (and absent from the file when unset); the merge clone and its conflict
+description. `MimCapacitorTests` carries the shipped technology's own numbers.
+
+
 ## MIM-1 — region vias: drawn via artwork beyond the point `ViaShape` (2026-08-30)
 
 `docs/sonnet-briefs/brief-em-mim-1-region-vias.md`, gap 1 of the MIM series. Extraction and

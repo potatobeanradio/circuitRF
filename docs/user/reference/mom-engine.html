@@ -76,7 +76,10 @@ not general 3D.</p>
 ε<sub>r</sub> and tanδ. <em>(Dielectric loss, in both kernels. <strong>Conductor</strong> loss is the quasi-static
 kernel only — see below.)</em></li>
 <li><strong>Arbitrary planar shapes</strong>: lines, bends, tapers, stubs, spirals, pads, coupled sections.</li>
-<li><strong>Multiple metal levels</strong>, with <strong>vias</strong> carrying z-directed current between them.</li>
+<li><strong>Multiple metal levels</strong>, with <strong>vias</strong> carrying z-directed current between them. A via is either
+a placed via primitive or a <strong>drawn region</strong> — a rectangle or polygon on the via entry's drawing
+layer, which is how a plate-sized connection is expressed. See
+<a href="stackup.html#vias">Vias</a>.</li>
 <li><strong>A ground plane</strong> at the bottom of the stack, or an open boundary.</li>
 <li><strong>Discontinuities and the coupling between them</strong> — which is the entire point.</li>
 <li><strong>Frequency sweeps</strong>, with <a href="#adaptive">adaptive sampling</a> so a resonant response does not need a fine
@@ -101,6 +104,14 @@ edge-plated wall, a connector barrel, a heatsink is not.</li>
 medium is stratified, so a dielectric is a slab spanning the whole plane or it is not representable.</li>
 <li><strong>Magnetic materials beyond a scalar µ<sub>r</sub> per layer.</strong> No ferrites, no anisotropy.</li>
 <li><strong>Non-linearity of any kind.</strong> This solves a linear problem and returns S-parameters.</li>
+<li><strong>The capacitance read off a thin-film (MIM) capacitor run</strong>, though its network, its feeds and
+its vias are solved normally, and for reasons of geometry and calibration rather than field
+physics: each metal level is a zero-thickness sheet placed at the <strong>bottom</strong> of its stackup band,
+so the two plate sheets end up separated by the capacitor dielectric <em>plus the whole thickness of
+the lower plate's metal</em>; and a MIM's feed arrives on upper metal, where a port cannot yet be
+de-embedded — and an un-de-embedded port's own discontinuity is a fraction-of-a-femtofarad series
+element that masks any small capacitance behind it. See
+<a href="stackup.html#mim">A thin-film (MIM) capacitor</a>.</li>
 <li><strong>Conductor loss, in the full-wave kernel.</strong> Its metal is a <strong>perfect conductor</strong>: the conductivity
 and thickness you set in the stackup are carried but not used in the field solve. Dielectric loss
 (tanδ) <em>is</em> modelled, and it dominates on ordinary substrates — measured on 1.6 mm FR-4, the missing

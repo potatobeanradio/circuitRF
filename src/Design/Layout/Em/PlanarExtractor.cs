@@ -226,7 +226,7 @@ public static class PlanarExtractor
         // Green's function had one. It now selects a SET: the names the .cem gives, else the single
         // name R-em-4b's older field gives, else every signal conductor that actually carries
         // artwork. Ordered bottom-to-top because R-via-5 and R-msh-2 both index by that order.
-        var signalBands = conductorShapes.Select(c => c.Band).Distinct().OrderBy(b => b.BottomM).ToList();
+        var signalBands = conductorShapes.Select(c => c.Band).Distinct().OrderBy(b => b.SheetM).ToList();
 
         List<Band> levels;
         if (settings.AnalysisLevelNames is { Length: > 0 } wantedLevels)
@@ -250,7 +250,7 @@ public static class PlanarExtractor
                         notes);
                 if (!levels.Any(b => b.Index == band.Index)) levels.Add(band);
             }
-            levels = [.. levels.OrderBy(b => b.BottomM)];
+            levels = [.. levels.OrderBy(b => b.SheetM)];
         }
         else if (settings.SignalStackupLayerName is { Length: > 0 } wanted)
         {
@@ -281,8 +281,14 @@ public static class PlanarExtractor
         var signal = levels[0];       // the LOWEST level — the one the slab's top surface is
 
         // ── R-em-4: ground is the TOP SURFACE of the highest ground-designated conductor below ──
+        //
+        // MIM-6: this is R-em-4's own rule and is NOT `SheetAt`. A ground plane is not a meshed
+        // level with a sheet to place — it is the boundary the Green's function terminates on, and
+        // the boundary is the metal's top surface whatever a ground entry's `SheetAt` says. Do not
+        // "unify" the two: reading `SheetAt` here would let a stray Bottom on a ground entry drop
+        // the reference plane by a metal thickness on every technology that carries one.
         var groundBand = stack
-            .Where(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference && b.TopM <= signal.BottomM)
+            .Where(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference && b.TopM <= signal.SheetM)
             .OrderByDescending(b => b.TopM)
             .FirstOrDefault();
 
@@ -306,7 +312,7 @@ public static class PlanarExtractor
             notes.Add(
                 $"Every port returns through '{groundBand.Layer.Name}', the ground-designated " +
                 $"conductor at {groundBand.TopM * 1e6:G4} µm — the highest one below the " +
-                $"signal level at {signal.BottomM * 1e6:G4} µm. That plane is the negative " +
+                $"signal level at {signal.SheetM * 1e6:G4} µm. That plane is the negative " +
                 "terminal of every port in this run and is not selectable per port; it is modelled " +
                 "as laterally infinite. To return through a different conductor, designate that one " +
                 "as the ground reference in the technology editor.");
@@ -348,7 +354,7 @@ public static class PlanarExtractor
         }
 
         // ── The slab: the dielectric between ground and the LOWEST level ──────────────────────
-        double slabHeight = signal.BottomM - groundTopM;
+        double slabHeight = signal.SheetM - groundTopM;
         if (!(slabHeight > 0))
         {
             // "Check the stackup order" is the right advice only when the order really is wrong. The
@@ -371,7 +377,7 @@ public static class PlanarExtractor
 
         var slabBands = stack
             .Where(b => b.Layer.Kind == StackupKind.Dielectric &&
-                        b.BottomM >= groundTopM - 1e-15 && b.TopM <= signal.BottomM + 1e-15)
+                        b.BottomM >= groundTopM - 1e-15 && b.TopM <= signal.SheetM + 1e-15)
             .ToList();
         if (slabBands.Count == 0)
             return PlanarExtractionResult.No(
@@ -542,8 +548,14 @@ public static class PlanarExtractor
             vias.Count > 0 ? vias : null);
 
         if (levels.Count > 1)
+            // MIM-6 — the z is printed WITH the surface of the band it sits on. A level's z is
+            // otherwise unreadable against the process data: 103 µm for a Metal1 whose band runs
+            // 100 to 103 is either a mistake or a deliberate reference-surface choice, and the note
+            // is the only place a user can tell which.
             notes.Add($"{levels.Count} conductor level(s) at z = " +
-                      string.Join(", ", levelZ.Select(z => $"{z * 1e6:G4} µm")) +
+                      string.Join(", ", levels.Select((b, i) =>
+                          $"{levelZ[i] * 1e6:G4} µm ({SurfaceOf(b.Layer).ToString().ToLowerInvariant()} " +
+                          $"of '{b.Layer.Name}')")) +
                       $" above the ground plane, in the medium {mediumStack}. " +
                       (vias.Count > 0
                           ? $"{vias.Count} via(s) carry z-directed current between them."
@@ -589,7 +601,7 @@ public static class PlanarExtractor
     {
         double belowEps = 1.0;
         var underneath = stack
-            .Where(b => b.Layer.Kind == StackupKind.Dielectric && b.TopM <= lowest.BottomM + 1e-15)
+            .Where(b => b.Layer.Kind == StackupKind.Dielectric && b.TopM <= lowest.SheetM + 1e-15)
             .OrderByDescending(b => b.TopM).FirstOrDefault();
         if (underneath is not null) belowEps = underneath.Layer.Epsr;
 
@@ -627,9 +639,9 @@ public static class PlanarExtractor
         List<Band> bands, List<Band> levels, double groundTopM)
     {
         var levelZ = new double[levels.Count];
-        for (int i = 0; i < levels.Count; i++) levelZ[i] = levels[i].BottomM - groundTopM;
+        for (int i = 0; i < levels.Count; i++) levelZ[i] = levels[i].SheetM - groundTopM;
 
-        double topOfInterest = levels[^1].BottomM;
+        double topOfInterest = levels[^1].SheetM;
         var dielectrics = bands
             .Where(b => b.Layer.Kind == StackupKind.Dielectric && b.TopM > groundTopM + 1e-15)
             .OrderBy(b => b.BottomM).ToList();
@@ -637,7 +649,7 @@ public static class PlanarExtractor
         // Every boundary the stack must carry: the ground plane, each level, and each material change
         // up to (and including) the dielectric that encloses the topmost level.
         var cuts = new SortedSet<double> { groundTopM };
-        foreach (var b in levels) cuts.Add(b.BottomM);
+        foreach (var b in levels) cuts.Add(b.SheetM);
         foreach (var d in dielectrics)
         {
             if (d.BottomM > groundTopM + 1e-15 && d.BottomM <= topOfInterest + 1e-15) cuts.Add(d.BottomM);
@@ -656,13 +668,31 @@ public static class PlanarExtractor
             double mid = 0.5 * (lo + hi);
 
             // R-em-4a, restated for the plan view: a CONDUCTOR's own z band is not a dielectric
-            // region — it is absorbed into the dielectric ABOVE it. The stackup does not say what
-            // fills a metal band where no metal is drawn, and "whatever is above it" is what matches
-            // the validated cross-section problems (metal is deposited on the layer below and
-            // encapsulated by what comes next). Getting this wrong inserts a spurious air gap the
-            // thickness of the metal into the medium.
-            var host = dielectrics.FirstOrDefault(d => d.BottomM <= mid && mid <= d.TopM)
-                    ?? dielectrics.FirstOrDefault(d => Math.Abs(d.BottomM - hi) <= 1e-15);
+            // region — it is absorbed into a NEIGHBOURING dielectric. The stackup does not say what
+            // fills a metal band where no metal is drawn, and which neighbour takes it is not a free
+            // choice: it is the one PAIRED with where that conductor's sheet sits, which is what
+            // keeps the sheet on an interface of the medium by construction.
+            //
+            //   Bottom (the default, and every technology before MIM-6): sheet on the band's bottom,
+            //   band absorbed into the dielectric ABOVE — metal deposited on the layer below and
+            //   encapsulated by what comes next, which is what the validated cross-section problems
+            //   model and what makes a microstrip's height come out as the substrate thickness.
+            //
+            //   Top (MIM-6): sheet on the band's top, band absorbed into the dielectric BELOW — what
+            //   a capacitor's LOWER plate needs, so the gap between the plate sheets is the capacitor
+            //   dielectric alone instead of that dielectric plus the plate's own metal.
+            //
+            // Getting either one backwards inserts a spurious region the thickness of the metal into
+            // the medium — and on a plate pair that region IS the answer.
+            var host = dielectrics.FirstOrDefault(d => d.BottomM <= mid && mid <= d.TopM);
+            if (host is null)
+            {
+                var metal = bands.FirstOrDefault(b => b.Layer.Kind == StackupKind.Conductor &&
+                                                      b.BottomM <= mid && mid <= b.TopM);
+                host = metal is not null && SurfaceOf(metal.Layer) == ConductorSheetSurface.Top
+                    ? dielectrics.FirstOrDefault(d => Math.Abs(d.TopM    - lo) <= 1e-15)
+                    : dielectrics.FirstOrDefault(d => Math.Abs(d.BottomM - hi) <= 1e-15);
+            }
 
             if (host is null)
             {
@@ -891,7 +921,18 @@ public static class PlanarExtractor
 
     // ── Stackup -> z bands (restated from CrossSectionExtractor, not shared — see the header) ──
 
-    private sealed record Band(StackupLayer Layer, double BottomM, double TopM, int Index);
+    /// <summary><see cref="SheetM"/> is where this band's zero-thickness ANALYSIS SHEET sits, which
+    /// is not the same question as where the band is. Every level-z, slab-height and medium-cut
+    /// decision below reads <see cref="SheetM"/>; <see cref="BottomM"/>/<see cref="TopM"/> stay the
+    /// band's own extent and are what the absorption arithmetic and the conductor's reported
+    /// thickness are written in (MIM-6).</summary>
+    private sealed record Band(StackupLayer Layer, double BottomM, double TopM, int Index, double SheetM);
+
+    /// <summary>MIM-6: which surface of its own band a conductor's sheet sits on. Null, and every
+    /// non-conductor entry, is <see cref="ConductorSheetSurface.Bottom"/> — today's behaviour.</summary>
+    private static ConductorSheetSurface SurfaceOf(StackupLayer l) =>
+        l.Kind == StackupKind.Conductor ? l.SheetAt ?? ConductorSheetSurface.Bottom
+                                        : ConductorSheetSurface.Bottom;
 
     /// <summary>R-em-3: <c>Stackup.Layers</c> is ordered TOP to BOTTOM, so the stack accumulates
     /// thickness UPWARD from the bottom — walk the list in reverse. A Via entry contributes no
@@ -905,7 +946,9 @@ public static class PlanarExtractor
         {
             var l = stackup.Layers[i];
             if (l.Kind == StackupKind.Via) continue;
-            bands.Add(new Band(l, y * perDbu, (y + l.ThicknessDbu) * perDbu, i));
+            double bottomM = y * perDbu, topM = (y + l.ThicknessDbu) * perDbu;
+            bands.Add(new Band(l, bottomM, topM, i,
+                SurfaceOf(l) == ConductorSheetSurface.Top ? topM : bottomM));
             y += l.ThicknessDbu;
         }
         return bands;
