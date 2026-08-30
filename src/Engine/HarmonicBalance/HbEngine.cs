@@ -244,10 +244,19 @@ public sealed class HbEngine
     /// </summary>
     public HbRunResult Run(HbAnalysisParams p, Complex[,]? warmStart = null)
     {
-        // Two tones keep the frozen FFT/convolution path verbatim — its goldens and the data
-        // display's two-tone spectrum depend on it. Three or more go to the APFT lattice path.
-        if (p.ToneFreqsHz.Length == 2) return new HbRunResult(RunTwoTone(p));
-        if (p.ToneFreqsHz.Length >= 3) return new HbRunResult(RunMultiTone(p));
+        // TWO OR MORE tones go to the APFT lattice path. Two tones used to be routed to the
+        // rectangular-FFT path instead; AnalysisSettings.HbTwoToneOnLattice (default TRUE since
+        // 2026-08-30) is the switch back, and that setting carries the measurements the default
+        // was chosen on. RunMultiTone is tone-count-general and MixingLattice at T = 2 reproduces
+        // MixingGrid's enumeration exactly, so the DataSet has the same shape and the same
+        // mixIndex labels either way — only the numbers differ, and only in their last digits.
+        if (p.ToneFreqsHz.Length == 2 && !_settings.HbTwoToneOnLattice)
+            return new HbRunResult(RunTwoTone(p));
+        // >= 2, not >= 3: two tones must land HERE unless HbTwoToneOnLattice was cleared above.
+        // Gating this on >= 3 instead lets a two-tone run fall through to the single-tone path
+        // below, which converges cleanly and returns a plausible DataSet carrying a `harmonic`
+        // axis where the caller expects `mixIndex` — a wrong answer with no error anywhere.
+        if (p.ToneFreqsHz.Length >= 2) return new HbRunResult(RunMultiTone(p));
 
         int    K      = p.MaxHarmonic;
         double f0     = p.ToneHz;
@@ -690,8 +699,12 @@ public sealed class HbEngine
         var omegas  = new double[T];
         for (int t = 0; t < T; t++) omegas[t] = 2.0 * Math.PI * f[t];
 
-        var lattice = new MixingLattice(T, p.MaxMixOrder);
-        var apft    = new HbApft(lattice, _settings.HbApftOversample);
+        // The transform depends only on (tone count, MaxMixOrder, oversample) — nothing that
+        // changes between sweep points — so it comes from the process-wide cache rather than being
+        // rebuilt here. See HbApft.Get. The ceiling check above still runs first, so an over-cap
+        // request is refused before anything is constructed.
+        var apft    = HbApft.Get(T, p.MaxMixOrder, _settings.HbApftOversample);
+        var lattice = apft.Lattice;
         int M       = lattice.MixCount;
 
         var extractor = new HbLinearExtractor(_netlist, _settings);

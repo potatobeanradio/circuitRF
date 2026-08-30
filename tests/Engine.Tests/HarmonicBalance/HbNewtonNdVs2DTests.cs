@@ -24,8 +24,12 @@ namespace CircuitRF.Engine.Tests.HarmonicBalance;
 /// independent formulations of the same physics is the strongest evidence available that the
 /// T ≥ 3 path is right, and it costs two-tone runtime rather than six-tone runtime.</para>
 ///
-/// <para>It also pins the direction of any future divergence: if this reddens, the new path
-/// changed, because the two-tone path is frozen by <c>Hero5GateTests</c>.</para>
+/// <para><b>Since 2026-08-30 the lattice path is what a two-tone analysis runs by default</b>
+/// (<c>AnalysisSettings.HbTwoToneOnLattice</c>), so this comparison is no longer new-against-shipped
+/// — it is shipped-against-the-implementation-it-replaced, reached through the setting. That makes
+/// it more important rather than less: it is now the only place the two formulations meet, and the
+/// committed Hero-5 goldens were themselves produced on the FFT path, so <c>Hero5GateTests</c> is a
+/// cross-path check too.</para>
 /// </summary>
 public class HbNewtonNdVs2DTests(ITestOutputHelper output)
 {

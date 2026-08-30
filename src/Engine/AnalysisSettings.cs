@@ -255,6 +255,44 @@ public sealed class AnalysisSettings
     /// </summary>
     public double HbApftOversample { get; init; } = 2.0;
 
+    /// <summary>
+    /// Route a TWO-tone analysis through the T-tone lattice path (<see cref="HarmonicBalance.HbApft"/>
+    /// + <see cref="HarmonicBalance.HbNewtonNd"/>) — the path three or more tones already take —
+    /// rather than the rectangular-FFT path (<see cref="HarmonicBalance.HbFft2D"/> +
+    /// <see cref="HarmonicBalance.HbNewton2D"/>). <b>Default TRUE since 2026-08-30</b> (owner
+    /// decision, on the measurements in <c>src/Engine/RESOLVED.md</c> §HB-P1). Set it FALSE to get
+    /// the FFT path back; nothing else in the engine reads it.
+    ///
+    /// <para><b>Why it is on.</b> Both paths solve the same retained diamond, but the FFT path
+    /// evaluates the device on a full rectangular grid in order to keep a diamond-shaped subset of
+    /// it: 1,024 time samples for the 62 complex unknowns of the shipping order-5 two-tone
+    /// analysis, against roughly 250 on the lattice. Device evaluation is the two-tone path's
+    /// dominant per-iteration cost, so that is a measured <b>3.5×</b> on <c>hero5.cnl</c> —
+    /// 21.3 ms/point to 6.1 ms/point — and it is the only thing that moves it: HB-P1's M1–M3 took
+    /// the same point from 21.6 ms to 21.2 ms and no further.</para>
+    ///
+    /// <para><b>What it changes, and what it does not.</b> The two paths discard everything outside
+    /// the retained diamond DIFFERENTLY — the FFT grid aliases it back by periodic wrap, the
+    /// lattice least-squares projects it — so they do not agree to the last bit. The disagreement
+    /// grows monotonically with mixing order and is largest at the products on the diamond's outer
+    /// rim, the ones most exposed to what was thrown away: measured 1.5e-16 at DC, 1.8e-8 at the
+    /// carriers, 4.8e-6 at IM3, <b>8.9e-2 at the order-5 rim</b>. That is truncation, not error
+    /// (harmonic-balance.md §6.5), and <c>HbNewtonNdVs2DTests</c> pins that it shrinks as the
+    /// diamond grows — but it does mean <b>the outermost retained order should not be read at face
+    /// value on either path</b>. Raise <c>MaxMixOrder</c> past the product you actually want.</para>
+    ///
+    /// <para>The frozen two-tone goldens do NOT move: <c>Hero5GateTests</c> ignores bins below 1e-5
+    /// and allows 1e-4 relative, and orders 0–3 — everything it checks — agree to 4.8e-6 or better.
+    /// The committed goldens were produced on the FFT path and are deliberately left that way, so
+    /// they are now a CROSS-PATH check rather than a self-check. See RESOLVED §HB-P1.</para>
+    ///
+    /// <para>Index order, cube shapes, <c>mixIndex</c> labels, <c>TwoToneMeasurements</c> and the
+    /// data display's two-tone spectrum are unaffected either way — <c>MixingLattice</c> at T = 2
+    /// reproduces <c>MixingGrid</c>'s locked enumeration element for element
+    /// (<c>MixingLatticeTests</c>). Only the numbers move.</para>
+    /// </summary>
+    public bool HbTwoToneOnLattice { get; init; } = true;
+
     // ── Frequency-sweep parallelism (SP-P3) ─────────────────────────────────────
 
     /// <summary>

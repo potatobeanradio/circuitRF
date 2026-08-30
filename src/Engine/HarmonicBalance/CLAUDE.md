@@ -277,10 +277,16 @@ real-split block math (the FD oracle guards it).
   Reduces EXACTLY to single-tone when k₂≡0. Guarded by the two-tone FD-Jacobian oracle
   (`HbJacobian2DTests`, gate 1e-4 — the active-device FD floor is ~2e-5; structural bugs show at
   O(0.1–1), as the per-axis ConversionWeight2D bug did at exactly 0.5).
-- **`HbEngine.RunTwoTone`** — dispatched from `Run` on `p.IsMultiTone`. Extracts the linear
-  interface per mixing product; `HbResult` carries the `MixingGrid` + tone freqs, with V/INl on the
-  mixIndex axis, plus per-device branch-current cubes `I:instance:terminal` (axes `[mixIndex, Pin]`).
-  See the ω≥0 contract above for negative-frequency handling.
+- **`HbEngine.RunTwoTone`** — **no longer the default two-tone route (2026-08-30).** `Run` now sends
+  two tones to `RunMultiTone` (the T-tone lattice) unless `AnalysisSettings.HbTwoToneOnLattice` is
+  cleared, which is what reaches this method; it is a measured 3.5× on `hero5.cnl`, and §6.1–§6.3 of
+  `harmonic-balance.md` stay in the tree as the independent second implementation the lattice is
+  gated against (`HbNewtonNdVs2DTests`). **The committed Hero-5 goldens were produced on THIS path
+  and are deliberately left that way**, so `Hero5GateTests` is now a cross-path check — do not
+  regenerate them (`src/Engine/RESOLVED.md` §HB-P1). Either route extracts the linear interface per
+  mixing product; `HbResult` carries the `MixingGrid` + tone freqs, with V/INl on the mixIndex axis,
+  plus per-device branch-current cubes `I:instance:terminal` (axes `[mixIndex, Pin]`). See the ω≥0
+  contract above for negative-frequency handling.
 - **`HbNewton2D.ComputeDevicePortCurrents2D`** — post-convergence per-port current extraction for the
   two-tone path. Mirrors `HbNewton.ComputeDevicePortCurrents` (IFFT V → time domain, device eval, FFT
   per port) but uses `HbFft2D.Inverse2D` / `HbFft2D.SpecGet` over the mixing lattice. Returns

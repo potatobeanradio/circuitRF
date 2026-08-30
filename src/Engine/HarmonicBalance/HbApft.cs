@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 
 namespace CircuitRF.Engine.HarmonicBalance;
@@ -49,6 +50,63 @@ namespace CircuitRF.Engine.HarmonicBalance;
 /// </summary>
 public sealed class HbApft
 {
+    // ── The process-wide transform cache (M3) ─────────────────────────────────────────────────
+    //
+    // An HbApft depends on NOTHING that changes between sweep points: (tone count, MaxMixOrder,
+    // oversample) fix the lattice, the sample phases, Γ, the normal matrix, its Cholesky and the
+    // S back-solves that produce Aᵀ. RunMultiTone used to build one per CALL, which is per sweep
+    // point — 93 ms at 6 tones / order 3, so a 20-point parametric sweep spent 1.9 s constructing
+    // twenty identical transforms.
+    //
+    // Sharing one instance across points AND across threads is safe because the object is
+    // immutable after construction: _gamma, _at and _phases are written only in the constructor
+    // and are read-only by contract thereafter (the Jacobian reads them directly, and the
+    // micro-kernel writes only into the caller's own block buffers).
+    //
+    // The cache is UNBOUNDED on purpose. A key is (tones, order, oversample), so a session holds
+    // one entry per distinct analysis shape — a handful, not a stream — and a sweep, a loadpull or
+    // a drive ladder all reuse the same one. An eviction policy would add a way to get this wrong
+    // and buy nothing. The ceiling check in HbEngine.CheckMultiToneCeiling still runs BEFORE Get
+    // is called, so an over-cap request is refused without allocating anything.
+
+    private static readonly ConcurrentDictionary<(int Tones, int Order, double Oversample), HbApft>
+        Cache = new();
+
+    private static readonly ConcurrentDictionary<(int Tones, int Order, double Oversample), int>
+        Constructions = new();
+
+    /// <summary>
+    /// The shared transform for this analysis shape, built on first use and reused thereafter.
+    /// A duplicate construction under a race is harmless — the two are identical and immutable,
+    /// and one is simply discarded.
+    /// </summary>
+    public static HbApft Get(int toneCount, int maxMixOrder, double oversample)
+        => Cache.GetOrAdd((toneCount, maxMixOrder, oversample),
+                          k => new HbApft(new MixingLattice(k.Tones, k.Order), k.Oversample));
+
+    /// <summary>
+    /// How many <see cref="HbApft"/> instances this process has constructed for one cache key. A
+    /// diagnostic counter, public so <c>HbApftTests</c> can assert that the cache actually elides
+    /// the rebuild and that the multi-tone ceiling refuses before anything is constructed.
+    ///
+    /// <para>It is counted PER KEY, not process-wide, on purpose: xUnit runs test classes
+    /// concurrently, and several of them build transforms, so a single global counter would be
+    /// perturbed by whatever else happened to be running. A test that picks an oversample no other
+    /// test uses owns its key outright and can assert an exact count.</para>
+    /// </summary>
+    public static int ConstructionCountFor(int toneCount, int maxMixOrder, double oversample)
+        => Constructions.TryGetValue((toneCount, maxMixOrder, oversample), out int c) ? c : 0;
+
+    private int _productCalls;
+
+    /// <summary>
+    /// How many times <see cref="AccumulateTripleProducts"/> has been entered on THIS transform.
+    /// A diagnostic counter, public so <c>HbApftTests</c> can assert that a Jacobian build calls
+    /// the product once per live node pair rather than the twice-per-pair of the one-block-per-call
+    /// form this replaced. Per instance rather than static, for the concurrency reason above.
+    /// </summary>
+    public int ProductCallCount => Volatile.Read(ref _productCalls);
+
     /// <summary>Ratio of samples to real DOF. Below ~1 the transform is under-determined.</summary>
     public const double MinOversample = 1.2;
 
@@ -82,6 +140,20 @@ public sealed class HbApft
     internal double[] AnalysisT => _at;
 
     /// <summary>
+    /// Γ[s, j] — the synthesis matrix element for sample <paramref name="sample"/> and real DOF
+    /// <paramref name="dof"/>. Public for the same reason as <see cref="SamplePhase"/>: an
+    /// independent oracle cannot re-derive the triple product without the two matrices that go
+    /// into it. Nothing in the engine reads it elementwise; the kernel walks the arrays directly.
+    /// </summary>
+    public double SynthesisElement(int sample, int dof) => _gamma[sample * Dof + dof];
+
+    /// <summary>
+    /// A[r, s] — the analysis (pseudo-inverse) matrix element for real DOF <paramref name="dof"/>
+    /// and sample <paramref name="sample"/>. The companion to <see cref="SynthesisElement"/>.
+    /// </summary>
+    public double AnalysisElement(int dof, int sample) => _at[sample * Dof + dof];
+
+    /// <summary>
     /// Torus phase φ_s[t] (radians) of sample <paramref name="s"/> along tone
     /// <paramref name="t"/>. Public because it is part of the transform's contract: it is the
     /// only way a caller — or an independent oracle — can build a waveform on the same sample set
@@ -91,6 +163,7 @@ public sealed class HbApft
 
     public HbApft(MixingLattice lattice, double oversample)
     {
+        Constructions.AddOrUpdate((lattice.ToneCount, lattice.MaxMixOrder, oversample), 1, (_, c) => c + 1);
         Lattice = lattice;
         int M   = lattice.MixCount;
         int T   = lattice.ToneCount;
@@ -216,31 +289,168 @@ public sealed class HbApft
     }
 
     /// <summary>
-    /// Jacobian building block: <c>out += A · diag(weights) · Γ</c>, a D×D real matrix, written
-    /// into <paramref name="block"/> (row-major, D×D) which the caller has zeroed.
+    /// Jacobian building blocks for one node pair: <c>blockG += A·diag(wG)·Γ</c> and
+    /// <c>blockC += A·diag(wC)·Γ</c>, each a D×D real matrix written row-major into a buffer the
+    /// caller has zeroed. Either weight vector may be <c>null</c>, meaning "that derivative
+    /// waveform is identically zero for this node pair" — the corresponding block is left alone.
     ///
     /// <para>This is the T-tone replacement for the two-tone difference/sum-frequency convolution
     /// (<c>HbFft2D.SpecGet(G, k−i)</c> / <c>(k+i)</c>). It is the EXACT derivative of the
     /// discretized residual — <c>i_nl = A·i(Γ·V)</c> differentiates to <c>A·diag(∂i/∂v)·Γ</c> by
     /// the chain rule — which is why it needs no spectrum of the derivative waveform at all, and
     /// therefore no order-2·MaxMixOrder reach in the transform.</para>
+    ///
+    /// <para><b>Both blocks are taken together</b> because they share A and Γ: a thread that has
+    /// just walked a column panel of Γ for the conductance block finds it hot in cache for the
+    /// charge block. That is the whole reason for the paired signature — the arithmetic is
+    /// unchanged and, being accumulated in the same order, the result is bit-identical to two
+    /// separate passes.</para>
+    ///
+    /// <para>Public rather than internal so <c>HbApftTests</c> can compare it against the scalar
+    /// triple loop it replaced; <c>CircuitRF.Engine</c> exposes no internals to its test
+    /// project.</para>
     /// </summary>
-    internal void AccumulateTripleProduct(double[] weights, double[] block)
+    public void AccumulateTripleProducts(double[]? wG, double[]? wC, double[] blockG, double[] blockC)
+    {
+        Interlocked.Increment(ref _productCalls);
+        if (wG is null && wC is null) return;
+
+        int D = Dof, S = SampleCount;
+        int nr = 4 * Vector<double>.Count;                  // columns handled by one kernel pass
+        int panels = (D + nr - 1) / nr;
+
+        // Column panels are independent — each owns a disjoint set of output COLUMNS in both
+        // blocks — so the split needs no locking, no per-thread buffer and no reduction, and every
+        // output element is still summed over s in ascending order by exactly one thread. The
+        // result is therefore bit-identical however many threads run it, which is what
+        // HbApftTests pins; a thread count is never a numerical input here.
+        int threads = 1;
+        if ((long)S * D * D >= ParallelThreshold)
+            threads = Math.Min(Environment.ProcessorCount, panels);
+
+        if (threads <= 1)
+        {
+            Kernel(wG, wC, blockG, blockC, 0, D);
+            return;
+        }
+
+        // Round the panel split first and derive the worker count from it, so a run never asks for
+        // workers that would find no panel left (11 panels across 10 cores is 6 workers of 2, not
+        // 10 of whom 4 are empty).
+        int panelsPer = (panels + threads - 1) / threads;
+        threads = (panels + panelsPer - 1) / panelsPer;
+
+        Parallel.For(0, threads, t =>
+        {
+            int c0 = t * panelsPer * nr;
+            int c1 = Math.Min(D, (t + 1) * panelsPer * nr);
+            if (c0 < c1) Kernel(wG, wC, blockG, blockC, c0, c1);
+        });
+    }
+
+    /// <summary>
+    /// Work below this many multiply-adds (S·D²) runs single-threaded: measured on the 3-tone
+    /// order-3 lattice (S·D² ≈ 5.2e5) the fan-out costs more than it saves, while at 6 tones
+    /// order 2 (≈1.3e6) it is already a 2.7× win.
+    /// </summary>
+    private const long ParallelThreshold = 1_000_000;
+
+    /// <summary>
+    /// The triple product over one range of output columns — a 4-row × 4-vector register-blocked
+    /// GEMM micro-kernel.
+    ///
+    /// <para><b>Why this shape.</b> The scalar form this replaced ran s outermost and touched the
+    /// whole D×D output block on every one of the S samples: 862 MB of read-modify-write traffic
+    /// at 6 tones / order 3, for 1.08e8 multiply-adds. Here the 16 accumulators for a 4×(4·W)
+    /// output tile live in vector registers for the whole s loop, so each output element is
+    /// written exactly once. The two operand rows a tile needs at sample s — <c>_at[s·D + r0…r0+3]</c>
+    /// and <c>_gamma[s·D + c0…]</c> — are both CONTIGUOUS, which is why no packed copy of either
+    /// matrix is needed and the method allocates nothing.</para>
+    ///
+    /// <para>MEASURED per D×D block at 6 tones / order 3 (D = 378, S = 756; Release, Apple M4):
+    /// scalar triple loop 56.5 ms → 9.9 ms single-threaded → 4.0 ms on four column panels.
+    /// A variant that pre-transposes the weighted analysis rows into a (2D×S) scratch buffer was
+    /// 4% faster and needs 4.6 MB per call; it was not worth the allocation.</para>
+    /// </summary>
+    private void Kernel(double[]? wG, double[]? wC, double[] blockG, double[] blockC, int c0, int c1)
     {
         int D = Dof, S = SampleCount;
-        for (int s = 0; s < S; s++)
+        int w  = Vector<double>.Count;
+        int nr = 4 * w;
+
+        for (int cb = c0; cb < c1; cb += nr)
         {
-            double w = weights[s];
-            if (w == 0.0) continue;
-            int rowBase = s * D;
-            for (int r = 0; r < D; r++)
+            int width = Math.Min(nr, c1 - cb);
+            if (width != nr)                                  // ragged tail panel
             {
-                double ar = _at[rowBase + r] * w;
-                if (ar == 0.0) continue;
-                int outBase = r * D;
-                for (int c = 0; c < D; c++)
-                    block[outBase + c] += ar * _gamma[rowBase + c];
+                if (wG is not null) Edge(wG, blockG, 0, D, cb, cb + width);
+                if (wC is not null) Edge(wC, blockC, 0, D, cb, cb + width);
+                continue;
             }
+
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var weights = pass == 0 ? wG : wC;
+                if (weights is null) continue;
+                var block = pass == 0 ? blockG : blockC;
+
+                int r0 = 0;
+                for (; r0 + 4 <= D; r0 += 4)
+                {
+                    Vector<double> a00 = default, a01 = default, a02 = default, a03 = default;
+                    Vector<double> a10 = default, a11 = default, a12 = default, a13 = default;
+                    Vector<double> a20 = default, a21 = default, a22 = default, a23 = default;
+                    Vector<double> a30 = default, a31 = default, a32 = default, a33 = default;
+
+                    for (int s = 0; s < S; s++)
+                    {
+                        int ab = s * D + r0, gb = s * D + cb;
+                        double wv = weights[s];
+                        var g0 = new Vector<double>(_gamma.AsSpan(gb,         w));
+                        var g1 = new Vector<double>(_gamma.AsSpan(gb + w,     w));
+                        var g2 = new Vector<double>(_gamma.AsSpan(gb + 2 * w, w));
+                        var g3 = new Vector<double>(_gamma.AsSpan(gb + 3 * w, w));
+                        var v0 = new Vector<double>(_at[ab]     * wv);
+                        var v1 = new Vector<double>(_at[ab + 1] * wv);
+                        var v2 = new Vector<double>(_at[ab + 2] * wv);
+                        var v3 = new Vector<double>(_at[ab + 3] * wv);
+                        a00 += v0 * g0; a01 += v0 * g1; a02 += v0 * g2; a03 += v0 * g3;
+                        a10 += v1 * g0; a11 += v1 * g1; a12 += v1 * g2; a13 += v1 * g3;
+                        a20 += v2 * g0; a21 += v2 * g1; a22 += v2 * g2; a23 += v2 * g3;
+                        a30 += v3 * g0; a31 += v3 * g1; a32 += v3 * g2; a33 += v3 * g3;
+                    }
+
+                    int o = r0 * D + cb;
+                    Store(block, o, w, a00, a01, a02, a03); o += D;
+                    Store(block, o, w, a10, a11, a12, a13); o += D;
+                    Store(block, o, w, a20, a21, a22, a23); o += D;
+                    Store(block, o, w, a30, a31, a32, a33);
+                }
+                if (r0 < D) Edge(weights, block, r0, D, cb, cb + nr);      // ragged row remainder
+            }
+        }
+    }
+
+    private static void Store(double[] block, int o, int w,
+        Vector<double> a0, Vector<double> a1, Vector<double> a2, Vector<double> a3)
+    {
+        (a0 + new Vector<double>(block.AsSpan(o,         w))).CopyTo(block.AsSpan(o,         w));
+        (a1 + new Vector<double>(block.AsSpan(o + w,     w))).CopyTo(block.AsSpan(o + w,     w));
+        (a2 + new Vector<double>(block.AsSpan(o + 2 * w, w))).CopyTo(block.AsSpan(o + 2 * w, w));
+        (a3 + new Vector<double>(block.AsSpan(o + 3 * w, w))).CopyTo(block.AsSpan(o + 3 * w, w));
+    }
+
+    /// <summary>Scalar fallback for the rows and columns a whole 4×(4·W) tile does not cover.
+    /// Accumulates over s in the same ascending order, so the tail matches the kernel.</summary>
+    private void Edge(double[] weights, double[] block, int r0, int r1, int c0, int c1)
+    {
+        int D = Dof, S = SampleCount;
+        for (int r = r0; r < r1; r++)
+        for (int c = c0; c < c1; c++)
+        {
+            double acc = 0;
+            for (int s = 0; s < S; s++) acc += _at[s * D + r] * weights[s] * _gamma[s * D + c];
+            block[r * D + c] += acc;
         }
     }
 

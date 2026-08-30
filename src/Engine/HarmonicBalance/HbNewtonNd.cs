@@ -27,11 +27,18 @@ namespace CircuitRF.Engine.HarmonicBalance;
 /// deliberately transcribed rather than re-derived: Y_NN on the mix diagonal, the per-row jω
 /// charge rotation, the guard-order cutoff, and the Maas §7.3 DC row/column special cases.</para>
 ///
-/// <para>One and two tones stay on <see cref="HbNewton"/> / <see cref="HbNewton2D"/>: their
-/// goldens are frozen and the two-tone data-display path depends on them. This class is the
-/// T ≥ 3 path. <c>HbNewtonNdVs2DTests</c> nonetheless drives it at T = 2 against
-/// <see cref="HbNewton2D"/>, because agreeing with the frozen implementation on a problem both
-/// can solve is the strongest available evidence the new formulation is right.</para>
+/// <para><b>This class is the T ≥ 2 path.</b> Single tone stays on <see cref="HbNewton"/>. Two
+/// tones came here on 2026-08-30, when <c>AnalysisSettings.HbTwoToneOnLattice</c> was defaulted to
+/// true — it is a measured 3.5× there, since the rectangular grid evaluates the device on 1,024
+/// time samples to solve what the lattice solves on ~250. <see cref="HbNewton2D"/> and
+/// <see cref="HbFft2D"/> are not dead: clearing that setting routes two tones back to them, and
+/// they remain the independent second implementation this one is gated against.</para>
+///
+/// <para>That gate is <c>HbNewtonNdVs2DTests</c>, which drives BOTH formulations at T = 2 on the
+/// same circuit and requires them to agree — the strongest available evidence the T-tone
+/// formulation is right, since at T ≥ 3 there is no second implementation to compare with. Its
+/// value did not change when the default flipped; what changed is that the FFT path it compares
+/// against is now reached only through the setting.</para>
 ///
 /// <para>Unknowns: V[n, mix] for n = 0..N−1 nonlinear-facing nodes and mix = 0..M−1 retained
 /// products, real-split → 2·N·M DOF. mix = 0 is the DC index (real-only, Maas §7.3).</para>
@@ -287,14 +294,21 @@ public static class HbNewtonNd
         {
             Array.Clear(block);
 
+            // Both derivative waveforms go in ONE call: they share A and Γ, so the kernel walks a
+            // column panel of Γ once for the pair instead of once each. A node pair with no device
+            // across it has an identically-zero waveform, and passing null for it costs nothing —
+            // the AllZero shortcut is preserved, it has just moved into the argument.
             var dgNm = dg[n * N + m];
-            if (!AllZero(dgNm)) apft.AccumulateTripleProduct(dgNm, block);
-
             var dcNm = dc[n * N + m];
-            if (!AllZero(dcNm))
+            bool hasG = !AllZero(dgNm);
+            bool hasC = !AllZero(dcNm);
+
+            if (hasC) Array.Clear(blockC);
+            if (hasG || hasC)
+                apft.AccumulateTripleProducts(hasG ? dgNm : null, hasC ? dcNm : null, block, blockC);
+
+            if (hasC)
             {
-                Array.Clear(blockC);
-                apft.AccumulateTripleProduct(dcNm, blockC);
                 for (int k = 0; k < M; k++)
                 {
                     double w = omega[k];

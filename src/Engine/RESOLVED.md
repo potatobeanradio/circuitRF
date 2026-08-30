@@ -543,3 +543,201 @@ exist.
 subprocess whose traceback arrives on a background stderr reader, on a path this change never
 touches; it passes in isolation, which is the signature of a load-dependent test rather than a
 regression.
+
+## HB-P1 — the dense solve, the APFT triple product, and the transform cache (2026-08-30)
+
+`docs/sonnet-briefs/brief-hb-p1-dense-solve-and-apft-cost.md`. Three independent costs in the HB
+inner loop, all of them implementation rather than formulation: `HbNewton.SolveGaussian` was an
+augmented Gauss-Jordan sweep, `HbApft`'s Jacobian triple product a scalar triple loop, and the APFT
+itself was rebuilt once per sweep point although it depends on nothing that changes between points.
+M4 (two-tone on the lattice) was **not** built — it is owner-gated by the brief's own text.
+
+**Measured per point, Release, Apple M4** (a scratch console harness driving `HbEngine.Run` on the
+committed fixtures — not a test; `dotnet test` builds Debug, which inverts managed-vs-native timing):
+
+| fixture | unknowns | before | after | |
+|---|---|---|---|---|
+| `hero5_6tone.cnl` at order 3 | 756 | 903 ms | **181 ms** | 5.0× |
+| `hero5_6tone.cnl` as shipped (order 2) | 172 | 14.1 ms | **7.1 ms** | 2.0× |
+| `hero5_3tone.cnl` | 128 | 8.0 ms | **5.1 ms** | 1.6× |
+| `hero5.cnl` (two-tone, order 5) | 124 | 21.6 ms | 21.2 ms | — |
+| `hero2_convergence.cnl` (single-tone) | 24–32 | 1.0 ms | 1.0 ms | — |
+
+The two-tone and single-tone rows are unchanged on purpose: at 124 unknowns the LU saves ~0.3 ms per
+iteration, and those paths spend their time in the FFT box's device evaluation instead (the brief's
+own §6 — the two-tone grid evaluates 1,024 samples to solve 62 complex unknowns). **The brief
+projected ~8× on the order-3 point; the honest figure is 5.0×**, and the arithmetic below says where
+the other 3× went.
+
+### The triple product is bit-identical to the scalar loop it replaced — and that was not luck
+
+The kernel is a 4-row × 4-vector register-blocked GEMM: the 16 accumulators for an output tile live
+in vector registers for the whole sample loop, so each output element is written once instead of the
+scalar form's read-modify-write on every one of the S samples (862 MB of traffic per D×D block at
+6 tones / order 3, for 1.08e8 multiply-adds).
+
+It sums each output element over the samples **in the same ascending order** as the loop it replaced,
+so the results agree to the last bit — `HbApftTests` reports relative error `0.00E+000` on both
+blocks, not a tolerance. **That is the property to preserve if this is ever touched again**: it means
+M2 changed no converged answer anywhere, and it is what lets the column-panel fan-out be safe, since
+each output element is still summed by exactly one thread. `OneSharedTransform_GivesBitIdenticalProducts_ToConcurrentCallers`
+asserts equality of the raw arrays, deliberately, rather than a tolerance.
+
+Per D×D block at 6 tones / order 3 (D = 378, S = 756): scalar loop **56.5 ms** → 9.9 ms
+single-threaded → **4.0 ms** over four column panels.
+
+### The three faster-looking options that were measured and rejected
+
+- **NumFlat's `Mat<double>.Lu()`** — the brief's preferred choice, and the thing design §8 had claimed
+  for years was already in use. It is **not blocked**: 39.5 ms at n = 756 against the in-house
+  kernel's 29.4 ms, i.e. indistinguishable from an ordinary unblocked right-looking LU. It is also
+  *erratic at power-of-two sizes* (n = 256 and n = 512 both collapse to roughly Gauss-Jordan's time —
+  reproducible, presumably cache aliasing on a power-of-two row stride), and it is **slower than
+  Gauss-Jordan below n ≈ 40**, so adopting it would have made the single-tone path worse. It stays as
+  the independent oracle in `HbDenseSolveTests.Lu_AgreesWithNumFlat`, which is the check that would
+  catch the two in-house implementations sharing a pivoting mistake.
+- **A blocked LU** (panel factorisation + trailing GEMM) — written, measured, bought nothing at these
+  sizes (39.6 ms vs the simple form's 39.6 ms at n = 756 before vectorising). The trailing update is
+  bound by issue rate, not cache traffic, so there is no traffic to block away. The simpler
+  right-looking form ships.
+- **Parallelising the LU's rank-1 update** — 29.6 ms → 20.5 ms at n = 756 on eight threads (1.44×),
+  and *slower* at every size below 512, because a `Parallel.For` is dispatched per column and n = 756
+  means 756 dispatches. Not taken. If the solve is ever the bottleneck again, the fix is a blocked
+  factorisation that fans out once per panel, not this.
+- **Pre-transposing the weighted analysis rows into a (2D × S) scratch buffer** before the GEMM (the
+  brief's option 1) — 4 % faster and needs 4.6 MB per call. Not taken: `_at[s·D + r]` for four
+  consecutive `r` is *already contiguous*, so the kernel forms the weighted rows in registers and
+  allocates nothing.
+
+### Where the remaining 181 ms is, and why 8× was not reachable
+
+Roughly three Newton iterations, each: **~30 ms** in the LU at n = 756 (the floor for an unblocked
+n³/3 at ~7 GFLOP/s on a 128-bit-vector machine), **~24 ms** in `BuildJNd` (three live node pairs ×
+two blocks × 4 ms), ~3 ms evaluating the device. The brief's 8× assumed the triple product would
+reach 5–10× *and* that the solve would fall by ~3×; the product beat its target (14× with the
+fan-out) but the solve is exactly 2.9×, and it is now the largest single item. Closing the rest means
+a real blocked/parallel factorisation or a smaller Jacobian — i.e. §16 item 5, which stays deferred.
+
+### The crossover is 8, not 48 — and only one side of it is reachable in production
+
+The brief expected the `Mat<double>` copy to make LU a loss up to n ≈ 48. With no copy, the in-house
+kernel is ahead from **n ≈ 8** (measured ratio 1.13 at n = 8, 1.53 at 16, 1.70 at 24, 2.88 at 756),
+so `HbNewton.SolveCrossover` is 8. The consequence for the brief's test 3: no analysis this engine
+runs is that small — the smallest HB system is 2·N·M and Hero-sized circuits start at dof 24 — so the
+Gauss-Jordan branch is exercised only by a synthetic system in
+`SolveGaussian_TakesBothBranchesOfTheCrossover_AndTheyAgree`. It is kept rather than deleted so the
+small case is not made worse to serve the large one, and because it is the reference the LU is gated
+against.
+
+### The product is called once per LIVE node pair — which is 3, not N² = 4
+
+The brief's test 9 expects exactly N² calls per iteration where there were 2·N². It is at most N²: a
+node pair whose conductance **and** charge waveforms are both identically zero is skipped entirely
+(the AllZero shortcut, now expressed as a null weight argument). On the Hero-2 FET one of the four
+pairs is exactly that — the gate current does not depend on the drain voltage — so a real Jacobian
+build makes **3** calls. The test asserts `1 ≤ calls ≤ N²` and `calls < 2·N²`, which is the property
+that actually matters and does not encode a circuit's topology into a solver test.
+
+### The diagnostic counters are per key and per instance, not process-wide
+
+The brief specifies a static `HbApft.ConstructionCount`. A process-wide counter cannot be asserted
+on: xUnit runs test classes concurrently and several of them build transforms, so the count is
+perturbed by whatever else is in flight. What ships instead is
+`HbApft.ConstructionCountFor(tones, order, oversample)` (per cache key — a test that picks an
+oversample no other test uses owns its key outright and can assert an exact count) and an
+**instance** `ProductCallCount`. `RunningTheSameAnalysisTwice_ConstructsOneTransform` and
+`AnOverCapRequest_ConstructsNoTransform` are exact and race-free because of it.
+
+### Two things found on the way that are NOT this brief's
+
+- **The golden generators rewrite `testdata/` in the source tree on every routine `dotnet test`.**
+  `Hero2GoldenGenerator`, `Hero5GoldenGenerator` and `Hero3LoadpullTests` are ordinary `[Fact]`s in
+  the default gate, and they walk up from `AppContext.BaseDirectory` to the repo's own `testdata/`
+  and overwrite the CSVs. So every full run dirties the working tree, and — since xUnit runs
+  `Hero5GateTests` and `Hero5GoldenGenerator` concurrently — whether the golden comparison reads the
+  committed data or data the generator just wrote is a race. The comparison is not reliably a gate.
+  Verifying "no answer changed" therefore means running the comparators with the generators
+  **excluded**, against a clean `testdata/`; done here, 14 tests, all green.
+- **The regenerated goldens confirm the change is numerically invisible.** With the generators
+  allowed to run, not one field above 1e-12 changed in any Hero-2 or Hero-5 golden. Hero-3's largest
+  relative change on a field above 1e-12 is 9.9e-4 — on a value that is itself 1.3e-12, a quadrature
+  component at the Newton residual floor. Every physically meaningful number is byte-identical. The
+  regenerated files were reverted and are not part of this change.
+
+### M4 — two-tone on the lattice: ON by default (owner decision, 2026-08-30)
+
+`AnalysisSettings.HbTwoToneOnLattice`, **default true**. Built behind the switch and measured first;
+the owner then took the default on the numbers below. Clearing the setting routes two tones back to
+`HbNewton2D`/`HbFft2D`, which stay in the tree as the independent second implementation
+`HbNewtonNdVs2DTests` gates the lattice against.
+
+**Speed: 3.5×.** `hero5.cnl` over the golden's own drive range (−20…−8 dBm, 4 points):
+**21.3 ms/point → 6.1 ms/point**. This is the only thing that speeds the two-tone path up — M1–M3
+moved it from 21.6 ms to 21.2 ms, because its cost is the device evaluation the FFT grid forces
+(1,024 time samples for 62 complex unknowns, against ~250 on the lattice) and none of M1–M3 touches
+that.
+
+**Accuracy: the frozen goldens do NOT move.** Worst relative disagreement against the FFT path,
+by mixing order, over that same drive range (peak |V| in the second column, so the reader can see
+which orders carry signal at all):
+
+| order | peak \|V\| | worst rel. disagreement |
+|---|---|---|
+| 0 (DC) | 4.8e+1 | **1.5e-16** |
+| 1 (carriers) | 6.0e-1 | 1.8e-8 |
+| 2 | 6.5e-3 | 1.3e-7 |
+| 3 (IM3) | 1.4e-3 | 4.8e-6 |
+| 4 | 5.1e-6 | 3.6e-4 |
+| 5 (diamond edge) | 2.3e-7 | 8.9e-2 |
+
+The brief predicted "carriers to 1e-6, order-5 edge to ~1e-3". Carriers are two orders better than
+that; **the order-5 edge is two orders WORSE — 9 %, not 0.1 %**. That is not a defect: order 5 is the
+outer rim of the retained diamond at `MaxMixOrder=5`, so those products are the ones most exposed to
+whatever the two paths discarded differently, and the disagreement is a *measurement of how little
+either path can be trusted there*. `HbNewtonNdVs2DTests` already pins that it shrinks as the diamond
+grows.
+
+**What makes it a non-event for the goldens** is that `Hero5GateTests` ignores bins below
+`NoiseFloor = 1e-5` and allows `max(1e-6, |value|·1e-4)`. Orders 4 and 5 peak at 5.1e-6 and 2.3e-7 —
+below its floor, never checked. **Verified directly, twice, rather than inferred**: the whole
+solution is green under the new default (14,416 tests, 0 failures, `Ui.Tests` and
+`Harmonica.Tests` included — both exercise two-tone through the data display and harmonicaRF), and
+regenerating the Hero-5 goldens ON the lattice and diffing them against the committed FFT-produced
+ones gives a worst per-field disagreement of **3.5e-5 above the gate's own floor**.
+
+**Note the margin, because it is not large: 3.5e-5 against a 1e-4 tolerance is 2.8×.** That is
+smaller than the 4.8e-6 the per-order table above suggests, and the difference is not a
+contradiction — the gate compares the real and imaginary PARTS separately, each against its own
+magnitude, so a small quadrature component of a large phasor carries a much larger relative error
+than the phasor does. Anything that later nudges two-tone convergence could put this over. If it
+does, the honest fix is to look at whether the bins in question are meaningful at all before
+touching either the tolerance or the reference.
+
+**The committed goldens are deliberately left with their FFT provenance.** They were produced on the
+rectangular-FFT path, they still pass from the lattice, and leaving them that way makes
+`Hero5GateTests` a CROSS-PATH check — a stronger gate than it was when reference and engine shared an
+implementation. Regenerating them would silently convert it back into a self-check for nothing.
+**This is now a live hazard**, because the golden generators are ordinary `[Fact]`s that rewrite
+`testdata/` on every routine `dotnet test` (see the note at the end of §HB-P1): a full run followed
+by `git add testdata/` would replace the FFT references with lattice ones and no test would notice.
+The generators were run and reverted throughout this work for exactly that reason.
+
+### The routing bug M4's first measurement caught, and why the test leads with an axis name
+
+Routing was first written as "skip `RunTwoTone` when the flag is set", leaving the lattice branch
+gated on `ToneFreqsHz.Length >= 3`. A two-tone run then falls past BOTH multi-tone branches into the
+**single-tone** solver. It converges cleanly — residual 1.2e-9 — and returns a well-formed DataSet
+carrying a `harmonic` axis of length 5 where the caller expects a `mixIndex` axis of length 31.
+Nothing throws, nothing warns, and every intermodulation product the analysis exists to compute is
+simply absent. **It presented as a 28× speed-up**, which is the only reason it was noticed: the
+number was too good, and the comparison against the FFT path then failed to find a `mixIndex` axis.
+
+The branch is now `>= 2` with a comment saying why, and
+`HbTwoToneOnLatticeTests.OnTheLattice_TheResultIsStillATwoToneSpectrum_NotASingleToneOne` asserts the
+axis before it asserts any number. A timing measurement is a correctness check here: a large
+unexplained speed-up in a solver usually means it solved a smaller problem.
+
+*(Unrelated tooling trap met on the way: `sed -i.bak` then `mv foo.cs.bak foo.cs` restores the
+ORIGINAL MTIME, so MSBuild's incremental check skips the recompile and the next test run silently
+uses the pre-restore DLL. Verify a deliberate flag flip by asserting that a test which SHOULD fail
+does fail, rather than trusting the build.)*

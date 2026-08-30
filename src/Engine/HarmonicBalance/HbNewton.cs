@@ -1107,9 +1107,128 @@ public static class HbNewton
         }
     }
 
-    // ── Gaussian elimination with partial pivoting ─────────────────────────────
+    // ── Dense linear solve: LU with partial pivoting, Gauss-Jordan below the crossover ────
+    //
+    // The solve runs once per Newton iteration on EVERY HB path (single-tone, two-tone and
+    // T-tone), on a matrix that is structurally dense — every node-pair block is a Toeplitz+Hankel
+    // conversion matrix and Y_NN fills the rest — so there is no sparsity to exploit and n^3/3 is
+    // the right cost. Gauss-Jordan pays ~n^3 for the same answer, because it reduces every row
+    // above AND below the pivot at every column; it also copies the matrix into an n×(n+1)
+    // augmented buffer first, which doubles the transient for nothing.
+    //
+    // MEASURED (Release, Apple M4, single thread; Gauss-Jordan time / this LU's, best of ~20):
+    //     n     8    16    24    32    48    64   124   172   256   378   512   756
+    //   ratio 1.13  1.53  1.70  1.78  1.90  2.68  2.81  2.80  2.81  2.86  2.83  2.88
+    // The LU is ahead from n ≈ 8 up and the margin widens to ~2.9× at the 6-tone/order-3 size
+    // (n = 756: 84.6 ms → 29.4 ms). Below n = 8 Gauss-Jordan is marginally faster — both are well
+    // under a microsecond there — which is what SolveCrossover records.
+    //
+    // NumFlat's Mat<double>.Lu() was measured on the same matrices and is deliberately NOT used:
+    // it is not blocked (39.5 ms at n = 756 against this kernel's 29.4 ms), it is erratic at
+    // power-of-two sizes (at n = 256 and n = 512 it falls back to roughly Gauss-Jordan's time), it
+    // is slower than Gauss-Jordan below n ≈ 40, and it needs a copy into and out of Mat<double>
+    // that this kernel does not. HbDenseSolveTests gates this implementation against it anyway.
+    //
+    // A blocked LU (panel factorisation + trailing GEMM) was written and measured too, and bought
+    // nothing at these sizes — the trailing update is bound by issue rate, not cache traffic — so
+    // the simpler right-looking form is what ships.
 
-    internal static double[]? SolveGaussian(double[] A, double[] b, int n)
+    /// <summary>
+    /// Below this order the augmented Gauss-Jordan sweep is (marginally) faster than the LU
+    /// factorisation; at and above it the LU wins and the margin grows. Measured — see the table
+    /// in the source above this constant.
+    /// </summary>
+    public const int SolveCrossover = 8;
+
+    /// <summary>
+    /// Solves <c>A·x = b</c> for the dense real Newton system, returning <c>null</c> when the
+    /// matrix is singular (pivot magnitude below 1e-30) — every caller branches on that and
+    /// reports the singular Jacobian rather than throwing.
+    ///
+    /// <para>Public rather than internal so <c>HbDenseSolveTests</c> can drive both branches and
+    /// compare them against each other and against NumFlat; <c>CircuitRF.Engine</c> exposes no
+    /// internals to its test project.</para>
+    /// </summary>
+    public static double[]? SolveGaussian(double[] A, double[] b, int n)
+        => n < SolveCrossover ? SolveGaussJordan(A, b, n) : SolveLu(A, b, n);
+
+    /// <summary>
+    /// In-place right-looking LU with partial pivoting on a private copy of <paramref name="A"/>,
+    /// followed by the two triangular solves. The rank-1 trailing update is the whole cost and is
+    /// explicitly vectorised; the row swap is full-width, so the multipliers already stored in the
+    /// strict lower triangle travel with their row.
+    /// </summary>
+    public static double[]? SolveLu(double[] A, double[] b, int n)
+    {
+        var a = new double[n * n];
+        Array.Copy(A, a, n * n);
+        var piv = new int[n];
+        int w = System.Numerics.Vector<double>.Count;
+
+        for (int k = 0; k < n; k++)
+        {
+            int p = k;
+            double best = Math.Abs(a[k * n + k]);
+            for (int r = k + 1; r < n; r++)
+            {
+                double v = Math.Abs(a[r * n + k]);
+                if (v > best) { best = v; p = r; }
+            }
+            if (best < 1e-30) return null;                 // same singularity test as Gauss-Jordan
+
+            piv[k] = p;
+            if (p != k)
+                for (int j = 0; j < n; j++)
+                    (a[k * n + j], a[p * n + j]) = (a[p * n + j], a[k * n + j]);
+
+            double inv = 1.0 / a[k * n + k];
+            int len = n - k - 1;
+            if (len <= 0) continue;
+            var rowK = a.AsSpan(k * n + k + 1, len);
+
+            for (int r = k + 1; r < n; r++)
+            {
+                double f = a[r * n + k] * inv;
+                a[r * n + k] = f;                          // multiplier, in place of the zero
+                if (f == 0.0) continue;
+                var rowR = a.AsSpan(r * n + k + 1, len);
+                var vf   = new System.Numerics.Vector<double>(f);
+                int j = 0;
+                for (; j <= len - w; j += w)
+                {
+                    var acc = new System.Numerics.Vector<double>(rowR.Slice(j, w))
+                            - vf * new System.Numerics.Vector<double>(rowK.Slice(j, w));
+                    acc.CopyTo(rowR.Slice(j, w));
+                }
+                for (; j < len; j++) rowR[j] -= f * rowK[j];
+            }
+        }
+
+        var x = new double[n];
+        Array.Copy(b, x, n);
+        for (int k = 0; k < n; k++) { int p = piv[k]; if (p != k) (x[k], x[p]) = (x[p], x[k]); }
+        for (int i = 1; i < n; i++)                        // L·y = P·b (L has a unit diagonal)
+        {
+            double s = x[i];
+            int rb = i * n;
+            for (int j = 0; j < i; j++) s -= a[rb + j] * x[j];
+            x[i] = s;
+        }
+        for (int i = n - 1; i >= 0; i--)                   // U·x = y
+        {
+            double s = x[i];
+            int rb = i * n;
+            for (int j = i + 1; j < n; j++) s -= a[rb + j] * x[j];
+            x[i] = s / a[rb + i];
+        }
+        return x;
+    }
+
+    /// <summary>
+    /// The original augmented Gauss-Jordan sweep, kept for the sub-<see cref="SolveCrossover"/>
+    /// case (where it is faster) and as the reference <c>HbDenseSolveTests</c> compares against.
+    /// </summary>
+    public static double[]? SolveGaussJordan(double[] A, double[] b, int n)
     {
         var aug = new double[n * (n + 1)];
         for (int r = 0; r < n; r++)

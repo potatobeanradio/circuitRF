@@ -103,4 +103,60 @@ public class HbMultiToneCeilingTests(ITestOutputHelper output)
             Assert.True(best >= 3, $"{t} tones cannot reach MaxMixOrder 3 within the cap");
         }
     }
+
+    /// <summary>
+    /// <b>The ceiling still refuses BEFORE the transform is constructed</b> (HB-P1 M3). Since the
+    /// APFT now comes from a process-wide cache, the refusal has to keep running ahead of
+    /// <see cref="HbApft.Get"/> — a cache lookup that constructs on a miss would otherwise turn a
+    /// setup-time refusal back into a long allocation followed by a throw, which is the exact
+    /// failure this ceiling exists to prevent. The wall-clock assertion above is the symptom; this
+    /// one names the cause, and would still catch it on a machine fast enough to hide it.
+    /// </summary>
+    [Fact]
+    public void AnOverCapRequest_ConstructsNoTransform()
+    {
+        var (engine, p0) = Load("hero5_6tone.cnl");
+        var p = p0 with { MaxMixOrder = 5 };     // 6 tones at order 5 → 1,827 products
+
+        int before = HbApft.ConstructionCountFor(6, 5, AnalysisSettings.Default.HbApftOversample);
+        Assert.Throws<InvalidOperationException>(() => engine.Run(p));
+        int after = HbApft.ConstructionCountFor(6, 5, AnalysisSettings.Default.HbApftOversample);
+
+        output.WriteLine($"transforms constructed for the refused key: {before} → {after}");
+        Assert.Equal(before, after);
+        Assert.Equal(0, after);
+    }
+
+    /// <summary>
+    /// <b>A second run reuses the first run's transform</b> (HB-P1 M3) — the whole point of the
+    /// cache, since an APFT depends on nothing that changes between sweep points. Before it, a
+    /// twenty-point parametric sweep built twenty identical transforms and paid 93 ms for each of
+    /// them at 6 tones / order 3.
+    /// </summary>
+    [Fact]
+    public void RunningTheSameAnalysisTwice_ConstructsOneTransform()
+    {
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(Hero5Dir(), "hero5_6tone.cnl"));
+        var netlist   = new Elaborator(lib).Elaborate(tb);
+        var hba       = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
+        var p0        = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+
+        // The default oversample is shared with every other multi-tone test, and xUnit runs test
+        // classes concurrently, so this run gets a key of its own: the counter is then exactly this
+        // test's, whatever else is in flight.
+        const double mine = 2.0319;
+        var settings = new AnalysisSettings { HbApftOversample = mine };   // otherwise the defaults
+        int tones    = p0.ToneFreqsHz.Length;
+
+        Assert.Equal(0, HbApft.ConstructionCountFor(tones, p0.MaxMixOrder, mine));
+
+        new HbEngine(netlist, tb, settings).Run(p0);
+        Assert.Equal(1, HbApft.ConstructionCountFor(tones, p0.MaxMixOrder, mine));
+
+        new HbEngine(netlist, tb, settings).Run(p0);
+        new HbEngine(netlist, tb, settings).Run(p0);
+        int built = HbApft.ConstructionCountFor(tones, p0.MaxMixOrder, mine);
+        output.WriteLine($"three runs of a {tones}-tone order-{p0.MaxMixOrder} analysis built {built} transform(s)");
+        Assert.Equal(1, built);
+    }
 }
