@@ -590,8 +590,17 @@ public partial class PlotInspectorViewModel : ViewModelBase
     private void OnLibraryChanged(object? sender, EventArgs e)
     {
         // Remove network-bound traces whose SNP is no longer in the library.
+        //
+        // NetworkView belongs in this set as much as Snp does. A SIMULATED run has no Snp by
+        // design — its S cube goes through the cube path, which can carry a swept axis an SNP
+        // structurally cannot — so its DERIVED traces (stability circles, MaxGain, µ, µ′, K, |Δ|,
+        // passivity, group delay) bind to the entry's narrow NetworkView instead. Reading Snp
+        // alone made every one of them look like a trace whose source had left the library, so
+        // the first LibraryChanged after a re-run DELETED them. Its ordinary S(i,j) traces
+        // survived, because those are cube-bound and take the path-keyed branch below — which is
+        // why the symptom was "only the derived traces disappear when I re-simulate".
         var librarySnps = new System.Collections.Generic.HashSet<SNP>(
-            _library!.Entries.Select(entry => entry.Snp).OfType<SNP>());
+            _library!.Entries.SelectMany(entry => new[] { entry.Snp, entry.NetworkView }).OfType<SNP>());
 
         // Also track current file paths for cube-bound stale detection.
         var libraryPaths = new System.Collections.Generic.HashSet<string>(

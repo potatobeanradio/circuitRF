@@ -158,6 +158,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // data display / symbol / cell tab. Cleared when this doc is closed or the workspace changes.
     private SchematicDocument? _lastActiveSchematicDoc;
 
+    // True while the Analyses panel is the focused dockable. A tool panel is not a document, so it
+    // never becomes DocumentDock.ActiveDockable — which is what Run/Stop are otherwise gated on —
+    // and clicking into the panel used to grey out ⌘R while the panel's OWN Run button beside it
+    // stayed live. See CanRunAnalysis.
+    private bool _analysesPanelFocused;
+
     // R-h9a-3: the harmonicaRF document currently holding the docked macOS menu-bar takeover (null
     // when none does). Tracked so a focus change or workspace reset can tell the OLD holder to give
     // the menu bar back before anything else happens. Cleared alongside _lastActiveSchematicDoc at
@@ -483,6 +489,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // The same thing racing a tree click is why the inspector only SOMETIMES showed a cell's
             // properties, and it is what put a hidden ComboBox under a live pointer press — see
             // Controls/HiddenComboBoxInputGuard for where that ended up.
+            // ⌘R follows the Analyses panel. The panel is a tool, so it is never the DocumentDock's
+            // ActiveDockable and the early return below is where its focus would otherwise be lost.
+            SetAnalysesPanelFocused(ReferenceEquals(args.Dockable, _factory.AnalysesTool));
+
             if (args.Dockable is ITool) return;
 
             if (args.Dockable is not IDocument document || document.Owner is not IDock pane) return;
@@ -1783,6 +1793,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
+        // A fresh dock layout brings a fresh Analyses panel, so the old panel's focus must not
+        // outlive it and leave Run enabled against a schematic that is no longer open.
+        SetAnalysesPanelFocused(false);
         ResetHarmonicaDockedFocusTracking();
         // Record the outgoing workspace's session (open tabs + dock arrangement) BEFORE anything is
         // torn down — nothing else on this path ever wrote it, so those tabs were simply forgotten.
@@ -2170,6 +2183,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
+        // A fresh dock layout brings a fresh Analyses panel, so the old panel's focus must not
+        // outlive it and leave Run enabled against a schematic that is no longer open.
+        SetAnalysesPanelFocused(false);
         ResetHarmonicaDockedFocusTracking();
 
         // Split every tracked MATERIALIZED document by docked-vs-floated; the docked ones close, and
@@ -2658,8 +2674,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // greyed out whenever a .csch document is not the active dockable — not merely retained-schematic
     // aware, per the owner's explicit request. This is distinct from the Analyses panel's own Run
     // button, which deliberately keeps working off _lastActiveSchematicDoc (brief-analyses-toolbar-run-retain).
+    //
+    // ...with ONE addition (owner, 2026-08-29): the Analyses panel itself counts as a place to run
+    // from. Focusing that panel — to pick an analysis, edit a sweep, then run it — is not focusing
+    // "something other than a schematic" in any sense the user means; and the panel's own Run button
+    // sitting live beside a greyed-out ⌘R was the visible contradiction. A tool panel is never the
+    // DocumentDock's ActiveDockable, so the retained schematic is what the enablement (and
+    // RunAnalysis's own fallback, which already reads it) resolves against. Everything else is
+    // unchanged: focus a Data Display or a symbol editor and Run still greys out.
     private bool CanRunAnalysis() =>
-        _runCts is null && _factory.DocumentDock?.ActiveDockable is SchematicDocument;
+        _runCts is null && HasARunnableSchematicInFocus;
+
+    /// <summary>
+    /// True when the user is looking at somewhere a run can be started FROM: a schematic document,
+    /// or the Analyses panel with a schematic still retained behind it. Shared by Run and Stop so
+    /// the pair can never disagree about whether this surface owns the run.
+    /// </summary>
+    private bool HasARunnableSchematicInFocus =>
+        _factory.DocumentDock?.ActiveDockable is SchematicDocument
+        || (_analysesPanelFocused && _lastActiveSchematicDoc is not null);
+
+    /// <summary>
+    /// Records whether the Analyses panel holds focus and re-evaluates Run/Stop. Called on every
+    /// focus change, including the ones that move focus AWAY from the panel — a
+    /// <c>[RelayCommand(CanExecute=…)]</c> is never re-evaluated on its own.
+    /// </summary>
+    private void SetAnalysesPanelFocused(bool focused)
+    {
+        if (_analysesPanelFocused == focused) return;
+        _analysesPanelFocused = focused;
+        RunAnalysisCommand.NotifyCanExecuteChanged();
+        StopAnalysisCommand.NotifyCanExecuteChanged();
+    }
 
     /// <summary>
     /// Live cancellation source for the run in flight; null when nothing is running. It is what makes
@@ -2938,8 +2984,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     private bool CanStopAnalysis() =>
-        _runCts is { IsCancellationRequested: false } &&
-        _factory.DocumentDock?.ActiveDockable is SchematicDocument;
+        _runCts is { IsCancellationRequested: false } && HasARunnableSchematicInFocus;
 
     private void WireAnalysesRun()
     {
@@ -11270,6 +11315,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             _lastActiveSchematicDoc = null;
             _factory.AnalysesTool?.SetActiveSchematic(null);
+            // The panel may still hold focus, and Run/Stop now read the retained doc through it —
+            // so the pair has to be re-asked here, or ⌘R stays live with nothing to run.
+            RunAnalysisCommand.NotifyCanExecuteChanged();
+            StopAnalysisCommand.NotifyCanExecuteChanged();
         }
 
         // R-h9a-3: a harmonicaRF document closing while it holds the docked menu-bar takeover must

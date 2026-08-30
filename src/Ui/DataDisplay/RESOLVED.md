@@ -5,6 +5,122 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## Every derived trace vanished when the analysis was re-run (2026-08-29)
+
+**Reported:** after re-running the S-parameter analysis, the Max Gain trace disappeared from the
+Data Display — then the same for the stability circles. The owner's own read was right: it was
+because they are derived-parameter traces.
+
+**It hit derived traces on a SIMULATED source only, and every one of them** — stability circles,
+MaxGain, µ, µ′, K, |Δ|, passivity, group delay. Ordinary S(i,j) traces on the same source
+survived, which is what made the symptom look metric-specific.
+
+`PlotInspectorViewModel.OnLibraryChanged` sweeps out traces whose source has left the library, and
+built its "still here" set from `entry.Snp` alone. **A simulated run has no `Snp` by design** — its
+S cube goes through the cube path, which can carry a swept axis an SNP structurally cannot — so its
+derived traces bind to the entry's narrow `NetworkView` instead. Reading `Snp` alone made every
+such trace look orphaned, and the first `LibraryChanged` after a run deleted it outright. An
+ordinary S(i,j) trace on the same source is cube-bound and takes the path-keyed branch, so it was
+never in scope.
+
+`LibraryChanged` fires on every re-run: `WorkspaceViewModel.RefreshOpenDataDisplaysAsync` →
+`ReloadChangedAsync` → `ReloadAsync` → `RefreshNpy` → the event. So the deletion was reliable, not
+intermittent.
+
+### Two halves — fixing only the first would have hidden a second bug behind it
+
+1. **`OnLibraryChanged` now reads `Snp` AND `NetworkView`.** That is the deletion itself.
+2. **`RefreshNpy` refreshes the `NetworkView` in place** rather than discarding the instance, via
+   the new `RefreshNetworkViewPreservingIdentity`. It used to do `_networkView = null;
+   _networkViewBuilt = false;`, so the next access handed out a **new** SNP — and a live trace still
+   holds the old one. With only fix 1, the trace would have stopped disappearing and started
+   quietly drawing the PREVIOUS run's data, which is worse than a visible deletion. This is exactly
+   the guarantee `RefreshTouchstone` already makes for `Snp` ("the SNP instance identity is
+   preserved so existing trace bindings survive"), applied to the other view of the same idea; both
+   the stale-sweep and the picker's `alreadyApplied` test are reference comparisons.
+
+   A rebuild that comes back null means the reloaded source genuinely stopped being network-shaped
+   (S cube gone, or a sweep axis made it rank 4). The view then stays null and the bound traces are
+   correctly stale — the sweep should remove them.
+
+### Gates
+
+`SimulatedSourceNetworkMetricsTests` gained a 5-case theory covering the derived kinds across both
+plot geometries — rect metrics assert on `Points`, circles on `StabilityCircleCentres`, since a
+circle trace draws into neither of the other's storage — plus
+`ReloadingASimulatedSource_KeepsTheNetworkViewInstance`, which re-runs onto a **different frequency
+grid** so "same instance" cannot be confused with "nothing was refreshed". All five fail on the old
+code by deleting the trace; the identity test fails by handing back a new SNP.
+
+### The site that actually caused the reported symptom — `OnSelectedDataSourceChanged`
+
+The three fixes above were all real, and none of them was the one the owner was hitting. It took
+driving the owner's own `.cdd` through the real load path to find it, and it lives in
+`DataDisplayViewModel.OnSelectedDataSourceChanged`:
+
+```csharp
+if (!t.IsCubeBound)
+    t.Data = _library.SelectedEntry?.Snp ?? SNP.CreateBroken(t.SourcePath ?? "");
+```
+
+Every trace whose `SourceRef` is the "Selected" sentinel is re-pointed here. For a simulated source
+`SelectedEntry.Snp` is null, so each derived trace was handed **`SNP.CreateBroken` — a zero-port
+SNP**. `BuildDerivedPath` clears its geometry and returns immediately below two ports, so the trace
+went blank; and because that placeholder belongs to no library entry, the next `LibraryChanged`
+swept it out of the plot for good.
+
+**This fires on every re-run**, because `WorkspaceViewModel.RefreshOpenDataDisplaysAsync` finishes
+by re-selecting the datasource it just reloaded. Reproducing it needed that third step: a test that
+called `ReloadChangedAsync` alone passed while the product was still broken.
+
+**`DataSourceRef.Selected` is the literal string `"run.npy"`.** Reading the owner's `.cdd`, the
+traces' `"SourcePath": "run.npy"` looks like a stale file name beside a `SelectedDataSource` of
+`"S-Param.npy"` — it is not, it is the sentinel, and every trace in that file carries it. Naming a
+test fixture `run.npy` also silently makes it the sentinel, which cost a debugging round.
+
+### A third site, same shape — and leaving it was the wrong call
+
+`TraceRowViewModel.RebuildSignals` re-finds a trace's entry with the same `e.Snp == _trace.Data`
+test, which never matches for a simulated source. This was initially recorded as cosmetic on the
+argument that `_suppressDataCallback` is set around the assignment, so the trace could not be
+rebound. **That was wrong, and the owner found it immediately:** with the deletion fixed, Max Gain
+stopped disappearing and instead turned into S(1,1) on pressing Run — the fallback
+`SelectedSignal = match ?? AvailableSignals.FirstOrDefault()` re-pointed the card at the first
+signal in the group, and the trace followed. The lesson is the plain one: reasoning about a
+suppression flag is not evidence about what a rebuild does. The gate now asserts on
+`row.SelectedSignal?.Derived`, not just on the trace surviving.
+
+The lookup now asks about `NetworkView` as well, mirroring the `Entry.NetworkView ?? Entry.Snp`
+order the bind in `OnSelectedSignalChanged` uses, so it resolves the very object the trace holds.
+The `matchEntry.Snp!` dereferences below it become one `matchView` local; for a Touchstone entry
+`NetworkView` **is** `Snp` — including a broken one — so the missing-file (`IsEmpty`) branch is
+reached exactly as before. `CubeBoundTraceOnSimulatedSource_KeepsItsCardSelection_AcrossARerun`
+guards the path that was already correct.
+
+### Four sites, one mistake
+
+`Snp` read as if it were the only view of a source, in four places that each had to ask
+"which SNP does this trace hold?":
+
+| Site | Effect when wrong |
+|---|---|
+| `PlotInspectorViewModel.OnLibraryChanged` | derived trace swept as stale, deleted |
+| `DataSourceEntryViewModel.RefreshNpy` | new NetworkView instance each reload → same sweep |
+| `TraceRowViewModel.RebuildSignals` | card falls back to S(1,1), trace follows |
+| `DataDisplayViewModel.OnSelectedDataSourceChanged` | trace's Data replaced by a 0-port broken SNP |
+
+Plus the `.cdd` loader (`snp = libEntry?.Snp`), which dropped derived traces on open — the fifth.
+All five now use the same `NetworkView ?? Snp` order the picker's bind established. Each was
+verified load-bearing by reverting it alone against the `.cdd` gate.
+
+**The lesson for the next one of these:** the first three were found by reading code and confirmed
+with synthetic fixtures built through the picker, and each looked like the whole answer. The one
+that mattered turned up only when the owner's real artifact went through the real open-and-re-run
+sequence. `DerivedTraceRerunFromCddTests` exists to be that path, and it mirrors
+`RefreshOpenDataDisplaysAsync` step for step, re-selection included, precisely because leaving that
+last step out is what made an earlier version of it pass over a broken product.
+
+
 ## MAG/MSG was 2× too large in dB, and the transform combo is a mislabel (2026-08-29)
 
 **Reported:** a modelled BJT's Max Gain trace read about twice the datasheet's Gms, and the trace
@@ -17,8 +133,9 @@ Two separate things, one a real numeric bug and one a naming/plumbing defect.
 
 MAG = |S21/S12|·(K−√(K²−1)) and MSG = |S21/S12| are **power** gains, so dB is 10·log10. The
 function used 20·log10, so every MAG/MSG the Data Display drew — plot, marker readout and Table
-cell alike, since all three share `NetworkMetrics` — was exactly twice its true dB value. A BFR181
-at 3.5 V / 5 mA reads 22.55 dB at 1.8 GHz instead of 11.27 dB.
+cell alike, since all three share `NetworkMetrics` — was exactly twice its true dB value. A vendor
+data set for a small-signal RF bipolar transistor at 3.5 V / 5 mA reads 22.55 dB at 1.8 GHz where
+its own data sheet says 11.27 dB.
 
 **Nothing caught it because every existing assertion compared MaxGain to MaxGain** — the SNP path
 against the matrix path, the renormalized reference against the raw one. A factor wrong in both

@@ -293,6 +293,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     /// </summary>
     internal void RefreshNpy(DataSet data, string newPath)
     {
+        var boundView = _networkView;                     // may be held by live derived traces
         _filePath = newPath;
         _data     = data;
         _networkView = null; _networkViewBuilt = false;   // rebuilt lazily against the new DataSet
@@ -321,8 +322,36 @@ public partial class DataSourceEntryViewModel : ViewModelBase
             _snp = null;
         }
 
+        RefreshNetworkViewPreservingIdentity(boundView);
         NotifyBrokenStateChanged();
         ClassifyZ0FromData();
+    }
+
+    /// <summary>
+    /// Re-points an already-handed-out <see cref="NetworkView"/> at the reloaded DataSet
+    /// <b>without replacing the instance</b> — the same guarantee <see cref="RefreshTouchstone"/>
+    /// makes for <see cref="Snp"/>, and for the same reason: derived traces hold this object, and
+    /// both the plot's stale-trace sweep and the picker's "already applied" test are reference
+    /// comparisons. Handing out a fresh instance on every re-run is indistinguishable from the
+    /// source having left the library.
+    ///
+    /// <para>Called only after <c>_data</c> and <c>_snp</c> are settled, since the lazy getter
+    /// reads both. A rebuild that comes back null means the reloaded source is no longer
+    /// network-shaped (its S cube is gone, or a sweep axis has made it rank 4) — then the view is
+    /// legitimately gone and the traces bound to it are genuinely stale.</para>
+    /// </summary>
+    private void RefreshNetworkViewPreservingIdentity(SNP? bound)
+    {
+        if (bound is null) return;      // nothing was ever handed out
+        if (_snp is not null) return;   // Snp IS the view here, and it was refreshed in place above
+
+        _networkView = null; _networkViewBuilt = false;
+        var rebuilt = NetworkView;      // lazy build against the new DataSet
+        if (rebuilt is null) return;    // no longer network-shaped — leave the view null
+
+        bound.RefreshFrom(rebuilt);
+        _networkView      = bound;
+        _networkViewBuilt = true;
     }
 
     /// <summary>

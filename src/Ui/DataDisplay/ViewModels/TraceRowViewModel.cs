@@ -2797,13 +2797,25 @@ public partial class TraceRowViewModel : ViewModelBase
         }
         else if (_trace.Data != null)
         {
-            var matchEntry = _parent.LibraryEntries.FirstOrDefault(e => e.Snp == _trace.Data);
-            if (matchEntry != null)
+            // The trace's Data is whichever view the bind in OnSelectedSignalChanged handed it:
+            // `Entry.NetworkView ?? Entry.Snp`. So finding its entry again has to ask about BOTH.
+            // Matching on Snp alone found nothing for a SIMULATED source — which has no Snp by
+            // design — and the fallback below then re-pointed the card at the first signal in the
+            // group. That is the "my Max Gain trace turns into S(1,1) when I press Run" report: the
+            // trace was no longer being deleted, but its card silently re-selected S(1,1) on the
+            // rebuild that every re-run triggers.
+            var matchEntry = _parent.LibraryEntries.FirstOrDefault(
+                e => ReferenceEquals(e.Snp, _trace.Data) || ReferenceEquals(e.NetworkView, _trace.Data));
+            // Same "?? " order as the bind, so this is the very object the trace holds. (For a
+            // Touchstone entry NetworkView IS Snp — including a BROKEN one, so the IsEmpty branch
+            // below still fires for a missing file exactly as before.)
+            var matchView = matchEntry?.NetworkView ?? matchEntry?.Snp;
+            if (matchEntry != null && matchView != null)
             {
-                if (matchEntry.Snp!.IsEmpty
+                if (matchView.IsEmpty
                     || (_trace.Derived == DerivedParameters.None
-                        && (_trace.Row >= matchEntry.Snp!.Ports
-                            || _trace.Col >= matchEntry.Snp!.Ports)))
+                        && (_trace.Row >= matchView.Ports
+                            || _trace.Col >= matchView.Ports)))
                 {
                     match = _allSignals.FirstOrDefault(s => s.IsBroken && s.Entry == matchEntry);
                 }

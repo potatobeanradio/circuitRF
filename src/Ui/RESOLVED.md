@@ -14094,3 +14094,40 @@ vectors. Both new plot fixtures set it from `ThemeService.CurrentVariant` in `Af
 - `LayoutCanvas.ZoomToFit` measures a **Fixed**-size ruler's world footprint at the zoom in force when
   it is asked and deliberately does not iterate, so a Scaled ruler is the predictable one to size a
   figure around.
+
+
+## ⌘R follows the Analyses panel, not just a schematic tab (2026-08-29)
+
+**Asked for:** if the Analyses panel has focus and a simulation can be run, enable Simulate ▸ Run
+(⌘R / Ctrl+R).
+
+`CanRunAnalysis` was `_runCts is null && DocumentDock?.ActiveDockable is SchematicDocument`. A tool
+panel is **never** the DocumentDock's ActiveDockable, so clicking into the Analyses panel — to pick
+an analysis, edit a sweep, then run it — greyed out ⌘R and the Simulate ▸ Run item, while the
+panel's OWN Run button sat live an inch away. The two disagreed about the same action.
+
+- `CanRunAnalysis` and `CanStopAnalysis` now share one `HasARunnableSchematicInFocus`: a schematic
+  document is active, **or** the Analyses panel holds focus and a schematic is still retained
+  (`_lastActiveSchematicDoc`). Run and Stop take it together so they cannot disagree about whether
+  this surface owns the run.
+- `RunAnalysis` needed no change — it already resolved `ActiveDockable as SchematicDocument ??
+  _lastActiveSchematicDoc`, exactly as the panel's own `OnAnalysesRunRequested` does. Only the gate
+  was narrower than the action behind it.
+- The window-level `KeyBinding`s for `Ctrl+R`/`Meta+R` already exist and are not focus-scoped, so
+  the gesture always reached the command; `CanExecute` was the whole of it.
+- Focus is tracked in the `FocusedDockableChanged` handler, **before** its `is ITool` early return
+  — that return is where a tool panel's focus would otherwise be dropped. `SetAnalysesPanelFocused`
+  fires the two `NotifyCanExecuteChanged` calls, including on the transitions AWAY from the panel:
+  the standing gotcha in `WorkspaceViewModel` applies here too, a `[RelayCommand(CanExecute=…)]` is
+  never re-evaluated on its own.
+- Re-evaluated at the three places the retained schematic is dropped as well — `OnDockableClosed`
+  when the retained doc is the one closing, and the two workspace-lifecycle resets (which also clear
+  the focus flag, since a fresh dock layout brings a fresh Analyses panel).
+
+Everything else is unchanged: focus a Data Display, symbol editor or cell tab and Run still greys
+out, which was the owner's explicit earlier request (see the note beside `CanRunAnalysis`).
+
+**Not covered by an automated test.** No test in the repo constructs a `WorkspaceViewModel` — the
+existing ones reach only its static helpers or scan its source — and standing one up needs a full
+Dock factory and a window. A source-scan gate would assert the strings, not the behaviour. Verified
+by build only; the enablement itself wants a manual check.

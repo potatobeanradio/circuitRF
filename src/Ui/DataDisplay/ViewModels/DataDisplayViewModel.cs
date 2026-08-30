@@ -537,7 +537,22 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 {
                     t.SourcePath = _library.ResolveAbs(t.SourceRef);
                     if (!t.IsCubeBound)
-                        t.Data = _library.SelectedEntry?.Snp ?? SNP.CreateBroken(t.SourcePath ?? "");
+                    {
+                        // NetworkView first, Snp second, broken placeholder last — the same order
+                        // the picker's bind and the .cdd loader use.
+                        //
+                        // Reading Snp alone here is what actually made Max Gain and the stability
+                        // circles vanish on Run. Every trace whose SourceRef is the "Selected"
+                        // sentinel comes through this loop, and for a SIMULATED source
+                        // SelectedEntry.Snp is null by design — so each derived trace was handed
+                        // SNP.CreateBroken, a ZERO-PORT SNP. BuildDerivedPath clears its geometry
+                        // and returns at once below two ports, so the trace went blank; and since
+                        // that placeholder belongs to no library entry, the next LibraryChanged
+                        // swept it out of the plot for good. This fires on every re-run, because
+                        // the post-run refresh re-selects the datasource it just reloaded.
+                        var sel = _library.SelectedEntry;
+                        t.Data = sel?.NetworkView ?? sel?.Snp ?? SNP.CreateBroken(t.SourcePath ?? "");
+                    }
                 }
             }
             c.Inspector.RebuildAndNotify();
@@ -1370,7 +1385,18 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                                              StringComparison.OrdinalIgnoreCase));
                 }
 
-                snp = libEntry?.Snp;
+                // NetworkView first, Snp as the fallback — the SAME order the picker's own bind uses
+                // (`value.Entry.NetworkView ?? value.Entry.Snp`), so a trace restored from a .cdd and
+                // a trace picked in the card end up holding the SAME object for the same source.
+                //
+                // Reading Snp alone meant a SIMULATED source — which has no Snp by design — produced
+                // `snp == null`, and the `snp is null` guard just below dropped every DERIVED trace
+                // (stability circles, MaxGain, µ, …) as the display opened. Its S(i,j) traces are
+                // cube-bound and never went through this branch, which is why only the metrics were
+                // affected. For a Touchstone or a broken entry NetworkView IS Snp, so nothing about
+                // those two paths changes — including the broken-entry placeholder the guard below
+                // deliberately accepts.
+                snp = libEntry?.NetworkView ?? libEntry?.Snp;
             }
 
             bool isCubeBound    = (traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0)

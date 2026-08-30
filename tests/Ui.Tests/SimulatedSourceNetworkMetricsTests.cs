@@ -328,4 +328,165 @@ public sealed class SimulatedSourceNetworkMetricsTests : IDisposable
         Assert.False(entry.IsBroken);          // cube-only is a normal source, not a failure
         Assert.NotNull(entry.Data);
     }
+
+    // =========================================================================
+    //  Surviving a RE-RUN — the metric traces must not be swept away as stale
+    // =========================================================================
+
+    /// <summary>
+    /// Builds a plot holding one derived (network-metric) trace on a simulated source, wired to the
+    /// library exactly as the real inspector is, and returns the inspector so a reload can be run
+    /// through it.
+    /// </summary>
+    private static PlotInspectorViewModel BuildDerivedPlot(
+        DataSourceLibraryViewModel lib, string path, DerivedParameters derived, PlotType plotType,
+        out TraceRowViewModel row)
+    {
+        var trace = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            SourcePath = path, CubeName = "SP1.S", Slice = null, Transform = CubeTransform.None,
+        };
+        var plot = new Plot(plotType, FreqUnit.GHz);
+        plot.Traces.Add(trace);
+        var inspector = new PlotInspectorViewModel(plot, () => { }, lib);
+        inspector.RebuildAndNotify();
+        row = inspector.Traces[0];
+        row.SelectedGroup = "SP1";
+        row.SelectedSignal = row.AvailableSignals.First(x => x.Derived == derived);
+        return inspector;
+    }
+
+    /// <summary>
+    /// A derived trace on a SIMULATED source must survive re-running the analysis. It did not: a
+    /// simulated run has no <c>Snp</c> by design, so its metric traces bind to the entry's
+    /// <c>NetworkView</c> — and <c>PlotInspectorViewModel.OnLibraryChanged</c> built its "still in
+    /// the library" set from <c>entry.Snp</c> alone. Every derived trace on a simulated source was
+    /// therefore classified stale and DELETED on the first LibraryChanged after a run.
+    /// </summary>
+    [Theory]
+    [InlineData(DerivedParameters.MaxGain,              PlotType.Rect)]
+    [InlineData(DerivedParameters.Mu,                   PlotType.Rect)]
+    [InlineData(DerivedParameters.Passivity,            PlotType.Rect)]
+    [InlineData(DerivedParameters.LoadStabilityCircle,  PlotType.Smith)]
+    [InlineData(DerivedParameters.SourceStabilityCircle, PlotType.Smith)]
+    public async Task DerivedTraceOnSimulatedSource_SurvivesARerun(
+        DerivedParameters derived, PlotType plotType)
+    {
+        string p = WriteNpy(GroupedRun("SP1"));
+        var lib = new DataSourceLibraryViewModel();
+        await lib.LoadFileAsync(p);
+        await lib.SelectDataSourceAsync(p);
+
+        var inspector = BuildDerivedPlot(lib, p, derived, plotType, out var row);
+        var trace = row.Trace;
+        Assert.Equal(derived, trace.Derived);
+        Assert.True(HasGeometry(trace), "trace drew nothing before the re-run");
+
+        // Re-run: the analysis overwrites its own .npy at the same path, then the workspace
+        // reloads exactly the changed files (WorkspaceViewModel.RefreshOpenDataDisplaysAsync).
+        DataSetExporter.Export(GroupedRun("SP1"), p, ExportFormat.Npy);
+        await lib.ReloadChangedAsync([p]);
+
+        Assert.Single(inspector.Traces);
+        Assert.Equal(derived, inspector.Traces[0].Trace.Derived);
+        Assert.True(HasGeometry(inspector.Traces[0].Trace), "trace drew nothing after the re-run");
+    }
+
+    /// <summary>
+    /// The trace surviving is not enough — the CARD must still be pointed at the metric. It was not:
+    /// <c>RebuildSignals</c> re-found a trace's entry with <c>e.Snp == _trace.Data</c>, which never
+    /// matches for a simulated source (no Snp), so the selection fell back to the first signal in
+    /// the group and Max Gain silently became S(1,1) on the rebuild every re-run triggers.
+    /// </summary>
+    [Theory]
+    [InlineData(DerivedParameters.MaxGain,             PlotType.Rect)]
+    [InlineData(DerivedParameters.Mu,                  PlotType.Rect)]
+    [InlineData(DerivedParameters.Passivity,           PlotType.Rect)]
+    [InlineData(DerivedParameters.LoadStabilityCircle, PlotType.Smith)]
+    public async Task DerivedTraceOnSimulatedSource_KeepsItsCardSelection_AcrossARerun(
+        DerivedParameters derived, PlotType plotType)
+    {
+        string p = WriteNpy(GroupedRun("SP1"));
+        var lib = new DataSourceLibraryViewModel();
+        await lib.LoadFileAsync(p);
+        await lib.SelectDataSourceAsync(p);
+
+        var inspector = BuildDerivedPlot(lib, p, derived, plotType, out var row);
+
+        DataSetExporter.Export(GroupedRun("SP1"), p, ExportFormat.Npy);
+        await lib.ReloadChangedAsync([p]);
+
+        row = Assert.Single(inspector.Traces);
+        Assert.Equal(derived, row.Trace.Derived);                       // the trace itself
+        Assert.Equal(derived, row.SelectedSignal?.Derived);             // and the card's picker
+        Assert.False(row.Trace.IsCubeBound);                            // never re-pointed at S(i,j)
+    }
+
+    /// <summary>An ordinary S(i,j) trace on the same source must be unaffected by that lookup change.</summary>
+    [Fact]
+    public async Task CubeBoundTraceOnSimulatedSource_KeepsItsCardSelection_AcrossARerun()
+    {
+        string p = WriteNpy(GroupedRun("SP1"));
+        var lib = new DataSourceLibraryViewModel();
+        await lib.LoadFileAsync(p);
+        await lib.SelectDataSourceAsync(p);
+
+        var trace = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            SourcePath = p, CubeName = "SP1.S", Slice = null, Transform = CubeTransform.None,
+        };
+        var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
+        plot.Traces.Add(trace);
+        var inspector = new PlotInspectorViewModel(plot, () => { }, lib);
+        inspector.RebuildAndNotify();
+        var row = inspector.Traces[0];
+        row.SelectedGroup  = "SP1";
+        row.SelectedSignal = row.AvailableSignals.First(x => x.Label == "S(2,1)");
+
+        DataSetExporter.Export(GroupedRun("SP1"), p, ExportFormat.Npy);
+        await lib.ReloadChangedAsync([p]);
+
+        var after = Assert.Single(inspector.Traces);
+        Assert.True(after.Trace.IsCubeBound);
+        Assert.Equal("S(2,1)", after.SelectedSignal?.Label);
+    }
+
+    /// <summary>A rect metric draws into Points; a stability circle draws into the circle lists.</summary>
+    private static bool HasGeometry(Trace t) =>
+        t.IsStabilityCircle ? t.StabilityCircleCentres.Count > 0 : t.Points.Count > 0;
+
+    /// <summary>
+    /// The binding itself, at the layer the deletion read: a reload must not hand out a NEW
+    /// NetworkView instance, for exactly the reason <c>RefreshTouchstone</c> preserves the SNP's
+    /// identity — a live trace holds the old one and would silently keep drawing stale data even
+    /// once the stale-sweep stopped removing it.
+    /// </summary>
+    [Fact]
+    public async Task ReloadingASimulatedSource_KeepsTheNetworkViewInstance()
+    {
+        string p = WriteNpy(GroupedRun("SP1"));
+        var lib = new DataSourceLibraryViewModel();
+        await lib.LoadFileAsync(p);
+        var entry = Assert.Single(lib.Entries);
+
+        var before = entry.NetworkView;
+        Assert.NotNull(before);
+        double firstFreqBefore = before!.Frequencies[0];
+
+        // A re-run with a DIFFERENT frequency grid, so "same instance" cannot be confused with
+        // "nothing was refreshed".
+        var rerun = GroupedRun("SP1");
+        var sCube = rerun.CubesIn("SP1")["S"];
+        var shifted = new DataSet();
+        shifted.AddToGroup("SP1", "S", new DataCube(
+            [new Axis("freq", [4e9, 5e9, 6e9], "Hz"), sCube.Axes[1], sCube.Axes[2]],
+            sCube.ComplexValues));
+        shifted.AddToGroup("SP1", "Z0", rerun.CubesIn("SP1")["Z0"]);
+        DataSetExporter.Export(shifted, p, ExportFormat.Npy);
+        await lib.ReloadChangedAsync([p]);
+
+        Assert.Same(before, entry.NetworkView);            // identity preserved for live traces
+        Assert.Equal(1e9, firstFreqBefore, 6);
+        Assert.Equal(4e9, entry.NetworkView!.Frequencies[0], 6);   // and it really was refreshed
+    }
 }
