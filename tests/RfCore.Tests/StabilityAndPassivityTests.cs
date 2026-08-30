@@ -201,4 +201,56 @@ public class StabilityAndPassivityTests
         var m = Amp2Port();
         Assert.Equal(RFNetwork.Passivity(m), RFNetwork.Passivity(Snp2Port(m, new Complex(50, 0)))[0]);
     }
+
+    // ── MAG/MSG is a POWER gain: dB is 10·log10, not 20 ──────────────────────────────────
+    //
+    //  Nothing pinned the ABSOLUTE dB scale until this test: every other MaxGain assertion in
+    //  the repo compares MaxGain to MaxGain (SNP path vs matrix path, renormalized vs not), and
+    //  a factor that is wrong in both halves cancels. It was wrong in both halves — MaxGain
+    //  returned 20·log10 of a power ratio, so every MAG/MSG shown was exactly 2× its true dB
+    //  value. The oracle below is independent of the formula under test.
+
+    /// <summary>
+    /// The unilateral limit is an exact, external oracle. With S11 = S22 = 0 and S12 → 0 the
+    /// two-port is matched at both ends and unilateral, so its maximum available gain IS its
+    /// transducer power gain |S21|² — a quantity with no reference to K, to |S21/S12|, or to
+    /// anything else MaxGain computes. MAG in dB must therefore equal 10·log10(|S21|²).
+    /// </summary>
+    [Theory]
+    [InlineData(3.0, 1e-4)]
+    [InlineData(3.0, 1e-5)]
+    [InlineData(0.5, 1e-5)]   // |S21| < 1: a lossy unilateral two-port, MAG negative in dB
+    public void MaxGain_UnilateralMatchedTwoPort_IsTransducerPowerGainInDb(double s21, double s12)
+    {
+        var m = new Mat<Complex>(2, 2);
+        m[0, 0] = Complex.Zero;
+        m[0, 1] = new Complex(s12, 0.0);
+        m[1, 0] = new Complex(s21, 0.0);
+        m[1, 1] = Complex.Zero;
+
+        double expectedDb = 10.0 * Math.Log10(s21 * s21);   // = 20·log10(|S21|)
+
+        // Tolerance is set by how far S12 is from zero (and, at S12 = 1e-5, by the cancellation
+        // in K − √(K²−1) at K ≈ 1.7e4) — not by MaxGain. It is not a tight limit: 4 places still
+        // sits three orders of magnitude inside the 2× error this guards against, which would
+        // read ~19.08 dB against an expected 9.54.
+        Assert.Equal(expectedDb, RFNetwork.MaxGain(m), 4);
+    }
+
+    /// <summary>
+    /// The same scale check on a realistic conditionally-stable amplifier, so the guard is not
+    /// only anchored at a degenerate unilateral corner: MAG/MSG in dB is 10·log10 of the linear
+    /// value the header formula defines.
+    /// </summary>
+    [Fact]
+    public void MaxGain_ConditionallyStableAmp_IsTenLog10OfTheLinearFormula()
+    {
+        var m = Amp2Port();
+        var (k, _, _, _, _) = RFNetwork.StabilityK(m);
+
+        double ratio  = m[1, 0].Magnitude / m[0, 1].Magnitude;
+        double linear = k >= 1.0 ? ratio * (k - Math.Sqrt(k * k - 1.0)) : ratio;
+
+        Assert.Equal(10.0 * Math.Log10(linear), RFNetwork.MaxGain(m), 9);
+    }
 }

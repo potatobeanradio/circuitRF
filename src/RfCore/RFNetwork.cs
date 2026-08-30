@@ -850,6 +850,13 @@ namespace RfCore
         //  Maximum available gain (MAG) / maximum stable gain (MSG)
         //  K ≥ 1: MAG = |S21/S12| · (K − √(K²−1))
         //  K < 1: MSG = |S21/S12|
+        //
+        //  Both are POWER gains, so dB is 10·log10 — NOT 20·log10. It read 20 until
+        //  2026-08-29 and every MAG/MSG the Data Display drew was exactly twice its
+        //  true value in dB. The oracle that pins the scale is the unilateral limit:
+        //  with S11 = S22 = 0 and S12 → 0, K → ∞ and MAG → |S21|², which is the
+        //  transducer power gain of that matched two-port — so MAG in dB must come
+        //  out at 10·log10(|S21|²) = 20·log10(|S21|), the familiar S21 in dB.
         // ----------------------------------------------------------
 
         /// <summary>
@@ -882,7 +889,7 @@ namespace RfCore
             double linearGain = k >= 1.0
                 ? ratio * (k - Math.Sqrt(k * k - 1.0))
                 : ratio;
-            return 20.0 * Math.Log10(linearGain + 1e-300);
+            return 10.0 * Math.Log10(linearGain + 1e-300);
         }
 
         // ----------------------------------------------------------

@@ -5,6 +5,54 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## MAG/MSG was 2× too large in dB, and the transform combo is a mislabel (2026-08-29)
+
+**Reported:** a modelled BJT's Max Gain trace read about twice the datasheet's Gms, and the trace
+card's transform combo — which auto-selects dB20 for a Max Gain trace — produced a *different*
+number when switched to None.
+
+Two separate things, one a real numeric bug and one a naming/plumbing defect.
+
+### 1. `RFNetwork.MaxGain` returned 20·log10 of a POWER ratio
+
+MAG = |S21/S12|·(K−√(K²−1)) and MSG = |S21/S12| are **power** gains, so dB is 10·log10. The
+function used 20·log10, so every MAG/MSG the Data Display drew — plot, marker readout and Table
+cell alike, since all three share `NetworkMetrics` — was exactly twice its true dB value. A BFR181
+at 3.5 V / 5 mA reads 22.55 dB at 1.8 GHz instead of 11.27 dB.
+
+**Nothing caught it because every existing assertion compared MaxGain to MaxGain** — the SNP path
+against the matrix path, the renormalized reference against the raw one. A factor wrong in both
+halves cancels identically. The new gates use an oracle that never touches the formula:
+
+- **The unilateral limit is exact.** With S11 = S22 = 0 and S12 → 0, K → ∞ and the whole expression
+  collapses to |S21|² — which is the transducer power gain of that matched two-port, a quantity
+  defined without reference to K or to |S21/S12|. So MAG in dB must come out at 10·log10(|S21|²),
+  i.e. the familiar 20·log10(|S21|). That is `MaxGain_UnilateralMatchedTwoPort_…`.
+- Its tolerance is set by how far S12 is from zero and by the cancellation in K−√(K²−1) at
+  K ≈ 1.7e4, not by the code under test; 4 decimal places is three orders inside the 2× error.
+- A second gate pins the scale on a realistic conditionally-stable amplifier so the guard is not
+  anchored only at a degenerate corner.
+
+### 2. The trace card's transform combo does not transform a derived trace
+
+For a network-metric trace the combo is not applied to anything. `Trace.BuildDerivedPath` plots the
+`NetworkMetrics` value directly and never consults `YAxis`; `DataPointScalar` explicitly returns the
+derived value untransformed (its comment says so). The dB20 entry that appears for Max Gain is set
+by the `Derived` setter as `YAxis = Db` and only ever reaches two places: the trace label, which
+becomes `dB(Max Gain)`, and a new marker's default `MatrixFormat`. It is a **unit annotation wearing
+a transform's clothes** — the value was already dB before the fix and still is after it.
+
+That makes changing it actively harmful rather than merely inert. `CubeTransformToYAxis` maps
+None/dB10/dB/Conj → `DependentVarFormat.Complex`, and `GetMarkerValString` branches on
+`YAxis == Complex` into `Marker.FormatComplex(Complex(v, 0))`. A marker created while the trace was
+in dB carries `MatrixFormat.DB`, whose formatter is `20·log10(|c|)` — so selecting None makes the
+readout print 20·log10 of a dB number. That is the second, unrelated "different number", and it has
+nothing to do with the factor of 2 above.
+
+**Not changed here** — it is a UI-semantics decision with two defensible answers (disable the combo
+for derived traces, or give it a real linear/dB meaning) and the reported numeric bug is §1.
+
+
 ## Contour markers read out the whole plot, not just their own trace (GitHub #2, 2026-08-29)
 
 **Reported:** a user asked for a loadpull marker to show complex impedance, P3dB and efficiency
