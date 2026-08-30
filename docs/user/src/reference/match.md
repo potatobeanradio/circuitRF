@@ -19,6 +19,7 @@ lede: Direct synthesis of a bandpass matching network that absorbs both terminat
 <li><a href="#solutions">The solutions list</a></li>
 <li><a href="#feasibility">Feasibility: what is possible before you synthesise anything</a></li>
 <li><a href="#worked">Worked example: a two-stage FET interstage match</a></li>
+<li><a href="#dualband-worked">Worked example: the same stages, matched over two bands</a></li>
 <li><a href="#flatten">Flatten to Cell</a></li>
 <li><a href="#refs">References</a></li>
 </ol>
@@ -56,7 +57,12 @@ at the top, and a slash means that band is blocked:
 | two smaller bandpass glyphs, side by side | **dual-band** |
 | three smaller bandpass glyphs, two below one | **tri-band** |
 
-It follows the design: apply a lowpass solution and the symbol on the page becomes a lowpass symbol.
+{{ui: match-form-glyphs}}
+
+It follows the design: apply a lowpass solution and the symbol on the page becomes a lowpass symbol,
+and switching **Bands** to *Dual* or *Tri* splits the wave stack into two or three smaller ones. The
+glyph is drawn from the component's own `Form` and `Bands` parameters, so a schematic printed for a
+review states the topology of every matching network on it without anyone opening a Designer.
 
 ## Absorption, and why it is the whole point {#absorption}
 
@@ -360,6 +366,73 @@ Two consequences worth knowing before you go looking for them:
   the lower; if you have it the other way round the refusal says which end to analyse from. Odd counts
   are Chebyshev only.
 
+#### The math behind the three forms {#forms-math}
+
+All three forms come out of **one two-parameter prototype family**, evaluated in the squared frequency
+variable `u = Ω²` with the band mapped onto `[-1, 1]`. With `a = F1/F2`:
+
+```text
+x(u) = (2u − 1 − a²) / (1 − a²)             the band [a², 1] mapped onto [−1, 1]
+
+Φ(u) = T_n(x(u))²        Chebyshev          T_n = the nth Chebyshev polynomial
+Φ(u) = x(u)^(2n)         Butterworth
+
+|Γ(u)|² = (K + ε²·Φ(u)) / (1 + ε²·Φ(u))
+```
+
+`Φ` has **maximum 1 in band**, so the worst in-band reflection is `|Γ|²_worst = (K + ε²)/(1 + ε²)` —
+which is why the two free parameters are exactly `K` and `ε²`, and why the panel can quote a return
+loss before it has drawn an element.
+
+**`K` is not free: it is pinned at DC, and that is the whole cost of the lowpass and highpass forms.**
+A ladder of single elements is transparent at `u = 0` — a lowpass ladder's inductors are shorts and its
+capacitors are opens — so the network's reflection there is whatever the two resistances make it:
+
+```text
+Γ(0) = (r − 1)/(r + 1)        r = R_far / R_analysis        K = Γ(0)²
+```
+
+That number comes out of the same budget as the in-band match, which is the whole reason a large
+impedance ratio costs return loss in these forms and costs nothing in bandpass form — the figures
+quoted above are this expression. (`K = 0` exactly is a trap rather than the ideal case — the numerator's roots
+then sit in double pairs on the jω axis and there is no well-defined spectral factor — so circuitRF
+floors it at 1e-12, a −120 dB ceiling that is past anything a matching network means. The equal-
+resistance case `r = 1` drops the pin entirely and makes `ε` the free parameter instead.)
+
+With `K` and `ε²` chosen, the reflection's numerator and denominator are both of the form `c + ε²Φ`, so
+their roots are written down rather than searched for — one arccosine (Chebyshev) or one root of unity
+(Butterworth), mapped `x → u → s` — and the ladder falls out of a continued-fraction (Cauer) expansion.
+**Order `n` gives `2n` elements** — `T_n(x)` is degree `n` in `x` and `x` is degree 1 in `u`, so `Φ` is
+degree `2n` in `u` — or `2n + 1` when both terminations are the same topology, where the family gains a
+third parameter: an extra pole at `u = −u_R`, outside the band.
+
+**Denormalising is where lowpass and highpass part company**, and it is the only place they differ. The
+prototype `g`-values become elements at a single reference frequency — the **top** of the band for a
+lowpass network, the **bottom** for a highpass one, because that is the edge each form is matched up to:
+
+```text
+lowpass   ω_ref = 2π·F2      shunt C:  g = ω_ref·R·C        series L:  g = ω_ref·L / R
+highpass  ω_ref = 2π·F1      shunt L:  g = R / (ω_ref·L)    series C:  g = 1 / (ω_ref·R·C)
+```
+
+Read the highpass row as the lowpass row with `ω → −1/ω`, which is the classical lowpass-to-highpass
+transformation: every series inductor becomes a series capacitor and every shunt capacitor a shunt
+inductor. Both ends normalise at the **analysis** end's resistance, not each at its own — in this
+prototype the terminating resistance is a *ratio* and element values do not rescale at the far port.
+
+Two consequences fall straight out of those four expressions:
+
+- **Which reactance each end can absorb is fixed by the form and by the ratio.** A lowpass ladder holds
+  a series L or a shunt C and nothing else; a highpass ladder a series C or a shunt L. The
+  low-impedance port takes the series arm and the high-impedance port the shunt arm, so a shunt
+  capacitance absorbs on the high side of a step-down and is refused on the low side of a step-up.
+- **The values stay tame.** There are no resonators, so nothing is set by a fractional bandwidth: at a
+  wide band a bandpass arm's two elements are pushed apart by roughly `1/w` while these stay within a
+  factor of a few of each other.
+
+A highpass design additionally requires `F1 > 0` — it is matched between F1 and F2 and pinned at
+infinity, so a zero lower edge is the lowpass form's degenerate case and is refused by name.
+
 ### Multiband: two or three bands at once, and the gaps left alone {#dualband}
 
 Set **Bands** to *Dual* and a second pair of edges appears. The network is then matched over **f1–f2
@@ -429,6 +502,86 @@ reach **−12.0 dB in all three bands**, twelve reach −14.5 dB and sixteen rea
 lowpass and highpass forms of the previous section have no multiband version yet. Nor do asymmetric
 bands — bands whose ratio bandwidths are genuinely different, matched as requested rather than
 widened. Both are recorded as future work.
+
+#### The math behind two and three bands {#dualband-math}
+
+**There is no separate multiband synthesis.** A multiband network is the *same* single-element
+prototype family the previous section describes, pushed through the *same* bandpass transformation an
+ordinary Match uses — so what comes out is an ordinary alternating bandpass ladder of `2n`
+two-element arms, and Norton transforms, absorption, the excess-element rule, Flatten and the stamp all
+handle it with no multiband case anywhere.
+
+**Step 1 — the bands are made mirror images.** A real network's `|Γ(jΩ)|²` is an *even* function of Ω,
+so the passbands a resonated ladder produces are mirror images about ω₀ in log frequency. That is one
+equation, and it is what your four (or six) numbers have to satisfy:
+
+```text
+two bands    f1·f4 = f2·f3                    ⇔  f2/f1 = f4/f3   (equal ratio bandwidths)
+three bands  f1·f6 = f2·f5 = f3·f4            the MIDDLE band is the one kept
+```
+
+Yours will not satisfy it. circuitRF keeps the wider band exactly, widens the narrower one *away from
+the gap* until the ratios match, and states the result in one line under the fields. Everything from
+here uses the **effective** bands.
+
+**Step 2 — the bandpass transformation.** With `ω₀` the geometric centre and `w` the **outer**
+fractional bandwidth:
+
+```text
+two bands    ω₀ = 2π·√(f1·f4)      three bands  ω₀ = 2π·√(f3·f4)   (the middle band's centre)
+w = (f_high − f_low) / √(f_low·f_high)          the outer pair, gap included
+
+Ω(f) = ( f/f0 − f0/f ) / w                      the standard bandpass map
+```
+
+Each single prototype element becomes a two-element resonant arm at ω₀, exactly as it does for one
+band. **The gap is where Ω is small**: the mapping folds the region between the passbands onto the
+*middle* of the prototype axis, so a prototype that has a **stopband there** is a network that has an
+unmatched gap there. That is the whole trick.
+
+**Step 3 — where the passbands land in the prototype variable.** In `u = Ω²`, and with the mirror
+relations above collapsing every square root into a ratio of frequency *differences* over the outer
+span:
+
+```text
+one band     u ∈ [0, 1]
+
+two bands    u ∈ [a², 1]                    a = (f3 − f2)/(f4 − f1)
+             Φ(u) = T_n(x(u))²              x(u) = (2u − 1 − a²)/(1 − a²)
+
+three bands  u ∈ [0, a²] ∪ [b², 1]          a = (f4 − f3)/(f6 − f1)
+             Φ(u) = p(u)²                   b = (f5 − f2)/(f6 − f1)
+```
+
+Two bands is therefore **literally the lowpass-form family of the previous section, on the interval
+`[a², 1]` instead of `[0, 1]`** — written down by arccosine, no root-finding. Three bands is the only
+place a new object appears: the passband is a **union** of two intervals, and `p` is the equal-ripple
+polynomial on that union, produced by a Remez exchange rather than by a formula. `max Φ = 1` in band
+either way, so the worst in-band reflection is still `(K + ε²)/(1 + ε²)` and the parameter search does
+not know which case it is looking at.
+
+**This is why Butterworth exists for two bands and does not exist for three.** The Butterworth member
+is `x(u)^(2n)` — maximally flat at the centre of *one* interval — and a union of intervals has no
+single centre to be flat at. The equal-ripple answer is the only member of the family that lives on a
+union, so **tri-band is Chebyshev only** and the others are refused by name rather than silently
+substituted.
+
+**The two free parameters are chosen exactly as §Feasibility describes.** The near end's absorbed
+element is pinned by the termination — `g₁ = Q_analysis · w`, with Q read at ω₀, which for a multiband
+spec is the *gap* centre where every arm is transparent — and the remaining freedom minimises the worst
+in-band `|Γ|²`. `K` is **scanned** rather than solved, because the near element is not monotone in it
+(it rises and then falls); `ε²` is then bracketed and bisected at each `K`, where it is monotone. The
+optimum is flat — the worst return loss moves by at most 0.1 dB across a whole decade of `K` — so a
+64-point log scan plus a bounded refinement is ample and there is no root-finding subtlety to tune.
+
+**Element counts, and where the +2 comes from.** `2n` arms of two elements is `4n`, and one arm more —
+`4n + 2` — when both terminations are the same topology. Orders count match points **per band**, which
+is why dual-band stops at 3: order 3 is twelve elements, the same twelve a single-band order-6 network
+gives, and that is the fair comparison. Tri-band goes on to 6 because a narrow middle band is not three
+bands at all until order 4 — before that the middle passband has no ripple of its own to speak of.
+A design may then carry two more elements than the arithmetic above: an **excess** element where the
+synthesised end value exceeds what the termination supplies, and one extra arm per **Norton transform**
+that was applied.
 
 ## Feasibility: what is possible before you synthesise anything {#feasibility}
 
@@ -526,6 +679,97 @@ Reading the figure, in the order you would work:
 The element values shown are what the synthesis computes, and they are the same values the component
 stamps and the same values [Flatten to Cell](#flatten) writes out.
 
+## Worked example: the same stages, matched over two bands {#dualband-worked}
+
+The same two stages as the previous section: **200 Ω ‖ 0.125 pF into 1.25 Ω + 10 pF.** This time the
+radio only ever operates in two narrow bands with 200 MHz of nothing between them, so there is no
+reason to spend the Fano budget on the gap. Everything below is reproducible — place a `Match`, open
+the Designer, and type these numbers.
+
+### What to type
+
+| Field | Value |
+|---|---|
+| **Termination 1** — topology / R / X kind / value | Parallel · `200 Ω` · C · `0.125 pF` |
+| **Termination 2** — topology / R / X kind / value | Series · `1.25 Ω` · C · `10 pF` |
+| **Bands** | Dual |
+| **Band f1, f2** | `1.75 GHz`, `1.9 GHz` |
+| **Band f3, f4** | `2.1 GHz`, `2.2 GHz` |
+| **Order** | 3 (three match points **per band**) |
+| **Response** | Chebyshev — single-match |
+| **Form** | Bandpass (multiband is bandpass only) |
+| **Response pane ▸ ± band** | `20` % |
+
+{{ui: match-dualband}}
+
+### Reading the result
+
+1. **A note appears under the band fields, and it is not a warning:** *"Band 2 widened to
+   2.1–2.28 GHz to mirror band 1 about 1.997 GHz."* The two bands as typed have ratio bandwidths of
+   1.0857 and 1.0476, which no even `|Γ(jΩ)|²` can produce; band 1 is the wider one so it is kept
+   exactly, and band 2 is widened away from the gap to 2.28 GHz. **The design is to 1.75–1.9 and
+   2.1–2.28 GHz** — you get the band you asked for and a little more, never less.
+2. **116 solutions, and the applied one is the first card:** *Chebyshev · dual-band · order 3 ·
+   1 transform · (L1, L2) · RL 17.06 dB*. The list is the whole order × family cross-product ranked
+   simplest first, and the strip along the bottom names what is currently applied.
+3. **Fourteen elements.** Order 3 with a mixed termination pair is `4n = 12`; one more comes from the
+   Norton transform (a Π replaces two like inductors with three) and one more is the excess capacitor
+   `CFano` beside termination 1, where the synthesis wanted more shunt capacitance than the stage's own
+   125 fF supplies. `C1 = 125 fF` and `C6 = 10 pF` are the two terminations themselves, absorbed —
+   elements you do not have to buy, and the line under the schematic says so.
+4. **One Norton Π on `L1`/`L2` at N = 7.198** brings the achieved Π N² to 51.816 against a required
+   51.816. Without it the far end lands nowhere near 200 Ω.
+
+The Response pane's readout card carries the rest, and these are the numbers worth checking against
+your own run:
+
+| Readout | This design |
+|---|---|
+| Q1, Q2 (both at ω₀ = 2π · 1.9975 GHz, which sits in the **gap**) | 0.308, 6.49 |
+| Fano ceiling, and which end sets it | 25.9 dB, termination 2 |
+| Worst in-band return loss, across **both** bands | 17.06 dB |
+| Insertion loss / ripple | 0.086 dB / 0.050 dB |
+| Gap, peak reflection over 1.9–2.1 GHz | 0.511, i.e. −5.8 dB |
+
+Two of those are worth a sentence each.
+
+**The ceiling is set by termination 2, and that tells you what to change.** A series capacitance is
+limited by the **lowest** frequency you ask for, not by total bandwidth — so if this design were short
+of return loss, moving f1 up would buy more than anything else on the panel.
+
+**The gap number is the design working**, not failing. The budget a single wide match from 1.75 to
+2.28 GHz would have spent on 200 MHz of unused spectrum is in the two passbands instead.
+
+### The response
+
+{{ui: match-dualband-response}}
+
+Two matched passbands, a reflecting gap between them, and the whole thing plotted at **±20 %** of the
+band so you can see what happens on either side as well. `|S11|` is on the left axis and `|S21|` on the
+right, because at 0.086 dB of insertion loss a shared scale renders `|S21|` as a flat line on the
+ceiling.
+
+### What the order buys, and what it costs
+
+Every row below is the same specification with only **Order** changed, and every one is a row the
+solutions list offers:
+
+| Order | Elements | Worst in-band return loss | Gap, max reflection |
+|---|---|---|---|
+| 1 | 6 | 10.5 dB | −8.9 dB |
+| 2 | 10 | 14.7 dB | −8.9 dB |
+| 3 | 14 | 17.1 dB | −5.8 dB |
+
+**The gap number rises as the in-band number improves**, and that is the mechanism rather than a side
+effect: a higher-order network reclaims more of the budget from the gap and puts it in the bands. If
+the gap mattered to you, this is the trade you would be making in the wrong direction — and the panel
+states it so the choice is yours.
+
+**For comparison**, set Bands back to *Single* and ask for 1.75–2.28 GHz at order 6. That is also
+fourteen elements — and it reaches **14.35 dB**, in the passbands and everywhere between them alike.
+The dual-band network buys **2.7 dB in both bands** for the same part count, and the only thing it
+gave up is 200 MHz the application never uses.
+
 ## Flatten to Cell {#flatten}
 
 **Flatten to Cell…** turns the design into an ordinary editable cell. What it writes:
@@ -564,10 +808,29 @@ can enable the two `Term`s and run an S-parameter analysis on the cell alone.
 
 ## Getting the design out {#exports}
 
+Three files, from the **Export** button:
+
 - **Touchstone (`.s2p`)** of the design response, with the per-port references R1 and R2 written as the
   file's own.
 - **Component listing (`.csv`)** — instance, type, value, unit: the same rows as the grid view.
 - **Prototype g-values (`.csv`)**, for anyone checking the synthesis against a published table.
+
+**And copy and paste works, from all four views** — which is usually the faster route, because nothing
+lands on disk and nothing has to be re-imported.
+
+| Right-click | You get |
+|---|---|
+| the **network schematic**, or the **value grid** | **Copy** — the ladder as a real schematic selection. It pastes into a circuitRF schematic page as live components and wires, and into a document or slide as **vector** art (SVG and PDF, plus a PNG; on Windows an enhanced metafile, which is the vector form an office suite pastes). |
+| the **value grid** | **Copy as CSV** as well — the same rows as the file export, straight onto the clipboard. |
+| either **plot** | the Data Display's own **Copy**, which puts the chart on the clipboard as vector art with its markers and info boxes. |
+
+Pasting the network into a schematic page is worth knowing about on its own, when what you want is the
+ladder inside a bench you already have open rather than a new cell beside it. **It is not the same
+circuit [Flatten to Cell](#flatten) writes, and the difference is deliberate.** Copy gives you the
+picture you are looking at — the elements at the values and positions the pane drew them, plus both
+terminations as ordinary live components. Flatten writes a cell that *simulates*: interface pins, the
+terminations parked in annexes and disabled, and a design annotation. Copy for the drawing, Flatten
+for the cell.
 
 **Settings** holds the display units per dimension, the significant digits, the minimum Q for
 Q-adjusted solutions, and whether to offer them at all. Inductance and capacitance default to **pH**

@@ -65,6 +65,11 @@ visually until you draw one.
     </tbody>
   </table>
 
+<p class="small">These are circuitRF's own formats. The <strong>interchange</strong> formats it reads
+and writes — GDSII, DXF, Gerber plus Excellon drill, and <code>.kicad_pcb</code> board files — are not
+in this family and are not documents you open: they are imported into cells, or exported from them. See
+<a href="layout-editor.html#interchange">Interchange</a> for what each carries and what it cannot.</p>
+
 <div class="callout note">
 <span class="label">Which of these are documents you open</span>
 <p><code>.csch</code>, <code>.csym</code>, <code>.clay</code>, <code>.cdd</code>, <code>.ctech</code>,

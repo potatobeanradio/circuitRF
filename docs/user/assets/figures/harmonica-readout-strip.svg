@@ -50,27 +50,27 @@
 							Cds (pF):
 					</text></g><clipPath id="harmonica-readout-strip_cl_21"><rect x="86" y="197" width="149" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_21)"><text fill="#006E28" transform="translate(86 197)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87" y="13.51">
 							0.00
-					</text></g><clipPath id="harmonica-readout-strip_cl_22"><rect x="251" y="10" width="46" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_22)"><text fill="#006E28" transform="translate(251 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.78, 15.26, 24.46, 33.32" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_22"><rect x="251" y="10" width="43" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_22)"><text fill="#006E28" transform="translate(251 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.78, 15.26, 24.46, 33.32" y="13.51">
 							P-3dB
 					</text></g><clipPath id="harmonica-readout-strip_cl_23"><rect x="251" y="28" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_23)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 28)" font-size="13.95" font-family="Inter" x="0, 8.78, 17.1, 25.21, 30.28, 34.2, 39.1, 47.76, 56.83, 68.96, 74.01" y="13.51">
 							Pout (dBm):
-					</text></g><clipPath id="harmonica-readout-strip_cl_24"><rect x="335" y="28" width="66" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_24)"><text fill="#006E28" transform="translate(335 28)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.29, 18.2, 21.85, 30.89" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_24"><rect x="334" y="28" width="66" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_24)"><text fill="#006E28" transform="translate(334 28)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.29, 18.2, 21.85, 30.89" y="13.51">
 							40.65
 					</text></g><clipPath id="harmonica-readout-strip_cl_25"><rect x="251" y="46" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_25)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 46)" font-size="13.95" font-family="Inter" x="0, 8.34, 13.38, 18.41, 22.33, 27.39, 38.72, 43.77" y="13.51">
 							Eff (%):
-					</text></g><clipPath id="harmonica-readout-strip_cl_26"><rect x="335" y="46" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_26)"><text fill="#006E28" transform="translate(335 46)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.53, 21.26" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_26"><rect x="334" y="46" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_26)"><text fill="#006E28" transform="translate(334 46)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.53, 21.26" y="13.51">
 							65.7
 					</text></g><clipPath id="harmonica-readout-strip_cl_27"><rect x="251" y="64" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_27)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 64)" font-size="13.95" font-family="Inter" x="0, 7.83, 17.26, 25.6, 29.53, 34.58, 45.91, 50.97" y="13.51">
 							PAE (%):
-					</text></g><clipPath id="harmonica-readout-strip_cl_28"><rect x="335" y="64" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_28)"><text fill="#006E28" transform="translate(335 64)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.83, 21.88" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_28"><rect x="334" y="64" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_28)"><text fill="#006E28" transform="translate(334 64)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.83, 21.88" y="13.51">
 							63.4
 					</text></g><clipPath id="harmonica-readout-strip_cl_29"><rect x="251" y="82" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_29)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 82)" font-size="13.95" font-family="Inter" x="0, 10.36, 18.23, 21.54, 29.7, 33.63, 38.52, 47.18, 56.26, 61.31" y="13.51">
 							Gain (dB):
-					</text></g><clipPath id="harmonica-readout-strip_cl_30"><rect x="335" y="82" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_30)"><text fill="#006E28" transform="translate(335 82)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.76, 29.05" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_30"><rect x="334" y="82" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_30)"><text fill="#006E28" transform="translate(334 82)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.76, 29.05" y="13.51">
 							14.47
 					</text></g><clipPath id="harmonica-readout-strip_cl_31"><rect x="251" y="100" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_31)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 100)" font-size="13.95" font-family="Inter" x="0, 10.36, 18.87, 22.79, 27.68, 36.34, 45.42, 50.47" y="13.51">
 							Gp (dB):
-					</text></g><clipPath id="harmonica-readout-strip_cl_32"><rect x="335" y="100" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_32)"><text fill="#006E28" transform="translate(335 100)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.76, 29.05" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_32"><rect x="334" y="100" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_32)"><text fill="#006E28" transform="translate(334 100)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.76, 29.05" y="13.51">
 							14.47
 					</text></g><clipPath id="harmonica-readout-strip_cl_33"><rect x="251" y="118" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_33)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 118)" font-size="13.95" font-family="Inter" x="0, 8.72, 12.03, 20.19, 24.12" y="13.51">
 							Zin (
@@ -80,43 +80,43 @@
 							50.000+j0.000
 					</text></g><clipPath id="harmonica-readout-strip_cl_35"><rect x="251" y="136" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_35)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 136)" font-size="13.95" font-family="Inter" x="0, 9.43, 21.84, 26.81, 35.67, 48.07" y="13.51">
 							AM/PM:
-					</text></g><clipPath id="harmonica-readout-strip_cl_36"><rect x="335" y="136" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_36)"><text fill="#006E28" transform="translate(335 136)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.5, 13.21, 22.22, 31.13, 34.78, 44.09" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_36"><rect x="334" y="136" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_36)"><text fill="#006E28" transform="translate(334 136)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.5, 13.21, 22.22, 31.13, 34.78, 44.09" y="13.51">
 							-180.0°
 					</text></g><clipPath id="harmonica-readout-strip_cl_37"><rect x="251" y="154" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_37)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 154)" font-size="13.95" font-family="Inter" x="0, 8.78, 17.44, 25.23, 29.15, 34.2, 47.44, 52.49" y="13.51">
 							Pdc (W):
-					</text></g><clipPath id="harmonica-readout-strip_cl_38"><rect x="335" y="154" width="94" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_38)"><text fill="#006E28" transform="translate(335 154)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 13.15, 16.81, 25.85, 34.86" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_38"><rect x="334" y="154" width="94" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_38)"><text fill="#006E28" transform="translate(334 154)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 13.15, 16.81, 25.85, 34.86" y="13.51">
 							17.681
 					</text></g><clipPath id="harmonica-readout-strip_cl_39"><rect x="251" y="173" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_39)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 173)" font-size="13.95" font-family="Inter" x="0, 7.45" y="13.51">
 							γ:
-					</text></g><clipPath id="harmonica-readout-strip_cl_40"><rect x="335" y="172" width="131" height="19" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_40)"><text fill="#006E28" transform="translate(335 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_40"><rect x="334" y="172" width="131" height="19" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_40)"><text fill="#006E28" transform="translate(334 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17" y="13.51">
 							0.000
-					</text><text fill="#006E28" transform="translate(375.48 176.22)" font-size="13.95" font-family="DejaVu Sans" x="0" y="9.88">
+					</text><text fill="#006E28" transform="translate(374.48 176.22)" font-size="13.95" font-family="DejaVu Sans" x="0" y="9.88">
 							∠
-					</text><text fill="#006E28" transform="translate(383.81 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
+					</text><text fill="#006E28" transform="translate(382.81 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
 							—
-					</text></g><clipPath id="harmonica-readout-strip_cl_41"><rect x="503" y="10" width="174" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_41)"><text fill="#006E28" transform="translate(503 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 12.76, 22.73, 31.77, 35, 41.83, 47.21, 56.81, 60.04, 69.35, 76.63, 83.46, 92.94, 102.16, 110.95, 114.68, 124.28, 130.82, 134.62, 143.8, 147.54, 157.14" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_41"><rect x="503" y="10" width="172" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_41)"><text fill="#006E28" transform="translate(503 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 12.76, 22.73, 31.77, 35, 41.83, 47.21, 56.81, 60.04, 69.35, 76.63, 83.46, 92.94, 102.16, 110.95, 114.68, 124.28, 130.82, 134.62, 143.8, 147.54, 157.14" y="13.51">
 							MXP 1f0 ZL1=82.0-j0.0 
 					</text><text fill="#006E28" transform="translate(663.37 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
 							Ω
 					</text></g><clipPath id="harmonica-readout-strip_cl_42"><rect x="503" y="28" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_42)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 28)" font-size="13.95" font-family="Inter" x="0, 8.78, 17.1, 25.21, 30.28, 34.2, 39.1, 47.76, 56.83, 68.96, 74.01" y="13.51">
 							Pout (dBm):
-					</text></g><clipPath id="harmonica-readout-strip_cl_43"><rect x="587" y="28" width="66" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_43)"><text fill="#006E28" transform="translate(587 28)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.29, 18.2, 21.85, 30.89" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_43"><rect x="586" y="28" width="66" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_43)"><text fill="#006E28" transform="translate(586 28)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.29, 18.2, 21.85, 30.89" y="13.51">
 							40.64
 					</text></g><clipPath id="harmonica-readout-strip_cl_44"><rect x="503" y="46" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_44)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 46)" font-size="13.95" font-family="Inter" x="0, 8.34, 13.38, 18.41, 22.33, 27.39, 38.72, 43.77" y="13.51">
 							Eff (%):
-					</text></g><clipPath id="harmonica-readout-strip_cl_45"><rect x="587" y="46" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_45)"><text fill="#006E28" transform="translate(587 46)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.65, 21.36" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_45"><rect x="586" y="46" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_45)"><text fill="#006E28" transform="translate(586 46)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.65, 21.36" y="13.51">
 							66.3
 					</text></g><clipPath id="harmonica-readout-strip_cl_46"><rect x="503" y="64" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_46)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 64)" font-size="13.95" font-family="Inter" x="0, 7.83, 17.26, 25.6, 29.53, 34.58, 45.91, 50.97" y="13.51">
 							PAE (%):
-					</text></g><clipPath id="harmonica-readout-strip_cl_47"><rect x="587" y="64" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_47)"><text fill="#006E28" transform="translate(587 64)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 18.04, 21.7" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_47"><rect x="586" y="64" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_47)"><text fill="#006E28" transform="translate(586 64)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 18.04, 21.7" y="13.51">
 							64.0
 					</text></g><clipPath id="harmonica-readout-strip_cl_48"><rect x="503" y="82" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_48)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 82)" font-size="13.95" font-family="Inter" x="0, 10.36, 18.23, 21.54, 29.7, 33.63, 38.52, 47.18, 56.26, 61.31" y="13.51">
 							Gain (dB):
-					</text></g><clipPath id="harmonica-readout-strip_cl_49"><rect x="587" y="82" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_49)"><text fill="#006E28" transform="translate(587 82)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.64, 28.47" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_49"><rect x="586" y="82" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_49)"><text fill="#006E28" transform="translate(586 82)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.64, 28.47" y="13.51">
 							14.57
 					</text></g><clipPath id="harmonica-readout-strip_cl_50"><rect x="503" y="100" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_50)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 100)" font-size="13.95" font-family="Inter" x="0, 10.36, 18.87, 22.79, 27.68, 36.34, 45.42, 50.47" y="13.51">
 							Gp (dB):
-					</text></g><clipPath id="harmonica-readout-strip_cl_51"><rect x="587" y="100" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_51)"><text fill="#006E28" transform="translate(587 100)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.64, 28.47" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_51"><rect x="586" y="100" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_51)"><text fill="#006E28" transform="translate(586 100)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.71, 19.64, 28.47" y="13.51">
 							14.57
 					</text></g><clipPath id="harmonica-readout-strip_cl_52"><rect x="503" y="118" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_52)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 118)" font-size="13.95" font-family="Inter" x="0, 8.72, 12.03, 20.19, 24.12" y="13.51">
 							Zin (
@@ -126,43 +126,43 @@
 							50.000+j0.000
 					</text></g><clipPath id="harmonica-readout-strip_cl_54"><rect x="503" y="136" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_54)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 136)" font-size="13.95" font-family="Inter" x="0, 9.43, 21.84, 26.81, 35.67, 48.07" y="13.51">
 							AM/PM:
-					</text></g><clipPath id="harmonica-readout-strip_cl_55"><rect x="587" y="136" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_55)"><text fill="#006E28" transform="translate(587 136)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.5, 13.21, 22.22, 31.13, 34.78, 44.09" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_55"><rect x="586" y="136" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_55)"><text fill="#006E28" transform="translate(586 136)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.5, 13.21, 22.22, 31.13, 34.78, 44.09" y="13.51">
 							-180.0°
 					</text></g><clipPath id="harmonica-readout-strip_cl_56"><rect x="503" y="154" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_56)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 154)" font-size="13.95" font-family="Inter" x="0, 8.78, 17.44, 25.23, 29.15, 34.2, 47.44, 52.49" y="13.51">
 							Pdc (W):
-					</text></g><clipPath id="harmonica-readout-strip_cl_57"><rect x="587" y="154" width="94" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_57)"><text fill="#006E28" transform="translate(587 154)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 13.15, 17.21, 26.49, 35.32" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_57"><rect x="586" y="154" width="94" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_57)"><text fill="#006E28" transform="translate(586 154)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 13.15, 17.21, 26.49, 35.32" y="13.51">
 							17.452
 					</text></g><clipPath id="harmonica-readout-strip_cl_58"><rect x="503" y="173" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_58)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 173)" font-size="13.95" font-family="Inter" x="0, 7.45" y="13.51">
 							γ:
-					</text></g><clipPath id="harmonica-readout-strip_cl_59"><rect x="587" y="172" width="131" height="19" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_59)"><text fill="#006E28" transform="translate(587 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_59"><rect x="586" y="172" width="131" height="19" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_59)"><text fill="#006E28" transform="translate(586 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17" y="13.51">
 							0.000
-					</text><text fill="#006E28" transform="translate(627.48 176.22)" font-size="13.95" font-family="DejaVu Sans" x="0" y="9.88">
+					</text><text fill="#006E28" transform="translate(626.48 176.22)" font-size="13.95" font-family="DejaVu Sans" x="0" y="9.88">
 							∠
-					</text><text fill="#006E28" transform="translate(635.81 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
+					</text><text fill="#006E28" transform="translate(634.81 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
 							—
-					</text></g><clipPath id="harmonica-readout-strip_cl_60"><rect x="755" y="10" width="180" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_60)"><text fill="#006E28" transform="translate(755 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 12.76, 22.73, 31.28, 34.51, 41.34, 46.72, 56.32, 59.55, 68.86, 76.14, 82.97, 92.45, 99.28, 108.48, 117.74, 121.9, 130.68, 137.22, 141.02, 150.2, 153.94, 163.54" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_60"><rect x="755" y="10" width="178" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_60)"><text fill="#006E28" transform="translate(755 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 12.76, 22.73, 31.28, 34.51, 41.34, 46.72, 56.32, 59.55, 68.86, 76.14, 82.97, 92.45, 99.28, 108.48, 117.74, 121.9, 130.68, 137.22, 141.02, 150.2, 153.94, 163.54" y="13.51">
 							MXE 1f0 ZL1=134.2-j0.0 
 					</text><text fill="#006E28" transform="translate(921.78 10)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
 							Ω
 					</text></g><clipPath id="harmonica-readout-strip_cl_61"><rect x="755" y="28" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_61)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 28)" font-size="13.95" font-family="Inter" x="0, 8.78, 17.1, 25.21, 30.28, 34.2, 39.1, 47.76, 56.83, 68.96, 74.01" y="13.51">
 							Pout (dBm):
-					</text></g><clipPath id="harmonica-readout-strip_cl_62"><rect x="839" y="28" width="66" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_62)"><text fill="#006E28" transform="translate(839 28)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.09, 17.74, 21.79, 30.46" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_62"><rect x="838" y="28" width="66" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_62)"><text fill="#006E28" transform="translate(838 28)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.09, 17.74, 21.79, 30.46" y="13.51">
 							39.23
 					</text></g><clipPath id="harmonica-readout-strip_cl_63"><rect x="755" y="46" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_63)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 46)" font-size="13.95" font-family="Inter" x="0, 8.34, 13.38, 18.41, 22.33, 27.39, 38.72, 43.77" y="13.51">
 							Eff (%):
-					</text></g><clipPath id="harmonica-readout-strip_cl_64"><rect x="839" y="46" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_64)"><text fill="#006E28" transform="translate(839 46)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.69, 21.58" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_64"><rect x="838" y="46" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_64)"><text fill="#006E28" transform="translate(838 46)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.69, 21.58" y="13.51">
 							69.9
 					</text></g><clipPath id="harmonica-readout-strip_cl_65"><rect x="755" y="64" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_65)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 64)" font-size="13.95" font-family="Inter" x="0, 7.83, 17.26, 25.6, 29.53, 34.58, 45.91, 50.97" y="13.51">
 							PAE (%):
-					</text></g><clipPath id="harmonica-readout-strip_cl_66"><rect x="839" y="64" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_66)"><text fill="#006E28" transform="translate(839 64)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.75, 21.8" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_66"><rect x="838" y="64" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_66)"><text fill="#006E28" transform="translate(838 64)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 9.04, 17.75, 21.8" y="13.51">
 							68.2
 					</text></g><clipPath id="harmonica-readout-strip_cl_67"><rect x="755" y="82" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_67)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 82)" font-size="13.95" font-family="Inter" x="0, 10.36, 18.23, 21.54, 29.7, 33.63, 38.52, 47.18, 56.26, 61.31" y="13.51">
 							Gain (dB):
-					</text></g><clipPath id="harmonica-readout-strip_cl_68"><rect x="839" y="82" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_68)"><text fill="#006E28" transform="translate(839 82)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.31, 18.12, 24.83" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_68"><rect x="838" y="82" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_68)"><text fill="#006E28" transform="translate(838 82)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.31, 18.12, 24.83" y="13.51">
 							16.19
 					</text></g><clipPath id="harmonica-readout-strip_cl_69"><rect x="755" y="100" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_69)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 100)" font-size="13.95" font-family="Inter" x="0, 10.36, 18.87, 22.79, 27.68, 36.34, 45.42, 50.47" y="13.51">
 							Gp (dB):
-					</text></g><clipPath id="harmonica-readout-strip_cl_70"><rect x="839" y="100" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_70)"><text fill="#006E28" transform="translate(839 100)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.31, 18.12, 24.83" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_70"><rect x="838" y="100" width="57" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_70)"><text fill="#006E28" transform="translate(838 100)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 15.31, 18.12, 24.83" y="13.51">
 							16.19
 					</text></g><clipPath id="harmonica-readout-strip_cl_71"><rect x="755" y="118" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_71)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 118)" font-size="13.95" font-family="Inter" x="0, 8.72, 12.03, 20.19, 24.12" y="13.51">
 							Zin (
@@ -172,23 +172,23 @@
 							50.000+j0.000
 					</text></g><clipPath id="harmonica-readout-strip_cl_73"><rect x="755" y="136" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_73)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 136)" font-size="13.95" font-family="Inter" x="0, 9.43, 21.84, 26.81, 35.67, 48.07" y="13.51">
 							AM/PM:
-					</text></g><clipPath id="harmonica-readout-strip_cl_74"><rect x="839" y="136" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_74)"><text fill="#006E28" transform="translate(839 136)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.5, 13.21, 22.22, 31.13, 34.78, 44.09" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_74"><rect x="838" y="136" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_74)"><text fill="#006E28" transform="translate(838 136)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.5, 13.21, 22.22, 31.13, 34.78, 44.09" y="13.51">
 							-180.0°
 					</text></g><clipPath id="harmonica-readout-strip_cl_75"><rect x="755" y="154" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_75)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 154)" font-size="13.95" font-family="Inter" x="0, 8.78, 17.44, 25.23, 29.15, 34.2, 47.44, 52.49" y="13.51">
 							Pdc (W):
-					</text></g><clipPath id="harmonica-readout-strip_cl_76"><rect x="839" y="154" width="94" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_76)"><text fill="#006E28" transform="translate(839 154)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 12.86, 16.75, 25.52, 33.99" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_76"><rect x="838" y="154" width="94" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_76)"><text fill="#006E28" transform="translate(838 154)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 6.71, 12.86, 16.75, 25.52, 33.99" y="13.51">
 							11.977
 					</text></g><clipPath id="harmonica-readout-strip_cl_77"><rect x="755" y="173" width="78" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_77)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 173)" font-size="13.95" font-family="Inter" x="0, 7.45" y="13.51">
 							γ:
-					</text></g><clipPath id="harmonica-readout-strip_cl_78"><rect x="839" y="172" width="131" height="19" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_78)"><text fill="#006E28" transform="translate(839 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_78"><rect x="838" y="172" width="131" height="19" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_78)"><text fill="#006E28" transform="translate(838 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17" y="13.51">
 							0.000
-					</text><text fill="#006E28" transform="translate(879.48 176.22)" font-size="13.95" font-family="DejaVu Sans" x="0" y="9.88">
+					</text><text fill="#006E28" transform="translate(878.48 176.22)" font-size="13.95" font-family="DejaVu Sans" x="0" y="9.88">
 							∠
-					</text><text fill="#006E28" transform="translate(887.81 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
+					</text><text fill="#006E28" transform="translate(886.81 172.58)" font-size="13.95" font-weight="600" font-family="Inter" x="0" y="13.51">
 							—
 					</text></g><clipPath id="harmonica-readout-strip_cl_79"><rect x="251" y="197" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_79)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 197)" font-size="13.95" font-family="Inter" x="0, 8.9, 17.22, 25.33, 30.28, 38.07, 46.19" y="13.51">
 							Source:
-					</text></g><clipPath id="harmonica-readout-strip_cl_80"><rect x="311" y="197" width="107" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_80)"><text fill="#006E28" transform="translate(311 197)" font-size="13.95" font-weight="600" font-family="Inter"></text></g><clipPath id="harmonica-readout-strip_cl_81"><rect x="251" y="215" width="36" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_81)"><text fill="#006E28" transform="translate(251 215)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 7.92, 16.48, 24.57" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_80"><rect x="310" y="197" width="107" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_80)"><text fill="#006E28" transform="translate(310 197)" font-size="13.95" font-weight="600" font-family="Inter"></text></g><clipPath id="harmonica-readout-strip_cl_81"><rect x="251" y="215" width="34" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_81)"><text fill="#006E28" transform="translate(251 215)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 7.92, 16.48, 24.57" y="13.51">
 							Load
 					</text></g><clipPath id="harmonica-readout-strip_cl_82"><rect x="251" y="233" width="54" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_82)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(251 233)" font-size="13.95" font-family="Inter" x="0, 8.72, 15.93, 22.41, 26.34" y="13.51">
 							ZL1 (
@@ -208,7 +208,7 @@
 							Ω):
 					</text></g><clipPath id="harmonica-readout-strip_cl_87"><rect x="310" y="269" width="154" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_87)"><text fill="#006E28" transform="translate(310 269)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17, 40.48, 49.86, 53.49, 62.4, 66.06, 75.36, 84.67" y="13.51">
 							0.000+j0.000
-					</text></g><clipPath id="harmonica-readout-strip_cl_88"><rect x="503" y="197" width="118" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_88)"><text fill="#006E28" transform="translate(503 197)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 3.91, 12.59, 18.01, 23.71, 27.51, 36.18, 44.02, 47.81, 56.01, 59.24, 69.67, 79.82, 88.96, 92.19, 97.9, 108.33" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_88"><rect x="503" y="197" width="115" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_88)"><text fill="#006E28" transform="translate(503 197)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 3.91, 12.59, 18.01, 23.71, 27.51, 36.18, 44.02, 47.81, 56.01, 59.24, 69.67, 79.82, 88.96, 92.19, 97.9, 108.33" y="13.51">
 							Intrinsic VDS (V)
 					</text></g><clipPath id="harmonica-readout-strip_cl_89"><rect x="503" y="215" width="27" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_89)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(503 215)" font-size="13.95" font-family="Inter" x="0, 10.03, 20.17" y="13.51">
 							DC:
@@ -226,7 +226,7 @@
 							3f0:
 					</text></g><clipPath id="harmonica-readout-strip_cl_96"><rect x="535" y="269" width="154" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_96)"><text fill="#006E28" transform="translate(535 269)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 8.91, 12.56, 21.87, 31.17, 40.48, 46.97, 50.61, 59.52, 63.17, 72.48, 81.78" y="13.51">
 							0.000-j0.000
-					</text></g><clipPath id="harmonica-readout-strip_cl_97"><rect x="755" y="197" width="110" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_97)"><text fill="#006E28" transform="translate(755 197)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 3.91, 12.59, 18.01, 23.71, 27.51, 36.18, 44.02, 47.81, 56.01, 59.24, 63.15, 73.3, 82.44, 85.67, 91.38, 101.81" y="13.51">
+					</text></g><clipPath id="harmonica-readout-strip_cl_97"><rect x="755" y="197" width="108" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_97)"><text fill="#006E28" transform="translate(755 197)" font-size="13.95" font-weight="600" font-family="Inter" x="0, 3.91, 12.59, 18.01, 23.71, 27.51, 36.18, 44.02, 47.81, 56.01, 59.24, 63.15, 73.3, 82.44, 85.67, 91.38, 101.81" y="13.51">
 							Intrinsic IDS (A)
 					</text></g><clipPath id="harmonica-readout-strip_cl_98"><rect x="755" y="215" width="27" height="17" /></clipPath><g clip-path="url(#harmonica-readout-strip_cl_98)"><text fill="#006E28" fill-opacity="0.6471" transform="translate(755 215)" font-size="13.95" font-family="Inter" x="0, 10.03, 20.17" y="13.51">
 							DC:

@@ -187,6 +187,12 @@ public static class FigureCatalog
           + "will actually use - the two mesh cells either side of the cut - so it can be read "
           + "against the gridlines under it. Without a mesh it reverts to a fixed legible width."),
 
+        new("layout-rulers", DocLayoutFixtures.LayoutRulers, 1100, 700,
+            WindowFrame.Titled("circuitRF - Layout editor"),
+            "Three ruler annotations on the same artwork: a trace width, a free-angle clearance "
+          + "carrying a caption and its dx/dy components, and a Scaled-text ruler across the whole "
+          + "run. A ruler is not geometry and never reaches a manufacturing file."),
+
         new("snap-glyphs", DocLayoutFixtures.SnapGlyphs, 1010, 190, null,
             "The six geometry-snap glyphs, each drawn by the editor's own renderer from a real query."),
 
@@ -224,17 +230,37 @@ public static class FigureCatalog
 
         new("match-designer", DocMatchFixtures.Designer, 1280, 860,
             WindowFrame.Titled("Match - MN1"),
-            "The Match Designer on the interstage example a freshly placed Match carries: "
-          + "specification, the synthesised ladder, the response, and the transform rack."),
+            "The Match Designer on the design a freshly placed Match carries: the specification "
+          + "pane, the solutions list under it, the synthesised ladder with its value grid, and the "
+          + "transform rack."),
 
         new("match-interstage", DocMatchFixtures.Interstage2Stage, 1280, 860,
             WindowFrame.Titled("Match - MN1"),
             "The two-stage interstage example, solved: 200 ohm || 0.125 pF into 1.25 ohm + 10 pF over "
-          + "3.3-5.0 GHz, with the synthesised element values and the response it achieves."),
+          + "3.3-5.0 GHz, with the solution applied and the element values it produces."),
 
         new("match-solutions", DocMatchFixtures.Solutions, 1280, 860,
             WindowFrame.Titled("Match - MN1"),
             "The solutions list, slid out: every valid transform set, simplest first."),
+
+        new("match-dualband", DocMatchFixtures.DualBandDesigner, 1280, 860,
+            WindowFrame.Titled("Match - MN1"),
+            "The dual-band worked example: 200 ohm || 0.125 pF into 1.25 ohm + 10 pF, matched over "
+          + "1.75-1.9 GHz and 2.1-2.2 GHz together at three match points per band. The band-2 edge "
+          + "has been widened to mirror band 1, the solutions list is out with the applied card "
+          + "checked, and the ladder carries both terminations as absorbed elements."),
+
+        // 1120x700 rather than the Designer's own pane: this is the ONE figure on the Match page a
+        // reader is expected to read numbers off (two passbands, a gap, and where |S11| crosses), and
+        // the pane's golden-ratio plot inside a scroll view is roughly a third of this area.
+        new("match-dualband-response", DocMatchFixtures.DualBandResponse, 1120, 700, null,
+            "The dual-band example's response, plotted at +/-20% of the band: |S11| against the left "
+          + "axis, |S21| against the right. Both passbands are matched; the region between them is "
+          + "not, and that is the design working rather than failing."),
+
+        new("match-form-glyphs", DocMatchFixtures.FormGlyphs, 780, 150, null,
+            "The five Match glyphs. A slash across a wave means that part of the spectrum is blocked; "
+          + "two or three smaller bandpass groups mean two or three bands."),
 
         // ── wBond: the views a WORKSPACE produces ─────────────────────────────────
         // In a workspace a wBond is the wire layer of a layout cell, not a separate application

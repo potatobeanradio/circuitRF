@@ -18,6 +18,7 @@ lede: The planar method-of-moments solver: what it does, what it will not do, an
 <li><a href="#conformal">Conformal boundary cells</a></li>
 <li><a href="#mesh-convergence">Mesh convergence, and how to check it</a></li>
 <li><a href="#budget">What makes a run infeasible</a></li>
+<li><a href="#aim">The accelerated solve, and when to use it</a></li>
 <li><a href="#refusals">What the engine refuses, and why a refusal is better</a></li>
 <li><a href="#cosim">Using EM results in a circuit simulation</a></li>
 <li><a href="#worked">Worked example: a microstrip line with a bend</a></li>
@@ -767,7 +768,7 @@ the structure's own.
 solve, and a mesh above it is refused** with a message pointing at the remedies that actually bind. A
 tool that silently tried to allocate 12 GB would not be lightweight.
 
-**The [accelerated solve](#budget) raises that ceiling to 12,000** — on a single-metal-level structure
+**The [accelerated solve](#aim) raises that ceiling to 12,000** — on a single-metal-level structure
 with no vias, which is the only kind it can accelerate. A multi-level or via-bearing mesh is refused by
 name regardless, so the ceiling there is still 5,000, and the refusal names turning the accelerator on
 as the first remedy whenever doing so would let your mesh through.
@@ -801,6 +802,100 @@ ceiling as everything else. If a run is still refused because a calibration stan
 the remaining options are a coarser mesh, or turning de-embedding off and reading the raw solve —
 knowing those S-parameters include the port discontinuity and are for diagnostics only.</p>
 </div>
+
+## The accelerated solve, and when to use it {#aim}
+
+**Accelerated solve** is a checkbox in the EM Setup panel, off by default. It changes *how* the linear
+system is solved, not *what* is solved: the same mixed-potential integral equation, the same mesh, the
+same basis functions, the same Green's function, checked against the dense path to its own accuracy
+gates. What changes is that the matrix is never formed.
+
+### What AIM is
+
+The method is the **Adaptive Integral Method (AIM)** — the standard grid-based acceleration for
+method-of-moments problems, and the same family as the pre-corrected FFT and IE-FFT schemes you will
+find in the literature.
+
+The idea in one paragraph. A dense MoM matrix is expensive because every basis function talks to every
+other one, and the direct solve costs O(N³). But at any useful distance a basis function's field is
+indistinguishable from that of a small cluster of point sources carrying the same low-order multipole
+moments. AIM exploits that in three steps:
+
+1. **Project.** Lay a *uniform* auxiliary grid over the structure and replace each basis function, for
+   far-field purposes only, by weights on a small block of grid nodes chosen to reproduce the same
+   moments. circuitRF projects three densities per basis — the x̂ current, the ŷ current, and the charge
+   ∇·f — because the operator has two blocks with two different kernels and projecting the current
+   without its divergence would accelerate half of it and quietly leave the rest dense.
+2. **Convolve.** On a uniform grid the interaction is a convolution, so the whole far field is three
+   **FFT convolutions** per matrix–vector product — two for the vector potential, one for the scalar —
+   rather than an N² sum.
+3. **Correct.** Near pairs — where the multipole approximation is not good enough — are computed
+   *exactly*, as they are on the dense path, and the grid's approximation of them is subtracted back
+   off. That correction is sparse and O(N).
+
+The system is then solved iteratively (GMRES), preconditioned by the near-field block's own sparse LU.
+No dense matrix is ever formed and nothing dense is ever factored.
+
+Two details worth knowing, because they are the reason this works on a real mesh:
+
+- **Your mesh is not the grid.** circuitRF's mesher is edge-graded and conformally cut, which is what
+  buys accuracy at low unknown counts — a uniform mesh needs roughly twenty times the unknowns to
+  match it. AIM keeps that mesh untouched; only the *auxiliary* grid it projects onto is uniform. This
+  is not the "uniform mesh makes the matrix Toeplitz" trick, which would cost you the grading.
+- **A non-converged solve throws.** GMRES has an iteration cap, and reaching it raises an error rather
+  than returning a current distribution that is smooth, plausible and wrong. That is the backstop
+  behind the higher unknown ceiling.
+
+### When to turn it on
+
+**Turn it on when the structure is large.** The switch buys memory first and time second, and both
+thresholds are measured rather than estimated:
+
+| Where you are | What the accelerator does |
+|---|---|
+| Below ~900 unknowns | Nothing useful. Working sets are megabytes either way. |
+| Above ~900 unknowns | Roughly **4× less working set** than the dense path. |
+| Above ~1,100 unknowns | Also **faster per frequency point**, and the gap widens with size: about 2× at 1,900 unknowns, an order of magnitude at 3,700. |
+| Above 5,000 unknowns | The **only** way to run at all — the dense ceiling is 5,000 and the accelerated ceiling is 12,000. |
+
+Concretely, the cases where the answer is yes:
+
+- **The mesh was refused for being past the 5,000-unknown ceiling** and the structure is on one metal
+  level. This is the common one, and the refusal names the switch.
+- **A long or wide board at a fine mesh** — anything where N is in the thousands. Measured on a
+  length-growth ladder to N ≈ 12,900, the accelerator's working set went 53 MB → 188 MB; the dense
+  matrix alone at that size would be 2.3 GB, which is why it is structurally unreachable.
+- **A de-embedded run whose calibration standard was refused.** A standard reproduces your port's own
+  cross-section, so a wide port's standard can be larger than the DUT. Both the standards'
+  frequency-domain solves and their static capacitance step are accelerated, and are judged against the
+  same 12,000-unknown ceiling.
+- **A long frequency sweep on a big structure**, where the frequency-independent projection state is
+  built once and reused at every point.
+
+### When to leave it off
+
+- **Small structures.** Below about 1,100 unknowns it is 1.3–1.5× *slower* than the dense solve, and it
+  saves memory you were not short of. A bend, a short line, a single stub — leave it off. This is why
+  off is the default.
+- **A multi-level or via-bearing layout.** The checkbox is disabled, with the reason stated beside it:
+  the accelerator projects the single-level horizontal basis family, and a via's vertical current needs
+  its own grid kernel per height pairing. Such a mesh is judged against the 5,000-unknown dense
+  ceiling whatever the switch says.
+- **A cross-section (quasi-static) setup.** There is no dense system to accelerate — that kernel's
+  solve is closed-form per frequency — so the checkbox is disabled there too.
+- **When you are checking a result you do not trust.** The two paths are separate implementations of
+  the same operator, so running a suspect point both ways is a genuine cross-check. They agree to the
+  accelerator's own gates; a disagreement is worth reporting.
+
+### What it does not do
+
+It does **not** change the mesh, the ports, the de-embedding or the physics, so it cannot fix an
+accuracy problem — a mesh too coarse to resolve a gap is equally wrong on both paths. It does not raise
+the ceiling for multi-level geometry. And it is not a licence to ask for an arbitrarily fine mesh: the
+ceiling was set from a length-growth ladder that stayed healthy to N ≈ 12,900, while *refining the
+resolution* at a fixed footprint was measured pushing GMRES from 5–8 iterations to 372 by cells/λ = 120
+and failing to converge at 140. Growing the structure is well behaved; over-refining a small one is
+where the iteration count goes.
 
 ## What the engine refuses, and why a refusal is better {#refusals}
 

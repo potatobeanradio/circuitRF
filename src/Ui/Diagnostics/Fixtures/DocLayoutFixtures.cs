@@ -125,6 +125,68 @@ public static class DocLayoutFixtures
         DataContext = new LayoutDocument("Microstrip bend", EditorVm(Artwork())),
     });
 
+    // ── Ruler annotations ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The same artwork with three RULERS on it — the three things a ruler is actually used for.
+    ///
+    /// <para>One measures a trace width across the trunk, one the diagonal clearance between the stub
+    /// and the via (the measurement a Manhattan document most wants and cannot take with the grid),
+    /// and one carries a CAPTION and its Δx/Δy components. The third is deliberately
+    /// <see cref="RulerSizeMode.Scaled"/>, because Fixed and Scaled are the one ruler property a
+    /// reader has to see the difference between.</para>
+    ///
+    /// <para>Every ruler here is a <see cref="RulerAnnotation"/> in <c>LayoutView.Rulers</c> — never a
+    /// shape — so this figure is also the only place the documentation shows that collection at all.
+    /// </para>
+    /// </summary>
+    internal static LayoutView RulerArtwork()
+    {
+        var view = Artwork();
+
+        // Across the trunk: a plain width measurement, the commonest use of the tool.
+        view.Rulers.Add(new RulerAnnotation
+        {
+            X1 = Um(60), Y1 = Um(0), X2 = Um(60), Y2 = Um(60),
+        });
+
+        // The diagonal gap between the stub's top-right corner and the bend's lower-left one —
+        // free-angle, which is the measurement a Manhattan document most wants and cannot express as
+        // artwork. Both endpoints sit well inside the frame the canvas's own initial fit produces,
+        // which is why this measures the bend rather than the via out at the right edge.
+        view.Rulers.Add(new RulerAnnotation
+        {
+            X1 = Um(160), Y1 = Um(150), X2 = Um(240), Y2 = Um(60),
+            ShowComponents = true,
+            Caption = "stub to bend",
+        });
+
+        // Scaled text, so the figure shows both size modes at once.
+        view.Rulers.Add(new RulerAnnotation
+        {
+            X1 = Um(0), Y1 = Um(-40), X2 = Um(300), Y2 = Um(-40),
+            SizeMode = RulerSizeMode.Scaled,
+            TextHeightDbu = Um(9),
+        });
+
+        return view;
+    }
+
+    /// <summary>The layout editor with rulers placed over the artwork.</summary>
+    public static FigureScene LayoutRulers()
+    {
+        var view = RulerArtwork();
+        if (view.Rulers.Count == 0)
+            throw new InvalidOperationException(
+                "The ruler figure's own view carries no rulers, so the picture would be of the plain "
+              + "layout editor with a misleading caption under it.");
+
+        return new FigureScene(new LayoutEditorView
+        {
+            DataContext = new LayoutDocument("Microstrip bend", EditorVm(view)),
+        });
+    }
+
     // ── The geometry-snap glyphs ──────────────────────────────────────────────
 
     /// <summary>

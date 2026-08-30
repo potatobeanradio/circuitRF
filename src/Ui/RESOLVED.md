@@ -14008,3 +14008,89 @@ to contain circuitRF's own frames.
   chain. The chain is what named it —
   `CellParameterBodyView < Panel[IsVisible=FALSE] < ... < PropertiesView`, root `WorkspaceWindow`,
   so not a popup and not a stale flag but a genuinely hidden panel taking a click.
+
+## User-docs refresh for 1.0.0-beta.5 — three docs-factory defects (2026-08-29)
+
+Content work (Match forms and multiband maths, a dual-band worked example, the MoM accelerator, the
+layout Ruler, board/DXF/GDSII/Gerber interchange) is in `docs/user/src/`. What is worth keeping is the
+three ways the figure generator was silently producing wrong pictures, all of them from one root: a
+fixture that hands the generator a window's `Content` after detaching it from that window.
+
+### 1. Detaching the content drops the whole `<Window.Styles>` scope
+
+Owner-reported: the Match figures' Frequency Band group and Solutions panel rendered several points
+larger than the application does, labels running into their values.
+
+`DocMatchFixtures` built a `MatchDesignerWindow`, took its `Content` and set `window.Content = null`.
+Every size, weight and colour in that window is a style **class** — `detailLabel`, `val`, `cardhdr`,
+`note`, `panelhdr` — declared in `<Window.Styles>`. A detached content control is no longer a
+descendant of the window, so **not one of those selectors matches any more** and every classed control
+falls back to the inherited default. Nothing errors, nothing is missing, and the figure is simply
+wrong. Inline `FontSize` attributes kept working throughout, which is exactly what made it read as a
+rendering quirk rather than a missing style scope.
+
+Fix: copy `window.Styles` and `window.Resources` onto the content before handing it over. It had
+affected `match-designer`, `match-interstage` and `match-solutions` since they were first generated.
+
+### 2. The same detach silently disables the window's code-behind — and the response pane with it
+
+`MatchDesignerWindow.OnLoaded` binds the two `PlotControl`s to the view-model's plot host and sets the
+pane grid's column widths, both through `this.FindControl`, i.e. **against the window**. A window that
+is never loaded runs none of it, so the response column collapses and its plots are bound to nothing.
+That is why no Match figure has ever shown the Response pane, and why the two catalog captions claiming
+it did were wrong (both corrected).
+
+**Showing the window first was tried and is not the fix**: a second top-level inside the generator's own
+capture window fails the run outright with *"Attempt to call InvalidateArrange on wrong LayoutManager"*.
+The chapter's response figure is captured from the view-model's own `MagnitudePlot` through a bare
+`PlotControl` instead (`DocMatchFixtures.DualBandResponse`) — larger and more readable than the pane
+would have been. Making the pane itself capturable needs that wiring reachable without a window, which
+is a change to shipping code and was not made here.
+
+### 3. A figure of an async panel needs a dispatcher PUMP, not `WaitForAnalysis`
+
+Owner-reported: the dual-band figure was captured mid-search — an empty solutions list and a status
+strip reading *"no solutions · applied: a hand-set transform set searching…"*.
+
+`MatchDesignerViewModel.WaitForAnalysis` blocks the calling thread on `Task.WaitAll`, and under the
+docs host that thread **is** the dispatcher the search's own batch landings are posted to, so waiting on
+it is a deadlock rather than a wait — which is why the fixture had been documented as deliberately not
+waiting. Draining the dispatcher in a bounded loop (`Dispatcher.UIThread.RunJobs()` + a short sleep,
+45 s cap, no throw on the cap) lets those landings run. All four Match figures now show a completed
+search; the interstage one went from *"4 of 8 solutions shown"* to *"30 of 74"*, which is a second
+figure that had been quietly wrong. Costs the docs run ~17 s.
+
+### A `PlotControl` captured outside its host needs its theme set in `AfterLayout`
+
+The generator calls `row.Build()` **before** `ApplyVariant`, so a fixture cannot read the variant at
+construction time. A plot whose `PlotTheme` is set in `Build` comes back drawn out of the light palette
+in the dark figure — which the docs stylesheet cannot correct, because the colours are baked into the
+vectors. Both new plot fixtures set it from `ThemeService.CurrentVariant` in `AfterLayout`.
+
+### Two shipped strings were stale, and one panel gate still is
+
+- **The board-import menu tooltip said "Import only — circuitRF never writes this format."** There has
+  been an `Export ▸ Board…` for some time. Rewritten.
+- **The EM panel's Accelerated-solve tooltip** claimed the option "does NOT raise the unknown ceiling"
+  (it raises it from 5,000 to 12,000 on a single-level mesh, `brief-em-aim-ceiling.md`) and put the time
+  crossover at 3,700 unknowns (P6 measured it at ~1,100 — `src/Engine/Mom/RESOLVED.md` §5). Both
+  corrected.
+- **Open, not fixed here:** `EmSetupEditorViewModel.AcceleratedSolveDisabledReason` still disables the
+  checkbox for any multi-level or via-bearing layout, and justifies it in its own doc comment by
+  *"`PlanarSolve.SolveAt` throws by name"* — which P12 (2026-08-29) removed when it landed
+  `PlanarBorderedAimOperator`. The engine will now run such a mesh accelerated; the panel will not let
+  a user ask for it. The user documentation describes the panel's behaviour, which is what a reader
+  meets. Note that P12 deliberately did **not** widen the *ceiling* to multi-level
+  (`SurfaceMesher.UsesAcceleratedCeiling` returns `aimOn && !multiLevel`), so re-enabling the checkbox
+  is a decision about the ceiling too, not a one-line flip.
+
+### Two figure-framing notes
+
+- `LayoutCanvas` fits itself once, on its first valid layout pass, so an explicit `ZoomToFit` in a
+  fixture's `AfterLayout` changes nothing. The fitted frame still leaves the artwork off-centre and
+  clipped at the right — visible in `layout-editor.svg` long before rulers existed. The ruler figure
+  works within that frame (its free-angle ruler measures the stub-to-bend gap rather than the via out
+  at the edge) rather than fighting it.
+- `LayoutCanvas.ZoomToFit` measures a **Fixed**-size ruler's world footprint at the zoom in force when
+  it is asked and deliberately does not iterate, so a Scaled ruler is the predictable one to size a
+  figure around.

@@ -39,6 +39,7 @@
 <li><a href="#conformal">Conformal boundary cells</a></li>
 <li><a href="#mesh-convergence">Mesh convergence, and how to check it</a></li>
 <li><a href="#budget">What makes a run infeasible</a></li>
+<li><a href="#aim">The accelerated solve, and when to use it</a></li>
 <li><a href="#refusals">What the engine refuses, and why a refusal is better</a></li>
 <li><a href="#cosim">Using EM results in a circuit simulation</a></li>
 <li><a href="#worked">Worked example: a microstrip line with a bend</a></li>
@@ -166,8 +167,10 @@ classic &quot;nearly touching cells&quot; problem is not where the difficulty li
 is numerical, and it sees a continuous function with a kink, which is a quadrature-order question.
 Against an ε<sub>r</sub> = 1 reduction where the kernel is exact, the assembled matrix is right to
 <strong>5.0 × 10<sup>-6</sup></strong>.</p>
-<p><strong>The solve.</strong> Dense complex LU per frequency, or — optionally — an iterative solve against a
-grid-accelerated matrix–vector product. The accelerated path computes the same answer a different way,
+<p><strong>The solve.</strong> A dense complex factorisation per frequency, or — optionally — an iterative solve
+against a grid-accelerated matrix–vector product. The dense one exploits the fact that the matrix is
+symmetric: it factors it <strong>in place</strong>, in half the arithmetic a general solver would use, across
+every core your core-count setting allows. The accelerated path computes the same answer a different way,
 to its own accuracy gates; its win is <strong>working-set memory</strong>, roughly 4× less past about 900 unknowns,
 while the <em>time</em> crossover is much later, around 3,700 unknowns. Below that the dense path is faster.
 <strong>It does raise the unknown ceiling — from 5,000 to 12,000 — but only on a single-metal-level structure
@@ -654,36 +657,46 @@ prevent, and what the passivity check exists to catch if anything like it ever h
 <h2 id="adaptive">Adaptive frequency sampling</h2>
 <h3 id="the-problem-it-solves">The problem it solves</h3>
 <p>Fill is O(N²) and solve is O(N³) <strong>per frequency</strong>, because the Green's function is frequency-dependent.
-So a sweep costs the number of points times the cost of a point, and a resonant structure needs a lot of
-points to look right. Sample a resonance on a coarse uniform grid and you get a plot that is <em>wrong</em> —
-the notch lands between two samples and vanishes. Sample it finely enough everywhere and you have paid
-for resolution across the whole band to get it in one place.</p>
+So a sweep costs the number of points times the cost of a point. Sample finely enough to see every
+feature and you have paid for that resolution across the whole band; sample coarsely and the sweep is
+cheap but thin. Adaptive sampling breaks that link: it lets you <strong>ask for a fine grid and pay closer to
+what a coarse one costs</strong>, because it solves only where the response is actually doing something.</p>
 <h3 id="how-it-works">How it works</h3>
 <ol>
 <li>Solve a sparse subset of the requested frequencies.</li>
-<li>Fit a <strong>rational interpolant</strong> to what has been solved.</li>
+<li>Fit a <strong>complex cubic spline</strong> to what has been solved.</li>
 <li>Solve a <strong>midpoint</strong> and compare it with what the model predicted.</li>
 <li>Where they disagree, add samples there and refit. Where they agree, stop.</li>
 </ol>
-<p>The tolerance is agreement to 10<sup>-3</sup> in |S|. Two properties are worth knowing:</p>
+<p>The tolerance is agreement to 10<sup>-3</sup> in |S|. Three properties are worth knowing:</p>
 <ul>
 <li><strong>The published sweep is always exactly the grid you asked for.</strong> Adaptive sampling changes which
 points are <em>solved</em>, never which are <em>reported</em>.</li>
 <li><strong>Every solved point carries the solver's own result, unchanged.</strong> Nothing that was actually solved is
 replaced by the model.</li>
+<li><strong>It never adds a frequency you did not ask for.</strong> So it cannot rescue a feature that falls <em>between</em>
+two of your requested points — a resonance narrower than your frequency step is lost with the setting
+on or off. Resolving a feature is the grid's job; adaptive sampling only makes a fine grid affordable.</li>
 </ul>
 <h3 id="what-the-tolerance-trades">What the tolerance trades</h3>
 <p>Tighter tolerance means more solved points, so more time, and a curve that tracks the true response more
 closely between the ones you asked for. Looser means fewer solves and a curve that may smooth a feature
-the solver would have found. Because the trade is <em>entirely</em> between solve count and fidelity in the
-un-solved gaps, the useful move when in doubt is not to loosen the tolerance — it is to reduce the
-number of requested points.</p>
+the solver would have found.</p>
+<p>Two things to know before turning either knob. The tolerance is a <strong>local stopping test, not an error
+bar</strong>: it is checked at the midpoints the refinement probes, and the worst realised difference against a
+fully-solved sweep can be up to about ten times it. And <strong>reducing the number of requested points is
+usually the wrong move</strong> — with adaptive sampling on, how many points get solved is set by the structure
+rather than by your grid, so a coarser grid mostly costs you resolution without saving much time. On a
+20 mm microstrip over 1–20 GHz, asking for 401 points and letting it sample adaptively is <em>faster</em> than
+asking for 101 and solving them all.</p>
 <h3 id="how-to-tell-it-converged-and-what-to-do-if-it-did-not">How to tell it converged, and what to do if it did not</h3>
 <p>The run reports how many points it solved out of how many you requested. Two checks:</p>
 <ul>
-<li><strong>Solve fraction.</strong> A smooth response converges after solving a small fraction of the grid. A run that
-solved nearly every point is telling you the response is not smooth on that grid — which is
-information, not a failure.</li>
+<li><strong>Solve fraction.</strong> A response that is smooth <em>on the grid you asked for</em> converges after solving a
+fraction of it. A run that solved nearly every point is telling you the response is not smooth on that
+grid — which is information, not a failure, and on a wide band over an electrically long structure it
+is the normal answer, because the transmission phase alone rotates a long way between neighbouring
+points.</li>
 <li><strong>Re-run with the sampling off.</strong> If the curve does not move, it converged. This is the direct test and
 it costs one full sweep; it is worth doing once per new class of structure, not once per run.</li>
 </ul>
@@ -782,12 +795,16 @@ the whole grid; the edge singularity is where the error lives.</li>
 <p>The <strong>Mesh</strong> button computes the mesh <strong>without solving</strong>, so the unknown count, the smallest and largest
 cell and the truncation extent are all visible before you commit to a run. Use it.</p>
 <h2 id="budget">What makes a run infeasible</h2>
-<p>The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes.</p>
+<p>The full-wave matrix is dense and complex: N unknowns is N² × 16 bytes. <strong>The matrix is most of what
+a frequency point costs, and the frequency-independent geometry cache is the rest</strong> — so the figure
+the refusal quotes, and the one below, is both together. The factorisation itself is free of charge:
+it is written into the matrix rather than beside it.</p>
 <table>
 <thead>
 <tr>
 <th>N</th>
-<th>Matrix memory</th>
+<th>Matrix</th>
+<th><strong>Held while one frequency solves</strong></th>
 <th>Character</th>
 </tr>
 </thead>
@@ -795,29 +812,35 @@ cell and the truncation extent are all visible before you commit to a run. Use i
 <tr>
 <td>500</td>
 <td>4 MB</td>
+<td><strong>5 MB</strong></td>
 <td>A short line or a bend lives here</td>
 </tr>
 <tr>
 <td>2,000</td>
-<td>64 MB</td>
-<td>Interactive: seconds per frequency</td>
+<td>61 MB</td>
+<td><strong>84 MB</strong></td>
+<td>Interactive: under a second per frequency</td>
 </tr>
 <tr>
 <td>5,000</td>
-<td>400 MB</td>
+<td>381 MB</td>
+<td><strong>527 MB</strong></td>
 <td>The practical ceiling for a lightweight tool</td>
 </tr>
 <tr>
 <td>10,000</td>
-<td>1.6 GB</td>
+<td>1.5 GB</td>
+<td><strong>2.1 GB</strong></td>
 <td>Out of scope</td>
 </tr>
 </tbody>
 </table>
+<p>A de-embedded run holds more again — every calibration standard's geometry cache is live alongside
+the structure's own.</p>
 <p><strong>There is a hard ceiling at 5,000 unknowns for the dense solve, the predicted N is shown before you
 solve, and a mesh above it is refused</strong> with a message pointing at the remedies that actually bind. A
 tool that silently tried to allocate 12 GB would not be lightweight.</p>
-<p><strong>The <a href="#budget">accelerated solve</a> raises that ceiling to 12,000</strong> — on a single-metal-level structure
+<p><strong>The <a href="#aim">accelerated solve</a> raises that ceiling to 12,000</strong> — on a single-metal-level structure
 with no vias, which is the only kind it can accelerate. A multi-level or via-bearing mesh is refused by
 name regardless, so the ceiling there is still 5,000, and the refusal names turning the accelerator on
 as the first remedy whenever doing so would let your mesh through.</p>
@@ -831,19 +854,127 @@ de-embedded 101-point sweep of that structure is about 13 minutes.</li>
 </ul>
 <p>That is the arithmetic behind <a href="#adaptive">adaptive sampling</a> being on by default: the per-point cost went
 up 4.4× and the number of points did not.</p>
-<p>The <strong>accelerated solve</strong> option changes the memory picture rather than the time one: roughly 4× less
-working set past about 900 unknowns, with the time crossover much later, around 3,700 unknowns. It is
-<strong>single-metal-level only, with no vias</strong> — and within that, it raises the ceiling from 5,000 unknowns
-to 12,000.</p>
-<div class="callout warn">
-<span class="label">One thing it does not reach, and it costs real minutes when it bites</span>
-<p>De-embedding's own reference-impedance step is a <strong>separate, always-dense</strong> computation
-on each calibration standard, and the accelerator does not touch it. A standard reproduces your port's
-own cross-section, so a <em>wide</em> port's standard can be as large as the whole structure — and such
-a run is refused up front, at setup time, even though the DUT's own accelerated solve would have
-succeeded. Turn de-embedding off to read the raw solve, knowing those S-parameters include the port
-discontinuity and are for diagnostics only.</p>
+<p>The <strong>accelerated solve</strong> option buys memory first and time second: roughly 4× less working set past
+about 900 unknowns, and a faster frequency point past about 1,100 — its frequency-independent state
+is built once per structure and the dense factorisation's cost grows as the cube of the unknown count,
+so the gap widens with size (about 2× at 1,900 unknowns, an order of magnitude at 3,700). Below the
+crossover it is somewhat slower than the dense solve. It is <strong>single-metal-level only, with no vias</strong>
+— and within that, it raises the ceiling from 5,000 unknowns to 12,000.</p>
+<div class="callout note">
+<span class="label">It now covers de-embedding's own reference-impedance step too</span>
+<p>Working out a de-embedded result's reference impedance needs a separate static calculation on each
+calibration standard, and a standard reproduces your port's own cross-section — so a <em>wide</em>
+port's standard can be as large as the whole structure. That step used to stay dense whatever this
+option said, which meant a run could be refused up front even though the structure's own accelerated
+solve would have succeeded. It is accelerated as well now, and judged against the same 12,000-unknown
+ceiling as everything else. If a run is still refused because a calibration standard is too large,
+the remaining options are a coarser mesh, or turning de-embedding off and reading the raw solve —
+knowing those S-parameters include the port discontinuity and are for diagnostics only.</p>
 </div>
+<h2 id="aim">The accelerated solve, and when to use it</h2>
+<p><strong>Accelerated solve</strong> is a checkbox in the EM Setup panel, off by default. It changes <em>how</em> the linear
+system is solved, not <em>what</em> is solved: the same mixed-potential integral equation, the same mesh, the
+same basis functions, the same Green's function, checked against the dense path to its own accuracy
+gates. What changes is that the matrix is never formed.</p>
+<h3 id="what-aim-is">What AIM is</h3>
+<p>The method is the <strong>Adaptive Integral Method (AIM)</strong> — the standard grid-based acceleration for
+method-of-moments problems, and the same family as the pre-corrected FFT and IE-FFT schemes you will
+find in the literature.</p>
+<p>The idea in one paragraph. A dense MoM matrix is expensive because every basis function talks to every
+other one, and the direct solve costs O(N³). But at any useful distance a basis function's field is
+indistinguishable from that of a small cluster of point sources carrying the same low-order multipole
+moments. AIM exploits that in three steps:</p>
+<ol>
+<li><strong>Project.</strong> Lay a <em>uniform</em> auxiliary grid over the structure and replace each basis function, for
+far-field purposes only, by weights on a small block of grid nodes chosen to reproduce the same
+moments. circuitRF projects three densities per basis — the x̂ current, the ŷ current, and the charge
+∇·f — because the operator has two blocks with two different kernels and projecting the current
+without its divergence would accelerate half of it and quietly leave the rest dense.</li>
+<li><strong>Convolve.</strong> On a uniform grid the interaction is a convolution, so the whole far field is three
+<strong>FFT convolutions</strong> per matrix–vector product — two for the vector potential, one for the scalar —
+rather than an N² sum.</li>
+<li><strong>Correct.</strong> Near pairs — where the multipole approximation is not good enough — are computed
+<em>exactly</em>, as they are on the dense path, and the grid's approximation of them is subtracted back
+off. That correction is sparse and O(N).</li>
+</ol>
+<p>The system is then solved iteratively (GMRES), preconditioned by the near-field block's own sparse LU.
+No dense matrix is ever formed and nothing dense is ever factored.</p>
+<p>Two details worth knowing, because they are the reason this works on a real mesh:</p>
+<ul>
+<li><strong>Your mesh is not the grid.</strong> circuitRF's mesher is edge-graded and conformally cut, which is what
+buys accuracy at low unknown counts — a uniform mesh needs roughly twenty times the unknowns to
+match it. AIM keeps that mesh untouched; only the <em>auxiliary</em> grid it projects onto is uniform. This
+is not the &quot;uniform mesh makes the matrix Toeplitz&quot; trick, which would cost you the grading.</li>
+<li><strong>A non-converged solve throws.</strong> GMRES has an iteration cap, and reaching it raises an error rather
+than returning a current distribution that is smooth, plausible and wrong. That is the backstop
+behind the higher unknown ceiling.</li>
+</ul>
+<h3 id="when-to-turn-it-on">When to turn it on</h3>
+<p><strong>Turn it on when the structure is large.</strong> The switch buys memory first and time second, and both
+thresholds are measured rather than estimated:</p>
+<table>
+<thead>
+<tr>
+<th>Where you are</th>
+<th>What the accelerator does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Below ~900 unknowns</td>
+<td>Nothing useful. Working sets are megabytes either way.</td>
+</tr>
+<tr>
+<td>Above ~900 unknowns</td>
+<td>Roughly <strong>4× less working set</strong> than the dense path.</td>
+</tr>
+<tr>
+<td>Above ~1,100 unknowns</td>
+<td>Also <strong>faster per frequency point</strong>, and the gap widens with size: about 2× at 1,900 unknowns, an order of magnitude at 3,700.</td>
+</tr>
+<tr>
+<td>Above 5,000 unknowns</td>
+<td>The <strong>only</strong> way to run at all — the dense ceiling is 5,000 and the accelerated ceiling is 12,000.</td>
+</tr>
+</tbody>
+</table>
+<p>Concretely, the cases where the answer is yes:</p>
+<ul>
+<li><strong>The mesh was refused for being past the 5,000-unknown ceiling</strong> and the structure is on one metal
+level. This is the common one, and the refusal names the switch.</li>
+<li><strong>A long or wide board at a fine mesh</strong> — anything where N is in the thousands. Measured on a
+length-growth ladder to N ≈ 12,900, the accelerator's working set went 53 MB → 188 MB; the dense
+matrix alone at that size would be 2.3 GB, which is why it is structurally unreachable.</li>
+<li><strong>A de-embedded run whose calibration standard was refused.</strong> A standard reproduces your port's own
+cross-section, so a wide port's standard can be larger than the DUT. Both the standards'
+frequency-domain solves and their static capacitance step are accelerated, and are judged against the
+same 12,000-unknown ceiling.</li>
+<li><strong>A long frequency sweep on a big structure</strong>, where the frequency-independent projection state is
+built once and reused at every point.</li>
+</ul>
+<h3 id="when-to-leave-it-off">When to leave it off</h3>
+<ul>
+<li><strong>Small structures.</strong> Below about 1,100 unknowns it is 1.3–1.5× <em>slower</em> than the dense solve, and it
+saves memory you were not short of. A bend, a short line, a single stub — leave it off. This is why
+off is the default.</li>
+<li><strong>A multi-level or via-bearing layout.</strong> The checkbox is disabled, with the reason stated beside it:
+the accelerator projects the single-level horizontal basis family, and a via's vertical current needs
+its own grid kernel per height pairing. Such a mesh is judged against the 5,000-unknown dense
+ceiling whatever the switch says.</li>
+<li><strong>A cross-section (quasi-static) setup.</strong> There is no dense system to accelerate — that kernel's
+solve is closed-form per frequency — so the checkbox is disabled there too.</li>
+<li><strong>When you are checking a result you do not trust.</strong> The two paths are separate implementations of
+the same operator, so running a suspect point both ways is a genuine cross-check. They agree to the
+accelerator's own gates; a disagreement is worth reporting.</li>
+</ul>
+<h3 id="what-it-does-not-do">What it does not do</h3>
+<p>It does <strong>not</strong> change the mesh, the ports, the de-embedding or the physics, so it cannot fix an
+accuracy problem — a mesh too coarse to resolve a gap is equally wrong on both paths. It does not raise
+the ceiling for multi-level geometry. And it is not a licence to ask for an arbitrarily fine mesh: the
+ceiling was set from a length-growth ladder that stayed healthy to N ≈ 12,900, while <em>refining the
+resolution</em> at a fixed footprint was measured pushing GMRES from 5–8 iterations to 372 by cells/λ = 120
+and failing to converge at 140. Growing the structure is well behaved; over-refining a small one is
+where the iteration count goes.</p>
 <h2 id="refusals">What the engine refuses, and why a refusal is better</h2>
 <p>A wrong EM answer is smooth, plausible and expensive — it goes into a design, and the board comes back
 wrong. So this engine refuses rather than extrapolating, and every refusal names the specific feature

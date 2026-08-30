@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
+using CircuitRF.Core.Matching;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
@@ -29,6 +30,34 @@ public sealed class DocSymbolGlyph : Control
     public static readonly StyledProperty<int> PortCountProperty =
         AvaloniaProperty.Register<DocSymbolGlyph, int>(nameof(PortCount), 2);
 
+    /// <summary>
+    /// Which <c>Match</c> glyph to draw. Ignored for every other <see cref="Kind"/>.
+    ///
+    /// <para>A <c>Match</c> is the one built-in whose glyph is a function of its DESIGN rather than of
+    /// its kind — the waves say bandpass, lowpass or highpass and how many bands
+    /// (<c>BuiltInSymbols.PrimitivesForMatch</c>) — so documenting it needs a way to ask for a
+    /// variant. These two properties are that, and they go through the same call the schematic makes,
+    /// so a figure of the dual-band glyph cannot show a symbol the canvas would not draw.</para>
+    /// </summary>
+    public static readonly StyledProperty<NetworkForm> MatchFormProperty =
+        AvaloniaProperty.Register<DocSymbolGlyph, NetworkForm>(nameof(MatchForm), NetworkForm.Bandpass);
+
+    /// <summary>How many bands the <c>Match</c> glyph depicts, 1-3. See <see cref="MatchForm"/>.</summary>
+    public static readonly StyledProperty<int> MatchBandsProperty =
+        AvaloniaProperty.Register<DocSymbolGlyph, int>(nameof(MatchBands), 1);
+
+    public NetworkForm MatchForm
+    {
+        get => GetValue(MatchFormProperty);
+        set => SetValue(MatchFormProperty, value);
+    }
+
+    public int MatchBands
+    {
+        get => GetValue(MatchBandsProperty);
+        set => SetValue(MatchBandsProperty, value);
+    }
+
     public SymbolKind Kind
     {
         get => GetValue(KindProperty);
@@ -42,17 +71,19 @@ public sealed class DocSymbolGlyph : Control
     }
 
     static DocSymbolGlyph()
-        => AffectsRender<DocSymbolGlyph>(KindProperty, PortCountProperty);
+        => AffectsRender<DocSymbolGlyph>(KindProperty, PortCountProperty,
+                                         MatchFormProperty, MatchBandsProperty);
 
     public override void Render(DrawingContext context)
     {
         base.Render(context);
         if (Bounds.Width < 2 || Bounds.Height < 2) return;
-        context.Custom(new Op(new Rect(Bounds.Size), Kind, PortCount,
+        context.Custom(new Op(new Rect(Bounds.Size), Kind, PortCount, MatchForm, MatchBands,
                               SchematicRenderTheme.FromTheme(ColorTheme.BuiltIn, ThemeService.CurrentVariant)));
     }
 
-    private sealed class Op(Rect bounds, SymbolKind kind, int ports, SchematicRenderTheme theme)
+    private sealed class Op(Rect bounds, SymbolKind kind, int ports,
+                           NetworkForm matchForm, int matchBands, SchematicRenderTheme theme)
         : ICustomDrawOperation
     {
         public Rect Bounds => bounds;
@@ -66,7 +97,9 @@ public sealed class DocSymbolGlyph : Control
             if (lease is null) return;
             using (lease)
             {
-                var symbol = SymbolArtworkGenerator.SymbolFor(kind, ports);
+                var symbol = kind == SymbolKind.Match
+                    ? BuiltInSymbols.PrimitivesForMatch(matchForm, matchBands)
+                    : SymbolArtworkGenerator.SymbolFor(kind, ports);
                 SymbolArtworkGenerator.DrawFitted(
                     lease.SkCanvas, kind, symbol,
                     (float)bounds.Width, (float)bounds.Height,

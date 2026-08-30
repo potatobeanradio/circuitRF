@@ -7,7 +7,7 @@
       "Index": 1,
       "Slot": 0,
       "Id": "",
-      "Tooltip": "Zoom to Fit",
+      "Tooltip": "Zoom to Fit  (F)",
       "Icon": "FitToPage",
       "Command": null,
       "Kind": "button"
@@ -133,53 +133,53 @@
       "Index": 14,
       "Slot": 14,
       "Id": "",
-      "Tooltip": "Insert Bitmap\u2026",
-      "Icon": "ImageAddOutline",
-      "Command": null,
+      "Tooltip": "Ruler  (D) \u2014 click two points to measure (Shift locks to 0/45/90\u00B0; Ctrl\u002BK clears every ruler)",
+      "Icon": "Ruler",
+      "Command": "RelayCommand\u00601",
       "Kind": "button"
     },
     {
       "Index": 15,
       "Slot": 15,
       "Id": "",
-      "Tooltip": "Rotate 90\u00B0 CCW  (R)",
-      "Icon": "ArrowRotateLeft",
+      "Tooltip": "Insert Bitmap\u2026",
+      "Icon": "ImageAddOutline",
       "Command": null,
       "Kind": "button"
     },
     {
       "Index": 16,
       "Slot": 16,
-      "Id": "",
-      "Tooltip": "Rotate 90\u00B0 CW  (Shift\u002BR)",
-      "Icon": "RotateRight",
+      "Id": "RotateCcwBtn",
+      "Tooltip": "Rotate 90\u00B0 CCW  (R)",
+      "Icon": "ArrowRotateLeft",
       "Command": null,
       "Kind": "button"
     },
     {
       "Index": 17,
       "Slot": 17,
-      "Id": "",
-      "Tooltip": "Mirror Horizontal  (M)",
-      "Icon": "FlipHorizontal",
+      "Id": "RotateCwBtn",
+      "Tooltip": "Rotate 90\u00B0 CW  (Shift\u002BR)",
+      "Icon": "RotateRight",
       "Command": null,
       "Kind": "button"
     },
     {
       "Index": 18,
       "Slot": 18,
-      "Id": "",
-      "Tooltip": "Mirror Vertical  (Shift\u002BM)",
-      "Icon": "FlipVertical",
+      "Id": "MirrorHBtn",
+      "Tooltip": "Mirror Horizontal  (M)",
+      "Icon": "FlipHorizontal",
       "Command": null,
       "Kind": "button"
     },
     {
       "Index": 19,
       "Slot": 19,
-      "Id": "",
-      "Tooltip": "Instance\u2026 (place a cell reference)",
-      "Icon": "ViewGridPlusOutline",
+      "Id": "MirrorVBtn",
+      "Tooltip": "Mirror Vertical  (Shift\u002BM)",
+      "Icon": "FlipVertical",
       "Command": null,
       "Kind": "button"
     },
@@ -187,14 +187,23 @@
       "Index": 20,
       "Slot": 20,
       "Id": "",
+      "Tooltip": "Instance\u2026 (place a cell reference)",
+      "Icon": "ViewGridPlusOutline",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 21,
+      "Slot": 21,
+      "Id": "",
       "Tooltip": "Show PCell pins",
       "Icon": "PinOutline",
       "Command": null,
       "Kind": "toggle"
     },
     {
-      "Index": 21,
-      "Slot": 21,
+      "Index": 22,
+      "Slot": 22,
       "Id": "",
       "Tooltip": "Geometry snap  (F3 / S)",
       "Icon": "Magnet",
@@ -202,8 +211,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 22,
-      "Slot": 22,
+      "Index": 23,
+      "Slot": 23,
       "Id": "",
       "Tooltip": "Snap to intersections",
       "Icon": "VectorIntersection",
@@ -212,25 +221,7 @@
     },
     {
       "Index": 0,
-      "Slot": 23,
-      "Id": "",
-      "Tooltip": "",
-      "Icon": "separator",
-      "Command": null,
-      "Kind": "separator"
-    },
-    {
-      "Index": 23,
       "Slot": 24,
-      "Id": "",
-      "Tooltip": "Save layout  (Ctrl\u002BS)",
-      "Icon": "FloppyDisc",
-      "Command": null,
-      "Kind": "button"
-    },
-    {
-      "Index": 0,
-      "Slot": 25,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -239,7 +230,25 @@
     },
     {
       "Index": 24,
+      "Slot": 25,
+      "Id": "",
+      "Tooltip": "Save layout  (Ctrl\u002BS)",
+      "Icon": "FloppyDisc",
+      "Command": null,
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
       "Slot": 26,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 25,
+      "Slot": 27,
       "Id": "PushInBtn",
       "Tooltip": "Push Into Cell  (Ctrl\u002B])",
       "Icon": "ArrowDownward",
@@ -247,8 +256,8 @@
       "Kind": "button"
     },
     {
-      "Index": 25,
-      "Slot": 27,
+      "Index": 26,
+      "Slot": 28,
       "Id": "PopOutBtn",
       "Tooltip": "Pop Out  (Ctrl\u002B[)",
       "Icon": "ArrowTop",
@@ -257,7 +266,7 @@
     },
     {
       "Index": 0,
-      "Slot": 36,
+      "Slot": 37,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -265,8 +274,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 26,
-      "Slot": 37,
+      "Index": 27,
+      "Slot": 38,
       "Id": "",
       "Tooltip": "Check Design Rules (Ctrl/\u2318\u002BShift\u002BK)",
       "Icon": "ShieldTickOutline",
@@ -274,8 +283,8 @@
       "Kind": "button"
     },
     {
-      "Index": 27,
-      "Slot": 38,
+      "Index": 28,
+      "Slot": 39,
       "Id": "",
       "Tooltip": "EM Setup for this layout \u2014 opens it, creating it the first time",
       "Icon": "SineWave",
@@ -283,8 +292,8 @@
       "Kind": "button"
     },
     {
-      "Index": 28,
-      "Slot": 39,
+      "Index": 29,
+      "Slot": 40,
       "Id": "",
       "Tooltip": "Show EM cross-section mesh",
       "Icon": "GridLarge",
@@ -292,8 +301,8 @@
       "Kind": "toggle"
     },
     {
-      "Index": 29,
-      "Slot": 40,
+      "Index": 30,
+      "Slot": 41,
       "Id": "",
       "Tooltip": "Show full-wave surface mesh",
       "Icon": "Grid",
@@ -302,7 +311,7 @@
     },
     {
       "Index": 0,
-      "Slot": 41,
+      "Slot": 42,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -310,8 +319,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 30,
-      "Slot": 42,
+      "Index": 31,
+      "Slot": 43,
       "Id": "",
       "Tooltip": "Export GDSII\u2026",
       "Icon": "IosShare",
@@ -319,8 +328,8 @@
       "Kind": "button"
     },
     {
-      "Index": 31,
-      "Slot": 43,
+      "Index": 32,
+      "Slot": 44,
       "Id": "",
       "Tooltip": "Export DXF\u2026",
       "Icon": "FileExportOutline",
@@ -328,8 +337,8 @@
       "Kind": "button"
     },
     {
-      "Index": 32,
-      "Slot": 44,
+      "Index": 33,
+      "Slot": 45,
       "Id": "",
       "Tooltip": "Export Gerber\u2026",
       "Icon": "FileChartOutline",
@@ -338,7 +347,7 @@
     },
     {
       "Index": 0,
-      "Slot": 45,
+      "Slot": 46,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -346,8 +355,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 33,
-      "Slot": 46,
+      "Index": 34,
+      "Slot": 47,
       "Id": "",
       "Tooltip": "Layer:",
       "Icon": "text",
@@ -355,8 +364,8 @@
       "Kind": "text"
     },
     {
-      "Index": 34,
-      "Slot": 47,
+      "Index": 35,
+      "Slot": 48,
       "Id": "",
       "Tooltip": "",
       "Icon": "combo",
@@ -365,7 +374,7 @@
     },
     {
       "Index": 0,
-      "Slot": 48,
+      "Slot": 49,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
