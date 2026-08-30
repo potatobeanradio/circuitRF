@@ -55,6 +55,10 @@ public partial class App : Application
         // untouched by this flag, which governs only Dock's own drag-begin restack.
         Dock.Settings.DockSettings.BringWindowsToFrontOnDrag = false;
 
+        // A ComboBox in a hidden panel must not act on a click that reaches it anyway — see the class
+        // for why that locks up the whole machine rather than merely misbehaving.
+        Controls.HiddenComboBoxInputGuard.Install();
+
         // Teach the kit importer to recognise a process's own technology files, so importing a kit
         // that carries them SAYS SO rather than listing them as unrecognised. The readers behind them
         // are UI-project code, which is why this is registered here rather than shipped as a built-in.

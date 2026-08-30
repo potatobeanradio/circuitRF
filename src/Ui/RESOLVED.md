@@ -13846,3 +13846,92 @@ and only the payload, so the glyph can no more change the circuit than the old t
 
 `MatchFlatten` writes the instance's own glyph into the generated cell's `.csym`, so flattening a
 lowpass ladder no longer hands back a cell wearing a bandpass symbol.
+
+## A click on a HIDDEN ComboBox froze the whole machine (2026-08-29)
+
+**Reported as:** clicked a cell in the Project tree, clicked into the Primary Schematic box in the
+Properties inspector, then clicked away — and circuitRF went unresponsive. Crucially, *no other
+application could be focused either*, which is not something a spinning UI thread does. The same
+session also produced a second complaint that turned out to be the same defect — the Properties
+inspector sometimes failing to show a cell's properties when that cell was clicked in the Project
+Tree.
+
+**Root cause: pointer input reaches a ComboBox inside an `IsVisible=false` subtree, and a ComboBox
+that is not visible cannot open a dropdown without recursing forever.**
+`ComboBox.OnPointerReleased` toggles `IsDropDownOpen` gated on ONE thing — the `:pressed`
+pseudo-class it set on the way down — and never asks whether it is still visible:
+
+```csharp
+if ((popup == null || !popup.IsInsidePopup(visual)) && PseudoClasses.Contains(":pressed"))
+{
+    SetCurrentValue(IsDropDownOpenProperty, !IsDropDownOpen);
+```
+
+The template two-way `TemplateBinding`s `Popup.IsOpen` to `ComboBox.IsDropDownOpen`, and on a hidden
+ComboBox the pair never converges: `Popup.Open()` raises `PopupOpened`, which writes
+`IsDropDownOpen`, which the binding publishes back to `IsOpen`, whose re-evaluation calls
+`CloseCore()`, which re-opens it. Every turn allocates a `PopupRoot` and a native popup window, and
+an open popup holds a **system-wide input grab** — which is why the machine had to be recovered by
+force-quit and why a terminal could not be focused to sample the process.
+
+**The fix is `Controls/HiddenComboBoxInputGuard`**, a class handler on the **Tunnel** route of
+`PointerPressed`/`PointerReleased` that marks the event handled when `IsEffectivelyVisible` is false.
+Tunnel is what makes four lines sufficient: it runs before ComboBox's own bubble-route handler, which
+already declines a handled event, so the `:pressed` latch is never set either and no half-state is
+left for the next click. Inert in normal use — anything the user can see and click is effectively
+visible.
+
+**The upstream cause: Dock's `Tool` declares `IDocument`, so the tool panels were being activated
+as documents.** `WorkspaceViewModel`'s `FocusedDockableChanged` handler existed to catch a click
+into a document pane whose active tab did not change, and guarded on
+`args.Dockable is not IDocument document || document.Owner is not IDock pane`. Neither half excludes
+anything: `Dock.Model.Mvvm.Controls.Tool` implements `IDocument` (verified by decompiling
+Dock.Model.Mvvm 12.0.0.2), and a `ToolDock` is an `IDock`. So a click ANYWHERE in the Properties
+inspector ran `ActivateDocument` on the Properties panel itself, fell through to the
+no-document-type branch, and called `SetActiveSchematic(null)` — wiping the cell properties the user
+was looking at and replacing them with "Select object to inspect its properties". The guard is now
+`if (args.Dockable is ITool) return;` ahead of the old test.
+
+**All three symptoms are that one defect.** The inspector emptying on a click is it directly. The
+inspector *"sometimes"* not showing a cell's properties is the same thing racing a Project-tree
+click — whichever of the two orderings wins decides whether the cell context survives. And the
+lockup needed it as a PRECONDITION: Dock's focus handling runs on the TUNNEL route of
+`PointerPressed`, so the press hid the panel before ComboBox's own bubble-route handler set
+`:pressed` on the now-hidden control — which is why the probe recorded a press on a ComboBox that
+was *already* `IsEffectivelyVisible=false`, and why the release then had a hidden ComboBox to open a
+dropdown on.
+
+`HiddenComboBoxInputGuard` stays regardless. It is defence in depth for a failure whose blast radius
+is the whole machine: any other route that hides a panel under a live press would land in exactly
+the same recursion, and a four-line tunnel guard is cheap insurance against a lockup that cannot
+even be sampled without arming a background shell first.
+
+**Two wrong diagnoses along the way, both from reading the runaway's STEADY STATE instead of its
+first step.** A dump of the hung process showed the offending ComboBox invisible with its popup open,
+and it was tempting — twice — to conclude that hiding the panel *while a dropdown was open* was the
+trigger, and to guard the context switch (`PropertiesTool`'s flags, on `PropertyChanging`). It
+changed nothing, because the dropdown was never open beforehand: the probe's very first transition is
+`False->True`, on a ComboBox that was *already* hidden and unbound, driven by a real
+`MouseDevice.MouseUp`. **The steady state of a runaway does not name its cause.** The guard that
+finally worked came from instrumenting the FIRST transition, where the stack is still shallow enough
+to contain circuitRF's own frames.
+
+**What each tool could and could not do**, since the next lockup will start the same way:
+
+- **`sample` cannot symbolicate JIT'd managed code.** The whole 9-frame cycle came back as `???`
+  addresses; only the native `AvaloniaNative::CreatePopup` frames underneath were readable. It still
+  earned its keep — it proved recursion-not-spin and named popup creation.
+- **`dotnet-stack report` truncates a thread at 100 frames**, all Avalonia internals here, and **SOS
+  `clrstack` segfaults** walking a stack this deep (exit 139 after 9 frames on a 7.2 GB dump). What
+  worked on the dump was `dumpheap -stat` plus `dumpobj` hops along
+  `PopupRoot -> Popup._templatedParent -> ComboBox -> Grid` — bounded, and cheap.
+- **A headless Avalonia harness cannot reproduce any of it.** Headless has no native popup windows,
+  so the cycle never forms, and its hit-testing does not reproduce the delivery either.
+- **What actually solved it** was a throwaway probe (`ComboBoxPopupProbe`, opt-in via
+  `CRF_COMBO_DIAG`, built in the shape of the surviving `Diagnostics/MenuBarProbe` and DELETED once
+  the cause was found — rebuild it the same way rather than looking for it): the static
+  `IsDropDownOpenProperty.Changed`
+  observable, logging the first dozen transitions with a stack trace AND the control's full ancestor
+  chain. The chain is what named it —
+  `CellParameterBodyView < Panel[IsVisible=FALSE] < ... < PropertiesView`, root `WorkspaceWindow`,
+  so not a popup and not a stale flag but a genuinely hidden panel taking a click.

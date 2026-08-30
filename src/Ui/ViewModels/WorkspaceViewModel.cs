@@ -469,6 +469,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // which the CanvasInteracted handlers call, so an unguarded fan-out here would re-enter.
         _factory.FocusedDockableChanged += (_, args) =>
         {
+            // A TOOL panel is not a document, however much Dock's type hierarchy says otherwise.
+            //
+            // Dock.Model.Mvvm's `Tool` declares `IDocument` (verified by decompiling
+            // Dock.Model.Mvvm 12.0.0.2, not assumed), so the IDocument test below passes for the
+            // Properties, Project and Library panels, and a ToolDock satisfies `is IDock` as well —
+            // neither half of the old guard excluded anything. Clicking anywhere inside the
+            // Properties inspector therefore ran ActivateDocument on the Properties panel ITSELF,
+            // fell through to its no-document-type branch, and called SetActiveSchematic(null):
+            // the cell properties the user was looking at vanished mid-click and were replaced by
+            // "Select object to inspect its properties" (owner, 2026-08-29).
+            //
+            // The same thing racing a tree click is why the inspector only SOMETIMES showed a cell's
+            // properties, and it is what put a hidden ComboBox under a live pointer press — see
+            // Controls/HiddenComboBoxInputGuard for where that ended up.
+            if (args.Dockable is ITool) return;
+
             if (args.Dockable is not IDocument document || document.Owner is not IDock pane) return;
             if (ReferenceEquals(pane, _activeDocumentPane)
                 && ReferenceEquals(document, _lastActivatedDocument)) return;
