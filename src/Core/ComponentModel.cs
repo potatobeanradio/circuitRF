@@ -77,6 +77,139 @@ public abstract class ComponentModel
     }
 
     /// <summary>
+    /// HB-P4 — whether an engine should hand this model the WHOLE time grid at once
+    /// (<see cref="EvaluateGrid"/>) rather than calling <see cref="Evaluate(in PortVoltages)"/> once
+    /// per sample.
+    ///
+    /// <para>Distinct from <see cref="PrefersBatchEvaluate"/>, which exists for models whose cost is
+    /// TRANSPORT (an out-of-process worker) and which answers with a list of per-sample results. This
+    /// one exists for models whose cost is ARITHMETIC, and it answers into caller-owned
+    /// structure-of-arrays buffers: the SDD runs its compiled register program once for the grid with
+    /// vectorised operands instead of once per sample through 136-byte duals, and the closed-form
+    /// built-ins stop allocating six arrays a sample.</para>
+    ///
+    /// <para>False by default, so a model that does not opt in takes exactly the path it took before
+    /// this existed — which is what keeps its results bit-identical.</para>
+    /// </summary>
+    public virtual bool PrefersGridEvaluate => false;
+
+    /// <summary>
+    /// HB-P4 M4 — whether this model implements <see cref="EvaluateInto"/>, letting the default
+    /// <see cref="EvaluateGrid"/> reuse four buffers for the whole grid rather than allocating six
+    /// arrays per sample. A closed-form built-in sets this; the SDD does not (it overrides
+    /// <see cref="EvaluateGrid"/> outright, with a far larger win).
+    /// </summary>
+    protected virtual bool HasEvaluateInto => false;
+
+    /// <summary>
+    /// The allocation-free form of <see cref="Evaluate(in PortVoltages)"/>: the same arithmetic,
+    /// written into CALLER-OWNED buffers. Implementations must write (or clear) every entry — the
+    /// buffers are reused across samples, so anything left unwritten is the previous sample's value.
+    /// <paramref name="i"/> and <paramref name="q"/> are length <see cref="PortCount"/>;
+    /// <paramref name="dg"/> and <paramref name="dc"/> are <c>PortCount × PortCount</c>.
+    /// </summary>
+    protected virtual void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
+        => throw new NotSupportedException($"{GetType().Name} does not implement EvaluateInto");
+
+    /// <summary>
+    /// Evaluate every sample of a time grid in one call, writing into <paramref name="into"/>.
+    ///
+    /// <para><paramref name="portVoltages"/> is <c>[port][t]</c> and <paramref name="controlCurrents"/>
+    /// is <c>[control][t]</c>, both row-major with stride <paramref name="sampleCount"/>; pass an
+    /// empty span for controls when the device has none. The result buffers are the caller's and are
+    /// reused across iterations — this method shapes and fills them, and allocates nothing per
+    /// sample when the model overrides it.</para>
+    ///
+    /// <para>The default is the scalar path applied once per sample and copied in, so every model
+    /// supports the call whether or not it sets <see cref="PrefersGridEvaluate"/>.</para>
+    /// </summary>
+    public virtual void EvaluateGrid(
+        ReadOnlySpan<double> portVoltages, ReadOnlySpan<double> controlCurrents,
+        int sampleCount, GridResult into)
+    {
+        int P = PortCount;
+        int C = sampleCount > 0 ? controlCurrents.Length / sampleCount : 0;
+        into.EnsureShape(P, C, sampleCount);
+        into.ClearBlocks();
+        into.ResetTerms();
+
+        // A model with a closed-form Evaluate says so by overriding EvaluateInto, and then the
+        // grid loop writes through four buffers allocated ONCE for the whole grid instead of six
+        // arrays per sample. There is no control-current form of it — only the SDD has controls,
+        // and it overrides EvaluateGrid outright.
+        if (HasEvaluateInto && C == 0)
+        {
+            var pv = new double[P];
+            var bi = new double[P];
+            var bq = new double[P];
+            var bdg = new double[P, P];
+            var bdc = new double[P, P];
+            for (int t = 0; t < sampleCount; t++)
+            {
+                for (int p = 0; p < P; p++) pv[p] = portVoltages[p * sampleCount + t];
+                EvaluateInto(new PortVoltages(pv), bi, bq, bdg, bdc);
+                for (int p = 0; p < P; p++)
+                {
+                    into.I[into.PortBase(p) + t] = bi[p];
+                    into.Q[into.PortBase(p) + t] = bq[p];
+                    for (int q = 0; q < P; q++)
+                    {
+                        into.Dg[into.JacBase(p, q) + t] = bdg[p, q];
+                        into.Dc[into.JacBase(p, q) + t] = bdc[p, q];
+                    }
+                }
+            }
+            return;
+        }
+
+        var portV = new double[P];
+        var ctrlV = new double[C];
+        for (int t = 0; t < sampleCount; t++)
+        {
+            for (int p = 0; p < P; p++) portV[p] = portVoltages[p * sampleCount + t];
+            for (int c = 0; c < C; c++) ctrlV[c] = controlCurrents[c * sampleCount + t];
+
+            var r = C > 0
+                ? Evaluate(new PortVoltages(portV), new ControlCurrents(ctrlV))
+                : Evaluate(new PortVoltages(portV));
+
+            for (int p = 0; p < P; p++)
+            {
+                into.I[into.PortBase(p) + t] = r.I[p];
+                into.Q[into.PortBase(p) + t] = r.Q[p];
+                for (int q = 0; q < P; q++)
+                {
+                    into.Dg[into.JacBase(p, q) + t] = r.Dg[p, q];
+                    into.Dc[into.JacBase(p, q) + t] = r.Dc[p, q];
+                }
+                for (int c = 0; c < C; c++)
+                {
+                    if (r.DControl is not null) into.DControl[into.CtrlBase(p, c) + t] = r.DControl[p, c];
+                    if (r.DControlCharge is not null) into.DControlCharge[into.CtrlBase(p, c) + t] = r.DControlCharge[p, c];
+                }
+            }
+
+            // Buckets are discovered on the first sample: which w values a device produces is a
+            // property of its equations, not of the operating point.
+            if (t == 0)
+                foreach (var term in r.Terms) into.AddTerm(term.W);
+            var live = into.LiveTerms;
+            for (int b = 0; b < live.Length && b < r.Terms.Count; b++)
+            {
+                var src = r.Terms[b];
+                var dst = live[b];
+                for (int p = 0; p < P; p++)
+                {
+                    dst.Value[into.PortBase(p) + t] = src.Value[p];
+                    for (int q = 0; q < P; q++) dst.Jac[into.JacBase(p, q) + t] = src.Jac[p, q];
+                    if (src.JacCtrl is not null)
+                        for (int c = 0; c < C; c++) dst.JacCtrl[into.CtrlBase(p, c) + t] = src.JacCtrl[p, c];
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Frequency-domain weighting function H[w](ω).
     /// w=0 → 1 (identity/conductance), w=1 → jω (charge/capacitance).
     /// SDD overrides this for w≥2 (user-defined H[w] expressions, brief #3).

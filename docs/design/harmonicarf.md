@@ -79,6 +79,19 @@ Integration check — the **full Hero-3 loadpull**, 20 Γ points × 32 Pin steps
 > right: HB-P2 is lever 2 and 3 territory (never re-elaborate, warm-start everything, and now never
 > re-extract), and lever 1 — the pre-terminated (N_nl + N_term)-port network of §6.2 — is still
 > unbuilt and still the biggest structural win.
+>
+> **HB-P4 then took the device evaluation itself** (`src/Core/RESOLVED.md` §HB-P4,
+> `src/Engine/RESOLVED.md` §HB-P4). The SDD's compiled register program is walked ONCE per time grid
+> with structure-of-arrays operands instead of once per sample through 136-byte duals: **9-16×
+> faster per sample** serially (4.0 µs → 543 ns at 16 samples, → 243 ns at 1,024), up to **46×** with
+> the sample-parallel split above 256 samples, and allocation-free after the first call. On the whole
+> solve that is **1.4-2.0×** on the hero fixtures (Hero 2 at K=5: 0.61 → 0.31 ms).
+>
+> **The share it removed was 30-45% of a solve, not the 70-85% the HB review measured** — partly
+> because HB-P1/P2/P3 had already taken the rest of the iteration, and partly because
+> `HbEngine.Run` reaches a two-tone HB through the APFT sampler at **~128 samples**, never through
+> the 1,024-sample 2-D lattice the review priced it at. Size the next brief off the APFT sample
+> count, not off `HbFft2D.GridSizes`.
 
 **What that buys.** A 61-point Γ grid with ~8 bisection Pin steps per point is ~500 solves:
 **≈ 0.45 s single-threaded, ≈ 70 ms across 8 workers.** A single Pin drive-up (the loadline and
@@ -111,8 +124,10 @@ The levers that *do* matter, in descending order of value:
 ### 2.2 The one thing that can break the premise: external models
 
 `HbNewton.cs` calls `ec.Evaluate(...)` **once per time sample**, inside the Newton loop
-(`src/Engine/HarmonicBalance/HbNewton.cs:281`). For a built-in model that is a direct call and costs
-nothing. For an **external device** (Verilog-A `.osdi` via `osdi-worker`, or a vendor kit via
+(`src/Engine/HarmonicBalance/HbNewton.cs:281`) — for any model that has not opted into one of the two
+whole-grid doors. For a built-in model a per-sample call is a direct call and costs nothing, and
+since HB-P4 the SDD and the closed-form built-ins take `EvaluateGrid` instead, which asks for the
+whole grid at once. For an **external device** (Verilog-A `.osdi` via `osdi-worker`, or a vendor kit via
 `senior-worker`), `ExternalDeviceModel.Evaluate` is **one IPC round trip per time sample**.
 
 At K=5 the grid is `nextpow2(4K)` = 32 samples; with 3–4 warm Newton iterations that is ~100–130 round

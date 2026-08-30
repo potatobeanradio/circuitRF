@@ -193,16 +193,44 @@ public static class HbNewton2D
                 portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
             }
 
+            // HB-P4 M2 — the two-tone grid is N1·N2 samples (1,024 at the shipping mesh), which is
+            // where the per-sample device evaluation dominates a Newton iteration most heavily.
+            int S2 = N1 * N2;
+            GridResult? devGrid = null;
+            HbGridSampler? sampler = null;
+            if (ec.PrefersGridEvaluate)
+            {
+                var pv = HbGridBuffers.PortVBuffer(S2, portCount);
+                for (int p = 0; p < portCount; p++)
+                {
+                    int ip = portPlusIdx[p], im = portMinusIdx[p];
+                    int bse = p * S2;
+                    for (int t1 = 0; t1 < N1; t1++)
+                    for (int t2 = 0; t2 < N2; t2++)
+                        pv[bse + t1 * N2 + t2] =
+                            (ip >= 0 ? vTime[ip][t1, t2] : 0.0) - (im >= 0 ? vTime[im][t1, t2] : 0.0);
+                }
+                devGrid = HbGridBuffers.Result(devOrd);
+                ec.EvaluateGrid(pv.AsSpan(0, portCount * S2), [], S2, devGrid);
+                sampler = HbGridBuffers.Sampler();
+            }
+
             for (int t1 = 0; t1 < N1; t1++)
             for (int t2 = 0; t2 < N2; t2++)
             {
-                for (int p = 0; p < portCount; p++)
+                NonlinearResult res;
+                if (devGrid is not null)
+                    res = sampler!.Sample(devGrid, t1 * N2 + t2);
+                else
                 {
-                    double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t1, t2]  : 0.0;
-                    double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t1, t2] : 0.0;
-                    portV[p] = vp - vm;
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t1, t2]  : 0.0;
+                        double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t1, t2] : 0.0;
+                        portV[p] = vp - vm;
+                    }
+                    res = ec.Evaluate(new PortVoltages(portV));
                 }
-                var res = ec.Evaluate(new PortVoltages(portV));
 
                 for (int p = 0; p < portCount; p++)
                 {

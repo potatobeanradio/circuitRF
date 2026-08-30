@@ -245,6 +245,25 @@ public sealed class DiodeModel : ComponentModel
 
     public override NonlinearResult Evaluate(in PortVoltages v)
     {
+        int P = PortCount;
+        var i = new double[P];
+        var q = new double[P];
+        var dg = new double[P, P];
+        var dc = new double[P, P];
+        EvaluateInto(v, i, q, dg, dc);
+        return new NonlinearResult(i, q, dg, dc);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>HB-P4 M4 — see <see cref="ComponentModel.EvaluateInto"/>.</remarks>
+    public override bool PrefersGridEvaluate => !NonlinearEvalDiagnostics.DisableGridEvaluate;
+
+    /// <inheritdoc/>
+    protected override bool HasEvaluateInto => true;
+
+    /// <inheritdoc/>
+    protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
+    {
         if (_rs > 0)
         {
             // Port 0 — the series resistor. Linear, but it lives here rather than as a separate
@@ -261,26 +280,25 @@ public sealed class DiodeModel : ComponentModel
 
             // No cross terms: each port's current depends only on its own voltage. The COUPLING is
             // the shared internal node, and the engine supplies that through the node map.
-            return new NonlinearResult(
-                i:  [vr * gr, ij],
-                q:  [0.0, qj2],
-                dg: new double[2, 2] { { gr, 0.0 }, { 0.0, gj } },
-                dc: new double[2, 2] { { 0.0, 0.0 }, { 0.0, cj2 } });
+            i[0] = vr * gr;  i[1] = ij;
+            q[0] = 0.0;      q[1] = qj2;
+            dg[0, 0] = gr;   dg[0, 1] = 0.0;  dg[1, 0] = 0.0;  dg[1, 1] = gj;
+            dc[0, 0] = 0.0;  dc[0, 1] = 0.0;  dc[1, 0] = 0.0;  dc[1, 1] = cj2;
+            return;
         }
 
         double vd = v[0];
-        var (i, g) = Conduction(vd);
+        var (id, g) = Conduction(vd);
         var (qj, cj) = Depletion(vd);
 
         // Diffusion charge is Tt·I(V), so its capacitance is Tt·dI/dV — including the gmin term,
         // which is negligible but excluding it would make dc inconsistent with q.
-        double q = qj + _tt * i;
+        double qd = qj + _tt * id;
         double c = cj + _tt * g;
 
-        return new NonlinearResult(
-            i:  [i],
-            q:  [q],
-            dg: new double[1, 1] { { g } },
-            dc: new double[1, 1] { { c } });
+        i[0] = id;
+        q[0] = qd;
+        dg[0, 0] = g;
+        dc[0, 0] = c;
     }
 }

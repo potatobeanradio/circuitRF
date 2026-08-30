@@ -1081,3 +1081,87 @@ whose committed copy is **stale relative to what the engine writes at HEAD** —
 it in a `git worktree` at the pre-brief commit and getting a file byte-identical to the post-brief one.
 Neither was attributable to HB-P3, and **the stale `.gam` is deliberately left as committed**: it is
 read by nothing, and refreshing it is a decision about that fixture rather than part of this brief.
+
+## HB-P4 — the HB device pass asks for the whole grid at once (2026-08-30)
+
+`docs/sonnet-briefs/brief-hb-p4-sdd-grid-evaluate.md`, engine side.
+`src/Engine/HarmonicBalance/HbGridBuffers.cs`, plus the device loops in `HbNewton.RunDevicePass`,
+`HbNewton.ComputeDevicePortCurrents`, `HbNewton2D.EvaluateNonlinear2D` and
+`HbNewtonNd.EvaluateNonlinearNd`. The Core side (the evaluator itself) is in `src/Core/RESOLVED.md`.
+
+Where a model says its cost is arithmetic (`PrefersGridEvaluate`), the pass transposes the device's
+port voltages to `[port][t]`, calls `EvaluateGrid` once, and reads the result back one sample at a
+time through `HbGridSampler`. The `EvaluateBatch` path (out-of-process workers, H0) and the scalar
+path are unchanged and still chosen first/last respectively.
+
+**Measured, Release, M4, one drive point, best of 5:**
+
+| fixture | shape | scalar | grid | speedup |
+|---|---|---|---|---|
+| Hero2/hero2.cnl | single tone, K=4, gridN=16 | 0.39 ms | 0.24 ms | **1.65x** |
+| Hero2/hero2_convergence.cnl | single tone, K=5, gridN=32 | 0.61 ms | 0.31 ms | **1.95x** |
+| Hero4/hero4.cnl | single tone, K=4, gridN=16, 2 devices | 0.95 ms | 0.68 ms | **1.40x** |
+| Hero5/hero5.cnl | two tone (APFT, S≈128) | 3.89 ms | 2.69 ms | **1.45x** |
+| Hero5/hero5_3tone.cnl | 3 tones, APFT | 3.51 ms | 2.18 ms | **1.61x** |
+| Hero5/hero5_6tone.cnl | 6 tones, APFT | 5.17 ms | 3.57 ms | **1.45x** |
+
+### The brief's premise measurements are stale, in TWO ways — the device pass is not 70-85% of a solve
+
+The brief opens with "device evaluation is ~70% of a Newton iteration and 85% of a two-tone one".
+Measured on these fixtures now, it is **30-45%**, which is why a 16x device speedup shows up as
+1.4-2.0x on the solve. Two separate reasons, both worth knowing before sizing the next HB brief:
+
+1. **HB-P1/P2/P3 landed in between.** The extractor rebuild, the Jacobian and the line search were all
+   removed or reduced from the same iteration, so the same device cost is a smaller share of a smaller
+   total than when the review was written.
+2. **`HbEngine.Run` does not use the 2-D lattice for two tones.** The brief prices Hero 5 at
+   "32x32 = 1,024 samples". `HbNewton2D.EvaluateNonlinear2D` is never reached by `Run` — verified by
+   instrumenting both device loops and running all six fixtures, which produced zero 2-D calls. The
+   multi-tone path is the APFT sampler (`HbNewtonNd`) at **S = 124-172 samples** for every one of
+   two, three and six tones. `HbFft2D.GridSizes(5, 5, 1)` does return (32, 32), so the 1,024 figure is
+   real for the lattice engine — it just is not what a two-tone HB run executes. Anything sized off
+   "the two-tone grid is 1,024 samples" is sized off a path the shipped run does not take.
+
+### `RunSinglePoint` takes the single-tone Newton loop whatever it is handed
+
+The first version of `HbGridEvaluateTests` used `RunSinglePoint` for Hero 5 and reported a 10-entry
+V cube for a fixture whose lattice has 31 mixing products — it had silently measured the single-tone
+path twice and called it a two-tone bit-identity test. Only `Run` dispatches a multi-tone parameter
+set to the 2-D / APFT engines. A multi-tone test written against `RunSinglePoint` passes vacuously.
+
+### The counters have to allow for the nonlinear-DC pre-solve
+
+`NonlinearEvalDiagnostics.ScalarCalls` never reaches zero on the grid path and should not: the DC
+pre-solve that seeds the initial guess evaluates one operating point per Newton step (nothing to
+batch — brief §8 excludes it) and lands on the same counter. The assertable property is that no HB
+DEVICE PASS went sample by sample, i.e. the count is below `gridN`. On Hero 2 that is 4 against a
+reference run's 52.
+
+### Allocation
+
+The per-sample device allocation is gone; what still scales with the grid is the pass's OWN buffers
+(`iTime`, `qTime`, `dgTime`, `dcTime`, `vTime` and the FFT temporaries), identical on both paths and
+untouched by this brief. Measured on Hero 2, one `EvaluateNonlinear`, 16 -> 256 samples: the scalar
+path's allocation grows 198,432 B and the grid path's 116,136 B, so **343 B/sample of device garbage
+is gone** and the remainder is the pass itself. At the model level the claim is exact —
+`SddModel.EvaluateGrid` on a warm `GridResult` allocates **zero** bytes at both 32 and 1,024 samples.
+
+### `HbGridBuffers` is thread-static on purpose
+
+The result buffers must survive from one Newton iteration to the next or the allocation this brief
+removes just moves up a level. `EvaluateNonlinear` is a public static entry point with callers in
+three engines and in the test suite, so threading a cache parameter through every overload would be a
+wide change for a private concern. A device pass is single-threaded — the parallel split lives inside
+`SddModel.EvaluateGrid`, over samples — so per-thread state is both sufficient and isolating.
+
+`HbGridSampler` copies a dozen doubles per sample rather than rewriting the three engines'
+accumulation loops. Those loops are the KCL port stamp (`PortAdd`/`PortAdd4`, four signed corners per
+port pair) and the w>=2 bucket accumulation: the part of the device pass least worth transcribing
+three more times, against a copy that is under 1% of what the brief removes.
+
+### The parallel threshold of 256 measured right
+
+Below it the fork/join loses (S=128: 368 ns/sample parallel against 280 serial); at 256 it is a small
+win (199 against 265); from 512 up it is 2-3x (S=1024: 102 against 243). `HbNewtonNd`'s 124-172
+samples therefore stay serial, which is the correct call for the fixtures as they run today — the
+parallel path is there for the larger grids a denser APFT or the lattice engine produces.

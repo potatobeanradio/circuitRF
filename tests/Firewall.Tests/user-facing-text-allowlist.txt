@@ -16,6 +16,7 @@
 #
 # Format: <path>|<exact message text>
 #
+src/Core/ComponentModel.cs|{GetType().Name} does not implement EvaluateInto
 src/Core/ComponentModel.cs|{GetType().Name} is not a nonlinear model
 src/Core/ComponentModel.cs|{GetType().Name}.Stamp is not implemented
 src/Core/ComponentModel.cs|{GetType().Name}: H[{w}] is not defined
@@ -87,6 +88,7 @@ src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path1}' not found
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path2}' not found
 src/Core/Devices/MutualInductanceModel.cs|MutualInductanceModel '{c.InstancePath}': Resolve() was not called
+src/Core/Devices/SddModel.cs|SDD '{_name}' has {C} control reference(s), so EvaluateGrid needs a 
 src/Core/Devices/SddModel.cs|SDD '{_name}': I[p,{w}] used but H[{w}] is not defined
 src/Core/Devices/SnpModel.cs|{who}: Touchstone file not found: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: its 'File' parameter names a folder, not a Touchstone file: '{_filePath}'.
@@ -109,6 +111,7 @@ src/Core/Elaboration/Elaborator.cs|SDD '{inst.InstanceName}': expected an even n
 src/Core/Elaboration/Elaborator.cs|SDD equation references '{name}' which resolved to a Complex value; 
 src/Core/Elaboration/Elaborator.cs|Z_Port '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); got {netCount}.
 src/Core/Elaboration/Elaborator.cs|Z_Port '{inst.InstanceName}': expected {2 * portCount} nets (2 per port: +,−) for a {portCount}-port 
+src/Core/Expressions/CompiledSddExpr.cs|SDD '{modelName}': this equation contains a conditional and has no grid form — 
 src/Core/Expressions/Evaluator.cs|'[...]' indexing requires a cube (e.g. HB1.V[...]); got {target.Kind}.
 src/Core/Expressions/Evaluator.cs|'{cl.Name}' requires real arguments
 src/Core/Expressions/Evaluator.cs|'{label}' not found on axis '{axis.Name}'. Available: [{string.Join(
@@ -169,6 +172,7 @@ src/Core/Expressions/SddEvaluator.cs|Unknown binary op '{b.Op}'
 src/Core/Expressions/SddEvaluator.cs|Unknown comparison op '{cmp.Op}'
 src/Core/Expressions/SddEvaluator.cs|Unknown constant '{name}'
 src/Core/Expressions/SddEvaluator.cs|Unknown unary op '{u.Op}'
+src/Core/Expressions/SddGridEvaluator.cs|Unknown register op: {ins.Op}
 src/Core/Expressions/SddRegisterProgram.cs|SddRegisterCompiler: 'if' reached the register path
 src/Core/Expressions/SddRegisterProgram.cs|SddRegisterCompiler: conditional reached the register path
 src/Core/Expressions/SddRegisterProgram.cs|Unknown register op: {ins.Op}
@@ -289,20 +293,16 @@ src/Engine/Mom/ModalDecomposition.cs|MoM: the lossless modal eigenproblem [C]v =
 src/Engine/Mom/ModalDecomposition.cs|The even/odd decomposition is defined for exactly two conductors; this model has 
 src/Engine/Mom/PlanarAdaptiveSweep.cs|at least one node
 src/Engine/Mom/PlanarAdaptiveSweep.cs|one value per node
-src/Engine/Mom/PlanarAim.cs|Expected a vector of length {_n}, got {x.Length}.
 src/Engine/Mom/PlanarAim.cs|Basis {i} is horizontal but follows the vertical basis at {nh}. The accelerator 
-src/Engine/Mom/PlanarAim.cs|This mesh carries {g.VerticalCount} ẑ-directed (via) unknown(s). 
+src/Engine/Mom/PlanarAim.cs|Expected a vector of length {_n}, got {x.Length}.
 src/Engine/Mom/PlanarAim.cs|The accelerated solve did not converge: {iterations} iteration(s) reached a relative 
 src/Engine/Mom/PlanarAim.cs|The exact near-field entries were released after the preconditioner was factored from 
 src/Engine/Mom/PlanarAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarAim.cs|The stencil's Vandermonde matrix is singular, which can only happen if the grid 
+src/Engine/Mom/PlanarAim.cs|This mesh carries {g.VerticalCount} ẑ-directed (via) unknown(s). 
 src/Engine/Mom/PlanarAimBordered.cs|Expected a vector of length {_n}, got {x.Length}.
 src/Engine/Mom/PlanarAimBordered.cs|The accelerated multi-level solve did not converge: {iterations} iteration(s) 
 src/Engine/Mom/PlanarAimBordered.cs|The exact near-field entries were released after the preconditioner was factored from 
-src/Engine/Mom/PlanarStaticAim.cs|Expected a vector of length {_m}, got {x.Length}.
-src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve did not converge: {iterations} iteration(s) 
-src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve models a SINGLE conductor level over the 
-src/Engine/Mom/PlanarStaticAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no in-plane ramp: its current crosses the shared FOOTPRINT 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis has no shared EDGE — its unit current crosses the shared 
 src/Engine/Mom/PlanarBasisFunctions.cs|A vertical (via) basis spans two cells at the same (x, y) on DIFFERENT levels, so 
@@ -316,17 +316,25 @@ src/Engine/Mom/PlanarDeembed.cs|This calibration standard's static capacitance s
 src/Engine/Mom/PlanarDeembed.cs|{p} ports need {p} error boxes, not {boxes.Count}.
 src/Engine/Mom/PlanarExcitation.cs|A solve needs at least one port.
 src/Engine/Mom/PlanarFeedExtension.cs|{p} ports need {p} lengths and {p} propagation constants.
+src/Engine/Mom/PlanarFill.cs|The cores-only source carries no remainder.
 src/Engine/Mom/PlanarFill.cs|These cores were built geometry-only (M5's accelerator path), so the cached cell-pair 
 src/Engine/Mom/PlanarFill.cs|This fill needs the cached cell-pair and basis-pair cores, and these were built 
 src/Engine/Mom/PlanarFill.cs|This mesh has {n:N0} unknowns, which is past the {SurfaceMesher.UnknownCeiling:N0}-unknown 
+src/Engine/Mom/PlanarFill.cs|{caller} needs cores in the {layout} layout and these are {cores.Layout}. 
 src/Engine/Mom/PlanarKernel.cs|A planar solve needs at least one port. Place port labels on the conductor ends in 
 src/Engine/Mom/PlanarKernel.cs|This layout has no port {drivenPortNumber} to drive; it has 
 src/Engine/Mom/PlanarSolve.cs|A sweep needs at least one frequency.
-src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number}'s calibration standard needs {nStd:N0} unknowns 
 src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at 
+src/Engine/Mom/PlanarSolve.cs|Port {ports[i].Number}'s calibration standard needs {nStd:N0} unknowns 
 src/Engine/Mom/PlanarSolve.cs|The sweep's lowest frequency is {SurfaceMesher.Eng(fLo)}Hz. 
 src/Engine/Mom/PlanarSolve.cs|This mesh was built without a level list, so the general kernel has no height to 
+src/Engine/Mom/PlanarStaticAim.cs|Expected a vector of length {_m}, got {x.Length}.
+src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve did not converge: {iterations} iteration(s) 
+src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve models a SINGLE conductor level over the 
+src/Engine/Mom/PlanarStaticAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarSystem.cs|This geometry needs {n:N0} unknowns, which is past the 
+src/Engine/Mom/PlanarSystem.cs|This system has been factored, and P7's factorisation runs IN PLACE — the matrix's 
+src/Engine/Mom/PlanarSystem.cs|This system was factored with P7's complex-symmetric LDLᵀ, which is not an LU and 
 src/Engine/Mom/QuasiStaticKernel.cs|{Name} cannot solve this problem. {ok.Reason}
 src/Engine/Mom/RlgcExtractor.cs|MoM: [C₀] is singular — the conductor set has no reference.
 src/Engine/Mom/RlgcToSparams.cs|At least one frequency point required.
@@ -341,6 +349,11 @@ src/Engine/Mom/SpectralGreens.cs|The {what} height is {z}; it must be finite.
 src/Engine/Mom/SpectralGreens.cs|This is SpectralGreens — the ONE-LAYER kernel — and it is defined for z, z′ ≥ h = 
 src/Engine/Mom/SpectralGreens.cs|{kernel} has no 'asymptotic top reflection': it is not built from a reflection 
 src/Engine/Mom/SurfaceMesher.cs|This mesh has {n:N0} unknowns, which is past the {ceiling:N0}-unknown 
+src/Engine/Mom/SymmetricFactorization.cs|A residual needs a square matrix and two vectors of its size; got {z.RowCount}×
+src/Engine/Mom/SymmetricFactorization.cs|A symmetric factorisation needs a square, non-empty matrix; this one is 
+src/Engine/Mom/SymmetricFactorization.cs|Right-hand side {r} has {rhs[r].Count} entries against a factorisation of 
+src/Engine/Mom/SymmetricFactorization.cs|The unpivoted complex-symmetric factorisation met an exactly zero pivot at 
+src/Engine/Mom/SymmetricFactorization.cs|This right-hand side has {b.Count} entries against a factorisation of {n}.
 src/Engine/NonlinearDcEngine.cs|SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' 
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] references a {kind} device; 
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] — {kind} branch index not yet assigned. 
@@ -442,8 +455,6 @@ src/RfCore/Loadpull/SplReader.cs|.spl: no freq/grid/pin header line found.
 src/RfCore/Loadpull/SplWriter.cs|Loadpull DataSet has no frequency blocks.
 src/RfCore/RFNetwork.Interpolation.cs|Cannot interpolate an empty SNP.
 src/RfCore/RFNetwork.Interpolation.cs|targetFrequencies must not be empty.
-src/RfCore/SnpInterpolator.cs|Cannot interpolate an empty SNP.
-src/RfCore/SnpInterpolator.cs|targetFrequencies must not be empty.
 src/RfCore/RFNetwork.cs|De-embedding requires 2-port matrices.
 src/RfCore/RFNetwork.cs|Passivity requires a square scattering matrix.
 src/RfCore/RFNetwork.cs|SToS requires an S-parameter SNP.
@@ -455,6 +466,8 @@ src/RfCore/RFNetwork.cs|z0Old length ({z0Old.Length}) must equal matrix size ({n
 src/RfCore/SNP.cs|All matrices must be square and the same size.
 src/RfCore/SNP.cs|At least one frequency point required.
 src/RfCore/SNP.cs|Frequency and matrix counts must match.
+src/RfCore/SnpInterpolator.cs|Cannot interpolate an empty SNP.
+src/RfCore/SnpInterpolator.cs|targetFrequencies must not be empty.
 src/RfCore/TouchstoneIO.cs|No valid frequency points found in Touchstone file.
 src/RfCore/TouchstoneIO.cs|Token overflow: got {blockTokens.Count} tokens, 
 src/WBond/ArrayReduction.cs|Array '{arrayNames?[a] ?? a.ToString()}' has no wires. An empty array makes the mapping 
@@ -512,20 +525,3 @@ src/WBond/WireTableCsv.cs|Line {lineNumber}: the wire's two feet are at the same
 src/WBond/WireTableCsv.cs|Line {lineNumber}: the wirebond table header is missing required column(s) 
 src/WBond/WireTableCsv.cs|Line {lineNumber}: wire diameter must be positive, got {diameter} nm.
 src/WBond/WireTableCsv.cs|The wirebond table has no header row. Expected a line naming at least: 
-src/Engine/Mom/PlanarFill.cs|{caller} needs cores in the {layout} layout and these are {cores.Layout}. 
-src/Engine/Mom/PlanarFill.cs|The cores-only source carries no remainder.
-
-# P7 (brief-em-p7-symmetric-inplace-factorisation.md). Six of these seven are internal
-# invariants a user cannot reach — argument shapes, and two "you already factored this"
-# guards that exist so a stale read of a consumed matrix cannot return plausible numbers.
-# The seventh, the zero pivot, IS reachable in principle and is deliberately a plain
-# exception: it names the setting that works around it and it sits beside this area's
-# other planar refusals (PlanarSystem's own ceiling, a few lines above), which a later
-# conversion should take as one family rather than one at a time.
-src/Engine/Mom/PlanarSystem.cs|This system has been factored, and P7's factorisation runs IN PLACE — the matrix's 
-src/Engine/Mom/PlanarSystem.cs|This system was factored with P7's complex-symmetric LDLᵀ, which is not an LU and 
-src/Engine/Mom/SymmetricFactorization.cs|A residual needs a square matrix and two vectors of its size; got {z.RowCount}×
-src/Engine/Mom/SymmetricFactorization.cs|A symmetric factorisation needs a square, non-empty matrix; this one is 
-src/Engine/Mom/SymmetricFactorization.cs|Right-hand side {r} has {rhs[r].Count} entries against a factorisation of 
-src/Engine/Mom/SymmetricFactorization.cs|The unpivoted complex-symmetric factorisation met an exactly zero pivot at 
-src/Engine/Mom/SymmetricFactorization.cs|This right-hand side has {b.Count} entries against a factorisation of {n}.

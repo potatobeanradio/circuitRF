@@ -455,11 +455,33 @@ public static class HbNewton
                     ? ec.EvaluateBatch(GatherPortVoltages(vTime, gridN, portCount, portPlusIdx, portMinusIdx))
                     : null;
 
+            // HB-P4 M2 — and one walk of the compiled program for the whole grid, when the model
+            // says its cost is arithmetic rather than transport. Same rule as the batch above: the
+            // control-current form has no grid shape here and stays scalar.
+            GridResult? grid = null;
+            HbGridSampler? sampler = null;
+            if (batch is null && ec.PrefersGridEvaluate && cRefTime is null)
+            {
+                var pv = HbGridBuffers.PortVBuffer(gridN, portCount);
+                for (int p = 0; p < portCount; p++)
+                {
+                    int ip = portPlusIdx[p], im = portMinusIdx[p];
+                    int bse = p * gridN;
+                    for (int t = 0; t < gridN; t++)
+                        pv[bse + t] = (ip >= 0 ? vTime[ip][t] : 0.0) - (im >= 0 ? vTime[im][t] : 0.0);
+                }
+                grid = HbGridBuffers.Result(devOrd);
+                ec.EvaluateGrid(pv.AsSpan(0, portCount * gridN), [], gridN, grid);
+                sampler = HbGridBuffers.Sampler();
+            }
+
             for (int t = 0; t < gridN; t++)
             {
                 NonlinearResult res;
                 if (batch is not null)
                     res = batch[t];
+                else if (grid is not null)
+                    res = sampler!.Sample(grid, t);
                 else
                 {
                     for (int p = 0; p < portCount; p++)
@@ -1529,11 +1551,30 @@ public static class HbNewton
                     ? ec.EvaluateBatch(GatherPortVoltages(vTime!, gridN, portCount, portPlusIdx, portMinusIdx))
                     : null;
 
+            GridResult? grid = null;
+            HbGridSampler? sampler = null;
+            if (batch is null && ec.PrefersGridEvaluate && cRefTimePost is null)
+            {
+                var pv = HbGridBuffers.PortVBuffer(gridN, portCount);
+                for (int p = 0; p < portCount; p++)
+                {
+                    int ip = portPlusIdx[p], im = portMinusIdx[p];
+                    int bse = p * gridN;
+                    for (int t = 0; t < gridN; t++)
+                        pv[bse + t] = (ip >= 0 ? vTime![ip][t] : 0.0) - (im >= 0 ? vTime![im][t] : 0.0);
+                }
+                grid = HbGridBuffers.Result(devOrd);
+                ec.EvaluateGrid(pv.AsSpan(0, portCount * gridN), [], gridN, grid);
+                sampler = HbGridBuffers.Sampler();
+            }
+
             for (int t = 0; t < gridN; t++)
             {
                 NonlinearResult res;
                 if (batch is not null)
                     res = batch[t];
+                else if (grid is not null)
+                    res = sampler!.Sample(grid, t);
                 else
                 {
                     var portV = new double[portCount];

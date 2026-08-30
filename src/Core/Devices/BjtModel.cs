@@ -442,6 +442,25 @@ public sealed class BjtModel : ComponentModel
     public override NonlinearResult Evaluate(in PortVoltages v)
     {
         int P = PortCount;
+        var i = new double[P];
+        var q = new double[P];
+        var dg = new double[P, P];
+        var dc = new double[P, P];
+        EvaluateInto(v, i, q, dg, dc);
+        return new NonlinearResult(i, q, dg, dc);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>HB-P4 M4 — see <see cref="ComponentModel.EvaluateInto"/>.</remarks>
+    public override bool PrefersGridEvaluate => !NonlinearEvalDiagnostics.DisableGridEvaluate;
+
+    /// <inheritdoc/>
+    protected override bool HasEvaluateInto => true;
+
+    /// <inheritdoc/>
+    protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
+    {
+        int P = PortCount;
 
         // Internal (polarity-normalised) junction voltages. Every equation below is written for an
         // n-p-n; the p-n-p is the same device with every voltage and every current negated, so one
@@ -561,10 +580,13 @@ public sealed class BjtModel : ComponentModel
         double cbxX = (1.0 - _xcjc) * cjx;
 
         // ── Assemble ─────────────────────────────────────────────────────────
-        var i  = new double[P];
-        var q  = new double[P];
-        var dg = new double[P, P];
-        var dc = new double[P, P];
+        // The buffers are the caller's and are reused across a grid's samples, so start from a clean
+        // sheet: the assignments below cover only the entries this device actually contributes to,
+        // and everything else must read zero rather than the previous sample's value.
+        Array.Clear(i);
+        Array.Clear(q);
+        Array.Clear(dg);
+        Array.Clear(dc);
 
         // Currents and charges flip with polarity; the Jacobians do NOT — each entry carries one
         // factor of the sign from the current and one from the voltage, and s² is 1. The only
@@ -624,7 +646,5 @@ public sealed class BjtModel : ComponentModel
             dg[p, PBe] = _s * dIdR * drdve;
             dg[p, PBc] = _s * dIdR * drdvc;
         }
-
-        return new NonlinearResult(i, q, dg, dc);
     }
 }

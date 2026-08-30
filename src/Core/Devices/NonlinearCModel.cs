@@ -48,12 +48,28 @@ public sealed class NonlinearCModel : ComponentModel
 
     public override NonlinearResult Evaluate(in PortVoltages v)
     {
-        double vd  = v[0];
-        double cap = CapAt(vd);
-        return new NonlinearResult(
-            i:  [0.0],
-            q:  [ChargeAt(vd)],
-            dg: new double[1, 1] { { 0.0 } },
-            dc: new double[1, 1] { { cap } });
+        var i = new double[1];
+        var q = new double[1];
+        var dg = new double[1, 1];
+        var dc = new double[1, 1];
+        EvaluateInto(v, i, q, dg, dc);
+        return new NonlinearResult(i, q, dg, dc);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>HB-P4 M4 — see <see cref="ComponentModel.EvaluateInto"/>.</remarks>
+    public override bool PrefersGridEvaluate => !NonlinearEvalDiagnostics.DisableGridEvaluate;
+
+    /// <inheritdoc/>
+    protected override bool HasEvaluateInto => true;
+
+    /// <inheritdoc/>
+    protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
+    {
+        double vd = v[0];
+        i[0] = 0.0;
+        q[0] = ChargeAt(vd);
+        dg[0, 0] = 0.0;
+        dc[0, 0] = CapAt(vd);
     }
 }

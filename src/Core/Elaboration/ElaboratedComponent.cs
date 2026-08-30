@@ -75,6 +75,41 @@ public sealed class ElaboratedComponent(
         return scaled;
     }
 
+    /// <inheritdoc cref="ComponentModel.PrefersGridEvaluate"/>
+    public bool PrefersGridEvaluate => Model.PrefersGridEvaluate;
+
+    /// <summary>
+    /// Whole-grid nonlinear evaluation, with the device multiplier applied to every block at every
+    /// sample — the same seam as <see cref="Evaluate(in PortVoltages)"/>, for the same reason. The
+    /// scaling is done in place, so the multiplier costs no allocation here either.
+    /// </summary>
+    public void EvaluateGrid(ReadOnlySpan<double> portVoltages, ReadOnlySpan<double> controlCurrents,
+                             int sampleCount, GridResult into)
+    {
+        Model.EvaluateGrid(portVoltages, controlCurrents, sampleCount, into);
+        if (!HasMultiplier) return;
+
+        double m = Multiplicity;
+        int P = into.PortCount, C = into.ControlCount, S = sampleCount;
+        ScaleRun(into.I, P * S, m);
+        ScaleRun(into.Q, P * S, m);
+        ScaleRun(into.Dg, P * P * S, m);
+        ScaleRun(into.Dc, P * P * S, m);
+        ScaleRun(into.DControl, P * C * S, m);
+        ScaleRun(into.DControlCharge, P * C * S, m);
+        foreach (var term in into.LiveTerms)
+        {
+            ScaleRun(term.Value, P * S, m);
+            ScaleRun(term.Jac, P * P * S, m);
+            ScaleRun(term.JacCtrl, P * C * S, m);
+        }
+    }
+
+    private static void ScaleRun(double[] buf, int count, double m)
+    {
+        for (int k = 0; k < count; k++) buf[k] *= m;
+    }
+
     private IMnaContext Wrap(IMnaContext mna) => new MultipliedMnaContext(mna, Multiplicity, InstancePath);
 
     /// <summary>

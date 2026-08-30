@@ -211,15 +211,39 @@ public static class HbNewtonNd
                 portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
             }
 
-            for (int s = 0; s < S; s++)
+            // HB-P4 M2 — 756 APFT samples at 6 tones, order 3.
+            GridResult? grid = null;
+            HbGridSampler? sampler = null;
+            if (ec.PrefersGridEvaluate)
             {
+                var pv = HbGridBuffers.PortVBuffer(S, portCount);
                 for (int p = 0; p < portCount; p++)
                 {
-                    double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][s]  : 0.0;
-                    double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][s] : 0.0;
-                    portV[p] = vp - vm;
+                    int ip = portPlusIdx[p], im = portMinusIdx[p];
+                    int bse = p * S;
+                    for (int t = 0; t < S; t++)
+                        pv[bse + t] = (ip >= 0 ? vTime[ip][t] : 0.0) - (im >= 0 ? vTime[im][t] : 0.0);
                 }
-                var res = ec.Evaluate(new PortVoltages(portV));
+                grid = HbGridBuffers.Result(devOrd);
+                ec.EvaluateGrid(pv.AsSpan(0, portCount * S), [], S, grid);
+                sampler = HbGridBuffers.Sampler();
+            }
+
+            for (int s = 0; s < S; s++)
+            {
+                NonlinearResult res;
+                if (grid is not null)
+                    res = sampler!.Sample(grid, s);
+                else
+                {
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][s]  : 0.0;
+                        double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][s] : 0.0;
+                        portV[p] = vp - vm;
+                    }
+                    res = ec.Evaluate(new PortVoltages(portV));
+                }
 
                 for (int p = 0; p < portCount; p++)
                 {

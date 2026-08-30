@@ -577,3 +577,98 @@ parse-once, fit-once-per-settings-tuple, per-consumer warnings, and re-read afte
 `SnpCacheTests` (Engine.Tests) runs `SParameterEngine.Run` twice on one netlist and once on a fresh
 elaboration and asserts the three `S` cubes are bit-identical — the shape `ParametricSweepEngine`
 produces — plus a rewritten .s2p reaching the second run.
+
+## HB-P4 — the SDD evaluates the whole time grid in one call (2026-08-30)
+
+`docs/sonnet-briefs/brief-hb-p4-sdd-grid-evaluate.md`, Core side.
+`src/Core/Expressions/SddGridEvaluator.cs` + `GridScratch.cs` + `GridDomainWarnings.cs`,
+`CompiledSddExpr.EvalDualGrid`, `SddModel.EvaluateGrid`, `ComponentModel.EvaluateGrid`/`EvaluateInto`,
+`GridResult.cs`, `NonlinearEvalDiagnostics.cs`.
+
+The compiled register program is the same instruction sequence for every sample of an HB time grid.
+It is now walked ONCE per grid with each register laid out as `value[S]` + `grad[k][S]`, vectorised
+across samples, instead of once per sample through 136-byte `Dual` structs. The scalar path
+(`EvalDual`, `Dual`, `SddEvaluator`) is untouched and is the oracle.
+
+**Measured (Release, M4, 10 cores, a 2-port SDD carrying the hero gate + drain + a charge equation):**
+
+| S | scalar ns/sample | grid serial | speedup | grid parallel | speedup |
+|---|---|---|---|---|---|
+| 16 | 4,983 | 543 | 9.2x | — | — |
+| 32 | 4,135 | 389 | 10.6x | — | — |
+| 128 | 3,966 | 280 | 14.2x | 368 | 10.8x |
+| 256 | 3,929 | 265 | 14.8x | 199 | 19.7x |
+| 1024 | 3,944 | 243 | 16.2x | 102 | 38.6x |
+| 2048 | 3,941 | 245 | 16.1x | 86 | 46.1x |
+
+### The vector helpers' FORM was worth 2.3x — spans are not free here
+
+The obvious spelling — `new Vector<double>(a.Slice(i, w)) + new Vector<double>(b.Slice(i, w))` —
+measured **2.3x slower** than `Vector.LoadUnsafe(ref a, i)` against a `ref double` from
+`MemoryMarshal.GetReference`: 14.0 ns against 6.3 ns per multiply instruction per sample, and the
+hero drain equation 545 ns/sample against 236. `Vector<double>(ReadOnlySpan<T>)` carries a length
+check the JIT did not hoist out of the loop, so every element paid for a branch it could not need.
+This is the single largest factor in the kernel and it is invisible in the source: both spellings
+read as "a vectorised add".
+
+### Blocking the walk into cache-sized chunks measured WORSE, at every size
+
+The plausible theory — a 1,024-sample grid of the drain equation is a 1.3 MB register file, so walk
+it in L1-sized blocks — was implemented, measured and REVERTED. Per sample, at S = 1,024: 530 ns at a
+16-sample block, 390 at 32, 318 at 64, 284 at 128, 266 at 256, **250 at the whole grid**. The
+per-instruction setup is paid once per block, so a small block multiplies it, and the streaming
+access pattern never produced the cache pressure the blocking was meant to relieve. The serial path
+walks the whole range in one go. (The parallel path chunks for load balance, not for cache: 2x the
+core count, which measured better than one chunk per core.)
+
+### The transcendentals are NOT the residue — the brief's ~30% estimate is off by an order of magnitude
+
+Swapping `exp`/`ln`/`tanh` for `abs` in the hero drain equation — identical program shape, identical
+register count, so the only difference is the function evaluated — moves the kernel by **0-6%**.
+`Math.Exp`/`Log`/`Tanh` themselves are ~1-3% of the grid kernel; what an `exp` instruction actually
+costs is its per-sample loop (8.5 ns/sample against a multiply's 6.3). **No vector transcendental was
+ever used**, so the brief's contingency — "if a vector transcendental differs in the last bit, use
+`Math.X`" — never arose: every transcendental is `Math.X` in a scalar loop from the start, which is
+what makes bit identity free. Vectorising the transcendental instructions' GRADIENT lanes (the value
+stays a scalar `Math.X` loop; the derivative factor is parked in a spare register and the lanes go
+through the same `VMul`/`VDiv` as the arithmetic opcodes) was worth ~3.5% and is what shipped.
+A vector transcendental library would be chasing the 1-3%.
+
+### Bit identity needed the gradient WIDTH tracked, not just the arithmetic
+
+`Dual` carries an `N` that a binary operator resolves as `max(a.N, b.N)`, and lanes at or above it
+are never written — they stay +0.0. Computing every lane unconditionally is NOT equivalent: a lane
+the scalar path leaves at +0.0 can come back as `-0.0` or `NaN` from `0*bv` or `0/0` when the value
+is non-finite. N is structural (a literal is 0, a slot is n, everything else is the max of its
+operands), so `BuildHasGrad` precomputes it once; a gradient-free register's lanes are neither
+written nor read (reads come from a shared zero run). That is both faster and exact.
+
+**The one residual inequivalence, recorded rather than fixed:** `min`/`max` copy the CHOSEN operand's
+`N`, which is per-sample, so the grid uses `max(a, b)`. The two agree on every lane whose inputs are
+finite; they can differ only where a `min`/`max` over operands of DIFFERENT structural width feeds a
+non-finite intermediate. No SDD in this repository has that shape.
+
+### `SddModel.PrefersGridEvaluate` is false for a CONTROL SDD, and that is a model-level decision
+
+Found by the engine test, not by review. `HbNewton.RunDevicePass` gates the grid path on
+`cRefTime is null`, which reads as "this device has no control seeds this pass" — but a device WITH
+`C[n]` references reaches that state routinely (before its branch index resolves, and on any path
+that carries no `ControlCurrentContext` at all, which is every `RunSinglePoint` caller by design).
+The grid evaluator then got an empty control span for an equation compiled with `nC = 1` and threw
+`ArgumentOutOfRange`. The engine's own test stays, but the door is closed by the model, which is the
+one thing that knows it has controls. `EvalDualGrid` itself seeds controls per sample and is gated
+bit-for-bit against the scalar path — it is only that no engine feeds it.
+
+### A `Parallel.For` allocates its closure where the captured LOCALS are, not where the lambda is
+
+The zero-allocation claim failed at 40 bytes per call — on the SERIAL path, at every grid size. The
+`Parallel.For` in the untaken branch of `EvaluateGrid` captures locals declared at the top of the
+method, so the compiler allocates the display class at the top, unconditionally. Moving the branch
+into its own method (`EvalParallel`) is what makes "allocates nothing" true rather than nearly true.
+
+### `GridResult` layout is chosen so the common case needs no copy
+
+`EvalDualGrid` writes gradient lane `k` at `k*S + t` from a base; `GridResult.Dg` wants
+`(p*P + q)*S + t`. Those are the same run of memory when the gradient width equals the port count, so
+a device with no control references writes its Jacobian block in place. Only a control SDD (width
+P+C) needs the intermediate buffer, because its last C lanes belong to a different block.

@@ -176,6 +176,25 @@ public abstract class FetModelBase : ComponentModel
 
     public sealed override NonlinearResult Evaluate(in PortVoltages v)
     {
+        var i = new double[2];
+        var q = new double[2];
+        var dg = new double[2, 2];
+        var dc = new double[2, 2];
+        EvaluateInto(v, i, q, dg, dc);
+        return new NonlinearResult(i, q, dg, dc);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>HB-P4 M4 — a closed-form law has nothing to gain from the SDD's vectorised register
+    /// program, but it has the same six-arrays-per-sample allocation to lose.</remarks>
+    public override bool PrefersGridEvaluate => !NonlinearEvalDiagnostics.DisableGridEvaluate;
+
+    /// <inheritdoc/>
+    protected override bool HasEvaluateInto => true;
+
+    /// <inheritdoc/>
+    protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
+    {
         double vgs = v[0], vds = v[1];
         double vgd = vgs - vds;
         var (id, gm, gds) = DrainCurrent(vgs, vds);
@@ -203,11 +222,11 @@ public abstract class FetModelBase : ComponentModel
         double qg = qgs + qgd;      // charge into the gate
         double qd = -qgd;           // charge into the drain
 
-        return new NonlinearResult(
-            i:  [ig, id],
-            q:  [qg, qd],
-            // Port 0 current depends on Vgs only; port 1 on both.
-            dg: new double[2, 2] { { gg, 0.0 }, { gm, gds } },
-            dc: new double[2, 2] { { cgsV + cgdV, -cgdV }, { -cgdV, cgdV } });
+        i[0] = ig;  i[1] = id;
+        q[0] = qg;  q[1] = qd;
+        // Port 0 current depends on Vgs only; port 1 on both.
+        dg[0, 0] = gg;  dg[0, 1] = 0.0;  dg[1, 0] = gm;   dg[1, 1] = gds;
+        dc[0, 0] = cgsV + cgdV;  dc[0, 1] = -cgdV;
+        dc[1, 0] = -cgdV;        dc[1, 1] = cgdV;
     }
 }

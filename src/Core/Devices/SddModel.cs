@@ -39,6 +39,44 @@ public sealed class SddModel : ComponentModel
     private readonly CompiledSddExpr?[] _compiledCharge;
     private readonly (int W, CompiledSddExpr Compiled)[][] _compiledHigher;
 
+    // HB-P4 M2 — the grid door. True only when EVERY compiled equation has a register program
+    // (no conditional anywhere); one equation with an `if` puts the whole device back on the scalar
+    // path, because a device is asked for all its equations at once.
+    private readonly bool _supportsGrid;
+    // Distinct w≥2 buckets, ascending — the same set the scalar Evaluate builds per call, computed
+    // once here instead.
+    private readonly int[] _wOrder;
+    // Register files for the grid runner: one per worker (index 0 is the serial one). Grown, never
+    // shrunk, so a converged solve allocates none of this after its first iteration.
+    private GridScratch?[] _scratchPool = [];
+    // Only needed when the device has control refs: the grid evaluator writes n = ports + controls
+    // gradient lanes contiguously, and the last C of them belong to a different result block.
+    private double[] _gradBuf = [];
+    // Parallel-path copies of the caller's spans (a lambda cannot close over a span) and the
+    // per-chunk warning collectors.
+    private double[] _portCopy = [], _ctrlCopy = [];
+    private GridDomainWarnings[] _chunkWarn = [];
+
+    /// <summary>
+    /// HB-P4 M3 — the sample count at or above which a grid evaluation is split across cores.
+    /// A two-tone grid is 1,024 samples and an n-tone APFT grid 756, which are worth a fork/join;
+    /// a single-tone 32 is not, and would spend more in the join than in the arithmetic. Settable so
+    /// a test can force either side of the decision and gate that both give the same bits — and
+    /// thread-affine for the same reason as <see cref="NonlinearEvalDiagnostics"/>, so one test class
+    /// forcing it cannot reach another's solve. Zero means the default.
+    /// </summary>
+    public static int GridParallelThreshold
+    {
+        get => _gridParallelThreshold == 0 ? DefaultGridParallelThreshold : _gridParallelThreshold;
+        set => _gridParallelThreshold = value;
+    }
+
+    /// <summary>The shipped value of <see cref="GridParallelThreshold"/>.</summary>
+    public const int DefaultGridParallelThreshold = 256;
+
+    [ThreadStatic] private static int _gridParallelThreshold;
+
+
     /// <summary>Instance name (for error messages).</summary>
     public string Name => _name;
 
@@ -110,6 +148,20 @@ public sealed class SddModel : ComponentModel
                 compiled[j] = (higher[j].W, CompiledSddExpr.Compile(higher[j].Ast, _params, _portCount, controlNs, _name));
             _compiledHigher[p] = compiled;
         }
+
+        // HB-P4 — the grid door opens only if every equation can walk it.
+        bool grid = true;
+        foreach (var c in _compiledCurrent) if (c is not null && !c.SupportsGrid) grid = false;
+        foreach (var c in _compiledCharge)  if (c is not null && !c.SupportsGrid) grid = false;
+        foreach (var list in _compiledHigher)
+            foreach (var (_, c) in list) if (!c.SupportsGrid) grid = false;
+        _supportsGrid = grid;
+
+        var wSet = new SortedSet<int>();
+        foreach (var list in _higherAst)
+            foreach (var (ww, _) in list)
+                wSet.Add(ww);
+        _wOrder = [.. wSet];
     }
 
     public override int       PortCount => _portCount;
@@ -170,6 +222,7 @@ public sealed class SddModel : ComponentModel
     /// </summary>
     public override NonlinearResult Evaluate(in PortVoltages v, in ControlCurrents c)
     {
+        NonlinearEvalDiagnostics.CountScalar();
         int n  = _portCount;
         int nC = c.Count;
 
@@ -311,6 +364,204 @@ public sealed class SddModel : ComponentModel
                 mna.AddNodeBranchCoupling(nm, branch, -col);
             }
         }
+    }
+
+    // ── HB-P4 M2/M3: the whole time grid in one call ─────────────────────────────────────
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>False when some equation of this device contains a conditional: the active branch is
+    /// per-sample, so there is no single instruction sequence to run across the grid, and that device
+    /// keeps the scalar path unchanged until a later brief lifts conditionals into masked selects.</para>
+    ///
+    /// <para>False, too, for a device with <c>C[n]</c> CONTROL REFERENCES. <see cref="EvaluateGrid"/>
+    /// can seed controls per sample and does — but no engine hands it any: HB produces
+    /// <c>_c_ref(t)</c> through a two-pass self-consistent loop that calls the per-sample form, and
+    /// it can call the device with NO control seeds at all (before the referenced branch index is
+    /// resolved, or when the solve carries no control context). Declaring the door open on a device
+    /// the caller will drive with an empty control span is a fault waiting for whichever fixture
+    /// reaches that state — so the model, which is the one thing that knows it has controls, closes
+    /// it. The engine's own <c>cRefTime is null</c> test stays as well.</para>
+    /// </remarks>
+    public override bool PrefersGridEvaluate
+        => _supportsGrid && ControlRefs.Length == 0 && !NonlinearEvalDiagnostics.DisableGridEvaluate;
+
+    /// <summary>
+    /// HB-P4 — evaluates every equation of this SDD at every sample of the grid, writing the
+    /// structure-of-arrays result straight into the caller's buffers.
+    ///
+    /// <para>The gradient layout is why this costs no copy in the common case: the grid evaluator
+    /// emits lane <c>k</c> of equation <c>p</c> at <c>k·S + t</c> from a base, and
+    /// <see cref="GridResult.Dg"/> wants <c>(p·P + q)·S + t</c> — the same run of memory when the
+    /// gradient width equals the port count. Only a control SDD (width P+C) needs the intermediate
+    /// buffer, because its last C lanes belong to a different block.</para>
+    /// </summary>
+    public override void EvaluateGrid(
+        ReadOnlySpan<double> portVoltages, ReadOnlySpan<double> controlCurrents,
+        int sampleCount, GridResult into)
+    {
+        if (!_supportsGrid)
+        {
+            base.EvaluateGrid(portVoltages, controlCurrents, sampleCount, into);
+            return;
+        }
+
+        NonlinearEvalDiagnostics.CountGrid();
+
+        int P = _portCount;
+        int C = ControlRefs.Length;
+        if (C > 0 && controlCurrents.Length < C * sampleCount)
+            throw new ArgumentException(
+                $"SDD '{_name}' has {C} control reference(s), so EvaluateGrid needs a " +
+                $"[control][t] span of {C * sampleCount} values; got {controlCurrents.Length}.",
+                nameof(controlCurrents));
+        into.EnsureShape(P, C, sampleCount);
+        into.ClearBlocks();
+        into.ResetTerms();
+        foreach (int w in _wOrder) into.AddTerm(w);
+        if (sampleCount <= 0) return;
+
+        var warn = new GridDomainWarnings();
+
+        // Sized here, not lazily inside a worker: the chunks write disjoint runs of it, but growing
+        // it from two threads at once would not be disjoint.
+        if (C > 0) EnsureBuf(ref _gradBuf, (P + C) * sampleCount);
+
+        if (sampleCount >= GridParallelThreshold && Environment.ProcessorCount > 1)
+            EvalParallel(portVoltages, controlCurrents, P, C, sampleCount, into, ref warn);
+        else
+        {
+            // One walk of the program for the whole grid. Splitting the serial walk into cache-sized
+            // blocks was tried and MEASURED WORSE at every block size (529 ns/sample at 16 samples a
+            // block against 250 at the whole 1,024-sample grid): the per-instruction setup is paid
+            // once per block, so a small block multiplies it, and the register file streams
+            // predictably enough that the cache pressure the blocking was meant to relieve never
+            // showed up. See src/Core/RESOLVED.md HB-P4.
+            EnsurePool(1);
+            EvalChunk(portVoltages, controlCurrents, sampleCount, 0, sampleCount,
+                      into, _scratchPool[0]!, ref warn);
+        }
+
+        warn.Emit(_name);
+    }
+
+    /// <summary>
+    /// M3 — the samples split cleanly: every chunk runs the same program over its own slice of the
+    /// grid, into its own registers, and writes into disjoint runs of the caller's result. Only the
+    /// warning collectors need joining, and they merge in chunk order so the reported argument is
+    /// the one a serial run would have reported.
+    ///
+    /// <para>It is a separate method for an allocation reason, not a tidiness one: a lambda's
+    /// closure object is allocated where its captured LOCALS are declared, not where the lambda
+    /// appears, so leaving the <c>Parallel.For</c> inline in <see cref="EvaluateGrid"/> put a
+    /// 40-byte display-class allocation on every serial call too — small, but it made the
+    /// allocation-free claim false at 32 samples exactly as much as at 1,024.</para>
+    /// </summary>
+    private void EvalParallel(
+        ReadOnlySpan<double> portVoltages, ReadOnlySpan<double> controlCurrents,
+        int P, int C, int sampleCount, GridResult into, ref GridDomainWarnings warn)
+    {
+        // Twice the core count, not once: more chunks than cores is what lets a core that finishes
+        // early pick up another, and the measured optimum sat around there rather than at exactly
+        // one chunk per core.
+        int chunks = Math.Min(2 * Environment.ProcessorCount, sampleCount);
+        int perChunk = (sampleCount + chunks - 1) / chunks;
+        chunks = (sampleCount + perChunk - 1) / perChunk;
+
+        // A lambda cannot close over a span, so the inputs are copied once into buffers the model
+        // keeps — P·S doubles against a grid of P·S evaluations, and only above the threshold.
+        EnsureBuf(ref _portCopy, P * sampleCount);
+        EnsureBuf(ref _ctrlCopy, Math.Max(1, C * sampleCount));
+        portVoltages[..(P * sampleCount)].CopyTo(_portCopy);
+        if (C > 0) controlCurrents[..(C * sampleCount)].CopyTo(_ctrlCopy);
+        if (_chunkWarn.Length < chunks) _chunkWarn = new GridDomainWarnings[chunks];
+        Array.Clear(_chunkWarn, 0, chunks);
+        EnsurePool(chunks);
+
+        var portCopy = _portCopy;
+        var ctrlCopy = _ctrlCopy;
+        Parallel.For(0, chunks, ci =>
+        {
+            int t0 = ci * perChunk;
+            int count = Math.Min(perChunk, sampleCount - t0);
+            EvalChunk(portCopy, C > 0 ? ctrlCopy : [], sampleCount, t0, count,
+                      into, _scratchPool[ci]!, ref _chunkWarn[ci]);
+        });
+        for (int ci = 0; ci < chunks; ci++) warn.Merge(_chunkWarn[ci]);
+    }
+
+    /// <summary>Runs every equation over samples <c>[t0, t0+count)</c> on one worker's scratch.</summary>
+    private void EvalChunk(
+        ReadOnlySpan<double> portV, ReadOnlySpan<double> ctrlV, int stride, int t0, int count,
+        GridResult into, GridScratch scratch, ref GridDomainWarnings warn)
+    {
+        int P = _portCount;
+        int C = ControlRefs.Length;
+
+        for (int p = 0; p < P; p++)
+        {
+            if (_compiledCurrent[p] is { } cur)
+                RunEquation(cur, portV, ctrlV, stride, t0, count, scratch, ref warn,
+                            into.I.AsSpan(into.PortBase(p), stride),
+                            into.Dg.AsSpan(into.JacBase(p, 0), P * stride),
+                            C > 0 ? into.DControl.AsSpan(into.CtrlBase(p, 0), C * stride) : [],
+                            P, C, stride);
+
+            if (_compiledCharge[p] is { } chg)
+                RunEquation(chg, portV, ctrlV, stride, t0, count, scratch, ref warn,
+                            into.Q.AsSpan(into.PortBase(p), stride),
+                            into.Dc.AsSpan(into.JacBase(p, 0), P * stride),
+                            C > 0 ? into.DControlCharge.AsSpan(into.CtrlBase(p, 0), C * stride) : [],
+                            P, C, stride);
+
+            var live = into.LiveTerms;
+            foreach (var (w, compiled) in _compiledHigher[p])
+            {
+                GridWeightedTerm? dst = null;
+                for (int b = 0; b < live.Length; b++) if (live[b].W == w) { dst = live[b]; break; }
+                if (dst is null) continue;
+                RunEquation(compiled, portV, ctrlV, stride, t0, count, scratch, ref warn,
+                            dst.Value.AsSpan(into.PortBase(p), stride),
+                            dst.Jac.AsSpan(into.JacBase(p, 0), P * stride),
+                            C > 0 ? dst.JacCtrl.AsSpan(into.CtrlBase(p, 0), C * stride) : [],
+                            P, C, stride);
+            }
+        }
+    }
+
+    private void RunEquation(
+        CompiledSddExpr compiled, ReadOnlySpan<double> portV, ReadOnlySpan<double> ctrlV,
+        int stride, int t0, int count, GridScratch scratch, ref GridDomainWarnings warn,
+        Span<double> value, Span<double> jac, Span<double> jacCtrl, int P, int C, int gradStride)
+    {
+        if (C == 0)
+        {
+            // The evaluator's own gradient layout IS the Jacobian block's — write in place.
+            compiled.EvalDualGrid(portV, ctrlV, stride, t0, count, value, jac, scratch, _name, ref warn);
+            return;
+        }
+
+        compiled.EvalDualGrid(portV, ctrlV, stride, t0, count, value, _gradBuf, scratch, _name, ref warn);
+        for (int k = 0; k < P; k++)
+            _gradBuf.AsSpan(k * gradStride + t0, count).CopyTo(jac.Slice(k * gradStride + t0, count));
+        for (int k = 0; k < C; k++)
+            _gradBuf.AsSpan((P + k) * gradStride + t0, count).CopyTo(jacCtrl.Slice(k * gradStride + t0, count));
+    }
+
+    private void EnsurePool(int workers)
+    {
+        if (_scratchPool.Length < workers)
+        {
+            var grown = new GridScratch?[workers];
+            Array.Copy(_scratchPool, grown, _scratchPool.Length);
+            _scratchPool = grown;
+        }
+        for (int i = 0; i < workers; i++) _scratchPool[i] ??= new GridScratch();
+    }
+
+    private static void EnsureBuf(ref double[] buf, int need)
+    {
+        if (buf.Length < need) buf = new double[need];
     }
 
     private (int N, double Value)[] BuildControlSeeds(in ControlCurrents c)
