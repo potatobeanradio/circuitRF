@@ -57,6 +57,15 @@ public interface ITreeActions
     /// <summary>Copy a Known File into the workspace folder and re-point the .cws reference.</summary>
     void CopyToWorkspace(ProjectTreeNodeViewModel node);
 
+    /// <summary>
+    /// Build a NEW cell in the workspace root around a copy of this Known File's view (.csch / .csym
+    /// / .clay), prompting for the cell name. Validates the file FIRST and creates nothing when it
+    /// does not read back as that view type — the user is told why instead. Distinct from
+    /// <see cref="CopyToWorkspace"/>, which copies the file loose and re-points the reference; this
+    /// one leaves the Known File reference exactly where it is and produces a cell beside it.
+    /// </summary>
+    Task CopyKnownFileToWorkspaceAsCellAsync(ProjectTreeNodeViewModel node);
+
     /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
     void RemoveKnownFile(ProjectTreeNodeViewModel node);
 

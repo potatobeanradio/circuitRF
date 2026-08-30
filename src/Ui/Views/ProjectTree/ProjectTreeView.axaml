@@ -390,6 +390,12 @@
                                                   IsVisible="{Binding IsKnownFile}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+                                        <MenuItem Header="Copy to Workspace as Cell…"
+                                                  Command="{Binding CopyToWorkspaceAsCellCommand}"
+                                                  IsVisible="{Binding IsKnownFileCopyableAsCell}"
+                                                  ToolTip.Tip="Create a new cell in this workspace whose view is a copy of this file. The file is checked first; an unreadable one creates nothing.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Remove Reference"
                                                   Command="{Binding RemoveKnownFileCommand}"
                                                   IsVisible="{Binding IsKnownFile}">

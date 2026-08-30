@@ -189,9 +189,22 @@ public static class WorkspaceScanner
     }
 
     private static ProjectTreeNode BuildFileNode(string file, string workspaceRoot)
-    {
-        string ext = Path.GetExtension(file).ToLowerInvariant();
-        NodeKind kind = ext switch
+        => new(ClassifyFile(file), FileName(file), file, Rel(file, workspaceRoot));
+
+    /// <summary>
+    /// What a loose file's EXTENSION says it is. The one extension-to-kind table in the app: a Known
+    /// File carries no kind of its own (every one of them scans as <see cref="NodeKind.KnownFile"/>,
+    /// wherever it lives), so the tree asks this to decide whether a bookmarked path is a circuitRF
+    /// document circuitRF can open — and a second copy of the table would be the thing that forgets
+    /// a newly-added document type.
+    /// </summary>
+    /// <returns>
+    /// <see cref="NodeKind.OtherFile"/> for any extension with no document type behind it. Purely
+    /// lexical — the path is never touched, so a directory named <c>x.clay</c> classifies as a
+    /// layout and callers that care check <c>IsDirectory</c> themselves.
+    /// </returns>
+    public static NodeKind ClassifyFile(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() switch
         {
             ".csym"   => NodeKind.ViewFile,
             ".csch"   => NodeKind.ViewFile,
@@ -204,8 +217,6 @@ public static class WorkspaceScanner
             ".cem"    => NodeKind.EmSetupFile,
             _         => NodeKind.OtherFile,
         };
-        return new ProjectTreeNode(kind, FileName(file), file, Rel(file, workspaceRoot));
-    }
 
     // ── Library ───────────────────────────────────────────────────────────────
 

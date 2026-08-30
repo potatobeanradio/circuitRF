@@ -7535,7 +7535,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     public void OpenNode(ProjectTreeNodeViewModel node)
     {
-        switch (node.Kind)
+        // A Known File has no kind of its own — everything bookmarked in the .cws scans as
+        // NodeKind.KnownFile — so a circuitRF document sitting in that list used to fall through to
+        // the default no-op and simply not respond to a double-click. Classify it by extension and
+        // let it take the ordinary route below: what it opens as is an ORPHAN document, since a
+        // bookmarked path is normally outside the workspace and foreignness is decided by the file's
+        // own path (brief-foreign-documents.md §1.1), not by the surface it was opened from.
+        var kind = node.Kind;
+        if (kind == NodeKind.KnownFile)
+        {
+            if (node.IsDirectory) return;                       // a folder bookmark opens nothing
+            kind = WorkspaceScanner.ClassifyFile(node.AbsolutePath);
+            if (kind is NodeKind.OtherFile or NodeKind.ColorThemeFile) return;  // no editor for it
+            if (!File.Exists(node.AbsolutePath))
+            {
+                Messages.Error($"'{node.AbsolutePath}' is no longer there.");
+                return;
+            }
+        }
+
+        switch (kind)
         {
             case NodeKind.ViewFile:
                 var ext = Path.GetExtension(node.AbsolutePath).ToLowerInvariant();
@@ -9181,7 +9200,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ── Reveal in file manager ────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public void Reveal(ProjectTreeNodeViewModel node) => RevealPathInFileManager(node.AbsolutePath);
+    /// <remarks>
+    /// A BROKEN reference reveals the nearest folder that still exists. A Known File whose target has
+    /// been moved or deleted is exactly when the user reaches for Reveal — to go and look — and the
+    /// old behaviour handed the path straight to the file manager, which opens somewhere unhelpful or
+    /// nothing at all. Revealing <c>/myfiles/folder1/</c> for a missing
+    /// <c>/myfiles/folder1/test.txt</c> puts them where the file was. Said out loud, because a
+    /// silently substituted target would read as "the file is fine".
+    /// </remarks>
+    public void Reveal(ProjectTreeNodeViewModel node)
+    {
+        var path = node.AbsolutePath;
+        if (File.Exists(path) || Directory.Exists(path))
+        {
+            RevealPathInFileManager(path);
+            return;
+        }
+
+        var nearest = FileReveal.NearestExistingDirectory(path);
+        if (nearest is null)
+        {
+            Messages.Error($"'{path}' is no longer there, and neither is any folder above it.");
+            return;
+        }
+
+        Messages.Warning($"'{path}' is no longer there — showing '{nearest}' instead.");
+        RevealPathInFileManager(nearest);
+    }
 
     public void RevealPath(string absolutePath)
     {
@@ -9355,6 +9400,78 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
         _factory.ProjectTreeTool?.Refresh();
         Messages.Success("Copied", dest);
+    }
+
+    /// <inheritdoc/>
+    public async Task CopyKnownFileToWorkspaceAsCellAsync(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Error("Open a workspace first — a cell is created inside one.");
+            return;
+        }
+
+        var source = node.AbsolutePath;
+
+        if (CellViewFileValidator.ViewTypeFor(source) is not { } viewType)
+        {
+            Messages.Error($"'{Path.GetFileName(source)}' is not a schematic, symbol or layout.");
+            return;
+        }
+
+        // Validation runs BEFORE the name prompt, not after it: a file that can never become a cell
+        // should not first ask the user to name one. Nothing is created on this path.
+        if (CellViewFileValidator.DescribeDefect(source, viewType) is { } defect)
+        {
+            Messages.Error($"Cannot create a cell from '{Path.GetFileName(source)}' — {defect}");
+            return;
+        }
+
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        var dialog = new InputNameDialog(
+            "Copy to Workspace as Cell", "Cell name:", Path.GetFileNameWithoutExtension(source));
+        var name = await dialog.ShowDialog<string?>(mainWindow);
+        if (name is null) return;
+
+        var reason = NameValidator.Validate(name);
+        if (reason is not null)
+        {
+            Messages.Error($"Invalid cell name: {reason}");
+            return;
+        }
+
+        // The workspace ROOT, so the new cell lands at the top level of the tree.
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var newCellDir   = Path.Combine(workspaceDir, name);
+        if (Directory.Exists(newCellDir))
+        {
+            Messages.Error($"A cell named '{name}' already exists.");
+            return;
+        }
+
+        try
+        {
+            CellFolder.CreateCellFolder(workspaceDir, name);
+
+            // A byte-for-byte copy, named after the cell — the same convention New Cell uses for its
+            // primary schematic, and what makes the copy the SOLE file in its sub-folder and hence
+            // that view's primary with no .ccell entry needed (CellFolder.ResolvePrimary, branch 2).
+            // The .csch's own recorded CellName is left alone: it is re-derived from the file name on
+            // every save, so rewriting it here would be a second authority for no gain.
+            var dest = Path.Combine(
+                CellFolder.SubFolderPath(newCellDir, viewType),
+                name + CellFolder.ViewExtension(viewType));
+            File.Copy(source, dest);
+
+            _factory.ProjectTreeTool?.Refresh();
+            Messages.Success("Created", dest);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to create cell: {ex.Message}");
+        }
     }
 
     /// <inheritdoc/>

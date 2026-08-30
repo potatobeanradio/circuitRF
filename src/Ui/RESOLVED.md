@@ -14131,3 +14131,85 @@ out, which was the owner's explicit earlier request (see the note beside `CanRun
 existing ones reach only its static helpers or scan its source — and standing one up needs a full
 Dock factory and a window. A source-scan gate would assert the strings, not the behaviour. Verified
 by build only; the enablement itself wants a manual check.
+
+
+## Known Files that are circuitRF documents (2026-08-30)
+
+Owner request, four parts: double-clicking a Known File with a circuitRF extension opens it as an
+orphan document; an "Open" context item does the same (keeping "Open External…"); a `.csch` / `.clay`
+/ `.csym` Known File additionally offers "Copy to Workspace as Cell…", validated first; and a BROKEN
+Known File's Reveal opens the nearest folder that still exists.
+
+### A Known File has no NodeKind of its own — that was the whole of the open bug
+
+`WorkspaceScanner` classifies loose files under the workspace root by extension, but everything listed
+in the `.cws` `KnownFiles` array scans as `NodeKind.KnownFile` **regardless of what it is**
+(`BuildKnownFileNode`). `WorkspaceViewModel.OpenNode` switches on `node.Kind`, so a bookmarked `.csch`
+fell to the `default:` no-op and a double-click did nothing at all — no message, no tab.
+
+The extension-to-kind table is now `WorkspaceScanner.ClassifyFile`, public and used twice:
+`BuildFileNode` (unchanged behaviour) and `OpenNode`, which classifies a `KnownFile` and then takes the
+ordinary route below. **One table, because the failure mode of a second one is forgetting a
+newly-added document type in exactly one of them.** `ProjectTreeNodeViewModel.IsOpenableKnownFile`
+reads the same function, and folds into the existing `IsOpenableFile`, so the "Open" item that already
+existed for in-workspace documents now covers a Known File with no second menu entry.
+
+Three exclusions, all deliberate: a DIRECTORY (`IsDirectory` — a folder named `bundle.clay` is a
+folder), a broken reference (nothing to open; guarded again inside `OpenNode` because the tree may be
+stale), and `.ccolor` (classified, but there is no colour-theme document to open). Everything else with
+no editor — `.s2p`, `.pdf`, `.csv` — keeps "Open External…" as its only route, which is why that item
+stayed.
+
+### An extension check plus the format's own reader is NOT a validation
+
+The interesting finding, and the reason `CellViewFileValidator` exists rather than a `try { Load } catch`.
+
+Every circuitRF view file is JSON with **no cross-format type discriminator**, and
+`System.Text.Json` ignores unknown members by default. So a `.clay` renamed to `.csch` deserializes
+**cleanly** into a `CschFile` — every one of its keys is unknown, every `CschFile` member takes its
+default, and `SchematicPersistence.LoadFromFile` returns an empty schematic with no exception. "Copy to
+Workspace as Cell…" would have produced a perfectly well-formed cell containing a blank view, and the
+user's only evidence would be that their layout had vanished.
+
+The gate is therefore two steps, and the first is the one that matters:
+
+1. **A required JSON key unique to that format** — `Components` (`.csch`), `Primitives` (`.csym`),
+   `Shapes` (`.clay`). All three are non-nullable collections on the file DTOs, so they are written
+   even for a brand-new empty view; that is what makes their ABSENCE evidence rather than a false
+   alarm on a sparse file. (`Pins` would NOT work — `ClayFile` and `CsymFile` both have one.)
+2. **The format's own reader**, which stays the authority on malformed JSON, a truncated file, a
+   `format_version` from a newer build, and any per-format validation those readers grow later.
+
+Read through `GzipTextFile.ReadAllTextAutoGzip` — made public for this second consumer rather than
+copied, since `.clay` is the format that may be compressed and a private copy of the magic-byte sniff
+is what drifts the day a writer starts emitting gzip.
+
+**The gate runs before the name prompt**, not after: a file that can never become a cell should not
+first ask the user to name one. Nothing is created on that path, and the defect sentence is what the
+user is told. A test pins the ordering (validate < prompt < create) because it is an ordering, and an
+ordering is exactly what a later edit reverses without noticing.
+
+### The copy itself is byte-for-byte, and the `.csch`'s recorded CellName is left alone
+
+The copy lands as `<cell>/<schematic|symbol|layout>/<cellName><ext>` — sole file in its sub-folder,
+which makes it that view's primary through `CellFolder.ResolvePrimary` branch 2 with no `.ccell` entry
+needed. `CschFile.CellName` keeps whatever the source said; it is re-derived from the file name on
+every save (`SchematicPersistence.SaveToFile(path, model, Path.GetFileNameWithoutExtension(path))` at
+every save site), so rewriting it here would create a second authority for no gain. A verbatim copy
+also preserves view state and anything a future format version adds.
+
+The new cell is created in the workspace ROOT so it appears at the top level of the tree, and the
+Known File reference is left exactly where it is — this is not `CopyToWorkspace`, which copies the file
+loose and re-points the `.cws` entry.
+
+### Reveal on a broken reference
+
+`FileReveal.NearestExistingDirectory` walks up from the path to the first folder that exists;
+`WorkspaceViewModel.Reveal` uses it whenever the target is gone. `/myfiles/folder1/test.txt` missing
+with `/myfiles/folder1/` present opens `folder1`. **It says so** — a silently substituted target reads
+as "the file is fine". Applied to every revealable node, not only Known Files: the question "where was
+this?" has the same answer everywhere. The recent-workspaces `RevealPath` is unchanged; it answers a
+different question ("is my workspace still there?") and its "no longer there" message is the answer.
+
+Gated by `tests/Ui.Tests/KnownFileDocumentActionsTests.cs` (52 tests), including the two
+renamed-format cases that motivated the key check.

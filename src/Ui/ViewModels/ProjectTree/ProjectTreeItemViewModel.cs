@@ -43,6 +43,11 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public string    RelativePath  => _node.RelativePath;
     public string    AbsolutePath  => _node.AbsolutePath;
 
+    /// <summary>True when this node's path is a DIRECTORY rather than a file. Only a Known File can
+    /// be either, which is why the flag lives on the node at all — every other kind is settled by
+    /// its <see cref="Kind"/>.</summary>
+    public bool      IsDirectory   => _node.IsDirectory;
+
     /// <summary>
     /// Display name shown in the tree label.
     /// Known File directories show their relative path so the user can tell
@@ -143,7 +148,36 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsOpenableFile =>
         Kind is NodeKind.DataDisplayFile or NodeKind.HarmonicaFile or NodeKind.TechFile
              or NodeKind.EmSetupFile or NodeKind.WBondFile
-        || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay");
+        || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay")
+        || IsOpenableKnownFile;
+
+    /// <summary>
+    /// True for a Known File that is a circuitRF DOCUMENT — one the app has an editor for. Such a
+    /// file opens in a tab like any other, foreign or not: it is bookmarked from outside the
+    /// workspace, so what it opens as is an orphan document (brief-foreign-documents.md — foreignness
+    /// is decided by the file's own path, never by how it was opened).
+    ///
+    /// <para>Excludes a directory (a folder called <c>x.clay</c> is still a folder), a broken
+    /// reference (nothing to open), and every non-document extension — a bookmarked <c>.snp</c> or
+    /// <c>.pdf</c> still has only "Open External…", which is why that item stays.</para>
+    /// </summary>
+    public bool IsOpenableKnownFile =>
+        Kind == NodeKind.KnownFile
+        && !IsDirectory
+        && !IsWarning
+        && WorkspaceScanner.ClassifyFile(AbsolutePath) is not NodeKind.OtherFile and not NodeKind.ColorThemeFile;
+
+    /// <summary>
+    /// True for a Known File that could become a cell — a <c>.csch</c>, <c>.csym</c> or <c>.clay</c>,
+    /// the three views a cell folder has a home for. Drives "Copy to Workspace as Cell…"; the file
+    /// itself is only VALIDATED when that command runs, since reading every bookmarked file to
+    /// decide whether to show a menu item would make opening the menu do the work.
+    /// </summary>
+    public bool IsKnownFileCopyableAsCell =>
+        Kind == NodeKind.KnownFile
+        && !IsDirectory
+        && !IsWarning
+        && CellViewFileValidator.ViewTypeFor(AbsolutePath) is not null;
 
     /// <summary>True when this node has unsaved work — drives the "Save" context item.
     /// Resolved through the host so it reflects live dirty state when the menu opens.</summary>
@@ -223,6 +257,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>Copy an external Known File into the workspace and re-point the reference.</summary>
     public IRelayCommand CopyToWorkspaceCommand { get; }
+
+    /// <summary>Copy a Known File view into a NEW cell in the workspace (validated first).</summary>
+    public IAsyncRelayCommand CopyToWorkspaceAsCellCommand { get; }
 
     /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
     public IRelayCommand RemoveKnownFileCommand { get; }
@@ -405,6 +442,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         CopyToWorkspaceCommand = new RelayCommand(
             () => _actions?.CopyToWorkspace(this),
             () => _actions is not null && IsKnownFile && !IsWarning && !IsInsideWorkspace);
+
+        CopyToWorkspaceAsCellCommand = new AsyncRelayCommand(
+            () => _actions?.CopyKnownFileToWorkspaceAsCellAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsKnownFileCopyableAsCell);
 
         RemoveKnownFileCommand = new RelayCommand(
             () => _actions?.RemoveKnownFile(this),

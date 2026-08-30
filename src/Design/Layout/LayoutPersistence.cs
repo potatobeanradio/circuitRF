@@ -272,8 +272,13 @@ public static class LayoutPersistence
 
 /// <summary>Shared gzip-sniffing text reader for .clay / .ctech (docs/design/layout-view.md §4):
 /// writers only ever emit plain JSON in v1, but a reader that already sniffs the gzip magic bytes
-/// makes a future gzip writer a write-side-only change with no format-version bump.</summary>
-internal static class GzipTextFile
+/// makes a future gzip writer a write-side-only change with no format-version bump.
+///
+/// <para>Public rather than internal because a second consumer outside this assembly reads the same
+/// bytes: <c>CellViewFileValidator</c> checks a candidate <c>.clay</c>'s own JSON keys before a cell
+/// is built from it, and a private copy of the magic-byte sniff is exactly the sort of thing that
+/// drifts the day a writer starts emitting gzip.</para></summary>
+public static class GzipTextFile
 {
     private static readonly byte[] GzipMagic = [0x1F, 0x8B];
 
