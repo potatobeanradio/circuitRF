@@ -4,6 +4,40 @@ Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern: a completed brief's deta
 `##` section per brief, sparingly — only for findings that are still true, still surprising, and
 would cost someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## Round 11 §2 superseded — the HB line search removed the runaway root the continuity guard existed to catch (2026-08-30)
+
+`LadderContinuityTests.TheClassFGridPointThatMadeTheContourIslands_IsRecoveredByContinuation` began
+failing after HB-P3 with *"the unguarded 2 dB ladder is expected to land on the nonphysical root, but
+DE was 27.5%"*. The test was right and the premise had expired: HB-P3 added a backtracking line search
+to the HB Newton (`HbNewton.Backtrack`), and `HarmonicaContext.Solve` calls straight into
+`HbNewton.Solve`, so harmonicaRF inherited it. The runaway root was reached by a full Newton step that
+*increases* ‖F‖ — precisely the step the line search now refuses — so it is gone **before**
+`PinSearch`'s continuity guard is ever consulted.
+
+**Measured before repointing the test**, over the whole 37-point default ring grid (`RingGrid(3, 12,
+0.8)`) under Class F at K = 3, at PinStep 2, 3, 4, 6 and 8 dB, with the guard on and off — ten runs:
+
+| | steps with DE > 100% | continuations | holes | max DE | max Pout |
+|---|---|---|---|---|---|
+| every step size, guard on and off | 0 | 0 | 0 | 80.6–82.3 % | 40.4 dBm |
+
+**There is no step size at which this fixture still exhibits the defect**, so the vacuity assertion
+could not be restored by coarsening the ladder — which is why the test was repointed rather than
+retuned. At the owner's own Γ = −0.267 + 0.462j the 2 dB and 1 dB ladders now agree on compression
+Pout to 36.294 dBm with zero continuations either way.
+
+**The guard is deliberately left in place and is NOT redundant.** A line search only refuses a step
+that fails to reduce ‖F‖; nothing about a monotone descent forbids descending onto a different branch.
+Its predicate is still gated directly (`IsDiscontinuous_MeasuresPoutAgainstItsOwnPinStep`); what is
+now unexercised is the guard *firing on a real fixture* — a real loss of coverage, recorded here and
+in the test file's header rather than papered over. A fixture that jumps branch under the line search
+would restore it; none is known.
+
+This is the same supersession HB-P3 already recorded for the Engine-side twin,
+`LoadpullLadderContinuityTests` (`src/Engine/RESOLVED.md` §HB-P3) — the harmonicaRF sibling was simply
+missed at the time, and both now carry the note. The §2 history below is left intact: it is still the
+correct account of why the guard exists.
+
 ## Round 11 — one drive-up ladder, two ways of taking a step it could not take (harmonicaRF fixes, 2026-08-15)
 
 Two owner reports with the same shape underneath: **a Pin ladder that moves further in one rung than

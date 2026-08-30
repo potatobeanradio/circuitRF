@@ -13,6 +13,24 @@
 //       the Class F preset, onto a NONPHYSICAL root of the same residual (Pout 89 dBm, Pdc 353 kW,
 //       DE 251%) in one step. ‖F‖ ≈ 2e-9, so it was reported converged and entered the contour fit
 //       as ordinary data — the "contour islands" the owner saw.
+//
+//  WHAT §2 NOW MEASURES, AND WHY IT IS LESS (HB-P3/HB-P4, 2026-08-30).
+//  The nonphysical root is gone before the continuity guard is ever consulted. The HB Newton's
+//  backtracking line search (HbNewton.Backtrack, which HarmonicaContext.Solve goes through) refuses
+//  exactly the step that reached it: a full Newton step that increases ‖F‖. Measured over the whole
+//  37-point default ring grid under Class F at K = 3, at PinStep 2, 3, 4, 6 and 8 dB, guard on and
+//  guard off: zero steps with DE > 100%, zero continuations, zero holes, max DE 80.6–82.3% and max
+//  Pout 40.4 dBm throughout. There is no step size at which this fixture still exhibits the defect,
+//  so the vacuity assertion §2 opened with ("without the guard the ladder is supposed to land on the
+//  nonphysical root") could not be restored by coarsening the ladder.
+//
+//  The guard is NOT thereby redundant and is deliberately left in place: a line search only refuses a
+//  step that fails to reduce ‖F‖, and nothing about a monotone descent forbids descending onto a
+//  different branch. Its predicate is still gated directly by IsDiscontinuous_MeasuresPoutAgainstItsOwnPinStep
+//  below; what is now unexercised is the guard FIRING on a real fixture, which is a real loss of
+//  coverage and is recorded here rather than hidden by a test that still reads as if it proved
+//  something. A fixture that jumps branch under the line search would restore it; none is known.
+//  This is the same supersession recorded for the Engine-side twin, LoadpullLadderContinuityTests.
 // ================================================================
 
 using System;
@@ -134,17 +152,25 @@ public sealed class LadderContinuityTests
     }
 
     /// <summary>
-    /// THE OWNER'S OWN CASE, as a gate. One Γ point of the shipped default's 37-point grid under
-    /// Class F at K = 3, walked at the contour grid's own 2 dB ladder. Without the guard the ladder
-    /// converges onto a root drawing 353 kW from a 48 V supply and reporting DE = 251%; with it, the
-    /// same 2 dB ladder reaches the same answer the 1 dB ladder does.
+    /// THE OWNER'S OWN CASE. One Γ point of the shipped default's 37-point grid under Class F at
+    /// K = 3, walked at the contour grid's own 2 dB ladder. It used to converge onto a root drawing
+    /// 353 kW from a 48 V supply and reporting DE = 251%, and the continuity guard was what pulled it
+    /// back onto the physical branch.
     ///
-    /// <para>Note what is asserted about the BAD answer: not "it is far from the good one" but that
-    /// it violates conservation of energy (DE &gt; 100% — more RF out than DC in, with no other source
-    /// in the circuit). That is what makes this a physics gate rather than a tuned threshold.</para>
+    /// <para>SUPERSEDED BY HB-P3/HB-P4 (2026-08-30) — read the file header's "what §2 now measures"
+    /// note. The nonphysical root is unreachable here now: the Newton line search refuses the step
+    /// that got there, before the guard is consulted. So the two assertions this test was built on —
+    /// that the unguarded ladder is WRONG, and that the guard FIRES — are both false today, and no
+    /// PinStep from 2 to 8 dB restores them. What is asserted instead is the pair of facts that
+    /// survive, and they are the ones a user cares about: the 2 dB ladder stays physical on its own,
+    /// and it lands on the same branch the 1 dB ladder walks.</para>
+    ///
+    /// <para>Note what is asserted about the answer: not "it is close to some stored number" but that
+    /// it obeys conservation of energy (DE &lt;= 100% — no more RF out than DC in, with no other source
+    /// in the circuit). That is what keeps this a physics gate rather than a tuned threshold.</para>
     /// </summary>
     [Fact]
-    public void TheClassFGridPointThatMadeTheContourIslands_IsRecoveredByContinuation()
+    public void TheClassFGridPointThatMadeTheContourIslands_StaysPhysicalAtTheGridsOwn2dBLadder()
     {
         var gamma = new Complex(-0.267, 0.462);
 
@@ -153,28 +179,32 @@ public sealed class LadderContinuityTests
         var off = PinSearch.Sweep(HarmonicaContext.Create(Model(3, continuityMarginDb: 0.0)),
                                   tOff, -10, 34, 2.0);
 
-        Assert.Equal(PinStopReason.Compression, off.Reason);
-        var worstOff = off.Steps[^1];
-        Assert.True(worstOff.De > 1.0,
-            $"the unguarded 2 dB ladder is expected to land on the nonphysical root, but DE was {worstOff.De:P1}");
-        Assert.True(PoutDbm(worstOff) > 60,
-            $"...and its Pout with it, but it was {PoutDbm(worstOff):F1} dBm");
-        Assert.Equal(0, off.Continuations);
-
         var tOn = ClassF(3);
         SetLoadFundamental(tOn, gamma);
         var on = PinSearch.Sweep(HarmonicaContext.Create(Model(3)), tOn, -10, 34, 2.0);
 
+        Assert.Equal(PinStopReason.Compression, off.Reason);
         Assert.Equal(PinStopReason.Compression, on.Reason);
-        Assert.True(on.Continuations > 0, "the guard is expected to fire on this point");
-        foreach (var st in on.Steps)
+
+        // The unguarded 2 dB ladder is physical the whole way up — this is the half that the line
+        // search now delivers on its own, and it is what the guard used to have to repair.
+        foreach (var st in off.Steps)
         {
             Assert.True(st.De <= 1.0, $"DE {st.De:P1} at {st.PavlDbm:F0} dBm is more power out than in");
             Assert.True(PoutDbm(st) < 45, $"Pout {PoutDbm(st):F1} dBm at {st.PavlDbm:F0} dBm is not this device");
         }
 
-        // …and it is the SAME branch the 1 dB ladder walks unaided, which is the independent check
-        // that the guard recovers the physical answer rather than merely a different wrong one.
+        // …so the guard has nothing to remove here: it neither fires nor moves the answer nor costs a
+        // solve. (Its predicate is gated directly by IsDiscontinuous_MeasuresPoutAgainstItsOwnPinStep.)
+        Assert.Equal(0, off.Continuations);
+        Assert.Equal(0, on.Continuations);
+        Assert.Equal(off.Solves, on.Solves);
+        Assert.Equal(off.Steps.Count, on.Steps.Count);
+        for (int i = 0; i < off.Steps.Count; i++)
+            Assert.Equal(PoutDbm(off.Steps[i]), PoutDbm(on.Steps[i]), precision: 12);
+
+        // …and it is the SAME branch the 1 dB ladder walks, which is the independent check that the
+        // coarse ladder is on the physical answer rather than merely a self-consistent wrong one.
         var tFine = ClassF(3);
         SetLoadFundamental(tFine, gamma);
         var fine = PinSearch.Sweep(HarmonicaContext.Create(Model(3, continuityMarginDb: 0.0)),
