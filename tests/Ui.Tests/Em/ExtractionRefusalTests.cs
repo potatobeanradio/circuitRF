@@ -140,15 +140,45 @@ public class ExtractionRefusalTests
 
     // ── Row 4: shapes on a layer bound to no stackup conductor layer ──────────────────────────
 
+    /// <summary>
+    /// <b>NARROWED, 2026-08-30, and this test is the one that recorded the defect.</b> It used to
+    /// assert that a SILKSCREEN shape refuses the whole extraction, which is what the taxonomy said
+    /// at the time — but sweeping the shipped 2-layer starter showed the same refusal firing on
+    /// Outline, Silk ×2 and Soldermask ×2. Every PCB layout has a board outline, so R-em-6's row 4
+    /// was refusing the normal case, and its advice ("add this drawing layer to a conductor entry")
+    /// amounted to declaring your board outline to be copper.
+    ///
+    /// <para>The row now splits on a discriminator that was always available: a layer the technology
+    /// DECLARES but binds to nothing is the technology saying it is not metal — ignored, and named
+    /// in a note. Only an UNDECLARED layer still refuses, which is where row 4's original reasoning
+    /// (nothing says how thick it is or what it is made of) actually holds. The ignore side is
+    /// gated in full by <c>UnboundLayerArtworkTests</c>; what stays here is the refusal itself,
+    /// against the bar this file exists to hold — that it is SPECIFIC.</para>
+    /// </summary>
     [Fact]
-    public void GeometryOnAnUnboundLayer_NamesTheLayerAndPointsAtTheDrawingLayersBinding()
+    public void GeometryOnAnUndeclaredLayer_NamesTheLayer_AndPointsAtTheLayersTab()
     {
         var tech = StarterTechnologies.Pcb2Layer();
+        var undeclared = new LayerKey(742, 3);
         var reason = Refused(Extract(tech,
-            new RectShape { Layer = TopCopper, X1 = 0, Y1 = 0, X2 = Mm(20), Y2 = Mm(2.9) },
-            new RectShape { Layer = SilkTop,   X1 = 0, Y1 = Mm(5), X2 = Mm(3), Y2 = Mm(6) }));
+            new RectShape { Layer = TopCopper,  X1 = 0, Y1 = 0,       X2 = Mm(20), Y2 = Mm(2.9) },
+            new RectShape { Layer = undeclared, X1 = 0, Y1 = Mm(5),   X2 = Mm(3),  Y2 = Mm(6) }));
 
-        Mentions(reason, "Silk Top", "5/0", "DrawingLayers", "conductor");
+        Mentions(reason, "742/3", "does not declare", "Layers tab", "metal");
+    }
+
+    /// <summary>The other half of the split, asserted HERE too rather than only in its own file:
+    /// row 4 must no longer fire on the layer it used to. A silkscreen shape is not a refusal.</summary>
+    [Fact]
+    public void GeometryOnASilkscreenLayer_IsNoLongerARefusalAtAll()
+    {
+        var tech = StarterTechnologies.Pcb2Layer();
+        var r = Extract(tech,
+            new RectShape { Layer = TopCopper, X1 = 0, Y1 = 0, X2 = Mm(20), Y2 = Mm(2.9) },
+            new RectShape { Layer = SilkTop,   X1 = 0, Y1 = Mm(5), X2 = Mm(3), Y2 = Mm(6) });
+
+        Assert.True(r.Ok, r.Refusal);
+        Assert.Contains(r.Notes, n => n.Contains("Silk Top", StringComparison.Ordinal));
     }
 
     // ── Row 5: shapes on two or more SIGNAL conductor stackup layers ──────────────────────────

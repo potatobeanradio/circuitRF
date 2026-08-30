@@ -488,7 +488,14 @@
                                             <!-- Label column is a fixed width shared between the Thickness and σ
                                                  rows so their TextBoxes start at the same x, even though
                                                  "Thickness:" and "σ (S/m):" are different lengths. -->
-                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <!-- Hidden on a via row. A via has no z band of its own —
+                                                 PlanarExtractor.BuildStack skips every StackupKind.Via
+                                                 entry and the barrel's length comes from the Spans pair
+                                                 below, so this field is read by nothing. Shown, it read
+                                                 as a real dimension left at 0 and invited a wrong answer
+                                                 (user-reported, 2026-08-30: "I am not sure what the via
+                                                 thickness should be"). The Spans row answers it. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding !IsVia}">
                                                 <TextBlock Text="Thickness:" Width="70" FontSize="11" VerticalAlignment="Center"/>
                                                 <TextBox Classes="cell compact" Width="60" Tag="Thickness"
                                                          Text="{Binding StagedThicknessText}"
@@ -566,15 +573,18 @@
                                             <!-- ── Drawing layers ───────────────────────────────────
                                                  TWO controls, because §10.4 states two different
                                                  cardinalities and one control cannot honestly serve
-                                                 both. A via or dielectric binds AT MOST ONE, so it gets
-                                                 a plain ComboBox with an explicit "(none)". A conductor
+                                                 both. A via binds AT MOST ONE, so it gets a plain
+                                                 ComboBox with an explicit "(none)". A DIELECTRIC gets
+                                                 no picker at all (ShowsDrawingLayerPicker) — the
+                                                 binding never placed the slab, and the refusal it
+                                                 existed to dodge is fixed at its source. A conductor
                                                  binds one or more, so it keeps a checkbox list — but a
                                                  FILTERED, bounded, virtualized one: a real process
                                                  carries several hundred drawing layers, and the previous
                                                  WrapPanel of one checkbox per layer neither fitted the
                                                  pane nor could be found in. -->
                                             <StackPanel Orientation="Horizontal" Spacing="4"
-                                                        IsVisible="{Binding IsSingleDrawingLayer}">
+                                                        IsVisible="{Binding ShowsDrawingLayerPicker}">
                                                 <TextBlock Text="{Binding DrawingLayersLabel}" Width="70"
                                                            FontSize="11" VerticalAlignment="Center"/>
                                                 <ComboBox Classes="cell" MinWidth="220"

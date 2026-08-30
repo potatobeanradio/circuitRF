@@ -1,0 +1,462 @@
+{
+  "FormatVersion": 1,
+  "Name": "PCB 4-Layer FR-4 (62mil, 1/0.5oz)",
+  "DefaultDisplayUnit": "Mil",
+  "DefaultSnapDbu": 25400,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 1016000,
+  "DefaultViaPadDbu": 609600,
+  "DefaultViaDrillDbu": 304800,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 11,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Inner 1",
+      "Color": {
+        "r": 155,
+        "g": 138,
+        "b": 70,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 10,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "In1.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "Inner 2",
+      "Color": {
+        "r": 122,
+        "g": 147,
+        "b": 85,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 9,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "In2.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Bottom Copper",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 8,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Cu"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Top",
+      "Color": {
+        "r": 30,
+        "g": 107,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 7,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.Mask"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 6,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Bottom",
+      "Color": {
+        "r": 21,
+        "g": 80,
+        "b": 44,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 6,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.Mask"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 7,
+        "Datatype": 0
+      },
+      "Name": "Silk Top",
+      "Color": {
+        "r": 242,
+        "g": 242,
+        "b": 242,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 5,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "F.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 8,
+        "Datatype": 0
+      },
+      "Name": "Silk Bottom",
+      "Color": {
+        "r": 200,
+        "g": 200,
+        "b": 200,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.SilkS"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "Drill",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 10,
+        "Datatype": 0
+      },
+      "Name": "Ground Via",
+      "Color": {
+        "r": 74,
+        "g": 140,
+        "b": 200,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 11,
+        "Datatype": 0
+      },
+      "Name": "Outline",
+      "Color": {
+        "r": 255,
+        "g": 213,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "Edge.Cuts"
+      }
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper (1 oz)",
+        "ThicknessDbu": 35000,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Prepreg (top)",
+        "ThicknessDbu": 203200,
+        "Epsr": 4.4,
+        "TanD": 0.02,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Inner 1 (Ground Plane)",
+        "ThicknessDbu": 17500,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Core",
+        "ThicknessDbu": 1066800,
+        "Epsr": 4.4,
+        "TanD": 0.02,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Inner 2",
+        "ThicknessDbu": 17500,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 3,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Prepreg (bottom)",
+        "ThicknessDbu": 203200,
+        "Epsr": 4.4,
+        "TanD": 0.02,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Bottom Copper (1 oz)",
+        "ThicknessDbu": 35000,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 58000000.0,
+        "DrawingLayers": [
+          {
+            "Layer": 4,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Via",
+        "Name": "Plated Through-Hole",
+        "ThicknessDbu": 0,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 25000,
+        "SpanFromLayer": "Top Copper (1 oz)",
+        "SpanToLayer": "Bottom Copper (1 oz)"
+      },
+      {
+        "Kind": "Via",
+        "Name": "Ground Via (L1-L2)",
+        "ThicknessDbu": 0,
+        "Epsr": 1.0,
+        "TanD": 0.0,
+        "Mur": 1.0,
+        "SigmaSm": 0.0,
+        "DrawingLayers": [
+          {
+            "Layer": 10,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 25000,
+        "SpanFromLayer": "Top Copper (1 oz)",
+        "SpanToLayer": "Inner 1 (Ground Plane)"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Top Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Top Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Inner 1 Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Inner 1 Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Inner 2 Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Inner 2 Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Bottom Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "ValueDbu": 152400,
+      "Severity": "Error"
+    }
+  ]
+}

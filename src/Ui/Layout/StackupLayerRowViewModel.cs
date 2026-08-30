@@ -44,8 +44,31 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     /// <summary>Only a conductor may bind more than one drawing layer (§10.4).</summary>
     public bool AllowMultipleDrawingLayers => Kind == StackupKind.Conductor;
 
-    /// <summary>The complement — the kinds that get a plain ComboBox instead of a checkbox list.</summary>
+    /// <summary>The complement — the kinds that get a plain ComboBox instead of a checkbox list.
+    /// Still true for a dielectric, because the CARDINALITY rule is unchanged: if a dielectric ever
+    /// carries a binding (a shipped file may, and they round-trip untouched) it carries at most one.
+    /// What changed is that the editor no longer OFFERS one — see
+    /// <see cref="ShowsDrawingLayerPicker"/>.</summary>
     public bool IsSingleDrawingLayer => !AllowMultipleDrawingLayers;
+
+    /// <summary>
+    /// Whether the row shows a drawing-layer picker at all. <b>A dielectric no longer does.</b>
+    ///
+    /// <para>The binding never placed the slab — <c>PlanarExtractor.BuildMediumStack</c> reads only
+    /// εr/tanδ/µr/thickness and every dielectric is laterally infinite — so the field asked the user
+    /// for a physical fact it did not consume. Its ONE real effect was to stop
+    /// <c>CrossSectionExtractor</c> refusing on artwork drawn over the slab (an MMIC die outline),
+    /// and that refusal has since been fixed at its source: a layer the technology declares but
+    /// binds to no stackup entry is now ignored with a note, exactly as silk, soldermask and the
+    /// board outline always should have been. With the workaround unnecessary, the control is gone.
+    /// User-proposed, 2026-08-30.</para>
+    ///
+    /// <para>The MODEL field stays. Shipped and user <c>.ctech</c> files carrying a dielectric
+    /// binding still parse, still validate, and still round-trip through
+    /// <see cref="TechnologyMerge"/> unchanged — removing the control must not rewrite anyone's
+    /// file.</para>
+    /// </summary>
+    public bool ShowsDrawingLayerPicker => Kind == StackupKind.Via;
 
     public string DrawingLayersLabel => AllowMultipleDrawingLayers ? "Drawing layers:" : "Drawing layer:";
 

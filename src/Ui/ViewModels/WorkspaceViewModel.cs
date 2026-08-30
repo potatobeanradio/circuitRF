@@ -4973,6 +4973,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 NewTechnologyStarter.Mmic  => StarterTechnologies.MmicGaAs(),
                 NewTechnologyStarter.Empty => StarterTechnologies.Empty(),
+                // The 4-layer starter exists only as an authored .ctech — R-misc-6's "one authored
+                // representation, not two". There is deliberately no Pcb4Layer() beside
+                // Pcb2Layer(): a C# transcription of it would be a second copy to drift.
+                NewTechnologyStarter.Pcb4  => ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz"),
                 _                          => StarterTechnologies.Pcb2Layer(),
             };
             tech.Name = result.Name;
@@ -6220,20 +6224,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         doc.ViewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(EmSetupEditorViewModel.IsDirty))
-                _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+            if (e.PropertyName is not nameof(EmSetupEditorViewModel.IsDirty)) return;
+            _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+            RaiseFileMenuEnablementChanged();   // see HookTechFileDirty for why
         };
     }
 
     /// <summary>Reflects a .ctech editor's dirty state onto its tree node's dirty dot — mirrors
     /// <see cref="HookLayoutCellDirty"/>, except a technology has no owning cell: the node
-    /// updated is the .ctech file node itself.</summary>
+    /// updated is the .ctech file node itself.
+    ///
+    /// <para><b>It also re-asks the File menu, and that half is not cosmetic.</b>
+    /// <see cref="CanSaveAllDocuments"/> already answers "yes" for a dirty
+    /// <see cref="TechDocument"/>, but nothing was re-EVALUATING it: the two enablement fan-outs
+    /// fire on a tab switch, a window focus change, or a completed save, and the canvas-backed
+    /// editors additionally re-ask on a canvas click (<see cref="OnSchematicCanvasInteracted"/> and
+    /// its layout/symbol siblings). A .ctech editor is a FORM — it has no canvas, so none of those
+    /// ever fired while the user typed into it, and File ▸ Save stayed greyed out for the whole
+    /// editing session even though ⌘S/Ctrl+S worked (a <c>RelayCommand</c>'s CanExecute is
+    /// evaluated fresh at invocation, so only the menu's APPEARANCE was stale). The dirty
+    /// transition is the missing refresh point, and it is exactly here. User-reported,
+    /// 2026-08-30.</para></summary>
     private void HookTechFileDirty(TechDocument doc)
     {
         doc.ViewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(TechEditorViewModel.IsDirty))
-                _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+            if (e.PropertyName is not nameof(TechEditorViewModel.IsDirty)) return;
+            _factory.ProjectTreeTool?.SetFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+            RaiseFileMenuEnablementChanged();
         };
     }
 

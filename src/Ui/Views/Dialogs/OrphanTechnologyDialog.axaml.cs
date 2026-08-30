@@ -102,6 +102,7 @@ public partial class OrphanTechnologyDialog : Window
         // orthogonal to that concern and is left as-is.
         Technology starter = StarterMmicRadio.IsChecked == true ? ShippedTechnologies.Load("mmic-GaAs_2LM_100um")
             : StarterEmptyRadio.IsChecked == true                ? StarterTechnologies.Empty()
+            : StarterPcb4Radio.IsChecked == true                 ? ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz")
             : ShippedTechnologies.Load(ShippedTechnologies.DefaultId);
         return new OrphanTechnologyChoice(null, starter);
     }

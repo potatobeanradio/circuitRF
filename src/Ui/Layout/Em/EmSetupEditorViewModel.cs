@@ -1768,9 +1768,18 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             string layers = l.DrawingLayers.Count == 0
                 ? "—"
                 : string.Join(", ", l.DrawingLayers.Select(k => $"{k.Layer}/{k.Datatype}"));
+            // A via has no z band of its own (PlanarExtractor.BuildStack skips every
+            // StackupKind.Via entry, and the barrel's length comes from SpanFrom/SpanTo), so its
+            // ThicknessDbu is read by nothing. Rendering it as "0 m" here read as a real dimension
+            // someone had failed to fill in — show the span, which is the quantity that IS used.
+            string thickness = l.Kind == StackupKind.Via
+                ? (l.SpanFromLayer is { Length: > 0 } sf && l.SpanToLayer is { Length: > 0 } st
+                    ? $"{sf} → {st}"
+                    : "span not set")
+                : CrossSectionExtractor.FormatMeters(l.ThicknessDbu / (LayoutUnits.DefaultDbuPerMicron * 1e6));
+
             rows.Add(new EmStackupRow(
-                l.Kind.ToString(), l.Name,
-                CrossSectionExtractor.FormatMeters(l.ThicknessDbu / (LayoutUnits.DefaultDbuPerMicron * 1e6)),
+                l.Kind.ToString(), l.Name, thickness,
                 electrical, layers, false, l.Kind == StackupKind.Conductor && l.IsGroundReference));
         }
         StackupRows = rows;

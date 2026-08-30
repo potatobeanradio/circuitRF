@@ -4,7 +4,7 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// docs/sonnet-briefs/brief-misc-termg-units-technologies.md §3 (R-misc-6/7/9): the four shipped
+/// docs/sonnet-briefs/brief-misc-termg-units-technologies.md §3 (R-misc-6/7/9): the shipped
 /// default technologies, embedded as real .ctech text assets and parsed through the normal
 /// TechPersistence reader — never hand-transcribed into C#. A malformed shipped technology must
 /// fail HERE, in CI, not on a new user's first run (R-misc-7's own framing).
@@ -12,7 +12,7 @@ namespace CircuitRF.Ui.Tests;
 public sealed class ShippedTechnologiesTests
 {
     [Fact]
-    public void All_ListsExactlyTheFourShippedFiles()
+    public void All_ListsExactlyTheShippedFiles()
     {
         var ids = ShippedTechnologies.All.Select(e => e.Id).OrderBy(x => x, StringComparer.Ordinal).ToList();
         Assert.Equal(
@@ -22,6 +22,7 @@ public sealed class ShippedTechnologiesTests
                 "pcb-2layer_FR-4_70mil_1oz",
                 "pcb-2layer_RO4350B_20mil_1oz",
                 "pcb-2layer_RO4350B_30mil_1oz",
+                "pcb-4layer_FR-4_62mil_1oz",
             }.OrderBy(x => x, StringComparer.Ordinal),
             ids);
     }
@@ -39,6 +40,7 @@ public sealed class ShippedTechnologiesTests
     [InlineData("pcb-2layer_FR-4_70mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_20mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_30mil_1oz")]
+    [InlineData("pcb-4layer_FR-4_62mil_1oz")]
     public void ShippedTechnology_Parses_RoundTrips_AndPassesValidation(string id)
     {
         var tech = ShippedTechnologies.Load(id);
@@ -58,9 +60,9 @@ public sealed class ShippedTechnologiesTests
         Assert.Equal(tech.Stackup.Layers.Count, reloaded.Stackup.Layers.Count);
     }
 
-    // R-misc-9: the four shipped Names must be distinguishable — no two entries read the same.
+    // R-misc-9: the shipped Names must be distinguishable — no two entries read the same.
     [Fact]
-    public void AllFourNames_AreDistinguishable_NoTwoReadTheSame()
+    public void AllNames_AreDistinguishable_NoTwoReadTheSame()
     {
         var names = ShippedTechnologies.All.Select(e => ShippedTechnologies.Load(e).Name).ToList();
         Assert.Equal(names.Count, names.Distinct(StringComparer.Ordinal).Count());
@@ -73,15 +75,64 @@ public sealed class ShippedTechnologiesTests
     [InlineData("pcb-2layer_FR-4_70mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_20mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_30mil_1oz")]
+    [InlineData("pcb-4layer_FR-4_62mil_1oz")]
     public void PcbTechnology_HasViaStackupEntry_WithFillModelAndSpan(string id)
     {
         var tech = ShippedTechnologies.Load(id);
-        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
-        Assert.NotNull(via.Fill);
-        Assert.False(string.IsNullOrEmpty(via.SpanFromLayer));
-        Assert.False(string.IsNullOrEmpty(via.SpanToLayer));
-        if (via.Fill == ViaFillKind.Plated)
-            Assert.True(via.WallThicknessDbu is > 0);
+        var vias = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).ToList();
+        Assert.NotEmpty(vias);
+        foreach (var via in vias)
+        {
+            Assert.NotNull(via.Fill);
+            Assert.False(string.IsNullOrEmpty(via.SpanFromLayer));
+            Assert.False(string.IsNullOrEmpty(via.SpanToLayer));
+            if (via.Fill == ViaFillKind.Plated)
+                Assert.True(via.WallThicknessDbu is > 0);
+        }
+    }
+
+    /// <summary>
+    /// User-reported, 2026-08-30: most of their boards are 4-layer. What makes this starter usable
+    /// rather than merely present is that EVERY conductor behaves sensibly in the planar EM path,
+    /// which took a second pass to get right — the first cut marked only Inner 1 and left the two
+    /// lower conductors in states nobody could act on (see this test's siblings in
+    /// FourLayerGroundReferenceTests, which run the extractor rather than reading the file).
+    ///
+    /// <para><b>TWO ground references, and the pairing is the point.</b> R-em-4 resolves ground as
+    /// the highest ground-designated conductor BELOW the signal level, so one plane can only serve
+    /// the layers above it. Inner 1 references L1 across the 8 mil top prepreg; Bottom Copper
+    /// references Inner 2 across the 8 mil bottom prepreg. Both signal layers therefore solve, and
+    /// each is 8 mil off its own plane — the symmetric SIG/GND/SIG/GND build, not SIG/GND/PWR/SIG.
+    /// R-pc-9's substrate resolution is unaffected: it takes the NEAREST designated ground beneath
+    /// the topmost conductor, which is still Inner 1.</para>
+    ///
+    /// <para>Two via entries on separate drawing layers: a PTH is what a fab builds, and a stitching
+    /// via to the reference plane is the one <c>BuildVias</c> can turn into an attachment basis.
+    /// Sharing a drawing layer would make them indistinguishable to the Via tool.</para>
+    /// </summary>
+    [Fact]
+    public void FourLayerPcb_PairsEachSignalLayerWithItsOwnGroundPlane_AndShipsAGroundViaBesideThePth()
+    {
+        var tech = ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz");
+
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        Assert.Equal(4, conductors.Count);
+        Assert.All(conductors, c => Assert.NotEmpty(c.DrawingLayers));
+
+        // Top-to-bottom: signal, ground, signal, ground. Asserted as the whole pattern rather than
+        // one membership check, because it is the ALTERNATION that makes every layer solvable.
+        Assert.Equal([false, true, false, true], conductors.Select(c => c.IsGroundReference));
+
+        var ground = conductors[1];
+        var pth = Assert.Single(tech.Stackup.Layers,
+            l => l.Kind == StackupKind.Via && l.SpanToLayer == conductors[3].Name);
+        Assert.Equal(conductors[0].Name, pth.SpanFromLayer);
+
+        var stitch = Assert.Single(tech.Stackup.Layers,
+            l => l.Kind == StackupKind.Via && l.SpanToLayer == ground.Name);
+        Assert.Equal(conductors[0].Name, stitch.SpanFromLayer);
+
+        Assert.NotEqual(pth.DrawingLayers[0], stitch.DrawingLayers[0]);
     }
 
     [Fact]

@@ -439,8 +439,14 @@ public static class CrossSectionExtractor
             if (l.Kind == StackupKind.Via)
                 foreach (var k in l.DrawingLayers) viaLayers.Add(k);
 
+        // R-em-4c superseded, 2026-08-30: what makes a shape "not metal" is that the TECHNOLOGY
+        // DECLARES its layer and binds it to no conductor — not that a dielectric entry happens to
+        // name it. See the refusal below for why that distinction had to move.
+        var declaredLayers = new HashSet<LayerKey>(tech.Layers.Select(l => l.Key));
+
         var conductors = new List<ConductorShape>();
         int ignoredGround = 0, ignoredVia = 0, ignoredDielectric = 0, ignoredAnnotation = 0;
+        var ignoredUnbound = new List<string>();
         string? groundLayerName = null;
 
         foreach (var s in shapes)
@@ -473,11 +479,38 @@ public static class CrossSectionExtractor
 
             if (viaLayers.Contains(s.Layer)) { ignoredVia++; continue; }
 
+            // ── DECLARED-BUT-UNBOUND IS NOT AN ERROR. UNDECLARED IS. ──────────────────────────
+            //
+            // This used to refuse on any layer no stackup entry named, and the advice it gave was
+            // "add this drawing layer to a conductor entry" — i.e. declare your board outline to be
+            // copper. Measured on the shipped 2-layer PCB starter: a shape on Outline, Silk Top,
+            // Silk Bottom, Soldermask Top or Soldermask Bottom refused the whole extraction. Every
+            // PCB layout has a board outline, so the normal case was the failing one, and the only
+            // escape was the dielectric-DrawingLayers workaround the MMIC starter used for its die
+            // outline (which is why that binding existed at all).
+            //
+            // The discriminator was always available and was simply not being asked for: a layer
+            // the technology DECLARES but binds to no stackup entry is the technology stating that
+            // the layer is not metal. Silk, soldermask and outline are exactly that. A layer the
+            // technology does not declare at all is the case nobody has said anything about — a
+            // foreign import, a hand-edited file — and that still refuses, because there the old
+            // reasoning holds in full: nothing says how thick it is or what it is made of.
+            //
+            // Ignoring is REPORTED, never silent, and names the layers (see the note below), so a
+            // trace genuinely drawn on a forgotten layer is still visible in the run's own output
+            // rather than vanishing.
+            if (declaredLayers.Contains(s.Layer))
+            {
+                string label = LayerLabel(tech, s.Layer);
+                if (!ignoredUnbound.Contains(label)) ignoredUnbound.Add(label);
+                continue;
+            }
+
             return new Classification(conductors,
-                $"There is geometry on layer {LayerLabel(tech, s.Layer)}, which is not bound to any " +
-                "stackup conductor layer, so nothing says how thick that metal is or what it is made " +
-                "of. Bind it in the technology editor: add this drawing layer to a conductor entry's " +
-                "DrawingLayers list on the Stackup tab.");
+                $"There is geometry on layer {LayerLabel(tech, s.Layer)}, which technology " +
+                $"'{tech.Name}' does not declare at all, so nothing says whether it is metal, how " +
+                "thick it is, or what it is made of. Add the layer to the technology's Layers tab — " +
+                "and if it IS metal, bind it to a conductor entry on the Stackup tab.");
         }
 
         if (ignoredGround > 0)
@@ -500,6 +533,13 @@ public static class CrossSectionExtractor
         if (ignoredDielectric > 0)
             notes.Add($"{ignoredDielectric} shape(s) on a layer bound only to a DIELECTRIC stackup " +
                       "entry were ignored — that binding marks a substrate extent, not metal.");
+
+        if (ignoredUnbound.Count > 0)
+            notes.Add($"Shape(s) on {ignoredUnbound.Count} layer(s) this technology declares but " +
+                      $"binds to no stackup entry ({string.Join(", ", ignoredUnbound)}) were ignored. " +
+                      "They are not metal as far as this technology is concerned — which is what a " +
+                      "board outline, a silkscreen or a soldermask opening should be. If one of them " +
+                      "IS metal, bind it to a conductor entry on the Stackup tab.");
 
         // Labels and bitmaps are DELIBERATELY not reported (owner request, 2026-08-11: "too
         // obvious/redundant to show users for every setup"). Every other ignored-shape note above

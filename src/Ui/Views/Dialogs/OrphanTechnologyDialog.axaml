@@ -22,6 +22,7 @@
                      Content="Use a built-in starter technology" FontSize="12" Margin="0,8,0,0" IsChecked="True"/>
         <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="12" Margin="20,4,0,0">
             <RadioButton x:Name="StarterPcbRadio"   GroupName="Starter" Content="PCB (2-layer)" FontSize="12" IsChecked="True"/>
+            <RadioButton x:Name="StarterPcb4Radio"  GroupName="Starter" Content="PCB (4-layer)" FontSize="12"/>
             <RadioButton x:Name="StarterMmicRadio"  GroupName="Starter" Content="MMIC (GaAs)"    FontSize="12"/>
             <RadioButton x:Name="StarterEmptyRadio" GroupName="Starter" Content="Empty"          FontSize="12"/>
         </StackPanel>

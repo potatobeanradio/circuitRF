@@ -6,8 +6,12 @@ using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
-/// <summary>The starting point chosen in the New Technology dialog.</summary>
-public enum NewTechnologyStarter { Pcb, Mmic, Empty }
+/// <summary>The starting point chosen in the New Technology dialog. <see cref="Pcb4"/> was added
+/// on a user report that most of their boards are 4-layer (2026-08-30); unlike the other three it
+/// resolves through <c>ShippedTechnologies</c> rather than a C# object initializer, which is
+/// R-misc-6's "one authored representation, not two" — see <c>OrphanTechnologyDialog</c>'s own note
+/// on the same choice.</summary>
+public enum NewTechnologyStarter { Pcb, Pcb4, Mmic, Empty }
 
 /// <summary>
 /// Result returned by <see cref="NewTechnologyDialog"/> on OK. Name is the validated technology
@@ -60,6 +64,7 @@ public partial class NewTechnologyDialog : Window
 
         var starter = StarterMmicRadio.IsChecked == true ? NewTechnologyStarter.Mmic
             : StarterEmptyRadio.IsChecked == true          ? NewTechnologyStarter.Empty
+            : StarterPcb4Radio.IsChecked == true           ? NewTechnologyStarter.Pcb4
             : NewTechnologyStarter.Pcb;
 
         Close(new NewTechnologyResult(name, starter, SetAsDefaultCheck.IsChecked == true));

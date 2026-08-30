@@ -175,10 +175,23 @@ public static class PlanarExtractor
         }
 
         if (conductorShapes.Count == 0)
+            // "Bind the layer to a conductor entry" is exactly wrong when the layer IS bound and the
+            // conductor it is bound to is a GROUND-designated one — the advice sends the user to
+            // re-do something already done. That case is reachable on any stackup with more than one
+            // plane (a 4-layer board where the only artwork so far is an inner pour), so it is named
+            // separately. User-reported, 2026-08-30.
             return PlanarExtractionResult.No(
-                $"This EM setup is pointed at geometry with nothing on a layer bound to a signal " +
-                $"conductor entry in technology '{tech.Name}'. Draw the artwork on a conductor layer, " +
-                "or bind the layer it is on to a conductor entry in the technology editor's Stackup tab.",
+                ignoredGround > 0
+                    ? $"This EM setup's geometry is entirely on ground-designated conductor layers of " +
+                      $"technology '{tech.Name}', so there is no signal conductor to solve for. A " +
+                      "ground plane is not meshed — it is the laterally infinite return the Green's " +
+                      "function handles analytically — so a run needs at least one shape on a " +
+                      "conductor that is NOT marked as a ground reference. Draw the trace, or untick " +
+                      "\"Ground reference\" on the conductor this artwork belongs to."
+                    : $"This EM setup is pointed at geometry with nothing on a layer bound to a signal " +
+                      $"conductor entry in technology '{tech.Name}'. Draw the artwork on a conductor " +
+                      "layer, or bind the layer it is on to a conductor entry in the technology " +
+                      "editor's Stackup tab.",
                 notes);
 
         // ── L9d/D5 — WHICH LEVELS, bottom-to-top, and it is N or a refusal ───────────────────
@@ -275,11 +288,33 @@ public static class PlanarExtractor
         else if (tech.Stackup.Bottom == BoundaryCondition.Ground)
         {
             groundTopM = stack[0].BottomM;
-            notes.Add(
-                $"No conductor layer in technology '{tech.Name}' is marked as a ground reference, so " +
-                "the ground plane was taken from Stackup.Bottom = Ground at the bottom of the stack. " +
-                "Mark the return-path conductor as a ground reference in the technology editor to " +
-                "place it exactly.");
+
+            // `groundBand` is null for TWO different reasons, and saying the wrong one is worse than
+            // saying nothing: the query above is "the highest ground-designated conductor BELOW this
+            // signal level", so it also comes back empty on a stackup that HAS a designated ground
+            // sitting ABOVE the signal. On every 2-layer technology the two coincide (the only
+            // candidate is the bottom conductor), which is why the message could say "none is marked"
+            // unconditionally and be right — until the first technology with an INNER ground plane,
+            // where a trace on a lower layer was told its technology designates no ground at all
+            // while the Stackup tab plainly showed one ticked. User-reported, 2026-08-30.
+            var above = stack
+                .Where(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference)
+                .OrderBy(b => b.TopM)
+                .ToList();
+
+            notes.Add(above.Count == 0
+                ? $"No conductor layer in technology '{tech.Name}' is marked as a ground reference, so " +
+                  "the ground plane was taken from Stackup.Bottom = Ground at the bottom of the stack. " +
+                  "Mark the return-path conductor as a ground reference in the technology editor to " +
+                  "place it exactly."
+                : $"The signal level '{signal.Layer.Name}' is BELOW every ground-designated conductor " +
+                  $"in technology '{tech.Name}' ({string.Join(", ", above.Select(b => $"'{b.Layer.Name}'"))}), " +
+                  "so none of them can be its return path — a port returns through a plane BENEATH the " +
+                  "conductor it feeds. The ground plane was taken from Stackup.Bottom = Ground at the " +
+                  "bottom of the stack instead, which is further away than the technology's own plane " +
+                  "and will read as a higher impedance. Either designate a conductor below this level " +
+                  "as a ground reference, or run this level's structure against the plane it is " +
+                  "actually referenced to.");
         }
         else
         {
@@ -289,10 +324,24 @@ public static class PlanarExtractor
         // ── The slab: the dielectric between ground and the LOWEST level ──────────────────────
         double slabHeight = signal.BottomM - groundTopM;
         if (!(slabHeight > 0))
+        {
+            // "Check the stackup order" is the right advice only when the order really is wrong. The
+            // commoner way to arrive here is a correctly-ordered board whose BOTTOM conductor is
+            // being treated as the signal: it sits on the Stackup.Bottom = Ground boundary, so the
+            // slab has zero height and nothing is misordered at all.
+            bool onTheBottomBoundary = ReferenceEquals(signal, stack[0]);
             return PlanarExtractionResult.No(
                 $"The signal conductor '{signal.Layer.Name}' sits at or below the ground plane, so " +
-                "there is no dielectric slab between them to solve on. Check the stackup order in the " +
-                "technology editor.", notes);
+                "there is no dielectric slab between them to solve on. " +
+                (onTheBottomBoundary
+                    ? "It is the bottom conductor of the stackup, resting directly on the " +
+                      "Stackup.Bottom = Ground boundary — there is no dielectric beneath it to be a " +
+                      "slab. Artwork on the bottom conductor is a ground pour or a backside feature, " +
+                      "not a signal level: either mark that conductor as a ground reference (its " +
+                      "shapes are then ignored with a note rather than refused), or move the trace to " +
+                      "a conductor that has a ground-designated plane beneath it."
+                    : "Check the stackup order in the technology editor."), notes);
+        }
 
         var slabBands = stack
             .Where(b => b.Layer.Kind == StackupKind.Dielectric &&

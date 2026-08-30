@@ -26,7 +26,8 @@
 
             <TextBlock Text="Starting point:" FontSize="12" Margin="0,4,0,0"/>
             <StackPanel Orientation="Horizontal" Spacing="12">
-                <RadioButton x:Name="StarterPcbRadio"   GroupName="Starter" Content="PCB starter"  FontSize="12" IsChecked="True"/>
+                <RadioButton x:Name="StarterPcbRadio"   GroupName="Starter" Content="PCB (2-layer)" FontSize="12" IsChecked="True"/>
+                <RadioButton x:Name="StarterPcb4Radio"  GroupName="Starter" Content="PCB (4-layer)" FontSize="12"/>
                 <RadioButton x:Name="StarterMmicRadio"  GroupName="Starter" Content="MMIC starter"  FontSize="12"/>
                 <RadioButton x:Name="StarterEmptyRadio" GroupName="Starter" Content="Empty"         FontSize="12"/>
             </StackPanel>

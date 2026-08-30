@@ -14213,3 +14213,117 @@ different question ("is my workspace still there?") and its "no longer there" me
 
 Gated by `tests/Ui.Tests/KnownFileDocumentActionsTests.cs` (52 tests), including the two
 renamed-format cases that motivated the key check.
+
+## A form-backed document had no refresh point for File ▸ Save (2026-08-30)
+
+Two user reports about the `.ctech` editor, plus one question that turned out to be a misreading the
+UI invited.
+
+### File ▸ Save stayed greyed out on a dirty `.ctech` while ⌘S saved it perfectly
+
+`CanSaveAllDocuments` has answered `TechDocument td => td.IsDirty` since the File-menu restructure, so
+the predicate was never wrong. **Nothing was re-EVALUATING it.** A `[RelayCommand(CanExecute=…)]` is
+re-asked only when something calls `NotifyCanExecuteChanged`, and the two enablement fan-outs fire on a
+dock tab switch, a window focus change, or a completed save. The canvas-backed editors have a third
+trigger the form-backed ones do not: `OnSchematicCanvasInteracted` (and its layout/symbol siblings)
+calls `RaiseFileMenuEnablementChanged` on a canvas click. **A `.ctech` editor is a form. It has no
+canvas**, so between opening the tab (clean → item disabled) and switching away, no refresh point ever
+came, and the item held its open-time appearance for the whole editing session.
+
+⌘S worked throughout because `RelayCommand.CanExecute` is evaluated fresh at invocation regardless of
+when the last notification was raised — only the menu item's APPEARANCE was stale. That is precisely
+why the report reads as a contradiction ("the menu is dead but the shortcut is fine") rather than as a
+save bug.
+
+**The fix is the missing refresh point, not a new predicate:** `HookTechFileDirty` already runs on
+every dirty transition (it pushes the project-tree dirty dot), so it now also calls
+`RaiseFileMenuEnablementChanged`. `HookEmSetupDirty` is kept in step — a `.cem` editor is the same
+shape (workspace-scoped, never scratch, no canvas) and had the identical hole.
+
+The `.cem` editor additionally binds its own Ctrl/⌘+S to `ViewModel.SaveCommand`; the `.ctech` editor
+does not, so its ⌘S reaches `SaveAllDocumentsCommand` through the window key binding. Both now agree
+with the menu.
+
+### A via row offered a Thickness field that measures nothing
+
+Every shipped `.ctech` carries `"ThicknessDbu": 0` on its via entry, and the Stackup tab rendered that
+as an editable "Thickness: 0 mil" — which reads as a real dimension somebody forgot to fill in. It is
+not one. **A via has no z band of its own**: `PlanarExtractor.BuildStack` (and
+`CrossSectionExtractor`'s copy of the same walk) skips every `StackupKind.Via` entry, `WBondClearance`
+skips it, `PcbWriter` sums only Conductor and Dielectric, and `TechValidation` exempts it from the
+positive-thickness check. The barrel's length is `SpanFromLayer` → `SpanToLayer` resolved against the
+z bands of the two conductors it joins, which is `ProcessTechnologyBuilder`'s own reason for writing
+`ThicknessDbu = 0` on import. Nothing reads the field.
+
+Hidden on via rows (`IsVisible="{Binding !IsVia}"`); the Spans pair immediately below already answers
+the question the field was inviting. The `.cem` editor's read-only stackup table printed the same zero
+as "0 m" and now prints the span instead.
+
+### The dielectric is not missing — it is not a drawing layer
+
+The related question ("I don't see the dielectric in the layer overview") is about two different
+tables. The Layers tab and the layout Layers panel list DRAWING layers — what can be drawn on. A
+dielectric slab is stackup-only and appears on the Stackup tab. In the MoM the dielectric is a
+laterally infinite slab: `BuildMediumStack` reads only `Epsr`/`TanD`/`Mur`/`ThicknessDbu` and never
+looks at a dielectric's `DrawingLayers`, so a dielectric bound to `(none)` is everywhere, and binding
+one to a drawing layer changes no electrical result — `CrossSectionExtractor`'s R-em-4c note already
+records that such a binding exists "for other purposes" (a substrate outline) and must never make a
+shape a conductor.
+
+Gated by `tests/Ui.Tests/TechFileMenuAndViaThicknessTests.cs` (6 tests). The last one is not a source
+scan: it extracts two copies of the PCB starter differing only in the via's `ThicknessDbu` and asserts
+the stack heights are identical, so the claim the two UI changes rest on is measured rather than
+restated.
+
+## A 4-layer PCB starter technology (2026-08-30)
+
+User report: most of their boards are 4-layer, and every shipped PCB technology was 2-layer.
+
+`src/Ui/resources/technologies/pcb-4layer_FR-4_62mil_1oz.ctech` — L1 1 oz / 8 mil prepreg / L2 0.5 oz
+/ 42 mil core / L3 0.5 oz / 8 mil prepreg / L4 1 oz, 62.1 mil overall, FR-4 at εr 4.4, tanδ 0.02
+throughout.
+
+**Written as a `.ctech` and NOT as a `Pcb4Layer()` beside `Pcb2Layer()`.** `ShippedTechnologies`
+discovers every embedded `*.ctech` at runtime, so the file alone puts the entry in the New Workspace
+picker with no code change at all — and R-misc-6's "one authored representation, not two" is exactly
+the reason not to transcribe it into a C# object initializer. The two dialogs that offer starters by
+name (`NewTechnologyDialog` via `NewTechnologyStarter.Pcb4`, and `OrphanTechnologyDialog`) resolve it
+through `ShippedTechnologies.Load`, the way the orphan dialog already resolved PCB and MMIC.
+
+### The ground planes took a second pass, and reading the file would never have caught it
+
+The first cut marked ONE ground reference, Inner 1, on the reasoning that it is what puts a 50 Ω
+microstrip on L1 over the 8 mil prepreg (~14 mil wide) rather than over the whole board (~42 mil).
+That much is right and is still the reason the plane is inner. What it missed is what the OTHER three
+conductors then do, which no reading of the `.ctech` shows — it needs the extractor run on each.
+Running it (a scratch xunit probe printing `PlanarExtractionResult` for a trace on each conductor,
+deleted afterwards) found two of the four in states nobody could act on, one of them silently wrong:
+
+- **L3 solved `Ok=True`** against the stack bottom, carrying the note *"No conductor layer in
+  technology X is marked as a ground reference"* — **false**, Inner 1 was ticked and on screen. A
+  wrong reference, further away than the real one, with no refusal. See `src/Design/RESOLVED.md` for
+  why the message was wrong and what it says now.
+- **L4 refused** with *"Check the stackup order in the technology editor"*, and the order was fine.
+
+**The starter is now SIG / GND / SIG / GND** — Inner 1 AND Bottom Copper are ground references, and
+Inner 2 lost its "(Power)" suffix. R-em-4 resolves ground as the highest designated conductor BELOW
+the signal level, so one plane can only serve the layers above it; two planes pair each signal layer
+with its own. Inner 1 references L1 across the top prepreg, Bottom Copper references Inner 2 across
+the bottom prepreg, both at 8 mil. All four conductors now reach an answer someone can act on, and
+the result is a better board than the first cut — a symmetric two-signal-layer RF build rather than
+SIG/GND/PWR/SIG. R-pc-9's substrate resolution is untouched: it takes the NEAREST designated ground
+beneath the topmost conductor, still Inner 1.
+
+**Two via entries, on separate drawing layers.** A PTH spanning L1 → L4 is what a fab builds, but
+`BuildVias` drops it: Bottom Copper is neither an analysis level nor the plane R-em-4 resolved, so it
+is the `wrongGround` refusal (correctly — treating a finite pour as the infinite plane would solve a
+structure nobody drew). The separate `Ground Via (L1-L2)` entry is the stitching via that becomes an
+attachment basis. Sharing a drawing layer would make the two indistinguishable to the Via tool and to
+the extractor.
+
+Gated by `tests/Ui.Tests/Em/FourLayerGroundReferenceTests.cs` (8 tests), which runs the extractor on
+each conductor rather than reading the file — the distinction that found the bug. `ShippedTechnologies
+Tests` gained the new id in three places and asserts the `[false, true, false, true]` alternation as a
+whole pattern, because it is the alternation, not the membership, that makes every layer solvable;
+`PcbTechnology_HasViaStackupEntry_WithFillModelAndSpan` widened from `Assert.Single` to every via
+entry, having assumed one per technology — true only while every PCB file was 2-layer.
