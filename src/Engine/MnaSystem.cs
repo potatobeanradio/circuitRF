@@ -24,8 +24,26 @@ namespace CircuitRF.Engine;
 ///   3. Factorize()       — build CSC, compute AMD perm (first call), LU-factorize
 ///   4. lu.Solve(b, x)    — back-substitute for each RHS
 ///
-/// The AMD permutation is computed once from the topology (first Factorize call)
-/// and reused across all subsequent frequencies.
+/// SPARSITY-PATTERN CACHE (SP-P2). The stamp SEQUENCE — not merely the pattern — is
+/// invariant across frequency: <c>StampAll</c> visits the components in one fixed order,
+/// each model issues the same <c>Accum</c> calls in the same order, and <c>AddBranch</c>
+/// hands out the same indices. So the FIRST pass records the (row, col) sequence and
+/// builds the CSC plus a slot map (call index → CSC value index); every later pass writes
+/// straight into the CSC value array with no hashing and no rebuild.
+///
+/// The cached pass VERIFIES (row, col) at every call — two int compares. A model may
+/// legitimately stamp a different sequence at a different ω (an ideal inductor skips its
+/// diagonal at ω = 0; a regularization retry adds gmin stamps that were not recorded), so
+/// on the first mismatch the pattern is invalidated, the pass finishes in recording mode,
+/// and the pattern is rebuilt. A silently wrong pattern would put a value in the wrong cell
+/// and produce a plausible, wrong answer; the verification is not optional.
+///
+/// Duplicate cells merge in CALL order, which is the order the previous dictionary-based
+/// assembly summed them in — so the assembled matrix is bit-identical to the old path.
+///
+/// The AMD permutation is computed once from the topology (first Factorize call) and reused
+/// across all subsequent frequencies; a rebuild whose sparsity structure actually differs
+/// discards it.
 ///
 /// Fixed conventions (Engine CLAUDE.md):
 ///   - Branch current flows from element's FIRST node to its SECOND.
@@ -37,10 +55,29 @@ public sealed class MnaSystem : IMnaContext
     private readonly int _nodeCount;   // number of voltage unknowns (non-ground nodes)
     private int _branchCount;
 
-    // Backing store: (row, col) → accumulated value.
-    private readonly Dictionary<(int Row, int Col), Complex> _entries = [];
-    // RHS vector keyed by row index.
-    private readonly Dictionary<int, Complex> _rhs = [];
+    // ── Recording representation (pass 1, and any pass after an invalidation) ──
+    // The stamp calls in call order. Kept as parallel lists so the recording pass does no
+    // tuple hashing at all; the CSC build below merges duplicates.
+    private readonly List<int>     _recRow = [];
+    private readonly List<int>     _recCol = [];
+    private readonly List<Complex> _recVal = [];
+    private readonly Dictionary<int, Complex> _rhs = [];   // RHS while recording
+
+    // ── Cached representation (valid once _slot is non-null) ──────────────────
+    private int[]?     _patRow;          // recorded row sequence
+    private int[]?     _patCol;          // recorded col sequence
+    private int[]?     _slot;            // call index → index into _values
+    private int        _patLen;          // number of recorded calls
+    private int        _patBranchCount;  // branch count the pattern was recorded with
+    private SparseMatrix? _csc;
+    private Complex[]? _values;          // alias of _csc.Values (hot path)
+    private Complex[]? _rhsArr;          // dense RHS, cleared per pass
+    private int[]?     _zeroRowIdx;      // structural diagnostics, computed at pattern build
+    private int[]?     _zeroColIdx;
+    private (int[] ColPtr, int[] RowIdx)? _lastStructure;   // previous structure, for the AMD keep/discard test
+
+    private bool _recording = true;      // this pass is accumulating into the lists
+    private int  _k;                     // calls made so far in the current pass
 
     // Cached AMD permutation — computed once from the topology, reused across frequencies.
     private int[]? _amdPerm;
@@ -51,6 +88,15 @@ public sealed class MnaSystem : IMnaContext
     /// </param>
     public MnaSystem(int nonGroundNodes) => _nodeCount = nonGroundNodes;
 
+    /// <summary>
+    /// How many times the sparsity pattern has been built (SP-P2). A frequency sweep over a
+    /// netlist whose stamp sequence is invariant builds it exactly ONCE, however many points it
+    /// runs; a further build means some pass diverged from the recorded sequence and the cache
+    /// paid a rebuild. Exposed so a test can assert the structural property rather than a time.
+    /// </summary>
+    public int PatternBuilds => _patternBuilds;
+    private int _patternBuilds;
+
     public int NodeCount   => _nodeCount;
     public int BranchCount => _branchCount;
     public int Size        => _nodeCount + _branchCount;
@@ -58,12 +104,27 @@ public sealed class MnaSystem : IMnaContext
     // ── Reset (call before stamping each new frequency) ───────────────────────
 
     /// <summary>Clear all accumulated values and reset the branch counter.
-    /// The cached AMD permutation is preserved (topology does not change).</summary>
+    /// The cached AMD permutation and sparsity pattern are preserved (topology does not change);
+    /// with a valid pattern this is an <c>Array.Clear</c> of the value and RHS arrays.</summary>
     public void Reset()
     {
-        _entries.Clear();
-        _rhs.Clear();
+        _k           = 0;
         _branchCount = 0;
+
+        if (_slot is not null)
+        {
+            Array.Clear(_values!);
+            Array.Clear(_rhsArr!);
+            _recording = false;
+        }
+        else
+        {
+            _recRow.Clear();
+            _recCol.Clear();
+            _recVal.Clear();
+            _rhs.Clear();
+            _recording = true;
+        }
     }
 
     // ── IMnaContext ───────────────────────────────────────────────────────────
@@ -84,6 +145,11 @@ public sealed class MnaSystem : IMnaContext
 
     public int AddBranch()
     {
+        // More branches than the pattern recorded ⇒ the sequence changed (fact 2): the RHS array
+        // and the CSC are both sized for the recorded system, so invalidate before handing out
+        // an index that would not fit.
+        if (!_recording && _branchCount >= _patBranchCount) Invalidate();
+
         int idx = _nodeCount + _branchCount++;
         return idx;
     }
@@ -126,24 +192,19 @@ public sealed class MnaSystem : IMnaContext
     /// A zero row means the corresponding unknown has no constraints and will cause singularity.
     /// <paramref name="nodeNamer"/> maps a 0-based voltage-node matrix index to a display name.
     /// <paramref name="branchNamer"/> maps a branch-row matrix index to a display name.
+    /// The structural answer is computed once per sparsity pattern; only the naming is per call.
     /// </summary>
     public IReadOnlyList<(int Row, string Description)> FindZeroRows(
         Func<int, string>? nodeNamer   = null,
         Func<int, string>? branchNamer = null)
     {
-        var nonZeroRows = new HashSet<int>(_entries.Count);
-        foreach (var (row, _) in _entries.Keys)
-            nonZeroRows.Add(row);
-
-        var result = new List<(int, string)>();
-        for (int r = 0; r < Size; r++)
+        EnsurePattern();
+        var result = new List<(int, string)>(_zeroRowIdx!.Length);
+        foreach (int r in _zeroRowIdx!)
         {
-            if (nonZeroRows.Contains(r)) continue;
-            string desc;
-            if (r < _nodeCount)
-                desc = $"voltage node: {nodeNamer?.Invoke(r) ?? $"node#{r + 1}"}";
-            else
-                desc = $"branch row: {branchNamer?.Invoke(r) ?? $"branch#{r - _nodeCount}"}";
+            string desc = r < _nodeCount
+                ? $"voltage node: {nodeNamer?.Invoke(r) ?? $"node#{r + 1}"}"
+                : $"branch row: {branchNamer?.Invoke(r) ?? $"branch#{r - _nodeCount}"}";
             result.Add((r, desc));
         }
         return result;
@@ -159,19 +220,13 @@ public sealed class MnaSystem : IMnaContext
         Func<int, string>? nodeNamer   = null,
         Func<int, string>? branchNamer = null)
     {
-        var nonZeroCols = new HashSet<int>(_entries.Count);
-        foreach (var (_, col) in _entries.Keys)
-            nonZeroCols.Add(col);
-
-        var result = new List<(int, string)>();
-        for (int c = 0; c < Size; c++)
+        EnsurePattern();
+        var result = new List<(int, string)>(_zeroColIdx!.Length);
+        foreach (int c in _zeroColIdx!)
         {
-            if (nonZeroCols.Contains(c)) continue;
-            string desc;
-            if (c < _nodeCount)
-                desc = $"voltage node: {nodeNamer?.Invoke(c) ?? $"node#{c + 1}"}";
-            else
-                desc = $"branch col: {branchNamer?.Invoke(c) ?? $"branch#{c - _nodeCount}"}";
+            string desc = c < _nodeCount
+                ? $"voltage node: {nodeNamer?.Invoke(c) ?? $"node#{c + 1}"}"
+                : $"branch col: {branchNamer?.Invoke(c) ?? $"branch#{c - _nodeCount}"}";
             result.Add((c, desc));
         }
         return result;
@@ -187,7 +242,8 @@ public sealed class MnaSystem : IMnaContext
         Func<int, string>? nodeNamer   = null,
         Func<int, string>? branchNamer = null)
     {
-        var cs = BuildCscMatrix();
+        EnsurePattern();
+        var cs = _csc!;
         if (_amdPerm is null)
         {
             try { _amdPerm = AMD.Generate(cs, ColumnOrdering.MinimumDegreeAtA); }
@@ -201,7 +257,7 @@ public sealed class MnaSystem : IMnaContext
             }
         }
 
-        // Pre-solve: find structurally zero rows and columns.
+        // Pre-solve: report the structurally zero rows and columns found when the pattern was built.
         var zeroRows = FindZeroRows(nodeNamer, branchNamer);
         var zeroCols = FindZeroCols(nodeNamer, branchNamer);
         if (zeroRows.Count > 0 || zeroCols.Count > 0)
@@ -254,13 +310,12 @@ public sealed class MnaSystem : IMnaContext
         return lu;
     }
 
-    /// <summary>Build the dense RHS vector from accumulated source values.</summary>
+    /// <summary>Build the dense RHS vector from accumulated source values.
+    /// The caller owns the returned array (it is a copy of the internal one).</summary>
     public Complex[] BuildRhs()
     {
-        var b = new Complex[Size];
-        foreach (var (row, val) in _rhs)
-            b[row] = val;
-        return b;
+        EnsurePattern();
+        return (Complex[])_rhsArr!.Clone();
     }
 
     /// <summary>
@@ -274,16 +329,55 @@ public sealed class MnaSystem : IMnaContext
         return b;
     }
 
+    /// <summary>
+    /// Allocation-free form of <see cref="BuildRhsWithPortDrive"/>: fills a caller-owned buffer
+    /// of length <see cref="Size"/>. Used by the per-port loops, which run once per frequency
+    /// per port and would otherwise allocate a fresh vector each time.
+    /// </summary>
+    public void FillRhsWithPortDrive(Complex[] buffer, int branchRow, Complex driveValue)
+    {
+        EnsurePattern();
+        Array.Copy(_rhsArr!, buffer, _rhsArr!.Length);
+        buffer[branchRow] = driveValue;
+    }
+
     // ── Inspection (tests + Step 2 solver) ────────────────────────────────────
 
     public Complex GetEntry(int row, int col)
-        => _entries.TryGetValue((row, col), out var v) ? v : Complex.Zero;
+    {
+        if (row < 0 || col < 0) return Complex.Zero;
+        EnsurePattern();
+        var cs = _csc!;
+        if (row >= cs.RowCount || col >= cs.ColumnCount) return Complex.Zero;
+
+        // Row indices are ascending within a column (the pattern build sorts them), so binary search.
+        int lo = cs.ColumnPointers[col], hi = cs.ColumnPointers[col + 1] - 1;
+        var ri = cs.RowIndices;
+        while (lo <= hi)
+        {
+            int mid = lo + ((hi - lo) >> 1);
+            int r   = ri[mid];
+            if (r == row) return cs.Values[mid];
+            if (r <  row) lo = mid + 1; else hi = mid - 1;
+        }
+        return Complex.Zero;
+    }
 
     public Complex GetRhs(int row)
-        => _rhs.TryGetValue(row, out var v) ? v : Complex.Zero;
+    {
+        if (row < 0) return Complex.Zero;
+        EnsurePattern();
+        return row < _rhsArr!.Length ? _rhsArr[row] : Complex.Zero;
+    }
 
     public IEnumerable<(int Row, int Col, Complex Value)> NonZeroEntries()
-        => _entries.Select(kv => (kv.Key.Row, kv.Key.Col, kv.Value));
+    {
+        EnsurePattern();
+        var cs = _csc!;
+        for (int c = 0; c < cs.ColumnCount; c++)
+            for (int p = cs.ColumnPointers[c]; p < cs.ColumnPointers[c + 1]; p++)
+                yield return (cs.RowIndices[p], c, cs.Values[p]);
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -292,30 +386,226 @@ public sealed class MnaSystem : IMnaContext
 
     private void Accum(int row, int col, Complex value)
     {
-        var key = (row, col);
-        _entries[key] = _entries.TryGetValue(key, out var existing)
-            ? existing + value
-            : value;
+        if (!_recording)
+        {
+            int k = _k;
+            if (k < _patLen && _patRow![k] == row && _patCol![k] == col)
+            {
+                _values![_slot![k]] += value;
+                _k = k + 1;
+                return;
+            }
+            Invalidate();   // sequence diverged — finish this pass in recording mode
+        }
+
+        _recRow.Add(row);
+        _recCol.Add(col);
+        _recVal.Add(value);
+        _k++;
     }
 
     private void AccumRhs(int row, Complex value)
-        => _rhs[row] = _rhs.TryGetValue(row, out var existing) ? existing + value : value;
+    {
+        if (!_recording) { _rhsArr![row] += value; return; }
+        _rhs[row] = _rhs.TryGetValue(row, out var existing) ? existing + value : value;
+    }
+
+    /// <summary>
+    /// Return to recording mode, replaying the calls already made in this pass into the recording
+    /// lists. Each cell's accumulated total is attributed to the FIRST call that reached it and the
+    /// repeats get exact zero, so the rebuilt matrix is bit-identical to the interrupted one
+    /// (adding 0 to a finite value is exact).
+    /// </summary>
+    private void Invalidate()
+    {
+        int k = _k;
+
+        _recRow.Clear();
+        _recCol.Clear();
+        _recVal.Clear();
+
+        if (k > 0)
+        {
+            var seen = new bool[_values!.Length];
+            for (int i = 0; i < k; i++)
+            {
+                int s = _slot![i];
+                _recRow.Add(_patRow![i]);
+                _recCol.Add(_patCol![i]);
+                if (seen[s]) _recVal.Add(Complex.Zero);
+                else { seen[s] = true; _recVal.Add(_values[s]); }
+            }
+        }
+
+        _rhs.Clear();
+        if (_rhsArr is not null)
+            for (int r = 0; r < _rhsArr.Length; r++)
+                if (_rhsArr[r] != Complex.Zero) _rhs[r] = _rhsArr[r];
+
+        _patRow = _patCol = _slot = null;
+        _csc     = null;
+        _values  = null;
+        _rhsArr  = null;
+        _zeroRowIdx = _zeroColIdx = null;
+        _recording  = true;
+        // _amdPerm is kept for now; BuildPattern discards it only if the structure actually changed.
+    }
+
+    /// <summary>
+    /// Make the CSC representation current. A completed cached pass is already current; a recording
+    /// pass (or a cached pass that stopped short of the recorded sequence) rebuilds the pattern.
+    /// </summary>
+    private void EnsurePattern()
+    {
+        if (!_recording)
+        {
+            // A pass that stopped SHORT — or allocated a different number of branches — is a
+            // mismatch just as a diverging (row, col) is.
+            if (_k == _patLen && _branchCount == _patBranchCount) return;
+            Invalidate();
+        }
+        BuildPattern();
+    }
+
+    private void BuildPattern()
+    {
+        int n = Size;
+        int m = _recRow.Count;
+
+        var order = StableOrderByColThenRow(n, m);
+
+        var colPtr = new int[n + 1];
+        var rowIdx = new int[m];
+        var values = new Complex[m];
+        var slot   = new int[m];
+
+        int nnz = 0, prevRow = -1, prevCol = -1;
+        for (int j = 0; j < m; j++)
+        {
+            int i = order[j];
+            int r = _recRow[i], c = _recCol[i];
+            if (nnz == 0 || r != prevRow || c != prevCol)
+            {
+                rowIdx[nnz] = r;
+                values[nnz] = Complex.Zero;
+                nnz++;
+                prevRow = r;
+                prevCol = c;
+                colPtr[c + 1]++;
+            }
+            int s = nnz - 1;
+            slot[i]    = s;
+            values[s] += _recVal[i];     // call order — matches the old dictionary's summation
+        }
+        for (int c = 0; c < n; c++) colPtr[c + 1] += colPtr[c];
+
+        if (nnz != m)
+        {
+            Array.Resize(ref rowIdx, nnz);
+            Array.Resize(ref values, nnz);
+        }
+
+        // Keep the AMD permutation only if the sparsity STRUCTURE is unchanged; a rebuild that
+        // merely re-sequenced identical cells (the regularization retry is the common case) does
+        // not need a fresh ordering, a genuinely different structure does.
+        if (_amdPerm is not null && !SameStructure(colPtr, rowIdx)) _amdPerm = null;
+
+        _csc    = new SparseMatrix(n, n, values, rowIdx, colPtr);
+        _values = values;
+        _slot   = slot;
+        _patRow = [.. _recRow];
+        _patCol = [.. _recCol];
+        _patLen = m;
+        _patBranchCount = _branchCount;
+
+        _rhsArr = new Complex[n];
+        foreach (var (row, val) in _rhs)
+            _rhsArr[row] = val;
+
+        ComputeStructuralZeros(n, colPtr, rowIdx, nnz);
+
+        // The recording lists are rebuilt from the pattern if it is ever invalidated; drop their
+        // contents (keeping capacity) so the same storage is not carried twice.
+        _recRow.Clear();
+        _recCol.Clear();
+        _recVal.Clear();
+        _rhs.Clear();
+
+        _recording = false;
+        _k         = m;
+        _patternBuilds++;
+    }
+
+    private bool SameStructure(int[] colPtr, int[] rowIdx)
+    {
+        var old = _lastStructure;
+        if (old is null) return true;   // nothing to compare against — keep whatever we have
+        var (oldColPtr, oldRowIdx) = old.Value;
+        if (oldColPtr.Length != colPtr.Length || oldRowIdx.Length != rowIdx.Length) return false;
+        for (int i = 0; i < colPtr.Length; i++) if (oldColPtr[i] != colPtr[i]) return false;
+        for (int i = 0; i < rowIdx.Length; i++) if (oldRowIdx[i] != rowIdx[i]) return false;
+        return true;
+    }
+
+    private void ComputeStructuralZeros(int n, int[] colPtr, int[] rowIdx, int nnz)
+    {
+        _lastStructure = (colPtr, rowIdx);
+
+        var rowSeen = new bool[n];
+        for (int i = 0; i < nnz; i++) rowSeen[rowIdx[i]] = true;
+
+        var zr = new List<int>();
+        for (int r = 0; r < n; r++) if (!rowSeen[r]) zr.Add(r);
+        var zc = new List<int>();
+        for (int c = 0; c < n; c++) if (colPtr[c + 1] == colPtr[c]) zc.Add(c);
+
+        _zeroRowIdx = [.. zr];
+        _zeroColIdx = [.. zc];
+    }
+
+    /// <summary>
+    /// Order the recorded calls by (column, row, call index). Two STABLE counting-sort passes —
+    /// stability is what makes duplicate cells merge in call order, so the assembled values match
+    /// the previous dictionary path bit for bit.
+    /// </summary>
+    private int[] StableOrderByColThenRow(int n, int m)
+    {
+        if (m == 0) return [];
+
+        var cnt = new int[n + 1];
+        for (int i = 0; i < m; i++) cnt[_recRow[i] + 1]++;
+        for (int r = 0; r < n; r++) cnt[r + 1] += cnt[r];
+        var byRow = new int[m];
+        for (int i = 0; i < m; i++) byRow[cnt[_recRow[i]]++] = i;
+
+        Array.Clear(cnt);
+        for (int i = 0; i < m; i++) cnt[_recCol[i] + 1]++;
+        for (int c = 0; c < n; c++) cnt[c + 1] += cnt[c];
+        var order = new int[m];
+        for (int j = 0; j < m; j++)
+        {
+            int i = byRow[j];
+            order[cnt[_recCol[i]]++] = i;
+        }
+        return order;
+    }
 
     /// <summary>
     /// Build and return the CSC representation of the current matrix.
     /// Used by <see cref="HarmonicBalance.HbLinearExtractor"/> to snapshot G(ω)
     /// before factorization so the sparse matrix can be exported without recomputing.
     /// Calling this after <see cref="Factorize"/> on the same MnaSystem instance is
-    /// safe — both calls build from the same <c>_entries</c> dictionary.
+    /// safe — both build from the same accumulated entries. The returned matrix is a COPY the
+    /// caller owns: the internal one is zeroed and refilled by the next <see cref="Reset"/>.
     /// </summary>
-    public CompressedColumnStorage<Complex> BuildCsc() => BuildCscMatrix();
-
-    private CompressedColumnStorage<Complex> BuildCscMatrix()
+    public CompressedColumnStorage<Complex> BuildCsc()
     {
-        int n   = Size;
-        var tri = new CoordinateStorage<Complex>(n, n, _entries.Count);
-        foreach (var ((row, col), val) in _entries)
-            tri.At(row, col, val);
-        return SparseMatrix.OfIndexed(tri);
+        EnsurePattern();
+        var c = _csc!;
+        return new SparseMatrix(
+            c.RowCount, c.ColumnCount,
+            (Complex[])c.Values.Clone(),
+            (int[])c.RowIndices.Clone(),
+            (int[])c.ColumnPointers.Clone());
     }
 }

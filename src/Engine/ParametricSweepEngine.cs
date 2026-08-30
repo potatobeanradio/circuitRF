@@ -362,7 +362,7 @@ public static class ParametricSweepEngine
             }
 
             case SParameterAnalysis spa:
-                return RunSParam(spa, netlist, settings, control);
+                return RunSParam(spa, lib, tb, netlist, settings, baseDirectory, control);
 
             case DcAnalysis dca:
                 return RunDc(dca, netlist, settings);
@@ -414,12 +414,20 @@ public static class ParametricSweepEngine
 
     private static DataSet RunSParam(
         SParameterAnalysis spa,
+        Library            lib,
+        TestBench          tb,
         ElaboratedNetlist  netlist,
         AnalysisSettings?  settings,
+        string?            baseDirectory,
         RunControl?        control = null)
     {
         var freqs = spa.Expand(netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
-        return SParameterEngine.Run(netlist, freqs, settings, control);
+        // The frequency-parallel overload (SP-P3). It elaborates its extra copies from THIS point's
+        // TestBench, which still carries the sweep-variable override — the sweep restores that only
+        // after RunInner has returned — so every chunk runs the same circuit this point is about.
+        // A short inner grid falls back to serial on its own, which is what an outer sweep over a
+        // handful of frequencies gets.
+        return SParameterEngine.Run(netlist, lib, tb, baseDirectory, freqs, settings, control);
     }
 
     private static DataSet RunDc(

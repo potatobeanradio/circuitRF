@@ -254,4 +254,19 @@ public sealed class AnalysisSettings
     /// this trades margin, not silence.</para>
     /// </summary>
     public double HbApftOversample { get; init; } = 2.0;
+
+    // ── Frequency-sweep parallelism (SP-P3) ─────────────────────────────────────
+
+    /// <summary>
+    /// How many frequency points of an S-parameter sweep may be solved at once. 0 = automatic
+    /// (the default): the engine picks from <see cref="Environment.ProcessorCount"/> and the
+    /// length of the grid. 1 pins the run to the serial path.
+    ///
+    /// <para>Every frequency point is an independent solve, so the sweep splits into contiguous
+    /// chunks running on separately elaborated copies of the netlist — the copies are the whole
+    /// thread-safety story, since a model writes state during <c>Stamp</c>. The knob exists so a
+    /// laptop can be pinned and a test can force a chosen degree; it does not change any result,
+    /// which stays bit-identical to the serial path at every degree.</para>
+    /// </summary>
+    public int MaxParallelism { get; init; } = 0;
 }

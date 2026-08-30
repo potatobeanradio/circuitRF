@@ -88,7 +88,10 @@ public sealed class ElaboratedNetlist : IDisposable
     public void AddWarningOnce(string key, string message)
     {
         if (_seenWarningKeys.Add(key))
+        {
             AddWarning(message);
+            _keyedWarnings.Add((key, message));
+        }
     }
 
     /// <summary>
@@ -108,7 +111,38 @@ public sealed class ElaboratedNetlist : IDisposable
     /// <summary>Adds a note only if <paramref name="key"/> has not been seen in this run.</summary>
     public void AddNoteOnce(string key, string message)
     {
-        if (_seenWarningKeys.Add(key)) _notes.Add(message);
+        if (_seenWarningKeys.Add(key))
+        {
+            _notes.Add(message);
+            _keyedNotes.Add((key, message));
+        }
+    }
+
+    // The keyed half of the two lists above, kept in arrival order so one netlist's run-time
+    // diagnostics can be replayed into another's (see MergeDiagnosticsFrom). Only keyed entries are
+    // recorded: an unkeyed AddWarning has no identity to dedupe on, and every diagnostic a run
+    // produces goes through the keyed doors.
+    private readonly List<(string Key, string Message)> _keyedWarnings = [];
+    private readonly List<(string Key, string Message)> _keyedNotes    = [];
+
+    /// <summary>
+    /// Folds another netlist's KEYED warnings and notes into this one, first occurrence winning.
+    ///
+    /// <para><b>Why this exists.</b> An S-parameter sweep may run its frequency chunks on separately
+    /// elaborated copies of one testbench (SP-P3), because a model writes state while it stamps and
+    /// sharing one netlist across threads would be a race. Each copy therefore keeps its own
+    /// diagnostics, and the caller only ever sees the netlist it handed in — so the copies' findings
+    /// are merged back into it, in chunk order, which makes the reported list identical to the one
+    /// the serial path produces however the work was divided.</para>
+    ///
+    /// <para>Unkeyed warnings are deliberately not merged: they come from ELABORATION, so every copy
+    /// already produced the same ones this netlist has, and replaying them would duplicate them.</para>
+    /// </summary>
+    public void MergeDiagnosticsFrom(ElaboratedNetlist other)
+    {
+        if (ReferenceEquals(other, this)) return;
+        foreach (var (key, message) in other._keyedWarnings) AddWarningOnce(key, message);
+        foreach (var (key, message) in other._keyedNotes)    AddNoteOnce(key, message);
     }
 
     /// <summary>

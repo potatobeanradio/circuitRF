@@ -243,3 +243,303 @@ inflated (the run read 6 m 12 s against the ~3.5 min it takes alone); a few tagg
 alone. They are all still run by `dotnet test --settings circuitrf.benchmark.runsettings`, and the
 counts in the root notes ("122 test methods repo-wide") are now stale by ~176.
 
+
+## SP-P2 — the MNA keeps its sparsity pattern across frequencies (2026-08-30)
+
+`brief-sp-p2-mna-pattern-cache.md`. `MnaSystem` used to rebuild everything at every frequency: stamps
+into a `Dictionary<(int,int),Complex>`, a `CoordinateStorage`, a sort into CSC, then two `HashSet`
+scans for structurally zero rows and columns — all of it invariant across ω. It now records the stamp
+SEQUENCE on the first pass, builds the CSC and a slot map (`call index → CSC value index`) from it,
+and every later pass writes straight into the CSC value array. `Reset` is an `Array.Clear` of the
+value and RHS arrays. The structural zero-row/zero-column answer is computed once per pattern; only
+the *naming* of a zero row still happens per `Factorize` call, so the diagnostics are unchanged.
+
+### Measured — before/after, and it is bit-identical
+
+Release, single thread, scratch console harness against a `git worktree` of the pre-change tree with
+SP-P1's uncommitted work copied in, so the comparison isolates SP-P2. 401 frequency points; the
+ladder is series-RLC sections with shunt C, two ports. Median of four runs; the spread was under 2 %
+on every row except the whole-run 20/200 ladders, which are short enough to be noisy (±10 %).
+
+Whole `SParameterEngine.Run`, including elaboration, the port solves and the `DataSet` build:
+
+| fixture | before | after | time | alloc |
+|---|---|---|---|---|
+| ladder 20   | 35.8 µs/pt, 39.5 KB/pt   | 22.2 µs/pt, 27.2 KB/pt   | **1.61×** | 1.45× |
+| ladder 200  | 119 µs/pt, 378.9 KB/pt   | 85.9 µs/pt, 261.9 KB/pt  | **1.39×** | 1.45× |
+| ladder 2000 | 1,529 µs/pt, 3,736 KB/pt | 1,009 µs/pt, 2,607 KB/pt | **1.51×** | 1.43× |
+| Hero 1      | 6.4 µs/pt, 14.0 KB/pt    | 5.7 µs/pt, 9.9 KB/pt     | 1.12×     | 1.41× |
+
+Assembly only — stamp + CSC + structural checks + LU, which is the scope the brief's prototype table
+measured (`Size`/`nnz` are this harness's, and the 2000-section ladder lands on the brief's own
+Size 4,003 / nnz 12,004):
+
+| fixture | before | after | time | alloc |
+|---|---|---|---|---|
+| ladder 20 (Size 43, nnz 124)       | 8.2 µs/pt, 37.9 KB/pt     | 5.4 µs/pt, 27.6 KB/pt     | **1.52×** | 1.37× |
+| ladder 200 (Size 403, nnz 1,204)   | 74.9 µs/pt, 360.4 KB/pt   | 47.4 µs/pt, 262.1 KB/pt   | **1.58×** | 1.38× |
+| ladder 2000 (Size 4,003, nnz 12,004) | 1,387 µs/pt, 3,547 KB/pt | 823 µs/pt, 2,605 KB/pt   | **1.69×** | 1.36× |
+
+Against the brief's prototype (2.35× / 1.51× / 1.62×), the 200- and 2000-node targets are met or
+beaten and the 20-node one is not (1.52× against 2.35×). **The allocation columns say why that gap is
+not a shortfall in this implementation**: converted to the prototype's units, this harness measures
+14.8 → 10.8 MB, 141 → 103 MB and 1,389 → 1,020 MB per 401-point sweep, against the prototype's
+15.0 → 10.8, 145 → 105 and 1,429 → 1,042 — the same numbers to within half a percent at every size,
+in both trees. What does not line up is the prototype's *absolute times* (its 20-node "before" is
+43 µs/pt against 8.2 here, its 2000-node one 786 µs/pt against 1,387), so its 2.35× was measured
+against a baseline five times slower than this repo's, and there is no 2.35× available here to find.
+
+**Results are bit-identical, proven end to end.** The harness hashes the whole `S` cube (FNV-1a); all
+four fixtures hash the same in both trees (`1218452B9B9A226B` / `A60A96730AA111DE` /
+`E9DB3B6673D38F01` / `CD2AE3881F1B4AE8`). No tolerance was loosened, and the new tests assert
+`Assert.Equal` on `Complex`, not a tolerance.
+
+### The stamp order is preserved *deliberately*, and that is what makes it bit-identical
+
+The old dictionary summed a cell's repeated stamps in CALL order (`_entries[key] = existing + value`).
+Floating-point addition is not associative, so a pattern build that merged duplicates in any other
+order would move the last bits of every shared cell — every diagonal, in a ladder. The pattern build
+therefore orders the calls with **two stable counting-sort passes** (by row, then by column), never
+`Array.Sort`, which is an unstable introsort and would have reordered duplicates silently. `T9` pins
+this with `1e16, 1, -1e16, 1` in one cell: call order gives 1, any reversal gives 2.
+
+The same requirement reaches the invalidation path. When a cached pass diverges at call *k*, the
+calls already made have to go back into the recording lists — but their individual values are gone,
+already summed into the CSC. Rather than keep a per-call value array (a store on every stamp, for a
+path that fires rarely), the replay attributes each cell's whole accumulated total to the FIRST call
+that reached it and gives the repeats exact `Complex.Zero`. Adding zero to a finite value is exact,
+so the rebuilt matrix is bit-identical to the interrupted one rather than merely close.
+
+### Which fixtures rebuilt the pattern, and why
+
+`MnaSystem.PatternBuilds` counts pattern builds and is public for exactly this question — an
+invariant sweep builds it **once**, however many points it runs (`T9b`, 25 points). Two things
+rebuild it, both anticipated by the brief:
+
+- **ω = 0 with an ideal inductor.** `InductorModel.Stamp` skips its branch diagonal when `jωL + R`
+  is exactly zero, so a DC point's sequence is one call shorter. `T9c` walks 1 GHz → 2 GHz → DC → DC
+  and reads `PatternBuilds` 1, 1, 2, 2: the DC sequence is itself cacheable, so a grid containing
+  0 Hz costs one extra build, not one per point. `T2` runs the three orderings of `[0, f1, f2]`
+  through the real engine and requires every point to equal a one-point-per-run solve exactly.
+- **The `IfNecessary` regularization retry.** `ApplyRegularization` adds gmin stamps the recorded
+  sequence does not have, so the retry mismatches and rebuilds. On a genuinely singular netlist this
+  happens **twice per frequency** — the first attempt stops short of the regularized pattern
+  (a short pass is a mismatch too, caught by the end-of-pass check in `EnsurePattern`), the retry
+  then overshoots it. That path therefore gets no speed-up, which is no worse than before, since it
+  rebuilt the dictionary at every point anyway. `T4` pins that the swept `S` still equals the
+  point-by-point `S` and that the warning still fires exactly once.
+
+**No model turned out to stamp in a value-dependent order that fact 2 did not anticipate.** Two look
+as though they might and do not: `TLineModel.StampUniformLine` clamps `|sinh γl|` to a floor at a
+quarter-wave resonance, and `PnToneModel` matches ω against its tone list — both change only the
+VALUE handed to an unconditional stamp call, so neither can move the sequence. The complete list of
+per-ω sequence branches in `src/Core/Devices` is `InductorModel` and `MatchModel` (the ω = 0
+diagonal skip and the `hasC && ω == 0` branch) and `SddModel.StampLinearized`'s zero-admittance and
+zero-column `continue`s — the three the brief already named.
+
+### Two things the brief did not ask for, both because the change would otherwise regress
+
+- **`AMD` is discarded only when the sparsity structure actually differs**, not on every
+  invalidation. The brief suggests `_amdPerm = null` on invalidate; doing that literally would
+  recompute the ordering twice per frequency on the regularization-retry path, where today it is
+  computed once for the whole run — a real regression on the very path that already pays the most.
+  The gmin retry usually lands on diagonals that are already structurally present, so the rebuilt
+  structure is identical and the permutation is still the right one. `BuildPattern` compares the new
+  column pointers and row indices against the previous ones and keeps the permutation only when they
+  match, which is what the brief's own rationale asks for (recompute when the structure differs).
+- **`NonlinearDcEngine` reads the assembly out with `NonZeroEntries()` instead of probing every
+  cell.** It filled a dense `_gAug` with `stamped²` `GetEntry` calls, which was O(1) each against a
+  dictionary and is O(log nnz_col) against a CSC — size × nnz instead of size + nnz for the readback.
+  The dense array starts zeroed, so iterating the nonzeros is exactly equivalent.
+
+### What is left, and it is all the LU
+
+At the 2000-section ladder the whole run now allocates 2,607 KB/pt, of which **2,568 KB/pt (98.6 %)
+is `SparseLU.Create`'s own L/U buffers** — measured by running the same assembly loop with
+`FindZeroRows()` in place of `Factorize()`, which makes the CSC current without factorizing: the
+assembly's own cost is 37.2 KB/pt. (The same measurement on the pre-change tree is not comparable,
+because the old `FindZeroRows` scanned the dictionary and never built a CSC at all.) Replacing
+`SparseLU.Create` with a fixed-pattern refactorization is §6's explicit non-goal and would need a
+sparse LU of our own; it is now the only thing left worth measuring on this path.
+
+`BuildCsc()` returns a COPY, because the internal CSC is live and the next `Reset` zeroes it — but
+only when a caller asks for it (`SParameterEngine` never does, and `HbLinearExtractor` calls it once
+per ω, where it used to pay for a second full CSC build). The per-port `new Complex[mna.Size]` RHS
+allocations in both S-parameter paths are now one reused buffer each, via the new
+`MnaSystem.FillRhsWithPortDrive`.
+
+## SP-P3 — the S-parameter sweep runs its frequencies in parallel (2026-08-30)
+
+`brief-sp-p3-frequency-parallelism.md`. `SParameterEngine` gained a second `Run` overload that
+splits the frequency grid into contiguous chunks and solves them at once, each on its own elaborated
+copy of the testbench. The serial `Run(netlist, …)` is unchanged in behaviour and is still what a
+caller holding one netlist gets; the per-netlist setup it always did (ports, singularity namers, the
+DC operating point, the SDD control-branch resolution, its own `MnaSystem`) is now factored into a
+`Prepared` object built once per worker, and the two solve loops take a half-open `[lo, hi)` range
+instead of running the whole grid.
+
+### Measured — Release, 10 cores, workstation GC (the shipped default)
+
+Scratch console harness, median of 5-7 runs, whole `Run` including elaboration and the `DataSet`
+build. The ladder is series-RLC sections with shunt C, two ports. "deg" is what the automatic
+formula chose.
+
+| fixture | serial | parallel | ratio | deg | gen-0 ser | gen-0 par |
+|---|---|---|---|---|---|---|
+| Hero 1, 20,001 points        |  60.3 ms |  25.9 ms | **2.33×** | 10 | 38 | 40 |
+| 200-node ladder, 2,001 points| 129.1 ms |  46.2 ms | **2.79×** | 10 | 63 | 67 |
+| 2000-node ladder, 401 points | 261.2 ms | 144.0 ms | **1.81×** |  6 | 66 | 24 |
+
+Against the brief's 2.8× / 3.1× / 3.0×, the middle row matches and the outer two fall short. **The
+brief's own diagnosis is confirmed rather than merely repeated: the limiter is allocation.** The same
+harness under `DOTNET_gcServer=1`, nothing else changed:
+
+| fixture | serial | parallel | ratio |
+|---|---|---|---|
+| Hero 1, 20,001 points         |  56.2 ms | 15.1 ms | **3.73×** |
+| 200-node ladder, 2,001 points | 135.1 ms | 35.5 ms | **3.80×** |
+| 2000-node ladder, 401 points  | 330.8 ms | 150.7 ms| **2.19×** |
+
+3.80× on the 200-node case is the brief's own number to two figures, and gen-0 collections per run
+fall from 63 to 5. **Switching the application's GC mode is not this brief's call** — it is a
+process-wide trade that changes memory footprint for every analysis and for the UI — but it is now a
+measured lever rather than a guess, and it is where the rest of the scaling is.
+
+Degree sweeps, same harness, showing where each fixture stops paying:
+
+| degree | 200-node ladder | 2000-node ladder |
+|---|---|---|
+| 2  | 1.84× | 1.68× |
+| 3  | 2.41× | — |
+| 4  | 2.74× | 1.96× |
+| 6  | 2.73× | 2.05× |
+| 8  | 2.88× | 1.91× |
+| 10 | 2.85× | 2.01× |
+| 12 | 2.57× | — |
+
+Past the core count it goes backwards, which is what the `min(ProcessorCount, …)` term is for.
+
+**Bit-identity is proven, not assumed.** The harness hashes the whole `S` cube (FNV-1a over every
+`Real`/`Imaginary` bit pattern); serial and parallel hash the same on every fixture, at every degree
+in both sweeps, under both GC modes. The tests assert `Assert.Equal` on `Complex` entry by entry, not
+a tolerance.
+
+### Elaboration per worker is cheap — until it isn't, and the floor does not see it
+
+Measured elaboration, median of 9: **Hero 1 11 µs, 200-node ladder 346 µs, 2000-node ladder
+4,277 µs.** The brief's premise ("elaboration is cheap enough to repeat per thread") holds for the
+first two and is where the 2000-node row's 1.81× partly goes: five extra copies at 4.3 ms is ~21 ms
+of a 144 ms parallel run, about 15 % of it, spent before the first point is solved.
+
+**The floor counts POINTS, not the cost of a point**, so it cannot see this: 401 points is well over
+the 64-per-worker threshold whether a point costs 5 µs or 650 µs. Left as measured rather than
+patched with a second heuristic — a cost-aware floor would need a per-netlist estimate the engine
+does not have before it elaborates, and the row is still a 1.81× win. It is the thing to look at
+first if this path is ever revisited.
+
+### Three departures from the brief, all for a reason
+
+- **The overload takes the caller's netlist AS WELL AS `(lib, tb, baseDirectory)`**, rather than the
+  brief's `Run(lib, tb, baseDirectory, …)` which elaborates every copy itself. Every caller already
+  holds an elaborated netlist when it computes the frequency grid (`spa.Expand(nl.ResolvedGlobals,
+  …)`), and every caller reads that netlist's `Warnings` afterwards — `Cli sparam` prints them twice,
+  before and after the run, and `SchematicRunService` drains them into `RunResult.Warnings`. The
+  brief's signature would have re-elaborated the primary for nothing and left the caller reading the
+  warnings of a netlist the run never touched. So the caller's netlist runs chunk 0 and keeps the
+  merged diagnostics, and only the T−1 extras are elaborated and disposed here.
+- **Merging warnings "by key, first occurrence winning" was not expressible with the existing API.**
+  `ElaboratedNetlist.Warnings` is a `List<string>` and the key set behind `AddWarningOnce` is
+  private, so a message alone cannot be de-duplicated against a key that produced it. `AddWarningOnce`
+  and `AddNoteOnce` now also record the `(key, message)` pair, and `MergeDiagnosticsFrom` replays a
+  copy's keyed entries into another netlist. Only KEYED entries merge, deliberately: an unkeyed
+  `AddWarning` comes from elaboration, so every copy produced the same ones the primary already has
+  and replaying them would duplicate them.
+- **A failing point throws the exception the serial loop would have thrown, not an
+  `AggregateException`.** `Parallel.For` wraps whatever escapes a body, which would have turned a
+  `SingularMatrixException` — caught by name in the GUI and the CLI — into something neither catches.
+  Each chunk instead records its own exception and sets an abort flag the others check per point; the
+  lowest faulting CHUNK is the lowest faulting FREQUENCY, because the ranges are contiguous and in
+  order, so its exception is re-thrown with `ExceptionDispatchInfo` and the answer does not depend on
+  which thread lost the race. A cancellation travels the same road and arrives as the
+  `OperationCanceledException` `RunControl.Tick` threw; `T5b` pins that against the serial path
+  itself rather than against a remembered type name.
+
+### No model turned out to hold shared static state fact 1 missed
+
+`src/Core/Devices/*.cs` has no mutable static state at all — every `static` there is a pure helper or
+prose. `MnaSystem`'s only static is `Col(node)`. So the per-worker netlist really is the whole
+thread-safety story for the shipped models.
+
+**The one piece of process-wide shared state on this path is `RfCore.TouchstoneCache`, and SP-P1
+had already made it thread-safe** (`ConcurrentDictionary` + `Lazy` at `ExecutionAndPublication`).
+That is not incidental: without it, T copies of an SnP-bearing netlist would each parse the
+Touchstone file and re-fit its splines. With it they share one parse and one fit, and only the thin
+`SnpInterpolator` wrapper — which carries the per-run out-of-range warning — is per model.
+
+`RunControl.Tick` is now called from several threads at once. The counter is `Interlocked` and safe;
+the throttle's `Stopwatch.Restart()` is not, but its worst case is a mis-timed interval and therefore
+an extra or a skipped progress observation, never a wrong count or an exception. Left alone rather
+than serialised: a lock on the report path would cost more than the report.
+
+### Which callers went parallel, and the one measurement behind leaving two serial
+
+On the new overload: `SchematicRunService.RunTypedAnalysis` (the GUI's S-parameter run), `Cli sparam`,
+and `ParametricSweepEngine.RunSParam`. The sweep case is safe because the extra copies are elaborated
+serially, inside `Run`, while the sweep's variable override is still installed in
+`tb.GlobalVariables` — the sweep restores it only after `RunInner` returns — so every chunk runs the
+circuit that point is about. A short inner grid falls back to serial on its own.
+
+`TerminationProbe` and `MatchDesignerViewModel.RunResponse` stay on the serial overload, and the
+brief's "measure one if you doubt it" was taken up: a 6-element match network over the Match
+Designer's default 401 points runs **0.438 ms serial against 0.247 ms at degree 6 — a real 1.77×**.
+It is left serial anyway, and that is a judgement rather than an oversight: `RunResponse` is called
+per drag frame, so taking six thread-pool workers and five extra elaborations sixty times a second to
+save 0.19 ms on a path that is already sub-millisecond spends more than it returns, and it competes
+with the UI thread that is waiting for the frame.
+
+### The degree formula, and why the floor is where it is
+
+`PlanDegree(netlist, freqCount, maxDegree)` is public and pure, which is what makes "did this take
+the serial path?" answerable without timing anything — it is what the fallback tests assert on.
+
+- `maxDegree == 1` pins serial; `> 1` caps; `0` consults `AnalysisSettings.MaxParallelism`, itself 0
+  for automatic, which is `Environment.ProcessorCount`.
+- `min(cap, freqCount / 64)`, floored at 1. **64 points per worker** is the brief's own figure and it
+  survives contact: Hero 1 costs ~3 µs a point here, so 64 points is ~0.2 ms — the same order as one
+  elaboration of a circuit big enough to be worth splitting.
+- An `ExternalDeviceModel` anywhere in the netlist returns 1, because its instance is a slot in a
+  worker PROCESS (one per kit, not one per thread) and T copies would ask for T times the instances
+  and then serialise on its channel anyway. An `SddModel` with `ControlRefs` also returns 1 — nothing
+  unsafe, just a small test surface behind `ResolveSParamControlBranches`, kept serial until this
+  path has some use behind it.
+
+### Tests
+
+`tests/Engine.Tests/Linear/SParamFrequencyParallelTests.cs`, 23 methods, ~0.2 s, nothing timed.
+Seven fixtures (wave path, three coupled inductors, an unbiased and a biased nonlinear device, the
+reactive-Z0 legacy path, a floating node that takes the regularization retry at every point, and a
+P1Tone port) run serial and at degree 3 over a 301-point grid — 101/100/100, so the split is
+exercised on an uneven remainder — and every `S` entry, the `Z0` cube, the warnings list and the
+notes list must match exactly. Degrees 2/3/5/8 all land on the same doubles. Separately: the
+regularization warning is reported once however many chunks raise it; two independent elaborations of
+a biased nonlinear netlist reach the same DC operating point to the last bit (fact 4, asserted rather
+than assumed); progress counts every point exactly once and never overruns; a run cancelled after 40
+ticks throws `OperationCanceledException` and every chunk stops; and `PlanDegree` is pinned at its
+floor, its cap, its serial pin and both fallbacks.
+
+Two test-harness details worth not rediscovering: `Progress<T>` posts to the thread pool, so a
+cancellation test that acts on an observation races the run it is observing and will sometimes
+measure a completed run — the tests use an inline `IProgress<RunProgress>` that runs on the reporting
+thread. And the external-device fallback is asserted through `PlanDegree` against a hand-built
+`ExternalDeviceModel` over a trivial in-process fake instance, so no worker process is spawned:
+the fallback is decided from the model's TYPE, before any solve, so the fake's numbers only have to
+exist.
+
+### Gates
+
+`dotnet test tests/Engine.Tests` 1,433 passed / 1 skipped, `tests/Core.Tests` 1,741 passed,
+`tests/Firewall.Tests` 10 passed. `tests/Ui.Tests` 10,185 passed with one failure,
+`PCellWorkerHostTests.AScriptThatDiesImmediately_StillReportsWhatItSaidOnTheWayOut` — a Python
+subprocess whose traceback arrives on a background stderr reader, on a path this change never
+touches; it passes in isolation, which is the signature of a load-dependent test rather than a
+regression.

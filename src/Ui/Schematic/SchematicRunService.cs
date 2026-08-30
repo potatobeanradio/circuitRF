@@ -459,8 +459,12 @@ public static class SchematicRunService
         switch (analysis)
         {
             case SParameterAnalysis spa:
+                // The frequency-parallel overload (SP-P3): lib/tb/baseDirectory let it elaborate a
+                // netlist per worker, which is what makes splitting the grid safe. Short grids fall
+                // back to the serial path inside the engine.
                 return SParameterEngine.Run(
-                    nl, spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit), null, control);
+                    nl, lib, tb, baseDirectory,
+                    spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit), null, control);
 
             case HarmonicBalanceAnalysis hba:
             {

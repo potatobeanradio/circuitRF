@@ -442,6 +442,8 @@ src/RfCore/Loadpull/SplReader.cs|.spl: no freq/grid/pin header line found.
 src/RfCore/Loadpull/SplWriter.cs|Loadpull DataSet has no frequency blocks.
 src/RfCore/RFNetwork.Interpolation.cs|Cannot interpolate an empty SNP.
 src/RfCore/RFNetwork.Interpolation.cs|targetFrequencies must not be empty.
+src/RfCore/SnpInterpolator.cs|Cannot interpolate an empty SNP.
+src/RfCore/SnpInterpolator.cs|targetFrequencies must not be empty.
 src/RfCore/RFNetwork.cs|De-embedding requires 2-port matrices.
 src/RfCore/RFNetwork.cs|Passivity requires a square scattering matrix.
 src/RfCore/RFNetwork.cs|SToS requires an S-parameter SNP.

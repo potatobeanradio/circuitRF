@@ -121,7 +121,7 @@ static int RunSparam(string[] args)
                 $"{start/1e9:G4}–{stop/1e9:G4} GHz");
         }
 
-        var ds  = SParameterEngine.Run(nl, freqs);
+        var ds  = SParameterEngine.Run(nl, lib, tb, baseDirectory: null, freqs);
 
         // AGAIN, AFTER THE RUN — the engine reports what it finds while assembling and solving, long
         // after the pass above. Without this a real problem is written to nl.Warnings and printed by

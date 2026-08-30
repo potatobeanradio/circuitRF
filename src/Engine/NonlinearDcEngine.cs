@@ -293,11 +293,12 @@ public sealed class NonlinearDcEngine
         _bSource    = new double[_systemSize];
 
         for (int i = 0; i < stamped; i++)
-        {
             _bSource[i] = mna.GetRhs(i).Real;
-            for (int k = 0; k < stamped; k++)
-                _gAug[i, k] = mna.GetEntry(i, k).Real;
-        }
+        // Read the sparse assembly out once, rather than probing all stamped² cells: the MNA now
+        // answers GetEntry from its CSC, so a dense scan would be size × nnz instead of size + nnz.
+        // _gAug starts zeroed, so the entries not present are already right.
+        foreach (var (row, col, val) in mna.NonZeroEntries())
+            _gAug[row, col] = val.Real;
 
         CollectThermalNodes();
 

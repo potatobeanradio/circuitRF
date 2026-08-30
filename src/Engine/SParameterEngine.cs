@@ -1,6 +1,9 @@
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using CircuitRF.Core;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Elaboration;
 using CSparse.Complex.Factorization;
 using NumFlat;
@@ -50,6 +53,195 @@ public static class SParameterEngine
     {
         settings ??= AnalysisSettings.Default;
 
+        var prep      = Prepare(netlist, freqsHz, settings);
+        var sMatrices = new Mat<Complex>[freqsHz.Length];
+        RunRange(prep, freqsHz, settings, 0, freqsHz.Length, sMatrices, control, abort: null);
+        return BuildDataSet(freqsHz, sMatrices, prep.Z0PerPort);
+    }
+
+    // ── Frequency-parallel overload (SP-P3) ───────────────────────────────────
+
+    /// <summary>
+    /// The same sweep, with contiguous chunks of the frequency grid solved at once on separately
+    /// elaborated copies of <paramref name="tb"/>.
+    ///
+    /// <para><b>The copies are the whole thread-safety story.</b> Nine models write a branch index
+    /// during <c>Stamp</c>, <see cref="SnpModel"/> loads its file lazily, several microstrip models
+    /// accumulate warnings, and an SDD carries resolved control-branch indices — all state on the
+    /// MODEL, all written at every frequency. Every one of those writes the same value on every
+    /// thread (the topology does not depend on ω), so the race is benign and it is still a race.
+    /// Rather than make <c>Stamp</c> re-entrant across every model in the repository, each worker
+    /// gets a netlist nothing else touches; elaboration costs 57 µs for Hero 1 and 1.7 ms for a
+    /// 200-node ladder, against a sweep long enough to be worth splitting at all.</para>
+    ///
+    /// <para><b>The result is bit-identical to the serial path at every degree.</b> Each point's
+    /// arithmetic is unchanged and each chunk writes only its own slice of the output array, so
+    /// nothing is merged and nothing is reordered. Two things need care and get it: the run-time
+    /// warnings each copy accumulates are folded back into <paramref name="netlist"/> in chunk
+    /// order, and a failing point throws the exception the serial path would have thrown — the one
+    /// from the LOWEST frequency index that failed, not whichever thread lost the race.</para>
+    ///
+    /// <para><paramref name="netlist"/> is the caller's own, already elaborated: it runs the first
+    /// chunk, keeps the merged diagnostics, and is never disposed here. Passing it rather than
+    /// re-elaborating it is what lets a caller go on reading <c>Warnings</c> as it always has.</para>
+    /// </summary>
+    /// <param name="maxDegreeOfParallelism">0 = consult <see cref="AnalysisSettings.MaxParallelism"/>
+    /// (itself 0 = automatic); 1 pins the serial path; &gt;1 caps the worker count.</param>
+    public static DataSet Run(
+        ElaboratedNetlist netlist,
+        Library           lib,
+        TestBench         tb,
+        string?           baseDirectory,
+        double[]          freqsHz,
+        AnalysisSettings? settings = null,
+        RunControl?       control  = null,
+        int               maxDegreeOfParallelism = 0)
+    {
+        settings ??= AnalysisSettings.Default;
+
+        int requested = maxDegreeOfParallelism > 0 ? maxDegreeOfParallelism : settings.MaxParallelism;
+        int degree    = PlanDegree(netlist, freqsHz.Length, requested);
+        if (degree <= 1) return Run(netlist, freqsHz, settings, control);
+
+        int freqCount = freqsHz.Length;
+        var sMatrices = new Mat<Complex>[freqCount];
+        var preps     = new Prepared[degree];
+        var extras    = new ElaboratedNetlist?[degree - 1];
+
+        try
+        {
+            // Elaborated SERIALLY, before any worker starts: the Elaborator reads the TestBench's
+            // global-variable list, which a parametric sweep is mutating around this very call.
+            preps[0] = Prepare(netlist, freqsHz, settings);
+            for (int i = 1; i < degree; i++)
+            {
+                var copy = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                extras[i - 1] = copy;
+                preps[i]      = Prepare(copy, freqsHz, settings);
+            }
+
+            // A chunk that fails records WHERE and stops; the others notice and stop too, so a
+            // cancelled or singular run does not go on solving points nobody will read.
+            var faults  = new Exception?[degree];
+            int faulted = 0;
+            Func<bool> abort = () => Volatile.Read(ref faulted) != 0;
+
+            Parallel.For(0, degree, new ParallelOptions { MaxDegreeOfParallelism = degree }, c =>
+            {
+                var (lo, hi) = ChunkRange(freqCount, degree, c);
+                try
+                {
+                    RunRange(preps[c], freqsHz, settings, lo, hi, sMatrices, control, abort);
+                }
+                catch (Exception ex)
+                {
+                    faults[c] = ex;
+                    Volatile.Write(ref faulted, 1);
+                }
+            });
+
+            // Chunks are contiguous and in order, so the lowest faulting CHUNK holds the lowest
+            // faulting frequency — which is the point the serial loop would have died on.
+            foreach (var fault in faults)
+                if (fault is not null)
+                    ExceptionDispatchInfo.Capture(fault).Throw();
+
+            // Chunk order, first occurrence winning: the reported list is what a serial run reports.
+            for (int i = 0; i < extras.Length; i++)
+                if (extras[i] is { } copy) netlist.MergeDiagnosticsFrom(copy);
+
+            return BuildDataSet(freqsHz, sMatrices, preps[0]!.Z0PerPort);
+        }
+        finally
+        {
+            foreach (var copy in extras) copy?.Dispose();
+        }
+    }
+
+    /// <summary>Minimum frequency points a worker must be given before splitting is worth the
+    /// elaboration and the thread start. Hero 1 costs ~5 µs a point, so 64 points is ~0.3 ms —
+    /// comparable to one elaboration of a circuit big enough to care.</summary>
+    public const int MinPointsPerWorker = 64;
+
+    /// <summary>
+    /// How many workers this netlist and grid will actually be run with. Pure and public to the
+    /// tests, because "did it take the serial path?" is otherwise only answerable by timing.
+    /// </summary>
+    /// <param name="maxDegree">0 = automatic, 1 = pinned serial, &gt;1 = a cap.</param>
+    public static int PlanDegree(ElaboratedNetlist netlist, int freqCount, int maxDegree)
+    {
+        if (maxDegree == 1)              return 1;
+        if (!CanRunInParallel(netlist))  return 1;
+
+        int cap = maxDegree > 1 ? maxDegree : Environment.ProcessorCount;
+        return Math.Max(1, Math.Min(cap, freqCount / MinPointsPerWorker));
+    }
+
+    /// <summary>
+    /// Whether this netlist may be elaborated more than once for one run.
+    ///
+    /// <para><b>An external device may not.</b> Its instance is a slot in a WORKER PROCESS, one per
+    /// kit rather than one per thread, so T copies would ask that process for T times the instances
+    /// and then serialize on its channel anyway — paying the cost of parallelism for none of it.</para>
+    ///
+    /// <para><b>A control-referencing SDD may not, in this revision.</b> Nothing about it is unsafe:
+    /// <c>ResolveSParamControlBranches</c> simply runs per netlist and its test surface is small, so
+    /// it stays on the path it has always run on until this one has some use behind it.</para>
+    /// </summary>
+    private static bool CanRunInParallel(ElaboratedNetlist netlist)
+    {
+        foreach (var ec in netlist.Components)
+        {
+            if (ec.Model is ExternalDeviceModel) return false;
+            if (ec.Model is SddModel sdd && sdd.ControlRefs.Length > 0) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Half-open range of frequency indices chunk <paramref name="chunk"/> owns. The first
+    /// <c>count % degree</c> chunks carry one extra point, so the split is contiguous and covers the
+    /// grid exactly whatever the remainder.</summary>
+    private static (int Lo, int Hi) ChunkRange(int count, int degree, int chunk)
+    {
+        int size = count / degree, rem = count % degree;
+        int lo   = chunk * size + Math.Min(chunk, rem);
+        int hi   = lo + size + (chunk < rem ? 1 : 0);
+        return (lo, hi);
+    }
+
+    private static DataSet BuildDataSet(double[] freqsHz, Mat<Complex>[] sMatrices, Complex[] z0PerPort)
+    {
+        var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
+        var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
+        var ds    = DataSetBuilder.FromSnp(snp);            // S cube + uniform Z0 placeholder
+        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0PerPort)); // overwrite with per-port truth
+        return ds;
+    }
+
+    // ── Per-netlist setup ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Everything one netlist needs before its first frequency: the ports, the singularity namers,
+    /// its own <see cref="MnaSystem"/>, the DC operating point the nonlinear devices linearize at,
+    /// and the SDD control-branch resolution. Invariant across ω, so it is done once per netlist —
+    /// which for a parallel run means once per worker, on state nothing else can see.
+    /// </summary>
+    private sealed class Prepared
+    {
+        internal ElaboratedNetlist  Netlist           = null!;
+        internal List<PortEntry>    Ports             = null!;
+        internal Complex[]          Z0PerPort         = null!;
+        internal bool               AllPortsResistive;
+        internal MnaSystem          Mna               = null!;
+        internal Func<int, string>  NodeNamer         = null!;
+        internal Func<int, string>  BranchNamer       = null!;
+        internal bool               CanRetry;
+        internal double[]?          DcNodeVoltages;
+    }
+
+    private static Prepared Prepare(
+        ElaboratedNetlist netlist, double[] freqsHz, AnalysisSettings settings)
+    {
         // ── Identify ports + build branch-label map ───────────────────────────
         int nonGroundNodes = netlist.Nodes.Count - 1;
         var (ports, branchLabels) = CollectPortsAndBranchLabels(netlist, nonGroundNodes);
@@ -59,9 +251,6 @@ public static class SParameterEngine
                 "Place Term or P1Tone components (Num=1, Z=50 Ohm) directly in the testbench, not inside sub-cells.");
         int N = ports.Count;
 
-        var mna       = new MnaSystem(nonGroundNodes);
-        var freqCount = freqsHz.Length;
-        var sMatrices = new Mat<Complex>[freqCount];
         var z0PerPort = ports.Select(p => p.Z0).ToArray();
 
         // Choose path once: wave path when every port Z0 has a positive real part.
@@ -104,6 +293,9 @@ public static class SParameterEngine
 
         // ── Nonlinear devices → solve the DC operating point once and linearize there (design §3.2) ──
         // RULE: purely-linear S-parameter runs never touch the DC engine (zero behavior change).
+        // Per NETLIST, which for a parallel run means once per worker: NonlinearDcEngine is
+        // deterministic for a given netlist, so every copy reaches the same operating point and the
+        // chunks linearize about the same bias (Engine.Tests pins this rather than assuming it).
         double[]? dcNodeVoltages = null;
         bool hasNonlinear = netlist.Components.Any(c => c.Model.Kind == ModelKind.Nonlinear);
         if (hasNonlinear)
@@ -136,41 +328,68 @@ public static class SParameterEngine
         // Must happen before the frequency loop — the SDD reads ControlBranchIndices when it stamps.
         ResolveSParamControlBranches(netlist, freqsHz, allPortsResistive, ports, N, dcNodeVoltages, settings);
 
-        if (allPortsResistive)
-            RunWavePath(netlist, freqsHz, settings, ports, N, mna, freqCount, sMatrices,
-                nodeNamer, branchNamer, canRetry, dcNodeVoltages, control);
-        else
-            RunLegacyPath(netlist, freqsHz, settings, ports, N, z0PerPort, mna, freqCount, sMatrices,
-                nodeNamer, branchNamer, canRetry, dcNodeVoltages, control);
+        return new Prepared
+        {
+            Netlist           = netlist,
+            Ports             = ports,
+            Z0PerPort         = z0PerPort,
+            AllPortsResistive = allPortsResistive,
+            Mna               = new MnaSystem(nonGroundNodes),
+            NodeNamer         = nodeNamer,
+            BranchNamer       = branchNamer,
+            CanRetry          = canRetry,
+            DcNodeVoltages    = dcNodeVoltages,
+        };
+    }
 
-        var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
-        var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
-        var ds    = DataSetBuilder.FromSnp(snp);            // S cube + uniform Z0 placeholder
-        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0PerPort)); // overwrite with per-port truth
-        return ds;
+    /// <summary>Solves the half-open frequency range [lo, hi) into <paramref name="sMatrices"/>,
+    /// which it writes BY INDEX and therefore shares with no other range.</summary>
+    private static void RunRange(
+        Prepared         p,
+        double[]         freqsHz,
+        AnalysisSettings settings,
+        int              lo,
+        int              hi,
+        Mat<Complex>[]   sMatrices,
+        RunControl?      control,
+        Func<bool>?      abort)
+    {
+        if (p.AllPortsResistive)
+            RunWavePath(p, freqsHz, settings, lo, hi, sMatrices, control, abort);
+        else
+            RunLegacyPath(p, freqsHz, settings, lo, hi, sMatrices, control, abort);
     }
 
     // ── Wave path (Re(Z0) > 0 for every port) ─────────────────────────────────
 
     private static void RunWavePath(
-        ElaboratedNetlist    netlist,
-        double[]             freqsHz,
-        AnalysisSettings     settings,
-        List<PortEntry>      ports,
-        int                  N,
-        MnaSystem            mna,
-        int                  freqCount,
-        Mat<Complex>[]       sMatrices,
-        Func<int, string>    nodeNamer,
-        Func<int, string>    branchNamer,
-        bool                 canRetry,
-        double[]?            dcNodeVoltages = null,
-        RunControl?          control        = null)
+        Prepared         p,
+        double[]         freqsHz,
+        AnalysisSettings settings,
+        int              lo,
+        int              hi,
+        Mat<Complex>[]   sMatrices,
+        RunControl?      control,
+        Func<bool>?      abort)
     {
-        int nonGroundNodes = mna.NodeCount;
+        var netlist        = p.Netlist;
+        var ports          = p.Ports;
+        int N              = ports.Count;
+        var mna            = p.Mna;
+        var nodeNamer      = p.NodeNamer;
+        var branchNamer    = p.BranchNamer;
+        bool canRetry      = p.CanRetry;
+        var dcNodeVoltages = p.DcNodeVoltages;
 
-        for (int fi = 0; fi < freqCount; fi++)
+        int nonGroundNodes = mna.NodeCount;
+        var xBuf = Array.Empty<Complex>();
+        var bBuf = Array.Empty<Complex>();
+
+        for (int fi = lo; fi < hi; fi++)
         {
+            // Another chunk has already failed; nothing will read the rest of this one.
+            if (abort is not null && abort()) return;
+
             // One frequency is this loop's work unit and its cancellation boundary alike.
             control?.Tick();
 
@@ -202,7 +421,7 @@ public static class SParameterEngine
             }
 
             var sMatrix = new Mat<Complex>(N, N);
-            var xBuf    = new Complex[mna.Size];
+            if (xBuf.Length != mna.Size) { xBuf = new Complex[mna.Size]; bBuf = new Complex[mna.Size]; }
 
             for (int j = 0; j < N; j++)
             {
@@ -210,8 +429,10 @@ public static class SParameterEngine
                 double  sqrtReZ0j = Math.Sqrt(ports[j].Z0.Real);
                 Complex iInj      = 2.0 * sqrtReZ0j / ports[j].Z0;
 
-                // RHS: current injection at the driven port nodes.
-                var b = new Complex[mna.Size];
+                // RHS: current injection at the driven port nodes. One buffer, cleared per port —
+                // the wave path's RHS is zero everywhere but the two driven rows.
+                var b = bBuf;
+                Array.Clear(b);
                 if (ports[j].Node0 > 0) b[ports[j].Node0 - 1] = iInj;
                 if (ports[j].Node1 > 0) b[ports[j].Node1 - 1] = -iInj;
 
@@ -250,25 +471,34 @@ public static class SParameterEngine
     // ── Legacy path (any port has Re(Z0) ≤ 0) ─────────────────────────────────
 
     private static void RunLegacyPath(
-        ElaboratedNetlist    netlist,
-        double[]             freqsHz,
-        AnalysisSettings     settings,
-        List<PortEntry>      ports,
-        int                  N,
-        Complex[]            z0PerPort,
-        MnaSystem            mna,
-        int                  freqCount,
-        Mat<Complex>[]       sMatrices,
-        Func<int, string>    nodeNamer,
-        Func<int, string>    branchNamer,
-        bool                 canRetry,
-        double[]?            dcNodeVoltages = null,
-        RunControl?          control        = null)
+        Prepared         p,
+        double[]         freqsHz,
+        AnalysisSettings settings,
+        int              lo,
+        int              hi,
+        Mat<Complex>[]   sMatrices,
+        RunControl?      control,
+        Func<bool>?      abort)
     {
-        int nonGroundNodes = mna.NodeCount;
+        var netlist        = p.Netlist;
+        var ports          = p.Ports;
+        int N              = ports.Count;
+        var z0PerPort      = p.Z0PerPort;
+        var mna            = p.Mna;
+        var nodeNamer      = p.NodeNamer;
+        var branchNamer    = p.BranchNamer;
+        bool canRetry      = p.CanRetry;
+        var dcNodeVoltages = p.DcNodeVoltages;
 
-        for (int fi = 0; fi < freqCount; fi++)
+        int nonGroundNodes = mna.NodeCount;
+        var xBuf = Array.Empty<Complex>();
+        var bBuf = Array.Empty<Complex>();
+
+        for (int fi = lo; fi < hi; fi++)
         {
+            // Another chunk has already failed; nothing will read the rest of this one.
+            if (abort is not null && abort()) return;
+
             // One frequency is this loop's work unit and its cancellation boundary alike.
             control?.Tick();
 
@@ -303,13 +533,12 @@ public static class SParameterEngine
 
             // ── Extract port Y-matrix via unit-voltage excitation ─────────────
             var yMat = new Mat<Complex>(N, N);
-            var xBuf = new Complex[mna.Size];
+            if (xBuf.Length != mna.Size) { xBuf = new Complex[mna.Size]; bBuf = new Complex[mna.Size]; }
 
             for (int j = 0; j < N; j++)
             {
-                var b = mna.BuildRhsWithPortDrive(
-                    branchRow:  ports[j].BranchIndex,
-                    driveValue: Complex.One);
+                var b = bBuf;
+                mna.FillRhsWithPortDrive(b, branchRow: ports[j].BranchIndex, driveValue: Complex.One);
 
                 lu.Solve(b, xBuf);
 

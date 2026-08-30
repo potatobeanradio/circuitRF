@@ -27,7 +27,8 @@ public sealed class SnpModel : ComponentModel
     private readonly OutOfRangePolicy    _extrapPolicy;
     private readonly InterpolationFormat _interpFormat;
 
-    private SNP? _snp;
+    private SNP?             _snp;
+    private SnpInterpolator? _interp;
 
     /// <summary>
     /// Branch indices per port, set during each Stamp call.
@@ -93,7 +94,31 @@ public sealed class SnpModel : ComponentModel
             throw new FileNotFoundException(
                 $"{who}: Touchstone file not found: '{_filePath}'.", _filePath);
 
-        return _snp = TouchstoneIO.ReadFile(_filePath);
+        return _snp = TouchstoneCache.Get(_filePath);
+    }
+
+    /// <summary>
+    /// The model's spline fit over its Touchstone file, built once and evaluated per frequency.
+    ///
+    /// <para>SP-P1, 2026-08-30: <see cref="Stamp"/> used to call <c>RFNetwork.Interpolate</c> with a
+    /// one-element target array at every frequency point, and that call re-fits all 2·N² splines
+    /// from scratch — the same coefficients, every point. On a ladder with twenty 2001-point SnPs
+    /// that was 98 % of the S-parameter run. The fit depends only on (file, method, format, domain),
+    /// none of which vary over a sweep, so it is built once per model and shared process-wide
+    /// through <see cref="TouchstoneCache"/> — <see cref="Elaboration.Elaborator"/> news a fresh
+    /// model at every point of a parametric sweep, so a per-instance field alone would not survive
+    /// the sweep.</para>
+    ///
+    /// <para>The interpolator WRAPPER is per model, not shared: its out-of-range warning fires
+    /// once per model per run rather than once per process, which is what keeps a re-run telling
+    /// the user the same thing the first run did.</para>
+    /// </summary>
+    private SnpInterpolator LoadInterpolator(ElaboratedComponent c)
+    {
+        if (_interp is not null) return _interp;
+        LoadSnp(c); // refuse here, naming the component, before the cache is asked for a fit
+        return _interp = TouchstoneCache.GetInterpolator(
+            _filePath, _interpMethod, _interpFormat, MatrixType.S, _extrapPolicy);
     }
 
     /// <summary>
@@ -107,18 +132,13 @@ public sealed class SnpModel : ComponentModel
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
-        var snp   = LoadSnp(c);
-        double hz = omega / (2.0 * Math.PI);
+        var snp    = LoadSnp(c);
+        var interp = LoadInterpolator(c);
+        double hz  = omega / (2.0 * Math.PI);
 
         // Interpolate the stored S-parameters to this frequency, then convert to Z.
-        var interpolated = RFNetwork.Interpolate(
-            snp,
-            [hz],
-            _interpMethod,
-            _interpFormat,
-            MatrixType.S,
-            _extrapPolicy);
-        var zMat = RFNetwork.SToZ(interpolated.Matrices[0], snp.Z0);
+        // The splines were fitted once (see LoadInterpolator); this is the evaluation only.
+        var zMat = RFNetwork.SToZ(interp.Evaluate(hz), snp.Z0);
 
         int n       = _portCount;
         int refNode = c.ReferenceNode;

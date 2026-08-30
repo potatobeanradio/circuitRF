@@ -60,98 +60,23 @@ namespace RfCore
             MatrixType         interpolateIn = MatrixType.S,
             OutOfRangePolicy   outOfRange   = OutOfRangePolicy.WarnClamp)
         {
+            // The whole body of this method now lives in SnpInterpolator: the constructor does
+            // the frequency-independent fit (domain conversion, component extraction, phase
+            // unwrap, spline solve) and Evaluate does the per-target part. A fresh interpolator
+            // per call reproduces the historic one-warning-per-call semantics exactly, and there
+            // is only ONE fitting path, so the batch and per-point routes cannot drift (SP-P1).
             if (source.IsEmpty)
                 throw new ArgumentException("Cannot interpolate an empty SNP.");
             if (targetFrequencies.Length == 0)
                 throw new ArgumentException("targetFrequencies must not be empty.");
 
-            // 1. Convert source to the requested parameter domain
-            SNP src = ToType(source, interpolateIn);
-
-            // 2. Check for out-of-range target frequencies and warn once
-            double fMin = src.Frequencies[0];
-            double fMax = src.Frequencies[src.FrequencyCount - 1];
-            bool hasBelow = false, hasAbove = false;
-            foreach (double f in targetFrequencies)
-            {
-                if (f < fMin) hasBelow = true;
-                if (f > fMax) hasAbove = true;
-            }
-            if (hasBelow || hasAbove)
-            {
-                string side = (hasBelow && hasAbove) ? "both sides of"
-                            : hasBelow ? "below" : "above";
-                if (outOfRange == OutOfRangePolicy.WarnExtrapolate)
-                    Warn($"Interpolation target(s) extend {side} the stored range " +
-                         $"[{fMin/1e9:G4}–{fMax/1e9:G4} GHz]. " +
-                         "Linear extrapolation will be used — extrapolated S-parameters " +
-                         "are routinely non-physical.");
-                else
-                    Warn($"Interpolation target(s) extend {side} the stored range " +
-                         $"[{fMin/1e9:G4}–{fMax/1e9:G4} GHz]. " +
-                         "Out-of-range values will be clamped to the nearest endpoint.");
-            }
-
-            // 3. Build splines for every (row, col) × component
-            int nPorts    = src.Ports;
-            int nFreqSrc  = src.FrequencyCount;
-            int nFreqTgt  = targetFrequencies.Length;
-            double[] xs   = src.Frequencies;
-            bool forceLinear = method == InterpolationMethod.Linear || nFreqSrc < 3;
-
-            var resultMats = new Mat<Complex>[nFreqTgt];
-            for (int t = 0; t < nFreqTgt; t++)
-                resultMats[t] = new Mat<Complex>(nPorts, nPorts);
-
-            for (int r = 0; r < nPorts; r++)
-            for (int c = 0; c < nPorts; c++)
-            {
-                // Extract component arrays
-                var comp1 = new double[nFreqSrc];
-                var comp2 = new double[nFreqSrc];
-
-                if (format == InterpolationFormat.RealImag)
-                {
-                    for (int fi = 0; fi < nFreqSrc; fi++)
-                    {
-                        comp1[fi] = src.Matrices[fi][r, c].Real;
-                        comp2[fi] = src.Matrices[fi][r, c].Imaginary;
-                    }
-                }
-                else // MagPhase
-                {
-                    for (int fi = 0; fi < nFreqSrc; fi++)
-                    {
-                        comp1[fi] = src.Matrices[fi][r, c].Magnitude;
-                        comp2[fi] = src.Matrices[fi][r, c].Phase;
-                    }
-                    PhaseUnwrap(comp2);
-                }
-
-                var spline1 = new Spline1D(xs, comp1, method, forceLinear);
-                var spline2 = new Spline1D(xs, comp2, method, forceLinear);
-
-                for (int ti = 0; ti < nFreqTgt; ti++)
-                {
-                    double f  = targetFrequencies[ti];
-                    bool outR = f < fMin || f > fMax;
-                    double v1 = (outR && outOfRange == OutOfRangePolicy.WarnExtrapolate)
-                        ? spline1.EvalExtrap(f) : spline1.Eval(f);
-                    double v2 = (outR && outOfRange == OutOfRangePolicy.WarnExtrapolate)
-                        ? spline2.EvalExtrap(f) : spline2.Eval(f);
-
-                    resultMats[ti][r, c] = format == InterpolationFormat.RealImag
-                        ? new Complex(v1, v2)
-                        : Complex.FromPolarCoordinates(v1, v2);
-                }
-            }
-
-            return new SNP(targetFrequencies, resultMats, interpolateIn, src.Format, src.Z0);
+            return new SnpInterpolator(source, method, format, interpolateIn, outOfRange)
+                .Evaluate(targetFrequencies);
         }
 
         // ---- Domain conversion helper --------------------------
 
-        private static SNP ToType(SNP src, MatrixType target) =>
+        internal static SNP ToType(SNP src, MatrixType target) =>
             (src.Type, target) switch
             {
                 var (s, t) when s == t          => src,
@@ -166,7 +91,7 @@ namespace RfCore
 
         // ---- Phase unwrap --------------------------------------
 
-        private static void PhaseUnwrap(double[] phase)
+        internal static void PhaseUnwrap(double[] phase)
         {
             for (int i = 1; i < phase.Length; i++)
             {
@@ -186,7 +111,7 @@ namespace RfCore
         //  Boundary condition: second derivative = 0 at both endpoints.
         // ============================================================
 
-        private readonly struct Spline1D
+        internal readonly struct Spline1D
         {
             private readonly double[] _x;
             private readonly double[] _a; // y values at knots

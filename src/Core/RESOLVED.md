@@ -488,3 +488,92 @@ netlist keeps the greedy rule; it has no alternative spelling to fall back on.
 Related, and already recorded in `src/Core/CLAUDE.md`'s trap list: a cell-parameter declaration, a
 top-level variable assignment and an instance-line param are three separate parse sites for the same
 unit token, and fixing one has repeatedly left the others wrong. The schematic VAR row was the fourth.
+
+
+## SP-P1 — an SnP fits its splines once, and a sweep parses each file once (2026-08-30)
+
+`brief-sp-p1-snp-spline-cache.md`. `SnpModel.Stamp` called `RFNetwork.Interpolate(snp, [hz], …)`
+once per frequency, and that call re-fits all 2·N² splines from scratch on every call. Three pieces
+now: `SnpFit` (the frequency-independent half — domain conversion, component extraction, phase
+unwrap, spline solve), `SnpInterpolator` (the public wrapper — out-of-range policy, warn-once flag,
+`Evaluate(double)` / `Evaluate(double[])`), and `TouchstoneCache` (process-wide parse + fit cache).
+`RFNetwork.Interpolate` is now `new SnpInterpolator(...).Evaluate(targets)`, so there is exactly one
+fitting path.
+
+### Measured
+
+Release, single thread, scratch console harness against the pre-change tree in a `git worktree` —
+NOT a `Category=Benchmark` test. 200-section RLC ladder, 401 frequency points; the SnP variant
+replaces 20 of its inductors with 2001-point 2-port Touchstone files.
+
+| | before | after | |
+|---|---|---|---|
+| ladder, no SnP | 211.5 µs/pt, 558 KB/pt | 215.4 µs/pt, 558 KB/pt | unchanged, as expected |
+| ladder, 20 SnPs | **5,737.9 µs/pt, 33,284 KB/pt** | **204.5 µs/pt, 600 KB/pt** | **28.1× faster** |
+| Hero 1 (one 84-pt .s2p) | 8.5 µs/pt, 25.0 KB/pt | 6.9 µs/pt, 13.9 KB/pt | 1.23×, allocation 1.8× |
+
+The SnP ladder now costs what the plain ladder costs (204.5 vs 215.4 µs/pt) — the brief's target.
+**Allocation: 55× overall, but that understates it and the honest number is the difference.** The
+600 KB/pt that remains is the ladder's own MNA assembly (the no-SnP row measures 558 KB/pt of it);
+the SnP-attributable part went 32,726 → 42 KB/pt, **779×**. Closing the remaining 558 KB is SP-P2's
+job, not this one's.
+
+**Bit-identical, proven end to end, not just by the goldens.** The harness prints an FNV-1a hash of
+the whole `S` cube; all three fixtures hash the same in both trees
+(`BC1057644B6D8669` / `C8FAAE3188D0CCC0` / `3CF16DEF32479870`). No tolerance was loosened anywhere.
+
+### What did NOT get faster — and one small, deliberate regression
+
+**The batch `Interpolate` path is ~1.2× SLOWER** (0.266 → 0.320 ms for one 401-target call on a
+2001-point file, both warmed and averaged over 200 reps). That is the cost of routing it through a
+`SnpFit` object instead of stack locals, and it is the price of the single fitting path. In absolute
+terms it is 54 µs on a call the Data Display makes once per plot. Two things were tried and did not
+recover it, so don't re-try them: reordering `EvaluateAll` to (row, col)-outermost, and hoisting the
+`Spline1D` structs into locals — **both are kept because they ARE worth ~1.5× on their own**, but
+the residual is object-allocation overhead, not loop shape. The first measurement of this looked
+like 1.6× and was mostly tier-0 JIT: the pre-change tree had already executed that exact code 401
+times before the batch call was timed, the post-change tree had not. **Warm both paths before
+comparing them, or the new one is measured cold.**
+
+### Traps
+
+- **A pure series two-port cannot be an SnP fixture.** The first harness generated each .s2p as a
+  bare series R+L, and every run threw `SingularMatrixException`. `SnpModel` stamps through Z, and a
+  pure series element has no impedance matrix at all (this is the same fact that `Chain` exists for
+  — see `src/Core/CLAUDE.md`). The fixture is a pi-network (series R+L, shunt C at each port).
+- **The out-of-range warning had to be split away from the cached fit.** The brief has the cache
+  hold the interpolator itself, keyed additionally by policy. Done that way the warn-once flag
+  becomes process-wide, so a SECOND run of a design that extrapolates past the end of its file
+  would say nothing at all. So the cache holds the immutable `SnpFit` and hands out a fresh
+  `SnpInterpolator` wrapper each call — the fit is shared, the warning is per consumer (once per
+  model per run, where it used to be once per frequency point and the engine's drain deduped it).
+- **The policy is not part of the fit key.** `OutOfRangePolicy` only selects `Eval` vs `EvalExtrap`
+  at evaluation time; it changes no coefficient. Keying the cache by it would have doubled the
+  fits for nothing. The key is (path identity, method, format, interpolateIn).
+- **`Interpolate`'s two `ArgumentException`s fire in the original order** — empty source before
+  empty target grid — which is why `RFNetwork.Interpolate` still checks `source.IsEmpty` itself
+  rather than letting the constructor raise it after the target check.
+- **Nothing mutates a cached `SNP`.** `SnpModel` reads `Z0` and nothing else; `SnpFit` reads
+  `Frequencies`/`Matrices`/`Format`/`Z0`. The instance is shared, and `SNP` does have public
+  setters (`Type`, `Format`, `Z0`), so anything new that reaches `TouchstoneCache.Get` must treat
+  the result as immutable or take a copy.
+- **Two strings moved file and the firewall gate caught it.** `UserFacingTextGateTests` keys its
+  allowlist on PATH plus text, so relocating an existing message into a new file reads as a new
+  user-facing message. Both lines were re-added under `src/RfCore/SnpInterpolator.cs`.
+
+### Call sites not converted
+
+`RFNetwork.Interpolate` has exactly one production caller — `SnpModel.Stamp`, now converted. Every
+other caller in the repo is a test. The Data Display's plotting path does not call it at all (the
+brief expected it to, batched); nothing there needed changing.
+
+### Gates
+
+`SnpInterpolatorTests` (RfCore.Tests) compares per-frequency `Evaluate` against batch `Interpolate`
+with `Assert.Equal` on `Complex` — **no tolerance** — over 2- and 5-port files × 3 methods ×
+2 formats, at stored knots and between them, and out of range under both policies. That test is
+also what gates the two evaluation loop orders against each other. `TouchstoneCacheTests` covers
+parse-once, fit-once-per-settings-tuple, per-consumer warnings, and re-read after an mtime change.
+`SnpCacheTests` (Engine.Tests) runs `SParameterEngine.Run` twice on one netlist and once on a fresh
+elaboration and asserts the three `S` cubes are bit-identical — the shape `ParametricSweepEngine`
+produces — plus a rewritten .s2p reaching the second run.
