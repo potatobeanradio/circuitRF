@@ -624,20 +624,12 @@ public static class ComponentTypeRegistry
                                                 new("Vdc",  "0", "V",   false, UnitDimension.Voltage)];
             // ITone mirrors ToneSource exactly, with I/Idc for V/Vdc — I and Freq match the
             // I_1Tone factory keys, Idc (hidden) is the DC offset.
-            //
-            // The unit is "A", not "mA", and that is NOT cosmetic: every SI-prefixed current,
-            // voltage and power unit in this build is an IDENTITY unit (Units.cs's _identityUnits),
-            // so "1 mA" resolves to 1 amp — a silent 1000x. Base units are the only ones that scale
-            // correctly today, so a freshly placed ITone uses one. See RESOLVED.md.
             case SymbolKind.CurrentToneSource:
-                                        return [new("I",    "1e-3", "A",   true,  UnitDimension.Current),
-                                                new("Freq", "1",    "GHz", true,  UnitDimension.Frequency),
-                                                new("Idc",  "0",    "A",   false, UnitDimension.Current)];
+                                        return [new("I",    "1", "mA",  true,  UnitDimension.Current),
+                                                new("Freq", "1", "GHz", true,  UnitDimension.Frequency),
+                                                new("Idc",  "0", "mA",  false, UnitDimension.Current)];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
-            // "S" for the same reason ITone uses "A" — a prefixed unit would not scale (see above).
-            // The conductance table itself IS correct (S/mS/uS/kS are real linear scales), but the
-            // default stays in the base unit so the two sources read alike.
-            case SymbolKind.Vccs:       return [new("G", "0.01", "S", true, UnitDimension.Conductance)];
+            case SymbolKind.Vccs:       return [new("G", "10", "mS", true, UnitDimension.Conductance)];
             // Pavl/Z/Freq/Phase match P1ToneModel factory keys.
             // Num is the s-param port index; auto-assigned at placement from the shared Term+P1Tone pool.
             case SymbolKind.P1Tone: return [
@@ -1310,12 +1302,12 @@ public static class ComponentTypeRegistry
         //        (tone 1 is the base scalar I/Freq, migrated to I[1]/Freq[1] on first add).
         SymbolKind.CurrentToneSource => new IndexedParamGroup(
             NameFormats:     ["Freq[{0}]", "I[{0}]", "Phase[{0}]"],
-            DefaultUnits:    ["GHz", "A", "deg"],
+            DefaultUnits:    ["GHz", "mA", "deg"],
             ShowOnSchematic: [true, true, false],
             Dimensions:      [UnitDimension.Frequency, UnitDimension.Current, UnitDimension.Angle],
             FirstAddIndex:   2,
             SkipIndices:     null,
-            DefaultExpressions: ["1", "1e-3", "0"]),
+            DefaultExpressions: ["1", "1", "0"]),
 
         // PnTone: each group = Freq[n]/Pavl[n]/Phase[n] (the power-source analog of ToneSource). The
         //         component is seeded with tones 1 & 2 (DefaultParameters); "+" adds tone 3, 4, …

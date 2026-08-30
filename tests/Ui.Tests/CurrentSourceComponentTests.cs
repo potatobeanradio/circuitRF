@@ -55,14 +55,21 @@ public class CurrentSourceComponentTests
         Assert.DoesNotContain(ps, p => p.Name is "V" or "Vdc");
     }
 
-    // Base units only. Every SI-prefixed current unit in this build is an IDENTITY unit (see
-    // Units.cs), so "1 mA" would resolve to one AMP — a silent 1000x on a freshly placed part.
+    // A freshly placed ITone reads "I = 1 mA", and that mA must be a real thousandth. Until
+    // 2026-08-29 every prefixed current unit was an IDENTITY unit and this default would have
+    // stamped one AMP; the assertion pairs the declared unit with the scale it must carry, so the
+    // two can never be separated again.
     [Fact]
-    public void ITone_DefaultUnits_AreBaseUnits_NotPrefixedOnes()
+    public void ITone_DefaultUnits_ArePrefixed_AndThosePrefixesActuallyScale()
     {
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.CurrentToneSource, 0);
-        Assert.Equal("A", ps.First(p => p.Name == "I").Unit);
-        Assert.Equal("A", ps.First(p => p.Name == "Idc").Unit);
+        Assert.Equal("mA", ps.First(p => p.Name == "I").Unit);
+        Assert.Equal("mA", ps.First(p => p.Name == "Idc").Unit);
+        Assert.Equal(1e-3, CircuitRF.Core.Expressions.Units.Scale("mA"));
+
+        var g = ComponentTypeRegistry.DefaultParameters(SymbolKind.Vccs, 0).Single();
+        Assert.Equal("mS", g.Unit);
+        Assert.Equal(1e-3, CircuitRF.Core.Expressions.Units.Scale("mS"));
     }
 
     [Fact]

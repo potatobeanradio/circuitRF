@@ -110,6 +110,52 @@ analysis DC1  type=dc
         Assert.Equal(+2.0, V(nl, dc, "n1"), Tol);
     }
 
+    // ── "1 mA" runs the analysis at 0.001 A — end to end, through the stamp ───
+    //
+    //   The whole chain, not just the resolved parameter: the prefixed spelling and the explicit
+    //   base-unit spelling must produce the SAME node voltage. Until 2026-08-29 every prefixed
+    //   voltage/current/power unit was an identity unit, so "2 mA" stamped two AMPS and this circuit
+    //   read 2000 V instead of 2 V. Both spellings are asserted against the same closed form so a
+    //   regression in either direction fails.
+    [Fact]
+    public void ITone_PrefixedUnit_ReachesTheStampWithItsRealScale()
+    {
+        var (nlPrefixed, dcPrefixed) = RunDc(@"
+I_1Tone:I1  n1 0   Idc=2 mA  Freq=1e9  I=0
+R:R1        n1 0   R=1000 Ohm
+
+analysis DC1  type=dc
+");
+        var (nlBase, dcBase) = RunDc(@"
+I_1Tone:I1  n1 0   Idc=0.002 A  Freq=1e9  I=0
+R:R1        n1 0   R=1000 Ohm
+
+analysis DC1  type=dc
+");
+        double vPrefixed = V(nlPrefixed, dcPrefixed, "n1");
+        double vBase     = V(nlBase,     dcBase,     "n1");
+        output.WriteLine($"Idc=2 mA -> {vPrefixed:G8} V   Idc=0.002 A -> {vBase:G8} V");
+
+        Assert.Equal(+2.0, vPrefixed, Tol);   // 2 mA x 1 kOhm, NOT 2000 V
+        Assert.Equal(vBase, vPrefixed, Tol);
+    }
+
+    // The same statement for the VCCS's transconductance: "10 mS" is a hundredth of a siemens.
+    [Fact]
+    public void Vccs_PrefixedConductanceUnit_ReachesTheStampWithItsRealScale()
+    {
+        var (nl, dc) = RunDc(@"
+Vdc:V1    nc 0        Vdc=2 V
+R:Rc      nc 0        R=1000 Ohm
+VCCS:G1   n_out 0 nc 0   G=10 mS
+R:RL      n_out 0     R=100 Ohm
+
+analysis DC1  type=dc
+");
+        Assert.True(dc.Converged);
+        Assert.Equal(-2.0, V(nl, dc, "n_out"), Tol);   // -10 mS x 2 V x 100 Ohm
+    }
+
     // ── A zero-Hz tone is reported, and names Idc as the right place for it ───
     [Fact]
     public void ITone_ZeroHzTone_WarnsAndNamesIdc()

@@ -56,24 +56,45 @@ stamped only into the DC solve passes the first and fails the others. The coroll
 documentation now states: an ideal transconductance has no frequency dependence, no compression and
 no delay — `G` is the same number at every harmonic, and anything else needs an SDD.
 
-## The prefixed voltage, current and power units do not scale — found, not fixed (2026-08-29)
+## The prefixed voltage, current and power units did not scale (2026-08-29)
 
-`Units.cs` keeps `mV`, `kV`, `uV`, `nV`, `mA`, `uA`, `nA`, `mW`, `uW`, `kW` in `_identityUnits`, which
-means `Units.Scale` returns null for them and `Evaluator.ApplyUnit` falls through to a multiplier of
-exactly **1.0**. So `Vdc=2 mV` resolves to **two volts**, and `Idc=2 mA` to **two amps** — measured
-directly, not inferred (a one-off `Vdc:V1 n1 0 Vdc=2 mV` into 1 kΩ reads V(n1) = 2). The base units
-`V`, `A` and `W` are unaffected, being scale-1 anyway.
+`Vdc=2 mV` resolved to **two volts** and `I=2 mA` to **two amps** — measured directly, not inferred.
+`Units.cs` kept `mV`, `kV`, `uV`, `nV`, `mA`, `uA`, `nA`, `mW`, `uW`, `kW` in `_identityUnits`, so
+`Units.Scale` returned null for every one of them and `Evaluator.ApplyUnit` fell through to a
+multiplier of **exactly 1**. The value parsed, stamped, converged and plotted; nothing anywhere
+reported it. Surfaced by ITone, whose natural default unit is `mA`.
 
-This is the same defect `nm`/`cm` had before 2026-08-07, and the comment beside them in `_identityUnits`
-already records the fix: a prefixed unit is physics, not a dimensionless marker, and it belongs in
-`_scales` with its real value. It is **not** fixed here, because doing so changes what every existing
-design using one of those spellings means, which is the owner's call and not this task's. Nothing in
-`testdata/` uses one today, so the blast radius is small.
+**Identical in kind, cause and fix to the `nm`/`cm` bug of 2026-08-07**, whose own note in
+`_identityUnits` already stated the rule this violated: a prefixed unit is physics, not a
+dimensionless marker, and it belongs in `_scales` with its real value. Fixed the same way.
 
-**What was done instead:** the new ITone and VCCS state their defaults in BASE units (`A`, `S`) with
-scaled expressions (`1e-3`, `0.01`) rather than the prettier `1 mA` / `10 mS`, so a freshly placed one
-is correct. The palette's unit dropdown still OFFERS the prefixed spellings, for these components as
-for every existing one — that trap is untouched and is what the fix above would close.
+**The three BASE symbols `V`, `A` and `W` deliberately did NOT move**, and that is the part worth
+remembering. Their multiplier of 1 is already correct through `ApplyUnit`'s identity fallback, so
+there is nothing to gain — and moving them would flip `Units.IsKnown`, which the CONSERVATIVE `.cnl`
+token gates read (`CnlReader`'s parameter-declaration peek at line 316, and `SplitTrailingUnit` with
+`includeIdentityUnits: false`). **`W` is this codebase's own name for a microstrip WIDTH**, so
+`L = 2 * W` would have started splitting into the expression `2 *` and the unit `W` — a new silent
+bug traded for the old one. The repo's own `GenuineIdentityUnits_AreStillIdentityOnly` already held
+that line for `V`; it now covers `A` and `W` too.
+
+**Second-order fix, the same one R-len-2 recorded for `nm`/`cm`.** Several `.cnl` and vendor-dialect
+token gates consume a trailing unit through `IsKnown` rather than `IsRecognizedUnit`. While these
+units were identity-only, `IsKnown` was false and those sites left the token **unconsumed** —
+silently dropping the unit from a cell-parameter declaration, which is the same shape as the
+phantom-node failure `Units.cs`'s `TOhm` comment records. All three parse sites (instance line,
+top-level variable assignment, cell-parameter declaration) are now gated separately in
+`ElectricalUnitsTests`, because `src/Core/CLAUDE.md` warns they are separate code paths and that
+fixing one has repeatedly left the others broken.
+
+**The sweep path needed no engine change, and that is asserted rather than assumed.**
+`ParametricSweepEngine`'s own rule — *scale and mark must come from the same unit or they contradict
+each other* — was being broken by the null `Scale`: it scaled by 1 while re-attaching the base symbol
+that MARKS the values as already-SI. A 1 → 3 mV sweep therefore ran at 1 → 3 volts, which is the 2 GHz
+→ 2 Hz bug in a new dimension. `SweptElectricalUnitTests` covers it in both directions (spec-carries-
+the-unit, and spec-inherits-the-VAR's), mirroring `SweptLengthUnitTests`.
+
+**Blast radius was small:** nothing in `testdata/` used one of these spellings. Any design that did
+was previously running 1000× off and is now correct.
 
 ## The bipolar transistor: six things that were not obvious (2026-08-29)
 

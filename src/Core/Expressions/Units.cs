@@ -64,6 +64,29 @@ public static class Units
         { "mS",  1e-3  },
         { "uS",  1e-6  },
         { "nS",  1e-9  },
+        // Voltage, current and power — the PREFIXED spellings only.
+        //
+        // These used to sit in _identityUnits with no scale at all, which made Scale() return null,
+        // which ApplyUnit turns into a multiplier of exactly 1: "Vdc=2 mV" resolved to TWO VOLTS and
+        // "I=2 mA" to two amps. Same defect, same fix and same reasoning as nm/cm before them (see
+        // the note in _identityUnits) — a millivolt is a thousandth of a volt, not a dimensionless
+        // marker.
+        //
+        // The BASE symbols V, A and W deliberately stay in _identityUnits, where their multiplier of
+        // 1 is already correct. Moving them here would flip IsKnown, which the conservative .cnl
+        // token gates read — and "W" is this codebase's own name for a microstrip WIDTH, so
+        // `L = 2 * W` would start splitting as an expression plus a unit. GenuineIdentityUnits_
+        // AreStillIdentityOnly holds that line.
+        { "kV",  1e3   },
+        { "mV",  1e-3  },
+        { "uV",  1e-6  },
+        { "nV",  1e-9  },
+        { "mA",  1e-3  },
+        { "uA",  1e-6  },
+        { "nA",  1e-9  },
+        { "kW",  1e3   },
+        { "mW",  1e-3  },
+        { "uW",  1e-6  },
         // Length. "metre" is the scale-1 BASE symbol (see the SI-prefix note above for why it is not
         // "m"); it is what BaseUnit returns for every unit in this block, which is the property
         // ParametricSweepEngine's own re-attach depends on.
@@ -93,15 +116,20 @@ public static class Units
     // Absent from _scales by design (see UnitNormalizer.cs "table-uncovered" comments).
     private static readonly HashSet<string> _identityUnits = new(StringComparer.Ordinal)
     {
-        "V",  "kV", "mV", "uV", "nV",     // voltage
-        "A",  "mA", "uA", "nA",            // current
-        "W",  "mW", "uW", "kW",            // power (linear)
+        "V",                                // voltage      — base symbol, multiplier 1
+        "A",                                // current      — base symbol, multiplier 1
+        "W",                                // power        — base symbol, multiplier 1
         "dB", "dBm", "dBc", "dBW",         // logarithmic / measurement
         "%",                                 // percentage
         // "nm" and "cm" USED to sit here, with the comment "length not in linear table". That was
         // never true of the physics — a nanometre is 1e-9 metres, not a dimensionless marker — and
         // it made Scale("nm") return null, which Evaluator.ApplyUnit turns into a multiplier of
         // exactly 1. They now live in _scales with their real values.
+        //
+        // The PREFIXED voltage, current and power units (kV/mV/uV/nV, mA/uA/nA, kW/mW/uW) sat here
+        // for the same wrong reason and moved out for the same right one on 2026-08-29: "2 mA" was
+        // resolving to two amps. Only the three BASE symbols belong here now — see the block in
+        // _scales for why moving those three as well would be a different bug.
     };
 
     /// <summary>
