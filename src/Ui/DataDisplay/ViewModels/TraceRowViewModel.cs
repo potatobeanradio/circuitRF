@@ -1833,8 +1833,10 @@ public partial class TraceRowViewModel : ViewModelBase
             // typed expression (no error).
             if (_trace.ExpressionError is not null)
                 _trace.Expression = null;
-            _trace.Transform = value.Transform;
-            _trace.YAxis     = CubeTransformToYAxis(value.Transform);
+            // Trace owns the CubeTransform -> YAxis mapping, because for Max Gain it is not the
+            // generic one (dB10, not dB20) and it refuses the entries that say nothing about a real
+            // positive power gain. A refused transform writes nothing.
+            if (!_trace.SetDisplayTransform(value.Transform)) return;
         }
         _parent.RebuildAndNotify();
     }
@@ -1863,10 +1865,12 @@ public partial class TraceRowViewModel : ViewModelBase
             // SelectedTransformItem's ReferenceEquals-based "did it actually change" check (and
             // Avalonia's own ComboBox SelectedItem matching against its ItemsSource) would never see
             // two reads as equal even when nothing changed.
-            var key = (_trace.IsCubeBound, _parent.PlotType, isComplexData: _trace.IsCubeBound ? _trace.CubeDataIsComplex : true);
+            var key = (_trace.IsCubeBound, _parent.PlotType,
+                       isComplexData: _trace.IsCubeBound ? _trace.CubeDataIsComplex : true,
+                       _trace.Derived);
             if (_cachedTransformItems is null || _cachedTransformItemsKey != key)
             {
-                _cachedTransformItems    = BuildTransformItems(key.IsCubeBound, key.PlotType, key.isComplexData);
+                _cachedTransformItems    = BuildTransformItems(key.IsCubeBound, key.PlotType, key.isComplexData, key.Derived);
                 _cachedTransformItemsKey = key;
             }
             return _cachedTransformItems;
@@ -1874,17 +1878,27 @@ public partial class TraceRowViewModel : ViewModelBase
     }
 
     private IReadOnlyList<CubeTransformItem>? _cachedTransformItems;
-    private (bool IsCubeBound, PlotType PlotType, bool isComplexData) _cachedTransformItemsKey;
+    private (bool IsCubeBound, PlotType PlotType, bool isComplexData, DerivedParameters Derived) _cachedTransformItemsKey;
 
     internal static IReadOnlyList<CubeTransformItem> BuildTransformItems(
-        bool isCubeBound, PlotType plotType, bool isComplexData) =>
+        bool isCubeBound, PlotType plotType, bool isComplexData,
+        DerivedParameters derived = DerivedParameters.None) =>
         Enum.GetValues<CubeTransform>()
-            .Select(t => new CubeTransformItem(t, TransformEntryEnabled(t, isCubeBound, plotType, isComplexData)))
+            .Select(t => new CubeTransformItem(t, TransformEntryEnabled(t, isCubeBound, plotType, isComplexData, derived)))
             .ToList();
 
     private static bool TransformEntryEnabled(
-        CubeTransform t, bool isCubeBound, PlotType plotType, bool isComplexData)
+        CubeTransform t, bool isCubeBound, PlotType plotType, bool isComplexData,
+        DerivedParameters derived = DerivedParameters.None)
     {
+        // Max Gain is a real, positive POWER ratio, so its list is its own: None and Mag (the
+        // linear ratio) and dB10 (10*log10 of it). dB20/dB would misname the arithmetic — the
+        // metric has been 10*log10 since 2026-08-29 — and Real/Imag/Phase/Conj describe a complex
+        // value it never has. Everything else stays keyed out and disabled rather than hidden, so
+        // the combo still reads as the same control on every trace.
+        if (derived == DerivedParameters.MaxGain)
+            return Array.IndexOf(Trace.MaxGainTransforms, t) >= 0;
+
         // Pre-existing rule, unaffected by plot type: dB10/dB/Conj are cube-only.
         if (!isCubeBound && t is CubeTransform.dB10 or CubeTransform.dB or CubeTransform.Conj)
             return false;
@@ -1917,16 +1931,7 @@ public partial class TraceRowViewModel : ViewModelBase
             _trace.Transform = CubeTransform.None;
 
         var items = TraceTransformItems;
-        CubeTransformItem? item;
-        if (_trace.IsCubeBound)
-        {
-            item = items.FirstOrDefault(t => t.Transform == _trace.Transform);
-        }
-        else
-        {
-            var ct = YAxisToCubeTransform(_trace.YAxis);
-            item = items.FirstOrDefault(t => t.Transform == ct);
-        }
+        var item  = items.FirstOrDefault(t => t.Transform == _trace.DisplayTransform);
         if (!ReferenceEquals(_selectedTransformItem, item))
         {
             _suppressTransformCallback = true;
@@ -1934,26 +1939,6 @@ public partial class TraceRowViewModel : ViewModelBase
             _suppressTransformCallback = false;
         }
     }
-
-    private static CubeTransform YAxisToCubeTransform(DependentVarFormat f) => f switch
-    {
-        DependentVarFormat.Db        => CubeTransform.dB20,
-        DependentVarFormat.Mag       => CubeTransform.Mag,
-        DependentVarFormat.Phase     => CubeTransform.Phase,
-        DependentVarFormat.Real      => CubeTransform.Real,
-        DependentVarFormat.Imaginary => CubeTransform.Imag,
-        _                            => CubeTransform.None,   // Complex → None
-    };
-
-    private static DependentVarFormat CubeTransformToYAxis(CubeTransform ct) => ct switch
-    {
-        CubeTransform.dB20  => DependentVarFormat.Db,
-        CubeTransform.Mag   => DependentVarFormat.Mag,
-        CubeTransform.Phase => DependentVarFormat.Phase,
-        CubeTransform.Real  => DependentVarFormat.Real,
-        CubeTransform.Imag  => DependentVarFormat.Imaginary,
-        _                   => DependentVarFormat.Complex,    // None/dB10/dB/Conj → Complex
-    };
 
     /// <summary>
     /// Called by PlotInspectorViewModel when the plot Freq unit changes so harmonic
@@ -2427,17 +2412,8 @@ public partial class TraceRowViewModel : ViewModelBase
 
         // Unified transform item — cube or mapped-from-YAxis, from the per-plot-type list (§4).
         // TraceTransformItems needs _trace/_parent, both already assigned above.
-        if (trace.IsCubeBound)
-        {
-            _selectedTransformItem = TraceTransformItems
-                .FirstOrDefault(t => t.Transform == trace.Transform);
-        }
-        else
-        {
-            var ct = YAxisToCubeTransform(trace.YAxis);
-            _selectedTransformItem = TraceTransformItems
-                .FirstOrDefault(t => t.Transform == ct);
-        }
+        _selectedTransformItem = TraceTransformItems
+            .FirstOrDefault(t => t.Transform == trace.DisplayTransform);
 
         RemoveCommand              = new RelayCommand(() => _parent.RemoveTrace(this));
         ToggleSecondaryAxisCommand = new RelayCommand(() => UseSecondaryAxis = !UseSecondaryAxis);

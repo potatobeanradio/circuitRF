@@ -317,6 +317,118 @@ namespace CircuitRF.Ui.DataDisplay
 
         public bool IsDerived => Derived != DerivedParameters.None;
 
+        /// <summary>True for a derived metric that is a real scalar versus frequency (µ, µ′, K,
+        /// |Δ|, MaxGain, passivity, group delay) — i.e. every derived trace except a Γ-plane locus.</summary>
+        public bool IsDerivedScalar => IsDerived && Derived.IsScalarVsFrequency();
+
+        /// <summary>
+        /// True when <see cref="YAxis"/> names the COMPLEX value itself rather than a real scalar.
+        /// </summary>
+        /// <remarks>
+        /// <c>YAxis == Complex</c> alone is not that question. A scalar derived metric stores its
+        /// display choice in <see cref="YAxis"/> too (Max Gain uses <c>Db</c> for 10·log10 and
+        /// <c>Complex</c>/<c>Mag</c> for the linear ratio — see <see cref="MaxGainIsLog"/>), and its
+        /// value is a real number in every one of those states. Readout, hit-test and impedance
+        /// paths that branch on "is this a complex trace" must ask THIS, or a linear Max Gain trace
+        /// gets formatted as "g + j0" and offered an impedance it has no reflection coefficient for.
+        /// A stability circle IS a Γ-plane locus and is deliberately still complex here.
+        /// </remarks>
+        public bool YAxisIsComplexValue => YAxis == DependentVarFormat.Complex && !IsDerivedScalar;
+
+        // ---- Display transform for a derived scalar ---------------------
+        //
+        //  Until 2026-08-30 the transform combo was, for a derived trace, "a unit annotation
+        //  wearing a transform's clothes" (DataDisplay/RESOLVED.md) — it changed the label and
+        //  nothing else, and for MaxGain it labelled a 10·log10 quantity "dB20". MaxGain now
+        //  genuinely has two forms, so the combo selects between them:
+        //
+        //    dB10  → 10·10log10(MAG)   (the default, and what every pre-existing .cdd restores)
+        //    Mag   → the linear power ratio
+        //    None  → the linear power ratio, unlabelled
+        //
+        //  The choice is stored in YAxis rather than in Transform because Transform is not
+        //  round-tripped for a network/derived trace (DataDisplayViewModel restores YAxis and
+        //  Derived only), so an old file would silently reload as linear.
+
+        /// <summary>
+        /// True when a Max Gain trace plots 10·log10(MAG/MSG) rather than the linear power ratio.
+        /// Meaningless — and always false — for any other derived metric.
+        /// </summary>
+        public bool MaxGainIsLog =>
+            Derived == DerivedParameters.MaxGain && YAxis == DependentVarFormat.Db;
+
+        /// <summary>
+        /// The transform this trace's Y value actually is, in the display language the axis label,
+        /// the marker readouts and the trace card's transform combo all share. Cube traces already
+        /// carry it directly; a network trace's <see cref="YAxis"/> maps onto it; and Max Gain is
+        /// the one quantity whose dB is 10·log10, so it reads dB10 and never dB20.
+        /// </summary>
+        public CubeTransform DisplayTransform
+        {
+            get
+            {
+                if (IsCubeBound) return Transform;
+                if (Derived == DerivedParameters.MaxGain)
+                    return YAxis switch
+                    {
+                        DependentVarFormat.Db  => CubeTransform.dB10,
+                        DependentVarFormat.Mag => CubeTransform.Mag,
+                        _                      => CubeTransform.None,
+                    };
+                return YAxis switch
+                {
+                    DependentVarFormat.Db        => CubeTransform.dB20,
+                    DependentVarFormat.Mag       => CubeTransform.Mag,
+                    DependentVarFormat.Phase     => CubeTransform.Phase,
+                    DependentVarFormat.Real      => CubeTransform.Real,
+                    DependentVarFormat.Imaginary => CubeTransform.Imag,
+                    _                            => CubeTransform.None,
+                };
+            }
+        }
+
+        /// <summary>
+        /// The transforms a trace of this kind may be given — everything else is keyed out and
+        /// disabled in the trace card's combo. Only Max Gain narrows the list today: it is a real,
+        /// positive power gain, so Real/Imag/Phase/Conj say nothing about it and dB20/dB would be a
+        /// lie about the arithmetic. <c>null</c> means "no per-trace restriction".
+        /// </summary>
+        public static readonly CubeTransform[] MaxGainTransforms =
+            { CubeTransform.None, CubeTransform.dB10, CubeTransform.Mag };
+
+        /// <summary>
+        /// Applies a <see cref="DisplayTransform"/> selection back onto the trace's own state.
+        /// Returns false when the transform is not one this trace accepts, in which case nothing
+        /// is written.
+        /// </summary>
+        public bool SetDisplayTransform(CubeTransform t)
+        {
+            if (Derived == DerivedParameters.MaxGain)
+            {
+                if (Array.IndexOf(MaxGainTransforms, t) < 0) return false;
+                YAxis = t switch
+                {
+                    CubeTransform.dB10 => DependentVarFormat.Db,
+                    CubeTransform.Mag  => DependentVarFormat.Mag,
+                    _                  => DependentVarFormat.Complex,
+                };
+                Transform = t;
+                return true;
+            }
+
+            Transform = t;
+            YAxis = t switch
+            {
+                CubeTransform.dB20  => DependentVarFormat.Db,
+                CubeTransform.Mag   => DependentVarFormat.Mag,
+                CubeTransform.Phase => DependentVarFormat.Phase,
+                CubeTransform.Real  => DependentVarFormat.Real,
+                CubeTransform.Imag  => DependentVarFormat.Imaginary,
+                _                   => DependentVarFormat.Complex,
+            };
+            return true;
+        }
+
         // ---- Ordered port selection for network metrics (R-stb-3/3a) ----
         //
         //  1-based, and ORDERED — port roles are not symmetric. μ is the LOAD stability factor and
@@ -868,8 +980,8 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             if (IsDerived)
-                return Derived == DerivedParameters.MaxGain && YAxis == DependentVarFormat.Db
-                    ? $"{prefix}dB({Derived.Description()})"
+                return MaxGainIsLog
+                    ? $"{prefix}dB10({Derived.Description()})"
                     : $"{prefix}{Derived.Description()}";
 
             string el = $"({Row + 1},{Col + 1})";
@@ -1566,6 +1678,7 @@ namespace CircuitRF.Ui.DataDisplay
         private int _derivedMetricCacheInPort;
         private int _derivedMetricCacheOutPort;
         private bool _derivedMetricCachePassivityScope;
+        private bool _derivedMetricCacheMaxGainLog;
         private Mat<Complex>[]? _derivedMetricCacheMats;
 
         /// <summary>
@@ -1597,8 +1710,15 @@ namespace CircuitRF.Ui.DataDisplay
                 return tau;
             }
 
+            // Max Gain is the one metric with two display forms. Both come from RFNetwork, chosen
+            // here rather than by the UI taking 10^(dB/10) of the other, so there is still exactly
+            // one implementation of MAG/MSG (R-stb-1).
+            var metric = Derived == DerivedParameters.MaxGain && !MaxGainIsLog
+                ? RfCore.Data.NetworkMetric.MaxGainLinear
+                : Derived.ToNetworkMetric();
+
             return RfCore.Data.NetworkMetrics.TwoPortMetric(
-                Data.Matrices, z0PerPort, Derived.ToNetworkMetric(), InputPort, OutputPort);
+                Data.Matrices, z0PerPort, metric, InputPort, OutputPort);
         }
 
         private double[] GetDerivedMetricArray()
@@ -1608,6 +1728,7 @@ namespace CircuitRF.Ui.DataDisplay
                 && _derivedMetricCacheInPort == InputPort
                 && _derivedMetricCacheOutPort == OutputPort
                 && _derivedMetricCachePassivityScope == PassivityWholeNetwork
+                && _derivedMetricCacheMaxGainLog == MaxGainIsLog
                 && ReferenceEquals(_derivedMetricCacheMats, Data.Matrices))
             {
                 return _derivedMetricCache;
@@ -1623,6 +1744,7 @@ namespace CircuitRF.Ui.DataDisplay
             _derivedMetricCacheInPort = InputPort;
             _derivedMetricCacheOutPort = OutputPort;
             _derivedMetricCachePassivityScope = PassivityWholeNetwork;
+            _derivedMetricCacheMaxGainLog = MaxGainIsLog;
             _derivedMetricCacheMats = Data.Matrices;
             return values;
         }
@@ -1752,7 +1874,7 @@ namespace CircuitRF.Ui.DataDisplay
                 double best    = double.PositiveInfinity;
                 int    bestIdx = -1;
 
-                if (YAxis == DependentVarFormat.Complex)
+                if (YAxisIsComplexValue)
                 {
                     for (int i = 0; i < Points.Count; i++)
                     {
@@ -2601,7 +2723,7 @@ namespace CircuitRF.Ui.DataDisplay
             string suffix = IsStabilityCircle ? " Γ" : "";
             string desc   = ReadoutDescription(showFilePrefix);
 
-            if (YAxis == DependentVarFormat.Complex)
+            if (YAxisIsComplexValue)
                 return $"{desc}{suffix}={m.FormatComplex(GetMarkerDataPoint(m))}";
 
             double scalar = DataPointScalar(m.Freq);
@@ -2625,7 +2747,7 @@ namespace CircuitRF.Ui.DataDisplay
                 return $"  Δ{other.ReadoutDescription(false)}={valStr}";
             }
 
-            if (other.YAxis == DependentVarFormat.Complex)
+            if (other.YAxisIsComplexValue)
             {
                 var    dp     = other.GetMarkerDataPoint(m);
                 string valStr = double.IsNaN(dp.Real) ? "NaN" : m.FormatComplex(dp);
@@ -2672,7 +2794,7 @@ namespace CircuitRF.Ui.DataDisplay
         public bool MarkerShowsImpedance(Marker m) =>
             !m.IsMulti && (IsCubeBound
                 ? IsCubeReflectionElement
-                : Row == Col && YAxis == DependentVarFormat.Complex);
+                : Row == Col && YAxisIsComplexValue);
 
         /// <summary>Shared impedance formula — Γ (or S(i,i)) at a reference Z0, both the plain and
         /// normalized forms. One formatter for the network and cube-bound paths (brief-dd-z0-

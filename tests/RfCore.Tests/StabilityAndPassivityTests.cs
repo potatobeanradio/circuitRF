@@ -18,6 +18,7 @@ using System;
 using System.Numerics;
 using NumFlat;
 using RfCore;
+using RfCore.Data;
 using Xunit;
 
 namespace RfCore.Tests;
@@ -252,5 +253,67 @@ public class StabilityAndPassivityTests
         double linear = k >= 1.0 ? ratio * (k - Math.Sqrt(k * k - 1.0)) : ratio;
 
         Assert.Equal(10.0 * Math.Log10(linear), RFNetwork.MaxGain(m), 9);
+    }
+
+    /// <summary>
+    /// <c>MaxGainLinear</c> is the primitive and <c>MaxGain</c> is 10·log10 of it — one
+    /// implementation of MAG/MSG, not two. The Data Display plots either form, so the pair has to
+    /// stay exactly consistent or a user switching the trace card's transform sees the curve move
+    /// by more than the transform.
+    /// </summary>
+    [Fact]
+    public void MaxGainLinear_IsThePrimitiveMaxGainIsTenLog10Of()
+    {
+        var m = Amp2Port();
+        double lin = RFNetwork.MaxGainLinear(m);
+
+        Assert.True(lin > 0);
+        Assert.Equal(10.0 * Math.Log10(lin), RFNetwork.MaxGain(m), 12);
+    }
+
+    /// <summary>
+    /// The unilateral oracle applies to the linear form directly, with no log in the way: MAG IS
+    /// the transducer power gain |S21|².
+    /// </summary>
+    [Theory]
+    [InlineData(3.0, 1e-4)]
+    [InlineData(0.5, 1e-5)]
+    public void MaxGainLinear_UnilateralMatchedTwoPort_IsS21Squared(double s21, double s12)
+    {
+        var m = new Mat<Complex>(2, 2);
+        m[0, 0] = Complex.Zero;
+        m[0, 1] = new Complex(s12, 0.0);
+        m[1, 0] = new Complex(s21, 0.0);
+        m[1, 1] = Complex.Zero;
+
+        Assert.Equal(s21 * s21, RFNetwork.MaxGainLinear(m), 6);
+    }
+
+    /// <summary>The SNP sweep overloads agree with the per-matrix ones, in both forms.</summary>
+    [Fact]
+    public void MaxGainLinear_SnpSweep_MatchesThePerMatrixForm()
+    {
+        var m   = Amp2Port();
+        var snp = new SNP([1e9], [m], MatrixType.S, MatrixFormat.RI, new Complex(50, 0));
+
+        Assert.Equal(RFNetwork.MaxGainLinear(m), RFNetwork.MaxGainLinear(snp)[0], 12);
+        Assert.Equal(RFNetwork.MaxGain(m),       RFNetwork.MaxGain(snp)[0],       12);
+    }
+
+    /// <summary>
+    /// The cube adapter routes the new metric to the same function — <c>NetworkMetrics</c> still
+    /// computes nothing of its own (R-stb-1).
+    /// </summary>
+    [Fact]
+    public void NetworkMetrics_MaxGainLinear_RoutesToRFNetwork()
+    {
+        var m  = Amp2Port();
+        var z0 = new[] { new Complex(50, 0), new Complex(50, 0) };
+
+        double lin = NetworkMetrics.TwoPortMetric([m], z0, NetworkMetric.MaxGainLinear, 1, 2)[0];
+        double db  = NetworkMetrics.TwoPortMetric([m], z0, NetworkMetric.MaxGain,       1, 2)[0];
+
+        Assert.Equal(RFNetwork.MaxGainLinear(m), lin, 12);
+        Assert.Equal(10.0 * Math.Log10(lin),     db,  12);
     }
 }

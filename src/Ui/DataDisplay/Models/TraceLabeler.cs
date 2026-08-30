@@ -137,32 +137,20 @@ namespace CircuitRF.Ui.DataDisplay
                 ? t.Derived.Description()
                 : $"{t.MatrixType}({t.Row + 1},{t.Col + 1})";
 
-            return name + TransformSuffix(FromDependentVarFormat(t.YAxis));
+            return name + TransformSuffix(t.DisplayTransform);
         }
-
-        /// <summary>
-        /// The network trace's Y format as the cube transform that computes the same number.
-        /// </summary>
-        /// <remarks>
-        /// <c>Db</c> is <b>dB20</b> and not merely "dB": every network path in <c>Trace</c> computes
-        /// <c>20·log10(|z|)</c> for it (the value path, the derived path and the readout path alike),
-        /// so naming it dB20 is a statement about the arithmetic rather than a guess. <c>Complex</c>
-        /// has no transform — it is the raw value — which is what <c>None</c> means here.
-        /// </remarks>
-        private static CubeTransform FromDependentVarFormat(DependentVarFormat f) => f switch
-        {
-            DependentVarFormat.Db        => CubeTransform.dB20,
-            DependentVarFormat.Mag       => CubeTransform.Mag,
-            DependentVarFormat.Phase     => CubeTransform.Phase,
-            DependentVarFormat.Real      => CubeTransform.Real,
-            DependentVarFormat.Imaginary => CubeTransform.Imag,
-            _                            => CubeTransform.None,
-        };
 
         /// <summary>
         /// The one transform-suffix table, shared by both trace kinds. Empty for
         /// <see cref="CubeTransform.None"/>, so a raw complex trace carries no suffix at all.
         /// </summary>
+        /// <remarks>
+        /// Which entry a NETWORK trace gets is <see cref="Trace.DisplayTransform"/>'s answer, not a
+        /// second mapping here. <c>YAxis == Db</c> is dB20 for an S/Y/Z element, because every
+        /// network path in <c>Trace</c> computes 20·log10(|z|) for it — but it is <b>dB10</b> for
+        /// Max Gain, whose value is a POWER ratio and whose dB has been 10·log10 since 2026-08-29.
+        /// Labelling that one "dB20" said the arithmetic was something it was not.
+        /// </remarks>
         private static string TransformSuffix(CubeTransform t) => t switch
         {
             CubeTransform.dB20  => " dB20",

@@ -864,12 +864,29 @@ namespace RfCore
         /// </summary>
         public static double[] MaxGain(SNP snp)
         {
+            var lin  = MaxGainLinear(snp);
+            var gain = new double[lin.Length];
+            for (int i = 0; i < lin.Length; i++) gain[i] = LinearToDb(lin[i]);
+            return gain;
+        }
+
+        /// <summary>
+        /// MAG or MSG as a LINEAR power ratio over frequency for a 2-port SNP.
+        /// </summary>
+        /// <remarks>
+        /// This is the primitive; <see cref="MaxGain(SNP)"/> is 10·log10 of it. Both spellings are
+        /// offered because the Data Display lets the user choose which one a Max Gain trace plots,
+        /// and a UI that computed the linear form by undoing the dB one would be carrying two
+        /// definitions of the same quantity.
+        /// </remarks>
+        public static double[] MaxGainLinear(SNP snp)
+        {
             var s       = NormalizedS2Port(snp);
             var (Kn, _, _, _, _) = StabilityK(s);
             int n       = s.FrequencyCount;
             var gain    = new double[n];
             for (int i = 0; i < n; i++)
-                gain[i] = MaxGain(s.Matrices[i], Kn[i]);
+                gain[i] = MaxGainLinear(s.Matrices[i], Kn[i]);
             return gain;
         }
 
@@ -877,20 +894,28 @@ namespace RfCore
         /// MAG or MSG in dB for a single 2×2 S-matrix.
         /// The matrix must already be normalized to a uniform reference impedance.
         /// </summary>
-        public static double MaxGain(Mat<Complex> s)
+        public static double MaxGain(Mat<Complex> s) => LinearToDb(MaxGainLinear(s));
+
+        /// <summary>
+        /// MAG or MSG as a LINEAR power ratio for a single 2×2 S-matrix.
+        /// The matrix must already be normalized to a uniform reference impedance.
+        /// </summary>
+        public static double MaxGainLinear(Mat<Complex> s)
         {
             var (k, _, _, _, _) = StabilityK(s);
-            return MaxGain(s, k);
+            return MaxGainLinear(s, k);
         }
 
-        private static double MaxGain(Mat<Complex> s, double k)
+        private static double MaxGainLinear(Mat<Complex> s, double k)
         {
-            double ratio      = s[1, 0].Magnitude / (s[0, 1].Magnitude + 1e-300);
-            double linearGain = k >= 1.0
+            double ratio = s[1, 0].Magnitude / (s[0, 1].Magnitude + 1e-300);
+            return k >= 1.0
                 ? ratio * (k - Math.Sqrt(k * k - 1.0))
                 : ratio;
-            return 10.0 * Math.Log10(linearGain + 1e-300);
         }
+
+        /// <summary>10·log10 of a POWER ratio, with the same floor the dB path has always used.</summary>
+        private static double LinearToDb(double linearGain) => 10.0 * Math.Log10(linearGain + 1e-300);
 
         // ----------------------------------------------------------
         //  Stability circles

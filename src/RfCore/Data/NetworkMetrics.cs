@@ -38,6 +38,12 @@ namespace RfCore.Data
         MaxGain,
         /// <summary>σ_max(S) — passivity measure. Defined for ANY N (see R-stb-6).</summary>
         Passivity,
+        /// <summary>
+        /// MAG/MSG as a LINEAR power ratio. 2-port. APPENDED — the Data Display offers the user a
+        /// choice of linear or 10·log10 for a Max Gain trace, and the two spellings come from the
+        /// one implementation in <see cref="RFNetwork"/> rather than from the UI undoing a log.
+        /// </summary>
+        MaxGainLinear,
     }
 
     public static class NetworkMetrics
@@ -369,6 +375,7 @@ namespace RfCore.Data
                     NetworkMetric.Mu       => RFNetwork.StabilityMu(m),
                     NetworkMetric.MuPrime  => RFNetwork.StabilityMuPrime(m),
                     NetworkMetric.MaxGain  => RFNetwork.MaxGain(m),
+                    NetworkMetric.MaxGainLinear => RFNetwork.MaxGainLinear(m),
                     NetworkMetric.K        => RFNetwork.StabilityK(m).K,
                     NetworkMetric.DeltaMag => RFNetwork.StabilityK(m).Delta,
                     _ => throw new ArgumentOutOfRangeException(nameof(metric)),

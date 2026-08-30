@@ -170,6 +170,69 @@ nothing to do with the factor of 2 above.
 for derived traces, or give it a real linear/dB meaning) and the reported numeric bug is §1.
 
 
+## Max Gain now says which form it is plotting (2026-08-30)
+
+**Reported:** the Max Gain trace's Y-axis label reads "MaxGain dB20", which is misleading; the trace
+card offers transforms that make no sense for the metric (dB20 rather than dB10, Real and Imag at
+all); and since MAG/MSG has both a linear and a log10 spelling, the UI has to say which one is on
+the plot — defaulting to log10 when the metric is picked.
+
+This is the follow-up to §"MAG/MSG was 2× too large in dB" above, which fixed the arithmetic and
+deliberately left the display question open ("a UI-semantics decision with two defensible answers").
+The answer taken is the second one: **give the combo a real linear/dB meaning.**
+
+### The label said dB20 because, for every other network trace, `YAxis == Db` IS dB20
+
+`TraceLabeler` had its own private `FromDependentVarFormat`, whose documented reasoning was that
+"every network path in `Trace` computes 20·log10(|z|)" for `Db`. That stopped being true for MaxGain
+on 2026-08-29 — its value arrives from `RFNetwork.MaxGain` already at 10·log10 and the YAxis switch
+is bypassed — so the one quantity in the application whose dB is 10·log10 was the one being labelled
+dB20. The mapping now lives on the trace as `Trace.DisplayTransform`, which the labeler, the marker
+readouts (via `ReadoutDescription` → `QuantityFor`) and the trace card's combo all read. One
+mapping, so the label and the selected combo entry cannot disagree about what is plotted.
+
+### The form is stored in `YAxis`, not in `Transform`
+
+`Trace.Transform` looks like the natural home, and `ApplySelectedTransform` was already writing it
+for network traces — but nothing reads it back for them, and **`DataDisplayViewModel` does not
+restore it for a network/derived trace** (only `YAxis` and `Derived`). Storing the choice there would
+have silently reloaded every existing `.cdd`'s Max Gain trace as linear. `YAxis` round-trips, so the
+three states map onto it: `Db` → dB10 (the default, and what every old file already carries),
+`Mag` → the linear ratio, `Complex` → the same ratio, unlabelled.
+
+**`Complex` for a real scalar is the trap that mapping creates**, and it is why `Trace.YAxisIsComplexValue`
+now exists. Four paths used `YAxis == DependentVarFormat.Complex` as "is this a complex trace":
+the marker readout, the multi-marker line, the 2-D nearest-point hit test and `MarkerShowsImpedance`.
+Left alone, a linear Max Gain trace would have read out as "16 + j0" and been offered an impedance
+it has no reflection coefficient for. A stability circle is a genuine Γ-plane locus and is
+deliberately still complex under the new predicate.
+
+### The linear form is a primitive, not the dB form undone
+
+`RFNetwork.MaxGainLinear` is the MAG/MSG formula; `RFNetwork.MaxGain` is 10·log10 of it, and
+`NetworkMetric.MaxGainLinear` is appended so the cube adapter reaches it the same way. Taking
+10^(dB/10) in the UI would have been a second definition of the metric living outside RfCore, which
+is exactly what R-stb-1 exists to prevent. `Trace`'s derived-metric memo is keyed on the form too —
+without that, switching the combo returns the previously cached array and the curve does not move.
+
+### What the combo offers
+
+`None`, `dB10`, `Mag` — enabled. `dB20`, `dB`, `Phase`, `Real`, `Imag`, `Conj` — keyed out and
+disabled (shown, not hidden, which is the existing `ItemContainerTheme` mechanism the picker already
+uses everywhere else). `SetDisplayTransform` refuses a transform outside that set and writes
+nothing, so the gate does not depend on the view alone. `Trace.MaxGainTransforms` is the one list.
+
+**Scoped to MaxGain on purpose.** The other derived scalars (µ, µ′, K, |Δ|, passivity, group delay)
+still have an inert combo showing "Mag" — that is the pre-existing state described in the §2 note
+above, it was not part of the report, and unlike MaxGain none of them has a second form to choose
+between. Their transform lists are byte-identical to before, which
+`NonMaxGainNetworkTrace_KeepsItsExistingTransformList` pins.
+
+Gates: `tests/Ui.Tests/MaxGainDisplayFormTests.cs` (13) and four new methods in
+`tests/RfCore.Tests/StabilityAndPassivityTests.cs`. The numeric oracle is the same unilateral limit
+that fixed the 2× bug — MAG → |S21|² for a matched unilateral two-port — read at both spellings.
+
+
 ## Contour markers read out the whole plot, not just their own trace (GitHub #2, 2026-08-29)
 
 **Reported:** a user asked for a loadpull marker to show complex impedance, P3dB and efficiency
