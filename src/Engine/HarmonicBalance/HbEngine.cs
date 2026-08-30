@@ -303,12 +303,21 @@ public sealed class HbEngine
         // MixingGrid's enumeration exactly, so the DataSet has the same shape and the same
         // mixIndex labels either way — only the numbers differ, and only in their last digits.
         if (p.ToneFreqsHz.Length == 2 && !_settings.HbTwoToneOnLattice)
-            return new HbRunResult(RunTwoTone(p));
+        {
+            var tt = RunTwoTone(p, warmStart);
+            return new HbRunResult(tt.Ds, converged: tt.Converged, interfaceV: tt.InterfaceV,
+                trace: tt.Trace);
+        }
         // >= 2, not >= 3: two tones must land HERE unless HbTwoToneOnLattice was cleared above.
         // Gating this on >= 3 instead lets a two-tone run fall through to the single-tone path
         // below, which converges cleanly and returns a plausible DataSet carrying a `harmonic`
         // axis where the caller expects `mixIndex` — a wrong answer with no error anywhere.
-        if (p.ToneFreqsHz.Length >= 2) return new HbRunResult(RunMultiTone(p));
+        if (p.ToneFreqsHz.Length >= 2)
+        {
+            var mt = RunMultiTone(p, warmStart);
+            return new HbRunResult(mt.Ds, converged: mt.Converged, interfaceV: mt.InterfaceV,
+                trace: mt.Trace);
+        }
 
         int    K      = p.MaxHarmonic;
         double f0     = p.ToneHz;
@@ -433,13 +442,64 @@ public sealed class HbEngine
                   NonlinearAbsTol           = _settings.NonlinearAbsTol,
               }
             : _settings;
-        var solveResult = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
-            _netlist, ifNodes, gridN, effectiveSettings, p.Tol,
-            p.Lambda, p.GuardHarmonic, cc);
+        // A cold solve first unless the directive says to ramp unconditionally (DriveStepping=Always).
+        HbNewton.SolveResult? solveResult = null;
+        if (p.DriveStepping != DcBiasSteppingMode.Always)
+        {
+            solveResult = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
+                _netlist, ifNodes, gridN, effectiveSettings, p.Tol,
+                p.Lambda, p.GuardHarmonic, cc);
 
-        trace.AddStep(new HbConvergenceTrace.StepRecord(
-            0.0, solveResult.Iterations, solveResult.Converged,
-            solveResult.IterTrace));
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                0.0, solveResult.Iterations, solveResult.Converged,
+                solveResult.IterTrace));
+        }
+
+        // ── DriveStepping (§11): the drive-ramp fallback ──────────────────────
+        // Never = report the failure as it stands; IfNecessary = ramp only when the cold solve did
+        // not converge; Always = ramp without trying cold. The line search catches most of what used
+        // to land here (HB-P3 M1), so IfNecessary is normally free.
+        if (p.DriveStepping != DcBiasSteppingMode.Never &&
+            (solveResult is null || !solveResult.Converged))
+        {
+            var sources = HbDriveRamp.Collect(_netlist);
+            if (sources.Count > 0)
+            {
+                try
+                {
+                    var rung = HbDriveRamp.Walk(
+                        sources,
+                        (offsetDb, warm) => SolveRung(
+                            offsetDb, warm, extractor, yNN, iSrc, f0, K, N, ifNodes, gridN,
+                            effectiveSettings, p, cc is not null, trace),
+                        r => r.V);
+
+                    // A ramp that never reached the requested drive leaves the cold result standing
+                    // (fact 5: a wrong branch must never be smuggled in as an answer).
+                    if (rung is not null)
+                    {
+                        Array.Copy(rung.V, V, V.Length);
+                        solveResult = rung.Result;
+                    }
+                }
+                finally
+                {
+                    // A throw mid-ramp must not leave the netlist stamped at a rung.
+                    HbDriveRamp.Restore(sources);
+                    for (int k = 1; k <= K; k++) iSrc[k] = extractor.Extract(k * omega0).ISrc;
+                }
+            }
+        }
+
+        // DriveStepping=Always with no ramp to run (no reachable tone source, or no rung converged):
+        // fall back to the ordinary cold solve so the point still reports SOMETHING measured.
+        if (solveResult is null)
+        {
+            solveResult = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
+                _netlist, ifNodes, gridN, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic, cc);
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+        }
 
         if (!solveResult.Converged)
         {
@@ -533,12 +593,87 @@ public sealed class HbEngine
         }
 
         var ds = BuildSingleToneDataSet(
-            Vfull, INlfull, namesFull, f0, K, trace, portCurrentsByBranch,
+            Vfull, INlfull, namesFull, f0, K, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
             _netlist.Nodes.LabeledNames, probeCurrents);
 
         // V holds the converged interface spectrum [N, K+1]; expose it so a parametric sweep can
         // warm-start the next point (continuation — §11). Only propagate a converged seed.
-        return new HbRunResult(ds, backSolver, solveResult.Converged, V);
+        return new HbRunResult(ds, backSolver, solveResult.Converged, V, trace);
+    }
+
+    /// <summary>
+    /// The <c>Converged</c>/<c>Residual</c> scalars a point publishes, taken from THE SOLVE THAT
+    /// PRODUCED ITS ANSWER.
+    ///
+    /// <para>These used to be read off <c>trace.Steps[0]</c>, which was the same thing while a point
+    /// was always exactly one Newton solve. It stopped being the same thing when <c>DriveStepping</c>
+    /// gained its ramp (HB-P3 M2): step 0 is then the cold attempt that FAILED, and a point rescued by
+    /// the ramp would have published <c>Converged = 0</c> beside a perfectly good spectrum — while
+    /// under <c>Always</c>, step 0 is the small-signal bottom rung and would publish its residual for
+    /// the requested drive's. Reading the last step instead is no better: a ramp that runs out of
+    /// rungs ends on a failing one that is not the answer either.</para>
+    /// </summary>
+    private readonly record struct PointOutcome(bool Converged, double Residual)
+    {
+        public static PointOutcome Of(bool converged,
+            IReadOnlyList<HbConvergenceTrace.IterRecord> iterTrace)
+            => new(converged, iterTrace.Count > 0 ? iterTrace[^1].ResidualNorm : 0.0);
+    }
+
+    /// <summary>One rung of the single-tone drive ramp: its converged spectrum and its solve.</summary>
+    private sealed record DriveRung(Complex[,] V, HbNewton.SolveResult Result);
+
+    /// <summary>
+    /// Solve the single-tone point at one rung of the <c>DriveStepping</c> ramp — the sources are
+    /// already scaled by <see cref="HbDriveRamp.Walk{T}"/>, so this re-extracts the Norton excitation
+    /// at that drive and runs the Newton from <paramref name="warm"/> (the rung below) or, for the
+    /// bottom rung, from a fresh DC operating point.
+    ///
+    /// <para>Only <c>I_src</c> is re-extracted: <c>Y_NN</c> is topology, and a drive change moves the
+    /// right-hand side only — the extractor's cached LU is reused, so a rung costs one back-solve per
+    /// harmonic on top of its Newton. The control-current context is rebuilt per rung for the same
+    /// reason its <c>BSrc</c> exists at all: it is a snapshot of the source RHS, and a rung's sources
+    /// are not the requested drive's.</para>
+    ///
+    /// <para>Returns null for a rung that did not converge, which is what makes the ladder subdivide
+    /// it. Every rung — converged or not — goes into the trace at its own dB offset.</para>
+    /// </summary>
+    private DriveRung? SolveRung(
+        double offsetDb, Complex[,]? warm,
+        HbLinearExtractor extractor, Complex[][,] yNN, Complex[][] iSrc,
+        double f0, int K, int N, int[] ifNodes, int gridN,
+        AnalysisSettings effectiveSettings, HbAnalysisParams p, bool hasControl,
+        HbConvergenceTrace trace)
+    {
+        double omega0 = 2.0 * Math.PI * f0;
+        for (int k = 1; k <= K; k++) iSrc[k] = extractor.Extract(k * omega0).ISrc;
+
+        ControlCurrentContext? cc = null;
+        if (hasControl)
+        {
+            var bSrc = new Complex[K + 1][];
+            for (int k = 0; k <= K; k++) bSrc[k] = extractor.BuildSourceRhs(k == 0 ? 0.0 : k * omega0);
+            cc = new ControlCurrentContext(extractor, bSrc, f0, K);
+        }
+
+        Complex[,] v;
+        if (warm is not null && warm.GetLength(0) == N && warm.GetLength(1) == K + 1)
+        {
+            v = (Complex[,])warm.Clone();
+        }
+        else
+        {
+            var dc = NonlinearDcEngine.Run(_netlist, effectiveSettings);
+            v = InitialGuess(null, dc, N, K, ifNodes);
+        }
+
+        var sr = HbNewton.Solve(v, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN,
+            effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic, cc);
+
+        trace.AddStep(new HbConvergenceTrace.StepRecord(
+            offsetDb, sr.Iterations, sr.Converged, sr.IterTrace));
+
+        return sr.Converged ? new DriveRung(v, sr) : null;
     }
 
     // ── Two-tone engine entry point (harmonic-balance.md §6) ─────────────────
@@ -550,7 +685,8 @@ public sealed class HbEngine
     /// use the separable 2-D FFT, and the Newton solve is <see cref="HbNewton2D.Solve"/>.
     /// The returned <see cref="HbResult"/> carries the grid; V/INl are indexed [sweep][node, mixIdx].
     /// </summary>
-    private DataSet RunTwoTone(HbAnalysisParams p)
+    private (DataSet Ds, bool Converged, Complex[,] InterfaceV, HbConvergenceTrace Trace) RunTwoTone(
+        HbAnalysisParams p, Complex[,]? warmStart)
     {
         double f1 = p.ToneFreqsHz[0];
         double f2 = p.ToneFreqsHz[1];
@@ -610,26 +746,74 @@ public sealed class HbEngine
         for (int m = 1; m < M; m++)
             (yNN[m], iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
 
-        var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
-        if (!dcResult.Converged)
-            _netlist.AddWarningOnce("hb-dc-nonconverge",
-                "HB: DC operating point did not converge; proceeding with best available.");
-
         var trace = new HbConvergenceTrace();
         var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
         var effectiveSettings = EffectiveSettings(p);
 
-        var V = InitialGuess2D(null, dcResult, N, M, ifNodes);
+        // Continuation warm start (§11.1) — the same rule the single-tone path has followed since it
+        // was built, on the lattice instead of the harmonic axis: a seed of THIS run's shape is the
+        // Newton guess and the per-point nonlinear-DC solve is skipped entirely (HB-P3 M3).
+        var V = SeedLattice(warmStart, N, M, ifNodes, effectiveSettings);
 
         // Re-extract source excitation (drive amplitude baked into I_src).
         for (int m = 1; m < M; m++)
             (_, iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
 
-        var solveResult = HbNewton2D.Solve(V, yNN, iSrc, grid, f1, f2, N, N1, N2,
-            _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+        HbNewton2D.SolveResult? solveResult = null;
+        if (p.DriveStepping != DcBiasSteppingMode.Always)
+        {
+            solveResult = HbNewton2D.Solve(V, yNN, iSrc, grid, f1, f2, N, N1, N2,
+                _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
 
-        trace.AddStep(new HbConvergenceTrace.StepRecord(
-            0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+        }
+
+        // DriveStepping's drive ramp — the two-tone twin of the single-tone one; see HbDriveRamp.
+        if (p.DriveStepping != DcBiasSteppingMode.Never &&
+            (solveResult is null || !solveResult.Converged))
+        {
+            var sources = HbDriveRamp.Collect(_netlist);
+            if (sources.Count > 0)
+            {
+                try
+                {
+                    var rung = HbDriveRamp.Walk(
+                        sources,
+                        (offsetDb, warm) =>
+                        {
+                            for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+                            var v  = SeedLattice(warm, N, M, ifNodes, effectiveSettings);
+                            var sr = HbNewton2D.Solve(v, yNN, iSrc, grid, f1, f2, N, N1, N2,
+                                _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+                            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                                offsetDb, sr.Iterations, sr.Converged, sr.IterTrace));
+                            return sr.Converged
+                                ? new LatticeRung<HbNewton2D.SolveResult>(v, sr) : null;
+                        },
+                        r => r.V);
+
+                    if (rung is not null)
+                    {
+                        Array.Copy(rung.V, V, V.Length);
+                        solveResult = rung.Result;
+                    }
+                }
+                finally
+                {
+                    HbDriveRamp.Restore(sources);
+                    for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+                }
+            }
+        }
+
+        if (solveResult is null)
+        {
+            solveResult = HbNewton2D.Solve(V, yNN, iSrc, grid, f1, f2, N, N1, N2,
+                _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+        }
 
         if (!solveResult.Converged)
         {
@@ -721,9 +905,39 @@ public sealed class HbEngine
             probeCurrents[ec.InstancePath] = spec;
         }
 
-        return BuildTwoToneDataSet(
-            Vfull, INlfull, namesFull, grid, f1, f2, trace, portCurrentsByBranch,
+        var ds2 = BuildTwoToneDataSet(
+            Vfull, INlfull, namesFull, grid, f1, f2, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
             _netlist.Nodes.LabeledNames, probeCurrents);
+
+        // V holds the converged interface spectrum [N, M]; expose it so a parametric sweep can
+        // warm-start the next point (§11 — the chain is shape-agnostic, so it works at any tone count).
+        return (ds2, solveResult.Converged, V, trace);
+    }
+
+    /// <summary>
+    /// One rung of a lattice (two-tone / T-tone) drive ramp. Generic in the solve result because
+    /// <c>HbNewton2D</c> and <c>HbNewtonNd</c> declare their own — the two Newton loops are
+    /// deliberately parallel implementations, not one behind an interface.
+    /// </summary>
+    private sealed record LatticeRung<TResult>(Complex[,] V, TResult Result);
+
+    /// <summary>
+    /// The lattice paths' initial guess: <paramref name="warmStart"/> when it is a seed of THIS run's
+    /// shape <c>[N, M]</c>, otherwise a fresh nonlinear-DC operating point. Exactly the single-tone
+    /// branch's five lines with <c>K+1</c> read as <c>M</c> — which is all the two-tone and T-tone
+    /// paths ever needed to join the continuation the single-tone sweep has always had.
+    /// </summary>
+    private Complex[,] SeedLattice(Complex[,]? warmStart, int N, int M, int[] ifNodes,
+        AnalysisSettings settings)
+    {
+        if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == M)
+            return (Complex[,])warmStart.Clone();
+
+        var dcResult = NonlinearDcEngine.Run(_netlist, settings);
+        if (!dcResult.Converged)
+            _netlist.AddWarningOnce("hb-dc-nonconverge",
+                "HB: DC operating point did not converge; proceeding with best available.");
+        return InitialGuess2D(null, dcResult, N, M, ifNodes);
     }
 
     // ── T-tone engine entry point (harmonic-balance.md §6.5) ─────────────────
@@ -741,7 +955,8 @@ public sealed class HbEngine
     /// <c>"(k1,k2)"</c> to <c>"(k1,…,kT)"</c> — so the data display renders a T-tone spectrum
     /// through exactly the path a two-tone one already uses.</para>
     /// </summary>
-    private DataSet RunMultiTone(HbAnalysisParams p)
+    private (DataSet Ds, bool Converged, Complex[,] InterfaceV, HbConvergenceTrace Trace) RunMultiTone(
+        HbAnalysisParams p, Complex[,]? warmStart)
     {
         double[] f = p.ToneFreqsHz;
         int T = f.Length;
@@ -808,26 +1023,72 @@ public sealed class HbEngine
         for (int m = 1; m < M; m++)
             (yNN[m], iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
 
-        var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
-        if (!dcResult.Converged)
-            _netlist.AddWarningOnce("hb-dc-nonconverge",
-                "HB: DC operating point did not converge; proceeding with best available.");
-
         var trace = new HbConvergenceTrace();
         var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
         var effectiveSettings = EffectiveSettings(p);
 
-        var V = InitialGuess2D(null, dcResult, N, M, ifNodes);
+        // Continuation warm start (§11.1), identical to the two-tone path — see SeedLattice.
+        var V = SeedLattice(warmStart, N, M, ifNodes, effectiveSettings);
 
         // Re-extract source excitation (drive amplitude baked into I_src).
         for (int m = 1; m < M; m++)
             (_, iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
 
-        var solveResult = HbNewtonNd.Solve(V, yNN, iSrc, apft, f, N,
-            _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+        HbNewtonNd.SolveResult? solveResult = null;
+        if (p.DriveStepping != DcBiasSteppingMode.Always)
+        {
+            solveResult = HbNewtonNd.Solve(V, yNN, iSrc, apft, f, N,
+                _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
 
-        trace.AddStep(new HbConvergenceTrace.StepRecord(
-            0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+        }
+
+        // DriveStepping's drive ramp — the T-tone twin; see HbDriveRamp.
+        if (p.DriveStepping != DcBiasSteppingMode.Never &&
+            (solveResult is null || !solveResult.Converged))
+        {
+            var sources = HbDriveRamp.Collect(_netlist);
+            if (sources.Count > 0)
+            {
+                try
+                {
+                    var rung = HbDriveRamp.Walk(
+                        sources,
+                        (offsetDb, warm) =>
+                        {
+                            for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+                            var v  = SeedLattice(warm, N, M, ifNodes, effectiveSettings);
+                            var sr = HbNewtonNd.Solve(v, yNN, iSrc, apft, f, N,
+                                _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+                            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                                offsetDb, sr.Iterations, sr.Converged, sr.IterTrace));
+                            return sr.Converged
+                                ? new LatticeRung<HbNewtonNd.SolveResult>(v, sr) : null;
+                        },
+                        r => r.V);
+
+                    if (rung is not null)
+                    {
+                        Array.Copy(rung.V, V, V.Length);
+                        solveResult = rung.Result;
+                    }
+                }
+                finally
+                {
+                    HbDriveRamp.Restore(sources);
+                    for (int m = 1; m < M; m++) (_, iSrc[m]) = ExtractMix(lattice.OmegaOf(m, omegas));
+                }
+            }
+        }
+
+        if (solveResult is null)
+        {
+            solveResult = HbNewtonNd.Solve(V, yNN, iSrc, apft, f, N,
+                _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                0.0, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+        }
 
         if (!solveResult.Converged)
         {
@@ -912,9 +1173,11 @@ public sealed class HbEngine
             probeCurrents[ec.InstancePath] = spec;
         }
 
-        return BuildMultiToneDataSet(
-            Vfull, INlfull, namesFull, lattice, f, trace, portCurrentsByBranch,
+        var dsNd = BuildMultiToneDataSet(
+            Vfull, INlfull, namesFull, lattice, f, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
             _netlist.Nodes.LabeledNames, probeCurrents);
+
+        return (dsNd, solveResult.Converged, V, trace);
     }
 
     /// <summary>
@@ -1457,7 +1720,7 @@ public sealed class HbEngine
         string[]    nodeNames,
         double      f0,
         int         K,
-        HbConvergenceTrace trace,
+        PointOutcome outcome,
         Dictionary<string, List<Complex[]>> portCurrents,
         HashSet<string>?    labeledNames = null,
         Dictionary<string, Complex[]>? probeCurrents = null)
@@ -1482,9 +1745,8 @@ public sealed class HbEngine
             inlData[n * K1 + k] = iNl[n, k];
         }
 
-        var step0   = trace.Steps.Count > 0 ? trace.Steps[0] : null;
-        double conv = step0?.Converged == true ? 1.0 : 0.0;
-        double res  = step0?.IterTrace.Count > 0 ? step0.IterTrace[^1].ResidualNorm : 0.0;
+        double conv = outcome.Converged ? 1.0 : 0.0;
+        double res  = outcome.Residual;
 
         var ds = new DataSet();
         ds.Add("V",         new DataCube([nodeAxis, harmAxis], vData));
@@ -1569,7 +1831,7 @@ public sealed class HbEngine
         MixingGrid  grid,
         double      f1,
         double      f2,
-        HbConvergenceTrace trace,
+        PointOutcome outcome,
         Dictionary<string, List<Complex[]>> portCurrentsByBranch,
         HashSet<string>?    labeledNames = null,
         Dictionary<string, Complex[]>? probeCurrents = null)
@@ -1600,9 +1862,8 @@ public sealed class HbEngine
             inlData[n * M + m] = iNl[n, m];
         }
 
-        var step0   = trace.Steps.Count > 0 ? trace.Steps[0] : null;
-        double conv = step0?.Converged == true ? 1.0 : 0.0;
-        double res  = step0?.IterTrace.Count > 0 ? step0.IterTrace[^1].ResidualNorm : 0.0;
+        double conv = outcome.Converged ? 1.0 : 0.0;
+        double res  = outcome.Residual;
 
         var toneAxis  = new Axis("tone", [1.0, 2.0], "");
         var orderAxis = new Axis("order", [1.0], "");
@@ -1688,7 +1949,7 @@ public sealed class HbEngine
         string[]      nodeNames,
         MixingLattice lattice,
         double[]      toneFreqsHz,
-        HbConvergenceTrace trace,
+        PointOutcome outcome,
         Dictionary<string, List<Complex[]>> portCurrentsByBranch,
         HashSet<string>?    labeledNames = null,
         Dictionary<string, Complex[]>? probeCurrents = null)
@@ -1718,9 +1979,8 @@ public sealed class HbEngine
             inlData[n * M + m] = iNl[n, m];
         }
 
-        var step0   = trace.Steps.Count > 0 ? trace.Steps[0] : null;
-        double conv = step0?.Converged == true ? 1.0 : 0.0;
-        double res  = step0?.IterTrace.Count > 0 ? step0.IterTrace[^1].ResidualNorm : 0.0;
+        double conv = outcome.Converged ? 1.0 : 0.0;
+        double res  = outcome.Residual;
 
         int T = toneFreqsHz.Length;
         var toneVals  = new double[T];

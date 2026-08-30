@@ -184,4 +184,127 @@ analysis HB1_sweep_Pin type=parametric_sweep Var=Pin Start=0 Stop=10 Step=2 Inne
         output.WriteLine($"Production sweep warm-vs-cold V cube: max |Δ| = {worst:E3} V");
         Assert.True(worst < 1e-3, $"warm/cold V cube diverge (max |Δ|={worst:E3} V) — different root?");
     }
+
+    // ── Multi-tone (HB-P3 M3) ────────────────────────────────────────────────
+    //
+    // The two-tone and n-tone paths used to build their initial guess from NonlinearDcEngine.Run +
+    // InitialGuess2D on EVERY call — RunTwoTone took no seed and RunMultiTone took no seed, so a
+    // swept two-tone analysis cold-started every point while the single-tone one beside it had been
+    // warm-starting since §11.1 was built. They now take the same seed, of their own [N, M] shape.
+
+    private static string Hero5Dir()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null)
+        {
+            var cand = Path.Combine(dir, "testdata", "Hero5");
+            if (Directory.Exists(cand)) return cand;
+            dir = Path.GetDirectoryName(dir);
+        }
+        throw new DirectoryNotFoundException("testdata/Hero5 not found");
+    }
+
+    private readonly record struct MultiToneSweep(int DcSolves, int Iterations, Complex[][,] V);
+
+    /// <summary>Walks Pavl_dbm through a multi-tone HB analysis, warm-chaining or not.</summary>
+    private static MultiToneSweep RunMultiToneSweep(string cnlFile, double[] levels, bool warm,
+        int? maxIterAtIndex = null, int maxIter = 1)
+    {
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(Hero5Dir(), cnlFile));
+        var hba  = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
+        int idx  = tb.GlobalVariables.FindIndex(v => v.Name == "Pavl_dbm");
+        Assert.True(idx >= 0, "Pavl_dbm global not found");
+        var orig = tb.GlobalVariables[idx];
+
+        var perPoint = new Complex[levels.Length][,];
+        Complex[,]? seed = null;
+        int iterations = 0;
+
+        NonlinearDcEngine.ResetRuns();
+        try
+        {
+            for (int i = 0; i < levels.Length; i++)
+            {
+                tb.GlobalVariables[idx] = new Variable(
+                    "Pavl_dbm", levels[i].ToString("G17", CultureInfo.InvariantCulture), orig.Unit);
+
+                using var netlist = new Elaborator(lib).Elaborate(tb);
+                var p = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+                // DriveStepping off: this measures the WARM START, and a ramp firing on a starved
+                // point would add DC solves and iterations that belong to a different mechanism.
+                p = p with { DriveStepping = DcBiasSteppingMode.Never };
+                if (maxIterAtIndex == i) p = p with { MaxIter = maxIter };
+
+                var rr = new HbEngine(netlist, tb).Run(p, warm ? seed : null);
+                iterations += rr.Trace!.Steps.Sum(st => st.Iterations);
+                perPoint[i] = rr.InterfaceV!;
+                seed = rr.Converged ? rr.InterfaceV : null;   // §11.1: reset the chain on a failure
+            }
+        }
+        finally { tb.GlobalVariables[idx] = orig; }
+
+        return new MultiToneSweep(NonlinearDcEngine.Runs, iterations, perPoint);
+    }
+
+    /// <summary>
+    /// Warm vs cold on a two-tone and a three-tone Pin sweep: one DC seed for the whole sweep instead
+    /// of one per point, fewer Newton iterations, and the same interface spectrum at every point.
+    /// </summary>
+    [Theory]
+    [InlineData("hero5.cnl")]
+    [InlineData("hero5_3tone.cnl")]
+    public void MultiTonePinSweep_WarmStart_MatchesCold_AndUsesFewerSolves(string cnlFile)
+    {
+        // Deliberately a COMPRESSED span. Below compression a multi-tone point converges in three
+        // Newton iterations from either seed, so a small-signal sweep shows the DC-solve saving and
+        // nothing else — there is no iteration headroom there to save.
+        double[] levels = [8, 10, 12, 14, 16, 18, 20, 22];
+
+        var cold = RunMultiToneSweep(cnlFile, levels, warm: false);
+        var warm = RunMultiToneSweep(cnlFile, levels, warm: true);
+
+        double worst = 0, scale = 1.0;
+        for (int i = 0; i < levels.Length; i++)
+        {
+            worst = Math.Max(worst, MaxAbsDiff(cold.V[i], warm.V[i]));
+            for (int n = 0; n < cold.V[i].GetLength(0); n++)
+                for (int m = 0; m < cold.V[i].GetLength(1); m++)
+                    scale = Math.Max(scale, cold.V[i][n, m].Magnitude);
+        }
+
+        output.WriteLine($"{cnlFile}, {levels.Length} points ({levels[0]}..{levels[^1]} dBm):");
+        output.WriteLine($"  COLD: {cold.Iterations,4} Newton iters, {cold.DcSolves} DC solves");
+        output.WriteLine($"  WARM: {warm.Iterations,4} Newton iters, {warm.DcSolves} DC solves");
+        output.WriteLine($"  max |ΔV| = {worst:E3} V ({worst / scale:E2} relative)");
+
+        Assert.Equal(levels.Length, cold.DcSolves);   // cold: a DC seed every point
+        Assert.Equal(1,             warm.DcSolves);   // warm: one for the whole sweep
+        Assert.True(warm.Iterations < cold.Iterations,
+            $"warm Newton iters ({warm.Iterations}) should be < cold ({cold.Iterations})");
+        // Relative, for the reason the single-tone production-sweep test above gives: warm and cold
+        // stop at different within-tolerance iterates, so they agree to convergence noise.
+        Assert.True(worst / scale < 1e-6,
+            $"warm and cold reach different spectra (max |Δ|={worst:E3} V, {worst / scale:E2} relative)");
+    }
+
+    /// <summary>
+    /// The chain still resets on a non-converged point at every tone count — §11.1's rule, and the
+    /// belt to the line search's braces. Starving ONE point (MaxIter=1) must make the NEXT point
+    /// DC-seed itself rather than inherit a half-solved spectrum.
+    /// </summary>
+    [Fact]
+    public void MultiToneChain_ResetsAfterANonConvergedPoint()
+    {
+        double[] levels = [-20, -18, -16, -14];
+
+        var clean   = RunMultiToneSweep("hero5.cnl", levels, warm: true);
+        var starved = RunMultiToneSweep("hero5.cnl", levels, warm: true, maxIterAtIndex: 1, maxIter: 1);
+
+        output.WriteLine($"clean  : {clean.DcSolves} DC solves");
+        output.WriteLine($"starved: {starved.DcSolves} DC solves (point 1 capped at MaxIter=1)");
+
+        Assert.Equal(1, clean.DcSolves);
+        // The first point seeds from DC; point 1 fails; point 2 must seed from DC again.
+        Assert.Equal(2, starved.DcSolves);
+    }
 }

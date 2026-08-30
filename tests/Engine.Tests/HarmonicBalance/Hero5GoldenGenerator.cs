@@ -98,7 +98,7 @@ public class Hero5GoldenGenerator(ITestOutputHelper output)
         DataSet ds, MixingGrid grid, Func<int, int, Complex> getValue)
     {
         var path = Path.Combine(dir, filename);
-        using var w = new StreamWriter(path);
+        using var w = GoldenRegen.OpenWriter(path);   // no-op unless CIRCUITRF_REGENERATE_GOLDENS
         var tf = ds["ToneFreqs"].RealValues;
         double f1 = tf[0], f2 = tf[1];
 

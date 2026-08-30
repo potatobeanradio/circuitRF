@@ -89,17 +89,23 @@ public static class HbNewtonNd
         // per-port terminal currents behind for the post-solve extraction (M3).
         var portITime = AllocPortITime(netlist, apft.SampleCount);
 
+        // The line search's scratch iterate, and the one evaluation that precedes the loop — the
+        // identical transcription of HbNewton.Solve's structure (HB-P3 M1); see HbNewton.Backtrack
+        // for why the three loops need it and why a converging solve is unchanged by it.
+        var V0 = new Complex[N, M];
+
+        var (iNl, qNl, dg, dc) = EvaluateNonlinearNd(V, apft, N, netlist, interfaceNodes, portITime);
+        iNlLast   = iNl;
+        var    F  = BuildFNd(V, yNN, iSrc, iNl, qNl, lattice, N, toneFreqsHz);
+        double fN = HbNewton.L2(F);
+
         for (int iter = 0; iter < maxIter; iter++)
         {
-            var (iNl, qNl, dg, dc) = EvaluateNonlinearNd(V, apft, N, netlist, interfaceNodes, portITime);
-            iNlLast = iNl;
-
-            var F  = BuildFNd(V, yNN, iSrc, iNl, qNl, lattice, N, toneFreqsHz);
-            double fN = HbNewton.L2(F);
-            trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
-
             if (fN < tol)
+            {
+                trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 return new SolveResult(true, iter + 1, trace, iNlLast, portITime);
+            }
 
             var J = BuildJNd(yNN, dg, dc, apft, N, toneFreqsHz, guardOrder);
 
@@ -108,17 +114,28 @@ public static class HbNewtonNd
             double[]? dV = HbNewton.SolveGaussian(J, negF, unknowns);
             if (dV is null)
             {
+                trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 Console.Error.WriteLine($"[HBnD] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
                 return new SolveResult(false, iter + 1, trace, iNlLast, portITime);
             }
 
-            ApplyUpdateNd(V, dV, N, M, lambda);
+            double fEntry = fN;
+            Array.Copy(V, V0, V.Length);
+            var step = HbNewton.Backtrack(fEntry, lambda, lam =>
+            {
+                Array.Copy(V0, V, V.Length);
+                ApplyUpdateNd(V, dV, N, M, lam);
+                (iNl, qNl, dg, dc) = EvaluateNonlinearNd(V, apft, N, netlist, interfaceNodes, portITime);
+                F = BuildFNd(V, yNN, iSrc, iNl, qNl, lattice, N, toneFreqsHz);
+                return HbNewton.L2(F);
+            });
+            iNlLast = iNl;
+            fN      = step.Residual;
+            trace.Add(new HbConvergenceTrace.IterRecord(
+                iter, fEntry, step.Lambda, step.Backtracks, step.Stalled));
         }
 
-        var (iNlF, qNlF, _, _) = EvaluateNonlinearNd(V, apft, N, netlist, interfaceNodes, portITime);
-        iNlLast = iNlF;
-        var FF = BuildFNd(V, yNN, iSrc, iNlF, qNlF, lattice, N, toneFreqsHz);
-        trace.Add(new HbConvergenceTrace.IterRecord(maxIter, HbNewton.L2(FF)));
+        trace.Add(new HbConvergenceTrace.IterRecord(maxIter, fN));
         return new SolveResult(false, maxIter, trace, iNlLast, portITime);
     }
 

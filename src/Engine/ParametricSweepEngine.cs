@@ -345,8 +345,11 @@ public static class ParametricSweepEngine
         out Complex[,]? hbConvergedSeed,
         RunControl? control = null)
     {
-        // Only a single-tone HB inner produces a chainable seed; every other inner leaves it null so
-        // the sweep does not warm-start across it (continuation is innermost-axis only — §11).
+        // Only an HB inner produces a chainable seed — at ANY tone count since HB-P3 M3; every other
+        // inner leaves it null so the sweep does not warm-start across it (continuation is
+        // innermost-axis only — §11). The seed is whatever shape that run's interface has
+        // (<c>[N, K+1]</c> single-tone, <c>[N, M]</c> on a mixing lattice) and the engine that
+        // receives it checks its own shape, so nothing here has to know which.
         hbConvergedSeed = null;
 
         switch (inner)
@@ -355,8 +358,9 @@ public static class ParametricSweepEngine
             {
                 var p  = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
                 var rr = new HbEngine(netlist, tb, settings).Run(p, hbWarmStart);
-                // Chain this point's converged spectrum into the next point's seed. Two-tone returns a
-                // null InterfaceV → no chaining; a non-converged point also resets the chain.
+                // Chain this point's converged spectrum into the next point's seed. A non-converged
+                // point resets the chain — design §11.1's rule, kept for every tone count: with the
+                // line search in, non-convergence is rare, and the reset is the belt to its braces.
                 hbConvergedSeed = rr.Converged ? rr.InterfaceV : null;
                 return rr.DataSet;
             }

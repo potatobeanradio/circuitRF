@@ -886,3 +886,198 @@ line-for-line identical (500 / 2358 / 187 / 1218 lines, worst absolute deltas 5.
 other gives **byte equality**, so HB-P2 moved no converged number anywhere. The committed copies were
 already behind their own generators before this brief; that is someone else's decision to make, and
 the files are left as committed here.
+
+---
+
+## HB-P3 — the line search, `DriveStepping`, and warm starts at every tone count (2026-08-30)
+
+`docs/sonnet-briefs/brief-hb-p3-convergence-line-search-and-multitone-warm-start.md`. Design:
+`harmonic-balance.md` §11 (rewritten as built), the new §11.2, §11.1, §16 item 4 (settled).
+
+### The numbers
+
+**Release, Apple M4, `testdata/Hero2/hero2_convergence.cnl`, cold `RunSinglePoint` from a DC seed:**
+
+| Pavl | before | after |
+|---|---|---|
+| 0 dBm | 3 iters, converged | 3 iters, 0 backtracks |
+| 10 dBm | 4 iters, converged | 4 iters, 0 backtracks |
+| 14 dBm | — | 7 iters, 2 backtracks |
+| **16 dBm** | **100 iters, NOT converged, ‖F‖ = 4.64e-1** | **6 iters, 4 backtracks** |
+| 18 dBm | — | 7 iters, 5 backtracks |
+| **20 dBm** | **100 iters, NOT converged, ‖F‖ = 9.57e-1** | **6 iters, 6 backtracks** |
+| 30 dBm | 12 iters, converged | 11 iters, 7 backtracks |
+
+**21-point Pin sweep, 0→30 dBm in 1.5 dB steps, same fixture** (each figure the mean of repeated runs;
+before/after measured from a `git worktree` at the pre-brief commit and the working tree, same harness,
+same binary layout):
+
+| | before | after |
+|---|---|---|
+| cold (DC seed each point) | 6.5 ms/pt, 797 Newton iters, **6 non-converged** | **2.07 ms/pt, 132 iters, 0 non-converged** |
+| warm (previous-point seed) | 1.14 ms/pt, 85 iters | 1.19 ms/pt, 85 iters |
+
+The warm case pays ~5% for the per-iteration iterate copy the line search needs and saves nothing,
+because it was never the case that failed — which is the shape this change was supposed to have.
+
+**Multi-tone Pin sweep, 8 → 22 dBm, 8 points** (`DriveStepping=Never`, so this measures the warm start
+alone):
+
+| fixture | nonlinear-DC solves | Newton iterations | ms/point |
+|---|---|---|---|
+| `hero5.cnl` (2 tones, lattice) | 8 → **1** | 41 → **35** | 7.40 → **6.52** |
+| `hero5_3tone.cnl` | 8 → **1** | 64 → **43** | 9.39 → **6.48** |
+
+Against the *pre-brief* engine the three-tone figure is larger still — **36.3 ms/point cold and
+40.5 ms/point "warm"** — because that path burned `MaxIter` at 18, 20 and 22 dBm and the seed it was
+handed was discarded. Both halves of that (the failure and the ignored seed) are fixed here.
+
+### Where the two-tone/n-tone loops actually failed, and where they did not
+
+The brief expected a two-tone drive level at which the undamped loop fails, to be found and recorded.
+**There is none on `hero5.cnl`.** Measured against the pre-brief engine, cold, at 18/20/24/26/28/30/32
+dBm: both routes — the mixing lattice (`HbNewtonNd`, the default since 2026-08-30) and the rectangular
+`HbNewton2D` — converge at every level, ‖F‖ between 8e-11 and 2.6e-8. With the line search in, the
+lattice route refuses exactly one step (at 28 dBm) and the rectangular route refuses none anywhere in
+that span.
+
+**The three-tone loop did have one, and it is sharp: `hero5_3tone.cnl` at 17 dBm.** The pre-brief engine
+returns non-converged there (‖F‖ = 2.53e-1) and at every level above (0.26 at 18, 0.34 at 20); 16 dBm
+converges in 7. With the line search the same cold point converges in 8 iterations with two backtracks.
+That level is what `HbLineSearchTests.AThreeToneColdSolve_AtTheLevelTheUndampedLoopFailed_Converges`
+pins, and the test says in its own comment that the two-tone half of the brief's expectation was not
+reproducible rather than manufacturing a fixture to make it so.
+
+### A converging solve is NOT unconditionally byte-identical — the brief's fact 2 is half true
+
+Fact 2 predicted that with `Lambda = 1` a converging solve "takes exactly the same steps as today, so
+goldens do not move." The goldens indeed do not move — `Hero2RegressionTests`, `Hero4Tests` and
+`Hero5GateTests` all compare committed CSVs and are untouched — but the stronger claim about *steps* is
+false. On the 21-point warm Hero-2 chain, **19 of 21 points take zero backtracks and two do not**: 13.5
+dBm (3 backtracks) and 15.0 dBm (1), both on the compression knee, where the full Newton step genuinely
+increases ‖F‖ and is refused. Total iterations are 85 either way. So "λ = 1 means nothing changes" is
+the right *expectation* and the wrong *invariant*, and a test asserting `Backtracks == 0` everywhere —
+which the brief specified — would have been asserting something untrue.
+
+### THE FINDING WITH THE WIDEST BLAST RADIUS: the line search de-fanged the loadpull continuity gate
+
+`LoadpullLadderContinuityTests` had two tests whose fixtures existed to *be wrong*: `hero3_classF.cnl`
+at its 2 dB drive step produced 11 energy-violating grid points (several reporting efficiencies in the
+thousands of percent), and `hero3_classF_active.cnl` produced a point at PAE = 33,729%. Both opened with
+a vacuity assertion — "the fixture is supposed to be WRONG without the guard — if it is not, it has
+stopped testing anything". **Both of those assertions now fail, and the guard has nothing left to
+remove.** The runaway root is reached by a full Newton step that increases ‖F‖, which is precisely the
+step the line search refuses, so it is gone before `DriveLadder`'s continuity criterion is ever
+consulted.
+
+Measured over the whole 20-point grid of both fixtures at `PinStep` = 2, 3, 4, 6 and 8 dB, guard on and
+guard off: **zero gross violations and zero continuations everywhere**, max PAE 79.7–80.3% and
+81.4–82.1%. **There is no step size at which these fixtures still exhibit the defect**, so the vacuity
+assertions could not be restored by coarsening them.
+
+The continuity guard is **not** thereby redundant and was left in place: a line search refuses a step
+that fails to reduce ‖F‖, and nothing about a monotone descent forbids descending onto a *different*
+branch. But it is now **unexercised by these fixtures** — a real loss of coverage, recorded in the
+tests' own header rather than papered over. A fixture that jumps branch under the line search would
+restore it; none is known.
+
+### Two more tests that were measuring where the Newton happened to stop
+
+- **`LinearBackSolveTests.BackSolver_TighterHbTol_ImprovesCubeAgreement`** compared the default
+  `Tol = 1e-6` against `1e-10` and asked for ≥100× better back-solve agreement. It now gets 1.5×, and
+  the reason is not a regression: **Newton on `hero2.cnl` is quadratic and its last two iterates are
+  ‖F‖ = 2.20e-5 and 1.24e-9 — there is no iterate in between for a tolerance to stop at.** Anything
+  from 1e-4 up stops at the first; anything from 1e-5 down reaches the second. So 1e-6 and 1e-10 were
+  *the same solve*, and the test had been passing on where the undamped trajectory happened to land.
+  The loose end is now pinned at 1e-4, which spans the real step: 6.94e-4 → 1.94e-11, a factor of
+  3.6e7.
+- The three `LoadpullLadderContinuityTests`/`LinearBackSolveTests` failures were the **only** ones in
+  the suite. Every Hero golden, every Jacobian FD oracle and every two-tone/n-tone cross-check passed
+  unchanged.
+
+### Design notes worth keeping
+
+- **`Converged`/`Residual` used to be read off `trace.Steps[0]`.** That was the same thing while a point
+  was always exactly one Newton solve, and stopped being it the moment `DriveStepping` gained rungs:
+  step 0 is then the cold attempt that FAILED, so a point rescued by the ramp would have published
+  `Converged = 0` beside a perfectly good spectrum, and under `Always` it would have published the
+  small-signal bottom rung's residual for the requested drive's. Reading the LAST step is no better —
+  a ramp that runs out of rungs ends on a failing one. Both scalars now come from the solve that
+  actually produced the answer (`HbEngine.PointOutcome`).
+- **`IDriveScalable` scales the tone and never the DC bias.** Ramping the bias too would walk the
+  operating point off the branch the ramp exists to follow — a FET's gate would come up from pinch-off
+  at the same time as its drive. Bias ramping is `DcBiasStepping`, a separate mechanism.
+- **The ramp's rung offsets are relative and the last one is exactly 0**, not an accumulated sum, for
+  the same reason `DriveLadder.ContinueThroughJump` lands its final sub-step exactly: a rung reported at
+  `-1.7763568394002505e-15` dB would miss every level-keyed lookup made against it.
+- **`HbDriveRamp.Walk` deliberately does not restore the drive**; the caller's `finally` does. Pinned by
+  `HbDriveSteppingTests.WalkLeavesTheDriveWhereItWas_AndRestoreIsWhatPutsItBack`, so the engine's
+  `finally` cannot be mistaken for decoration and deleted. Injecting a throwing device *model* into an
+  elaborated netlist has no seam today, which is why the throw is injected at the ramp's own delegate.
+- **A fixture that the line search cannot rescue had to be constructed for M2's gate**, exactly as the
+  brief anticipated: capping `HbMaxIter` is what does it. `hero2_convergence.cnl` at 20 dBm converges
+  cold in 6 iterations, so `MaxIter = 4` fails cold while every warm-started rung still fits inside 4;
+  `MaxIter = 3` fails both, which is the third case worth pinning (the cold result must stand).
+- **Two test-facing counters were added**, in the spirit of `HbEngine.LinearFactorizations`:
+  `HbNewton.Evaluations` (device evaluations, `[ThreadStatic]`) and `NonlinearDcEngine.Runs` (DC seeds).
+  They are what tests 4 and 9–11 of the brief actually read; there was no other observable for either.
+
+### A hazard found on the way, now FIXED: `dotnet test` used to REWRITE the Hero goldens
+
+`Hero2GoldenGenerator.GenerateHero2Golden`, `Hero5GoldenGenerator.GenerateHero5Golden`,
+`Hero3LoadpullTests.GenerateHero3Golden` and `Hero3BPursuitTests.GenerateHero3BGolden` are plain
+`[Fact]`s that ran and overwrote `testdata/Hero*/…csv` on **every** `dotnet test`. xunit runs classes
+in parallel, so a regression test could be comparing against the file its own generator had written
+milliseconds earlier, from the very engine under test. **A golden that silently re-freezes itself is
+not a golden, and a green unfiltered run was not evidence the frozen answers had held.** It had stood
+that way since those generators were written; HB-P3 is only where it was noticed, because a change to
+the Newton moved the goldens' noise-floor digits and the suite stayed green either way.
+
+**The fix (`tests/Engine.Tests/Support/GoldenRegen.cs`).** Nothing under `testdata/` is written unless
+`CIRCUITRF_REGENERATE_GOLDENS` is set. The generator tests still **run and still assert** — several
+carry real physics checks (positive Gt at every grid point, bounded Gmax spread, stop-reason
+accounting) that belong in the routine gate — they just write to `TextWriter.Null`. Skipping the tests
+outright was the smaller change and was rejected for exactly that reason. Seven write sites were
+routed through `GoldenRegen.OpenWriter(path)` (a `TextWriter` that is real or discarding), so a golden
+writer's body carries no branch of its own and cannot grow one that forgets the guard.
+
+**One of the eight writers was not a test at all**, and that is the part worth remembering:
+`testdata/Hero3B/loadpull_pursuit_output.gam` is written by `LoadpullPursuitEngine` itself, because
+`hero3B_at_compression.cnl`'s `OutputGrid=` names a path inside `testdata/`. So *every* test that ran
+that pursuit rewrote committed data as a side effect of the engine behaving correctly. Gating the test
+would not have caught it. `Hero3BPursuitTests.BuildEngine` now repoints `OutputGridPath` at a scratch
+file, which keeps the engine's `.gam` write exercised while leaving the repo alone.
+
+To regenerate deliberately:
+`CIRCUITRF_REGENERATE_GOLDENS=1 dotnet test tests/Engine.Tests --filter "FullyQualifiedName~Generate"`,
+then read `git diff testdata/` before committing — that diff is the point of the exercise.
+
+**The gate is behavioural, not a convention.** `GoldenFilesStayFrozenTests.EveryGoldenWriter_LeavesTestDataByteIdentical` SHA-256s all 81 files under `testdata/`, invokes every writer directly, and
+re-hashes. It fails naming the file when a new ungated writer appears — and the list of writers it
+calls is the checklist that says a new one is owed. It skips (rather than inverts) under
+`CIRCUITRF_REGENERATE_GOLDENS`, where the files moving is the intent. Cost: ~2 s.
+
+**What the goldens actually did under HB-P3, measured once the generators were controllable.** The
+Engine suite was re-run with all four generators filtered out, against the committed goldens:
+**1,489 passed, 0 failed.** Then the generators were run alone and the regenerated files compared
+numerically against `HEAD`:
+
+| golden | numbers changed | worst absolute Δ |
+|---|---|---|
+| `Hero2/hero2_self_V_n_gate.csv` | 34 | 1.5e-22 |
+| `Hero3/hero3_self_V.csv` | 1,437 | 8.8e-16 |
+| `Hero5/hero5_self_V_n_drain.csv` | 213 | 2.0e-8 |
+| `Hero5/hero5_self_INl_n_gate.csv` | 224 | 2.1e-17 |
+
+Every difference sits on a near-zero spectral entry — the largest, 2.0e-8 V, is two orders under the
+1e-6 convergence tolerance and lands on entries whose own magnitude is ~1e-15 — i.e. the "<1e-5 is
+noise" rule the Hero-5 gate already carries. **The committed goldens were restored and are unchanged
+in this diff.**
+
+Two other artifacts used to churn on every run and no longer do: `testdata/Hero3/RLSweep_*.csv`
+(`Hero3LoadpullTests.RLSweep` is an assertion test that also wrote diagnostics; differences were in the
+8th significant digit on the −50 dBm tickle rows) and `testdata/Hero3B/loadpull_pursuit_output.gam`,
+whose committed copy is **stale relative to what the engine writes at HEAD** — proven by regenerating
+it in a `git worktree` at the pre-brief commit and getting a file byte-identical to the post-brief one.
+Neither was attributable to HB-P3, and **the stale `.gam` is deliberately left as committed**: it is
+read by nothing, and refreshing it is a decision about that fixture rather than part of this brief.

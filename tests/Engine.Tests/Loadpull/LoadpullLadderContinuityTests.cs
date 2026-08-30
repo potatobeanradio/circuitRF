@@ -8,6 +8,24 @@
 //    3. Against an ACTIVE (negative-real) termination the energy screen goes silent, because no
 //       energy bound is computable there — while the continuity guard, which tests smoothness rather
 //       than a budget, keeps working.
+//
+//  WHAT THESE NOW MEASURE, AND WHY IT IS LESS (HB-P3, 2026-08-30).
+//  Facts 2 and 3 were statements about a ladder that CONVERGED ONTO A RUNAWAY ROOT — 11 gross
+//  energy-violating grid points on hero3_classF at its 2 dB step, and a single PAE = 33,729% point
+//  on hero3_classF_active. Adding a backtracking line search to the HB Newton (HbNewton.Backtrack)
+//  removed BOTH, before the continuity guard is ever consulted: the runaway root is reached by a
+//  full Newton step that increases ‖F‖, which is precisely the step the line search now refuses.
+//  Measured over the whole 20-point grid of each fixture at PinStep = 2, 3, 4, 6 and 8 dB, guard on
+//  and guard off: zero gross violations and zero continuations everywhere, max PAE 79.7–80.3% and
+//  81.4–82.1% respectively. There is no step size at which these fixtures still exhibit the defect,
+//  so the vacuity assertions ("the fixture is supposed to be WRONG without the guard") could not be
+//  restored by coarsening them.
+//
+//  The guard is NOT thereby redundant and is deliberately left in place: a line search only refuses
+//  a step that fails to reduce ‖F‖, and nothing about a monotone descent forbids descending onto a
+//  different branch. It is now UNEXERCISED BY THESE FIXTURES, which is a real loss of coverage and is
+//  recorded here rather than hidden by tests that still read as if they were proving something.
+//  A fixture that jumps branch under the line search would restore it; none is known.
 // ================================================================
 
 using System.Linq;
@@ -129,17 +147,17 @@ public sealed class LoadpullLadderContinuityTests(ITestOutputHelper output)
         output.WriteLine($"guard ON : PAE>100% points={on.EnergyViolatingPoints} (gross {on.GrossViolations}) " +
                          $"nonconv={on.NonConvergent} continuations={on.Continuations} solves={on.Solves}");
 
-        Assert.True(off.GrossViolations > 0,
-            "the fixture is supposed to be WRONG without the guard — if it is not, it has stopped testing anything");
-
-        // Every runaway root is gone…
+        // SUPERSEDED BY HB-P3 (2026-08-30) — read the class remarks' "what this now measures" note.
+        // The unguarded ladder no longer reaches a runaway root on this fixture at all, so the
+        // vacuity assertion this test opened with (off.GrossViolations > 0) is no longer true and the
+        // guard has nothing to remove. What is asserted instead is the pair of facts that survive:
+        // the fixture is clean either way, and turning the guard on changes neither the answer nor
+        // the work done.
+        Assert.Equal(0, off.GrossViolations);
         Assert.Equal(0, on.GrossViolations);
-        // …and the guard did the work rather than the fixture having changed under it.
-        Assert.True(on.Continuations > 0);
-        // …and what is left is the single drift case above, not a regression back toward the 11.
-        Assert.True(on.EnergyViolatingPoints <= 1,
-            $"expected at most the one known drift point, got {on.EnergyViolatingPoints}");
-        Assert.True(on.EnergyViolatingPoints < off.EnergyViolatingPoints);
+        Assert.Equal(off.EnergyViolatingPoints, on.EnergyViolatingPoints);
+        Assert.Equal(off.Solves, on.Solves);
+        Assert.Equal(0, on.Continuations);
     }
 
     /// <summary>
@@ -170,18 +188,21 @@ public sealed class LoadpullLadderContinuityTests(ITestOutputHelper output)
                          $"maxPAE={on.MaxPae:P1} continuations={on.Continuations} warnings={on.Warnings}");
         output.WriteLine($"fine 0.5 : maxPAE={fine.MaxPae:P1}");
 
-        // Every point is recognised as active…
+        // Every point is recognised as active, and the engine stays silent about every one of them —
+        // which is the half of this test that HB-P3 did not touch, and the half that matters most: an
+        // energy screen that fired here would break the negative-resistance work the capability is for.
         Assert.Equal(off.Points, off.ActivePoints);
-        // …so the engine stays silent even where PAE is far past 100%, which is the whole point.
-        Assert.True(off.MaxPae > 1.0, "the fixture is supposed to reach PAE > 100% without the guard");
         Assert.Equal(0, off.Warnings);
         Assert.Equal(0, on.Warnings);
 
-        // …and the continuity guard still does its job, judged against the fine guarded walk rather
-        // than against any energy bound.
-        Assert.True(on.Continuations > 0);
-        Assert.True(on.MaxPae < 1.0,
-            $"the guarded coarse walk should stay on the physical branch, but reached PAE {on.MaxPae:P1}");
+        // SUPERSEDED BY HB-P3 (2026-08-30) — see the class remarks. The PAE = 33,729% root this
+        // fixture used to land on at 2 dB is gone before the guard is consulted, so "off.MaxPae > 1"
+        // is no longer true and the guard no longer has a jump to continue through. The coarse walk
+        // still agrees with the fine one, which is the statement about the ANSWER rather than about
+        // the guard, and it still holds.
+        Assert.True(off.MaxPae < 1.0, $"unguarded coarse walk reached PAE {off.MaxPae:P1}");
+        Assert.True(on.MaxPae  < 1.0, $"guarded coarse walk reached PAE {on.MaxPae:P1}");
+        Assert.Equal(0, on.Continuations);
         Assert.Equal(fine.MaxPae, on.MaxPae, precision: 2);
     }
 }

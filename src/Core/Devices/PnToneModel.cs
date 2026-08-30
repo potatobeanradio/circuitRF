@@ -26,9 +26,12 @@ namespace CircuitRF.Core.Devices;
 /// f_c = (f1+f2)/2). In S-parameter mode (_fc ≤ 0) the source is passive: it presents Z[1] between
 /// the external and reference nodes and ties off its (undriven) internal node — no port role.
 /// </summary>
-public sealed class PnToneModel : ComponentModel
+public sealed class PnToneModel : ComponentModel, IDriveScalable
 {
     private const double OmegaTolRad = 1.0;  // 1 rad/s harmonic-matching tolerance
+
+    /// <inheritdoc/>
+    public double DriveScale { get; set; } = 1.0;
 
     public override int       PortCount => 1;
     public override ModelKind Kind      => ModelKind.Linear;
@@ -110,7 +113,8 @@ public sealed class PnToneModel : ComponentModel
             double omegaTone = 2.0 * Math.PI * _tones[i].FreqHz;
             if (Math.Abs(omega - omegaTone) < OmegaTolRad)
             {
-                driveV = Complex.FromPolarCoordinates(_vsMagnitude[i], _tones[i].PhaseDeg * Math.PI / 180.0);
+                driveV = Complex.FromPolarCoordinates(
+                    DriveScale * _vsMagnitude[i], _tones[i].PhaseDeg * Math.PI / 180.0);
                 break;
             }
         }

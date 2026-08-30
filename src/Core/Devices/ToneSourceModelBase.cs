@@ -19,8 +19,11 @@ namespace CircuitRF.Core.Devices;
 /// tests THIS type rather than either leaf — a check that named only the voltage leaf would let a
 /// current tone source off the grid, or leave its drive live during a source-zeroed extraction.</para>
 /// </summary>
-public abstract class ToneSourceModelBase : ComponentModel
+public abstract class ToneSourceModelBase : ComponentModel, IDriveScalable
 {
+    /// <inheritdoc/>
+    public double DriveScale { get; set; } = 1.0;
+
     public override int       PortCount => 1;
     public override ModelKind Kind      => ModelKind.Linear;
 
@@ -72,18 +75,20 @@ public abstract class ToneSourceModelBase : ComponentModel
     /// </summary>
     protected Complex ExcitationAt(double omega)
     {
+        // DriveScale multiplies the TONES and not the DC offset — see IDriveScalable. A tone that
+        // happens to sit at 0 Hz is still a tone and still scales; Vdc/Idc is the bias and does not.
         if (Math.Abs(omega) < OmegaTolRads)
         {
             var e = new Complex(_currentDc, 0);
             for (int i = 0; i < _tones.Length; i++)
                 if (Math.Abs(2.0 * Math.PI * _tones[i].FreqHz) < OmegaTolRads)
-                    e += _currentPhasors[i];
+                    e += DriveScale * _currentPhasors[i];
             return e;
         }
 
         for (int i = 0; i < _tones.Length; i++)
             if (Math.Abs(omega - 2.0 * Math.PI * _tones[i].FreqHz) < OmegaTolRads)
-                return _currentPhasors[i];
+                return DriveScale * _currentPhasors[i];
 
         return Complex.Zero;
     }

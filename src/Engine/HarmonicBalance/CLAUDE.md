@@ -7,15 +7,19 @@ before implementing, and keep the pieces below independently testable.
 ## Parametric-sweep warm-start + quiet diagnostics (harmonic-balance.md §11.1) — COMPLETE
 
 - **Warm-start (continuation) for the generic HB sweep.** `HbEngine.Run(p, warmStart=null)` takes an
-  optional interface-V seed `[N,K+1]`; when supplied it is the Newton guess and the per-point
-  `NonlinearDcEngine.Run` DC seed is **skipped**. `HbRunResult` now carries `Converged` + `InterfaceV`
-  (the converged interface spectrum). `ParametricSweepEngine.RunInner` returns the converged seed via an
-  `out` param; `Run` chains it into the next point — **innermost sweep axis only** (nested/outer sweeps
-  return a null seed → each outer step restarts cold), resets on non-convergence, falls back to cold on a
-  dimension change. Gated by `AnalysisSettings.HbSweepWarmStart` (**default true**). Two-tone unchanged
-  (cold). Benchmark: GaN-PA Pin sweep 22→12 Newton iters, 11→1 DC solves, bit-identical interface
-  spectrum. Gate: `HbPinSweepWarmStartBenchTests` (iteration/DC counts + production warm-vs-cold
-  equivalence through `ParametricSweepEngine.Run`). All 454 Engine tests green.
+  optional interface-V seed; when supplied it is the Newton guess and the per-point
+  `NonlinearDcEngine.Run` DC seed is **skipped**. `HbRunResult` carries `Converged` + `InterfaceV`
+  (the converged interface spectrum) + `Trace`. `ParametricSweepEngine.RunInner` returns the converged
+  seed via an `out` param; `Run` chains it into the next point — **innermost sweep axis only**
+  (nested/outer sweeps return a null seed → each outer step restarts cold), resets on non-convergence,
+  falls back to cold on a dimension change. Gated by `AnalysisSettings.HbSweepWarmStart` (**default
+  true**). **Every tone count since HB-P3 (2026-08-30)** — the seed is `[N,K+1]` single-tone and `[N,M]`
+  over the mixing lattice for two or more tones, and each engine path checks the shape it was handed.
+  (`RunTwoTone`/`RunMultiTone` took no seed at all before that, so a swept multi-tone analysis
+  cold-started every point.) Benchmark: GaN-PA Pin sweep 22→12 Newton iters, 11→1 DC solves,
+  bit-identical interface spectrum; two-/three-tone sweeps 8→1 DC solves. Gate:
+  `HbPinSweepWarmStartBenchTests` (iteration/DC counts, multi-tone warm-vs-cold, chain reset, plus
+  production warm-vs-cold equivalence through `ParametricSweepEngine.Run`).
 - **Quiet by default.** The per-solve stderr traces (`[HB]`/`[HB-DC]`/`[HB2D-DC]`/`[HB trace]` and the
   inductance-regularization notice) repeated once per sweep point. They are now gated behind
   `AnalysisSettings.HbConsoleDiagnostics` (**default false**). The regularization itself always runs

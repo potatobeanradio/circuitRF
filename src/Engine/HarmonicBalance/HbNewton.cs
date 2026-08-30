@@ -66,6 +66,23 @@ public sealed record ControlJacData(
 /// </summary>
 public static class HbNewton
 {
+    /// <summary>
+    /// How many time-domain device evaluations <see cref="EvaluateNonlinear"/> has performed ON THIS
+    /// THREAD. Test-facing, in the same spirit as <c>HbEngine.LinearFactorizations</c>: the property
+    /// HB-P3 M1 asserts is that the line search's ACCEPTED trial is also the next iteration's entry
+    /// evaluation, so a converging solve with no backtracks evaluates exactly once per iteration and
+    /// never twice at the same V. Per-thread so the test suite's parallel classes cannot see each
+    /// other's counts; reset it with <see cref="ResetEvaluations"/> immediately before the solve
+    /// under test.
+    /// </summary>
+    [ThreadStatic] private static int _evaluations;
+
+    /// <inheritdoc cref="_evaluations"/>
+    public static int Evaluations => _evaluations;
+
+    /// <inheritdoc cref="_evaluations"/>
+    public static void ResetEvaluations() => _evaluations = 0;
+
     /// <param name="INl">I_nl per [node, harmonic] — caller reads I_nl[n,0] for DC-current trend.</param>
     /// <param name="PortITime">
     /// Per-device, per-port terminal current over the time grid — <c>[deviceOrdinal][port, t]</c>,
@@ -118,47 +135,132 @@ public static class HbNewton
         // once — a per-iteration allocation would trade one cost for another.
         var portITime = AllocPortITime(netlist, gridN);
 
+        // Scratch the line search steps FROM — the accepted iterate every trial restarts at.
+        var V0 = new Complex[N, K + 1];
+
+        // ── 0. One evaluation before the loop ─────────────────────────────────
+        // From here the loop's ENTRY state is always the last accepted trial's evaluation, so
+        // EvaluateNonlinear runs exactly once per accepted step plus once per rejected trial —
+        // never twice at the same V (HB-P3 M1; HbLineSearchTests counts it).
+        var (iNl, qNl, G, C, higherBuckets) =
+            EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlLast, out var ctrlJac,
+                              portITime);
+        iNlLast   = iNl;
+        var    F  = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0, higherBuckets);
+        double fN = L2(F);
+
         for (int iter = 0; iter < maxIter; iter++)
         {
-            // ── 1. Time-domain evaluation ─────────────────────────────────────
-            var (iNl, qNl, G, C, higherBuckets) =
-                EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlLast, out var ctrlJac,
-                                  portITime);
-            iNlLast = iNl;
-
-            // ── 2. Residual F[n, k=0..K] ──────────────────────────────────────
-            var F     = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0, higherBuckets);
-            double fN = L2(F);
-            trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
-
+            // ── 1. Convergence test on ‖F‖ (absolute, in amperes — design §12.2) ──
             if (fN < tol)
+            {
+                trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 return new SolveResult(true, iter + 1, trace, iNlLast, portITime);
+            }
 
-            // ── 3. Jacobian J (real-split 2×2 blocks, §7.2 + Maas §7.3) ───────
+            // ── 2. Jacobian J (real-split 2×2 blocks, §7.2 + Maas §7.3) ───────
             var J = BuildJ(yNN, G, C, N, K, omega0, guardHarmonic, higherBuckets,
                 useControlJacobian ? ctrlJac : null, cc);
 
-            // ── 4. Dense solve J·ΔV = −F ─────────────────────────────────────
+            // ── 3. Dense solve J·ΔV = −F ─────────────────────────────────────
             var negF = new double[unknowns];
             for (int r = 0; r < unknowns; r++) negF[r] = -F[r];
             double[]? dV = SolveGaussian(J, negF, unknowns);
             if (dV is null)
             {
+                trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 Console.Error.WriteLine($"[HB] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
                 return new SolveResult(false, iter + 1, trace, iNlLast, portITime);
             }
 
-            // ── 5. Update V[k=0..K] += λ·ΔV ─────────────────────────────────
-            ApplyUpdate(V, dV, N, K, lambda);
+            // ── 4. Update V[k=0..K] += λ·ΔV, λ from the backtracking line search ──
+            double fEntry = fN;
+            Array.Copy(V, V0, V.Length);
+            var step = Backtrack(fEntry, lambda, lam =>
+            {
+                Array.Copy(V0, V, V.Length);
+                ApplyUpdate(V, dV, N, K, lam);
+                (iNl, qNl, G, C, higherBuckets) =
+                    EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlLast, out ctrlJac,
+                                      portITime);
+                F = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0, higherBuckets);
+                return L2(F);
+            });
+            iNlLast = iNl;
+            fN      = step.Residual;
+            trace.Add(new HbConvergenceTrace.IterRecord(
+                iter, fEntry, step.Lambda, step.Backtracks, step.Stalled));
         }
 
-        // Max iterations.
-        var (iNlF, qNlF, _, _, bucketsF) =
-            EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlLast, out _, portITime);
-        iNlLast = iNlF;
-        var FF = BuildF(V, yNN, iSrc, iNlF, qNlF, N, K, omega0, bucketsF);
-        trace.Add(new HbConvergenceTrace.IterRecord(settings.HbMaxIter, L2(FF)));
+        // Max iterations. ‖F‖ at the final iterate is already known — the last accepted trial
+        // computed it — so the tail costs no evaluation of its own.
+        trace.Add(new HbConvergenceTrace.IterRecord(settings.HbMaxIter, fN));
         return new SolveResult(false, settings.HbMaxIter, trace, iNlLast, portITime);
+    }
+
+    // ── Backtracking line search (HB-P3 M1) ──────────────────────────────────
+
+    /// <summary>
+    /// How many times the line search may halve λ before it accepts the smallest step it tried
+    /// rather than standing still. 8 halvings, so λ bottoms out at 1/256.
+    ///
+    /// <para>A constant rather than a user setting on purpose: it bounds a failure mode, it does not
+    /// tune an answer. A step this short that still does not reduce ‖F‖ is not a step-length problem
+    /// — that is what <c>DriveStepping</c>'s ramp is for.</para>
+    /// </summary>
+    public const int MaxBacktracks = 8;
+
+    /// <summary>
+    /// The Armijo sufficient-decrease coefficient c in <c>‖F(V+λ·ΔV)‖ ≤ (1 − c·λ)·‖F(V)‖</c>.
+    /// Small enough (1e-4) that a full Newton step from a good iterate is accepted on the first
+    /// trial, which is what keeps a converging solve byte-identical to the undamped loop.
+    /// </summary>
+    public const double ArmijoC = 1e-4;
+
+    /// <summary>The outcome of one line search: the residual reached, and how it got there.</summary>
+    public readonly record struct LineSearchStep(
+        double Residual, double Lambda, int Backtracks, bool Stalled);
+
+    /// <summary>
+    /// The backtracking line search the three HB Newton loops share.
+    ///
+    /// <para><b>Why the loops need it.</b> The HB Jacobian is exact and the fixed point is right; what
+    /// failed at a compressed drive was the STEP. A full Newton step from a DC seed overshoots into
+    /// the region where an SDD's <c>tanh</c>/<c>exp</c> terms saturate, and the iterate then wanders
+    /// until <c>HbMaxIter</c> — 100 iterations returning non-converged on the shipped Hero-2 fixture
+    /// at 16 and 20 dBm, before this existed.</para>
+    ///
+    /// <para><paramref name="trialAt"/> applies λ·ΔV to the caller's iterate, evaluates there and
+    /// returns ‖F‖, leaving the caller's own state (spectra, Jacobian ingredients, residual vector)
+    /// set to that trial. It is called at most <see cref="MaxBacktracks"/>+1 times and the ACCEPTED
+    /// trial is always the last one called — which is what lets a caller keep per-evaluation
+    /// by-products (the port-current buffer) without snapshotting them per trial.</para>
+    ///
+    /// <para>A NaN residual never satisfies the test, so it backtracks like any other rejection.
+    /// Exhausting the halvings keeps the smallest step rather than standing still — standing still
+    /// would repeat the same Jacobian and the same rejected step forever — and flags
+    /// <see cref="LineSearchStep.Stalled"/> so the trace says so.</para>
+    /// </summary>
+    /// <param name="f0">‖F‖ at the iterate being stepped from.</param>
+    /// <param name="lambdaStart">
+    /// The first λ tried — the user's fixed <c>Lambda</c> damping (B2), default 1. Its meaning is
+    /// unchanged: λ &lt; 1 still damps every step, it is now the STARTING point of the search
+    /// instead of the only value.
+    /// </param>
+    public static LineSearchStep Backtrack(double f0, double lambdaStart, Func<double, double> trialAt)
+    {
+        ArgumentNullException.ThrowIfNull(trialAt);
+
+        double lam = lambdaStart;
+        for (int rejected = 0; ; rejected++)
+        {
+            double fT = trialAt(lam);
+            if (fT <= (1.0 - ArmijoC * lam) * f0)
+                return new LineSearchStep(fT, lam, rejected, false);
+            if (rejected == MaxBacktracks)
+                return new LineSearchStep(fT, lam, rejected, true);
+            lam *= 0.5;
+        }
     }
 
     /// <summary>
@@ -209,6 +311,7 @@ public static class HbNewton
             ControlCurrentContext? cc, Complex[,]? iNlPrev, out ControlJacData? ctrlJac,
             double[][,]? portITime = null)
     {
+        _evaluations++;
         ctrlJac = null;
 
         var vTime = new double[N][];

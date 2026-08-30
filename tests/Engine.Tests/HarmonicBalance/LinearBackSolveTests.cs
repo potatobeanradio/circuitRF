@@ -142,11 +142,19 @@ public class LinearBackSolveTests(ITestOutputHelper output)
             return maxErr;
         }
 
-        // ── Loose convergence (default ~1e-6) ────────────────────────────────────
+        // ── Loose convergence (Tol=1e-4) ─────────────────────────────────────────
+        // The loose end is PINNED rather than left at the fixture's default, because Newton on this
+        // fixture is quadratic and its last two iterates are ‖F‖ = 2.20e-5 and 1.24e-9 — there is no
+        // iterate in between for a tolerance to stop at. Anything from 1e-4 up stops at the first,
+        // anything from 1e-5 down reaches the second, so the default 1e-6 and the 1e-10 below are the
+        // SAME solve and their errors differ only in the last digits (both ~1.9e-11; measured
+        // 2026-08-30). That used to be masked by where the undamped loop happened to stop; HB-P3's
+        // line search changed the trajectory and exposed it. 1e-4 vs 1e-10 spans the real step:
+        // 6.94e-4 → 1.94e-11, a factor of 3.6e7 against the 100× the assertion asks for.
         var (lib1, tb1) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
         var netlist1    = new Elaborator(lib1).Elaborate(tb1);
         var hba1        = tb1.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var pLoose      = HbEngine.Resolve(hba1, netlist1.ResolvedGlobals);
+        var pLoose      = HbEngine.Resolve(hba1, netlist1.ResolvedGlobals) with { Tol = 1e-4 };
         var rLoose      = new HbEngine(netlist1, tb1).Run(pLoose);
         double errLoose = MaxFundRelErr(rLoose, rLoose.BackSolver!);
         output.WriteLine($"Default Tol ({pLoose.Tol:E1}): max fund relErr = {errLoose:E3}");

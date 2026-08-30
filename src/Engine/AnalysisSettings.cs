@@ -203,11 +203,15 @@ public sealed class AnalysisSettings
     public bool HbConsoleDiagnostics { get; init; } = false;
 
     /// <summary>
-    /// When true (default), a parametric sweep whose innermost analysis is a single-tone HB
-    /// <strong>warm-starts</strong> each point from the previous point's converged spectrum — the
-    /// continuation method (harmonic-balance.md §11). This skips the per-point nonlinear-DC seed solve
-    /// and follows the solution branch, cutting Newton iterations (benchmarked ~45% fewer iters and
-    /// N→1 DC solves on a GaN-PA Pin sweep, with bit-identical results).
+    /// When true (default), a parametric sweep whose innermost analysis is an HB analysis — at ANY
+    /// tone count — <strong>warm-starts</strong> each point from the previous point's converged
+    /// spectrum, the continuation method (harmonic-balance.md §11). This skips the per-point
+    /// nonlinear-DC seed solve and follows the solution branch, cutting Newton iterations
+    /// (benchmarked ~45% fewer iters and N→1 DC solves on a GaN-PA Pin sweep, with bit-identical
+    /// results). The seed is the run's own interface spectrum — <c>[N, K+1]</c> for a single tone,
+    /// <c>[N, M]</c> over the mixing lattice for two or more — and each engine path checks the shape
+    /// it was handed, so a sweep that changes dimension falls back to a cold seed rather than
+    /// mis-reading one.
     ///
     /// The seed chains <em>only along the innermost sweep axis</em> and resets at each outer-sweep step
     /// (each outer step runs a fresh inner sweep, whose first point is DC-seeded). A non-converged point

@@ -24,9 +24,12 @@ namespace CircuitRF.Core.Devices;
 ///
 /// SetToneContext must be called by HbEngine before any Stamp() in HB mode.
 /// </summary>
-public sealed class P1ToneModel : ComponentModel
+public sealed class P1ToneModel : ComponentModel, IDriveScalable
 {
     private const double OmegaTolRad = 1.0;  // 1 rad/s harmonic-matching tolerance
+
+    /// <inheritdoc/>
+    public double DriveScale { get; set; } = 1.0;
 
     public override int       PortCount => 1;
     public override ModelKind Kind      => ModelKind.Linear;
@@ -144,7 +147,7 @@ public sealed class P1ToneModel : ComponentModel
         double omegaDrv = 2.0 * Math.PI * _driveFreqHz;
         bool   isTone   = Math.Abs(omega - omegaDrv) < OmegaTolRad;
         var    driveV   = isTone
-            ? Complex.FromPolarCoordinates(_vsMagnitude, _phaseDeg * Math.PI / 180.0)
+            ? Complex.FromPolarCoordinates(DriveScale * _vsMagnitude, _phaseDeg * Math.PI / 180.0)
             : Complex.Zero;
 
         int brDrive = mna.AddBranch();

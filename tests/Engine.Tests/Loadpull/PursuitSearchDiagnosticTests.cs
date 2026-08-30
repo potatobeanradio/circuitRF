@@ -95,7 +95,7 @@ public class PursuitSearchDiagnosticTests
     {
         var dir     = Hero3BDir();
         var outPath = Path.Combine(dir, "diag1_truth_surface.txt");
-        using var f = new StreamWriter(outPath, append: false);
+        using var f = GoldenRegen.OpenWriter(outPath);   // no-op unless CIRCUITRF_REGENERATE_GOLDENS
         void W(string s = "") => f.WriteLine(s);
 
         var (lpEngine, pp) = BuildEngines();
@@ -178,7 +178,7 @@ public class PursuitSearchDiagnosticTests
     {
         var dir     = Hero3BDir();
         var outPath = Path.Combine(dir, "diag2_walk.txt");
-        using var f = new StreamWriter(outPath, append: false);
+        using var f = GoldenRegen.OpenWriter(outPath);   // no-op unless CIRCUITRF_REGENERATE_GOLDENS
         void W(string s = "") => f.WriteLine(s);
 
         var (lpEngine, pp) = BuildEngines();

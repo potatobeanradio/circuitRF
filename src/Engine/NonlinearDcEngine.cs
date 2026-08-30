@@ -150,8 +150,23 @@ public sealed class NonlinearDcEngine
     /// side of a knife edge. So a converged result is ALSO rejected when a node already measured as
     /// unreferenced came back at a temperature no part can be at.</para>
     /// </summary>
+    /// <summary>
+    /// How many DC operating-point solves this thread has run. Test-facing, like
+    /// <c>HbNewton.Evaluations</c>: what an HB sweep's warm start actually buys is N DC seeds
+    /// becoming ONE (harmonic-balance.md §11.1), and that is the number those gates read. Per-thread
+    /// so the suite's parallel classes cannot see each other's counts.
+    /// </summary>
+    [ThreadStatic] private static int _runs;
+
+    /// <inheritdoc cref="_runs"/>
+    public static int Runs => _runs;
+
+    /// <inheritdoc cref="_runs"/>
+    public static void ResetRuns() => _runs = 0;
+
     public static DcResult Run(ElaboratedNetlist netlist, AnalysisSettings? settings = null)
     {
+        _runs++;
         var s      = settings ?? AnalysisSettings.Default;
         var direct = new NonlinearDcEngine(netlist, s);
 
