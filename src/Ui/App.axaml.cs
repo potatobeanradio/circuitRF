@@ -219,12 +219,74 @@ public partial class App : Application
                 () => Updates.UpdateStartup.AfterFirstWindow(crashVm.Messages),
                 Avalonia.Threading.DispatcherPriority.ApplicationIdle);
 
+            // Release Notes, at the same idle priority and behind the same "the window is provably
+            // up" condition — this one needs an owner to centre on. It is circuitRF's alone:
+            // harmonicaRF and wBond share the preferences file but have no workspace window to open
+            // it over, and a launch of either that recorded a version as seen would consume the one
+            // showing circuitRF is entitled to.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => ShowReleaseNotesIfDue(firstWindow),
+                Avalonia.Threading.DispatcherPriority.ApplicationIdle);
+
             // Apple Events (macOS Finder double-click).
             if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
                 activatable.Activated += (_, e) => OnActivated(e, firstWindow);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Opens the Release Notes dialog when this launch is the first one of a newly installed version.
+    ///
+    /// <para><b>The version is recorded as seen at the moment the dialog opens</b>, whatever it ends
+    /// up showing — see <c>ReleaseNotesGate.MarkShown</c>. It is deliberately not recorded before the
+    /// fetch: a launch the user quits during those few seconds has been shown nothing, and should be
+    /// offered the notes again next time.</para>
+    ///
+    /// <para><c>async void</c> because it is a dispatcher callback, and every path inside it is
+    /// wrapped: release notes are the least important thing happening at startup and must never be
+    /// the reason anything else fails.</para>
+    /// </summary>
+    private static async void ShowReleaseNotesIfDue(Window owner)
+    {
+        try
+        {
+            // Checked before anything else, and ahead of the preview switch below: an installation
+            // whose administrator forbade contacting the update host does not contact it for this
+            // either, and no developer convenience may be the way around that.
+            if (!Updates.ReleaseNotesGate.NetworkPermitted) return;
+
+            Updates.ReleaseNotesDecision decision = Updates.ReleaseNotesGate.Resolve();
+
+            // Diagnostic force-show, for looking at the dialog without reinstalling: it bypasses the
+            // gate ONLY, so what appears is the real fetch of the real running version's notes.
+            // Nothing is recorded on this path — a preview must not consume a real showing.
+            bool preview = Environment.GetEnvironmentVariable("CRF_RELEASE_NOTES") == "1";
+
+            if (!preview)
+            {
+                if (decision == Updates.ReleaseNotesDecision.None) return;
+
+                if (decision == Updates.ReleaseNotesDecision.RecordSilently)
+                {
+                    Updates.ReleaseNotesGate.MarkShown(AppVersion.Display);
+                    return;
+                }
+            }
+
+            Updates.ReleaseNotesResult result =
+                await Updates.ReleaseNotesFetcher.FetchAsync(AppVersion.Display).ConfigureAwait(true);
+
+            if (!preview) Updates.ReleaseNotesGate.MarkShown(AppVersion.Display);
+
+            // Shown rather than ShowDialog: it belongs over the workspace window and follows it, but
+            // a modal that arrives seconds after launch would seize a window the user is already
+            // working in.
+            var dialog = new Views.Dialogs.ReleaseNotesDialog(result);
+            dialog.Show(owner);
+        }
+        catch (Exception) { /* never the reason a launch is worse than it would have been */ }
     }
 
     private static async void ApplyLaunchSettings(WorkspaceViewModel vm)

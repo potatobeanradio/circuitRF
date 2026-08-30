@@ -24,6 +24,12 @@ sealed class Program
         // exception handlers, is the part that catches a simulation death.
         Diagnostics.CrashReporter.Install("circuitRF");
 
+        // BEFORE the line below, which writes state.json on every path that applies an update: settle
+        // whether this installation existed at all before this launch. That single fact is what tells
+        // a brand new installation (which must never open with release notes) apart from an existing
+        // one running a build that has just gained the feature. circuitRF only — see ReleaseNotesGate.
+        Updates.ReleaseNotesGate.CaptureAtStartup();
+
         // BEFORE Avalonia, and before anything opens a file: reclaim update debris, revert a
         // version that has failed to start twice, and apply a staged update. On macOS an applied
         // update execv()s the new executable and this call does not return; on Windows and Linux

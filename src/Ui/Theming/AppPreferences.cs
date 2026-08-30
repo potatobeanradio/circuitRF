@@ -244,6 +244,26 @@ public sealed class AppPreferences
     public bool? IncludeBetaUpdates { get; set; }
 
     /// <summary>
+    /// Whether the <b>Release Notes</b> dialog opens the first time a newly installed version is
+    /// launched. Null means the default, which is <b>ON</b> — the same nullable idiom, and for the
+    /// same reason, as <see cref="AutomaticUpdates"/> above: absence IS the default, so a machine with
+    /// no preferences.json needs no first-run seeding and a seeded file would make "never chosen" and
+    /// "chosen to be on" indistinguishable.
+    ///
+    /// <para><b>It governs whether the dialog is SHOWN, never whether the version is recorded as
+    /// seen.</b> A user who turns it off and later turns it back on gets the notes for the next
+    /// version they install, not a backlog of the ones they skipped — see
+    /// <c>Updates.ReleaseNotesGate</c>, which is the only thing that reads this.</para>
+    ///
+    /// <para>Per USER and therefore shared by all three applications, like every key around it; only
+    /// circuitRF has a window to show the dialog over, which is why the checkbox sits in the Updates
+    /// section rather than growing a fourth settings surface.</para>
+    /// </summary>
+    [JsonPropertyName("show_release_notes")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ShowReleaseNotes { get; set; }
+
+    /// <summary>
     /// Whether a kit may run its own EXTERNAL DEVICE WORKER — the separate process circuitRF starts
     /// to evaluate a vendor device model. Null means the default, which is <b>ON</b>.
     ///
@@ -284,6 +304,17 @@ public static class AppPreferencesIo
     private static string PrefsDir => AppDataRoot.Dir;
 
     private static string PrefsPath => Path.Combine(PrefsDir, "preferences.json");
+
+    /// <summary>
+    /// Whether a preferences file exists <i>at all</i> — the cheapest honest answer to "has this
+    /// installation ever been used before", which is what
+    /// <c>Updates.ReleaseNotesGate.CaptureAtStartup</c> has to settle before anything writes one.
+    ///
+    /// <para>Exposed rather than having callers rebuild the path, because the path is redirectable
+    /// (<see cref="AppDataRoot"/>) and a second copy of it would be right until the day a tool moved
+    /// the state directory.</para>
+    /// </summary>
+    public static bool FileExists => File.Exists(PrefsPath);
 
     public static AppPreferences Load()
     {

@@ -20,7 +20,7 @@
     <TextBlock Text="Updates" FontSize="11" FontWeight="SemiBold"
                Opacity="0.55" Margin="0,0,0,6" Name="SectionHeader"/>
 
-    <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+    <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
       <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
                  Name="AutoUpdateCheck"
                  Content="Automatic updates" FontSize="12"
@@ -36,13 +36,25 @@
                  Margin="20,8,0,0"
                  IsCheckedChanged="OnIncludeBetasChanged"/>
 
+      <!-- NOT a sub-item of "Automatic updates", and deliberately not disabled with it: a version
+           installed by hand is still a new version, and its notes are still what the user wants to
+           read. It governs the dialog only, never whether a version is recorded as seen. -->
+      <CheckBox  Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2"
+                 Name="ReleaseNotesCheck"
+                 Content="Show release notes after an update" FontSize="12"
+                 Margin="0,10,0,0"
+                 IsCheckedChanged="OnShowReleaseNotesChanged"/>
+      <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
+                 Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
+                 Text="Opens the release notes once, the first time a newly installed version is launched. Never on a new installation, and never twice for the same version."/>
+
       <!-- Costs nothing, and it is the first thing anyone looks at when wondering whether the
            feature is working at all. Read from the updater's state file; never written here. -->
-      <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
+      <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
                  Opacity="0.55" Margin="0,10,0,0"
                  Name="LastCheckedText" Text="Last checked: never"/>
 
-      <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
+      <TextBlock Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
                  Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
                  Name="UpdateOverrideText" IsVisible="False" Text=""/>
     </Grid>

@@ -102,7 +102,8 @@ public sealed class GitHubReleasesFeed : IUpdateFeed
                 }
             }
 
-            releases.Add(new ReleaseInfo(tag, version, Bool(r, "prerelease"), Bool(r, "draft"), assets));
+            releases.Add(new ReleaseInfo(tag, version, Bool(r, "prerelease"), Bool(r, "draft"), assets,
+                                         Str(r, "body") ?? ""));
         }
 
         return releases;

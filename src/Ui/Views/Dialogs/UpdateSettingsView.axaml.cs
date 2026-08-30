@@ -50,6 +50,10 @@ public partial class UpdateSettingsView : UserControl
             AutoUpdateCheck.IsChecked   = prefs.AutomaticUpdates   ?? true;
             IncludeBetasCheck.IsChecked = prefs.IncludeBetaUpdates ?? false;
 
+            // Through the gate rather than off `prefs`, by the same one-accessor rule the two above
+            // follow via UpdatePolicy: ReleaseNotesGate is the only thing that reads this key.
+            ReleaseNotesCheck.IsChecked = ReleaseNotesGate.ShowPreference;
+
             UpdatePolicyState policy = UpdatePolicy.Current;
 
             if (policy.IsOverridden)
@@ -91,6 +95,17 @@ public partial class UpdateSettingsView : UserControl
         AppPreferencesIo.Update(p => p.AutomaticUpdates = AutoUpdateCheck.IsChecked);
         SyncBetaEnablement();
         ApplyUpdatePreferenceChange();
+    }
+
+    /// <summary>
+    /// The same setting the Release Notes dialog's own "Always Show New Release Notes" checkbox
+    /// writes — one key, two surfaces, and the dialog is where a user who has just decided they do
+    /// not want this is actually standing.
+    /// </summary>
+    private void OnShowReleaseNotesChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        ReleaseNotesGate.SetShowPreference(ReleaseNotesCheck.IsChecked == true);
     }
 
     private void OnIncludeBetasChanged(object? sender, RoutedEventArgs e)

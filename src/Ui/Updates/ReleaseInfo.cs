@@ -21,7 +21,8 @@ public sealed record ReleaseInfo(
     SemanticVersion Version,
     bool IsPreRelease,
     bool IsDraft,
-    IReadOnlyList<ReleaseAsset> Assets)
+    IReadOnlyList<ReleaseAsset> Assets,
+    string Body = "")
 {
     /// <summary>
     /// The version exactly as the tag spells it, with a leading <c>v</c> removed — which is what the
@@ -44,6 +45,16 @@ public sealed record ReleaseInfo(
     /// <c>&lt;install root&gt;/app-&lt;ver&gt;</c> and <c>updates/staged/&lt;ver&gt;/</c>.
     /// </summary>
     public bool HasUsableVersionText => UpdateInstallSite.IsSafeVersionText(VersionText);
+
+    /// <summary>
+    /// The release notes, as the publisher typed them — Markdown, and the only field here that is
+    /// free text rather than something the updater makes a decision from.
+    ///
+    /// <para>Defaulted rather than required, because it is read by exactly one caller
+    /// (<see cref="ReleaseNotesFetcher"/>) and no part of choosing, verifying or installing an update
+    /// may ever come to depend on it: a release with an empty body must still update.</para>
+    /// </summary>
+    public string Body { get; init; } = Body;
 
     /// <summary>The asset named exactly <c>update-manifest.json</c>, if the release carries one.</summary>
     public ReleaseAsset? Manifest => Named(UpdateManifest.AssetName);

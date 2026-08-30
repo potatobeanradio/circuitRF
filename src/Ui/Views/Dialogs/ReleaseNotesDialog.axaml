@@ -1,0 +1,68 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.ReleaseNotesDialog"
+        Title="Release Notes"
+        Width="720"
+        Height="560"
+        MinWidth="480"
+        MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    Shown once, the first time a newly installed version is launched. Never on a clean system, and
+    never twice for the same version — ReleaseNotesGate owns both of those and this window owns
+    neither.
+
+    The notes are ONE SelectableTextBlock, not a list of per-line controls: the owner's requirement is
+    that a user can drag a selection across many lines and copy it in one go, and a selection cannot
+    cross two controls. Bold, italics, bullets and indentation are therefore inlines within it
+    (ReleaseNotesMarkdown produces the runs; the code-behind turns them into Inlines), and the
+    indentation is non-breaking spaces for the same reason — there is nowhere else to put a margin.
+  -->
+
+  <Grid RowDefinitions="Auto,*,Auto" Margin="16,14,16,12">
+
+    <!-- Which version these notes are for. Always shown, including on the two failure forms, because
+         "we could not fetch them" is only actionable if you know what was being asked for. -->
+    <TextBlock Grid.Row="0" Name="HeadingText" Text="Release Notes"
+               FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
+
+    <Border Grid.Row="1"
+            BorderBrush="{DynamicResource ThemeBorderMidBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            ClipToBounds="True">
+      <ScrollViewer Name="NotesScroll" Padding="12,10"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto">
+        <SelectableTextBlock Name="NotesText"
+                             TextWrapping="Wrap"
+                             FontSize="12"
+                             LineHeight="18"
+                             VerticalAlignment="Top"
+                             HorizontalAlignment="Stretch"/>
+      </ScrollViewer>
+    </Border>
+
+    <!-- Bottom bar. The checkbox is at the LEFT, per the owner's own layout; it writes the preference
+         the moment it changes, so there is no OK/Cancel asymmetry to explain. -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+
+      <CheckBox Grid.Column="0" Name="AlwaysShowCheck"
+                Content="Always Show New Release Notes"
+                FontSize="12"
+                VerticalAlignment="Center"
+                IsCheckedChanged="OnAlwaysShowChanged"/>
+
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+        <!-- Only on a failure form: somewhere to go when we could not fetch the notes ourselves. -->
+        <Button Name="BrowseButton" Content="Open Releases Page…" FontSize="12"
+                IsVisible="False" Click="OnBrowseClicked"/>
+        <Button Content="Close" Width="90" IsDefault="True" IsCancel="True"
+                FontSize="12" Click="OnCloseClicked"/>
+      </StackPanel>
+    </Grid>
+
+  </Grid>
+</Window>

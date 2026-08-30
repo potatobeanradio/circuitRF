@@ -1,5 +1,78 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Release Notes on first launch of a new version (2026-08-29)
+
+Owner request: after an update, open a Release Notes dialog over the workspace showing that version's
+notes pulled from the GitHub repository, rendered as simplified Markdown in one selectable, scrollable
+block; never on a clean install, never twice for the same version, with an "Always Show New Release
+Notes" checkbox in the dialog and in Settings ▸ Security & Permissions ▸ Updates.
+
+### A null "already shown" mark cannot tell a clean install from an upgrade
+
+The state file's `release_notes_shown_for` is null in two completely different situations: a machine on
+which circuitRF has never run, which must show nothing, and an existing installation whose current
+build has only just gained the feature, which should show. Nothing in the file distinguishes them, so
+the discriminator is captured OUTSIDE it — `ReleaseNotesGate.CaptureAtStartup` asks whether
+`preferences.json` or `updates/state.json` existed at all.
+
+**It must run before `UpdateStartup.RunBeforeUi`, and that ordering is the whole mechanism.** That call
+writes `state.json` on every path that applies an update, so asking afterwards reports a fresh
+installation as an existing one and a brand new machine opens with release notes — the one failure the
+gate exists to prevent. `ReleaseNotesWiringTests.TheCapture_RunsBeforeTheUpdaterWritesState` compares
+the two indices in `Program.cs` rather than trusting the comment.
+
+### Three shared-state traps, all from one preferences file serving three applications
+
+- **Only circuitRF captures and only circuitRF shows.** One `preferences.json` and one `state.json`
+  serve circuitRF, harmonicaRF and wBond, so a wBond launch that recorded a version as seen would
+  silently consume circuitRF's single showing of it — and neither of the other two has a workspace
+  window to open the dialog over. A test asserts neither name appears in their entry points.
+- **Turning the setting off still RECORDS the version.** Otherwise re-enabling it replays a backlog of
+  every version skipped while it was off.
+- **The overrides bind this path too.** The fetch is an outbound network call, so a `no-auto-update`
+  file beside the install or `CRF_NO_UPDATE_CHECK=1` suppresses it, checked through
+  `UpdatePolicy.Current` like everything else. The plain "Automatic updates" preference deliberately
+  does NOT: a version installed by hand is still a new version, which is why the Settings checkbox is
+  not a sub-item of that one.
+
+### The parser is ~250 lines rather than Markdig, and the reasons are not "it was easier"
+
+Markdig is already a dependency of the docs factory. What arrives here is untrusted text from the
+network rendered on launch, and CommonMark would faithfully carry tables, raw HTML, images and
+reference links into a control that can show none of them. The supported vocabulary is bold, italic,
+bullets and indentation; everything else degrades to plain text — headings become a larger bold line,
+inline code loses its backticks, a link keeps its label and drops its target.
+
+Two rules in `IsDelimiter` are not optional, and both come from what real release bodies contain:
+
+- **An unmatched delimiter prints.** `2 * 3 = 6` would otherwise italicise the rest of the line.
+- **An underscore between two alphanumerics is text.** `last_check_utc` appears constantly and every
+  one of them would open an italic span. Asterisks get no such exemption.
+
+The closing delimiter of `*italic*` has nothing after it by construction, so "is there a partner later
+in the line" cannot be the only test — an emphasis span already open may always be closed. Without
+that second clause `***both***` rendered its own closing asterisks.
+
+### One SelectableTextBlock, because a selection cannot cross two controls
+
+The owner's requirement is dragging a selection across many lines and copying it in one go. That rules
+out a per-line `ItemsControl`, so the parse produces DATA (`ReleaseNoteLine`/`ReleaseNoteRun`) and the
+dialog turns it into `Inlines` of one block — which is also the only reason any of this is testable,
+since `Ui.Tests` calls no Avalonia runtime API. Indentation is **non-breaking** spaces: there is
+nowhere to put a margin inside an inline run, and ordinary leading spaces are exactly what a text
+layout may drop at a wrap.
+
+Heading LEVEL is carried through the parse rather than folded into boldness, because release bodies are
+full of bold lead-ins mid-paragraph (`**Rulers.** New ruler…`) that would otherwise be
+indistinguishable from a section heading (owner, on seeing the first build).
+
+### `CRF_RELEASE_NOTES=1`
+
+Forces the dialog on launch, bypassing the gate only — a real fetch of the real running version's
+notes, recording nothing, so a preview never consumes a showing. It is checked AFTER
+`NetworkPermitted`: no developer convenience is a way around an administrator's kill switch.
+
+
 ## A side-by-side split pinned "the active document" to pane 0 (2026-08-29)
 
 Owner report: with a `.clay` and a `.csch` docked side by side, ⌘S saved the layout and never the

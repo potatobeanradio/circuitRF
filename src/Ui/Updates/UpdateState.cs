@@ -128,6 +128,24 @@ public sealed class UpdateState
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTime? LastSpaceNoticeUtc { get; set; }
 
+    /// <summary>
+    /// The version whose Release Notes have already been put in front of the user — the one field
+    /// that makes that dialog show <b>once per version</b> rather than on every launch.
+    ///
+    /// <para><b>Bookkeeping, so it lives here and not in <c>preferences.json</c></b>, by this file's
+    /// own rule: a preference is something the user chose, and this is a record of what they have
+    /// been shown. The choice — whether to be shown anything at all — is
+    /// <c>AppPreferences.ShowReleaseNotes</c>, and the two are deliberately not the same key.</para>
+    ///
+    /// <para><b>Null does not mean "show them".</b> It means nothing has been recorded yet, and what
+    /// that implies depends on whether this installation existed before the launch that found it null
+    /// — a distinction <see cref="ReleaseNotesGate"/> owns, because a clean install must never open
+    /// with the notes for a version the user has never run anything else.</para>
+    /// </summary>
+    [JsonPropertyName("release_notes_shown_for")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReleaseNotesShownFor { get; set; }
+
     /// <summary>Versions already announced in the Message Panel, so a relaunch does not repeat a line.</summary>
     [JsonPropertyName("announced")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
