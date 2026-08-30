@@ -253,7 +253,9 @@ An ordered stack from top to bottom, living in the `.ctech` file:
 - **Boundary conditions** top and bottom: open (free space), or perfect/lossy ground plane.
 - **Dielectric layer**: thickness, εr, tanδ, µr.
 - **Conductor layer**: thickness, σ, optional surface roughness; bound to one or more drawing layers.
-- **Via layer**: connects two conductor layers; bound to a drawing layer.
+- **Via layer**: connects two conductor layers; bound to a drawing layer. *(Drawn via
+  artwork is the point `ViaShape` today; accepting drawn via REGIONS — the MIM
+  plate-connection case — is planned in §10.12 / brief MIM-1.)*
 
 UI: a vertical stack diagram, click a band to edit, with **presets** — "FR-4 2-layer 1.6 mm",
 "Rogers 4350B 0.508 mm", "GaAs MMIC 100 µm" — because preset-then-tweak is what makes the 30-second
@@ -1168,3 +1170,70 @@ geometry* — the old wording would have excluded a solver that requires none of
   against an assumed perfect plane reports optimistically low inductance. Conversely, a user who
   declares downbonds explicitly gets much of the stepped-ground effect in **T1**, before any surface
   kernel exists.
+
+### 10.12 Thin-film (MIM) capacitors — plan
+
+**Status: proposal (2026-08-30). Nothing in this section is built.** The work is staged as the
+`docs/sonnet-briefs/brief-em-mim-series.md` series (MIM-1 … MIM-5); the authoritative record of
+what lands is, as always, `src/Engine/Mom/CLAUDE.md` and the per-area `RESOLVED.md` files, and each
+brief corrects this section in place with a `> Built at MIM-x` note as it ships.
+
+**The structure.** A MIM capacitor is a thin dielectric (50–300 nm, silicon-nitride-class εr) between
+two metal plates inside the interlayer dielectric: the SHUNT form returns its bottom plate through a
+backside via to the wafer's back metal; the SERIES form feeds in on one metal level and out on
+another through a plate-connection via. Both are ordinary multi-level planar-EM structures — exactly
+the class of problem L9/P12's multi-level + via machinery was built for — and an investigation on
+2026-08-30 found that what still blocks them is four specific, independent gaps, **none of which is
+the stackup model**: `StackupLayer` already expresses the thin dielectric, the plate conductor and
+the via entry, and the technology editor already binds a drawing layer and a span to a Via entry.
+
+**The capacitor dielectric is a stackup layer, not artwork — by design.** The 2.5D premise (§10.1)
+is a laterally infinite stratified medium, so the thin dielectric enters as a full layer of the
+stack, present everywhere at its true thickness. This is the standard approximation in the
+planar-EM class of tool, and it is a good one here: the fields that set the capacitance are
+confined under the plates, where the layer genuinely exists; elsewhere a 50–300 nm sheet perturbs
+an interconnect-scale stack negligibly. Drawn artwork on a dielectric-bound drawing layer stays
+ignored (with a note), exactly as §10.4's editor behaviour already reflects. What the user DRAWS
+are the two plates (conductor layers) and the plate-connection via — a REGION, which is gap 1.
+
+**The four gaps, each one brief:**
+
+1. **Region vias (MIM-1).** `PlanarExtractor` consumes only the point `ViaShape`; a rectangle or
+   polygon drawn on a via-bound layer is dropped silently, while the engine's `PlanarVia` already
+   takes an arbitrary polygon footprint and meshes one vertical basis per covered cell. Extraction
+   and reporting work only; the engine and every §7 via refusal are untouched.
+2. **A shipped exemplar (MIM-2).** The GaAs starter technology gains a plate conductor, a thin
+   capacitor dielectric and a plate-via entry (its `Cap Dielectric`/`Nitride` drawing layers have
+   existed, unbound, since the starter shipped), so both capacitor forms have an in-tree fixture.
+3. **Thin-layer numerics (MIM-3).** Two meshed levels 0.05–0.5 µm apart is a regime nothing has
+   measured: §L8c's images-closer-than-a-cell quadrature failure mode is reproduced deliberately by
+   plate spacing, cross-level kernels still carry logarithms (§3.5 of the engine record), and
+   `LayerStack` accepts any positive thickness without evidence. Measurement-first: kernel / fill /
+   physics ladders against direct Sommerfeld integration and the parallel-plate closed form, ending
+   in a validated-range statement or a bounded fix.
+4. **Interior-height electrostatics (MIM-4 — §7's "all of Part B").** De-embedding's
+   Z_c = γ/(jωC_pul) rests on an electrostatic image series over ONE grounded slab, which is why a
+   de-embedded edge port off the slab top throws and a stratified region under the lowest level
+   refuses at extraction — and a MIM's feed arrives on upper metal. The static Green's function at
+   interior heights retires both refusals; at ω = 0 the spectral kernel has no branch points and no
+   poles, so this is tamer than DCIM, but it is research-grade and staged oracle-first, with the
+   shipped on-slab-top path kept bit-identical.
+
+A fifth brief (MIM-5) closes the import loop: a process stack description that omits an optional
+capacitor module imports faithfully and silently, so the technology-import report learns to name
+the conductors its via list cannot reach and the layer-table rows nothing binds, and the user docs
+gain the three-row hand-add recipe.
+
+**What a MIM run looks like at each stage.** After MIM-1 + MIM-2: a runnable RAW solve (internal
+ports, or de-embedding off), with accuracy at plate separations resting on MIM-3's verdict. After
+MIM-4: ordinary de-embedded S-parameters with the feed on any level. **The acceptance topology is a
+NETWORK — several capacitors joined by transmission lines in one run — because that is what an MMIC
+matching section is.** Nothing in the plan is per-capacitor: the extractor takes every shape on the
+selected levels and every via region, so multi-cap structures use the same machinery (MIM-2 pins
+this with a two-caps-plus-line fixture). The two real bounds on such a run are the de-embedded port
+level (on the lowest analysis level until MIM-4 — a bottom-metal-fed network de-embeds today) and
+the unknown budget: on the shared tensor grid each plate's fine gridlines span the whole domain, so
+caps far apart with a long line between them grow N quickly; the accelerated (AIM) path and the
+§10.7 ceiling refusals are the existing answer, not anything new here. The user-facing EM reference
+page's "Cannot" list tracks the same boundary at every stage — §10.9's rule that the two documents
+must not contradict applies here verbatim.
