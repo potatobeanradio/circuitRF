@@ -69,6 +69,17 @@ Hero-2's SDD GaN HEMT.
 Integration check — the **full Hero-3 loadpull**, 20 Γ points × 32 Pin steps = **640 HB solves in
 0.55 s** (0.86 ms/solve), including tuner mutation and the live compression logic.
 
+> **Both figures above have improved since, and the table is deliberately not rewritten** — it was
+> taken on the machine named above, and re-measuring on another box would mix two machines in one
+> table. What HB-P1 and HB-P2 changed, measured before-and-after in one session on one box
+> (`src/Engine/RESOLVED.md` §HB-P1, §HB-P2): a warm K=5 Hero-2 solve **2.6× faster and 9.5× lighter**
+> (461 → 175 µs, 393 → 41 KB), Hero-4 warm **2.4×** (572 → 238 µs), and the full Hero-3 loadpull
+> **0.24 s → 0.19 s with 3.3× less garbage** (167 → 51 MB). The §6.8 targets below are therefore
+> reached with more margin than this table claims, not less. §2.1's lever list is unchanged and still
+> right: HB-P2 is lever 2 and 3 territory (never re-elaborate, warm-start everything, and now never
+> re-extract), and lever 1 — the pre-terminated (N_nl + N_term)-port network of §6.2 — is still
+> unbuilt and still the biggest structural win.
+
 **What that buys.** A 61-point Γ grid with ~8 bisection Pin steps per point is ~500 solves:
 **≈ 0.45 s single-threaded, ≈ 70 ms across 8 workers.** A single Pin drive-up (the loadline and
 power-sweep panels) is ~15–30 solves ≈ **20 ms**. Both targets in §6.8 are comfortably reachable for

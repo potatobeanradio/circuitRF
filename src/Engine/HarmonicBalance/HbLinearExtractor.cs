@@ -35,14 +35,72 @@ public sealed class HbLinearExtractor
     private readonly Func<int, string> _nodeNamer;
     private readonly Func<int, string> _branchNamer;
 
-    // Keyed by omega = k·ω₀.  G is topology-based and unchanged across sweep points,
-    // so the factorization computed during Extract() is reused by SolveFullNetwork().
-    // G is also cached (pre-factored CSC matrix) so the exporter can retrieve sparse G
-    // without rebuilding it.  G is null in the SolveFullNetwork lazy-cache path only
-    // when Extract() was never called for that omega (e.g. DC k=0 back-solve hit first);
-    // in that case the exporter must call Extract() or rebuild G on demand.
-    private readonly Dictionary<double, (SparseLU Lu, int Size, Complex[,]? YNN,
-        CompressedColumnStorage<Complex>? G)> _luCache = new();
+    /// <summary>
+    /// One cached factorization of the linear partition at one frequency, together with the exact
+    /// matrix it was built from.
+    ///
+    /// <para><c>G</c> is not merely an export convenience (though the exporter still reads it):
+    /// it is the VALIDITY CERTIFICATE for <c>Lu</c>. Every path that wants the factorization
+    /// re-stamps the matrix first — it has to, because the right-hand side changes with the drive —
+    /// and then asks <see cref="MnaSystem.MatchesCsc"/> whether what it just stamped is what was
+    /// factored. Bit-identical means the LU is still the LU of this matrix; anything else means a
+    /// value in the linear partition moved and the entry is replaced. See §"Cache lifetime".</para>
+    ///
+    /// <para><c>YNN</c> is null when the entry was created by a path that never needed the
+    /// interface admittance (the back-solver, the control-sensitivity row); it is filled in on
+    /// demand from the SAME <c>Lu</c>, without refactorizing.</para>
+    /// </summary>
+    private sealed class LuEntry
+    {
+        public required SparseLU Lu;
+        public required int      Size;
+        public required CompressedColumnStorage<Complex> G;
+        public Complex[,]? YNN;
+    }
+
+    // ── Cache lifetime (HB-P2) ────────────────────────────────────────────────
+    //
+    // An extractor now OUTLIVES a single solve: HbEngine keeps one per (netlist, settings) and
+    // every Run / RunSinglePoint takes it, so a loadpull's hundreds of Pin steps against one
+    // topology factor each harmonic ONCE instead of once per solve.
+    //
+    // What can go stale is a value in the linear partition — a loadpull tuner's per-grid-point
+    // impedance override, a re-configured termination. That is detected, not declared: each entry
+    // stores the matrix it was factored from and every use compares it, bit for bit, against the
+    // matrix just stamped. The comparison is O(nnz) int/complex compares against a stamp the caller
+    // was going to pay for anyway, and it needs no cooperation from any caller — which is the point,
+    // since an "invalidate after you mutate" protocol is silently wrong the first time someone
+    // forgets. InvalidateLinear() exists for callers that KNOW (and for tests); correctness does
+    // not depend on it being called.
+    //
+    // Keyed by omega = k·ω₀. The DC entry here is the UNREGULARIZED one — it is what
+    // SolveFullNetwork and ControlSensitivityRow have always used at ω = 0. ExtractDC's
+    // inductance-regularized factorization, when one is needed, lives in _dcRegEntry instead, so
+    // engaging regularization does not change the back-solve's matrix (it never did).
+    private readonly Dictionary<double, LuEntry> _luCache = new();
+
+    // ExtractDC's factorization when inductance regularization is applied — a DIFFERENT matrix
+    // from _luCache[0], and deliberately kept apart from it.
+    private LuEntry? _dcRegEntry;
+
+    // Sticky once IfNecessary mode has engaged: the DC interface was voltage-pinned, so every later
+    // ExtractDC stamps with regularization from the start rather than re-discovering it.
+    private bool _dcIndRegEngaged;
+
+    // One MnaSystem per (omega, regularized?), reused across solves so MnaSystem's own sparsity
+    // pattern and AMD ordering (SP-P2) survive — a repeat stamp then writes straight into the CSC
+    // value array with no rebuild, no hashing, and no AMD. A fresh instance per stamp, which is what
+    // this used to do, threw all of that away every call.
+    private readonly Dictionary<double, MnaSystem> _mnaCache = new();
+    private MnaSystem? _mnaDcReg;
+
+    /// <summary>
+    /// How many times a harmonic's MNA has actually been LU-factorized by this extractor. Test-facing:
+    /// the structural property HB-P2 is about is "one factorization per harmonic per topology, not per
+    /// solve", and that is a count, not a time. A tuner override at one harmonic should add exactly one.
+    /// </summary>
+    public int Factorizations => _factorizations;
+    private int _factorizations;
 
     // Branch-name map built lazily after the first BuildMna() call.
     // index b (0-based branch offset) → human-readable name for export.
@@ -121,49 +179,90 @@ public sealed class HbLinearExtractor
     /// </summary>
     public (Complex[,] YNN, Complex[] ISrc) ExtractDC()
     {
-        bool alwaysReg = _settings.InductanceRegularization == RegularizationMode.Always;
+        bool reg = _settings.InductanceRegularization == RegularizationMode.Always || _dcIndRegEngaged;
 
-        // ── First attempt (possibly with reg applied from the start) ────────────
-        var (zNN, singularIdxs) = ComputeZnn(alwaysReg);
+        // ONE stamp serves both halves. The matrix is the same whether the independent sources are
+        // zeroed or not — ZeroDriveMna suppresses only AddSourceValue/AddCurrentInjection, which
+        // land in the right-hand side — so the Z-column pass and the V_oc pass have always been
+        // factorizations of the same matrix, built twice.
+        var mna = StampDc(reg);
+        var entry = EnsureDcFactorization(mna, reg);
 
-        if (singularIdxs.Count > 0)
+        if (entry.YNN is null)
         {
-            if (_settings.InductanceRegularization == RegularizationMode.Never)
-                ThrowSingularDiagnostic(zNN);
+            var (zNN, singularIdxs) = ZColumns(entry.Lu, entry.Size);
 
-            // IfNecessary: regularize and retry. The notice is a per-solve diagnostic (it would
-            // otherwise repeat every point of a sweep) — gate it behind HbConsoleDiagnostics. The
-            // regularization itself always runs; it converges to the exact answer as R→0.
-            if (_settings.HbConsoleDiagnostics) WarnInductanceReg(singularIdxs);
-            (zNN, _) = ComputeZnn(applyIndReg: true);
+            if (singularIdxs.Count > 0 && !reg)
+            {
+                if (_settings.InductanceRegularization == RegularizationMode.Never)
+                    ThrowSingularDiagnostic(zNN);
+
+                // IfNecessary: regularize and retry. The notice is a per-solve diagnostic (it would
+                // otherwise repeat every point of a sweep) — gate it behind HbConsoleDiagnostics. The
+                // regularization itself always runs; it converges to the exact answer as R→0.
+                if (_settings.HbConsoleDiagnostics) WarnInductanceReg(singularIdxs);
+                _dcIndRegEngaged = true;
+                reg   = true;
+                mna   = StampDc(true);
+                entry = EnsureDcFactorization(mna, true);
+                (zNN, _) = ZColumns(entry.Lu, entry.Size);
+            }
+
+            entry.YNN = InvertNN(zNN, _N);
         }
 
-        var yNN  = InvertNN(zNN, _N);
-        var iSrc = ComputeISrc(yNN, alwaysReg || singularIdxs.Count > 0);
-        return (yNN, iSrc);
+        // V_oc with the bias sources active, against the SAME factorization.
+        var bSrc = mna.BuildRhs();
+        var xSrc = new Complex[entry.Size];
+        entry.Lu.Solve(bSrc, xSrc);
+        return (entry.YNN, ISrcFromVoc(entry.YNN, xSrc));
     }
 
     // ── DC extraction helpers ─────────────────────────────────────────────────
 
-    /// <summary>
-    /// Build MNA at ω=0 with zeroed sources, optionally apply inductance regularization,
-    /// then do the Z-column extraction.  Returns (Z_{N×N}, list of singular diagonal indices).
-    /// </summary>
-    private (Complex[,] ZNN, List<int> SingularIdxs) ComputeZnn(bool applyIndReg)
+    /// <summary>Stamp the linear partition at ω = 0, optionally regularized, into the persistent
+    /// MnaSystem that belongs to that (frequency, regularization) pair.</summary>
+    private MnaSystem StampDc(bool applyIndReg)
     {
-        var mnaZ = BuildMna(0.0, zeroDrive: true);
-        if (applyIndReg) ApplyInductanceReg(mnaZ);
-        var luZ  = mnaZ.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+        if (!applyIndReg) return StampAt(0.0);
 
+        // The regularized stamp is a LONGER call sequence than the plain one, so it gets its own
+        // MnaSystem: sharing one instance between the two would invalidate and rebuild the sparsity
+        // pattern on every alternation, which is exactly what the persistent instance exists to avoid.
+        if (_mnaDcReg is null) _mnaDcReg = new MnaSystem(_nonGroundCount);
+        else                   _mnaDcReg.Reset();
+        StampInto(_mnaDcReg, 0.0, zeroDrive: false);
+        ApplyInductanceReg(_mnaDcReg);
+        return _mnaDcReg;
+    }
+
+    /// <summary>The DC factorization for the given regularization state, reused when the freshly
+    /// stamped matrix is the one it was built from.</summary>
+    private LuEntry EnsureDcFactorization(MnaSystem mna, bool applyIndReg)
+    {
+        if (!applyIndReg) return EnsureFactorization(0.0, mna);
+
+        if (_dcRegEntry is not null && mna.MatchesCsc(_dcRegEntry.G)) return _dcRegEntry;
+        return _dcRegEntry = Factorize(mna);
+    }
+
+    /// <summary>
+    /// Z-column extraction against an existing factorization: inject 1 A at each interface node in
+    /// turn and read the interface voltages. Also reports which diagonal entries came back at zero —
+    /// a voltage-pinned interface node (ideal choke through an ideal voltage source).
+    /// </summary>
+    private (Complex[,] ZNN, List<int> SingularIdxs) ZColumns(SparseLU lu, int size)
+    {
         var zNN  = new Complex[_N, _N];
-        var xBuf = new Complex[mnaZ.Size];
+        var xBuf = new Complex[size];
+        var b    = new Complex[size];
 
         for (int j = 0; j < _N; j++)
         {
-            var b = new Complex[mnaZ.Size];
+            Array.Clear(b);
             int nodeJ = _interfaceNodes[j];
             if (nodeJ > 0) b[nodeJ - 1] = Complex.One;
-            luZ.Solve(b, xBuf);
+            lu.Solve(b, xBuf);
             for (int k = 0; k < _N; k++)
             {
                 int nodeK = _interfaceNodes[k];
@@ -179,19 +278,9 @@ public sealed class HbLinearExtractor
         return (zNN, singular);
     }
 
-    /// <summary>
-    /// Solve for V_oc(0) with bias sources active and compute I_src = −Y_{N×N}·V_oc.
-    /// Uses the same regularization state as the Z-column pass for consistency.
-    /// </summary>
-    private Complex[] ComputeISrc(Complex[,] yNN, bool applyIndReg)
+    /// <summary>I_src[k] = −Σ_j Y_{N×N}[k,j]·V_oc[j], with V_oc read off a full solution vector.</summary>
+    private Complex[] ISrcFromVoc(Complex[,] yNN, Complex[] xSrc)
     {
-        var mnaS = BuildMna(0.0, zeroDrive: false);
-        if (applyIndReg) ApplyInductanceReg(mnaS);
-        var luS  = mnaS.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
-        var bSrc = mnaS.BuildRhs();
-        var xSrc = new Complex[mnaS.Size];
-        luS.Solve(bSrc, xSrc);
-
         var vOc = new Complex[_N];
         for (int k = 0; k < _N; k++)
         {
@@ -285,86 +374,80 @@ public sealed class HbLinearExtractor
     /// </summary>
     public (Complex[,] YNN, Complex[] ISrc) Extract(double omega)
     {
-        SparseLU   luZ;
-        int        mnaSize;
-        Complex[,] yNN;
+        // ONE stamp, sources ACTIVE. It supplies both halves at once:
+        //   • the MATRIX, which is what step 1 factorizes — the zeroed-source build this used to
+        //     make separately produced the SAME matrix (ZeroDriveMna suppresses only the two
+        //     right-hand-side channels), so building it twice was building it twice;
+        //   • the RIGHT-HAND SIDE, which is what step 2 solves against and is the only part that
+        //     actually changes between Pin steps.
+        // It is also the cache's validity certificate: if this matrix is bit-identical to the one
+        // the stored LU was built from, that LU is still this matrix's LU.
+        var mna   = StampAt(omega);
+        var entry = EnsureFactorization(omega, mna);
 
-        // ── Step 1: Y_{N×N} via Z-column extraction (sources zeroed) ──────────
-        // G is topology-based — identical across sweep points.  Cache the factorization
-        // so (a) repeated sweep-loop Extract calls skip refactorization, and (b)
-        // SolveFullNetwork reuses the EXACT same LU, giving back-solve matching the
-        // HB interface voltages to ~1e-12 instead of ~1e-5 from a rebuild.
-        if (!_luCache.TryGetValue(omega, out var entry))
-        {
-            var mnaZ = BuildMna(omega, zeroDrive: true);
-            // Snapshot the sparse G BEFORE factorization for export use (data-export.md §4.2).
-            // BuildCsc() reads the same _entries dict that Factorize() will consume — safe.
-            var gMatrix = mnaZ.BuildCsc();
-            luZ     = mnaZ.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
-            mnaSize = mnaZ.Size;
-
-            // Lazy-build branch name map on first successful MNA (size is stable).
-            if (_branchNames is null && mnaZ.BranchCount > 0)
-            {
-                _branchNames = BuildBranchNamesFromMna(mnaZ);
-                _cachedMnaSize = mnaSize;
-            }
-
-            var zNN  = new Complex[_N, _N];
-            var xBuf = new Complex[mnaSize];
-
-            for (int j = 0; j < _N; j++)
-            {
-                // Inject 1A at interface node j; solve; V at interface nodes = Z column j.
-                var b = new Complex[mnaSize];
-                int nodeJ = _interfaceNodes[j];
-                if (nodeJ > 0) b[nodeJ - 1] = Complex.One;
-
-                luZ.Solve(b, xBuf);
-
-                for (int k = 0; k < _N; k++)
-                {
-                    int nodeK = _interfaceNodes[k];
-                    zNN[k, j] = nodeK > 0 ? xBuf[nodeK - 1] : Complex.Zero;
-                }
-            }
-
-            // Invert Z_{N×N} → Y_{N×N}.
-            yNN = InvertNN(zNN, _N);
-            _luCache[omega] = (luZ, mnaSize, yNN, gMatrix);
-        }
-        else
-        {
-            luZ     = entry.Lu;
-            mnaSize = entry.Size;
-            yNN     = entry.YNN ?? new Complex[_N, _N]; // guard — should never be null from Extract path
-        }
+        // ── Step 1: Y_{N×N} via Z-column extraction ───────────────────────────
+        // Only on a genuine miss, or when the entry was created by a path that did not need Y
+        // (the back-solver, the control-sensitivity row) — never a refactorization either way.
+        entry.YNN ??= InvertNN(ZColumns(entry.Lu, entry.Size).ZNN, _N);
 
         // ── Step 2: V_oc with sources active → I_src = −Y_{N×N}·V_oc ─────────
-        // Reuse cached LU: G is the same; only bSrc changes with sweep/drive state.
-        var mnaS = BuildMna(omega, zeroDrive: false);
-        var bSrc = mnaS.BuildRhs();
-        var xSrc = new Complex[mnaSize];
-        luZ.Solve(bSrc, xSrc);
+        var bSrc = mna.BuildRhs();
+        var xSrc = new Complex[entry.Size];
+        entry.Lu.Solve(bSrc, xSrc);
 
-        var vOc  = new Complex[_N];
-        for (int k = 0; k < _N; k++)
+        return (entry.YNN, ISrcFromVoc(entry.YNN, xSrc));
+    }
+
+    // ── Factorization cache ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// The factorization for <paramref name="omega"/>, reused when <paramref name="mna"/> — the
+    /// matrix just stamped — is bit-identical to the one the cached LU was built from, and rebuilt
+    /// when it is not. This is the whole invalidation mechanism; see §"Cache lifetime".
+    /// </summary>
+    private LuEntry EnsureFactorization(double omega, MnaSystem mna)
+    {
+        if (_luCache.TryGetValue(omega, out var entry) && mna.MatchesCsc(entry.G)) return entry;
+        return _luCache[omega] = Factorize(mna);
+    }
+
+    /// <summary>Factorize the currently-stamped matrix, snapshotting it as the entry's certificate.</summary>
+    private LuEntry Factorize(MnaSystem mna)
+    {
+        // Snapshot the sparse G BEFORE factorization, for export (data-export.md §4.2) and as the
+        // cache-validity certificate. BuildCsc() reads the same assembled matrix Factorize() will
+        // consume — safe, and the snapshot is a copy the entry owns.
+        var g  = mna.BuildCsc();
+        var lu = mna.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+        _factorizations++;
+
+        // Lazy-build branch name map on first successful MNA (size is stable).
+        if (_branchNames is null && mna.BranchCount > 0)
         {
-            int nodeK = _interfaceNodes[k];
-            vOc[k] = nodeK > 0 ? xSrc[nodeK - 1] : Complex.Zero;
+            _branchNames   = BuildBranchNamesFromMna(mna);
+            _cachedMnaSize = mna.Size;
         }
 
-        // I_src[k] = −Σ_j Y_{N×N}[k,j] * V_oc[j]
-        var iSrc = new Complex[_N];
-        for (int k = 0; k < _N; k++)
-        {
-            Complex sum = Complex.Zero;
-            for (int j = 0; j < _N; j++)
-                sum += yNN[k, j] * vOc[j];
-            iSrc[k] = -sum;
-        }
+        return new LuEntry { Lu = lu, Size = mna.Size, G = g };
+    }
 
-        return (yNN, iSrc);
+    /// <summary>
+    /// Drop every cached factorization. Not needed for correctness — a stale entry is detected by
+    /// the matrix comparison in <see cref="EnsureFactorization"/> — but available to a caller that
+    /// wants the memory back, and to a test that wants to force the cold path.
+    /// </summary>
+    public void InvalidateLinear()
+    {
+        _luCache.Clear();
+        _dcRegEntry = null;
+    }
+
+    /// <summary>Drop the cached factorization for one harmonic. Same status as the parameterless
+    /// overload: an optimisation and a test hook, never the thing that keeps an answer correct.</summary>
+    public void InvalidateLinear(double omega)
+    {
+        _luCache.Remove(omega);
+        if (Math.Abs(omega) < 1e-12) _dcRegEntry = null;
     }
 
     /// <summary>
@@ -394,13 +477,13 @@ public sealed class HbLinearExtractor
 
         if (Math.Abs(omega) < 1e-12)
         {
-            (zNN, var singular) = ComputeZnn(indReg);
+            (zNN, var singular) = ComputeZnnFresh(indReg);
             if (singular.Count > 0)
             {
                 if (_settings.InductanceRegularization == RegularizationMode.Never)
                     ThrowSingularDiagnostic(zNN);
                 if (_settings.HbConsoleDiagnostics) WarnInductanceReg(singular);
-                (zNN, _) = ComputeZnn(applyIndReg: true);
+                (zNN, _) = ComputeZnnFresh(applyIndReg: true);
                 indReg = true;
             }
             return (zNN, ComputeVoc(0.0, indReg));
@@ -427,6 +510,20 @@ public sealed class HbLinearExtractor
         return (zNN, ComputeVoc(omega, applyIndReg: false));
     }
 
+    /// <summary>
+    /// A standalone DC Z-column extraction on its OWN throwaway MnaSystem and factorization — the
+    /// open-port path (<see cref="ExtractImpedance"/>) only. It deliberately does not touch the
+    /// shared factorization cache: that cache belongs to the TERMINATED extraction the Newton loop
+    /// runs on, and this one asks a different question of the same netlist.
+    /// </summary>
+    private (Complex[,] ZNN, List<int> SingularIdxs) ComputeZnnFresh(bool applyIndReg)
+    {
+        var mnaZ = BuildMna(0.0, zeroDrive: true);
+        if (applyIndReg) ApplyInductanceReg(mnaZ);
+        var luZ = mnaZ.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+        return ZColumns(luZ, mnaZ.Size);
+    }
+
     /// <summary>Open-circuit interface voltages with the circuit's own sources active.</summary>
     private Complex[] ComputeVoc(double omega, bool applyIndReg)
     {
@@ -447,10 +544,32 @@ public sealed class HbLinearExtractor
 
     // ── MNA assembly ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Stamp the linear partition at <paramref name="omega"/> into the persistent MnaSystem for that
+    /// frequency, sources ACTIVE. Reusing the instance is what keeps MnaSystem's own sparsity-pattern
+    /// and AMD caches (SP-P2) alive across solves — a fresh instance per stamp discards both, and
+    /// then every stamp pays a pattern rebuild and every factorization pays a fresh AMD ordering.
+    /// </summary>
+    private MnaSystem StampAt(double omega)
+    {
+        if (!_mnaCache.TryGetValue(omega, out var mna))
+            _mnaCache[omega] = mna = new MnaSystem(_nonGroundCount);
+        else
+            mna.Reset();
+
+        StampInto(mna, omega, zeroDrive: false);
+        return mna;
+    }
+
     private MnaSystem BuildMna(double omega, bool zeroDrive)
     {
         var mna = new MnaSystem(_nonGroundCount);
+        StampInto(mna, omega, zeroDrive);
+        return mna;
+    }
 
+    private void StampInto(MnaSystem mna, double omega, bool zeroDrive)
+    {
         // Non-mutual, non-nonlinear components first.
         foreach (var ec in _netlist.Components)
         {
@@ -476,8 +595,6 @@ public sealed class HbLinearExtractor
             for (int n = 1; n <= _nonGroundCount; n++)
                 mna.AddAdmittance(n, 0, new Complex(gmin, 0));
         }
-
-        return mna;
     }
 
     // Every component whose DRIVE must be suppressed for the source-zeroed Y_NN extraction.
@@ -500,8 +617,7 @@ public sealed class HbLinearExtractor
     /// the component state (ToneSource phasors, bias values) is correct for that
     /// sweep point — the RHS is NOT stable after UpdateSweepPoint advances.
     /// </summary>
-    public Complex[] BuildSourceRhs(double omega) =>
-        BuildMna(omega, zeroDrive: false).BuildRhs();
+    public Complex[] BuildSourceRhs(double omega) => StampAt(omega).BuildRhs();
 
     /// <summary>
     /// Solve the full linear network at <paramref name="omega"/> using a pre-built
@@ -518,25 +634,12 @@ public sealed class HbLinearExtractor
     /// </summary>
     public Complex[] SolveFullNetwork(double omega, Complex[] iNlAtInterface, Complex[] bSrc)
     {
-        // Reuse the exact factorization built during Extract() so the back-solve and
-        // the HB solve use the SAME linear system (machine-precision agreement, ~1e-12).
-        // If omega was never Extract()ed (e.g., DC k=0), build and cache it now,
-        // including the sparse G snapshot for export.
-        if (!_luCache.TryGetValue(omega, out var entry))
-        {
-            var mna0 = BuildMna(omega, zeroDrive: true);
-            var g0   = mna0.BuildCsc();   // snapshot before Factorize (data-export.md §4.2)
-            var lu0  = mna0.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
-
-            if (_branchNames is null && mna0.BranchCount > 0)
-            {
-                _branchNames = BuildBranchNamesFromMna(mna0);
-                _cachedMnaSize = mna0.Size;
-            }
-
-            entry = (lu0, mna0.Size, null, g0);
-            _luCache[omega] = entry;
-        }
+        // Reuse the exact factorization built during Extract() so the back-solve and the HB solve
+        // use the SAME linear system (machine-precision agreement, ~1e-12). If omega was never
+        // Extract()ed (e.g. DC k=0), the stamp below builds and caches it now, including the sparse
+        // G snapshot for export. Either way the matrix is re-stamped and compared, so an entry that
+        // no longer describes the network is replaced rather than reused.
+        var entry = EnsureFactorization(omega, StampAt(omega));
 
         var b = (Complex[])bSrc.Clone();  // don't modify caller's copy
 
@@ -570,19 +673,7 @@ public sealed class HbLinearExtractor
     /// </summary>
     public Complex[] ControlSensitivityRow(double omega, int branchIdx)
     {
-        if (!_luCache.TryGetValue(omega, out var entry))
-        {
-            var mna0 = BuildMna(omega, zeroDrive: true);
-            var g0   = mna0.BuildCsc();
-            var lu0  = mna0.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
-            if (_branchNames is null && mna0.BranchCount > 0)
-            {
-                _branchNames = BuildBranchNamesFromMna(mna0);
-                _cachedMnaSize = mna0.Size;
-            }
-            entry = (lu0, mna0.Size, null, g0);
-            _luCache[omega] = entry;
-        }
+        var entry = EnsureFactorization(omega, StampAt(omega));
 
         var rRef = new Complex[_N];
         var bvec = new Complex[entry.Size];
@@ -642,7 +733,7 @@ public sealed class HbLinearExtractor
     /// </summary>
     internal (int[] Rows, int[] Cols, System.Numerics.Complex[] Data) GetSparseG(double omega)
     {
-        if (!_luCache.TryGetValue(omega, out var entry) || entry.G is null)
+        if (!_luCache.TryGetValue(omega, out var entry))
             return ([], [], []);
 
         var g = entry.G;

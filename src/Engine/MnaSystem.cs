@@ -591,6 +591,41 @@ public sealed class MnaSystem : IMnaContext
     }
 
     /// <summary>
+    /// True when the currently-assembled matrix is bit-identical — structure AND values — to
+    /// <paramref name="other"/>, which is normally an earlier <see cref="BuildCsc"/> snapshot of
+    /// this same system.
+    ///
+    /// <para><b>Why (HB-P2).</b> <see cref="HarmonicBalance.HbLinearExtractor"/> caches one LU per
+    /// harmonic and reuses it across solves. What makes a cached LU stale is a VALUE change in the
+    /// linear partition — a loadpull tuner's per-point impedance override, a re-configured
+    /// termination — and the extractor has to re-stamp the matrix on every solve anyway (the
+    /// right-hand side changes with the drive). So the honest validity test is simply "is the
+    /// matrix I just stamped the one I factored?", asked here against the live CSC with no
+    /// allocation and no cooperation from the caller. An invalidation protocol that callers must
+    /// remember to invoke would answer the same question and be silently wrong when one forgot.</para>
+    /// </summary>
+    public bool MatchesCsc(CompressedColumnStorage<Complex>? other)
+    {
+        if (other is null) return false;
+        EnsurePattern();
+        var cs = _csc!;
+        if (other.RowCount != cs.RowCount || other.ColumnCount != cs.ColumnCount) return false;
+
+        var (ocp, orx, ova) = (other.ColumnPointers, other.RowIndices, other.Values);
+        var (ncp, nrx, nva) = (cs.ColumnPointers, cs.RowIndices, cs.Values);
+        if (ocp.Length != ncp.Length || orx.Length != nrx.Length || ova.Length != nva.Length)
+            return false;
+
+        for (int i = 0; i < ncp.Length; i++) if (ocp[i] != ncp[i]) return false;
+        for (int i = 0; i < nrx.Length; i++) if (orx[i] != nrx[i]) return false;
+        // Bit equality, not a tolerance: the question is whether this is the SAME matrix, and
+        // Complex.Equals is exact. A NaN entry would compare unequal and force a refactorization,
+        // which is the safe direction.
+        for (int i = 0; i < nva.Length; i++) if (!ova[i].Equals(nva[i])) return false;
+        return true;
+    }
+
+    /// <summary>
     /// Build and return the CSC representation of the current matrix.
     /// Used by <see cref="HarmonicBalance.HbLinearExtractor"/> to snapshot G(ω)
     /// before factorization so the sparse matrix can be exported without recomputing.

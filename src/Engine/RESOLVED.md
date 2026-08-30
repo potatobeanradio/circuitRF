@@ -741,3 +741,148 @@ unexplained speed-up in a solver usually means it solved a smaller problem.
 ORIGINAL MTIME, so MSBuild's incremental check skips the recompile and the next test run silently
 uses the pre-restore DLL. Verify a deliberate flag flip by asserting that a test which SHOULD fail
 does fail, rather than trusting the build.)*
+
+## HB-P2 — the linear extractor outlives one solve (2026-08-30)
+
+`docs/sonnet-briefs/brief-hb-p2-extractor-reuse.md`. Three costs, all outside the Newton loop:
+`RunSinglePoint` built a fresh `HbLinearExtractor` and refactorized every harmonic on every call
+although only the drive changed between Pin steps; the stamp that produced the right-hand side spent
+most of its time rebuilding an expression evaluator; and the post-convergence per-port currents were
+obtained by evaluating every nonlinear device at every time sample a second time.
+
+**Measured on this box, Release, before and after in the same session** (a scratch console harness
+driving the shipping entry points on the committed fixtures — not a test; `dotnet test` builds Debug):
+
+| case | before | after | |
+|---|---|---|---|
+| Hero 2 warm `RunSinglePoint` | 460.9 µs / 393.0 KB | **174.6 µs / 41.2 KB** | 2.6× / 9.5× |
+| Hero 4 warm `RunSinglePoint` | 572.4 µs / 457.0 KB | **237.9 µs / 66.5 KB** | 2.4× / 6.9× |
+| Hero 2 warm `Run` | 1230.1 µs / 543.6 KB | **608.8 µs / 63.1 KB** | 2.0× / 8.6× |
+| Hero 4 warm `Run` | 799.0 µs / 591.5 KB | **262.3 µs / 92.6 KB** | 3.0× / 6.4× |
+| Hero 3 full loadpull, 20 Γ × 32 Pin | 0.24 s / 166.7 MB | **0.19 s / 50.5 MB** | 1.26× / 3.3× |
+| warm extractor: `ExtractDC` + `Extract`×K (Hero 2) | 120.5 µs / 143.0 KB | **17.4 µs / 3.9 KB** | 6.9× / 37× |
+
+The loadpull's 1.26× is the honest shape of the win: at 640 solves the extractor was ~80 µs of a
+~375 µs solve, and what is left is the Newton loop itself (HB-P1/HB-P3 territory). Its allocation
+fell 3.3× regardless, which is what a long grid run actually feels.
+
+### The invalidation protocol the brief specified was not built — the cache validates itself instead
+
+The brief's M1 asks every caller that mutates a termination (`TunerModel.SetHarmonicOverride` and
+friends) to call `InvalidateLinear(k·ω₀)` beside it, with a DEBUG-only re-stamp-and-compare as a
+"safety net". **That protocol is silently wrong the first time a caller forgets, and Release would
+not say so** — and the call sites are not only the two loadpull engines: `SetHarmonicOverride` /
+`ClearHarmonicOverride` are also reached from `HarmonicaContext` and from six `Engine.Tests` files
+that drive `RunSinglePoint` directly on an engine they hold across mutations.
+
+What ships instead makes the DEBUG net the whole mechanism, in Release too, for free. Every path that
+wants a harmonic's factorization has to re-stamp the matrix first — it always did, because the
+right-hand side changes with the drive — so `MnaSystem.MatchesCsc` asks the only question that
+matters, against the matrix already in hand and with no allocation: **is what I just stamped the
+matrix this LU was built from?** Bit equality, structure and values. A `.Equals` mismatch (a NaN
+included) refactorizes, which is the safe direction. Cost: O(nnz) compares, ~100 cells on a hero.
+
+Three consequences worth keeping:
+
+- **No caller changed.** `LoadpullEngine`, `LoadpullPursuitEngine` and harmonicaRF gained nothing to
+  remember, and every existing test that mutates a tuner between solves on one engine is correct as
+  written. `HbLinearExtractor.InvalidateLinear()` / `InvalidateLinear(ω)` exist and are exposed on
+  `HbEngine` too, but only as an optimisation and a test hook — correctness never depends on a call.
+- **The invalidation is exactly as fine-grained as the physics.** A Γ move at the tuned harmonic
+  refactorizes that one harmonic and no other, because only that one's matrix moved. Pinned by
+  `HbExtractorReuseTests.TunerImpedanceOverride_IsPickedUpWithNoInvalidationCall_AndRefactorsOneHarmonic`,
+  which deliberately makes no invalidation call and asserts both `1` refactorization and an answer
+  bit-identical to a fresh engine's.
+- **A drive change costs nothing.** `SetSourceDrive` moves the right-hand side only; the matrix
+  compares equal and nothing refactorizes. The same test asserts that too.
+
+The engine keeps the extractor per **(netlist, extractor-relevant settings)**, comparing the settings
+by VALUE rather than by reference — `Gmin`, both regularization modes, `InductanceRegR`,
+`HbConsoleDiagnostics`. Reference equality, which the brief suggested hoisting a copy to preserve,
+could never hold: `RunSinglePoint` mints a fresh `AnalysisSettings` whenever the directive's
+`MaxIter` differs from the settings default, so the loadpull engine's every call would have missed.
+
+### `ExtractDC` had no cache at all, and was factorizing the same matrix twice per call
+
+Not in the brief, and the larger half of M1 on any circuit whose DC interface needs regularization.
+`ExtractDC` never touched `_luCache` — every call built a zero-drive MNA, factorized it for the
+Z-columns, then built a *second* MNA with sources active and factorized **that** for `V_oc`. The two
+matrices are identical: `ZeroDriveMna` suppresses only `AddSourceValue`/`AddCurrentInjection`, which
+land in the right-hand side and not in the matrix. So the whole extraction — DC and every AC
+harmonic — now takes ONE stamp with sources active, and the same factorization serves both halves.
+
+The regularized DC factorization is deliberately kept in its own slot (`_dcRegEntry`) rather than in
+`_luCache[0]`. `SolveFullNetwork` and `ControlSensitivityRow` have always back-solved at ω = 0
+against an **unregularized** matrix, and loadpull forces `InductanceRegularization=Always`, so
+sharing one DC entry would have quietly moved every loadpull back-solve (the source-tuner branch
+currents behind `Iin`/`Zin`) by the regularization resistance. Two slots, today's numbers.
+
+Hero 2 therefore factorizes **K+2** times, not K+1: its ideal chokes pin the DC interface, so
+`IfNecessary` engages and the first `ExtractDC` pays one speculative unregularized pass before the
+regularized one. That happens once — the mode is sticky — and the tests assert the count a *single*
+solve costs, then that twenty solves cost exactly the same.
+
+### 80% of the linear-partition stamp was rebuilding an expression evaluator
+
+The brief's M2 proposes a `BuildRhsOnly(ω)` that stamps only the RHS-contributing components. It was
+not needed, and building it would have cost the self-validating cache above (which needs the full
+matrix). Measuring the stamp first said why:
+
+| Hero 2, per stamp | before |
+|---|---|
+| fresh `MnaSystem` + full stamp + `BuildRhs` | 8.96 µs / 13.22 KB |
+| the two `Z_Port` stamps alone | **6.90 µs / 6.21 KB** |
+
+`ZPortModel.EvaluateZ` built a `Scope` **and** an `Evaluator` and re-injected every resolved global —
+one `ToString()` per global — on every stamp, at every frequency, on every solve. `ChainModel` has
+the identical shape. But `Z(freq)` is a *pure function of freq* for the life of the model: the
+expressions, the scope variables and the declared functions are all fixed at construction, and
+`ComponentModelFactory` builds the scope dictionary as its own private copy that nothing else holds.
+So the memo is exact, not approximate. With it, plus reusing one `MnaSystem` instance per (ω,
+regularized?) so SP-P2's sparsity pattern and AMD ordering survive between solves:
+
+| Hero 2, per stamp | before | after |
+|---|---|---|
+| fresh `MnaSystem` + full stamp + `BuildRhs` | 8.96 µs / 13.22 KB | 3.95 µs / 7.07 KB |
+| reused `MnaSystem`, `Reset` + stamp + `BuildRhs` | 6.24 µs / 6.45 KB | **1.40 µs / 0.30 KB** |
+| `BuildSourceRhs` × (K+1) | 59.3 µs / 80.8 KB | **9.2 µs / 1.8 KB** |
+
+That also settles M2's "AMD once" without touching `MnaSystem.Factorize`'s signature: the ordering is
+per instance, and the instance now persists. It benefits the S-parameter sweep and anything else that
+stamps a `Z_Port` or a `Chain`, not just HB.
+
+**This adds no thread-safety constraint that was not already there** — `Stamp` already writes
+`PortBranchIndices` on the model, so one instance was never stampable from two threads at once, which
+is why `SParameterEngine`'s parallel path elaborates its own netlist per worker.
+
+### M3 — and the one case where the re-evaluation is a different answer, not a slower one
+
+`ComputeDevicePortCurrents` re-evaluated every device at every sample after convergence, to produce
+`I:instance:terminal` cubes whose values its own comment says are `INl` re-housed per port. The last
+Newton device pass is an evaluation at exactly the converged `V` (the loop returns *before* applying
+an update once `‖F‖ < tol`), so keeping its `res.I[p]` in a buffer allocated once per solve makes the
+post-solve step an FFT per port. Same for the two-tone and n-tone twins.
+
+**The `cc != null` exemption is not a conservative default; it is required.** With control currents
+the post-solve currents are evaluated at the *converged* `_c_ref`, back-solved from the converged
+`INl` — which the last Newton pass, one iterate behind on its seed, did not use. That is a different
+evaluation of the same device, not a cheaper route to the same one.
+`ControlCurrentSdd_IgnoresTheLastPassBuffer_AndReEvaluatesAtTheConvergedCRef` hands the control path
+a deliberately wrong buffer and asserts the answer does not move — then hands the *same* wrong buffer
+to the `cc == null` path and asserts it does, so the exemption cannot be satisfied vacuously by a
+buffer nobody reads.
+
+A buffer whose shape does not match (device count, port count, sample count) falls back to
+re-evaluation rather than throwing: a caller passing the wrong one is a caller error, not a data
+error, and the wrong answer is the one worth refusing.
+
+### Pre-existing, and NOT caused by this work: the committed self-goldens are stale
+
+Running `Engine.Tests` rewrites ten `testdata/Hero{2,3,5}/*_self_*.csv` and `RLSweep_*.csv` fixtures,
+because the golden *generators* are `[Fact]`s. **HEAD does the same** — checked by building the
+unmodified HEAD in a second worktree and running the same filter there: the Hero-3 churn is
+line-for-line identical (500 / 2358 / 187 / 1218 lines, worst absolute deltas 5.551e-17 / 6.467e-15 /
+1.000e-16 / 8.839e-16). Regenerating all fourteen files on both trees and diffing them against each
+other gives **byte equality**, so HB-P2 moved no converged number anywhere. The committed copies were
+already behind their own generators before this brief; that is someone else's decision to make, and
+the files are left as committed here.

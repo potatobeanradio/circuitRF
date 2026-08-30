@@ -88,29 +88,48 @@ public sealed class ChainModel : ComponentModel
         mna.AddBranchConstraint(br2, br2, d);
     }
 
+    // ABCD(freq) is a PURE function of freq for the life of the model — the expressions, the
+    // resolved scope variables and the declared functions are all fixed at construction. The memo
+    // is therefore exact, and it is what keeps a repeated stamp of one topology (the HB extractor
+    // re-stamps the linear partition once per harmonic per solve; a loadpull runs hundreds of
+    // solves) from rebuilding a Scope and an Evaluator and re-injecting every global each time.
+    // Same reasoning, same shape, as ZPortModel.EvaluateZ.
+    private Dictionary<double, (Complex A, Complex B, Complex C, Complex D)>? _abcdCache;
+    private Scope?     _scope;
+    private Evaluator? _ev;
+
     private (Complex A, Complex B, Complex C, Complex D) Evaluate(double freqHz)
     {
-        var scope = new Scope($"Chain:{_name}");
-        foreach (var kv in _scopeVars)
-            scope.Bind(kv.Key, kv.Value.ToString()!);
+        _abcdCache ??= [];
+        if (_abcdCache.TryGetValue(freqHz, out var cached)) return cached;
 
-        var ev = new Evaluator();
-        foreach (var fn in _functions ?? []) ev.RegisterFunction(fn);
-        foreach (var kv in _scopeVars)
-            ev.InjectResolved($"Chain:{_name}", kv.Key, kv.Value);
-        scope.Bind("freq", freqHz.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
-        ev.InjectResolved($"Chain:{_name}", "freq", new Value(freqHz));
+        if (_scope is null || _ev is null)
+        {
+            _scope = new Scope($"Chain:{_name}");
+            foreach (var kv in _scopeVars)
+                _scope.Bind(kv.Key, kv.Value.ToString()!);
+
+            _ev = new Evaluator();
+            foreach (var fn in _functions ?? []) _ev.RegisterFunction(fn);
+            foreach (var kv in _scopeVars)
+                _ev.InjectResolved($"Chain:{_name}", kv.Key, kv.Value);
+        }
+
+        _scope.Bind("freq", freqHz.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        _ev.InjectResolved($"Chain:{_name}", "freq", new Value(freqHz));
 
         Complex One(Expr? e, Complex fallback)
         {
             if (e is null) return fallback;
-            var v = ev.EvalExpr(e, scope);
+            var v = _ev.EvalExpr(e, _scope);
             return v.Kind == ValueKind.Real ? new Complex(v.AsReal(), 0) : v.AsComplex();
         }
 
         // Defaults form the identity two-port (a through connection), so a partially-specified
         // chain block degrades to a wire rather than to a silent zero matrix.
-        return (One(_a, Complex.One), One(_b, Complex.Zero),
-                One(_c, Complex.Zero), One(_d, Complex.One));
+        var abcd = (One(_a, Complex.One), One(_b, Complex.Zero),
+                    One(_c, Complex.Zero), One(_d, Complex.One));
+        _abcdCache[freqHz] = abcd;
+        return abcd;
     }
 }

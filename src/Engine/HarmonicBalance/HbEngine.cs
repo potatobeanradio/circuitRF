@@ -136,6 +136,58 @@ public sealed class HbEngine
         _settings = settings ?? AnalysisSettings.Default;
     }
 
+    // ── The linear extractor outlives one solve (HB-P2) ───────────────────────
+    //
+    // The extractor holds one LU per harmonic. Rebuilding it per solve threw those away and
+    // refactorized every harmonic on every call — ~55% of a warm RunSinglePoint and ~70% of its
+    // allocation, although the only thing that changes between the Pin steps of one loadpull Γ
+    // point is the drive, which touches the right-hand side and not the matrix. So the engine keeps
+    // one, and a solve re-stamps and reuses it.
+    //
+    // Reuse is NOT taken on trust: the extractor compares the matrix it just stamped, bit for bit,
+    // against the one each cached factorization was built from, and rebuilds on any difference. A
+    // loadpull tuner's per-grid-point impedance override is therefore picked up with no cooperation
+    // from the loadpull engine at all — which is the point, since a "remember to invalidate"
+    // protocol fails silently the one time a caller forgets.
+    //
+    // The extractor is per (netlist, extractor-relevant settings). The netlist is fixed for the
+    // engine's life; the settings are not — RunSinglePoint takes a settingsOverride, and the
+    // loadpull engine uses it to force InductanceRegularization=Always. So the cached extractor is
+    // kept only while the fields it actually reads are unchanged, compared by VALUE rather than by
+    // reference: RunSinglePoint mints a fresh AnalysisSettings whenever the directive's MaxIter
+    // differs from the settings default, and reference equality would never hold across those.
+    private HbLinearExtractor? _extractor;
+    private (double Gmin, RegularizationMode Cond, RegularizationMode Ind, double IndR, bool Diag)
+        _extractorKey;
+
+    private HbLinearExtractor GetExtractor(AnalysisSettings settings)
+    {
+        var key = (settings.Gmin, settings.ConductanceRegularization,
+                   settings.InductanceRegularization, settings.InductanceRegR,
+                   settings.HbConsoleDiagnostics);
+
+        if (_extractor is not null && _extractorKey == key) return _extractor;
+
+        _extractorKey = key;
+        return _extractor = new HbLinearExtractor(_netlist, settings);
+    }
+
+    /// <summary>
+    /// How many times this engine's linear extractor has LU-factorized a harmonic's MNA. Test-facing:
+    /// the property HB-P2 asserts is one factorization per harmonic per topology, not one per solve.
+    /// </summary>
+    public int LinearFactorizations => _extractor?.Factorizations ?? 0;
+
+    /// <summary>
+    /// Drop the cached linear factorizations. Never required for correctness — a matrix that no
+    /// longer matches is detected on the next stamp — but available to a caller that wants the
+    /// memory back, or a test that wants the cold path.
+    /// </summary>
+    public void InvalidateLinear() => _extractor?.InvalidateLinear();
+
+    /// <summary>Drop one harmonic's cached factorization. Same status as the parameterless overload.</summary>
+    public void InvalidateLinear(double omega) => _extractor?.InvalidateLinear(omega);
+
     // ── Directive resolution ─────────────────────────────────────────────────
 
     /// <summary>
@@ -264,7 +316,7 @@ public sealed class HbEngine
         double omega0 = 2.0 * Math.PI * f0;
 
         // ── Setup: linear extractor (extracts Y_{N×N} and I_src at each harmonic) ──
-        var extractor  = new HbLinearExtractor(_netlist, _settings);
+        var extractor  = GetExtractor(_settings);
         int N          = extractor.InterfaceCount;
         int[] ifNodes  = extractor.InterfaceNodes;
 
@@ -414,7 +466,7 @@ public sealed class HbEngine
         // C2: Post-convergence per-device port-current extraction (not in Newton hot path).
         // Pass cc + converged INl so SDDs with C[n] refs get the correct _cn values.
         var pointPortCurrents = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, _netlist, ifNodes, cc, solveResult.INl);
+            V, N, K, gridN, _netlist, ifNodes, cc, solveResult.INl, solveResult.PortITime);
         foreach (var (key, spec) in pointPortCurrents)
         {
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
@@ -510,7 +562,7 @@ public sealed class HbEngine
         // the 4·order rule, the 2·order sum bins the Jacobian needs (harmonic-balance.md §5.2/§6.1).
         var (N1, N2) = HbFft2D.GridSizes(p.MaxMixOrder, p.MaxMixOrder, p.FFTOverSample);
 
-        var extractor = new HbLinearExtractor(_netlist, _settings);
+        var extractor = GetExtractor(_settings);
         int N         = extractor.InterfaceCount;
         int[] ifNodes = extractor.InterfaceNodes;
         var nodeNames = ifNodes.Select(n =>
@@ -600,7 +652,7 @@ public sealed class HbEngine
 
         // C2: post-convergence per-device port-current extraction over the mixing lattice.
         var pointPortCurrents = HbNewton2D.ComputeDevicePortCurrents2D(
-            V, grid, N, N1, N2, _netlist, ifNodes);
+            V, grid, N, N1, N2, _netlist, ifNodes, solveResult.PortITime);
         foreach (var (key, spec) in pointPortCurrents)
         {
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
@@ -707,7 +759,7 @@ public sealed class HbEngine
         var lattice = apft.Lattice;
         int M       = lattice.MixCount;
 
-        var extractor = new HbLinearExtractor(_netlist, _settings);
+        var extractor = GetExtractor(_settings);
         int N         = extractor.InterfaceCount;
         int[] ifNodes = extractor.InterfaceNodes;
         var nodeNames = ifNodes.Select(n =>
@@ -798,7 +850,7 @@ public sealed class HbEngine
 
         // Post-convergence per-device port-current extraction over the lattice.
         var pointPortCurrents = HbNewtonNd.ComputeDevicePortCurrentsNd(
-            V, apft, N, _netlist, ifNodes);
+            V, apft, N, _netlist, ifNodes, solveResult.PortITime);
         foreach (var (key, spec) in pointPortCurrents)
         {
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
@@ -1170,7 +1222,7 @@ public sealed class HbEngine
                 NonlinearAbsTol           = settings.NonlinearAbsTol,
             };
 
-        var extractor = new HbLinearExtractor(_netlist, settings);
+        var extractor = GetExtractor(settings);
         int N         = extractor.InterfaceCount;
         int[] ifNodes = extractor.InterfaceNodes;
 
@@ -1349,7 +1401,7 @@ public sealed class HbEngine
         int    gridN  = HbFft.GridSize(K, p.FFTOverSample);
         double omega0 = 2.0 * Math.PI * f0;
 
-        var extractor = new HbLinearExtractor(_netlist, _settings);
+        var extractor = GetExtractor(_settings);
         int N         = extractor.InterfaceCount;
         int[] ifNodes = extractor.InterfaceNodes;
 

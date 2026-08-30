@@ -25,9 +25,17 @@ namespace CircuitRF.Engine.HarmonicBalance;
 /// </summary>
 public static class HbNewton2D
 {
+    /// <param name="PortITime">
+    /// Per-device, per-port terminal current over the 2-D time grid — <c>[deviceOrdinal][port][t1, t2]</c>
+    /// — from the LAST device evaluation of this solve, which is the one at the returned <c>V</c>.
+    /// <see cref="ComputeDevicePortCurrents2D"/> takes it instead of re-evaluating every device at
+    /// every sample for numbers already in hand (HB-P2 M3). This path has no control-current form,
+    /// so there is no case where the re-evaluation is the different — and correct — answer.
+    /// </param>
     public record SolveResult(bool Converged, int Iterations,
         IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace,
-        Complex[,] INl);  // I_nl[node, mixIdx] at the returned point
+        Complex[,] INl,
+        double[][][,]? PortITime = null);  // I_nl[node, mixIdx] at the returned point
 
     // ── Newton loop ──────────────────────────────────────────────────────────────
 
@@ -60,9 +68,13 @@ public static class HbNewton2D
         var trace    = new List<HbConvergenceTrace.IterRecord>();
         Complex[,] iNlLast = new Complex[N, M];
 
+        // One buffer for the whole solve, overwritten per pass, so the last pass leaves its
+        // per-port terminal currents behind for the post-solve extraction (M3).
+        var portITime = AllocPortITime(netlist, N1, N2);
+
         for (int iter = 0; iter < maxIter; iter++)
         {
-            var (iNl, qNl, G, C) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes);
+            var (iNl, qNl, G, C) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
             iNlLast = iNl;
 
             var F  = BuildF2D(V, yNN, iSrc, iNl, qNl, grid, N, f1, f2);
@@ -70,7 +82,7 @@ public static class HbNewton2D
             trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
 
             if (fN < tol)
-                return new SolveResult(true, iter + 1, trace, iNlLast);
+                return new SolveResult(true, iter + 1, trace, iNlLast, portITime);
 
             var J = BuildJ2D(yNN, G, C, grid, N, f1, f2, guardOrder);
 
@@ -80,17 +92,17 @@ public static class HbNewton2D
             if (dV is null)
             {
                 Console.Error.WriteLine($"[HB2D] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
-                return new SolveResult(false, iter + 1, trace, iNlLast);
+                return new SolveResult(false, iter + 1, trace, iNlLast, portITime);
             }
 
             ApplyUpdate2D(V, dV, N, M, lambda);
         }
 
-        var (iNlF, qNlF, _, _) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes);
+        var (iNlF, qNlF, _, _) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
         iNlLast = iNlF;
         var FF = BuildF2D(V, yNN, iSrc, iNlF, qNlF, grid, N, f1, f2);
         trace.Add(new HbConvergenceTrace.IterRecord(maxIter, HbNewton.L2(FF)));
-        return new SolveResult(false, maxIter, trace, iNlLast);
+        return new SolveResult(false, maxIter, trace, iNlLast, portITime);
     }
 
     private static void ApplyUpdate2D(Complex[,] V, double[] dV, int N, int M, double lambda)
@@ -123,7 +135,7 @@ public static class HbNewton2D
     /// </summary>
     public static (Complex[,] iNl, Complex[,] qNl, Complex[][,] G, Complex[][,] C)
         EvaluateNonlinear2D(Complex[,] V, MixingGrid grid, int N, int N1, int N2,
-            ElaboratedNetlist netlist, int[] interfaceNodes)
+            ElaboratedNetlist netlist, int[] interfaceNodes, double[][][,]? portITime = null)
     {
         int M = grid.MixCount;
 
@@ -145,13 +157,16 @@ public static class HbNewton2D
         var dcTime = new double[N * N][,];
         for (int idx = 0; idx < N * N; idx++) { dgTime[idx] = new double[N1, N2]; dcTime[idx] = new double[N1, N2]; }
 
-        foreach (var nlIdx in netlist.NonlinearComponents)
+        for (int devOrd = 0; devOrd < netlist.NonlinearComponents.Count; devOrd++)
         {
+            int nlIdx     = netlist.NonlinearComponents[devOrd];
             var ec        = netlist.Components[nlIdx];
             int portCount = ec.Model.PortCount;
             var portV     = new double[portCount];
             var portPlusIdx  = new int[portCount];
             var portMinusIdx = new int[portCount];
+
+            var devPortI = portITime is not null && devOrd < portITime.Length ? portITime[devOrd] : null;
 
             for (int p = 0; p < portCount; p++)
             {
@@ -174,6 +189,7 @@ public static class HbNewton2D
 
                 for (int p = 0; p < portCount; p++)
                 {
+                    if (devPortI is not null) devPortI[p][t1, t2] = res.I[p];
                     PortAdd(iTime, portPlusIdx[p], portMinusIdx[p], t1, t2, res.I[p]);
                     PortAdd(qTime, portPlusIdx[p], portMinusIdx[p], t1, t2, res.Q[p]);
                     for (int q = 0; q < portCount; q++)
@@ -500,55 +516,75 @@ public static class HbNewton2D
         int               N1,
         int               N2,
         ElaboratedNetlist netlist,
-        int[]             interfaceNodes)
+        int[]             interfaceNodes,
+        double[][][,]?    portITime = null)
     {
         int M = grid.MixCount;
 
+        // Prefer the buffer the last Newton device pass filled — it is an evaluation at the same
+        // converged V, so re-deriving it here costs a full device sweep for numbers already in hand
+        // (HB-P2 M3). There is no control-current form on this path, so the re-evaluation below is
+        // only ever a fallback for a caller that supplied no buffer (or one of the wrong shape).
+        bool useLastPass = MatchesShape(portITime, netlist, N1, N2);
+
         // IFFT V to time domain (mirrors EvaluateNonlinear2D step 1)
-        var diamond = new Complex[M];
-        var vTime   = new double[N][,];
-        for (int n = 0; n < N; n++)
+        double[][,]? vTime = null;
+        if (!useLastPass)
         {
-            for (int m = 0; m < M; m++)
-                diamond[m] = (m == 0) ? new Complex(V[n, 0].Real, 0) : V[n, m];
-            vTime[n] = new double[N1, N2];
-            HbFft2D.Inverse2D(grid, diamond, N1, N2, vTime[n]);
+            var diamond = new Complex[M];
+            vTime = new double[N][,];
+            for (int n = 0; n < N; n++)
+            {
+                for (int m = 0; m < M; m++)
+                    diamond[m] = (m == 0) ? new Complex(V[n, 0].Real, 0) : V[n, m];
+                vTime[n] = new double[N1, N2];
+                HbFft2D.Inverse2D(grid, diamond, N1, N2, vTime[n]);
+            }
         }
 
         var result = new Dictionary<string, Complex[]>(StringComparer.Ordinal);
 
-        foreach (var nlIdx in netlist.NonlinearComponents)
+        for (int devOrd = 0; devOrd < netlist.NonlinearComponents.Count; devOrd++)
         {
+            int    nlIdx     = netlist.NonlinearComponents[devOrd];
             var    ec        = netlist.Components[nlIdx];
             int    portCount = ec.Model.PortCount;
             string[] terms   = ec.Model.TerminalNames;
 
-            var portPlusIdx  = new int[portCount];
-            var portMinusIdx = new int[portCount];
-            for (int p = 0; p < portCount; p++)
+            double[][,] portI;
+            if (useLastPass)
             {
-                int np = ec.Nodes.Length > 2*p   ? ec.Nodes[2*p]   : 0;
-                int nm = ec.Nodes.Length > 2*p+1 ? ec.Nodes[2*p+1] : 0;
-                portPlusIdx[p]  = Array.IndexOf(interfaceNodes, np);
-                portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
+                portI = portITime![devOrd];
             }
-
-            var portITime = new double[portCount][,];
-            for (int p = 0; p < portCount; p++) portITime[p] = new double[N1, N2];
-
-            var portV = new double[portCount];
-            for (int t1 = 0; t1 < N1; t1++)
-            for (int t2 = 0; t2 < N2; t2++)
+            else
             {
+                var portPlusIdx  = new int[portCount];
+                var portMinusIdx = new int[portCount];
                 for (int p = 0; p < portCount; p++)
                 {
-                    double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t1, t2]  : 0.0;
-                    double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t1, t2] : 0.0;
-                    portV[p] = vp - vm;
+                    int np = ec.Nodes.Length > 2*p   ? ec.Nodes[2*p]   : 0;
+                    int nm = ec.Nodes.Length > 2*p+1 ? ec.Nodes[2*p+1] : 0;
+                    portPlusIdx[p]  = Array.IndexOf(interfaceNodes, np);
+                    portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
                 }
-                var res = ec.Evaluate(new PortVoltages(portV));
-                for (int p = 0; p < portCount; p++)
-                    portITime[p][t1, t2] = res.I[p];
+
+                portI = new double[portCount][,];
+                for (int p = 0; p < portCount; p++) portI[p] = new double[N1, N2];
+
+                var portV = new double[portCount];
+                for (int t1 = 0; t1 < N1; t1++)
+                for (int t2 = 0; t2 < N2; t2++)
+                {
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        double vp = portPlusIdx[p]  >= 0 ? vTime![portPlusIdx[p]][t1, t2]  : 0.0;
+                        double vm = portMinusIdx[p] >= 0 ? vTime![portMinusIdx[p]][t1, t2] : 0.0;
+                        portV[p] = vp - vm;
+                    }
+                    var res = ec.Evaluate(new PortVoltages(portV));
+                    for (int p = 0; p < portCount; p++)
+                        portI[p][t1, t2] = res.I[p];
+                }
             }
 
             // FFT each port → spectrum, extract retained mixing products
@@ -557,7 +593,7 @@ public static class HbNewton2D
                 string term = p < terms.Length ? terms[p] : (p + 1).ToString();
                 string key  = $"{ec.InstancePath}:{term}";
 
-                var iSpec = ForwardConv2D(portITime[p], N1, N2);
+                var iSpec = ForwardConv2D(portI[p], N1, N2);
                 var iAmpl = new Complex[M];
                 for (int m = 0; m < M; m++)
                 {
@@ -574,6 +610,36 @@ public static class HbNewton2D
         }
 
         return result;
+    }
+
+    /// <summary>A <c>[deviceOrdinal][port][t1, t2]</c> buffer sized for this netlist's nonlinear
+    /// devices, or null when there are none.</summary>
+    internal static double[][][,]? AllocPortITime(ElaboratedNetlist netlist, int N1, int N2)
+    {
+        int count = netlist.NonlinearComponents.Count;
+        if (count == 0) return null;
+        var buf = new double[count][][,];
+        for (int i = 0; i < count; i++)
+        {
+            int pc = netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount;
+            buf[i] = new double[pc][,];
+            for (int p = 0; p < pc; p++) buf[i][p] = new double[N1, N2];
+        }
+        return buf;
+    }
+
+    /// <summary>Whether a last-pass buffer describes THIS netlist at THIS grid size.</summary>
+    private static bool MatchesShape(double[][][,]? buf, ElaboratedNetlist netlist, int N1, int N2)
+    {
+        if (buf is null || buf.Length != netlist.NonlinearComponents.Count) return false;
+        for (int i = 0; i < buf.Length; i++)
+        {
+            var ec = netlist.Components[netlist.NonlinearComponents[i]];
+            if (buf[i].Length != ec.Model.PortCount) return false;
+            foreach (var g in buf[i])
+                if (g.GetLength(0) != N1 || g.GetLength(1) != N2) return false;
+        }
+        return true;
     }
 
     // Real-split DOF index for (node n, mixIdx, Re/Im). mix=0..M-1, all included.
