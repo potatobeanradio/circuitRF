@@ -316,7 +316,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     // ── Extensible parameter types ─────────────────────────────────────────────
 
-    /// <summary>True when the current target type supports user-added parameter groups (P1Tone, ToneSource, ZPort, SDD, VAR).</summary>
+    /// <summary>True when the current target type supports user-added parameter groups (P1Tone, VTone, ITone, ZPort, SDD, VAR).</summary>
     public bool AllowsAddParameter
         => ComponentTypeRegistry.UserParamTemplate(_target?.Symbol ?? SymbolKind.Ground) is not null;
 
@@ -840,8 +840,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         var existing = _target.Parameters.ToList();
 
-        // ToneSource: migrate scalar V/Freq → indexed V[1]/Freq[1] on first add
-        if (_target.Symbol == SymbolKind.ToneSource)
+        // Tone source (voltage or current): migrate scalar V/I + Freq → indexed V[1]/I[1] + Freq[1]
+        // on first add.
+        if (_target.Symbol is SymbolKind.ToneSource or SymbolKind.CurrentToneSource)
             existing = MigrateToneSourceToIndexed(existing);
 
         int nextIdx = ComputeNextIndex(template, existing);
@@ -854,11 +855,15 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             string unit = fi < template.DefaultUnits.Length     ? template.DefaultUnits[fi]     : "";
             bool   show = fi < template.ShowOnSchematic.Length  ? template.ShowOnSchematic[fi]  : false;
             var    dim  = fi < template.Dimensions.Length       ? template.Dimensions[fi]       : UnitDimension.None;
-            newParams.Add(new EditableParameter { Name = name, Expression = "", Unit = unit, ShowOnSchematic = show, Dimension = dim });
+            // The template's own default, not "" — a blank expression renders no schematic label
+            // whatever ShowOnSchematic says, so a blank new group reads as "the checkbox is broken".
+            // See IndexedParamGroup.DefaultExpressions.
+            string expr = template.DefaultExpression(fi);
+            newParams.Add(new EditableParameter { Name = name, Expression = expr, Unit = unit, ShowOnSchematic = show, Dimension = dim });
         }
 
-        // ToneSource: keep NumFreqs in sync
-        if (_target.Symbol == SymbolKind.ToneSource)
+        // Tone source (voltage or current): keep NumFreqs in sync
+        if (_target.Symbol is SymbolKind.ToneSource or SymbolKind.CurrentToneSource)
             UpdateHiddenParam(newParams, "NumFreqs", CountToneGroups(newParams).ToString());
 
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
@@ -878,8 +883,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         var newParams = _target.Parameters.Where(p => !toRemove.Contains(p.Name)).ToList();
 
-        // ToneSource: keep NumFreqs in sync
-        if (_target.Symbol == SymbolKind.ToneSource)
+        // Tone source (voltage or current): keep NumFreqs in sync
+        if (_target.Symbol is SymbolKind.ToneSource or SymbolKind.CurrentToneSource)
             UpdateHiddenParam(newParams, "NumFreqs", CountToneGroups(newParams).ToString());
 
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
@@ -1283,17 +1288,23 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         return result;
     }
 
-    // ── ToneSource migration helpers ──────────────────────────────────────────
+    // ── Tone-source migration helpers (VTone and ITone alike) ─────────────────
 
     /// <summary>
-    /// Converts a ToneSource with scalar V/Freq params to indexed V[1]/Freq[1] + NumFreqs=1.
+    /// Converts a tone source with scalar amplitude/Freq params to the indexed form plus
+    /// NumFreqs=1 — V/Freq → V[1]/Freq[1] for a VTone, I/Freq → I[1]/Freq[1] for an ITone.
     /// No-op if already in indexed form.
+    ///
+    /// <para>One function serves both because the two amplitude spellings cannot collide: a VTone
+    /// never carries an <c>I</c> parameter and an ITone never carries a <c>V</c> one, so renaming
+    /// whichever is present needs no knowledge of which kind it was called for.</para>
     /// </summary>
     public static List<EditableParameter> MigrateToneSourceToIndexed(List<EditableParameter> existing)
     {
         bool alreadyIndexed = existing.Any(p =>
             p.Name.StartsWith("Freq[", System.StringComparison.Ordinal) ||
-            p.Name.StartsWith("V[", System.StringComparison.Ordinal));
+            p.Name.StartsWith("V[", System.StringComparison.Ordinal) ||
+            p.Name.StartsWith("I[", System.StringComparison.Ordinal));
         if (alreadyIndexed) return existing;
 
         var result = new List<EditableParameter>(existing.Count + 1);
@@ -1301,6 +1312,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         {
             var clone = p.Clone();
             if      (p.Name == "V")    clone.Name = "V[1]";
+            else if (p.Name == "I")    clone.Name = "I[1]";
             else if (p.Name == "Freq") clone.Name = "Freq[1]";
             result.Add(clone);
         }

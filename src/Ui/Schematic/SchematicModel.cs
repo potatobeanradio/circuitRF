@@ -163,6 +163,27 @@ public enum SymbolKind
 
     /// <summary>p-n-p bipolar transistor (engine "BJT_PNP"). Emitter arrow points INTO the base.</summary>
     BjtPnp,
+
+    // ── Current sources ───────────────────────────────────────────────────────
+    // Both carry an ARROW as their only direction cue, for the same reason the BJT pair does: the
+    // arrow is the first thing a reader looks for, and it is the whole of what says which way the
+    // current goes. The two point OPPOSITE ways, and each is right for what it is — an INDEPENDENT
+    // source delivers into its first pin (the engine's "J injects into its first node" convention,
+    // src/Engine/CLAUDE.md), while a CONTROLLED transconductance sinks from its output-plus pin, the
+    // way a small-signal gm source is drawn in every device model. Read each glyph's own arrow.
+
+    /// <summary>Single- or multi-tone ideal CURRENT source (engine "I_1Tone"/"I_nTone"), the dual of
+    /// <see cref="ToneSource"/>. Two pins, (0,−200) top and (0,+200) bottom; `I` is the tone
+    /// amplitude, `Freq` its frequency, `Idc` a DC offset. Positive `I` sources current INTO the top
+    /// pin — the direction the glyph's arrowhead points.</summary>
+    CurrentToneSource,
+
+    /// <summary>Ideal voltage-controlled current source (engine "VCCS"). Four pins in ± pair order —
+    /// [0]=out+, [1]=out−, [2]=ctrl+, [3]=ctrl− — carrying I = G·(V(ctrl+) − V(ctrl−)). The control
+    /// pair senses only and draws no current, which is what makes it ideal; positive G draws current
+    /// IN at out+ and OUT at out−, the downward direction the diamond's arrowhead points — so the
+    /// stage is inverting across a grounded load.</summary>
+    Vccs,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

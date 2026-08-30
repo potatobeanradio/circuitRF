@@ -923,7 +923,7 @@ public sealed class HbEngine
         {
             switch (ec.Model)
             {
-                case ToneSourceModel:
+                case ToneSourceModelBase:
                     foreach (var (key, val) in ec.Parameters)
                     {
                         if (val.Kind != ValueKind.Real) continue;
@@ -1023,7 +1023,7 @@ public sealed class HbEngine
         const double Tol = 1.0;  // 1 Hz
         foreach (var ec in _netlist.Components)
         {
-            if (ec.Model is ToneSourceModel)
+            if (ec.Model is ToneSourceModelBase)
             {
                 foreach (var (key, val) in ec.Parameters)
                 {
@@ -1254,8 +1254,9 @@ public sealed class HbEngine
 
     private void UpdateSweepPoint(string sweepVar, double newValue)
     {
-        // Update the sweep variable in the resolved globals (for ToneSourceModel re-evaluation).
-        // Find ToneSourceModel instances and re-evaluate their V/Vdc expressions.
+        // Update the sweep variable in the resolved globals (for tone-source re-evaluation).
+        // Find tone-source instances (voltage AND current) and re-evaluate their amplitude/offset
+        // expressions.
         var updatedGlobals = new Dictionary<string, Value>(_netlist.ResolvedGlobals,
             StringComparer.Ordinal)
         {
@@ -1267,9 +1268,9 @@ public sealed class HbEngine
         var reEvaluated = ReEvaluateGlobals(_tb, sweepVar, newValue,
             _netlist.ResolvedGlobals);
 
-        // Update ToneSourceModels with the new globals.
+        // Update every tone source with the new globals.
         foreach (var ec in _netlist.Components)
-            if (ec.Model is ToneSourceModel tsm)
+            if (ec.Model is ToneSourceModelBase tsm)
                 tsm.ReevaluateFromGlobals(reEvaluated);
     }
 
@@ -1767,6 +1768,13 @@ public sealed class HbEngine
         {
             VdcModel        vdc  => ValidateSinglePortBranchHb(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),
             ToneSourceModel tone => ValidateSinglePortBranchHb(sddName, n, port, tone.LastBranchIndex, "V_1Tone/V_nTone"),
+            // An ideal current source's current is an INPUT, not a solved unknown — it allocates no
+            // branch to point at. Named explicitly because "the other tone source works" is exactly
+            // the wrong inference to leave the user to draw from a generic list of allowed kinds.
+            CurrentToneSourceModel => throw new InvalidOperationException(
+                $"HB: SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): " +
+                $"its current is an input, not a solved unknown, so it has no branch to reference. " +
+                $"Put an IProbe in series with it and reference that instead."),
             IProbeModel probe => ValidateSinglePortBranchHb(sddName, n, port, probe.LastBranchIndex, "IProbe"),
             InductorModel ind => ValidateSinglePortBranchHb(sddName, n, port, ind.LastBranchIndex,   "Inductor"),
             SnpModel    snp   => ValidateMultiPortBranchHb(sddName, n, port, snp.PortBranchIndices,  "SnP"),
@@ -1846,7 +1854,7 @@ public sealed class HbEngine
         {
             // Collect the tone frequencies this source contributes (PnTone has several).
             IEnumerable<double> freqs;
-            if (ec.Model is ToneSourceModel)
+            if (ec.Model is ToneSourceModelBase)
                 freqs = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
                     ? [fv.AsReal()] : [];
             else if (ec.Model is P1ToneModel p1) freqs = [p1.FreqHz];

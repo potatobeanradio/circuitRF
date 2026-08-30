@@ -91,6 +91,7 @@ src/Core/Devices/SddModel.cs|SDD '{_name}': I[p,{w}] used but H[{w}] is not defi
 src/Core/Devices/SnpModel.cs|{who}: Touchstone file not found: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: its 'File' parameter names a folder, not a Touchstone file: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: no Touchstone file is specified. Open the component's parameters and set 
+src/Core/Devices/VccsModel.cs|VCCS '{c.InstancePath}': expected 4 nets (out+, out−, ctrl+, ctrl−); 
 src/Core/Devices/WBondModel.cs|The wBond design '{sourceDescription}' has no wires, so the component has no pins. 
 src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' ({_sourceDescription}) has its ground plane disabled and no array 
 src/Core/Elaboration/Elaborator.cs|'{inst.Reference}:{inst.InstanceName}' parameter '{ov.Name}' is frequency-dependent, 
@@ -247,6 +248,7 @@ src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sdd.Name}': C[{n}]={refInst} �
 src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}] references {kind}; Cport[{n}]=<port> is required.
 src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}] — {kind} branch index not assigned; 
 src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}] — {kind} port {port} branch index not assigned.
+src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): 
 src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': C[{n}]={target.InstancePath} references 
 src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': Cport[{n}]={port} out of range for {kind} 
 src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': Cport[{n}]={port} — {kind} is two-terminal; 
@@ -343,6 +345,7 @@ src/Engine/NonlinearDcEngine.cs|SDD '{sdd.Name}': C[{n}]={refInst} — no siblin
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] references a {kind} device; 
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] — {kind} branch index not yet assigned. 
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}] — {kind} port {port} branch index not yet assigned.
+src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): 
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' 
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} is out of range for {kind} device 
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} — {kind} is a two-terminal device; 
@@ -350,6 +353,7 @@ src/Engine/ParametricSweepEngine.cs|Parametric sweep '{sweep.Name}': inner analy
 src/Engine/ParametricSweepEngine.cs|ParametricSweepEngine: inner analysis type 
 src/Engine/SParameterEngine.cs|S-parameter analysis requires at least one Port, Term, or P1Tone component at the testbench top level. 
 src/Engine/SParameterEngine.cs|SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' 
+src/Engine/SParameterEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): 
 src/Engine/SParameterEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' 
 src/Engine/SParameterEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} — referenced device allocated no branch 
 src/Engine/SParameterEngine.cs|{ec.InstancePath}: Port/Term is missing the Num parameter.

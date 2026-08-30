@@ -131,6 +131,7 @@ public static class LibraryCatalog
         (SymbolKind.IProbe,      0),
         (SymbolKind.P1Tone,      0),
         (SymbolKind.ToneSource,  0),   // "V1Tone" — the single-tone voltage source, displayed as VTone.
+        (SymbolKind.CurrentToneSource, 0), // "I_1Tone" — its current-source dual, displayed as ITone.
         (SymbolKind.Snp,         2),   // S2P
         (SymbolKind.Snp,         3),   // S3P
         (SymbolKind.Tline,       0),   // TLIN

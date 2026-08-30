@@ -473,6 +473,13 @@ public static class SParameterEngine
         {
             VdcModel        vdc => vdc.LastBranchIndex,
             ToneSourceModel ton => ton.LastBranchIndex,
+            // An ideal current source's current is an INPUT, not a solved unknown — it allocates no
+            // branch to point at. Named explicitly because "the other tone source works" is exactly
+            // the wrong inference to leave the user to draw from a generic list of allowed kinds.
+            CurrentToneSourceModel => throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): " +
+                $"its current is an input, not a solved unknown, so it has no branch to reference. " +
+                $"Put an IProbe in series with it and reference that instead."),
             IProbeModel   probe => probe.LastBranchIndex,
             InductorModel   ind => ind.LastBranchIndex,
             SnpModel        snp => PortBranch(snp.PortBranchIndices, port),

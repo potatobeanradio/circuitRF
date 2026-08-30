@@ -64,10 +64,30 @@ public sealed record IndexedParamGroup(
     /// <summary>Lowest index that the user may add via "+" (e.g. 0 for P1Tone, 2 for ToneSource).</summary>
     int FirstAddIndex = 0,
     /// <summary>Indices that must not be added (reserved/fixed). Null = no skips.</summary>
-    int[]? SkipIndices = null)
+    int[]? SkipIndices = null,
+    /// <summary>
+    /// Default EXPRESSION for each format entry (parallel; blank when absent or shorter).
+    ///
+    /// <para><b>Why a blank default is not neutral</b> (owner report, 2026-08-29). A parameter with
+    /// an empty expression renders NO schematic label — <c>EditableSchematic.BuildRenderModel</c>
+    /// skips it — regardless of its ShowOnSchematic flag, which is right for a label but makes the
+    /// checkbox look broken at exactly the moment a user ticks it on a freshly added group. A group
+    /// whose members are meant to show on the schematic therefore states real defaults here, so the
+    /// row that appears is a complete one. It also stops <c>NumFreqs</c> counting a tone whose
+    /// frequency and amplitude are both silently zero.</para>
+    ///
+    /// <para>Left null where blank genuinely IS the right start: an SDD equation slot and a VAR row
+    /// have no defensible default value, and inventing one would be a guess the user must then
+    /// notice and undo.</para>
+    /// </summary>
+    string[]? DefaultExpressions = null)
 {
     /// <summary>True if the given index is in the skip set.</summary>
     public bool IsSkipped(int index) => SkipIndices is not null && SkipIndices.Contains(index);
+
+    /// <summary>The default expression for format entry <paramref name="i"/>, or "" when none.</summary>
+    public string DefaultExpression(int i)
+        => DefaultExpressions is not null && i < DefaultExpressions.Length ? DefaultExpressions[i] : "";
 }
 
 /// <summary>Display metadata for one component type.</summary>
@@ -111,6 +131,7 @@ public static class ComponentTypeRegistry
         [UnitDimension.Frequency]   = ["None", "Hz", "kHz", "MHz", "GHz", "THz"],
         [UnitDimension.Voltage]     = ["None", "nV", "µV", "mV", "V", "kV"],
         [UnitDimension.Current]     = ["None", "nA", "µA", "mA", "A"],
+        [UnitDimension.Conductance] = ["None", "nS", "µS", "mS", "S", "kS"],
         [UnitDimension.Power]       = ["None", "fW", "pW", "nW", "µW", "mW", "W", "dBm"],
         // "metre" and not "m" — deliberately, and it is the ONE user-visible consequence of
         // brief-core-length-units §5 q1. The expression engine keeps "m" as the SI prefix MILLI, so
@@ -148,6 +169,19 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["VTone", "ToneSource", "tone", "RF", "signal"],
             IsCommon: true),
+        // ITone: the current-source dual of VTone, same engine shape, same parameter story with
+        // I/Idc where VTone has V/Vdc. Common for the same reason VTone is — it is the other half of
+        // "drive this node", and a user looking for one expects to find the other beside it.
+        [SymbolKind.CurrentToneSource] = new("ITone", "I",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["ITone", "CurrentToneSource", "current source", "tone", "RF", "signal", "I"],
+            IsCommon: true),
+        // VCCS: "G" is its instance prefix by long convention (the SPICE G element), even though
+        // circuitRF's own current DIRECTION is the opposite of that element's — see VccsModel.
+        [SymbolKind.Vccs]          = new("VCCS", "G",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["VCCS", "G", "transconductance", "controlled", "dependent", "gm", "vccs"],
+            IsCommon: false),
         // Ground is self-identifying via its symbol glyph; suppress both labels by default.
         [SymbolKind.Ground]        = new("GND",   "GND",
             DefaultShowTypeLabel: false, DefaultShowInstanceName: false,
@@ -414,7 +448,8 @@ public static class ComponentTypeRegistry
     /// <summary>
     /// Engine type-reference string for a given SymbolKind — what goes in the .cnl Reference field
     /// and into <see cref="Instance.Reference"/>. Differs from <see cref="DisplayName(SymbolKind)"/>
-    /// for ZPort ("Z" vs "Z_Port"), ToneSource ("VTone" vs "V_1Tone").
+    /// for ZPort ("Z" vs "Z_Port"), ToneSource ("VTone" vs "V_1Tone"), CurrentToneSource
+    /// ("ITone" vs "I_1Tone").
     /// </summary>
     public static string EngineReference(SymbolKind kind, int portCount = 0) => kind switch
     {
@@ -423,6 +458,8 @@ public static class ComponentTypeRegistry
         SymbolKind.Capacitor     => "C",
         SymbolKind.Vdc           => "Vdc",
         SymbolKind.ToneSource    => "V_1Tone",
+        SymbolKind.CurrentToneSource => "I_1Tone",
+        SymbolKind.Vccs          => "VCCS",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
@@ -585,6 +622,22 @@ public static class ComponentTypeRegistry
             case SymbolKind.ToneSource: return [new("V",    "1", "V",   true,  UnitDimension.Voltage),
                                                 new("Freq", "1", "GHz", true,  UnitDimension.Frequency),
                                                 new("Vdc",  "0", "V",   false, UnitDimension.Voltage)];
+            // ITone mirrors ToneSource exactly, with I/Idc for V/Vdc — I and Freq match the
+            // I_1Tone factory keys, Idc (hidden) is the DC offset.
+            //
+            // The unit is "A", not "mA", and that is NOT cosmetic: every SI-prefixed current,
+            // voltage and power unit in this build is an IDENTITY unit (Units.cs's _identityUnits),
+            // so "1 mA" resolves to 1 amp — a silent 1000x. Base units are the only ones that scale
+            // correctly today, so a freshly placed ITone uses one. See RESOLVED.md.
+            case SymbolKind.CurrentToneSource:
+                                        return [new("I",    "1e-3", "A",   true,  UnitDimension.Current),
+                                                new("Freq", "1",    "GHz", true,  UnitDimension.Frequency),
+                                                new("Idc",  "0",    "A",   false, UnitDimension.Current)];
+            // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
+            // "S" for the same reason ITone uses "A" — a prefixed unit would not scale (see above).
+            // The conductance table itself IS correct (S/mS/uS/kS are real linear scales), but the
+            // default stays in the base unit so the two sources read alike.
+            case SymbolKind.Vccs:       return [new("G", "0.01", "S", true, UnitDimension.Conductance)];
             // Pavl/Z/Freq/Phase match P1ToneModel factory keys.
             // Num is the s-param port index; auto-assigned at placement from the shared Term+P1Tone pool.
             case SymbolKind.P1Tone: return [
@@ -1115,7 +1168,7 @@ public static class ComponentTypeRegistry
     /// Parses a short type code (case-insensitive) to a SymbolKind and, for variadic-port types,
     /// the parsed port count N.
     ///
-    /// Canonical codes: R, L, C, V, VTone, GND, Term/T, TermG/TG, SDD, Z{N}P (any N ≥ 1),
+    /// Canonical codes: R, L, C, V, VTone, ITone, VCCS/G, GND, Term/T, TermG/TG, SDD, Z{N}P (any N ≥ 1),
     /// SDD{N} (any N ≥ 1), X.
     ///
     /// <list type="bullet">
@@ -1143,6 +1196,9 @@ public static class ComponentTypeRegistry
             case "V":
             case "VDC":    kind = SymbolKind.Vdc;           return true;
             case "VTONE":  kind = SymbolKind.ToneSource;    return true;
+            case "ITONE":  kind = SymbolKind.CurrentToneSource; return true;
+            case "VCCS":
+            case "G":      kind = SymbolKind.Vccs;          return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
@@ -1236,7 +1292,8 @@ public static class ComponentTypeRegistry
             ShowOnSchematic: [true],
             Dimensions:      [UnitDimension.Resistance],
             FirstAddIndex:   0,
-            SkipIndices:     [1]),
+            SkipIndices:     [1],
+            DefaultExpressions: ["50"]),
 
         // ToneSource: each group = Freq[n]/V[n]/Phase[n].  Tones start at 2 (tone 1 is the base
         //             scalar V/Freq that gets migrated to V[1]/Freq[1] on first add).
@@ -1246,7 +1303,19 @@ public static class ComponentTypeRegistry
             ShowOnSchematic: [true, true, false],
             Dimensions:      [UnitDimension.Frequency, UnitDimension.Voltage, UnitDimension.Angle],
             FirstAddIndex:   2,
-            SkipIndices:     null),
+            SkipIndices:     null,
+            DefaultExpressions: ["1", "1", "0"]),
+
+        // ITone: the current dual of ToneSource's group — Freq[n]/I[n]/Phase[n], same indexing rule
+        //        (tone 1 is the base scalar I/Freq, migrated to I[1]/Freq[1] on first add).
+        SymbolKind.CurrentToneSource => new IndexedParamGroup(
+            NameFormats:     ["Freq[{0}]", "I[{0}]", "Phase[{0}]"],
+            DefaultUnits:    ["GHz", "A", "deg"],
+            ShowOnSchematic: [true, true, false],
+            Dimensions:      [UnitDimension.Frequency, UnitDimension.Current, UnitDimension.Angle],
+            FirstAddIndex:   2,
+            SkipIndices:     null,
+            DefaultExpressions: ["1", "1e-3", "0"]),
 
         // PnTone: each group = Freq[n]/Pavl[n]/Phase[n] (the power-source analog of ToneSource). The
         //         component is seeded with tones 1 & 2 (DefaultParameters); "+" adds tone 3, 4, …
@@ -1257,7 +1326,8 @@ public static class ComponentTypeRegistry
             ShowOnSchematic: [true, true, false],
             Dimensions:      [UnitDimension.Frequency, UnitDimension.Power, UnitDimension.Angle],
             FirstAddIndex:   2,
-            SkipIndices:     null),
+            SkipIndices:     null,
+            DefaultExpressions: ["1", "0", "0"]),
 
         // ZPort: user adds extra Z[n] scalar params (1D; existing Z[i,j] 2D params are unaffected).
         SymbolKind.ZPort => new IndexedParamGroup(
@@ -1266,7 +1336,8 @@ public static class ComponentTypeRegistry
             ShowOnSchematic: [true],
             Dimensions:      [UnitDimension.Resistance],
             FirstAddIndex:   1,
-            SkipIndices:     null),
+            SkipIndices:     null,
+            DefaultExpressions: ["50"]),
 
         // SDD: user adds named I[…] equation slots.
         SymbolKind.Sdd => new IndexedParamGroup(

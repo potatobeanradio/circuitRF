@@ -129,6 +129,14 @@ public static class SymbolPortDefs
             // extraction (NOT a pin, NOT ground) — exposing it as a pin is DEFERRED (loadpull.md §1). Wider
             // 400 box (edges ±200) → ±300 pin gives a 100-unit lead.
             case SymbolKind.SourceTuner: return [("1", 300f, 0f)];
+            // VCCS: FOUR pins in the ± pair order VccsModel reads —
+            // [0] out+ (top), [1] out− (bottom), [2] ctrl+ (upper left), [3] ctrl− (lower left).
+            // Pin ORDER is the contract: swapping either pair reverses the source's sign, which is a
+            // circuit that still solves. The output pair is vertical like every other 2-terminal
+            // source; the control pair sits on the left, where a sense connection naturally arrives.
+            case SymbolKind.Vccs:
+                return [("out+", 0f, -200f), ("out-", 0f, 200f),
+                        ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);

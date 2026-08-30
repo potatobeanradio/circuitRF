@@ -22,7 +22,7 @@ public class PaletteFilterOrderingTests
         [
             "R", "GND", "L", "M", "C", "NonlinearC",
             "Term", "TermG", "VAR", "MEAS", "Vdc", "IProbe",
-            "P1Tone", "VTone",
+            "P1Tone", "VTone", "ITone",
             "S2P", "S3P", "TLIN", "MLIN",
             "SourceTuner", "LoadTuner", "Z1P", "wBond",
         ];
@@ -44,9 +44,9 @@ public class PaletteFilterOrderingTests
     [Fact]
     public void AllItemsPinnedOrder_EverythingAfterThePinnedRows_KeepsAllItemsOwnRelativeOrder()
     {
-        // 23 = the length of LibraryCatalog's own AllFilterPinnedOrder. Bump this when a row is
-        // pinned or unpinned; Match was the 23rd (2026-08-19).
-        const int PinnedRows = 23;
+        // 24 = the length of LibraryCatalog's own AllFilterPinnedOrder. Bump this when a row is
+        // pinned or unpinned; Match was the 23rd (2026-08-19) and ITone the 24th (2026-08-29).
+        const int PinnedRows = 24;
         var pinned      = LibraryCatalog.AllItemsPinnedOrder();
         var pinnedSet   = pinned.Take(PinnedRows).Select(i => (i.Kind, i.PortCount)).ToHashSet();
         var restActual  = pinned.Skip(PinnedRows).Select(i => (i.Kind, i.PortCount)).ToList();

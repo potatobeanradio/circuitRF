@@ -1523,10 +1523,11 @@ public static class NetExtractor
         List<string>? warningsOut = null)
     {
         var reference = ComponentTypeRegistry.EngineReference(comp.Symbol, comp.PortCount);
-        // ToneSource with indexed V[1]/Freq[1] format (NumFreqs present) → use V_nTone factory.
-        if (comp.Symbol == SymbolKind.ToneSource &&
+        // A tone source with the indexed V[1]/I[1]/Freq[1] format (NumFreqs present) is the
+        // MULTI-tone factory spelling — V_nTone for the voltage source, I_nTone for the current one.
+        if (comp.Symbol is SymbolKind.ToneSource or SymbolKind.CurrentToneSource &&
             comp.Parameters.Any(p => p.Name == "NumFreqs"))
-            reference = "V_nTone";
+            reference = comp.Symbol == SymbolKind.ToneSource ? "V_nTone" : "I_nTone";
 
         // SnP: filter UI-only params and separate the optional reference-node pin.
         if (comp.Symbol == SymbolKind.Snp)

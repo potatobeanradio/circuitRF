@@ -107,6 +107,35 @@ tone amplitude, `Freq` the tone frequency, and `Vdc` a DC offset.
 
 {{table: components/ToneSource}}
 
+### Current Tone Source (ITone) {#currenttonesource}
+
+{{symbol: current-tone-source}}
+
+The current-source dual of [VTone](#tonesource) — a single-tone sinusoidal **current** source with an
+optional DC offset. `I` is the tone amplitude, `Freq` the tone frequency, and `Idc` a DC offset. Use
+it to drive a node with a known current rather than a known voltage: an ideal current source has
+infinite output impedance, so it sets the current through a branch and lets the network decide the
+voltage.
+
+**The arrow says which way the current goes.** A positive `I` **delivers** current into pin 1 (the
+arrowhead end, the top pin as drawn) and draws it out of pin 2. Note this is the opposite of the
+SPICE `I` element, which sinks current from its first node; circuitRF uses one direction convention
+for every source it has, and the glyph states it so you never have to remember which.
+
+Like VTone, the **+** button in the parameter editor turns it into a multi-tone source: the scalar
+`I`/`Freq` migrate to `I[1]`/`Freq[1]` and each further tone gets its own `Freq[n]`, `I[n]` and
+`Phase[n]`.
+
+<div class="callout note">
+<span class="label">An ideal current source is an open circuit</span>
+<p>It contributes no conductance at all, and none whatsoever at frequencies it is not exciting. A node
+driven <b>only</b> by a current source therefore has no DC path to ground and the matrix is singular —
+that is the physics of the element, not a defect. Give the node a resistor, a termination or a bias
+path and it solves.</p>
+</div>
+
+{{table: components/CurrentToneSource}}
+
 ### RF Power Source (P1Tone) {#p1tone}
 
 {{symbol: p1tone}}
@@ -139,6 +168,50 @@ match the tones declared on the [Harmonic Balance analysis](simulations.html#two
 owns the mixing grid, and the source just supplies power at those frequencies.
 
 {{table: components/PnTone}}
+
+### Voltage-Controlled Current Source (VCCS) {#vccs}
+
+{{symbol: vccs}}
+
+An ideal transconductance: the current it delivers is `G` times the voltage across a separate,
+purely-sensing control pair.
+
+`I = G · (V(ctrl+) − V(ctrl−))`
+
+Four terminals in two pairs — the **output** pair (`out+` top, `out−` bottom) carries the current, and
+the **control** pair (`ctrl+`, `ctrl−`, on the left) senses the controlling voltage. The control pair
+draws **no current at all**, which is what makes the source ideal and what makes the device
+unilateral: nothing travels backwards through it. `G` is the transconductance, in siemens.
+
+**The arrow says which way the current goes**, and it points **down**: a positive `G` and a positive
+control voltage draw current in at `out+` and out at `out−`. That is the SPICE `G` element's own
+direction, and the way a small-signal transconductance is drawn in a device model — the controlled
+source sinks drain current from the drain node. So a VCCS across a grounded load resistor is
+**inverting**, and a 50 Ω, `G` = 10 mS stage measures S21 = −0.25.
+
+Note the VCCS's arrow points the **opposite** way to [ITone](#currenttonesource)'s. That is not an
+inconsistency to squint past: ITone is an independent source and *delivers* current to its arrow pin,
+while the VCCS is a controlled source drawn the way controlled sources are drawn. Read each symbol's
+own arrow.
+
+<div class="callout note">
+<span class="label">It works in every analysis, harmonic balance included</span>
+<p>The VCCS is a <b>linear</b> device, so it is stamped into the matrix at every frequency the
+simulator solves at: DC, S-parameters, and <b>every retained harmonic of a harmonic-balance run</b>,
+plus everything built on those (parametric sweeps, loadpull, loadpull-pursuit). In HB it lives in the
+linear partition alongside the resistors and lines, so <code>G</code> is the same number at every
+harmonic — an ideal transconductance has no frequency dependence, no compression, and no delay. If you
+need any of those, the device you want is an <a href="sdd.html">SDD</a>, whose equations can state
+them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
+</div>
+
+<div class="callout note">
+<span class="label">An ideal current source is an open circuit</span>
+<p>The output pair gets no conductance of its own, so — exactly as with ITone — an output node with
+nothing else attached to it has no DC path to ground and the matrix is singular. Load it.</p>
+</div>
+
+{{table: components/Vccs}}
 
 ## Terminals & ports
 

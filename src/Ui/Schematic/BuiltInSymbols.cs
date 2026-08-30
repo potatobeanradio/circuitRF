@@ -41,6 +41,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _capacitor    = BuildCapacitor();
     private static readonly Symbol _vdcSrc       = BuildVdc();
     private static readonly Symbol _toneSrc      = BuildToneSource();
+    private static readonly Symbol _iToneSrc     = BuildCurrentToneSource();
+    private static readonly Symbol _vccs         = BuildVccs();
     private static readonly Symbol _ground       = BuildGround();
     private static readonly Symbol _term         = BuildTerm();
     private static readonly Symbol _pin          = BuildPin();
@@ -135,6 +137,8 @@ public static class BuiltInSymbols
             case SymbolKind.Mklopf:     return _mklopf;
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
+            case SymbolKind.CurrentToneSource: return _iToneSrc;
+            case SymbolKind.Vccs:       return _vccs;
             case SymbolKind.Ground:     return _ground;
             case SymbolKind.Term:       return _term;
             case SymbolKind.Pin:        return _pin;
@@ -395,6 +399,55 @@ public static class BuiltInSymbols
         Txt("+", -25, -130, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),   // + polarity marker near top lead
         Txt("−", -25, +130, fontSize: PolarityFontSize),                                           // − polarity marker near bottom lead
     ], SymbolKind.ToneSource);
+
+    // ── ITone / current tone source — the SAME circle-and-sine body as VTone, so the two read as
+    // one family, with the polarity marks replaced by an ARROW on the top lead.
+    // Pins: (0,-200) top / (0,+200) bottom.
+    //
+    // The arrow is the whole of the direction cue, and it is the BJT's arrowhead, at the BJT's size
+    // and drawn the same way (a filled three-point Poly lying ON the lead rather than beside it).
+    // It points at pin 1 because that is where a positive I is DELIVERED — the engine's
+    // "a current source injects into its first node" convention, drawn.
+    //
+    // Deliberately NOT the textbook circle-with-an-arrow-inside: the body is 120 across and already
+    // carries the sine that says "tone", and an arrowhead inside it would either collide with the
+    // sine or shrink to something unreadable at palette size. On the lead it is legible at every
+    // zoom and cannot be mistaken for the AC mark.
+
+    private static Symbol BuildCurrentToneSource() => Sym([
+        L(   0, -200,   0,  -60),           // top lead
+        Circ(  0,    0,  60),                // body circle (stroked)
+        L(   0,   60,   0,  200),           // bottom lead
+        Sine(0,    0,  22,    1,   70, SineAxis.Horizontal),  // AC mark — identical to VTone's
+        Poly(true, 0, -160, -20, -114, 20, -114),   // current-direction arrowhead, tip toward pin 1
+    ], SymbolKind.CurrentToneSource);
+
+    // ── VCCS — ideal voltage-controlled current source ────────────────────────
+    // Pins: [0] out+ (0,-200), [1] out- (0,+200), [2] ctrl+ (-300,-100), [3] ctrl- (-300,+100).
+    //
+    // The DIAMOND is the universal "dependent source" body — the one mark that separates a
+    // controlled source from an independent one at a glance — and the arrow inside it is the BJT's
+    // arrowhead again, pointing DOWN at out−: a positive G·Vc flows IN at out+ and OUT at out−, the
+    // way a small-signal transconductance is drawn in every device model (and the SPICE G element's
+    // own direction). It therefore points the OPPOSITE way to ITone's, which is an independent
+    // source and delivers into its first pin — read each glyph's own arrow, do not carry one over.
+    //
+    // The control leads STOP SHORT of the diamond (they end at x=-170, the diamond's left vertex is
+    // at x=-90) and are marked + and −. That gap is the drawing: the control pair senses voltage and
+    // carries no current, so a lead touching the body would draw exactly the connection this device
+    // does not have.
+
+    private static Symbol BuildVccs() => Sym([
+        L(   0, -200,    0,  -90),          // output lead, top (out+)
+        L(   0,   90,    0,  200),          // output lead, bottom (out-)
+        Poly(false, 0, -90,  90, 0,  0, 90,  -90, 0),   // diamond body (stroked, closed)
+        L(   0,  -58,    0,   22),          // arrow shaft, pointing down toward out−
+        Poly(true, 0,  62, -18,  20, 18,  20),          // arrowhead, tip toward out−
+        L(-300, -100, -170, -100),          // control lead, upper (ctrl+)
+        L(-300,  100, -170,  100),          // control lead, lower (ctrl-)
+        Txt("+", -150, -100, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−", -150, +100, fontSize: PolarityFontSize),
+    ], SymbolKind.Vccs);
 
     // ── P1Tone — RF power source: Term-sized box, top-half zigzag resistor,
     // bottom-half voltage-source circle with 1-cycle sine inside.

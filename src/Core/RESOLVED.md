@@ -6,6 +6,75 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## The two current sources: ITone and the VCCS (2026-08-29)
+
+`CurrentToneSourceModel` (`I_1Tone`/`I_nTone`) and `VccsModel` (`VCCS`). Five things worth keeping.
+
+**1. The two sources point in OPPOSITE directions, deliberately, and each glyph says which.**
+
+- **ITone delivers into pin 1** (arrow up). It is an independent source and calls
+  `AddCurrentInjection`, whose convention is fixed in `src/Engine/CLAUDE.md` → "Current-source
+  direction": `J` injects into its FIRST node. That is the opposite of the SPICE `I` element.
+- **The VCCS draws current out of `out+` and delivers it at `out−`** (arrow down, owner's call,
+  2026-08-29). It never calls `AddCurrentInjection` — it stamps admittance — so the injection
+  convention does not reach it, and it is drawn the way a small-signal transconductance is drawn in
+  every device model. This IS the SPICE `G` element's direction, so a VCCS across a grounded load is
+  inverting.
+
+Neither direction is discoverable from a result: the sign flips and everything still solves,
+converges and plots. So both are pinned by SIGNED assertions rather than magnitudes — the S-param
+gate asserts **S21 = −0.25**, the DC gate **V = −2 V**, and one glyph test asserts the two arrowheads
+point opposite ways so a later "make them consistent" tidy-up cannot silently flip one alone.
+
+**2. The tone machinery is now a base class, and engine code must test the BASE.** `ToneSourceModelBase`
+holds the tone table, the DC offset, the sweep-time re-evaluation of amplitude/phase expressions and the
+zero-Hz warning; the two leaves differ only in `Stamp` (Group 2 branch constraint vs Group 1 RHS
+injection). Every engine site that asks "is this a tone source" — the two commensurability checks,
+`UpdateSweepPoint`'s re-evaluation, `HbLinearExtractor`'s drive-zeroing — was re-pointed at the base.
+A check left naming only `ToneSourceModel` would let a current tone source sit off the mixing grid, or
+skip its `ReevaluateFromGlobals`, and both failures are silent.
+
+**3. A current source is NOT an SDD control-current reference, and the generic refusal was the wrong
+message.** It allocates no branch: its current is an input, not a solved unknown. All three resolvers
+(DC, HB, S-param) therefore gained an explicit arm naming it, rather than letting it fall through to
+"allowed: Vdc, V_1Tone/V_nTone, IProbe, L, SnP, Z_Port" — from which the obvious inference, "but the
+other tone source is on the list", is exactly wrong. The arm points at the remedy: a series `IProbe`.
+
+**4. The VCCS's control rows must stay EMPTY, and that is the only thing making it ideal.** The stamp
+is four entries (`Y[out+,c+] += G`, `Y[out+,c−] −= G`, `Y[out−,c+] −= G`, `Y[out−,c−] += G`), all in
+the two OUTPUT rows against the two CONTROL columns. A control-row entry would
+draw current through the sense pair, and the resulting error is a few percent on a divider — small
+enough to pass any tolerance set from the output voltage alone. `Vccs_ControlPairDrawsNoCurrent_…`
+therefore asserts the CONTROL node's own voltage against an unloaded 1 k/1 k divider, which is where
+the loading would actually show.
+
+**5. Both work in HB, because both are `ModelKind.Linear`** — stamped into the linear partition at
+every retained harmonic, like a resistor, and therefore in DC, S-parameters and everything built on
+them (parametric sweep, loadpull, pursuit) too. `CurrentSourceHbTests` measures that rather than
+asserting it: the VCCS's transconductance is checked at k=0, k=1 AND k=2 of one run, because a device
+stamped only into the DC solve passes the first and fails the others. The corollary the user
+documentation now states: an ideal transconductance has no frequency dependence, no compression and
+no delay — `G` is the same number at every harmonic, and anything else needs an SDD.
+
+## The prefixed voltage, current and power units do not scale — found, not fixed (2026-08-29)
+
+`Units.cs` keeps `mV`, `kV`, `uV`, `nV`, `mA`, `uA`, `nA`, `mW`, `uW`, `kW` in `_identityUnits`, which
+means `Units.Scale` returns null for them and `Evaluator.ApplyUnit` falls through to a multiplier of
+exactly **1.0**. So `Vdc=2 mV` resolves to **two volts**, and `Idc=2 mA` to **two amps** — measured
+directly, not inferred (a one-off `Vdc:V1 n1 0 Vdc=2 mV` into 1 kΩ reads V(n1) = 2). The base units
+`V`, `A` and `W` are unaffected, being scale-1 anyway.
+
+This is the same defect `nm`/`cm` had before 2026-08-07, and the comment beside them in `_identityUnits`
+already records the fix: a prefixed unit is physics, not a dimensionless marker, and it belongs in
+`_scales` with its real value. It is **not** fixed here, because doing so changes what every existing
+design using one of those spellings means, which is the owner's call and not this task's. Nothing in
+`testdata/` uses one today, so the blast radius is small.
+
+**What was done instead:** the new ITone and VCCS state their defaults in BASE units (`A`, `S`) with
+scaled expressions (`1e-3`, `0.01`) rather than the prettier `1 mA` / `10 mS`, so a freshly placed one
+is correct. The palette's unit dropdown still OFFERS the prefixed spellings, for these components as
+for every existing one — that trap is untouched and is what the fix above would close.
+
 ## The bipolar transistor: six things that were not obvious (2026-08-29)
 
 `BjtModel` — the charge-control BJT, both polarities, added as `BJT_NPN`/`BJT_PNP`. The equations are

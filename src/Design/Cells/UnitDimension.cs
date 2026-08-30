@@ -18,6 +18,8 @@ public enum UnitDimension
     Frequency,
     Voltage,
     Current,
+    /// <summary>Conductance / transconductance, in siemens (A/V) — the VCCS's G.</summary>
+    Conductance,
     Power,
     Length,
     Angle,

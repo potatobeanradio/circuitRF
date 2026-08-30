@@ -29,13 +29,15 @@ public static class ComponentModelFactory
             { "Term",  () => new TermModel()          },
             { "Short",  () => new ShortModel()          },
             { "IProbe", () => new IProbeModel()        },
+            { "VCCS",  () => new VccsModel()          },
         };
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone",
+            "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
+            "Tuner", "P1Tone", "PnTone",
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             "BJT_NPN", "BJT_PNP",
@@ -74,7 +76,9 @@ public static class ComponentModelFactory
         if (typeName.Equals("Z_Port", StringComparison.OrdinalIgnoreCase))
             return CreateZPortModel(parameters, functions);
         if (typeName.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase) ||
-            typeName.Equals("V_nTone", StringComparison.OrdinalIgnoreCase))
+            typeName.Equals("V_nTone", StringComparison.OrdinalIgnoreCase) ||
+            typeName.Equals("I_1Tone", StringComparison.OrdinalIgnoreCase) ||
+            typeName.Equals("I_nTone", StringComparison.OrdinalIgnoreCase))
             return CreateToneSourceModel(typeName, parameters, functions);
         if (typeName.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
             return CreateTunerModel(parameters);
@@ -438,13 +442,21 @@ public static class ComponentModelFactory
         return new ChainModel(Pick("A"), Pick("B"), Pick("C"), Pick("D"), numericParams, name, functions);
     }
 
-    // ── ToneSource (V_1Tone / V_nTone) ───────────────────────────────────────
+    // ── ToneSource (V_1Tone / V_nTone / I_1Tone / I_nTone) ───────────────────
+    //
+    // One builder for both flavours. The VOLTAGE source spells its amplitude "V" and its offset
+    // "Vdc"; the CURRENT source spells them "I" and "Idc". Everything else — the tone table, the
+    // single-vs-multi split, the expression capture — is identical, which is why the two models
+    // share ToneSourceModelBase rather than this code being written twice.
 
-    private static ToneSourceModel CreateToneSourceModel(
+    private static ToneSourceModelBase CreateToneSourceModel(
         string typeName, IReadOnlyDictionary<string, Value> parameters,
         IReadOnlyList<UserFunction>? functions = null)
     {
-        bool isV1 = typeName.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase);
+        bool isCurrent = typeName.StartsWith("I_", StringComparison.OrdinalIgnoreCase);
+        bool isSingle  = typeName.EndsWith("_1Tone", StringComparison.OrdinalIgnoreCase);
+        string ampKey  = isCurrent ? "I"   : "V";
+        string dcKey   = isCurrent ? "Idc" : "Vdc";
 
         // Collect resolved scope vars (everything that isn't metadata or equations).
         var scopeVars = new Dictionary<string, Value>(StringComparer.Ordinal);
@@ -453,22 +465,22 @@ public static class ComponentModelFactory
                 kv.Key is not ("ToneSrcName" or "ToneSrcNumFreqs"))
                 scopeVars[kv.Key] = kv.Value;
 
-        double vdcResolved = 0.0;
-        Expr?  vdcExpr     = null;
-        if (parameters.TryGetValue("Vdc", out var vdcVal))
+        double dcResolved = 0.0;
+        Expr?  dcExpr     = null;
+        if (parameters.TryGetValue(dcKey, out var dcVal))
         {
-            if (vdcVal.Kind == ValueKind.String)
-                vdcExpr = Parser.Parse(vdcVal.AsString());
-            else if (vdcVal.Kind == ValueKind.Real)
-                vdcResolved = vdcVal.AsReal();
+            if (dcVal.Kind == ValueKind.String)
+                dcExpr = Parser.Parse(dcVal.AsString());
+            else if (dcVal.Kind == ValueKind.Real)
+                dcResolved = dcVal.AsReal();
         }
 
-        var tones = new List<ToneSourceModel.ToneEntry>();
+        var tones = new List<ToneSourceModelBase.ToneEntry>();
 
-        if (isV1)
+        if (isSingle)
         {
             double freq = GetReal(parameters, "Freq", 0.0);
-            tones.Add(BuildToneEntry(freq, parameters, "V", "Phase", scopeVars));
+            tones.Add(BuildToneEntry(freq, parameters, ampKey, "Phase", scopeVars));
         }
         else
         {
@@ -476,14 +488,16 @@ public static class ComponentModelFactory
             for (int i = 1; i <= numFreqs; i++)
             {
                 double freq = GetReal(parameters, $"Freq[{i}]", 0.0);
-                tones.Add(BuildToneEntry(freq, parameters, $"V[{i}]", $"Phase[{i}]", scopeVars));
+                tones.Add(BuildToneEntry(freq, parameters, $"{ampKey}[{i}]", $"Phase[{i}]", scopeVars));
             }
         }
 
-        return new ToneSourceModel(tones.ToArray(), vdcResolved, vdcExpr, scopeVars);
+        return isCurrent
+            ? new CurrentToneSourceModel(tones.ToArray(), dcResolved, dcExpr, scopeVars)
+            : new ToneSourceModel(tones.ToArray(), dcResolved, dcExpr, scopeVars);
     }
 
-    private static ToneSourceModel.ToneEntry BuildToneEntry(
+    private static ToneSourceModelBase.ToneEntry BuildToneEntry(
         double freqHz,
         IReadOnlyDictionary<string, Value> parameters,
         string vKey,
@@ -521,7 +535,7 @@ public static class ComponentModelFactory
         if (vExpr is null)
             phasor = phasor * Complex.FromPolarCoordinates(1.0, phaseDeg * Math.PI / 180.0);
 
-        return new ToneSourceModel.ToneEntry(freqHz, phasor, vExpr, phaseExpr, scopeVars);
+        return new ToneSourceModelBase.ToneEntry(freqHz, phasor, vExpr, phaseExpr, scopeVars);
     }
 
     private static double GetReal(IReadOnlyDictionary<string, Value> parameters, string key, double fallback)

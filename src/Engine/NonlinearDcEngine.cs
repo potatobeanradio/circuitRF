@@ -634,6 +634,13 @@ public sealed class NonlinearDcEngine
         {
             VdcModel        vdc  => ValidateSinglePortBranch(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),
             ToneSourceModel tone => ValidateSinglePortBranch(sddName, n, port, tone.LastBranchIndex, "V_1Tone/V_nTone"),
+            // An ideal current source's current is an INPUT, not a solved unknown — it allocates no
+            // branch to point at. Named explicitly because "the other tone source works" is exactly
+            // the wrong inference to leave the user to draw from a generic list of allowed kinds.
+            CurrentToneSourceModel => throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): " +
+                $"its current is an input, not a solved unknown, so it has no branch to reference. " +
+                $"Put an IProbe in series with it and reference that instead."),
             IProbeModel probe => ValidateSinglePortBranch(sddName, n, port, probe.LastBranchIndex, "IProbe"),
             InductorModel ind => ValidateSinglePortBranch(sddName, n, port, ind.LastBranchIndex,   "Inductor"),
             SnpModel    snp   => ValidateMultiPortBranch(sddName, n, port, snp.PortBranchIndices,  "SnP"),

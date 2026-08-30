@@ -746,7 +746,7 @@ public sealed class Elaborator
                                      ?? throw new InvalidOperationException(
                                          $"Failed to create model for primitive '{inst.Reference}' at '{childPath}'");
 
-                if (model is ToneSourceModel tsm)
+                if (model is ToneSourceModelBase tsm)
                     foreach (var w in tsm.GetZeroHzToneWarnings(childPath))
                         netlist.AddWarningOnce($"zero-hz-tone:{childPath}", w);
 
@@ -898,7 +898,9 @@ public sealed class Elaborator
         if (inst.Reference.Equals("Z_Port", StringComparison.OrdinalIgnoreCase))
             return ResolveZPortParameters(inst, parentScope);
         if (inst.Reference.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase) ||
-            inst.Reference.Equals("V_nTone", StringComparison.OrdinalIgnoreCase))
+            inst.Reference.Equals("V_nTone", StringComparison.OrdinalIgnoreCase) ||
+            inst.Reference.Equals("I_1Tone", StringComparison.OrdinalIgnoreCase) ||
+            inst.Reference.Equals("I_nTone", StringComparison.OrdinalIgnoreCase))
             return ResolveToneSourceParameters(inst, parentScope);
         if (inst.Reference.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
             return ResolveP1ToneParameters(inst, parentScope);
@@ -1384,9 +1386,12 @@ public sealed class Elaborator
         }
     }
 
-    // ── V_1Tone / V_nTone parameter resolution ────────────────────────────────
+    // ── V_1Tone / V_nTone / I_1Tone / I_nTone parameter resolution ────────────
+    // One resolver for both flavours: the amplitude/offset keys differ ("V"/"Vdc" against
+    // "I"/"Idc") and nothing else does, so both spellings are listed rather than the resolver
+    // being duplicated. A key that belongs to the other flavour simply never appears.
 
-    private static readonly Regex RxToneIndexed = new(@"^(V|Freq|Phase)\[(\d+)\]$",
+    private static readonly Regex RxToneIndexed = new(@"^(V|I|Freq|Phase)\[(\d+)\]$",
         RegexOptions.Compiled);
 
     private IReadOnlyDictionary<string, Value> ResolveToneSourceParameters(
@@ -1400,7 +1405,7 @@ public sealed class Elaborator
 
         foreach (var ov in inst.Overrides)
         {
-            bool isExprParam = ov.Name is "V" or "Vdc" or "Phase"
+            bool isExprParam = ov.Name is "V" or "Vdc" or "I" or "Idc" or "Phase"
                 || RxToneIndexed.IsMatch(ov.Name);
 
             if (isExprParam)

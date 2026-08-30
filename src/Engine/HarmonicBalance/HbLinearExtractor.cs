@@ -459,7 +459,7 @@ public sealed class HbLinearExtractor
             // Term/Port branches are driven ports for S-parameter analysis only; inert in HB.
             if (ec.Model is PortModel or TermModel) continue;
 
-            if (zeroDrive && IsVoltageOrToneSource(ec))
+            if (zeroDrive && IsIndependentSource(ec))
                 ec.Stamp(new ZeroDriveMna(mna), omega);
             else
                 ec.Stamp(mna, omega);
@@ -480,8 +480,11 @@ public sealed class HbLinearExtractor
         return mna;
     }
 
-    private static bool IsVoltageOrToneSource(ElaboratedComponent ec) =>
-        ec.Model is VdcModel or ToneSourceModel or TunerModel;
+    // Every component whose DRIVE must be suppressed for the source-zeroed Y_NN extraction.
+    // ToneSourceModelBase covers both flavours: the voltage tone source's drive is a branch source
+    // value, the current tone source's is an RHS injection, and ZeroDriveMna zeroes both.
+    private static bool IsIndependentSource(ElaboratedComponent ec) =>
+        ec.Model is VdcModel or ToneSourceModelBase or TunerModel;
     // TunerModel contains an internal V_1Tone drive (SourceTuner) and a bias supply
     // (both roles) — it must be stamped via ZeroDriveMna in the zeroDrive=true path
     // so its source values are zeroed for the Y_NN extraction. The ZeroDriveMna passes
@@ -755,8 +758,9 @@ public sealed class HbLinearExtractor
 }
 
 /// <summary>
-/// IMnaContext proxy that zeros all AddSourceValue calls (for source-zeroed Y extraction).
-/// All structural stamps (branches, constraints, admittances) pass through unchanged.
+/// IMnaContext proxy that zeros every excitation — AddSourceValue AND AddCurrentInjection — for
+/// the source-zeroed Y extraction. All structural stamps (branches, constraints, admittances) pass
+/// through unchanged.
 /// </summary>
 file sealed class ZeroDriveMna(MnaSystem inner) : IMnaContext
 {
@@ -767,6 +771,16 @@ file sealed class ZeroDriveMna(MnaSystem inner) : IMnaContext
     public void AddConstraint(int br, int node, Complex coeff) => inner.AddConstraint(br, node, coeff);
     public void AddNodeBranchCoupling(int node, int br, Complex coeff) => inner.AddNodeBranchCoupling(node, br, coeff);
     public void AddBranchConstraint(int br, int other, Complex coeff) => inner.AddBranchConstraint(br, other, coeff);
-    public void AddCurrentInjection(int node, Complex j) => inner.AddCurrentInjection(node, j);
+    // BOTH excitation channels are zeroed. A Group-2 source (Vdc, V_1Tone, the Tuner's internal
+    // drive) states its excitation through AddSourceValue; a Group-1 source (I_1Tone) states it
+    // through AddCurrentInjection, and a proxy that zeroed only the first would not be
+    // source-zeroed at all once a current source is in the netlist.
+    //
+    // Today that is belt AND braces rather than a live bug: every zeroDrive=true caller
+    // (ComputeZnn, the Z-column pass, SolveFullNetwork's cached factorization) uses only the
+    // MATRIX and builds its own right-hand side, so a leaked injection would never be read. The
+    // point is that nothing about "zeroDrive" says so — the first caller to ask a zero-drive MNA
+    // for its own BuildRhs() would get a silently live drive back.
+    public void AddCurrentInjection(int node, Complex j) { /* zeroed for Y extraction */ }
     public void AddSourceValue(int branch, Complex value) { /* zeroed for Y extraction */ }
 }

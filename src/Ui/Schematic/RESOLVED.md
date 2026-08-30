@@ -2,6 +2,60 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## An added parameter group rendered no label, whatever "show on schematic" said (2026-08-29)
+
+Owner report: adding a second tone to a VTone (and to the new ITone) with **View on schematic** ticked
+put no label on the instance.
+
+**The checkbox was being honoured; the value was missing.** `EditableSchematic.BuildRenderModel` skips
+any label parameter whose `Expression` is empty — right for a label, since "Freq[2] = " is noise — and
+`ParameterEditorViewModel.AddGroup` created every member of a new group with `Expression = ""`. So the
+one moment a user ticks that box is the one moment it appears to do nothing.
+
+**Fixed at the cause, not at the render rule.** `IndexedParamGroup` now carries `DefaultExpressions`,
+and every group whose members are `ShowOnSchematic` states real ones — the tone families (VTone, ITone,
+PnTone) and the impedance ones (P1Tone's `Z[k]`, ZPort's `Z[n]`, both 50 Ω). SDD equation slots and VAR
+rows deliberately keep no default: blank genuinely is the right start there, and an invented value is a
+guess the user then has to notice and undo. `EveryShownMemberOfAnAddedGroup_HasANonBlankDefault` is the
+gate, and it is expressed as the RULE (shown ⟹ non-blank) rather than as a list, so a future group
+cannot be added blank without failing it.
+
+Second-order: a blank shown parameter also made `SchematicViewModel`'s `LabelCount` (`2 +
+LabelParameters().Count()`, unfiltered) disagree with the renderer's own filtered list, so per-label
+drag offsets would index the wrong row. With no group ever added blank, that condition no longer
+arises from this path; the underlying mismatch is untouched and is worth its own look if a blank shown
+parameter can be reached another way.
+
+## ITone and the VCCS: the arrow is the whole of the direction cue (2026-08-29)
+
+`SymbolKind.CurrentToneSource` ("ITone", `I_1Tone`) and `SymbolKind.Vccs` ("VCCS").
+
+**Both reuse the BJT's arrowhead** (owner request) — a filled three-point `Poly` lying ON the lead, at
+the BJT's own size — because that glyph is already the thing a reader looks for when they want to know
+which way something flows.
+
+**They point OPPOSITE ways, and that is correct.** ITone's points UP, at pin 1, where an independent
+source delivers its current (`src/Engine/CLAUDE.md` → "Current-source direction"). The VCCS's points
+DOWN, at `out−`: a controlled transconductance SINKS its current from `out+`, which is how a
+small-signal gm source is drawn in every device model. `Vccs_Glyph_…` asserts both arrows in one test,
+against each other, so a later "make these consistent" pass cannot flip one and leave the schematic
+lying about a direction.
+
+**ITone is VTone's body with the polarity marks swapped for the arrow.** Same circle, same sine, same
+two pins in the same places — so the two read as one family — and deliberately NOT the textbook
+circle-with-an-arrow-inside: the body is 120 across and already carries the sine, so an arrowhead
+inside it would either collide with the sine or shrink to nothing at palette size. On the lead it is
+legible at every zoom and cannot be mistaken for the AC mark.
+
+**The VCCS's control leads stop short of the diamond, and the gap IS the drawing.** They end at
+x = −170; the diamond's left vertex is at x = −90. A lead touching the body would draw a connection the
+device does not have — the control pair senses voltage and carries no current at all. A glyph test
+asserts the gap rather than trusting the coordinates to stay put.
+
+**Pin ORDER is the engine contract, in the 2N ± pair form** `VccsModel` reads:
+`[out+, out−, ctrl+, ctrl−]`. Swapping either pair reverses the source's sign and still solves, so the
+order is asserted by test, not left to the geometry.
+
 ## The bipolar transistor: two kinds, one law — and what that costs elsewhere (2026-08-29)
 
 `SymbolKind.BjtNpn` / `BjtPnp`, engine references `BJT_NPN` / `BJT_PNP`. Both place the SAME model

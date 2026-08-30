@@ -56,6 +56,14 @@ public static class Units
         // resistors, which then had no constraint of its own and made the whole matrix singular.
         { "TOhm", 1e12 },
         { "mOhm", 1e-3 },   // the other end of the same series, absent for the same reason
+        // Conductance / transconductance. The base symbol is "S" (siemens); a VCCS's G is the only
+        // parameter that uses it today. "S" is a plain unit, not an SI prefix, so it carries none of
+        // the SplitTrailingUnit ambiguity the single-letter prefixes above do.
+        { "S",   1.0   },
+        { "kS",  1e3   },
+        { "mS",  1e-3  },
+        { "uS",  1e-6  },
+        { "nS",  1e-9  },
         // Length. "metre" is the scale-1 BASE symbol (see the SI-prefix note above for why it is not
         // "m"); it is what BaseUnit returns for every unit in this block, which is the property
         // ParametricSweepEngine's own re-attach depends on.
@@ -124,6 +132,8 @@ public static class Units
         { "mA", "A" }, { "uA", "A" }, { "nA", "A" },
         // Power
         { "mW", "W" }, { "uW", "W" }, { "kW", "W" },
+        // Conductance
+        { "kS", "S" }, { "mS", "S" }, { "uS", "S" }, { "nS", "S" },
         // Length. Every one of these maps to "metre" — the scale-1 base symbol — INCLUDING "mil",
         // "in" and "inch", which are not SI-prefixed but are still lengths and still need a base
         // whose scale is 1.0. "mil" was absent from this map entirely, so BaseUnit("mil") returned

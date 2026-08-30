@@ -59,6 +59,8 @@ public static class SymbolArtworkGenerator
         (SymbolKind.NonlinearC,      "nonlinear-c",       2),
         (SymbolKind.Vdc,             "vdc",               2),
         (SymbolKind.ToneSource,      "tone-source",       2),
+        (SymbolKind.CurrentToneSource, "current-tone-source", 2),
+        (SymbolKind.Vccs,            "vccs",              4),
         (SymbolKind.P1Tone,          "p1tone",            2),
         (SymbolKind.PnTone,          "pntone",            2),
         (SymbolKind.Ground,          "ground",            1),
