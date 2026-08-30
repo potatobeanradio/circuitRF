@@ -62,7 +62,10 @@ not general 3D.
   ε<sub>r</sub> and tanδ. *(Dielectric loss, in both kernels. **Conductor** loss is the quasi-static
   kernel only — see below.)*
 - **Arbitrary planar shapes**: lines, bends, tapers, stubs, spirals, pads, coupled sections.
-- **Multiple metal levels**, with **vias** carrying z-directed current between them.
+- **Multiple metal levels**, with **vias** carrying z-directed current between them. A via is either
+  a placed via primitive or a **drawn region** — a rectangle or polygon on the via entry's drawing
+  layer, which is how a plate-sized connection is expressed. See
+  [Vias](stackup.html#vias).
 - **A ground plane** at the bottom of the stack, or an open boundary.
 - **Discontinuities and the coupling between them** — which is the entire point.
 - **Frequency sweeps**, with [adaptive sampling](#adaptive) so a resonant response does not need a fine

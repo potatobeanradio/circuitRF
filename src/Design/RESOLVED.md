@@ -1,5 +1,123 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## MIM-1 — region vias: drawn via artwork beyond the point `ViaShape` (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-1-region-vias.md`, gap 1 of the MIM series. Extraction and
+reporting only; `src/Engine` untouched, and every §7 via refusal still fires unchanged.
+
+### What was wrong, and why it was silent rather than refused
+
+`PlanarExtractor`'s classification loop recognised a via-bound drawing layer in exactly one place:
+inside its `if (s is ViaShape)` branch. Every other shape fell through to `binding`, the layer→z-band
+map — and `BuildStack` builds that map from **non-Via entries only**, because a via contributes no
+thickness and has no z band of its own. So a rectangle or polygon drawn on a via layer missed the map
+and landed in `ignoredOther`.
+
+**The counter it landed in is what made the failure worse than a drop.** `ignoredOther`'s note says
+the shape is *"not bound to a stackup conductor or via entry"* — which is exactly the wrong advice
+for artwork on a layer that IS bound, and sends the user to the technology editor to redo something
+already done. The same silence swallowed a drawn backside-via slot or bar.
+
+This is the same map-vs-branch split that made `BuildVias` unreachable at L9's phase gate. It is
+worth stating once more: the two bindings answer different questions (where a layer sits in z, versus
+which two conductors a via joins), keeping them apart is right, and the cost of keeping them apart is
+that every new shape kind has to be routed to the second one deliberately.
+
+### What it does now
+
+- **A filled region on a via-bound layer becomes a `PlanarVia` footprint**, through the conductor
+  path's own shape→`PlanarPolygon` conversion — outer ring plus holes, the layout's own flatten
+  tolerance, the same degenerate-ring floor. Reused rather than restated: a via footprint and a
+  conductor footprint are resolved onto the same tensor grid, and two conversions that could drift
+  apart would show up as a via meshing to a slightly different set of cells than the metal it lands
+  on.
+- **The footprint is NOT squared.** The equal-area square (side = 0.886 × drill) exists so a round
+  barrel *nobody drew* does not contribute a hard gridline per facet. A drawn outline already is the
+  footprint, so it goes to the mesher as it stands.
+- **Span, conductivity and the ground rule come from the stackup entry**, identical to the point
+  path, and a region via participates in the same `noSpan` / `unknownLevels` / `notAdjacent` /
+  `toGround` / `wrongGround` accounting — counted in SHAPES, because a shape is what the user drew
+  and can go and look at.
+- **Nothing on a via-bound layer falls into `ignoredOther` any more.** A `PathShape` there gets its
+  own sentence (a centreline encloses no area; draw the region), and so does a region that flattens
+  to nothing.
+
+### The one design decision worth the words: regions are GROUPED PER STACKUP ENTRY
+
+Every region on one via entry becomes **one `PlanarVia` carrying several footprint polygons**, not
+one `PlanarVia` each. The obvious reason is that the span, conductivity and ground rule all come from
+the entry, so per-shape vias would be N identical records. The real reason is correctness:
+
+`SurfaceMesher` scans every grid cell against a via's polygon list and **stops at the first polygon
+that covers it**. Two overlapping footprints inside one `PlanarVia` therefore give a shared cell
+**one** vertical basis. As separate `PlanarVia`s they would give it **one each**, silently doubling
+the vertical current in the overlap — and a plate connection drawn as two overlapping rectangles is
+an ordinary thing to draw, not a corner case. `TwoOverlappingRegions_GiveTheirSharedCellsOneVerticalBasisEach`
+pins it as a counter that is independent of the mesh pitch: no cell index appears twice,
+and the meshed footprint is the union (60 × 40 µm) rather than the sum (2 × 40 × 40 µm).
+
+**The same hazard exists on the point path and was left alone**, deliberately — it is pre-existing
+behaviour, changing it would move existing runs, and the brief forbids touching the point path. It
+was *measured* while sizing the structural gate below: a 2 × 2 array of nominally touching point
+vias overlaps by 0.37 nm (see the next section), and the meshed footprint comes out at
+1600.0591 µm² against the true union — i.e. the overlap strip is counted twice, exactly as the
+first-cover argument predicts.
+
+### The structural gate, and why it compares AREA rather than a basis list
+
+The brief asks that a region via covering the cells of an N×N array of touching point vias yield the
+same vertical basis functions. **That cannot be a basis-list comparison, and asserting it would be
+asserting something false.** L9c's own mesher finding is that a via footprint must contribute HARD
+gridlines or the via vanishes silently — so N×N touching footprints put N−1 interior gridlines per
+axis into the shared tensor grid that one large footprint does not. Those lines *subdivide* the
+covered cells; they do not move the covered boundary. Measured: 943 unknowns (4 vertical) for the
+single region against 943 (4 vertical) for the drawn 2 × 2 array on this fixture.
+
+The grid-independent statement of the same claim is **the plan-view area the vertical bases cover**
+— still a cell counter (one basis per covered cell, summed over the cells' own areas), never an
+S-parameter. The gate is in two halves:
+
+| | Fixture | Claim | Result |
+|---|---|---|---|
+| A | 2 × 2 drawn squares vs one drawn rectangle over their union | covered area equal, **to the bit**; the single footprint needs no more unknowns | 1600 µm² both, N = 943 both |
+| B | 2 × 2 point vias vs the same region | covered area equal to the equal-area square's own DBU rounding | −3.6926 × 10⁻⁵ relative, **predicted exactly** |
+
+**Half B's discrepancy is predicted rather than bounded**, which is the part worth keeping. A point
+via's square is 0.886 × drill and a drill is an integer number of DBU, so the square that gets meshed
+has side s′ ≠ the nominal s and the array covers n²s′² against the region's (ns)². On this fixture
+s′ − s = +0.37 nm, so nominally touching point vias in fact *overlap*, and 1 − (s′/s)² reproduces the
+measured area difference to 12 decimal places. If the two ever disagree by anything that rounding
+does not account for, one of the two paths has a real defect. (The overlap also costs N: 1096
+unknowns with 16 vertical bases, against the drawn array's 943 with 4 — a sub-nanometre sliver run,
+and a good illustration of why the point path snaps nothing.)
+
+### Milestone 4's assumed paths, checked rather than assumed
+
+- **A Via stackup row binds a drawing layer and states its span** — real, `ShowsDrawingLayerPicker`
+  is `Kind == Via` and a Conductor row deliberately does not show that control (it binds through the
+  layer table). Verified against a live `TechEditorViewModel` over the MMIC starter, including that
+  the picker's option list actually contains the layer the extractor keys on.
+- **A rectangle drawn on that layer reaches the extractor** — real, and is now the main body of tests.
+- **`EmDiagnostics`' via count includes region vias** — **this path does not exist.** `EmDiagnostics`
+  is the EM run service's REFUSAL family (`em.run.cancelled`, `em.layout.not-found`, …); it has no
+  via counter and no counter of any other extraction quantity. The via count a user actually sees is
+  carried in the run's NOTES, which `EmRunService` concatenates from the extractor and the mesher.
+  Nothing was built: the smallest version is a test that both note sources count a region via, which
+  is what `TheRunsOwnViaCount_IncludesRegionVias` asserts. Growing a diagnostic for a *quantity*
+  would be the first non-refusal member of that family and is a decision for whoever converts the
+  next family, not a side effect of this brief.
+
+### Tests
+
+`tests/Ui.Tests/Em/RegionViaExtractionTests.cs`, 13 methods, all routine tier (~70 ms). Point-via
+bit-identity is asserted with `BitConverter.DoubleToInt64Bits` against the documented rule restated
+in the test, not read back from the object under test.
+
+The terminal resolution (`SpanFrom`/`SpanTo` → a level pair or one of five counters) is now a single
+local function both artwork kinds call. That is not tidiness either: "the artwork says WHERE, the
+stackup says WHICH TWO CONDUCTORS" only holds if the answer cannot depend on how the via was drawn,
+and a second copy of that block is exactly how it would stop holding.
+
 ## R-em-4's ground query returns null for TWO reasons, and the note claimed the wrong one (2026-08-30)
 
 `PlanarExtractor` resolves the EM ground as **the highest ground-designated conductor BELOW the

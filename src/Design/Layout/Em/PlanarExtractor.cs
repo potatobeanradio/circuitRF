@@ -145,6 +145,19 @@ public static class PlanarExtractor
 
         var viaShapes = new List<(ViaShape Shape, StackupLayer Entry)>();
 
+        // ── MIM-1 — drawn REGIONS on a via-bound layer, and the silence that used to swallow them ──
+        //
+        // A MIM capacitor's plate connection is a rectangle or polygon nearly as large as the plate,
+        // not a point. Until MIM-1 the only via artwork this loop recognised was a ViaShape, so a
+        // region on a via-bound layer missed `binding` (BuildStack skips every Via entry, so a via's
+        // drawing layer is never in that map) and fell into `ignoredOther` — counted with everything
+        // else and reported by a sentence about Paths and unbound layers, which is exactly the wrong
+        // advice for artwork that IS bound. Nothing on a via-bound layer may land there any more:
+        // a region becomes a footprint, and whatever still cannot (a Path centreline, a shape that
+        // encloses no area) is counted separately and named.
+        var regionViaShapes = new List<(LayoutShape Shape, StackupLayer Entry)>();
+        int ignoredViaPath = 0;
+
         foreach (var s in shapes)
         {
             if (s is LabelShape or BitmapShape) { ignoredAnnotation++; continue; }
@@ -160,16 +173,29 @@ public static class PlanarExtractor
                 continue;
             }
 
-            if (s is PathShape)                 { ignoredOther++;      continue; }
+            // A Path is a centreline on a via layer for the same reason it is one on a conductor
+            // layer — it encloses no area — but on a via layer it now gets its OWN sentence.
+            if (s is PathShape)
+            {
+                if (viaBinding.ContainsKey(s.Layer)) ignoredViaPath++;
+                else                                 ignoredOther++;
+                continue;
+            }
 
-            if (!binding.TryGetValue(s.Layer, out var bands)) { ignoredOther++; continue; }
+            // The conductor binding is asked FIRST, so a layer bound to both a conductor entry and a
+            // via entry keeps behaving exactly as it did before MIM-1.
+            if (binding.TryGetValue(s.Layer, out var bands))
+            {
+                var signalBand = bands.FirstOrDefault(b =>
+                    b.Layer.Kind == StackupKind.Conductor && !b.Layer.IsGroundReference);
+                if (signalBand is not null) { conductorShapes.Add((s, signalBand)); continue; }
 
-            var signalBand = bands.FirstOrDefault(b =>
-                b.Layer.Kind == StackupKind.Conductor && !b.Layer.IsGroundReference);
-            if (signalBand is not null) { conductorShapes.Add((s, signalBand)); continue; }
+                if (bands.Any(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference))
+                { ignoredGround++; continue; }
+            }
 
-            if (bands.Any(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.IsGroundReference))
-            { ignoredGround++; continue; }
+            if (viaBinding.TryGetValue(s.Layer, out var regionEntry))
+            { regionViaShapes.Add((s, regionEntry)); continue; }
 
             ignoredOther++;
         }
@@ -420,6 +446,33 @@ public static class PlanarExtractor
             polysByLevel[li].Add(new PlanarPolygon(outer, holes.Count == 0 ? null : holes));
         }
 
+        // ── MIM-1 — the same shape -> PlanarPolygon conversion, for via-bound regions ─────────
+        //
+        // Deliberately the conductor path's own conversion rather than a second one: outer ring plus
+        // holes, the layout's own flatten tolerance, the same degenerate-ring floor. A via footprint
+        // and a conductor footprint are the same kind of artwork resolved onto the same tensor grid,
+        // and two conversions that could drift apart would show up as a via that meshes to a slightly
+        // different set of cells than the metal it lands on.
+        var regionViaPolys = new List<(PlanarPolygon Poly, StackupLayer Entry)>();
+        int ignoredViaRegion = 0;
+        foreach (var (shape, entry) in regionViaShapes)
+        {
+            long tol = LayoutFlattener.ResolveTolDbu(shape, tech);
+            IReadOnlyList<long[]> rings;
+            try { rings = LayoutFlattener.Flatten(shape, tol); }
+            catch (ArgumentOutOfRangeException) { ignoredViaRegion++; continue; }
+
+            if (rings.Count == 0 || rings[0].Length < 6) { ignoredViaRegion++; continue; }
+            if (LayoutBooleans.IsCurved(shape)) flattenedCurves++;
+
+            var viaOuter = ToPoints(rings[0], perDbu);
+            var viaHoles = new List<IReadOnlyList<EmPoint>>();
+            for (int i = 1; i < rings.Count; i++)
+                if (rings[i].Length >= 6) viaHoles.Add(ToPoints(rings[i], perDbu));
+
+            regionViaPolys.Add((new PlanarPolygon(viaOuter, viaHoles.Count == 0 ? null : viaHoles), entry));
+        }
+
         int totalPolys = polysByLevel.Sum(l => l.Count);
         if (totalPolys == 0)
             return PlanarExtractionResult.No(
@@ -437,6 +490,17 @@ public static class PlanarExtractor
             notes.Add($"{ignoredOther} shape(s) were ignored — a Path is a centreline, and anything " +
                       "not bound to a stackup conductor or via entry is not metal as far as this " +
                       "technology is concerned.");
+        // MIM-1 — the two things still ignorable on a via-bound layer, each named rather than
+        // folded into the sentence above, which would send the user to re-bind a layer that is
+        // already bound.
+        if (ignoredViaPath > 0)
+            notes.Add($"{ignoredViaPath} Path shape(s) on a via-bound drawing layer were ignored. A " +
+                      "Path is a centreline with no enclosed area, and a via footprint is a region — " +
+                      "draw the connection as a rectangle or a polygon, or place a via primitive.");
+        if (ignoredViaRegion > 0)
+            notes.Add($"{ignoredViaRegion} shape(s) on a via-bound drawing layer enclose no area and " +
+                      "were ignored. A via footprint is meshed by the cells it covers, so a shape " +
+                      "with no interior covers nothing.");
         if (flattenedCurves > 0)
             notes.Add($"{flattenedCurves} curved shape(s) were flattened to polygons at the layout's " +
                       "own flatten tolerance before meshing. That tolerance is an ARTWORK decision and " +
@@ -467,7 +531,7 @@ public static class PlanarExtractor
                 // kernel on, and it must only happen when there is something general to say.
                 levels.Count > 1 ? levelZ[i] : double.NaN);
 
-        var vias = BuildVias(viaShapes, levels, tech, perDbu, notes, groundBand);
+        var vias = BuildVias(viaShapes, regionViaPolys, levels, perDbu, notes, groundBand);
 
         var problem = new PlanarProblem(
             conductorLayers,
@@ -657,62 +721,85 @@ public static class PlanarExtractor
     /// physics — so the barrel is replaced by the EQUAL-AREA square, which preserves the conducting
     /// cross-section (the quantity a via's own impedance depends on) and costs two gridlines per
     /// axis.</para>
+    ///
+    /// <para><b>MIM-1 — a via is also a drawn REGION, and that footprint is NOT squared.</b> The
+    /// equal-area substitution above exists so a circle nobody drew does not staircase; a rectangle
+    /// or polygon drawn on a via-bound layer already IS the footprint, and it reaches the mesher at
+    /// the outline the user drew. A MIM capacitor's plate connection is exactly that: a region
+    /// nearly as large as the plate itself. Both kinds share every rule below — the span and the
+    /// conductivity come from the stackup entry, and the noSpan / unknownLevels / notAdjacent /
+    /// toGround / wrongGround accounting is one accounting.</para>
     /// </summary>
     private static List<PlanarVia> BuildVias(
-        List<(ViaShape Shape, StackupLayer Entry)> viaShapes, List<Band> levels, Technology tech,
-        double perDbu, List<string> notes, Band? groundBand = null)
+        List<(ViaShape Shape, StackupLayer Entry)> viaShapes,
+        List<(PlanarPolygon Poly, StackupLayer Entry)> regionViaPolys,
+        List<Band> levels, double perDbu, List<string> notes, Band? groundBand = null)
     {
         var vias = new List<PlanarVia>();
-        if (viaShapes.Count == 0) return vias;
+        if (viaShapes.Count == 0 && regionViaPolys.Count == 0) return vias;
 
         int noSpan = 0, unknownLevels = 0, notAdjacent = 0, toGround = 0, wrongGround = 0;
+        int pointVias = 0, regionVias = 0, regionPolys = 0;
         var wrongGroundNames = new List<string>();
 
-        foreach (var (shape, entry) in viaShapes)
+        // ── Which two terminals does this stackup entry name? ─────────────────────────────────
+        //
+        // Shared by both artwork kinds ON PURPOSE (MIM-1): the whole point of "the artwork says
+        // WHERE, the stackup says WHICH TWO CONDUCTORS" is that the answer cannot depend on how the
+        // via was drawn, and a second copy of this block is exactly how it would come to. `count` is
+        // how many SHAPES to charge to whichever counter bites, since a region entry stands for
+        // several drawn shapes and a point via for one.
+        //
+        // ── R-gv-6 — a via to the GROUND the kernel actually models ───────────────────────────
+        //
+        // A backside via names a conductor that is NOT an analysis level, so before L9's own phase
+        // gate it fell into `unknownLevels` and was dropped with a note. That behaviour was correct
+        // and reported; what was missing was the basis. It is now built — but ONLY when the named
+        // conductor is the one the Green's function terminates on. The ground plane this kernel has
+        // is the laterally infinite PEC at z = 0, which R-em-4 resolves to exactly one band; a via
+        // to some OTHER ground-designated pour is a finite conductor the kernel does not mesh, and
+        // turning it into an attachment would silently model a different structure. The refusal must
+        // not simply disappear — that is the failure mode L9's own FINDING 2 is about.
+        bool Terminals(StackupLayer entry, int count, out int lower, out int upper)
         {
+            lower = upper = 0;
+
             string? from = entry.SpanFromLayer, to = entry.SpanToLayer;
-            if (from is not { Length: > 0 } || to is not { Length: > 0 }) { noSpan++; continue; }
+            if (from is not { Length: > 0 } || to is not { Length: > 0 }) { noSpan += count; return false; }
 
-            int a = levels.FindIndex(b => string.Equals(b.Layer.Name, from, StringComparison.Ordinal));
-            int b2 = levels.FindIndex(b => string.Equals(b.Layer.Name, to, StringComparison.Ordinal));
+            int a  = levels.FindIndex(b => string.Equals(b.Layer.Name, from, StringComparison.Ordinal));
+            int b2 = levels.FindIndex(b => string.Equals(b.Layer.Name, to,   StringComparison.Ordinal));
 
-            // ── R-gv-6 — a via to the GROUND the kernel actually models ───────────────────────
-            //
-            // A backside via names a conductor that is NOT an analysis level, so before L9's own
-            // phase gate it fell into `unknownLevels` and was dropped with a note. That behaviour
-            // was correct and reported; what was missing was the basis. It is now built — but ONLY
-            // when the named conductor is the one the Green's function terminates on. The ground
-            // plane this kernel has is the laterally infinite PEC at z = 0, which R-em-4 resolves
-            // to exactly one band; a via to some OTHER ground-designated pour is a finite conductor
-            // the kernel does not mesh, and turning it into an attachment would silently model a
-            // different structure. The refusal must not simply disappear — that is the failure
-            // mode L9's own FINDING 2 is about.
-            int lower, upper;
             if (a < 0 || b2 < 0)
             {
                 string missing = a < 0 ? from : to;
                 int meshed     = a < 0 ? b2   : a;
 
-                if (meshed < 0) { unknownLevels++; continue; }
+                if (meshed < 0) { unknownLevels += count; return false; }
 
                 if (groundBand is null ||
                     !string.Equals(groundBand.Layer.Name, missing, StringComparison.Ordinal))
                 {
-                    wrongGround++;
+                    wrongGround += count;
                     if (!wrongGroundNames.Contains(missing)) wrongGroundNames.Add(missing);
-                    continue;
+                    return false;
                 }
 
                 lower = PlanarVia.GroundTerminal;
                 upper = meshed;
-                toGround++;
+                toGround += count;
+                return true;
             }
-            else
-            {
-                lower = Math.Min(a, b2);
-                upper = Math.Max(a, b2);
-                if (upper != lower + 1) { notAdjacent++; continue; }
-            }
+
+            lower = Math.Min(a, b2);
+            upper = Math.Max(a, b2);
+            if (upper != lower + 1) { notAdjacent += count; return false; }
+            return true;
+        }
+
+        foreach (var (shape, entry) in viaShapes)
+        {
+            if (!Terminals(entry, 1, out int lower, out int upper)) continue;
 
             // The equal-area square, centred on the via: side = d·√π/2.
             double d = shape.DrillSize * perDbu;
@@ -725,6 +812,35 @@ public static class PlanarExtractor
                 [new PlanarPolygon([new EmPoint(cx - half, cy - half), new EmPoint(cx + half, cy - half),
                                     new EmPoint(cx + half, cy + half), new EmPoint(cx - half, cy + half)])],
                 entry.SigmaSm));
+            pointVias++;
+        }
+
+        // ── MIM-1 — the drawn REGIONS, GROUPED BY THEIR STACKUP ENTRY ─────────────────────────
+        //
+        // One PlanarVia per via entry carrying every footprint drawn on it, rather than one per
+        // shape. Two reasons, and the second is a correctness one:
+        //
+        //   • the span, the conductivity and the ground rule all come from the ENTRY, so every
+        //     region on it resolves to the identical pair of terminals — splitting them would be
+        //     one identical record per shape;
+        //   • the mesher scans every grid cell against a via's polygon list and stops at the FIRST
+        //     one that covers it, so two OVERLAPPING footprints in one PlanarVia contribute one
+        //     vertical basis to a shared cell. As separate PlanarVias they would each contribute
+        //     one, silently doubling the metal in the overlap. A plate connection drawn as several
+        //     touching or overlapping rectangles is an ordinary thing to draw.
+        //
+        // The counters below stay in SHAPES, because that is what the user drew and can go and look
+        // at; only the PlanarVia count is per entry.
+        foreach (var group in regionViaPolys.GroupBy(r => r.Entry))
+        {
+            var entry = group.Key;
+            int shapeCount = group.Count();
+
+            if (!Terminals(entry, shapeCount, out int lower, out int upper)) continue;
+
+            vias.Add(new PlanarVia(lower, upper, [.. group.Select(g => g.Poly)], entry.SigmaSm));
+            regionVias++;
+            regionPolys += shapeCount;
         }
 
         if (toGround > 0)
@@ -741,12 +857,20 @@ public static class PlanarExtractor
                       "conductor this kernel does not mesh, and treating it as the infinite plane " +
                       "would solve a structure you did not draw.");
 
-        if (vias.Count > 0)
-            notes.Add($"{vias.Count} via(s) were extracted. Each round barrel is replaced by the " +
+        if (pointVias > 0)
+            notes.Add($"{pointVias} via(s) were extracted. Each round barrel is replaced by the " +
                       "EQUAL-AREA square centred on it (side = 0.886 × the drill diameter), which " +
                       "preserves the conducting cross-section the via's own impedance depends on. A " +
                       "staircased circle would contribute a hard gridline per facet to the shared " +
                       "tensor grid every level uses, multiplying the unknown count for no physics.");
+        if (regionVias > 0)
+            notes.Add($"{regionPolys} drawn region(s) became the footprints of {regionVias} via " +
+                      "connection(s), at the outline you drew. A region via is meshed " +
+                      "exactly as a point via is — one vertical basis per cell of the shared tensor " +
+                      "grid the footprint covers that carries metal on both levels — so a plate " +
+                      "connection nearly as large as its plate is an ordinary via, not a special " +
+                      "case. Nothing is squared: the equal-area substitution applies to a round " +
+                      "barrel, and a drawn outline already is the footprint.");
         if (noSpan > 0)
             notes.Add($"{noSpan} via shape(s) were ignored because their stackup via entry names no " +
                       "SpanFrom/SpanTo conductors. Which two levels a via joins is a property of the " +

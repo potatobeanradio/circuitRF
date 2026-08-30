@@ -135,8 +135,18 @@ boundary is what is above, and it is `Open` unless you say otherwise.
 ## Vias {#vias}
 
 A via entry is not a layer — it is a **connection between two conductor entries, named by name** in
-its `Span from` / `Span to` fields. Draw a via shape on the drawing layer the entry is bound to, and
-the EM extractor turns it into a real vertical current path.
+its `Span from` / `Span to` fields. Draw on the drawing layer the entry is bound to, and the EM
+extractor turns what you drew into a real vertical current path.
+
+**Two kinds of artwork count**, and both go through the same rules below:
+
+- a **via primitive**, the pad-and-drill point you place with the Via tool;
+- a **filled region** — a rectangle or a polygon, holes included. This is what a thin-film
+  capacitor's plate connection is: a patch nearly as large as the plate itself, rather than a point.
+  Several regions on one via entry are several footprints of the same connection.
+
+A **path** on a via layer is ignored, with a note — a path is a centreline and encloses no area, so
+there is no footprint to mesh. Draw the region instead.
 
 Three rules the extractor applies, each reported when it bites:
 
@@ -146,9 +156,11 @@ Three rules the extractor applies, each reported when it bites:
   named conductor is the ground-designated one, so the via runs from a signal level down to the plane.
   A via naming some *other* non-analysis conductor is ignored with a note — it would otherwise silently
   model a structure you did not draw.
-- **The footprint is squared.** A round barrel staircased onto the mesh grid would cost a gridline per
-  facet for no physics, so it is replaced by the **equal-area square**, which preserves the conducting
-  cross-section. The run reports that it did.
+- **A via primitive's footprint is squared.** A round barrel staircased onto the mesh grid would cost
+  a gridline per facet for no physics, so it is replaced by the **equal-area square**, which preserves
+  the conducting cross-section. The run reports that it did. **A drawn region is not squared** — the
+  substitution exists so a circle nobody drew does not staircase, and an outline you drew already is
+  the footprint, so it is meshed as it stands.
 
 <div class="callout note">
 <span class="label">An internal port does not need you to draw one</span>

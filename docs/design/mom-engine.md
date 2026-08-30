@@ -253,9 +253,10 @@ An ordered stack from top to bottom, living in the `.ctech` file:
 - **Boundary conditions** top and bottom: open (free space), or perfect/lossy ground plane.
 - **Dielectric layer**: thickness, εr, tanδ, µr.
 - **Conductor layer**: thickness, σ, optional surface roughness; bound to one or more drawing layers.
-- **Via layer**: connects two conductor layers; bound to a drawing layer. *(Drawn via
-  artwork is the point `ViaShape` today; accepting drawn via REGIONS — the MIM
-  plate-connection case — is planned in §10.12 / brief MIM-1.)*
+- **Via layer**: connects two conductor layers; bound to a drawing layer. Drawn via artwork is
+  either the point `ViaShape` (meshed as its equal-area square) or a filled REGION — a rectangle or
+  polygon on the bound layer, which is the MIM plate-connection case and reaches the mesher at the
+  outline it was drawn. *(> Built at MIM-1, 2026-08-30.)*
 
 UI: a vertical stack diagram, click a band to edit, with **presets** — "FR-4 2-layer 1.6 mm",
 "Rogers 4350B 0.508 mm", "GaAs MMIC 100 µm" — because preset-then-tweak is what makes the 30-second
@@ -1173,8 +1174,8 @@ geometry* — the old wording would have excluded a solver that requires none of
 
 ### 10.12 Thin-film (MIM) capacitors — plan
 
-**Status: proposal (2026-08-30). Nothing in this section is built.** The work is staged as the
-`docs/sonnet-briefs/brief-em-mim-series.md` series (MIM-1 … MIM-5); the authoritative record of
+**Status: in progress. MIM-1 (region vias) is built, 2026-08-30; MIM-2 … MIM-5 remain proposals.**
+The work is staged as the `docs/sonnet-briefs/brief-em-mim-series.md` series (MIM-1 … MIM-5); the authoritative record of
 what lands is, as always, `src/Engine/Mom/CLAUDE.md` and the per-area `RESOLVED.md` files, and each
 brief corrects this section in place with a `> Built at MIM-x` note as it ships.
 
@@ -1194,14 +1195,19 @@ planar-EM class of tool, and it is a good one here: the fields that set the capa
 confined under the plates, where the layer genuinely exists; elsewhere a 50–300 nm sheet perturbs
 an interconnect-scale stack negligibly. Drawn artwork on a dielectric-bound drawing layer stays
 ignored (with a note), exactly as §10.4's editor behaviour already reflects. What the user DRAWS
-are the two plates (conductor layers) and the plate-connection via — a REGION, which is gap 1.
+are the two plates (conductor layers) and the plate-connection via — a REGION, which was gap 1
+and is built (MIM-1, 2026-08-30).
 
 **The four gaps, each one brief:**
 
-1. **Region vias (MIM-1).** `PlanarExtractor` consumes only the point `ViaShape`; a rectangle or
-   polygon drawn on a via-bound layer is dropped silently, while the engine's `PlanarVia` already
-   takes an arbitrary polygon footprint and meshes one vertical basis per covered cell. Extraction
-   and reporting work only; the engine and every §7 via refusal are untouched.
+1. **Region vias (MIM-1). > Built 2026-08-30.** `PlanarExtractor` consumed only the point
+   `ViaShape`; a rectangle or polygon drawn on a via-bound layer was dropped silently, while the
+   engine's `PlanarVia` already took an arbitrary polygon footprint and meshed one vertical basis
+   per covered cell. It now becomes a footprint at the outline it was drawn (NOT squared — the
+   equal-area substitution belongs to a point via and exists so a circle nobody drew does not
+   staircase), every region on one stackup entry groups into one `PlanarVia`, and nothing on a
+   via-bound layer falls into `ignoredOther` any more. The engine and every §7 via refusal were
+   untouched. Write-up: `src/Design/RESOLVED.md`.
 2. **A shipped exemplar (MIM-2).** The GaAs starter technology gains a plate conductor, a thin
    capacitor dielectric and a plate-via entry (its `Cap Dielectric`/`Nitride` drawing layers have
    existed, unbound, since the starter shipped), so both capacitor forms have an in-tree fixture.

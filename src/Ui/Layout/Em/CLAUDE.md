@@ -179,10 +179,17 @@ levels collapse into one and the whole point is lost. The first version left the
 uncovered and would have inserted a spurious air gap the thickness of Metal1 into every two-level
 stack; the fix falls back to the dielectric whose `BottomM` equals the band's top.
 
-**A via's footprint is an equal-area SQUARE** (side = 0.886 × drill diameter), because L9c's basis is
-one cell of L8b's shared tensor grid and a circle is not. The span comes from the stackup entry's own
-`SpanFromLayer`/`SpanToLayer` — the same fields the `.ctech` editor writes and R-via-3 already
-declared — never from geometry.
+**A POINT via's footprint is an equal-area SQUARE** (side = 0.886 × drill diameter), because L9c's
+basis is one cell of L8b's shared tensor grid and a circle is not. The span comes from the stackup
+entry's own `SpanFromLayer`/`SpanToLayer` — the same fields the `.ctech` editor writes and R-via-3
+already declared — never from geometry.
+
+> Built at MIM-1 (2026-08-30): **a via is also a drawn REGION**, and that footprint is NOT squared —
+> the equal-area substitution exists so a circle nobody drew does not staircase, and a rectangle or
+> polygon on a via-bound layer already is the footprint. Region footprints on one stackup entry are
+> grouped into ONE `PlanarVia`, which is a correctness decision: the mesher stops at the first
+> polygon covering a cell, so separate `PlanarVia`s would give a shared cell one vertical basis each.
+> See `src/Design/RESOLVED.md`.
 
 ### The ungrounded refusal was NARROWED, and the accepted SET did not widen
 
