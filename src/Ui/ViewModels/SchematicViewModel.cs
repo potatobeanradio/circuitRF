@@ -201,6 +201,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     private Dictionary<string, (double X, double Y)>?                                                 _dragStartCompPositions;
     private Dictionary<string, WireDragInfo>?                                                         _dragWireInfo;
     private Dictionary<string, IReadOnlyList<(double X, double Y)>>?                                  _dragUnselectedWirePoints;
+    /// <summary>Mid-span tap stubs for the frame in flight — drawn as previews, re-made each tick.</summary>
+    private List<IReadOnlyList<(double X, double Y)>>?                                               _dragTapStubs;
     private Dictionary<string, (double X, double Y)>?                                                 _dragStartObjPositions;
     private List<PinOnPinContact>?                                                                     _dragPinOnPinContacts;
     // Snapshot of every component's pin geometry at drag start — avoids per-frame resolver calls.
@@ -1516,6 +1518,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         if (_dragStartCompPositions is null || _dragUnselectedWirePoints is null) return;
         const double tol = 8.0;
+        _dragTapStubs = null;   // rebuilt from scratch each tick
 
         // Build map: original port world position → current (new) port world position.
         // Use the drag-start snapshot to avoid per-frame resolver calls (perf rule).
@@ -1547,42 +1550,15 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (!_dragUnselectedWirePoints.TryGetValue(wire.Id, out var orig)) continue;
             if (orig.Count < 2) continue;
 
-            double newSX = orig[0].X,   newSY = orig[0].Y;
-            double newEX = orig[^1].X,  newEY = orig[^1].Y;
-            bool changed = false;
-
-            foreach (var (ox, oy, nx, ny) in portMoves)
+            var follow = FollowEndpointsFor(orig, portMoves, tol);
+            if (follow is not null)
             {
-                // Shared-point rule: a wire endpoint held by a stationary pin must NOT follow
-                // a moving pin that merely started coincident there (stationary wins).
-                if (SchematicGeometry.CoincidentPoints(orig[0].X, orig[0].Y, ox, oy, tol)
-                    && !IsPointHeldByStationaryPin(orig[0].X, orig[0].Y))
-                { newSX = nx; newSY = ny; changed = true; }
-                if (SchematicGeometry.CoincidentPoints(orig[^1].X, orig[^1].Y, ox, oy, tol)
-                    && !IsPointHeldByStationaryPin(orig[^1].X, orig[^1].Y))
-                { newEX = nx; newEY = ny; changed = true; }
+                wire.Points.Clear();
+                wire.Points.AddRange(follow);
             }
 
-            if (changed) { ApplyOrthoRoute(wire, newSX, newSY, newEX, newEY); continue; }
-
-            // T-junction body-follow: port on wire segment interior → route wire through P'
-            bool bodyFollowed = false;
-            foreach (var (ox, oy, nx, ny) in portMoves)
-            {
-                if (bodyFollowed) break;
-                const double tol2 = SchematicEditModel.ConnectTolerance;
-                for (int si = 0; si < orig.Count - 1 && !bodyFollowed; si++)
-                {
-                    if (SchematicGeometry.PointOnSegmentInterior(
-                            ox, oy, orig[si].X, orig[si].Y, orig[si + 1].X, orig[si + 1].Y, tol2))
-                    {
-                        var newRoute = SimplifyWirePoints(RouteBodyFollow(orig, nx, ny));
-                        wire.Points.Clear();
-                        wire.Points.AddRange(newRoute);
-                        bodyFollowed = true;
-                    }
-                }
-            }
+            var stubs = BuildTapStubs(orig, follow ?? orig, portMoves);
+            if (stubs is not null) (_dragTapStubs ??= []).AddRange(stubs);
         }
     }
 
@@ -1635,7 +1611,10 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         if (compSnaps.Count == 0 && selWireSnaps.Count == 0 && objSnaps.Count == 0) return;
 
-        // Follow-wire moves: unselected wires re-routed to track dragged component ports
+        // Follow-wire moves: unselected wires re-routed to track dragged component ports.
+        // autoWireCmds collects every wire this drag has to CREATE to hold a contact: a mid-span
+        // tap's stub (below) and a separating pin-on-pin contact's wire (Case 2, further down).
+        var autoWireCmds    = new List<PlaceWireCommand>();
         var followWireSnaps = new List<WireMoveSnapshot>();
         if (compSnaps.Count > 0 && _dragUnselectedWirePoints is not null)
         {
@@ -1649,52 +1628,25 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (!_dragUnselectedWirePoints.TryGetValue(wire.Id, out var orig)) continue;
                 if (orig.Count < 2) continue;
 
-                double newSX = orig[0].X,  newSY = orig[0].Y;
-                double newEX = orig[^1].X, newEY = orig[^1].Y;
-                bool changed = false;
+                var follow = FollowEndpointsFor(orig, portMoves, tol);
+                if (follow is not null)
+                    followWireSnaps.Add(new WireMoveSnapshot(wire, orig, follow));
 
-                foreach (var (ox, oy, nx, ny) in portMoves)
+                // T-junction body-follow: a pin that TAPPED this wire mid-span and has left it
+                // grows its own stub back to the wire (see BuildTapStubs).
+                var stubs = BuildTapStubs(orig, follow ?? orig, portMoves);
+                if (stubs is null) continue;
+                foreach (var stub in stubs)
                 {
-                    // Shared-point rule: a wire endpoint held by a stationary pin must NOT follow
-                    // a moving pin that merely started coincident there (stationary wins).
-                    if (SchematicGeometry.CoincidentPoints(orig[0].X, orig[0].Y, ox, oy, tol)
-                        && !IsPointHeldByStationaryPin(orig[0].X, orig[0].Y))
-                    { newSX = nx; newSY = ny; changed = true; }
-                    if (SchematicGeometry.CoincidentPoints(orig[^1].X, orig[^1].Y, ox, oy, tol)
-                        && !IsPointHeldByStationaryPin(orig[^1].X, orig[^1].Y))
-                    { newEX = nx; newEY = ny; changed = true; }
-                }
-
-                if (changed)
-                {
-                    followWireSnaps.Add(new WireMoveSnapshot(wire, orig,
-                        WireGeometry.OrthogonalRoute(newSX, newSY, newEX, newEY)));
-                    continue;
-                }
-
-                // T-junction body-follow: port on wire segment interior → route wire through P'
-                foreach (var (ox, oy, nx, ny) in portMoves)
-                {
-                    bool found = false;
-                    const double tol2 = SchematicEditModel.ConnectTolerance;
-                    for (int si = 0; si < orig.Count - 1 && !found; si++)
-                    {
-                        if (SchematicGeometry.PointOnSegmentInterior(
-                                ox, oy, orig[si].X, orig[si].Y, orig[si + 1].X, orig[si + 1].Y, tol2))
-                        {
-                            followWireSnaps.Add(new WireMoveSnapshot(wire, orig,
-                                SimplifyWirePoints(RouteBodyFollow(orig, nx, ny))));
-                            found = true;
-                        }
-                    }
-                    if (found) break;
+                    var stubWire = new EditableWire();
+                    stubWire.Points.AddRange(stub);
+                    autoWireCmds.Add(new PlaceWireCommand(EditModel, stubWire));
                 }
             }
         }
 
         // Layer 3: build PlaceWireCommands for pin-on-pin contacts that separated during drag.
         // MovingPortIndex is the slot into the snapshotted PortDefsOf array (set at drag start).
-        var autoWireCmds = new List<PlaceWireCommand>();
         if (_dragPinOnPinContacts is { Count: > 0 } && compSnaps.Count > 0)
         {
             const double tol = SchematicEditModel.ConnectTolerance;
@@ -1815,6 +1767,114 @@ public sealed partial class SchematicViewModel : ObservableObject
         return moves;
     }
 
+    /// <summary>
+    /// The new geometry for an unselected wire whose endpoint(s) sit on a pin this drag has moved,
+    /// or null when neither endpoint is on a moved pin (nothing to follow).
+    ///
+    /// <para>Delegates the shape to <see cref="WireGeometry.FollowEndpoints"/>, which deforms only
+    /// the legs at the moved end. What this adds is WHICH ends move: the shared-point rule (rev 6)
+    /// says a wire endpoint that a STATIONARY pin also holds stays with the stationary pin and does
+    /// not follow, and the auto-wire (Case 2) covers the moving one instead.</para>
+    ///
+    /// <para>Used by the live pass and by the commit, from the same snapshot, so the wire the user
+    /// watches during the drag is the wire they get when they let go.</para>
+    /// </summary>
+    private IReadOnlyList<(double X, double Y)>? FollowEndpointsFor(
+        IReadOnlyList<(double X, double Y)> orig,
+        List<(double Ox, double Oy, double Nx, double Ny)> portMoves,
+        double tol)
+    {
+        if (orig.Count < 2) return null;
+
+        bool sMoved = false, eMoved = false;
+        double nsx = orig[0].X,  nsy = orig[0].Y;
+        double nex = orig[^1].X, ney = orig[^1].Y;
+
+        foreach (var (ox, oy, nx, ny) in portMoves)
+        {
+            if (SchematicGeometry.CoincidentPoints(orig[0].X, orig[0].Y, ox, oy, tol)
+                && !IsPointHeldByStationaryPin(orig[0].X, orig[0].Y))
+            { nsx = nx; nsy = ny; sMoved = true; }
+            if (SchematicGeometry.CoincidentPoints(orig[^1].X, orig[^1].Y, ox, oy, tol)
+                && !IsPointHeldByStationaryPin(orig[^1].X, orig[^1].Y))
+            { nex = nx; ney = ny; eMoved = true; }
+        }
+        if (!sMoved && !eMoved) return null;
+
+        return SimplifyWirePoints(
+            WireGeometry.FollowEndpoints(orig, sMoved, nsx, nsy, eMoved, nex, ney));
+    }
+
+    /// <summary>
+    /// Stubs that keep a MID-SPAN tap connected when the tapping pin is dragged off the wire, or
+    /// null when every tap on this wire survived the drag.
+    ///
+    /// <para><b>The wire is not re-routed to chase the pin</b> — that is what the removed
+    /// <c>RouteBodyFollow</c> did, and it drags a run the user placed, plus everything else tapping
+    /// that run, on behalf of a part with no claim on either of its ends. Two capacitors sharing a horizontal wire, one
+    /// nudged down, used to bend the wire down at the far capacitor's pin instead of the moved part
+    /// simply growing a lead. The moved part grows the lead instead, which is what the segment-drag
+    /// path already does for the same situation (<see cref="BuildInteriorPortStubs"/>).</para>
+    ///
+    /// <para><paramref name="orig"/> is where the wire was at press — the only geometry that can say
+    /// a pin was tapping it — and <paramref name="now"/> is where it is after any endpoint-follow.
+    /// A tap is only rebuilt when the pin has left <paramref name="now"/> entirely: a pin that slid
+    /// ALONG the wire, or that the follow's own re-route happens to still pass through, keeps the
+    /// contact it already has and gets no stub.</para>
+    ///
+    /// <para>The stub leaves the wire at a right angle, from the foot of the perpendicular dropped
+    /// onto the nearest segment — so it never runs ALONG the wire it is joining, where the two would
+    /// be one indistinguishable line on screen.</para>
+    /// </summary>
+    private static List<IReadOnlyList<(double X, double Y)>>? BuildTapStubs(
+        IReadOnlyList<(double X, double Y)> orig,
+        IReadOnlyList<(double X, double Y)> now,
+        List<(double Ox, double Oy, double Nx, double Ny)> portMoves)
+    {
+        const double tol = SchematicEditModel.ConnectTolerance;
+        if (orig.Count < 2 || now.Count < 2) return null;
+        List<IReadOnlyList<(double X, double Y)>>? stubs = null;
+
+        foreach (var (ox, oy, nx, ny) in portMoves)
+        {
+            bool tapped = false;
+            for (int si = 0; si < orig.Count - 1 && !tapped; si++)
+                tapped = SchematicGeometry.PointOnSegmentInterior(
+                    ox, oy, orig[si].X, orig[si].Y, orig[si + 1].X, orig[si + 1].Y, tol);
+            if (!tapped) continue;                       // this pin was not tapping this wire
+
+            bool stillOn = false;
+            for (int si = 0; si < now.Count - 1 && !stillOn; si++)
+                stillOn = SchematicGeometry.PointOnSegment(
+                    nx, ny, now[si].X, now[si].Y, now[si + 1].X, now[si + 1].Y, tol);
+            if (stillOn) continue;                       // the contact survived — nothing to draw
+
+            // Nearest segment of the wire as it now stands, and the foot of the perpendicular on it.
+            int    best     = 0;
+            double bestDsq  = double.PositiveInfinity;
+            (double X, double Y) foot = now[0];
+            for (int si = 0; si < now.Count - 1; si++)
+            {
+                var (ax, ay) = now[si];
+                var (bx, by) = now[si + 1];
+                double sx = bx - ax, sy = by - ay;
+                double lenSq = sx * sx + sy * sy;
+                double t = lenSq < 1e-10 ? 0.0 : Math.Clamp(((nx - ax) * sx + (ny - ay) * sy) / lenSq, 0.0, 1.0);
+                double cx = ax + t * sx, cy = ay + t * sy;
+                double dsq = (nx - cx) * (nx - cx) + (ny - cy) * (ny - cy);
+                if (dsq < bestDsq) { bestDsq = dsq; best = si; foot = (cx, cy); }
+            }
+
+            bool segH = Math.Abs(now[best + 1].Y - now[best].Y) < 1e-6;
+            var route = WireGeometry.NormalizePoints(segH
+                ? [foot, (foot.X, ny), (nx, ny)]         // leave a horizontal run vertically
+                : [foot, (nx, foot.Y), (nx, ny)]);       // and a vertical run horizontally
+            if (route.Count < 2) continue;
+            (stubs ??= []).Add(route);
+        }
+        return stubs;
+    }
+
     private static void ApplyOrthoRoute(EditableWire wire, double sx, double sy, double ex, double ey)
     {
         var route = WireGeometry.OrthogonalRoute(sx, sy, ex, ey);
@@ -1897,6 +1957,14 @@ public sealed partial class SchematicViewModel : ObservableObject
                 popPreviews.Add(WireGeometry.OrthogonalRoute(
                     contact.StationaryX, contact.StationaryY, nx, ny));
             }
+        }
+
+        // A mid-span tap that has left its wire previews the same way — the stub the commit will
+        // create, drawn from the geometry the commit reads, so the two cannot disagree.
+        if (_dragTapStubs is { Count: > 0 })
+        {
+            popPreviews ??= [];
+            popPreviews.AddRange(_dragTapStubs);
         }
 
         // Canvas-object position + size overrides (drag and resize paths).
@@ -2043,6 +2111,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _dragStartCompPositions   = null;
         _dragWireInfo             = null;
         _dragUnselectedWirePoints = null;
+        _dragTapStubs             = null;
         _dragStartObjPositions    = null;
         _dragPinOnPinContacts     = null;
         _dragPortDefs             = null;
@@ -2374,25 +2443,6 @@ public sealed partial class SchematicViewModel : ObservableObject
         return stem.JunctionAtStart
             ? WireGeometry.OrthogonalRoute(jx, jy, stem.FarPt.X, stem.FarPt.Y)
             : WireGeometry.OrthogonalRoute(stem.FarPt.X, stem.FarPt.Y, jx, jy);
-    }
-
-    /// <summary>
-    /// Re-routes a wire whose INTERIOR contains a T-junction component pin that has moved.
-    /// Keeps both wire endpoints (orig[0] and orig[^1]) fixed; routes from the start endpoint
-    /// to the new pin position, then on to the end endpoint (two OrthogonalRoute legs stitched
-    /// through P'). After <see cref="SimplifyWirePoints"/>, collinear segments are merged, so a
-    /// port that stays on the wire axis just gives back a straight wire. Mirrors RouteStem.
-    /// </summary>
-    private static IReadOnlyList<(double X, double Y)> RouteBodyFollow(
-        IReadOnlyList<(double X, double Y)> orig, double nx, double ny)
-    {
-        var toJunction   = WireGeometry.OrthogonalRoute(orig[0].X, orig[0].Y, nx, ny);
-        var fromJunction = WireGeometry.OrthogonalRoute(nx, ny, orig[^1].X, orig[^1].Y);
-        // Stitch: toJunction ends at P'; fromJunction starts at P' — skip that duplicate point.
-        var combined = new List<(double, double)>(toJunction.Count + fromJunction.Count - 1);
-        combined.AddRange(toJunction);
-        for (int i = 1; i < fromJunction.Count; i++) combined.Add(fromJunction[i]);
-        return combined;
     }
 
     /// <summary>

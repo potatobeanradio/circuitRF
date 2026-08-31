@@ -62,6 +62,123 @@ public static class WireGeometry
     }
 
     /// <summary>
+    /// Re-draws a wire whose ONE or TWO endpoints have been carried to a new place by a moved
+    /// component pin, keeping the shape the user drew.
+    ///
+    /// <para><b>Why this is not <see cref="OrthogonalRoute"/>.</b> The follow paths used to throw the
+    /// whole polyline away and redraw it as a bare L between the two endpoints, which is a different
+    /// wire wherever the original had more than one bend. Three things went wrong at once, all
+    /// reported from real sheets (2026-08-30): a run the user placed on a row moved off it; a
+    /// vertical run came back horizontal (and landed on top of an unrelated vertical, so the reader
+    /// could no longer tell two nets apart); and — the serious one — <b>every mid-span tap on that
+    /// wire was dropped</b>, because the L simply does not pass through where the T-junctions were.
+    /// A capacitor pair tapping the middle of an inductor's wire silently left the net when the
+    /// inductor was nudged one grid step.</para>
+    ///
+    /// <para><b>The rule instead: a moved endpoint deforms its own wire as little as the geometry
+    /// allows.</b> An orthogonal polyline alternates H and V legs, so the delta at a moved end
+    /// splits into a component ALONG that end's leg — absorbed by lengthening it, changing nothing
+    /// else — and a component ACROSS it, which is passed to the one neighbouring vertex, where the
+    /// next leg (perpendicular by construction) absorbs it as its own length. The propagation stops
+    /// there; nothing past the second vertex ever moves, so bends, rows and columns survive and so
+    /// does every tap that is not on the two legs that changed.</para>
+    ///
+    /// <para>When the neighbouring vertex is the far ENDPOINT, it is held by whatever is at the other
+    /// end and cannot absorb anything — a plain two-point wire is exactly this case. Then a new
+    /// elbow is inserted AT THE MOVED END, which leaves the original leg (and everything tapping it)
+    /// exactly where it was. This is the vertical jog a user expects to see appear under a part they
+    /// nudged off its row.</para>
+    ///
+    /// <para>Both endpoints moving by the same delta is a rigid translation, and is done as one.
+    /// Anything this cannot express — a zero-length or non-orthogonal leg — falls back to
+    /// <see cref="OrthogonalRoute"/>, i.e. to what shipped before.</para>
+    /// </summary>
+    public static IReadOnlyList<(double X, double Y)> FollowEndpoints(
+        IReadOnlyList<(double X, double Y)> orig,
+        bool startMoved, double nsx, double nsy,
+        bool endMoved,   double nex, double ney)
+    {
+        const double eps = 1e-6;
+        if (orig.Count < 2 || (!startMoved && !endMoved)) return orig;
+
+        if (startMoved && endMoved)
+        {
+            double dsx = nsx - orig[0].X,  dsy = nsy - orig[0].Y;
+            double dex = nex - orig[^1].X, dey = ney - orig[^1].Y;
+            if (Math.Abs(dsx - dex) < eps && Math.Abs(dsy - dey) < eps)
+                return orig.Select(p => (p.X + dsx, p.Y + dsy)).ToList();
+
+            var once = RubberBandEnd(orig, atStart: true, nsx, nsy);
+            return RubberBandEnd(once, atStart: false, nex, ney);
+        }
+
+        return startMoved
+            ? RubberBandEnd(orig, atStart: true,  nsx, nsy)
+            : RubberBandEnd(orig, atStart: false, nex, ney);
+    }
+
+    /// <summary>
+    /// One end of <paramref name="pts"/> moves to (nx,ny); the rest deforms as little as it can.
+    /// See <see cref="FollowEndpoints"/> for the rule this implements.
+    /// </summary>
+    private static IReadOnlyList<(double X, double Y)> RubberBandEnd(
+        IReadOnlyList<(double X, double Y)> pts, bool atStart, double nx, double ny)
+    {
+        const double eps = 1e-6;
+        if (pts.Count < 2) return pts;
+
+        int iEnd  = atStart ? 0 : pts.Count - 1;          // the endpoint that moves
+        int iNext = atStart ? 1 : pts.Count - 2;          // its one neighbour
+        var p0 = pts[iEnd];
+        var p1 = pts[iNext];
+
+        double dx = nx - p0.X, dy = ny - p0.Y;
+        if (Math.Abs(dx) < eps && Math.Abs(dy) < eps) return pts;
+
+        bool legH = Math.Abs(p1.Y - p0.Y) < eps;
+        bool legV = Math.Abs(p1.X - p0.X) < eps;
+        if (legH == legV)                                  // zero-length or diagonal — not our shape
+            return OrthogonalRouteBetween(pts, atStart, nx, ny);
+
+        var res = pts.ToList();
+        res[iEnd] = (nx, ny);
+
+        // The delta along the moved end's own leg just changes that leg's length.
+        double across = legH ? dy : dx;
+        if (Math.Abs(across) < eps) return res;
+
+        // Across the leg: hand it to the neighbour, but only when the neighbour is an INTERIOR
+        // vertex (the far endpoint is held) AND the leg past it is perpendicular, so taking the
+        // shift only changes ITS length too.
+        int iAfter = atStart ? 2 : pts.Count - 3;
+        if (iAfter >= 0 && iAfter < pts.Count)
+        {
+            var p2 = pts[iAfter];
+            bool nextPerp = legH
+                ? Math.Abs(p2.X - p1.X) < eps            // H leg → neighbour leg must be V
+                : Math.Abs(p2.Y - p1.Y) < eps;           // V leg → neighbour leg must be H
+            if (nextPerp)
+            {
+                res[iNext] = legH ? (p1.X, p1.Y + dy) : (p1.X + dx, p1.Y);
+                return res;
+            }
+        }
+
+        // Neighbour cannot absorb it: elbow at the moved end, leaving the original leg on its row
+        // (or column) — and with it every tap that leg carries.
+        var elbow = legH ? (nx, p0.Y) : (p0.X, ny);
+        res.Insert(atStart ? 1 : res.Count - 1, elbow);
+        return res;
+    }
+
+    /// <summary>The pre-existing bare-L fallback, for a wire whose end leg this rule cannot read.</summary>
+    private static IReadOnlyList<(double X, double Y)> OrthogonalRouteBetween(
+        IReadOnlyList<(double X, double Y)> pts, bool atStart, double nx, double ny)
+        => atStart
+            ? OrthogonalRoute(nx, ny, pts[^1].X, pts[^1].Y)
+            : OrthogonalRoute(pts[0].X, pts[0].Y, nx, ny);
+
+    /// <summary>
     /// Returns true if (px,py) lies on any point or segment of the given wire,
     /// within SnapTol. Used for drag-to-connect checking (§4.2).
     /// </summary>

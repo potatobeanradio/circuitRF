@@ -1,6 +1,6 @@
 # circuitRF — Placement Connectivity & Drag-Follow (design note)
 
-**Status:** Implemented (rev 6); Disconnect (rev 7) designed, in build · **Date:** 2026-06-10 · Companion to `grid-and-connectivity.md` and
+**Status:** Implemented (rev 8) · **Date:** 2026-06-10 · Companion to `grid-and-connectivity.md` and
 `library-palette.md`. **rev 3:** promotes the behavior to a single governing **invariant** (a connection,
 once made, survives any drag) and folds in the user's two decisions: dragging a component off a pin-on-pin
 contact **auto-forms a wire**; re-routing may add bends (connection beats tidiness).
@@ -17,6 +17,11 @@ pin, and a wire endpoint coincide at one point. See Case 4 below.
 connectivity override (a per-component set of detached port indices) that suppresses an otherwise-geometric
 connection. Bounded by a clears-on-next-move lifecycle so the steady state stays pure-geometry. See
 "Disconnect" below.
+**rev 8:** the follow RE-ROUTE is shape-preserving. Case 1's two branches used to redraw a followed
+wire as a bare `OrthogonalRoute` L, which is a different wire wherever the original had more than one
+bend — it does not pass through the original's interior, so every mid-span tap on it was silently
+dropped. `WireGeometry.FollowEndpoints` deforms only the legs at the moved end; Case 1b no longer
+bends the tapped wire at all. See Case 1 below and `src/Ui/Schematic/RESOLVED.md`.
 
 ## The governing invariant (the rule everything else serves)
 
@@ -48,12 +53,26 @@ pin-on-wire-vertex → Connected; lone port → Unconnected / no dot.
 ## The cases (all consequences of the invariant)
 
 ### 1. Drag a COMPONENT whose pin is on a WIRE
-The connected wire re-routes live so its contact tracks the moved pin:
-- **pin on a wire ENDPOINT** → the endpoint follows the pin (re-route orthogonally; far structure anchored).
-  *(works today — `UpdateConnectedWireEndpointsLive` + commit follow-snaps.)*
-- **pin on a wire BODY (T-junction)** → the wire re-routes through the moved pin (split at the T; both wire
-  ends anchored; jog through P′). *(code landed — `RouteBodyFollow` + `PointOnSegmentInterior` follow blocks.)*
-Extra bends are acceptable. One undoable `MoveCommand` (component + every followed wire).
+The connected wire adapts live so its contact tracks the moved pin:
+- **pin on a wire ENDPOINT** → the endpoint follows the pin, and **the rest of the wire deforms as
+  little as the geometry allows** (`WireGeometry.FollowEndpoints`, rev 8). The delta at the moved end
+  splits into a part along that end's leg (absorbed by lengthening it) and a part across it, handed to
+  the ONE neighbouring vertex whose next leg — perpendicular by construction — absorbs it. Nothing
+  past the second vertex moves. When the neighbour is the far endpoint (a two-point wire), an elbow is
+  inserted at the moved end instead, leaving the original leg where it was.
+  *(`UpdateConnectedWireEndpointsLive` + commit follow-snaps, from the same snapshot.)*
+- **pin on a wire BODY (T-junction)** → **the wire is not touched**; the moved pin grows its own stub
+  back to it (`BuildTapStubs`, a `PlaceWireCommand` in the same composite). This branch is only
+  reached when neither endpoint of the wire moved — both ends are anchored by something staying put —
+  so re-routing it, which is what `RouteBodyFollow` did until rev 8, dragged a run the user placed
+  (and every other tap on it) on behalf of a part with no claim on either end. The stub leaves the
+  wire at a right angle so it never runs along it. Same mechanism the segment-drag path already used
+  (`BuildInteriorPortStubs`).
+
+**Preserving the SHAPE is part of the invariant, not tidiness.** A wire's mid-span taps are geometric,
+so a re-route that does not pass through the original's interior is a re-wire: it drops every tap
+silently. Extra bends remain acceptable; discarding the user's bends is not. One undoable
+`MoveCommand` (component + every followed wire), plus any stub it had to create.
 
 ### 2. Drag a COMPONENT whose pin is on ANOTHER COMPONENT'S pin (pin-on-pin)
 The two pins were a direct contact (no wire). Dragging one component **away auto-forms a wire** between the
@@ -127,10 +146,12 @@ geometry re-rules at the new position. Only the moved component clears.
 selective disconnect (v1 = all pins).
 
 ## Implementation guidance
-- **Reuse the single connectivity source + the stem-follow re-route.** Case 1 reuses
-  `RouteStem`/`RouteBodyFollow`; case 2's auto-wire is a new wire routed by `WireGeometry.OrthogonalRoute`
-  (same routing primitive); case 3 reuses the existing endpoint-pinning + jog re-route. Do **not** fork the
-  connectivity predicate or invent parallel routing.
+- **Reuse the single connectivity source + the shared routing primitives.** Case 1a routes via
+  `WireGeometry.FollowEndpoints`; case 1b's stub and case 2's auto-wire are new wires built on
+  `WireGeometry.OrthogonalRoute`/`NormalizePoints`; case 3 reuses the existing endpoint-pinning + jog
+  re-route (`RouteStem`). Do **not** fork the connectivity predicate or invent parallel routing, and
+  do **not** re-route a followed wire end to end — `OrthogonalRoute` between two endpoints is a
+  different wire from the one the user drew.
 - **Live vs commit.** During the drag, preserve connections in the fast overlay path
   (`UpdateDragOverlay`/`WireDragPoints`, perf-gated by `LiveDotMaxObjects`); fold the final geometry
   (followed wires, any auto-formed wire) into the single undoable `MoveCommand`/`CompositeCommand` at commit.

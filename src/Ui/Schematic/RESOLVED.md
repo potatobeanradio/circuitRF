@@ -2,6 +2,63 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## Drag-follow redrew the whole wire, and mid-span taps left the net (2026-08-30)
+
+Owner testing turned up seven drag defects on three real sheets. **Two were disconnects** — the
+serious kind, because the schematic still looks wired and simulates as something else — and five were
+shape damage. **All seven are one line of code:** both component-drag follow paths, the live tick
+(`UpdateConnectedWireEndpointsLive`) and the commit (`CommitDragAsCommand`), threw the followed wire's
+whole polyline away and redrew it as `WireGeometry.OrthogonalRoute`'s bare L between the two
+endpoints.
+
+**Why that loses connections, not just tidiness.** A wire's mid-span T-taps are geometric: a pin on a
+segment interior IS on that net (`ComputeConnectivityGeometry`). The bare L is a *different wire* — it
+does not pass where the original's interior was — so every tap on it is dropped, silently. Two
+capacitors tapping the middle of a horizontal wire between an inductor and another capacitor left the
+net when the inductor was nudged **one grid step**, and the resulting netlist is a different circuit
+that still runs.
+
+The five "annoying" reports are the same L seen from the other side: a vertical run comes back
+horizontal, a horizontal run moves off its row, and in one case the new leg landed exactly on top of
+an unrelated vertical wire — where a reader cannot tell one net from two — and ran through a
+transistor's symbol on the way.
+
+**The rule now: a moved endpoint deforms its own wire as little as the geometry allows**
+(`WireGeometry.FollowEndpoints`). An orthogonal polyline alternates H and V legs, so the delta at a
+moved end splits into a part ALONG that end's leg — absorbed by lengthening it, changing nothing else
+— and a part ACROSS it, handed to the **one** neighbouring vertex, where the next leg (perpendicular
+by construction) absorbs it as its own length. **Propagation stops there**: nothing past the second
+vertex ever moves, so bends, rows and columns survive, and so does every tap not on the two legs that
+changed. When the neighbour is the far ENDPOINT it is held by whatever is at the other end and can
+absorb nothing — a plain two-point wire is exactly this case — so an elbow is inserted AT THE MOVED
+END, leaving the original leg (and its taps) untouched. That elbow is the vertical jog a user expects
+to see appear under a part they nudged off its row, and it is what fixes both disconnects.
+
+**A tap that leaves its wire now grows a stub; the wire is not bent to chase it.** The old
+`RouteBodyFollow` re-routed the tapped wire through the moved pin — but that branch is only reached
+when NEITHER of the wire's endpoints moved, i.e. when both ends are anchored by something staying put,
+so it was dragging a run the user placed (and everything else tapping it) on behalf of a part with no
+claim on either end. `BuildTapStubs` creates a `PlaceWireCommand` stub instead, chained into the same
+undoable composite as the move, exactly as the segment-drag path already did for the same situation
+(`BuildInteriorPortStubs`). **The stub leaves the wire at a right angle**, from the foot of the
+perpendicular dropped onto the nearest segment, so it never runs ALONG the wire it joins.
+
+**A gap closed while there:** the stub is built from the wire's POST-follow geometry, so a tap also
+survives when the tapped wire is itself following a moved endpoint. Dragging the inductor and one of
+the tapping capacitors *together* used to lose the other capacitor, and the old code could not have
+caught it — it `continue`d past the body-follow branch whenever an endpoint had moved.
+
+**Not attempted, and it should not be assumed:** general obstacle-aware routing. Wire-over-wire and
+wire-over-symbol are listed as out of scope in
+`docs/design/placement-connectivity-and-drag-follow.md`, and both reported instances of them were
+*produced by* the whole-wire redraw, so preserving shape removes them at the cause rather than by
+avoidance. A drag that genuinely needs a detour still will not get one.
+
+Gated by `tests/Ui.Tests/Schematic/DragRoutePreservesShapeTests.cs` (19 cases): net-level extraction
+oracles for both disconnects, the exact expected polyline for each of the five shape reports (so a
+future tidy-up cannot quietly go back to the L), the stub's geometry and its undo, the group-drag
+case above, and a wire-over-wire overlap check on the sheet where the old route produced one.
+
 ## An added parameter group rendered no label, whatever "show on schematic" said (2026-08-29)
 
 Owner report: adding a second tone to a VTone (and to the new ITone) with **View on schematic** ticked

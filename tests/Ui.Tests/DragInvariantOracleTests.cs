@@ -14,7 +14,8 @@ namespace CircuitRF.Ui.Tests;
 ///
 /// Expected pass/fail at Layer 0 (before any Layer 1-3 fixes):
 ///   Case 1a (pin on wire endpoint):      PASS  — endpoint-follow lands the wire at the new pin
-///   Case 1b (pin on wire body / T-body): PASS  — RouteBodyFollow re-routes through the new pin
+///   Case 1b (pin on wire body / T-body): PASS  — the tap keeps its contact (rev 8: by growing its
+///                                                own stub; before that, by re-routing the wire)
 ///   Case 2  (pin-on-pin → auto-wire):    FAIL  — no auto-wire; pins separate, unconnected
 ///   Case 3  (wire drag, pin held):       PASS  — StartPinned=true; endpoint stays on pin
 /// </summary>
@@ -58,8 +59,9 @@ public class DragInvariantOracleTests
     // ── Case 1b — pin on wire BODY (T-junction) ────────────────────────────────
 
     /// <summary>
-    /// Component pin sits on a wire's mid-span (T-junction).  Drag the component → the wire
-    /// re-routes through the new pin position (RouteBodyFollow).
+    /// Component pin sits on a wire's mid-span (T-junction).  Drag the component → the contact is
+    /// preserved. Rev 8 changed HOW — the moved pin grows a stub rather than bending the anchored
+    /// wire (BuildTapStubs) — which this oracle deliberately does not care about.
     /// Invariant: the pin stays Connected after the drag.
     /// </summary>
     [Fact]
