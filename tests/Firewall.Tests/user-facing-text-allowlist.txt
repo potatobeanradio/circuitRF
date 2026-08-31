@@ -383,7 +383,7 @@ src/RfCore/Data/DataCube.cs|Cube [{n}] rank mismatch.
 src/RfCore/Data/DataCube.cs|Cube is Complex.
 src/RfCore/Data/DataCube.cs|Cube is Real.
 src/RfCore/Data/DataCube.cs|Cube rank mismatch: {a.Rank} vs {b.Rank}.
-src/RfCore/Data/DataCube.cs|Data length {dataLength} does not match axes shape {expected}.
+src/RfCore/Data/DataCube.cs|Data length {dataLength} does not match axes shape {expected} ({shape}).
 src/RfCore/Data/DataCube.cs|Expected {Rank} slice arguments, got {args.Length}.
 src/RfCore/Data/DataCube.cs|Labels length ({labels.Length}) must match Values length ({values.Length}).
 src/RfCore/Data/DataCube.cs|New axis length ({newAxis.Length}) must match cube count ({cubes.Count}).

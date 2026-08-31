@@ -117,12 +117,19 @@ namespace RfCore.Data
             ValidateSize(_strides, axes, data.Length);
         }
 
+        // The internal buffer-adopting constructors validate their shape too, for the same reason the
+        // public ones do — see ValidateSize. A cube whose axes claim more elements than its buffer
+        // holds does not fail where it is BUILT; it fails much later, in Slice's gather, as a bare
+        // IndexOutOfRangeException on a stack that names only the reader. Every caller below builds
+        // its buffer from the axes it passes, so this only ever fires on a genuine bug — and when it
+        // does, the throw lands on the code that made the cube.
         private DataCube(Axis[] axes, Complex[] data, bool noCopy)
         {
             Axes         = axes.ToList().AsReadOnly();
             DataKind     = DataKind.Complex;
             _complexData = noCopy ? data : (Complex[])data.Clone();
             _strides     = ComputeStrides(axes);
+            ValidateSize(_strides, axes, _complexData.Length);
         }
 
         private DataCube(Axis[] axes, double[] data, bool noCopy)
@@ -131,6 +138,7 @@ namespace RfCore.Data
             DataKind  = DataKind.Real;
             _realData = noCopy ? data : (double[])data.Clone();
             _strides  = ComputeStrides(axes);
+            ValidateSize(_strides, axes, _realData.Length);
         }
 
         // ---- Scalar (0-rank) factory ----------------------------
@@ -670,9 +678,16 @@ namespace RfCore.Data
         {
             // Empty-product for rank-0 (scalar) is 1, not 0.
             int expected = axes.Length == 0 ? 1 : strides[0] * axes[0].Length;
-            if (dataLength != expected)
-                throw new ArgumentException(
-                    $"Data length {dataLength} does not match axes shape {expected}.");
+            if (dataLength == expected) return;
+
+            // Name the shape, not just the two numbers: this message is the whole value of validating
+            // here rather than letting the gather run off the buffer later, so it has to identify WHICH
+            // cube is malformed when it turns up in a crash report.
+            string shape = axes.Length == 0
+                ? "scalar"
+                : string.Join(" x ", axes.Select(a => $"{a.Name}[{a.Length}]"));
+            throw new ArgumentException(
+                $"Data length {dataLength} does not match axes shape {expected} ({shape}).");
         }
 
         // ---- Gather helpers (recursive dimension walk) ---------

@@ -71,6 +71,79 @@ public class DataCubeTests
             new DataCube(new[] { FreqAxis, IAxis }, new Complex[3 * 3])); // wrong size
     }
 
+    // ---- Shape validation covers the BUFFER-ADOPTING constructors too ----------
+    //
+    //  Slice, the element-wise transforms, the arithmetic operators, PrependAxis and Reduce all
+    //  build their result through a private constructor that adopts the buffer instead of cloning
+    //  it. That constructor used to skip the shape check, so a cube whose axes claimed more
+    //  elements than its buffer held was constructed happily and only died later, inside
+    //  Slice's gather, as a bare IndexOutOfRangeException on a stack naming the READER rather than
+    //  whatever built the cube. These two tests pin both halves of the fix: the guard fires, and
+    //  every internal path that adopts a buffer still passes it.
+
+    private static object InvokeAdoptingCtor(Axis[] axes, Complex[] data)
+    {
+        var ctor = typeof(DataCube).GetConstructor(
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
+            null, new[] { typeof(Axis[]), typeof(Complex[]), typeof(bool) }, null);
+        Assert.NotNull(ctor);
+        try { return ctor!.Invoke(new object[] { axes, data, true }); }
+        catch (System.Reflection.TargetInvocationException e) { throw e.InnerException!; }
+    }
+
+    [Fact]
+    public void ShapeMismatch_InAdoptingConstructor_ThrowsAndNamesTheShape()
+    {
+        // Axes claim 3 x 2 = 6 elements; the buffer holds 4.
+        var ex = Assert.Throws<ArgumentException>(() =>
+            InvokeAdoptingCtor(new[] { FreqAxis, IAxis }, new Complex[4]));
+
+        Assert.Contains("4", ex.Message);          // what the buffer holds
+        Assert.Contains("6", ex.Message);          // what the axes claim
+        Assert.Contains("freq[3]", ex.Message);    // and WHICH cube it is
+        Assert.Contains("i[2]", ex.Message);
+    }
+
+    [Fact]
+    public void EveryInternalBufferAdoptingPath_BuildsAShapeConsistentCube()
+    {
+        var s    = MakeSCube();                       // [freq 3, i 2, j 2] Complex
+        var real = MakeRealCube();
+
+        // Slice (both the surviving-axis gather and the all-pinned element path)
+        var sliced = s[.., 0, 0].Cube!;
+        Assert.Equal(3, sliced.Axes[0].Length);
+        Assert.Equal(3, sliced.ComplexValues.Length);
+        Assert.Equal(2, s[.., .., 0].Cube!.Rank);
+
+        // Element-wise transforms
+        Assert.Equal(12, s.Mag().RealValues.Length);
+        Assert.Equal(12, s.Real().RealValues.Length);
+        Assert.Equal(12, s.Conj().ComplexValues.Length);
+        Assert.Equal(12, s.DB20().RealValues.Length);
+
+        // Arithmetic: identical-shape zip, scalar map, and the broadcast path
+        Assert.Equal(12, (s + s).ComplexValues.Length);
+        Assert.Equal(12, (s * 2.0).ComplexValues.Length);
+        var perFreq = s[.., 0, 0].Cube!;              // [freq] — broadcasts back against [freq,i,j]
+        Assert.Equal(12, (s * perFreq).ComplexValues.Length);
+
+        // PrependAxis, At, Reduce, Scalar
+        var stacked = DataCube.PrependAxis(PinAxis, Enumerable.Repeat(s, 4).ToArray());
+        Assert.Equal(4, stacked.Rank);                       // [Pin, freq, i, j]
+        Assert.Equal(48, stacked.ComplexValues.Length);
+
+        var pinned = stacked.At("Pin", 0);                   // pinning one axis drops it
+        Assert.Equal(3, pinned.Rank);
+        Assert.Equal(12, pinned.ComplexValues.Length);
+
+        var reduced = real.Max("harmonic");                  // [harmonic 3, Pin 4] → [Pin 4]
+        Assert.Equal(1, reduced.Rank);
+        Assert.Equal(4, reduced.RealValues.Length);
+
+        Assert.Equal(0, DataCube.Scalar(1.0).Rank);
+    }
+
     // ================================================================
     //  Slice semantics — int collapses rank, Range keeps it
     // ================================================================
