@@ -1,5 +1,92 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MIM-5 — the import report names what the via list cannot reach (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-5-import-coverage-note.md`. A process stack description routinely
+omits an optional module — a thin-film capacitor's plate, its dielectric, its plate via — while the
+layer table beside it still lists the module's drawing layers. `ProcessTechnologyBuilder` imported
+that faithfully and said nothing, so the user got a valid technology that silently could not express
+the capacitor their process offers, with no pointer to the two-minute fix. Two notes and a docs
+section, no new UI and no new behaviour: the import stays faithful and only the REPORT grew.
+
+### What can honestly be said, and what could not
+
+The importer cannot detect the absence of something the file never mentions, and nothing here matches
+on a name (the builder's own header rule). What it CAN see are two structural facts, and they are the
+two notes:
+
+- **`ReportUnreachedConductors`** — a non-device conductor that no via entry names at either end.
+- **`ReportUnboundDrawingLayers`** — a drawing-purpose layer-table row that no stackup entry binds.
+
+Both are ordinary notes in `TechnologyImportResult.Notes`, the same standing as the existing
+`dangling`/`undrawn` via notes and written in the same voice; nothing gained a warning or an error
+state, and `TechValidation.Validate` still finds nothing on a technology that carries both.
+
+### The reachability test is "joined to anything", NOT "joined in both directions"
+
+The brief specified the exemptions directionally — the topmost conductor is not expected to be
+reached from above, nor the bottom one from below — and that is not what shipped, on the grounds of
+what it would report. A directional test names a LADDER when one via entry is missing: the
+level above the gap has nothing below it and the level below has nothing above, so a three-metal
+stack missing one via names two conductors, neither of which is obviously the culprit. The conductor
+no via names AT ALL is the one worth naming, and on the case the brief exists for — a plate between
+two metals that keep their own via — it is exactly one name. The exemptions then reduce to a single
+guard: a stack with fewer than two non-device conductors is silent, because there is nothing for a
+via to join it to.
+
+Device sheets are excluded via the file's own `LAYER_TYPE`, reusing the vocabulary
+`ChooseGroundReference` already reads — that method's inline set became the shared
+`DeviceConductorNames`.
+
+### Only drawing-purpose rows can be orphans
+
+A row whose purpose is a pin, a label or a marker is never bound by a stackup entry BY DESIGN —
+`IndexByBaseName` prefers a drawing purpose over every other — so listing those would name most of a
+real layer table on every import and mean nothing. The fixture table's `MetalTop.pin` is the pinned
+case: it imports as a layer, and it is not in the note.
+
+**And the count leads, with the names capped at twelve.** Even restricted to drawing rows this note
+is the one that can run to hundreds of names on a real kit — every marker, implant and boundary layer
+a stack legitimately never binds — and an uncapped list hides the magnitude it exists to report. The
+dangling/undrawn via notes above need no cap: a via list is short by construction.
+
+### The cross-pointer, and the gate that keeps it honest
+
+Both notes end in the same `DocPointer` constant, naming the page AND the section:
+`reference/stackup.html#mim-import`. A dangling deep link fails the way every broken link fails —
+the page opens at the top and nobody notices — so the test asserts the anchor exists in the
+GENERATED page, not in the Markdown it came from. Same idea as `DocAnchors`, scoped to one link.
+
+The docs section is `docs/user/src/reference/stackup.md` §`#mim-import`, under the existing thin-film
+chapter: the three stackup rows, ε<sub>r</sub> = C″·d/ε₀ worked from the capacitance density a process
+actually publishes (0.30 fF/µm² over 0.2 µm → 6.8, which is what the shipped MIM technology carries),
+the reminder to set the lower metal's `SheetAt = Top` (MIM-6, or the modelled gap is the dielectric
+plus a whole metal thickness), the laterally-infinite-dielectric approximation, and a warning to do it
+on a COPY — MIM-2's airbridge refusal and Z₀ shift are why the shipped MIM stack is a second
+technology.
+
+### The notes surface: confirmed, not changed
+
+`WorkspaceViewModel.RunTechnologyImportAsync` already renders every entry of `result.Notes`
+individually into the Messages panel after the import succeeds. The new notes arrive there with no
+change to that path.
+
+### Gates
+
+`tests/Ui.Tests/Layout/TechImport/ProcessTechnologyImportTests.cs` gained
+`ImportReportsWhatTheStackCannotReachTests` (10 tests): a complete via list and a fully-bound table are
+silent; a plate stack with its plate via removed names the plate and NOT the two metals either side;
+a device sheet and a single-conductor stack are silent; two extra drawing rows are named and the
+bound and pin rows are not; twenty orphan rows are counted and truncated at twelve; both notes carry
+the anchor and the anchor exists in the shipped page.
+`dotnet test tests/Ui.Tests` green (10,329).
+
+**Generated-docs churn, classified.** The regeneration moved six pages, and only two are this
+brief's: `stackup.html` (the new section, plus §mim-accuracy text an earlier MIM brief had left
+unregenerated) and `mom-engine.html` (MIM-3's "Cannot" list rewrite, likewise stale). The other four
+pages and seven `.svg` figures differed only in last-digit float jitter, one mid-animation chevron
+rotation and one zero-length path, and were reverted — they carry no content change.
+
 ## MIM-6 — the shipped MIM technology's plate gap is the process's 0.2 µm (2026-08-30)
 
 `docs/sonnet-briefs/brief-em-mim-6-level-reference-surface.md`, the fix for §MIM-2's FINDING 1

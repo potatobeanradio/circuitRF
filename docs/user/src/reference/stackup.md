@@ -266,6 +266,70 @@ There is also a **plate level makes a post non-adjacent** rule on top of the ref
 must span two conductors that are adjacent *in the analysis*, and with the plate metal in the level
 list a post between the two interconnect metals skips a level and is dropped with a note.
 
+### Adding a capacitor module to an imported technology {#mim-import}
+
+A technology imported from a process description often arrives **without** its capacitor module. A
+process stack description states the interconnect — the metals, the insulation between them, the vias
+that join them — and treats an optional thin-film module as exactly that: optional, and frequently
+left out, while the layer table shipped beside it still lists the module's drawing layers. The import
+is faithful to what it was handed, so what you get is a valid technology whose plate layers draw
+perfectly and connect to nothing.
+
+**The import report says so, by name.** Two of its notes are about this and only this:
+
+- *"No via in the file names these conductors…"* — a conductor the stack describes that no via entry
+  reaches. It cannot be connected, and the file never said how it should be.
+- *"The layer table defines N drawing layer(s) no stackup entry is bound to…"* — layers you can draw
+  on that the stack does not model. A shape on one is artwork, not structure. A real layer table has
+  plenty of these legitimately, so the note counts them and names the first dozen.
+
+Neither is an error, and neither is a guess: nothing in the file states the missing piece, so
+circuitRF names the gap rather than inventing an entry to fill it.
+
+**The fix is three rows** in the Technology Editor's Stackup tab, in stack order, and it takes about
+two minutes. Numbers below are silicon-nitride-class examples — take yours from the process:
+
+| Row | Kind | What to set |
+|---|---|---|
+| The capacitor dielectric | Dielectric | Thickness *d* (50–300 nm; 0.2 µm here) and ε<sub>r</sub>. **No drawing layer.** |
+| The top plate | Conductor | Its thickness (0.25 µm here) and its **drawing layer** — the plate layer the import already brought in |
+| The plate connection | Via | **Span from** the plate **to** the metal above it, and its own **drawing layer** — the plate-via layer the import already brought in |
+
+Insert them between the two interconnect metals, in that order, top plate above dielectric. The bottom
+plate is the interconnect metal underneath — there is no fourth row, and nothing is drawn for the
+dielectric.
+
+**ε<sub>r</sub> comes from the capacitance density the process quotes**, which is the number a process
+actually publishes:
+
+<p class="center">ε<sub>r</sub> = C″·<em>d</em> / ε₀</p>
+
+At C″ = 0.30 fF/µm² over *d* = 0.2 µm that is 6.8 — the value the shipped MIM technology carries. Work
+it out from your own two numbers rather than copying a permittivity out of a materials table: the
+capacitance is what you want the model to reproduce, and *d* and ε<sub>r</sub> only ever appear
+together in it.
+
+**Then set the lower metal's sheet surface to Top.** A conductor is solved as a zero-thickness sheet,
+and by default that sheet sits at the *bottom* of its own band — so the modelled plate separation
+would be your dielectric **plus the lower plate's whole metal thickness**, several times the gap you
+just entered, with a plausible capacitance to show for it. See
+[Which surface a conductor's sheet sits on](#sheet-surface).
+
+<div class="callout warn">
+<span class="label">Do it on a copy, not on the technology your designs already use</span>
+<p>A capacitor dielectric between two interconnect metals is not a free addition — an airbridge post
+between those metals then crosses a dielectric interface and <strong>refuses the whole run</strong>,
+and a line on either metal moves in ε<sub>eff</sub> and Z₀. That is why circuitRF
+ships the MIM stackup as a <a href="#mim-separate">separate technology</a> rather than as three extra
+rows on the plain one. Copy the imported technology, add the rows to the copy, and retarget the
+layouts that need capacitors.</p>
+</div>
+
+Two things to know before you read a number off the result: the dielectric is
+[laterally infinite](#anatomy) — present everywhere at its stated thickness, which is a good
+approximation because the fields that set the capacitance are confined under the plates — and the
+mesh has to resolve the gap, which is the subject of the next section.
+
 ### Reading a capacitance off a MIM run {#mim-accuracy}
 
 <div class="callout warn">

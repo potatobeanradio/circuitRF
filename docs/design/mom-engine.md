@@ -1174,9 +1174,9 @@ geometry* — the old wording would have excluded a solver that requires none of
 
 ### 10.12 Thin-film (MIM) capacitors — plan
 
-**Status: in progress. MIM-1 (region vias), MIM-2 (the shipped exemplar), MIM-6 (the level
-reference surface), MIM-3 (the thin-layer ladders and their verdict) and MIM-4 (interior-height
-electrostatics) are built, 2026-08-30; MIM-5 remains a proposal.** MIM-6 is not in the
+**Status: MIM-1 (region vias), MIM-2 (the shipped exemplar), MIM-6 (the level
+reference surface), MIM-3 (the thin-layer ladders and their verdict), MIM-4 (interior-height
+electrostatics) and MIM-5 (the import coverage note) are all built, 2026-08-30.** MIM-6 is not in the
 original four-gap plan below — it is the fifth gap MIM-2's own measurement surfaced, and it is
 folded into gap 2's finding (a) rather than given a numbered gap of its own, because it is that
 finding's fix and nothing else.
@@ -1313,10 +1313,18 @@ and is built (MIM-1, 2026-08-30).
 > measurement in this section's briefs: never read a small element's value off raw S — compare
 > with/without on the same artwork, or measure de-embedded.
 
-A fifth brief (MIM-5) closes the import loop: a process stack description that omits an optional
-capacitor module imports faithfully and silently, so the technology-import report learns to name
-the conductors its via list cannot reach and the layer-table rows nothing binds, and the user docs
-gain the three-row hand-add recipe.
+A fifth brief (MIM-5) closes the import loop. **> Built 2026-08-30.** A process stack description
+that omits an optional capacitor module imported faithfully and silently, so
+`ProcessTechnologyBuilder` now names the non-device conductors its via list reaches at neither end
+and the drawing-purpose layer-table rows no stackup entry binds — two ordinary notes beside the
+existing dangling/undrawn ones, both pointing at the user docs' new three-row hand-add recipe
+(`reference/stackup.html#mim-import`, with εr worked from the capacitance density the process
+publishes). **The brief's directional exemption — topmost exempt from above, bottom from below —
+is NOT what shipped**: a directional test names a ladder when one via entry is missing (the level
+above the gap has nothing below, the one below has nothing above), which buries the conductor that
+is actually unreachable, so the test is "named by no via at all" and a stack with fewer than two
+non-device conductors is silent. The import itself is unchanged — only the report grew. Write-up:
+`src/Ui/RESOLVED.md` §MIM-5.
 
 **What a MIM run looks like at each stage.** After MIM-1 + MIM-2 + MIM-6: a runnable RAW solve
 (internal ports, or de-embedding off) that is STRUCTURALLY right and whose capacitance must not be

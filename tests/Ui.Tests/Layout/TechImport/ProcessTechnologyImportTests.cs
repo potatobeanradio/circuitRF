@@ -481,6 +481,246 @@ public class ProcessTechnologyBuilderTests
     }
 }
 
+/// <summary>
+/// MIM-5 — what the import can honestly say about the structure a process file leaves OUT.
+///
+/// <para>A process description routinely omits an optional module (a thin-film capacitor's plate, its
+/// dielectric, its plate via) while the layer table that came with it still lists the module's
+/// drawing layers. The import is faithful either way and the result is a valid technology that simply
+/// cannot express the capacitor the process offers. The importer cannot detect the absence of
+/// something the file never mentions — no guessing, no name matching — so what it reports are the two
+/// STRUCTURAL facts it can see: a conductor no via names, and a drawing layer no stackup entry
+/// binds.</para>
+/// </summary>
+public class ImportReportsWhatTheStackCannotReachTests
+{
+    /// <summary>Where both notes point, and the anchor the generated page must carry.</summary>
+    private const string DocAnchor = "reference/stackup.html#mim-import";
+
+    /// <summary>
+    /// Three conductors with a capacitor plate between two interconnect metals — the shape the whole
+    /// note exists for. <paramref name="withPlateVia"/> is the one entry a process description omits.
+    /// </summary>
+    private static string PlateStack(bool withPlateVia) => $$"""
+        TECHNOLOGY = FABZ
+
+        DIELECTRIC upperOx   {THICKNESS=3.0  ER=4.0 }
+        CONDUCTOR  MetalUp   {THICKNESS=1.0  RPSQ=0.02 }
+        DIELECTRIC capOx     {THICKNESS=0.2  ER=6.8 }
+        CONDUCTOR  Plate     {THICKNESS=0.15 RPSQ=0.05 }
+        DIELECTRIC lowerOx   {THICKNESS=2.0  ER=4.0 }
+        CONDUCTOR  MetalDown {THICKNESS=0.5  RPSQ=0.10 }
+        DIELECTRIC bulk      {THICKNESS=100  ER=12.9 }
+
+        VIA ViaStack {FROM=MetalDown TO=MetalUp AREA=0.04 RPV=5 }
+        {{(withPlateVia ? "VIA PlateVia {FROM=Plate TO=MetalUp AREA=1.0 RPV=1 }" : "")}}
+        """;
+
+    private static TechnologyImportResult Build(string stack, string? table = null) =>
+        ProcessTechnologyBuilder.Build(
+            ProcessStackReader.Read(stack),
+            table is null ? null : LayerPropertiesReader.Read(table),
+            fallbackName: "unused");
+
+    private static string? Unreached(TechnologyImportResult r) =>
+        r.Notes.SingleOrDefault(n => n.Contains("No via in the file names these conductors"));
+
+    private static string? Unbound(TechnologyImportResult r) =>
+        r.Notes.SingleOrDefault(n => n.Contains("no stackup entry is bound to"));
+
+    [Fact]
+    public void AViaListThatReachesEveryConductorIsSilent()
+    {
+        // The note has to be quiet on a complete stack or it is noise on every import: the fixture's
+        // two conductors are joined by its one via, and the plate stack's three by its two.
+        Assert.Null(Unreached(Build(ProcessStackReaderTests.Stack, LayerPropertiesReaderTests.Table)));
+        Assert.Null(Unreached(Build(PlateStack(withPlateVia: true))));
+    }
+
+    [Fact]
+    public void AConductorNoViaNamesIsNamed_AndNothingElseIs()
+    {
+        // Exactly the conductor the missing entry would have reached. The two metals either side keep
+        // their own via and are NOT named — a directional test ("nothing above me", "nothing below
+        // me") would report all three and bury the one that matters.
+        string note = Assert.IsType<string>(Unreached(Build(PlateStack(withPlateVia: false))));
+
+        Assert.Contains("Plate", note);
+        Assert.DoesNotContain("MetalUp", note);
+        Assert.DoesNotContain("MetalDown", note);
+    }
+
+    [Fact]
+    public void ADeviceSheetIsNeverReportedAsUnreached()
+    {
+        // The one thing a process file DOES say about a conductor's role. A gate or a diffusion is
+        // part of a transistor, not a level anything routes to, and no via is expected to name one.
+        var r = Build("""
+            TECHNOLOGY = FABZ
+            DIELECTRIC ox   {THICKNESS=2.0 ER=4.0 }
+            CONDUCTOR  MetA {THICKNESS=1.0 RPSQ=0.02 }
+            DIELECTRIC ox2  {THICKNESS=1.0 ER=4.0 }
+            CONDUCTOR  MetB {THICKNESS=0.5 RPSQ=0.10 }
+            DIELECTRIC fox  {THICKNESS=0.4 ER=3.9 }
+            CONDUCTOR  Gate {THICKNESS=0.2 RPSQ=7.0 LAYER_TYPE=GATE}
+            VIA V {FROM=MetB TO=MetA AREA=0.04 RPV=5 }
+            """);
+
+        Assert.Null(Unreached(r));
+    }
+
+    [Fact]
+    public void ASingleConductorIsSilent_BecauseThereIsNothingToJoinItTo()
+    {
+        var r = Build("""
+            TECHNOLOGY = FABZ
+            DIELECTRIC ox   {THICKNESS=2.0 ER=4.0 }
+            CONDUCTOR  Only {THICKNESS=1.0 RPSQ=0.02 }
+            """);
+
+        Assert.Null(Unreached(r));
+    }
+
+    /// <summary>The fixture table plus two rows describing a module the stack description omits.</summary>
+    private const string TableWithOrphanRows = """
+        <?xml version='1.0' encoding='UTF-8'?>
+        <layer-properties xmlns='http://example.invalid/layer-properties'>
+          <properties>
+            <fill-color>#112233</fill-color>
+            <visible>true</visible>
+            <name>MetalTop.drawing</name>
+            <source>10/0</source>
+          </properties>
+          <properties>
+            <fill-color>#112233</fill-color>
+            <visible>false</visible>
+            <name>MetalTop.pin</name>
+            <source>10/2</source>
+          </properties>
+          <properties>
+            <fill-color>#778899</fill-color>
+            <visible>true</visible>
+            <name>MetalLow.drawing</name>
+            <source>5/0</source>
+          </properties>
+          <properties>
+            <visible>true</visible>
+            <name>ViaMid.drawing</name>
+            <source>7/0</source>
+          </properties>
+          <properties>
+            <visible>true</visible>
+            <name>PlateMetal.drawing</name>
+            <source>20/0</source>
+          </properties>
+          <properties>
+            <visible>true</visible>
+            <name>PlateVia.drawing</name>
+            <source>21/0</source>
+          </properties>
+        </layer-properties>
+        """;
+
+    [Fact]
+    public void ALayerTableRowNoStackupEntryBindsIsNamed()
+    {
+        var r = Build(ProcessStackReaderTests.Stack, TableWithOrphanRows);
+
+        string note = Assert.IsType<string>(Unbound(r));
+        Assert.Contains("PlateMetal.drawing", note);
+        Assert.Contains("PlateVia.drawing",   note);
+
+        // And nothing else: the three rows the stack does bind, and the pin row a stackup entry is
+        // never expected to bind, all stay out of it.
+        Assert.DoesNotContain("MetalTop", note);
+        Assert.DoesNotContain("MetalLow", note);
+        Assert.DoesNotContain("ViaMid",   note);
+    }
+
+    [Fact]
+    public void AWallOfOrphanRowsIsCounted_NotListedInFull()
+    {
+        // A real layer table carries hundreds of drawing rows a stack never binds — markers, implants,
+        // boundaries — so the count has to lead and the names have to stop. An uncapped list hides the
+        // magnitude it is reporting.
+        var rows = string.Concat(Enumerable.Range(0, 20).Select(i => $"""
+              <properties>
+                <visible>true</visible>
+                <name>Spare{i}.drawing</name>
+                <source>{100 + i}/0</source>
+              </properties>
+            """));
+
+        var r = Build(
+            ProcessStackReaderTests.Stack,
+            LayerPropertiesReaderTests.Table.Replace("</layer-properties>", rows + "\n</layer-properties>"));
+
+        string note = Assert.IsType<string>(Unbound(r));
+        Assert.Contains("20 drawing layer(s)", note);
+        Assert.Contains("Spare0.drawing",  note);
+        Assert.Contains("Spare11.drawing", note);
+        Assert.DoesNotContain("Spare12.drawing", note);
+        Assert.Contains("and 8 more", note);
+    }
+
+    [Fact]
+    public void ATableWhoseEveryDrawingRowIsBoundIsSilent()
+    {
+        Assert.Null(Unbound(Build(ProcessStackReaderTests.Stack, LayerPropertiesReaderTests.Table)));
+    }
+
+    [Fact]
+    public void ANonDrawingPurposeIsNeverReportedAsUnbound()
+    {
+        // A pin, label or marker row is never bound by a stackup entry BY DESIGN — a drawing purpose
+        // wins over every other in IndexByBaseName — so naming those would list most of a real table
+        // on every import and mean nothing.
+        var r = Build(ProcessStackReaderTests.Stack, LayerPropertiesReaderTests.Table);
+
+        Assert.Contains(r.Technology.Layers, l => l.Name == "MetalTop.pin");
+        Assert.DoesNotContain(r.Notes, n => n.Contains("MetalTop.pin"));
+    }
+
+    [Fact]
+    public void BothNotesPointAtTheDocsSectionThatCarriesTheHandAddRecipe()
+    {
+        // MIM-5 milestone 3: the note has to be actionable in one hop, which means naming the page
+        // AND the section — and the section has to exist. The generated page is what the pointer
+        // opens, so that is what is checked, not the Markdown source it came from.
+        string unreached = Assert.IsType<string>(Unreached(Build(PlateStack(withPlateVia: false))));
+        string unbound   = Assert.IsType<string>(
+            Unbound(Build(ProcessStackReaderTests.Stack, TableWithOrphanRows)));
+
+        Assert.Contains(DocAnchor, unreached);
+        Assert.Contains(DocAnchor, unbound);
+
+        string page = File.ReadAllText(
+            Path.Combine(RepoRoot(), "docs", "user", "reference", "stackup.html"));
+        Assert.Contains("id=\"mim-import\"", page);
+    }
+
+    [Fact]
+    public void NeitherNoteIsAWarningOrAnError()
+    {
+        // They have the same standing as the dangling-via and undrawn-via notes: a statement about
+        // what the file says, not a fault. Nothing in the import gains a failure state from them.
+        var r = Build(PlateStack(withPlateVia: false), TableWithOrphanRows);
+
+        Assert.NotNull(Unreached(r));
+        Assert.NotNull(Unbound(r));
+        Assert.Empty(TechValidation.Validate(r.Technology));
+    }
+
+    private static string RepoRoot([System.Runtime.CompilerServices.CallerFilePath] string here = "")
+    {
+        var dir = Path.GetDirectoryName(here);
+        while (dir is not null && !File.Exists(Path.Combine(dir, "CLAUDE.md")))
+            dir = Path.GetDirectoryName(dir);
+        Assert.True(dir is not null, "Could not locate the repo root walking up from this test file.");
+        return dir!;
+    }
+}
+
 public class ProcessTechnologyScanTests : IDisposable
 {
     private readonly string _root = Path.Combine(

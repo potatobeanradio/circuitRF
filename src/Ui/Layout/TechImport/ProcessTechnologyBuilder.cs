@@ -33,6 +33,9 @@ public static class ProcessTechnologyBuilder
     /// <summary>Thicknesses at or below this (in µm) are treated as nothing at all.</summary>
     private const double NegligibleUm = 1e-9;
 
+    /// <summary>How many names a note that could otherwise run to hundreds prints before it counts.</summary>
+    private const int NamesPerNote = 12;
+
     public static TechnologyImportResult Build(
         ProcessStackDescription stack,
         ProcessLayerTable?      layerTable,
@@ -51,6 +54,9 @@ public static class ProcessTechnologyBuilder
         AttachDrawingLayers(slabs, byName, notes);
 
         var vias = BuildVias(stack, zByName, byName, notes);
+
+        ReportUnreachedConductors(stack, slabs, vias, notes);
+        ReportUnboundDrawingLayers(layers, slabs, vias, notes);
 
         var stackup = new Stackup
         {
@@ -88,6 +94,14 @@ public static class ProcessTechnologyBuilder
     /// </summary>
     private static readonly string[] DeviceLayerTypes = ["GATE", "DIFFUSION"];
 
+    /// <summary>The conductors the file marks as parts of a device, by name.</summary>
+    private static HashSet<string> DeviceConductorNames(ProcessStackDescription stack)
+        => new(stack.Entries
+                    .Where(e => e.Kind == ProcessStackEntryKind.Conductor
+                             && DeviceLayerTypes.Contains(e.LayerType.Trim(), StringComparer.OrdinalIgnoreCase))
+                    .Select(e => e.Name),
+               StringComparer.Ordinal);
+
     /// <summary>
     /// Marks the conductor a design's currents most likely return through, and says so.
     ///
@@ -116,12 +130,7 @@ public static class ProcessTechnologyBuilder
         if (conductors.Count == 0) return;
         if (conductors.Any(l => l.IsGroundReference)) return;
 
-        var deviceLayers = new HashSet<string>(
-            stack.Entries
-                 .Where(e => e.Kind == ProcessStackEntryKind.Conductor
-                          && DeviceLayerTypes.Contains(e.LayerType.Trim(), StringComparer.OrdinalIgnoreCase))
-                 .Select(e => e.Name),
-            StringComparer.Ordinal);
+        var deviceLayers = DeviceConductorNames(stack);
 
         // Slabs are built top-down, so the last conductor is the lowest.
         var routing = conductors.Where(l => !deviceLayers.Contains(l.Name)).ToList();
@@ -531,6 +540,119 @@ public static class ProcessTechnologyBuilder
 
         return vias;
     }
+
+    /// <summary>
+    /// Names the conductors the file's own via list cannot reach — connectivity the file does not
+    /// state, reported so it can be added, never guessed at.
+    ///
+    /// <para><b>Why this is worth a note at all.</b> A process description routinely omits an OPTIONAL
+    /// module — a thin-film capacitor's plate, its dielectric, its plate via — while the layer table
+    /// that came with it still lists the module's drawing layers. The import is faithful either way,
+    /// and the result is a valid technology that simply cannot express a structure the process
+    /// genuinely offers. Nothing downstream says so: the stack builds, the layers draw, and the first
+    /// symptom is a via the Via tool will not place. The importer cannot detect the absence of
+    /// something the file never mentions, but it CAN say which conductors nothing joins.</para>
+    ///
+    /// <para><b>The test is "joined to any other conductor", not "joined in both directions".</b> The
+    /// topmost conductor is not expected to be reached from above, nor the bottom one from below, so a
+    /// directional test needs those two exemptions — and it then reports a whole LADDER of levels when
+    /// one via entry is missing (the level above the gap has nothing below it, the one below has
+    /// nothing above), which buries the conductor that is actually unreachable. The conductor no via
+    /// names at all is the one worth naming. A single conductor is silent for the same reason: there
+    /// is nothing for a via to join it to.</para>
+    ///
+    /// <para>Device sheets are excluded — the file's own <c>LAYER_TYPE</c> marks the conductors that
+    /// are parts of a transistor rather than levels anything routes to.</para>
+    /// </summary>
+    private static void ReportUnreachedConductors(
+        ProcessStackDescription stack,
+        List<StackupLayer>      slabs,
+        List<StackupLayer>      vias,
+        List<string>            notes)
+    {
+        var deviceLayers = DeviceConductorNames(stack);
+
+        var conductors = slabs
+            .Where(l => l.Kind == StackupKind.Conductor && !deviceLayers.Contains(l.Name))
+            .Select(l => l.Name)
+            .ToList();
+        if (conductors.Count < 2) return;
+
+        var reached = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var v in vias)
+        {
+            if (v.SpanFromLayer is { Length: > 0 } from) reached.Add(from);
+            if (v.SpanToLayer   is { Length: > 0 } to)   reached.Add(to);
+        }
+
+        var unreached = conductors.Where(n => !reached.Contains(n)).ToList();
+        if (unreached.Count == 0) return;
+
+        notes.Add("No via in the file names these conductors, so the stack states no connection to " +
+                  $"them: {string.Join(", ", unreached)}. This is connectivity the file does not " +
+                  "state rather than an error — a process often omits an optional module's via while " +
+                  "describing the conductor it lands on. Add a Via entry in the Technology Editor's " +
+                  $"Stackup tab, spanning the two conductors it joins; {DocPointer}");
+    }
+
+    /// <summary>
+    /// Names the drawing layers the layer table defines that no stackup entry is bound to.
+    ///
+    /// <para>They import as ordinary layers and draw perfectly well, and a shape on one is artwork the
+    /// stack does not model — which is the other half of the same gap
+    /// <see cref="ReportUnreachedConductors"/> reports: a layer table describing an optional module the
+    /// stack description leaves out lists the module's layers and nothing else. Saying so once, by
+    /// name, is what answers "my capacitor layers imported but do nothing" from the import report
+    /// itself.</para>
+    ///
+    /// <para><b>Only geometry rows count.</b> A row whose purpose is something other than drawing — a
+    /// pin, a label, a marker — is never bound by a stackup entry BY DESIGN (see
+    /// <see cref="IndexByBaseName"/>, where a drawing purpose wins over every other), so listing those
+    /// would name most of the table every time and mean nothing.</para>
+    /// </summary>
+    private static void ReportUnboundDrawingLayers(
+        List<LayerDef>     layers,
+        List<StackupLayer> slabs,
+        List<StackupLayer> vias,
+        List<string>       notes)
+    {
+        if (layers.Count == 0) return;
+
+        var bound = new HashSet<LayerKey>();
+        foreach (var l in slabs) foreach (var k in l.DrawingLayers) bound.Add(k);
+        foreach (var v in vias)  foreach (var k in v.DrawingLayers) bound.Add(k);
+
+        var orphans = layers
+            .Where(l => l.Purpose is null or { Length: 0 }
+                     || string.Equals(l.Purpose, "drawing", StringComparison.OrdinalIgnoreCase))
+            .Where(l => !bound.Contains(l.Key))
+            .Select(l => l.Name)
+            .ToList();
+        if (orphans.Count == 0) return;
+
+        // The COUNT leads, and the names are capped. A real layer table carries hundreds of drawing
+        // rows a stack never binds — every marker, implant and boundary layer among them — so an
+        // uncapped list is a wall of text that hides the magnitude it is trying to report. The
+        // dangling/undrawn via notes above need no cap because a via list is short by construction.
+        string named = orphans.Count <= NamesPerNote
+            ? string.Join(", ", orphans)
+            : $"{string.Join(", ", orphans.Take(NamesPerNote))}, and {orphans.Count - NamesPerNote} more";
+
+        notes.Add($"The layer table defines {orphans.Count} drawing layer(s) no stackup entry is " +
+                  $"bound to: {named}. They import and draw, but a shape on one is artwork the stack " +
+                  "does not model — a layer table commonly lists an optional module's layers while " +
+                  "the stack description omits the module itself. Add the entries in the Technology " +
+                  $"Editor's Stackup tab and bind them; {DocPointer}");
+    }
+
+    /// <summary>
+    /// Where the hand-add recipe is written, named identically by both notes above so either one is
+    /// actionable in a single hop. The two notes are what a user sees when a process describes a
+    /// capacitor module only in its layer table, and the recipe is three stackup rows.
+    /// </summary>
+    private const string DocPointer =
+        "the recipe is in Help ▸ circuitRF Documentation, Stackup ▸ \"Adding a capacitor module to " +
+        "an imported technology\" (reference/stackup.html#mim-import).";
 
     // ── derived quantities ────────────────────────────────────────────────────
 
