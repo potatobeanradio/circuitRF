@@ -169,13 +169,21 @@ adding or mapping — never silently dropped.
 
 ## Hierarchy, instances and arrays {#hierarchy}
 
-An **instance** references another cell's layout view. **Arrays** (rows × columns at a pitch) are stored
-as one object, which is what makes a via farm or an MMIC unit-cell array nearly free to render. Cycles
-are detected at edit time, not discovered at render time.
+**Hierarchy here is the same idea as in the schematic, on the same cells.** Read
+[Hierarchy in the Schematic Editor](schematic-editor.html#hierarchy) once; everything it says about
+making a cell, placing it and pushing into it holds in this view, on the cell's layout instead of its
+schematic. Push in and pop out are the same two toolbar buttons, the same <kbd>⌘]</kbd> /
+<kbd>⌘[</kbd>, and the same clickable breadcrumb.
 
-**Push-in / pop-out** navigation works as it does in the schematic: descend into a sub-cell, edit it in
-place, come back out. **Flatten** (one level or all levels) and **Group into new cell** are the two
-operations you will reach for constantly.
+Three things are the layout's own:
+
+- An **instance** references another cell's **layout** view — where the schematic instance referenced
+  its symbol. A cell with a schematic but no layout has nothing to place here.
+- **Arrays** (rows × columns at a pitch) are stored as one object, which is what makes a via farm or
+  an MMIC unit-cell array nearly free to render.
+- **Flatten** (one level or all levels) turns instances back into geometry, and **Group into new
+  cell** does the reverse — hierarchy you can build after the fact, out of artwork you have already
+  drawn. Cycles are detected at edit time, not discovered at render time.
 
 ## Schematic ⇄ layout {#schematic-flow}
 

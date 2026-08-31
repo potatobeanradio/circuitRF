@@ -18,6 +18,12 @@
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
   <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
 </header>
 <hr class="doc-headrule">
 
@@ -370,12 +376,21 @@ DBU pastes as-is; a different DBU rescales by the exact ratio, and warns through
 offending shapes if the ratio would round. Layers absent from the destination technology are offered for
 adding or mapping — never silently dropped.</p>
 <h2 id="hierarchy">Hierarchy, instances and arrays</h2>
-<p>An <strong>instance</strong> references another cell's layout view. <strong>Arrays</strong> (rows × columns at a pitch) are stored
-as one object, which is what makes a via farm or an MMIC unit-cell array nearly free to render. Cycles
-are detected at edit time, not discovered at render time.</p>
-<p><strong>Push-in / pop-out</strong> navigation works as it does in the schematic: descend into a sub-cell, edit it in
-place, come back out. <strong>Flatten</strong> (one level or all levels) and <strong>Group into new cell</strong> are the two
-operations you will reach for constantly.</p>
+<p><strong>Hierarchy here is the same idea as in the schematic, on the same cells.</strong> Read
+<a href="schematic-editor.html#hierarchy">Hierarchy in the Schematic Editor</a> once; everything it says about
+making a cell, placing it and pushing into it holds in this view, on the cell's layout instead of its
+schematic. Push in and pop out are the same two toolbar buttons, the same <kbd>⌘]</kbd> /
+<kbd>⌘[</kbd>, and the same clickable breadcrumb.</p>
+<p>Three things are the layout's own:</p>
+<ul>
+<li>An <strong>instance</strong> references another cell's <strong>layout</strong> view — where the schematic instance referenced
+its symbol. A cell with a schematic but no layout has nothing to place here.</li>
+<li><strong>Arrays</strong> (rows × columns at a pitch) are stored as one object, which is what makes a via farm or
+an MMIC unit-cell array nearly free to render.</li>
+<li><strong>Flatten</strong> (one level or all levels) turns instances back into geometry, and <strong>Group into new
+cell</strong> does the reverse — hierarchy you can build after the fact, out of artwork you have already
+drawn. Cycles are detected at edit time, not discovered at render time.</li>
+</ul>
 <h2 id="schematic-flow">Schematic ⇄ layout</h2>
 <p>Two commands under the <strong>Design</strong> menu move work between the two views. They are deliberately symmetric,
 and <strong>neither ever runs by itself</strong> — there is no save hook, no open hook, no activation hook. They run
@@ -1482,5 +1497,7 @@ all three are the same subject; and <strong>save</strong>.</p>
   <a href="../index.html">Documentation home</a>
 </footer>
 
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
 </body>
 </html>

@@ -18,6 +18,12 @@
 <header class="doc-header">
   <a class="brand" href="index.html"><img class="logo" src="assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
   <span class="doc-kind">Documentation</span>
+  <div class="doc-search" data-crf-search data-root="" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
 </header>
 <hr class="doc-headrule">
 
@@ -43,6 +49,12 @@ ground up, with worked examples.</p>
 file formats and the two bundled tools.</p>
 </a>
 </div>
+  <div class="search-hero" data-crf-search data-root="" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search the documentation…"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
 <h2 id="what-is-circuitrf">What is circuitRF?</h2>
 <p>circuitRF studies the frequency response and nonlinear behaviour of RF circuits — from a handful of
 components to hierarchical, multi-port designs. It is an <strong>RF simulator, not a SPICE simulator</strong>:
@@ -129,5 +141,7 @@ from the live interface rather than drawn by hand — so a picture here is what 
   <a href="index.html">Documentation home</a>
 </footer>
 
+<script src="assets/js/search-index.js" defer></script>
+<script src="assets/js/docs-search.js" defer></script>
 </body>
 </html>

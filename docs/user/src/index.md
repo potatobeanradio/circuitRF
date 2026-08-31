@@ -23,6 +23,8 @@ file formats and the two bundled tools.</p>
 </a>
 </div>
 
+{{search: hero}}
+
 ## What is circuitRF?
 
 circuitRF studies the frequency response and nonlinear behaviour of RF circuits — from a handful of

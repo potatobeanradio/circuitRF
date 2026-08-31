@@ -734,4 +734,197 @@ public class DocsFactoryTests
                 $"Documentation schematic '{stem}' parsed to an empty circuit.");
         }
     }
+
+    // ── Documentation search ─────────────────────────────────────────────────
+    //
+    // The search is two halves that have to agree: a GENERATED index
+    // (assets/js/search-index.js, rebuilt by tools/DocGen) and a HAND-WRITTEN reader
+    // (assets/js/docs-search.js). Neither announces its own failure — a stale index
+    // sends readers to anchors that no longer exist, a missing script leaves a search
+    // box that silently does nothing, and both look completely normal in a browser
+    // until you type. These gates are what notice.
+
+    private static string SearchIndexPath() => Path.Combine(DocsRoot(), "assets", "js", "search-index.js");
+    private static string SearchScriptPath() => Path.Combine(DocsRoot(), "assets", "js", "docs-search.js");
+
+    /// <summary>The index's payload, parsed out of the one assignment the generated file contains.</summary>
+    private static JsonElement SearchIndexJson()
+    {
+        string js = File.ReadAllText(SearchIndexPath());
+        int eq = js.IndexOf("window.CRF_DOCS_SEARCH = ", StringComparison.Ordinal);
+        Assert.True(eq >= 0,
+            "search-index.js does not assign window.CRF_DOCS_SEARCH. docs-search.js reads exactly that "
+          + "global and gives up silently when it is absent, so the search boxes would never appear.");
+
+        string json = js[(eq + "window.CRF_DOCS_SEARCH = ".Length)..].TrimEnd().TrimEnd(';');
+        return JsonDocument.Parse(json).RootElement.Clone();
+    }
+
+    /// <summary>
+    /// <b>Every search result must land on an anchor that exists.</b>
+    ///
+    /// <para>This is the same failure the Help-button gate above catches, arriving by a different
+    /// road: a section is renamed or an explicit <c>{#id}</c> changes, the index still carries the
+    /// old anchor, and every result for that section opens the page scrolled to the top with no
+    /// error anywhere. Regenerating fixes it — which is exactly why the check has to be automatic,
+    /// because nobody re-reads 450 search results by hand.</para>
+    /// </summary>
+    [Fact]
+    public void EverySearchResultResolvesToAnAnchorInTheShippedPages()
+    {
+        var offered = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var page in AllPages())
+        {
+            string rel = Path.GetRelativePath(DocsRoot(), page).Replace(Path.DirectorySeparatorChar, '/');
+            offered.Add(rel);
+            foreach (System.Text.RegularExpressions.Match m in Regex.Matches(File.ReadAllText(page), @"id=""(?<id>[^""]+)"""))
+                offered.Add(rel + "#" + m.Groups["id"].Value);
+        }
+
+        var root = SearchIndexJson();
+        var pages = root.GetProperty("p").EnumerateArray().Select(p => p[0].GetString()!).ToList();
+
+        var broken = new List<string>();
+        foreach (var s in root.GetProperty("s").EnumerateArray())
+        {
+            string slug = pages[s[0].GetInt32()];
+            string anchor = s[1].GetString()!;
+            string link = anchor.Length == 0 ? slug : slug + "#" + anchor;
+            if (!offered.Contains(link)) broken.Add($"{link}  (\"{s[2].GetString()}\")");
+        }
+
+        Assert.True(broken.Count == 0,
+            "These search results point at anchors that are not in the shipped HTML, so choosing one "
+          + "opens the page at the top and says nothing. Re-run tools/DocGen:\n  "
+          + string.Join("\n  ", broken));
+    }
+
+    /// <summary>
+    /// <b>The index must cover the whole reading order.</b>
+    ///
+    /// <para>A page missing from it is unfindable while looking completely normal to a reader who
+    /// arrives by a link — the exact invisibility the reading-order orphan check exists to prevent
+    /// on the navigation side.</para>
+    /// </summary>
+    [Fact]
+    public void TheSearchIndexCoversEveryPageInTheReadingOrder()
+    {
+        var indexed = SearchIndexJson().GetProperty("p").EnumerateArray()
+                                       .Select(p => p[0].GetString()!)
+                                       .ToHashSet(StringComparer.Ordinal);
+
+        var expected = AllPages()
+            .Select(p => Path.GetRelativePath(DocsRoot(), p).Replace(Path.DirectorySeparatorChar, '/'))
+            .ToList();
+
+        var missing = expected.Where(p => !indexed.Contains(p)).ToList();
+        Assert.True(missing.Count == 0,
+            "These pages ship but are not in the search index, so nothing a reader types can find "
+          + "them:\n  " + string.Join("\n  ", missing));
+    }
+
+    /// <summary>
+    /// <b>No figure geometry may reach the index.</b>
+    ///
+    /// <para>Pages are ~1 MB each because their figures are inlined as <c>&lt;svg&gt;</c>. The
+    /// extraction removes those by counting tag depth, and if that ever stops working the index does
+    /// not break — it silently grows by two orders of magnitude, ships to every reader, and matches
+    /// queries against path coordinates. A size ceiling plus a look for path data catches both
+    /// halves of that.</para>
+    /// </summary>
+    [Fact]
+    public void TheSearchIndexCarriesProseAndNotFigureGeometry()
+    {
+        long bytes = new FileInfo(SearchIndexPath()).Length;
+        Assert.True(bytes < 1_500_000,
+            $"search-index.js is {bytes:N0} bytes. It holds the prose of ~33 pages and should be well "
+          + "under a megabyte; this size means figure geometry is being indexed as text.");
+
+        var offenders = new List<string>();
+        var root = SearchIndexJson();
+        var pages = root.GetProperty("p").EnumerateArray().Select(p => p[0].GetString()!).ToList();
+
+        foreach (var s in root.GetProperty("s").EnumerateArray())
+        {
+            string text = s[3].GetString()!;
+            // Three consecutive SVG coordinate pairs: prose does not contain this and path data is
+            // nothing but this.
+            if (Regex.IsMatch(text, @"(-?\d+\.\d+[ ,]+){6}"))
+                offenders.Add($"{pages[s[0].GetInt32()]}#{s[1].GetString()}");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "These indexed sections contain SVG path data rather than prose:\n  "
+          + string.Join("\n  ", offenders));
+    }
+
+    /// <summary>
+    /// <b>Every page carries the search box and both scripts, at the right relative depth.</b>
+    ///
+    /// <para>The docs are opened from a web host, from the loopback server the Help menu starts, and
+    /// straight off disk, so every reference between them is relative. A wrong number of
+    /// <c>../</c> segments is invisible on the landing page and broken everywhere below it.</para>
+    /// </summary>
+    [Fact]
+    public void EveryPageCarriesTheSearchBoxAndItsScripts()
+    {
+        var offenders = new List<string>();
+        foreach (var page in AllPages())
+        {
+            string rel  = Path.GetRelativePath(DocsRoot(), page).Replace(Path.DirectorySeparatorChar, '/');
+            string html = File.ReadAllText(page);
+            string depth = string.Concat(Enumerable.Repeat("../", rel.Count(c => c == '/')));
+
+            if (!html.Contains("class=\"doc-search\" data-crf-search", StringComparison.Ordinal))
+                offenders.Add($"{rel}: no header search box");
+            if (!html.Contains($"data-root=\"{depth}\"", StringComparison.Ordinal))
+                offenders.Add($"{rel}: search box data-root is not \"{depth}\", so every result would "
+                            + "link to the wrong place");
+            foreach (var script in new[] { "search-index.js", "docs-search.js" })
+                if (!html.Contains($"src=\"{depth}assets/js/{script}\"", StringComparison.Ordinal))
+                    offenders.Add($"{rel}: does not load {depth}assets/js/{script}");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "The search is wired wrongly on these pages:\n  " + string.Join("\n  ", offenders));
+    }
+
+    /// <summary>
+    /// <b>The hand-written half of the search still exists and still reads the generated half.</b>
+    ///
+    /// <para><c>docs-search.js</c> is not generated, so nothing else in this pipeline would notice it
+    /// being deleted or renamed — and the symptom is a search box that accepts typing and does
+    /// nothing, on every page, with no error.</para>
+    /// </summary>
+    [Fact]
+    public void TheSearchScriptIsShippedAndReadsTheGeneratedIndex()
+    {
+        Assert.True(File.Exists(SearchScriptPath()),
+            "docs/user/assets/js/docs-search.js is missing. It is hand-written, not generated, so "
+          + "re-running tools/DocGen will not bring it back.");
+
+        string js = File.ReadAllText(SearchScriptPath());
+        Assert.Contains("window.CRF_DOCS_SEARCH", js);
+        Assert.Contains("data-crf-search", js);
+    }
+
+    /// <summary>
+    /// <b>The landing page's own search box sits where a reader arriving with a question will look
+    /// for it</b> — below the three guide cards, above the prose. Asserted by position, because the
+    /// box existing somewhere on the page is not the thing that was asked for.
+    /// </summary>
+    [Fact]
+    public void TheLandingPageCarriesTheSearchBoxBetweenTheCardsAndTheProse()
+    {
+        string html = File.ReadAllText(Path.Combine(DocsRoot(), "index.html"));
+
+        int cards = html.IndexOf("class=\"card-grid\"", StringComparison.Ordinal);
+        int hero  = html.IndexOf("class=\"search-hero\"", StringComparison.Ordinal);
+        int prose = html.IndexOf("id=\"what-is-circuitrf\"", StringComparison.Ordinal);
+
+        Assert.True(hero >= 0, "The landing page has no search box. It comes from {{search: hero}} in "
+                             + "docs/user/src/index.md.");
+        Assert.True(cards >= 0 && cards < hero && hero < prose,
+            "The landing page's search box is not between the guide cards and \"What is circuitRF?\".");
+    }
 }

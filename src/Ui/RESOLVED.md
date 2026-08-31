@@ -1,5 +1,84 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## User-docs search, and hierarchy documented as a procedure (2026-08-31)
+
+Owner asked for two things: a way to search the user docs from a browser (a box in each page header,
+and one on the landing page between the guide cards and the prose), and a rewrite of the Schematic
+Editor's hierarchy section as step-by-step instructions — with the Layout Editor's kept extremely
+brief and pointed back at it.
+
+The search is described in `docs/design/user-docs-factory.md` §6.1a. What is worth recording here is
+what the work turned up.
+
+### A `fetch()` of a JSON index would have worked everywhere except the case that matters
+
+The docs are read three ways: over the loopback HTTP server `DocLauncher` starts for the Help menu,
+from a web host, and by opening a page straight off disk — the stylesheet's own header promises the
+third. `file://` origin rules block `fetch()` of a sibling file in every browser, and a classic
+`<script src>` is the only load that works in all three. So the index is emitted as
+`assets/js/search-index.js` assigning one global, not as `.json`.
+
+### The generated site contents made the landing page answer every query
+
+`{{toc: site}}` expands to every other page's one-line blurb, so indexing it made `index.html` and
+`reference/index.html` match almost anything — a search for "bondwire" was answered with the table of
+contents rather than the wBond page, and the reading-order prior (below) made that *worse*, since the
+landing page ranks first. `SearchIndex.Strippable` removes the `div.site-toc` region by counting tag
+depth, the same way it removes inlined `<svg>` figures. **A regex cannot do either**: a figure is an
+`<svg>` that may contain another, and a non-greedy match leaves the outer half — tens of thousands of
+path coordinates — in the index as "text".
+
+### Two sections genuinely tie, and the file system was breaking the tie
+
+"Hierarchy" heads a section in both editors and both score within two points. The generator had been
+handing pages to the index in `Directory.EnumerateFiles` order, so `layout-editor` beat
+`schematic-editor` for the alphabet's reasons. The index is now sorted by the **reading order**
+(`src/_nav.txt`), and the reader multiplies each section's score by a prior that decays 15% across
+that order. It only ever settles a near-tie — it cannot lift a weak match over a strong one — and it
+puts the schematic above the layout, and the Getting-started guides above the Reference, which is
+what the documentation itself says the order is. Measured 0.14 ms per query over 458 sections.
+
+### The context menu's Push In is HIDDEN for a non-cell, not greyed
+
+`schematic-editor.md` said "**Push In** (greyed when the component is not a hierarchical cell)" in a
+paragraph whose next sentence is "Items are **disabled rather than hidden**". `SchematicView.axaml.cs`
+sets `CtxPushIn.IsVisible = isCell` — it is genuinely absent on a resistor, along with **Open Cell in
+New Tab**. Corrected, and the two cell-only items are now called out as the exception they are.
+
+### DocGen is byte-reproducible — the render timer was the missing lever
+
+Two consecutive `dotnet run --project tools/DocGen -- --out docs/user` with **no source change**
+used to rewrite two or three figures and the pages that inline them, and a *different* subset each
+time. Every differing byte was in one path — `M0 0L7 7L14 0`, an Expander chevron — and only its
+transform changed: `matrix(-0.9478 0.3188 …)` (161.4°) against `translate(467 495)` (not rotated at
+all) in successive runs. A keyframe animation photographed part way through.
+
+**The fix is `AvaloniaHeadlessPlatform.ForceRenderTimerTick`,** which is the one thing the earlier
+investigation above had not tried. In Avalonia the animation clock is advanced by the RENDER TIMER;
+a headless process never enters a render loop, so nothing ticks it and the animation drifts only as
+far as incidental wall-clock carries it between template application and capture. Ticking 600 frames
+in `UiArtworkGenerator.SettleAnimations` runs every animation past its end, and a finished animation
+stays finished — so the capture reads a **terminal keyframe**: exactly `translate(…)` for a collapsed
+Expander and exactly `matrix(-1 3.6e-9 -3.6e-9 -1 …)`, 180.000°, for an open one, on every run.
+
+- **Sized to overrun, not to match.** Undershooting does not announce itself — at 120 frames the
+  chevron came back 1.5° short of 180° and still churned. 600 is far past any control theme's
+  duration and costs nothing measurable (32.5 s → 32.7 s over ~380 captures).
+- **The tick is INJECTED, not called.** It is `Avalonia.Headless` API and `src/Ui` may not reference
+  it (§7 of the design note), so `UiArtworkGenerator.AdvanceFrames` is the seam and
+  `tools/DocGen/HeadlessHost` sets it. Null in the shipping application, where an animation is
+  supposed to play.
+- **Verified by three consecutive full runs**, byte-identical across all 564 files.
+- **Three of the committed figures were wrong, not merely different:** `analysis-editor-hb-dark` and
+  `em-setup-loaded` (both variants) carry a half-rotated chevron in git, and the light and dark
+  variants of one figure disagreed with each other. They now agree.
+
+**Two figures still differ from the committed version and are NOT this bug** — they are stable across
+runs, so they came from whichever build generated the committed files: `plot-loadpull-contours` (both
+variants) differs in one coordinate's last digit, `M302.95` → `M302.96`, and `harmonica-instrument`
+(both) gains a whole extra contour `<path>`, +176 bytes. Committing the regenerated output settles
+them; there is nothing to fix in the generator.
+
 ## MIM-7 — one GaAs technology; the second `.ctech` is retired (2026-08-30)
 
 `docs/sonnet-briefs/brief-em-mim-7-one-technology.md`. The extraction rule, its gates and the two
@@ -4629,6 +4708,14 @@ setting `Transitions` to null (a control theme's setters outrank `Application.St
 advance on dispatcher pumping alone). The transition-clearing walk is kept because it is correct for
 transitions; the Expander case is **open**. A fix probably means giving the capture a controllable
 animation clock rather than the global one. Until then those four files are reverted by hand.
+
+> **CLOSED 2026-08-31 — the last sentence above was the right instinct, and the lever is the render
+> timer.** "The clock does not advance on dispatcher pumping alone" is the whole diagnosis: in
+> Avalonia the animation clock is advanced by the RENDER TIMER, and a headless process that never
+> enters a render loop never ticks one, so the animation only moves as far as incidental wall-clock
+> carried it. `AvaloniaHeadlessPlatform.ForceRenderTimerTick(600)` before each capture runs every
+> animation past its end, and an animation that has finished stays finished — so the capture reads a
+> terminal keyframe rather than a sample of one. See "DocGen is byte-reproducible" below.
 
 `src/Ui/CLAUDE.md` reached 21,417 lines as an append-only phase log and had to be archived to
 `src/Ui/HISTORY.md`. Going forward, a completed brief's detail lands here instead — one `##` section

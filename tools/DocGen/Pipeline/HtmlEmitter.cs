@@ -25,12 +25,22 @@ public static class HtmlEmitter
             .UseAutoIdentifiers()
             .Build();
 
+    /// <summary>
+    /// The rendered body of a page — placeholders already expanded, Markdown converted — with no
+    /// chrome around it.
+    ///
+    /// <para>Public because the <see cref="SearchIndex"/> indexes this and not the Markdown source:
+    /// a parameter table, a per-button table and a figure caption are all produced by a placeholder
+    /// and appear nowhere in the page a reader would search from.</para>
+    /// </summary>
+    public static string BodyHtml(string expandedBody) => Markdig.Markdown.ToHtml(expandedBody, Markdown);
+
     /// <summary>Render <paramref name="page"/> (placeholders already expanded) to a complete HTML file.</summary>
     public static string Render(DocPage page, string expandedBody,
                                 SiteNav? nav = null, IReadOnlyDictionary<string, string>? titles = null)
     {
         string depth = string.Concat(Enumerable.Repeat("../", page.Slug.Count(c => c == '/')));
-        string bodyHtml = Markdig.Markdown.ToHtml(expandedBody, Markdown);
+        string bodyHtml = BodyHtml(expandedBody);
 
         var sb = new StringBuilder();
         sb.AppendLine("<!DOCTYPE html>");
@@ -56,6 +66,7 @@ public static class HtmlEmitter
                     + "<span class=\"wordmark\">circuitRF</span></a>");
         if (page.DocKind.Length > 0)
             sb.AppendLine($"  <span class=\"doc-kind\">{E(page.DocKind)}</span>");
+        sb.Append(SearchBox(depth, "doc-search", "Search the documentation", "Search docs"));
         sb.AppendLine("</header>");
         sb.AppendLine("<hr class=\"doc-headrule\">");
         sb.AppendLine();
@@ -78,8 +89,36 @@ public static class HtmlEmitter
         sb.AppendLine($"  <a href=\"{depth}index.html\">Documentation home</a>");
         sb.AppendLine("</footer>");
         sb.AppendLine();
+        // Both are deferred and neither blocks the page: a reader whose browser has not run them yet
+        // sees a documentation page that is complete apart from a search box that does nothing, and
+        // docs-search.js hides the box entirely if the index failed to load.
+        sb.AppendLine($"<script src=\"{depth}assets/js/search-index.js\" defer></script>");
+        sb.AppendLine($"<script src=\"{depth}assets/js/docs-search.js\" defer></script>");
         sb.AppendLine("</body>");
         sb.AppendLine("</html>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// One search box: the input, and the empty panel <c>docs-search.js</c> fills with results.
+    ///
+    /// <para><c>data-root</c> is how a result's link is built. The docs are read from disk as often
+    /// as from a server, so a result cannot link to an absolute <c>/reference/…</c> path; every page
+    /// already knows its own depth to the site root and hands it to the script here.</para>
+    ///
+    /// <para>Rendered <c>hidden</c> and unhidden by the script. A search box in a page whose
+    /// JavaScript is off or has not arrived is a text field that swallows what you type, which is
+    /// worse than no search box at all.</para>
+    /// </summary>
+    internal static string SearchBox(string depth, string cssClass, string label, string placeholder)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"  <div class=\"{cssClass}\" data-crf-search data-root=\"{depth}\" hidden>");
+        sb.AppendLine("    <input type=\"search\" class=\"search-input\" autocomplete=\"off\" spellcheck=\"false\"");
+        sb.AppendLine($"           aria-label=\"{E(label)}\" placeholder=\"{E(placeholder)}\"");
+        sb.AppendLine("           role=\"combobox\" aria-expanded=\"false\" aria-autocomplete=\"list\">");
+        sb.AppendLine("    <div class=\"search-panel\" role=\"listbox\" hidden></div>");
+        sb.AppendLine("  </div>");
         return sb.ToString();
     }
 

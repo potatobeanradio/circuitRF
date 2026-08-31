@@ -261,6 +261,40 @@ evolves and one fixture serves many figures.
 Unchanged from today's look — the existing stylesheet, header, breadcrumb and `prefers-color-scheme`
 dark handling are good and should be preserved, not redesigned. Inline figures per §4.
 
+### 6.1a Search — a generated index and a hand-written reader
+
+Added 2026-08-31. Every page carries a search box at the right of its header, and the landing page
+carries a wide one between the three guide cards and the prose.
+
+**The index is emitted as a SCRIPT, not as JSON.** The docs are read three ways — over the loopback
+server `DocLauncher` starts for the Help menu, from a web host, and by opening a page straight off
+disk — and only a classic `<script src>` works in all three. A `fetch()` of a sibling `.json` is
+blocked by every browser's `file://` origin rules, so a search built that way would work everywhere
+except the offline case §6.1's stylesheet header promises.
+
+**A section, not a page, is the unit.** Every `h2`/`h3` that carries an id becomes one record with
+its own text, so a result deep-links to the anchor the reader wants rather than to the top of a
+30-screen Reference page. The extraction runs over the RENDERED body, which is what makes generated
+content searchable: a parameter table, a per-button table and a figure caption are all produced by a
+placeholder and appear nowhere in the Markdown source.
+
+Two things are deliberately removed before indexing — inlined `<svg>` figures (hundreds of kilobytes
+of path data each, and not one readable word) and the generated site contents (`{{toc: site}}`, which
+is every other page's blurb; left in, the two contents pages answer almost any query).
+
+| Half | File | Owned by |
+|---|---|---|
+| Index | `docs/user/assets/js/search-index.js` | generated — `tools/DocGen/Pipeline/SearchIndex.cs` |
+| Reader | `docs/user/assets/js/docs-search.js` | hand-written, no dependency, no build step |
+| Markup | both boxes | `HtmlEmitter.SearchBox`, so they cannot drift |
+| Style | `[SEARCH]` block in `circuitrf-docs.css` | hand-written |
+
+Ranking is: every query word must appear somewhere in a section, worth most in the page title, less
+in the heading, least in the body, with a bonus for the whole query as a phrase — then multiplied by a
+15% prior that decays along the **reading order**, so a genuine tie ("Hierarchy" heads a section in
+both editors) is settled by the order the documentation itself puts them in rather than by the order
+the file system enumerated them. Measured at 0.14 ms per query over 458 sections.
+
 ### 6.2 Slides as landscape PDF — same engine, no new dependency
 
 `SKDocument.CreatePdf(stream)` gives a canvas per page, the same way `SKSvgCanvas` gives one per figure.
@@ -338,6 +372,19 @@ hand-edits a generated page and the next run silently reverts it.
 3. A cross-link check: every anchor `DocLauncher` deep-links to exists in the emitted HTML.
 4. CI: regenerate and `git diff --exit-code`.
 5. A banner comment in every generated file saying which command regenerates it.
+   **The output is byte-reproducible as of 2026-08-31** — verified by three consecutive full runs —
+   so `git diff --exit-code` is a usable gate rather than a permanently red one. What made it not
+   reproducible was the animation clock: Avalonia advances it from the RENDER TIMER, a headless
+   process never enters a render loop, and an Expander's chevron was therefore captured at whatever
+   angle wall-clock reached. `UiArtworkGenerator.SettleAnimations` now ticks the timer past every
+   animation's end through the `AdvanceFrames` seam, which `tools/DocGen/HeadlessHost` fills with
+   `AvaloniaHeadlessPlatform.ForceRenderTimerTick` (this assembly split is why it is a seam and not
+   a call — see the placement rule above).
+6. Search gates (`DocsFactoryTests`): every indexed section resolves to an anchor that exists in the
+   shipped HTML; the index covers every page; it carries prose and not figure geometry; every page
+   wires both scripts at the right relative depth; and the hand-written `docs-search.js` still exists
+   — nothing else in this pipeline would notice it being deleted, and the symptom is a search box
+   that accepts typing and does nothing.
 
 Runtime is the open cost: a headless render per figure per variant is fast (tens of ms), but fixture
 construction may not be. If total generation crosses a few seconds it stays a manual command, not a

@@ -29,6 +29,7 @@
      [TABLE]     parameter / data tables         [CALLOUT]  note/tip/warning
      [SYMBOL]    component symbol figures        [SHOT]     UI capture frames
      [CODE]      code + netlist blocks           [UTIL]     helpers / print
+     [SEARCH]    the header + landing search boxes
    ============================================================================ */
 
 /* ---------------------------------------------------------------- [VARS] --- */
@@ -53,6 +54,10 @@
   --note-bg:    #EAF6FA;  --note-bar:  var(--crf-cyan);
   --tip-bg:     #ECF7EE;  --tip-bar:   #34A853;
   --warn-bg:    #FFF3EC;  --warn-bar:  var(--crf-coral);
+
+  /* Search (LIGHT) — the matched-word highlight and the input's focus ring. */
+  --hilite:     #BCEEF7;
+  --focus-ring: #A9E9F5;
 
   /* Type & rhythm — change these to restyle spacing/width globally */
   --font-sans: "IBM Plex Sans", "Inter", -apple-system, BlinkMacSystemFont,
@@ -80,6 +85,9 @@
     --note-bg:    #102832;  --note-bar:  var(--crf-cyan);
     --tip-bg:     #14271A;  --tip-bar:   #4CC366;
     --warn-bg:    #2A1B12;  --warn-bar:  var(--crf-coral);
+
+    --hilite:     #17505E;
+    --focus-ring: #1B4E5B;
   }
 }
 
@@ -122,7 +130,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 
 /* ------------------------------------------------------------- [CHROME] --- */
 .doc-header {
-  display: flex; align-items: center; gap: 0.8rem;
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
   max-width: var(--maxw); margin: 0 auto; padding: 1.1rem 1.25rem 0.9rem;
 }
 /* Brand lock-up: the favicon mark (a rounded ink tile that reads on light AND dark, so no
@@ -319,6 +327,12 @@ pre.netlist { border-left: 4px solid var(--crf-cyan); }      /* .cnl listings */
 .nowrap { white-space: nowrap; }
 .steps { counter-reset: step; list-style: none; padding-left: 0; }
 .steps > li { counter-increment: step; position: relative; padding-left: 2.2rem; margin: 0.7rem 0; }
+/* A step long enough to need paragraphs of its own: the counter badge is positioned
+   against the TOP of the <li>, so a leading <p>'s own top margin would drop the text a
+   line below its own number. */
+.steps > li > p:first-child { margin-top: 0; }
+.steps > li > p:last-child  { margin-bottom: 0; }
+.steps > li > ul            { margin: 0.35rem 0; }
 .steps > li::before {
   content: counter(step); position: absolute; left: 0; top: 0.05rem;
   width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--crf-cyan);
@@ -326,8 +340,100 @@ pre.netlist { border-left: 4px solid var(--crf-cyan); }      /* .cnl listings */
   display: flex; align-items: center; justify-content: center;
 }
 
+
+/* ------------------------------------------------------------- [SEARCH] --- */
+/* Two boxes, one set of rules. The small one sits at the right of every page
+   header; the wide one is on the landing page only, between the three guide
+   cards and the prose. They are the same markup from the same emitter
+   (tools/DocGen/Pipeline/HtmlEmitter.cs, SearchBox) and the same script
+   (assets/js/docs-search.js) — the classes below differ only in SIZE and in
+   whether the result panel floats over the page or pushes it down.
+
+   Both are rendered `hidden` and unhidden by the script, so a page with no
+   JavaScript shows no search field rather than one that does nothing. */
+
+.doc-search, .search-hero { position: relative; }
+
+.doc-search { margin-left: 0.8rem; flex: 0 1 15rem; min-width: 9rem; }
+.search-hero { margin: 1.6rem 0 2.2rem; }
+
+.search-input {
+  width: 100%; font: inherit; font-size: 0.92rem; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 0.4rem 0.9rem;
+  transition: border-color 0.15s, background 0.15s;
+  /* The platform's own clear button and magnifier are drawn in the platform's
+     colours and are invisible on the dark palette — so neither is used. */
+  -webkit-appearance: none; appearance: none;
+}
+.search-input::-webkit-search-decoration,
+.search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.search-input::placeholder { color: var(--muted); }
+.search-input:focus {
+  outline: none; background: var(--bg);
+  border-color: var(--crf-cyan);
+  /* Stated twice on purpose: a browser without color-mix() drops that declaration
+     entirely, and would then draw no focus ring at all. The flat variable above it
+     is the one it keeps. */
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--crf-cyan) 25%, transparent);
+}
+
+.search-hero .search-input {
+  font-size: 1.05rem; padding: 0.75rem 1.1rem; border-radius: var(--radius);
+}
+
+/* The results. In the header they float over the page — the header is fixed
+   furniture and pushing the article down on every keystroke is unreadable. On
+   the landing page the box is IN the article, so its panel is too. */
+.search-panel {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); overflow-y: auto; overscroll-behavior: contain;
+}
+.doc-search .search-panel {
+  position: absolute; z-index: 40; top: calc(100% + 0.45rem); right: 0;
+  width: min(30rem, 88vw); max-height: min(28rem, 70vh);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+.search-hero .search-panel { margin-top: 0.6rem; max-height: 32rem; }
+
+.search-hit {
+  display: block; padding: 0.6rem 0.9rem; color: inherit; text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+.search-hit:last-child { border-bottom: 0; }
+.search-hit:hover { text-decoration: none; }
+/* One highlight for hover AND for the keyboard cursor: the arrow keys and the
+   mouse are picking the same thing, so they must not be able to point at two. */
+.search-hit:hover, .search-hit.is-active { background: var(--surface); }
+.search-hit.is-active { box-shadow: inset 3px 0 0 var(--crf-cyan); }
+
+.hit-title { display: block; font-weight: 600; color: var(--link); font-size: 0.98rem; }
+.hit-crumb {
+  display: block; font-size: 0.76rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.1rem;
+}
+.hit-text {
+  display: block; font-size: 0.86rem; color: var(--muted); line-height: 1.5;
+  margin-top: 0.25rem;
+}
+.search-hit mark {
+  background: var(--hilite);
+  background: color-mix(in srgb, var(--crf-cyan) 30%, transparent);
+  color: var(--text); border-radius: 3px; padding: 0 0.1em;
+}
+.search-empty { margin: 0; padding: 0.8rem 0.9rem; color: var(--muted); font-size: 0.9rem; }
+
+@media (max-width: 34rem) {
+  /* Below this the header's three items cannot share a line. The search box takes
+     its own, full width, rather than shrinking to a field too narrow to read. */
+  .doc-search { flex: 1 0 100%; margin-left: 0; }
+  .doc-search .search-panel { width: 100%; }
+}
+
 @media print {
-  .doc-header .doc-kind, nav.toc, nav.page-nav { display: none; }
+  .doc-header .doc-kind, nav.toc, nav.page-nav,
+  .doc-search, .search-hero { display: none; }
   a { color: var(--text); text-decoration: underline; }
   body { font-size: 11pt; }
 }

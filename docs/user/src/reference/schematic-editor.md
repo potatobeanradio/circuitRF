@@ -18,7 +18,8 @@ time in, and it is the only one an analysis runs on.
 <li><a href="#placing">Placing a component</a></li>
 <li><a href="#wiring">Wiring, values and labels</a></li>
 <li><a href="#context-menu">The context menu</a></li>
-<li><a href="#hierarchy">Hierarchy and the other two views</a></li>
+<li><a href="#hierarchy">Hierarchy: putting one schematic inside another</a></li>
+<li><a href="#views">The other two views</a></li>
 <li><a href="#analyses">Simulating: an Analysis</a></li>
 <li><a href="#toolbar">The toolbar</a></li>
 </ol>
@@ -123,25 +124,110 @@ component value can refer to, and the same expression language drives sweeps and
 
 {{ui: schematic-context-menu}}
 
-Right-clicking a component gives you the operations that apply to *it*: **Edit Parameters**, **Push
-In** (greyed when the component is not a hierarchical cell), rotate and mirror, the two label
-commands, **Labels ▸** for choosing which parameters show on the sheet, **Disconnect**, **Copy** and
-**Delete**. Items are **disabled rather than hidden**, so their positions stay put and you learn the
-menu by muscle memory.
+Right-clicking a component gives you the operations that apply to *it*: **Edit Parameters**, rotate
+and mirror, the two label commands, **Labels ▸** for choosing which parameters show on the sheet,
+**Disconnect**, **Copy** and **Delete**. Items are **disabled rather than hidden**, so their
+positions stay put and you learn the menu by muscle memory.
 
-## Hierarchy and the other two views {#hierarchy}
+Two more items appear only on a **cell instance** — **Push In** and **Open Cell in New Tab**. Those
+two are genuinely absent on a resistor rather than greyed, because they are not operations a
+resistor has; [Hierarchy](#hierarchy) below is what they are for.
 
-A schematic can instance other cells as sub-cells. **Push In** descends into the selected cell and
-**Pop Out** comes back; the breadcrumb above the canvas shows where you are. An edit to a cell
-affects every instance of it, live.
+## Hierarchy: putting one schematic inside another {#hierarchy}
 
-The three views of a cell are edited in three editors, and each one hands off to the others:
+**Hierarchy is drawing a circuit once and using it in many places.** A bias network, a matching
+section, a whole amplifier stage — draw it as its own **cell**, then drop that cell into a bigger
+schematic as a single component. The big schematic stays readable, and one edit to the cell reaches
+every place it is used.
+
+Two things have to be true before any of it works, and they are the two that trip people up:
+
+- **Hierarchy needs a cell.** A schematic on its own is not reusable — only a *cell* can be placed
+  into another schematic. Making the cell is step 1 below, and it is not optional.
+- **The cell goes into a *different* schematic.** A cell cannot contain itself, so the schematic you
+  place it in must be another one. Pushing in is then how you get back down to the first.
+
+### Step by step: a cell inside another schematic {#step-by-step}
+
+<ol class="steps">
+<li><p><strong>Create the cell.</strong> <strong>File ▸ New ▸ New Cell…</strong>
+(<kbd>⇧⌘N</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>), give it a name, and circuitRF makes
+the cell folder and opens its schematic. The command needs an open workspace — a cell is a folder
+inside one — so if it is greyed out, open or create a workspace first
+(<a href="workspace.html">The Workspace</a>).</p></li>
+
+<li><p><strong>Draw the sub-circuit, and give it pins.</strong> Wire it up as you would any
+schematic, then place a <strong>Pin</strong> at every point the outside world needs to connect to.
+The pins <em>are</em> the cell's ports — the pin numbered 1 becomes port 1 — and a cell with no pins
+places as a component nothing can be wired to.
+<a href="pins-ports-terms.html">Pin, Port and Term</a> is worth reading once if that distinction is
+new. Save with <kbd>⌘S</kbd>.</p></li>
+
+<li><p><strong>Open the schematic that will use it</strong> — a different one, and a
+<strong>saved</strong> one. A cell instance records where the cell is <em>relative to the schematic
+holding it</em>, so a scratch sheet from <strong>File ▸ New Schematic</strong> has nowhere to record
+it from; placing into one is refused with <em>"Save the schematic before placing a cell"</em> in
+Messages. Save it into the workspace first, or start it as a cell of its own.</p></li>
+
+<li><p><strong>Drag the cell out of the Project Tree and onto the canvas.</strong> That is the
+placement gesture. Cells you author are <em>not</em> in the Library Palette — the palette carries the
+built-in library and any imported kits, and your own cells live in the
+<a href="workspace.html">Project Tree</a> instead. It lands as one component with your cell's pins on
+it.</p>
+<p>If the cell has no symbol yet, you are offered an auto-generated one, built from the pin count
+from step 2. Accept it to keep moving; draw a proper one later in the
+<a href="symbol-editor.html">Symbol Editor</a>.</p></li>
+
+<li><p><strong>Wire it in and set its parameters</strong> like any other component. Double-clicking
+its body opens the parameter editor for that instance.</p></li>
+
+<li><p><strong>Push in to edit the cell from here.</strong> Click the instance once to select it,
+then use any of:</p>
+<ul>
+<li><strong>Right-click ▸ Push In</strong> — the item appears only on a cell instance.</li>
+<li>Toolbar button <strong>18</strong>, and <strong>19</strong> to come back out
+(<a href="#toolbar">the toolbar</a> below numbers them).</li>
+<li><kbd>⌘]</kbd> / <kbd>Ctrl</kbd>+<kbd>]</kbd> in, <kbd>⌘[</kbd> / <kbd>Ctrl</kbd>+<kbd>[</kbd>
+out — also on the <strong>View</strong> menu as <strong>Push Into Cell</strong> and
+<strong>Pop Out</strong>.</li>
+</ul>
+<p>You are now editing the cell's own schematic, <strong>in the same tab</strong>. A breadcrumb bar
+appears above the canvas showing how deep you are (<code>X1</code>, the instance you came through);
+every step in it is clickable, so you can jump straight back to any level rather than popping out one
+at a time. Push in again from there to go deeper.</p></li>
+</ol>
+
+Once that round trip works, everything else about hierarchy follows from it:
+
+- **An edit to a cell reaches every instance of it, live.** That is the whole point — and it is also
+  the thing to be careful about, because pushing in through `X1` and changing a value changes `X2`
+  too. They are the same cell.
+- **Push In is not the only way in.** **Right-click ▸ Open Cell in New Tab** opens the cell as its
+  own document instead, which is what you want when you are going back and forth and would rather
+  have both on screen than one behind the other.
+- **Depth is not limited to one level.** A cell can instance other cells, and the breadcrumb grows a
+  step each time you push in. Elaboration flattens the whole tree into one netlist before an analysis
+  ever runs, so depth costs you nothing at simulation time.
+- **Parameters pass downward.** A cell can publish parameters that the parent sets per instance, so
+  two instances of one cell can carry different values. See
+  [Expressions](expressions.html) for how a cell evaluates them in its own scope.
+- **Only the top schematic is simulated.** An analysis attaches to the **test bench** — the schematic
+  you press Run on — and the hierarchy below it is flattened into that run. A cell in the middle of a
+  tree has no analyses of its own.
+
+## The other two views {#views}
+
+The schematic is one of a cell's three views, and each is edited in its own editor:
 
 | View | Editor | What it owns |
 |---|---|---|
 | **Schematic** | this page | the electrical contents — instances, nets, values |
 | **Symbol** | [Symbol Editor](symbol-editor.html) | the glyph an instance draws, and where its pins sit |
 | **Layout** | [Layout Editor](layout-editor.html) | the physical artwork, for fab handoff and EM |
+
+The symbol is what step 4 above places; the layout is what gets manufactured. A cell need not have
+all three — the cell folder holds `schematic/`, `symbol/` and `layout/` side by side and any of them
+may be absent.
 
 Two commands under the **Design** menu move work between the schematic and the layout —
 **Update Layout from Schematic** (<kbd>⌘U</kbd>) and **Update Schematic from Layout**

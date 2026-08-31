@@ -21,6 +21,7 @@ namespace CircuitRF.DocGen.Pipeline;
 ///   <item><term><c>{{anchor: components#sdd}}</c></term><description>a checked cross-link; add <c>|Link text</c> to word it</description></item>
 ///   <item><term><c>{{toc: site}}</c></term><description>the complete table of contents, from the reading order</description></item>
 ///   <item><term><c>{{regions: workspace}}</c></term><description>the numbered legend of the workspace figure</description></item>
+///   <item><term><c>{{search: hero}}</c></term><description>the landing page's full-width search box</description></item>
 /// </list>
 ///
 /// <para><b>An unknown placeholder is a generation error, never literal text.</b> A typo'd
@@ -81,9 +82,10 @@ public sealed class Placeholders
                 "anchor"  => Anchor(arg),
                 "toc"     => Toc(arg),
                 "regions" => Regions(arg),
+                "search"  => Search(arg),
                 _ => throw new InvalidOperationException(
                         $"unknown placeholder kind '{kind}'. Known kinds: ui, symbol, toolbar, snapglyph, "
-                      + "table, anchor, toc, regions."),
+                      + "table, anchor, toc, regions, search."),
             };
         }
         catch (Exception ex)
@@ -294,6 +296,28 @@ public sealed class Placeholders
     }
 
     // ── {{regions: workspace}} ────────────────────────────────────────────────
+
+    // ── {{search: hero}} ────────────────────────────────────────────────
+
+    /// <summary>
+    /// A prominent search box in the body of a page, for the landing page — where the reader has not
+    /// yet chosen a guide and "search everything" is the fastest route in. It is the same control
+    /// the header carries, from the same emitter, so the two cannot behave differently.
+    /// </summary>
+    private string Search(string arg)
+    {
+        if (arg != "hero")
+            throw new InvalidOperationException(
+                $"unknown search box '{arg}'. The only one is 'hero' \u2014 the landing page's full-width box. "
+              + "Every page already carries the header box automatically.");
+
+        string depth = _pageSlug is null
+            ? ""
+            : string.Concat(Enumerable.Repeat("../", _pageSlug.Count(c => c == '/')));
+
+        return HtmlEmitter.SearchBox(depth, "search-hero", "Search the documentation",
+                                     "Search the documentation\u2026");
+    }
 
     /// <summary>The numbered legend of an indexed figure whose numbers are regions, not buttons.</summary>
     private string Regions(string arg) => arg switch

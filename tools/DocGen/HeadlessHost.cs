@@ -23,6 +23,15 @@ public static class HeadlessHost
             .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .WithInterFont()
             .SetupWithoutStarting();
+
+        // The animation clock is advanced by the RENDER TIMER, and nothing ticks it in a headless
+        // process that never enters a render loop — so a keyframe animation declared in a control
+        // theme (an Expander's chevron) is photographed at whatever angle wall-clock happened to
+        // reach. Handing the generator this is what lets it run an animation to its end before
+        // capturing; it is Avalonia.Headless API, which src/Ui may not reference.
+        CircuitRF.Ui.Diagnostics.UiArtworkGenerator.AdvanceFrames =
+            frames => AvaloniaHeadlessPlatform.ForceRenderTimerTick(frames);
+
         _started = true;
     }
 }

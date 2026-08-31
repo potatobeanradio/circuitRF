@@ -24,6 +24,8 @@ public sealed class DocGenRun
     private readonly List<string> _written = [];
 
     private long _bytesBefore, _bytesAfter;
+    private int _searchSections;
+    private long _searchBytes;
     private int _clipsDropped, _pathsDeduped;
     private readonly List<string> _fontSubstitutions = [];
 
@@ -224,6 +226,8 @@ public sealed class DocGenRun
             return families;
         }
 
+        var search = new SearchIndex();
+
         var pages = Directory.EnumerateFiles(srcRoot, "*.md", SearchOption.AllDirectories)
                              .OrderBy(p => p, StringComparer.Ordinal)
                              .Select(DocPage.Load)
@@ -287,6 +291,13 @@ public sealed class DocGenRun
             string expanded = expander.Expand(page.Body, page.SourcePath);
             foreach (var f in expander.FontFamiliesUsed) families.Add(f);
 
+            // Rank = position in the reading order, which is what breaks a scoring tie at query
+            // time. A page the nav does not list sorts last rather than first: SiteNav.Validate has
+            // already refused that case, so this only decides the shape of a run with no _nav.txt.
+            int rank = nav is null ? int.MaxValue
+                     : nav.Order.ToList().IndexOf(page.Slug) is var r && r >= 0 ? r : int.MaxValue;
+            search.Add(page, HtmlEmitter.BodyHtml(expanded), rank);
+
             string html = HtmlEmitter.Render(page, expanded, nav, titles);
 
             var leftover = Regex.Match(html, @"\{\{[^}]*\}\}");
@@ -300,6 +311,15 @@ public sealed class DocGenRun
             _written.Add(outPath);
             Account(outPath, htmlOnly: true);
         }
+
+        // The search index is written LAST, from what the pages turned out to contain — so it cannot
+        // describe a page this run did not write. A slides-only run never reaches here.
+        string js = Path.Combine(_docsRoot, "assets", "js", "search-index.js");
+        Directory.CreateDirectory(Path.GetDirectoryName(js)!);
+        File.WriteAllText(js, search.ToJs());
+        _written.Add(js);
+        _searchSections = search.SectionCount;
+        _searchBytes = new FileInfo(js).Length;
 
         // Un-ported pages stay exactly as they are (migration is incremental, never big-bang), and
         // their font usage is whatever their <img>-referenced symbol files already used.
@@ -432,6 +452,7 @@ public sealed class DocGenRun
         sb.AppendLine($"  no-op clips dropped ...... {_clipsDropped}");
         sb.AppendLine($"  repeated paths hoisted ... {_pathsDeduped}");
         sb.AppendLine($"Black-alpha brushes remapped {DocsApp.RemapReport.Count}");
+        sb.AppendLine($"Search index ............... {_searchSections} sections, {_searchBytes:N0} bytes");
         sb.AppendLine($"Wall clock ................. {elapsed.TotalSeconds:F1} s");
         if (elapsed.TotalSeconds > 60)
             sb.AppendLine("NOTE: generation took over 60 s. That is slower than this is meant to be; "

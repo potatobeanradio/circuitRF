@@ -241,17 +241,32 @@ public static class UiArtworkGenerator
     }
 
     /// <summary>
-    /// <b>Cancels every TRANSITION in the tree before the capture reads it</b>, so a property that
-    /// was easing toward a value is photographed at that value rather than part way to it.
+    /// <b>Runs every animation in the tree to its end before the capture reads it</b>, so a property
+    /// easing toward a value is photographed AT that value rather than part way to it.
     ///
-    /// <para><b>What this does NOT fix, stated because it is a live churn source:</b> an Expander's
-    /// chevron is turned by a KEYFRAME animation declared in the control theme, which a transition
-    /// cannot be cleared out of and which samples wall-clock — so <c>analysis-editor-hb</c> and
-    /// <c>em-setup-loaded</c> come back with a slightly different rotation matrix on every run
-    /// (<c>matrix(-0.9469 0.3214 …)</c> against <c>matrix(-0.9441 0.3296 …)</c>) whatever this does.
-    /// Clearing transitions, an application-level style setting <c>Transitions</c> to null, and
-    /// waiting 450 ms for the animation to finish were all tried and all measured to change nothing.
-    /// Four files, and they are the only ones left: see <c>src/Ui/RESOLVED.md</c>.</para>
+    /// <para>Two mechanisms have to be dealt with, and they need opposite treatments:</para>
+    ///
+    /// <list type="number">
+    ///   <item><b>Transitions</b> are cleared. A transition has no "end" to run to — it is driven by
+    ///   the property changing — so cancelling it is the whole fix.</item>
+    ///   <item><b>Keyframe animations</b> declared in a control theme (an Expander's chevron is the
+    ///   one that bites here) cannot be cleared and do not care about the transition collection. They
+    ///   are driven by the animation clock, and the clock is advanced by the RENDER TIMER — not by
+    ///   pumping the dispatcher. So the capture ticks the timer past the animation's duration, and
+    ///   the animation lands on its final keyframe. That value is the same on every machine and every
+    ///   run, which is the property that matters; the elapsed time it took to get there is not.</item>
+    /// </list>
+    ///
+    /// <para><b>Why the tick is injected rather than called.</b> Forcing the timer is
+    /// <c>Avalonia.Headless</c>'s API, and this assembly must not reference it — the headless
+    /// bootstrap lives in <c>tools/DocGen</c> for exactly that reason (see
+    /// <c>docs/design/user-docs-factory.md</c> §7). <see cref="AdvanceFrames"/> is the seam.</para>
+    ///
+    /// <para><b>Three earlier attempts are recorded in <c>src/Ui/RESOLVED.md</c> and none of them was
+    /// this one</b>: clearing <c>Transitions</c> (a keyframe animation is not a transition), an
+    /// application-level style setting <c>Transitions</c> to null (a control theme's setters outrank
+    /// <c>Application.Styles</c>), and sleeping 450 ms (the clock does not advance on dispatcher
+    /// pumping alone — which is the observation that points straight at the render timer).</para>
     /// </summary>
     private static void SettleAnimations(Visual root)
     {
@@ -260,7 +275,33 @@ public static class UiArtworkGenerator
                 a.Transitions = null;
 
         Pump();
+
+        if (AdvanceFrames is { } advance)
+        {
+            advance(SettleFrames);
+            Pump();
+        }
     }
+
+    /// <summary>
+    /// How many render-timer frames a capture runs before it reads the tree.
+    ///
+    /// <para>Sized to overrun, not to match: the Fluent chevron animations are a quarter-second at
+    /// the longest, and an animation that has finished stays finished, so ticking well past the end
+    /// costs a fraction of a second per run and removes the need to know any control theme's
+    /// durations. Undershooting is the failure that does not announce itself.</para>
+    /// </summary>
+    private const int SettleFrames = 600;
+
+    /// <summary>
+    /// Advances the animation clock by N frames. Set once by the headless bootstrap
+    /// (<c>tools/DocGen</c>) to <c>AvaloniaHeadlessPlatform.ForceRenderTimerTick</c>.
+    ///
+    /// <para>Null in any process that has not set it, and then <see cref="SettleAnimations"/> simply
+    /// does the transition half — which is what a normal application wants, since the point of an
+    /// animation on screen is that it plays.</para>
+    /// </summary>
+    public static Action<int>? AdvanceFrames { get; set; }
 
     /// <summary>
     /// Development escape hatch: write the figure even when the dropped-paint lint fires, so the
