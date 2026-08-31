@@ -8057,3 +8057,152 @@ magnitude inside it. That is the whole reason MIM-3 was a measurement brief rath
 **Nothing in the one-level or interconnect-scale arithmetic was touched.** No existing gate was
 loosened; `Dcim.ValidatedRhoOverLambdaAtHeights`, `…Layered` and `…InteriorHorizontal` are exactly
 where they were, because Table 1 says they should be.
+
+---
+
+# MIM-4 — the interior-height static Green's function: the tables (brief-em-mim-4-interior-static-greens.md, 2026-08-30)
+
+Narrative, findings and the "not done" list are in `RESOLVED.md` §MIM-4. What follows is the measured
+data behind them.
+
+## The formulation, once
+
+At ω = 0 the layered problem is a Sturm-Liouville problem in z rather than a reflection referenced to
+one region — there is no `k_z`, and the propagation constant is `k_ρ` in every region alike:
+
+```
+    d/dz( P(z) dG̃/dz ) − k²P(z) G̃ = −2k·δ(z − z′),     P = ε*  (scalar) or 1/µ  (vector)
+    G̃(k; z, z′) = −2k · ψ↓(z_<) ψ↑(z_>) / W,           W = P(ψ↓ψ↑′ − ψ↓′ψ↑) = const
+    G(ρ)        = (1/4π) ∫₀^∞ G̃(k) J₀(kρ) dk           (free space = 1/4πρ, as everywhere here)
+```
+
+with ψ↓ satisfying the bottom termination and ψ↑ the top. Reduction checks, all exact by hand before
+any code: a homogeneous stack over a PEC floor gives `(e^{−k|z−z′|} − e^{−k(z+z′)})/ε` at every
+height pair; both points on a one-slab top surface give `1 + Γ_e` with
+`Γ_e = (K − x)/(1 − Kx)`, `x = e^{−2kh}` — the spectral form `StaticGreens`' shipped image series
+inverts.
+
+## Table 1 — the spectral kernel (milestone 1), worst deviation over the sampled grids
+
+Deviation is measured against the kernel's own O(1) scale, not the sample's magnitude: as k → 0 the
+kernel is a difference of two nearly-equal exponentials **in the closed-form oracle exactly as much as
+in the production path** — at k·H = 1e-9 the oracle itself is only good to 2e-7 relative — and what
+the spatial integral consumes is the absolute error.
+
+| Check | Stack | Worst |
+|---|---|---|
+| Homogeneous over PEC = free space + one image, every (z, z′) | εᵣ = 1 / 4.4 / 12.9, two layers | < 1e-14 |
+| Vector kernel does not see a non-magnetic stratification | 3-layer board | < 1e-14 |
+| Split a layer into 3 sub-layers of its own material | 3-layer board → 6 layers, scalar and vector | < 1e-14 |
+| Cross-region pair at k·H = 1e-9 (the 0/0 trap) | 2 layers over PEC | 1e-15 absolute |
+| `1 + Γ_e` on the slab top | FR-4 1.6 mm, GaAs 100 µm | < 1e-14 |
+| vs `LayeredStaticGreens`' spectral form in the top half-space | 3-layer board, scalar and vector | < 1e-14 |
+| Flux `P·∂G̃/∂z` continuous across every interface | 3-layer board, k = 500 / 5000 | < 1e-4 (probe-offset limited) |
+
+## Table 2 — the independent finite-volume solve (milestone 1, tier 3)
+
+A finite-volume discretisation of the same ODE on a uniform grid with every interface on a node,
+solved by a complex tridiagonal elimination. It shares no reflection coefficient, no cascade, no
+exponential basis and no Wronskian with the thing under test. Gated on Richardson behaviour as well as
+on error — halving h must QUARTER it — because a second-order scheme agreeing to 1e-4 proves nothing
+on its own.
+
+| (z, z′), mm | 350 cells | 700 cells | ratio |
+|---|---|---|---|
+| (0.40, 0.40) same layer, coincident | — | < 3e-4 | > 3.2 |
+| (1.00, 1.00) exactly on an interface | — | < 3e-4 | > 3.2 |
+| (0.30, 1.30) two layers apart | — | < 3e-4 | > 3.2 |
+| (1.60, 1.65) inside the thin top layer | — | < 3e-4 | > 3.2 |
+
+(k = 800 and 4 000, 3-layer board 1.00 / 0.50 / 0.25 mm at εᵣ 4.4 / 9.8 / 2.2.)
+
+## Table 3 — the spatial function against the SHIPPED one-slab image series
+
+`InteriorStaticImages` fitted at z = z′ = h in `LayerStack.FromGroundedSlab(slab)`, against
+`StaticGreens.ScalarPotential`.
+
+| ρ/h | FR-4 (1.6 mm, εᵣ 4.4, tanδ 0.02) | GaAs (100 µm, εᵣ 12.9, tanδ 0.002) |
+|---|---|---|
+| 1e-4 | 3.6e-15 | 6.7e-15 |
+| 1e-2 | 3.5e-13 | 6.5e-13 |
+| 1 | 7.8e-11 | 1.5e-10 |
+| 10 | 1.1e-7 | 7.0e-7 |
+| 100 | 7.4e-6 → **8.6e-7** | 4.9e-5 → **8.9e-6** |
+| 1000 | 8.5e-6 → **9.3e-7** | 5.7e-5 → **8.9e-6** |
+
+Arrows are before → after the low-k sample block (finding 3). The far-field figures are relative to a
+value that has itself fallen by 1.6e9 from ρ = h; in absolute terms the worst is **4e-14 of the
+near-field scale**.
+
+## Table 4 — interior heights, against direct Hankel integration
+
+`InteriorStaticGreens.PotentialByQuadrature`, which shares no approximation with the image model.
+Every one of these heights is refused by name by `LayeredStaticGreens`.
+
+| Stack | z | images | spectral residual | worst rel over ρ |
+|---|---|---|---|---|
+| board 1.00/0.50/0.25 mm | 1.00 mm (on an interface) | 25 | 1.7e-10 | 6.5e-6 at ρ = 66 mm |
+| board | 1.50 mm | 27 | 4.2e-11 | 8.1e-7 |
+| board | 1.75 mm (top) | 25 | 3.4e-11 | 4.9e-7 |
+| MIM 100/0.2/2.8 µm | 100.0 µm (lower plate) | 22 | 2.1e-10 | 8.2e-9 |
+| MIM | 100.2 µm (upper plate) | 23 | 1.4e-10 | 1.4e-8 |
+| MIM | 103.0 µm (interconnect) | 14 | 1.6e-11 | 1.6e-8 |
+
+ρ on the MIM stack is swept 0.05 → 250 µm — five decades, down to a quarter of the capacitor
+dielectric's thickness. `c_∞` comes out exact at every level: 0.1015 = (1 + r)/ε_nitride on the lower
+plate, 0.2564 on the upper, 1 on the interconnect.
+
+## Table 5 — cost, which is the fit-versus-quadrature decision
+
+| | per ρ | once |
+|---|---|---|
+| `InteriorStaticModel.Evaluate` (9–27 images) | **0.34 µs** | fit 16–78 ms |
+| `StaticGreens.ScalarPotential` (the shipped series, 130 images on GaAs) | 2.5 µs | — |
+| `InteriorStaticGreens.PotentialByQuadrature` | **1–270 ms**, rising with ρ | — |
+
+The fill's radial table wants 10⁴–10⁶ samples of the kernel, so the reference integrator is four to
+six orders of magnitude away from being usable and is kept only as the oracle. **The image model is
+7× faster than the series it replaces on the case where both apply.**
+
+## Table 6 — C_pul (milestone 3)
+
+| Check | Result |
+|---|---|
+| Interior route vs shipped, FR-4 slab top | 1.1643962437e-10 F/m both; **3.5e-12** relative |
+| Interior route vs shipped, GaAs slab top | 3.5162217008e-9 vs …012e-9; **1.2e-10** relative |
+| Slab split into 3 sub-layers of its own material | **8.3e-12** |
+| Fit residual, worst over 8 stacks (one-slab, board ×3, MIM ×3) | **2.1e-10**, against a refusal ceiling of 1e-6 |
+
+### The series-capacitance limit (§10.9's tier 2, in the planar geometry)
+
+Two stacked dielectrics (60 µm εᵣ 9.8 + 40 µm εᵣ 2.2) against the single slab whose εᵣ is their series
+equivalent (4.26931). A wide line IS a parallel-plate capacitor, so the two must converge; a narrow
+one must NOT, because fringing samples the layers differently and no single εᵣ can represent that.
+
+| W/h | N | equivalent slab | stacked | difference |
+|---|---|---|---|---|
+| 0.5 | 87 | 5.827e-11 F/m | 4.584e-11 F/m | 21.33% |
+| 2 | 157 | 1.181e-10 | 1.060e-10 | 10.26% |
+| 8 | 1 045 | 3.500e-10 | 3.389e-10 | 3.16% |
+| 24 | 8 877 | 9.657e-10 | 9.549e-10 | 1.12% |
+
+## Table 7 — the de-embedded gates (milestone 4)
+
+A 60 µm-wide uniform line on the UPPER level of the MMIC 2-level stack (100 µm GaAs + 3 µm εᵣ 2.7),
+at 10 GHz — the configuration `PlanarSolve` threw on before this brief. Renormalised back to the Z_c
+the run itself reports, so the number under test is the one the interior electrostatics produced.
+
+| Quantity | Value |
+|---|---|
+| C_pul | 1.4788e-10 F/m |
+| Z_c | 61.227 − j0.729 Ω |
+| interior fit residual | 1.1e-9 |
+| \|S₁₁\| of a section that should be matched | **9.05e-4** (gate 3e-2) |
+| ∠S₂₁ vs −βℓ | **1.19e-3 rad** (gate 3e-2) |
+| \|S₂₁\| vs e^{−αℓ} | **4.67e-6** (gate 3e-2) |
+| cascade identity, 2ℓ vs two ℓ (ℓ = 881 µm) | **1.8e-4** (gate 3e-2) |
+| reciprocity | < 1e-9 |
+
+For scale: the same |S₁₁| gate reads 3.9e-4 at 2 GHz and 6.0e-3 at 10 GHz on the SLAB TOP over
+1.6 mm FR-4 (§L8d's own T4_6), where the limit is direct radiative and surface-wave coupling between
+the ports rather than the algebra. The buried level is inside that band.

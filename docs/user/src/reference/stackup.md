@@ -171,9 +171,16 @@ stackup mistakes are refused by name rather than solved around:
 - **There is no dielectric entry between the plane and the conductor.** A conductor floating directly
   on a plane with nothing in between has no substrate to be a microstrip over.
 
-Dielectric entries between the two are combined into the substrate the kernel solves on, with their
-own ε<sub>r</sub> and tanδ. Layers *above* the top conductor are not part of that slab: the top
-boundary is what is above, and it is `Open` unless you say otherwise.
+**Several dielectric entries between the two are carried as several layers**, each at its own
+thickness, ε<sub>r</sub> and tanδ — the medium is stratified and the solver solves it that way. (It
+used to refuse a stratified region under the feed and tell you to merge the entries into one; merging
+them changes the physics, and the reason for it is gone.) The run's notes name the layers it found and
+print the single ε<sub>r</sub> it uses to *size* the calibration standards and the mesh — the
+series-capacitance equivalent of the stack. That number is a mesh-sizing average and never the
+reference impedance the answer is published against.
+
+Layers *above* the top conductor are not part of that slab: the top boundary is what is above, and it
+is `Open` unless you say otherwise.
 
 ## Vias {#vias}
 
@@ -259,10 +266,10 @@ There is also a **plate level makes a post non-adjacent** rule on top of the ref
 must span two conductors that are adjacent *in the analysis*, and with the plate metal in the level
 list a post between the two interconnect metals skips a level and is dropped with a note.
 
-### Do not take a capacitance off a MIM run yet {#mim-accuracy}
+### Reading a capacitance off a MIM run {#mim-accuracy}
 
 <div class="callout warn">
-<span class="label">The separation is now right; the read-out path is not</span>
+<span class="label">Never read a small element off a RAW solve, and mesh the gap</span>
 <p>The solver models the plate separation the process states — 0.2 µm on the shipped MIM technology,
 the capacitor dielectric and nothing else. (It used to model 3.2 µm: a conductor is solved as a
 zero-thickness sheet, and with that sheet at the bottom of its own band the lower plate's whole metal
@@ -270,17 +277,29 @@ thickness fell inside the gap. The lower plate's entry now says its sheet sits o
 <strong>top</strong> of its band — see <a href="#sheet-surface">Which surface a conductor's sheet
 sits on</a>.) The run's notes print every level's z <em>and</em> the surface it sits on, so you can
 always read back the separation it used.</p>
-<p><strong>What still stands between a run and a capacitance: a MIM's feed arrives on upper metal,
-where a port cannot yet be de-embedded</strong> — so a MIM run is read through internal ports or as a
-raw solve. A raw solve's s-parameters include each port's own discontinuity, and that discontinuity is
-a fraction-of-a-femtofarad series element: read a small capacitance through it and you read the port,
-not the capacitor, whatever the plates do. (An earlier revision of this page said the plate
-capacitance was "not modelled", on a measurement taken through exactly that raw path — retracted: the
-same solver's calibrated path transmits a via-bridged two-level structure at |S21| = 0.999, and the
-constant value that measurement returned is the port discontinuity itself.)</p>
-<p>So treat a MIM run as a <em>structural</em> answer for now — the network, the feeds and the vias
-around the capacitor are solved normally — and take the capacitance itself from the process's own
-fF/µm².</p>
+<p><strong>A port on upper metal now de-embeds.</strong> It used to be refused: the reference
+impedance a de-embedded answer is published against is Z<sub>c</sub> = γ/(jωC<sub>pul</sub>), and
+C<sub>pul</sub> came from an electrostatic image series over one grounded slab — the right problem for
+a trace on the substrate's own top surface and the wrong one for metal buried in the interlayer
+dielectric. The solver now solves that electrostatics at the port level's own height in the real
+stack, so an ordinary two-port MIM network de-embeds like anything else. The same change lets a
+technology carry several dielectrics <em>under</em> the lowest analysis level, which used to be
+refused with "merge the layers".</p>
+<p><strong>Read the capacitance from the de-embedded answer, never from a raw one.</strong> A raw
+solve's s-parameters include each port's own discontinuity, and that discontinuity is a
+fraction-of-a-femtofarad series element: read a small capacitance through it and you read the port,
+not the capacitor, whatever the plates do. That is not special to a capacitor — a matched 50 Ω GaAs
+microstrip reads |S<sub>21</sub>| = 0.07 raw at 10 GHz. (An earlier revision of this page said the
+plate capacitance was "not modelled", on a measurement taken through exactly that raw path —
+retracted.)</p>
+<p><strong>And mesh the gap.</strong> The one thing that genuinely limits a plate capacitance is the
+mesh: the cross-level part of the fill degrades as the cell size grows against the plate separation,
+and the extracted capacitance follows it — within 10% of ε₀ε<sub>r</sub>A/d while the ratio is at
+most 5, 1.46× at 12.5, and the wrong sign at 25. <strong>The shipped MIM technology's default mesh
+sits outside that</strong> (a 10 µm plate pair 0.2 µm apart meshes at 2.5 µm, i.e. 12.5), and the run
+says so in its notes — it is a note rather than a refusal because the rest of the structure is
+unaffected. Refine the mesh over the plates until the note stops firing before you trust the
+value.</p>
 </div>
 
 **The shunt form's backside via sets an upper frequency.** A vertical basis carries uniform current

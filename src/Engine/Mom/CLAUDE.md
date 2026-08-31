@@ -25,6 +25,9 @@ the file moved). The Ui half is `src/Ui/Layout/Em/CLAUDE.md`; the user-facing pa
 > | G_A^zz accuracy ceiling · curved-edge negative result | 3919–4306 |
 > | Conformal cut cells · convex decomposition · edge attractor · mesh frequency | 4307–5047 |
 > | M1/M2 parallelism · calibration-standard fill-two · M5 AIM decision gate + build (archived 2026-08-13, the maintenance rule below having lapsed once already) | 5048–5515 |
+> | Performance briefs P1–P7 (honest memory, cores, fan-out, AIM geometry/moments/classes, factor matrices) | 5516–6957 |
+> | P8 AIM near radius · P9 adaptive default · P10 fan-out starvation · P11 accelerated static C · P12 bordered AIM | 6958–7781 |
+> | MIM-3 thin dielectric layers · **MIM-4 interior-height static Green's function** | 7782–end |
 >
 > **Maintenance rule, or this regrows — and it already did once.** A completed phase appends its
 > narrative to `HISTORY.md`, not here. This file only *changes* — a new invariant, a moved default, a
@@ -675,12 +678,26 @@ E      = (σ/2πε₀)·(∂Φ/∂x·û + ∂Φ/∂y·n̂)      — returned in 
   in k_z0 is entire and **cannot carry a cut**. `Dcim.CanFit(LayerStack)` refuses by name. Equal-
   density bottoms are fine.
 - **Interior sources are refused by name** by `DcimModel.Evaluate(ρ,z,z′)`,
-  `SommerfeldIntegral.EvaluateLayered` and `LayeredStaticGreens`. *(`DcimModel.Evaluate`'s refusal
-  string still says buried metal arrives with L9c — stale; the interior fit is on `FitAtHeights`.)*
-- **All of Part B** — the interior electrostatic Green's function and `C_pul` at a buried level.
-  `PlanarSolve`'s buried-level refusal is byte-identical. **The most valuable remaining work here.**
-- **A port on a buried level de-embeds nothing** — `PlanarDeembed`'s `C_pul` is a grounded-slab image
-  series and the de-embedded S is *referenced* to the Z_c it yields (`LevelIsOnSlabTop`).
+  `SommerfeldIntegral.EvaluateLayered` and `LayeredStaticGreens` — each of the three is referenced to
+  the TOP HALF-SPACE and cannot be made to answer an interior pair. All three now name the object
+  that does: `Dcim.FitAtHeights` / `SommerfeldIntegral.EvaluateInterior` at ω > 0, and
+  **`InteriorStaticGreens`** at ω = 0.
+- ~~**All of Part B** — the interior electrostatic Green's function and `C_pul` at a buried level.~~
+  ~~**A port on a buried level de-embeds nothing.**~~ **BUILT at MIM-4 (2026-08-30)**:
+  `InteriorStaticGreens` + `InteriorStaticImages` + `PlanarKernelTerms.StaticScalarAt` +
+  `PlanarDeembed.CapacitancePerMetre`'s stack overload. `PlanarSolve`'s buried-level throw and
+  `PlanarExtractor`'s stratified-sub-feed refusal are both retired; `RESOLVED.md` §MIM-4.
+  **Two things that are now invariants rather than findings.** (1) **The C_pul route is chosen by
+  comparing the MEDIUM structurally, never the level's height** — a single level over a stratified
+  region sits at the slab's height too, so height alone would put a two-dielectric board's reference
+  impedance on a one-dielectric series (`PlanarPortCalibrator.DescribedByTheSlab`). (2) An explicit
+  `MediumStack` is now attached at ONE level too, whenever the medium has more than one layer.
+  What is refused in their place: a de-embedded buried port whose interior fit's own spectral
+  residual exceeds `PlanarSolve.InteriorCPulResidualCeiling` (1e-6; every stack measured is ≤ 2.1e-10).
+- **A static kernel for a CROSS-LEVEL cell pair is still missing** — `PlanarStaticAim.Build` and
+  `PlanarDeembed.StaticCapacitance` take ONE kernel evaluated at ONE height pair, so a multi-level
+  static solve needs a per-pairing SET (the way `PlanarKernelSet` carries the full-wave one) and
+  nothing builds it. A calibration standard is always single-level (D3), so nothing reaches it today.
 - **A port ON a via** — a different object: a vertical basis has no end in the layout plane and no
   cell beyond the cut. **A port on a cut cell** is likewise refused: its reference plane is a shared
   edge whose transverse extent is no longer the grid's.

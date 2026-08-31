@@ -208,17 +208,26 @@ public sealed class PlanarStaticAim
                 "slab height, so it has to be handed in. Pass the problem's own Slab.HeightM; to run " +
                 "without the floor, pass the height anyway and set NearRadiusMinM: 0.");
 
-        // The static scalar Green's function this solves against is an image series over ONE grounded
-        // slab, so a mesh whose cells sit on more than one level is not a problem it models. A
+        // The kernel handed in is evaluated at ONE height pair, so a mesh whose cells sit on more
+        // than one level is not a problem this operator models — whichever kernel built it. A
         // calibration standard is always a single-level uniform line (D3) and never reaches this.
+        //
+        // MIM-4 narrowed what this refusal is ABOUT rather than deleting it. It used to say a
+        // multi-level mesh "needs a static Green's function at interior heights, which this
+        // repository does not have"; InteriorStaticImages is that function, and
+        // PlanarKernelTerms.StaticScalarAt hands one to this method for any single level at any
+        // height. What is still missing is a static kernel for a CROSS-LEVEL cell pair — a
+        // per-pairing set, the way PlanarKernelSet carries the full-wave one — which is a different
+        // object from the one this argument takes.
         foreach (var c in cores.Mesh.Cells)
             if (c.LayerIndex != cores.Mesh.Cells[0].LayerIndex)
                 throw new NotSupportedException(
-                    "The accelerated static capacitance solve models a SINGLE conductor level over the " +
-                    "grounded slab, because PlanarKernelTerms.StaticScalar is an image series for a " +
-                    "line on the slab's own top surface. A multi-level mesh needs a static Green's " +
-                    "function at interior heights, which this repository does not have (see " +
-                    "src/Engine/Mom/CLAUDE.md §L9c). Solve this mesh's static system densely.");
+                    "The accelerated static capacitance solve models a SINGLE conductor level, because " +
+                    "the kernel it is handed is one function of ρ, evaluated at ONE height pair — " +
+                    "PlanarKernelTerms.StaticScalar on the slab top, or StaticScalarAt at any interior " +
+                    "height (MIM-4). A multi-level mesh needs a static kernel PER LEVEL PAIRING, which " +
+                    "is a set rather than a function and which nothing builds yet. Solve this mesh's " +
+                    "static system densely.");
 
         return new PlanarStaticAim(cores, staticScalar, slabHeightM, st,
                                    entryCores ?? new PlanarEntryCores(cores));

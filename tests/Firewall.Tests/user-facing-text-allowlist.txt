@@ -284,6 +284,7 @@ src/Engine/Mom/ChargeSolver.cs|MoM: mesh has no conductors.
 src/Engine/Mom/Dcim.cs|A DcimModel's images are referenced to the top half-space and need z, z′ ≥ H = 
 src/Engine/Mom/Dcim.cs|DerivativeAtHeights belongs to a Dcim.FitAtHeights model.
 src/Engine/Mom/Dcim.cs|This DcimModel was fitted for a source and observer in the TOP HALF-SPACE, where 
+src/Engine/Mom/InteriorStaticGreens.cs|The reference integrator would need more than {maxPanels:N0} panels at ρ = 
 src/Engine/Mom/LayeredMedium.cs|Every split fraction must be positive.
 src/Engine/Mom/LayeredMedium.cs|LayeredStaticGreens is referenced to the top half-space and needs z, z′ ≥ H = 
 src/Engine/Mom/LayeredMedium.cs|The top termination is {stack.Top}, a solid wall — there is no half-space above 
@@ -330,7 +331,7 @@ src/Engine/Mom/PlanarSolve.cs|The sweep's lowest frequency is {SurfaceMesher.Eng
 src/Engine/Mom/PlanarSolve.cs|This mesh was built without a level list, so the general kernel has no height to 
 src/Engine/Mom/PlanarStaticAim.cs|Expected a vector of length {_m}, got {x.Length}.
 src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve did not converge: {iterations} iteration(s) 
-src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve models a SINGLE conductor level over the 
+src/Engine/Mom/PlanarStaticAim.cs|The accelerated static capacitance solve models a SINGLE conductor level, because 
 src/Engine/Mom/PlanarStaticAim.cs|The near set is not symmetric: ({i}, {j}) is in it and ({j}, {i}) is not. 
 src/Engine/Mom/PlanarSystem.cs|This geometry needs {n:N0} unknowns, which is past the 
 src/Engine/Mom/PlanarSystem.cs|This system has been factored, and P7's factorisation runs IN PLACE — the matrix's 

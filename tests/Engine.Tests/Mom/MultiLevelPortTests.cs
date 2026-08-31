@@ -412,38 +412,45 @@ public sealed class MultiLevelPortTests
     }
 
     [Fact]
-    [Trait("Category", "Benchmark")]   // a full de-embedded two-level point, 1 m 23 s
-    public void M3_2_D3_APortOnALevelThatIsNotTheSlabsTop_IsRefusedByName_AndTheNeighbourRuns()
+    [Trait("Category", "Benchmark")]   // two full de-embedded two-level points
+    public void M3_2_D3_APortOnALevelThatIsNotTheSlabsTop_DeembedsSinceMIM4_AndSoDoesItsNeighbour()
     {
-        // The refusal is on Z_c's own electrostatics rather than on "multi-level", and R-mlp-3 wants
-        // its legitimate neighbour accepted in the same test. A port on M1 (which IS the slab's top
-        // surface) de-embeds; the SAME structure with the ports brought out on M2 does not, because
-        // C_pul would be an image series solving a different electrostatic problem and the de-embedded
-        // S is REFERENCED to the Z_c it produces.
+        // ── MIM-4 RETIRED THE REFUSAL THIS TEST USED TO ASSERT ────────────────────────────────
+        //
+        // It read: a port on M2 is refused because C_pul would be "an image series solving a
+        // different electrostatic problem", and the de-embedded S is REFERENCED to the Z_c it
+        // produces. That was true of the machinery, not of the physics — InteriorStaticImages now
+        // solves the electrostatics at the port level's own z in the real stack, so BOTH levels
+        // de-embed and the assertion is inverted rather than deleted. R-mom-17's own corollary: a
+        // refusal that outlives its truth is the failure the rule exists for, and the test that
+        // pinned it has to move with it.
         double f = 10e9, len = 400e-6;
         var problem = TwoLevel(f, lengthM: len);
         var mesh = SurfaceMesher.Mesh(problem).Mesh;
 
         var onM2 = PlanarPorts.ResolveAll(mesh, EndPorts(len, layer: 1));
-        var ex = Assert.Throws<InvalidOperationException>(
-            () => PlanarSolve.Run(problem, mesh, onM2, [f]));
-        Assert.Contains("Z_c", ex.Message);
-        // L9e's refusal audit (M4) re-worded this message — it used to point at "L9c's un-run Tier 4"
-        // and now names the missing OBJECT instead (a static Green's function at interior heights, and
-        // the fact that LayeredStaticGreens refuses one). The assertion is UPDATED to the claim the
-        // message actually makes rather than loosened: a refusal that does not say what is missing is
-        // the thing R-mom-17 exists to prevent. Found by re-running the Benchmark tier, which is why
-        // this was still asserting the old phrasing.
-        Assert.Contains("INTERIOR heights", ex.Message);
+        var m2Run = PlanarSolve.Run(problem, mesh, onM2, [f]);
+        Assert.Single(m2Run.Points);
+        var m2 = m2Run.Points[0];
+        Assert.True(double.IsFinite(m2.S[1, 0].Magnitude));
+        Assert.All(m2.Calibrations, c => Assert.True(double.IsFinite(c.Zc.Magnitude) && c.Zc.Real > 0));
 
-        // …the neighbour, on the level that sits on the slab, runs to a real de-embedded answer.
+        // …and the neighbour, on the level that sits on the slab, still runs — and still takes the
+        // SHIPPED one-slab route for its own C_pul, because its medium is not the one-slab medium
+        // (there is a 3 µm encapsulation above it), which is what the structural comparison decides.
         var onM1 = PlanarPorts.ResolveAll(mesh, EndPorts(len, layer: 0));
-        var run = PlanarSolve.Run(problem, mesh, onM1, [f]);
-        Assert.Single(run.Points);
-        Assert.True(double.IsFinite(run.Points[0].S[1, 0].Magnitude));
+        var m1Run = PlanarSolve.Run(problem, mesh, onM1, [f]);
+        Assert.Single(m1Run.Points);
+        Assert.True(double.IsFinite(m1Run.Points[0].S[1, 0].Magnitude));
 
-        _out.WriteLine($"M2 ports refused; M1 ports de-embed to S21 = {run.Points[0].S[1, 0]}.\n" +
-                       ex.Message);
+        // The two levels are DIFFERENT lines and must not come back with the same reference
+        // impedance — if they did, the interior electrostatics would not be seeing the height.
+        Complex zM1 = m1Run.Points[0].Calibrations[0].Zc, zM2 = m2.Calibrations[0].Zc;
+        _out.WriteLine($"M1 ports: Z_c = {zM1:F3} Ω, S21 = {m1Run.Points[0].S[1, 0]}");
+        _out.WriteLine($"M2 ports: Z_c = {zM2:F3} Ω, S21 = {m2.S[1, 0]}");
+        Assert.True((zM1 - zM2).Magnitude > 0.01 * zM1.Magnitude,
+            $"M1 and M2 came back with the same Z_c ({zM1} vs {zM2}); the electrostatics is not " +
+            "seeing the level height");
     }
 
     [Fact]

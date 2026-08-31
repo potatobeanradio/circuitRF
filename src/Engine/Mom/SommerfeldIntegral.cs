@@ -465,8 +465,9 @@ public static class SommerfeldIntegral
     /// pieces extracted below (the direct term and the quasi-static image) are the inverse
     /// transforms of <c>e^{−jk_z0|Δ|}/(2jk_z0)</c> and <c>Γ(∞)e^{−jk_z0Σ}/(2jk_z0)</c>, both
     /// referenced to the top half-space's own k_z0, and the substitutions that keep k_z0 out of
-    /// every denominator are referenced to it too. A buried source needs a different partition;
-    /// that is L9c's, when a buried source first exists.</para>
+    /// every denominator are referenced to it too. A buried source needs a different partition, and
+    /// it has one: <see cref="EvaluateInterior"/> at ω &gt; 0 (L9c), and MIM-4's
+    /// <c>InteriorStaticGreens</c> at ω = 0.</para>
     /// </summary>
     public static SommerfeldResult EvaluateLayered(LayeredSpectralGreens g, GreensKernel kernel,
                                                    double rhoM, double z, double zp,

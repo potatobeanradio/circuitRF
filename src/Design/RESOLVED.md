@@ -1,5 +1,45 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## MIM-4 — the stratified sub-feed refusal, retired (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-4-interior-static-greens.md`, gap 4 of the MIM series. The engine
+half is `src/Engine/Mom/RESOLVED.md` §MIM-4; what changed HERE is `PlanarExtractor`.
+
+**What was refused.** More than one dielectric entry between the ground plane and the lowest analysis
+level: *"L9's Green's function handles a stratified medium happily — what does not is the
+de-embedding … Merge the layers under the feed into one substrate entry, or wait for a static Green's
+function at interior heights."* That merge was **a change to the physics offered as a workaround** —
+two dielectrics in series under a trace are not one dielectric of either εᵣ — and the only reason for
+it was that `C_pul` came from an image series over one grounded slab. MIM-4's
+`InteriorStaticImages` removes the reason.
+
+**What it does now.** The layers are carried at their stated thicknesses (`BuildMediumStack` always
+built them; nothing there changed), and a note replaces the refusal.
+
+**Two things worth keeping.**
+
+1. **The `GroundedSlab` is now a SIZING object where the region is stratified, and the right average
+   for that job is the series-capacitance equivalent** — `h/ε_eff = Σ d_i/ε_i`. It still sets the
+   calibration standards' geometry, the branch-continuation β seed, the accelerated near-radius floor
+   and the mesh; none of those is the published reference impedance any more. It reduces to the single
+   layer's own εᵣ, bit for bit, when there is one, and it is what a wide line over the real stack
+   converges to: 21.3% / 10.3% / 3.2% / 1.1% difference from the true stratified `C_pul` at
+   W/h = 0.5 / 2 / 8 / 24. The note says out loud that the number is for sizing and never for the
+   reference impedance — a number the user can see and misread is exactly the shape of thing that
+   gets trusted silently.
+2. **A stratified medium turns the general kernel on at ONE level too.** The explicit `MediumStack`
+   used to be attached only when `levels.Count > 1`. Before this brief that was sufficient — a
+   stratified region under the lowest level was refused, and with one level there is nothing above it
+   in the stack, so a one-level problem was always one dielectric. Carrying the layers without also
+   changing this would have handed L8's one-slab kernel a stack it does not describe:
+   `generalMedium = levels.Count > 1 || mediumStack.LayerCount > 1`.
+
+**Held by** `tests/Ui.Tests/Em/StratifiedSubFeedExtractionTests.cs` — it extracts, both layers reach
+the medium, the sizing slab is the series equivalent while the medium is not, the note carries the
+layer names and says what the effective εᵣ is and is not for, and a ONE-dielectric region is
+unchanged (one layer, the slab's own material bit for bit, no note, and still the one-slab kernel
+path).
+
 ## MIM-6 — the level reference surface: a conductor's sheet learns which surface of its band it sits on (2026-08-30)
 
 `docs/sonnet-briefs/brief-em-mim-6-level-reference-surface.md`, the fifth gap of the MIM series —

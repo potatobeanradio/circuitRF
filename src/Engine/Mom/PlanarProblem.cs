@@ -227,10 +227,17 @@ public sealed record PlanarProblem(
 
     /// <summary>
     /// <b>Whether conductor level <paramref name="layerIndex"/> sits exactly on the top surface of
-    /// <see cref="Slab"/></b> — the one configuration for which L8d's quasi-static C_pul route (an
-    /// electrostatic image series over a grounded slab, <c>PlanarKernelTerms.StaticScalar</c>) is the
-    /// right electrostatic problem for a line on that level. See <see cref="PlanarDeembed"/> for the
-    /// refusal this gates.
+    /// <see cref="Slab"/></b> — a necessary condition for L8d's quasi-static C_pul route (an
+    /// electrostatic image series over a grounded slab, <c>PlanarKernelTerms.StaticScalar</c>) to be
+    /// the right electrostatic problem for a line on that level.
+    ///
+    /// <para><b>It is NOT sufficient, and since MIM-4 it no longer gates anything.</b> A single level
+    /// over a STRATIFIED sub-feed region also sits at the slab's height — the slab is built from the
+    /// same distance — so the height alone would put a two-dielectric board's reference impedance on
+    /// a one-dielectric series. <c>PlanarPortCalibrator</c> compares the MEDIUM structurally instead,
+    /// and a level this returns false for is now calibrated through
+    /// <c>PlanarKernelTerms.StaticScalarAt</c> rather than refused. Kept because it still says
+    /// something true and cheap that a caller may want to ask.</para>
     /// </summary>
     public bool LevelIsOnSlabTop(int layerIndex)
         => Math.Abs(LevelZ(layerIndex) - Slab.HeightM) <= 1e-12 * Math.Max(1.0, Slab.HeightM);

@@ -739,6 +739,12 @@ public sealed class LayeredDcimTests
         // L9e/M4 — UPDATED, NOT LOOSENED. These used to assert the refusals named the PHASE ("L9c").
         // L9c arrived and built the interior fit, so what the refusal must name now is the API that
         // does the job — Dcim.FitAtHeights — rather than a schedule that has expired.
+        //
+        // MIM-4 — the same rule applied a second time. LayeredStaticGreens' refusal used to point at
+        // "the full-wave path (LayeredSpectralGreens), which has no such restriction", which was odd
+        // advice for a STATIC problem and is now simply superseded: InteriorStaticGreens answers the
+        // ω = 0 problem at any height pair. The refusal itself stays and is correct — this class's own
+        // partition is referenced to the top half-space — so what moved is what it names.
         var stack = LayerStacks.Pcb3Layer;
         var g = new LayeredSpectralGreens(stack, 10e9);
         var m = Dcim.Fit(g, GreensKernel.ScalarPotential);
@@ -751,7 +757,7 @@ public sealed class LayeredDcimTests
                      ("SommerfeldIntegral.EvaluateLayered", "EvaluateInterior",
                       () => SommerfeldIntegral.EvaluateLayered(
                                 g, GreensKernel.ScalarPotential, 1e-3, inside, inside)),
-                     ("LayeredStaticGreens", "inside the stack",
+                     ("LayeredStaticGreens", "InteriorStaticGreens",
                       () => LayeredStaticGreens.ScalarPotential(stack, 1e-3, inside, inside)),
                  })
         {

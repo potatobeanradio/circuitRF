@@ -477,6 +477,42 @@ public sealed class PlanarKernelTerms
     }
 
     /// <summary>
+    /// <b>MIM-4 — <see cref="StaticScalar"/> for a level at ANY height in a general
+    /// <see cref="LayerStack"/>.</b> The decomposition has the same shape as the one-slab one because
+    /// the physics does: no logarithm and no linear term (the static kernel is even in ρ), a 1/ρ whose
+    /// coefficient is <see cref="InteriorStaticGreens.AsymptoticConstant"/> in closed form, and a
+    /// smooth remainder whose ρ = 0 value is the constant.
+    ///
+    /// <para><b>This does not replace <see cref="StaticScalar"/> and must not.</b> R-mlp-1's pattern:
+    /// the on-slab-top path stays on the code that shipped, bit for bit, and the new machinery
+    /// activates only where the old one refused. The two agree — <c>InteriorStaticImageTests</c>
+    /// compares this decomposition's <c>Inverse</c> and <c>Constant</c> against
+    /// <see cref="StaticScalar"/>'s own closed-form series — which is the check, not the wiring.</para>
+    /// </summary>
+    public static PlanarKernelTerms StaticScalarAt(LayerStack stack, double levelZ,
+                                                   InteriorStaticFitSettings? fit = null,
+                                                   PlanarExtractionOrder order = PlanarExtractionOrder.Constant,
+                                                   double rhoFloor = 0.0)
+        => StaticScalarAt(InteriorStaticImages.FitScalar(stack, levelZ, levelZ, fit), order, rhoFloor);
+
+    /// <inheritdoc cref="StaticScalarAt(LayerStack, double, InteriorStaticFitSettings, PlanarExtractionOrder, double)"/>
+    /// <param name="model">An already-fitted model — a caller that wants to read its residual
+    /// before committing to it (the de-embedding path does) fits once and passes it here.</param>
+    public static PlanarKernelTerms StaticScalarAt(InteriorStaticModel model,
+                                                   PlanarExtractionOrder order = PlanarExtractionOrder.Constant,
+                                                   double rhoFloor = 0.0)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        double smallest = double.PositiveInfinity;
+        foreach (var im in model.Images) smallest = Math.Min(smallest, im.Depth.Magnitude);
+
+        return new PlanarKernelTerms(model.Evaluate,
+                                     model.Singular / (4.0 * Math.PI), Complex.Zero,
+                                     model.SmoothAtZero, Complex.Zero,
+                                     order, rhoFloor, smallest);
+    }
+
+    /// <summary>
     /// The ω → 0 VECTOR kernel: free space plus one perfect negative image at depth 2h, for every εᵣ
     /// (L8a records why the dielectric does not enter the magnetostatic problem). Kept beside
     /// <see cref="StaticScalar"/> so the static harness can be built for both halves.

@@ -385,34 +385,65 @@ public static class PlanarExtractor
                 $"conductor '{signal.Layer.Name}', so the slab this kernel solves on has no material. " +
                 "Add the substrate to the stackup in the technology editor.", notes);
 
-        if (slabBands.Count > 1)
+        foreach (var b in slabBands)
+            if (!(b.Layer.Epsr >= 1))
+                return PlanarExtractionResult.No(
+                    $"Stackup layer '{b.Layer.Name}' is under the lowest analysis level but has εr = " +
+                    $"{b.Layer.Epsr:G4}. Relative permittivity is ≥ 1 — set it in the technology " +
+                    "editor's Stackup tab (FR-4 is 4.4, GaAs 12.9).", notes);
+
+        // ── MIM-4 — the STRATIFIED SUB-FEED REGION IS CARRIED, not refused ────────────────────
+        //
+        // The refusal that stood here said a stratified region under the feed "would renormalise
+        // every published s-parameter by the wrong reference", because C_pul came from an image
+        // series over ONE grounded slab, and told the user to "merge the layers under the feed".
+        // That merge was a change to the physics dressed as a workaround. The medium built below
+        // has always carried the real layers; what could not was the de-embedding, and MIM-4's
+        // InteriorStaticImages closes it — PlanarSolve solves D7's electrostatics at the port
+        // level's own z, in the real stack.
+        //
+        // The GroundedSlab below is still built, and is now purely a SIZING object: the calibration
+        // standards' geometry, the branch-continuation β seed, the accelerated near-radius floor,
+        // and the mesh. None of those is the published reference impedance any more. Where the
+        // sub-feed region is stratified it is the SERIES-CAPACITANCE equivalent — h/ε_eff =
+        // Σ d_i/ε_i, exactly the electrostatic equivalent of the layers in series, which is the
+        // right average for every one of those uses and reduces to the single layer's own εᵣ, bit
+        // for bit, when there is only one.
+        var slabLayer = slabBands[0];
+        EmMaterial slabMaterial;
+        if (slabBands.Count == 1)
         {
-            // L9d narrows what this is ABOUT rather than deleting it: the general stack now carries
-            // as many dielectrics as it likes ABOVE the lowest level, but the de-embedding's Z_c is
-            // still γ/(jωC_pul) with C_pul from an electrostatic IMAGE SERIES over one grounded slab,
-            // and a stratified region between ground and the lowest metal is not that problem.
+            slabMaterial = new EmMaterial(slabLayer.Layer.Epsr, slabLayer.Layer.TanD,
+                                          slabLayer.Layer.Mur <= 0 ? 1.0 : slabLayer.Layer.Mur);
+        }
+        else
+        {
+            double invEps = 0, thickness = 0, tanWeighted = 0, muWeighted = 0;
+            foreach (var b in slabBands)
+            {
+                double d = b.TopM - b.BottomM;
+                if (!(d > 0)) continue;
+                invEps      += d / b.Layer.Epsr;
+                tanWeighted += d * b.Layer.TanD;
+                muWeighted  += d * (b.Layer.Mur <= 0 ? 1.0 : b.Layer.Mur);
+                thickness   += d;
+            }
+            double epsEff = thickness > 0 && invEps > 0 ? thickness / invEps : slabLayer.Layer.Epsr;
+            slabMaterial = new EmMaterial(epsEff,
+                                          thickness > 0 ? tanWeighted / thickness : slabLayer.Layer.TanD,
+                                          thickness > 0 ? muWeighted / thickness : 1.0);
+
             var names = string.Join(", ", slabBands.Select(b => $"'{b.Layer.Name}'"));
-            return PlanarExtractionResult.No(
+            notes.Add(
                 $"There are {slabBands.Count} dielectric layers between the ground plane and the " +
-                $"lowest analysis level '{signal.Layer.Name}' ({names}). L9's Green's function handles " +
-                "a stratified medium happily — what does not is the de-embedding: Z_c is γ/(jωC_pul) " +
-                "and C_pul comes from an electrostatic image series over ONE grounded slab, so a " +
-                "stratified region UNDER the feed would renormalise every published s-parameter by " +
-                "the wrong reference. Dielectrics ABOVE the lowest level are fine and are carried. " +
-                "Merge the layers under the feed into one substrate entry, or wait for a static " +
-                "Green's function at interior heights (L9c's own un-run Tier 4).", notes);
+                $"lowest analysis level '{signal.Layer.Name}' ({names}); all of them are carried into " +
+                "the medium at their stated thicknesses, and the de-embedding's C_pul is solved in " +
+                $"that medium at the level's own height. εᵣ = {epsEff:G4} — the series-capacitance " +
+                "equivalent of those layers — is used only to SIZE the calibration standards, the " +
+                "mesh and the phase seed, never as the published reference impedance.");
         }
 
-        var slabLayer = slabBands[0];
-        if (!(slabLayer.Layer.Epsr >= 1))
-            return PlanarExtractionResult.No(
-                $"Stackup layer '{slabLayer.Layer.Name}' is the substrate but has εr = " +
-                $"{slabLayer.Layer.Epsr:G4}. Relative permittivity is ≥ 1 — set it in the technology " +
-                "editor's Stackup tab (FR-4 is 4.4, GaAs 12.9).", notes);
-
-        var slab = new GroundedSlab(slabHeight,
-            new EmMaterial(slabLayer.Layer.Epsr, slabLayer.Layer.TanD,
-                           slabLayer.Layer.Mur <= 0 ? 1.0 : slabLayer.Layer.Mur));
+        var slab = new GroundedSlab(slabHeight, slabMaterial);
 
         // The metal must be ON the slab's top surface — L8a's own refusal, asked here rather than
         // re-derived, so the two cannot drift.
@@ -539,12 +570,21 @@ public static class PlanarExtractor
 
         var vias = BuildVias(viaShapes, regionViaPolys, levels, perDbu, notes, groundBand);
 
+        // MIM-4 — a STRATIFIED medium turns the general kernel on even at one level. Before this
+        // brief that case could not arise: a stratified region under the lowest level was refused at
+        // extraction, and with one level there is nothing above it in the stack, so a one-level
+        // problem was always one dielectric. Now that the layers are carried, handing L8's one-slab
+        // kernel a stack it does not describe would be exactly the plausible-wrong-answer failure
+        // L9d's own D5 note guards against. A genuinely single-slab problem still yields
+        // LayerCount == 1 here and stays on the shipped path, bit for bit.
+        bool generalMedium = levels.Count > 1 || mediumStack.LayerCount > 1;
+
         var problem = new PlanarProblem(
             conductorLayers,
             slab,
             maxFrequencyHz,
             alternatives,
-            levels.Count > 1 ? mediumStack : null,
+            generalMedium ? mediumStack : null,
             vias.Count > 0 ? vias : null);
 
         if (levels.Count > 1)

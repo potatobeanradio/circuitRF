@@ -367,6 +367,48 @@ public static class PlanarDeembed
         return (c2 - c1) / dl;
     }
 
+    /// <summary>
+    /// <b>MIM-4 — the same differencing, for a standard on a level at ANY height in a general
+    /// stack.</b> Only the electrostatic kernel changes: <see cref="PlanarKernelTerms.StaticScalarAt"/>
+    /// in place of the one-slab image series, at the level's own z. The two lines, the differencing,
+    /// the end-effect cancellation and every guard are the ones above.
+    ///
+    /// <para><b>The overload above is untouched and is what the on-slab-top path still calls</b> —
+    /// R-mlp-1. This one is reached only where <c>PlanarSolve</c> used to throw.</para>
+    /// </summary>
+    /// <param name="stack">The problem's own medium.</param>
+    /// <param name="levelZ">The z of the conductor level the standards sit on (D3: one level).</param>
+    /// <param name="referenceHeightM">
+    /// The height the ACCELERATED route's near-radius floor is sized from — <c>2h</c> in
+    /// <see cref="PlanarStaticAim"/>. For a level over a ground plane that is its own distance to the
+    /// plane, which is exactly <c>slab.HeightM</c> on the case the overload above serves; it is a
+    /// mesh-radius heuristic and not a physical claim about the medium, which is why it is a separate
+    /// argument rather than derived from <paramref name="stack"/>.
+    /// </param>
+    /// <param name="model">
+    /// The fitted interior model, when the caller has already built one to read its residual. Null
+    /// fits one here.
+    /// </param>
+    public static double CapacitancePerMetre(PlanarStandard shortStd, PlanarStandard longStd,
+                                             LayerStack stack, double levelZ, double referenceHeightM,
+                                             PlanarFillSettings? settings = null,
+                                             PlanarFillCores? shortCores = null,
+                                             PlanarFillCores? longCores = null,
+                                             InteriorStaticModel? model = null)
+    {
+        ArgumentNullException.ThrowIfNull(stack);
+        var terms = PlanarKernelTerms.StaticScalarAt(
+            model ?? InteriorStaticImages.FitScalar(stack, levelZ, levelZ));
+
+        double c1 = StaticCapacitance(shortStd.Mesh, terms, settings, shortCores, referenceHeightM);
+        double c2 = StaticCapacitance(longStd.Mesh,  terms, settings, longCores, referenceHeightM);
+        double dl = longStd.LengthM - shortStd.LengthM;
+
+        if (!(dl > 0))
+            throw new InvalidOperationException("The two calibration standards have the same length.");
+        return (c2 - c1) / dl;
+    }
+
     /// <summary>Z_c = γ/(jωC_pul) — the standard γ-and-C route. See the file header for what it
     /// assumes and for why kernel A is its oracle rather than its input.</summary>
     public static Complex CharacteristicImpedance(Complex gamma, double cPerMetre, double fHz) =>

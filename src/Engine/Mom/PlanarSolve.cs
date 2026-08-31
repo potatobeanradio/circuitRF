@@ -302,6 +302,7 @@ public sealed class PlanarPortCalibrator
     private readonly double[]           _deltas;
     private readonly double             _shortLength;
 
+    private readonly InteriorStaticModel? _interiorModel;
     private double   _cPerMetre = double.NaN;   // quasi-static: computed once, reused (D7)
     private double   _prevBeta  = double.NaN;
     private Complex? _prevA21;
@@ -335,15 +336,71 @@ public sealed class PlanarPortCalibrator
     /// </summary>
     private readonly PlanarLevels? _standardLevels;
 
+    /// <summary>
+    /// <b>MIM-4 — the medium C_pul's electrostatics is taken from, when that medium is not the
+    /// slab.</b> Null keeps this calibrator on the shipped one-slab image series, bit for bit, which
+    /// is what every port on a genuine one-slab problem still gets (R-mlp-1). Non-null routes D7's
+    /// static differencing through <see cref="InteriorStaticImages"/> at <c>_standardLevelZ</c>.
+    /// <see cref="DescribedByTheSlab"/> makes the choice.
+    /// </summary>
+    private readonly LayerStack? _interiorStack;
+    private readonly double      _standardLevelZ;
+
+    /// <summary><b>The fitted interior model's own spectral residual</b>, or NaN on the one-slab
+    /// path. Carried so a run can report the quality of the electrostatics its reference impedance
+    /// rests on rather than leaving it to be assumed.</summary>
+    public double InteriorFitResidual { get; } = double.NaN;
+
+    /// <summary>
+    /// <b>Whether the shipped one-slab image series IS this level's electrostatic problem.</b>
+    ///
+    /// <para>Being at <c>slab.HeightM</c> is NOT enough on its own and that is the whole point: a
+    /// single level over a STRATIFIED sub-feed region sits at the top of its medium and at the
+    /// slab's height, and the slab it is compared against is a series-capacitance average the
+    /// extractor built to size a mesh with. Answering "yes" there would put a two-dielectric board's
+    /// reference impedance on a one-dielectric series — plausibly, and wrongly. So the medium is
+    /// compared structurally: one layer, of the slab's own material and height, PEC below, half-space
+    /// above, and the level on its top surface.</para>
+    /// </summary>
+    private static bool DescribedByTheSlab(LayerStack stack, GroundedSlab slab, double levelZ)
+    {
+        if (stack.LayerCount != 1) return false;
+        if (stack.Bottom.Kind != TerminationKind.Pec) return false;
+        if (stack.Top.Kind != TerminationKind.HalfSpace) return false;
+
+        double tol = 1e-12 * Math.Max(1.0, slab.HeightM);
+        var layer = stack.Layers[0];
+        if (Math.Abs(layer.ThicknessM - slab.HeightM) > tol) return false;
+        if (!double.IsNaN(levelZ) && Math.Abs(levelZ - slab.HeightM) > tol) return false;
+
+        var m = layer.Material;
+        return Math.Abs(m.EpsR - slab.Material.EpsR) <= 1e-12 * Math.Max(1.0, slab.Material.EpsR)
+            && Math.Abs(m.TanD - slab.Material.TanD) <= 1e-12
+            && Math.Abs(m.MuR  - slab.Material.MuR)  <= 1e-12
+            && Math.Abs(stack.Top.Material.EpsR - 1.0) <= 1e-12;
+    }
+
     public PlanarPortCalibrator(PlanarPortResolution port, GroundedSlab slab,
                                 double fLoHz, double fHiHz,
                                 PlanarCalibrationSettings? calibration = null,
                                 PlanarFillSettings? fill = null,
                                 double standardLevelZ = double.NaN,
-                                IReadOnlyList<PlanarStandard>? standards = null)
+                                IReadOnlyList<PlanarStandard>? standards = null,
+                                LayerStack? mediumStack = null)
     {
         _slab = slab;
         _standardLevels = double.IsNaN(standardLevelZ) ? null : new PlanarLevels([standardLevelZ]);
+        _standardLevelZ = standardLevelZ;
+
+        // The decision is made ONCE, here, and it is the only thing that separates the two C_pul
+        // routes.
+        _interiorStack = mediumStack is not null && !DescribedByTheSlab(mediumStack, slab, standardLevelZ)
+                       ? mediumStack : null;
+        if (_interiorStack is not null)
+        {
+            _interiorModel = InteriorStaticImages.FitScalar(_interiorStack, standardLevelZ, standardLevelZ);
+            InteriorFitResidual = _interiorModel.Residual;
+        }
 
         var set = standards is null
                 ? PlanarCalibration.BuildSet(port, slab, fLoHz, fHiHz, calibration)
@@ -435,10 +492,18 @@ public sealed class PlanarPortCalibrator
         // leak — the static differencing needs the two EXTREME lengths, not the one this frequency
         // solved — but it does mean the longest standard is cored on every de-embedded run.
         if (double.IsNaN(_cPerMetre))
-            _cPerMetre = PlanarDeembed.CapacitancePerMetre(Standards[0], Standards[^1], _slab,
-                                                           _standards[0].Settings,
-                                                           _standards[0].Cores,
-                                                           _standards[^1].Cores);
+            _cPerMetre = _interiorStack is { } medium
+                ? PlanarDeembed.CapacitancePerMetre(Standards[0], Standards[^1], medium,
+                                                    _standardLevelZ,
+                                                    _standardLevelZ - medium.InterfaceZ[0],
+                                                    _standards[0].Settings,
+                                                    _standards[0].Cores,
+                                                    _standards[^1].Cores,
+                                                    _interiorModel)
+                : PlanarDeembed.CapacitancePerMetre(Standards[0], Standards[^1], _slab,
+                                                    _standards[0].Settings,
+                                                    _standards[0].Cores,
+                                                    _standards[^1].Cores);
 
         return new PlanarPortCalibration(
             portNumber, g, box,
@@ -737,6 +802,19 @@ public static class PlanarSolve
         new(Complex.Zero, Complex.Zero, Complex.One, 0, 0);
 
     /// <summary>
+    /// <b>MIM-4 — how bad the interior electrostatic fit may be before a de-embedded buried-level
+    /// port is refused.</b> A relative spectral residual, so it is comparable across stacks.
+    ///
+    /// <para>Sized from what the fit actually achieves rather than from taste: 3e-12 on a one-slab
+    /// stack, 2e-10 on a three-layer board, 2e-10 on the shipped thin-film MIM stack whose layers
+    /// span three orders of magnitude — and the spatial function agrees with direct Hankel
+    /// integration to 1e-8 at those residuals. 1e-6 is four decades of headroom above every stack
+    /// measured, which makes this a guard against a fit that has genuinely failed rather than a
+    /// tolerance anyone has to tune.</para>
+    /// </summary>
+    public const double InteriorCPulResidualCeiling = 1e-6;
+
+    /// <summary>
     /// L8d's own entry point, unchanged: a single conductor level on one grounded slab. Delegates to
     /// the problem-taking overload with the one-level problem this describes, so both paths share
     /// one implementation and the one-level one still fits through <see cref="PlanarKernelPair"/>.
@@ -948,34 +1026,22 @@ public static class PlanarSolve
                     // ── L9d/D3 — a standard is a SINGLE-LEVEL uniform line on the port's own level,
                     //    and Z_c's quasi-static C_pul is what bounds where that is legitimate.
                     //
-                    // PlanarDeembed differences the two standards' STATIC capacitances, and the only
-                    // static Green's function this repository has is an electrostatic image series
-                    // over a GROUNDED SLAB (PlanarKernelTerms.StaticScalar). That is the right
-                    // electrostatic problem for a line ON the slab's own top surface and the wrong
-                    // one for a line buried inside the stack — where the return path, the image
-                    // depths and the whole series change. The de-embedded S is REFERENCED to Z_c, so
-                    // a wrong C_pul is not a diagnostic inaccuracy: it renormalises every published
-                    // s-parameter. Refused by name rather than reported.
+                    // **MIM-4 retired the refusal that stood here.** It said a buried level "needs a
+                    // static Green's function at INTERIOR heights ... and nothing else in this
+                    // repository provides it". InteriorStaticImages now does, so the port is
+                    // CALIBRATED rather than refused: PlanarPortCalibrator takes the problem's own
+                    // medium and D7's static differencing runs at the level's own z. The on-slab-top
+                    // path is untouched and stays on the shipped image series bit for bit — the
+                    // calibrator makes that choice in one place, from the level's height.
+                    //
+                    // What is checked instead is the thing that can actually go wrong now: the
+                    // interior electrostatics is a FIT, and a fit that did not converge would
+                    // renormalise every published s-parameter by a wrong reference just as surely as
+                    // the wrong series would have. Its own measured residual is the gate, below.
                     // (An internal delta gap never reaches here — it took the IsDeembeddable
-                    // continue above — and that is right: this refusal is about C_pul deciding the
-                    // Z_c the answer is REFERENCED to, and an internal port is referenced to its own
-                    // declared Z0 instead. A buried internal port is therefore not refused by it.)
-                    if (general && !problem.LevelIsOnSlabTop(ports[i].LayerIndex))
-                        throw new InvalidOperationException(
-                            $"Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at " +
-                            $"z = {fmt(problem.LevelZ(ports[i].LayerIndex))}, which is not " +
-                            $"the top surface of the grounded slab ({fmt(slab.HeightM)}). " +
-                            "De-embedding references the answer to the line's own Z_c = γ/(jωC_pul), " +
-                            "and C_pul comes from differencing two electrostatic solves that use an " +
-                            "IMAGE SERIES over the slab — correct for a line on the slab's top surface, " +
-                            "and not the right electrostatic problem for a level buried inside the " +
-                            "stack. Feeding it anyway would renormalise every published s-parameter by " +
-                            "the wrong reference. A buried-level port needs a static Green's function " +
-                            "at INTERIOR heights — LayeredStaticGreens is referenced to the top " +
-                            "half-space and refuses one by name, and nothing else in this repository " +
-                            "provides it (see src/Engine/Mom/CLAUDE.md §L9c for what building it " +
-                            "would take). Bring the feed out on the level that sits " +
-                            "on the slab, or turn de-embedding off and read the raw solve.");
+                    // continue above — and that is right: this is about C_pul deciding the Z_c the
+                    // answer is REFERENCED to, and an internal port is referenced to its own declared
+                    // Z0 instead.)
 
                     sw.Restart();
 
@@ -1049,7 +1115,26 @@ public static class PlanarSolve
                     var cal = new PlanarPortCalibrator(
                         ports[i], slab, fLo, fHi, st.Calibration, fillSt,
                         standardLevelZ: general ? problem.LevelZ(ports[i].LayerIndex) : double.NaN,
-                        standards: stdSet);
+                        standards: stdSet,
+                        mediumStack: general ? problem.EffectiveStack : null);
+
+                    // MIM-4 — the interior electrostatics is fitted, so its quality is asked about
+                    // rather than assumed. R-mom-17: a fit this poor is refused BY NAME at setup,
+                    // not carried into a published reference impedance.
+                    if (cal.InteriorFitResidual > InteriorCPulResidualCeiling)
+                        throw new InvalidOperationException(
+                            $"Port {ports[i].Number} sits on conductor level {ports[i].LayerIndex} at " +
+                            $"z = {fmt(problem.LevelZ(ports[i].LayerIndex))}, an interior height of " +
+                            $"this stack, and the static Green's function there did not fit: its " +
+                            $"spectral residual is {cal.InteriorFitResidual:E2} against a ceiling of " +
+                            $"{InteriorCPulResidualCeiling:E0}. De-embedding references the answer to " +
+                            "the line's own Z_c = γ/(jωC_pul), so a bad electrostatic fit renormalises " +
+                            "every published s-parameter rather than degrading one number. Simplify " +
+                            "the medium under this level (merging two dielectrics of nearly equal εᵣ " +
+                            "is exact, not an approximation), bring the feed out on a level with a " +
+                            "simpler stack beneath it, or turn de-embedding off and read the raw " +
+                            "solve — those s-parameters include the port discontinuity and are for " +
+                            "diagnostics only.");
                     setupMs += sw.Elapsed.TotalMilliseconds;
                     cores  += cal.MeshCount;
                     standards += cal.MeshCount;

@@ -1799,3 +1799,177 @@ mixed kernel about a via against a horizontal basis. Recorded so it is not re-fo
 - **A de-embedded reading on the shipped stack is still MIM-4's.** Milestone 3 had to truncate the
   stack at the upper plate to get a de-embedded port at all; on the real MIM stack both plate levels
   are buried and `LevelIsOnSlabTop` refuses. That is §7's "all of Part B", unchanged.
+
+---
+
+# MIM-4 — the interior-height static Green's function (brief-em-mim-4-interior-static-greens.md, 2026-08-30)
+
+§7's "all of Part B", built. Three refusals fenced the de-embedding path in, and every realistic MIM
+run — whose feed arrives on upper metal — hit one of them: `PlanarSolve`'s throw for a de-embeddable
+edge port off the slab top, `PlanarExtractor`'s refusal of more than one dielectric under the lowest
+level, and `LayeredStaticGreens` / `DcimModel.Evaluate` / `SommerfeldIntegral.EvaluateLayered`
+refusing interior sources. **The first two are retired; the third is narrowed to what is still true
+of those three classes.**
+
+## The verdict, in one paragraph
+
+At ω = 0 the layered problem is a **Sturm-Liouville problem in z**, not a reflection referenced to a
+region, and that reframing is the whole of milestone 1:
+`d/dz(P dG̃/dz) − k²P G̃ = −2k·δ(z−z′)` with `P = ε*` (scalar) or `1/µ` (vector), solved as
+`G̃ = −2k·ψ↓(z_<)ψ↑(z_>)/W`. Source and observer may sit anywhere. The spatial inverse is a
+**two-level Prony image fit** — `∫e^{−bk}J₀(kρ)dk = 1/√(ρ²+b²)`, so a fit of the spectral remainder
+IS an image expansion — with the sum rule imposed exactly. It reproduces the shipped one-slab series
+to 1e-10 out to ρ = h, agrees with direct Hankel integration to 1e-8 at interior heights on a
+0.2 µm-over-100 µm thin-film stack, and evaluates in **0.34 µs per ρ against the shipped image
+series' own 2.5 µs**. `C_pul` through it reproduces the shipped `C_pul` to **3.5e-12** where both
+apply, and a uniform line on a buried level de-embeds to a matched section. The shipped on-slab-top
+path is untouched.
+
+## Findings
+
+**1. The inter-region scale factor has an exact cancellation, and without it the formulation is
+numerically dead at small k.** Matching ψ↓ across interface *i* divides by `1 + Γ↓_{i−1}τ_i²`, which
+is ψ↓'s own value at the top of a layer — and over a PEC floor that vanishes as k → 0 (Γ↓(0) = −1
+through any stack, so it is `1 − e^{−2kd}`), while the numerator vanishes with it. 0/0 at k = 0
+exactly, small/small beside it, with relative error the reciprocal of the layer's electrical
+thickness. Substituting the reflection recursion collapses it analytically:
+
+```
+    1 + Γ↓_i = (1 + r_i)(1 + Γ↓_{i−1}τ_i²) / (1 + r_i Γ↓_{i−1}τ_i²)
+```
+
+so the vanishing factor cancels and what is left is `τ_{i+1}(1+r_i)/(1 + r_iΓ↓_{i−1}τ_i²)`, whose
+denominator is bounded below by `1 − |r_i| > 0` for every passive stack. Gated at k·H = 1e-9 on a
+cross-region pair, to 1e-15 absolute.
+
+**2. Every exponential is written as a decay over its own region, and that matters more here than in
+the full-wave kernel.** `e^{−k(z_hi−z)}` and `e^{−k(z−z_lo)}`, never `e^{+kz}`. The static integrand
+is killed by nothing but those exponentials, so k runs out to tens of reciprocal layer thicknesses on
+a thin-film stack — 1e8/m on the shipped MIM stackup — and the obvious form
+`ψ↓ψ↑/(Pτ(1−Γ↓Γ↑τ²))` overflows. The same-region product is expanded so the layer's own τ cancels
+against the Wronskian's algebraically rather than by division; the four terms that come out are the
+four classical distances (direct, floor image, ceiling image, one round trip), each with a
+non-negative exponent by construction.
+
+**3. THE FIT'S SPECTRAL RESIDUAL DOES NOT BOUND ITS SPATIAL FAR FIELD, and the sum rule is only half
+of why.** Measured, not assumed. With an unconstrained least squares the spectrum was exact to
+**2.4e-15** and the spatial function was **8.5e-6** wrong at ρ = 1000 h. Two separate causes, found
+in order:
+
+- The 1/ρ tail's coefficient is `c_∞ + Σa`, which over a ground plane is exactly **zero** — a
+  grounded structure's potential falls as a dipole. An unconstrained fit gets that cancellation only
+  to its own residual. It is now imposed exactly, by eliminating one column
+  (`a_p = rule − Σ_{j≠p}a_j`, the deepest image, so `φ_j − φ_p` is `φ_j` almost everywhere and the
+  conditioning is the unconstrained problem's). Verified to 1e-16 — **and it did not move the far
+  field at all**, which is what pointed at the second cause.
+- The far field is set by the **second moment `Σ a b²`**, and the images cancel by a factor of ~45
+  there. That is a k-derivative-like quantity at k = 0, and both Prony grids are uniform, so their
+  first step IS their resolution near k = 0: the spatial far field at ρ is governed by k ≈ 1/ρ, which
+  for any ρ past a few stack heights falls INSIDE that first step. A third sample block — geometric,
+  40 points over five decades, added to the AMPLITUDE least squares only (Prony needs uniform
+  samples, so it never sees it) — cut the far-field error **10–60×**, to 5e-7…7e-6.
+
+What is left is a fractional error in that 45× cancellation, and it is negligible in the only terms
+that matter: at ρ = 1000 h the kernel has fallen 1.6e9 from its ρ = h value, so 1e-6 of it is
+**4e-14 of the near-field scale that sets a capacitance**. Constraining the second moment as well as
+the sum is the named remedy if it ever binds; it needs `R″(0)` to more digits than a difference
+quotient gives, and it is not built.
+
+**4. Fit versus quadrature: quadrature is the loser, by four to six orders of magnitude, and it stays
+as the oracle.** The brief asked for the decision to be measured. Per ρ: the image model costs
+**0.34 µs** (9–27 images), `PlanarKernelTerms.StaticScalar`'s own shipped series costs **2.5 µs**
+(130 images on GaAs), and `InteriorStaticGreens.PotentialByQuadrature` costs **1–270 ms**, rising
+with ρ because the J₀ partition does. The fit costs 16–78 ms **once** per level. That is not close,
+and the fill's radial table wants ~10⁴–10⁶ samples. The reference integrator is kept because it
+shares no approximation with the model — its own partition is geometric as well as at the Bessel
+zeros, because the integrand carries two length scales that differ by three orders of magnitude on a
+thin-film stack and a uniform partition sized for the finer one costs a quarter of a million panels —
+and it **refuses by name** rather than grinding when the partition it would need is absurd.
+
+**5. The fit recovers the exact physical images where they exist, which is the strongest single
+check that it is an image expansion and not a curve fit.** On the FR-4 slab the fitted depths come
+back at b/2h = 1.000, 2.000, 3.006, … with amplitudes matching `−(1+K)(1−K)K^{n−1}` (−0.6035, 0.3800,
+−0.2466 against −0.6036, 0.3800, −0.2393); the tail of the 130-term series is carried by a handful of
+complex images. Nobody told it about `2nh`.
+
+**6. THE C_pul ROUTE MUST BE CHOSEN BY COMPARING THE MEDIUM, NOT THE LEVEL'S HEIGHT — and the case
+that proves it is the one this brief created.** A single level over a STRATIFIED sub-feed region sits
+at the top of its medium AND at `slab.HeightM`, because the extractor's sizing slab is built from
+that same distance. A height test would answer "on the slab top" there and put a two-dielectric
+board's published reference impedance on a one-dielectric image series — plausibly and wrongly, which
+is the exact failure the retired refusal existed to prevent. `PlanarPortCalibrator.DescribedByTheSlab`
+compares structurally instead: one layer, of the slab's own material and height, PEC below,
+half-space above, level on its top surface. `PlanarProblem.LevelIsOnSlabTop` still says something
+true and now gates nothing.
+
+**6b. That test also changes an answer the old code got wrong, and the change is deliberate and
+named.** A MULTI-LEVEL problem whose port sits on the slab top but has a dielectric ABOVE that level
+— an encapsulation, an interlayer — used to pass `LevelIsOnSlabTop` and take the one-slab image
+series, which ignores everything above the metal. It now takes the interior route in the real stack.
+Measured on the MMIC two-level fixture (100 µm GaAs + 3 µm εᵣ 2.7): the M1 port's Z_c is 43.34 Ω
+where the one-slab series had it elsewhere, and the M2 port's is 48.78 Ω. **This is the one place
+this brief perturbs a previously-passing de-embedded result**, and it is a correction rather than a
+regression: the old value was the electrostatics of a bare slab in air, which that structure is not.
+No existing gate moved — the whole `Category=Benchmark` multi-level and MIM tier passes — and the
+alternative (keeping the height test so the wrong answer stays bit-identical) was rejected because
+finding 6 shows the height test is not a correct rule in the first place.
+
+**7. A stratified medium turns the general kernel on at ONE level too.** Before this brief that case
+could not arise — a stratified region under the lowest level was refused at extraction, and with one
+level there is nothing above it — so `PlanarExtractor` attached an explicit `MediumStack` only for a
+multi-level problem. Carrying the layers without that change would have handed L8's one-slab kernel a
+stack it does not describe. `generalMedium = levels.Count > 1 || mediumStack.LayerCount > 1`.
+
+**8. The extractor's `GroundedSlab` is now purely a SIZING object where the region is stratified, and
+the right average for that job is the series-capacitance equivalent.** It still sets the calibration
+standards' geometry, the branch-continuation β seed, the accelerated near-radius floor and the mesh —
+none of which is the published reference impedance any more. `h/ε_eff = Σ d_i/ε_i` is the exact
+electrostatic equivalent of layers in series, reduces to the single layer's own εᵣ bit for bit, and
+is what a wide line over the real stack converges to: **21.3% / 10.3% / 3.2% / 1.1%** difference from
+the true stratified `C_pul` at W/h = 0.5 / 2 / 8 / 24. The note says out loud that the number is for
+sizing and never for the reference impedance.
+
+**9. Comparing two independently calibrated runs is not a de-embedding gate, and the first version of
+G2 was one.** A₂₁'s SIGN is a continuation carried from the previous frequency; at a single frequency
+there is nothing to continue from, so two `PlanarSolve.Run`s of the same cross-section landed on
+opposite signs and their S₂₁ differed by exactly π (expected `<0.902, −0.425>`, got
+`<−0.877, 0.461>`, magnitudes agreeing to 0.6%). Their Z_c also differed by 5.6%, because a standard
+reproduces its DUT's own longitudinal gridlines (D4) and the two DUTs are different lengths. Neither
+is a fact about the interior electrostatics. The cascade identity is gated the way `T4_2` gates it on
+the slab top: ONE calibration, applied to both lines.
+
+## What was built
+
+| Where | What |
+|---|---|
+| `Mom/InteriorStaticGreens.cs` | **New.** The ω = 0 spectral kernel at arbitrary (z, z′) for a general `LayerStack` — the cascade (`Build`), `Spectral`, `AsymptoticConstant` (the exact 1/ρ coefficient), `SnapToInterface`, `CanEvaluateAt` (the one refusal left: a point inside a solid wall), and `PotentialByQuadrature`, the reference inverse transform |
+| `Mom/InteriorStaticImages.cs` | **New.** `InteriorStaticModel` (an exact 1/ρ term plus complex images, `Evaluate`, `SmoothAtZero`, `Residual`) and the two-level Prony fit with the constrained amplitude solve and the low-k block |
+| `Mom/SingularExtraction.cs` | `PlanarKernelTerms.StaticScalarAt` — `StaticScalar`'s shape for any level at any height. `StaticScalar` untouched |
+| `Mom/PlanarDeembed.cs` | `CapacitancePerMetre`'s `LayerStack` + `levelZ` overload. The `GroundedSlab` overload is byte-identical |
+| `Mom/PlanarSolve.cs` | The buried-level throw **retired**; `PlanarPortCalibrator` takes `mediumStack`, chooses its C_pul route via `DescribedByTheSlab`, and reports `InteriorFitResidual`. `InteriorCPulResidualCeiling = 1e-6` is what is refused in its place |
+| `Design/Layout/Em/PlanarExtractor.cs` | The stratified-sub-feed refusal **retired** — the layers are carried, the sizing slab is the series equivalent, and a note says which is which. `generalMedium` attaches the stack at one level too |
+| `Mom/LayeredMedium.cs`, `Dcim.cs`, `SommerfeldIntegral.cs`, `PlanarStaticAim.cs`, `PlanarProblem.cs` | Refusal wording swept: each now names the object that answers, and `DcimModel.Evaluate`'s stale "no static Green's function at interior heights in this repository" clause is gone |
+| `tests/Engine.Tests/Mom/InteriorStaticSpectralTests.cs` | **New**, 13 routine tests: symmetry, flux continuity across every interface, the wall refusal, the exact reductions, split invariance at 1e-14, `1 + Γ_e`, agreement with `LayeredStaticGreens`, and an INDEPENDENT finite-volume solve of the same ODE gated on Richardson behaviour as well as on error |
+| `tests/Engine.Tests/Mom/InteriorStaticImageTests.cs` | **New**, 14 routine tests: the shipped series, the sum rule, `LayeredStaticGreens`, direct Hankel integration at interior heights and on the thin-film stack, the vector reduction, the extraction constants, and the integrator's own refusal |
+| `tests/Engine.Tests/Mom/InteriorCPulTests.cs` | **New**, 6 routine tests: the two kernels on the one problem where both apply, split invariance, the series-capacitance limit (both halves), the route selection, and every stack's fit residual against the ceiling |
+| `tests/Engine.Tests/Mom/InteriorDeembedGateTests.cs` | **New**, 2 `Category=Benchmark` (45 s together): a uniform line on a buried level de-embeds to a matched section, and the cascade identity there |
+| `tests/Ui.Tests/Em/StratifiedSubFeedExtractionTests.cs` | **New**, 4 routine tests: the stratified region extracts, both layers reach the medium, the sizing slab is the series equivalent and the medium is not, the note replaces the refusal, and one dielectric is unchanged |
+| `tests/Engine.Tests/Mom/MultiLevelPortTests.cs` | `M3_2` inverted rather than deleted — the port that was refused now de-embeds, and M1 and M2 must not come back with the same Z_c |
+
+## Not done, on purpose
+
+- **The second-moment constraint** (finding 3). Named, measured, not built: the absolute error it
+  would remove is 4e-14 of the near-field scale.
+- **A static kernel for a CROSS-LEVEL cell pair.** `PlanarStaticAim.Build` and
+  `PlanarDeembed.StaticCapacitance` take ONE kernel at ONE height pair; a multi-level static solve
+  needs a per-pairing SET, the way `PlanarKernelSet` carries the full-wave one. A calibration standard
+  is always single-level (D3), so nothing reaches it — the refusal is narrowed to say that instead of
+  "this repository does not have it".
+- **`LayeredStaticGreens` still refuses interior heights**, and correctly: its own partition (two
+  closed terms, and a decay length its quadrature is sized from) is referenced to the top half-space.
+  It is an oracle, `InteriorStaticGreens` reproduces it wherever both are defined, and rewriting it
+  would delete the independent check.
+- **A de-embedded reading of the shipped MIM capacitor's own capacitance.** MIM-4 removes the port
+  refusal that blocked it; what still binds is MIM-3's MESH condition, and the shipped technology's
+  default mesh sits outside it (`ValidatedCellOverSeparation`). That is gap 3's business, reported as
+  a note, and no constant was moved here.

@@ -1175,8 +1175,8 @@ geometry* — the old wording would have excluded a solver that requires none of
 ### 10.12 Thin-film (MIM) capacitors — plan
 
 **Status: in progress. MIM-1 (region vias), MIM-2 (the shipped exemplar), MIM-6 (the level
-reference surface) and MIM-3 (the thin-layer ladders and their verdict) are built, 2026-08-30;
-MIM-4 and MIM-5 remain proposals.** MIM-6 is not in the
+reference surface), MIM-3 (the thin-layer ladders and their verdict) and MIM-4 (interior-height
+electrostatics) are built, 2026-08-30; MIM-5 remains a proposal.** MIM-6 is not in the
 original four-gap plan below — it is the fifth gap MIM-2's own measurement surfaced, and it is
 folded into gap 2's finding (a) rather than given a numbered gap of its own, because it is that
 finding's fix and nothing else.
@@ -1269,13 +1269,29 @@ and is built (MIM-1, 2026-08-30).
    fires on it. Kernel A on the same cross-section reproduces the closed form to 1.007–1.16 and is
    mesh-converged to five digits, so the closed form is not in doubt. Write-ups:
    `src/Engine/Mom/RESOLVED.md` §MIM-3, tables in `src/Engine/Mom/HISTORY.md`.
-4. **Interior-height electrostatics (MIM-4 — §7's "all of Part B").** De-embedding's
-   Z_c = γ/(jωC_pul) rests on an electrostatic image series over ONE grounded slab, which is why a
-   de-embedded edge port off the slab top throws and a stratified region under the lowest level
-   refuses at extraction — and a MIM's feed arrives on upper metal. The static Green's function at
-   interior heights retires both refusals; at ω = 0 the spectral kernel has no branch points and no
-   poles, so this is tamer than DCIM, but it is research-grade and staged oracle-first, with the
-   shipped on-slab-top path kept bit-identical.
+4. **Interior-height electrostatics (MIM-4 — §7's "all of Part B"). > Built 2026-08-30.**
+   De-embedding's Z_c = γ/(jωC_pul) rested on an electrostatic image series over ONE grounded slab,
+   which is why a de-embedded edge port off the slab top threw and a stratified region under the
+   lowest level refused at extraction — and a MIM's feed arrives on upper metal. **Both refusals are
+   retired.** `InteriorStaticGreens` solves the ω = 0 problem as a Sturm-Liouville problem in z —
+   `d/dz(P dG/dz) − k²P G = −2kδ(z−z′)`, with `P = ε*` for the scalar problem and `1/µ` for the
+   vector one — so source and observer may sit anywhere in the stack, and `InteriorStaticImages`
+   inverts it by fitting the spectral remainder as complex exponentials in k_ρ, which IS an image
+   expansion because `∫e^(−bk)J₀(kρ)dk = 1/√(ρ²+b²)`. Two Prony levels, because a thin-film stack
+   carries image depths three orders of magnitude apart; the sum rule `c_∞ + Σa = 0` imposed exactly,
+   because over a ground plane the 1/ρ tail cancels and the far field IS that cancellation.
+
+   **Measured.** The fit reproduces the shipped one-slab series to 1e-10 out to ρ = h and agrees with
+   direct Hankel integration to 1e-8 at interior heights on a 0.2 µm-over-100 µm MIM stack; it costs
+   0.34 µs per ρ, against the shipped series' own 2.5 µs and the reference integrator's 1–270 ms —
+   which is the brief's fit-versus-quadrature decision, and quadrature is the loser and stays as the
+   oracle. C_pul through the new route reproduces the shipped one to 3.5e-12 where both apply, and a
+   uniform line on a buried level de-embeds to a matched section (|S₁₁| = 9e-4, ∠S₂₁ within 1.2e-3 rad
+   of −βℓ, cascade identity 1.8e-4). The shipped on-slab-top path is untouched and is selected by
+   comparing the MEDIUM structurally rather than the level's height — a single level over a stratified
+   region sits at the slab's height too. `PlanarExtractor` now carries the sub-feed layers and reports
+   a series-capacitance ε_eff used only to size the mesh, the standards and the phase seed. Write-up:
+   `src/Engine/Mom/RESOLVED.md` §MIM-4, tables in `src/Engine/Mom/HISTORY.md`.
 
 > **Learned at MIM-2 (2026-08-30).** MIM-1 and MIM-2 are built; three amendments, full record in
 > `src/Ui/RESOLVED.md` §MIM-2. (1) The MIM stack ships as a SECOND technology beside the plain GaAs
@@ -1306,14 +1322,15 @@ gain the three-row hand-add recipe.
 (internal ports, or de-embedding off) that is STRUCTURALLY right and whose capacitance must not be
 read off it — **not because a term is missing, but because a raw reading in this kernel is the
 series delta-gap port (MIM-3, gap 3 above); the plate term is present and is right to 10% once
-de-embedded, provided the mesh resolves the gap to `ValidatedCellOverSeparation`.** After
-MIM-4: ordinary de-embedded S-parameters with the feed on any level. **The acceptance topology is a
+de-embedded, provided the mesh resolves the gap to `ValidatedCellOverSeparation`.** **After MIM-4
+(built): ordinary de-embedded S-parameters with the feed on any level, and a technology may carry
+several dielectrics under the lowest one.** **The acceptance topology is a
 NETWORK — several capacitors joined by transmission lines in one run — because that is what an MMIC
 matching section is.** Nothing in the plan is per-capacitor: the extractor takes every shape on the
 selected levels and every via region, so multi-cap structures use the same machinery (MIM-2 pins
-this with a two-caps-plus-line fixture). The two real bounds on such a run are the de-embedded port
-level (on the lowest analysis level until MIM-4 — a bottom-metal-fed network de-embeds today) and
-the unknown budget: on the shared tensor grid each plate's fine gridlines span the whole domain, so
+this with a two-caps-plus-line fixture). The two real bounds on such a run are now the MESH condition
+of gap 3 (`PlanarLevels.ValidatedCellOverSeparation`, reported as a note, and the shipped MIM
+technology's default mesh sits outside it) and the unknown budget: on the shared tensor grid each plate's fine gridlines span the whole domain, so
 caps far apart with a long line between them grow N quickly; the accelerated (AIM) path and the
 §10.7 ceiling refusals are the existing answer, not anything new here. The user-facing EM reference
 page's "Cannot" list tracks the same boundary at every stage — §10.9's rule that the two documents

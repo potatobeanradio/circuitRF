@@ -50,6 +50,10 @@ a conflict dialog that showed them as identical would be lying about what it is 
 there is MIM-4's: a MIM's feed arrives on upper metal where a port cannot yet be de-embedded, so a
 raw solve's numbers are read through each port's own ~0.3 fF discontinuity.
 
+> **Closed at MIM-4 (2026-08-30).** A port on upper metal de-embeds now, and `#mim-accuracy` was
+> rewritten accordingly: what is left there is MIM-3's MESH condition and the standing rule that a
+> small element is never read off a RAW solve. `src/Engine/Mom/RESOLVED.md` §MIM-4.
+
 
 
 ## MIM-2 — a shipped technology that can state a MIM capacitor (2026-08-30)

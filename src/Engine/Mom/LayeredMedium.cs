@@ -396,7 +396,10 @@ public static class StaticGreens
 /// independently. Only then is it used as the multilayer reference.</para>
 ///
 /// <para>Source and observer must both lie in the top half-space; the inverse transform below is
-/// referenced to that region and is refused by name otherwise.</para>
+/// referenced to that region and is refused by name otherwise. <b>MIM-4's
+/// <see cref="InteriorStaticGreens"/> has no such restriction</b> — it solves the same ω = 0 problem
+/// as a Sturm-Liouville problem in z rather than as a reflection referenced to one region — and the
+/// two are gated against each other wherever both are defined.</para>
 /// </summary>
 public static class LayeredStaticGreens
 {
@@ -466,8 +469,11 @@ public static class LayeredStaticGreens
         if (z < h || zp < h)
             throw new ArgumentException(
                 $"LayeredStaticGreens is referenced to the top half-space and needs z, z′ ≥ H = " +
-                $"{h:G6} m; got z = {z:G6}, z′ = {zp:G6}. A source inside the stack needs the " +
-                $"full-wave path (LayeredSpectralGreens), which has no such restriction.");
+                $"{h:G6} m; got z = {z:G6}, z′ = {zp:G6}. This class's own partition — its two closed " +
+                $"terms and the decay length its quadrature is sized from — is referenced to that " +
+                $"region and cannot be made to answer an interior pair. InteriorStaticGreens answers " +
+                $"one (MIM-4): it solves the same ω = 0 problem as a Sturm-Liouville problem in z, at " +
+                $"any height pair, and reproduces this class exactly wherever both are defined.");
         if (stack.Top.Kind != TerminationKind.HalfSpace)
             throw new ArgumentException(
                 $"The top termination is {stack.Top}, a solid wall — there is no half-space above " +

@@ -1598,11 +1598,7 @@ public sealed class DcimModel
                 $"{h:G6} m; got z = {z:G6}, z′ = {zp:G6}. A source INSIDE the stack is not an " +
                 $"exact shift of this fit — its exponentials are in the source region's own k_zm, " +
                 $"not in k_z0 — so it needs its own fit, which is what Dcim.FitAtHeights builds and " +
-                $"what PlanarKernelSet.Get asks for: use that path, not this one. What an interior " +
-                $"fit still cannot do is DE-EMBED a port on a buried level, because C_pul comes " +
-                $"from an electrostatic image series over a grounded slab and there is no static " +
-                $"Green's function at interior heights in this repository (see PlanarSolve.Run's " +
-                $"own refusal).");
+                $"what PlanarKernelSet.Get asks for: use that path, not this one.");
 
         double k0 = K0;
         double delta = Math.Abs(z - zp);
