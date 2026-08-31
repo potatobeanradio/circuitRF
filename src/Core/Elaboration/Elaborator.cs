@@ -925,6 +925,19 @@ public sealed class Elaborator
         if (inst.Reference.Equals("Match", StringComparison.OrdinalIgnoreCase))
             return ResolveMatchParameters(inst, parentScope);
 
+        // The Mixer's parameters are all plain reals and want no resolver of their own, but its NET
+        // count does need a named error. The engines form a nonlinear device's port voltages from
+        // Nodes[2p]/Nodes[2p+1], so five nets is an index-out-of-range thrown from inside a Newton
+        // iteration — at a point where nothing left on the stack can name the instance. Both
+        // schematic tiles emit six (the single-ended one adds the ground returns itself), so a
+        // wrong count only reaches here from a hand-written netlist, which is exactly the reader
+        // this sentence is for.
+        if (inst.Reference.Equals("Mixer", StringComparison.OrdinalIgnoreCase) &&
+            inst.NetBindings.Count != 6)
+            throw new InvalidOperationException(
+                $"Mixer '{inst.InstanceName}': expected 6 nets (rf+, rf−, lo+, lo−, if+, if−); " +
+                $"got {inst.NetBindings.Count}.");
+
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {

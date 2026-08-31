@@ -182,6 +182,23 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["VCCS", "G", "transconductance", "controlled", "dependent", "gm", "vccs"],
             IsCommon: false),
+        // Mixer / MixerD: ONE engine component ("Mixer"), two tiles — the TermG pattern. Primary
+        // category is Devices rather than Sources because a mixer is a thing you put IN the signal
+        // path, not a thing that drives it; the Nonlinear filter carries it too, since it is one.
+        // "MIX" is the instance prefix for both: a schematic that swaps one tile for the other
+        // should not renumber.
+        [SymbolKind.Mixer]         = new("Mixer", "MIX",
+            Category: ComponentCategory.Devices,
+            ExtraCategories: [ComponentCategory.Nonlinear],
+            SearchTerms: ["Mixer", "mix", "multiplier", "downconvert", "upconvert", "LO", "IF",
+                          "conversion", "heterodyne"],
+            IsCommon: true),
+        [SymbolKind.MixerD]        = new("MixerD", "MIX",
+            Category: ComponentCategory.Devices,
+            ExtraCategories: [ComponentCategory.Nonlinear],
+            SearchTerms: ["MixerD", "Mixer", "differential mixer", "balanced", "mix", "multiplier",
+                          "LO", "IF", "conversion"],
+            IsCommon: false),
         // Ground is self-identifying via its symbol glyph; suppress both labels by default.
         [SymbolKind.Ground]        = new("GND",   "GND",
             DefaultShowTypeLabel: false, DefaultShowInstanceName: false,
@@ -460,6 +477,8 @@ public static class ComponentTypeRegistry
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.CurrentToneSource => "I_1Tone",
         SymbolKind.Vccs          => "VCCS",
+        SymbolKind.Mixer         => "Mixer",
+        SymbolKind.MixerD        => "Mixer",  // SAME engine component as Mixer — no parallel model
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
@@ -556,7 +575,8 @@ public static class ComponentTypeRegistry
         && !string.IsNullOrWhiteSpace(parameterName);
 
     public static string ParameterDescription(SymbolKind kind, string parameterName)
-        => kind is not SymbolKind.VerilogA ? "" : parameterName switch
+        => kind is SymbolKind.Mixer or SymbolKind.MixerD ? MixerParameterDescription(parameterName)
+         : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The compiled model (.osdi) to load. circuitRF runs a model you built — it does "
                      + "not compile Verilog-A itself. Choosing one fills in Model and Pins below.",
@@ -566,6 +586,32 @@ public static class ComponentTypeRegistry
                      + "filled in from the file — change it only if you are drawing before choosing one.",
             _       => "",
         };
+
+    /// <summary>
+    /// The mixer's parameter meanings. Kept out of the switch above because it is the one component
+    /// whose non-idealities are OFF by default at a large number rather than at zero, and a reader
+    /// meeting "200 dB" in a table needs to be told that is the ideal case rather than a claim.
+    /// </summary>
+    private static string MixerParameterDescription(string parameterName) => parameterName switch
+    {
+        "ConvGain" => "Single-sideband power conversion gain, RF port to IF port, at the LO drive "
+                    + "Plo names. Negative is a loss. Both sidebands are produced at this level.",
+        "Plo"      => "The LO power the gain above holds at. Mixing is a product, so conversion "
+                    + "gain tracks LO amplitude: drive the LO harder than this and you get more.",
+        "Zrf"      => "RF port impedance. The port is this resistance to its own reference.",
+        "Zlo"      => "LO port impedance.",
+        "Zif"      => "IF port impedance — also the source resistance the IF output sits behind.",
+        "IsoLO_RF" => "LO-to-RF isolation: how far below the LO its leakage at the RF port sits. "
+                    + "The 200 dB default means none — the ideal mixer leaks nothing.",
+        "IsoLO_IF" => "LO-to-IF isolation, the LO feedthrough a real mixer shows at its IF port. "
+                    + "200 dB means none.",
+        "IsoRF_IF" => "RF-to-IF isolation: straight-through RF feedthrough, unconverted. "
+                    + "200 dB means none.",
+        "IIP3"     => "Input-referred third-order intercept at the RF port, which sets both "
+                    + "compression and IM3. The 100 dBm default means the RF path is exactly "
+                    + "linear and the mixer never compresses.",
+        _          => "",
+    };
 
     /// <summary>
     /// The gate-charge, gate-conduction and temperature parameters every built-in FET law shares.
@@ -630,6 +676,31 @@ public static class ComponentTypeRegistry
                                                 new("Idc",  "0", "mA",  false, UnitDimension.Current)];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
             case SymbolKind.Vccs:       return [new("G", "10", "mS", true, UnitDimension.Conductance)];
+            // Mixer / MixerD: identical parameter list, because they are the same component.
+            //
+            // The first two are the whole of the ideal device and they belong together: the mixing
+            // law is a PRODUCT, so its conversion gain scales with LO amplitude, and a gain quoted
+            // without the LO drive it holds at would be a number with no meaning. Quoting the pair
+            // is also how a real part is specified, so `ConvGain` = −7 dB at `Plo` = +7 dBm reads
+            // off a datasheet unchanged. Both show on the schematic; nothing else does, because a
+            // mixer wearing eleven labels is unreadable and the rest are ideal by default anyway.
+            //
+            // The three isolations and IIP3 default to numbers so large they mean "off" — 200 dB
+            // and 100 dBm. They are honest numbers rather than sentinels, and MixerModel snaps
+            // each to EXACTLY ideal above its own threshold, so a freshly-placed mixer stamps no
+            // leakage terms at all rather than 1e-10 of one.
+            case SymbolKind.Mixer:
+            case SymbolKind.MixerD:
+                return [new("ConvGain", "-7",  "dB",  true,  UnitDimension.None),
+                        new("Plo",      "7",   "dBm", true,  UnitDimension.Power),
+                        new("Zrf",      "50",  "Ω",   false, UnitDimension.Resistance),
+                        new("Zlo",      "50",  "Ω",   false, UnitDimension.Resistance),
+                        new("Zif",      "50",  "Ω",   false, UnitDimension.Resistance),
+                        new("IsoLO_RF", "200", "dB",  false, UnitDimension.None),
+                        new("IsoLO_IF", "200", "dB",  false, UnitDimension.None),
+                        new("IsoRF_IF", "200", "dB",  false, UnitDimension.None),
+                        new("IIP3",     "100", "dBm", false, UnitDimension.Power)];
+
             // Pavl/Z/Freq/Phase match P1ToneModel factory keys.
             // Num is the s-param port index; auto-assigned at placement from the shared Term+P1Tone pool.
             case SymbolKind.P1Tone: return [
@@ -1160,7 +1231,8 @@ public static class ComponentTypeRegistry
     /// Parses a short type code (case-insensitive) to a SymbolKind and, for variadic-port types,
     /// the parsed port count N.
     ///
-    /// Canonical codes: R, L, C, V, VTone, ITone, VCCS/G, GND, Term/T, TermG/TG, SDD, Z{N}P (any N ≥ 1),
+    /// Canonical codes: R, L, C, V, VTone, ITone, VCCS/G, Mixer/MIX, MixerD/MIXD, GND, Term/T,
+    /// TermG/TG, SDD, Z{N}P (any N ≥ 1),
     /// SDD{N} (any N ≥ 1), X.
     ///
     /// <list type="bullet">
@@ -1191,6 +1263,10 @@ public static class ComponentTypeRegistry
             case "ITONE":  kind = SymbolKind.CurrentToneSource; return true;
             case "VCCS":
             case "G":      kind = SymbolKind.Vccs;          return true;
+            case "MIXER":
+            case "MIX":    kind = SymbolKind.Mixer;         return true;
+            case "MIXERD":
+            case "MIXD":   kind = SymbolKind.MixerD;        return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;

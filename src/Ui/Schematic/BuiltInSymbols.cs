@@ -31,6 +31,14 @@ public static class BuiltInSymbols
     /// case is SnP at Tight pitch, whose pins are a full grid square (100) apart.
     /// </summary>
     public const double SddPortLabelFontSize = 18.0;
+    /// <summary>
+    /// Font size for the mixer's RF/LO/IF port names. Larger than
+    /// <see cref="SddPortLabelFontSize"/> because these sit OUTSIDE the body, on the leads, where
+    /// there is room — and because they carry more weight than a port number does: the mixer's
+    /// three leads are not interchangeable, and a reader who connects the wrong one gets a circuit
+    /// that solves and is wrong.
+    /// </summary>
+    public const double MixerPortFontSize = 30.0;
     /// <summary>Font size for the "VAR" body label.</summary>
     public const double VarLabelFontSize = 48.0;
 
@@ -43,6 +51,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _iToneSrc     = BuildCurrentToneSource();
     private static readonly Symbol _vccs         = BuildVccs();
+    private static readonly Symbol _mixer        = BuildMixer();
+    private static readonly Symbol _mixerD       = BuildMixerD();
     private static readonly Symbol _ground       = BuildGround();
     private static readonly Symbol _term         = BuildTerm();
     private static readonly Symbol _pin          = BuildPin();
@@ -139,6 +149,8 @@ public static class BuiltInSymbols
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.CurrentToneSource: return _iToneSrc;
             case SymbolKind.Vccs:       return _vccs;
+            case SymbolKind.Mixer:      return _mixer;
+            case SymbolKind.MixerD:     return _mixerD;
             case SymbolKind.Ground:     return _ground;
             case SymbolKind.Term:       return _term;
             case SymbolKind.Pin:        return _pin;
@@ -448,6 +460,68 @@ public static class BuiltInSymbols
         Txt("+", -150, -100, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
         Txt("−", -150, +100, fontSize: PolarityFontSize),
     ], SymbolKind.Vccs);
+
+    // ── Mixer — the universal circle-and-✕ ────────────────────────────────────
+    // Pins: RF (-300,0) left · LO (0,+300) bottom · IF (+300,0) right.
+    //
+    // This glyph is not a choice. A circle with a multiplication sign in it has meant "mixer" in
+    // every RF block diagram for sixty years, and it says the one thing about the device that a
+    // reader needs: what comes out is the PRODUCT of what goes in. Drawing anything else here would
+    // be inventing a private notation for the most standardised symbol in the discipline.
+    //
+    // The three leads are NOT interchangeable — RF·LO lands on IF and no other assignment of the
+    // three does — so each carries its name. That is a departure from the rest of this library,
+    // where a 2-terminal part's pins are symmetric or a polarity mark suffices; here a reader who
+    // guesses wrong gets a circuit that solves and is wrong, which is the failure worth three
+    // small words. LO enters from BELOW, as it does in every block diagram, so a downconverter
+    // reads left to right with its local oscillator underneath.
+
+    private static Symbol BuildMixer() => Sym([
+        Circ(  0,    0,  120),                  // body circle (stroked)
+        L(  -85,  -85,   85,   85),             // ✕, first stroke  (r·√2/2 ≈ 85)
+        L(  -85,   85,   85,  -85),             // ✕, second stroke
+        L( -300,    0, -120,    0),             // RF lead (left)
+        L(  120,    0,  300,    0),             // IF lead (right)
+        L(    0,  300,    0,  120),             // LO lead (bottom)
+        Txt("RF", -215,  -55, fontSize: MixerPortFontSize),
+        Txt("IF",  215,  -55, fontSize: MixerPortFontSize),
+        Txt("LO",   75,  235, fontSize: MixerPortFontSize),
+    ], SymbolKind.Mixer);
+
+    // ── MixerD — the same device with all six nets exposed ────────────────────
+    // Pins: rf+ (-300,-100) rf− (-300,+100) · lo+ (-100,+300) lo− (+100,+300) ·
+    //       if+ (+300,-100) if− (+300,+100).
+    //
+    // A BOX rather than the circle, because six leads cannot land on a circle's edge on the
+    // connection grid — they would meet it at irrational offsets and the symbol would stop being
+    // drawable in the editor's own coordinates. The ✕ is kept and is the whole of the family
+    // resemblance: it is the mark that says "multiplier", and it is why this reads as the same
+    // device as the tile beside it rather than as a generic three-port block.
+    //
+    // Port names go INSIDE, beside their own pair, and the polarity marks are the same "+"/"−"
+    // pair in the same SymbolPlus role the VCCS uses — a reader who has learned one ± convention
+    // in this library has learned them all.
+
+    private static Symbol BuildMixerD() => Sym([
+        RRect( 0,    0,  240,  240,   12),      // body box
+        L(  -85,  -85,   85,   85),             // ✕, first stroke
+        L(  -85,   85,   85,  -85),             // ✕, second stroke
+        L( -300, -100, -120, -100),             // rf+ lead
+        L( -300,  100, -120,  100),             // rf− lead
+        L(  120, -100,  300, -100),             // if+ lead
+        L(  120,  100,  300,  100),             // if− lead
+        L( -100,  300, -100,  120),             // lo+ lead
+        L(  100,  300,  100,  120),             // lo− lead
+        Txt("+", -215, -155, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−", -215,  155, fontSize: PolarityFontSize),
+        Txt("+",  215, -155, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−",  215,  155, fontSize: PolarityFontSize),
+        Txt("+", -165,  235, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−",  165,  235, fontSize: PolarityFontSize),
+        Txt("RF", -215,  -20, fontSize: MixerPortFontSize),
+        Txt("IF",  215,  -20, fontSize: MixerPortFontSize),
+        Txt("LO",    0,  235, fontSize: MixerPortFontSize),
+    ], SymbolKind.MixerD);
 
     // ── P1Tone — RF power source: Term-sized box, top-half zigzag resistor,
     // bottom-half voltage-source circle with 1-cycle sine inside.

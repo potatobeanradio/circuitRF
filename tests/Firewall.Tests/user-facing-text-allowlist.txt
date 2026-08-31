@@ -107,6 +107,7 @@ src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): pins 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): the model writes no equation for 
 src/Core/Elaboration/Elaborator.cs|Failed to create model for primitive '{inst.Reference}' at '{childPath}'
+src/Core/Elaboration/Elaborator.cs|Mixer '{inst.InstanceName}': expected 6 nets (rf+, rf−, lo+, lo−, if+, if−); 
 src/Core/Elaboration/Elaborator.cs|SDD '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); 
 src/Core/Elaboration/Elaborator.cs|SDD equation references '{name}' which resolved to a Complex value; 
 src/Core/Elaboration/Elaborator.cs|Z_Port '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); got {netCount}.

@@ -647,6 +647,90 @@ current negated — so a parameter set written for one polarity is used unchange
 
 {{table: components/BjtPnp}}
 
+### Ideal Mixer (Mixer) {#mixer}
+
+{{symbol: mixer}}
+
+A three-port ideal mixer: what comes out of the IF port is the **product** of what goes into the RF
+and LO ports. RF on the left, LO underneath, IF on the right — the three leads are not
+interchangeable, which is why each one carries its name.
+
+`v_IF (open circuit) = K · v_RF · v_LO`
+
+You never type `K`. You state a conversion gain and the LO drive it holds at — `ConvGain` = −7 dB at
+`Plo` = +7 dBm, straight off a datasheet — and circuitRF derives the multiplier constant from them,
+using each port's impedance. `ConvGain` is a **single-sideband power** gain: negative is a loss.
+
+**Both sidebands come out.** A product of two cosines is half the sum plus half the difference, so an
+RF tone at 2 GHz against a 1.8 GHz LO puts equal power at 200 MHz *and* 3.8 GHz. The mixer does not
+pick one for you; a single-sideband result comes from filtering what leaves the IF port, or from an
+image-reject network built around two mixers — exactly as it does in hardware.
+
+**Conversion gain tracks LO amplitude.** That is what a multiplier does, and it is why the gain is
+quoted together with `Plo`. Drive the LO 3 dB harder than `Plo` and the conversion gain rises 3 dB;
+drive it 3 dB softer and it falls. If the LO in your test bench is not delivering `Plo` to the LO
+port, the mixer is not running at the gain you typed.
+
+<div class="callout note">
+<span class="label">Why it is a multiplier and not a switch</span>
+<p>A real diode or FET mixer <b>commutates</b>: the LO switches the RF path rather than scaling it,
+which is why a real mixer's conversion loss barely moves once the LO is hard enough to switch. An
+ideal switching mixer is not expressible here — a component's law is a memoryless function of its
+port voltages, and hard switching has a derivative no Newton step survives. The product is the ideal
+mixing law that <i>is</i> expressible, and its LO dependence is stated above rather than hidden.</p>
+</div>
+
+#### Non-idealities
+
+A freshly-placed mixer is ideal: the three isolations default to 200 dB and `IIP3` to 100 dBm, which
+mean *none* and *never compresses*. Type a real number into any of them to turn that non-ideality on.
+
+| Parameter | What it does |
+|---|---|
+| `Zrf` `Zlo` `Zif` | Each port is this resistance to its reference, and the IF output sits behind `Zif`. Change one and that port is mismatched — the first non-ideality most circuits notice. |
+| `IsoLO_RF` | LO leaking backwards out of the RF port. It is a real voltage at a real port, so it mixes with the LO like anything else there. |
+| `IsoLO_IF` | LO feedthrough at the IF port — usually the one that sets an IF filter's job. |
+| `IsoRF_IF` | RF straight through to IF, unconverted. |
+| `IIP3` | Input-referred third-order intercept at the RF port. Sets compression and IM3 together, through a soft limiter whose third-order term matches the intercept exactly. |
+
+The limiter is a `tanh`, not the textbook `a₁x − a₃x³`. A bare cubic turns over and goes **negative**
+past its peak, and harmonic balance then finds that root and converges cleanly onto a wrong answer.
+`tanh` is monotone everywhere and has the same third-order term.
+
+<div class="callout note">
+<span class="label">What it does in an S-parameter run</span>
+<p>It reports the <b>port matches and the three leakages, and no conversion at all</b> — and that is
+the right answer rather than a missing one. S-parameters are a single-frequency measurement, and
+conversion is the business of moving energy <i>between</i> frequencies. The arithmetic says the same
+thing: circuitRF linearises a nonlinear device at its DC operating point, and the mixer's RF-to-IF
+small-signal gain is proportional to the LO voltage, which at DC is zero. So an S-parameter sweep of
+a mixer is a useful measurement of the thing S-parameters can measure — how well each port is
+matched, and how much leaks between them.</p>
+<p><b>Conversion gain comes from harmonic balance.</b> Drive the RF and LO ports as two tones, and
+read the IF power at the mixing product you want. For conversion gain <i>versus</i> frequency, wrap
+that harmonic-balance analysis in a <a href="simulations.html#parametric-sweep">parametric sweep</a>
+of the RF frequency — that is the swept measurement an S-parameter run cannot be.</p>
+</div>
+
+{{table: components/Mixer}}
+
+### Differential Mixer (MixerD) {#mixerd}
+
+{{symbol: mixer-d}}
+
+The **same component** as [Mixer](#mixer) — same equations, same parameters, same everything — with
+all six of its nets brought out as pins instead of three. Use it when a port's return is not ground.
+Otherwise the single-ended tile is the identical circuit with three fewer wires to draw.
+
+The pins are in ± pairs: `rf+` `rf−` on the left, `lo+` `lo−` along the bottom, `if+` `if−` on the
+right. Swapping a pair inverts that port's voltage, which gives a circuit that still solves and is
+wrong — so read the marks.
+
+The box body is not a second opinion about what a mixer looks like: six leads cannot land on a
+circle's edge on the connection grid. The ✕ is kept, and it is the whole of the family resemblance.
+
+{{table: components/MixerD}}
+
 ### Compiled Verilog-A model (VerilogA) {#veriloga}
 
 {{symbol: verilog-a}}

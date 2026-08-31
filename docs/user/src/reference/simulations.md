@@ -288,7 +288,9 @@ terminations rather than reading them), plus the keys below.
 once** — every harmonic *and* every intermodulation (mixing) product. Two tones is the standard
 test for **linearity**: third-order intermodulation (IM3), intercept points, spectral regrowth,
 and the asymmetry between the lower and upper IM products. Three or more tones is the natural
-setting for **mixers** (RF, LO and their products) and for multi-carrier work.
+setting for **mixers** (RF, LO and their products) and for multi-carrier work. Two tones is enough
+for an [ideal mixer](components.html#mixer) on its own — one for the RF, one for the LO — and the
+converted power reads off the IF port at the mixing product you want.
 
 Multi-tone is not a separate analysis — it is [Harmonic Balance](#harmonic-balance) with more than
 one tone. Everything from the single-tone chapter (the linear/nonlinear split, the Newton solve,

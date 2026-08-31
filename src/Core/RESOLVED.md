@@ -6,6 +6,70 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## The ideal mixer: what it can be, and why S-parameters say nothing (2026-08-31)
+
+`MixerModel` (`Mixer`), placed by two schematic tiles — `SymbolKind.Mixer` (3 pins, ground-referenced)
+and `SymbolKind.MixerD` (6 pins, differential) — over ONE engine component, the TermG pattern.
+
+**1. The mixing law had to be a PRODUCT, and that was not a preference.** `Evaluate` is memoryless in
+the port voltages: no time argument, no internal oscillator, no way to put a local oscillator inside
+the device. So the LO must arrive through a port, and the only ideal mixing law expressible that way
+is `v_if(open) = K·v_rf·v_lo`. The alternative worth wanting is a **commutating** mixer — the LO
+switching rather than scaling, which is why a real diode mixer's conversion loss barely moves once
+the LO is hard enough to switch, and why its conversion is `2/π` regardless of drive. That needs
+`sgn`, whose derivative is a delta function, and no Newton step survives it. A `tanh` approximation
+of the switch is expressible but changes the gain calibration (the fundamental of `B·tanh(cos θ)` is
+not `B`), so it was left out rather than shipped miscalibrated.
+
+The honest cost is stated everywhere it matters: **conversion gain tracks LO amplitude**, +3 dB for
++3 dB. That is why `ConvGain` is meaningless without `Plo`, why the two are the only parameters shown
+on the schematic, and why they are quoted together in the docs the way a datasheet quotes them.
+
+**2. The user never types the multiplier constant, and one closed form connects the two ends.** With
+every port matched, `G = P_if/P_rf = K²·B²·Zrf/(16·Zif)` — two factors of two, one from the
+product-to-sum identity and one from the `Zif`/load divider — so `K = (4/B)·√(G·Zif/Zrf)` at
+`B = √(2·Plo·Zlo)`. The RF amplitude is absent from it, which is what makes the result a *gain*.
+Nothing but a test connects the dB the user types to the volt⁻¹ the model runs on, so
+`MixerModelTests.ConvGain_IsWhatComesOutOfTheStatedGain` does the arithmetic independently rather
+than reading a number back out of the model, and `MixerHbTests` closes it end to end through the real
+two-tone solver (−20 dBm in at −7 dB reads −27.000 dBm out).
+
+**3. An S-parameter run of a mixer reports NO conversion, and that is an answer, not a gap.** It
+looks exactly like a missing feature — sweep a mixer, read S21 = 0, conclude the device was never
+stamped — so it is worth knowing why. The linear engines route a nonlinear device through
+`ComponentModel.StampLinearized`, which linearises at the DC operating point; the mixer's RF-to-IF
+small-signal gain is `∂i_if/∂v_rf = −K·v_lo/Zif`, and `v_lo` at DC is zero. S-parameters are a
+single-frequency measurement and conversion is the business of moving energy *between* frequencies,
+so there is nothing there for them to report. What they DO report is real and worth having: the port
+matches, and the three leakage paths. `MixerSParamTests` pins both halves — including a detuned
+`Zrf` reading Γ = −1/3 exactly, which is what proves the device is in the matrix rather than absent
+from it. (A side effect worth knowing: give the LO port a DC bias and the same device becomes a
+linear amplifier in S-parameters, because a multiplier driven by a constant is exactly that.)
+
+**4. The non-idealities are OFF at a large number, and "off" is snapped to EXACTLY zero.** The
+expression engine has no `inf`, so the three isolations default to 200 dB and `IIP3` to 100 dBm.
+Those are honest numbers, not sentinels — but a leakage coefficient of 1e-10 is not the same thing as
+an absent one: `StampLinearized` skips a zero admittance (`if (y == Complex.Zero) continue`), so the
+model snaps anything above `IsolationOff` (150 dB) / `CompressionOff` (90 dBm) to a hard zero and the
+ideal mixer stamps no off-diagonal terms at all.
+
+**5. The compression limiter is `tanh`, not the textbook `a₁x − a₃x³`.** A bare cubic turns over and
+goes NEGATIVE past its peak; Newton then finds that root and the run converges cleanly onto a wrong
+answer — the expensive failure mode. `tanh` is monotone and bounded everywhere and has the same
+third-order term, so matching it to `IIP3 = √(4a₁/3a₃)` gives `IIP3 = 2·Vsat` exactly.
+
+**6. Leakage is deliberately one-directional** (LO→RF, LO→IF, RF→IF and nothing back). It cannot form
+a loop the solver has to break, and each isolation names one path — getting two of them the same way
+round is the kind of mistake that survives every other test, so `MixerSParamTests` asserts the
+destination port of each.
+
+**7. The single-ended tile mints its own ground returns at extraction**, in `NetExtractor`, the same
+way `TermG` does with Term's port 2 — three pins in, six nets out, `[rf+, 0, lo+, 0, if+, 0]`. The
+engine never learns there are two tiles. A wrong net count from a hand-written netlist is refused by
+name in `Elaborator.ResolveParameters`, because without that it is an index-out-of-range thrown from
+inside a Newton iteration, where nothing left on the stack can say which instance was wrong.
+
+
 ## The two current sources: ITone and the VCCS (2026-08-29)
 
 `CurrentToneSourceModel` (`I_1Tone`/`I_nTone`) and `VccsModel` (`VCCS`). Five things worth keeping.

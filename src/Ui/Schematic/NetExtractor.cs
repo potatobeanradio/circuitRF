@@ -1738,6 +1738,23 @@ public static class NetExtractor
             return new Instance(comp.InstanceName, reference, termgNets, overrides2);
         }
 
+        // Mixer (single-ended): 3 symbol pins but MixerModel declares 3 PORTS, i.e. 6 nets in ±
+        // pair order [rf+, rf−, lo+, lo−, if+, if−]. Each port's − is hard-wired to ground ("0"),
+        // exactly as TermG does with Term's port 2 and Tuner does with its reference — a packaging
+        // convenience over the SAME engine component, never a parallel model. MixerD emits all six
+        // from its own pins and falls through to the ordinary path below.
+        if (comp.Symbol is SymbolKind.Mixer)
+        {
+            var mixerNets = new List<string>(6);
+            foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
+            {
+                var (px, py) = model.PortWorldOf(comp, def);
+                mixerNets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+                mixerNets.Add("0");
+            }
+            return new Instance(comp.InstanceName, reference, mixerNets, overrides2);
+        }
+
         // R-pc-8: microstrip components get their substrate injected as extra parameter overrides,
         // resolved from the schematic's own workspace technology — the "one parameter list" the
         // user sees (W/L/Angle/...) is untouched; H/T/Er/Sigma/TanD are never declared cell

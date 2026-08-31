@@ -42,7 +42,7 @@ public static class ComponentModelFactory
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             "BJT_NPN", "BJT_PNP",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
-            "ExtDevice", "wBond", "Match",
+            "ExtDevice", "wBond", "Match", "Mixer",
         };
 
     /// <summary>
@@ -122,6 +122,8 @@ public static class ComponentModelFactory
             return CreateWBondModel(parameters);
         if (typeName.Equals("Match", StringComparison.OrdinalIgnoreCase))
             return CreateMatchModel(parameters);
+        if (typeName.Equals("Mixer", StringComparison.OrdinalIgnoreCase))
+            return CreateMixerModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -900,6 +902,28 @@ public static class ComponentModelFactory
     /// supplier kit states only the ones that matter for its device and expects the rest to take
     /// their usual values — omitting Cj0 must give a diode with no junction capacitance, not an error.
     /// </summary>
+    /// <summary>
+    /// The ideal three-port mixer. Every parameter is a plain Real; the two "off" defaults
+    /// (200 dB of isolation, 100 dBm of IIP3) are numbers rather than sentinels, and the model
+    /// itself decides where "off" begins — see <see cref="MixerModel"/>'s own constants.
+    /// </summary>
+    private static MixerModel CreateMixerModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        return new MixerModel(
+            convGainDb: P("ConvGain",  -7.0),
+            ploDbm:     P("Plo",        7.0),
+            zRf:        P("Zrf",       50.0),
+            zLo:        P("Zlo",       50.0),
+            zIf:        P("Zif",       50.0),
+            isoLoRfDb:  P("IsoLO_RF", 200.0),
+            isoLoIfDb:  P("IsoLO_IF", 200.0),
+            isoRfIfDb:  P("IsoRF_IF", 200.0),
+            iip3Dbm:    P("IIP3",     100.0));
+    }
+
     private static DiodeModel CreateDiodeModel(IReadOnlyDictionary<string, Value> parameters, double ambientC)
     {
         double P(string name, double fallback) =>

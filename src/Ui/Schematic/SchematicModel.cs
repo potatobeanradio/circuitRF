@@ -184,6 +184,28 @@ public enum SymbolKind
     /// IN at out+ and OUT at out−, the downward direction the diamond's arrowhead points — so the
     /// stage is inverting across a grounded load.</summary>
     Vccs,
+
+    // ── Ideal mixer ───────────────────────────────────────────────────────────
+    // TWO kinds over ONE engine component ("Mixer"), the TermG pattern rather than the BJT one:
+    // nothing electrical differs between them, so there is no parallel model — only how many of the
+    // six nets the schematic exposes as pins. The single-ended tile ties each port's − net to
+    // ground at extraction, exactly as TermG does with Term's port 2, and gets the universal
+    // circle-and-✕ glyph in exchange; the differential tile shows all six pins and can drive a
+    // balanced IF, at the cost of looking like nothing in any textbook.
+
+    /// <summary>Ideal three-port mixer, SINGLE-ENDED (engine "Mixer"). Three pins — RF left, LO
+    /// bottom, IF right — with each port's − net tied to ground at extraction, so the engine still
+    /// sees its six nets in ± pair order. Memoryless multiplier: v_if(open) = K·v_rf·v_lo, with the
+    /// multiplier constant derived from `ConvGain` at the stated `Plo`. Both sidebands appear.
+    /// Non-idealities: port impedances, three isolations, and an input-referred IIP3.</summary>
+    Mixer,
+
+    /// <summary>Ideal three-port mixer, DIFFERENTIAL (engine "Mixer"). The SAME component as
+    /// <see cref="Mixer"/> — six pins in the repository's ± pair order:
+    /// [0]=rf+, [1]=rf−, [2]=lo+, [3]=lo−, [4]=if+, [5]=if−. Use it when a port's
+    /// return is not ground; otherwise the single-ended tile is the same circuit with three fewer
+    /// wires to draw.</summary>
+    MixerD,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

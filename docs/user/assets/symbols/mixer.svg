@@ -1,0 +1,13 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="52.6" rx="28.6" ry="28.6" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 32.34L140.26 72.86" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 72.86L140.26 32.34" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.5 52.6L91.4 52.6" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M148.6 52.6L191.5 52.6" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 124.09L120 81.2" /><text fill="#2D14C3" transform="translate(68.76 39.49)" font-size="7.15" font-family="IBM Plex Sans" x="-4.29, 0.2896" y="2.68">
+			RF
+	</text><text fill="#2D14C3" transform="translate(171.24 39.49)" font-size="7.15" font-family="IBM Plex Sans" x="-3.43, -0.5684" y="2.68">
+			IF
+	</text><text fill="#2D14C3" transform="translate(137.87 108.6)" font-size="7.15" font-family="IBM Plex Sans" x="-4.32, -0.74" y="2.68">
+			LO
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="45.5" y="49.6" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121.09" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="188.5" y="49.6" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100.6, 112.85, 116.98, 125.14, 133.51" y="172.32">
+			Mixer
+	</text></svg>

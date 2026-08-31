@@ -1273,6 +1273,179 @@ current negated — so a parameter set written for one polarity is used unchange
 <tr><td>Temp</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Tnom</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td></tr>
 </tbody></table>
+<h3 id="mixer">Ideal Mixer (Mixer)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="52.6" rx="28.6" ry="28.6" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 32.34L140.26 72.86" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 72.86L140.26 32.34" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.5 52.6L91.4 52.6" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M148.6 52.6L191.5 52.6" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 124.09L120 81.2" /><text fill="#2D14C3" transform="translate(68.76 39.49)" font-size="7.15" font-family="IBM Plex Sans" x="-4.29, 0.2896" y="2.68">
+			RF
+	</text><text fill="#2D14C3" transform="translate(171.24 39.49)" font-size="7.15" font-family="IBM Plex Sans" x="-3.43, -0.5684" y="2.68">
+			IF
+	</text><text fill="#2D14C3" transform="translate(137.87 108.6)" font-size="7.15" font-family="IBM Plex Sans" x="-4.32, -0.74" y="2.68">
+			LO
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="45.5" y="49.6" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121.09" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="188.5" y="49.6" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100.6, 112.85, 116.98, 125.14, 133.51" y="172.32">
+			Mixer
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="52.6" rx="28.6" ry="28.6" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 32.34L140.26 72.86" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 72.86L140.26 32.34" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.5 52.6L91.4 52.6" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M148.6 52.6L191.5 52.6" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 124.09L120 81.2" /><text fill="#9684FA" transform="translate(68.76 39.49)" font-size="7.15" font-family="IBM Plex Sans" x="-4.29, 0.2896" y="2.68">
+			RF
+	</text><text fill="#9684FA" transform="translate(171.24 39.49)" font-size="7.15" font-family="IBM Plex Sans" x="-3.43, -0.5684" y="2.68">
+			IF
+	</text><text fill="#9684FA" transform="translate(137.87 108.6)" font-size="7.15" font-family="IBM Plex Sans" x="-4.32, -0.74" y="2.68">
+			LO
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="45.5" y="49.6" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="121.09" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="188.5" y="49.6" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="100.6, 112.85, 116.98, 125.14, 133.51" y="172.32">
+			Mixer
+	</text></svg></span>
+</span><figcaption>Mixer</figcaption></figure>
+<p>A three-port ideal mixer: what comes out of the IF port is the <strong>product</strong> of what goes into the RF
+and LO ports. RF on the left, LO underneath, IF on the right — the three leads are not
+interchangeable, which is why each one carries its name.</p>
+<p><code>v_IF (open circuit) = K · v_RF · v_LO</code></p>
+<p>You never type <code>K</code>. You state a conversion gain and the LO drive it holds at — <code>ConvGain</code> = −7 dB at
+<code>Plo</code> = +7 dBm, straight off a datasheet — and circuitRF derives the multiplier constant from them,
+using each port's impedance. <code>ConvGain</code> is a <strong>single-sideband power</strong> gain: negative is a loss.</p>
+<p><strong>Both sidebands come out.</strong> A product of two cosines is half the sum plus half the difference, so an
+RF tone at 2 GHz against a 1.8 GHz LO puts equal power at 200 MHz <em>and</em> 3.8 GHz. The mixer does not
+pick one for you; a single-sideband result comes from filtering what leaves the IF port, or from an
+image-reject network built around two mixers — exactly as it does in hardware.</p>
+<p><strong>Conversion gain tracks LO amplitude.</strong> That is what a multiplier does, and it is why the gain is
+quoted together with <code>Plo</code>. Drive the LO 3 dB harder than <code>Plo</code> and the conversion gain rises 3 dB;
+drive it 3 dB softer and it falls. If the LO in your test bench is not delivering <code>Plo</code> to the LO
+port, the mixer is not running at the gain you typed.</p>
+<div class="callout note">
+<span class="label">Why it is a multiplier and not a switch</span>
+<p>A real diode or FET mixer <b>commutates</b>: the LO switches the RF path rather than scaling it,
+which is why a real mixer's conversion loss barely moves once the LO is hard enough to switch. An
+ideal switching mixer is not expressible here — a component's law is a memoryless function of its
+port voltages, and hard switching has a derivative no Newton step survives. The product is the ideal
+mixing law that <i>is</i> expressible, and its LO dependence is stated above rather than hidden.</p>
+</div>
+<h4 id="non-idealities">Non-idealities</h4>
+<p>A freshly-placed mixer is ideal: the three isolations default to 200 dB and <code>IIP3</code> to 100 dBm, which
+mean <em>none</em> and <em>never compresses</em>. Type a real number into any of them to turn that non-ideality on.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Zrf</code> <code>Zlo</code> <code>Zif</code></td>
+<td>Each port is this resistance to its reference, and the IF output sits behind <code>Zif</code>. Change one and that port is mismatched — the first non-ideality most circuits notice.</td>
+</tr>
+<tr>
+<td><code>IsoLO_RF</code></td>
+<td>LO leaking backwards out of the RF port. It is a real voltage at a real port, so it mixes with the LO like anything else there.</td>
+</tr>
+<tr>
+<td><code>IsoLO_IF</code></td>
+<td>LO feedthrough at the IF port — usually the one that sets an IF filter's job.</td>
+</tr>
+<tr>
+<td><code>IsoRF_IF</code></td>
+<td>RF straight through to IF, unconverted.</td>
+</tr>
+<tr>
+<td><code>IIP3</code></td>
+<td>Input-referred third-order intercept at the RF port. Sets compression and IM3 together, through a soft limiter whose third-order term matches the intercept exactly.</td>
+</tr>
+</tbody>
+</table>
+<p>The limiter is a <code>tanh</code>, not the textbook <code>a₁x − a₃x³</code>. A bare cubic turns over and goes <strong>negative</strong>
+past its peak, and harmonic balance then finds that root and converges cleanly onto a wrong answer.
+<code>tanh</code> is monotone everywhere and has the same third-order term.</p>
+<div class="callout note">
+<span class="label">What it does in an S-parameter run</span>
+<p>It reports the <b>port matches and the three leakages, and no conversion at all</b> — and that is
+the right answer rather than a missing one. S-parameters are a single-frequency measurement, and
+conversion is the business of moving energy <i>between</i> frequencies. The arithmetic says the same
+thing: circuitRF linearises a nonlinear device at its DC operating point, and the mixer's RF-to-IF
+small-signal gain is proportional to the LO voltage, which at DC is zero. So an S-parameter sweep of
+a mixer is a useful measurement of the thing S-parameters can measure — how well each port is
+matched, and how much leaks between them.</p>
+<p><b>Conversion gain comes from harmonic balance.</b> Drive the RF and LO ports as two tones, and
+read the IF power at the mixing product you want. For conversion gain <i>versus</i> frequency, wrap
+that harmonic-balance analysis in a <a href="simulations.html#parametric-sweep">parametric sweep</a>
+of the RF frequency — that is the swept measurement an S-parameter run cannot be.</p>
+</div>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>ConvGain</td><td><code>-7</code></td><td>dB</td><td>shown</td><td>Single-sideband power conversion gain, RF port to IF port, at the LO drive Plo names. Negative is a loss. Both sidebands are produced at this level.</td></tr>
+<tr><td>Plo</td><td><code>7</code></td><td>dBm</td><td>shown</td><td>The LO power the gain above holds at. Mixing is a product, so conversion gain tracks LO amplitude: drive the LO harder than this and you get more.</td></tr>
+<tr><td>Zrf</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>RF port impedance. The port is this resistance to its own reference.</td></tr>
+<tr><td>Zlo</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>LO port impedance.</td></tr>
+<tr><td>Zif</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>IF port impedance — also the source resistance the IF output sits behind.</td></tr>
+<tr><td>IsoLO_RF</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>LO-to-RF isolation: how far below the LO its leakage at the RF port sits. The 200 dB default means none — the ideal mixer leaks nothing.</td></tr>
+<tr><td>IsoLO_IF</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>LO-to-IF isolation, the LO feedthrough a real mixer shows at its IF port. 200 dB means none.</td></tr>
+<tr><td>IsoRF_IF</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>RF-to-IF isolation: straight-through RF feedthrough, unconverted. 200 dB means none.</td></tr>
+<tr><td>IIP3</td><td><code>100</code></td><td>dBm</td><td>&mdash;</td><td>Input-referred third-order intercept at the RF port, which sets both compression and IM3. The 100 dBm default means the RF path is exactly linear and the mixer never compresses.</td></tr>
+</tbody></table>
+<h3 id="mixerd">Differential Mixer (MixerD)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M91.4 78.34L91.4 26.86Q91.4 26.72 91.42 26.58Q91.43 26.44 91.46 26.3Q91.48 26.16 91.53 26.03Q91.57 25.9 91.62 25.77Q91.67 25.64 91.74 25.51Q91.81 25.39 91.88 25.27Q91.96 25.15 92.05 25.05Q92.14 24.94 92.24 24.84Q92.34 24.74 92.45 24.65Q92.56 24.56 92.67 24.48Q92.79 24.4 92.91 24.34Q93.04 24.27 93.17 24.22Q93.3 24.16 93.43 24.12Q93.57 24.08 93.7 24.05Q93.84 24.03 93.98 24.01Q94.12 24 94.26 24L145.74 24Q145.88 24 146.02 24.01Q146.16 24.03 146.3 24.06Q146.43 24.08 146.57 24.12Q146.7 24.16 146.83 24.22Q146.96 24.27 147.09 24.34Q147.21 24.4 147.33 24.48Q147.44 24.56 147.55 24.65Q147.66 24.74 147.76 24.84Q147.86 24.94 147.95 25.05Q148.04 25.15 148.12 25.27Q148.19 25.39 148.26 25.51Q148.33 25.64 148.38 25.77Q148.43 25.9 148.48 26.03Q148.52 26.16 148.54 26.3Q148.57 26.44 148.58 26.58Q148.6 26.72 148.6 26.86L148.6 78.34Q148.6 78.48 148.58 78.62Q148.57 78.76 148.54 78.89Q148.52 79.03 148.48 79.17Q148.43 79.3 148.38 79.43Q148.33 79.56 148.26 79.68Q148.19 79.81 148.12 79.93Q148.04 80.04 147.95 80.15Q147.86 80.26 147.76 80.36Q147.66 80.46 147.55 80.55Q147.44 80.64 147.33 80.71Q147.21 80.79 147.09 80.86Q146.96 80.92 146.83 80.98Q146.7 81.03 146.57 81.07Q146.43 81.11 146.3 81.14Q146.16 81.17 146.02 81.18Q145.88 81.2 145.74 81.2L94.26 81.2Q94.12 81.2 93.98 81.18Q93.84 81.17 93.7 81.14Q93.57 81.11 93.43 81.07Q93.3 81.03 93.17 80.98Q93.04 80.92 92.91 80.86Q92.79 80.79 92.67 80.71Q92.56 80.64 92.45 80.55Q92.34 80.46 92.24 80.36Q92.14 80.26 92.05 80.15Q91.96 80.04 91.88 79.93Q91.81 79.81 91.74 79.68Q91.67 79.56 91.62 79.43Q91.57 79.3 91.53 79.17Q91.48 79.03 91.46 78.89Q91.43 78.76 91.42 78.62Q91.4 78.48 91.4 78.34Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 32.34L140.26 72.86" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 72.86L140.26 32.34" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.5 28.77L91.4 28.77" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.5 76.43L91.4 76.43" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M148.6 28.77L191.5 28.77" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M148.6 76.43L191.5 76.43" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M96.17 124.09L96.17 81.2" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M143.83 124.09L143.83 81.2" /><text fill="#D26328" transform="translate(68.76 15.66)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			+
+	</text><text fill="#2D14C3" transform="translate(68.76 89.54)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			−
+	</text><text fill="#D26328" transform="translate(171.24 15.66)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			+
+	</text><text fill="#2D14C3" transform="translate(171.24 89.54)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			−
+	</text><text fill="#D26328" transform="translate(80.68 108.6)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			+
+	</text><text fill="#2D14C3" transform="translate(159.32 108.6)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			−
+	</text><text fill="#2D14C3" transform="translate(68.76 47.83)" font-size="7.15" font-family="IBM Plex Sans" x="-4.29, 0.2896" y="2.68">
+			RF
+	</text><text fill="#2D14C3" transform="translate(171.24 47.83)" font-size="7.15" font-family="IBM Plex Sans" x="-3.43, -0.5684" y="2.68">
+			IF
+	</text><text fill="#2D14C3" transform="translate(120 108.6)" font-size="7.15" font-family="IBM Plex Sans" x="-4.32, -0.74" y="2.68">
+			LO
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="45.5" y="25.77" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="45.5" y="73.43" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="93.17" y="121.09" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="140.83" y="121.09" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="188.5" y="25.77" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="188.5" y="73.43" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="95.43, 107.69, 111.81, 119.97, 128.34, 134.24" y="172.32">
+			MixerD
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M91.4 78.34L91.4 26.86Q91.4 26.72 91.42 26.58Q91.43 26.44 91.46 26.3Q91.48 26.16 91.53 26.03Q91.57 25.9 91.62 25.77Q91.67 25.64 91.74 25.51Q91.81 25.39 91.88 25.27Q91.96 25.15 92.05 25.05Q92.14 24.94 92.24 24.84Q92.34 24.74 92.45 24.65Q92.56 24.56 92.67 24.48Q92.79 24.4 92.91 24.34Q93.04 24.27 93.17 24.22Q93.3 24.16 93.43 24.12Q93.57 24.08 93.7 24.05Q93.84 24.03 93.98 24.01Q94.12 24 94.26 24L145.74 24Q145.88 24 146.02 24.01Q146.16 24.03 146.3 24.06Q146.43 24.08 146.57 24.12Q146.7 24.16 146.83 24.22Q146.96 24.27 147.09 24.34Q147.21 24.4 147.33 24.48Q147.44 24.56 147.55 24.65Q147.66 24.74 147.76 24.84Q147.86 24.94 147.95 25.05Q148.04 25.15 148.12 25.27Q148.19 25.39 148.26 25.51Q148.33 25.64 148.38 25.77Q148.43 25.9 148.48 26.03Q148.52 26.16 148.54 26.3Q148.57 26.44 148.58 26.58Q148.6 26.72 148.6 26.86L148.6 78.34Q148.6 78.48 148.58 78.62Q148.57 78.76 148.54 78.89Q148.52 79.03 148.48 79.17Q148.43 79.3 148.38 79.43Q148.33 79.56 148.26 79.68Q148.19 79.81 148.12 79.93Q148.04 80.04 147.95 80.15Q147.86 80.26 147.76 80.36Q147.66 80.46 147.55 80.55Q147.44 80.64 147.33 80.71Q147.21 80.79 147.09 80.86Q146.96 80.92 146.83 80.98Q146.7 81.03 146.57 81.07Q146.43 81.11 146.3 81.14Q146.16 81.17 146.02 81.18Q145.88 81.2 145.74 81.2L94.26 81.2Q94.12 81.2 93.98 81.18Q93.84 81.17 93.7 81.14Q93.57 81.11 93.43 81.07Q93.3 81.03 93.17 80.98Q93.04 80.92 92.91 80.86Q92.79 80.79 92.67 80.71Q92.56 80.64 92.45 80.55Q92.34 80.46 92.24 80.36Q92.14 80.26 92.05 80.15Q91.96 80.04 91.88 79.93Q91.81 79.81 91.74 79.68Q91.67 79.56 91.62 79.43Q91.57 79.3 91.53 79.17Q91.48 79.03 91.46 78.89Q91.43 78.76 91.42 78.62Q91.4 78.48 91.4 78.34Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 32.34L140.26 72.86" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M99.74 72.86L140.26 32.34" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.5 28.77L91.4 28.77" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M48.5 76.43L91.4 76.43" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M148.6 28.77L191.5 28.77" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M148.6 76.43L191.5 76.43" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M96.17 124.09L96.17 81.2" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M143.83 124.09L143.83 81.2" /><text fill="#F58C4B" transform="translate(68.76 15.66)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			+
+	</text><text fill="#9684FA" transform="translate(68.76 89.54)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			−
+	</text><text fill="#F58C4B" transform="translate(171.24 15.66)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			+
+	</text><text fill="#9684FA" transform="translate(171.24 89.54)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			−
+	</text><text fill="#F58C4B" transform="translate(80.68 108.6)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			+
+	</text><text fill="#9684FA" transform="translate(159.32 108.6)" font-size="8.58" font-family="IBM Plex Sans" x="-2.57" y="3.22">
+			−
+	</text><text fill="#9684FA" transform="translate(68.76 47.83)" font-size="7.15" font-family="IBM Plex Sans" x="-4.29, 0.2896" y="2.68">
+			RF
+	</text><text fill="#9684FA" transform="translate(171.24 47.83)" font-size="7.15" font-family="IBM Plex Sans" x="-3.43, -0.5684" y="2.68">
+			IF
+	</text><text fill="#9684FA" transform="translate(120 108.6)" font-size="7.15" font-family="IBM Plex Sans" x="-4.32, -0.74" y="2.68">
+			LO
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="45.5" y="25.77" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="45.5" y="73.43" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="93.17" y="121.09" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="140.83" y="121.09" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="188.5" y="25.77" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="188.5" y="73.43" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="95.43, 107.69, 111.81, 119.97, 128.34, 134.24" y="172.32">
+			MixerD
+	</text></svg></span>
+</span><figcaption>MixerD</figcaption></figure>
+<p>The <strong>same component</strong> as <a href="#mixer">Mixer</a> — same equations, same parameters, same everything — with
+all six of its nets brought out as pins instead of three. Use it when a port's return is not ground.
+Otherwise the single-ended tile is the identical circuit with three fewer wires to draw.</p>
+<p>The pins are in ± pairs: <code>rf+</code> <code>rf−</code> on the left, <code>lo+</code> <code>lo−</code> along the bottom, <code>if+</code> <code>if−</code> on the
+right. Swapping a pair inverts that port's voltage, which gives a circuit that still solves and is
+wrong — so read the marks.</p>
+<p>The box body is not a second opinion about what a mixer looks like: six leads cannot land on a
+circle's edge on the connection grid. The ✕ is kept, and it is the whole of the family resemblance.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>ConvGain</td><td><code>-7</code></td><td>dB</td><td>shown</td><td>Single-sideband power conversion gain, RF port to IF port, at the LO drive Plo names. Negative is a loss. Both sidebands are produced at this level.</td></tr>
+<tr><td>Plo</td><td><code>7</code></td><td>dBm</td><td>shown</td><td>The LO power the gain above holds at. Mixing is a product, so conversion gain tracks LO amplitude: drive the LO harder than this and you get more.</td></tr>
+<tr><td>Zrf</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>RF port impedance. The port is this resistance to its own reference.</td></tr>
+<tr><td>Zlo</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>LO port impedance.</td></tr>
+<tr><td>Zif</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>IF port impedance — also the source resistance the IF output sits behind.</td></tr>
+<tr><td>IsoLO_RF</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>LO-to-RF isolation: how far below the LO its leakage at the RF port sits. The 200 dB default means none — the ideal mixer leaks nothing.</td></tr>
+<tr><td>IsoLO_IF</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>LO-to-IF isolation, the LO feedthrough a real mixer shows at its IF port. 200 dB means none.</td></tr>
+<tr><td>IsoRF_IF</td><td><code>200</code></td><td>dB</td><td>&mdash;</td><td>RF-to-IF isolation: straight-through RF feedthrough, unconverted. 200 dB means none.</td></tr>
+<tr><td>IIP3</td><td><code>100</code></td><td>dBm</td><td>&mdash;</td><td>Input-referred third-order intercept at the RF port, which sets both compression and IM3. The 100 dBm default means the RF path is exactly linear and the mixer never compresses.</td></tr>
+</tbody></table>
 <h3 id="veriloga">Compiled Verilog-A model (VerilogA)</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 122.18L84.94 27.83Q84.94 27.64 84.96 27.45Q84.97 27.26 85.01 27.08Q85.05 26.89 85.1 26.71Q85.16 26.53 85.23 26.36Q85.3 26.19 85.39 26.02Q85.48 25.86 85.58 25.7Q85.69 25.54 85.81 25.4Q85.92 25.25 86.06 25.12Q86.19 24.99 86.34 24.87Q86.48 24.75 86.64 24.64Q86.79 24.54 86.96 24.45Q87.13 24.36 87.3 24.29Q87.47 24.22 87.65 24.16Q87.83 24.11 88.02 24.07Q88.2 24.04 88.39 24.02Q88.57 24 88.76 24L151.24 24Q151.43 24 151.61 24.02Q151.8 24.04 151.98 24.07Q152.17 24.11 152.35 24.16Q152.53 24.22 152.7 24.29Q152.88 24.36 153.04 24.45Q153.21 24.54 153.36 24.64Q153.52 24.75 153.66 24.87Q153.81 24.99 153.94 25.12Q154.07 25.25 154.19 25.4Q154.31 25.54 154.42 25.7Q154.52 25.86 154.61 26.02Q154.7 26.19 154.77 26.36Q154.84 26.53 154.9 26.71Q154.95 26.89 154.99 27.08Q155.03 27.26 155.04 27.45Q155.06 27.64 155.06 27.83L155.06 122.18Q155.06 122.36 155.04 122.55Q155.03 122.74 154.99 122.92Q154.95 123.11 154.9 123.29Q154.84 123.47 154.77 123.64Q154.7 123.81 154.61 123.98Q154.52 124.14 154.42 124.3Q154.31 124.46 154.19 124.6Q154.07 124.75 153.94 124.88Q153.81 125.01 153.66 125.13Q153.52 125.25 153.36 125.36Q153.21 125.46 153.04 125.55Q152.88 125.64 152.7 125.71Q152.53 125.78 152.35 125.84Q152.17 125.89 151.98 125.93Q151.8 125.96 151.61 125.98Q151.43 126 151.24 126L88.76 126Q88.57 126 88.39 125.98Q88.2 125.96 88.02 125.93Q87.83 125.89 87.65 125.84Q87.47 125.78 87.3 125.71Q87.13 125.64 86.96 125.55Q86.79 125.46 86.64 125.36Q86.48 125.25 86.34 125.13Q86.19 125.01 86.06 124.88Q85.92 124.75 85.81 124.6Q85.69 124.46 85.58 124.3Q85.48 124.14 85.39 123.98Q85.3 123.81 85.23 123.64Q85.16 123.47 85.1 123.29Q85.05 123.11 85.01 122.92Q84.97 122.74 84.96 122.55Q84.94 122.36 84.94 122.18Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 43.13L56.25 43.13" /><text fill="#2D14C3" transform="translate(91.44 43.13)" font-size="5.74" font-family="IBM Plex Sans" x="-1.72" y="2.15">
@@ -1381,6 +1554,8 @@ in the same multi-line editor as VAR. No fixed parameters.</p>
 <tr><td><a href="#fetangelov">Angelov</a></td><td>FetAngelov</td><td>Devices</td></tr>
 <tr><td><a href="#bjtnpn">NPN</a></td><td>BjtNpn</td><td>Devices</td></tr>
 <tr><td><a href="#bjtpnp">PNP</a></td><td>BjtPnp</td><td>Devices</td></tr>
+<tr><td><a href="#mixer">Mixer</a></td><td>Mixer</td><td>Devices</td></tr>
+<tr><td><a href="#mixerd">MixerD</a></td><td>MixerD</td><td>Devices</td></tr>
 </tbody></table>
 <hr />
 <p>See also: <a href="dynamic-symbols.html">Dynamic symbols (SDD / ZPort / SnP)</a> ·

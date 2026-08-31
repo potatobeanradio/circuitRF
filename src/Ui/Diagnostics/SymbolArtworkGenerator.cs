@@ -107,6 +107,11 @@ public static class SymbolArtworkGenerator
         // document exactly the wrong half.
         (SymbolKind.BjtNpn,          "bjt-npn",           3),
         (SymbolKind.BjtPnp,          "bjt-pnp",           3),
+        // The ideal mixer, in both packagings. Two figures for what is ONE engine component,
+        // because the two glyphs are the whole of the difference the user is choosing between —
+        // the same reasoning as the BJT pair above, and the opposite of the FET laws.
+        (SymbolKind.Mixer,           "mixer",             3),
+        (SymbolKind.MixerD,          "mixer-d",           6),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

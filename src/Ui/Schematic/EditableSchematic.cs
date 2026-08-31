@@ -137,6 +137,21 @@ public static class SymbolPortDefs
             case SymbolKind.Vccs:
                 return [("out+", 0f, -200f), ("out-", 0f, 200f),
                         ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
+            // Mixer (single-ended): the three signal pins of the classic glyph — RF left, LO
+            // bottom, IF right. The engine's other three nets (each port's −) are tied to ground by
+            // NetExtractor, the same way TermG's port 2 is; they are deliberately NOT pins.
+            case SymbolKind.Mixer:
+                return [("RF", -300f, 0f), ("LO", 0f, 300f), ("IF", 300f, 0f)];
+            // MixerD: all SIX nets, in the ± pair order MixerModel reads —
+            // [0] rf+, [1] rf−, [2] lo+, [3] lo−, [4] if+, [5] if−.
+            // Pin ORDER is the engine contract: swapping a pair inverts that port's voltage, which
+            // is a circuit that still solves, so the order is asserted by test rather than left to
+            // the geometry. RF on the left, IF on the right, LO along the bottom — the same reading
+            // direction as the single-ended tile, so the two are recognisably one device.
+            case SymbolKind.MixerD:
+                return [("rf+", -300f, -100f), ("rf-", -300f, 100f),
+                        ("lo+",  -100f, 300f), ("lo-",  100f, 300f),
+                        ("if+",  300f, -100f), ("if-",  300f, 100f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);
