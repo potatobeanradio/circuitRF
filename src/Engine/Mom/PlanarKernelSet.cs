@@ -103,6 +103,47 @@ public sealed record PlanarLevels(IReadOnlyList<double> Z, double GroundZ = 0.0)
     public const double MaxElectricalLength = 0.30;
 
     /// <summary>
+    /// <b>MIM-3 — how large a CELL may be against the SEPARATION between two conductor levels
+    /// before the cross-level block stops being the answer it looks like. A NOTE, never a
+    /// refusal.</b>
+    ///
+    /// <para>This is a property of the QUADRATURE, not of the kernel, and the two tiers were
+    /// separated before either was believed. The kernel is fine: at height pairs straddling a
+    /// 0.05-3 um capacitor dielectric, <see cref="Dcim.FitAtHeights"/> against direct Sommerfeld
+    /// integration is <b>flat in the separation</b> — worst 4.2e-3 of the free-space kernel at
+    /// 0.05 um and 6.4e-3 at 3 um, i.e. the interconnect-scale spacing L9c already measured. There
+    /// is no thin-layer kernel failure to find.</para>
+    ///
+    /// <para>The FILL is where it goes. On two coincident plates straddling the dielectric,
+    /// entry-wise against the same matrix at forced-high quadrature, scaled by the block's own
+    /// largest entry — the SAME-level block stays put and only the CROSS-level block moves:</para>
+    ///
+    /// <list type="table">
+    ///   <item><term>cell/d = 1</term><description>2.3e-7</description></item>
+    ///   <item><term>cell/d = 2</term><description>9.6e-6</description></item>
+    ///   <item><term>cell/d = 5</term><description>4.1e-3</description></item>
+    ///   <item><term>cell/d = 10</term><description>4.1e-2</description></item>
+    ///   <item><term>cell/d = 20</term><description>1.7e-1</description></item>
+    /// </list>
+    ///
+    /// <para>Four decades between cell/d = 1 and 20 — steepest at the bottom, flattening as it
+    /// saturates — and §L8c's own failure mode: reciprocity holds to 1e-19 and passivity to 1e-5
+    /// the whole way up, so nothing downstream looks wrong. The
+    /// mechanism is the recorded one (§3.5): a cross-level entry "has no 1/rho", but at
+    /// d &lt;&lt; cell the kernel has a peak of width d inside a cell of width h, and a rule that
+    /// treats the pair as smooth integrates straight over it.</para>
+    ///
+    /// <para><b>What it costs in the answer</b>, on a de-embedded 10 x 10 um shunt plate pair
+    /// against eps0*epsr*A/d, with the same structure minus its lower plate subtracted as the
+    /// baseline: 0.89 / 0.99 / 1.10 at cell/d = 1.25 / 2.5 / 5, then <b>1.46 at 12.5 and the wrong
+    /// SIGN at 25 and 50</b>. 5 is where the two ladders agree, so 5 is the number.</para>
+    ///
+    /// <para>Kernel A on the same cross-section reproduces the closed form to 1.007-1.16 over the
+    /// whole ladder and is mesh-converged to five digits, so the closed form is not in doubt.</para>
+    /// </summary>
+    public const double ValidatedCellOverSeparation = 5.0;
+
+    /// <summary>
     /// The refusal, and it is now earned on ONE quantity rather than two.
     ///
     /// <para><b>L9e's geometric bound (<c>MaxLengthOverWidth = 0.5</c>) is RETIRED.</b> It existed

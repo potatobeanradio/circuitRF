@@ -1790,7 +1790,122 @@ public static class PlanarSolve
               $"components — this is a note rather than a refusal because 'unmeasured' is what it " +
               $"is, and refusing on it would be inventing a limit rather than reporting one.");
 
+        // ── MIM-3 — the CELL against the LEVEL SEPARATION. A note, never a refusal ────────────
+        notes.AddRange(LevelSeparationNotes(problem, mesh, fHiHz, fmt));
+
         return (EmSuitability.Yes, notes);
+    }
+
+    /// <summary>
+    /// <b>MIM-3 — is any pair of conductor levels closer together than the cells that straddle
+    /// them can resolve?</b> A NOTE, never a refusal, for R-prt-13's reason: the answer is still
+    /// produced, it is still reciprocal and passive, and what is unreliable is a MAGNITUDE. A
+    /// refusal would also take away the many multi-level runs where the ratio is fine.
+    ///
+    /// <para>The quantity is asked per ADJACENT LEVEL PAIR and over the cells that actually sit on
+    /// those two levels, because that is the only place the cross-level block is evaluated —
+    /// R-zz-1's own discipline. Reporting the mesh's largest cell anywhere would grade a plate pair
+    /// on a cell belonging to some unrelated wide conductor.</para>
+    ///
+    /// <para><b>The remedy names the binding quantity</b> (§3.5's own trap, and the reason
+    /// <c>BuildRefusal</c> asks <c>waveBinds</c>): the cell size is
+    /// <c>min(λ_g/CellsPerWavelength, width/MinCellsAcrossConductor)</c>, and only the FIRST term
+    /// responds to the two frequency knobs. Where the second wins — which on a plate small enough
+    /// to sit this close to another level it always does by orders of magnitude — lowering "cells
+    /// per wavelength" or the mesh frequency changes nothing at all.
+    ///
+    /// <para><b>And it is DECIDED rather than hedged, by turning the knob round.</b> The note
+    /// reports how large <c>CellsPerWavelength</c> would have to be for the λ_g term to reach the
+    /// pitch this mesh already has: <c>λ_g / cell</c> at the sweep's top, with λ_g taken at the
+    /// stack's largest εᵣ. On a plate small enough to sit this close to another level that number
+    /// runs to thousands, and quoting it is what lets the note say the frequency knobs do not act
+    /// here without asserting anything it has not computed.</para></para>
+    /// </summary>
+    public static List<string> LevelSeparationNotes(
+        PlanarProblem problem, PlanarMesh mesh, double fHiHz,
+        SurfaceMesher.PlanarLengthFormat? lengthFormat = null)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        ArgumentNullException.ThrowIfNull(mesh);
+        var notes = new List<string>();
+        var fmt   = lengthFormat ?? SurfaceMesher.DefaultLengthFormat;
+        var levels = PlanarLevels.From(problem);
+        if (levels.Z.Count < 2) return notes;
+
+        double worstRatio = 0, worstSep = 0, worstCell = 0;
+        int worstLo = -1;
+
+        for (int lo = 0; lo + 1 < levels.Z.Count; lo++)
+        {
+            double sep = Math.Abs(levels.Z[lo + 1] - levels.Z[lo]);
+            if (!(sep > 0)) continue;
+
+            double cell = 0;
+            foreach (var c in mesh.Cells)
+            {
+                if (c.LayerIndex != lo && c.LayerIndex != lo + 1) continue;
+                cell = Math.Max(cell, Math.Max(c.Width, c.Height));
+            }
+            if (!(cell > 0)) continue;
+
+            double ratio = cell / sep;
+            if (ratio <= worstRatio) continue;
+            worstRatio = ratio; worstSep = sep; worstCell = cell; worstLo = lo;
+        }
+
+        if (worstLo < 0) return notes;
+
+        // The two frequency knobs reach the cell size ONLY through the λ_g/CellsPerWavelength cap,
+        // so the question "do they act here" has an arithmetic answer: what would CellsPerWavelength
+        // have to be for that cap to equal the pitch this mesh already has? λ_g at the stack's
+        // largest εᵣ is the shortest guided wavelength anywhere in it, i.e. the most generous form of
+        // the question. (§3.5's trap is naming a remedy without asking whether it BINDS; this is the
+        // asking.)
+        double epsMax = 1.0;
+        foreach (var l in problem.EffectiveStack.Layers) epsMax = Math.Max(epsMax, l.Material.EpsR);
+        double lambdaG = fHiHz > 0 ? EmConstants.C0 / (fHiHz * Math.Sqrt(epsMax)) : double.NaN;
+        double cellsPerWavelengthNeeded = lambdaG / worstCell;
+
+        string where = $"levels {worstLo} and {worstLo + 1} ({fmt(worstSep)} apart, largest " +
+                       $"straddling cell {fmt(worstCell)})";
+
+        if (worstRatio <= PlanarLevels.ValidatedCellOverSeparation)
+        {
+            notes.Add(
+                $"The closest conductor levels are resolved by the mesh: cell/separation = " +
+                $"{worstRatio:G3} at {where}, inside the " +
+                $"{PlanarLevels.ValidatedCellOverSeparation} MIM-3 measured the cross-level fill " +
+                $"over (≤ 4.1e-3 against forced-high quadrature; the extracted plate capacitance " +
+                $"within 10% of ε₀εᵣA/d).");
+            return notes;
+        }
+
+        notes.Add(
+            $"CELL/SEPARATION = {worstRatio:G3} at {where}, PAST the " +
+            $"{PlanarLevels.ValidatedCellOverSeparation} the cross-level fill is measured over. " +
+            $"MIM-3 measured the cross-level matrix block against forced-high quadrature at " +
+            $"2.3e-7 / 4.1e-3 / 3.9e-2 / 1.5e-1 for cell/separation of 1 / 5 / 10 / 20 — four " +
+            $"decades of it, steepest at the bottom — and the capacitance extracted from a plate " +
+            $"pair follows it: within 10% of " +
+            $"ε₀εᵣA/d up to 5, 1.46× at 12.5, and the WRONG SIGN at 25. The KERNEL is not the " +
+            $"problem (it is flat in the separation down to 0.05 µm); the quadrature is, because a " +
+            $"cross-level entry carries a peak of width {fmt(worstSep)} inside a cell of " +
+            $"{fmt(worstCell)}. Nothing downstream shows it: reciprocity and passivity hold " +
+            $"throughout. What acts on this is the CELL PITCH across the metal on those two levels. " +
+            $"That pitch is min(λ_g/CellsPerWavelength, width/{PlanarMeshSettings.MinCellsAcrossConductor}), " +
+            $"and only the first term responds to the frequency knobs" +
+            (double.IsFinite(cellsPerWavelengthNeeded) && cellsPerWavelengthNeeded > 200
+                ? $" — and here it would take Cells per wavelength ≥ {cellsPerWavelengthNeeded:N0} " +
+                  $"(or the mesh frequency raised by that factor) before that term even reaches the " +
+                  $"{fmt(worstCell)} this mesh already has, which is far past the unknown ceiling " +
+                  $"this kernel solves under. At any usable setting the second term binds, and it " +
+                  $"is the metal's own width — so neither frequency knob acts here. "
+                : $"; where the second term binds — the metal's own width — neither frequency knob " +
+                  $"acts at all. ") +
+            $"Coupling " +
+            $"between these two levels — a thin-film capacitor's plate capacitance above all — is " +
+            $"the part of this answer to distrust; everything on a single level is unaffected.");
+        return notes;
     }
 
     /// <summary>

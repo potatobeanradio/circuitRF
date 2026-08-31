@@ -7778,3 +7778,282 @@ is a statement about. Identical in every other respect; the via is 10% of the li
 0.5 s at `N_z` = 2 and the same N. The dense path pays the same `N_h × N_z` mixed entries, so this is
 not a regression against it — but it is the term that decides whether the ceiling can be widened for
 a mesh with a via FIELD rather than a via.
+
+# MIM-3 — thin dielectric layers: what was measured, and what it costs (brief-em-mim-3-thin-layer-gate.md, 2026-08-30)
+
+A MIM capacitor puts two meshed conductor levels 0.05–0.5 µm apart, `LayerStack.CanRepresent`
+accepts any positive thickness, and nothing had ever measured the kernel or the quadrature there.
+The brief was measurement-first and the answer separates cleanly into two halves: **the kernel is
+fine at plate spacing and the QUADRATURE is not.** The narrative and the verdict are in
+`RESOLVED.md` §MIM-3; the tables are here.
+
+Run against a post-MIM-6 build, so the plate gap is the 0.2 µm the shipped MIM technology states
+and not the 3.2 µm a pre-MIM-6 tree would have measured. Everything below is a scratch harness,
+Release, run alone.
+
+## The fixture, and why d is the only thing that moves
+
+`GaAs 103 µm | capacitor dielectric d (εᵣ 6.8, tanδ 0.001) | air to 106 µm`, on a ground plane —
+the shipped `mmic-GaAs_2LM_100um_MIM` stack with its thickness parameterised. The top stays at
+106 µm at every rung, so the mode content and the ρ/λ span do not move with d; **and in the fill
+and physics tiers d is a STACKUP number, so the artwork, the mesh, the unknown count and the ports
+are bit-identical across the whole ladder.** Each ladder therefore varies one thing.
+
+The ladder carries **2 µm and 3 µm control rungs** on the same stack shape. 3 µm is L9c's own
+`MmicTwoLevel` spacing, i.e. the separation the existing record was taken at, so every table below
+can be read against a regime that was already measured.
+
+## Table 0 — the ORACLE, before anything is concluded from it
+
+`SommerfeldIntegral.EvaluateInterior`'s own header warns that a cross-region pair separated by a
+3 µm spacer exhausts `MaxTailPanels` on the default settings. This ladder asks for 0.05 µm, so the
+first thing measured was the oracle. Worst over d = 0.05 µm, both pairings, all four components,
+ρ/λ ∈ [1e-3, 1] (G_A^zz to 0.1, its own validated range):
+
+| knob, one at a time | worst rel. move vs default | worst cost |
+|---|---|---|
+| `RelativeTolerance` 1e-11 → 1e-12 | **3.3e-8** | 3.17 s (G_A^zz) |
+| `PanelNodes` 16 → 24 | 1.8e-10 | 0.29 s |
+| `OscillationDensity` 8 → 16 | 8.8e-11 | 0.34 s |
+| `MaxSubdivisions` 14 → 18 | 5.0e-16 | 2.17 s |
+| `MaxTailPanels` 500 → 5000 | 0.0 | 0.34 s |
+
+`TailConverged` is true at every point at the DEFAULT settings, with tail residuals ≤ 2.5e-8. **The
+oracle is converged at its defaults to ~3e-8 relative, five decades below anything reported below,
+so the defaults are what Table 1 uses.**
+
+**A setting that never returns is not a tighter oracle, it is no oracle.** The first attempt paired
+`RelativeTolerance = 1e-13` with `MaxSubdivisions = 18` and took ~15 minutes for a single
+(d, pairing, component) row at ρ/λ ≥ 0.5 — the whole 120-row table would have been ~30 hours. The
+knob table above exists because that had to be diagnosed rather than waited out.
+
+## Table 1 — milestone 1, the KERNEL tier
+
+`Dcim.FitAtHeights` → `DcimModel.EvaluateAtHeights` (what `PlanarKernelSet` hands the fill) against
+`EvaluateInterior`, at 10 GHz. The measure is L8a's and L9c's: the SCALED error `|ΔG|·4πR`, i.e.
+the error as a fraction of the free-space kernel at the same R. **Worst over both pairings**
+(low–low at 103 µm, low–high across the dielectric) and over the validated ρ span — ρ/λ ≤ 1 for
+G_A^xx / G_q / mixed (`ValidatedRhoOverLambdaInteriorHorizontal`) and ρ/λ ≤ 0.1 for G_A^zz
+(`ValidatedRhoOverLambdaAtHeights`).
+
+| d (µm) | G_A^xx | G_q | G_A^zz | mixed | worst STRICT rel, ρ/λ ≤ 0.1 (excl. mixed low–low) |
+|---|---|---|---|---|---|
+| 0.05 | 7.5e-4 | 4.2e-3 | 1.1e-3 | 7.5e-4 | 1.2e-2 |
+| 0.10 | 7.4e-4 | 4.1e-3 | 5.6e-3 | 7.5e-4 | 1.2e-2 |
+| 0.20 | 7.9e-4 | 4.0e-3 | 6.1e-3 | 7.5e-4 | 1.4e-2 |
+| 0.50 | 7.5e-4 | 5.6e-3 | 6.1e-3 | 7.5e-4 | 2.1e-2 |
+| 1.00 | 7.4e-4 | 6.3e-3 | 2.7e-3 | 7.5e-4 | 1.6e-2 |
+| **2.00** (control) | 7.8e-4 | 5.7e-3 | 5.7e-3 | 7.5e-4 | 2.0e-2 |
+| **3.00** (control, = L9c's `MmicTwoLevel`) | 7.1e-4 | 6.4e-3 | 2.8e-3 | 7.5e-4 | 1.6e-2 |
+
+**The ladder is FLAT.** 0.05 µm is not worse than 3 µm on any component — it is marginally better
+on two of them — and every number sits inside L9b's own ≤1.6e-2 envelope for the top-half-space
+pairing and L9c's ≤1.9e-2 for the interior one. **There is no thin-layer kernel failure to find**,
+and the ρ/λ constants stay exactly where L8a/L9b/L9c measured them.
+
+The εᵣ = 1 control (the same geometry with no permittivity contrast in the slot) is flat in d too,
+so the flatness is not the contrast cancelling itself out.
+
+### One observation that is NOT a MIM-3 finding, recorded so nobody re-finds it
+
+The **mixed component at a same-level (low–low) pairing** fits with 0 images and an infinite
+residual, and its strict relative error is 2.07 at every rung. It is **d-independent to four
+figures** — the last three ρ columns are the same numbers at 0.05 µm and at 3 µm — and it is
+*worse* on the εᵣ = 1 control (1.58e+1). So it is a property of that pairing, not of thin layers.
+Its scaled error is ≤ 7.5e-4 throughout, and the fill only asks the mixed kernel about a via
+against a horizontal basis, so nothing here depends on it. Left as an observation.
+
+## Table 2 — milestone 2, the FILL tier. This is where it goes
+
+Two coincident square plates, four cells to a side, straddling the dielectric; `FillMultiLevel` at
+the SHIPPED quadrature against the same matrix at a forced-high one, entry-wise, scaled by **that
+block's own largest entry**. The kernel is identical in both, so what is isolated is the
+quadrature. N = 48 and cells = 32 at every rung by construction — only the cell/separation ratio
+moves.
+
+Forced-high is `SelfPanels 8 / TouchPanels 6 / NearNodes 20 / MidNodes 16 / FarNodes 12 /
+NearRatio 8 / FarRatio 32 / remainder 16-12-8 / UseRadialTable off`. The last two columns step it
+again (12/10, 28/24/20, remainder 24-20-16) on the d = 0.2 µm rungs, so "the reference is
+converged" is measured rather than asserted.
+
+| d (µm) | cell/d | cell (µm) | plate (µm) | same-level \|ΔZ\| | **cross-level \|ΔZ\|** | ref. same | ref. cross |
+|---|---|---|---|---|---|---|---|
+| 0.05 | 1 | 0.05 | 0.2 | 3.37e-6 | **2.33e-7** | – | – |
+| 0.05 | 2 | 0.1 | 0.4 | 3.54e-6 | **9.59e-6** | – | – |
+| 0.05 | 5 | 0.25 | 1 | 2.83e-6 | **4.11e-3** | – | – |
+| 0.05 | 10 | 0.5 | 2 | 3.95e-4 | **3.93e-2** | – | – |
+| 0.05 | 20 | 1 | 4 | 9.59e-3 | **1.52e-1** | – | – |
+| 0.05 | 50 | 2.5 | 10 | 9.41e-2 | **4.85e-1** | – | – |
+| 0.10 | 1 | 0.1 | 0.4 | 3.37e-6 | **2.29e-7** | – | – |
+| 0.10 | 2 | 0.2 | 0.8 | 3.53e-6 | **8.46e-6** | – | – |
+| 0.10 | 5 | 0.5 | 2 | 3.15e-6 | **3.89e-3** | – | – |
+| 0.10 | 10 | 1 | 4 | 3.33e-4 | **3.81e-2** | – | – |
+| 0.10 | 20 | 2 | 8 | 8.73e-3 | **1.49e-1** | – | – |
+| 0.10 | 50 | 5 | 20 | 8.94e-2 | **4.78e-1** | – | – |
+| **0.20** | 1 | 0.2 | 0.8 | 3.37e-6 | **2.24e-7** | 1.53e-8 | **7.65e-15** |
+| **0.20** | 2 | 0.4 | 1.6 | 3.54e-6 | **7.35e-6** | 1.60e-8 | **1.31e-10** |
+| **0.20** | 5 | 1 | 4 | 2.89e-6 | **3.66e-3** | 1.83e-8 | **2.42e-5** |
+| **0.20** | 10 | 2 | 8 | 3.84e-4 | **3.68e-2** | 7.86e-7 | **1.69e-3** |
+| **0.20** | 20 | 4 | 16 | 9.45e-3 | **1.46e-1** | 2.51e-4 | **1.61e-2** |
+| **0.20** | 50 | 10 | 40 | 9.34e-2 | **4.72e-1** | 9.75e-3 | **8.29e-2** |
+| 0.50 | 1 | 0.5 | 2 | 3.37e-6 | **1.86e-7** | – | – |
+| 0.50 | 2 | 1 | 4 | 3.54e-6 | **2.35e-6** | – | – |
+| 0.50 | 5 | 2.5 | 10 | 2.89e-6 | **2.26e-3** | – | – |
+| 0.50 | 10 | 5 | 20 | 3.84e-4 | **2.81e-2** | – | – |
+| 0.50 | 20 | 10 | 40 | 9.45e-3 | **1.23e-1** | – | – |
+| 0.50 | 50 | 25 | 100 | 9.35e-2 | **4.24e-1** | – | – |
+| 1.00 | 1 | 1 | 4 | 3.37e-6 | **1.58e-7** | – | – |
+| 1.00 | 2 | 2 | 8 | 3.54e-6 | **7.56e-7** | – | – |
+| 1.00 | 5 | 5 | 20 | 2.94e-6 | **1.50e-3** | – | – |
+| 1.00 | 10 | 10 | 40 | 3.75e-4 | **2.25e-2** | – | – |
+| 1.00 | 20 | 20 | 80 | 9.32e-3 | **1.08e-1** | – | – |
+| 1.00 | 50 | 50 | 200 | 9.33e-2 | **3.94e-1** | – | – |
+| **2.00** (control) | 1 | 2 | 8 | 3.37e-6 | **7.60e-8** | – | – |
+| **2.00** | 2 | 4 | 16 | 3.54e-6 | **3.00e-7** | – | – |
+| **2.00** | 5 | 10 | 40 | 3.12e-6 | **2.05e-4** | – | – |
+| **2.00** | 10 | 20 | 80 | 3.39e-4 | **8.91e-3** | – | – |
+| **2.00** | 20 | 40 | 160 | 8.86e-3 | **7.04e-2** | – | – |
+| **2.00** | 50 | 100 | 400 | 9.34e-2 | **3.30e-1** | – | – |
+
+**The ladder is a function of cell/d and essentially not of d.** Read down any cell/d value and the
+cross-level column moves by at most 3× across a 40× change in the separation itself, while reading
+across cell/d moves it by six decades. That is what makes the ratio — rather than the thickness —
+the quantity the verdict is stated in, and it is why `ValidatedCellOverSeparation` is a mesh
+condition rather than a stackup one.
+
+**Three things, and the third is an honesty note.**
+
+1. **The cross-level block loses four decades between cell/separation 1 and 20** — 2.3e-7,
+   9.6e-6, 4.1e-3, 3.9e-2, 1.5e-1, 4.9e-1 — steepest at the bottom and flattening as it saturates.
+   The SAME-level block does not follow it — it is still 3e-6 where
+   the cross-level block is at 4e-3, and only turns up (9e-2) at cell/d = 50, where the cells have
+   become large in absolute terms as well. So this is the cross-level quadrature, not a coarse
+   mesh.
+2. **The reference is converged where the verdict is taken.** At cell/d = 1 the default-vs-high
+   difference is 2.24e-7 while high-vs-higher is 7.65e-15 — seven decades apart. At cell/d = 5,
+   where the range is drawn, it is 3.66e-3 against 2.42e-5, still 150×. The error being reported is
+   the default's, not the reference's.
+3. **AND THE HONESTY NOTE: at the COARSEST rungs the reference is not converged either.** At
+   cell/d = 20 the two references disagree by 1.61e-2 against a default-vs-high of 1.46e-1 — only
+   9× — and at 50 it is 8.29e-2 against 4.72e-1, 5.7×. The same peak that defeats the shipped rule
+   is starting to defeat the expensive one, which is itself evidence for the mechanism. Those two
+   rungs therefore support "the error is large and grows" and NOT the third significant figure of
+   any number in them. **Nothing in the verdict rests on them**: the range is drawn at 5, where the
+   reference has 150× of headroom.
+
+**The mechanism is the one already on the record** (§3.5): *"cross-level entries have no 1/ρ but
+still carry logarithms"*, and *"different levels ⇒ smooth ⇒ plain quadrature"* is a recorded trap.
+At d ≪ cell the cross-level kernel has a peak of width d sitting inside a cell of width h; a rule
+that treats the pair as smooth because Δz > 0 integrates straight over it. **This is §L8c's
+converged-looking-but-wrong mode reproduced exactly** — see Table 4: reciprocity holds to 1e-19 and
+passivity to 1e-5 the whole way up.
+
+## Table 3 — milestone 3, the PHYSICS tier: what it costs in an answer
+
+### 3a — the instrument, and the two that were discarded first
+
+**Raw S cannot carry a capacitance in this engine, and that is measured rather than assumed.** The
+port is necessarily a series delta gap whose `a₂₁ ∝ ω` (§5's low-frequency floor). The control:
+
+| structure | expected | raw reading |
+|---|---|---|
+| 70 µm GaAs microstrip, 800 µm, 10 GHz (≈ 50 Ω, matched) | \|S₂₁\| ≈ 1 | **\|S₂₁\| = 0.0706**, \|S₁₁\| = 0.997 |
+
+So the first two instruments were discarded on the strength of that one line, not on their answers:
+a one-port shunt cap read `Im(Y₁₁)/ω` **negative** at d ≤ 0.1 µm, and a series two-port read
+`−Im(Y₂₁)/ω` at 0.50 → 0.18 fF over a 40× change in d where ε₀εᵣA/d spans 120 → 3 fF. Both are the
+port, not the structure. **This is MIM-2's finding (b) reproduced, and it confirms MIM-2's
+RETRACTION of it rather than the finding.**
+
+### 3b — the de-embedded reading
+
+De-embedding a port off the slab top is MIM-4's, so the stack is truncated at the upper plate:
+`GaAs 103 µm | capacitor dielectric d`, top = the upper plate's own level. A 10 × 10 µm shunt MIM
+capacitor — lower plate on the interior interface, grounded by a backside via; upper plate on the
+slab top with a 40 µm feed to one de-embedded port. 60 GHz, so a 30 fF plate pair is a readable
+53 Ω rather than a short. The mesh pitch is 2.5 µm at every rung, so cell/d is the ladder's axis
+exactly as in Table 2.
+
+`C_baseline` is the SAME feed and the SAME port with the lower plate and via removed: **4.93 fF,
+frequency-stable to 8% from 20 to 140 GHz.** Everything that is not the capacitor is in it.
+
+| d (µm) | cell/d | C_deemb (fF) | C − baseline (fF) | ε₀εᵣA/d (fF) | Palmer (fF) | **(C−base)/(A/d)** |
+|---|---|---|---|---|---|---|
+| 2.00 | 1.25 | 7.61 | 2.68 | 3.010 | 4.715 | **0.89** |
+| 1.00 | 2.5 | 10.86 | 5.93 | 6.021 | 7.991 | **0.99** |
+| 0.50 | 5 | 18.15 | 13.22 | 12.042 | 14.278 | **1.10** |
+| 0.20 | 12.5 | 48.92 | 44.00 | 30.104 | 32.691 | **1.46** |
+| 0.10 | 25 | −23.76 | −28.68 | 60.208 | 63.061 | **−0.48** |
+| 0.05 | 50 | −6.56 | −11.48 | 120.417 | 123.536 | **−0.10** |
+
+**Table 2 predicts Table 3b, rung for rung.** Within 10% of the closed form while cell/d ≤ 5 (where
+the cross-level fill is ≤ 4.1e-3), 1.46× at 12.5, and the WRONG SIGN at 25 and 50 (where the fill is
+at 1.5e-1 and 4.9e-1).
+
+### 3c — frequency consistency, which is what says it is not a capacitance up there
+
+A capacitance does not depend on ω. Same structure, `C − 0` (raw de-embedded, no baseline
+subtracted) at six frequencies:
+
+| d (µm) | 20 GHz | 40 | 60 | 80 | 100 | 140 |
+|---|---|---|---|---|---|---|
+| 2.00 | 7.30 | 7.42 | 7.61 | 7.90 | 8.32 | 10.03 |
+| 1.00 | 10.09 | 10.36 | 10.86 | 11.70 | 13.13 | 21.28 |
+| 0.50 | 15.55 | 16.34 | 18.15 | 21.24 | 28.17 | **−330.6** |
+| 0.20 | 38.95 | 41.25 | 48.93 | 110.4 | **−134.8** | **−16.9** |
+| 0.10 | −64.5 | −71.7 | −23.8 | −9.6 | −11.8 | −8.3 |
+| **the baseline** | 4.833 | 4.880 | 4.927 | 4.979 | 5.041 | 5.234 |
+
+The baseline is stable to 8% across the whole band; the plate pair is not, and it destabilises in
+the same order the fill ladder degrades. (The 140 GHz column also carries de-embedding's own f²
+error growth, §5 — it is not all MIM-3's.)
+
+### 3d — kernel A on the equivalent cross-section, which settles the closed form
+
+Two 10 µm strips, 0.05 µm thick, gap d of εᵣ 6.8, over 103 µm of GaAs on ground. `C₁₂` from the
+Maxwell matrix against ε₀εᵣW/d per metre. **Kernel A shares no code with kernel B** — no DCIM, no
+rooftop basis, no layered spectral Green's function, no shared tensor grid.
+
+| d (µm) | C₁₂ (pF/m) | ε₀εᵣW/d (pF/m) | ratio | ε_eff |
+|---|---|---|---|---|
+| 0.05 | 12126.3 | 12041.7 | **1.0070** | 6.783 |
+| 0.10 | 6098.0 | 6020.9 | **1.0128** | 6.781 |
+| 0.20 | 3080.4 | 3010.4 | **1.0232** | 6.788 |
+| 0.50 | 1265.2 | 1204.2 | **1.0506** | 6.834 |
+| 1.00 | 656.5 | 602.1 | **1.0904** | 6.935 |
+| 2.00 | 349.0 | 301.0 | **1.1594** | 7.139 |
+
+Mesh-converged: refining 1.0 → 3.0 moves `C₁₂` at d = 0.2 µm from 3080.37 to 3080.15 pF/m, i.e. the
+fifth digit. The excess over the bare form grows monotonically with d, which is what a fringing
+correction does. **The closed form is not in doubt, and a 0.05 µm gap of εᵣ 6.8 is not intrinsically
+hard — kernel A does it to 0.7%.**
+
+## Table 4 — the self-consistency set, and why it catches nothing
+
+Same fixture as Table 3's discarded series two-port (both plates meshed, two ports, raw S):
+
+| d (µm) | \|S₁₂ − S₂₁\| | max eig(S Sᴴ) |
+|---|---|---|
+| 0.05 | 8.7e-19 | 0.999995 |
+| 0.10 | 4.3e-19 | 1.000008 |
+| 0.20 | 2.2e-19 | 0.999999 |
+| 0.50 | 2.2e-19 | 0.999985 |
+| 1.00 | 4.3e-19 | 0.999986 |
+| 2.00 | 2.2e-19 | 0.999987 |
+
+**Reciprocity to 1e-19 and passivity to 1e-5 at every rung, including the ones whose capacitance
+has the wrong sign.** §10.9's oracle-free set is blind to this by construction — the matrix is
+still complex-symmetric and the structure still does not create energy; what is wrong is a
+magnitude inside it. That is the whole reason MIM-3 was a measurement brief rather than a test.
+
+## What changed in the code
+
+| file | change |
+|---|---|
+| `PlanarKernelSet.cs` | `PlanarLevels.ValidatedCellOverSeparation = 5.0`, carrying Table 2's and Table 3b's ladders in its own doc comment |
+| `PlanarSolve.cs` | `LevelSeparationNotes` — a NOTE, never a refusal; asked per ADJACENT LEVEL PAIR over the cells on those two levels only (R-zz-1's discipline), and naming the binding quantity rather than the inert frequency knobs (§3.5's trap). Called from `VerticalRangeVerdict`, so every multi-level sweep carries it |
+| `tests/Engine.Tests/Mom/MimThinLayerTests.cs` | 6 routine tests (~1 s: the fixed-input cross-level literals, and the note's firing, wording, scoping and wiring) + `T7`, `Category=Benchmark`, which is the accuracy statement above (1 m 5 s in Debug) |
+
+**Nothing in the one-level or interconnect-scale arithmetic was touched.** No existing gate was
+loosened; `Dcim.ValidatedRhoOverLambdaAtHeights`, `…Layered` and `…InteriorHorizontal` are exactly
+where they were, because Table 1 says they should be.

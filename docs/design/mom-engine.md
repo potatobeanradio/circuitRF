@@ -1174,8 +1174,9 @@ geometry* — the old wording would have excluded a solver that requires none of
 
 ### 10.12 Thin-film (MIM) capacitors — plan
 
-**Status: in progress. MIM-1 (region vias), MIM-2 (the shipped exemplar) and MIM-6 (the level
-reference surface) are built, 2026-08-30; MIM-3 … MIM-5 remain proposals.** MIM-6 is not in the
+**Status: in progress. MIM-1 (region vias), MIM-2 (the shipped exemplar), MIM-6 (the level
+reference surface) and MIM-3 (the thin-layer ladders and their verdict) are built, 2026-08-30;
+MIM-4 and MIM-5 remain proposals.** MIM-6 is not in the
 original four-gap plan below — it is the fifth gap MIM-2's own measurement surfaced, and it is
 folded into gap 2's finding (a) rather than given a numbered gap of its own, because it is that
 finding's fix and nothing else.
@@ -1240,20 +1241,34 @@ and is built (MIM-1, 2026-08-30).
    path — is NOT taught the field, so on that technology it and the extractor differ by one metal
    thickness (100 vs 103 µm; teaching it would move a 70 µm line's static Z₀ 49.42 → 50.06 Ω, and its
    h is the physical substrate while the extractor's is a sheet POSITION). Write-up:
-   `src/Design/RESOLVED.md`, `src/Ui/RESOLVED.md` §MIM-6.** (b) **The plate capacitance is not in the
-   answer at all**: on a one-port 10 × 10 µm shunt cap the solver returns 0.30 fF at modelled gaps of
-   3.2 / 1.2 / 0.25 / 0.1 µm — constant to 1% across a 32× change, where ε₀εᵣA/d spans 1.88 to
-   60.2 fF. Ruled out by the measurement itself: not the feeds (one port, 10 µm feed,
-   frequency-independent from 2 to 20 GHz), not (a) (changing the gap directly changes nothing), not
-   the mesh (identical N). Write-up: `src/Ui/RESOLVED.md`.
-3. **Thin-layer numerics (MIM-3). > MIM-2 measured the premise and it is UNDERSTATED — the
-   cross-level plate term is absent at SEVERAL µm, not only sub-µm; see MIM-2's finding (b) above,
-   which is now this brief's first order of business.** Two meshed levels 0.05–0.5 µm apart is a
-   regime nothing has measured: §L8c's images-closer-than-a-cell quadrature failure mode is reproduced deliberately by
-   plate spacing, cross-level kernels still carry logarithms (§3.5 of the engine record), and
-   `LayerStack` accepts any positive thickness without evidence. Measurement-first: kernel / fill /
-   physics ladders against direct Sommerfeld integration and the parallel-plate closed form, ending
-   in a validated-range statement or a bounded fix.
+   `src/Design/RESOLVED.md`, `src/Ui/RESOLVED.md` §MIM-6.** (b) An initial claim that **the plate
+   capacitance is not in the answer at all** — 0.30 fF on a one-port shunt cap, constant across a
+   32× change in the modelled gap — was RETRACTED at MIM-2 as an artefact of reading RAW,
+   un-de-embedded S. **> MIM-3 (2026-08-30) confirms the retraction and measures why the rule is
+   stronger than it looked:** a matched ~50 Ω GaAs microstrip reads |S₂₁| = 0.0706 raw at 10 GHz,
+   because the port is a series delta gap with a₂₁ ∝ ω (§5's low-frequency floor). A raw reading of
+   ANY reactive element in this kernel is the port, at any topology — MIM-3 reproduced the ~0.3 fF
+   answer twice with two different raw instruments, and de-embedding the same structure moved it to
+   44 fF against a 30 fF closed form. Write-up: `src/Ui/RESOLVED.md`,
+   `src/Engine/Mom/RESOLVED.md` §MIM-3.
+3. **Thin-layer numerics (MIM-3). > Built 2026-08-30, as a measurement plus a note.** The
+   kernel / fill / physics ladders were run against direct Sommerfeld integration, forced-high
+   quadrature and the parallel-plate closed form, with 2 µm and 3 µm control rungs at the
+   interconnect spacing L9c had already measured. **The kernel is flat in the separation** — worst
+   4.2e-3 of the free-space kernel at 0.05 µm against 6.4e-3 at 3 µm, inside L9b's own envelope, so
+   no ρ/λ constant moved and none was moved. **The CROSS-LEVEL quadrature is what degrades**, by four
+   decades between cell size / level separation of 1 and 20 (2.3e-7, 4.1e-3 at 5, 3.9e-2 at 10,
+   1.5e-1 at 20, 4.9e-1 at 50) while the same-level block stays at 3e-6 — §3.5's recorded "different levels ⇒ smooth ⇒
+   plain quadrature" trap, with the peak's width now set by the stackup rather than by the mesh. The
+   extracted plate capacitance follows it rung for rung: within 10% of ε₀εᵣA/d while
+   cell/separation ≤ 5, 1.46× at 12.5, wrong SIGN at 25. Reciprocity (1e-19) and passivity (1e-5)
+   hold throughout, so nothing downstream shows it. The verdict is therefore a validated MESH
+   condition rather than a stackup one — `PlanarLevels.ValidatedCellOverSeparation = 5.0`, reported
+   by `PlanarSolve.LevelSeparationNotes` as a note and never a refusal. **The shipped MIM technology
+   sits outside it** (a 10 µm plate pair 0.2 µm apart meshes at 2.5 µm, i.e. 12.5) and the note
+   fires on it. Kernel A on the same cross-section reproduces the closed form to 1.007–1.16 and is
+   mesh-converged to five digits, so the closed form is not in doubt. Write-ups:
+   `src/Engine/Mom/RESOLVED.md` §MIM-3, tables in `src/Engine/Mom/HISTORY.md`.
 4. **Interior-height electrostatics (MIM-4 — §7's "all of Part B").** De-embedding's
    Z_c = γ/(jωC_pul) rests on an electrostatic image series over ONE grounded slab, which is why a
    de-embedded edge port off the slab top throws and a stratified region under the lowest level
@@ -1273,10 +1288,12 @@ and is built (MIM-1, 2026-08-30).
 > 0.2 µm. That was **brief MIM-6** (a per-conductor reference-surface field), sequenced before
 > MIM-3's physics tier so the ladder measures the true regime; **it is BUILT (2026-08-30) and the
 > shipped MIM capacitor now solves at 0.2 µm** — so MIM-3's physics tier may run, and must not be
-> run against a pre-MIM-6 build. (3) An initial claim that the plate
+> run against a pre-MIM-6 build. **It was run on a post-MIM-6 build and its verdict is gap 3
+> above.** (3) An initial claim that the plate
 > capacitance was absent from the kernel was RETRACTED as a measurement artifact — it read raw,
-> un-de-embedded S, which is the port discontinuity (a ~0.3 fF series element), not the structure;
-> the L9 gate's own bridged-vs-open record (|S₂₁| 0.9993 vs 0.0502) stands. Corollary for every
+> un-de-embedded S, which is the port and not the structure; the L9 gate's own bridged-vs-open
+> record (|S₂₁| 0.9993 vs 0.0502) stands, and **MIM-3 confirmed the retraction against a known-good
+> line: a matched 50 Ω microstrip reads |S₂₁| = 0.0706 raw.** Corollary for every
 > measurement in this section's briefs: never read a small element's value off raw S — compare
 > with/without on the same artwork, or measure de-embedded.
 
@@ -1285,10 +1302,11 @@ capacitor module imports faithfully and silently, so the technology-import repor
 the conductors its via list cannot reach and the layer-table rows nothing binds, and the user docs
 gain the three-row hand-add recipe.
 
-**What a MIM run looks like at each stage.** After MIM-1 + MIM-2: a runnable RAW solve (internal
-ports, or de-embedding off) that is STRUCTURALLY right and whose capacitance is not usable — MIM-2
-measured it as independent of the plate separation, so "accuracy resting on MIM-3's verdict" was
-optimistic: there is a missing term to find first. After
+**What a MIM run looks like at each stage.** After MIM-1 + MIM-2 + MIM-6: a runnable RAW solve
+(internal ports, or de-embedding off) that is STRUCTURALLY right and whose capacitance must not be
+read off it — **not because a term is missing, but because a raw reading in this kernel is the
+series delta-gap port (MIM-3, gap 3 above); the plate term is present and is right to 10% once
+de-embedded, provided the mesh resolves the gap to `ValidatedCellOverSeparation`.** After
 MIM-4: ordinary de-embedded S-parameters with the feed on any level. **The acceptance topology is a
 NETWORK — several capacitors joined by transmission lines in one run — because that is what an MMIC
 matching section is.** Nothing in the plan is per-capacitor: the extractor takes every shape on the

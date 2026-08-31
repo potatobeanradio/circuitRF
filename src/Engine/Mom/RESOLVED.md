@@ -1663,3 +1663,139 @@ src/Engine/Mom/PlanarSolve.cs         the general-kernel refusal replaced by the
 tests/Engine.Tests/Mom/PlanarP12BorderedAimTests.cs   NEW — 3 routine tests (3 s), 5 Benchmark (31 s)
 tests/Firewall.Tests/user-facing-text-allowlist.txt   two retired messages out, five new ones in
 ```
+
+# MIM-3 — thin dielectric layers: the verdict (brief-em-mim-3-thin-layer-gate.md, 2026-08-30)
+
+**The question.** A MIM capacitor puts two meshed conductor levels 0.05–0.5 µm apart.
+`LayerStack.CanRepresent` accepts any positive thickness, so nothing refuses the structure — which
+is the dangerous configuration: a complete, plausible answer with no evidence behind it. The brief
+was measurement-first, and the measurement had to come before any fix.
+
+Every table is in `HISTORY.md` §MIM-3. Run against a post-MIM-6 build, so the plate gap is the
+0.2 µm the shipped technology states rather than the 3.2 µm a pre-MIM-6 tree would have measured.
+
+## The verdict, in one paragraph
+
+**The kernel is not the problem and the quadrature is.** `Dcim.FitAtHeights` at height pairs
+straddling the capacitor dielectric is *flat in the separation* — worst 4.2e-3 of the free-space
+kernel at 0.05 µm against 6.4e-3 at 3 µm, the interconnect spacing L9c already measured — so no
+ρ/λ constant moves and none was moved. What degrades is the **cross-level block of the fill**,
+which loses four decades between `cell size / level separation` of 1 and 20: 2.3e-7 at 1, 4.1e-3
+at 5, 3.9e-2 at 10, 1.5e-1 at 20 and 4.9e-1 at 50, while the same-level block stays at 3e-6. The extracted plate
+capacitance follows that ladder rung for rung — within 10% of ε₀εᵣA/d while cell/separation ≤ 5,
+1.46× at 12.5, and the **wrong sign** at 25. So the shipped defaults hold over a stated range, the
+range is a **mesh** condition rather than a stackup one, and outside it a NOTE reports it:
+`PlanarLevels.ValidatedCellOverSeparation = 5.0` and `PlanarSolve.LevelSeparationNotes`.
+
+**The shipped MIM technology sits outside it.** A 10 × 10 µm plate pair 0.2 µm apart meshes at
+2.5 µm — cell/separation = 12.5 — so its plate capacitance reads about 1.5× high and the note
+fires on it. That is stated rather than fixed: see *Not done, on purpose*.
+
+## Findings
+
+**1. There is no thin-layer KERNEL failure, and the control rungs are what say so.** The brief's
+suspicion was §L8c's — DCIM's fitted images stop being smooth on the mesh's own scale once an image
+sits closer to the metal plane than a cell is wide. Measured, that does not happen here: the scaled
+error is flat from 0.05 µm to 3 µm on all four components and inside L9b's own ≤1.6e-2 envelope
+throughout. The εᵣ = 1 control (same geometry, no contrast) is flat too, so the flatness is not two
+effects cancelling. **A ladder without a rung in the already-measured regime could not have said
+this** — the 2 µm and 3 µm rungs are what turn "0.05 µm gives 4e-3" from a number into a verdict.
+
+**2. The failure is the recorded trap, at a scale nobody had asked it at.** §3.5 already says
+*"cross-level entries have no 1/ρ but still carry logarithms"* and that *"different levels ⇒ smooth
+⇒ plain quadrature"* is a trap. At d ≪ cell the cross-level kernel carries a peak of width d inside
+a cell of width h, and the rule integrates over it. The trap was recorded for surface waves and the
+mixed kernel's 1/k_ρ² tail; the plate regime is the same trap with the peak made arbitrarily narrow
+by the stackup.
+
+**2b. And the coarsest rungs are stated for what they are.** At cell/separation 20 and 50 the
+forced-high reference is itself only 9× and 5.7× better than the shipped rule (against 150× at 5
+and seven decades at 1) — the same narrow peak is starting to defeat the expensive rule too. Those
+two rungs support "the error is large and grows" and not their own third significant figure.
+**Nothing in the verdict rests on them**: the range is drawn at 5, where the reference has 150× of
+headroom, and the 25/50 rungs of the physics ladder need no precision to say "wrong sign".
+
+**3. Nothing downstream can see it.** Reciprocity holds to 1e-19 and passivity to 1e-5 at every
+rung, *including the ones whose extracted capacitance has the wrong sign*. §10.9's oracle-free
+self-consistency set is structurally blind to this: the matrix is still complex-symmetric and the
+structure still does not create energy — what is wrong is a magnitude inside it. This is §L8c's
+converged-looking-but-wrong mode, one tier down in z, and it is the whole reason the brief was a
+measurement rather than a test.
+
+**4. RAW S CANNOT CARRY A CAPACITANCE IN THIS ENGINE, and this is now measured on a known-good
+line.** Two instruments were built and discarded before the third: a one-port shunt cap reading
+`Im(Y₁₁)/ω` (negative at d ≤ 0.1 µm) and a series two-port reading `−Im(Y₂₁)/ω` (0.50 → 0.18 fF
+over a 40× change in d where ε₀εᵣA/d spans 120 → 3 fF). The control that settled it is one line: a
+70 µm GaAs microstrip, 800 µm long at 10 GHz — a matched ~50 Ω line — reads **|S₂₁| = 0.0706** raw.
+The port is a series delta gap with `a₂₁ ∝ ω` (§5), so a raw reading is the port and not the
+structure, at any topology. **The series topology's usual argument does not save it**: "Y₂₁ isolates
+the through element because port discontinuities are shunt" is true of an ideal error box and
+useless against an `a₂₁` two orders below unity.
+
+> **This independently reproduces MIM-2's finding (b) — and it confirms MIM-2's RETRACTION of it,
+> not the finding.** The series brief's rule (*never read a small element's value off raw S*) is
+> stronger than it looked: it is not only that a ~0.3 fF discontinuity masks a small element, it is
+> that a raw reading of ANY reactive element in this engine is dominated by the port. Correcting the
+> instrument moved a 0.31 fF answer to 44 fF against a 30 fF closed form.
+
+**5. De-embedded, the plate capacitance is there and is right where the mesh resolves the gap.**
+With the stack truncated at the upper plate (so `LevelIsOnSlabTop` is satisfied) and the same
+structure minus its lower plate subtracted as a baseline, `(C − baseline)/(ε₀εᵣA/d)` is
+0.89 / 0.99 / 1.10 at cell/separation 1.25 / 2.5 / 5. The baseline itself — feed, port, plate to
+ground — is 4.93 fF and frequency-stable to 8% from 20 to 140 GHz, while the plate pair is not, and
+destabilises in the same order the fill ladder degrades.
+
+**6. Kernel A settles the closed form.** On the equivalent cross-section it reproduces ε₀εᵣW/d to
+**1.007 at d = 0.05 µm**, rising monotonically to 1.16 at 2 µm exactly as a fringing correction
+should, and is mesh-converged to five digits. It shares no code with kernel B. So a 0.05 µm gap of
+εᵣ 6.8 is not intrinsically hard, and there is no argument that the closed form is the thing in
+error. The brief called this a free second opinion; it was the load-bearing one.
+
+**7. An observation that is NOT a MIM-3 finding.** The mixed component at a same-level pairing fits
+with zero images and an infinite residual, and its strict relative error is 2.07 at every rung —
+*d-independent to four figures*, and worse (1.58e+1) on the εᵣ = 1 control. It is a property of that
+pairing, not of thin layers, its scaled error is ≤ 7.5e-4 throughout, and the fill only asks the
+mixed kernel about a via against a horizontal basis. Recorded so it is not re-found as a MIM result.
+
+## What was built
+
+- **`PlanarLevels.ValidatedCellOverSeparation = 5.0`** — 5 is where the two independent ladders
+  agree (the fill's ≤ 4.1e-3 and the extracted capacitance's ≤ 10%), not a round number chosen
+  first. Its doc comment carries both ladders.
+- **`PlanarSolve.LevelSeparationNotes`** — a NOTE, never a refusal, for R-prt-13's reason: the
+  answer is still produced, still reciprocal, still passive, and what is unreliable is a magnitude.
+  A refusal would also take away every multi-level run whose ratio is fine. It is asked **per
+  adjacent level pair, over the cells on those two levels only** (R-zz-1's discipline — a per-mesh
+  question would grade a plate pair on some unrelated conductor's cell), and it **names the binding
+  quantity**: the transverse pitch is `width / MinCellsAcrossConductor` and does not respond to λ,
+  so it says outright that Cells per wavelength and Mesh frequency change nothing here rather than
+  offering two inert knobs (§3.5's trap, and the reason `BuildRefusal` asks `waveBinds`). It also
+  scopes the damage — single-level results are unaffected.
+- **`MimThinLayerTests`** — 6 routine tests, ~1 s total: the cross-level block on a fixed input
+  against literals (P3/P4's pattern), plus the note's firing threshold, its wording, its per-pair
+  scoping, its silence on a single-level problem, and its wiring through `VerticalRangeVerdict`.
+  `T7` carries the accuracy statement and is `Category=Benchmark` (1 m 5 s in Debug).
+
+## Not done, on purpose
+
+- **The quadrature was NOT changed.** The brief allowed "a bounded quadrature/fit change with
+  milestones 1–3 rerun after it" and it is not bounded: the cross-level near rule would need the
+  same singularity-extraction treatment the same-level one has (§3.3's three singular pieces), for
+  a peak whose width is a stackup parameter rather than a mesh one, and then all three ladders plus
+  every bit-identity digest in `PlanarP3/P4/P5` re-pinned. The brief's own instruction applies — *if
+  the fix is not cheap, stop and report; the ladder itself is this brief's deliverable.*
+- **No existing gate was loosened, and none needed to be.** `AimAccuracyTests`' 8.7e-7 and the L9
+  gates are untouched, and so are `Dcim.ValidatedRhoOverLambdaAtHeights`, `…Layered` and
+  `…InteriorHorizontal` — Table 1 says they are right where they are.
+- **The shipped MIM technology was not re-dimensioned to pass its own note.** Widening the plates
+  or thickening the dielectric would move cell/separation under 5 and silence the note, and it would
+  be tuning the exemplar to the tool. The plate gap is what the process states.
+- **The mesher was not taught to refine across a thin gap.** That is the actual remedy — a
+  transverse pitch derived from the nearest level separation as well as from the conductor width —
+  and it is a `SurfaceMesher` change with its own unknown-count consequences (a 10 µm plate at
+  cell/separation = 5 needs 0.4 µm cells, i.e. 25 across instead of 4, and the shared tensor grid
+  spreads that across the whole domain). Named here, not built; the note names it as the binding
+  quantity so a user is not left guessing.
+- **A de-embedded reading on the shipped stack is still MIM-4's.** Milestone 3 had to truncate the
+  stack at the upper plate to get a de-embedded port at all; on the real MIM stack both plate levels
+  are buried and `LevelIsOnSlabTop` refuses. That is §7's "all of Part B", unchanged.
