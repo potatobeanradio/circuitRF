@@ -278,6 +278,24 @@ public static class PlanarExtractor
                       "Their shapes are not meshed and contribute nothing to the answer. Add them to " +
                       "the setup's level list if they are part of the structure.");
 
+        // ── MIM-7 — a PATTERNED dielectric enters the medium only when its plate is analysed ──
+        //
+        // Everything above decided WHICH LEVELS; that is also the honest per-run answer to "does
+        // this run contain capacitors?", so it is the first point at which a tie can be resolved.
+        // Deactivating one changes z arithmetic (a material becomes air, and the conductor beneath
+        // gives its sheet back to the bottom of its band), so the stack is REBUILT rather than
+        // patched, and every band already in hand is re-resolved by its stackup index.
+        var analysed = levels.Select(b => b.Layer.Name).ToHashSet(StringComparer.Ordinal);
+        var effectiveStackup = PatternedDielectric.Deactivate(
+            tech.Stackup, analysed.Contains, revertSheetSurface: true, notes);
+        if (effectiveStackup is not null)
+        {
+            stack  = BuildStack(effectiveStackup);
+            levels = [.. levels.Select(b => stack.First(x => x.Index == b.Index)).OrderBy(b => b.SheetM)];
+            // `conductorShapes` keeps its OLD bands on purpose: everything downstream matches them
+            // by `Band.Index`, which is the stackup position and is unchanged by the rebuild.
+        }
+
         var signal = levels[0];       // the LOWEST level — the one the slab's top surface is
 
         // ── R-em-4: ground is the TOP SURFACE of the highest ground-designated conductor below ──

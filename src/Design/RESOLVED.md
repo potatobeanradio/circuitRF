@@ -1,5 +1,116 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## MIM-7 — a dielectric that is patterned with its plate, so ONE MMIC technology serves both (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-7-one-technology.md`. The extraction half is here; the shipped-file
+merge, the editor row and the documentation are `src/Ui/RESOLVED.md` §MIM-7. **`src/Engine` is
+untouched — the refusal, the via z-integral and the kernel are exactly as they were.**
+
+### The premise that was actually wrong
+
+circuitRF shipped two MMIC technologies that differed only by a capacitor module, and MIM-2 measured
+two real reasons for the split (`src/Ui/RESOLVED.md` §MIM-2): a capacitor dielectric between the
+interconnect metals makes every Metal1-Metal2 airbridge post cross a dielectric interface — which
+`PlanarKernel.CanSolve` refuses for the WHOLE RUN — and it sits on a Metal1 line as superstrate, so
+Z₀ falls 2.8%.
+
+**Both costs come from the film being in the medium of EVERY run, including runs with no capacitor in
+them — and the 2.5D premise does not require that.** It forces "laterally infinite per RUN"; it says
+nothing about which runs a patterned film belongs to. Physically the nitride exists under the plates
+and nowhere else, and the honest per-run proxy for "this run has capacitors in it" was already being
+computed: **is the plate conductor among the run's levels?** The extractor's default level selection
+is "every non-ground conductor that carries artwork", so an interconnect-only layout answers no with
+no configuration at all. It is also the kernel's own suggested remedy, verbatim in its refusal text:
+*"…or remove the interface if it carries no physics."*
+
+### The field, and the two halves of the rule
+
+`StackupLayer.PresentWithLayer` (`string?`, a conductor entry's NAME) — additive, nullable, no
+`.ctech` `FormatVersion` bump, meaningless on a non-Dielectric entry: the `SheetAt`/`SpanFromLayer`
+pattern. `TechValidation` requires an existing, non-ground Conductor and refuses the field on a
+non-Dielectric entry. **"Name the conductor directly ABOVE" is a RECOMMENDATION, not a validation
+rule** — a tie further away is expressible and honoured, only harder to read — so it is stated in the
+field's own documentation, the editor's tooltip and the user page rather than failed.
+
+When the named plate is not in the run:
+
+1. the film's band enters the medium as **air** — εᵣ 1, tanδ 0, µᵣ 1, thickness untouched, so every
+   band above it keeps the height the process states;
+2. **`SheetAt = Top` on the conductor whose band sits directly BENEATH the film is treated as unset
+   for that run.**
+
+**(2) is what makes the gate bit-identity rather than "close", and it is not a convenience.** MIM-6
+put Metal1's sheet on the top of its band expressly so a plate gap reads 0.2 µm; with no film there
+is no gap to read, and the pre-MIM-6 placement is the established baseline for interconnect. Without
+the revert the same airbridge would extract at z = 103/106 instead of 100/106 — a plausible answer,
+3% out, to a question about a stack with no capacitor in it.
+
+**A tie naming a conductor the stackup does not have leaves the film ACTIVE**, with a note. The other
+choice would let a typo silently thin the medium, which is the failure the mechanism exists to
+prevent. It is not a refusal, because the extraction is still a valid one — validation is where the
+typo is called an error.
+
+### BOTH extractors read it, and finding that was the one surprise
+
+The brief named `PlanarExtractor`. Implementing only that left nine `Ui.Tests` failures, four of them
+the acceptance tests: **`CrossSectionExtractor` builds its own layered medium from the same stackup**,
+so a film left switched on there is exactly MIM-2's second cost — measured, not argued:
+`Mmic_LineOnMetal1_...` came back at Z₀ 48.25 Ω against the hand-built 49.62, and the 72 µm line's
+ε_eff at 8.54 against a (6, 8.5) band. Both pass with the tie honoured there too.
+
+Its version of "in this run" is a set of one: a uniform-line cross-section refuses multi-level
+geometry outright, so the question is "is the plate THE signal conductor". There is no sheet surface
+to revert — that kernel models real metal of real thickness and never reads `SheetAt` (MIM-6's own
+recorded decision).
+
+So the rule lives in one file, `Em/PatternedDielectric.cs`, against this area's standing rule that
+the two extractors restate the stackup rules rather than call each other. **That rule is about the
+cross-section extractor's REDUCTION test and its refusals**, which must never appear on the planar
+acceptance path. This is the opposite shape: one paragraph of policy and one sentence of user-facing
+text — and the sentence is the reason. Two copies of the "your medium lost a layer" note would drift
+into two accounts of one decision.
+
+Mechanically both callers rebuild rather than patch: deactivating changes materials and z, and the
+bands already in hand are re-resolved by their stackup INDEX, which the rebuild preserves. The
+`Technology` object the caller passed in is never mutated (it is a live document, re-extracted at
+every frequency of a sweep) — the affected entries are cloned field for field.
+
+### The gates
+
+- **`MimCapacitorTests.AnAirbridgePost_SolvesOnTheOneTechnology_AndExtractsIdenticallyToTheModuleFreeStack`**
+  — the brief's own gate, and it flipped a test that asserted the refusal. Level names, every level z
+  and thickness, every medium region's thickness/εᵣ/tanδ/µᵣ, the slab, the via's indices and its
+  footprint areas: all compared with `Assert.Equal` on doubles, no tolerance. The comparison
+  technology is DERIVED from the shipped one by removing the module, not restated.
+- **`MimCapacitorTests.TheCapacitorRun_IsWhatTheRetiredSecondTechnologyProduced`** — the ACTIVE side,
+  as literals captured from `MmicGaAsMim()` before the merge, because the object they came from no
+  longer exists. 103 / 103.2 / 106 µm, medium 103 µm εᵣ 12.9 | 0.2 µm εᵣ 6.8 | 2.8 µm air, the plate
+  via 1→2 at 3.6e-11 m².
+- **`PatternedDielectricTests`** — the mechanism on a probe technology built in the test, so the
+  assertions are about the rule rather than about what circuitRF happens to ship: both extractors,
+  the note, the broken tie, named analysis levels overriding artwork, and the schema half
+  (validation, `.ctech` round trip and absence when unset, merge conflict description, editor row).
+
+`dotnet test tests/Ui.Tests` 10,364 passed / 0 failed; `tests/Firewall.Tests` 10/0.
+
+### What did NOT come out bit-identical, and why it cannot
+
+Two measured residuals, both outside the brief's stated gate and both stated rather than tuned away:
+
+- **A Metal2 line's CLOSED-FORM substrate is 102.75 µm instead of 103** (−0.24%), with ε_eff a shade
+  higher. `SubstrateResolver` sums dielectric bands and has no notion of an analysis level, so it
+  cannot ask the tie's question — and teaching it would not close this anyway: skipping the film
+  gives 102.55 µm, further away. The missing 0.25 µm is the plate METAL, and no closed-form path
+  counts a metal band. Pinned in
+  `MimCapacitorTests.TheClosedFormPathDoesNotReadTheTie_AndTheOnlyCostIsAMetal2LineBy025Micron`.
+- **A run whose LOWEST analysis level is Metal2 gets a sizing εᵣ of 9.78 instead of 9.58** (+2.1%).
+  `slabBands` sums the dielectric bands under the lowest level; the deactivated film is still a
+  0.2 µm dielectric band and the plate's 0.25 µm is a conductor band, which that sum never counts —
+  the same structural gap as above. Since MIM-4 the slab is a SIZING object only (calibration-standard
+  geometry, the β seed, the near-radius floor, the mesh), never the published reference impedance.
+  A Metal1-fed run — every de-embedded one, until MIM-4's ports move — is unaffected: its slab is the
+  GaAs alone, bit for bit.
+
 ## MIM-4 — the stratified sub-feed refusal, retired (2026-08-30)
 
 `docs/sonnet-briefs/brief-em-mim-4-interior-static-greens.md`, gap 4 of the MIM series. The engine

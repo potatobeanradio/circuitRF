@@ -1,6 +1,6 @@
 {
   "FormatVersion": 1,
-  "Name": "MMIC GaAs (2 Layer Metal, 100um)",
+  "Name": "MMIC GaAs (2 Layer Metal + MIM, 100um)",
   "DefaultDisplayUnit": "Um",
   "DefaultSnapDbu": 5,
   "DefaultFlattenTolDbu": 10,
@@ -151,6 +151,42 @@
       "Visible": true,
       "Selectable": true,
       "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "MIM Metal",
+      "Color": {
+        "r": 208,
+        "g": 96,
+        "b": 112,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 10,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 10,
+        "Datatype": 0
+      },
+      "Name": "MIM Via",
+      "Color": {
+        "r": 112,
+        "g": 48,
+        "b": 56,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 3,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
     }
   ],
   "Stackup": {
@@ -176,13 +212,41 @@
       {
         "Kind": "Dielectric",
         "Name": "Air",
-        "ThicknessDbu": 3000,
+        "ThicknessDbu": 2550,
         "Epsr": 1,
         "TanD": 0,
         "Mur": 1,
         "SigmaSm": 0,
         "DrawingLayers": [],
         "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "MIM Metal",
+        "ThicknessDbu": 250,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "MIM Dielectric",
+        "ThicknessDbu": 200,
+        "Epsr": 6.8,
+        "TanD": 0.001,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false,
+        "PresentWithLayer": "MIM Metal"
       },
       {
         "Kind": "Conductor",
@@ -198,7 +262,8 @@
             "Datatype": 0
           }
         ],
-        "IsGroundReference": false
+        "IsGroundReference": false,
+        "SheetAt": "Top"
       },
       {
         "Kind": "Dielectric",
@@ -264,6 +329,25 @@
         "IsGroundReference": false,
         "Fill": "Solid",
         "SpanFromLayer": "Metal1",
+        "SpanToLayer": "Metal2"
+      },
+      {
+        "Kind": "Via",
+        "Name": "MIM Via",
+        "ThicknessDbu": 0,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 10,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Solid",
+        "SpanFromLayer": "MIM Metal",
         "SpanToLayer": "Metal2"
       }
     ]

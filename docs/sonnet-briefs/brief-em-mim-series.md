@@ -47,6 +47,7 @@ ignored, by design. MIM-2's starter states this in its own documentation note.
 | MIM-3 | `brief-em-mim-3-thin-layer-gate.md` | measure, then maybe code | MIM-6 (physics tier) | the error-vs-separation ladder for closely spaced levels; a validated range or a named refusal |
 | MIM-4 | `brief-em-mim-4-interior-static-greens.md` | code, the big one | — | the interior-height static Green's function: de-embedded ports off the slab top, stratified sub-feed dielectrics |
 | MIM-5 | `brief-em-mim-5-import-coverage-note.md` | wording + docs | — | the technology import says which conductors its via list cannot reach; the user page documents adding MIM rows by hand |
+| MIM-7 | `brief-em-mim-7-one-technology.md` | code, extraction + tech data + docs | MIM-2, MIM-6 | one shipped GaAs technology: a tied capacitor dielectric enters the medium only when its plate is an analysis level, so the second `.ctech` retires |
 
 A de-embedded shunt or series MIM run needs MIM-1 + MIM-2 + MIM-4 (with MIM-3's verdict bounding
 the trustworthy separations). MIM-1 + MIM-2 alone already give a runnable RAW solve — internal
@@ -68,7 +69,10 @@ deviations and one retraction on the record (`src/Ui/RESOLVED.md` §MIM-2):
 - It shipped as a SECOND technology rather than three entries on the starter — measured, not filed:
   a capacitor dielectric between the interconnect metals makes every airbridge-post via refuse
   (`PlanarKernel.CanSolve`, via crossing a dielectric interface — a whole-run refusal) and shifts
-  the upper-metal line's substrate resolution.
+  the upper-metal line's substrate resolution. **Superseded at MIM-7 (2026-08-30), which is BUILT:**
+  both costs came from the film being present in runs with no capacitor in them, and
+  `StackupLayer.PresentWithLayer` ties it to its plate so it is not. There is ONE MMIC technology
+  again; `mmic-GaAs_2LM_100um_MIM` is retired. `src/Design/RESOLVED.md` §MIM-7.
 - Its FINDING 1 is real and became **MIM-6**, which is **BUILT (2026-08-30)**: a conductor entry now
   states which surface of its band its sheet sits on, with the absorption direction paired to that
   choice, and the shipped MIM technology's levels extract at 103 / 103.2 / 106 µm with a 0.2 µm plate

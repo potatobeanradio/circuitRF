@@ -337,8 +337,12 @@ public class PlanarMeshOverlayTests
     public void Extractor_TwoMetalLevels_ExtractAsATwoLevelProblemOnAGeneralMedium()
     {
         var tech = StarterTechnologies.MmicGaAs();
-        var conductors = tech.Stackup.Layers
-            .Where(l => l.Kind == StackupKind.Conductor && !l.IsGroundReference && l.DrawingLayers.Count > 0)
+        // The two INTERCONNECT metals by name, not "the first two signal conductors": since MIM-7
+        // folded the capacitor module onto this technology its signal conductors are Metal2, MIM
+        // Metal and Metal1, and taking the first two would make this an accidental test of a
+        // capacitor plate stack instead of the two-level interconnect one it is written for.
+        var conductors = new[] { "Metal2", "Metal1" }
+            .Select(n => tech.Stackup.Layers.Single(l => l.Name == n))
             .ToList();
         Assert.True(conductors.Count >= 2, "the MMIC starter is expected to have two signal metals");
 
@@ -378,8 +382,9 @@ public class PlanarMeshOverlayTests
         // level that was left out is DROPPED — with a note, because a shape that silently vanishes
         // from a full-wave solve is exactly the failure that note exists to prevent.
         var tech = StarterTechnologies.MmicGaAs();
-        var conductors = tech.Stackup.Layers
-            .Where(l => l.Kind == StackupKind.Conductor && !l.IsGroundReference && l.DrawingLayers.Count > 0)
+        // The two interconnect metals by name — see the previous test for why not "the first two".
+        var conductors = new[] { "Metal2", "Metal1" }
+            .Select(n => tech.Stackup.Layers.Single(l => l.Name == n))
             .ToList();
 
         var view = new LayoutView { DbuPerMicron = Dbu };

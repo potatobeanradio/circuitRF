@@ -1756,10 +1756,17 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         {
             string electrical = l.Kind switch
             {
+                // MIM-7: a TIED dielectric is not always in the medium, and this panel is the one
+                // place a user reads the stack a run is about to use. Showing its εᵣ with no hint
+                // that this particular band may be air for this run would be the same class of
+                // silence the run note exists to break.
                 StackupKind.Dielectric =>
                     $"εr {l.Epsr.ToString("G4", CultureInfo.InvariantCulture)} · " +
                     $"tanδ {l.TanD.ToString("G4", CultureInfo.InvariantCulture)} · " +
-                    $"µr {l.Mur.ToString("G4", CultureInfo.InvariantCulture)}",
+                    $"µr {l.Mur.ToString("G4", CultureInfo.InvariantCulture)}" +
+                    (l.PresentWithLayer is { Length: > 0 } plate
+                        ? $" · patterned with {plate} (air unless that level is analysed)"
+                        : ""),
                 StackupKind.Conductor =>
                     $"σ {l.SigmaSm.ToString("G4", CultureInfo.InvariantCulture)} S/m" +
                     (l.IsGroundReference ? " · ground reference" : ""),

@@ -38,15 +38,35 @@ public static class DocStackupFixtures
 
     private static double MicronsOf(long dbu) => dbu / (double)LayoutUnits.DefaultDbuPerMicron;
 
-    /// <summary>An MMIC stackup: two signal metals, a substrate, a backside ground plane, and the two
-    /// vias that connect them.</summary>
+    /// <summary>An MMIC stackup: two signal metals, the thin-film capacitor module between them, a
+    /// substrate, a backside ground plane, and the three vias that connect them.</summary>
     public static FigureScene MmicCrossSection() => CrossSection(StarterTechnologies.MmicGaAs());
 
-    private static FigureScene CrossSection(Technology tech)
-    {
-        var canvas = new Canvas { Width = Width, Height = 288 };
+    /// <summary>
+    /// <b>The capacitor module on its own, MIM-7</b> — the same real technology, windowed to the
+    /// bands between the two interconnect metals so the three things a reader of the MIM section
+    /// needs are legible at reading size: the plate metal, the tied dielectric under it (with the
+    /// tie marked), and the plate via's span.
+    ///
+    /// <para>A WINDOW on the full picture rather than a second, invented stack — every number is
+    /// still read off the shipped <c>Technology</c>, and the substrate and ground plane below are
+    /// named in the footer rather than redrawn. The full seven-band cross-section is
+    /// <c>stackup-mmic</c>, in the same chapter.</para>
+    /// </summary>
+    public static FigureScene MimModuleCrossSection() => CrossSection(
+        StarterTechnologies.MmicGaAs(),
+        include: l => l.Name is "Metal2" or "Air" or "MIM Metal" or "MIM Dielectric" or "Metal1",
+        height: 250,
+        footer: "…then 100 µm of GaAs and the backside ground plane, unchanged by the module.");
 
-        var bands = tech.Stackup.Layers.Where(l => l.Kind != StackupKind.Via).ToList();
+    private static FigureScene CrossSection(
+        Technology tech, Func<StackupLayer, bool>? include = null, double height = 352,
+        string? footer = null)
+    {
+        var canvas = new Canvas { Width = Width, Height = height };
+
+        var bands = tech.Stackup.Layers
+            .Where(l => l.Kind != StackupKind.Via && (include is null || include(l))).ToList();
         var vias  = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).ToList();
 
         // ── Where each band lands, top to bottom (the order the stackup itself is written in) ────
@@ -66,21 +86,34 @@ public static class DocStackupFixtures
         }
 
         // ── The two boundary conditions, which are properties of the STACK rather than of a band ─
-        canvas.Children.Add(Note($"Top: {tech.Stackup.Top}"
-                               + (tech.Stackup.Top == BoundaryCondition.Open ? " — free space above" : ""),
-                                 BandLeft, 22, bold: true));
-        canvas.Children.Add(Note($"Bottom: {tech.Stackup.Bottom}", BandLeft, y + 8, bold: true));
+        //
+        // A WINDOWED figure states neither: it is not showing the whole sandwich, so printing the
+        // stack's terminations beside a slice of it would say something the picture does not show.
+        if (include is null)
+        {
+            canvas.Children.Add(Note($"Top: {tech.Stackup.Top}"
+                                   + (tech.Stackup.Top == BoundaryCondition.Open ? " — free space above" : ""),
+                                     BandLeft, 22, bold: true));
+            canvas.Children.Add(Note($"Bottom: {tech.Stackup.Bottom}", BandLeft, y + 8, bold: true));
+        }
+        if (footer is not null) canvas.Children.Add(Note(footer, BandLeft, y + 8, small: true));
 
         // ── The vias, drawn ACROSS the bands they span ──────────────────────────────────────────
         //
         // A via is a stackup entry like any other, but it is not a layer of the sandwich: it is a
         // connection between two of them, and drawing it as a band in the list is what makes people
         // read it as one. Each is drawn at its own x, spanning exactly the two conductors it names.
-        double viaX = BandLeft + 0.62 * BandWidth;
+        // Spread across the RIGHT-HAND part of the band, never over the left where every band prints
+        // its own name: three vias at the old 0.30 spacing put the third one straight through the
+        // "Metal2"/"Air"/"MIM Metal" captions. The MMIC stackup grew a third via at MIM-2.
+        int viaSlot = 0;
         foreach (var via in vias)
         {
             if (via.SpanFromLayer is not { } a || via.SpanToLayer is not { } b) continue;
             if (!top.ContainsKey(a) || !top.ContainsKey(b)) continue;
+
+            double viaX = BandLeft + BandWidth * (0.68 - 0.18 * viaSlot);
+            viaSlot++;
 
             double y0 = Math.Min(top[a], top[b]), y1 = Math.Max(bot[a], bot[b]);
             canvas.Children.Add(new Border
@@ -93,7 +126,6 @@ public static class DocStackupFixtures
                 [Canvas.TopProperty]  = y0,
             });
             canvas.Children.Add(Note(via.Name, viaX + 22, 0.5 * (y0 + y1) - 8, small: true));
-            viaX -= 0.30 * BandWidth;
         }
 
         return new FigureScene(canvas);
@@ -150,6 +182,16 @@ public static class DocStackupFixtures
 
         if (band is { Kind: StackupKind.Conductor, IsGroundReference: true })
             yield return Note("◄ ground reference: every port's − terminal",
+                              LabelLeft, mid + 15, small: true, accent: true);
+
+        // MIM-7 — the tie, marked, because it is the one thing about this band a reader cannot infer
+        // from the picture: it is drawn as a layer of the sandwich like any other, and it is the only
+        // one that is not always there.
+        if (band is { Kind: StackupKind.Dielectric, PresentWithLayer: { Length: > 0 } plate })
+            // Kept short deliberately: the right-hand label column is BandWidth-limited, and a
+            // sentence long enough to explain the tie would run off the canvas. The chapter's own
+            // text explains it; this only has to be findable.
+            yield return Note($"◄ patterned with '{plate}' — only in runs that analyse it",
                               LabelLeft, mid + 15, small: true, accent: true);
     }
 

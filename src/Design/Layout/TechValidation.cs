@@ -42,6 +42,29 @@ public static class TechValidation
             if (sl.Kind != StackupKind.Via && sl.ThicknessDbu <= 0)
                 problems.Add($"Stackup layer \"{sl.Name}\" has non-positive thickness ({sl.ThicknessDbu} DBU).");
 
+            // MIM-7 — a dielectric that is patterned with a conductor rather than laterally
+            // continuous. Two hard rules; the third thing worth saying is a RECOMMENDATION and is
+            // stated in the field's own documentation and in the editor's tooltip rather than
+            // failed here: name the conductor directly ABOVE the dielectric, because that is the
+            // plate the film is deposited under. Tying it to a conductor further away is legal,
+            // honoured, and only harder to read.
+            if (sl.PresentWithLayer is { Length: > 0 } plate)
+            {
+                if (sl.Kind != StackupKind.Dielectric)
+                    problems.Add($"Stackup layer \"{sl.Name}\" is a {sl.Kind} entry but names \"{plate}\" " +
+                                 "as the conductor it is patterned with. Only a Dielectric entry can be a " +
+                                 "patterned thin film.");
+                else if (!conductorNames.Contains(plate))
+                    problems.Add($"Dielectric stackup layer \"{sl.Name}\" is patterned with an unknown " +
+                                 $"conductor layer \"{plate}\".");
+                else if (tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Conductor &&
+                                                      l.Name == plate && l.IsGroundReference))
+                    problems.Add($"Dielectric stackup layer \"{sl.Name}\" is patterned with \"{plate}\", " +
+                                 "which is the ground reference. A ground plane is never an analysis level, " +
+                                 "so this dielectric could never be present in any run — name the signal " +
+                                 "conductor whose artwork the film is deposited under.");
+            }
+
             if (sl.Kind == StackupKind.Via)
             {
                 if (sl.SpanFromLayer is not { Length: > 0 } || !conductorNames.Contains(sl.SpanFromLayer))

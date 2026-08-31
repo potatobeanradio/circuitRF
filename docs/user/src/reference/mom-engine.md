@@ -95,7 +95,7 @@ not general 3D.
   capacitor's network, feeds and vias are solved normally, and since a port on upper metal
   de-embeds the capacitance itself is in the de-embedded answer — to within 10% of ε₀ε<sub>r</sub>A/d
   while the mesh cell is at most **five times** the plate separation, 1.46× at 12.5 and the wrong
-  sign at 25. The shipped MIM technology's default mesh sits outside that and the run says so in a
+  sign at 25. The shipped MMIC technology's default mesh sits outside that and the run says so in a
   note. Two things that are no longer limits, because they were fixed: the plate sheets used to be
   separated by the capacitor dielectric *plus the lower plate's own metal thickness*, and a port on
   upper metal used to be refused. See [A thin-film (MIM) capacitor](stackup.html#mim).

@@ -58,11 +58,15 @@ public class TechPersistenceTests
         var tech = StarterTechnologies.MmicGaAs();
         Assert.Equal(LayoutUnit.Um, tech.DefaultDisplayUnit);
         Assert.Equal(LayoutUnits.ToDbu(5m, LayoutUnit.Nm, LayoutUnits.DefaultDbuPerMicron), tech.DefaultSnapDbu);
-        Assert.Equal(8, tech.Layers.Count);
+        // 8 interconnect drawing layers + MIM-2's two module layers (MIM Metal, MIM Via).
+        Assert.Equal(10, tech.Layers.Count);
         // brief-via-primitive-and-stackup.md §3.1/R-via-4: Metal2 / Air / Metal1 / GaAs / Backside Metal
         // (5 physical layers, replacing the old single "Plated Gold" conductor that wrongly merged
-        // Metal1+Metal2) plus two Via entries (Backside Via, Metal1-Metal2 Post) = 7.
-        Assert.Equal(7, tech.Stackup.Layers.Count);
+        // Metal1+Metal2) plus two Via entries (Backside Via, Metal1-Metal2 Post) = 7; MIM-2's
+        // capacitor module adds MIM Metal, MIM Dielectric and MIM Via = 10. MIM-7 folded that module
+        // onto this one technology by TYING the dielectric to its plate, so a run with no plate
+        // artwork in it carries none of it.
+        Assert.Equal(10, tech.Stackup.Layers.Count);
         Assert.Equal(BoundaryCondition.Ground, tech.Stackup.Bottom);
         Assert.Equal(4, tech.DrcRules.Count);
     }
@@ -390,13 +394,14 @@ public class TechPersistenceTests
     }
 
     [Fact]
-    public void MmicGaAs_ExposesTwoViaEntries_BacksideViaAndMetal1Metal2Post()
+    public void MmicGaAs_ExposesThreeViaEntries_BacksideVia_Metal1Metal2Post_AndThePlateVia()
     {
         var tech = StarterTechnologies.MmicGaAs();
         var vias = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).ToList();
-        Assert.Equal(2, vias.Count);
+        Assert.Equal(3, vias.Count);
         Assert.Contains(vias, v => v.SpanFromLayer == "Metal1" && v.SpanToLayer == "Backside Metal" && v.Fill == ViaFillKind.Plated);
         Assert.Contains(vias, v => v.SpanFromLayer == "Metal1" && v.SpanToLayer == "Metal2");
+        Assert.Contains(vias, v => v.SpanFromLayer == "MIM Metal" && v.SpanToLayer == "Metal2");
     }
 
     [Fact]
@@ -408,10 +413,12 @@ public class TechPersistenceTests
     }
 
     [Fact]
-    public void MmicGaAs_StackOrder_Metal2AirMetal1GaAsBacksideMetal()
+    public void MmicGaAs_StackOrder_Metal2AirMimMetalMimDielectricMetal1GaAsBacksideMetal()
     {
         var tech = StarterTechnologies.MmicGaAs();
         var physical = tech.Stackup.Layers.Where(l => l.Kind != StackupKind.Via).Select(l => l.Name).ToList();
-        Assert.Equal(["Metal2", "Air", "Metal1", "GaAs", "Backside Metal"], physical);
+        // The capacitor module sits between the two interconnect metals, plate above film, and the
+        // air gap paid for it — Metal2 is still exactly 3 µm above Metal1 (2.55 + 0.25 + 0.2).
+        Assert.Equal(["Metal2", "Air", "MIM Metal", "MIM Dielectric", "Metal1", "GaAs", "Backside Metal"], physical);
     }
 }

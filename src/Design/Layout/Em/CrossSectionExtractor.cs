@@ -171,6 +171,30 @@ public static class CrossSectionExtractor
             haveGround  = false;
         }
 
+        // ── MIM-7 — a PATTERNED dielectric is in this cross-section only if its plate is ──────
+        //
+        // A uniform-line cross-section has exactly ONE signal conductor (multi-level geometry is
+        // refused above), so that is what "in this run" means here — the set-of-levels question the
+        // planar extractor asks, with a set of one. A capacitor's thin film is deposited under its
+        // plate and etched away everywhere else, so it is superstrate over a line on the metal below
+        // it only where a capacitor actually is; carrying it on every line would move Z0 and ε_eff
+        // on every interconnect run, which is the cost that kept the MIM module in a second
+        // technology until this tie replaced it.
+        //
+        // Rebuilt rather than patched, and the bands re-resolved by stackup index — `signal` and
+        // `groundBand` are Band objects out of the OLD list and the arithmetic below reads their
+        // materials. There is no sheet surface to revert: this kernel models real metal of real
+        // thickness and never reads SheetAt (MIM-6).
+        if (PatternedDielectric.Deactivate(
+                tech.Stackup,
+                name => string.Equals(name, signal.Layer.Name, StringComparison.Ordinal),
+                revertSheetSurface: false, notes) is { } effectiveStackup)
+        {
+            stack      = BuildStack(effectiveStackup);
+            signal     = stack.First(b => b.Index == signal.Index);
+            groundBand = groundBand is null ? null : stack.First(b => b.Index == groundBand.Index);
+        }
+
         // ── R-em-5: a missing or nonsensical stackup value is a refusal, not a default ─────────
         var bad = ValidateStack(stack, signal, groundBand);
         if (bad is not null) return EmExtractionResult.No(bad, notes);

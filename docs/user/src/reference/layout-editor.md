@@ -85,21 +85,17 @@ Two starter technologies ship. They differ **only in data**, never in code path:
 | | PCB starter | MMIC starter |
 |---|---|---|
 | Display unit / snap | mil / 1 mil | µm / 5 nm |
-| Layers | Top &amp; Bottom Copper, Soldermask ×2, Silk ×2, Drill, Outline | Metal1, Metal2, Via, Resistor, Cap Dielectric, Nitride, Substrate, Backside Via |
+| Layers | Top &amp; Bottom Copper, Soldermask ×2, Silk ×2, Drill, Outline | Metal1, Metal2, Via, Resistor, Cap Dielectric, Nitride, Substrate, Backside Via, MIM Metal, MIM Via |
 | Stackup | 1.6 mm FR-4, ε<sub>r</sub> 4.4, tanδ 0.02, 1 oz copper, bottom ground | 100 µm GaAs, ε<sub>r</sub> 12.9, tanδ 0.0006, 3 µm plated gold, backside ground |
 | Primary interchange | Gerber + Excellon | GDSII |
 
-There is also a third: **MMIC GaAs + MIM**, which is the MMIC starter plus the three stackup entries
-a [thin-film capacitor](stackup.html#mim) needs — a `MIM Metal` plate, a `MIM Dielectric` under it,
-and a `MIM Via` up to Metal2 — with two matching drawing layers. Everything else is identical, and
-the layer keys a design already uses mean the same thing on both.
-
-**Pick the plain starter for airbridge work and the MIM one for capacitor work**, because a capacitor
-dielectric between the two metals is not free: an airbridge post between them then crosses a
-dielectric interface, which an EM run refuses outright, and a line on Metal2 shifts by about 3% in
-Z₀. That is exactly why the MIM entries are a second technology instead of being added to the
-starter — see [A thin-film (MIM) capacitor](stackup.html#mim), which also explains why you should
-not read a capacitance off a MIM run yet.
+The MMIC starter also carries a **thin-film (MIM) capacitor module** — a `MIM Metal` plate, a
+`MIM Dielectric` under it and a `MIM Via` up to Metal2, with two matching drawing layers. It costs
+plain interconnect work nothing, because the capacitor dielectric is
+[tied to its plate](stackup.html#mim-tied): a run with no plate artwork in it carries air in the
+film's place and extracts exactly as it did before the module existed. Draw a capacitor and the film
+is real. See [A thin-film (MIM) capacitor](stackup.html#mim), which also explains why you should not
+read a capacitance off a raw run.
 
 A layer's colour is **literal user data**, not a theme role: "M2 is teal" is a fact about the process
 that must survive a light/dark switch and must match what you see in your other tools. The editor's own

@@ -1229,6 +1229,24 @@ and is built (MIM-1, 2026-08-30).
    acceptance line). Neither may happen silently to the technology every existing MMIC workspace
    already copied, so the plain starter is byte-identical and the MIM stack is its own file.
 
+   > **Built at MIM-7 (2026-08-30): there is ONE MMIC technology again, and the second file is
+   > retired.** Both costs above came from the film being present in runs that contain no capacitor,
+   > which the 2.5D premise does not actually require: it forces "laterally infinite per RUN", not
+   > "present in every run". `StackupLayer.PresentWithLayer` names the conductor a dielectric is
+   > PATTERNED with, and when that conductor is not among a run's analysis levels the extractors
+   > carry the band as air at its stated thickness AND treat `SheetAt = Top` on the conductor
+   > directly beneath it as unset for that run — the pair is what makes an interconnect-only run
+   > BIT-identical to the same run on a module-free stack rather than merely close, gated on the
+   > airbridge artwork above. `mmic-GaAs_2LM_100um` now carries the module (the byte diff is pure
+   > additions plus the Air thickness MIM-2's own arithmetic requires) and
+   > `mmic-GaAs_2LM_100um_MIM` is gone. Both extractors read the tie — the cross-section kernel
+   > builds its own medium from the same stackup, so a film left on there is exactly the ~2.8% Z₀
+   > shift. The KERNEL is untouched: it still refuses a via across a dielectric interface, and a
+   > hand-authored stack whose dielectric genuinely is everywhere still meets that refusal. The one
+   > residual cost is closed-form-only and measured: a Metal2 line's `SubstrateResolver` substrate is
+   > 102.75 µm instead of 103, because the module put 0.25 µm of plate METAL where air was and only
+   > dielectric bands are summed. Write-ups: `src/Design/RESOLVED.md`, `src/Ui/RESOLVED.md` §MIM-7.
+
    **Two findings on the physics, and the second is the important one.** (a) A level is a sheet at
    the BOTTOM of its conductor band, so the modelled plate separation is the dielectric PLUS the
    lower plate's own metal thickness — 3.2 µm, not 0.2 µm. **> Built at MIM-6 (2026-08-30): a

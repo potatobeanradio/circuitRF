@@ -1,0 +1,57 @@
+<!-- GENERATED FILE - do not edit. Regenerate every figure and page with:
+     dotnet run ––project tools/DocGen –– ––out docs/user
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/UiArtworkGenerator.cs + tools/DocGen. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="862" height="252" viewBox="0 0 862 252"><rect fill="white" width="862" height="252" /><rect fill="#F6F8FA" width="862" height="252" /><rect fill="#C08020" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 47)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mim_cl_0"><rect x="35" y="51" width="44" height="16" /></clipPath><g clip-path="url(#stackup-mim_cl_0)"><text fill="#19191E" transform="translate(35 51)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal2
+				</text></g><clipPath id="stackup-mim_cl_1"><rect x="503" y="51" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_1)"><text fill="#010101" transform="translate(503 51)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="#010101" transform="translate(566.9 51)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="#010101" transform="translate(602.71 51)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="44" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 73)" x="0.5" y="0.5" width="459" height="44" /><clipPath id="stackup-mim_cl_2"><rect x="35" y="86" width="18" height="16" /></clipPath><g clip-path="url(#stackup-mim_cl_2)"><text fill="#19191E" transform="translate(35 86)" font-size="13" font-weight="600" font-family="Inter" x="0, 9.45, 12.84" y="12.59">
+						Air
+				</text></g><clipPath id="stackup-mim_cl_3"><rect x="503" y="86" width="162" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_3)"><text fill="#010101" transform="translate(503 86)" font-size="11.5" font-family="Inter" x="0, 6.96, 9.96, 16.96, 23.95, 27.18, 34.34, 44.33, 47.57, 51.88, 58.68, 61.4, 67.82, 74.08, 77.3" y="11.14">
+						2.55 µm thick, 
+				</text><text fill="#010101" transform="translate(583.53 86)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="#010101" transform="translate(589.79 86)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 23.18, 26.4, 29.63, 33.81, 40.3" y="11.14">
+						r = 1, tan
+				</text><text fill="#010101" transform="translate(636.82 86)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26" y="11.14">
+						δ = 0
+				</text></g><rect fill="#D06070" transform="translate(25 117)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 117)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mim_cl_4"><rect x="35" y="121" width="66" height="16" /></clipPath><g clip-path="url(#stackup-mim_cl_4)"><text fill="#19191E" transform="translate(35 121)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 15.35, 27.14, 30.36, 42.14, 49.85, 54.79, 62.26" y="12.59">
+						MIM Metal
+				</text></g><clipPath id="stackup-mim_cl_5"><rect x="503" y="121" width="162" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_5)"><text fill="#010101" transform="translate(503 121)" font-size="11.5" font-family="Inter" x="0, 6.89, 10.06, 17.02, 24.01, 27.25, 34.4, 44.4, 47.63, 51.95, 58.74, 61.47, 67.89, 74.15, 77.36" y="11.14">
+						0.25 µm thick, 
+				</text><text fill="#010101" transform="translate(583.6 121)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="#010101" transform="translate(619.41 121)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><rect fill="#788291" fill-opacity="0.2353" transform="translate(25 143)" x="0.5" y="0.5" width="459" height="33" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 143)" x="0.5" y="0.5" width="459" height="33" /><clipPath id="stackup-mim_cl_6"><rect x="35" y="151" width="91" height="16" /></clipPath><g clip-path="url(#stackup-mim_cl_6)"><text fill="#19191E" transform="translate(35 151)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 15.35, 27.14, 30.36, 39.78, 43.17, 50.87, 54.26, 61.97, 69.47, 74.41, 79.57, 82.96" y="12.59">
+						MIM Dielectric
+				</text></g><clipPath id="stackup-mim_cl_7"><rect x="503" y="151" width="189" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_7)"><text fill="#010101" transform="translate(503 151)" font-size="11.5" font-family="Inter" x="0, 6.89, 10.06, 17.02, 20.26, 27.41, 37.41, 40.64, 44.95, 51.75, 54.48, 60.9, 67.15, 70.37" y="11.14">
+						0.2 µm thick, 
+				</text><text fill="#010101" transform="translate(576.61 151)" font-size="11.5" font-family="Inter" x="0" y="11.14">
+						ε
+				</text><text fill="#010101" transform="translate(582.86 151)" font-size="11.5" font-family="Inter" x="0, 4.28, 7.51, 15.09, 18.33, 25.11, 28.01, 34.84, 38.06, 41.3, 45.48, 51.96" y="11.14">
+						r = 6.8, tan
+				</text><text fill="#010101" transform="translate(641.55 151)" font-size="11.5" font-family="Inter" x="0, 6.21, 9.44, 17.02, 20.26, 27.15, 30.02, 37.21, 44.4" y="11.14">
+						δ = 0.001
+				</text></g><clipPath id="stackup-mim_cl_8"><rect x="503" y="166" width="320" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_8)"><text fill="#1E82C8" transform="translate(503 166)" font-size="11.5" font-family="Inter" x="0, 10.52, 13.75, 20.76, 27.25, 31.43, 35.55, 42.24, 46.52, 53.25, 59.95, 67.09, 70.32, 79.67, 82.39, 86.71, 93.5, 96.74, 99.29, 109.51, 112.55, 122.78, 126.01, 136.24, 142.93, 147.12, 153.6, 156.33, 158.88, 162.11, 173.61, 176.85, 183.71, 190.44, 193.16, 199.57, 202.8, 205.53, 212.26, 215.49, 219.77, 226.46, 233.19, 239.2, 242.43, 246.74, 253.54, 260.02, 264.21, 267.44, 273.93, 280.66, 287.14, 289.87, 296.27, 302.28, 308.98, 312.22, 314.94" y="11.14">
+						◀ patterned with 'MIM Metal' — only in runs that analyse it
+				</text></g><rect fill="#E0B040" transform="translate(25 177)" x="0.5" y="0.5" width="459" height="25" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.3529" transform="translate(25 177)" x="0.5" y="0.5" width="459" height="25" /><clipPath id="stackup-mim_cl_9"><rect x="35" y="181" width="42" height="16" /></clipPath><g clip-path="url(#stackup-mim_cl_9)"><text fill="#19191E" transform="translate(35 181)" font-size="13" font-weight="600" font-family="Inter" x="0, 11.78, 19.49, 24.43, 31.9, 35.28" y="12.59">
+						Metal1
+				</text></g><clipPath id="stackup-mim_cl_10"><rect x="503" y="181" width="145" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_10)"><text fill="#010101" transform="translate(503 181)" font-size="11.5" font-family="Inter" x="0, 7.32, 10.55, 17.71, 27.7, 30.94, 35.25, 42.05, 44.77, 51.19, 57.45, 60.67" y="11.14">
+						3 µm thick, 
+				</text><text fill="#010101" transform="translate(566.9 181)" font-size="11.5" font-family="Inter" x="0, 7.25, 10.49, 18.07, 21.3, 28.29, 30.47" y="11.14">
+						σ = 4.1
+				</text><text fill="#010101" transform="translate(602.71 181)" font-size="11.5" font-family="Inter" x="0, 6.7, 14.02, 20.58, 23.82, 31.15, 35.25" y="11.14">
+						e+7 S/m
+				</text></g><clipPath id="stackup-mim_cl_11"><rect x="25" y="211" width="447" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_11)"><text fill="#010101" transform="translate(25 211)" font-size="11.5" font-family="Inter" x="0, 9.44, 13.75, 20.55, 27.25, 33.98, 37.21, 42.55, 49.74, 56.93, 60.16, 67.32, 77.31, 80.55, 87.41, 91.56, 94.79, 103.34, 109.82, 117.6, 123.61, 126.84, 133.33, 140.06, 147.2, 150.43, 154.74, 161.54, 168.24, 171.47, 178.61, 185.09, 191.51, 197.77, 203.78, 206.51, 213.65, 220.35, 223.58, 230.59, 234.67, 241.53, 248.21, 254.94, 262.08, 265.32, 272.32, 275.05, 281.54, 288.27, 294.97, 298.18, 301.42, 308.1, 314.83, 321.25, 328.04, 334.53, 341.26, 348.27, 354.96, 362.1, 365.34, 372.25, 378.65, 381.88, 386.2, 392.99, 399.69, 402.92, 412.92, 419.78, 426.92, 433.6, 436.33, 443.03" y="11.14">
+						…then 100 µm of GaAs and the backside ground plane, unchanged by the module.
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(338 47)" x="0.5" y="0.5" width="15" height="156" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(338 47)" x="0.5" y="0.5" width="15" height="156" /><clipPath id="stackup-mim_cl_12"><rect x="360" y="117" width="106" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_12)"><text fill="#010101" transform="translate(360 117)" font-size="11.5" font-family="Inter" x="0, 10.23, 16.92, 21.11, 27.59, 30.32, 35.66, 40.95, 51.18, 57.88, 62.06, 68.54, 71.27, 78.23, 81.46, 88.7, 95.56, 101.57" y="11.14">
+						Metal1-Metal2 Post
+				</text></g><rect fill="#787880" fill-opacity="0.8235" transform="translate(255 47)" x="0.5" y="0.5" width="15" height="96" /><rect fill="none" stroke="#3C3C44" stroke-width="1" stroke-miterlimit="10" transform="translate(255 47)" x="0.5" y="0.5" width="15" height="96" /><clipPath id="stackup-mim_cl_13"><rect x="277" y="87" width="44" height="14" /></clipPath><g clip-path="url(#stackup-mim_cl_13)"><text fill="#010101" transform="translate(277 87)" font-size="11.5" font-family="Inter" x="0, 10.23, 13.26, 23.49, 26.72, 34.5, 37.23" y="11.14">
+						MIM Via
+				</text></g></svg>

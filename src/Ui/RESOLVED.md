@@ -1,5 +1,73 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MIM-7 — one GaAs technology; the second `.ctech` is retired (2026-08-30)
+
+`docs/sonnet-briefs/brief-em-mim-7-one-technology.md`. The extraction rule, its gates and the two
+measured residuals are `src/Design/RESOLVED.md` §MIM-7. This is the shipped file, the starter, the
+editor row and the documentation.
+
+### One file, and the diff reads as additions
+
+`mmic-GaAs_2LM_100um.ctech` gains the module MIM-2 authored — the `MIM Metal` plate, the
+`MIM Dielectric` under it (now with `PresentWithLayer: "MIM Metal"`), the `MIM Via`, and the two
+drawing layers at keys 9/0 and 10/0 — and `mmic-GaAs_2LM_100um_MIM.ctech` is deleted.
+`ShippedTechnologies` discovers by embedded-resource wildcard, so deleting the file is the whole
+retirement.
+
+**Three removed lines in the byte diff, and each is required rather than incidental** (MIM-2's own
+"nothing renamed or renumbered" rule holds — no layer, entry or DRC rule moved):
+
+- the technology's `Name`, now *MMIC GaAs (2 Layer Metal + MIM, 100um)*;
+- `Air.ThicknessDbu` 3000 → 2550, which is what MIM-2's arithmetic requires (2.55 + 0.25 + 0.2 = 3)
+  and is exactly what keeps Metal2 exactly 3 µm above Metal1 — the reason an interconnect-only run
+  can be bit-identical at all;
+- `Metal1`'s `"IsGroundReference": false` line, which grew a comma and MIM-6's `"SheetAt": "Top"`.
+
+`StarterTechnologies.MmicGaAsMim()` is folded into `MmicGaAs()` and deleted; a comment where it was
+records why, so nobody re-splits the technology instead of adding a tie. Call sites were tests only.
+
+**Existing workspaces are untouched by construction.** A workspace holds its own copy of its
+technology in its `tech/` folder (R-misc-8) — `ShippedTechnologies` is read only at workspace-creation
+time — so an MMIC workspace made yesterday keeps the exact file it was created with, module or no
+module, and nothing in a release rewrites it.
+
+### The editor row
+
+`StackupLayerRowViewModel` gained `PresentWithChoices`/`SelectedPresentWith`, modelled on the via
+**Spans** row rather than on a text box: the value IS another stackup entry's name, so free text
+would let a tie be misspelled and fail only at extraction. `(none)` is the ordinary continuous
+dielectric and is what every entry authored before the field means; showing it writes nothing, so
+opening the editor on an existing `.ctech` and closing it leaves the file untouched. Ground-designated
+conductors are left out of the list — a ground plane is never an analysis level, so a film tied to one
+could never be present in any run, and `TechValidation` says so if a hand-edited file does it anyway.
+Commit is immediate and undoable, one entry per change, exactly as `SheetAt` and via `Fill` are.
+
+### Documentation
+
+`stackup.md`'s "It is a separate technology, and that is not filing" is replaced by
+**#mim-tied**, "The capacitor dielectric rides along only when its plate is analysed" — the two costs
+it used to justify a second file with are now what the tie exists to avoid, and both are still stated,
+because they are exactly what a *capacitor* run really does model. #mim-import drops the "do it on a
+copy" warning for "add the rows to the technology your designs already use", with the two settings
+that make it safe (the tie, and the lower metal's sheet surface) and an honest note on what
+ACTIVATION changes. §sheet-surface says the tie reverts `Top` for runs that are not analysing the
+plate, which is what makes it safe to set at all. `layout-editor.md`'s "there is also a third"
+paragraph and `mom-engine.md`'s "the shipped MIM technology" both follow.
+
+**A new figure, `stackup-mim`**, drawn by `DocStackupFixtures` from the real `Technology` object like
+every other figure in that folder: the module windowed out of the full cross-section — plate metal,
+the tied dielectric with the tie MARKED, and the plate via's span. A window rather than a second
+invented stack, and it prints no boundary conditions precisely because it is not showing the whole
+sandwich. `stackup-mmic` grew the module rows automatically and needed two fixes to stay legible: a
+taller canvas, and via columns spread by SLOT rather than by a fixed 0.30-of-the-band step — three
+vias put the third one straight through the band captions.
+
+**Regeneration churn, classified rather than committed**: `stackup.html`, `layout-editor.html`,
+`mom-engine.html` and the two `stackup-*` figure pairs carry real changes. Four other pages and four
+figure pairs differed only in last-digit float jitter — one chevron rotation matrix, contour vertex
+coordinates at the 0.01 px level, one zero-length path — and were reverted. Same wobble MIM-5
+recorded; it is not caused by this brief and does not belong in its diff.
+
 ## MIM-5 — the import report names what the via list cannot reach (2026-08-30)
 
 `docs/sonnet-briefs/brief-em-mim-5-import-coverage-note.md`. A process stack description routinely

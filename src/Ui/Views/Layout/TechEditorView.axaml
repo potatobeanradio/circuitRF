@@ -553,6 +553,25 @@
                                                 </StackPanel>
                                             </StackPanel>
 
+                                            <!-- MIM-7. A thin-film capacitor's dielectric is not a
+                                                 continuous layer of the sandwich: it is deposited
+                                                 under its plate and etched away everywhere else.
+                                                 Naming that plate here makes this dielectric enter
+                                                 an EM run's medium only when the plate is one of
+                                                 that run's analysis levels; every other run sees
+                                                 air in its place, so one technology can carry a
+                                                 capacitor module and still solve ordinary
+                                                 interconnect unchanged. "(none)" is a continuous
+                                                 dielectric and is what every other entry means. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsDielectric}">
+                                                <TextBlock Text="Patterned with:" Width="86" FontSize="11"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <ComboBox Classes="cell" MinWidth="110"
+                                                          ItemsSource="{Binding PresentWithChoices}"
+                                                          SelectedItem="{Binding SelectedPresentWith, Mode=TwoWay}"
+                                                          ToolTip.Tip="For a patterned thin film such as a capacitor dielectric: the conductor it is deposited under. Name the conductor directly ABOVE this entry. An EM run carries this dielectric only when that conductor is one of its analysis levels; otherwise it enters the medium as air at the same thickness and the run says so in its notes. Leave as (none) for an ordinary, laterally continuous dielectric."/>
+                                            </StackPanel>
+
                                             <!-- Via span (R-via-3). Shown ONLY for a via, and shown at
                                                  all because the stackup list is in LIST order, which a
                                                  via is deliberately outside of (it has no z band of its

@@ -148,10 +148,21 @@ public static class FigureCatalog
 
         // The stackup in cross-section, drawn from the shipped MMIC technology rather than from a
         // hand-written list of bands — so the picture cannot outlive the thing it is a picture of.
-        new("stackup-mmic", DocStackupFixtures.MmicCrossSection, 862, 290, null,
+        new("stackup-mmic", DocStackupFixtures.MmicCrossSection, 862, 354, null,
             "An MMIC stackup in cross-section: two signal metals over a GaAs substrate, a backside "
-          + "ground plane, and the two vias that connect them. The heavy edge marks the "
-          + "ground-designated conductor - the negative terminal of every port in an EM run. "
+          + "ground plane, the thin-film capacitor module between the metals, and the three vias "
+          + "that connect them. The heavy edge marks the ground-designated conductor - the negative "
+          + "terminal of every port in an EM run; the capacitor dielectric is marked with the plate "
+          + "it is patterned with, which is what keeps it out of runs that have no capacitor in "
+          + "them. Thicknesses are printed rather than drawn to scale."),
+
+        // MIM-7 — the capacitor module on its own, for the chapter's MIM section. A WINDOW on the
+        // figure above, from the same real Technology object, because seven bands at reading size
+        // make the 0.2 um film and its tie the two least legible things in the picture.
+        new("stackup-mim", DocStackupFixtures.MimModuleCrossSection, 862, 252, null,
+            "The thin-film capacitor module in cross-section: the plate metal, the capacitor "
+          + "dielectric under it - marked with the plate it is patterned with, which is what keeps "
+          + "it out of runs that analyse no plate - and the plate via up to the routing metal. "
           + "Thicknesses are printed rather than drawn to scale."),
 
         // The two port types, drawn by the real renderer on real MKLOPF artwork. Landscape and the

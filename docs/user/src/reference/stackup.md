@@ -151,15 +151,20 @@ plane comes out as the substrate thickness.
 whole metal thickness lands inside the plate gap, and the solver separates the two sheets by the
 capacitor dielectric *plus that metal* — 3.2 µm rather than 0.2 on a typical MMIC metal. Setting
 **Top** on the lower plate's entry puts the gap back to the dielectric alone, and gives the metal's
-thickness to the substrate below instead. The shipped *MMIC GaAs + MIM* technology does exactly this
-on `Metal1`.
+thickness to the substrate below instead. The shipped MMIC technology does exactly this on `Metal1`.
 
-The trade is stated rather than hidden: on that technology a `Metal1` microstrip's EM substrate is
+**And it applies only where the capacitor does.** A run that is not analysing the plate has no plate
+gap to get right, so **Top** on the conductor directly under a [patterned dielectric](#mim-tied) is
+put back to **Bottom** for that run — the same run note that reports the dielectric reports this.
+That is what lets one technology set it at all: an ordinary line on `Metal1` still solves against
+100 µm of GaAs, exactly as it did before the capacitor module existed.
+
+The trade is stated rather than hidden: in a *capacitor* run a `Metal1` microstrip's EM substrate is
 103 µm of GaAs rather than 100 — a ~3% height shift, against a 16× error in the modelled plate
 separation. The **closed-form** microstrip models are unaffected either way; they model real metal of
-real thickness and measure their height to the metal's underside, so on a technology using **Top**
-they and an EM run differ by up to one metal thickness. The run's notes name each level's z *and* the
-surface it sits on, which is where you read back what was actually solved.
+real thickness and measure their height to the metal's underside, so in such a run they and the EM
+result differ by up to one metal thickness. The run's notes name each level's z *and* the surface it
+sits on, which is where you read back what was actually solved.
 
 ## The slab, and what makes one solvable {#slab}
 
@@ -244,27 +249,46 @@ Both capacitor forms are ordinary multi-level artwork:
 - **Series** — feed in on the lower metal, which *is* the bottom plate, and out on the upper metal
   through the plate via.
 
-### It is a separate technology, and that is not filing {#mim-separate}
+{{ui: stackup-mim}}
 
-circuitRF ships **two** MMIC technologies: the plain one, and *MMIC GaAs + MIM*. They are identical
-apart from the three entries above. The reason they are two files rather than one is that a capacitor
-dielectric between the two interconnect metals is **not** a free addition:
+### The capacitor dielectric rides along only when its plate is analysed {#mim-tied}
 
-- **Airbridge posts stop solving.** A post between the two metals now crosses a dielectric interface,
-  and a via that crosses one is refused by name — the closed-form integral along a via is written in
-  one region's coefficients. **This refuses the whole run**, it does not drop a shape. So on the
-  MIM technology, do not mix airbridge posts and capacitor plates in one EM setup.
-- **A line on the upper metal moves.** The 0.2 µm ε<sub>r</sub> 6.8 sheet sits in its substrate, and
-  a line on the *lower* metal sees it as superstrate: measured on the acceptance line,
-  ε<sub>eff</sub> rises ~1.7% and Z₀ falls ~2.8%.
+There is **one** MMIC technology, and it carries the capacitor module. That is only possible because
+the capacitor dielectric is **tied to its plate** — the `Patterned with` setting on its row names
+`MIM Metal`, and it means *this film exists where that metal's artwork is, and nowhere else*, which
+is what a thin film physically is: deposited under the plate and etched away everywhere around it.
 
-Neither is acceptable as a silent change to the technology existing designs already use, and both
-are fine in a technology whose purpose is capacitors. Pick the plain starter for airbridge work and
-the MIM one for capacitor work.
+**So an EM run carries the film only if the plate is one of its analysis levels.** Draw a capacitor
+and the plate has artwork on it, so the film is there and the plates are 0.2 µm apart. Draw plain
+interconnect and it is not, so the film enters the medium as **air at the same thickness** — nothing
+above it moves — and the lower metal's sheet goes back to the bottom of its band. That run is then
+identical, number for number, to the same run on a stackup that never had a capacitor module in it.
+**No setting to remember, and nothing to switch.**
 
-There is also a **plate level makes a post non-adjacent** rule on top of the refusal above: a via
-must span two conductors that are adjacent *in the analysis*, and with the plate metal in the level
-list a post between the two interconnect metals skips a level and is dropped with a note.
+**It is always reported.** A run whose tie deactivated says so in its notes, naming the dielectric,
+the plate that would switch it back on, and the sheet surface it reverted. A medium you did not
+author and cannot see is exactly the kind of change that produces a complete, believable answer to a
+question nobody asked.
+
+Why it has to work this way: a stackup dielectric is [laterally infinite](#anatomy), so a film that
+was simply *present* would be present in every run. That is not free, and both costs are large enough
+to see:
+
+- **Airbridge posts would stop solving.** A post between the two metals would cross a dielectric
+  interface, and a via that crosses one is refused by name — the closed-form integral along a via is
+  written in one region's coefficients. **That refuses the whole run**, it does not drop a shape.
+- **A line on the lower metal would move.** The 0.2 µm ε<sub>r</sub> 6.8 sheet would sit on it as
+  superstrate: measured on the acceptance line, ε<sub>eff</sub> rises ~1.7% and Z₀ falls ~2.8%.
+
+Both are correct physics *for a run that has a capacitor in it*, and wrong for one that does not. The
+tie is what tells the two apart. (circuitRF shipped two MMIC technologies for exactly this reason
+until the tie existed; if you have a workspace holding its own copy of the older pair, they still
+work — nothing in a workspace is rewritten by a new release.)
+
+**What is still bounded:** with the plate level in the analysis, a post between the two interconnect
+metals skips a level, and a via must span two conductors that are adjacent *in the analysis*. It is
+dropped with a note. Capacitor plates and airbridge posts in one EM setup remain separate runs — but
+they are now separate runs on one technology, not two.
 
 ### Adding a capacitor module to an imported technology {#mim-import}
 
@@ -304,28 +328,38 @@ actually publishes:
 
 <p class="center">ε<sub>r</sub> = C″·<em>d</em> / ε₀</p>
 
-At C″ = 0.30 fF/µm² over *d* = 0.2 µm that is 6.8 — the value the shipped MIM technology carries. Work
+At C″ = 0.30 fF/µm² over *d* = 0.2 µm that is 6.8 — the value the shipped MMIC technology carries. Work
 it out from your own two numbers rather than copying a permittivity out of a materials table: the
 capacitance is what you want the model to reproduce, and *d* and ε<sub>r</sub> only ever appear
 together in it.
 
-**Then set the lower metal's sheet surface to Top.** A conductor is solved as a zero-thickness sheet,
-and by default that sheet sits at the *bottom* of its own band — so the modelled plate separation
-would be your dielectric **plus the lower plate's whole metal thickness**, several times the gap you
-just entered, with a plausible capacitance to show for it. See
-[Which surface a conductor's sheet sits on](#sheet-surface).
+**Then two settings on the rows around it**, and neither is optional:
 
-<div class="callout warn">
-<span class="label">Do it on a copy, not on the technology your designs already use</span>
-<p>A capacitor dielectric between two interconnect metals is not a free addition — an airbridge post
-between those metals then crosses a dielectric interface and <strong>refuses the whole run</strong>,
-and a line on either metal moves in ε<sub>eff</sub> and Z₀. That is why circuitRF
-ships the MIM stackup as a <a href="#mim-separate">separate technology</a> rather than as three extra
-rows on the plain one. Copy the imported technology, add the rows to the copy, and retarget the
-layouts that need capacitors.</p>
-</div>
+- **Tie the dielectric to the plate** — `Patterned with` on the dielectric's own row, set to the top
+  plate you just added. Without it the film is a continuous layer of the medium, present in every run
+  on this technology, and the two costs in [the tie's own section](#mim-tied) land on your
+  interconnect: airbridge posts between those metals refuse the whole run, and a line on either metal
+  moves in ε<sub>eff</sub> and Z₀.
+- **Set the lower metal's sheet surface to Top** — see
+  [Which surface a conductor's sheet sits on](#sheet-surface). A conductor is solved as a
+  zero-thickness sheet, and by default that sheet sits at the *bottom* of its own band, so the
+  modelled plate separation would be your dielectric **plus the lower plate's whole metal
+  thickness** — several times the gap you just entered, with a plausible capacitance to show for it.
+  The tie reverts this setting for you in any run that is not analysing the plate, which is why it is
+  safe to set at all.
 
-Two things to know before you read a number off the result: the dielectric is
+**Add the rows to the technology your designs already use** — there is no copy to make and no
+retargeting to do. With the tie set, a run that draws no plate artwork extracts exactly as it did
+before you added the rows: the film enters the medium as air at the same thickness and the sheet
+surface goes back, and the run's notes say so.
+
+**What activation does change**, stated so it is not a surprise the first time a capacitor run
+disagrees with an interconnect one: in a run that *does* analyse the plate, the film is real, and the
+lower metal's line sees it. Its sheet moves to the top of its band, so its substrate grows by that
+metal's own thickness, and ε<sub>eff</sub>/Z₀ move with it. That is the capacitor run's real physics,
+not an artifact — it is the same structure a capacitor sits in.
+
+Two things to know before you read a number off the result: within a run the dielectric is
 [laterally infinite](#anatomy) — present everywhere at its stated thickness, which is a good
 approximation because the fields that set the capacitance are confined under the plates — and the
 mesh has to resolve the gap, which is the subject of the next section.
@@ -334,7 +368,7 @@ mesh has to resolve the gap, which is the subject of the next section.
 
 <div class="callout warn">
 <span class="label">Never read a small element off a RAW solve, and mesh the gap</span>
-<p>The solver models the plate separation the process states — 0.2 µm on the shipped MIM technology,
+<p>The solver models the plate separation the process states — 0.2 µm on the shipped MMIC technology,
 the capacitor dielectric and nothing else. (It used to model 3.2 µm: a conductor is solved as a
 zero-thickness sheet, and with that sheet at the bottom of its own band the lower plate's whole metal
 thickness fell inside the gap. The lower plate's entry now says its sheet sits on the
@@ -359,7 +393,7 @@ retracted.)</p>
 <p><strong>And mesh the gap.</strong> The one thing that genuinely limits a plate capacitance is the
 mesh: the cross-level part of the fill degrades as the cell size grows against the plate separation,
 and the extracted capacitance follows it — within 10% of ε₀ε<sub>r</sub>A/d while the ratio is at
-most 5, 1.46× at 12.5, and the wrong sign at 25. <strong>The shipped MIM technology's default mesh
+most 5, 1.46× at 12.5, and the wrong sign at 25. <strong>The shipped MMIC technology's default mesh
 sits outside that</strong> (a 10 µm plate pair 0.2 µm apart meshes at 2.5 µm, i.e. 12.5), and the run
 says so in its notes — it is a note rather than a refusal because the rest of the structure is
 unaffected. Refine the mesh over the plates until the note stops firing before you trust the

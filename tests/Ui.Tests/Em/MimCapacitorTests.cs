@@ -1,20 +1,23 @@
-// MIM-2 — the GaAs starter technology can state a thin-film (MIM) capacitor, and both capacitor
+// MIM-2/MIM-7 — the GaAs starter technology states a thin-film (MIM) capacitor, and both capacitor
 // forms extract as ordinary multi-level planar EM problems.
 //
 // What this file is FOR. Until MIM-2 no shipped technology could express a MIM capacitor at all, so
-// every capability the rest of the series builds had no in-tree structure to run on. There is now a
-// shipped technology that can — `mmic-GaAs_2LM_100um_MIM`, the plain MMIC starter plus a plate
-// conductor (MIM Metal), the thin dielectric under it (MIM Dielectric) and the plate's connection up
-// to the routing metal (MIM Via) — and these fixtures are the shapes a user would draw on it. They
-// are built in CODE on the real shipped technology rather than committed as artwork, for the reason
-// RegionViaExtractionTests states: a fixture that restates the technology is a second copy of it
-// that drifts.
+// every capability the rest of the series builds had no in-tree structure to run on. The shipped
+// MMIC technology now can — the plain MMIC starter plus a plate conductor (MIM Metal), the thin
+// dielectric under it (MIM Dielectric) and the plate's connection up to the routing metal (MIM Via)
+// — and these fixtures are the shapes a user would draw on it. They are built in CODE on the real
+// shipped technology rather than committed as artwork, for the reason RegionViaExtractionTests
+// states: a fixture that restates the technology is a second copy of it that drifts.
 //
-// IT IS A SECOND TECHNOLOGY RATHER THAN THREE ENTRIES ADDED TO THE STARTER, and that was a measured
-// decision, not a filing preference — see StarterTechnologies.MmicGaAsMim's own note. A capacitor
-// dielectric between Metal1 and Metal2 makes every airbridge post refuse to solve and moves a Metal1
-// microstrip's Z0 by 2.8%; neither may happen silently to the technology every existing MMIC
-// workspace already copied.
+// IT WAS A SECOND TECHNOLOGY FROM MIM-2 TO MIM-7, and the reason it no longer is, is the point of
+// the gate below. Stating a capacitor dielectric between Metal1 and Metal2 made every airbridge
+// post refuse to solve (a WHOLE-RUN refusal from the kernel, not a dropped shape) and moved a
+// Metal1 microstrip's Z0 by 2.8% — neither acceptable silently on the technology every existing
+// MMIC workspace copied. Both costs came from the film being present in runs that contain no
+// capacitor. StackupLayer.PresentWithLayer ties the film to its plate, so it enters the medium only
+// when the plate is one of the run's ANALYSIS LEVELS, and an interconnect-only run extracts
+// BIT-IDENTICALLY to the same run on a stack with no module at all — which is what
+// AnAirbridgePost_SolvesOnTheOneTechnology_AndExtractsIdenticallyToTheModuleFreeStack asserts.
 //
 // NOTHING IN THE EXTRACTOR IS PER-CAPACITOR, and the two-capacitor fixture is here to hold that
 // shut: every shape on a selected level is taken and every region on a via entry is taken, so a
@@ -107,7 +110,25 @@ public class MimCapacitorTests(ITestOutputHelper output)
     ];
 
     private static PlanarExtractionResult Extract(List<LayoutShape> shapes, double fHz = 20e9)
-        => PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAsMim(), Dbu, fHz);
+        => PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAs(), Dbu, fHz);
+
+    /// <summary>
+    /// <b>Today's plain starter, DERIVED from the shipped one rather than restated.</b> MIM-7's
+    /// bit-identity gate needs the pre-module stack to compare against, and a hand-written copy of
+    /// it would be a second representation that drifts — the same objection that keeps every fixture
+    /// in this file built from the real <c>Technology</c>. Removing the module is exactly the four
+    /// edits MIM-2 made in reverse: the two drawing layers, the three stackup entries, the air gap
+    /// they were paid for out of, and MIM-6's sheet-surface choice on Metal1.
+    /// </summary>
+    private static Technology WithoutTheMimModule()
+    {
+        var tech = StarterTechnologies.MmicGaAs();
+        tech.Layers.RemoveAll(l => l.Name.StartsWith("MIM", StringComparison.Ordinal));
+        tech.Stackup.Layers.RemoveAll(l => l.Name.StartsWith("MIM", StringComparison.Ordinal));
+        tech.Stackup.Layers.Single(l => l.Name == "Air").ThicknessDbu = 3 * Dbu;
+        tech.Stackup.Layers.Single(l => l.Name == "Metal1").SheetAt = null;
+        return tech;
+    }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // MILESTONE 1 — the technology itself
@@ -124,7 +145,7 @@ public class MimCapacitorTests(ITestOutputHelper output)
     [Fact]
     public void TheStarterCarriesAPlateConductor_AThinDielectric_AndAPlateVia()
     {
-        var tech = StarterTechnologies.MmicGaAsMim();
+        var tech = StarterTechnologies.MmicGaAs();
 
         var plate = Assert.Single(tech.Stackup.Layers, l => l.Name == "MIM Metal");
         Assert.Equal(StackupKind.Conductor, plate.Kind);
@@ -163,9 +184,13 @@ public class MimCapacitorTests(ITestOutputHelper output)
         Assert.Equal(ConductorSheetSurface.Top, metal1.SheetAt);
         Assert.All(tech.Stackup.Layers.Where(l => l.Name != "Metal1"), l => Assert.Null(l.SheetAt));
 
-        // …and the plain starter it derives from is untouched — an existing MMIC workspace's
-        // microstrips must not move because a capacitor technology exists beside them.
-        Assert.All(StarterTechnologies.MmicGaAs().Stackup.Layers, l => Assert.Null(l.SheetAt));
+        // MIM-7 — the ONE field that lets all of the above live on the technology every MMIC
+        // workspace copies. The film is patterned: it exists under its plate and nowhere else, so a
+        // run whose analysis levels do not include "MIM Metal" carries air in its place and puts
+        // Metal1's sheet back on the bottom of its band. Exactly one entry carries a tie.
+        Assert.Equal("MIM Metal", thin.PresentWithLayer);
+        Assert.All(tech.Stackup.Layers.Where(l => l.Name != "MIM Dielectric"),
+                   l => Assert.Null(l.PresentWithLayer));
 
         // Metal2 still sits exactly 3 µm above Metal1: 2.55 air + 0.25 plate + 0.2 dielectric.
         var air = Assert.Single(tech.Stackup.Layers, l => l.Name == "Air");
@@ -181,15 +206,15 @@ public class MimCapacitorTests(ITestOutputHelper output)
     /// <see cref="StarterTechnologies.MmicGaAs"/> is the one every test builds on. They were in step
     /// before MIM-2 and are asserted to be in step after it — field by field, not by count.
     ///
-    /// <para><b>The one deliberate difference is <c>Name</c></b>, matching what the plain starter
-    /// already does: the file carries the full "MMIC GaAs (2 Layer Metal + MIM, 100um)" a picker
-    /// shows, the code carries the short "MMIC GaAs + MIM".</para>
+    /// <para><b>The one deliberate difference is <c>Name</c></b>: the file carries the full
+    /// "MMIC GaAs (2 Layer Metal + MIM, 100um)" a picker shows, the code carries the short
+    /// "MMIC GaAs".</para>
     /// </summary>
     [Fact]
     public void TheAuthoredCtechAndTheInCodeStarter_StateTheSameTechnology()
     {
-        var code = StarterTechnologies.MmicGaAsMim();
-        var file = ShippedTechnologies.Load("mmic-GaAs_2LM_100um_MIM");
+        var code = StarterTechnologies.MmicGaAs();
+        var file = ShippedTechnologies.Load("mmic-GaAs_2LM_100um");
 
         Assert.Equal(code.DefaultDisplayUnit,    file.DefaultDisplayUnit);
         Assert.Equal(code.DefaultSnapDbu,        file.DefaultSnapDbu);
@@ -221,6 +246,7 @@ public class MimCapacitorTests(ITestOutputHelper output)
             Assert.Equal(a.SigmaSm, b.SigmaSm, 3);
             Assert.Equal(a.IsGroundReference, b.IsGroundReference);
             Assert.Equal(a.SheetAt, b.SheetAt);
+            Assert.Equal(a.PresentWithLayer, b.PresentWithLayer);
             Assert.Equal(a.Fill, b.Fill);
             Assert.Equal(a.WallThicknessDbu, b.WallThicknessDbu);
             Assert.Equal(a.SpanFromLayer, b.SpanFromLayer);
@@ -293,6 +319,52 @@ public class MimCapacitorTests(ITestOutputHelper output)
         output.WriteLine("series MIM: levels at " +
             string.Join(", ", Enumerable.Range(0, p.Layers.Count).Select(i => $"{p.LevelZ(i) * 1e6:G6} µm")) +
             $"; medium {stack}");
+    }
+
+    /// <summary>
+    /// <b>MIM-7's other identity: a CAPACITOR run on the merged technology is the run the retired
+    /// second technology produced, number for number.</b>
+    ///
+    /// <para>The airbridge gate above pins the deactivated side against the module-free stack; this
+    /// pins the ACTIVE side against what <c>mmic-GaAs_2LM_100um_MIM</c> extracted on 2026-08-30,
+    /// captured from a run BEFORE the two technologies were merged. Written as literals rather than
+    /// as a comparison because the object it compares against no longer exists — which is exactly
+    /// why the numbers had to be taken first.</para>
+    /// </summary>
+    [Fact]
+    public void TheCapacitorRun_IsWhatTheRetiredSecondTechnologyProduced()
+    {
+        var r = Extract(SeriesCapacitor());
+        Assert.True(r.Ok, r.Refusal);
+        var p = r.Problem!;
+
+        Assert.Equal(["Metal1", "MIM Metal", "Metal2"], p.Layers.Select(l => l.Name));
+        Assert.Equal(103.0e-6,  p.LevelZ(0), 15);
+        Assert.Equal(103.2e-6,  p.LevelZ(1), 15);
+        Assert.Equal(106.0e-6,  p.LevelZ(2), 15);
+        Assert.Equal([3e-6, 0.25e-6, 3e-6], p.Layers.Select(l => Math.Round(l.ThicknessM, 12)));
+        Assert.All(p.Layers, l => Assert.Equal(4.1e7, l.SigmaSm, 3));
+
+        Assert.Equal(103e-6, p.Slab.HeightM, 15);
+        Assert.Equal(12.9,   p.Slab.Material.EpsR, 12);
+        Assert.Equal(0.0006, p.Slab.Material.TanD, 12);
+
+        var stack = p.EffectiveStack;
+        Assert.Equal(3, stack.LayerCount);
+        Assert.Equal([103e-6, 0.2e-6, 2.8e-6],
+                     stack.Layers.Select(l => Math.Round(l.ThicknessM, 12)));
+        Assert.Equal([12.9, 6.8, 1.0],    stack.Layers.Select(l => l.Material.EpsR));
+        Assert.Equal([0.0006, 0.001, 0.0], stack.Layers.Select(l => l.Material.TanD));
+
+        var via = Assert.Single(p.ViaList);
+        Assert.Equal(1, via.LowerLayerIndex);
+        Assert.Equal(2, via.UpperLayerIndex);
+        Assert.Equal(3.6e-11, Assert.Single(via.Polygons).Area(), 15);
+
+        Assert.True(p.RequiresGeneralKernel);
+        Assert.True(p.LevelIsOnSlabTop(0));
+        Assert.True(new PlanarKernel().CanSolve(p).Ok);
+        Assert.DoesNotContain(r.Notes, n => n.Contains("patterned thin film", StringComparison.Ordinal));
     }
 
     /// <summary>The plate connection is a drawn REGION on a via entry (MIM-1), meshed at the outline
@@ -409,7 +481,7 @@ public class MimCapacitorTests(ITestOutputHelper output)
         shapes.Add(Rect(Post, 40, 22, 46, 28));
         shapes.Add(Rect(Metal1, 38, 20, 48, 30));
 
-        var r = PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAsMim(), Dbu, 20e9,
+        var r = PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAs(), Dbu, 20e9,
             new EmExtractionSettings(AnalysisLevelNames: ["Metal1", "Metal2"]));
         Assert.True(r.Ok, r.Refusal);
 
@@ -550,20 +622,25 @@ public class MimCapacitorTests(ITestOutputHelper output)
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// <b>The airbridge post is REFUSED on the MIM technology, and that is the measurement that
-    /// decided this would be a second file.</b>
+    /// <b>MIM-7's gate: the same airbridge artwork SOLVES on the one shipped technology, and the
+    /// problem it extracts to is BIT-IDENTICAL to the module-free stack's.</b>
     ///
-    /// <para>The post spans Metal1 → Metal2, which on this stackup is 0.2 µm of εr 6.8 followed by
-    /// 2.8 µm of εr 1 — two regions of the medium. (Before MIM-6 the first was 3.2 µm, absorbing
-    /// Metal1's own metal; the post crosses the interface between them either way, which is why the
-    /// refusal is unchanged and only the z it reports moved.) <c>PlanarKernel.CanSolve</c> refuses a via that
-    /// crosses a dielectric interface, because its closed-form z-integral is written in ONE region's
-    /// asymptotic coefficients. <b>It is a whole-run refusal, not a dropped shape</b>, so on the plain
-    /// starter — where the same artwork solves — this would have been a silent loss of a shipped
-    /// capability. Extraction itself is fine; the refusal is the kernel's.</para>
+    /// <para>This test asserted the opposite from MIM-2 to MIM-7. A capacitor dielectric between
+    /// Metal1 and Metal2 puts a Metal1-Metal2 post across a dielectric interface, and
+    /// <c>PlanarKernel.CanSolve</c> refuses such a via by name — its closed-form z-integral is
+    /// written in ONE region's asymptotic coefficients. That is a WHOLE-RUN refusal, not a dropped
+    /// shape, which is why the module could not simply be added to the starter and why circuitRF
+    /// shipped two MMIC technologies.</para>
+    ///
+    /// <para><b>The tie removes the premise rather than the refusal.</b> The kernel is untouched and
+    /// still refuses a via across an interface; there is simply no interface here, because
+    /// "MIM Metal" is not an analysis level of a run with no plate artwork in it, so the film enters
+    /// the medium as air and Metal1's sheet goes back to the bottom of its band. What that buys is
+    /// asserted the strongest way available: not "it solves", but "every number the solver reads is
+    /// the number the module-free stack produces".</para>
     /// </summary>
     [Fact]
-    public void AnAirbridgePost_IsRefusedByTheKernelOnTheMimTechnology_ButSolvesOnThePlainStarter()
+    public void AnAirbridgePost_SolvesOnTheOneTechnology_AndExtractsIdenticallyToTheModuleFreeStack()
     {
         var shapes = new List<LayoutShape>
         {
@@ -576,116 +653,160 @@ public class MimCapacitorTests(ITestOutputHelper output)
             Port(Metal1, 300, 50, "P2"),
         };
 
-        // On the MIM technology: extracts as two levels (nothing is drawn on the plate metal), and
-        // the KERNEL refuses it by name.
-        var mim = PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAsMim(), Dbu, 30e9);
-        Assert.True(mim.Ok, mim.Refusal);
-        Assert.Equal(["Metal1", "Metal2"], mim.Problem!.Layers.Select(l => l.Name));
-        // Re-measured at MIM-6: with Metal1's sheet on the top of its band the post now runs
-        // z = 103 to 106 µm rather than 100 to 106, and it still straddles the plate dielectric's
-        // upper interface at 103.2 — so the refusal is unchanged and so is the reason for it.
-        Assert.Equal(103.0, mim.Problem!.LevelZ(0) * 1e6, 6);
-        Assert.Equal(106.0, mim.Problem!.LevelZ(1) * 1e6, 6);
-        var verdict = new PlanarKernel().CanSolve(mim.Problem!);
-        Assert.False(verdict.Ok, "the airbridge post no longer crosses a dielectric interface — if " +
-                                 "that is a deliberate change, this technology can go back to being " +
-                                 "three entries on the plain starter");
-        Assert.Contains("crosses a dielectric interface", verdict.Reason, StringComparison.Ordinal);
-        Assert.Contains("z = 103 µm to 106 µm", verdict.Reason, StringComparison.Ordinal);
+        var shipped = PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAs(), Dbu, 30e9);
+        var plain   = PlanarExtractor.Extract(shapes, WithoutTheMimModule(),          Dbu, 30e9);
+        Assert.True(shipped.Ok, shipped.Refusal);
+        Assert.True(plain.Ok,   plain.Refusal);
 
-        // On the plain starter, the same artwork solves — which is exactly what must not be lost.
-        var plain = PlanarExtractor.Extract(shapes, StarterTechnologies.MmicGaAs(), Dbu, 30e9);
-        Assert.True(plain.Ok, plain.Refusal);
-        Assert.True(new PlanarKernel().CanSolve(plain.Problem!).Ok);
-        // ONE PlanarVia carrying both posts' footprints — the posts are drawn REGIONS on one stackup
-        // entry, and MIM-1 groups by entry.
-        var post = Assert.Single(plain.Problem!.ViaList);
-        Assert.Equal(2, post.Polygons.Count);
+        var a = shipped.Problem!;
+        var b = plain.Problem!;
+
+        // Levels: two of them, at the pre-module z's — 100 and 106 µm, NOT MIM-6's 103.
+        Assert.Equal(["Metal1", "Metal2"], a.Layers.Select(l => l.Name));
+        Assert.Equal(b.Layers.Select(l => l.Name), a.Layers.Select(l => l.Name));
+        Assert.Equal(100.0, a.LevelZ(0) * 1e6, 12);
+        Assert.Equal(106.0, a.LevelZ(1) * 1e6, 12);
+        for (int i = 0; i < b.Layers.Count; i++)
+        {
+            Assert.Equal(b.LevelZ(i), a.LevelZ(i));                       // exact, not to a tolerance
+            Assert.Equal(b.Layers[i].ThicknessM, a.Layers[i].ThicknessM);
+            Assert.Equal(b.Layers[i].Polygons.Count, a.Layers[i].Polygons.Count);
+        }
+
+        // The medium: two regions, 100 µm of GaAs and 6 µm of air. The film's own 0.2 µm band and
+        // the plate metal's 0.25 µm are still THERE in the stackup — they merge away because the
+        // deactivated film is air and the metal band is absorbed into air on either side.
+        Assert.Equal(b.EffectiveStack.LayerCount, a.EffectiveStack.LayerCount);
+        for (int i = 0; i < b.EffectiveStack.LayerCount; i++)
+        {
+            Assert.Equal(b.EffectiveStack.Layers[i].ThicknessM,       a.EffectiveStack.Layers[i].ThicknessM);
+            Assert.Equal(b.EffectiveStack.Layers[i].Material.EpsR,    a.EffectiveStack.Layers[i].Material.EpsR);
+            Assert.Equal(b.EffectiveStack.Layers[i].Material.TanD,    a.EffectiveStack.Layers[i].Material.TanD);
+            Assert.Equal(b.EffectiveStack.Layers[i].Material.MuR,     a.EffectiveStack.Layers[i].Material.MuR);
+        }
+        Assert.Equal(b.Slab.HeightM,        a.Slab.HeightM);
+        Assert.Equal(b.Slab.Material.EpsR,  a.Slab.Material.EpsR);
+        Assert.Equal(b.Slab.Material.TanD,  a.Slab.Material.TanD);
+
+        // The vias: ONE PlanarVia carrying both posts' footprints — the posts are drawn REGIONS on
+        // one stackup entry, and MIM-1 groups by entry.
+        var postA = Assert.Single(a.ViaList);
+        var postB = Assert.Single(b.ViaList);
+        Assert.Equal(2, postA.Polygons.Count);
+        Assert.Equal(postB.LowerLayerIndex, postA.LowerLayerIndex);
+        Assert.Equal(postB.UpperLayerIndex, postA.UpperLayerIndex);
+        Assert.Equal(postB.Polygons.Select(q => q.Area()), postA.Polygons.Select(q => q.Area()));
+
+        // …and the kernel accepts it, which is the capability MIM-2 could not keep.
+        var verdict = new PlanarKernel().CanSolve(a);
+        Assert.True(verdict.Ok, verdict.Reason);
+        Assert.True(new PlanarKernel().CanSolve(b).Ok);
+
+        // The deactivation is REPORTED. A tie that switched off silently would be exactly the class
+        // of failure the extractor's dropped-artwork note exists to prevent: a medium the user did
+        // not author and cannot see.
+        var note = Assert.Single(shipped.Notes, n => n.Contains("patterned thin film", StringComparison.Ordinal));
+        Assert.Contains("'MIM Dielectric'", note, StringComparison.Ordinal);
+        Assert.Contains("'MIM Metal'", note, StringComparison.Ordinal);
+        Assert.Contains("as AIR", note, StringComparison.Ordinal);
+        Assert.Contains("'Metal1'", note, StringComparison.Ordinal);
+        Assert.DoesNotContain(plain.Notes, n => n.Contains("patterned thin film", StringComparison.Ordinal));
+
+        output.WriteLine($"airbridge on the one technology: levels {a.LevelZ(0) * 1e6:G6} / " +
+                         $"{a.LevelZ(1) * 1e6:G6} µm, medium {a.EffectiveStack}, kernel accepts");
     }
 
     /// <summary>
-    /// <b>The other half of the cost: a Metal1 microstrip moves.</b> The 0.2 µm εr 6.8 sheet sits
-    /// directly on the metal, so the substrate resolution a microstrip PCell gets is not the same on
-    /// the two technologies. Asserted as the actual numbers, because "negligible" was the brief's
-    /// word for it and the measurement is what replaced that word.
+    /// <b>What the merged technology costs the CLOSED-FORM path, measured rather than asserted to be
+    /// nothing.</b>
     ///
-    /// <para>The GROUND reference is unmoved on both — Backside Metal, with the zero-config default
-    /// still picking Metal2 (the topmost conductor) and the documented Metal1 override still
-    /// working. It is only the height and ε that move.</para>
+    /// <para>MIM-7's tie is read by the EM extractor and by nothing else. <c>SubstrateResolver</c> —
+    /// the Hammerstad-Jensen path a microstrip PCell uses — sums the stackup's dielectric bands as
+    /// authored, has no notion of an analysis level, and so cannot ask the question the tie answers.
+    /// That leaves ONE real, permanent difference between the merged technology and the pre-module
+    /// starter, and it is here rather than in a comment: <b>a Metal2 line's closed-form substrate is
+    /// 102.75 µm instead of 103</b>, because the module put 0.25 µm of plate METAL where 0.25 µm of
+    /// air used to be and only dielectric bands are summed. −0.24% in height, with ε_eff a shade
+    /// higher; the EM path, which is what an EM run publishes, is bit-identical (see the airbridge
+    /// gate above). Teaching the closed form the tie would not close it either — skipping the film
+    /// gives 102.55 µm, which is further away, because the missing 0.25 µm is metal, not
+    /// dielectric.</para>
     ///
-    /// <para><b>MIM-6, and the decision this test now records.</b> <c>SubstrateResolver</c> — the
-    /// closed-form microstrip path — sums DIELECTRIC thicknesses and is deliberately untouched by
-    /// the sheet-surface field, so on the MIM technology it and the EM extractor now disagree about
-    /// a Metal1 line's substrate by exactly one metal thickness: 100 µm against 103. Measured
-    /// consequence of teaching the closed form the field instead: a 70 µm line's static Z₀ would go
-    /// 49.42 → 50.06 Ω, +1.3%. It is not taught, because the two numbers answer different questions.
-    /// Hammerstad-Jensen models REAL, finite-thickness metal and takes that thickness as its own
-    /// parameter <c>t</c>; its h is the physical substrate, ground plane to the underside of the
-    /// metal, which is what the process states. The extractor's h is where a ZERO-thickness sheet
-    /// was placed — a discretisation position, not a dimension — and feeding it to the closed form
-    /// would count Metal1's 3 µm twice and move every Metal1 microstrip on this technology to agree
-    /// with a discretisation artifact. The discrepancy is bounded by one metal thickness by
-    /// construction, and the run's notes print the number the solver used. Asserted below so the
-    /// divergence is deliberate and visible rather than discovered later.</para>
+    /// <para><b>A Metal1 line is unaffected on both paths</b>: every band the module added is ABOVE
+    /// Metal1, so its substrate is the GaAs alone. That is the line the 2.8% Z₀ shift of MIM-2 was
+    /// measured on, and it is the shift the tie removes.</para>
+    ///
+    /// <para><b>MIM-6's recorded divergence stands, and now applies only to capacitor runs.</b> On a
+    /// run that DOES analyse the plate, the EM extractor puts Metal1's sheet on the top of its band
+    /// and solves 103 µm of GaAs while the closed form still says 100 — one metal thickness apart,
+    /// deliberately. Hammerstad-Jensen models REAL, finite-thickness metal and takes that thickness
+    /// as its own parameter <c>t</c>; its h is the physical substrate, ground plane to the underside
+    /// of the metal, which is what the process states. The extractor's h is where a ZERO-thickness
+    /// sheet was placed — a discretisation position, not a dimension — and feeding it to the closed
+    /// form would count Metal1's 3 µm twice. The divergence is bounded by one metal thickness by
+    /// construction, and the run's notes print the number the solver used.</para>
     /// </summary>
     [Fact]
-    public void AMetal1Microstrip_ResolvesDifferentlyOnTheTwoTechnologies_ButAgainstTheSamePlane()
+    public void TheClosedFormPathDoesNotReadTheTie_AndTheOnlyCostIsAMetal2LineBy025Micron()
     {
-        foreach (var tech in new[] { StarterTechnologies.MmicGaAs(), StarterTechnologies.MmicGaAsMim() })
+        var tech  = StarterTechnologies.MmicGaAs();
+        var plain = WithoutTheMimModule();
+
+        foreach (var t in new[] { tech, plain })
         {
-            var (byDefault, noFailure, _) = SubstrateResolver.ResolveElectrical(tech, PCellLayerSelection.Default);
+            var (byDefault, noFailure, _) = SubstrateResolver.ResolveElectrical(t, PCellLayerSelection.Default);
             Assert.Null(noFailure);
             Assert.Equal("Metal2", byDefault!.SignalConductorName);
             Assert.Equal("Backside Metal", byDefault.GroundConductorName);
             Assert.False(byDefault.IsStripline);
 
+            // Metal1 is below every band the module added, so ITS substrate is the GaAs alone on
+            // both — closed form and, for a run with no plate in it, the EM extractor too.
             var (metal1, noFailure2, _) =
-                SubstrateResolver.ResolveElectrical(tech, new PCellLayerSelection("Metal1", null));
+                SubstrateResolver.ResolveElectrical(t, new PCellLayerSelection("Metal1", null));
             Assert.Null(noFailure2);
             Assert.Equal("Backside Metal", metal1!.GroundConductorName);
-            // Metal1 is below every added band, so ITS substrate is the GaAs alone either way.
             Assert.Equal(100e-6, metal1.HeightMeters, 12);
             Assert.Equal(12.9, metal1.RelativePermittivity, 9);
         }
 
-        // A Metal2 line is the one that moves: 3 µm of air became 2.55 air + 0.2 dielectric, and the
-        // 0.25 µm plate METAL contributes nothing because only dielectric thicknesses are summed.
-        var plainM2 = SubstrateResolver.ResolveElectrical(StarterTechnologies.MmicGaAs(), PCellLayerSelection.Default).Substrate!;
-        var mimM2   = SubstrateResolver.ResolveElectrical(StarterTechnologies.MmicGaAsMim(), PCellLayerSelection.Default).Substrate!;
-        Assert.Equal(103.0e-6,  plainM2.HeightMeters, 12);
-        Assert.Equal(102.75e-6, mimM2.HeightMeters, 12);
-        Assert.True(mimM2.RelativePermittivity > plainM2.RelativePermittivity);
+        // The one measured cost of the merge, stated as the actual numbers.
+        var withModule = SubstrateResolver.ResolveElectrical(tech,  PCellLayerSelection.Default).Substrate!;
+        var without    = SubstrateResolver.ResolveElectrical(plain, PCellLayerSelection.Default).Substrate!;
+        Assert.Equal(103.0e-6,  without.HeightMeters, 12);
+        Assert.Equal(102.75e-6, withModule.HeightMeters, 12);
+        Assert.True(withModule.RelativePermittivity > without.RelativePermittivity);
 
         // The plate metal is a signal conductor like any other, and resolves against the same plane.
         var (plate, noFailure3, _) = SubstrateResolver.ResolveElectrical(
-            StarterTechnologies.MmicGaAsMim(), new PCellLayerSelection("MIM Metal", null));
+            tech, new PCellLayerSelection("MIM Metal", null));
         Assert.Null(noFailure3);
         Assert.Equal("Backside Metal", plate!.GroundConductorName);
         Assert.False(plate.IsStripline);
 
-        // ── MIM-6: the two substrate heights, side by side, and the size of the divergence ────
+        // ── The EM path, both ways round ──────────────────────────────────────────────────────
         //
-        // On the PLAIN starter the closed form and the EM extractor agree exactly. On the MIM
-        // technology they differ by Metal1's own 3 µm, because the EM sheet moved to the top of its
-        // band and the closed form's h did not — the recorded decision, see this test's own note.
-        var plainLine = MicrostripOn(StarterTechnologies.MmicGaAs());
-        var mimLine   = MicrostripOn(StarterTechnologies.MmicGaAsMim());
+        // A bare Metal1 line has no plate artwork, so the tie deactivates and the EM slab is the
+        // pre-module 100 µm — identical to the module-free stack and in step with the closed form.
+        var line      = MicrostripOn(tech);
+        var linePlain = MicrostripOn(plain);
+        Assert.Equal(linePlain.Problem!.Slab.HeightM, line.Problem!.Slab.HeightM);
+        Assert.Equal(100e-6, line.Problem!.Slab.HeightM, 12);
+        Assert.Equal(12.9,   line.Problem!.Slab.Material.EpsR, 9);
 
-        Assert.Equal(100e-6, plainLine.Problem!.Slab.HeightM, 12);
+        // A CAPACITOR run is where MIM-6's divergence lives: 103 µm of GaAs in the solver, 100 in
+        // the closed form.
+        var cap = Extract(SeriesCapacitor());
+        Assert.True(cap.Ok, cap.Refusal);
+        Assert.Equal(103e-6, cap.Problem!.Slab.HeightM, 12);
         Assert.Equal(100e-6, SubstrateResolver.ResolveElectrical(
-            StarterTechnologies.MmicGaAs(), new PCellLayerSelection("Metal1", null)).Substrate!.HeightMeters, 12);
+            tech, new PCellLayerSelection("Metal1", null)).Substrate!.HeightMeters, 12);
 
-        Assert.Equal(103e-6, mimLine.Problem!.Slab.HeightM, 12);
-        Assert.Equal(100e-6, SubstrateResolver.ResolveElectrical(
-            StarterTechnologies.MmicGaAsMim(), new PCellLayerSelection("Metal1", null)).Substrate!.HeightMeters, 12);
-
-        // Both slabs are the GaAs; only its height moved.
-        Assert.Equal(12.9, mimLine.Problem!.Slab.Material.EpsR, 9);
-
-        output.WriteLine($"Metal1 substrate — plain: closed form {100.0:F1} µm, EM " +
-                         $"{plainLine.Problem!.Slab.HeightM * 1e6:F1} µm; " +
-                         $"MIM: closed form {100.0:F1} µm, EM {mimLine.Problem!.Slab.HeightM * 1e6:F1} µm " +
-                         "(one Metal1 thickness apart, deliberately)");
+        output.WriteLine(
+            $"closed form Metal2 substrate: {without.HeightMeters * 1e6:F3} µm without the module, " +
+            $"{withModule.HeightMeters * 1e6:F3} µm with it (εr {without.RelativePermittivity:F4} -> " +
+            $"{withModule.RelativePermittivity:F4}); EM Metal1 slab {line.Problem!.Slab.HeightM * 1e6:F1} µm " +
+            $"interconnect-only, {cap.Problem!.Slab.HeightM * 1e6:F1} µm with the plate analysed");
     }
 
     /// <summary>A bare Metal1 line, for reading the EM extractor's own substrate height.</summary>

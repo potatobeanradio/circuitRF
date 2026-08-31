@@ -181,6 +181,33 @@ public sealed class StackupLayer
     /// </summary>
     public ConductorSheetSurface? SheetAt { get; set; }
 
+    /// <summary>
+    /// brief-em-mim-7-one-technology.md: names the CONDUCTOR entry this dielectric is patterned
+    /// with — i.e. this is a thin film that physically exists only where that conductor's artwork
+    /// is (a thin-film capacitor's dielectric, which is deposited under its plate and etched away
+    /// everywhere else), not a laterally continuous layer of the sandwich.
+    ///
+    /// <para><b>What reads it, and what it means.</b> The 2.5D premise makes every dielectric
+    /// laterally infinite WITHIN a run; it does not force one to be in EVERY run. The planar
+    /// extractor therefore carries this dielectric as stated when the named conductor is one of the
+    /// run's analysis levels, and as AIR (εᵣ 1, tanδ 0, its thickness untouched so nothing above it
+    /// moves) when it is not — and says so in the run's notes. That is what lets ONE technology
+    /// carry a capacitor module and still solve ordinary interconnect: a run with no plate artwork
+    /// in it is bit-identical to the same stack without the module. Nothing else reads the field:
+    /// the closed-form microstrip path sums the stackup as authored, and the kernel's own refusals
+    /// are unchanged.</para>
+    ///
+    /// <para><b>Name the conductor directly ABOVE this entry</b> — the plate the film is deposited
+    /// under. Anything else is expressible and honoured, but the paired rule that reverts that
+    /// conductor's <see cref="SheetAt"/> keys on the entry directly BENEATH the dielectric, so a
+    /// tie pointing somewhere else is harder to read than it is wrong.</para>
+    ///
+    /// <para>Additive, nullable, no <c>.ctech</c> <c>FormatVersion</c> bump — the
+    /// <see cref="SheetAt"/>/<see cref="SpanFromLayer"/> pattern. Meaningless (ignored) on a
+    /// non-Dielectric entry.</para>
+    /// </summary>
+    public string? PresentWithLayer { get; set; }
+
     // ── Via (Kind == StackupKind.Via only) — additive, nullable, no .ctech FormatVersion bump ──────
 
     /// <summary>R-via-2. Null for any non-Via entry.</summary>

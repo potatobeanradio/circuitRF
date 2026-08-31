@@ -224,6 +224,35 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         }
     }
 
+    // ── MIM-7 — the dielectric that is patterned with a plate rather than laterally continuous ──
+    //
+    // A ComboBox of conductor names with an explicit "(none)", exactly like the via Spans row above,
+    // and for the same reason: the value IS another stackup entry's name, so a free-text box would
+    // let a tie be spelled wrong and only fail at extraction. "(none)" is the ordinary dielectric —
+    // laterally infinite, present in every run — and is what every entry authored before this field
+    // means.
+    public IReadOnlyList<string> PresentWithChoices =>
+        [SpanNone, .. _owner.Working.Stackup.Layers
+                          .Where(l => l.Kind == StackupKind.Conductor && !l.IsGroundReference)
+                          .Select(l => l.Name)];
+
+    private string _selectedPresentWith = SpanNone;
+    public string SelectedPresentWith
+    {
+        get => _selectedPresentWith;
+        set
+        {
+            if (!SetProperty(ref _selectedPresentWith, value) || _isRefreshing) return;
+            string? v = value == SpanNone ? null : value;
+            if (Layer.PresentWithLayer == v) return;
+            var before = _owner.SnapshotJson();
+            Layer.PresentWithLayer = v;
+            _owner.CommitEdit(before, v is null
+                ? $"Make {Layer.Name} a continuous dielectric"
+                : $"Pattern {Layer.Name} with {v}");
+        }
+    }
+
     [ObservableProperty] private string _stagedWallThickness = "";
 
     public IRelayCommand RemoveCommand   { get; }
@@ -261,6 +290,8 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0", Inv);
         IsGroundReference    = Layer.IsGroundReference;
         SelectedSheetAt      = Layer.SheetAt ?? ConductorSheetSurface.Bottom;
+        SelectedPresentWith  = Layer.PresentWithLayer is { Length: > 0 } p ? p : SpanNone;
+        OnPropertyChanged(nameof(PresentWithChoices));
 
         DrawingLayerOptions.Clear();
         foreach (var l in _owner.Working.Layers)

@@ -51,6 +51,21 @@ public class SheetReferenceSurfaceTests
         Port(new LayerKey(1, 0), 300, 50, "P2"),
     ];
 
+    /// <summary>The same MMIC technology with its CAPACITOR in the run: plate artwork puts "MIM
+    /// Metal" among the analysis levels, which is what keeps MIM-7's tied dielectric active (and
+    /// therefore keeps Metal1's shipped <c>Top</c> in force). Without plate artwork the tie
+    /// deactivates and the shipped <c>Top</c> is reverted for the run — the case
+    /// <see cref="MmicTwoLevel"/> covers.</summary>
+    private static List<LayoutShape> MmicCapacitor() =>
+    [
+        Rect(new LayerKey(1, 0),   0, 20,  30, 30),
+        Rect(new LayerKey(9, 0),  20, 20,  30, 30),
+        Rect(new LayerKey(10, 0), 22, 22,  28, 28),
+        Rect(new LayerKey(2, 0),  22, 22,  60, 28),
+        Port(new LayerKey(1, 0),   0, 25, "P1"),
+        Port(new LayerKey(2, 0),  60, 25, "P2"),
+    ];
+
     /// <summary>A PCB microstrip — one level, so it also covers the path where the general medium is
     /// deliberately NOT built.</summary>
     private static List<LayoutShape> PcbLine() =>
@@ -73,27 +88,24 @@ public class SheetReferenceSurfaceTests
     /// </summary>
     [Theory]
     [InlineData("MmicGaAs")]
-    [InlineData("MmicGaAsMim")]
+    [InlineData("MmicGaAsCapacitor")]
     [InlineData("Pcb2Layer")]
     public void UnsetSheetAt_AndExplicitBottom_AreTheSameExtraction(string starter)
     {
         var (tech, shapes) = starter switch
         {
-            "MmicGaAs"    => (StarterTechnologies.MmicGaAs(),    MmicTwoLevel()),
-            "MmicGaAsMim" => (StarterTechnologies.MmicGaAsMim(), MmicTwoLevel()),
-            _             => (StarterTechnologies.Pcb2Layer(),   PcbLine()),
+            "MmicGaAs"          => (StarterTechnologies.MmicGaAs(),  MmicTwoLevel()),
+            "MmicGaAsCapacitor" => (StarterTechnologies.MmicGaAs(),  MmicCapacitor()),
+            _                   => (StarterTechnologies.Pcb2Layer(), PcbLine()),
         };
 
         var asAuthored = PlanarExtractor.Extract(shapes, tech, Dbu, 20e9);
         Assert.True(asAuthored.Ok, asAuthored.Refusal);
 
-        var forced = starter switch
-        {
-            "MmicGaAs"    => StarterTechnologies.MmicGaAs(),
-            "MmicGaAsMim" => StarterTechnologies.MmicGaAsMim(),
-            _             => StarterTechnologies.Pcb2Layer(),
-        };
-        // Only where the technology says NOTHING — the MIM starter ships Metal1 at Top on purpose,
+        var forced = starter.StartsWith("MmicGaAs", StringComparison.Ordinal)
+            ? StarterTechnologies.MmicGaAs()
+            : StarterTechnologies.Pcb2Layer();
+        // Only where the technology says NOTHING — the MMIC starter ships Metal1 at Top on purpose,
         // and overwriting that would make this test assert the opposite of what it is for.
         foreach (var l in forced.Stackup.Layers)
             if (l.Kind == StackupKind.Conductor && l.SheetAt is null)
@@ -106,22 +118,23 @@ public class SheetReferenceSurfaceTests
     }
 
     /// <summary>
-    /// The MIM technology ships ONE conductor at <c>Top</c>, and clearing it must put the extraction
-    /// back exactly where MIM-2 measured it — 100 / 103.2 / 106 µm with the whole 3.2 µm at εᵣ 6.8.
-    /// That is the other half of "additive": the new behaviour is reachable only by the new field,
-    /// and removing the field removes the behaviour with nothing left behind.
+    /// The MMIC technology ships ONE conductor at <c>Top</c>, and clearing it must put a CAPACITOR
+    /// run back exactly where MIM-2 measured it — 100 / 103.2 / 106 µm with the whole 3.2 µm at
+    /// εᵣ 6.8. That is the other half of "additive": the new behaviour is reachable only by the new
+    /// field, and removing the field removes the behaviour with nothing left behind.
     /// </summary>
     [Fact]
     public void ClearingTheShippedTopChoice_RestoresTheOldGeometryExactly()
     {
-        var tech = StarterTechnologies.MmicGaAsMim();
+        var tech = StarterTechnologies.MmicGaAs();
         tech.Stackup.Layers.Single(l => l.Name == "Metal1").SheetAt = null;
 
-        var r = PlanarExtractor.Extract(MmicTwoLevel(), tech, Dbu, 20e9);
+        var r = PlanarExtractor.Extract(MmicCapacitor(), tech, Dbu, 20e9);
         Assert.True(r.Ok, r.Refusal);
 
-        Assert.Equal(100.0, r.Problem!.LevelZ(0) * 1e6, 6);
-        Assert.Equal(106.0, r.Problem!.LevelZ(1) * 1e6, 6);
+        Assert.Equal(100.0,  r.Problem!.LevelZ(0) * 1e6, 6);
+        Assert.Equal(103.2,  r.Problem!.LevelZ(1) * 1e6, 6);
+        Assert.Equal(106.0,  r.Problem!.LevelZ(2) * 1e6, 6);
         var between = r.Problem!.EffectiveStack.Layers.Single(l => Math.Abs(l.Material.EpsR - 6.8) < 1e-9);
         Assert.Equal(3.2e-6, between.ThicknessM, 12);
     }
@@ -228,7 +241,7 @@ public class SheetReferenceSurfaceTests
     [Fact]
     public void SheetAt_RoundTripsThroughCtech_AndIsAbsentWhenUnset()
     {
-        var tech = StarterTechnologies.MmicGaAsMim();
+        var tech = StarterTechnologies.MmicGaAs();
         string json = TechPersistence.Serialize(tech);
 
         Assert.Equal(1, CountOccurrences(json, "\"SheetAt\""));
@@ -246,7 +259,8 @@ public class SheetReferenceSurfaceTests
     [Fact]
     public void ActechWithNoSheetAt_LoadsUnset()
     {
-        var back = TechPersistence.Deserialize(TechPersistence.Serialize(StarterTechnologies.MmicGaAs()));
+        // Pcb2Layer, because the MMIC starter now ships one deliberate Top (MIM-6, kept by MIM-7).
+        var back = TechPersistence.Deserialize(TechPersistence.Serialize(StarterTechnologies.Pcb2Layer()));
         Assert.All(back.Stackup.Layers, l => Assert.Null(l.SheetAt));
     }
 
@@ -257,6 +271,9 @@ public class SheetReferenceSurfaceTests
     {
         var target = StarterTechnologies.MmicGaAs();
         var source = StarterTechnologies.MmicGaAs();
+        // The shipped starter now carries Metal1 = Top (MIM-6), so the DIFFERENCE has to be made
+        // here: an older technology of the same shape that says nothing, merged from one that does.
+        target.Stackup.Layers.Single(l => l.Name == "Metal1").SheetAt = null;
         source.Stackup.Layers.Single(l => l.Name == "Metal1").SheetAt = ConductorSheetSurface.Top;
 
         var conflicts = TechnologyMerge.FindConflicts(target, source, TechSection.Stackup);
