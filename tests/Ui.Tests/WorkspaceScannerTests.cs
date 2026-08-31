@@ -628,16 +628,108 @@ public class WorkspaceScannerTests : IDisposable
     [Fact]
     public void Scan_ResolvableKnownFile_ProducesNodeWithNoWarning()
     {
+        // Outside the workspace — an in-workspace file is shown where it lives instead (below).
+        string outside = Path.Combine(Path.GetTempPath(), "WSOutside_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(outside);
+        try
+        {
+            string kfPath = Path.Combine(outside, "notes.txt");
+            File.WriteAllText(kfPath, "");
+            WriteCws(new CwsFile { KnownFiles = [kfPath] });
+
+            var tree = WorkspaceScanner.Scan(_root);
+            var kfGroup = FindKind(tree, NodeKind.KnownFilesGroup);
+            Assert.Equal("Known Files", kfGroup.Name);
+            var kf = Assert.Single(kfGroup.Children);
+            Assert.Equal(NodeKind.KnownFile, kf.Kind);
+            Assert.Null(kf.WarningReason);
+        }
+        finally { Directory.Delete(outside, recursive: true); }
+    }
+
+    // ── A Known File the tree already shows is not listed twice ──────────────
+    //
+    // A file inside the workspace is visible where it lives, so a second entry under Known Files is
+    // a duplicate. The .cws list itself is untouched — the Data Display's data-source library reads
+    // it, not the tree.
+
+    [Fact]
+    public void Scan_KnownFileAtWorkspaceRoot_ListedOnceAsALooseFileNotUnderKnownFiles()
+    {
         string kfPath = Path.Combine(_root, "notes.txt");
         File.WriteAllText(kfPath, "");
         WriteCws(new CwsFile { KnownFiles = [kfPath] });
 
         var tree = WorkspaceScanner.Scan(_root);
-        var kfGroup = FindKind(tree, NodeKind.KnownFilesGroup);
-        Assert.Equal("Known Files", kfGroup.Name);
-        var kf = Assert.Single(kfGroup.Children);
-        Assert.Equal(NodeKind.KnownFile, kf.Kind);
-        Assert.Null(kf.WarningReason);
+
+        Assert.Contains(tree.Children, n => n.Kind == NodeKind.OtherFile && n.Name == "notes.txt");
+        Assert.DoesNotContain(tree.Children, n => n.Kind == NodeKind.KnownFilesGroup);
+    }
+
+    [Fact]
+    public void Scan_KnownFileInASubFolder_StoredRelative_IsNotListedTwice()
+    {
+        // The stored form R-stb-10/11 actually writes for an in-workspace reference: relative,
+        // `/`-separated. Resolving before comparing is what makes this one match the tree node.
+        string dir = Path.Combine(_root, "data");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "meas.s2p"), "");
+        WriteCws(new CwsFile { KnownFiles = ["data/meas.s2p"] });
+
+        var tree = WorkspaceScanner.Scan(_root);
+
+        var folder = tree.Children.Single(n => n.Name == "data");
+        Assert.Contains(folder.Children, n => n.Name == "meas.s2p");
+        Assert.DoesNotContain(tree.Children, n => n.Kind == NodeKind.KnownFilesGroup);
+    }
+
+    [Fact]
+    public void Scan_KnownFolderInsideWorkspace_IsNotListedTwice()
+    {
+        string dir = Path.Combine(_root, "assets");
+        Directory.CreateDirectory(dir);
+        WriteCws(new CwsFile { KnownFiles = [dir] });
+
+        var tree = WorkspaceScanner.Scan(_root);
+
+        Assert.Contains(tree.Children, n => n.Kind == NodeKind.UserFolder && n.Name == "assets");
+        Assert.DoesNotContain(tree.Children, n => n.Kind == NodeKind.KnownFilesGroup);
+    }
+
+    [Fact]
+    public void Scan_OutsideKnownFile_SurvivesAlongsideAnInsideOneThatIsDropped()
+    {
+        string outside = Path.Combine(Path.GetTempPath(), "WSOutside_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(outside);
+        try
+        {
+            string outsideKf = Path.Combine(outside, "vendor.s2p");
+            File.WriteAllText(outsideKf, "");
+            string insideKf = Path.Combine(_root, "mine.s2p");
+            File.WriteAllText(insideKf, "");
+            WriteCws(new CwsFile { KnownFiles = [outsideKf, insideKf] });
+
+            var tree = WorkspaceScanner.Scan(_root);
+
+            var kfGroup = FindKind(tree, NodeKind.KnownFilesGroup);
+            var kf = Assert.Single(kfGroup.Children);
+            Assert.Equal("vendor.s2p", kf.Name);
+        }
+        finally { Directory.Delete(outside, recursive: true); }
+    }
+
+    [Fact]
+    public void Scan_BrokenKnownFileInsideWorkspace_StillListed()
+    {
+        // Nothing on disk to show it in place, so the broken-reference warning is still the only
+        // way the user learns the reference is dead.
+        WriteCws(new CwsFile { KnownFiles = ["data/gone.s2p"] });
+
+        var tree = WorkspaceScanner.Scan(_root);
+
+        var kf = Assert.Single(FindKind(tree, NodeKind.KnownFilesGroup).Children);
+        Assert.Equal("gone.s2p", kf.Name);
+        Assert.NotNull(kf.WarningReason);
     }
 
     [Fact]
@@ -762,12 +854,11 @@ public class WorkspaceScannerTests : IDisposable
             Assert.Single(goodLib.Children); // Resistor
             Assert.Contains("unresolved", badLib.WarningReason);
 
-            // Known Files group
+            // Known Files group: sweep.cdd is already rendered inside the assets folder, so only
+            // the broken reference — which nothing else in the tree can show — is listed here.
             var kfGroup = FindKind(tree, NodeKind.KnownFilesGroup);
-            Assert.Equal(2, kfGroup.Children.Count);
-            var goodKf = kfGroup.Children.Single(n => n.Name == "sweep.cdd");
-            var badKf  = kfGroup.Children.Single(n => n.Name == "missing.cdd");
-            Assert.Null(goodKf.WarningReason);
+            var badKf = Assert.Single(kfGroup.Children);
+            Assert.Equal("missing.cdd", badKf.Name);
             Assert.NotNull(badKf.WarningReason);
         }
         finally { Directory.Delete(libDir, recursive: true); }

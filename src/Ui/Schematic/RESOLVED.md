@@ -2,6 +2,40 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## A file inside the workspace was listed twice: in place, and again under Known Files (2026-08-30)
+
+Owner report. A Known File is a **bookmark to a file the tree cannot otherwise show**; once the file
+lives inside the workspace the ordinary scan already renders it where it sits, so the Known Files
+group was showing a second copy the user has to learn to ignore. `Import Data` and a file drop onto
+the tree both land here — `AddKnownFile` records any picked path, and R-stb-10/11 explicitly allows
+an in-workspace reference (stored workspace-relative).
+
+**Fixed as a rendering filter, not a list filter** (`WorkspaceScanner.Scan`). A `.cws` entry whose
+resolved path is already an `AbsolutePath` somewhere in the tree just built is skipped, and the group
+node is omitted entirely when nothing survives.
+
+- **The test is "already in the tree", NOT "inside the workspace root".** Those are different
+  questions and the difference is load-bearing: `IsHiddenTreeFile` deliberately hides `.DS_Store` and
+  `*.source` from the ordinary scan, so naming one as a Known File is the only way to see it, and
+  that opt-in has its own test. A "was it inside the root" test would have broken it. Same for a
+  broken in-workspace reference — nothing on disk to render, so the warning node is still the only
+  way the user learns the reference is dead.
+- **The `.cws` list itself is untouched, deliberately.** `GetKnownTouchstoneFiles` /
+  `GetKnownLoadpullFiles` feed the Data Display's data-source library from `KnownFiles`, **not from
+  the tree** — `DataSourceLibraryViewModel` otherwise only enumerates `results/*.npy`. Dropping an
+  in-workspace `.sNp`/`.spl` from the list at write time (the tempting "don't record it at all" fix)
+  would silently remove an imported measurement from every trace picker.
+- Comparison is on the **resolved, fully-qualified, trailing-separator-trimmed** path
+  (`WorkspaceScanner.PathKey`), because the stored form is relative for an in-workspace reference and
+  absolute for an outside one, and `ResolveRef` returns a rooted ref unnormalized.
+
+**Second, latent bug found on the way: `RemoveKnownFile` could never remove a relative entry.** It
+compared `node.AbsolutePath` against the raw stored string, so for the workspace-relative form the
+`RemoveAll` matched nothing, the `.cws` was rewritten unchanged, and the user still got
+"Reference removed (file not deleted)". It now matches the resolved path as well. This is reachable
+after the fix above — a hidden file opted in by name is stored relative and is still shown.
+
+
 ## Drag-follow redrew the whole wire, and mid-span taps left the net (2026-08-30)
 
 Owner testing turned up seven drag defects on three real sheets. **Two were disconnects** — the

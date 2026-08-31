@@ -9501,7 +9501,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
         catch { cws = new CwsFile(); }
 
-        cws.KnownFiles.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        // Match on the RESOLVED path, not the stored string: R-stb-10/11 stores an in-workspace
+        // reference workspace-relative (with `/` separators) and only an outside one absolutely, so
+        // comparing the node's absolute path against the raw entry never matches the relative form
+        // and the removal silently does nothing. A hidden file opted in by name (.DS_Store, *.source)
+        // is exactly that shape and is still shown in the tree, so this is reachable.
+        var wsRoot = Path.GetDirectoryName(CurrentWorkspacePath) ?? "";
+        cws.KnownFiles.RemoveAll(p =>
+            string.Equals(p, path, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(WorkspaceRefs.Resolve(p, wsRoot), path, StringComparison.OrdinalIgnoreCase));
         WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
         _factory.ProjectTreeTool?.Refresh();
         Messages.Info($"Reference removed (file not deleted):\n  {path}");

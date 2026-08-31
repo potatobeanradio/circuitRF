@@ -65,13 +65,33 @@ public static class WorkspaceScanner
             root.AddChild(libGroup);
         }
 
-        // Known Files (from .cws) — alphabetical by ref string
+        // Known Files (from .cws) — alphabetical by ref string.
+        //
+        // A reference that resolves to something the scan has ALREADY placed in the tree is skipped.
+        // A Known File is a bookmark to a file the tree cannot otherwise show; once the file is
+        // inside the workspace it is visible where it actually lives, and a second entry under
+        // Known Files is a duplicate the user has to learn to ignore. Membership is tested against
+        // the tree that was just built, not against the workspace root, because those are not the
+        // same question: .DS_Store and *.source live inside the workspace and are deliberately
+        // hidden from the ordinary scan, so naming one as a Known File is still the only way to see
+        // it (IsHiddenTreeFile's opt-in) and must keep working.
+        //
+        // The .cws list itself is NOT filtered — only its rendering. The Data Display's data-source
+        // library reads KnownFiles rather than the tree (GetKnownTouchstoneFiles /
+        // GetKnownLoadpullFiles), so dropping an in-workspace .sNp/.spl from the list would remove
+        // an imported measurement from every trace picker.
         if (cws.KnownFiles.Count > 0)
         {
+            var alreadyInTree = CollectAbsolutePaths(root);
             var kfGroup = new ProjectTreeNode(NodeKind.KnownFilesGroup, "Known Files", workspaceRootDir, "");
             foreach (string kfRef in cws.KnownFiles.OrderBy(r => r, StringComparer.OrdinalIgnoreCase))
+            {
+                if (alreadyInTree.Contains(PathKey(ResolveRef(kfRef, workspaceRootDir))))
+                    continue;
                 kfGroup.AddChild(BuildKnownFileNode(kfRef, workspaceRootDir));
-            root.AddChild(kfGroup);
+            }
+            if (kfGroup.Children.Count > 0)
+                root.AddChild(kfGroup);
         }
 
         // R-L5g-9 (brief-L5-followups-2.md §4): generated cells are NEVER shown in the Project Tree —
@@ -93,6 +113,33 @@ public static class WorkspaceScanner
     private static bool IsReservedTreeDir(string dir)
         => string.Equals(Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
             CircuitRF.Ui.Layout.PCells.GeneratedCellStore.ReservedFolderName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Every absolute path the tree already renders, as <see cref="PathKey"/> keys.</summary>
+    private static HashSet<string> CollectAbsolutePaths(ProjectTreeNode node)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Walk(node);
+        return seen;
+
+        void Walk(ProjectTreeNode n)
+        {
+            if (!string.IsNullOrEmpty(n.AbsolutePath))
+                seen.Add(PathKey(n.AbsolutePath));
+            foreach (var child in n.Children) Walk(child);
+        }
+    }
+
+    /// <summary>
+    /// Comparison form of a path: fully qualified, no trailing separator. Compared
+    /// case-insensitively by the caller, matching how the .cws list is de-duplicated everywhere
+    /// else — a workspace on a case-sensitive filesystem holding two files whose names differ only
+    /// in case is not a case worth splitting the comparison over.
+    /// </summary>
+    private static string PathKey(string path)
+    {
+        try { path = Path.GetFullPath(path); } catch { /* keep the raw form; it still compares */ }
+        return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
 
     // ── Cell ──────────────────────────────────────────────────────────────────
 
