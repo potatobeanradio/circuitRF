@@ -78,7 +78,17 @@ public static class BuiltInSymbols
     private static readonly Symbol _mklopf        = BuildMklopf();
     private static readonly Symbol _termG         = BuildTermG();
     private static readonly Symbol _diode         = BuildDiode();
-    private static readonly Symbol _fet           = BuildFet();
+    private static readonly Symbol _fet           = BuildFet(nChannel: true);
+    private static readonly Symbol _pfet          = BuildFet(nChannel: false);
+    private static readonly Symbol _jfetN         = BuildJfet(nChannel: true);
+    private static readonly Symbol _jfetP         = BuildJfet(nChannel: false);
+    private static readonly Symbol _igbtN         = BuildIgbt(nChannel: true);
+    private static readonly Symbol _igbtP         = BuildIgbt(nChannel: false);
+    private static readonly Symbol _bead          = BuildBead();
+    private static readonly Symbol _vdmosN        = BuildVdmos(nChannel: true);
+    private static readonly Symbol _vdmosP        = BuildVdmos(nChannel: false);
+    private static readonly Symbol _mosN          = BuildMos(nChannel: true);
+    private static readonly Symbol _mosP          = BuildMos(nChannel: false);
     private static readonly Symbol _bjtNpn        = BuildBjt(npn: true);
     private static readonly Symbol _bjtPnp        = BuildBjt(npn: false);
 
@@ -209,9 +219,31 @@ public static class BuiltInSymbols
             case SymbolKind.FetStatz:
             case SymbolKind.FetMaterka:
             case SymbolKind.FetAngelov:  return _fet;
+            // The p-channel laws share one glyph with each other and none with the n-channel ones:
+            // the gate arrow is the only thing on the drawing that says which channel this is.
+            case SymbolKind.PFetCurtice:
+            case SymbolKind.PFetStatz:
+            case SymbolKind.PFetMaterka: return _pfet;
             // The two BJT polarities do NOT share a glyph, unlike the five FET laws above. The
             // emitter arrow is the only thing that distinguishes an n-p-n from a p-n-p on a
             // schematic, and it is the first thing a reader looks for.
+            // The two MOS levels share one glyph per CHANNEL, and the two channels do not share
+            // with each other. Same split, same reasons, as the families above: the topology is
+            // identical across levels and the type label names the law, while the bulk arrow is the
+            // only thing on the drawing that says which channel this is.
+            // The two JFET channels do not share a glyph either, and for the same reason: the
+            // gate arrow is the only thing on the drawing that says which one this is.
+            case SymbolKind.JfetN:       return _jfetN;
+            case SymbolKind.JfetP:       return _jfetP;
+            case SymbolKind.IgbtN:       return _igbtN;
+            case SymbolKind.IgbtP:       return _igbtP;
+            case SymbolKind.Bead:        return _bead;
+            case SymbolKind.VdmosN:      return _vdmosN;
+            case SymbolKind.VdmosP:      return _vdmosP;
+            case SymbolKind.Mos1N:
+            case SymbolKind.Mos3N:       return _mosN;
+            case SymbolKind.Mos1P:
+            case SymbolKind.Mos3P:       return _mosP;
             case SymbolKind.BjtNpn:      return _bjtNpn;
             case SymbolKind.BjtPnp:      return _bjtPnp;
             default:                    return _generic;
@@ -444,16 +476,17 @@ public static class BuiltInSymbols
     //
     // Shared by all five built-in FET laws — see the dispatch above for why.
 
-    private static Symbol BuildFet() => Sym([
+    private static Symbol BuildFet(bool nChannel) => Sym([
         L(-200,    0, -135,    0),                    // gate lead (up to the arrow base)
-        Poly(true, -135, -32, -135,  32,  -80,   0),  // n-channel arrow, tip on the gate bar
+        nChannel ? Poly(true, -135, -32, -135,  32,  -80,   0)   // n-channel: tip on the gate bar
+                 : Poly(true,  -80, -32,  -80,  32, -135,   0),  // p-channel: tip toward the gate
         L( -80, -110,  -80,  110),                    // gate bar
         L( -30, -110,  -30,  110),                    // channel bar
         L( -30,  -80,    0,  -80),                    // drain arm off the channel
         L(   0,  -80,    0, -200),                    // drain lead
         L( -30,   80,    0,   80),                    // source arm off the channel
         L(   0,   80,    0,  200),                    // source lead
-    ], SymbolKind.FetCurtice);
+    ], nChannel ? SymbolKind.FetCurtice : SymbolKind.PFetCurtice);
 
     // ── BJT — base bar, collector and emitter arms, arrow on the emitter ──────
     // Pins: base (-200,0) LEFT, collector (0,-200) TOP, emitter (0,+200) BOTTOM. Same envelope and
@@ -474,6 +507,145 @@ public static class BuiltInSymbols
         npn ? Poly(true, -54,  95, -34,  65, -16,  99)    // n-p-n: tip toward the emitter
             : Poly(true, -46, 100, -26,  70, -64,  66),   // p-n-p: tip toward the base
     ], npn ? SymbolKind.BjtNpn : SymbolKind.BjtPnp);
+
+    // ── JFET — gate arrow straight onto an UNBROKEN channel bar ───────────────
+    // Pins: drain (0,−200) TOP, gate (−200,0) LEFT, source (0,+200) BOTTOM. Same envelope and the
+    // same lead lengths as the FET, MOS and BJT glyphs, so the four transistor families sit at one
+    // scale in the palette.
+    //
+    // What distinguishes it from the MESFET glyph beside it is what distinguishes the devices: the
+    // MESFET has TWO vertical bars (a gate bar standing off an insulated channel) and this has ONE,
+    // because a JFET's gate is a junction made directly onto the channel. The arrowhead sits at the
+    // end of the gate lead, ON the channel bar, which is where the junction is.
+    //
+    // The channel bar is UNBROKEN — a depletion device, conducting at zero gate bias, which is the
+    // opposite of the MOS glyph's three segments. The arrow IS the channel polarity and there is no
+    // other cue: it points INTO the channel for n-channel, out of it for p-channel.
+
+    private static Symbol BuildJfet(bool nChannel) => Sym([
+        L(-200,    0,  -30,    0),                    // gate lead, right onto the channel
+        L( -30, -110,  -30,  110),                    // channel bar, unbroken
+        L( -30,  -85,    0,  -85),                    // drain arm
+        L(   0,  -85,    0, -200),                    // drain lead
+        L( -30,   85,    0,   85),                    // source arm
+        L(   0,   85,    0,  200),                    // source lead
+        nChannel ? Poly(true, -90,  -20, -90,  20, -34,   0)    // n-channel: tip on the channel bar
+                 : Poly(true, -34,  -20, -34,  20, -90,   0),   // p-channel: tip toward the gate
+    ], nChannel ? SymbolKind.JfetN : SymbolKind.JfetP);
+
+    // ── IGBT — an insulated gate on one side, a bipolar's arrow on the other ──
+    // Pins: collector (0,−200) TOP, gate (−200,0) LEFT, emitter (0,+200) BOTTOM.
+    //
+    // The glyph says what the device is, which is the point of it: the input side is the MOS one —
+    // a gate bar standing off a broken (enhancement) channel bar — and the output side carries the
+    // BIPOLAR's emitter arrow. That arrow is not decoration. An IGBT does NOT conduct in reverse,
+    // and a reader who takes it for a power MOSFET will expect a body diode that is not there; the
+    // arrow is what stops that reading.
+
+    private static Symbol BuildIgbt(bool nChannel) => Sym([
+        L(-200,    0,  -80,    0),                    // gate lead
+        L( -80, -110,  -80,  110),                    // gate bar
+        L( -30, -110,  -30,  -60),                    // channel: collector segment
+        L( -30,  -25,  -30,   25),                    // channel: body segment
+        L( -30,   60,  -30,  110),                    // channel: emitter segment
+        L( -30,  -85,    0,  -85),                    // collector arm
+        L(   0,  -85,    0, -200),                    // collector lead
+        L( -30,   85,    0,   85),                    // emitter arm
+        L(   0,   85,    0,  200),                    // emitter lead
+        // The emitter arrow, built along the arm rather than axis-aligned so it lies ON the lead —
+        // the same construction the BJT glyph uses, and pointing the same way for the same reason.
+        nChannel ? Poly(true, -18,  75,   2,  75, -10,  99)     // conventional current OUT of the emitter
+                 : Poly(true, -30,  73, -10,  73, -22,  97),
+    ], nChannel ? SymbolKind.IgbtN : SymbolKind.IgbtP);
+
+    // ── Ferrite bead — a wire passing through a core ──────────────────────────
+    // Pins: (0,−200) and (0,+200), the same two every lumped element uses — it falls through
+    // SymbolPortDefs' default arm exactly as SRLC and PRLC do, so there is no second copy of the
+    // coordinates to drift.
+    //
+    // The wire runs UNBROKEN from pin to pin, which is the whole of what the glyph has to say: a
+    // bead is a conductor threaded through a core, not an element in series with one. At DC it is a
+    // piece of wire with the winding resistance of a piece of wire, and drawing it as a body with
+    // leads would suggest otherwise. The two hatch strokes are the core.
+
+    private static Symbol BuildBead() => Sym([
+        L(   0, -200,   0,  200),           // the wire, straight through
+        RRect(0, 0, 90, 150, 30),           // the core around it
+        L( -45,  -25,  45,  -55),           // core hatching
+        L( -45,   55,  45,   25),
+    ], SymbolKind.Bead);
+
+    // ── VDMOS — the MOSFET glyph with its body tied to the source, and the body DIODE drawn ──
+    // Pins: drain (0,−200) TOP, gate (−200,0) LEFT, source (0,+200) BOTTOM. No bulk pin.
+    //
+    // Two things say "power MOSFET" rather than "MOSFET" and both are drawn because both are facts
+    // about the circuit:
+    //   * the bulk arm turns and joins the SOURCE lead instead of leaving as a fourth pin. That is
+    //     the source-to-body short, inside the silicon, and it is why there is no body effect.
+    //   * the body DIODE is drawn explicitly, on the right, between the drain and source leads. It
+    //     is not decoration: it is the freewheeling path of every half-bridge and it carries the
+    //     full load current during dead time. Its arrow is the channel polarity read the usual way
+    //     — for n-channel it conducts from source to drain, so it points UP toward the drain.
+    //
+    // The channel bar is drawn in three segments, the enhancement mark, exactly as the lateral MOS
+    // glyph draws it.
+
+    private static Symbol BuildVdmos(bool nChannel) => Sym([
+        L(-200,    0,  -80,    0),                    // gate lead
+        L( -80, -110,  -80,  110),                    // gate bar
+        L( -30, -110,  -30,  -60),                    // channel: drain segment
+        L( -30,  -25,  -30,   25),                    // channel: body segment
+        L( -30,   60,  -30,  110),                    // channel: source segment
+        L( -30,  -85,    0,  -85),                    // drain arm
+        L(   0,  -85,    0, -200),                    // drain lead
+        L( -30,   85,    0,   85),                    // source arm
+        L(   0,   85,    0,  200),                    // source lead
+        L( -30,    0,   45,    0),                    // body tie, out and then down to the source
+        L(  45,    0,   45,   85),
+        L(  45,   85,    0,   85),
+        nChannel ? Poly(true,  25,  -20,  25,  20, -25,   0)     // n-channel: tip toward the channel
+                 : Poly(true, -25,  -20, -25,  20,  25,   0),    // p-channel: tip toward the body
+        // The body diode, tapped off the two leads.
+        L(   0, -150,  130, -150),
+        L( 130, -150,  130,  -55),
+        L( 130,   10,  130,  150),
+        L(   0,  150,  130,  150),
+        nChannel ? L(100, -55, 160, -55) : L(100,  10, 160,  10),          // cathode bar
+        nChannel ? Poly(true, 100,  10, 160,  10, 130, -55)                // conducts source→drain
+                 : Poly(true, 100, -55, 160, -55, 130,  10),               // …and the other way
+    ], nChannel ? SymbolKind.VdmosN : SymbolKind.VdmosP);
+
+    // ── MOSFET — insulated gate, a BROKEN channel bar, and a bulk arm on the right ──
+    // Pins: drain (0,−200) TOP, gate (−200,0) LEFT, source (0,+200) BOTTOM, bulk (+200,0) RIGHT.
+    // Same envelope and the same lead lengths as the FET and BJT glyphs, so the three transistor
+    // families sit at one scale in the palette.
+    //
+    // TWO things distinguish this from the MESFET glyph beside it, and both are load-bearing:
+    //   * the channel bar is drawn in THREE SEGMENTS rather than one. That is the standard mark for
+    //     an ENHANCEMENT device — no channel until the gate makes one — and it is what says this
+    //     part is off at zero gate bias, which the MESFET is not.
+    //   * there is a FOURTH lead, out to the right, for the bulk. The arrow on it is the channel
+    //     polarity and there is no other cue: it points INTO the channel for n-channel, out of it
+    //     for p-channel, which is the junction it stands for read the usual way.
+    //
+    // The bulk arm meets the channel at its midpoint, between the two outer segments, because that
+    // is where the substrate contacts the body — drawing it onto the drain or source end would
+    // suggest a connection to one of them, which is the thing the separate pin exists to deny.
+
+    private static Symbol BuildMos(bool nChannel) => Sym([
+        L(-200,    0,  -80,    0),                    // gate lead
+        L( -80, -110,  -80,  110),                    // gate bar (the insulator gap is the space)
+        L( -30, -110,  -30,  -60),                    // channel: drain segment
+        L( -30,  -25,  -30,   25),                    // channel: body segment
+        L( -30,   60,  -30,  110),                    // channel: source segment
+        L( -30,  -85,    0,  -85),                    // drain arm
+        L(   0,  -85,    0, -200),                    // drain lead
+        L( -30,   85,    0,   85),                    // source arm
+        L(   0,   85,    0,  200),                    // source lead
+        L( -30,    0,  200,    0),                    // bulk arm and lead, out to the right
+        nChannel ? Poly(true,  30,  -20,  30,  20,  -20,   0)    // n-channel: tip toward the channel
+                 : Poly(true, -20,  -20, -20,  20,   30,   0),   // p-channel: tip toward the bulk
+    ], nChannel ? SymbolKind.Mos1N : SymbolKind.Mos1P);
 
     private static Symbol BuildNonlinearC() => Sym([
         L(   0, -200,   0,  -12),            // top lead

@@ -6,6 +6,331 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## Six engine models for the refused model-card types (2026-09-01)
+
+The device half of the SPICE `.model` import work. The importer already refused `NJF`/`PJF`, `PMF`,
+`NMOS`/`PMOS`, `VDMOS`, `NIGBT`/`PIGBT` and `BEAD` **by name**, each saying what circuitRF lacked;
+this is the engine side of removing most of those refusals. New: `MosfetLevel1Model` and
+`MosfetLevel3Model` (`MOS1_N/P`, `MOS3_N/P`), `VdmosModel` (`VDMOS_N/P`), `JfetModel` (`JFET_N/P`),
+`IgbtModel` (`IGBT_N/P`), `BeadModel` (`Bead`), and a p-channel `Channel` on `FetModelBase` for three
+of the five MESFET laws.
+
+### The one rule that shaped all six: a POLARITY is a sign, a LEVEL is a law
+
+`BjtModel` already established that a polarity is one sign applied on the way in and on the way out,
+with **the Jacobian passing through unchanged** — the sign appears once on the current and once on
+the voltage, and the two cancel. Every new family here uses it, and every one has a test asserting
+the exact mirror term for term. `Channel.N` is `+1` and every multiplication by it is exact, so the
+five MESFET laws are **bit-identical** to what they were before polarity existed, which is what lets
+their own tests stand as the proof the change moved no number.
+
+**Three of the five MESFET laws have a p-channel form and two do not, and that is a decision.** A
+mirror is unambiguous only where the gate dependence is anchored to a threshold and is EVEN in it —
+the quadratic, Statz and Materka laws. The Curtice–Ettenberg cubic (`A0`–`A3`) and Angelov
+(`P1`–`P3`) are polynomials fitted *directly* against the gate voltage, so mirroring would have to
+negate the odd-order coefficients and leave the even ones alone, and no published convention says a
+p-channel parameter set is written that way. **The factory refuses `PFET_CurticeCubic` outright**
+rather than stripping the prefix and building an n-channel one — a test caught that hole, and what it
+would have produced is a device that solves, draws current in the right direction, and is wrong in
+its odd-order terms only.
+
+### The MOS transistor has FOUR terminals, and that is load-bearing
+
+Tying the bulk to the source internally is one line and silently deletes the body effect. A card that
+states `Gamma`/`Phi` would then import, simulate, and be wrong by hundreds of millivolts of threshold
+with nothing reporting it. `VdmosModel` is a separate three-terminal component for exactly that
+reason: there the short really is inside the silicon, and it is what turns the substrate junction
+into a **body diode** that carries load current.
+
+### Charge is charge-based, not capacitance-based, and the reason is harmonic balance
+
+The MOS intrinsic gate charge is the **long-channel charge-based** result, not the Meyer capacitance
+set a transient simulator conventionally uses. Meyer states three capacitances that each depend on
+more than one terminal voltage, so the charge they imply is **path-dependent**: around a harmonic
+cycle it does not return to where it started, and a periodic steady-state solve has nothing to
+converge to. Integrating the channel charge directly is conservative by construction and its
+derivatives reduce to exactly Meyer's wherever Meyer's are right — `Cox` at `Vds = 0`, two thirds of
+`Cox` in saturation, zero in cutoff, all three asserted. Written in `u = Vdse/Vgt` as
+`−Cox·Vgt·(2/3)(3 − 3u + u²)/(2 − u)` rather than as a ratio of two expressions that both vanish, so
+there is no singularity anywhere in `[0,1]`. The drain/source split is **50/50**, stated as a
+modelling decision rather than left as an approximation nobody made.
+
+The same argument drives the VDMOS's and the IGBT's bias-dependent Miller capacitance: both integrate
+`Cgd(V) = Cgdmin + ΔC·½·(1 + tanh(V/Vgdt))` in closed form to
+`Cgdmin·V + ΔC·½·(V + Vgdt·ln cosh(V/Vgdt))`, with `ln cosh` in its overflow-safe form (written
+directly it is `Infinity − Infinity` past about 710, which a Newton iterate reaches long before the
+circuit does).
+
+### Reverse operation is chosen by the PORT, not by rewriting a difference
+
+Every MOS-like device here is symmetric: which end acts as the drain is decided by the bias. The swap
+is done by choosing **which port carries** the effective gate-source and bulk-source voltages —
+`(gate,drain)` and `(bulk,drain)` instead of `(gate,source)` and `(bulk,source)` — rather than by
+rewriting them as differences of other ports. Both are already ports in their own right, so the
+derivatives land in the columns the quantities came from. **Getting this wrong is invisible in a
+per-port finite-difference check and shows up only at the node level**; the first draft computed the
+reverse-mode current from `v[PGd]` while writing its derivative into the `v[PGs]` column via a chain
+rule that assumed the difference form, and the node-level test is what caught it.
+
+For the VDMOS this is not a formality: third-quadrant conduction with the gate on *is* synchronous
+rectification, which is what the part is bought for.
+
+### A clamped value with an unclamped derivative is worse than either
+
+`√(Phi − Vbs)` is continued to keep the threshold finite when the bulk is driven forward past the
+surface potential. The first draft **clamped the value and kept the true slope**, so the function was
+flat there while the Jacobian still claimed the square root's unbounded one — exactly the
+inconsistency Newton turns into a stall. Both the threshold and the depletion charge under the gate
+now go through one `BodySqrt`, so they cannot disagree. **A tangent was the second draft and is also
+wrong here — see the review section at the end of this brief for what replaced it and why.**
+
+Level 3's channel-length modulation has the same shape of problem for real: `Δl ∝ √(Vds − Vdsat)` has
+an unbounded derivative exactly at the saturation boundary, where a Newton iterate spends its time.
+With `Vmax` stated the published form carries the pinch-off field and is finite on its own; without
+it, the argument is shifted by 1e-4 V and the same offset subtracted, so `Δl` is still exactly zero at
+the boundary and the slope is large but finite. The `Δl > Leff/2` substitution
+(`Leff − Leff²/(4Δl)`) is continuous in **value and slope** there — both sides give `Leff/2` and a
+slope of 1 — so it is a smooth ceiling rather than a clamp with a kink in it, and what it leaves is a
+current growing like `√Vds`.
+
+### Level 3's derivatives are carried exactly, not hand-derived
+
+`Grad3` is a four-double readonly struct carrying a value with its exact partials in `Vgs`/`Vds`/`Vbs`,
+with the product, quotient and chain rules in its operators. **This is not a finite difference and
+not an approximation** — it is the analytic derivative, obtained in a way that cannot drop a term.
+The level-3 law is a dozen stages deep (a short-channel factor inside a threshold, inside a
+bulk-charge factor, inside a saturation voltage, inside a velocity-saturation denominator, inside a
+channel-length-modulation multiplier) and hand-deriving that chain is several hundred lines of
+algebra in which one wrong term gives a Jacobian that is plausible everywhere and right nowhere. The
+repo already carries dual numbers for the same reason in `SddEvaluator`.
+
+**Two findings from writing it:**
+
+- **The narrow-width term must NOT be subtracted back out of `Vbi`.** The first draft made
+  `Vth(Vbs = 0)` come out as exactly the card's `Vto` whatever `Delta` said — a parameter read,
+  carried, and doing nothing. It is an *addition* on top of `Vto`: a narrow device's threshold is
+  higher than the card's stated one, and the charge-sharing factor lowers it the same way. Neither is
+  a correction to `Vto`; both are what the geometry does to it.
+- **Level 3 is not level 1 with extra terms switched off.** Turn all six short-channel parameters off
+  and the square law comes back only on a device with **no body effect** — the bulk-charge factor is
+  itself a level-3 term, replacing `Vds/2` with `(1 + fb)·Vds/2`, and `fb` is driven by `Gamma`. The
+  two levels differ by about fifteen percent of drain current on a device that states a body effect
+  and nothing else. A test asserts both halves of that.
+
+### The IGBT is the equivalent circuit, and its card still cannot be imported
+
+`IgbtModel` is an insulated-gate channel driving the base of a wide-base bipolar, with the internal
+base node as a genuine unknown the elaborator always mints. That structure is what gets the two
+defining behaviours right without either being fitted: the **junction drop in `Vce(sat)`** (the
+solver finds the base voltage where the channel current equals the bipolar's base current, so the
+on-state voltage is the channel's drop plus a junction's) and the **current tail** (the bipolar's
+diffusion charge `Tau·I`, which turn-off cannot remove through the gate). It does not conduct in
+reverse, structurally — which is why an IGBT half-bridge needs a discrete anti-parallel diode and a
+MOSFET one does not.
+
+**`NIGBT`/`PIGBT` cards are still refused, and the refusal now says something different.** circuitRF
+HAS an IGBT; the card's parameters belong to the published ambipolar transport model and describe the
+SILICON (base width, doping, carrier lifetime, mobility), while this one is parameterised by what a
+data sheet gives. Neither set can be derived from the other by renaming — that is a device-modelling
+extraction — so carrying the numbers across would produce a transistor wearing default values under
+the card's own name. That is a *different* refusal from "no model exists" and the text has to say so.
+
+### The ferrite bead: a four-element network, because the loss has to move with frequency
+
+`BeadModel` is linear, two-terminal, `Z(ω) = Rdc + [jωL ∥ Rp ∥ 1/(jωCp)]`, on `SeriesRlcModel`'s own
+branch-constraint shape (which works for an arbitrary `Z(ω)`, including `Z = 0` — a bead with no
+parameters is a wire, a short constraint rather than a division). The old refusal was right that a
+*fixed* RLC cannot reproduce a bead: an inductor's loss is zero and a series RLC's is a constant `R`,
+while a bead's rises from nothing at DC to a maximum at its ferromagnetic resonance and falls again.
+`Rp` is what **caps** the impedance — at resonance the reactive branches cancel and `|Z| = Rdc + Rp`,
+which is the peak a data sheet plots — so a bead fitted without it has no maximum at all.
+
+**Zero means NOT MODELLED for each of the three parallel elements**, never a short. Reading a zero
+parallel resistance literally would short the tank and leave a few milliohms, which is the opposite
+of what an omitted parameter means and would still simulate. At DC the inductive branch shorts the
+tank, so the bead is `Rdc` — which is both the physics and what a DC operating point needs, since a
+bead in a supply rail must not open it.
+
+### `JunctionMath`, and the three older models that still have their own copies
+
+The saturation-current exponential and the depletion charge are now shared
+(`src/Core/Devices/JunctionMath.cs`) by every model added here — the same arrangement `Temperature`
+was pulled out to create for the temperature relations. **`DiodeModel`, `BjtModel` and
+`FetModelBase` still carry their own copies and were deliberately not converted in this pass**: the
+copies agree, the conversion is mechanical, and folding it into a change this size would conflate
+"did a number move?" with "did a model change?". Converting them is a separate change whose gate is
+their own existing tests.
+
+### Two defects the palette-wiring test found, and neither was findable any other way
+
+`DevicePaletteWiringTests.P4`'s idea — perturb every parameter name the registry offers and require
+the device's behaviour to MOVE — was applied to the new families in
+`tests/Ui.Tests/GateControlledPaletteWiringTests.cs`. It caught two things nothing else would have:
+
+- **The MOS bulk capacitance pair read its precedence backwards.** A stated absolute `Cbd`/`Cbs`
+  must WIN over `Cj` times a junction area; it was the other way round, so an explicitly stated
+  device capacitance was silently inert on any card that also carried the process constant — which is
+  most cards. Note the two rules genuinely differ in direction: for the saturation currents the
+  DENSITY (`Js` × area) wins over the absolute `Is`. Both are published, and both are now in the test's
+  own `ReadOnlyWhenAbsent` table, which is what forced the question.
+- **The IGBT's `Bv` was on the wrong junction.** It sat on the bipolar's emitter-base junction, so it
+  could only trigger with the collector far BELOW the base — a reverse-conduction condition the
+  device never reaches. An IGBT's forward blocking voltage is sustained across the DRIFT REGION,
+  which in this equivalent circuit is the base-to-emitter span, and when it breaks over the current
+  flows base→emitter and turns the bipolar on with it. The parameter had been offered, carried, and
+  unreachable at every bias a circuit could produce.
+
+**One testing trap worth keeping:** the perturbation comparison must be EXACT inequality, with no
+tolerance at all. A parameter that is genuinely unread leaves the two probes bit-identical (same code
+path, same inputs), so any difference whatever is real. P4's own `1e-14 · max(1, |x|)` floor reads a
+fully-wired `Cgso` as unwired, because gate overlap charges are of order 1e-14 C — which is exactly
+what a first draft of the new test did.
+
+**And a parameter read only when another is ABSENT has to be probed with that other one cleared.**
+`Uo` (only without `Kp`), `Nsub` (only without `Gamma`/`Phi`), `Rsh`/`Nrd`/`Nrs` (only without
+`Rd`/`Rs`), `Cj` (only without `Cbd`/`Cbs`), `Is` (only without `Js`). That is a real property of the
+models and worth knowing at the parameter dialog too: setting `Uo` on a device that already states
+`Kp` does nothing, and nothing on screen says so.
+
+### Testing: what the per-port Jacobian check cannot see
+
+Every family has a central-finite-difference check of the whole analytic Jacobian, **twice** — once
+per port, and once at the NODE level after applying the elaborator's own node map. The first catches
+a wrong derivative; the second catches a right derivative written into the wrong column, which the
+first cannot see because the port voltages are a redundant coordinate system. Three real defects were
+found this way and none would have been visible in the other check.
+
+**Three finite-difference traps, all arithmetic rather than modelling, all worth recognising:**
+
+- **A node current is a SUM, and a bad bias makes it cancel.** With the bulk forward-biased 1.5 V the
+  substrate junction passes tens of kiloamps, so node 0 sums a 7e-4 channel current against 4e+4 —
+  eight digits gone before the difference quotient starts. The fix is to place the bulk relative to
+  the LOWER of the two channel terminals, i.e. to test the device where it operates, not to widen the
+  tolerance until nothing is asserted. Where a large current is genuinely wanted (the IGBT's grid),
+  the node-level tolerance carries an explicit `eps·|f|/h` floor instead.
+- **The square law's SECOND derivative steps at `Vds = Vgt`.** A central difference straddling the
+  saturation boundary returns `gds + h·Δf''/4` rather than `gds`. The JFET's grid landed exactly on it
+  and the offsets are now chosen to miss it, with the reason written down — a future failure of that
+  shape is the grid, not the model.
+- **A "temperature is inert at nominal" test must exclude `kT/q`.** Every temperature RELATION
+  collapses to the identity at `Temp == Tnom`, however far the pair sits from nominal — but the
+  thermal voltage is the temperature itself, not a departure from an extraction point, so the bulk
+  junction currents legitimately differ at 85 °C. Asserting them equal would be asserting the
+  junctions are not temperature-aware at all.
+
+**And the elaborator's node maps needed their own end-to-end tests.** Every one of these devices is
+three or four PINS to the user and five to eight PORTS to the engine, and the map lives in
+`Elaborator.cs` — a different file from the model, stating the same port order a second time. A wrong
+entry there elaborates, solves, and is a different circuit, with every unit test still passing.
+`tests/Engine.Tests/Devices/GateControlledDeviceIntegrationTests.cs` drives real netlists through
+real DC solves and checks the answers against arithmetic done in the test.
+
+### The reader was dropping a card's bare words
+
+`.model` cards were parsed with `var (_, assignments) = SplitBareAndAssignments(...)` — the bare
+words discarded, silently. Several dialects state a device's channel type that way (a lone `pchan` on
+a vertical-MOSFET card is the usual example), so an n-channel and a p-channel VDMOS card read
+**identically**, with every number right. `SpiceModelCard` now carries `Flags` and a `HasFlag`, both
+verbatim and uninterpreted exactly as `Parameters` is.
+
+**A negative threshold with no channel keyword is reported, not guessed at.** It is what a p-channel
+part looks like — and also what a (rare, real) depletion-mode n-channel part looks like, and nothing
+on the card separates the two.
+
+
+### Three defects a post-hoc review found, and why none of them was reachable from the tests above
+
+Every one of them is a silent-wrong-answer, and every one survived a per-port finite-difference
+Jacobian check over a bias grid — which is worth stating on its own, because that check is the
+strongest thing in this brief and it was never going to see any of these.
+
+**1. Level 3 froze the body effect at `Vbs ≥ Phi − 1 mV`, and the current and the charge then
+disagreed inside one device.** `MosfetLevel3Model` had its own local `if (arg.V < 1e-3) arg =
+Grad3.Const(1e-3)` instead of going through the base's `BodySqrt`. That clamps the value **and** all
+three derivatives, so past the changeover the threshold stopped moving, `gmbs` read **exactly zero**
+and the drain current sat on a plateau while the transistor was plainly still conducting — measured
+at 5.3065e-5 A for every `Vbs` from 0.60 to 2.00 with `Phi = 0.6`, against level 1's smooth
+2.5e-4 → 1.0e-3 over the same range. Worse, the base computes the gate charge from the same square
+root through its **own** continuation, so the charge went on moving while the current was frozen: one
+device holding two answers about one quantity.
+
+The Jacobian check could not see it because a clamp is **self-consistent** — value frozen, derivative
+zero, finite differences agree perfectly. And the bias grids deliberately keep the bulk at or below
+the lower channel terminal (see `MosfetLevel3ModelTests.BiasGrid`'s own comment), so no test went
+there at all.
+
+**The tangent this family uses everywhere else is ALSO wrong here, and that is the interesting
+half.** Continuing `√arg` along its tangent from `arg = Floor` crosses zero at `arg = −Floor` and
+goes negative about two millivolts past the changeover — and level 3 **divides** by that square root
+in its bulk-charge factor `fb = Gamma·fs/(4·sq)`. A tangent puts a genuine pole at an ordinary
+forward bulk bias, which is strictly worse than the freeze it was meant to fix. `BodySqrt` now uses
+the published **reciprocal** continuation
+
+```
+r(arg) = √Floor / (1 + (Floor − arg)/(2·Floor))
+```
+
+which matches the square root's own value and slope at the changeover (so nothing below it moves by a
+bit) and decays toward zero **without reaching it**. Staying positive is a correctness requirement of
+the caller, not a numerical nicety — which is why this one square root is not continued the way every
+other runaway expression in this directory is.
+
+**2. `Vtotc` was applied in a different coordinate system by three families than by the fourth, and
+all three said in a comment that they matched it.** `FetModelBase`'s laws do
+`sign · (Vto + Vtotc·ΔT)` — the shift in the **card's** coordinates, the channel sign afterwards,
+which is the order the card itself states the pair in. `JfetModel`, `VdmosModel` and `IgbtModel` did
+`sign·Vto + Vtotc·ΔT`.
+
+**The two are indistinguishable on an n-channel device**, where the sign is +1 — which is the whole
+reason it survived, since every polarity test in this brief checks the mirror at `Vtotc = 0`. On a
+p-channel one they drift in **opposite** directions, by twice the whole shift: a p-JFET with
+`Vto = +2`, `Vtotc = −5 mV/°C` at ΔT = +100 landed at −2.5 V in n-channel coordinates where the
+MESFET convention gives −1.5 V.
+
+**3. The card translation carried `LAMBDA` onto a level-3 binding, where nothing reads it.**
+`SpiceModelCardTranslation.Mosfet` strips the six short-channel parameters off a **level-1** binding
+for exactly the stated reason — a parameter on a device that never reads it looks honoured — and had
+no symmetric rule for the one parameter that runs the other way. Level 3 has no `Lambda` (it computes
+the output slope from a real channel shortening), `MosfetLevel3Model` has no such constructor
+parameter, and `ComponentTypeRegistry.DefaultParameters` already leaves the row off the level-3
+tile — so the UI knew and the translation did not. An imported card's `Lambda` landed on the
+transistor with the card's own value in it, absent from `Unmapped`, read by nothing. Both directions
+now go through one `DropOntoUnmapped`, and the two tests are written as an explicit pair.
+
+### Gates for the three
+
+`MosfetLevel3ModelTests.T10` (the forward-bulk region the other grids exclude: the current keeps
+responding, stays finite, and is continuous in value **and** slope across the changeover — asserted
+for both levels, since the point is that they share one continuation),
+`TemperatureTests.AThresholdTempCoefficient_IsAppliedInTheCardsOwnCoordinates_InEveryFamilyThatHasOne`
+(all four families, both channel types; the n-channel case is the control that passes either way),
+`ModelCardImportTests.Lambda_ReachesLevel1_AndIsReportedAsDroppedOnLevel3`. **Each was run against
+the defect it describes and observed to fail** — the tempco one failing only on its p-channel row,
+which is the point.
+
+### What the review checked and found correct
+
+Worth recording so it is not re-derived: every analytic `Dg`/`Dc` entry against central finite
+differences across cutoff/linear/saturation, forward **and** reverse orientation, both polarities,
+every ohmic-port configuration and `T ≠ Tnom`, for all six models plus the newly mirrored MESFETs;
+level 3's `dfdu`, `fs`, `fb`, `vdsat`, `vc` and the `Δl > Leff/2` ceiling's continuity in value and
+slope; the elaborator's pin expansions against both the declared port orders and `SymbolPortDefs`.
+
+Two artefacts that look like findings and are not. A **charge** derivative kink in `Vds` at exactly
+`Vds = 0` (~3e-15 F here) is inherent to the symmetric 50/50 partition under the drain/source swap and
+is present in every SPICE-lineage MOS. And the IGBT's `dg[4,4]` reads as a finite-difference mismatch
+wherever the bipolar's exponential is large — a 1e-7 conductance under a ~1e5 A cancellation — while
+matching analytically wherever it is small.
+
+Two things left alone, deliberately. `VdmosModel`'s body diode steps by `IBV` at `V = −Bv`
+(−1e-12 A → −1.0039e-3 A across 0.1 mV, measured); it copies `DiodeModel`'s existing convention
+exactly, so changing it is a change to the diode, not to this brief — but avalanche is a **rated**
+mode for a power MOSFET, unlike a signal diode's breakdown, so it is worth revisiting on its own.
+And `BeadModel` with `Rp = 0` has its tank admittance vanish at parallel resonance: measured
+1.4e17 Ω at ω₀, finite only by floating-point luck, and `1/Complex.Zero` would fill the MNA with NaN
+if the two susceptances ever rounded equal.
+
+
 ## SRLC and PRLC, and the interface that let a Mutual reach them (2026-08-31)
 
 Two lumped parts — `SeriesRlcModel` (`SRLC`) and `ParallelRlcModel` (`PRLC`), both linear,

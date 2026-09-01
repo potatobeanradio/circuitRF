@@ -81,6 +81,46 @@ Pin positions and [Mutual](#mutual) coupling work exactly as they do for the SRL
 
 {{table: components/Prlc}}
 
+### Ferrite Bead (Bead) {#bead}
+
+{{symbol: bead}}
+
+A two-terminal **linear** element: `Rdc` in series with a parallel `L` / `Rp` / `Cp` tank.
+
+**A bead is not an inductor and not a series RLC.** The number a data sheet gives — "600 Ω at
+100 MHz" — is an *impedance*, and the whole point of the part is that most of it is **resistive** at
+the frequency it is quoted at. That is what makes a bead absorb rather than reflect, and why it damps
+a supply rail where an inductor of the same reactance would ring against the decoupling capacitance.
+An inductor's loss is zero and a series RLC's is a constant `R`; a bead's rises from nothing at DC to
+a maximum at its ferromagnetic resonance and falls again above it.
+
+Each element stands for a real mechanism:
+
+| Parameter | What it is |
+|---|---|
+| `Rdc` | The winding's own resistance. It is what the part looks like at DC, and in a power rail it is what sets the drop. |
+| `L` | The low-frequency inductance — what the impedance rises along. |
+| `Rp` | The **core loss**. It *caps* the impedance: at the parallel resonance the reactive branches cancel and \|Z\| is `Rdc + Rp`, which is the peak a data sheet plots. Nothing else sets that peak, so a bead entered without it has no maximum at all. |
+| `Cp` | The parallel (inter-turn) capacitance — what takes the impedance back **down** above resonance. A bead is not a filter above its own resonance, and this is why. |
+
+**Zero means *not modelled* for each of the three parallel elements**, never "a short" or "a zero-ohm
+resistor". `Rp = 0` removes the loss branch and leaves an ideal `L`; `Cp = 0` removes the capacitive
+branch and the impedance goes on rising; `L = 0` leaves a plain `Rdc`.
+
+**At DC the bead is `Rdc` and nothing else**, because the inductive branch shorts the tank out. That
+is both the physics and what a DC operating point needs from this part — a bead in a supply rail must
+not open it.
+
+<div class="callout warn">
+<span class="label">Saturation is not modelled and cannot be</span>
+<p>A bead's inductance falls with DC bias current, sometimes by most of it, and this is a
+<b>linear</b> element. The four numbers describe the part at whatever current they were measured at,
+which is why a bead chosen from a small-signal impedance curve can behave quite differently in the
+rail it was chosen for.</p>
+</div>
+
+{{table: components/Bead}}
+
 ### Nonlinear Capacitor (NonlinearC) {#nonlinearc}
 
 {{symbol: nonlinear-c}}
@@ -584,6 +624,106 @@ The Angelov (Chalmers) law: `Ipk`, `Vpk`, `P1`–`P3`, `Alpha` and `Lambda`.
 
 {{table: components/FetAngelov}}
 
+#### p-channel: Curtice-P, Statz-P, Materka-P {#pfets}
+
+Three of the five laws are also offered as **p-channel** parts. Polarity is a sign, not a law: every
+voltage, current and charge is mirrored, so a p-channel tile is its n-channel counterpart with the
+same parameter list and the same equations. `Vto` (or `Vp0`) is stated the way a card states it —
+**positive** for a p-channel depletion MESFET — and circuitRF applies the sign itself.
+
+<div class="callout warn">
+<span class="label">Why only three</span>
+<p>A mirror is unambiguous only where the gate dependence is anchored to a threshold and is even in
+it, which is the case for the quadratic, Statz and Materka laws. The
+<b>Curtice–Ettenberg cubic</b> and <b>Angelov</b> laws are polynomials fitted <i>directly</i> against
+the gate voltage — <code>A0</code>–<code>A3</code> and <code>P1</code>–<code>P3</code> — so mirroring
+one would have to negate the odd-order coefficients and leave the even ones alone, and no published
+convention says a p-channel parameter set is written that way. Guessing would give a device that
+simulates and is wrong in its odd-order terms only: a gm curve of the wrong shape, at no bias where
+anything obviously breaks. So those two are n-channel only, deliberately. Nothing is lost at import:
+a p-channel model card is read as the quadratic law or Statz, never as either of these.</p>
+</div>
+
+##### Curtice-P (PFET_Curtice) {#pfetcurtice}
+
+{{symbol: pfet-curtice}}
+
+{{table: components/PFetCurtice}}
+
+##### Statz-P (PFET_Statz) {#pfetstatz}
+
+{{table: components/PFetStatz}}
+
+##### Materka-P (PFET_Materka) {#pfetmaterka}
+
+{{table: components/PFetMaterka}}
+
+### The junction FET {#jfets}
+
+Two tiles — **NJFET** and **PJFET** — over the Shichman–Hodges square law, one set of equations with
+one sign changed.
+
+<div class="callout warn">
+<span class="label">This is not the MESFET family with different numbers</span>
+<p>The two differ in the <b>knee</b> — a MESFET's is a fitted <code>tanh</code> or a piecewise cubic
+with its own parameter, a JFET's is the square law's own boundary at <code>Vds = Vgt</code> — and in
+the <b>gate</b>: a JFET's gate is a real p-n junction that conducts and stores depletion charge
+against <i>both</i> ends of the channel, where the MESFET family models a Schottky gate as one
+forward diode. Reading a JFET card as a Curtice quadratic with the <code>tanh</code> ignored gives a
+device that simulates and is quantitatively wrong through the whole knee — matched at pinch-off and
+matched deep in saturation, and out by tens of percent in between, for every choice of
+<code>Alpha</code>.</p>
+</div>
+
+```
+Vgt = Vgs − Vto
+Id  = 0                                            Vgt ≤ 0        cutoff
+    = Beta·Vds·(2·Vgt − Vds)·(1 + Lambda·Vds)      Vds < Vgt      linear
+    = Beta·Vgt²·(1 + Lambda·Vds)                   Vds ≥ Vgt      saturation
+```
+
+**The gate is two junctions.** `Cgs` and `Cgd` are the zero-bias capacitances of bias-dependent
+depletion charge, not fixed capacitors: `Cgd` falls as the gate-drain junction is reverse-biased,
+which at RF is most of the reverse isolation. Both junctions also conduct, with a diffusion term and
+an optional recombination term (`Isr`/`Nr`) that is a **second** exponential with its own ideality —
+folding it into the first would fit one decade of the gate leakage and miss the rest.
+
+**The device is symmetric**, like the MOS transistor: which end acts as the drain is decided by the
+bias. **`Rd` and `Rs` are model parameters**, on internal nodes circuitRF mints, not resistors you
+place beside the device.
+
+**`Vtotc` shifts the pinch-off additively, in volts per degree; `Betatce` scales `Beta` in *percent*
+per degree** — `1.01^(tc·ΔT)`, which is not the same as `1 + 0.01·tc·ΔT` once ΔT is more than a few
+tens of degrees. The two forms are the published ones and they are not interchangeable.
+
+<div class="callout warn">
+<span class="label">What is NOT modelled</span>
+<p><strong>Gate breakdown</strong>; the <strong>doping-profile knee</strong> that a higher published
+JFET level adds (its <code>B</code> parameter) and that level's own channel-length modulation
+(<code>Alpha</code>/<code>Vk</code>) — there is no square-law parameter that means the same thing, so
+a card stating them is imported as the square law with those parameters <i>named</i> rather than
+folded into <code>Lambda</code>; <strong>transit-time charge</strong>; <strong>flicker
+noise</strong>; and <strong>self-heating</strong>.</p>
+</div>
+
+#### n-channel (JFET_N) {#jfetn}
+
+{{symbol: jfet-n}}
+
+The gate arrow points **into** the channel. The channel bar is unbroken — a **depletion** device,
+conducting at zero gate bias, which is the opposite of the MOS glyph's three segments.
+
+{{table: components/JfetN}}
+
+#### p-channel (JFET_P) {#jfetp}
+
+{{symbol: jfet-p}}
+
+The gate arrow points **out of** the channel. Same equations, every sign reversed — so `Vto` is
+positive, as a p-channel card states it.
+
+{{table: components/JfetP}}
+
 ### The bipolar transistor {#bjt}
 
 Two components — **NPN** and **PNP** — over **one** set of equations and one parameter list. This is
@@ -684,6 +824,296 @@ The emitter arrow points **into** the base. Same equations, same parameter names
 current negated — so a parameter set written for one polarity is used unchanged for the other.
 
 {{table: components/BjtPnp}}
+
+### The MOS transistor {#mos}
+
+Two tiles — **NMOS1** and **PMOS1** — over one set of equations with one sign changed, arranged like
+the bipolar pair rather than like the five FET laws. The `1` is the **level**: the Shichman–Hodges
+square law, the original compact MOSFET model and the one every later level is written as a
+departure from.
+
+<div class="callout warn">
+<span class="label">This transistor has FOUR pins. Wire the bulk.</span>
+<p>Drain, gate, source and <strong>bulk</strong>. The bulk is a real terminal and not a convenience:
+tying it internally to the source would silently delete the <strong>body effect</strong>, which is
+what <code>Gamma</code> and <code>Phi</code> describe and which is worth hundreds of millivolts of
+threshold in a circuit where the source does not sit at the substrate potential. A part whose bulk
+really is tied to its source says so by wiring the pin — one wire, and then the schematic states
+the fact instead of hiding it. Leave the pin unwired and the substrate floats, which solves, and is
+a different circuit.</p>
+</div>
+
+#### What is modelled {#mos-equations}
+
+```
+Vth  = Vto + Gamma·(√(Phi − Vbs) − √Phi)
+Vgt  = Vgs − Vth
+Id   = 0                                              Vgt ≤ 0        cutoff
+     = Beta·(Vgt − Vds/2)·Vds·(1 + Lambda·Vds)        Vds < Vgt      linear
+     = (Beta/2)·Vgt²·(1 + Lambda·Vds)                 Vds ≥ Vgt      saturation
+Beta = Kp·W/Leff,   Leff = L − 2·Ld
+```
+
+**The device is symmetric.** Which terminal acts as the drain is decided by the bias, not by the
+schematic: drive `Vds` negative and circuitRF swaps the two ends and evaluates the law in the
+orientation it is published in. A model that did not would return a plausible, wrong current for
+every transmission gate and every passive mixer ever drawn.
+
+**Both bulk junctions are real diodes**, with their own saturation currents, their own depletion
+charge and their own sidewall term. They are what makes the substrate connection matter, and they
+are why a bulk biased above the source or the drain draws enormous current — as it does in silicon.
+
+**`Rd` and `Rs` are model parameters, not resistors you place.** A non-zero one moves the intrinsic
+transistor onto an internal node circuitRF mints for it, so the schematic shows one device either
+way. That node is a genuine unknown rather than something eliminated locally: at RF the ohmic
+resistances are shunted by the junction and overlap capacitances, and collapsing them is exact at DC
+and wrong in harmonic balance.
+
+<div class="callout note">
+<span class="label">Where a card states a process quantity instead of a device one</span>
+<p>Several parameters come in pairs — <code>Kp</code> or <code>Uo</code>, <code>Gamma</code>/<code>Phi</code>
+or <code>Nsub</code>, <code>Rd</code>/<code>Rs</code> or <code>Rsh</code> with <code>Nrd</code>/<code>Nrs</code>,
+<code>Cbd</code>/<code>Cbs</code> or <code>Cj</code>/<code>Cjsw</code> with the junction areas. They are
+not alternative spellings of one number: circuitRF derives the device quantity from the process one
+only where the device quantity is absent, and a value you state always wins.</p>
+</div>
+
+#### The gate charge {#mos-charge}
+
+The intrinsic gate charge is the **charge-based long-channel result**, not the Meyer capacitance set
+that a transient simulator conventionally uses.
+
+That difference matters here more than it does in a time-stepping simulator. Meyer's model states
+three capacitances that each depend on more than one terminal voltage, so the charge they imply
+depends on the **path** taken through the bias space — go once around a harmonic cycle and it does
+not return to where it started, and a periodic steady-state solve has nothing to converge to.
+Integrating the channel charge directly is conservative by construction, and its derivatives reduce
+to exactly Meyer's capacitances wherever Meyer's are right: `Cox` at `Vds` = 0, two thirds of `Cox`
+in saturation, zero in cutoff.
+
+The channel charge is split **evenly** between the drain and the source. The alternative 40/60 split
+is the better one in a switching transient; at RF both ends see the same signal through the same
+channel resistance, and the even split is what keeps the device symmetric under the drain/source
+swap above.
+
+<div class="callout warn">
+<span class="label">No <code>Tox</code> means no gate capacitance</span>
+<p><code>Tox</code> is the only thing that sets the oxide capacitance, so a parameter set that does
+not state one has <strong>no intrinsic gate charge at all</strong> — only the <code>Cgso</code>,
+<code>Cgdo</code> and <code>Cgbo</code> overlaps remain. That is the published rule and circuitRF
+does not invent a thickness to fill it, because there is nothing on the card to derive one from. It
+is worth knowing before wondering where the gain went.</p>
+</div>
+
+<div class="callout warn">
+<span class="label">What is NOT modelled — read this before choosing a model</span>
+<p><strong>Subthreshold conduction</strong> (<code>Nfs</code>) — the classical law goes to exactly
+zero at threshold, so a device biased there is being asked a question this model cannot answer.
+<strong>Short-channel effects</strong> — drain-induced barrier lowering, mobility degradation,
+velocity saturation and channel-length modulation done properly are what the higher levels add;
+here <code>Lambda</code> is a single fitted output slope and nothing else.
+<strong>Flicker noise</strong> (<code>Kf</code>/<code>Af</code>) — there is no noise analysis for it
+to feed. <strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
+A parameter this model does not read is not offered in the palette. If your application depends on
+any of the above, use a compiled model through <a href="#veriloga">VerilogA</a> instead.</p>
+</div>
+
+<div class="callout note">
+<span class="label">The defaults are a bare square-law device, on purpose</span>
+<p>Unlike the bipolar tiles, a freshly dragged MOS transistor carries a threshold, a transconductance
+parameter and a geometry, with every process quantity at zero. A MOS parameter set is a property of
+a <strong>process</strong>, and there is no such thing as a representative one — inventing plausible
+numbers here would put a specific fabricated transistor in the palette and let you simulate it
+without ever noticing you had not supplied a model.</p>
+</div>
+
+#### n-channel (MOS1_N) {#mos1n}
+
+{{symbol: mos1-n}}
+
+The bulk arrow points **into** the channel — the substrate junction read the usual way. The channel
+bar is drawn in three segments, the standard mark for an **enhancement** device: there is no channel
+until the gate makes one, so the part is off at zero gate bias.
+
+{{table: components/Mos1N}}
+
+#### p-channel (MOS1_P) {#mos1p}
+
+{{symbol: mos1-p}}
+
+The bulk arrow points **out of** the channel. Same equations, same parameter names, every voltage,
+current and charge negated — so `Vto` is stated as the card states it, negative for an ordinary
+p-channel enhancement device, and circuitRF applies the sign itself.
+
+{{table: components/Mos1P}}
+
+#### Level 3: the short-channel law {#mos3}
+
+**NMOS3** and **PMOS3** are the same four terminals and the same glyph over a different set of
+equations — the semi-empirical short-channel model. Two more tiles rather than a `Level` parameter on
+the level-1 ones, for the reason the five FET laws are five tiles: a level is a different law, and
+its six parameters mean nothing to the other one.
+
+Each parameter turns on exactly one mechanism and each is **off at zero**, so a level-3 card stating
+two or three of them is an ordinary thing to import.
+
+| Parameter | What it turns on |
+|---|---|
+| `Eta` | **Drain-induced barrier lowering** — the threshold falls as the drain is pulled up. This is what makes a short device's output conductance real, and it is why level 3 has no `Lambda`. |
+| `Theta` | **Mobility degradation with gate field** — carriers pressed against the oxide scatter off it, so transconductance stops rising with gate drive. |
+| `Vmax` | **Velocity saturation.** Carriers stop going faster, so the device saturates *earlier* than pinch-off would put it. |
+| `Kappa` | **Channel-length modulation**, done as a real shortening of the channel rather than as a multiplier on the current. |
+| `Xj` with `Nsub` | **Short-channel charge sharing** — the source and drain depletion regions take a share of the bulk charge the gate would otherwise hold, so the body effect weakens as the channel gets shorter. |
+| `Delta` | The **narrow-width effect**, which pushes the threshold the other way. |
+
+<div class="callout note">
+<span class="label">Level 3 is not level 1 with extra terms switched off</span>
+<p>Turn all six off and the square law does come back — but only on a device with <b>no body
+effect</b>. The <b>bulk-charge factor</b> is itself a level-3 term: it replaces the square law's
+plain <code>Vds/2</code> with <code>(1 + fb)·Vds/2</code>, and <code>fb</code> is driven by
+<code>Gamma</code>, not by any of the six. So the two levels genuinely differ by around fifteen
+percent of drain current on a device that states a body effect and nothing else. That is a real
+difference between the two published laws, and worth knowing before comparing them.</p>
+</div>
+
+<div class="callout warn">
+<span class="label"><code>Kappa</code> and <code>Xj</code> need <code>Nsub</code></span>
+<p>Both are built from the substrate depletion width, and nothing but the doping supplies one. State
+either without <code>Nsub</code> and it is carried, read, and inert — the import reports this when it
+sees it, but a hand-edited device will not tell you.</p>
+</div>
+
+**Subthreshold conduction (`Nfs`) and impact ionisation are still absent**, exactly as at level 1.
+The current goes to zero at threshold in both.
+
+##### n-channel (MOS3_N) {#mos3n}
+
+{{symbol: mos3-n}}
+
+{{table: components/Mos3N}}
+
+##### p-channel (MOS3_P) {#mos3p}
+
+{{table: components/Mos3P}}
+
+### The vertical power MOSFET {#vdmos}
+
+**NVDMOS** and **PVDMOS** — a *separate component* from the lateral MOS pair, not a setting of it.
+**Three** pins, not four: the source-to-body short is inside the silicon, and that is exactly what
+turns the substrate junction into a **body diode** between source and drain.
+
+Three things a power MOSFET is chosen for are absent from the lateral model, and every one is what a
+user is asking about when they reach for this part.
+
+**The body diode is a component of the circuit, not a leakage path.** It is the freewheeling diode of
+every half-bridge and the conduction path of every synchronous rectifier during dead time, and it
+carries the full load current there. So it has its own saturation current, its own reverse recovery
+charge (`Tt`) and its own **avalanche breakdown** (`Bv`) — a rated mode for this part, not a failure —
+and its current is reported on its own branch, `I:M1:body`.
+
+**The gate-drain capacitance collapses with drain bias, by one to two orders of magnitude.** That
+collapse *is* the switching loss: the Miller plateau is the gate charge pouring into it while the
+drain swings. `Cgdmax` and `Cgdmin` are the two ends of a data sheet's reverse-transfer curve and
+`Vgdt` is how sharply it falls between them. A constant capacitance of either plateau value gets the
+switching time wrong by the ratio of the two.
+
+**The gate resistance `Rg` is in the drive path**, in series with a capacitance that large, so it sets
+the switching speed as much as the drive current does.
+
+<div class="callout note">
+<span class="label">Third-quadrant conduction is not an edge case here</span>
+<p>Pull the drain below the source with the gate <i>on</i> and the channel conducts in reverse,
+shunting the body diode, so the drop is <code>I·Rds(on)</code> rather than a diode drop. That is
+synchronous rectification, and it is what the part is bought for. circuitRF decides which end is
+acting as the drain from the <b>bias</b> rather than from the schematic, so this comes out right
+without anything being configured.</p>
+</div>
+
+<div class="callout warn">
+<span class="label">What is NOT modelled</span>
+<p><strong>Quasi-saturation</strong> — the drift region's own resistance modulating with current
+needs a second internal node and a drift-region model this does not have; <code>Rd</code> stands in
+for its low-current limit. <strong>Subthreshold conduction</strong> — the off-state leakage is
+<code>Rds</code>, which you state. <strong>Self-heating</strong>, which for a power device is a real
+omission: the junction temperature is a parameter, so a thermal model belongs around the part rather
+than in it.</p>
+</div>
+
+#### n-channel (VDMOS_N) {#vdmosn}
+
+{{symbol: vdmos-n}}
+
+The bulk arm turns and joins the **source** lead instead of leaving as a fourth pin — that is the
+source-to-body short — and the body diode is drawn explicitly on the right, conducting from source to
+drain.
+
+{{table: components/VdmosN}}
+
+#### p-channel (VDMOS_P) {#vdmosp}
+
+{{symbol: vdmos-p}}
+
+{{table: components/VdmosP}}
+
+### The IGBT {#igbt}
+
+**NIGBT** and **PIGBT** — an insulated-gate channel driving the base of a wide-base bipolar
+transistor. That structure *is* the model, and it is what gets the device's two defining behaviours
+right without either being fitted.
+
+**The on-state voltage has a junction drop in it.** Current leaving the collector crosses the
+bipolar's emitter-base junction on its way in, so `Vce(sat)` never falls below roughly a diode drop
+however hard the gate is driven. That is the whole trade against a power MOSFET — worse at low
+current, better at high, because the drop then stops growing.
+
+**Turn-off has a current tail.** The charge stored in the wide base cannot be removed through the
+gate; it recombines. `Tau` is that stored charge, and the tail is most of the turn-off loss. How the
+current divides between the channel and the bipolar is set by `Bf`, and it is the bipolar's share
+that is still flowing after the gate is off — `I:Q1:imos` and `I:Q1:ic` report the two separately.
+
+**`Bv` is forward *break-over*, across the drift region** — the `V_CES` rating. Note the difference
+from the [power MOSFET](#vdmos)'s `Bv`, which is an **avalanche** rating and a mode the part is
+designed to survive: an IGBT's is a limit, and past it the drift region conducts and turns the
+bipolar on with it. `Bv = 0` means not modelled, as everywhere else.
+
+<div class="callout warn">
+<span class="label">An IGBT does not conduct in reverse</span>
+<p>That is structural rather than something switched off: with the collector below the emitter the
+bipolar's junction is reverse-biased and there is no path. It is the opposite of the
+<a href="#vdmos">power MOSFET</a>, whose body diode freewheels — and it is exactly why an IGBT
+half-bridge needs a discrete anti-parallel diode and a MOSFET one does not. <b>Place one if the
+circuit has one.</b></p>
+</div>
+
+<div class="callout warn">
+<span class="label">Its parameters are data-sheet quantities, and a transport-model card cannot be imported</span>
+<p>This is an <b>equivalent-circuit</b> model: its base is a lumped transit time rather than a solved
+carrier distribution, so there is no moving depletion boundary, no conductivity modulation of the
+drift region and no latch-up. Its parameters are therefore a threshold, a transconductance, a current
+gain and a transit time — things a data sheet gives.</p>
+<p>A <code>.model</code> card written for the published <b>ambipolar transport</b> model states
+something else entirely: base width, doping, carrier lifetime, mobility. Neither set can be derived
+from the other by renaming — that is a device-modelling extraction, not a mapping — so such a card is
+<b>refused by name</b> rather than being given this device's defaults under the card's own name.
+Enter the data sheet's numbers here, or run the card's own model through
+<a href="#veriloga">VerilogA</a>.</p>
+</div>
+
+#### n-channel (IGBT_N) {#igbtn}
+
+{{symbol: igbt-n}}
+
+The input side is the MOS one — a gate bar standing off a broken (enhancement) channel bar — and the
+output side carries the **bipolar's** emitter arrow. The arrow is not decoration: it is what stops a
+reader taking this for a power MOSFET and expecting a body diode that is not there.
+
+{{table: components/IgbtN}}
+
+#### p-channel (IGBT_P) {#igbtp}
+
+{{symbol: igbt-p}}
+
+{{table: components/IgbtP}}
 
 ### Ideal Mixer (Mixer) {#mixer}
 

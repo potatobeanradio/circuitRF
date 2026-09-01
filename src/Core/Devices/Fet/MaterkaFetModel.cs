@@ -17,13 +17,17 @@ public sealed class MaterkaFetModel(
     double tempC = FetModelBase.NominalTemperatureC,
     double tnomC = FetModelBase.NominalTemperatureC,
     double xti = 0.0, double eg = 1.16,
-    double alphatc = 0.0, double gammatc = 0.0, double vtotc = 0.0)
+    double alphatc = 0.0, double gammatc = 0.0, double vtotc = 0.0,
+    FetModelBase.Channel channel = FetModelBase.Channel.N)
     : FetModelBase(cgs, cgd, gateSaturationCurrent, gateEmissionCoefficient,
-                   capModel, vbi, mGrading, fc, tempC, tnomC, xti, eg)
+                   capModel, vbi, mGrading, fc, tempC, tnomC, xti, eg, channel)
 {
     private readonly double _alpha = ScalePercentPerDegree(alpha, alphatc, DeltaT(tempC, tnomC));
     private readonly double _gamma = ScaleLinear(gamma, gammatc, DeltaT(tempC, tnomC));
-    private readonly double _vp0   = ShiftPerDegree(vp0, vtotc, DeltaT(tempC, tnomC));
+    // Negated for a p-channel device. Vp0 is the ONLY parameter that needs it: the law's gate
+    // dependence is `1 − Vgs/Vp`, a RATIO of two quantities that both change sign, so it is
+    // invariant under the mirror, and `Gamma` multiplies Vds inside Vp and therefore flips with it.
+    private readonly double _vp0   = (double)(int)channel * ShiftPerDegree(vp0, vtotc, DeltaT(tempC, tnomC));
 
     protected override (double Id, double Gm, double Gds) DrainCurrent(double vgs, double vds)
     {

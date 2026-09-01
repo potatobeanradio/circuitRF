@@ -26,6 +26,10 @@ public static class ComponentModelFactory
             { "C",     () => new CapacitorModel()    },
             { "L",     () => new InductorModel()     },
             { "SRLC",  () => new SeriesRlcModel()   },
+            // The ferrite bead reads its parameters off the ElaboratedComponent at stamp time, like
+            // R/L/C do, so it needs no constructor arguments and belongs in this registry rather
+            // than among the parameterised types.
+            { "Bead",  () => new BeadModel()        },
             { "PRLC",  () => new ParallelRlcModel() },
             { "Vdc",   () => new VdcModel() },
             { "Port",  () => new PortModel()          },
@@ -43,7 +47,24 @@ public static class ComponentModelFactory
             "Tuner", "P1Tone", "PnTone",
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
+            // p-channel exists only for the three laws that mirror unambiguously — see
+            // FetModelBase and the two excluded laws' own summaries for why the other two do not.
+            "PFET_Curtice", "PFET_Statz", "PFET_Materka",
             "BJT_NPN", "BJT_PNP",
+            // The MOS family: one type per LAW and per CHANNEL, for the two reasons the FET and BJT
+            // families already establish — a level is a different set of equations, and a polarity
+            // is a sign the schematic has to show.
+            "MOS1_N", "MOS1_P", "MOS3_N", "MOS3_P",
+            // The vertical power MOSFET. A separate component from the lateral one, not a setting
+            // of it — see VdmosModel for the three things it has that the lateral model does not.
+            "VDMOS_N", "VDMOS_P",
+            // The IGBT, as the equivalent circuit it is: an insulated-gate channel driving a
+            // wide-base bipolar. See IgbtModel for why that structure is the model rather than a
+            // fitted approximation of one.
+            "IGBT_N", "IGBT_P",
+            // The JFET pair. Two types over one law, like the BJT's polarities: a channel type is a
+            // sign, and a sign the symbol has to show.
+            "JFET_N", "JFET_P",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             "ExtDevice", "wBond", "Match", "Mixer",
             // The ideal system blocks (brief-sys-2, brief-sys-3). One IdealSBlockModel subclass
@@ -111,8 +132,17 @@ public static class ComponentModelFactory
             return CreateResistorModel(parameters, ambientC);
         if (typeName.Equals("SemiC", StringComparison.OrdinalIgnoreCase))
             return CreateSemiCapacitorModel(parameters, ambientC);
-        if (typeName.StartsWith("FET_", StringComparison.OrdinalIgnoreCase))
+        if (typeName.StartsWith("FET_",  StringComparison.OrdinalIgnoreCase) ||
+            typeName.StartsWith("PFET_", StringComparison.OrdinalIgnoreCase))
             return CreateFetModel(typeName, parameters, ambientC);
+        if (typeName.StartsWith("IGBT_", StringComparison.OrdinalIgnoreCase))
+            return CreateIgbtModel(typeName, parameters, ambientC);
+        if (typeName.StartsWith("VDMOS", StringComparison.OrdinalIgnoreCase))
+            return CreateVdmosModel(typeName, parameters, ambientC);
+        if (typeName.StartsWith("MOS", StringComparison.OrdinalIgnoreCase))
+            return CreateMosfetModel(typeName, parameters, ambientC);
+        if (typeName.StartsWith("JFET_", StringComparison.OrdinalIgnoreCase))
+            return CreateJfetModel(typeName, parameters, ambientC);
         if (typeName.StartsWith("BJT_", StringComparison.OrdinalIgnoreCase))
             return CreateBjtModel(typeName, parameters, ambientC);
         if (typeName.Equals("TLIN", StringComparison.OrdinalIgnoreCase))
@@ -825,19 +855,44 @@ public static class ComponentModelFactory
         double tnC = P("Tnom", Temperature.NominalC);
         double xti = P("Xti", 0.0), eg = P("Eg", 1.16);
 
+        // p-channel is a leading "P" on the type name, and only three of the five laws have one.
+        // The other two are n-channel only for a structural reason, not an oversight: their gate
+        // dependence is a polynomial fitted directly against the gate voltage, so a mirror would
+        // have to negate the odd-order coefficients and leave the even ones alone, and no published
+        // convention says a p-channel card is written that way.
+        string key = typeName.ToUpperInvariant();
+        var channel = Fet.FetModelBase.Channel.N;
+        if (key.StartsWith("PFET_", StringComparison.Ordinal))
+        {
+            key = "FET_" + key["PFET_".Length..];
+            // ONLY the three laws that mirror unambiguously. Stripping the prefix and falling
+            // through would build an N-CHANNEL cubic or Angelov for a name that asked for a
+            // p-channel one — a device that solves, draws current in the right direction, and is
+            // wrong in its odd-order terms only. Returning null instead surfaces as "unknown
+            // primitive", which is a question the user can answer.
+            if (key is not ("FET_CURTICE" or "FET_STATZ" or "FET_MATERKA")) return null;
+            channel = Fet.FetModelBase.Channel.P;
+        }
+
+        // A p-channel depletion MESFET's pinch-off voltage is POSITIVE, as its card states it — the
+        // model applies the channel sign itself. Defaulting it by channel is what makes a freshly
+        // dragged p-channel tile a real device rather than one that never turns off.
+        double vtoDefault = channel == Fet.FetModelBase.Channel.P ? 2.0 : -2.0;
+
         // Every call is by NAME. These constructors carry a dozen-plus optional parameters and only
         // the coefficients each model actually owns, so their signatures differ and will keep
         // differing; positional binding would compile silently after a reorder and feed Cgd where
         // Alpha belongs.
-        return typeName.ToUpperInvariant() switch
+        return key switch
         {
             "FET_CURTICE" => new Fet.CurticeQuadraticFetModel(
-                vto: P("Vto", -2.0), beta: P("Beta", 0.02),
+                vto: P("Vto", vtoDefault), beta: P("Beta", 0.02),
                 lambda: P("Lambda", 0.0), alpha: P("Alpha", 2.0),
                 cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
                 capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
                 tempC: tC, tnomC: tnC, xti: xti, eg: eg,
-                betatc: P("Betatc", 0.0), alphatc: P("Alphatc", 0.0), vtotc: P("Vtotc", 0.0)),
+                betatc: P("Betatc", 0.0), alphatc: P("Alphatc", 0.0), vtotc: P("Vtotc", 0.0),
+                channel: channel),
 
             "FET_CURTICECUBIC" => new Fet.CurticeCubicFetModel(
                 a0: P("A0", 0.1), a1: P("A1", 0.05), a2: P("A2", 0.0), a3: P("A3", 0.0),
@@ -848,20 +903,22 @@ public static class ComponentModelFactory
                 gammatc: P("Gammatc", 0.0)),
 
             "FET_STATZ" => new Fet.StatzFetModel(
-                vto: P("Vto", -2.0), beta: P("Beta", 0.02), b: P("B", 0.3),
+                vto: P("Vto", vtoDefault), beta: P("Beta", 0.02), b: P("B", 0.3),
                 alpha: P("Alpha", 2.0), lambda: P("Lambda", 0.0),
                 cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
                 capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
                 tempC: tC, tnomC: tnC, xti: xti, eg: eg,
-                betatc: P("Betatc", 0.0), alphatc: P("Alphatc", 0.0), vtotc: P("Vtotc", 0.0)),
+                betatc: P("Betatc", 0.0), alphatc: P("Alphatc", 0.0), vtotc: P("Vtotc", 0.0),
+                channel: channel),
 
             "FET_MATERKA" => new Fet.MaterkaFetModel(
-                idss: P("Idss", 0.1), vp0: P("Vp0", -2.0),
+                idss: P("Idss", 0.1), vp0: P("Vp0", vtoDefault),
                 gamma: P("Gamma", 0.0), alpha: P("Alpha", 2.0),
                 cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
                 capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
                 tempC: tC, tnomC: tnC, xti: xti, eg: eg,
-                alphatc: P("Alphatc", 0.0), gammatc: P("Gammatc", 0.0), vtotc: P("Vtotc", 0.0)),
+                alphatc: P("Alphatc", 0.0), gammatc: P("Gammatc", 0.0), vtotc: P("Vtotc", 0.0),
+                channel: channel),
 
             "FET_ANGELOV" => new Fet.AngelovFetModel(
                 ipk: P("Ipk", 0.1), vpk: P("Vpk", -1.0),
@@ -874,6 +931,334 @@ public static class ComponentModelFactory
 
             _ => null,
         };
+    }
+
+    // ── IGBT ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The insulated-gate bipolar transistor, in both polarities. Its parameters are the ones a data
+    /// sheet gives — a threshold, a transconductance, a current gain and a transit time — because
+    /// that is what an equivalent-circuit model is parameterised by. See <see cref="Igbt.IgbtModel"/>
+    /// for what that buys and what it costs.
+    ///
+    /// <para>Defaults are a plausible mid-voltage switching part, so a freshly dragged tile turns
+    /// on, holds a saturation voltage with a junction drop in it, and has a current tail — the three
+    /// things a user immediately looks at. A STARTING POINT, not a claim about any part.</para>
+    /// </summary>
+    private static ComponentModel? CreateIgbtModel(
+        string typeName, IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        Igbt.IgbtModel.Polarity polarity = typeName.ToUpperInvariant() switch
+        {
+            "IGBT_N" => Igbt.IgbtModel.Polarity.NChannel,
+            "IGBT_P" => Igbt.IgbtModel.Polarity.PChannel,
+            _        => (Igbt.IgbtModel.Polarity)0,
+        };
+        if (polarity == 0) return null;
+
+        double vtoDefault = polarity == Igbt.IgbtModel.Polarity.NChannel ? 5.0 : -5.0;
+
+        return new Igbt.IgbtModel(
+            polarity:                    polarity,
+            vto:                         P("Vto",     vtoDefault),
+            kp:                          P("Kp",      8.0),
+            lambda:                      P("Lambda",  0.0),
+            bipolarGain:                 P("Bf",      0.5),
+            baseSaturationCurrent:       P("Is",      1e-12),
+            baseEmission:                P("N",       1.0),
+            baseTransitTime:             P("Tau",     1e-6),
+            baseEmitterResistance:       P("Rbe",     0.0),
+            collectorEmitterResistance:  P("Rce",     0.0),
+            breakdownVoltage:            P("Bv",      0.0),
+            breakdownCurrent:            P("Ibv",     1e-3),
+            breakdownEmission:           P("Nbv",     1.0),
+            junctionCapacitance:         P("Cjc",     0.0),
+            junctionPotential:           P("Vj",      0.8),
+            gradingCoefficient:          P("Mj",      0.5),
+            forwardBiasCapCoeff:         P("Fc",      0.5),
+            gateEmitterCapacitance:      P("Cge",     0.0),
+            millerCapacitanceMax:        P("Cgcmax",  0.0),
+            millerCapacitanceMin:        P("Cgcmin",  0.0),
+            millerTransitionVoltage:     P("Vgct",    1.0),
+            gateResistance:              P("Rg",      0.0),
+            collectorResistance:         P("Rc",      0.0),
+            emitterResistance:           P("Re",      0.0),
+            tempC:                       Temperature.ResolveDeviceC(parameters, ambientC),
+            tnomC:                       P("Tnom",    Temperature.NominalC),
+            saturationTempExponent:      P("Xti",     3.0),
+            bandgapAtZeroK:              P("Eg",      Temperature.SiliconBandgapEv),
+            vtoTempCoefficient:          P("Vtotc",   0.0),
+            kpTempCoefficient:           P("Kptc",    0.0));
+    }
+
+    // ── Vertical power MOSFET ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// The vertical power MOSFET, in both channel types. A SEPARATE component from
+    /// <c>MOS1_N</c>/<c>MOS1_P</c> rather than a setting of them, because it is a different device:
+    /// its body diode is a circuit element that carries load current, its gate-drain capacitance
+    /// collapses by orders of magnitude with drain bias, and it has a gate resistance in the drive
+    /// path. See <see cref="Mos.VdmosModel"/>.
+    ///
+    /// <para>Defaults are a plausible mid-voltage switching part rather than zeros, so a freshly
+    /// dragged tile turns on, blocks, and has a body diode — the three things a user immediately
+    /// tries. They are a STARTING POINT, not a claim about any particular part.</para>
+    /// </summary>
+    private static ComponentModel? CreateVdmosModel(
+        string typeName, IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        Mos.VdmosModel.Channel channel = typeName.ToUpperInvariant() switch
+        {
+            "VDMOS_N" => Mos.VdmosModel.Channel.N,
+            "VDMOS_P" => Mos.VdmosModel.Channel.P,
+            _         => (Mos.VdmosModel.Channel)0,
+        };
+        if (channel == 0) return null;
+
+        // The threshold is stated AS THE CARD STATES IT — negative for a p-channel enhancement
+        // device — and the model applies the channel sign itself.
+        double vtoDefault = channel == Mos.VdmosModel.Channel.N ? 3.0 : -3.0;
+
+        // Every call is by NAME: two dozen optional `double` parameters, so positional binding would
+        // compile silently after a reorder and feed a transit time where a junction potential goes.
+        return new Mos.VdmosModel(
+            channel:                    channel,
+            vto:                        P("Vto",     vtoDefault),
+            kp:                         P("Kp",      1.0),
+            lambda:                     P("Lambda",  0.0),
+            drainSourceResistance:      P("Rds",     0.0),
+            bodySaturationCurrent:      P("Is",      1e-13),
+            bodyEmission:               P("N",       1.0),
+            breakdownVoltage:           P("Bv",      0.0),
+            breakdownCurrent:           P("Ibv",     1e-3),
+            breakdownEmission:          P("Nbv",     1.0),
+            transitTime:                P("Tt",      0.0),
+            bodyZeroBiasCapacitance:    P("Cjo",     0.0),
+            bodyJunctionPotential:      P("Vj",      0.8),
+            bodyGradingCoefficient:     P("Mj",      0.5),
+            forwardBiasCapCoeff:        P("Fc",      0.5),
+            gateSourceCapacitance:      P("Cgs",     0.0),
+            gateDrainCapacitanceMax:    P("Cgdmax",  0.0),
+            gateDrainCapacitanceMin:    P("Cgdmin",  0.0),
+            gateDrainTransitionVoltage: P("Vgdt",    1.0),
+            gateResistance:             P("Rg",      0.0),
+            drainResistance:            P("Rd",      0.0),
+            sourceResistance:           P("Rs",      0.0),
+            tempC:                      Temperature.ResolveDeviceC(parameters, ambientC),
+            tnomC:                      P("Tnom",    Temperature.NominalC),
+            saturationTempExponent:     P("Xti",     3.0),
+            bandgapAtZeroK:             P("Eg",      Temperature.SiliconBandgapEv),
+            vtoTempCoefficient:         P("Vtotc",   0.0),
+            kpTempCoefficient:          P("Kptc",    0.0));
+    }
+
+    // ── JFET family ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The built-in junction FET, in both channel types. Two components over ONE set of equations
+    /// and one parameter list — the BJT pair's arrangement, for the BJT pair's reason: a channel
+    /// type is not a law, it is a sign, and a single type with a channel parameter would be one
+    /// silent edit away from a transistor that is not the one on the schematic.
+    ///
+    /// <para>Every parameter is optional and takes a conventional default, so a freshly placed
+    /// transistor is a working depletion-mode device the user can then edit.</para>
+    /// </summary>
+    private static ComponentModel? CreateJfetModel(
+        string typeName, IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        Jfet.JfetModel.Polarity polarity = typeName.ToUpperInvariant() switch
+        {
+            "JFET_N" => Jfet.JfetModel.Polarity.NChannel,
+            "JFET_P" => Jfet.JfetModel.Polarity.PChannel,
+            _        => (Jfet.JfetModel.Polarity)0,
+        };
+        if (polarity == 0) return null;
+
+        // A p-channel JFET's pinch-off voltage is POSITIVE, as the card states it — the model
+        // applies the channel sign itself. Defaulting it by channel is the same courtesy the MOS
+        // family gets: a freshly dragged tile is a real depletion device either way.
+        double vtoDefault = polarity == Jfet.JfetModel.Polarity.NChannel ? -2.0 : 2.0;
+
+        // Every call is by NAME: the constructor carries two dozen optional parameters whose types
+        // are all `double`, so positional binding would compile silently after a reorder.
+        return new Jfet.JfetModel(
+            polarity:                 polarity,
+            vto:                      P("Vto",     vtoDefault),
+            beta:                     P("Beta",    1e-4),
+            lambda:                   P("Lambda",  0.0),
+            saturationCurrent:        P("Is",      1e-14),
+            emissionCoefficient:      P("N",       1.0),
+            recombinationCurrent:     P("Isr",     0.0),
+            recombinationEmission:    P("Nr",      2.0),
+            gateSourceCapacitance:    P("Cgs",     0.0),
+            gateDrainCapacitance:     P("Cgd",     0.0),
+            junctionPotential:        P("Pb",      1.0),
+            gradingCoefficient:       P("M",       0.5),
+            forwardBiasCapCoeff:      P("Fc",      0.5),
+            drainResistance:          P("Rd",      0.0),
+            sourceResistance:         P("Rs",      0.0),
+            area:                     P("Area",    1.0),
+            // The same shared rule the diode, the BJT, the MESFETs and the MOS family use, so five
+            // device families in one design cannot disagree about what temperature they are at.
+            tempC:                    Temperature.ResolveDeviceC(parameters, ambientC),
+            tnomC:                    P("Tnom",    Temperature.NominalC),
+            saturationTempExponent:   P("Xti",     3.0),
+            bandgapAtZeroK:           P("Eg",      Temperature.SiliconBandgapEv),
+            // Vto shifts ADDITIVELY in volts per degree; Beta scales in PERCENT per degree. The two
+            // published forms are not the same shape, and confusing them costs several percent over
+            // a realistic junction rise — see FetModelBase, which states the same pair.
+            vtoTempCoefficient:       P("Vtotc",   0.0),
+            betaTempCoefficient:      P("Betatce", 0.0));
+    }
+
+    // ── MOS family ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The built-in MOS transistors. FOUR type names for two laws in two channel types, which is
+    /// the two rules the other families already establish put together: a LEVEL is a different set
+    /// of equations, exactly as the five MESFET laws are (so it cannot be a mode parameter), and a
+    /// CHANNEL is a sign the symbol has to show, exactly as the BJT's polarity is (so it cannot be
+    /// one either — a single type with a channel parameter would be one silent edit away from a
+    /// transistor that is not the one on the schematic).
+    ///
+    /// <para>Every parameter is optional and takes the conventional default, so a freshly placed
+    /// transistor is a working device the user can then edit. Where a card states a process
+    /// quantity instead of a device one — <c>Nsub</c> rather than <c>Gamma</c>, <c>Uo</c> rather
+    /// than <c>Kp</c>, <c>Rsh</c>·<c>Nrd</c> rather than <c>Rd</c> — the model derives the one from
+    /// the other, and the stated value always wins.</para>
+    /// </summary>
+    private static ComponentModel? CreateMosfetModel(
+        string typeName, IReadOnlyDictionary<string, Value> parameters, double ambientC)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        Mos.MosfetModelBase.Channel4 channel;
+        int level;
+        switch (typeName.ToUpperInvariant())
+        {
+            case "MOS1_N": channel = Mos.MosfetModelBase.Channel4.N; level = 1; break;
+            case "MOS1_P": channel = Mos.MosfetModelBase.Channel4.P; level = 1; break;
+            case "MOS3_N": channel = Mos.MosfetModelBase.Channel4.N; level = 3; break;
+            case "MOS3_P": channel = Mos.MosfetModelBase.Channel4.P; level = 3; break;
+            default: return null;
+        }
+
+        // The threshold is stated AS THE CARD STATES IT — negative for an ordinary p-channel
+        // enhancement device — and the model applies the channel sign itself. Defaulting it by
+        // channel is the same courtesy: a freshly dragged p-channel tile is an enhancement device,
+        // not one with a positive threshold that never turns on.
+        double vtoDefault = channel == Mos.MosfetModelBase.Channel4.N ? 1.0 : -1.0;
+
+        // Every call is by NAME. These constructors carry three dozen optional parameters whose
+        // types are all `double`, so positional binding would compile silently after a reorder and
+        // feed a junction area where an oxide thickness belongs.
+        //
+        // The two levels share every parameter but their own — level 1 has Lambda and level 3 has
+        // the six short-channel ones — which is exactly why they are separate types: a single type
+        // would present the union and silently accept whichever set the user did not mean.
+        if (level == 3)
+            return new Mos.MosfetLevel3Model(
+                channel:                  channel,
+                vto:                      P("Vto",    vtoDefault),
+                kp:                       P("Kp",     2.0e-5),
+                gamma:                    P("Gamma",  0.0),
+                phi:                      P("Phi",    0.6),
+                nsub:                     P("Nsub",   0.0),
+                eta:                      P("Eta",    0.0),
+                theta:                    P("Theta",  0.0),
+                kappa:                    P("Kappa",  0.2),
+                vmax:                     P("Vmax",   0.0),
+                delta:                    P("Delta",  0.0),
+                xj:                       P("Xj",     0.0),
+                w:                        P("W",      100e-6),
+                l:                        P("L",      100e-6),
+                ld:                       P("Ld",     0.0),
+                tox:                      P("Tox",    0.0),
+                uo:                       P("Uo",     600.0),
+                cgso:                     P("Cgso",   0.0),
+                cgdo:                     P("Cgdo",   0.0),
+                cgbo:                     P("Cgbo",   0.0),
+                saturationCurrent:        P("Is",     1e-14),
+                saturationCurrentDensity: P("Js",     0.0),
+                bulkEmission:             P("N",      1.0),
+                cbd:                      P("Cbd",    0.0),
+                cbs:                      P("Cbs",    0.0),
+                cj:                       P("Cj",     0.0),
+                cjsw:                     P("Cjsw",   0.0),
+                ad:                       P("Ad",     0.0),
+                @as:                      P("As",     0.0),
+                pd:                       P("Pd",     0.0),
+                ps:                       P("Ps",     0.0),
+                pb:                       P("Pb",     0.8),
+                mj:                       P("Mj",     0.5),
+                mjsw:                     P("Mjsw",   0.33),
+                fc:                       P("Fc",     0.5),
+                rd:                       P("Rd",     0.0),
+                rs:                       P("Rs",     0.0),
+                rsh:                      P("Rsh",    0.0),
+                nrd:                      P("Nrd",    0.0),
+                nrs:                      P("Nrs",    0.0),
+                tempC:                    Temperature.ResolveDeviceC(parameters, ambientC),
+                tnomC:                    P("Tnom",   Temperature.NominalC),
+                xti:                      P("Xti",    3.0),
+                eg:                       P("Eg",     Temperature.SiliconBandgapEv));
+
+        return new Mos.MosfetLevel1Model(
+            channel:                  channel,
+            vto:                      P("Vto",    vtoDefault),
+            kp:                       P("Kp",     2.0e-5),
+            gamma:                    P("Gamma",  0.0),
+            phi:                      P("Phi",    0.6),
+            lambda:                   P("Lambda", 0.0),
+            nsub:                     P("Nsub",   0.0),
+            w:                        P("W",      100e-6),
+            l:                        P("L",      100e-6),
+            ld:                       P("Ld",     0.0),
+            tox:                      P("Tox",    0.0),
+            uo:                       P("Uo",     600.0),
+            cgso:                     P("Cgso",   0.0),
+            cgdo:                     P("Cgdo",   0.0),
+            cgbo:                     P("Cgbo",   0.0),
+            saturationCurrent:        P("Is",     1e-14),
+            saturationCurrentDensity: P("Js",     0.0),
+            bulkEmission:             P("N",      1.0),
+            cbd:                      P("Cbd",    0.0),
+            cbs:                      P("Cbs",    0.0),
+            cj:                       P("Cj",     0.0),
+            cjsw:                     P("Cjsw",   0.0),
+            ad:                       P("Ad",     0.0),
+            @as:                      P("As",     0.0),
+            pd:                       P("Pd",     0.0),
+            ps:                       P("Ps",     0.0),
+            pb:                       P("Pb",     0.8),
+            mj:                       P("Mj",     0.5),
+            mjsw:                     P("Mjsw",   0.33),
+            fc:                       P("Fc",     0.5),
+            rd:                       P("Rd",     0.0),
+            rs:                       P("Rs",     0.0),
+            rsh:                      P("Rsh",    0.0),
+            nrd:                      P("Nrd",    0.0),
+            nrs:                      P("Nrs",    0.0),
+            // `Temp`/`Dtemp`/ambient resolve through the ONE shared rule the diode, the BJT and the
+            // MESFET family use, so four device families in one design cannot disagree about what
+            // temperature they are at. Tnom does NOT: it is the parameter set's own extraction
+            // temperature, a property of the model card rather than of the run.
+            tempC:                    Temperature.ResolveDeviceC(parameters, ambientC),
+            tnomC:                    P("Tnom",   Temperature.NominalC),
+            xti:                      P("Xti",    3.0),
+            // Read as the bandgap at 0 K, which is what the Varshni relation in Temperature
+            // subtracts from — the same reading every other family here uses.
+            eg:                       P("Eg",     Temperature.SiliconBandgapEv));
     }
 
     // ── BJT family ────────────────────────────────────────────────────────────

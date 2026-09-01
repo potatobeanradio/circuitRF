@@ -27,6 +27,22 @@ namespace CircuitRF.Core.Devices.Fet;
 /// by its tangent above. Parameters <c>Cgs</c>, <c>Cgd</c>, <c>Vbi</c>, <c>M</c>, <c>Fc</c>.</item>
 /// </list>
 ///
+/// <para><b>Polarity is a sign, not a law.</b> <see cref="Channel"/> multiplies every voltage on the
+/// way in and every current and charge on the way out, so one set of equations serves both channel
+/// types and the two cannot drift apart — the arrangement <see cref="BjtModel"/> uses for n-p-n and
+/// p-n-p. The Jacobian passes through UNCHANGED, because the sign appears once on each side of every
+/// derivative. n-channel is <c>+1</c> and every multiplication by it is exact, so an n-channel device
+/// is bit-identical to one built before this parameter existed.</para>
+///
+/// <para><b>Each law negates its own threshold-like parameter</b> — <c>Vto</c>, <c>Vp0</c>,
+/// <c>Vpk</c> — through <see cref="ChannelSign"/>, because a p-channel card states it in its own
+/// convention (positive for a p-channel depletion device) and the equations below are written in the
+/// n-channel one. <b>The Curtice-Ettenberg cubic law has no p-channel form and is not offered in
+/// one:</b> its <c>A0</c>-<c>A3</c> polynomial is a direct fit in Vgs with no threshold to anchor a
+/// sign to, so a mirror would have to negate the odd-order coefficients and leave the even ones
+/// alone, and no published convention says that it does. Guessing which is a device that simulates
+/// and is wrong, which is exactly what this family refuses to produce.</para>
+///
 /// <para><b>Still NOT modelled:</b> the Statz/TOM-family charge formulation, which is a different
 /// scheme again — it works on a smoothed effective voltage rather than on Vgs and Vgd separately,
 /// so it is not a parameter change to the above but its own implementation. Also absent:
@@ -34,6 +50,9 @@ namespace CircuitRF.Core.Devices.Fet;
 /// </summary>
 public abstract class FetModelBase : ComponentModel
 {
+    /// <summary>n-channel or p-channel, as the sign that multiplies every voltage, current and charge.</summary>
+    public enum Channel { N = 1, P = -1 }
+
     private const double Boltzmann  = Temperature.Boltzmann;
     private const double ElemCharge = Temperature.ElemCharge;
 
@@ -68,13 +87,24 @@ public abstract class FetModelBase : ComponentModel
     private readonly double _cgs, _cgd, _isGate, _nGate, _vt;
     private readonly double _vbi, _m, _fc;
     private readonly int    _capModel;
+    private readonly double _s;
+
+    /// <summary>
+    /// <c>+1</c> for n-channel, <c>−1</c> for p-channel. A concrete law multiplies its own
+    /// threshold-like parameter by this, because a card states that parameter in its own channel's
+    /// convention while every equation here is written in the n-channel one.
+    /// </summary>
+    protected double ChannelSign => _s;
 
     protected FetModelBase(double cgs, double cgd, double gateSaturationCurrent,
                            double gateEmissionCoefficient,
                            int capModel = 1, double vbi = 1.0, double m = 0.5, double fc = 0.5,
                            double tempC = NominalTemperatureC, double tnomC = NominalTemperatureC,
-                           double xti = 0.0, double bandgap = 1.16)
+                           double xti = 0.0, double bandgap = 1.16,
+                           Channel channel = Channel.N)
     {
+        _s = (double)(int)channel;
+
         double dT = DeltaT(tempC, tnomC);
 
         // Junction potential falls with temperature; the gate capacitances follow it, plus a small
@@ -195,7 +225,11 @@ public abstract class FetModelBase : ComponentModel
     /// <inheritdoc/>
     protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
     {
-        double vgs = v[0], vds = v[1];
+        // Into n-channel coordinates. For n-channel the sign is exactly +1, so every multiplication
+        // below is the identity and the result is bit-identical to one computed before polarity
+        // existed — which is what lets this family's own tests stand as the proof it changed no
+        // number.
+        double vgs = _s * v[0], vds = _s * v[1];
         double vgd = vgs - vds;
         var (id, gm, gds) = DrainCurrent(vgs, vds);
         var (ig, gg)      = GateCurrent(vgs);
@@ -222,8 +256,10 @@ public abstract class FetModelBase : ComponentModel
         double qg = qgs + qgd;      // charge into the gate
         double qd = -qgd;           // charge into the drain
 
-        i[0] = ig;  i[1] = id;
-        q[0] = qg;  q[1] = qd;
+        // Back out of n-channel coordinates. The Jacobian is NOT touched: the sign appears once on
+        // the current and once on the voltage, and the two cancel.
+        i[0] = _s * ig;  i[1] = _s * id;
+        q[0] = _s * qg;  q[1] = _s * qd;
         // Port 0 current depends on Vgs only; port 1 on both.
         dg[0, 0] = gg;  dg[0, 1] = 0.0;  dg[1, 0] = gm;   dg[1, 1] = gds;
         dc[0, 0] = cgsV + cgdV;  dc[0, 1] = -cgdV;

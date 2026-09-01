@@ -179,6 +179,21 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         && !IsWarning
         && CellViewFileValidator.ViewTypeFor(AbsolutePath) is not null;
 
+    /// <summary>
+    /// True for a Known File that is a SPICE <c>.model</c> card file — drives "Copy to Workspace as
+    /// Cell…" for model cards.
+    ///
+    /// <para>Extension only, exactly as <see cref="IsKnownFileCopyableAsCell"/> is: the item appears
+    /// on a bookmarked path with nothing having read it, and parsing every bookmarked file to decide
+    /// whether to show a menu item would make opening the menu do the work. What the file actually
+    /// holds is settled when the command runs, which is also where the user can be told about it.</para>
+    /// </summary>
+    public bool IsModelCardFile =>
+        Kind == NodeKind.KnownFile
+        && !IsDirectory
+        && !IsWarning
+        && ModelCardCellBuilder.IsModelCardFile(AbsolutePath);
+
     /// <summary>True when this node has unsaved work — drives the "Save" context item.
     /// Resolved through the host so it reflects live dirty state when the menu opens.</summary>
     public bool IsSaveable => _actions?.IsNodeDirty(this) ?? false;
@@ -260,6 +275,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>Copy a Known File view into a NEW cell in the workspace (validated first).</summary>
     public IAsyncRelayCommand CopyToWorkspaceAsCellCommand { get; }
+    /// <summary>Builds a cell from a SPICE <c>.model</c> card in this file (Known File nodes only).</summary>
+    public IAsyncRelayCommand CreateCellFromModelCardCommand { get; }
 
     /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
     public IRelayCommand RemoveKnownFileCommand { get; }
@@ -446,6 +463,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         CopyToWorkspaceAsCellCommand = new AsyncRelayCommand(
             () => _actions?.CopyKnownFileToWorkspaceAsCellAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsKnownFileCopyableAsCell);
+
+        CreateCellFromModelCardCommand = new AsyncRelayCommand(
+            () => _actions?.CreateCellFromModelCardAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsModelCardFile);
 
         RemoveKnownFileCommand = new RelayCommand(
             () => _actions?.RemoveKnownFile(this),

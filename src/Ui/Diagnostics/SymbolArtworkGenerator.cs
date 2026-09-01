@@ -104,6 +104,30 @@ public static class SymbolArtworkGenerator
         (SymbolKind.FetStatz,        "fet-statz",         3),
         (SymbolKind.FetMaterka,      "fet-materka",       3),
         (SymbolKind.FetAngelov,      "fet-angelov",       3),
+        // The three p-channel MESFET laws. Three figures for one glyph, because they are three
+        // separate components with three separate parameter sets — the same reasoning as the
+        // n-channel laws above.
+        (SymbolKind.PFetCurtice,     "pfet-curtice",      3),
+        (SymbolKind.PFetStatz,       "pfet-statz",        3),
+        (SymbolKind.PFetMaterka,     "pfet-materka",      3),
+        // The JFET pair — two glyphs, so two figures.
+        (SymbolKind.JfetN,           "jfet-n",            3),
+        (SymbolKind.JfetP,           "jfet-p",            3),
+        (SymbolKind.IgbtN,           "igbt-n",            3),
+        (SymbolKind.IgbtP,           "igbt-p",            3),
+        (SymbolKind.Bead,            "bead",              2),
+        // The vertical power MOSFET pair. Three pins each, and a glyph that draws the body diode.
+        (SymbolKind.VdmosN,          "vdmos-n",           3),
+        (SymbolKind.VdmosP,          "vdmos-p",           3),
+        // The MOS pair, for the same reason as the bipolar pair below: two glyphs, so two figures.
+        // Four pins each, which is what makes them worth looking at — the bulk is a real terminal.
+        (SymbolKind.Mos1N,           "mos1-n",            4),
+        (SymbolKind.Mos1P,           "mos1-p",            4),
+        // Level 3 shares level 1's glyph — same topology, different equations — but gets its own
+        // figures, because they are separate components with separate parameter sets and a page
+        // documenting MOS3_N has to be able to show it.
+        (SymbolKind.Mos3N,           "mos3-n",            4),
+        (SymbolKind.Mos3P,           "mos3-p",            4),
         // The two bipolar polarities get two figures because they get two GLYPHS — unlike the FET
         // laws above, the arrow is the only thing that tells them apart, so one shared figure would
         // document exactly the wrong half.

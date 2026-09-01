@@ -218,6 +218,9 @@ public class LibraryCatalogTests
         {
             SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
             SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc,
+            // The ferrite bead is a LINEAR impedance, so it belongs here and not with the devices —
+            // which is where a user looking for one goes.
+            SymbolKind.Bead,
         }, kinds);
     }
 
@@ -304,14 +307,14 @@ public class LibraryCatalogTests
     [Fact]
     public void SingleCategoryItems_UnchangedByExtraCategoryFeature()
     {
-        // Lumped returns exactly R/L/C/NLC/Mutual/SRLC/PRLC — no extra-category bleed from other
-        // components.
+        // Lumped returns exactly R/L/C/NLC/Mutual/SRLC/PRLC/Bead — no extra-category bleed from
+        // other components.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Lumped).Select(i => i.Kind).ToHashSet();
         Assert.Equal(
             new HashSet<SymbolKind>
             {
                 SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
-                SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc,
+                SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc, SymbolKind.Bead,
             },
             kinds);
     }

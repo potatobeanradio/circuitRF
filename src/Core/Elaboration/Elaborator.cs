@@ -845,6 +845,120 @@ public sealed class Elaborator
                     resolvedNodes = pins.ToArray();
                 }
 
+                // IGBT: the user draws three terminals (collector, gate, emitter) and the model
+                // is five intrinsic ports plus one per non-zero ohmic resistance. It ALWAYS needs an
+                // internal net — the base node between the insulated-gate channel and the bipolar is
+                // what the model IS, and it is what makes the on-state voltage come out as the
+                // channel's drop plus a junction's rather than as a fitted offset.
+                //
+                // The ohmic ports follow the intrinsic five in the order gate, collector, emitter;
+                // IgbtModel states the same order beside its own port indices.
+                if (model is Devices.Igbt.IgbtModel igbt && resolvedNodes.Length == 3)
+                {
+                    int nc = resolvedNodes[0], ng = resolvedNodes[1], ne = resolvedNodes[2];
+                    int nb = netlist.Nodes.GetOrAssign($"__igbt_{childPath}_b");
+                    int gi = igbt.HasGateResistance      ? netlist.Nodes.GetOrAssign($"__igbt_{childPath}_gi") : ng;
+                    int ci = igbt.HasCollectorResistance ? netlist.Nodes.GetOrAssign($"__igbt_{childPath}_ci") : nc;
+                    int ei = igbt.HasEmitterResistance   ? netlist.Nodes.GetOrAssign($"__igbt_{childPath}_ei") : ne;
+
+                    var pins = new List<int>(10 + 2 * igbt.InternalNodeCount)
+                    {
+                        nb, ei,   // the channel, whose drain is the base node
+                        ci, nb,   // the bipolar's base current, across its junction
+                        gi, ei,   // Cge
+                        gi, nb,   // the Miller capacitance
+                        ci, ei,   // the bipolar's transport current
+                    };
+                    if (igbt.HasGateResistance)      { pins.Add(ng); pins.Add(gi); }
+                    if (igbt.HasCollectorResistance) { pins.Add(nc); pins.Add(ci); }
+                    if (igbt.HasEmitterResistance)   { pins.Add(ne); pins.Add(ei); }
+                    resolvedNodes = pins.ToArray();
+                }
+
+                // Vertical power MOSFET: the user draws three terminals (drain, gate, source) and
+                // the model is four intrinsic ports plus one per non-zero ohmic resistance. There
+                // is no bulk net — the source-to-body short is inside the silicon, which is what
+                // makes the body diode a source-to-drain element rather than a substrate junction.
+                //
+                // The ohmic ports follow the intrinsic four in the order gate, drain, source;
+                // VdmosModel states the same order beside its own port indices.
+                if (model is Devices.Mos.VdmosModel vd && resolvedNodes.Length == 3)
+                {
+                    int nd = resolvedNodes[0], ng = resolvedNodes[1], ns = resolvedNodes[2];
+                    int gi = vd.HasGateResistance   ? netlist.Nodes.GetOrAssign($"__vdmos_{childPath}_gi") : ng;
+                    int di = vd.HasDrainResistance  ? netlist.Nodes.GetOrAssign($"__vdmos_{childPath}_di") : nd;
+                    int si = vd.HasSourceResistance ? netlist.Nodes.GetOrAssign($"__vdmos_{childPath}_si") : ns;
+
+                    var pins = new List<int>(8 + 2 * vd.InternalNodeCount)
+                    {
+                        di, si,   // channel current and Rds
+                        si, di,   // body diode: anode at the source for an n-channel device
+                        gi, si,   // Cgs
+                        gi, di,   // Cgd
+                    };
+                    if (vd.HasGateResistance)   { pins.Add(ng); pins.Add(gi); }
+                    if (vd.HasDrainResistance)  { pins.Add(nd); pins.Add(di); }
+                    if (vd.HasSourceResistance) { pins.Add(ns); pins.Add(si); }
+                    resolvedNodes = pins.ToArray();
+                }
+
+                // JFET family: the user draws three terminals (drain, gate, source) and the model
+                // is three intrinsic ports plus one per non-zero ohmic resistance. The gate is TWO
+                // junctions — one to each end of the channel — which is why three nets expand to
+                // six pins rather than being paired off as a two-port.
+                //
+                // The ohmic ports follow the intrinsic three in the order drain, source; JfetModel
+                // states the same order beside its own port indices, and the two must be read
+                // together.
+                if (model is Devices.Jfet.JfetModel jfet && resolvedNodes.Length == 3)
+                {
+                    int nd = resolvedNodes[0], ng = resolvedNodes[1], ns = resolvedNodes[2];
+                    int di = jfet.HasDrainResistance  ? netlist.Nodes.GetOrAssign($"__jfet_{childPath}_di") : nd;
+                    int si = jfet.HasSourceResistance ? netlist.Nodes.GetOrAssign($"__jfet_{childPath}_si") : ns;
+
+                    var pins = new List<int>(6 + 2 * jfet.InternalNodeCount)
+                    {
+                        di, si,   // channel current
+                        ng, si,   // gate-source junction
+                        ng, di,   // gate-drain junction
+                    };
+                    if (jfet.HasDrainResistance)  { pins.Add(nd); pins.Add(di); }
+                    if (jfet.HasSourceResistance) { pins.Add(ns); pins.Add(si); }
+                    resolvedNodes = pins.ToArray();
+                }
+
+                // MOS family: the user draws FOUR terminals (drain, gate, source, bulk) and the
+                // model is six intrinsic ports plus one per non-zero ohmic resistance. Five of the
+                // six intrinsic ports are branches inside the device rather than terminals, which is
+                // why the four nets expand to twelve pins here rather than being paired off.
+                //
+                // The ohmic ports follow the intrinsic six in the order drain, source —
+                // MosfetModelBase states the same order beside its own port indices, and the two
+                // must be read together. Their internal nets are minted here, keyed on the instance
+                // path, and get ordinary matrix rows for the same reason the BJT's and the diode's
+                // do: collapsing them locally is exact at DC and wrong in HB, where an internal node
+                // carries its own harmonic content.
+                if (model is Devices.Mos.MosfetModelBase mos && resolvedNodes.Length == 4)
+                {
+                    int nd = resolvedNodes[0], ng = resolvedNodes[1],
+                        ns = resolvedNodes[2], nb = resolvedNodes[3];
+                    int di = mos.HasDrainResistance  ? netlist.Nodes.GetOrAssign($"__mos_{childPath}_di") : nd;
+                    int si = mos.HasSourceResistance ? netlist.Nodes.GetOrAssign($"__mos_{childPath}_si") : ns;
+
+                    var pins = new List<int>(12 + 2 * mos.InternalNodeCount)
+                    {
+                        di, si,   // channel current
+                        nb, si,   // bulk-source junction
+                        nb, di,   // bulk-drain junction
+                        ng, si,   // gate-source charge
+                        ng, di,   // gate-drain charge
+                        ng, nb,   // gate-bulk charge
+                    };
+                    if (mos.HasDrainResistance)  { pins.Add(nd); pins.Add(di); }
+                    if (mos.HasSourceResistance) { pins.Add(ns); pins.Add(si); }
+                    resolvedNodes = pins.ToArray();
+                }
+
                 // ExtDevice: the provider reports currents per NODE, so every node becomes its own
                 // ground-referenced port — [n, 0] per node — and the internal nodes are minted here
                 // exactly like any other internal net. They therefore get ordinary rows in the

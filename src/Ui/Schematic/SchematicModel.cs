@@ -106,6 +106,119 @@ public enum SymbolKind
     /// <summary>Angelov (Chalmers) FET (engine "FET_Angelov"). Ipk/Vpk/P1–P3/Alpha/Lambda.</summary>
     FetAngelov,
 
+    // ── The MOS family ────────────────────────────────────────────────────────
+    //
+    // FOUR kinds for two laws in two channel types, which is the two rules above put together: a
+    // LEVEL is a different set of equations (so it cannot be a mode parameter, exactly as the five
+    // MESFET laws cannot), and a CHANNEL is a sign the reader has to be able to SEE (so it cannot be
+    // one either, exactly as the BJT's polarity cannot).
+    //
+    // Unlike the MESFET family these have FOUR pins: drain, gate, source and BULK. The bulk is a
+    // real terminal and not a convenience — tying it to the source internally would silently delete
+    // the body effect, which is a defining part of the level-1 law and is worth hundreds of
+    // millivolts of threshold. A part whose bulk really is tied to its source says so by wiring the
+    // pin.
+    //
+    // The two levels share one glyph per channel, for the same reason the five MESFET laws share
+    // theirs: the topology genuinely is identical and only the channel-current equation differs,
+    // which the type label below the symbol already names. The two CHANNELS do not share, for the
+    // same reason the two BJT polarities do not: the bulk arrow is the only thing on the drawing
+    // that tells them apart, and it is the first thing a reader looks for.
+
+    /// <summary>n-channel level-1 (Shichman-Hodges) MOSFET (engine "MOS1_N").</summary>
+    Mos1N,
+
+    /// <summary>p-channel level-1 (Shichman-Hodges) MOSFET (engine "MOS1_P").</summary>
+    Mos1P,
+
+    /// <summary>n-channel level-3 (semi-empirical short-channel) MOSFET (engine "MOS3_N").</summary>
+    Mos3N,
+
+    /// <summary>p-channel level-3 (semi-empirical short-channel) MOSFET (engine "MOS3_P").</summary>
+    Mos3P,
+
+    // ── The IGBTs ─────────────────────────────────────────────────────────────
+    //
+    // Three pins — collector, gate, emitter — and an internal base node the elaborator always mints,
+    // because an equivalent-circuit IGBT IS an insulated-gate channel driving a bipolar and the node
+    // between them is the model.
+    //
+    // The glyph is the MOS one with a BIPOLAR's emitter arrow on the output, which is exactly what
+    // the standard symbol says the device is: an insulated gate on one side, a junction on the
+    // other. It matters that the arrow is there — an IGBT does NOT conduct in reverse, and a reader
+    // who mistakes one for a power MOSFET will expect a body diode that is not present.
+
+    /// <summary>n-channel IGBT (engine "IGBT_N") — the ordinary one.</summary>
+    IgbtN,
+
+    /// <summary>p-channel IGBT (engine "IGBT_P").</summary>
+    IgbtP,
+
+    /// <summary>
+    /// Ferrite bead (engine "Bead") — a two-terminal LINEAR element, <c>Rdc</c> in series with a
+    /// parallel <c>L</c>/<c>Rp</c>/<c>Cp</c> tank.
+    ///
+    /// <para>Sits with the lumped elements rather than the devices, because that is what it is: a
+    /// linear impedance. It is not an inductor and not an SRLC — a bead's whole purpose is that most
+    /// of its impedance is RESISTIVE at the frequency a data sheet quotes, and that the loss RISES
+    /// with frequency to a peak and falls again. Neither of those is expressible with a fixed R.</para>
+    /// </summary>
+    Bead,
+
+    // ── The vertical power MOSFETs ────────────────────────────────────────────
+    //
+    // A SEPARATE component from the lateral MOS pair, not a setting of it. Three pins, not four:
+    // the source-to-body short is inside the silicon, which is exactly what turns the substrate
+    // junction into a source-to-drain BODY DIODE that carries load current. Its glyph draws that
+    // diode, because it is a circuit element the user is going to reason about.
+
+    /// <summary>n-channel vertical power MOSFET (engine "VDMOS_N").</summary>
+    VdmosN,
+
+    /// <summary>p-channel vertical power MOSFET (engine "VDMOS_P").</summary>
+    VdmosP,
+
+    // ── The p-channel MESFETs ─────────────────────────────────────────────────
+    //
+    // THREE, not five. p-channel is offered for exactly the laws that mirror unambiguously — the
+    // ones whose gate dependence is anchored to a threshold and is even in it, so flipping every
+    // voltage and current is the whole of the change. The Curtice-Ettenberg cubic and Angelov are
+    // n-channel only: their gate dependence is a polynomial fitted directly against the gate
+    // voltage, so a mirror would have to negate the odd-order coefficients and leave the even ones
+    // alone, and no published convention says a p-channel card is written that way. See each of
+    // those two models' own summary.
+    //
+    // All three share ONE glyph — the n-channel FET glyph with its gate arrow reversed — for the
+    // same reason the five n-channel laws share theirs: the topology is identical and the type
+    // label names the law. They do NOT share with the n-channel tiles, for the same reason the BJT
+    // polarities do not: the arrow is the whole of the difference a reader can see.
+
+    /// <summary>p-channel Curtice quadratic MESFET (engine "PFET_Curtice").</summary>
+    PFetCurtice,
+
+    /// <summary>p-channel Statz MESFET (engine "PFET_Statz").</summary>
+    PFetStatz,
+
+    /// <summary>p-channel Materka-Kacprzak MESFET (engine "PFET_Materka").</summary>
+    PFetMaterka,
+
+    // ── The JFET pair ─────────────────────────────────────────────────────────
+    //
+    // Two kinds over one law, arranged like the BJT's polarities rather than like the MESFET laws:
+    // the names denote the same equations with one sign changed. Three pins, like the MESFET — the
+    // JFET's gate IS the junction, so there is no fourth terminal to have.
+    //
+    // NOT the MESFET family with different coefficients, which is why these exist at all: the knee
+    // is the square law's own boundary rather than a fitted tanh, and the gate is a real p-n
+    // junction that conducts and stores depletion charge in BOTH directions where the MESFET's
+    // Schottky gate is modelled as one forward diode.
+
+    /// <summary>n-channel junction FET (engine "JFET_N"). Vto/Beta/Lambda + two gate junctions.</summary>
+    JfetN,
+
+    /// <summary>p-channel junction FET (engine "JFET_P"). Same equations, every sign reversed.</summary>
+    JfetP,
+
     /// <summary>Term with port 2 permanently grounded, presenting as a 1-port
     /// (brief-housekeeping-tearoff-palette-repo.md §4). A packaging convenience, not a parallel
     /// model: reuses <see cref="Term"/>'s own engine reference ("Port") and glyph exactly, with

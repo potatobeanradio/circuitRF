@@ -2,6 +2,136 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## Importing a SPICE `.model` card as a cell (2026-09-01)
+
+A `.MODEL` file dropped into the Project Tree gets **Copy to Workspace as Cell…** on its right-click
+menu, and **File ▸ Import ▸ Model Card…** does the same without bookmarking anything first. One card
+becomes a cell: a `.csch` holding the native circuitRF component with the card's parameters and its
+pins already wired, a `.csym` copied from that component's own artwork, and a `.ccell` naming both.
+
+**Almost none of this was new machinery, and finding that out was most of the work.**
+`SpiceNetlistReader` already parsed `.model` cards into `SpiceModelCard` (it handles the
+bracket-glued-to-type case, continuations and `.include`), `MatchFlatten.Write` already had the
+all-or-nothing cell-writing shape, and `MatchSymbolCopy` already had the symbol-deep-copy idiom. The
+two genuinely new pieces are `SpiceModelCardTranslation` (card type → engine reference + circuitRF
+parameter spellings, in `src/Core`, no UI in it) and `ModelCardCellBuilder` (that binding → a cell).
+
+### The unit trap, which is the one that would have shipped silently
+
+**A schematic parameter row carries a value AND a unit, and the registry's defaults use convenient
+ones** — the diode's `Cj0` is declared in **picofarads**, the inductor's `L` in nanohenries. A
+`.model` card states everything **unscaled**. Writing a card's `CJO=2e-12` into a row that still says
+`pF` is a capacitance a **trillion times too small**, and it simulates perfectly. Every imported row
+therefore gets the BASE unit for its dimension (`ModelCardCellBuilder.BaseUnit`), taken from the
+registry's own declaration of what that dimension is.
+
+The test for it asserts the **evaluated SI value**, not the expression string: a string comparison
+passes just as happily with the unit left at `pF`, which is the entire failure being guarded.
+
+*Adjacent gotcha found while writing that test:* `Evaluator.Eval`'s unit table is keyed `"Ohm"`/`"u"`
+and the editor's tokens are `"Ω"`/`"µ"`. **`UnitNormalizer.ToEngineUnit` is the boundary** — calling
+`Eval` with a registry unit token straight off a parameter row throws `Unknown unit 'Ω'`.
+
+### The diode's registry rows and its factory had drifted
+
+`ComponentModelFactory.CreateDiodeModel` has always read **`Xti`, `Eg`, `Tnom`, `Area`, `Isr`, `Nr`
+and `Nbv`**, and `ComponentTypeRegistry` declared **none of them** — so all seven were live,
+invisible in the parameter dialog, unsweepable, and had nowhere for a model card's `XTI` to land.
+Owner noticed the `XTI` gap; the other six came with it. All seven now have rows, at the factory's
+own fallback values (note `Eg` is **1.16**, `Temperature.SiliconBandgapEv`, not the BJT row's 1.11 —
+stating a different number would silently change every diode already in a design).
+
+**`DevicePaletteWiringTests.P4` is what holds the two lists together**, and adding rows to it needs
+one non-obvious thing: its activation dictionary must set **`Temp` far from `Tnom`**. At `Temp ==
+Tnom` every temperature relation collapses to the identity, so `Xti`, `Eg` and `Tnom` all read as
+*unwired parameters* while doing exactly what they say. `Isr` must be non-zero or `Nr` is inert with
+it, and `Nbv` is only live below −`Bv`, which is why the diode probe's bias grid runs to −6 V.
+
+### Refusals, and why nothing is approximated
+
+The nearest-native temptation is real: a JFET's square law looks like the Curtice quadratic with the
+`tanh` ignored, a ferrite bead looks like a parallel RLC, a p-channel part looks like an n-channel
+one with signs flipped. **Every one of those produces a cell that simulates and is quantitatively
+wrong with nothing anywhere reporting it.** So `NJF`/`PJF`, `PMF`, `NMOS`/`PMOS`, `VDMOS`,
+`NIGBT`/`PIGBT` and `BEAD` are refused **by name**, each saying what circuitRF does not have. The
+picker lists refused cards **with their reasons** rather than hiding them — "why is my VDMOS not
+offered?" is otherwise answered by an absence.
+
+A `RES`/`CAP`/`IND` card stating only a sheet resistance or an area coefficient is refused for the
+same reason `SpicePassiveModelBinding` already refuses it on an instance: there is no geometry here
+to apply it to, and the alternative is a value of zero that simulates.
+
+**Nothing is dropped quietly either.** Card parameters with no circuitRF home (`CJS`, `KF`, `AF`,
+`PTF`, `LEVEL`, …) are reported in the Messages panel *and* written onto the cell's own annotation.
+
+### Two smaller decisions
+
+- **Which MESFET law an `NMF` card states is decided from its PARAMETERS, never its `LEVEL`.** The
+  level numbering is not portable — the same integer selects a different law in different dialects —
+  so honouring it would make the choice depend on which simulator the file was written for, a fact
+  the file does not record. `B` (the doping-profile tail) appears in the Statz law and no other, so
+  its presence is the file's own unambiguous statement. A stated `LEVEL` is listed as unmapped so
+  nobody concludes it was honoured.
+- **A MESFET card's `RD`/`RS` become real series resistors in the schematic.** circuitRF's FET family
+  has no lead-resistance parameter, and a cell IS a schematic — so they go where they physically are
+  rather than into the unmapped list. `C2`/`C4` are conversely NOT aliased onto `Ise`/`Isc`: they are
+  multipliers of `IS` in old SPICE, and reading one as the other is off by fourteen orders of
+  magnitude on a card that looks entirely ordinary.
+
+### What is now imported, and what is still refused (updated 2026-09-01)
+
+The engine models landed (see `src/Core/RESOLVED.md`), so most of the refusals above are gone. **Each
+type left the refusal list only when there was a real model behind it** — the test that holds them is
+a theory whose list shrinks, never because a refusal was inconvenient.
+
+| Card type | Now |
+|---|---|
+| `NJF` / `PJF` | `JFET_N` / `JFET_P` — the Shichman-Hodges square law. |
+| `PMF` | `PFET_Curtice` / `PFET_Statz` — both laws a MESFET card can be read as have a p-channel form. |
+| `NMOS` / `PMOS` | `MOS1_*` or `MOS3_*`, chosen from the card's `LEVEL`. |
+| `VDMOS` | `VDMOS_N` / `VDMOS_P`, chosen from the card's bare `pchan` keyword. |
+| `BEAD` | `Bead`, unless the card describes no ferrite at all. |
+| `NIGBT` / `PIGBT` | **Still refused** — for a new reason. |
+
+**Four decisions on the import side worth keeping:**
+
+- **A MOS card's `LEVEL` IS read; a MESFET card's is not.** That is not an inconsistency. A MESFET
+  card's level selects between laws that different dialects number differently, so honouring it would
+  make the choice depend on which simulator the file was written for. A MOS card's numbering for the
+  *classical* levels is the one thing about it that is portable: 1, 2 and 3 mean the same three
+  published models wherever they appear.
+- **Level 2 is read as level 1 with a note; level 4 and above is REFUSED.** Every parameter the
+  classical levels share means the same thing in all of them, so reading a level-2 card as level 1
+  gives a device that is right at low field and optimistic at high — a far better answer than none,
+  provided the user is told. Level 4 and above are the compact-model families, whose parameters name
+  different quantities under different spellings; almost nothing would be carried and what came out
+  would be circuitRF's transistor wearing default numbers under the card's name.
+- **A short-channel parameter must not be carried onto a level-1 device.** It has no home there, and
+  landing it on the transistor would look exactly like it had been honoured — the row would be
+  present, with the card's value in it, read by nothing. They are moved into the unmapped list and
+  reported by name.
+- **A MOS or JFET card's `RD`/`RS` must NOT become placed series resistors**, even though they are
+  spelled exactly as a MESFET card spells its own lead resistances — which DO become resistors,
+  because circuitRF's MESFET has no parameter for them. The MOS and JFET families carry them as model
+  parameters on internal nodes the elaborator mints. Placing them a second time would put the
+  resistance in the device AND beside it, and the schematic would look entirely ordinary.
+
+**`NIGBT`/`PIGBT` is the interesting refusal: circuitRF has an IGBT and the card is still refused.**
+Its parameters belong to the published ambipolar transport model and describe the silicon (base
+width, doping, carrier lifetime); circuitRF's is an equivalent-circuit model parameterised by what a
+data sheet gives (threshold, transconductance, current gain, transit time). Neither set can be
+derived from the other by renaming — that is a device-modelling extraction — so the refusal now says
+*that* rather than "no model exists", and points at the VerilogA component.
+
+**One reader bug found on the way, and it was silent.** `.model` cards were parsed with the bare
+words discarded, so a `VDMOS` card's lone `pchan` keyword vanished and an n-channel and a p-channel
+card read identically with every number right. `SpiceModelCard` now carries `Flags`.
+
+**The unit trap keeps claiming new victims and the test shape is what catches it.** Every new family
+added rows in a convenience unit — `W`/`L` in µm, `Tox` in nm, `Cgdmax` in pF, `L` (the bead's) in µH
+— and every one of them is a card value written unscaled. The assertions are all on the **evaluated
+SI value**, never the expression string, for the reason the original entry gives.
+
 ## SRLC and PRLC: the pin contract is the whole design constraint (2026-08-31)
 
 Two new lumped tiles, `SymbolKind.Srlc` and `SymbolKind.Prlc`, over the engine components `SRLC` and

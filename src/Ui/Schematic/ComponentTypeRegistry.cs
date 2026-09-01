@@ -438,6 +438,119 @@ public static class ComponentTypeRegistry
                           "silicon", "SiGe", "HBT", "nonlinear", "device"],
             IsCommon: false,
             ExtraCategories: [ComponentCategory.Nonlinear]),
+        // The three p-channel MESFET laws. Every one of them lists "PMF" — the model-card type
+        // name — because a user who has just imported a p-channel card is looking for exactly this.
+        [SymbolKind.PFetCurtice]   = new("Curtice-P", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Curtice-P", "PMF", "p-channel", "pchannel", "Curtice", "FET", "MESFET",
+                          "quadratic", "transistor", "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.PFetStatz]     = new("Statz-P", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Statz-P", "PMF", "p-channel", "pchannel", "Statz", "FET", "MESFET",
+                          "transistor", "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.PFetMaterka]   = new("Materka-P", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Materka-P", "PMF", "p-channel", "pchannel", "Materka", "Kacprzak", "FET",
+                          "MESFET", "transistor", "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        // The JFET pair. "JFET" and "junction FET" are search terms on both, and so is "MESFET",
+        // because a user who does not know which family their part belongs to is looking at the
+        // same shape on a datasheet.
+        [SymbolKind.JfetN]         = new("NJFET", "J",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["NJFET", "NJF", "JFET", "junction FET", "J", "PJFET", "Shichman", "Hodges",
+                          "square law", "depletion", "FET", "transistor", "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.JfetP]         = new("PJFET", "J",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["PJFET", "PJF", "JFET", "junction FET", "J", "NJFET", "Shichman", "Hodges",
+                          "square law", "depletion", "p-channel", "FET", "transistor", "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        // The IGBT pair. The search terms cover what a user is building — a motor drive, an
+        // inverter, a hard-switched bridge — because "IGBT" is a part someone reaches for by
+        // application rather than by law.
+        [SymbolKind.IgbtN]         = new("NIGBT", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["NIGBT", "IGBT", "insulated gate", "bipolar", "motor drive", "inverter",
+                          "bridge", "switch", "power", "tail current", "PIGBT", "Q", "transistor",
+                          "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.IgbtP]         = new("PIGBT", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["PIGBT", "IGBT", "insulated gate", "bipolar", "p-channel", "inverter",
+                          "switch", "power", "NIGBT", "Q", "transistor", "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        // The ferrite bead. A LUMPED element, not a device — it is a linear impedance. The search
+        // terms are what a user is actually trying to do with one: damp a rail, suppress EMI, stop a
+        // decoupling network ringing.
+        [SymbolKind.Bead]          = new("Bead", "FB",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["Bead", "ferrite", "ferrite bead", "FB", "EMI", "suppression", "damping",
+                          "choke", "common mode", "supply rail", "decoupling", "lossy", "absorb"],
+            IsCommon: false),
+        // The level-3 pair. Two more tiles rather than a "level" parameter on the level-1 ones,
+        // for the reason the five MESFET laws are five tiles: a level is a different set of
+        // equations, and its six short-channel parameters mean nothing to level 1. One tile
+        // presenting the union of both sets would silently accept whichever the user did not mean.
+        [SymbolKind.Mos3N]         = new("NMOS3", "M",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["NMOS3", "NMOS", "MOSFET", "MOS", "level 3", "short channel", "DIBL",
+                          "velocity saturation", "submicron", "PMOS3", "FET", "transistor", "M",
+                          "nonlinear", "device", "bulk", "body"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.Mos3P]         = new("PMOS3", "M",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["PMOS3", "PMOS", "MOSFET", "MOS", "level 3", "short channel", "DIBL",
+                          "velocity saturation", "submicron", "NMOS3", "FET", "transistor", "M",
+                          "nonlinear", "device", "p-channel", "bulk", "body"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        // The vertical power MOSFET pair. "VDMOS" is the model-card type name and is a search term
+        // on both, as are the words a user reaches for when they want a switch rather than an
+        // amplifier — body diode, half bridge, synchronous rectifier.
+        [SymbolKind.VdmosN]        = new("NVDMOS", "M",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["NVDMOS", "VDMOS", "power MOSFET", "power", "MOSFET", "MOS", "switch",
+                          "body diode", "half bridge", "synchronous rectifier", "avalanche",
+                          "PVDMOS", "M", "transistor", "nonlinear", "device"],
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.VdmosP]        = new("PVDMOS", "M",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["PVDMOS", "VDMOS", "power MOSFET", "power", "MOSFET", "MOS", "switch",
+                          "body diode", "high side", "p-channel", "NVDMOS", "M", "transistor",
+                          "nonlinear", "device"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        // The MOS pair. Two tiles for one law in two channel types, arranged like the BJT's pair
+        // rather than the FET's five: the names denote the same equations with one sign changed.
+        // Both channel spellings are search terms on both tiles, because a user looking for one is
+        // looking for the pair — and "MOSFET", "NMOS" and "PMOS" all land here, which is what a
+        // user who has just been refused a NMOS model card will type.
+        [SymbolKind.Mos1N]         = new("NMOS1", "M",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["NMOS", "NMOS1", "MOSFET", "MOS", "level 1", "Shichman", "Hodges",
+                          "square law", "PMOS", "FET", "transistor", "M", "nonlinear", "device",
+                          "enhancement", "bulk", "body"],
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
+        [SymbolKind.Mos1P]         = new("PMOS1", "M",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["PMOS", "PMOS1", "MOSFET", "MOS", "level 1", "Shichman", "Hodges",
+                          "square law", "NMOS", "FET", "transistor", "M", "nonlinear", "device",
+                          "enhancement", "p-channel", "bulk", "body"],
+            IsCommon: false,
+            ExtraCategories: [ComponentCategory.Nonlinear]),
         [SymbolKind.Mutual]        = new("M",   "M",
             Category: ComponentCategory.Lumped,
             SearchTerms: ["Mutual", "mutual", "M", "coupling", "inductance", "transformer"],
@@ -627,6 +740,24 @@ public static class ComponentTypeRegistry
         SymbolKind.FetAngelov      => "FET_Angelov",
         // Two engine components over one model, so the netlist says which transistor it is rather
         // than leaving it to a parameter that a later edit could silently disagree with the symbol.
+        // p-channel is a leading "P" on the engine name, for the three laws that have one.
+        SymbolKind.PFetCurtice     => "PFET_Curtice",
+        SymbolKind.PFetStatz       => "PFET_Statz",
+        SymbolKind.PFetMaterka     => "PFET_Materka",
+        SymbolKind.JfetN           => "JFET_N",
+        SymbolKind.JfetP           => "JFET_P",
+        SymbolKind.IgbtN           => "IGBT_N",
+        SymbolKind.IgbtP           => "IGBT_P",
+        SymbolKind.Bead            => "Bead",
+        SymbolKind.VdmosN          => "VDMOS_N",
+        SymbolKind.VdmosP          => "VDMOS_P",
+        // One engine component per LAW and per CHANNEL — a level is different equations, a channel
+        // is a sign the schematic has to show. Neither can be a parameter without letting the
+        // netlist and the symbol disagree.
+        SymbolKind.Mos1N           => "MOS1_N",
+        SymbolKind.Mos3N           => "MOS3_N",
+        SymbolKind.Mos3P           => "MOS3_P",
+        SymbolKind.Mos1P           => "MOS1_P",
         SymbolKind.BjtNpn          => "BJT_NPN",
         SymbolKind.BjtPnp          => "BJT_PNP",
         _                        => Get(kind).DisplayName,
@@ -1439,6 +1570,12 @@ public static class ComponentTypeRegistry
                 return [
                     new("Is",   "1e-14", "A",  true,  UnitDimension.Current),
                     new("N",    "1",     "",   true,  UnitDimension.None),
+                    // Recombination — the second exponential, off at Isr = 0, which is the ordinary
+                    // case. Declared rather than left implicit because a model card that states it
+                    // has nowhere else to put it, and a parameter the engine reads but the dialog
+                    // never shows is one a user cannot discover, correct, or sweep.
+                    new("Isr",  "0",     "A",  false, UnitDimension.Current),
+                    new("Nr",   "2",     "",   false, UnitDimension.None),
                     // Rs is a MODEL parameter, not a separate placed resistor. Non-zero moves the
                     // junction onto an internal node the elaborator mints (DiodeModel §Rs).
                     new("Rs",   "0",     "Ω",  true,  UnitDimension.Resistance),
@@ -1449,8 +1586,48 @@ public static class ComponentTypeRegistry
                     // Bv = 0 means breakdown is NOT MODELLED — never "breaks down at 0 V".
                     new("Bv",   "0",     "V",  false, UnitDimension.Voltage),
                     new("Ibv",  "1e-3",  "A",  false, UnitDimension.Current),
+                    // Nbv is the PUBLISHED 1, not N: nothing physical ties the reverse knee to the
+                    // forward ideality, and no parameter table states that it does.
+                    new("Nbv",  "1",     "",   false, UnitDimension.None),
                     new("Tt",   "0",     "",   false, UnitDimension.None),
+                    // Geometry, then temperature — the same tail the BJT rows carry, and for the
+                    // same reason: Area scales the currents and the capacitance BEFORE any
+                    // temperature relation, and Xti/Eg/Tnom are what those relations are written in.
+                    // Every one of these was already live in CreateDiodeModel and simply had no row,
+                    // so a .model card's XTI had nowhere to land (owner, 2026-09-01). Eg is 1.16
+                    // (Temperature.SiliconBandgapEv), which is the factory's own fallback — stating
+                    // a different number here would change every existing diode silently.
+                    new("Area", "1",     "",   false, UnitDimension.None),
+                    new("Xti",  "3",     "",   false, UnitDimension.None),
+                    new("Eg",   "1.16",  "V",  false, UnitDimension.Voltage),
                     new("Temp", "26.85", "",   false, UnitDimension.None),
+                    new("Tnom", "26.85", "",   false, UnitDimension.None),
+                ];
+
+            // The p-channel laws share their n-channel counterpart's list, because they ARE that
+            // law with every sign reversed. Only the threshold default differs — a p-channel
+            // depletion device pinches off at a POSITIVE gate voltage, and a card states it that
+            // way.
+            // Read from the n-channel list rather than copied, so the two cannot drift: a
+            // parameter added to the Curtice law reaches its p-channel tile with no second edit.
+            // Only the leading threshold row is replaced.
+            case SymbolKind.PFetCurtice:
+                return [
+                    new("Vto",  "2",   "V", true, UnitDimension.Voltage),
+                    .. DefaultParameters(SymbolKind.FetCurtice, portCount).Skip(1),
+                ];
+
+            case SymbolKind.PFetStatz:
+                return [
+                    new("Vto",  "2",   "V", true, UnitDimension.Voltage),
+                    .. DefaultParameters(SymbolKind.FetStatz, portCount).Skip(1),
+                ];
+
+            case SymbolKind.PFetMaterka:
+                return [
+                    new("Idss", "0.1", "A", true, UnitDimension.Current),
+                    new("Vp0",  "2",   "V", true, UnitDimension.Voltage),
+                    .. DefaultParameters(SymbolKind.FetMaterka, portCount).Skip(2),
                 ];
 
             case SymbolKind.FetCurtice:
@@ -1517,6 +1694,283 @@ public static class ComponentTypeRegistry
                     .. FetSharedDefaults(),
                     new("Alphatc", "0", "", false, UnitDimension.None),
                     new("Vtotc",   "0", "", false, UnitDimension.None),
+                ];
+
+            // Both channels share ONE parameter list — one set of equations with one sign changed.
+            // The defaults are a generic small-signal depletion JFET: it conducts at zero gate bias
+            // and pinches off at −2 V, so a freshly dragged tile is a working device. As with every
+            // other family here they are a STARTING POINT, not a claim about any particular part.
+            //
+            // Vto is stated AS A CARD STATES IT — negative for n-channel, positive for p-channel —
+            // and the model applies the channel sign itself.
+            case SymbolKind.JfetN:
+            case SymbolKind.JfetP:
+                return [
+                    new("Vto",     "-2",    "V",  true,  UnitDimension.Voltage),
+                    new("Beta",    "1e-4",  "",   true,  UnitDimension.None),
+                    // Lambda = 0 means the output conductance is NOT MODELLED.
+                    new("Lambda",  "0",     "",   true,  UnitDimension.None),
+                    // The gate is TWO junctions, one to each end of the channel. Both conduct and
+                    // both store depletion charge, which is what makes this a JFET rather than a
+                    // MESFET with a different knee.
+                    new("Is",      "1e-14", "A",  false, UnitDimension.Current),
+                    new("N",       "1",     "",   false, UnitDimension.None),
+                    // Recombination — a SECOND exponential with its own ideality, off at Isr = 0,
+                    // exactly as the diode's is.
+                    new("Isr",     "0",     "A",  false, UnitDimension.Current),
+                    new("Nr",      "2",     "",   false, UnitDimension.None),
+                    new("Cgs",     "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Cgd",     "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Pb",      "1",     "V",  false, UnitDimension.Voltage),
+                    new("M",       "0.5",   "",   false, UnitDimension.None),
+                    new("Fc",      "0.5",   "",   false, UnitDimension.None),
+                    // Ohmic. MODEL parameters, not separately placed resistors — a non-zero one
+                    // moves the intrinsic device onto an internal node the elaborator mints.
+                    new("Rd",      "0",     "Ω",  false, UnitDimension.Resistance),
+                    new("Rs",      "0",     "Ω",  false, UnitDimension.Resistance),
+                    // Geometry, then temperature — the same tail the diode and BJT rows carry.
+                    new("Area",    "1",     "",   false, UnitDimension.None),
+                    new("Xti",     "3",     "",   false, UnitDimension.None),
+                    new("Eg",      "1.16",  "V",  false, UnitDimension.Voltage),
+                    // Vto shifts ADDITIVELY in volts per degree; Beta scales in PERCENT per degree.
+                    // Two different shapes, and confusing them costs several percent at ΔT = 100.
+                    new("Vtotc",   "0",     "",   false, UnitDimension.None),
+                    new("Betatce", "0",     "",   false, UnitDimension.None),
+                    new("Temp",    "26.85", "",   false, UnitDimension.None),
+                    new("Tnom",    "26.85", "",   false, UnitDimension.None),
+                ];
+
+            // Both channels share ONE parameter list. The defaults are a plausible mid-voltage
+            // switching part rather than zeros — a threshold, a transconductance, a body diode with
+            // a breakdown, and the two Miller plateaus — so a freshly dragged tile turns on, blocks,
+            // and freewheels, which are the three things a user immediately tries. A STARTING
+            // POINT, not a claim about any particular part.
+            //
+            // Kp here is A/V² for the WHOLE DEVICE. There is no W/L to apply: the geometry is the
+            // die, and a discrete part's card is written for that die.
+            // Both polarities share ONE parameter list. These are DATA SHEET quantities — a
+            // threshold, a transconductance, a current gain, a transit time — which is what an
+            // equivalent-circuit model is parameterised by, and deliberately not the ambipolar
+            // transport model's parameters, which describe the silicon instead. The two sets do not
+            // map onto one another; see IgbtModel.
+            case SymbolKind.IgbtN:
+            case SymbolKind.IgbtP:
+                return [
+                    new("Vto",    "5",     "V",  true,  UnitDimension.Voltage),
+                    new("Kp",     "8",     "",   true,  UnitDimension.None),
+                    new("Lambda", "0",     "",   false, UnitDimension.None),
+                    // The bipolar's gain is LOW by construction — its base is deliberately wide.
+                    // It sets how the collector current divides between the channel and the
+                    // bipolar, and therefore how much of the turn-off current is in the tail.
+                    new("Bf",     "0.5",   "",   true,  UnitDimension.None),
+                    new("Is",     "1e-12", "A",  false, UnitDimension.Current),
+                    new("N",      "1",     "",   false, UnitDimension.None),
+                    // Tau IS the current tail: it is the stored base charge, and turn-off cannot
+                    // remove it through the gate.
+                    new("Tau",    "1",     "us", true,  UnitDimension.None),
+                    new("Rbe",    "0",     "Ω",  false, UnitDimension.Resistance),
+                    new("Rce",    "0",     "Ω",  false, UnitDimension.Resistance),
+                    // Forward BREAK-OVER, across the drift region — the V_CES rating. It is a limit
+                    // rather than an operating mode, unlike the power MOSFET's avalanche, which is
+                    // rated. Bv = 0 means NOT MODELLED, never "breaks over at 0 V".
+                    new("Bv",     "0",     "V",  true,  UnitDimension.Voltage),
+                    new("Ibv",    "1e-3",  "A",  false, UnitDimension.Current),
+                    new("Nbv",    "1",     "",   false, UnitDimension.None),
+                    new("Cjc",    "0",     "pF", false, UnitDimension.Capacitance),
+                    new("Vj",     "0.8",   "V",  false, UnitDimension.Voltage),
+                    new("Mj",     "0.5",   "",   false, UnitDimension.None),
+                    new("Fc",     "0.5",   "",   false, UnitDimension.None),
+                    new("Cge",    "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Cgcmax", "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Cgcmin", "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Vgct",   "1",     "V",  false, UnitDimension.Voltage),
+                    new("Rg",     "0",     "Ω",  false, UnitDimension.Resistance),
+                    new("Rc",     "0",     "Ω",  false, UnitDimension.Resistance),
+                    new("Re",     "0",     "Ω",  false, UnitDimension.Resistance),
+                    new("Vtotc",  "0",     "",   false, UnitDimension.None),
+                    new("Kptc",   "0",     "",   false, UnitDimension.None),
+                    new("Xti",    "3",     "",   false, UnitDimension.None),
+                    new("Eg",     "1.16",  "V",  false, UnitDimension.Voltage),
+                    new("Temp",   "26.85", "",   false, UnitDimension.None),
+                    new("Tnom",   "26.85", "",   false, UnitDimension.None),
+                ];
+
+            // The ferrite bead. Every default is ZERO except the winding resistance, and zero
+            // means NOT MODELLED for each of the three parallel elements — never "a short". A bead
+            // with nothing typed into it is a piece of wire with a milliohm of resistance, which is
+            // the honest starting point: the four numbers come off a data sheet's impedance curve
+            // and there is no representative bead to pre-fill them with.
+            //
+            // Rp is what CAPS the impedance — at the parallel resonance the reactive branches
+            // cancel and |Z| is Rdc + Rp, which is the peak a data sheet plots. A bead entered
+            // without it has no maximum at all and goes on rising for ever.
+            case SymbolKind.Bead:
+                return [
+                    new("Rdc", "0.01", "Ω",  true,  UnitDimension.Resistance),
+                    new("L",   "0",    "uH", true,  UnitDimension.Inductance),
+                    new("Rp",  "0",    "Ω",  true,  UnitDimension.Resistance),
+                    new("Cp",  "0",    "pF", true,  UnitDimension.Capacitance),
+                ];
+
+            case SymbolKind.VdmosN:
+            case SymbolKind.VdmosP:
+                return [
+                    new("Vto",    "3",     "V",  true,  UnitDimension.Voltage),
+                    new("Kp",     "1",     "",   true,  UnitDimension.None),
+                    new("Lambda", "0",     "",   false, UnitDimension.None),
+                    // Rds = 0 means the off-state leakage is NOT MODELLED, never "a short circuit".
+                    new("Rds",    "0",     "Ω",  false, UnitDimension.Resistance),
+                    // The body diode. It carries load current in a half bridge, so it is not a
+                    // leakage path and its parameters are not decoration.
+                    new("Is",     "1e-13", "A",  false, UnitDimension.Current),
+                    new("N",      "1",     "",   false, UnitDimension.None),
+                    // Bv = 0 means avalanche is NOT MODELLED, never "breaks down at 0 V".
+                    new("Bv",     "0",     "V",  true,  UnitDimension.Voltage),
+                    new("Ibv",    "1e-3",  "A",  false, UnitDimension.Current),
+                    new("Nbv",    "1",     "",   false, UnitDimension.None),
+                    // Tt is the reverse-recovery charge — usually the dominant switching loss in a
+                    // hard-switched bridge.
+                    new("Tt",     "0",     "",   false, UnitDimension.None),
+                    new("Cjo",    "0",     "pF", false, UnitDimension.Capacitance),
+                    new("Vj",     "0.8",   "V",  false, UnitDimension.Voltage),
+                    new("Mj",     "0.5",   "",   false, UnitDimension.None),
+                    new("Fc",     "0.5",   "",   false, UnitDimension.None),
+                    // The gate. Cgdmax/Cgdmin are the two ends of a data sheet's reverse-transfer
+                    // curve and Vgdt is how sharply it falls between them — that collapse IS the
+                    // Miller plateau, and a constant capacitance of either value gets the switching
+                    // time wrong by the ratio of the two.
+                    new("Cgs",    "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Cgdmax", "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Cgdmin", "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Vgdt",   "1",     "V",  false, UnitDimension.Voltage),
+                    // Ohmic. Rg is in the DRIVE path, in series with a capacitance that large, so
+                    // it sets the switching speed as much as the drive current does.
+                    new("Rg",     "0",     "Ω",  false, UnitDimension.Resistance),
+                    new("Rd",     "0",     "Ω",  false, UnitDimension.Resistance),
+                    new("Rs",     "0",     "Ω",  false, UnitDimension.Resistance),
+                    // Temperature. Vto shifts ADDITIVELY in volts per degree; Kptc scales Kp in
+                    // PERCENT per degree, and with Kptc left at zero the mobility follows T^-1.5 —
+                    // which is why on-resistance rises with temperature, which is what makes
+                    // paralleling these parts work.
+                    new("Vtotc",  "0",     "",   false, UnitDimension.None),
+                    new("Kptc",   "0",     "",   false, UnitDimension.None),
+                    new("Xti",    "3",     "",   false, UnitDimension.None),
+                    new("Eg",     "1.16",  "V",  false, UnitDimension.Voltage),
+                    new("Temp",   "26.85", "",   false, UnitDimension.None),
+                    new("Tnom",   "26.85", "",   false, UnitDimension.None),
+                ];
+
+            // Both channels share ONE parameter list, because they are one set of equations with
+            // one sign changed — the BJT pair's arrangement, for the BJT pair's reason.
+            //
+            // The DEFAULTS are deliberately a bare square-law device: a threshold, a
+            // transconductance parameter and a geometry, with every process quantity at zero. A
+            // MOS parameter set is a property of a PROCESS, and there is no such thing as a
+            // representative one — inventing plausible numbers here would put a specific fabricated
+            // transistor in the palette and let a user simulate it without ever noticing they had
+            // not supplied a model. The BJT's own defaults are a published RF part carried through
+            // verbatim, which is a different situation: there the numbers describe something real.
+            //
+            // Where a card states a PROCESS quantity instead of a device one the model derives the
+            // other from it — Nsub gives Gamma and Phi, Uo with Tox gives Kp, Rsh with Nrd/Nrs
+            // gives Rd/Rs, Cj/Cjsw with the junction areas give Cbd/Cbs — and a stated value always
+            // wins. That is why both spellings of each pair have a row: the card may carry either.
+            //
+            // Tox = 0 means NO OXIDE CAPACITANCE, so the intrinsic gate charge is absent and only
+            // the overlaps remain. That is the published rule and the honest one — there is nothing
+            // to guess an oxide thickness from — but it does mean a card with no Tox gives a device
+            // with almost no gate capacitance, which is worth knowing before wondering where the
+            // gain went.
+            // Level 3 reads level 1's list rather than copying it, so the two cannot drift: a
+            // parameter added to one reaches the other with no second edit. What differs is exactly
+            // what the two laws differ on — Lambda is dropped (level 3 computes the output slope
+            // from a real channel shortening instead of fitting it) and the six short-channel
+            // parameters are added.
+            case SymbolKind.Mos3N:
+            case SymbolKind.Mos3P:
+            {
+                var shared = DefaultParameters(kind == SymbolKind.Mos3N ? SymbolKind.Mos1N : SymbolKind.Mos1P,
+                                               portCount)
+                    .Where(p => p.Name != "Lambda")
+                    .ToList();
+                // Inserted after the geometry rather than appended, because these are what a reader
+                // of a level-3 parameter set looks for first.
+                int at = shared.FindIndex(p => p.Name == "Uo");
+                shared.InsertRange(at < 0 ? shared.Count : at,
+                [
+                    // Each is OFF at zero, and each turns on exactly one mechanism.
+                    new("Eta",   "0",   "",    true,  UnitDimension.None),
+                    new("Theta", "0",   "",    true,  UnitDimension.None),
+                    // Kappa's conventional default is non-zero, unlike the rest: the published model
+                    // states it, and channel-length modulation is the mechanism a short device is
+                    // least likely to be without. It still does nothing without Nsub, which is what
+                    // the depletion width is derived from.
+                    new("Kappa", "0.2", "",    false, UnitDimension.None),
+                    new("Vmax",  "0",   "",    true,  UnitDimension.None),
+                    new("Delta", "0",   "",    false, UnitDimension.None),
+                    new("Xj",    "0",   "um",  false, UnitDimension.Length),
+                ]);
+                return shared;
+            }
+
+            case SymbolKind.Mos1N:
+            case SymbolKind.Mos1P:
+                return [
+                    // The channel-current law.
+                    new("Vto",    "1",     "V",     true,  UnitDimension.Voltage),
+                    new("Kp",     "2e-5",  "",      true,  UnitDimension.None),
+                    new("Gamma",  "0",     "",      true,  UnitDimension.None),
+                    new("Phi",    "0.6",   "V",     false, UnitDimension.Voltage),
+                    // Lambda = 0 means the output conductance is NOT MODELLED, never "saturates
+                    // flat at zero slope".
+                    new("Lambda", "0",     "",      true,  UnitDimension.None),
+                    // Geometry. Metres, like every other length in circuitRF — a card states them
+                    // unscaled and the parameter dialog offers the usual sub-multiples.
+                    new("W",      "100",   "um",    true,  UnitDimension.Length),
+                    new("L",      "100",   "um",    true,  UnitDimension.Length),
+                    new("Ld",     "0",     "um",    false, UnitDimension.Length),
+                    new("Tox",    "0",     "nm",    false, UnitDimension.Length),
+                    // The process alternatives to Kp and Gamma/Phi. Used only where the device
+                    // quantity above is absent.
+                    new("Uo",     "600",   "",      false, UnitDimension.None),
+                    new("Nsub",   "0",     "",      false, UnitDimension.None),
+                    // Gate overlaps. Cgso/Cgdo are per unit WIDTH, Cgbo per unit LENGTH — getting
+                    // that the wrong way round is a capacitance wrong by the aspect ratio.
+                    new("Cgso",   "0",     "",      false, UnitDimension.None),
+                    new("Cgdo",   "0",     "",      false, UnitDimension.None),
+                    new("Cgbo",   "0",     "",      false, UnitDimension.None),
+                    // The two bulk junctions. Is is per junction; Js is a density and needs an area.
+                    new("Is",     "1e-14", "A",     false, UnitDimension.Current),
+                    new("Js",     "0",     "",      false, UnitDimension.None),
+                    new("N",      "1",     "",      false, UnitDimension.None),
+                    new("Cbd",    "0",     "fF",    false, UnitDimension.Capacitance),
+                    new("Cbs",    "0",     "fF",    false, UnitDimension.Capacitance),
+                    new("Cj",     "0",     "",      false, UnitDimension.None),
+                    new("Cjsw",   "0",     "",      false, UnitDimension.None),
+                    new("Ad",     "0",     "",      false, UnitDimension.None),
+                    new("As",     "0",     "",      false, UnitDimension.None),
+                    new("Pd",     "0",     "um",    false, UnitDimension.Length),
+                    new("Ps",     "0",     "um",    false, UnitDimension.Length),
+                    new("Pb",     "0.8",   "V",     false, UnitDimension.Voltage),
+                    new("Mj",     "0.5",   "",      false, UnitDimension.None),
+                    new("Mjsw",   "0.33",  "",      false, UnitDimension.None),
+                    new("Fc",     "0.5",   "",      false, UnitDimension.None),
+                    // Ohmic. MODEL parameters, not separately placed resistors — a non-zero one
+                    // moves the intrinsic device onto an internal node the elaborator mints, so the
+                    // schematic shows one transistor either way.
+                    new("Rd",     "0",     "Ω", false, UnitDimension.Resistance),
+                    new("Rs",     "0",     "Ω", false, UnitDimension.Resistance),
+                    new("Rsh",    "0",     "Ω", false, UnitDimension.Resistance),
+                    new("Nrd",    "0",     "",      false, UnitDimension.None),
+                    new("Nrs",    "0",     "",      false, UnitDimension.None),
+                    // Temperature. Temp and Tnom are in DEGREES CELSIUS and unitless here, for the
+                    // same reason the diode's and the BJT's are — there is no temperature
+                    // UnitDimension, and a "C" unit token would collide with capacitance in the
+                    // .cnl parameter tokenizer.
+                    new("Xti",    "3",     "",      false, UnitDimension.None),
+                    new("Eg",     "1.16",  "V",     false, UnitDimension.Voltage),
+                    new("Temp",   "26.85", "",      false, UnitDimension.None),
+                    new("Tnom",   "26.85", "",      false, UnitDimension.None),
                 ];
 
             // Both polarities share ONE parameter list, because they are one set of equations with
@@ -1873,6 +2327,43 @@ public static class ComponentTypeRegistry
             // "FET"/"FETSDD" are deliberately NOT mapped here (R-hk-19: the library FET was hard-
             // removed with no compatibility alias) — they fall through to Enum.TryParse below,
             // which fails since "FetSdd" no longer exists, so a typed "FET" correctly does not parse.
+            case "PFET_CURTICE": kind = SymbolKind.PFetCurtice;  return true;
+            case "PFET_STATZ":   kind = SymbolKind.PFetStatz;    return true;
+            case "PFET_MATERKA": kind = SymbolKind.PFetMaterka;  return true;
+            // "NJF"/"PJF" are the SPICE card's own type names for the junction FET.
+            case "NJF":
+            case "NJFET":
+            case "JFET_N": kind = SymbolKind.JfetN;         return true;
+            case "PJF":
+            case "PJFET":
+            case "JFET_P": kind = SymbolKind.JfetP;         return true;
+            case "NIGBT":
+            case "IGBT_N": kind = SymbolKind.IgbtN;         return true;
+            case "PIGBT":
+            case "IGBT_P": kind = SymbolKind.IgbtP;         return true;
+            case "BEAD":
+            case "FB":     kind = SymbolKind.Bead;          return true;
+            // "VDMOS" is the card's own type name; the channel comes from a bare keyword on the
+            // card rather than from the type, so a bare "VDMOS" here means the n-channel tile.
+            case "VDMOS":
+            case "NVDMOS":
+            case "VDMOS_N": kind = SymbolKind.VdmosN;        return true;
+            case "PVDMOS":
+            case "VDMOS_P": kind = SymbolKind.VdmosP;        return true;
+            // "NMOS"/"PMOS" are the SPICE card's own type names and are mapped to level 1
+            // deliberately: it is the only level circuitRF implements, so a bare card type has
+            // exactly one answer. If a second level is added, a bare "NMOS" must keep meaning
+            // level 1 — silently re-pointing it would change every design already written.
+            case "NMOS":
+            case "NMOS1":
+            case "MOS1_N": kind = SymbolKind.Mos1N;         return true;
+            case "NMOS3":
+            case "MOS3_N": kind = SymbolKind.Mos3N;         return true;
+            case "PMOS3":
+            case "MOS3_P": kind = SymbolKind.Mos3P;         return true;
+            case "PMOS":
+            case "PMOS1":
+            case "MOS1_P": kind = SymbolKind.Mos1P;         return true;
             case "NPN":
             case "BJT_NPN": kind = SymbolKind.BjtNpn;       return true;
             case "PNP":

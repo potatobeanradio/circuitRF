@@ -14,6 +14,15 @@ namespace CircuitRF.Core.Devices.Fet;
 /// <c>Beta</c> here is the gate-voltage shift with drain bias — NOT the quadratic model's
 /// transconductance parameter of the same name. Same spelling, different quantity, which is exactly
 /// why each model in this family carries its own parameter set.</para>
+///
+/// <para><b>n-channel only, and deliberately so.</b> The other laws in this family take a
+/// <c>Channel</c> and mirror cleanly, because their gate dependence is anchored to a threshold and
+/// is even in it. This one's is the polynomial <c>A0-A3</c>, fitted directly against the gate
+/// voltage: mirroring it would have to negate the ODD-order coefficients and leave the even ones
+/// alone, and no published convention says that a p-channel card's coefficients are written that
+/// way. Guessing would give a device that simulates and is quantitatively wrong — the one outcome
+/// this family exists to refuse. A p-channel part is imported as the Curtice quadratic or Statz,
+/// which is what a p-channel MESFET card is read as anyway.</para>
 /// </summary>
 public sealed class CurticeCubicFetModel(
     double a0 = 0.1, double a1 = 0.05, double a2 = 0.0, double a3 = 0.0,

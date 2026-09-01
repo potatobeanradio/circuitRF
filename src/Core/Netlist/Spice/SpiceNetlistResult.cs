@@ -29,10 +29,33 @@ public sealed record SpiceNetlistNote(string File, int Line, string Message)
 /// <param name="Name">The name instances reference. Compared case-insensitively, as the dialect does.</param>
 /// <param name="ModelType">What kind of device the card is for, verbatim and uninterpreted.</param>
 /// <param name="Parameters">The card's own parameters, values already rewritten into circuitRF's grammar.</param>
+/// <param name="Flags">
+/// The card's BARE words — tokens that are not <c>key=value</c>. Several dialects state a device's
+/// channel type this way (a lone <c>pchan</c> on a vertical-MOSFET card is the usual example), and
+/// a reader that drops them cannot tell an n-channel part from a p-channel one at all. They are
+/// carried verbatim and uninterpreted, exactly as <see cref="Parameters"/> is: what a bare word
+/// means belongs to whoever implements <see cref="ModelType"/>, not to the reader.
+///
+/// <para>Empty for the overwhelming majority of cards, which state nothing but assignments.</para>
+/// </param>
 public sealed record SpiceModelCard(
     string                              Name,
     string                              ModelType,
-    IReadOnlyDictionary<string, string> Parameters);
+    IReadOnlyDictionary<string, string> Parameters,
+    IReadOnlyList<string>               Flags)
+{
+    /// <summary>A card with no bare words — the ordinary case, and every caller that predates them.</summary>
+    public SpiceModelCard(string name, string modelType, IReadOnlyDictionary<string, string> parameters)
+        : this(name, modelType, parameters, []) { }
+
+    /// <summary>True when the card states <paramref name="flag"/> as a bare word, in any case.</summary>
+    public bool HasFlag(string flag)
+    {
+        foreach (string f in Flags)
+            if (f.Equals(flag, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+}
 
 /// <summary>What a netlist in the SPICE dialect was found to contain.</summary>
 /// <param name="Library">Every subcircuit that could be read, as an ordinary circuitRF cell.</param>

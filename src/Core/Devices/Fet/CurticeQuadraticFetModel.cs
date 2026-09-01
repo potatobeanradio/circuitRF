@@ -19,13 +19,16 @@ public sealed class CurticeQuadraticFetModel(
     double tempC = FetModelBase.NominalTemperatureC,
     double tnomC = FetModelBase.NominalTemperatureC,
     double xti = 0.0, double eg = 1.16,
-    double betatc = 0.0, double alphatc = 0.0, double vtotc = 0.0)
+    double betatc = 0.0, double alphatc = 0.0, double vtotc = 0.0,
+    FetModelBase.Channel channel = FetModelBase.Channel.N)
     : FetModelBase(cgs, cgd, gateSaturationCurrent, gateEmissionCoefficient,
-                   capModel, vbi, mGrading, fc, tempC, tnomC, xti, eg)
+                   capModel, vbi, mGrading, fc, tempC, tnomC, xti, eg, channel)
 {
     // Temperature-scaled working parameters. Scaled ONCE here rather than per evaluation: they are
     // constant for the device's lifetime and DrainCurrent is on the Newton inner loop.
-    private readonly double _vto   = ShiftPerDegree(vto, vtotc, DeltaT(tempC, tnomC));
+    // Negated for a p-channel device: a card states Vto in its OWN channel's convention
+    // (positive for a p-channel depletion MESFET) and the law below is written in the n-channel one.
+    private readonly double _vto   = (double)(int)channel * ShiftPerDegree(vto, vtotc, DeltaT(tempC, tnomC));
     private readonly double _beta  = ScalePercentPerDegree(beta, betatc, DeltaT(tempC, tnomC));
     private readonly double _alpha = ScalePercentPerDegree(alpha, alphatc, DeltaT(tempC, tnomC));
 

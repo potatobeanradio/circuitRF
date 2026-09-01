@@ -141,6 +141,8 @@ public class DevicePaletteWiringTests
     /// matters: a parameter left at zero can be structurally inert (Vds0 does nothing when Beta is
     /// zero), and a perturbation test on an inert parameter proves nothing.
     /// </summary>
+    internal static Dictionary<string, double> ActivationFor(SymbolKind kind) => Activation(kind);
+
     private static Dictionary<string, double> Activation(SymbolKind kind)
     {
         // Shared FET block — gate charge, gate conduction, and a genuine temperature rise so the
@@ -155,11 +157,22 @@ public class DevicePaletteWiringTests
 
         Dictionary<string, double> own = kind switch
         {
+            // Isr/Nr/Nbv/Area/Xti/Eg/Tnom joined the registry when the .model-card importer needed
+            // somewhere to put a card's XTI (owner, 2026-09-01); the engine had read all seven all
+            // along. Each is set AWAY from its own default here, or the perturbation this test does
+            // has nothing to move. Temp sits far from Tnom for the same reason the BJT block's does:
+            // at Temp == Tnom every temperature relation collapses to the identity, and Xti, Eg and
+            // Tnom all read as unwired while doing exactly what they say.
             SymbolKind.Diode => new()
             {
                 ["Is"] = 2.5e-15, ["N"] = 1.12, ["Rs"] = 12.0, ["Cj0"] = 1.4e-13,
                 ["Vj"] = 0.72, ["M"] = 0.33, ["Fc"] = 0.6,
-                ["Bv"] = 5.0, ["Ibv"] = 1e-3, ["Tt"] = 1e-11, ["Temp"] = 40.0,
+                // Nbv is only live below −Bv, which is why the diode probe's bias grid runs to −6 V.
+                ["Bv"] = 5.0, ["Ibv"] = 1e-3, ["Nbv"] = 1.3,
+                // Recombination is off at Isr = 0, so a zero here would make Nr inert too.
+                ["Isr"] = 4e-13, ["Nr"] = 1.8,
+                ["Tt"] = 1e-11, ["Area"] = 2.0,
+                ["Xti"] = 3.4, ["Eg"] = 1.12, ["Temp"] = 80.0, ["Tnom"] = 25.0,
             },
             SymbolKind.FetCurtice => new()
             {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Fet;
 using CircuitRF.Core.Expressions;
@@ -412,5 +413,104 @@ public class FetModelTests
         // Below nominal it must go the other way — a coefficient applied with the wrong sign passes
         // every "it got bigger when hot" check and fails this one.
         Assert.True(IgAt(Tnom - 50.0, 3.0) < IgAt(Tnom, 3.0));
+    }
+
+    // ── T14 ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <b>p-channel is the exact mirror of n-channel, term for term</b>, for the three laws that
+    /// have one. Every voltage, current and charge is negated and the Jacobian is UNCHANGED,
+    /// because the sign appears once on each side of every derivative.
+    ///
+    /// <para>Note what the p-channel device is built with: the SAME threshold magnitude with the
+    /// opposite sign, because a card states it in its own channel's convention. Passing the
+    /// n-channel value unchanged would be a device with no pinch-off at all.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("Curtice")]
+    [InlineData("Statz")]
+    [InlineData("Materka")]
+    public void T14_PChannel_IsTheExactMirrorOfNChannel(string law)
+    {
+        const double Cgs = 0.4e-12, Cgd = 0.15e-12, Isg = 1e-13;
+        FetModelBase Build(FetModelBase.Channel ch)
+        {
+            double s = (double)(int)ch;
+            return law switch
+            {
+                "Curtice" => new CurticeQuadraticFetModel(
+                    vto: s * -2.0, beta: 0.02, lambda: 0.05, alpha: 2.0,
+                    cgs: Cgs, cgd: Cgd, gateSaturationCurrent: Isg, capModel: 2, channel: ch),
+                "Statz" => new StatzFetModel(
+                    vto: s * -2.0, beta: 0.02, b: 0.3, alpha: 2.0, lambda: 0.05,
+                    cgs: Cgs, cgd: Cgd, gateSaturationCurrent: Isg, capModel: 2, channel: ch),
+                _ => new MaterkaFetModel(
+                    idss: 0.1, vp0: s * -2.0, gamma: 0.05, alpha: 2.0,
+                    cgs: Cgs, cgd: Cgd, gateSaturationCurrent: Isg, capModel: 2, channel: ch),
+            };
+        }
+
+        var n = Build(FetModelBase.Channel.N);
+        var p = Build(FetModelBase.Channel.P);
+
+        foreach (var (vgs, vds) in new[] { (-1.5, 1.0), (-0.5, 3.0), (0.2, 5.0), (-2.5, 4.0), (0.0, 0.4) })
+        {
+            var rn = n.Evaluate(new PortVoltages([vgs, vds]));
+            var rp = p.Evaluate(new PortVoltages([-vgs, -vds]));
+
+            for (int k = 0; k < 2; k++)
+            {
+                Assert.Equal(-rn.I[k], rp.I[k], 1e-18);
+                Assert.Equal(-rn.Q[k], rp.Q[k], 1e-24);
+                for (int j = 0; j < 2; j++)
+                {
+                    Assert.Equal(rn.Dg[k, j], rp.Dg[k, j], 1e-18);
+                    Assert.Equal(rn.Dc[k, j], rp.Dc[k, j], 1e-24);
+                }
+            }
+        }
+
+        // The n-channel device must not have changed at all: Channel.N is +1 and every
+        // multiplication by it is exact, so it is bit-identical to one built before polarity
+        // existed. That is what lets every other test in this file stand as the proof.
+        var before = law switch
+        {
+            "Curtice" => (FetModelBase)new CurticeQuadraticFetModel(vto: -2.0, beta: 0.02, lambda: 0.05, alpha: 2.0,
+                              cgs: Cgs, cgd: Cgd, gateSaturationCurrent: Isg, capModel: 2),
+            "Statz"   => new StatzFetModel(vto: -2.0, beta: 0.02, b: 0.3, alpha: 2.0, lambda: 0.05,
+                              cgs: Cgs, cgd: Cgd, gateSaturationCurrent: Isg, capModel: 2),
+            _         => new MaterkaFetModel(idss: 0.1, vp0: -2.0, gamma: 0.05, alpha: 2.0,
+                              cgs: Cgs, cgd: Cgd, gateSaturationCurrent: Isg, capModel: 2),
+        };
+        var a = before.Evaluate(new PortVoltages([-0.5, 3.0]));
+        var b = n.Evaluate(new PortVoltages([-0.5, 3.0]));
+        Assert.Equal(a.I[1], b.I[1]);
+        Assert.Equal(a.Q[0], b.Q[0]);
+    }
+
+    // ── T15 ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <b>The two laws with NO p-channel form do not have one</b>, and that is a decision rather
+    /// than an omission: the cubic's <c>A0</c>-<c>A3</c> and Angelov's <c>P1</c>-<c>P3</c> are
+    /// polynomials fitted directly against the gate voltage, so mirroring would have to negate the
+    /// odd-order coefficients and leave the even ones alone, and no published convention says a
+    /// p-channel card is written that way.
+    ///
+    /// <para>Stated as a test because the tempting "fix" is to hand them a Channel too, which
+    /// compiles and produces a device that is wrong in the odd-order terms only — visible as a gm
+    /// curve of the wrong shape, at no bias where anything obviously breaks.</para>
+    /// </summary>
+    [Fact]
+    public void T15_TheTwoPolynomialLaws_HaveNoPChannelEngineType()
+    {
+        var empty = new Dictionary<string, Value>();
+
+        Assert.NotNull(ComponentModelFactory.TryCreate("PFET_Curtice", empty));
+        Assert.NotNull(ComponentModelFactory.TryCreate("PFET_Statz",   empty));
+        Assert.NotNull(ComponentModelFactory.TryCreate("PFET_Materka", empty));
+
+        Assert.Null(ComponentModelFactory.TryCreate("PFET_CurticeCubic", empty));
+        Assert.Null(ComponentModelFactory.TryCreate("PFET_Angelov",      empty));
     }
 }

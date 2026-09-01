@@ -471,7 +471,11 @@ public static class SpiceNetlistReader
                 return;
             }
 
-            var (_, assignments) = SplitBareAndAssignments(Words(body));
+            // The BARE words are kept, not discarded. Several dialects state a device's channel
+            // type as a lone keyword on the card (`pchan` on a vertical-MOSFET card is the usual
+            // example), and dropping them made an n-channel and a p-channel card read identically —
+            // silently, and with no way for anything downstream to tell.
+            var (bare, assignments) = SplitBareAndAssignments(Words(body));
 
             var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (k, v) in assignments) parameters[k] = Rewrite(v);
@@ -482,7 +486,7 @@ public static class SpiceNetlistReader
                      $"model '{name}' was already defined; the later definition is the one kept, " +
                      "and the two are not necessarily the same parameter set.");
 
-            var card = new SpiceModelCard(name, type, parameters);
+            var card = new SpiceModelCard(name, type, parameters, [.. bare]);
             if (existing >= 0) _cards[existing] = card; else _cards.Add(card);
         }
 

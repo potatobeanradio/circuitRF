@@ -109,7 +109,51 @@ public static class SymbolPortDefs
             case SymbolKind.FetStatz:
             case SymbolKind.FetMaterka:
             case SymbolKind.FetAngelov:
+            // The p-channel laws keep the SAME pin order and the same geometry — they are the same
+            // component with every sign reversed, and the elaborator's FET branch reads both.
+            case SymbolKind.PFetCurtice:
+            case SymbolKind.PFetStatz:
+            case SymbolKind.PFetMaterka:
                 return [("g", -200f, 0f), ("d", 0f, -200f), ("s", 0f, 200f)];
+            // JFET family: gate LEFT, drain TOP, source BOTTOM — the MESFET's arrangement on
+            // screen. Pin ORDER is the contract the elaborator reads when it expands the three nets
+            // into the model's three intrinsic ports and mints an internal net per non-zero ohmic
+            // resistance — [0] = drain, [1] = gate, [2] = source. Drain first, matching the order a
+            // model card states its terminals in, exactly as the MOS and BJT families do. That is
+            // deliberately NOT the MESFET family's gate-first order: those two orders are each a
+            // contract with a different elaborator branch, and the MESFET's predates this rule.
+            case SymbolKind.JfetN:
+            case SymbolKind.JfetP:
+                return [("d", 0f, -200f), ("g", -200f, 0f), ("s", 0f, 200f)];
+            // IGBT: collector TOP, gate LEFT, emitter BOTTOM — the BJT's arrangement, because
+            // that is what the output side of the device is. Pin ORDER is the contract the
+            // elaborator reads: [0] = collector, [1] = gate, [2] = emitter.
+            case SymbolKind.IgbtN:
+            case SymbolKind.IgbtP:
+                return [("c", 0f, -200f), ("g", -200f, 0f), ("e", 0f, 200f)];
+            // Vertical power MOSFET: THREE pins, not the lateral MOS family's four. Pin ORDER is
+            // the contract the elaborator reads — [0] = drain, [1] = gate, [2] = source — matching
+            // the order a model card states its terminals in. There is no bulk pin because the
+            // source-to-body short is inside the silicon; the body DIODE it creates is on the
+            // glyph, where a reader can see it.
+            case SymbolKind.VdmosN:
+            case SymbolKind.VdmosP:
+                return [("d", 0f, -200f), ("g", -200f, 0f), ("s", 0f, 200f)];
+            // MOS family: gate LEFT, drain TOP, source BOTTOM, BULK RIGHT. Pin ORDER is the
+            // contract the elaborator reads when it expands the four nets into the model's six
+            // intrinsic ports and mints an internal net per non-zero ohmic resistance —
+            // [0] = drain, [1] = gate, [2] = source, [3] = bulk. Drain first, matching the order a
+            // model card states its terminals in, exactly as the BJT's collector is; the on-screen
+            // arrangement is the FET's, so the three transistor families read alike.
+            //
+            // The bulk is on the RIGHT because it is the only terminal none of the other families
+            // has, and putting it opposite the gate keeps the three familiar pins exactly where a
+            // reader already expects them.
+            case SymbolKind.Mos1N:
+            case SymbolKind.Mos1P:
+            case SymbolKind.Mos3N:
+            case SymbolKind.Mos3P:
+                return [("d", 0f, -200f), ("g", -200f, 0f), ("s", 0f, 200f), ("b", 200f, 0f)];
             // BJT family: base LEFT, collector TOP, emitter BOTTOM. Pin ORDER is the contract the
             // elaborator reads when it builds the model's four intrinsic ports and mints an
             // internal net per non-zero parasitic resistance — [0] = collector, [1] = base,

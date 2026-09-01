@@ -66,6 +66,16 @@ public interface ITreeActions
     /// </summary>
     Task CopyKnownFileToWorkspaceAsCellAsync(ProjectTreeNodeViewModel node);
 
+    /// <summary>
+    /// Build a NEW cell around one SPICE <c>.model</c> card in this file — the native circuitRF
+    /// component carrying the card's parameters, its pins already wired, and an editable copy of
+    /// that component's symbol. Reads the file FIRST and creates nothing when it holds no card
+    /// circuitRF can build; the user is told which cards it holds and why each was refused.
+    /// Distinct from <see cref="CopyKnownFileToWorkspaceAsCellAsync"/>, which adopts a circuitRF
+    /// VIEW file as a cell view — a model card is not a view and has to be built into one.
+    /// </summary>
+    Task CreateCellFromModelCardAsync(ProjectTreeNodeViewModel node);
+
     /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
     void RemoveKnownFile(ProjectTreeNodeViewModel node);
 

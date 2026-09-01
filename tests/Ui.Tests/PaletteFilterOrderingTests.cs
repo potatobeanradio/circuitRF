@@ -95,9 +95,14 @@ public class PaletteFilterOrderingTests
     {
         var nonlinear = LibraryCatalog.ByCategory(ComponentCategory.Nonlinear);
 
-        // NonlinearC, VerilogA, Diode, the 5 FETs, the 2 BJT polarities, the 2 mixer tiles, and
-        // every SDD row (plain SDD + SDD1/SDD2/SDD3).
-        Assert.Equal(16, nonlinear.Count);
+        // NonlinearC, VerilogA, Diode, the 5 n-channel FET laws, the 3 p-channel ones, the 2 JFET
+        // channels, the 4 lateral MOS tiles (two levels x two channels), the 2 vertical power MOS
+        // channels, the 2 IGBT channels, the 2 BJT polarities, the 2 mixer tiles, and every SDD row
+        // (plain SDD + SDD1/SDD2/SDD3).
+        //
+        // The ferrite bead is deliberately NOT here: it is a linear impedance and belongs with the
+        // lumped elements, which is where a user looking for one goes.
+        Assert.Equal(29, nonlinear.Count);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.NonlinearC);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.VerilogA);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Diode);
@@ -106,6 +111,20 @@ public class PaletteFilterOrderingTests
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.FetStatz);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.FetMaterka);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.FetAngelov);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.PFetCurtice);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.PFetStatz);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.PFetMaterka);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.JfetN);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.JfetP);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Mos1N);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Mos3N);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Mos3P);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.VdmosN);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.VdmosP);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.IgbtN);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.IgbtP);
+        Assert.DoesNotContain(nonlinear, i => i.Kind == SymbolKind.Bead);
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Mos1P);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.BjtNpn);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.BjtPnp);
         // Both mixer tiles: the device really is nonlinear (its law is a product of two port

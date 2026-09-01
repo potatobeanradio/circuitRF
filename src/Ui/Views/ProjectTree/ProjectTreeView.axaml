@@ -396,6 +396,12 @@
                                                   ToolTip.Tip="Create a new cell in this workspace whose view is a copy of this file. The file is checked first; an unreadable one creates nothing.">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+                                        <MenuItem Header="Copy to Workspace as Cell…"
+                                                  Command="{Binding CreateCellFromModelCardCommand}"
+                                                  IsVisible="{Binding IsModelCardFile}"
+                                                  ToolTip.Tip="Build a new cell from a SPICE .model card in this file: the native circuitRF component carrying the card's parameters, its pins already wired, and an editable copy of that component's symbol. The file is read first; a card naming a device circuitRF has no model for is refused by name.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Remove Reference"
                                                   Command="{Binding RemoveKnownFileCommand}"
                                                   IsVisible="{Binding IsKnownFile}">

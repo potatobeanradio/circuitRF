@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Mom;
 using Avalonia.Controls;
+using CircuitRF.Core.Netlist.Spice;
 using CircuitRF.Core.Pdk;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
@@ -9496,6 +9497,144 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Error($"Failed to create cell: {ex.Message}");
         }
+    }
+
+    // ── SPICE model cards (.model) ────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public Task CreateCellFromModelCardAsync(ProjectTreeNodeViewModel node)
+        => CreateCellFromModelCardFromPathAsync(node.AbsolutePath);
+
+    /// <summary>
+    /// Turns one <c>.model</c> card into a cell — the project tree's "Copy to Workspace as Cell…"
+    /// on a model file, and File ▸ Import ▸ Model Card…, are the SAME method, so the two doors
+    /// cannot disagree about what an import produces.
+    ///
+    /// <para>The point of the whole feature is that a user never types a parameter table in by
+    /// hand, so everything the card states is carried and everything it states that circuitRF has
+    /// no home for is REPORTED. An import that says only "created" would let a dropped substrate
+    /// junction reach a measurement.</para>
+    /// </summary>
+    public async Task CreateCellFromModelCardFromPathAsync(string modelPath)
+    {
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Error("Open a workspace first — a cell is created inside one.");
+            return;
+        }
+
+        // The file is READ BEFORE the user is asked to name anything: a file with no card circuitRF
+        // can build should not first ask what to call the cell it is not going to create. This is
+        // CopyKnownFileToWorkspaceAsCellAsync's own rule, and for the same reason.
+        var scan = ModelCardCellBuilder.Scan(modelPath);
+        if (scan.Error is { } error)
+        {
+            Messages.Error(error, modelPath);
+            return;
+        }
+
+        string fileName = Path.GetFileName(modelPath);
+
+        if (scan.Supported.Count == 0)
+        {
+            // Every refusal, not just the first: a kit file holding four MOSFETs and a bead should
+            // say so once rather than one card at a time across four attempts.
+            Messages.Error(
+                $"{fileName} holds {scan.Translations.Count} model card(s) and circuitRF can build "
+                + "none of them.", modelPath);
+            foreach (var t in scan.Translations)
+                Messages.Info("  " + t.Refusal, modelPath);
+            return;
+        }
+
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        // One buildable card in a file of one is not a choice, and a dialog offering a single option
+        // is a click that asks nothing. Anything else goes to the picker — which lists the refused
+        // cards too, with their reasons.
+        var picked = scan.Translations.Count == 1
+            ? scan.Supported[0]
+            : await ModelCardPickerDialog.ShowAsync(mainWindow, fileName, scan.Translations);
+        if (picked is not { } chosen) return;
+
+        var dialog = new InputNameDialog(
+            "Import Model Card as Cell", "Cell name:", SuggestCellName(chosen.Card.Name));
+        var name = await dialog.ShowDialog<string?>(mainWindow);
+        if (name is null) return;
+
+        if (NameValidator.Validate(name) is { } reason)
+        {
+            Messages.Error($"Invalid cell name: {reason}");
+            return;
+        }
+
+        string workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        try
+        {
+            var result = ModelCardCellBuilder.Write(workspaceDir, name, chosen);
+
+            _factory.ProjectTreeTool?.Refresh();
+
+            Messages.Success(result.Report[0], result.SchematicPath);
+            foreach (string line in result.Report.Skip(1))
+                Messages.Warning(line, result.SchematicPath);
+
+            OpenOrActivateSchematic(result.SchematicPath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Could not create a cell from {fileName}: {ex.Message}", modelPath);
+            _factory.ProjectTreeTool?.Refresh();
+        }
+    }
+
+    /// <summary>
+    /// A card name made safe to seed the name box with. Only the characters a path component cannot
+    /// hold are replaced — the name is otherwise the card's own, because that is what the user is
+    /// looking for in the tree afterwards.
+    /// </summary>
+    private static string SuggestCellName(string cardName)
+    {
+        var cleaned = new string([.. cardName.Select(
+            c => c <= 0x1F || c is '<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*' ? '_' : c)])
+            .Trim().TrimEnd('.');
+        return NameValidator.IsValid(cleaned) ? cleaned : "Model";
+    }
+
+    /// <summary>
+    /// File ▸ Import ▸ Model Card… — the same import, reached without bookmarking the file first.
+    /// </summary>
+    /// <remarks>
+    /// The picker's filter is WIDER than the project tree's own extension test, deliberately: the
+    /// tree offers its menu item on a bookmarked file with nothing having read it, so the extension
+    /// is the whole of what decides there and a wide net would put a dead item on most of a
+    /// workspace. Here the user has already said what the file is by choosing it, and vendor cards
+    /// arrive as <c>.lib</c>, <c>.txt</c> and <c>.cir</c> at least as often as <c>.model</c>.
+    /// </remarks>
+    [RelayCommand]
+    private async Task ImportModelCard(Window? window)
+    {
+        var owner = ResolveOwner(window);
+        if (owner?.StorageProvider is not { } storage) return;
+
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import SPICE Model Card",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("SPICE model card")
+                {
+                    Patterns = ["*.model", "*.mod", "*.lib", "*.cir", "*.sp", "*.spi", "*.txt"],
+                },
+                new FilePickerFileType("All files") { Patterns = ["*"] },
+            ],
+        });
+
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path) return;
+        await CreateCellFromModelCardFromPathAsync(path);
     }
 
     /// <inheritdoc/>
