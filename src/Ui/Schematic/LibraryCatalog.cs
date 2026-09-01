@@ -297,12 +297,15 @@ public static class LibraryCatalog
     {
         ComponentCategory.Lumped           => 0,
         ComponentCategory.Devices          => 1,
-        ComponentCategory.Sources          => 2,
-        ComponentCategory.Terminals        => 3,
-        ComponentCategory.TransmissionLine => 4,
-        ComponentCategory.Microstrip       => 5,
-        ComponentCategory.Matching         => 6,
-        ComponentCategory.DataFiles        => 7,
-        _                                  => 8,
+        // System sits directly after Devices here too, so the "All" filter and the category picker
+        // tell the same story about where these parts live.
+        ComponentCategory.System           => 2,
+        ComponentCategory.Sources          => 3,
+        ComponentCategory.Terminals        => 4,
+        ComponentCategory.TransmissionLine => 5,
+        ComponentCategory.Microstrip       => 6,
+        ComponentCategory.Matching         => 7,
+        ComponentCategory.DataFiles        => 8,
+        _                                  => 9,
     };
 }

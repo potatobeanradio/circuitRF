@@ -1,5 +1,7 @@
 using System.Linq;
+using CircuitRF.Core.Devices;
 using CircuitRF.Core.Matching;
+using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 
 namespace CircuitRF.Ui.Schematic;
@@ -26,6 +28,14 @@ public enum ComponentCategory
     /// part, and it is where a future matching-network family belongs. <c>Other</c> would hide the
     /// headline component of the release behind the least descriptive label in the picker.</summary>
     Matching,
+    /// <summary>System-level blocks (brief-sys-series.md, owner request 2026-08-31): the balun,
+    /// circulator, switches, ideal amplifier, directional coupler, 90° hybrid, ideal filter,
+    /// attenuator and duplexer — plus the two mixer tiles, which keep <see cref="Devices"/> as their
+    /// primary. Follows <see cref="Matching"/>'s precedent: it names a CLASS of parts a user goes
+    /// looking for — the boxes a system block diagram is drawn out of — not one part. Its members
+    /// are what you reach for when the thing being designed is a signal CHAIN rather than a
+    /// circuit.</summary>
+    System,
     Sources,
     DataFiles,
     Terminals,
@@ -189,15 +199,84 @@ public static class ComponentTypeRegistry
         // should not renumber.
         [SymbolKind.Mixer]         = new("Mixer", "MIX",
             Category: ComponentCategory.Devices,
-            ExtraCategories: [ComponentCategory.Nonlinear],
+            ExtraCategories: [ComponentCategory.Nonlinear, ComponentCategory.System],
             SearchTerms: ["Mixer", "mix", "multiplier", "downconvert", "upconvert", "LO", "IF",
                           "conversion", "heterodyne"],
             IsCommon: true),
         [SymbolKind.MixerD]        = new("MixerD", "MIX",
             Category: ComponentCategory.Devices,
-            ExtraCategories: [ComponentCategory.Nonlinear],
+            ExtraCategories: [ComponentCategory.Nonlinear, ComponentCategory.System],
             SearchTerms: ["MixerD", "Mixer", "differential mixer", "balanced", "mix", "multiplier",
                           "LO", "IF", "conversion"],
+            IsCommon: false),
+        // ── System-level blocks (brief-sys-1) ─────────────────────────────────
+        // Eleven tiles under the new System category. Each names an engine component that does not
+        // exist yet — deliberately: SYS-1 ships the ARTWORK and the palette, and a tile placed after
+        // it fails at elaboration the way any unimplemented primitive does. SYS-2 onwards makes
+        // each one real.
+        //
+        // Two groups share one engine component and one instance prefix, the TermG pattern: the two
+        // switch tiles are one "Switch", and the coupler with both hybrids is one "Coupler".
+        // Swapping SPST for SPDT, or a coupler for a hybrid, should not renumber a schematic.
+        //
+        // DISPLAY NAMES ARE THE COMPONENT'S OWN WORD, NOT ITS ABBREVIATION (owner, 2026-08-31):
+        // "Filter", "Circulator", "Attenuator", "Directional Coupler" — never FLT, CIRC, ATT, CPL.
+        // The abbreviation is what a user TYPES (the instance prefix and the short type code, both
+        // unchanged); the display name is what they READ, on the tile and under the symbol, and
+        // there a four-letter code is a thing to be decoded rather than a name. Every one of these
+        // is a term of the discipline the tile is named after, so it needs no decoding at all.
+        [SymbolKind.Balun]         = new("Balun", "BAL",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Balun", "balanced", "unbalanced", "transformer", "differential",
+                          "single-ended", "hybrid"],
+            IsCommon: false),
+        [SymbolKind.Circulator]    = new("Circulator", "CIRC",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Circulator", "circ", "isolator", "nonreciprocal", "ferrite",
+                          "duplex", "three-port"],
+            IsCommon: true),
+        [SymbolKind.Switch]        = new("Switch", "SW",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Switch", "SPST", "sw", "on", "off", "open", "closed", "throw"],
+            IsCommon: false),
+        [SymbolKind.SwitchD]       = new("SwitchD", "SW",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Switch", "SPDT", "swd", "throw", "transfer", "select", "two-way"],
+            IsCommon: false),
+        [SymbolKind.Amp]           = new("Amp", "AMP",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Amplifier", "amp", "gain", "PA", "LNA", "driver", "buffer"],
+            IsCommon: true),
+        [SymbolKind.Coupler]       = new("Directional Coupler", "CPL",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Coupler", "directional coupler", "cpl", "coupling", "directivity",
+                          "tap", "through", "isolated"],
+            IsCommon: true),
+        // Both hybrids carry their phase in the DISPLAY NAME, not just in the glyph: "HYB" alone
+        // stopped being an answer the moment there were two of them, and the schematic label is
+        // where a reader looks to tell one instance from another.
+        [SymbolKind.Hybrid90]      = new("Hybrid90", "HYB",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Hybrid", "90", "quadrature", "branchline", "3 dB", "hyb", "splitter",
+                          "combiner"],
+            IsCommon: false),
+        [SymbolKind.Hybrid180]     = new("Hybrid180", "HYB",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Hybrid", "180", "rat race", "ratrace", "sum", "difference", "anti-phase",
+                          "hyb", "splitter", "combiner", "magic tee"],
+            IsCommon: false),
+        [SymbolKind.Filter]        = new("Filter", "FLT",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Filter", "flt", "lowpass", "highpass", "bandpass", "Butterworth",
+                          "Chebyshev", "passband", "stopband"],
+            IsCommon: true),
+        [SymbolKind.Atten]         = new("Attenuator", "ATT",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Attenuator", "att", "atten", "pad", "loss", "dB"],
+            IsCommon: true),
+        [SymbolKind.Duplexer]      = new("Duplexer", "DPX",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Duplexer", "dpx", "diplexer", "TX", "RX", "antenna", "front end"],
             IsCommon: false),
         // Ground is self-identifying via its symbol glyph; suppress both labels by default.
         [SymbolKind.Ground]        = new("GND",   "GND",
@@ -479,6 +558,20 @@ public static class ComponentTypeRegistry
         SymbolKind.Vccs          => "VCCS",
         SymbolKind.Mixer         => "Mixer",
         SymbolKind.MixerD        => "Mixer",  // SAME engine component as Mixer — no parallel model
+        // The system blocks. NONE of these resolves yet — no ComponentModelFactory entry exists for
+        // any of them — which is exactly the intent of SYS-1: the tile places, saves and reloads,
+        // and simulating it fails the way any unimplemented primitive does.
+        SymbolKind.Balun         => "Balun",
+        SymbolKind.Circulator    => "Circulator",
+        SymbolKind.Switch        => "Switch",
+        SymbolKind.SwitchD       => "Switch",   // SAME engine component as Switch — no parallel model
+        SymbolKind.Amp           => "Amp",
+        SymbolKind.Coupler       => "Coupler",
+        SymbolKind.Hybrid90      => "Coupler",  // SAME engine component as Coupler, at 3.01 dB / 90°
+        SymbolKind.Hybrid180     => "Coupler",  // and again, at 3.01 dB / 180°
+        SymbolKind.Filter        => "Filter",
+        SymbolKind.Atten         => "Atten",
+        SymbolKind.Duplexer      => "Duplexer",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
@@ -576,6 +669,8 @@ public static class ComponentTypeRegistry
 
     public static string ParameterDescription(SymbolKind kind, string parameterName)
         => kind is SymbolKind.Mixer or SymbolKind.MixerD ? MixerParameterDescription(parameterName)
+         : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
+         : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The compiled model (.osdi) to load. circuitRF runs a model you built — it does "
@@ -592,6 +687,241 @@ public static class ComponentTypeRegistry
     /// whose non-idealities are OFF by default at a large number rather than at zero, and a reader
     /// meeting "200 dB" in a table needs to be told that is the ideal case rather than a claim.
     /// </summary>
+    /// <summary>
+    /// The duplexer's parameter meanings, which are the FILTER's twice over.
+    ///
+    /// <para>Written as a prefix strip rather than as forty switch arms, because that is what the
+    /// component is: two complete filter specifications and one shared antenna impedance. Twenty
+    /// hand-copied sentences would drift from the filter's own the first time one of them was
+    /// improved, and the drift would be invisible — each half would still read correctly on its
+    /// own.</para>
+    /// </summary>
+    private static string DuplexerParameterDescription(string parameterName)
+    {
+        if (parameterName.Equals("Zant", StringComparison.Ordinal))
+            return "The impedance the shared antenna port PRESENTS - the arms' own Zin, under a "
+                 + "shorter name, so a complex value is conjugate-matched by a Term at its "
+                 + "conjugate. The TX and RX arms both look into it, which is what makes them "
+                 + "interact at all.";
+
+        string arm = parameterName.StartsWith("Tx", StringComparison.Ordinal) ? "TX"
+                   : parameterName.StartsWith("Rx", StringComparison.Ordinal) ? "RX"
+                   : "";
+        if (arm.Length == 0) return "";
+
+        string rest = parameterName[2..];
+
+        // TxZ / RxZ are the arm's own port impedance; the filter spells that Zout, since from the
+        // arm's point of view the antenna is port 1 and the transceiver side is port 2.
+        string filterName = rest.Equals("Z", StringComparison.Ordinal) ? "Zout" : rest;
+        string body = SystemBlockParameterDescription(SymbolKind.Filter, filterName);
+        if (body.Length == 0) return "";
+
+        // The isolation between the two arms is deliberately NOT a parameter — it is what these two
+        // responses and the shared node produce. Said on every row rather than nowhere, because the
+        // field a user looks for is the one that is not here.
+        return $"{arm} arm. {body} There is no isolation parameter: the TX-to-RX isolation is what "
+             + "these two responses and the antenna junction produce between them.";
+    }
+
+    /// <summary>
+    /// The system blocks' parameter meanings (brief-sys-1 onwards, as each block gains its model).
+    /// Three of these choose which variant of a DYNAMIC glyph is drawn, and a reader meeting
+    /// <c>Direction</c> or <c>State</c> in a parameter table needs to be told it changes the
+    /// PICTURE, because that is unusual here and it is the whole reason those components draw
+    /// themselves the way they do. The rest are ordinary electrical parameters, and the ones that
+    /// are OFF at a large number rather than at zero say so, because "200 dB" in a table reads as a
+    /// claim rather than as the ideal case unless it is spelled out.
+    /// </summary>
+    private static string SystemBlockParameterDescription(SymbolKind kind, string parameterName)
+        => (kind, parameterName) switch
+    {
+        (SymbolKind.Circulator, "Direction") =>
+            "Which way the circulator turns: CW circulates port 1 to 2 to 3 to 1, CCW reverses it. "
+          + "The arrow drawn inside the symbol follows this.",
+        (SymbolKind.Circulator, "IL") =>
+            "Insertion loss along the forward path, as a positive number of dB.",
+        (SymbolKind.Circulator, "Isolation") =>
+            "How far below the signal the leakage the WRONG way round the circle sits. The 200 dB "
+          + "default means none, and the entry is not stamped at all.",
+        (SymbolKind.Circulator, "RL") =>
+            "Return loss at every port that does not state its own VSWR. 200 dB means exactly "
+          + "matched.",
+        (SymbolKind.Circulator, "Z0") =>
+            "REFERENCE impedance of all three ports, real or complex - what S is defined against, "
+          + "unlike a Zin/Zout, which names what a port presents. It is NOT the way to detune the "
+          + "match: use VSWR1/Ang1, which set port 1's own reflection rather than the reference "
+          + "every port shares.",
+        (SymbolKind.Circulator, "VSWR1" or "VSWR2" or "VSWR3") =>
+            "Voltage standing-wave ratio at this port, with the other two matched - a real "
+          + "circulator is badly matched and this is how far. 1 means the port does not state one "
+          + "and falls back to RL. Pair it with the matching Ang: the SAME VSWR at a different "
+          + "angle is a completely different load to whatever is connected here.",
+        (SymbolKind.Circulator, "Ang1" or "Ang2" or "Ang3") =>
+            "Angle of this port's reflection coefficient, in degrees. Read only when the matching "
+          + "VSWR states a mismatch. Frequency-flat: it is the mismatch you want to test against, "
+          + "not a rotating one.",
+        (SymbolKind.Balun, "Zunb") =>
+            "Reference impedance of the unbalanced port.",
+        (SymbolKind.Balun, "Zbal") =>
+            "Reference impedance of EACH balanced port to ground, so the differential impedance "
+          + "across BAL+ and BAL− is twice this. The 50/50 default is the ordinary 1:2 balun.",
+        (SymbolKind.Balun, "IL") =>
+            "Insertion loss from the unbalanced port to the balanced pair, as a positive number "
+          + "of dB.",
+        (SymbolKind.Balun, "AmpImb") =>
+            "How far apart in level the two balanced outputs sit, in dB. 0 is a perfect split; the "
+          + "imbalance is applied symmetrically, half up on one output and half down on the other.",
+        (SymbolKind.Balun, "PhaseImb") =>
+            "Departure from 180°, in degrees. 0 gives exactly antiphase outputs.",
+        (SymbolKind.Coupler or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "Coupling") =>
+            "How far below the input the coupled port sits, in dB. This alone sets the split — the "
+          + "through port gets whatever is left, so a 20 dB coupler already loses 0.04 dB through "
+          + "its main arm. 3.0103 dB is the equal split that makes a hybrid.",
+        (SymbolKind.Coupler or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "Phase") =>
+            "Phase of the coupled port relative to the through port, in degrees — 90 for a "
+          + "quadrature hybrid, 180 for an anti-phase one. This block holds it at EVERY frequency, "
+          + "which no real coupler does; build one from four quarter-wave TLIN arms if you need "
+          + "the bandwidth to be real.",
+        (SymbolKind.Coupler or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "Directivity") =>
+            "How far below the COUPLED port the isolated port sits, in dB. The 200 dB default means "
+          + "the isolated port is exactly isolated — no entry is stamped at all.",
+        (SymbolKind.Coupler or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "IL") =>
+            "Loss ADDED on top of the split, as a positive number of dB. It is not a substitute for "
+          + "the split: an ideal coupler's main-arm loss is already in the Coupling arithmetic.",
+        (SymbolKind.Coupler or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "RL") =>
+            "Return loss at every port. 200 dB means all four ports are exactly matched.",
+        (SymbolKind.Coupler or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "Z0") =>
+            "Reference impedance of all four ports. Each port is this resistance to its own "
+          + "reference.",
+        (SymbolKind.Switch, "State") =>
+            "1 closes the switch, 0 opens it. The symbol is drawn in the position it is set to, "
+          + "so a swept State reads off the schematic.",
+        (SymbolKind.SwitchD, "State") =>
+            "Which throw the common port is connected to — 1 or 2, or 0 for both open. The blade "
+          + "in the symbol points at it.",
+        (SymbolKind.Switch or SymbolKind.SwitchD, "Throws") =>
+            "How many throws the switch has: 1 for the SPST tile, 2 for the SPDT. It is what makes "
+          + "the two tiles one component, and it sets the pin count, so leave it alone.",
+        (SymbolKind.Switch or SymbolKind.SwitchD, "IL") =>
+            "Insertion loss of the path the switch is making, as a positive number of dB.",
+        (SymbolKind.Switch or SymbolKind.SwitchD, "Isolation") =>
+            "How far below the signal the leakage past an OPEN throw sits. The 200 dB default means "
+          + "none — the ideal switch leaks nothing, and the entry is not stamped at all.",
+        (SymbolKind.Switch or SymbolKind.SwitchD, "OffState") =>
+            "What an open throw looks like from its own port: Reflective is an open circuit, "
+          + "Absorptive is a matched termination. Reflective is what a series switch does.",
+        (SymbolKind.Switch or SymbolKind.SwitchD, "Z0") =>
+            "Reference impedance of every port. Each port is this resistance to its own reference.",
+        (SymbolKind.Switch or SymbolKind.SwitchD, "RL") =>
+            "Return loss of the closed path. 200 dB means the closed switch is exactly matched.",
+        (SymbolKind.Filter, "Form") =>
+            "Lowpass, Bandpass or Highpass. The symbol strikes a line through every wave the "
+          + "network blocks, so the shape is read off the glyph. Lowpass and Highpass read Fc; "
+          + "Bandpass reads F1 and F2 and ignores it.",
+        (SymbolKind.Filter, "Response") =>
+            "Which prototype family the response comes from: Butterworth (maximally flat "
+          + "magnitude), Chebyshev (equiripple passband, reads Ripple), InvChebyshev (flat "
+          + "passband and an equiripple stopband floor, reads Astop), Bessel (maximally flat GROUP "
+          + "DELAY — chosen for its phase, not its shape) or Elliptic (equiripple in both bands, "
+          + "reads Ripple and Astop). A parameter the family does not read is ignored, so you never "
+          + "have to clear a field to change family.",
+        (SymbolKind.Filter, "Order") =>
+            "The PROTOTYPE order. A Bandpass transformation doubles the degree, so Order = 3 as a "
+          + "bandpass is a 6th-degree network — both conventions exist in the wild, and this one is "
+          + "the prototype's. The stopband slope of an all-pole family is 20 x Order dB per decade; "
+          + "InvChebyshev and Elliptic level off at their own floor instead.",
+        (SymbolKind.Filter, "Fc") =>
+            "The cutoff, for Lowpass and Highpass. For Chebyshev and Elliptic it is the RIPPLE "
+          + "bandwidth edge (where the response leaves the ripple band), for Butterworth the 3.01 dB "
+          + "point, for InvChebyshev the STOPBAND edge — where Astop is first met — and for Bessel "
+          + "the reciprocal of the group delay. Ignored when Form is Bandpass.",
+        (SymbolKind.Filter, "F1") =>
+            "Lower band edge, for Bandpass. The band centre is the GEOMETRIC mean of F1 and F2 and "
+          + "the response is geometrically symmetric about it, not arithmetically. Ignored for "
+          + "Lowpass and Highpass.",
+        (SymbolKind.Filter, "F2") =>
+            "Upper band edge, for Bandpass. Read with F1 — the two set both the centre and the "
+          + "width. Ignored for Lowpass and Highpass.",
+        (SymbolKind.Filter, "Ripple") =>
+            "Passband ripple, in dB, for Chebyshev and Elliptic. The passband swings between 0 and "
+          + "-Ripple exactly this many times, which is what the order buys. Ignored by the other "
+          + "three families.",
+        (SymbolKind.Filter, "Astop") =>
+            "Stopband floor, in dB below the passband, for InvChebyshev and Elliptic. The stopband "
+          + "is equiripple AT this level rather than falling away past it — that is the trade those "
+          + "two families make for a sharper transition. Ignored by the other three families.",
+        (SymbolKind.Filter, "Zin") =>
+            "The impedance port 1 PRESENTS - so a complex value is conjugate-matched by a Term at "
+          + "its conjugate: Zin = 5+j100 wants Z = 5-j100 across it for maximum power transfer. "
+          + "This block is stamped as its scattering matrix rather than synthesised as a ladder, so "
+          + "Zin and Zout may differ freely: the filter is then also an ideal lossless impedance "
+          + "transformer, matched at BOTH ports in its passband. Measured in a uniform 50 ohm "
+          + "system an unequal pair shows the transformer's mismatch, which is the answer and not a "
+          + "fault.",
+        (SymbolKind.Filter, "Zout") =>
+            "The impedance port 2 PRESENTS. See Zin — the two are independent, and an unequal pair "
+          + "is a lossless transformer as well as a filter.",
+        (SymbolKind.Filter, "IL") =>
+            "A flat insertion loss laid on top of the ideal response, in dB. It multiplies S21 and "
+          + "leaves S11 alone, so the block genuinely dissipates rather than reflecting what it "
+          + "loses — which is what a real filter's loss does. 0 is the lossless ideal.",
+        (SymbolKind.Amp, "Gain") =>
+            "Small-signal gain from the input port to the output port. Shown beside the symbol, "
+          + "because a triangle with a number inside it stops being readable at three digits.",
+        (SymbolKind.Amp, "IP3") =>
+            "Third-order intercept, referred to whichever port IP3Ref names. It is the amplifier's "
+          + "ONE nonlinearity, so it sets IM3 and compression together: the 1 dB compression point "
+          + "follows at IIP3 - 8.96 dB and is not separately adjustable. The 200 dBm default means "
+          + "the amplifier is exactly linear and never compresses.",
+        (SymbolKind.Amp, "IP3Ref") =>
+            "Whether IP3 above is an input-referred number or an output-referred one. OIP3 = IIP3 "
+          + "+ Gain is an identity, so this is one field and a reference rather than two fields "
+          + "that could disagree. Output is the default, because that is the form a power "
+          + "amplifier's datasheet quotes.",
+        (SymbolKind.Amp, "Zin") =>
+            "The impedance the input port PRESENTS, and what RLin is measured against. A complex "
+          + "value is conjugate-matched by a Term at its conjugate, and is accepted only while the "
+          + "amplifier is LINEAR - set IP3 to 200, since the tile's own default of 40 dBm is not.",
+        (SymbolKind.Amp, "Zout") =>
+            "The impedance the output port PRESENTS, and what RLout is measured against. See Zin "
+          + "for the complex case.",
+        (SymbolKind.Amp, "RLin") =>
+            "Input return loss. The 200 dB default means exactly matched - no reflection entry is "
+          + "stamped at all. The gain you typed is what you measure at any value of it.",
+        (SymbolKind.Amp, "RLout") =>
+            "Output return loss. 200 dB means exactly matched.",
+        (SymbolKind.Amp, "S12") =>
+            "Reverse isolation. The 200 dB default means the amplifier is unilateral - the reverse "
+          + "path is absent, not small, which is what makes an ideal amplifier unconditionally "
+          + "stable. Setting it is what makes stability a question at all.",
+        (SymbolKind.Atten, "Loss") =>
+            "How far the attenuator knocks the signal down, as a positive number of dB. 0 dB is an "
+          + "ideal through, which is a legitimate thing to place.",
+        (SymbolKind.Atten, "Z0") =>
+            "Reference impedance of both ports. Each port is this resistance to its own reference.",
+        (SymbolKind.Atten, "RL") =>
+            "Return loss of both ports. The 200 dB default means exactly matched — no reflection "
+          + "entry is stamped at all.",
+
+        // PIM and PIMPc are one specification in two fields and are worded as a pair, because
+        // either number alone says nothing: a product level means nothing without the carriers it
+        // was measured against. They read the same on all three blocks that can carry them.
+        (SymbolKind.Atten or SymbolKind.Circulator or SymbolKind.Coupler
+                          or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "PIM") =>
+            "Passive intermod: the third-order product this block puts on its output when two "
+          + "carriers of PIMPc each drive its input, as an absolute level. The -200 dBm default "
+          + "means there is no intermod here and none is calculated at all. A part quoted in dBc "
+          + "converts by adding PIMPc — -153 dBc at +43 dBm is -110 dBm.",
+        (SymbolKind.Atten or SymbolKind.Circulator or SymbolKind.Coupler
+                          or SymbolKind.Hybrid90 or SymbolKind.Hybrid180, "PIMPc") =>
+            "Power per carrier the PIM figure above was measured at — the second half of one "
+          + "specification. Two carriers at this power produce a product at exactly PIM; the "
+          + "product then rides the third power of drive, so 10 dB less carrier is 30 dB less "
+          + "product.",
+        _ => "",
+    };
+
     private static string MixerParameterDescription(string parameterName) => parameterName switch
     {
         "ConvGain" => "Single-sideband power conversion gain, RF port to IF port, at the LO drive "
@@ -665,15 +995,24 @@ public static class ComponentTypeRegistry
             case SymbolKind.Vdc:       return [new("Vdc", "0", "V",   true, UnitDimension.Voltage)];
             // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
             // Vdc (hidden) provides a DC bias offset on the tone source.
-            case SymbolKind.ToneSource: return [new("V",    "1", "V",   true,  UnitDimension.Voltage),
-                                                new("Freq", "1", "GHz", true,  UnitDimension.Frequency),
-                                                new("Vdc",  "0", "V",   false, UnitDimension.Voltage)];
+            //
+            // `Phase` is SEEDED, hidden, and carries its `deg` unit, for a reason that is not
+            // cosmetic: an angle parameter reaches the model in RADIANS (the Elaborator applies the
+            // unit — TLIN's `E` convention), so a Phase row a user adds BY HAND and leaves unitless
+            // would silently mean radians. Seeding it with the unit already on it removes that from
+            // the list of things anyone has to know. It matches what P1Tone and PnTone already seed,
+            // and what UserParamTemplate hands every ADDED tone of a multi-tone source.
+            case SymbolKind.ToneSource: return [new("V",     "1", "V",   true,  UnitDimension.Voltage),
+                                                new("Freq",  "1", "GHz", true,  UnitDimension.Frequency),
+                                                new("Phase", "0", "deg", false, UnitDimension.Angle),
+                                                new("Vdc",   "0", "V",   false, UnitDimension.Voltage)];
             // ITone mirrors ToneSource exactly, with I/Idc for V/Vdc — I and Freq match the
             // I_1Tone factory keys, Idc (hidden) is the DC offset.
             case SymbolKind.CurrentToneSource:
-                                        return [new("I",    "1", "mA",  true,  UnitDimension.Current),
-                                                new("Freq", "1", "GHz", true,  UnitDimension.Frequency),
-                                                new("Idc",  "0", "mA",  false, UnitDimension.Current)];
+                                        return [new("I",     "1", "mA",  true,  UnitDimension.Current),
+                                                new("Freq",  "1", "GHz", true,  UnitDimension.Frequency),
+                                                new("Phase", "0", "deg", false, UnitDimension.Angle),
+                                                new("Idc",   "0", "mA",  false, UnitDimension.Current)];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
             case SymbolKind.Vccs:       return [new("G", "10", "mS", true, UnitDimension.Conductance)];
             // Mixer / MixerD: identical parameter list, because they are the same component.
@@ -689,6 +1028,181 @@ public static class ComponentTypeRegistry
             // and 100 dBm. They are honest numbers rather than sentinels, and MixerModel snaps
             // each to EXACTLY ideal above its own threshold, so a freshly-placed mixer stamps no
             // leakage terms at all rather than 1e-10 of one.
+            // ── System blocks (brief-sys-1) ───────────────────────────────────
+            // ONLY the parameters the GLYPH reads, plus the one number each of the two blocks whose
+            // artwork was specified around a label actually shows there. Nothing here is read by an
+            // engine — none of these components exists yet — and the electrical parameter lists
+            // arrive with the models, in SYS-2 onwards. Declaring a full datasheet's worth of rows
+            // now would be inventing the model's interface a brief early, and every one of them
+            // would silently do nothing.
+            //
+            // Direction / State / Form are DISPLAY parameters in the same sense SnP's PinConfig and
+            // Match's Form are: they choose which cached glyph variant is drawn. They are hidden
+            // from the schematic labels because the glyph already says what they say — a switch
+            // drawn open does not also need to be captioned "Off".
+            // Circulator: Direction chooses the glyph AND the direction energy goes, so the picture
+            // and the stamp cannot disagree. Only it and the loss show on the schematic — a
+            // circulator wearing five labels is unreadable, and the rest are ideal by default.
+            // VSWR1..3 / Ang1..3 detune each port's own match in MAGNITUDE and PHASE, which is what
+            // a power amplifier on port 1 actually feels and what RL alone cannot say. All six are
+            // seeded at their ideal values, and VSWR = 1 means "not stated" so that port keeps
+            // falling back to RL - a user who never opens these sees exactly what they saw before.
+            // Ang carries its `deg` unit for the reason ToneSource's Phase does: an angle reaches
+            // the model in RADIANS, so a row added by hand and left unitless would silently mean
+            // radians.
+            case SymbolKind.Circulator:
+                return [new("Direction", "CW",   "",    false, UnitDimension.None),
+                        new("IL",        "0",    "dB",  false, UnitDimension.None),
+                        new("Isolation", "200",  "dB",  false, UnitDimension.None),
+                        new("RL",        "200",  "dB",  false, UnitDimension.None),
+                        new("Z0",        "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("VSWR1",     "1",    "",    false, UnitDimension.None),
+                        new("Ang1",      "0",    "deg", false, UnitDimension.Angle),
+                        new("VSWR2",     "1",    "",    false, UnitDimension.None),
+                        new("Ang2",      "0",    "deg", false, UnitDimension.Angle),
+                        new("VSWR3",     "1",    "",    false, UnitDimension.None),
+                        new("Ang3",      "0",    "deg", false, UnitDimension.Angle),
+                        new("PIM",       "-200", "dBm", false, UnitDimension.Power),
+                        new("PIMPc",     "43",   "dBm", false, UnitDimension.Power)];
+            // Balun: the three-port ground-referenced form (brief-sys-3 D3). Zbal is the impedance
+            // of EACH balanced port to ground, so the 50/50 defaults are the ordinary 1:2 balun —
+            // 100 Ω differential presenting 50 Ω single-ended.
+            case SymbolKind.Balun:
+                return [new("Zunb",     "50", "Ω",   false, UnitDimension.Resistance),
+                        new("Zbal",     "50", "Ω",   false, UnitDimension.Resistance),
+                        new("IL",       "0",  "dB",  false, UnitDimension.None),
+                        new("AmpImb",   "0",  "dB",  false, UnitDimension.None),
+                        new("PhaseImb", "0",  "deg", false, UnitDimension.Angle)];
+            // Coupler / Hybrid90 / Hybrid180: ONE engine component ("Coupler"), three tiles,
+            // differing only in Coupling and Phase — the Mixer/MixerD and Switch/SwitchD
+            // arrangement. 3.0103 dB is the equal split written to the precision that makes
+            // c = t = 1/√2; a hybrid is a 3 dB coupler and nothing else.
+            //
+            // Coupling shows on the schematic for the directional coupler, because it is the number
+            // that instance is ABOUT and the tile is drawn around it. The hybrids do not show it:
+            // their split is in the tile's own name, and a "Hybrid90" captioned "3.0103 dB" is two
+            // ways of saying the same thing on one drawing.
+            case SymbolKind.Coupler:
+                return [new("Coupling",    "20",   "dB",  true,  UnitDimension.None),
+                        new("Phase",       "90",   "deg", false, UnitDimension.Angle),
+                        new("Directivity", "200",  "dB",  false, UnitDimension.None),
+                        new("IL",          "0",    "dB",  false, UnitDimension.None),
+                        new("RL",          "200",  "dB",  false, UnitDimension.None),
+                        new("Z0",          "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("PIM",         "-200", "dBm", false, UnitDimension.Power),
+                        new("PIMPc",       "43",   "dBm", false, UnitDimension.Power)];
+            case SymbolKind.Hybrid90:
+            case SymbolKind.Hybrid180:
+                return [new("Coupling",    "3.0103", "dB",  false, UnitDimension.None),
+                        new("Phase",       kind == SymbolKind.Hybrid90 ? "90" : "180",
+                                                     "deg", false, UnitDimension.Angle),
+                        new("Directivity", "200",    "dB",  false, UnitDimension.None),
+                        new("IL",          "0",      "dB",  false, UnitDimension.None),
+                        new("RL",          "200",    "dB",  false, UnitDimension.None),
+                        new("Z0",          "50",     "Ω",   false, UnitDimension.Resistance),
+                        new("PIM",         "-200",   "dBm", false, UnitDimension.Power),
+                        new("PIMPc",       "43",     "dBm", false, UnitDimension.Power)];
+            // Switch / SwitchD: ONE engine component ("Switch"), two tiles, differing only in
+            // `Throws` — the Mixer/MixerD arrangement, and the same reason. `State` names which
+            // throw is CLOSED, so 0 opens the lot and 1 is the SPST's only throw; it is a plain
+            // number precisely so a parametric sweep over it gives every switch position in one
+            // run, with the glyph following along. See SwitchState/SwitchThrow for why both enums
+            // are numbered to match it.
+            case SymbolKind.Switch:
+                return [new("State",     "1",           "",   false, UnitDimension.None),
+                        new("Throws",    "1",           "",   false, UnitDimension.None),
+                        new("IL",        "0",           "dB", false, UnitDimension.None),
+                        new("Isolation", "200",         "dB", false, UnitDimension.None),
+                        new("OffState",  "Reflective",  "",   false, UnitDimension.None),
+                        new("Z0",        "50",          "Ω",  false, UnitDimension.Resistance),
+                        new("RL",        "200",         "dB", false, UnitDimension.None)];
+            case SymbolKind.SwitchD:
+                return [new("State",     "1",           "",   false, UnitDimension.None),
+                        new("Throws",    "2",           "",   false, UnitDimension.None),
+                        new("IL",        "0",           "dB", false, UnitDimension.None),
+                        new("Isolation", "200",         "dB", false, UnitDimension.None),
+                        new("OffState",  "Reflective",  "",   false, UnitDimension.None),
+                        new("Z0",        "50",          "Ω",  false, UnitDimension.Resistance),
+                        new("RL",        "200",         "dB", false, UnitDimension.None)];
+            // The filter (brief-sys-6). NOTHING shows on the schematic, which is the same choice
+            // Match makes with the same glyph: the picture already says lowpass/bandpass/highpass,
+            // and the band itself cannot be captioned in one line because Fc and F1/F2 are
+            // alternatives — whichever pair the Form does not read would be a caption stating a
+            // frequency the filter is not at.
+            //
+            // Ripple and Astop are declared unconditionally even though no single Response reads
+            // both: a user switching Chebyshev to Butterworth must not have to clear a field, so a
+            // parameter the family does not read is IGNORED rather than refused (FilterModel).
+            case SymbolKind.Filter:
+                return [new("Response", "Chebyshev", "",   false, UnitDimension.None),
+                        new("Form",     "Bandpass",  "",   false, UnitDimension.None),
+                        new("Order",    "3",         "",   false, UnitDimension.None),
+                        new("Fc",       "1",         "GHz", false, UnitDimension.Frequency),
+                        new("F1",       "0.9",       "GHz", false, UnitDimension.Frequency),
+                        new("F2",       "1.1",       "GHz", false, UnitDimension.Frequency),
+                        new("Ripple",   "0.1",       "dB",  false, UnitDimension.None),
+                        new("Astop",    "40",        "dB",  false, UnitDimension.None),
+                        new("Zin",      "50",        "Ω",   false, UnitDimension.Resistance),
+                        new("Zout",     "50",        "Ω",   false, UnitDimension.Resistance),
+                        new("IL",       "0",         "dB",  false, UnitDimension.None)];
+
+            // The duplexer is two complete filter specifications plus one shared antenna impedance,
+            // and deliberately NO Isolation: the isolation a duplexer achieves is what its two
+            // responses and their junction produce, and a user who typed one would be overriding
+            // physics with a number (DuplexerModel).
+            //
+            // The two default bands do not overlap and leave a gap, so a freshly placed duplexer is
+            // a working one rather than two filters fighting over the same frequency.
+            case SymbolKind.Duplexer:
+                return [new("Zant",       "50",        "Ω",  false, UnitDimension.Resistance),
+                        new("TxResponse", "Chebyshev", "",   false, UnitDimension.None),
+                        new("TxForm",     "Bandpass",  "",   false, UnitDimension.None),
+                        new("TxOrder",    "3",         "",   false, UnitDimension.None),
+                        new("TxFc",       "1",         "GHz", false, UnitDimension.Frequency),
+                        new("TxF1",       "0.9",       "GHz", false, UnitDimension.Frequency),
+                        new("TxF2",       "1",         "GHz", false, UnitDimension.Frequency),
+                        new("TxRipple",   "0.1",       "dB",  false, UnitDimension.None),
+                        new("TxAstop",    "40",        "dB",  false, UnitDimension.None),
+                        new("TxZ",        "50",        "Ω",  false, UnitDimension.Resistance),
+                        new("TxIL",       "0",         "dB",  false, UnitDimension.None),
+                        new("RxResponse", "Chebyshev", "",   false, UnitDimension.None),
+                        new("RxForm",     "Bandpass",  "",   false, UnitDimension.None),
+                        new("RxOrder",    "3",         "",   false, UnitDimension.None),
+                        new("RxFc",       "1",         "GHz", false, UnitDimension.Frequency),
+                        new("RxF1",       "1.1",       "GHz", false, UnitDimension.Frequency),
+                        new("RxF2",       "1.2",       "GHz", false, UnitDimension.Frequency),
+                        new("RxRipple",   "0.1",       "dB",  false, UnitDimension.None),
+                        new("RxAstop",    "40",        "dB",  false, UnitDimension.None),
+                        new("RxZ",        "50",        "Ω",  false, UnitDimension.Resistance),
+                        new("RxIL",       "0",         "dB",  false, UnitDimension.None)];
+            // The amplifier's triangle and the attenuator's bowtie are both drawn EMPTY on purpose,
+            // with the number they are about shown as the label underneath — so these two tiles ship
+            // that label from the moment they are placed. The amplifier shows TWO, because gain and
+            // intercept are the pair a system diagram is read for and neither is in the picture.
+            //
+            // IP3Ref is a hidden enum NAME (brief-sys-5's D5): one intercept field plus a reference,
+            // because OIP3 = IIP3 + Gain is an identity and two independent fields can be made to
+            // contradict each other. Output is the default because that is the form a power
+            // amplifier's datasheet quotes.
+            case SymbolKind.Amp:
+                return [new("Gain",   "20",     "dB",  true,  UnitDimension.None),
+                        new("IP3",    "40",     "dBm", true,  UnitDimension.Power),
+                        new("IP3Ref", "Output", "",    false, UnitDimension.None),
+                        new("Zin",    "50",     "Ω",   false, UnitDimension.Resistance),
+                        new("Zout",   "50",     "Ω",   false, UnitDimension.Resistance),
+                        new("RLin",   "200",    "dB",  false, UnitDimension.None),
+                        new("RLout",  "200",    "dB",  false, UnitDimension.None),
+                        new("S12",    "200",    "dB",  false, UnitDimension.None)];
+            // 10 dB, which is brief-sys-2's stated default for the MODEL — SYS-1 had seeded 3 here
+            // as a label placeholder before there was a model to disagree with, and a tile whose
+            // placed value differs from what the same component takes when the parameter is absent
+            // is a trap rather than a choice.
+            case SymbolKind.Atten:
+                return [new("Loss",  "10",   "dB",  true,  UnitDimension.None),
+                        new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("RL",    "200",  "dB",  false, UnitDimension.None),
+                        new("PIM",   "-200", "dBm", false, UnitDimension.Power),
+                        new("PIMPc", "43",   "dBm", false, UnitDimension.Power)];
             case SymbolKind.Mixer:
             case SymbolKind.MixerD:
                 return [new("ConvGain", "-7",  "dB",  true,  UnitDimension.None),
@@ -1232,7 +1746,8 @@ public static class ComponentTypeRegistry
     /// the parsed port count N.
     ///
     /// Canonical codes: R, L, C, V, VTone, ITone, VCCS/G, Mixer/MIX, MixerD/MIXD, GND, Term/T,
-    /// TermG/TG, SDD, Z{N}P (any N ≥ 1),
+    /// TermG/TG, Balun, Circulator/CIRC, Switch/SW, SwitchD/SWD, Amp, Coupler/CPL,
+    /// Hybrid90/HYB, Hybrid180, Filter/FLT, Attenuator/ATT, Duplexer/DPX, SDD, Z{N}P (any N ≥ 1),
     /// SDD{N} (any N ≥ 1), X.
     ///
     /// <list type="bullet">
@@ -1267,6 +1782,34 @@ public static class ComponentTypeRegistry
             case "MIX":    kind = SymbolKind.Mixer;         return true;
             case "MIXERD":
             case "MIXD":   kind = SymbolKind.MixerD;        return true;
+            // The system blocks. SW/SWD and CPL/HYB are distinct codes over shared engine
+            // components, because the code names the TILE — which is what a user typed.
+            // Each takes the short code AND the display name, because those are the two things a
+            // user has seen: the abbreviation is what the netlist and the instance names spell, and
+            // the display name is what the palette tile and the on-schematic label say. Making
+            // someone learn that the tile reading "Attenuator" is typed "ATT" buys nothing.
+            case "BALUN":  kind = SymbolKind.Balun;        return true;
+            case "CIRCULATOR":
+            case "CIRC":   kind = SymbolKind.Circulator;   return true;
+            case "SWITCH":
+            case "SW":     kind = SymbolKind.Switch;       return true;
+            case "SWITCHD":
+            case "SWD":    kind = SymbolKind.SwitchD;      return true;
+            case "AMP":    kind = SymbolKind.Amp;          return true;
+            case "DIRECTIONAL COUPLER":
+            case "COUPLER":
+            case "CPL":    kind = SymbolKind.Coupler;      return true;
+            case "HYBRID90":
+            case "HYB":
+            case "HYB90":  kind = SymbolKind.Hybrid90;     return true;
+            case "HYBRID180":
+            case "HYB180": kind = SymbolKind.Hybrid180;    return true;
+            case "FILTER":
+            case "FLT":    kind = SymbolKind.Filter;       return true;
+            case "ATTENUATOR":
+            case "ATT":    kind = SymbolKind.Atten;        return true;
+            case "DUPLEXER":
+            case "DPX":    kind = SymbolKind.Duplexer;     return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
@@ -1487,6 +2030,58 @@ public static class ComponentTypeRegistry
     public static IReadOnlyList<string>? EnumParamOptions(SymbolKind kind, string paramName) => (kind, paramName) switch
     {
         (SymbolKind.MBend, "Miter") => MBendMiterOptions,
+        _ => null,
+    };
+
+    // ── Named-value parameters: a closed set of NAMES, offered as a picker ────
+
+    private static readonly string[] FilterResponseOptions =
+        [nameof(FilterResponse.Butterworth), nameof(FilterResponse.Chebyshev),
+         nameof(FilterResponse.InvChebyshev), nameof(FilterResponse.Bessel),
+         nameof(FilterResponse.Elliptic)];
+
+    private static readonly string[] NetworkFormOptions =
+        [nameof(NetworkForm.Lowpass), nameof(NetworkForm.Highpass), nameof(NetworkForm.Bandpass)];
+
+    private static readonly string[] CirculatorDirectionOptions =
+        [nameof(CirculatorDirection.CW), nameof(CirculatorDirection.CCW)];
+
+    private static readonly string[] SwitchOffStateOptions =
+        [nameof(SwitchOffState.Reflective), nameof(SwitchOffState.Absorptive)];
+
+    private static readonly string[] Ip3ReferenceOptions =
+        [nameof(Ip3Reference.Input), nameof(Ip3Reference.Output)];
+
+    /// <summary>
+    /// The closed set of NAMES a parameter accepts, for a parameter whose value is an enum name
+    /// rather than a number — <c>Response</c>, <c>Form</c>, <c>Direction</c>, <c>OffState</c>,
+    /// <c>IP3Ref</c>. The Parameter Editor renders these as a picker committing the NAME verbatim,
+    /// which is what the model reads.
+    ///
+    /// <para><b>Not <see cref="EnumParamOptions"/>, and the difference is the stored value.</b> That
+    /// one is for a parameter whose value is a raw INDEX (MBend's <c>Miter</c> is 0/1/2 on the
+    /// schematic label and in the netlist); this one's value IS the name, so there is no index to
+    /// read out beside it and no translation to explain.</para>
+    ///
+    /// <para><b>Every name here is spelled with <c>nameof</c> against the enum the factory parses
+    /// it with</b>, deliberately: a hand-typed option that no longer matches its enum member is not
+    /// a broken picker, it is a picker that silently commits a value
+    /// <c>ComponentModelFactory.EnumNamed</c> cannot parse — which reads as the DEFAULT, with no
+    /// message, which is the whole class of bug this replaces.</para>
+    ///
+    /// <para>Returns null (the ordinary text box) for every other parameter. The SnP and wBond
+    /// name-valued parameters are absent on purpose: both components replace the generic rows with
+    /// their own panel, which already offers those as pickers.</para>
+    /// </summary>
+    public static IReadOnlyList<string>? NamedParamOptions(SymbolKind kind, string paramName) => (kind, paramName) switch
+    {
+        (SymbolKind.Circulator, "Direction")                      => CirculatorDirectionOptions,
+        (SymbolKind.Switch or SymbolKind.SwitchD, "OffState")     => SwitchOffStateOptions,
+        (SymbolKind.Filter, "Response")                           => FilterResponseOptions,
+        (SymbolKind.Filter, "Form")                               => NetworkFormOptions,
+        (SymbolKind.Duplexer, "TxResponse" or "RxResponse")       => FilterResponseOptions,
+        (SymbolKind.Duplexer, "TxForm" or "RxForm")               => NetworkFormOptions,
+        (SymbolKind.Amp, "IP3Ref")                                => Ip3ReferenceOptions,
         _ => null,
     };
 

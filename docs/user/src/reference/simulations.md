@@ -69,6 +69,11 @@ interpolated onto the sweep.
     </tbody>
   </table>
 
+<p class="small">For the ideal <a href="system-components.html">System Components</a> this is the
+analysis that answers almost everything about them: port match, isolation, coupling and directivity,
+a filter's passband and rejection, a duplexer's arm-to-arm leakage, and an amplifier's small-signal
+gain and stability.</p>
+
 <p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
 
 ## Harmonic Balance {#harmonic-balance}
@@ -82,6 +87,11 @@ every node. From it come Pout, gain, efficiency, PAE, compression, and intermodu
 Newton solve drives the harmonic-balance residual — frequency-domain KCL — to zero, using a
 conversion-matrix Jacobian. Power/source **continuation** ramps the drive to reach convergence
 deep into compression. [Multi-tone analysis](#two-tone) uses a diamond-truncated mixing spectrum.
+
+For the ideal [System Components](system-components.html) this is the analysis for everything an
+S-parameter run cannot reach — a mixer's conversion gain and its mixing products, an amplifier's
+compression and IM3, and passive intermodulation on the blocks that carry it. Two tones
+([multi-tone](#two-tone)) are what an intercept measurement needs.
 
 <table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th><th>Typical</th></tr></thead>

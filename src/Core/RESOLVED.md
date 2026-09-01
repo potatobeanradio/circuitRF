@@ -736,3 +736,999 @@ into its own method (`EvalParallel`) is what makes "allocates nothing" true rath
 `(p*P + q)*S + t`. Those are the same run of memory when the gradient width equals the port count, so
 a device with no control references writes its Jacobian block in place. Only a control SDD (width
 P+C) needs the intermediate buffer, because its last C lanes belong to a different block.
+
+
+## `IdealSBlockModel`: one stamp for every ideal S-matrix (brief-sys-2, 2026-08-31)
+
+`src/Core/Devices/System/` — the abstract base plus its first two users, `AttenuatorModel`
+(`Atten`) and `SwitchModel` (`Switch`, serving both switch tiles). Nothing in `src/Engine` was
+touched, and nothing needs to be for the rest of the SYS series.
+
+### The stamp is the DEFINITION of S, and that is the whole reason it exists
+
+One branch-current unknown per port, `v_p` across the port's own ± pair (the 2N-net convention
+`ZPortModel` and `MixerModel` already use), and one constraint row per port:
+
+```
+(v_p − Z0_p·i_p)/√Z0_p  −  Σ_q S_pq·(v_q + Z0_q·i_q)/√Z0_q  =  0
+```
+
+Every existing N-port stamp in the repository is a *derived* form — `SnpModel` and `ZPortModel` are
+Z(ω), `ChainModel` is ABCD — and each of them fails on a block a system diagram is actually made of.
+The ideal circulator has `det(I−S) = 0` exactly and therefore no Z at all; the ideal through
+(`S = [[0,1],[1,0]]` — a closed switch, a lowpass at DC) has no Y; the ideal open (`S = I`) has no Z.
+The rows above have no singular case: the through reduces to `v1 = v2`, `i1 = −i2` and the open to
+`i_p = 0`, both of which MNA represents routinely. `Atten Loss=0` and `Switch State=0` are the two
+shipping components that sit exactly on those two matrices, and both solve — in S-parameters, in
+DC and in HB, at ω = 0 and above it.
+
+### The unequal-Z0 case is a lossless ideal transformer, and it is the only gate that finds a dropped √Z0
+
+With every reference impedance equal, the `√Z0` factors cancel out of the answer, so a stamp missing
+them still measures right on every uniform block. Two gates cover it:
+
+- **Reference-impedance independence.** The same 50 Ω pad measured through 50 Ω ports and through
+  75 Ω ports must renormalise into each other. Note the 0 dB case is *vacuous* here and deliberately
+  left in the theory: an ideal through is a wire, and a wire is matched in every reference system, so
+  it shows no mismatch to renormalise. The renormalisation used is
+  `S' = (S − Γ)(I − Γ·S)⁻¹`, `Γ = (Z0' − Z0)/(Z0' + Z0)` — the uniform-real case, where the diagonal
+  scaling matrix commutes through and cancels — and the test checks that formula against a one-port
+  with a known load before relying on it.
+- **`Z0₁ = 50`, `Z0₂ = 75` with `S = [[0,1],[1,0]]`.** Adding the two constraint rows gives
+  `√Z0₁·i₁ = −√Z0₂·i₂` and subtracting them gives `v₂/√Z0₂ = v₁/√Z0₁`, i.e. `v₂ = n·v₁`,
+  `i₁ = −n·i₂` with `n = √(Z0₂/Z0₁)`: a **lossless ideal transformer**. Measured in a uniform 50 Ω
+  system it has the closed form `S11 = (1−n²)/(1+n²)`, `S21 = 2n/(1+n²)`, which the test computes
+  itself. No SYS-2 component exposes per-port Z0, so the gate builds a two-line subclass and adds it
+  to an elaborated netlist by hand — the point being that the `√Z0` lives in the BASE, and its two
+  users happening not to need it proves nothing.
+
+### `S(−ω) = conj(S(ω))` is inert on today's engine, and is implemented anyway
+
+Checked rather than assumed: **the HB linear extractor never hands a model a negative ω.**
+`HbEngine.ExtractMix` (HbEngine.cs:738 and :1015) extracts at `|ω|` and conjugates the whole `Y`
+matrix and Norton vector itself, precisely so an explicit complex `Z_Port` stays consistent with the
+L/C elements; `HbLinearExtractor` keys its caches on the ω it is given and has its own DC entry. So
+the rule costs one line and currently changes nothing. It is in the base rather than in each
+subclass because the moment it *does* matter — the quadrature coupler's `±j` in SYS-3/SYS-4 — a
+subclass that forgot it would be wrong in a way no gate on a real-S block can see. `FillS` is
+therefore only ever asked for `|ω|`, and the base conjugates.
+
+### A loss is not a suppression, and they must not share a threshold
+
+`MixerModel`'s "ideal means the entry is ABSENT" convention carries over — `SuppressedAmplitude`
+snaps to exactly zero at ≥ 150 dB, and `Stamp` skips a zero S entry, so a default-placed block puts
+no leakage term in the matrix rather than a 1e-10 one. But it applies **only to suppressions** (a
+return loss, an isolation). A `Loss` or an `IL` is what the part is FOR, so `Loss=200` is a 200 dB
+pad and is stamped as `1e-10`, not as an open. Two helpers, two names, one gate each.
+
+### The SPDT's two throws are not symmetric, and the throw-to-throw term is a PRODUCT
+
+Writing `ι = 10^(−IL/20)`, `σ = 10^(−Isolation/20)`, `ρ = 10^(−RL/20)`, each throw `p` gets its own
+transmission to the common port — `t_p = ι` if it is the closed throw, `σ` otherwise — and then
+`S[0,p] = t_p`, `S[p,q] = t_p·t_q` for two throws, `S[p,p] = ρ` on the closed path and `1`
+(reflective) or `0` (absorptive) elsewhere. The throw-to-throw entry being the *product* is what
+makes it vanish exactly when the isolation is off: a signal reaches the far throw only by leaking to
+the common node and being carried on from there, so with nothing leaking there is nothing for it to
+be a product with. The same table covers the SPST (one throw) and `State = 0` (nothing closed), and
+a `State` naming a throw that does not exist closes nothing **by the same rule rather than by a
+special case** — which is what makes a parametric sweep over `State` safe at every value.
+
+### `State` had to become a number, and that renumbered a UI enum
+
+SYS-1 shipped the SPST tile with `State = On` because the glyph reads it. That cannot survive
+contact with the engine: an enum NAME is a bare identifier the expression evaluator either fails on
+or, worse, resolves against a global that happens to share its spelling — and a swept string is not
+a thing, while sweeping `State` is the feature. So `State` is a plain evaluated number naming which
+throw is closed, and `SwitchState` was renumbered `{ Off = 0, On = 1 }` so `Enum.TryParse` resolves
+the numeral against the underlying value — exactly the reasoning `SwitchThrow { T1 = 1, T2 = 2 }`
+already carried. Both spellings still parse. Two consequences worth knowing:
+
+- `default(SwitchState)` is now **Off**, so `DocSymbolGlyph.SwitchPosProperty` states its default
+  explicitly. An Avalonia `StyledProperty` registered without one silently takes `default(T)`.
+- `OffState` is still an enum name and *does* need the Match/`Response` treatment — a dedicated
+  `ResolveSwitchParameters` in the `Elaborator` that stores it verbatim rather than evaluating it.
+
+### One default changed: the attenuator tile places a 10 dB pad, not a 3 dB one
+
+SYS-1 seeded `Atten.Loss = 3` as a placeholder for the label the bowtie is drawn around, before
+there was a model to disagree with; brief-sys-2's parameter table states 10 dB, which is what the
+factory falls back to when the parameter is absent. Two different "defaults" for one parameter means
+a placed tile and a hand-written netlist line with no `Loss` are different pads, so they were
+aligned on 10. The glyph is untouched — only the number printed beside it.
+
+### The net-count refusal is now one check for the whole 2N-net family
+
+The `Mixer`'s was the first; SYS-2 adds two more and the series adds seven. It moved to
+`Elaborator.ValidatePortPairNetCount`, driven by `ExpectedPortPairNets`, and runs **after** the
+overrides are resolved rather than before — because the `Switch`'s expected count depends on
+`Throws`, a parameter. The mixer's own sentence is unchanged and is gated by a test, since it is the
+one a user has already seen. One allow-list line replaced one allow-list line.
+
+### `src/Core/Devices/System/` is a FOLDER, not a namespace
+
+The files live where the brief put them; the namespace stays the flat `CircuitRF.Core.Devices`. A
+namespace segment literally spelled `System` shadows the BCL root from every file inside it —
+`System.Numerics.Complex` resolves as `CircuitRF.Core.Devices.System.Numerics.Complex` and fails to
+compile — and the cures are a `global::` prefix on every BCL reference or a file-scoped alias.
+Neither is worth a directory name. (`Devices/Fet` and `Devices/External` do match their folders;
+this one cannot.)
+
+### `Kind` is virtual from the start, on purpose
+
+SYS-4's passive-intermod overlay makes a block `Nonlinear` when PIM is on and `Linear` when it is
+off, and `ModelKind` is read off the model INSTANCE rather than the type name
+(`SParameterEngine`, `NonlinearDcEngine`, `ElaboratedComponent.IsNonlinear`). Writing
+`public override ModelKind Kind => ModelKind.Linear` on the base rather than sealing it means that
+change is a subclass property later instead of an edit to the shared stamp.
+
+### Gates
+
+`tests/Core.Tests/Devices/IdealSBlockModelTests.cs` (the S each parameter set produces, the three
+rules, and what actually reaches the matrix — via `CapturingMnaContext`),
+`tests/Core.Tests/Elaboration/PortPairNetCountTests.cs`,
+`tests/Engine.Tests/Devices/IdealSBlockSParamTests.cs` (S in / S out to 1e-12, renormalisation, the
+transformer, the cascades, the DC degeneracies),
+`tests/Engine.Tests/HarmonicBalance/IdealSBlockHbTests.cs` (two tones down 10 dB and **nothing
+created** — the absence assertion is the half a "two tones came out" check cannot make; note a
+wholly linear netlist does run under HB, checked rather than assumed),
+`tests/Ui.Tests/SystemBlockElaborationTests.cs` (a freshly placed tile elaborates into the model its
+glyph promises — the only thing that exercises registry defaults, ground-return extraction and
+parameter resolution together).
+
+
+## Balun, circulator, directional coupler and 90° hybrid (brief-sys-3, 2026-08-31)
+
+`src/Core/Devices/System/` — three more `IdealSBlockModel` subclasses (`CirculatorModel`,
+`CouplerModel`, `BalunModel`) and their factory, elaborator and registry wiring. **No machinery was
+added**: SYS-2's wave-constraint stamp took all three unchanged, and `src/Engine` was not touched.
+
+### The circulator is the component the whole family was built for
+
+`S = [[0,0,1],[1,0,0],[0,1,0]]` is a permutation matrix, so 1 is one of its eigenvalues and
+`det(I − S) = 0` **exactly** — no tolerance, no near-singularity, no conditioning argument. `Z` does
+not exist. Its `Y` does (`det(I + S) = 2`) and is `(1/Z₀)·[[0,1,−1],[−1,0,1],[1,−1,0]]`:
+antisymmetric, zero diagonal, and itself singular because every row and column sums to zero, as a
+floating network's must. All three facts are asserted **from the simulated S**, not from the model's
+own buffer, in `SystemBlockSParamTests`.
+
+It is also the only component in the repository with `S ≠ Sᵀ`, and that is measured rather than
+assumed: the simulated `|S21|/|S12|` equals the stated isolation in dB on all three port pairs, and
+reversing `Direction` transposes the matrix and moves nothing else. At the default isolation the
+reverse entry is not stamped at all, so the ratio is infinite rather than 200 dB — which is what
+makes an isolator (a circulator with one port terminated) behave as one.
+
+CW and CCW are one table, not two: CW carries port `p` to port `(p+1) mod 3`, and CCW is the
+transpose, written as one so there is nothing to keep in step.
+
+### `Phase` and `PhaseImb` arrive in RADIANS, and this cost a test to find
+
+**The Elaborator applies a parameter's own angle unit before the factory ever sees it.** An authored
+`Phase=90 deg` reaches the model as π/2. `TLineModel`'s `E` established that convention and
+documents it; the coupler's `Phase` and the balun's `PhaseImb` now follow it, and their factory
+fallback is `Math.PI/2`, not `90`.
+
+This was NOT visible from a hand-written netlist. A `.cnl` line saying a bare `Phase=90` carries no
+unit, so the value passes through untouched and every S-parameter gate passed — the failure appeared
+only in the UI test, where the tile's registry row declares `"deg"` / `UnitDimension.Angle` and a
+90° coupler measured 1.5708°. **Any new angle-valued parameter has this shape**: gate it through a
+placed tile, not only through a netlist line, or the unit scale is untested.
+
+*Found in passing here, and fixed straight afterwards on the owner's instruction — see "Every
+source's Phase" below:* all four source models took their `Phase` as **degrees** while their
+registry rows declared `"deg"`/`UnitDimension.Angle`, so a placed tone source with `Phase = 45 deg`
+drove the circuit at 0.785°.
+
+### The brief's balun formula double-counts the 180°, and the gate says which half is right
+
+brief-sys-3 states `S31 = −(1/√2)/k·10^(−IL/20)·exp(−j·(180 + PhaseImb)·π/180)` — a leading minus
+**and** a 180° in the exponent, which multiply to `+1` and give outputs that are IN PHASE. Its own
+gate says the opposite ("`AmpImb`/`PhaseImb` at zero give exactly antiphase outputs"). The gate is
+right and the formula has one negation too many, so what shipped is
+`S31 = −(1/√2)/k·ℓ·e^(−j·PhaseImb)` — the same number, with the 180° in the **sign** rather than in
+the exponent. That placement is not cosmetic: `e^(−jπ)` in floating point carries a 1.2e−16
+imaginary residue, and "exactly antiphase at zero imbalance" is a property the gate checks and a
+user reads off a plot.
+
+### The balun's `1/2` block, explained by its modal form
+
+`S22 = S33 = S23 = S32 = 1/2` looks like a mistake and is not. In the modal basis
+(`d = (2 − 3)/√2`, `c = (2 + 3)/√2`) the ideal matrix is
+
+```
+S(unb, d, c) = [[0, 1, 0],
+                [1, 0, 0],
+                [0, 0, 1]]
+```
+
+— an **ideal through** from the unbalanced port to the differential mode and a **total reflection**
+for the common mode. A lossless reciprocal three-port cannot have all three ports matched (a
+theorem), and a real balun does not isolate its balanced ports from each other either; what a user
+reads as a mismatch at ports 2 and 3 individually is the common-mode open, seen one port at a time.
+The differential mode's reference is `2·Zbal` and the unbalanced port's is `Zunb`, so the block is
+an ideal transformer of ratio `n = √(2·Zbal/Zunb)` and a differential load `R` is seen as
+`R·Zunb/(2·Zbal)`. Gated at five `(R, Zunb, Zbal)` combinations against that closed form.
+
+### A floating differential load across an ideal balun is a genuine floating node
+
+Worth knowing before someone writes the obvious netlist. The ideal balun's common mode is an OPEN
+(`S_cc = +1`, i.e. `i₂ + i₃ = 0`), and a resistor floating between BAL+ and BAL− says exactly the
+same thing — two identical rows, a **numerically exact rank deficiency**, and an undetermined
+common-mode potential. `SParameterEngine` diagnoses it correctly (its own "matrix singular —
+regularization (gmin) applied … likely floating node(s)" warning) and its gmin fallback still lands
+within ~5e−11 of the right answer instead of on it, against the 1e−15 the rest of the file holds.
+The fix in a netlist is to give the common mode somewhere to go: **two R/2 halves with the tap
+grounded** is the identical differential load, pins the common mode, and changes the answer not at
+all because the unbalanced port does not couple to the common mode (`S_1c = 0`). Both forms are in
+the gate — the working one as the measurement, the floating one as a named test that records why it
+reads 5e−11.
+
+### Only the quadrature coupler is unitary, and that is a theorem
+
+`Coupling` alone sets the split and it is lossless: `t = √(1 − c²)`, so a 20 dB coupler's 0.0436 dB
+of main-arm loss comes out of the arithmetic rather than out of a parameter. `IL` is a loss **added**
+on top, and it scales all three transmission paths — through, coupled AND isolated — because that is
+what keeps `Directivity` meaning what it says; scaling only the first two would quietly turn a 25 dB
+directivity into a 23 dB one.
+
+At `Phase = 90` the matrix is unitary. At 0 or 180 each ROW is still of unit norm (energy-consistent
+under any single-port excitation) but rows 1 and 4 stop being orthogonal, so it is not
+simultaneously realisable — **a lossless, matched, reciprocal four-port with directivity must have
+its coupled arm in quadrature with its through arm.** That is a theorem about four-ports, not a
+defect in the parametrisation, and it is stamped anyway: a user is allowed to type numbers a
+physical part could not have. The same rule covers a coupling above 0 dB, where `t = √(1 − c²)` is
+taken as the honest imaginary `j·√(c² − 1)` via `Complex.Sqrt` rather than as a NaN that would
+surface as a non-convergence with nothing attached to it.
+
+**Open, for the owner (SYS-1's D1 left it open):** the `Hybrid180` tile ships from SYS-1 and is
+seeded here at 3.0103 dB / 180°, which gives antiphase outputs from port 1 as advertised. If it is
+meant to be a *realisable* 180° hybrid the antiphase belongs on the `S42` partner instead of on
+`S31` (the rat-race form, `S = (1/√2)[[0,1,1,0],[1,0,0,−1],[1,0,0,1],[0,−1,1,0]]`, which IS unitary)
+— but that is a different component from the one brief-sys-3 specifies, and the brief names only
+`Coupler` and `Hybrid90`.
+
+### `3.0103 dB` is not an exactly equal split, and the back-to-back gate says so out loud
+
+Two hybrids cascaded thru-to-thru and coupled-to-coupled put everything on the second hybrid's ISO
+port at −90° and cancel at its IN port — `S(iso) = 2·c·t·e^(−j90°)`, `S(in) = t² − c²`. The
+cancellation is a *difference of two equal terms*, which is what makes this the one gate that
+catches a sign error no single-block measurement can. At the tile's own 3.0103 dB the residue is
+`t² − c² ≈ 1e−8` rather than zero, because 3.0103 dB is 4e−8 away from `20·log10(1/√2)`; the test
+computes `t² − c²` itself and asserts the residue **equals** it at both spellings rather than hiding
+it behind a tolerance. `|S21| = 1` and `arg = −90°` hold to 1e−12 either way.
+
+### Registry and elaborator wiring
+
+- `Coupler` is ONE engine component for **three** tiles (`Coupler`, `Hybrid90`, `Hybrid180`),
+  separated by two seeded numbers — the `Mixer`/`MixerD` and `Switch`/`SwitchD` arrangement. The
+  hybrids deliberately keep their **own** instance prefix (`HYB`) rather than sharing `CPL`: a user
+  does not swap a hybrid for a directional coupler mid-design, and `HYB1` is the name they expect.
+- `Circulator`'s `Direction` is an enum NAME and needs the Switch's `OffState` treatment for the
+  same reason (a bare identifier either fails to parse or resolves against a global that shares its
+  spelling). `ResolveSwitchParameters` became `ResolveEnumNamedParameters(inst, scope, params
+  string[])` rather than gaining a second copy.
+- Three more entries in `ExpectedPortPairNets` — 6, 6 and 8 nets. No new allow-list line: the
+  generalised message from SYS-2 already covers them.
+
+### Gates
+
+`tests/Core.Tests/Devices/SystemBlockSMatrixTests.cs` (every S entry from the dB and degree values,
+at defaults and three non-ideal settings each; `det(I−S) = 0`; the modal form; the unitarity
+theorem; the conjugate rule at a negative ω, stamped directly because HB does not supply one),
+`tests/Core.Tests/Elaboration/PortPairNetCountTests.cs` (the three net counts and `Direction`'s
+enum-name rule), `tests/Engine.Tests/Devices/SystemBlockSParamTests.cs` (S in / S out to 1e-12,
+measured non-reciprocity, the simulated Y, energy balance and quadrature across a sweep including
+DC, the back-to-back hybrid identity, the balun's impedance transformation and the floating-node
+finding), `tests/Engine.Tests/HarmonicBalance/SystemBlockHbTests.cs` (two tones through each block
+at the stated level, creating nothing — asserted RELATIVE to the carrier, because with no entry
+stamped what remains is the HB solve's own ~2.5e−11 floor and a stamped 200 dB term would sit five
+orders above it), `tests/Ui.Tests/SystemBlockElaborationTests.cs` (a freshly placed tile elaborates
+into the model its glyph promises — the only thing that exercises registry defaults, the angle unit,
+ground-return extraction and parameter resolution together).
+
+
+## Every source's `Phase` was converted twice, and its sweep path was worse (2026-08-31)
+
+Owner instruction, immediately after brief-sys-3 reported the symptom on `P1Tone`: fix it, and check
+`VTone` and `ITone` too. It turned out to be **four models and three distinct defects**, all in the
+same handful of lines, and none of them visible from any existing test.
+
+### Defect 1 — the double conversion, in all four source models
+
+**The Elaborator applies a parameter's own unit before the factory ever sees the value.**
+`Units.Scale("deg") = π/180`, so an authored `Phase=45 deg` resolves to 0.7853981633974483. That is
+the convention `TLineModel`'s `E` established and documents ("do NOT re-apply π/180"), and the one
+brief-sys-3's `Coupler.Phase` and `Balun.PhaseImb` now follow. But `P1ToneModel`, `PnToneModel` and
+`ToneSourceModelBase` (which serves `V_1Tone`/`V_nTone` **and** `I_1Tone`/`I_nTone`) each multiplied
+by π/180 **again**, so a placed tone source asking for 45° drove the circuit at **0.785°**.
+
+Every one of them now takes RADIANS and says so in its doc comment. Nothing else changed: the
+registry rows already declared `"deg"`/`UnitDimension.Angle` and were right all along, as was
+`UserParamTemplate`'s `Phase[{0}]` group for the added tones of a multi-tone `VTone`/`ITone`.
+
+**Why nothing caught it, and the lesson that generalises.** `Phase` defaults to `0` on every tile and
+in every one of the ~40 netlists in the test suite — grepped, not assumed: *no* netlist anywhere in
+the repository used a non-zero tone-source phase. **A gate on a default parameter set cannot see a
+unit-conversion bug**, because zero scales to zero. Any test of an angle-, prefix- or dB-scaled
+parameter has to use a value the conversion can move, and it has to go through a placed tile or an
+authored unit — a bare `.cnl` number carries no unit and passes through untouched, which is exactly
+why the S-parameter gates in brief-sys-3 all passed while the UI gate failed.
+
+### Defect 2 — a swept phase silently became zero
+
+`ResolveToneSourceParameters` stores `_expr_{name}` for any tone parameter that references a
+variable, so the model can re-resolve it at each sweep point. `BuildToneEntry` read `_expr_V` — and
+never read `_expr_Phase`. `ToneEntry.PhaseExpr` was therefore only ever non-null in the one case
+where `Eval` had *thrown*, so `ReevaluateFromGlobals` fell through to its `0.0` fallback: **a phase
+that referenced a global was zero at every sweep point after the first.**
+
+### Defect 3 — a variable-ref amplitude dropped the phase entirely
+
+`BuildToneEntry` applied the phase to the initial phasor only under `if (vExpr is null)`. So
+`V=vamp Phase=30 deg` — an ordinary swept-amplitude drive — stamped at **0°**, and defect 2 then
+ensured the 30° never arrived on re-evaluation either.
+
+Both are fixed by carrying amplitude and phase **separately** through `ToneEntry`
+(`VResolved`/`PhaseRad`, plus `VExpr`/`PhaseExpr`) and forming the phasor in exactly one place,
+`ToneSourceModelBase.Phasor`. A literal half keeps its resolved value instead of falling back to a
+constant; an expression half is re-evaluated.
+
+### The unit has to travel with the expression, and `_scale_{name}` is how
+
+The stored `_expr_{name}` is **only the expression text** — the unit is not part of it. So
+re-evaluating `Phase=phi deg` at a sweep point produces degrees where the first resolution produced
+radians, and `I=iamp mA` produces amps where the first produced milliamps: a value that changes by
+π/180 or by 1000 the moment the sweep moves off its first point. The Elaborator now records the
+multiplier it actually applied as `_scale_{name}` beside each `_expr_{name}`, and
+`ReevaluateFromGlobals` applies it.
+
+**It is the multiplier that was applied, not `Units.Scale(unit)`,** and the difference is real:
+`Evaluator.Eval` implements a **var-unit-wins** rule — if the expression references a variable that
+declares its own unit, the site unit is deliberately *not* applied, because the variable's value
+already carries it. `ToneParamUnitScale` reproduces that decision (via
+`Evaluator.ReferencesUnitBearingVariable`) and records `1.0` in that case. A test pins it: with
+`phi = 45 deg` and `Phase=phi deg`, a sweep must not scale twice.
+
+### Scope, and what was deliberately NOT changed
+
+- **The amplitude's unit scale was fixed alongside the phase's**, because it is the same statement in
+  the same method and the mechanism is shared — leaving `V`/`I` broken while fixing `Phase` would
+  have been a strange place to stop. It is called out here because it is wider than the instruction.
+- **The `VTone` and `ITone` tiles now seed a hidden `Phase = 0 deg`** — raised as a recommendation
+  and approved by the owner the same day. It is a product change rather than part of the fix, and
+  it is the right one: an angle parameter reaches its model in RADIANS, so a `Phase` row a user
+  added BY HAND and left unitless would have silently meant radians. Seeding it with the unit
+  already attached takes that off the list of things anyone has to know, and matches what `P1Tone`,
+  `PnTone` and `UserParamTemplate`'s added tones already do. Three tests pinned the old lists
+  deliberately and were updated with it.
+
+### The seeded `Phase` had to migrate with the rest, or a second tone would have eaten it
+
+`MigrateToneSourceToIndexed` turns the scalar `V`/`Freq` into `V[1]`/`Freq[1]` when the "+" button
+adds a second tone. It did not know about `Phase`, and the factory's multi-tone branch reads
+`Phase[i]` **and nothing else** — so a scalar `Phase` left behind by the migration would have been
+silently dropped, and adding a second tone would have zeroed the FIRST tone's angle. Seeding the row
+without fixing the migration would have created that trap rather than closing one. It renames
+`Phase` → `Phase[1]` now, unit and all, and a test drives the whole "+"-button sequence and asserts
+tone 1 still stamps its 45°.
+
+### Gates
+
+`tests/Core.Tests/Devices/ToneSourcePhaseUnitTests.cs` — every source at a NON-ZERO phase, in both
+spellings (`45 deg` and a bare `45`, which are different numbers and must stay so), plus the three
+sweep-path cases: a variable-ref phase, a variable-ref amplitude with a literal phase, and a
+variable that carries its own unit. `CapturingMnaContext` gained `SourceValues` and
+`CurrentInjections`, without which a source model cannot be gated at all without a solve — every
+existing use of it tests an admittance or a constraint row, and both RHS methods were no-ops.
+
+`tests/Ui.Tests/ToneSourcePhaseTileTests.cs` — the half that only a PLACED TILE can gate, and the
+reason it exists in that project: the row's declared unit is part of the arithmetic, and a `.cnl`
+line cannot exercise it, because a bare number in a netlist carries no unit and passes through
+untouched. That is exactly how the double conversion survived — the netlist gates were all
+vacuous on it.
+
+
+## Passive intermod on the ideal blocks (brief-sys-4, 2026-08-31)
+
+`src/Core/Devices/System/PimOverlay.cs` plus the overlay half of `IdealSBlockModel`, wired into
+`AttenuatorModel`, `CirculatorModel` and `CouplerModel` (which is also both hybrid tiles). Default
+off, `ModelKind.Linear`, zero cost, byte-for-byte the SYS-3 behaviour. Nothing in `src/Engine` was
+touched.
+
+### The brief's stated mechanism does not work, and the arithmetic says so in one solve
+
+brief-sys-4 specifies the limiter on the PORT VOLTAGES followed by the linear map,
+`i = Y·φ(v)`. Under matched terminations that form's third-order escape is
+
+```
+   δb = −(1/(3·Vsat²))·(I − S)·v⁽³⁾
+```
+
+and for the **ideal circulator driven at port 1**, `v = √Z0·a·(e₁ + e₂)` — port 1 and port 2 carry
+the SAME voltage, because a lossless circulator hands the whole wave from one to the other. `(I − S)`
+annihilates that vector at port 2 exactly. So the block's headline PIM host produces **zero product
+at its forward port**, and what it does produce comes out at port 3, the ISOLATED one. Solving the
+brief's own three equations gives `b = [8.33, 0, −8.33]` — the two gates it asks for, "the specified
+level comes out" and "PIM routes like the signal", both fail on the mechanism it specifies.
+
+The same cancellation is what makes an attenuator's product vanish as its loss goes to zero, which
+is the `Loss = 0` standalone generator the brief holds up as the reason to put PIM on the attenuator
+at all.
+
+### What ships instead: the limiter on the wave INCIDENT at each port
+
+The datasheet statement is `b = S·φ(a)` — distortion generated where the signal arrives, then routed
+by the block's own S. Written as the memoryless `i = f(v)` this repository requires, with
+`T = (I + S)⁻¹`, `G = diag(1/√Z0)` and `ψ(x) = Vsat·tanh(x/Vsat) − x`:
+
+```
+   Y = G·T·(I − S)·G        the linear half, unchanged
+   R = Re(T·G)              port voltages → the wave incident on each port
+   N = −2·G·T·S             the distortion → port currents
+   i(v) = Y·v + N·ψ(R·v)
+```
+
+Its closed form has no matrix inverse left in it, which is what makes the routing a theorem rather
+than a tuning:
+
+```
+   δb = −(1/(3·Vsat²))·S·x⁽³⁾ ,   x = R·v
+```
+
+**Routing is carried by `N` alone and is exact for every block whatever `R` is** — a product
+generated by carriers into port 1 leaves port 2 through `S21` and port 3 through `S31`. Measured:
+the circulator's isolated port sits at the linear path's own isolation to six decimals at 20 and
+35 dB, and at 179 dB down (double-precision noise on a 44.6 V carrier) when the isolation is ideal.
+The coupler's isolated port holds 5e-16 V.
+
+`R` is the exact incident wave whenever S is REAL — the attenuator, the circulator, the in-phase and
+180° couplers. For the quadrature coupler `T` is complex and the true incident wave is a Hilbert
+transform of the port voltages, which no memoryless function can compute; the real part is its
+memoryless projection, and the level calibration below is done against whatever `R` actually is, so
+nothing observable is left approximate by it.
+
+### brief-sys-4's Vsat one-liner is right only for a unity-transmission block
+
+The brief gives `IIP3 = (3·PIMPc − PIM)/2`, `Vsat = ½·√(2·10^(IIP3/10)·1e-3·Z0)`. Doing the block's
+own third-order arithmetic instead — carriers into `in`, product read at `out`, every port matched,
+`ρ = R·G⁻¹·(I + S)·e_in` — gives
+
+```
+   Vsat² = Pc^(3/2)·|Λ| / (2·√P_im3) ,    Λ = Σ_q S[out,q]·|ρ_q|²·ρ_q
+```
+
+which **reduces to the brief's line exactly when |Λ| = 1**, i.e. a unity-gain box with `R` exact.
+`|Λ|` is what the brief's version is missing: a block that attenuates, splits or projects must
+distort correspondingly harder to put the stated ABSOLUTE level on its output, and working out by
+how much is not the user's job. Gated over 0.01 → 30 dB of pad loss, where the stated −110 dBm comes
+back at −110.0000 at every one; the brief's own line would be 30 dB out at the top of that range.
+
+`Vsat` is in incident-wave units (√W), not volts. Converting to volts at a `Z0` port multiplies by
+`√Z0`, which is exactly why the brief's volt-based line looks different and is the same statement.
+
+### `tanh(u) − u` must not be computed as written
+
+It IS the whole nonlinearity, and it is a difference of two nearly equal numbers at every drive a
+PIM specification describes: a part quoted at −110 dBm against +43 dBm carriers runs at `u ≈ 3e−4`,
+so the answer is ~1e−8 of each term and eight of the sixteen digits go. `PimOverlay` uses the series
+`−u³/3 + 2u⁵/15 − 17u⁷/315 + 62u⁹/2835` below |u| = 0.1, where its next term is ~1e−12 of the result
+and there is no cancellation in it. ψ′ needs no such care: `sech²(u) − 1 = −tanh²(u)` exactly.
+
+### ψ′(0) = 0, so an S-parameter run with PIM on is EXACT, not merely close
+
+The brief asks for agreement with the linear path at 1e−12 with PIM set 60 dB below where it could
+matter. It is exact at **every** level, and for a reason worth having rather than a tolerance:
+`ψ = φ − x` has `ψ′(0) = 0`, so linearising at the zero-bias operating point gives `Y` with nothing
+added to it whatever `Vsat` is. Measured across eight block variants × five frequencies: worst
+|ΔS| < 1e−12 between a −170 dBm and a −40 dBm specification.
+
+That equivalence is also the sharpest available check on the `Y` derivation, because it compares an
+admittance stamp against the wave constraint the same S was written into. A dropped `√Z0`, a
+transposed inverse or an `(I−S)/(I+S)` the wrong way round survives every amplitude test and dies
+there.
+
+### The quadrature bucket's sign is fixed by which matrix it carries
+
+`H[2](ω) = +j·sign(ω)`, because the bucket holds `Im(Y)` and `Im(N)`: for ω > 0 the halves recombine
+as `Re(Y) + j·Im(Y) = Y` and for ω < 0 as `conj(Y)`, which is the family's own
+`S(−ω) = conj(S(ω))`. brief-sys-4 writes `+j·sign(ω)` in its mechanism and brief-sys-series writes
+`−j·sign(ω)` in its overview; the two disagree, and the sign is not a convention to pick — the wrong
+one passes every amplitude test and fails only `arg(S31) − arg(S21) = −90°`, which it does at nine
+decimals at every swept frequency.
+
+### THE OPEN ITEM: a complex-S block's PIM is wrong in a MULTI-TONE HB, and it is an engine gap
+
+**`HbNewton2D` and `HbNewtonNd` read `NonlinearResult.Terms` nowhere at all.** Only the single-tone
+`HbNewton` honours weighting buckets (HbNewton.cs:349, :783, :811, :980). So in a two-tone run — the
+analysis passive intermod exists for — a 90° hybrid with PIM on loses its `Im(Y)`, and what is left
+is `Re(Y)`, which for the ideal quadrature hybrid is **exactly zero**: the block becomes four open
+circuits. Measured, not argued: +43 dBm of drive delivers −276 dBm to the through port, and the
+source node reads +49 dBm (the open-circuit voltage, 6 dB up) instead of +46.
+
+The failure is loud rather than plausible, and it is gated as a known gap by
+`PassiveIntermodHbTests.The90DegreeHybridsQuadratureHalfIsLostInAMultiToneRun`, which FAILS with
+instructions the day the gap closes. Every block with a real S — the attenuator, the circulator,
+the in-phase and 180° couplers — is unaffected and fully gated.
+
+This is not a defect in the formulation, so brief-sys-series' "stop and report" applies rather than
+its "if a block appears to need an engine change the formulation is wrong". The fix is to mirror
+`HbNewton`'s bucket handling into the two multi-tone loops; **it would also repair the SDD's own
+user-defined `H[w]`, which has exactly the same gap today** and is the larger reason to do it.
+`src/Engine` is out of scope for this series, so it is reported and not done here.
+
+### The `Loss = 0` standalone PIM generator cannot exist, and the nearest thing is 0.01 dB
+
+A perfectly matched 0 dB attenuator is a wire; a wire has no Y; a component with no Y cannot be
+written as the memoryless `i = f(v)` that every nonlinearity here is. `det(I + S) = 0` **exactly** —
+a theorem about the object, not a limit of the implementation. Refused at construction by name, with
+the remedy in the message: give it a small loss (0.01 dB is 0.1% of amplitude and invisible on any
+plot) or a finite return loss, either of which lifts the degeneracy. A 0 dB coupler is a swap of port
+pairs and is refused for the same reason.
+
+**The remedy has a measured cost worth knowing.** `T = (I + S)⁻¹` diverges as the pad approaches an
+ideal through (|T| ≈ 435 at 0.01 dB), and what `T` amplifies is the block's own product fed back into
+its own argument, so the level error scales as `|T| × (product/carrier amplitude ratio)`:
+
+| pad loss | −153 dBc (a datasheet part) | −100 dBc | −90 dBc |
+|---|---|---|---|
+| 0.01 dB | +0.0014 dB | +0.66 dB | +2.40 dB |
+| 0.1 dB  | +0.0001 dB | +0.063 dB | +0.20 dB |
+| 1 dB    | 0.0000 dB  | +0.0056 dB | +0.018 dB |
+| 3 dB    | 0.0000 dB  | +0.0012 dB | +0.0039 dB |
+
+At any level a passive part is actually specified at it is invisible, and one decibel of loss — still
+an electrically negligible pad — removes it everywhere. Held by
+`PassiveIntermodHbTests.ANearlyLosslessPadStopsBeingExact_WhenTheProductStopsBeingPassive`, which
+gates the numbers in both directions so the effect cannot quietly grow. The underlying statement is
+structural and worth keeping: **for a near-lossless two-port a memoryless model cannot separate the
+incident wave from the reflected one**, because the port voltage alone does not distinguish them —
+the same degeneracy, seen from the other side.
+
+### `-190 dBm` is the off threshold, and borrowing the family's 150 dB would have been a bug
+
+The rest of this family switches a non-ideality off at 150 dB, but that number is a SUPPRESSION — a
+ratio, and 150 dB of it is beyond any part. A PIM figure is an ABSOLUTE level, and −150 dBm is an
+ordinary claim for a good passive part; a −150 dBm threshold silently switches off a specification
+the user meant. −190 sits 10 dB inside the −200 dBm default, exactly as `MixerModel`'s 90 dBm sits
+inside its 100 dBm one.
+
+**This was caught by a wrong answer, not by review.** A −150 dBm product read back as exactly zero
+and was written up as a double-precision floor around −190 dBc — a plausible story, and false. With
+the threshold moved, −160 dBm against two +43 dBm carriers (−203 dBc) comes back at −160.0000014.
+There is no floor anywhere near there.
+
+### Refusing PIM where it cannot live is one check at the factory's entry point
+
+`Balun` and `Switch` are excluded by their own briefs' decisions; `Filter` and `Duplexer` will be,
+because their S is frequency-dependent and a memoryless nonlinearity cannot be attached to a rational
+transfer function inside one component. Those two do not exist yet, so a per-creator check would have
+to be REMEMBERED when they land. `ComponentModelFactory.RefusePimWhereItCannotLive` runs once for
+every type before dispatch and names whatever it caught, with the honest remedy: place an attenuator
+with a small loss and the PIM specification in front of the block.
+
+### Two smaller things that were easy to get wrong
+
+- **`HasEvaluateInto` must be false when the block has a quadrature bucket.** The base
+  `ComponentModel.EvaluateGrid`'s `EvaluateInto` shortcut fills I/Q/Dg/Dc and carries no `Terms` —
+  correct for every model that took it before, silently lossy for one that has a bucket. The
+  overlay opts into the fast path only when `HasQuadrature` is false.
+- **The ideal 90° hybrid is an OPEN CIRCUIT at DC**, and that is recorded rather than papered over
+  as the brief asks. `Z0·Y = j·(2t·Q − P)` is purely imaginary, so with `H[2](0) = 0` the block
+  contributes nothing to the DC Jacobian. Every netlist that terminates its ports resistively solves
+  normally; a hybrid port wired only to reactances floats, which is the ordinary floating-node case
+  the DC engine's own gmin already covers and not a special case of this block. No conductance was
+  added anywhere.
+
+## The ideal power amplifier (brief-sys-5, 2026-08-31)
+
+`AmplifierModel` (`Amp`), the one block in the system-level family with a nonlinearity of its own.
+Two ports, four nets, no DC power consumption of any kind — no bias pin, no supply, no efficiency,
+no thermal node, per the owner's specification.
+
+### brief-sys-5's 9.6 dB compression figure is the CUBIC's number, not `tanh`'s
+
+The brief states P1dB falls at `IIP3 − 9.6 dB`, calls that "the tanh limiter's own value", and gates
+it "within 0.2 dB". **All three parts cannot hold together.** Computed from `tanh`'s own describing
+function `(2/π)∫₀^π tanh(u·cos θ)·cos θ dθ / u = 10^(−1/20)`:
+
+| limiter | 1 dB backoff from the intercept | at the OTHER's backoff |
+|---|---|---|
+| `tanh` (what this family uses) | **−8.9625 dB** (u = 0.712697) | — |
+| `a₁x − a₃x³` (the textbook cubic) | −9.6357 dB (u = 0.659542) | `tanh` is only **0.868 dB** down there |
+
+The two differ by 0.673 dB, more than three times the brief's own tolerance, so the gate as written
+would fail on a correct model. The gate that shipped computes both numbers itself, by bisection on
+that integral, and asserts the value `tanh` actually has —
+`AmplifierHbTests.TheOneDbBackoffIsTanhsOwn_NotTheCubicsThatTheBriefQuotes`. Measured through the
+real solver at three gain/intercept combinations, the compression at `IIP3 − 8.9625 dB` is
+**1.0000 dB to four decimal places.**
+
+The same fifth-order term shifts IM3 below the two-tone extrapolation, which decides how far down a
+gate has to drive: **−0.058 dB at 30 dB below the intercept, −0.18 at 25, −0.56 at 20, −4.7 at 10.**
+30 dB is what the 0.1 dB gates use.
+
+### The brief's two closed forms are the MATCHED special case, and using them literally would have
+### made return loss silently change the gain
+
+brief-sys-5 gives `i_in = v_in/Zin`, `i_out = (v_out − G·ψ(v_in))/Zout` with
+`G = 2·√(10^(Gain/10)·Zout/Zin)`, and separately lists `RLin`/`RLout`/`S12` as parameters. Those are
+not compatible as written. A Thevenin source of `G·ψ(v_in)` behind a resistance chosen to produce a
+stated `S11` and `S22` delivers
+
+```
+   |S21| = √(10^(Gain/10)) · (1 + S11) · (1 − S22)
+```
+
+so a 20 dB amplifier given a 10 dB INPUT return loss becomes a **22.4 dB** amplifier and one given a
+10 dB output return loss becomes **17.3 dB** — neither of which the user typed, and a datasheet
+states gain and return loss as independent measurements. A finite `S12` breaks it further: with a
+reverse path the port resistances no longer produce the stated `S11`/`S22` at all.
+
+What shipped instead: the block's S-matrix is the four numbers the parameters name, and its
+admittance is derived from it in closed form for the 2×2 case,
+`ỹ = (I + S)⁻¹(I − S)`, `Y[p,q] = ỹ[p,q]/√(Z0_p·Z0_q)`. **It reduces to the brief's four terms
+exactly** when `S11 = S22 = S12 = 0` — `Y11 = 1/Zin`, `Y22 = 1/Zout`, `Y21 = −G/Zout` with the
+brief's own `G` — and every entry is the typed number at every combination.
+`AmplifierSParamTests.AStatedReturnLossAndIsolationComeBackAsThemselves` gates the gain across the
+mismatched rows, which is the assertion that would fail on the literal form.
+
+`Vsat` carries the same correction, `× (1 + S11)`: an intercept is referred to AVAILABLE input
+power, and the port voltage at a given available power is `(1 + S11)` times its matched value. The
+factor is exactly 1 at the default return loss, where the expression is the brief's bit for bit.
+It is exact for a unilateral amplifier at any `RLin`; with a reverse path the input voltage also
+depends on what the load reflects, and no memoryless coefficient can carry that.
+
+### The amplifier is `Linear` on the INSTANCE at its default intercept — the brief says
+### `ModelKind.Nonlinear`, and the brief's own gate cannot be met that way
+
+"Ideal is exactly linear: at IP3 = 200 a single tone driven hard produces no harmonics at all —
+**assert their absence, not their smallness**." Absence is only available if the block never enters
+the nonlinear partition. So `Kind` is read off the instance, exactly as `IdealSBlockModel` already
+does for PIM: with `IP3` at its default the amplifier takes the family's wave-constraint stamp,
+costs nothing in HB, and `nl.NonlinearComponents` is EMPTY. +20 dBm into a 20 dB amplifier gives
+40.000000 dBm at the fundamental and an exact double `0.0` at every harmonic 2 through 5.
+
+`IdealSBlockModel.Kind` stayed `sealed` and grew one hook, `protected virtual bool
+HasOwnNonlinearity`, so the rule the base owns is still "a block is Linear unless SOMETHING in it is
+not" and all the routing hangs off that one answer rather than off which mechanism supplied it.
+`Stamp`'s early-out is now `if (Kind is ModelKind.Nonlinear) return;` rather than a `_pim` test.
+
+**The "off" test reads the number the user TYPED, before `IP3Ref` is applied.** 200 dBm
+output-referred on a 20 dB amplifier converts to 180 dBm input-referred, which is BELOW the 190 dBm
+threshold — a threshold applied after the conversion would leave a freshly placed amplifier
+nonlinear, carrying a limiter nobody asked for, on the default document.
+
+### The one refusal belongs to the NONLINEAR form only
+
+`det(I + S) = (1+S11)(1+S22) − S12·S21` vanishes when the reverse loop gain reaches unity. A
+component with no Y cannot be written as the memoryless `i = f(v)` every nonlinearity here is, so
+that is refused by name at construction — but **only when an intercept was also asked for.** The
+LINEAR amplifier stamps the definition of S and has no such degeneracy, and refusing it too would
+refuse a configuration that stamps and solves perfectly well. That is the honest split: an
+oscillator has a small-signal S-matrix and does not have a memoryless large-signal one.
+
+### The limiter and the intercept arithmetic are now one implementation
+
+`ThirdOrderLimiter` (internal, `src/Core/Devices/`) holds `SaturationVolts(iip3Dbm, zRef)` and the
+`tanh` limiter with its slope; `MixerModel` and `AmplifierModel` both call it. The expressions were
+moved verbatim, so the mixer is **bit-identical** — held both by its own unchanged suite and by
+`AmplifierModelTests.TheMixerAndTheAmplifierLimitAtExactlyTheSameScale`, which compares the two
+models' scales with an EXACT `Assert.Equal(double, double)` rather than a tolerance. Only the "off"
+threshold stayed per-component, because the sentinel differs: the mixer's `IIP3` default is 100 dBm
+(threshold 90), the amplifier's `IP3` is 200 (threshold 190).
+
+### `Assert.Equal(expected, actual, 1)` is not "within 0.1 dB"
+
+xUnit's decimal-places overload ROUNDS both sides, so it refused a measured −60.0578 dBm against a
+predicted −60.0000 — an error of 0.058 dB, comfortably inside the brief's 0.1 dB, and not noise but
+`tanh`'s fifth-order term at the chosen backoff. Every dB comparison in `AmplifierHbTests` goes
+through a `NearDb(expected, actual, tolDb, what)` helper that compares a difference against a
+tolerance stated in dB, and prints the signed error either way.
+
+### Gates
+
+`tests/Core.Tests/Devices/AmplifierModelTests.cs` (S-matrix from the typed dB, the brief's own
+voltage-gain algebra done in the test, the limiter law, both intercept references, the refusal, the
+mixer bit-identity), `tests/Engine.Tests/Devices/AmplifierSParamTests.cs` (S21 at three gains × three
+`Zin`/`Zout` combinations to 1e−9 through a real solve; unilateral and matched with nothing stamped;
+the linear and linearized stamps agreeing to 1e−12; flat from 1 Hz to 100 GHz),
+`tests/Engine.Tests/HarmonicBalance/AmplifierHbTests.cs` (the intercept both ways and agreeing, the
+3:1 slope over 15 dB, the compression point, absence of harmonics at the default, and a
+pad/amplifier/pad cascade against the standard cascade formula computed in the test), and
+`tests/Ui.Tests/SystemBlockElaborationTests.cs` (a freshly placed tile, including that `IP3Ref`
+survives as an enum NAME through extraction and elaboration).
+
+## The ideal filter and the duplexer (2026-08-31)
+
+`FilterModel` (`Filter`) and `DuplexerModel` (`Duplexer`), with the polynomial core in a new
+**`src/Core/Systems/`** folder — namespace `CircuitRF.Core.Systems`, three files:
+`FilterPrototype` (the response families), `FilterNetwork` (the transformations and the flat
+insertion loss), `EllipticPrototype` (the one family needing new mathematics). The models stay in
+`src/Core/Devices/System/` with the rest of brief-sys-2's family.
+
+### The prototype is evaluated at a transformed Ω, never as a transformed polynomial
+
+The response is `S11 = α·F(jΩ)/E(jΩ)`, `S21 = β·P(jΩ)/E(jΩ)`, `S22 = −α·F(−jΩ)/E(jΩ)`, with the
+lowpass/highpass/bandpass map supplying Ω from ω. **The bandpass transformation doubles the degree
+and nothing in the code doubles**: the degree lives in the map, so an `Order = 3` bandpass evaluates
+the same four-coefficient `E` a lowpass does. That is also what keeps every prototype-level relation
+valid after the transformation — Ω is real for real ω under all three maps.
+
+**`S22` is derived rather than asserted.** Losslessness plus reciprocity gives
+`S22 = −conj(S11)·S21/conj(S21)`; with real coefficients `conj(X(jΩ)) = X(−jΩ)`, and with `P` even
+(true of all five families) the `P` factors cancel and what is left is the line above. Writing
+`S22 = ±S11` from the parity of `F` gives the same answer for the all-pole families and is a parity
+assumption that holds until it does not. The gate that catches a wrong `S22` PHASE is column
+orthogonality, `S11·conj(S21) + S21·conj(S22) = 0`; every magnitude comparison in the file is blind
+to it.
+
+**One `SpectralScale` computed from leading coefficients replaces five per-family normalisations.**
+`λ` in `Q(s) = λ·E(s)E(−s)` is `Q[0] / (E·E(−s))[0]`, and `β = 1/√λ`, `α = ε·β`. Getting it wrong
+scales the whole response rather than distorting it, which is exactly the error a family-by-family
+derivation makes and a closed-form magnitude gate then catches at every frequency at once.
+
+**`F`'s sign is a free choice and is pinned.** Negating `F` gives the dual network — equally
+lossless, equally reciprocal, the same magnitudes. It is normalised to a positive leading
+coefficient so a highpass at DC is an OPEN at port 1 (the series-first ladder), and `P` is
+normalised on its LOWEST-order term so a lowpass at DC is `S21 = +1` rather than `−1`. The two ends
+of `P` can disagree in sign, so which end is chosen matters.
+
+### Four of brief-sys-6's gates are not true as written
+
+Each is now gated on what IS true, with the reason in the test's own remarks.
+
+1. **"Every family reaches 20·n dB per decade far into the stopband" — three of five.** Inverse
+   Chebyshev and elliptic put their transmission zeros on the jω axis, which is what buys the sharp
+   transition; the price is that the far stopband LEVELS OFF at the stated floor. At even order the
+   ultimate slope is 0 dB/decade; at odd order it is 20 dB/decade for **every** n, because only the
+   one zero that went to infinity is left. Gated on the floor instead, and the odd/even split is its
+   own test.
+2. **"Highpass at ω = 0 is an exact open" — not at even order for those same two families.** An
+   even-order inverse Chebyshev highpass at DC is a `−Astop` pad, not an open, and its bandpass
+   likewise. It is still exactly lossless there, which is what the replacement gate asserts.
+3. **"The passband has exactly n ripple extrema" — the honest count is two numbers.** Over the whole
+   prototype passband `[−1, 1]` there are exactly `n` touches of 0 dB (the reflection zeros, the
+   "n ripples") and exactly `n + 1` of `−Ripple`, two of which are the band edges; the interior
+   turning points number `2n − 1`. All three are asserted, so the arithmetic is visible rather than
+   folded into one number that could be right for the wrong reason.
+4. **"Each duplexer arm reproduces the standalone filter's S21 to 1e-9 in its own passband" — the
+   measured disagreement is up to 0.144 in amplitude.** See below.
+
+Also: **`Fc` means a different thing for inverse Chebyshev.** It is the STOPBAND edge (where `Astop`
+is first met), not the passband edge — the standard convention for the family, and the reason it is
+excluded from the "elliptic reaches the floor soonest" comparison: at Ω = 1 it is there by
+definition, and the two families are not being asked the same question.
+
+### The duplexer's arms are loaded by the far arm's REACTANCE, not by an ideal open
+
+brief-sys-6 says "the rational reflections here do carry the right phase, so the ideal junction
+behaves". Measured: an out-of-band ideal bandpass arm has `|S11| = 0.999999967` — nothing is
+dissipated, which is what "ideal" buys — but its ANGLE is **−23.0°** at the neighbouring band's
+centre, and a unit-magnitude reflection at a non-zero angle is a reactance. It loads the junction, so
+the near arm's transmission is not the standalone one: worst `|ΔS21|` **0.144** for adjacent bands
+(0.90–1.00 against 1.10–1.20 GHz, order 5), **0.040** when the bands are widely separated
+(0.80–0.90 against 1.30–1.40 GHz), where the angle has walked in to −7.7°. That is the same
+statement as "a real duplexer needs a phasing line", and it is why placing a `TLIN` in the arm is the
+right answer rather than a hidden length inside the component. It also shows in the ANT match:
+**−12.0 dB** worst across the TX band, **−11.5 dB** across the RX band.
+
+**The exact gate replacing it: the duplexer equals two `Filter` instances wired onto the same net,
+bit for bit, at every frequency.** That is the executable form of "no new mathematics at all", and
+unlike the brief's version it is exact. `IdealSBlockModel.Stamp`'s body was lifted into a public
+static `StampWaveConstraints(mna, nodes, s, z0, branchOut, nodeOffset, portNodes)` so the duplexer
+calls the family's own stamp twice with `portNodes` `{0,1}` and `{0,2}` — four branch currents, no
+internal node. `DuplexerModel` derives from `ComponentModel`, not from `IdealSBlockModel`: that class
+is "one component, one S-matrix" and this component is two.
+
+Measured TX→RX isolation at order 5 with the default band plan: **−88.7 dB** at the TX band's lower
+edge falling to **−63.1 dB** at its upper edge, and −57.2 dB at the RX band's lower edge — worst
+**−57.2 dB** across both bands. There is deliberately no `Isolation` parameter; the only thing
+derivable is that the leakage cannot beat the far arm's own rejection at the same frequency (it
+tracks it about 6 dB better, the junction having divided the drive), and that is what the test
+asserts.
+
+### Elliptic shipped (D6): the degree equation is solved through the NOME, not by iteration
+
+`EllipticPrototype`, ~170 lines, and it did not need the pole/zero formulas at all — only the ZEROS
+of the elliptic rational function, handed to the same `FromCharacteristic` road the other families
+take. With `k1 = ε_p/ε_s` and `k = 1/ξ`, the degree equation `n·K(k')/K(k) = K(k1')/K(k1)` becomes
+`q = q1^(1/n)` in the nome `q = exp(−π K'/K)` — one exponential, written as
+`exp(−π·K1'/(n·K1))` rather than `Pow(q1, 1.0/n)` so a demanding specification cannot underflow `q1`
+to zero and return an infinitely selective filter in silence. `k` comes back through the
+theta-function series `k = (θ₂/θ₃)²`. What was needed: `K(m)` by AGM, Jacobi `cd` by the DESCENDING
+Landen transformation (the ascending series loses accuracy exactly as `k → 1`, which is the
+selective end every elliptic design lives at), and the zeros `ζ_m = cd((2m−1)K/n, k)` with the poles
+at `ξ/ζ_m` from the inversion relation. Roughly a third of a day, well inside the brief's stop-and-
+report threshold.
+
+Verified against the two properties that DEFINE the family and nothing else shares: passband
+equiripple in exactly `[−Ripple, 0]` dB and stopband equiripple at exactly `−Astop`, both to 6
+decimal places, at n = 2…7 and four ripple/floor combinations. Measured transition edges (which are
+`ξ`, so finding them also checks the degree equation was solved): 0.1/40 dB gives ξ = 12.82 at n = 2,
+3.52 at n = 3, 1.66 at n = 7 for 0.1/80 dB. At n = 5 and 0.1/60 dB it reaches −60 dB at ω = 2.04
+against Chebyshev's 3.41, Butterworth's 3.98 and Bessel's 15.57.
+
+**n = 1 elliptic has no finite transmission zero** and is the first-order Chebyshev; its stopband
+edge is at ξ = ε_s/ε_p, which is 655 for 0.1/40 dB. Not a defect — there is nowhere to put a zero.
+
+### Bessel needed a spectral factorisation of its own, and the double zero is divided out exactly
+
+There is no `N(Ω)` to rewrite, so `F` comes from Feldtkeller directly:
+`F(s)F(−s) ∝ E(s)E(−s) − β²`. That polynomial is even and vanishes to SECOND order at `s = 0` —
+`|S11|` is zero at DC and the zero is double, as a spectral density's axis zero must be. The two
+factors of `s` are divided out by dropping two coefficients (the constant term is zero by
+construction, the `s¹` term by evenness) rather than left for a root finder to discover
+approximately; what remains has no imaginary-axis roots, which is the case `MatchPrototypes.Hurwitz`
+handles cleanly. Measured `τ(0) = 1.000000000000` at every order 1…7.
+
+**Bessel's gate is group delay and a fixed tolerance is the wrong shape for it.** The delay error
+goes as `ω^2n`, so any single number is slack at high order and impossible at n = 1, where
+"maximally flat" buys exactly one vanishing derivative and `τ = 1/(1+ω²)` is already 2% down at a
+sixth of the corner. It is gated instead as a measurement across orders — the band over which the
+delay stays within 1% of DC must GROW with every order, and does: **0.101, 0.564, 1.205, 1.934,
+2.713, 3.525, 4.362** for n = 1…7.
+
+### Reuse, and what moved
+
+`MatchPrototypes.Hurwitz` is now `public` — the filter's `E(s)` is the Hurwitz factor of `|E(jω)|²`
+in precisely the sense the match synthesis already meant, so a second root-find that could disagree
+with it was not written. `ChebyshevT` and `ReverseBessel` MOVED from `MatchPrototypes`'s privates
+into `MatchPoly` (both were needed twice over); two copies of a three-term recurrence would never
+disagree noisily, they would disagree in the last digits of one family's stopband.
+
+### `Zin ≠ Zout` is free, and that is the whole reason this is not a ladder
+
+A doubly-terminated LC ladder cannot take an arbitrary source/load impedance ratio — the termination
+ratio is fixed by the family and the order — so a synthesised filter would have had `Zin`/`Zout` as a
+constrained pair with refusals attached, which is `MatchModel`'s territory and already lives there.
+Stamped as its S-matrix, the reference impedances are simply what S is defined against: any pair
+works, there is no feasibility question, and the block is a lossless impedance transformer in the
+bargain. Gated by measuring a `Zin = 50`, `Zout = 25` filter in a UNIFORM 50 Ω system and
+renormalising it back onto (50, 25) with arithmetic written in the test.
+
+### `IL` dissipates rather than redistributing
+
+It multiplies `S21` and leaves `S11` and `S22` alone, so `|S11|² + |S21|² < 1` — which is what a real
+filter's loss does. A lossless run is exactly unitary, to 1e-12, across every form and family.
+
+### Two smaller things worth not rediscovering
+
+- **A leading `+` continuation line in a `.cnl` is silently DROPPED.** The continuation marker is a
+  TRAILING BACKSLASH; a line starting `+` has no `Type:Name` colon, so `ParseInstanceLine` returns
+  without a word. Cost an hour here: every parameter on the continuation defaulted, and because the
+  tile defaults and the factory fallbacks agree on purpose, the first several gates PASSED on the
+  wrong netlist. Not fixed — it is `CnlReader`'s business, not this brief's — but it is the same
+  shape as the trailing-`;`-comment trap already recorded above.
+- **`Assert.Equal(double, double, int)` rounds both sides**, so two doubles differing in the last bit
+  can fail at 12 places when they straddle a rounding boundary. Unitarity is asserted with an
+  explicit `Math.Abs(power - 1.0) < 1e-12` instead.
+
+### Gates
+
+`tests/Core.Tests/Devices/FilterPrototypeTests.cs` (every family against its textbook formula in
+TRIGONOMETRIC form — `cos(n·acos x)` / `cosh(n·acosh x)`, a different route from the recurrence the
+production code builds from; the structural counts; the transformations; the limits; the refusals),
+`tests/Core.Tests/Devices/FilterModelTests.cs` (which entries reach the matrix and where, the
+duplexer's four branches on a shared node, the conjugate-symmetry rule),
+`tests/Engine.Tests/Devices/FilterSParamTests.cs` (the measured S against the stated S at 11
+family/form pairs; unitarity; the three DC limits SOLVING; the renormalisation; the duplexer as two
+filters, bit for bit),
+`tests/Engine.Tests/HarmonicBalance/FilterHbTests.cs` (a two-tone signal through bandpass, highpass
+and the duplexer, each tone at the level the response states AT THAT FREQUENCY, and nothing created
+anywhere), and `tests/Ui.Tests/SystemBlockElaborationTests.cs` (a freshly placed tile, including that
+`Response` and `Form` survive as enum NAMES through extraction and elaboration, four times over on
+the duplexer).
+
+---
+
+## Complex port impedances on the ideal system blocks, and the Circulator's per-port detune (2026-08-31)
+
+Owner report: a `Filter` with `Zin = 5+j100` "does not seem to respect a complex Zin", and a
+suspicion that `Zout` and other components were the same. Both true, plus a design question about
+detuning a circulator's match that turned into a component parameter.
+
+### The bug is not "the imaginary part was dropped" — the whole value was
+
+Every creator in `ComponentModelFactory` reads its numbers through a local helper of the shape
+
+```csharp
+double P(string name, double fallback) =>
+    parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+```
+
+`5+j100` parses (the tokenizer has an implicit-`j` rule, `Parser.cs:95`), evaluates, and arrives as a
+perfectly good `ValueKind.Complex` — which **misses the `Real` test and takes the fallback**. The
+filter was therefore built at **50 Ω**, not at 5 Ω, not at |Z|, not at anything the user could
+recognise as a rounding of what they typed. Nothing was reported. The only symptom available is a
+response that does not look like the one asked for, which is the hardest kind of bug to attribute:
+the number is on screen, in the netlist, in the `.cws`, and gone by the time the model exists.
+
+**The general lesson, which outlives this component family: a "read it if the kind matches, else use
+the default" helper turns a TYPE error into a SILENT VALUE substitution.** `RefuseComplexWhereOnlyRealFits`
+now refuses a complex value on a parameter that can only be read as a real number, naming both — for
+a positive list of audited types, deliberately not blanket, because `Z_Port`, `Chain` and the tone
+sources forward every unrecognised numeric parameter into the expression scope and legitimately
+consume complex ones there.
+
+### Reference impedance vs presented impedance: the parameter NAME decides
+
+Kurokawa power waves — which `SParameterEngine` already extracts S with (`SParameterEngine:450`) —
+have `S_pp = 0` ⟺ `Z_seen = conj(Z0_p)`. So the reference impedance and the impedance a port
+PRESENTS differ by a conjugate, and one of them has to be the number a user types. The rule is:
+
+- **`Z0`** (Atten, Switch, Circulator, Coupler; Balun's `Zunb`/`Zbal`) **is the reference.**
+- **`Zin`/`Zout`** (Filter, Amp) **and the Duplexer's `Zant`/`TxZ`/`RxZ` are what the port
+  PRESENTS.** Those three classes conjugate on the way into `base(...)`, and that is the only place
+  a conjugate appears in the family; the stamp is the textbook form either way.
+
+So `Zin = 5+j100` presents 5+j100 and is conjugate-matched by a `Term` at `5-j100`. **This was
+shipped the other way round for a few hours and the owner caught it** — worth recording because the
+argument for the other convention is genuinely attractive (a `Term` at the same value as `Zin` then
+reads the prototype's own S11, block and measuring port agreeing by construction) and it is wrong
+anyway: a parameter called `Zin` names an input impedance, and a designer knows what their part
+presents, not what reference someone defined its S against.
+
+**Measured, with a real 50 Ω probe, so the answer depends on no convention:** `Zin = 5+j100` →
+port 1 presents 5.013 − j99.772 under the first spelling and 5.013 + j100.228 under the shipped one.
+That measurement is now `ZinIsTheImpedanceThePortPresents`, and it is the assertion that decides
+which way the family goes — a comparison of the model with its own definition cannot.
+
+### The stamp generalises with one conjugate, and must not move a real block by an ulp
+
+`(v_p − conj(Z0_p)·i_p)/√Re(Z0_p) = Σ_q S_pq·(v_q + Z0_q·i_q)/√Re(Z0_q)`. Rule 2 becomes
+`Re(Z0) > 0`. Rule 1 (`S(−ω) = conj(S(ω))`) extends to the reference impedance too, since a physical
+reference is conjugate-symmetric; `Z0At(ω)` is that, and is as inert on today's engine paths as rule
+1 already was.
+
+**The trap:** `-conj(Z0)/√Re(Z0)` and `-Z0/√Re(Z0)` are algebraically `-√Z0` for a real reference and
+are NOT bit-identical to it. Written the general way, two existing gates went red on the last digit
+(`-7.375355307487728` vs `...27`). The coefficients are now precomputed per port with an explicit
+`Imaginary == 0` branch that keeps `√Z0` for a real reference, so every block that existed before
+stamps the bits it always did.
+
+### The nonlinear half refuses, and the Amp's own default puts it on that side
+
+`PimOverlay` and `AmplifierModel`'s compression are a real `i = f(v)` built from a real admittance
+matrix; a complex reference makes that admittance complex, which is a second quadrature bucket and a
+second calibration rather than a wider type. `RefuseComplexZ0` refuses at CONSTRUCTION, naming the
+instance and the port — and quoting the value in the spelling the USER typed
+(`PortParameterIsPresentedImpedance` decides which of the conjugate pair to print, or the message
+shows a sign of reactance that contradicts the screen).
+
+**Consequence worth stating plainly: the `Amp` tile's default `IP3` is 40 dBm, not 200**, so a
+freshly placed amplifier is nonlinear and a complex `Zin`/`Zout` on one is refused until `IP3=200`.
+That is the scope line, and it is a test rather than a sentence.
+
+### `IL` is unaffected by any of this, and it was checked rather than assumed
+
+With `Zin = 5+j100` / `Zout = 20-j35`, conjugate-matched at both ends, `IL` is an exact 1:1 loss on
+`|S21|`: measured −10.000000, −3.000000, −1.000000, −0.500000 dB at five passband frequencies, with
+`S11` bit-identical to the lossless run. It multiplies S21 in the block's own frame, and a
+conjugate-matched measurement is that frame.
+
+### The Circulator's per-port VSWR/Ang, and why `Z0` cannot do that job
+
+`VSWR1..3` with `Ang1..3` set that port's own `S_pp = ((VSWR−1)/(VSWR+1))∠Ang`. `VSWR = 1` means
+"not stated" and the port falls back to the isotropic `RL`, so nothing changes for a design that
+never touches them. Frequency-flat, which keeps the block memoryless so PIM still works over it.
+
+**Reusing `Z0` was the obvious answer and it is wrong, for a reason that is a property of the NETWORK
+and not of the matrix.** With the ideal permutation S and all three ports in `Z_L`, a wave entering
+port 1 leaves at port 2, reflects, circulates to port 3, reflects again, and only then returns — so
+
+```
+Γ₁ = conj(ρ²)      with   ρ = (Z_L − conj(Z0)) / (Z_L + Z0)
+```
+
+in the block's own frame, plus a further reference change before a 50 Ω system measures it. Verified
+against an independent 6×6 solve at five values of `Z0` before it was written down; the first
+statement of it in these notes ("magnitude squared, phase doubled") was right about the mechanism and
+wrong about the frame, and the numbers caught that.
+
+### Gates
+
+`tests/Engine.Tests/Devices/ComplexReferenceImpedanceTests.cs` (the presented impedance, measured;
+the conjugate-vs-equal termination pair; unitarity with a complex reference; `Zout` read separately;
+`IL` as a 1:1 loss; the refusals, and the parameters that are NOT refused so the check cannot be
+satisfied by refusing everything), `tests/Core.Tests/Devices/CirculatorDetuneTests.cs`,
+`tests/Engine.Tests/Devices/CirculatorDetuneSParamTests.cs` (what a PA on port 1 sees, and the
+`conj(ρ²)` closed form for the rejected design).

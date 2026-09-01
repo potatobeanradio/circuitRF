@@ -46,6 +46,48 @@ public sealed class DocSymbolGlyph : Control
     public static readonly StyledProperty<int> MatchBandsProperty =
         AvaloniaProperty.Register<DocSymbolGlyph, int>(nameof(MatchBands), 1);
 
+    /// <summary>
+    /// Which variant of a DYNAMIC system block to draw (brief-sys-1). Each is ignored by every kind
+    /// but its own, exactly as <see cref="MatchForm"/> is.
+    ///
+    /// <para>Four built-ins besides <c>Match</c> draw a different picture per instance, and every one
+    /// of them draws the thing the prose is about: a circulator that turns the other way, a switch
+    /// in its other position, a filter that passes the other end of the band. Documenting them with
+    /// only the default variant would illustrate the sentence next to it and none of the others.
+    /// <see cref="SymbolKind.Filter"/> reuses <see cref="MatchForm"/> rather than adding a fifth
+    /// property, because it is the same parameter choosing the same picture.</para>
+    /// </summary>
+    public static readonly StyledProperty<CirculatorDirection> CirculatorDirProperty =
+        AvaloniaProperty.Register<DocSymbolGlyph, CirculatorDirection>(nameof(CirculatorDir));
+
+    /// <summary>The SPST switch's position. See <see cref="CirculatorDir"/>.
+    /// The default is stated because <see cref="SwitchState"/>'s members are numbered to match the
+    /// engine's <c>State</c> parameter, so <c>default(SwitchState)</c> is Off, not On.</summary>
+    public static readonly StyledProperty<SwitchState> SwitchPosProperty =
+        AvaloniaProperty.Register<DocSymbolGlyph, SwitchState>(nameof(SwitchPos), SwitchState.On);
+
+    /// <summary>The throw an SPDT switch points at. See <see cref="CirculatorDir"/>.</summary>
+    public static readonly StyledProperty<SwitchThrow> SwitchThrownProperty =
+        AvaloniaProperty.Register<DocSymbolGlyph, SwitchThrow>(nameof(SwitchThrown), SwitchThrow.T1);
+
+    public CirculatorDirection CirculatorDir
+    {
+        get => GetValue(CirculatorDirProperty);
+        set => SetValue(CirculatorDirProperty, value);
+    }
+
+    public SwitchState SwitchPos
+    {
+        get => GetValue(SwitchPosProperty);
+        set => SetValue(SwitchPosProperty, value);
+    }
+
+    public SwitchThrow SwitchThrown
+    {
+        get => GetValue(SwitchThrownProperty);
+        set => SetValue(SwitchThrownProperty, value);
+    }
+
     public NetworkForm MatchForm
     {
         get => GetValue(MatchFormProperty);
@@ -72,18 +114,40 @@ public sealed class DocSymbolGlyph : Control
 
     static DocSymbolGlyph()
         => AffectsRender<DocSymbolGlyph>(KindProperty, PortCountProperty,
-                                         MatchFormProperty, MatchBandsProperty);
+                                         MatchFormProperty, MatchBandsProperty,
+                                         CirculatorDirProperty, SwitchPosProperty,
+                                         SwitchThrownProperty);
+
+    /// <summary>
+    /// The symbol a set of variant selectors names — the ONE place that knows which built-ins draw
+    /// themselves differently per instance, so a figure of a variant is drawn by the same call the
+    /// canvas makes and cannot show a symbol the schematic would not.
+    /// </summary>
+    internal static Symbol GlyphFor(SymbolKind kind, int ports, NetworkForm matchForm, int matchBands,
+                                    CirculatorDirection dir, SwitchState pos, SwitchThrow thrown)
+        => kind switch
+        {
+            SymbolKind.Match      => BuiltInSymbols.PrimitivesForMatch(matchForm, matchBands),
+            SymbolKind.Filter     => BuiltInSymbols.PrimitivesForFilter(matchForm),
+            SymbolKind.Circulator => BuiltInSymbols.PrimitivesForCirculator(dir),
+            SymbolKind.Switch     => BuiltInSymbols.PrimitivesForSwitch(pos),
+            SymbolKind.SwitchD    => BuiltInSymbols.PrimitivesForSwitchD(thrown),
+            _                     => SymbolArtworkGenerator.SymbolFor(kind, ports),
+        };
 
     public override void Render(DrawingContext context)
     {
         base.Render(context);
         if (Bounds.Width < 2 || Bounds.Height < 2) return;
         context.Custom(new Op(new Rect(Bounds.Size), Kind, PortCount, MatchForm, MatchBands,
+                              CirculatorDir, SwitchPos, SwitchThrown,
                               SchematicRenderTheme.FromTheme(ColorTheme.BuiltIn, ThemeService.CurrentVariant)));
     }
 
     private sealed class Op(Rect bounds, SymbolKind kind, int ports,
-                           NetworkForm matchForm, int matchBands, SchematicRenderTheme theme)
+                           NetworkForm matchForm, int matchBands,
+                           CirculatorDirection dir, SwitchState pos, SwitchThrow thrown,
+                           SchematicRenderTheme theme)
         : ICustomDrawOperation
     {
         public Rect Bounds => bounds;
@@ -97,9 +161,7 @@ public sealed class DocSymbolGlyph : Control
             if (lease is null) return;
             using (lease)
             {
-                var symbol = kind == SymbolKind.Match
-                    ? BuiltInSymbols.PrimitivesForMatch(matchForm, matchBands)
-                    : SymbolArtworkGenerator.SymbolFor(kind, ports);
+                var symbol = GlyphFor(kind, ports, matchForm, matchBands, dir, pos, thrown);
                 SymbolArtworkGenerator.DrawFitted(
                     lease.SkCanvas, kind, symbol,
                     (float)bounds.Width, (float)bounds.Height,

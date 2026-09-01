@@ -218,6 +218,9 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
         {
             ComponentCategory.Lumped,
             ComponentCategory.Devices,
+            // Immediately after Devices: a system block is a signal-path part, so a user who has
+            // found Devices is one row away from the blocks they want.
+            ComponentCategory.System,
             ComponentCategory.Nonlinear,
             ComponentCategory.Sources,
             ComponentCategory.Terminals,

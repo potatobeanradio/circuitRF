@@ -30,13 +30,37 @@ public abstract class ToneSourceModelBase : ComponentModel, IDriveScalable
     // Matching tolerance: 1 rad/s — negligible at GHz; exact by the HB guarantee.
     protected const double OmegaTolRads = 1.0;
 
+    /// <summary>
+    /// One declared tone. The AMPLITUDE and the PHASE are carried separately rather than
+    /// pre-multiplied into one phasor, because either may be a swept expression that
+    /// <see cref="ReevaluateFromGlobals"/> re-resolves on its own; the phasor is
+    /// <c>VResolved·e^(j·PhaseRad)</c> and is formed in one place.
+    /// </summary>
     /// <param name="FreqHz">Tone frequency in Hz.</param>
-    /// <param name="Phasor">Resolved amplitude·e^{jφ} — used when the amplitude was a literal.</param>
+    /// <param name="VResolved">Resolved amplitude, WITHOUT the phase applied.</param>
+    /// <param name="PhaseRad">
+    /// The resolved phase, in RADIANS. It is radians because the Elaborator has already applied the
+    /// parameter's own angle unit — the convention <c>TLineModel</c>'s <c>E</c> established — so an
+    /// authored <c>Phase=45 deg</c> arrives here as 0.7854.
+    /// </param>
     /// <param name="VExpr">Raw amplitude expression, when the amplitude referenced a variable.</param>
     /// <param name="PhaseExpr">Raw phase expression, when the phase referenced a variable.</param>
+    /// <param name="VScale">
+    /// The unit multiplier the Elaborator applied to the AMPLITUDE, so that re-evaluating
+    /// <paramref name="VExpr"/> — which is only the raw expression TEXT, with no unit attached —
+    /// lands on the same number the first resolution did. 1.0 when there is no unit, and also 1.0
+    /// under the var-unit-wins rule, where the referenced variable carried its own unit and the site
+    /// unit was never applied in the first place.
+    /// </param>
+    /// <param name="PhaseScale">The same multiplier for the PHASE — π/180 for <c>deg</c>.</param>
     /// <param name="ScopeVars">Resolved scope this tone's expressions are evaluated against.</param>
-    public record ToneEntry(double FreqHz, Complex Phasor,
-        Expr? VExpr, Expr? PhaseExpr, IReadOnlyDictionary<string, Value> ScopeVars);
+    public record ToneEntry(double FreqHz, Complex VResolved, double PhaseRad,
+        Expr? VExpr, Expr? PhaseExpr, double VScale, double PhaseScale,
+        IReadOnlyDictionary<string, Value> ScopeVars);
+
+    /// <summary>A tone's phasor: its amplitude turned by its phase. The ONE place the two meet.</summary>
+    private static Complex Phasor(ToneEntry t)
+        => t.VResolved * Complex.FromPolarCoordinates(1.0, t.PhaseRad);
 
     private readonly ToneEntry[] _tones;
     private readonly double      _dcResolved;
@@ -54,7 +78,7 @@ public abstract class ToneSourceModelBase : ComponentModel, IDriveScalable
         _dcResolved      = dcResolved;
         _dcExpr          = dcExpr;
         _dcScopeVars     = dcScopeVars ?? new Dictionary<string, Value>();
-        _currentPhasors  = tones.Select(t => t.Phasor).ToArray();
+        _currentPhasors  = tones.Select(Phasor).ToArray();
         _currentDc       = dcResolved;
     }
 
@@ -115,11 +139,21 @@ public abstract class ToneSourceModelBase : ComponentModel, IDriveScalable
         for (int i = 0; i < _tones.Length; i++)
         {
             var tone = _tones[i];
-            if (tone.VExpr is null) continue;  // phasor was a literal — use initial value
+            if (tone.VExpr is null && tone.PhaseExpr is null)
+                continue;                       // both were literals — the initial phasor stands
 
-            Complex v     = EvalComplex(tone.VExpr,  tone.ScopeVars, globals);
-            double  phase = EvalReal(tone.PhaseExpr, tone.ScopeVars, globals, 0.0);
-            _currentPhasors[i] = v * Complex.FromPolarCoordinates(1.0, phase * Math.PI / 180.0);
+            // Both halves re-apply their own unit multiplier, because what is re-evaluated here is
+            // the RAW expression text and the Elaborator's unit scaling is not part of it. A phase
+            // that is a literal keeps its already-resolved radians rather than falling back to zero.
+            Complex v = tone.VExpr is null
+                ? tone.VResolved
+                : EvalComplex(tone.VExpr, tone.ScopeVars, globals) * tone.VScale;
+
+            double phase = tone.PhaseExpr is null
+                ? tone.PhaseRad
+                : EvalReal(tone.PhaseExpr, tone.ScopeVars, globals, 0.0) * tone.PhaseScale;
+
+            _currentPhasors[i] = v * Complex.FromPolarCoordinates(1.0, phase);
         }
 
         if (_dcExpr is not null)

@@ -925,18 +925,23 @@ public sealed class Elaborator
         if (inst.Reference.Equals("Match", StringComparison.OrdinalIgnoreCase))
             return ResolveMatchParameters(inst, parentScope);
 
-        // The Mixer's parameters are all plain reals and want no resolver of their own, but its NET
-        // count does need a named error. The engines form a nonlinear device's port voltages from
-        // Nodes[2p]/Nodes[2p+1], so five nets is an index-out-of-range thrown from inside a Newton
-        // iteration — at a point where nothing left on the stack can name the instance. Both
-        // schematic tiles emit six (the single-ended one adds the ground returns itself), so a
-        // wrong count only reaches here from a hand-written netlist, which is exactly the reader
-        // this sentence is for.
-        if (inst.Reference.Equals("Mixer", StringComparison.OrdinalIgnoreCase) &&
-            inst.NetBindings.Count != 6)
-            throw new InvalidOperationException(
-                $"Mixer '{inst.InstanceName}': expected 6 nets (rf+, rf−, lo+, lo−, if+, if−); " +
-                $"got {inst.NetBindings.Count}.");
+        // The Switch's OffState and the Circulator's Direction are enum NAMES, so they are kept out
+        // of the expression evaluator — the same rule, for the same reason, as Match's Response
+        // (see ResolveMatchParameters).
+        if (inst.Reference.Equals("Switch", StringComparison.OrdinalIgnoreCase))
+            return ResolveEnumNamedParameters(inst, parentScope, "OffState");
+        if (inst.Reference.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
+            return ResolveEnumNamedParameters(inst, parentScope, "Direction");
+        if (inst.Reference.Equals("Amp", StringComparison.OrdinalIgnoreCase))
+            return ResolveEnumNamedParameters(inst, parentScope, "IP3Ref");
+
+        // The filter pair's Response and Form are the same kind of value, twice over on the duplexer
+        // because it carries two complete filter specifications (brief-sys-6).
+        if (inst.Reference.Equals("Filter", StringComparison.OrdinalIgnoreCase))
+            return ResolveEnumNamedParameters(inst, parentScope, "Response", "Form");
+        if (inst.Reference.Equals("Duplexer", StringComparison.OrdinalIgnoreCase))
+            return ResolveEnumNamedParameters(inst, parentScope,
+                                              "TxResponse", "TxForm", "RxResponse", "RxForm");
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
@@ -953,6 +958,121 @@ public sealed class Elaborator
 
             result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
         }
+
+        ValidatePortPairNetCount(inst, result);
+        return result;
+    }
+
+    // ── 2N-net port-pair components: the net-count refusal ────────────────────
+
+    /// <summary>
+    /// Refuses a 2N-net component whose netlist line does not carry 2N nets, NAMING the instance.
+    ///
+    /// <para><b>Why this is worth a check of its own.</b> Every one of these components forms its
+    /// port voltages from <c>Nodes[2p]</c>/<c>Nodes[2p+1]</c>, so one net short is an
+    /// index-out-of-range thrown from inside a stamp or a Newton iteration — at a point where
+    /// nothing left on the stack can say which instance it was. The schematic tiles all emit the
+    /// right count (the ground-referenced ones append their own <c>"0"</c> returns at extraction),
+    /// so a wrong count only ever reaches here from a hand-written netlist, which is exactly the
+    /// reader this sentence is for.</para>
+    ///
+    /// <para>ONE check for the whole family rather than a copy per component: the Mixer's was the
+    /// first, and the ideal system blocks (brief-sys-2 onwards) are another nine of the same
+    /// shape.</para>
+    /// </summary>
+    private static void ValidatePortPairNetCount(Instance inst, IReadOnlyDictionary<string, Value> resolved)
+    {
+        var expected = ExpectedPortPairNets(inst, resolved);
+        if (expected is null || inst.NetBindings.Count == expected.Value.Nets) return;
+
+        throw new InvalidOperationException(
+            $"{inst.Reference} '{inst.InstanceName}': expected {expected.Value.Nets} nets " +
+            $"({expected.Value.Names}); got {inst.NetBindings.Count}.");
+    }
+
+    /// <summary>
+    /// The net count a 2N-net component requires, and the terminal names to print, or null when the
+    /// reference is not one of them. The Switch's count depends on a PARAMETER, which is why this
+    /// runs after the overrides are resolved rather than before.
+    /// </summary>
+    private static (int Nets, string Names)? ExpectedPortPairNets(
+        Instance inst, IReadOnlyDictionary<string, Value> resolved)
+    {
+        if (inst.Reference.Equals("Mixer", StringComparison.OrdinalIgnoreCase))
+            return (6, "rf+, rf−, lo+, lo−, if+, if−");
+
+        if (inst.Reference.Equals("Atten", StringComparison.OrdinalIgnoreCase))
+            return (4, "1+, 1−, 2+, 2−");
+
+        if (inst.Reference.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
+            return (6, "1+, 1−, 2+, 2−, 3+, 3−");
+
+        if (inst.Reference.Equals("Balun", StringComparison.OrdinalIgnoreCase))
+            return (6, "unb+, unb−, bal++, bal+−, bal−+, bal−−");
+
+        // One reference for three tiles — the directional coupler and both hybrids — so the count
+        // is the same eight for all of them.
+        if (inst.Reference.Equals("Coupler", StringComparison.OrdinalIgnoreCase))
+            return (8, "in+, in−, thru+, thru−, cpl+, cpl−, iso+, iso−");
+
+        // Unilateral, so the two ports are named rather than numbered — a netlist line with them
+        // the wrong way round is a 20 dB pad, and the names are the only warning of that.
+        if (inst.Reference.Equals("Amp", StringComparison.OrdinalIgnoreCase))
+            return (4, "in+, in−, out+, out−");
+
+        if (inst.Reference.Equals("Filter", StringComparison.OrdinalIgnoreCase))
+            return (4, "1+, 1−, 2+, 2−");
+
+        // Named rather than numbered: swapping TX and RX on a hand-written line is a duplexer with
+        // its band plan inverted, which simulates perfectly and answers a different question.
+        if (inst.Reference.Equals("Duplexer", StringComparison.OrdinalIgnoreCase))
+            return (6, "ant+, ant−, tx+, tx−, rx+, rx−");
+
+        if (inst.Reference.Equals("Switch", StringComparison.OrdinalIgnoreCase))
+        {
+            int throws = 1;
+            if (resolved.TryGetValue("Throws", out var t) && t.Kind == ValueKind.Real)
+                throws = Math.Max(1, (int)Math.Round(t.AsReal()));
+
+            // An SPST's two pins are interchangeable and unnamed on the glyph; anything with more
+            // than one throw has a common port that is not.
+            string names = throws == 1
+                ? "1+, 1−, 2+, 2−"
+                : "com+, com−, " + string.Join(", ",
+                    Enumerable.Range(1, throws).Select(k => $"{k}+, {k}−"));
+            return (2 * (1 + throws), names);
+        }
+
+        return null;
+    }
+
+    // ── Enum-named parameters on the ideal system blocks ──────────────────────
+
+    /// <summary>
+    /// Resolves a component whose parameters are plain reals apart from the NAMED few, which carry
+    /// an enum NAME — the Switch's <c>OffState</c>, the Circulator's <c>Direction</c>, the
+    /// amplifier's <c>IP3Ref</c>. An enum name
+    /// is a bare identifier the evaluator would either fail on or, worse, resolve against a global
+    /// that happens to share its spelling, so it is stored verbatim, exactly as Match's
+    /// <c>Response</c> is.
+    ///
+    /// <para>The Switch's <c>State</c> deliberately stays an ordinary evaluated NUMBER: it is what
+    /// makes a parametric sweep over the switch position work. Only a value with no numeric reading
+    /// at all belongs on this list.</para>
+    /// </summary>
+    private IReadOnlyDictionary<string, Value> ResolveEnumNamedParameters(
+        Instance inst, Scope parentScope, params string[] enumNamed)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var ov in inst.Overrides)
+        {
+            if (enumNamed.Any(n => ov.Name.Equals(n, StringComparison.OrdinalIgnoreCase)))
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+            else
+                result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+        }
+
+        ValidatePortPairNetCount(inst, result);
         return result;
     }
 
@@ -1434,8 +1554,15 @@ public sealed class Elaborator
                     var refs = AstWalker.CollectRefs(ast);
                     if (refs.Count > 0)
                     {
-                        // Has variable references → also store the raw expression.
+                        // Has variable references → also store the raw expression, AND the unit
+                        // multiplier that was just applied to it. The stored text carries no unit,
+                        // so a model re-evaluating it at a sweep point would otherwise land on a
+                        // different number than this first resolution did — `Phase=phi deg` would
+                        // come back in degrees after starting life in radians. 1.0 under the
+                        // var-unit-wins rule, where the referenced variable brought its own unit and
+                        // the site unit was never applied (Evaluator.Eval).
                         result[$"_expr_{ov.Name}"] = new Value(ov.Expression);
+                        result[$"_scale_{ov.Name}"] = new Value(ToneParamUnitScale(ov, parentScope));
                         InjectToneScopeVars(ast, parentScope, scopeVarCache, result);
                     }
                 }
@@ -1453,6 +1580,19 @@ public sealed class Elaborator
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The multiplier <see cref="Evaluator.Eval(string, Scope, string?)"/> applied to a tone-source
+    /// parameter's value for its declared unit — π/180 for <c>deg</c>, 1e-3 for <c>mV</c>, and 1.0
+    /// both when there is no unit and under the var-unit-wins rule, where a referenced variable
+    /// carried its own unit and the site unit was deliberately not applied.
+    /// </summary>
+    private static double ToneParamUnitScale(ParameterAssignment ov, Scope scope)
+    {
+        if (string.IsNullOrEmpty(ov.Unit)) return 1.0;
+        if (Evaluator.ReferencesUnitBearingVariable(ov.Expression, scope)) return 1.0;
+        return Units.Scale(ov.Unit) ?? 1.0;
     }
 
     private void InjectToneScopeVars(Expr ast, Scope scope,

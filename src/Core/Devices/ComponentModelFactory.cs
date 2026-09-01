@@ -7,6 +7,7 @@ using CircuitRF.Core.Expressions;
 using RfCore;
 
 using CircuitRF.Core.Matching;
+using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 
 namespace CircuitRF.Core.Devices;
@@ -43,6 +44,17 @@ public static class ComponentModelFactory
             "BJT_NPN", "BJT_PNP",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             "ExtDevice", "wBond", "Match", "Mixer",
+            // The ideal system blocks (brief-sys-2, brief-sys-3). One IdealSBlockModel subclass
+            // each; "Switch" serves both switch tiles, with the throw count a parameter, and
+            // "Coupler" serves the directional coupler and both hybrid tiles, with the coupling and
+            // the phase parameters.
+            "Atten", "Switch", "Circulator", "Coupler", "Balun",
+            // The ideal amplifier (brief-sys-5) — the one block in the family with a nonlinearity
+            // of its own, and therefore the one that never takes a PIM.
+            "Amp",
+            // The frequency-dependent pair (brief-sys-6). "Duplexer" is two "Filter" responses
+            // sharing a node, so the two read the same parameter set twice over with a Tx/Rx prefix.
+            "Filter", "Duplexer",
         };
 
     /// <summary>
@@ -67,6 +79,9 @@ public static class ComponentModelFactory
         IReadOnlyList<UserFunction>? functions = null,
         double ambientC = Temperature.NominalC)
     {
+        RefusePimWhereItCannotLive(typeName, parameters);
+        RefuseComplexWhereOnlyRealFits(typeName, parameters);
+
         if (typeName.Equals("SnP",    StringComparison.OrdinalIgnoreCase))
             return CreateSnpModel(parameters);
         if (typeName.Equals("Mutual", StringComparison.OrdinalIgnoreCase))
@@ -124,6 +139,22 @@ public static class ComponentModelFactory
             return CreateMatchModel(parameters);
         if (typeName.Equals("Mixer", StringComparison.OrdinalIgnoreCase))
             return CreateMixerModel(parameters);
+        if (typeName.Equals("Atten", StringComparison.OrdinalIgnoreCase))
+            return CreateAttenuatorModel(parameters);
+        if (typeName.Equals("Switch", StringComparison.OrdinalIgnoreCase))
+            return CreateSwitchModel(parameters);
+        if (typeName.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
+            return CreateCirculatorModel(parameters);
+        if (typeName.Equals("Coupler", StringComparison.OrdinalIgnoreCase))
+            return CreateCouplerModel(parameters);
+        if (typeName.Equals("Balun", StringComparison.OrdinalIgnoreCase))
+            return CreateBalunModel(parameters);
+        if (typeName.Equals("Amp", StringComparison.OrdinalIgnoreCase))
+            return CreateAmplifierModel(parameters);
+        if (typeName.Equals("Filter", StringComparison.OrdinalIgnoreCase))
+            return CreateFilterModel(parameters);
+        if (typeName.Equals("Duplexer", StringComparison.OrdinalIgnoreCase))
+            return CreateDuplexerModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -499,6 +530,19 @@ public static class ComponentModelFactory
             : new ToneSourceModel(tones.ToArray(), dcResolved, dcExpr, scopeVars);
     }
 
+    /// <summary>
+    /// One tone of a <c>V_1Tone</c>/<c>V_nTone</c>/<c>I_1Tone</c>/<c>I_nTone</c>, read out of the
+    /// resolved parameter bag.
+    ///
+    /// <para>Amplitude and phase are each carried BOTH as a resolved number and (when they referenced
+    /// a variable) as the raw expression the model re-evaluates at each sweep point, together with
+    /// the unit multiplier the Elaborator applied. The raw expression text has no unit attached to
+    /// it, so without that multiplier a swept <c>V=amp mV</c> or <c>Phase=phi deg</c> would jump to a
+    /// different number the moment the sweep moved.</para>
+    ///
+    /// <para><b>Phase arrives in RADIANS</b> — the Elaborator applied the parameter's angle unit,
+    /// the same convention <c>TLIN</c>'s <c>E</c> carries — so nothing here multiplies by π/180.</para>
+    /// </summary>
     private static ToneSourceModelBase.ToneEntry BuildToneEntry(
         double freqHz,
         IReadOnlyDictionary<string, Value> parameters,
@@ -506,14 +550,12 @@ public static class ComponentModelFactory
         string phaseKey,
         IReadOnlyDictionary<string, Value> scopeVars)
     {
-        // Check if the V parameter has a raw expression (variable-ref, needs re-evaluation on sweep).
         Expr?   vExpr     = null;
-        Complex phasor    = Complex.Zero;
+        Complex vResolved = Complex.Zero;
         Expr?   phaseExpr = null;
-        double  phaseDeg  = 0.0;
+        double  phaseRad  = 0.0;
 
-        string exprVKey = $"_expr_{vKey}";
-        if (parameters.TryGetValue(exprVKey, out var rawV) && rawV.Kind == ValueKind.String)
+        if (parameters.TryGetValue($"_expr_{vKey}", out var rawV) && rawV.Kind == ValueKind.String)
             vExpr = Parser.Parse(rawV.AsString());
 
         if (parameters.TryGetValue(vKey, out var vVal))
@@ -521,24 +563,39 @@ public static class ComponentModelFactory
             if (vExpr is null && vVal.Kind == ValueKind.String)
                 vExpr = Parser.Parse(vVal.AsString());
             else if (vVal.Kind == ValueKind.Real)
-                phasor = new Complex(vVal.AsReal(), 0);
+                vResolved = new Complex(vVal.AsReal(), 0);
             else if (vVal.Kind == ValueKind.Complex)
-                phasor = vVal.AsComplex();
+                vResolved = vVal.AsComplex();
         }
+
+        // The phase gets the SAME treatment the amplitude gets. It used not to: `_expr_Phase` was
+        // never read, so a phase that referenced a variable re-evaluated to zero at every sweep
+        // point after the first.
+        if (parameters.TryGetValue($"_expr_{phaseKey}", out var rawP) && rawP.Kind == ValueKind.String)
+            phaseExpr = Parser.Parse(rawP.AsString());
 
         if (parameters.TryGetValue(phaseKey, out var phVal))
         {
-            if (phVal.Kind == ValueKind.String)
+            if (phaseExpr is null && phVal.Kind == ValueKind.String)
                 phaseExpr = Parser.Parse(phVal.AsString());
             else if (phVal.Kind == ValueKind.Real)
-                phaseDeg = phVal.AsReal();
+                phaseRad = phVal.AsReal();
         }
 
-        if (vExpr is null)
-            phasor = phasor * Complex.FromPolarCoordinates(1.0, phaseDeg * Math.PI / 180.0);
-
-        return new ToneSourceModelBase.ToneEntry(freqHz, phasor, vExpr, phaseExpr, scopeVars);
+        return new ToneSourceModelBase.ToneEntry(
+            freqHz, vResolved, phaseRad, vExpr, phaseExpr,
+            UnitScaleOf(parameters, vKey), UnitScaleOf(parameters, phaseKey), scopeVars);
     }
+
+    /// <summary>
+    /// The unit multiplier the Elaborator applied to a tone-source parameter when it first resolved
+    /// it, recorded alongside the raw expression so a sweep-time re-evaluation of that expression
+    /// can apply the same one. Absent means 1.0 — no unit, or the var-unit-wins case where the site
+    /// unit was never applied.
+    /// </summary>
+    private static double UnitScaleOf(IReadOnlyDictionary<string, Value> parameters, string key)
+        => parameters.TryGetValue($"_scale_{key}", out var v) && v.Kind == ValueKind.Real
+            ? v.AsReal() : 1.0;
 
     private static double GetReal(IReadOnlyDictionary<string, Value> parameters, string key, double fallback)
         => parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
@@ -628,7 +685,8 @@ public static class ComponentModelFactory
 
         double pavlDbm = GetReal(parameters, "Pavl",  0.0);
         double freqHz  = GetReal(parameters, "Freq",  1e9);
-        double phaseDeg = GetReal(parameters, "Phase", 0.0);
+        // RADIANS — the Elaborator applied the parameter's angle unit, as it does for TLIN's E.
+        double phaseRad = GetReal(parameters, "Phase", 0.0);
 
         // Collect per-harmonic Z[k] and G[k] entries (same logic as Tuner).
         var harmonicZ = new Dictionary<int, Complex>();
@@ -663,7 +721,7 @@ public static class ComponentModelFactory
             }
         }
 
-        return new P1ToneModel(instanceName, harmonicZ, zDefault, pavlDbm, freqHz, phaseDeg);
+        return new P1ToneModel(instanceName, harmonicZ, zDefault, pavlDbm, freqHz, phaseRad);
     }
 
     // ── PnTone (multi-tone power source) ──────────────────────────────────────────
@@ -684,9 +742,10 @@ public static class ComponentModelFactory
         for (int i = 1; ; i++)
         {
             if (!parameters.TryGetValue($"Freq[{i}]", out var fv) || fv.Kind != ValueKind.Real) break;
-            double pavl  = GetReal(parameters, $"Pavl[{i}]",  0.0);
-            double phase = GetReal(parameters, $"Phase[{i}]", 0.0);
-            tones.Add(new PnToneModel.Tone(pavl, fv.AsReal(), phase));
+            double pavl     = GetReal(parameters, $"Pavl[{i}]",  0.0);
+            // RADIANS — the Elaborator applied the parameter's angle unit, as it does for TLIN's E.
+            double phaseRad = GetReal(parameters, $"Phase[{i}]", 0.0);
+            tones.Add(new PnToneModel.Tone(pavl, fv.AsReal(), phaseRad));
         }
         // Fallback: a scalar Freq (P1Tone-style single tone) lets a degenerate PnTone still resolve.
         if (tones.Count == 0 && parameters.TryGetValue("Freq", out var f0) && f0.Kind == ValueKind.Real)
@@ -923,6 +982,366 @@ public static class ComponentModelFactory
             isoRfIfDb:  P("IsoRF_IF", 200.0),
             iip3Dbm:    P("IIP3",     100.0));
     }
+
+    // ── The ideal system blocks (brief-sys-2) ─────────────────────────────────
+
+    /// <summary>
+    /// The three components that can carry a passive intermod (brief-sys-4). Everything else that is
+    /// handed a <c>PIM</c> parameter is refused by name — see
+    /// <see cref="RefusePimWhereItCannotLive"/>.
+    /// </summary>
+    private static readonly HashSet<string> _pimCapableTypes =
+        new(StringComparer.OrdinalIgnoreCase) { "Atten", "Circulator", "Coupler" };
+
+    /// <summary>
+    /// Refuses a <c>PIM</c> specification on a component that cannot host one, by name, and says
+    /// what to place instead.
+    ///
+    /// <para><b>Why this sits in the shared entry point rather than in each creator.</b> The
+    /// components that must refuse are the ones whose S is frequency-DEPENDENT — the filter and the
+    /// duplexer (brief-sys-6) — and those do not exist yet. A per-creator check would therefore have
+    /// to be remembered when they land, which is exactly the kind of thing that is not. One check
+    /// here covers every type in the factory, present and future, and the two that already exist
+    /// (<c>Balun</c> and <c>Switch</c>, both excluded by their own briefs' decisions).</para>
+    ///
+    /// <para>The remedy in the message is the honest one and is not a workaround: a memoryless
+    /// nonlinearity cannot be attached to a rational transfer function inside one component, and an
+    /// attenuator with a small loss and a PIM specification placed in front of the block is a better
+    /// answer than a fiction. It is a SMALL loss and not 0 dB — see
+    /// <see cref="AttenuatorModel"/>.</para>
+    /// </summary>
+    /// <summary>
+    /// A REFERENCE-IMPEDANCE parameter: real or complex, whichever the user wrote, with the type's
+    /// own default when it is absent.
+    ///
+    /// <para><b>Why this is not the ordinary <c>P(...)</c> reader.</b> Every creator here reads its
+    /// numbers through a local <c>P</c> that accepts <c>ValueKind.Real</c> and falls back to the
+    /// default on anything else. That is right for a length or a dB, and it is silently WRONG for an
+    /// impedance: <c>Zin = 5 + j100</c> resolves to a perfectly good <c>Complex</c> Value, misses the
+    /// <c>Real</c> test, and the block is built at 50 ohms with nothing said. The reported symptom is
+    /// a response that does not match — never a message. Reading impedances through their own
+    /// complex-aware helper, and refusing a complex value everywhere else
+    /// (<see cref="RefuseComplexWhereOnlyRealFits"/>), removes the whole shape of that bug.</para>
+    /// </summary>
+    private static Complex ImpedanceParam(
+        IReadOnlyDictionary<string, Value> parameters, string name, double fallbackOhms)
+        => parameters.TryGetValue(name, out var v) && v.Kind is ValueKind.Real or ValueKind.Complex
+         ? ToComplex(v)
+         : new Complex(fallbackOhms, 0);
+
+    /// <summary>
+    /// Which parameters of a type may carry a COMPLEX value, for the types that have been audited
+    /// for it. A type listed here refuses a complex value on any OTHER parameter of its own, naming
+    /// the parameter and listing the ones that do take one.
+    ///
+    /// <para><b>A positive list, and deliberately not "every type present and future"</b> — unlike
+    /// <see cref="RefusePimWhereItCannotLive"/> next door, which can be blanket because nothing legitimately
+    /// carries a <c>PIM</c> key. A complex value IS legitimately consumed elsewhere: <c>Z_Port</c>,
+    /// <c>Chain</c> and the tone sources forward every numeric parameter they do not recognise into
+    /// the expression scope, complex ones included, so a blanket refusal would reject working
+    /// designs. Listing the types whose numeric parameters were actually read is the version of this
+    /// check that cannot be wrong.</para>
+    /// </summary>
+    private static readonly (string Type, Func<string, bool> Takes, string List)[] _complexParamRules =
+    [
+        ("Atten",      n => Is(n, "Z0"),                       "Z0"),
+        ("Switch",     n => Is(n, "Z0"),                       "Z0"),
+        ("Circulator", n => Is(n, "Z0"),                       "Z0"),
+        ("Coupler",    n => Is(n, "Z0"),                       "Z0"),
+        ("Balun",      n => Is(n, "Zunb", "Zbal"),             "Zunb, Zbal"),
+        ("Amp",        n => Is(n, "Zin", "Zout"),              "Zin, Zout"),
+        ("Filter",     n => Is(n, "Zin", "Zout"),              "Zin, Zout"),
+        ("Duplexer",   n => Is(n, "Zant", "TxZ", "RxZ"),       "Zant, TxZ, RxZ"),
+        // The three terminations state a complex impedance PER HARMONIC. Their scalar `Z`/`Z0` is
+        // the real reference the per-harmonic reflection coefficients G[k] convert against, which is
+        // why it is not on the list and why the message points at Z[k].
+        ("Tuner",      n => Is(n, "Zdefault") || Indexed(n),   "Zdefault, Z[k], G[k]"),
+        ("P1Tone",     Indexed,                                "Z[k], G[k]"),
+        ("PnTone",     Indexed,                                "Z[k], G[k]"),
+        // Nothing. Both are real-valued by construction and say so rather than reading 50 ohms.
+        ("Mixer",      _ => false,                             ""),
+        ("TLIN",       _ => false,                             ""),
+    ];
+
+    private static bool Is(string name, params string[] any)
+    {
+        foreach (var a in any) if (name.Equals(a, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    private static bool Indexed(string name) => RxTunerZ.IsMatch(name) || RxTunerG.IsMatch(name);
+
+    /// <summary>
+    /// Refuses a complex value on a parameter that can only be read as a real number, naming both.
+    ///
+    /// <para>It exists because the failure it replaces is invisible: the value resolves, the model
+    /// is built at its DEFAULT, the run completes, and the only symptom is a wrong answer. Raised
+    /// here, before any model is constructed, so the message can name the parameter the user
+    /// actually typed rather than a number deep inside a solve.</para>
+    /// </summary>
+    private static void RefuseComplexWhereOnlyRealFits(
+        string typeName, IReadOnlyDictionary<string, Value> parameters)
+    {
+        Func<string, bool>? takes = null;
+        string list = "";
+        foreach (var (t, f, l) in _complexParamRules)
+            if (typeName.Equals(t, StringComparison.OrdinalIgnoreCase)) { takes = f; list = l; break; }
+        if (takes is null) return;
+
+        foreach (var kv in parameters)
+        {
+            if (kv.Value.Kind != ValueKind.Complex || takes(kv.Key)) continue;
+
+            var z = kv.Value.AsComplex();
+            throw new InvalidOperationException(
+                $"{typeName}: '{kv.Key}' was given the complex value {z.Real:G6}"
+              + $"{(z.Imaginary < 0 ? " - j" : " + j")}{Math.Abs(z.Imaginary):G6}, and only a real "
+              + $"number can be read there. "
+              + (list.Length > 0
+                    ? $"On a {typeName} the parameters that take a complex value are: {list}."
+                    : $"No parameter of a {typeName} takes a complex value - its arithmetic is real "
+                    + $"throughout. Put the complex impedance on what terminates it (a Term, a "
+                    + $"Z_Port) instead."));
+        }
+    }
+
+    private static void RefusePimWhereItCannotLive(
+        string typeName, IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.ContainsKey("PIM") || _pimCapableTypes.Contains(typeName)) return;
+
+        throw new InvalidOperationException(
+            $"{typeName}: this component cannot carry a passive intermod. A nonlinearity here is "
+          + $"memoryless in the port voltages, which a frequency-dependent or unilateral block "
+          + $"cannot be written as, and a block that already has an intercept of its own would make "
+          + $"both unreadable. Place an attenuator in front of it instead — a small loss (0.01 dB is "
+          + $"electrically invisible) with the PIM and PIMPc you wanted here — and it generates the "
+          + $"same product into the same signal path.");
+    }
+
+    /// <summary>
+    /// The ideal attenuator. <c>RL</c>'s 200 dB default is an honest number rather than a sentinel —
+    /// <see cref="AttenuatorModel"/> itself decides that a suppression that large means the entry is
+    /// absent, exactly as <see cref="MixerModel"/> does with its isolations.
+    /// </summary>
+    private static AttenuatorModel CreateAttenuatorModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        return new AttenuatorModel(
+            lossDb:       P("Loss", 10.0),
+            z0:           ImpedanceParam(parameters, "Z0", 50.0),
+            returnLossDb: P("RL",  200.0),
+            pimDbm:       P("PIM",  -200.0),
+            pimPcDbm:     P("PIMPc",  43.0));
+    }
+
+    /// <summary>
+    /// The ideal switch, for both tiles: <c>Throws</c> is 1 for the SPST and 2 for the SPDT, and the
+    /// registry seeds it per tile. <c>OffState</c> is an enum NAME and reaches here as a String —
+    /// the Elaborator keeps it out of the expression evaluator for the same reason Match's
+    /// <c>Response</c> is kept out — so an unrecognised spelling reads as <c>Reflective</c>, which is
+    /// what a switch with nothing said about it is.
+    /// </summary>
+    private static SwitchModel CreateSwitchModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        var offState = SwitchOffState.Reflective;
+        if (parameters.TryGetValue("OffState", out var os) && os.Kind == ValueKind.String &&
+            Enum.TryParse<SwitchOffState>(os.AsString(), ignoreCase: true, out var parsed))
+            offState = parsed;
+
+        return new SwitchModel(
+            throws:       (int)Math.Round(P("Throws", 1.0)),
+            state:        (int)Math.Round(P("State",  1.0)),
+            ilDb:         P("IL",          0.0),
+            isolationDb:  P("Isolation", 200.0),
+            offState:     offState,
+            z0:           ImpedanceParam(parameters, "Z0", 50.0),
+            returnLossDb: P("RL",        200.0));
+    }
+
+    /// <summary>
+    /// The ideal circulator. <c>Direction</c> is an enum NAME and reaches here as a String — the
+    /// Elaborator keeps it out of the expression evaluator for the same reason the Switch's
+    /// <c>OffState</c> and Match's <c>Response</c> are kept out — so an unrecognised spelling reads
+    /// as <c>CW</c>, which is the direction the glyph draws with nothing said about it.
+    /// </summary>
+    private static CirculatorModel CreateCirculatorModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        var direction = CirculatorDirection.CW;
+        if (parameters.TryGetValue("Direction", out var d) && d.Kind == ValueKind.String &&
+            Enum.TryParse<CirculatorDirection>(d.AsString(), ignoreCase: true, out var parsed))
+            direction = parsed;
+
+        return new CirculatorModel(
+            direction:    direction,
+            ilDb:         P("IL",          0.0),
+            isolationDb:  P("Isolation", 200.0),
+            returnLossDb: P("RL",        200.0),
+            z0:           ImpedanceParam(parameters, "Z0", 50.0),
+            pimDbm:       P("PIM",      -200.0),
+            pimPcDbm:     P("PIMPc",      43.0),
+            // Per-port match detune. VSWR at its default of 1 means "not stated" and that port
+            // falls back to RL, so the datasheet form still works and nothing changes for anyone
+            // who never touches these. Ang arrives in RADIANS - the Elaborator applies the
+            // parameter's own angle unit, as it does for the Coupler's Phase.
+            vswr:   [P("VSWR1", 1.0), P("VSWR2", 1.0), P("VSWR3", 1.0)],
+            angRad: [P("Ang1",  0.0), P("Ang2",  0.0), P("Ang3",  0.0)]);
+    }
+
+    /// <summary>
+    /// The ideal directional coupler, for all three tiles: the registry seeds <c>Coupling</c> at
+    /// 20 dB for the coupler and 3.0103 dB for the two hybrids, and <c>Phase</c> at 90 or 180. The
+    /// fallbacks here are the coupler's, because a hand-written <c>Coupler</c> line with nothing
+    /// said about it is a directional coupler.
+    /// </summary>
+    private static CouplerModel CreateCouplerModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        // Phase arrives in RADIANS — the Elaborator applies the parameter's own angle unit, the
+        // same convention TLIN's E carries — so the fallback is π/2, not 90.
+        return new CouplerModel(
+            couplingDb:    P("Coupling",     20.0),
+            phaseRad:      P("Phase", Math.PI / 2.0),
+            directivityDb: P("Directivity", 200.0),
+            ilDb:          P("IL",            0.0),
+            returnLossDb:  P("RL",          200.0),
+            z0:            ImpedanceParam(parameters, "Z0", 50.0),
+            pimDbm:        P("PIM",        -200.0),
+            pimPcDbm:      P("PIMPc",        43.0));
+    }
+
+    /// <summary>
+    /// The ideal balun, in the three-port ground-referenced form. <c>Zbal</c> is the impedance of
+    /// EACH balanced port to ground, so the two 50 Ω defaults are a 50 Ω to 100 Ω differential
+    /// transformation rather than a 1:1 one.
+    /// </summary>
+    private static BalunModel CreateBalunModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        return new BalunModel(
+            zUnb:        ImpedanceParam(parameters, "Zunb", 50.0),
+            zBal:        ImpedanceParam(parameters, "Zbal", 50.0),
+            ilDb:        P("IL",        0.0),
+            ampImbDb:    P("AmpImb",    0.0),
+            phaseImbRad: P("PhaseImb",  0.0));   // RADIANS, as the Coupler's Phase is
+    }
+
+    /// <summary>
+    /// The ideal power amplifier (brief-sys-5). <c>IP3Ref</c> is an enum NAME and reaches here as a
+    /// String — the Elaborator keeps it out of the expression evaluator for the same reason the
+    /// Switch's <c>OffState</c> and the Circulator's <c>Direction</c> are kept out — so an
+    /// unrecognised spelling reads as <c>Output</c>, which is the form a power-amplifier datasheet
+    /// quotes and therefore what a number with nothing said about it is.
+    ///
+    /// <para>Every "off" default is an honest number rather than a sentinel: 200 dB of return loss,
+    /// 200 dB of reverse isolation and 200 dBm of intercept. <see cref="AmplifierModel"/> itself
+    /// decides where each of those stops being a number and starts meaning "the term is absent".</para>
+    /// </summary>
+    private static AmplifierModel CreateAmplifierModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        var ip3Ref = Ip3Reference.Output;
+        if (parameters.TryGetValue("IP3Ref", out var r) && r.Kind == ValueKind.String &&
+            Enum.TryParse<Ip3Reference>(r.AsString(), ignoreCase: true, out var parsed))
+            ip3Ref = parsed;
+
+        return new AmplifierModel(
+            gainDb:   P("Gain",   20.0),
+            ip3Dbm:   P("IP3",    40.0),
+            ip3Ref:   ip3Ref,
+            zIn:      ImpedanceParam(parameters, "Zin",  50.0),
+            zOut:     ImpedanceParam(parameters, "Zout", 50.0),
+            rlInDb:   P("RLin",  200.0),
+            rlOutDb:  P("RLout", 200.0),
+            s12Db:    P("S12",   200.0));
+    }
+
+    // ── The frequency-dependent pair (brief-sys-6) ────────────────────────────
+
+    /// <summary>
+    /// The ideal filter. <c>Response</c> and <c>Form</c> are enum NAMES and reach here as Strings —
+    /// the Elaborator keeps them out of the expression evaluator for the same reason Match's own
+    /// <c>Response</c> and <c>Form</c> are kept out — so an unrecognised spelling reads as the
+    /// default rather than resolving against a global that happens to share its name.
+    ///
+    /// <para><b>Every fallback here is the tile's own default</b>, so a hand-written
+    /// <c>Filter</c> line with nothing said about it is the same 3rd-order 0.1 dB Chebyshev bandpass
+    /// a freshly placed tile is. A parameter the selected family or form does not read is passed
+    /// anyway and ignored — see <see cref="FilterModel"/> for why that is deliberate.</para>
+    /// </summary>
+    private static FilterModel CreateFilterModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        return new FilterModel(
+            response: EnumNamed(parameters, "Response", FilterResponse.Chebyshev),
+            form:     EnumNamed(parameters, "Form",     NetworkForm.Bandpass),
+            order:    (int)Math.Round(P("Order", 3.0)),
+            fcHz:     P("Fc",    1e9),
+            f1Hz:     P("F1",    0.9e9),
+            f2Hz:     P("F2",    1.1e9),
+            rippleDb: P("Ripple", 0.1),
+            astopDb:  P("Astop", 40.0),
+            zIn:      ImpedanceParam(parameters, "Zin",  50.0),
+            zOut:     ImpedanceParam(parameters, "Zout", 50.0),
+            ilDb:     P("IL",     0.0));
+    }
+
+    /// <summary>
+    /// The ideal duplexer: two complete filter specifications with a <c>Tx</c>/<c>Rx</c> prefix, plus
+    /// one shared <c>Zant</c>. There is no <c>Isolation</c> parameter, on purpose — see
+    /// <see cref="DuplexerModel"/>.
+    /// </summary>
+    private static DuplexerModel CreateDuplexerModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        FilterNetwork Arm(string prefix, double f1, double f2) => FilterNetwork.Create(
+            response: EnumNamed(parameters, prefix + "Response", FilterResponse.Chebyshev),
+            form:     EnumNamed(parameters, prefix + "Form",     NetworkForm.Bandpass),
+            order:    (int)Math.Round(P(prefix + "Order", 3.0)),
+            fcHz:     P(prefix + "Fc",     1e9),
+            f1Hz:     P(prefix + "F1",     f1),
+            f2Hz:     P(prefix + "F2",     f2),
+            rippleDb: P(prefix + "Ripple", 0.1),
+            astopDb:  P(prefix + "Astop", 40.0),
+            ilDb:     P(prefix + "IL",     0.0));
+
+        return new DuplexerModel(
+            tx:   Arm("Tx", 0.90e9, 1.00e9),
+            rx:   Arm("Rx", 1.10e9, 1.20e9),
+            zAnt: ImpedanceParam(parameters, "Zant", 50.0),
+            zTx:  ImpedanceParam(parameters, "TxZ",  50.0),
+            zRx:  ImpedanceParam(parameters, "RxZ",  50.0));
+    }
+
+    /// <summary>
+    /// An enum-NAMED parameter, or <paramref name="fallback"/> when it is absent or unrecognised.
+    /// The same reading the Switch's <c>OffState</c>, the Circulator's <c>Direction</c> and the
+    /// amplifier's <c>IP3Ref</c> get, written once because the filter pair needs it four times over.
+    /// </summary>
+    private static T EnumNamed<T>(IReadOnlyDictionary<string, Value> parameters, string name, T fallback)
+        where T : struct, Enum
+        => parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.String &&
+           Enum.TryParse<T>(v.AsString(), ignoreCase: true, out var parsed)
+            ? parsed
+            : fallback;
 
     private static DiodeModel CreateDiodeModel(IReadOnlyDictionary<string, Value> parameters, double ambientC)
     {

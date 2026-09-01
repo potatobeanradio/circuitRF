@@ -1,5 +1,135 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## SYS-1 — the system-block glyphs, and a `System` palette filter (2026-08-31)
+
+`brief-sys-1-symbols-and-palette.md`, the first of the `brief-sys-*` series. Eleven new
+`SymbolKind`s — `Balun`, `Circulator`, `Switch`, `SwitchD`, `Amp`, `Coupler`, `Hybrid90`,
+`Hybrid180`, `Filter`, `Atten`, `Duplexer` — their glyphs, port definitions, registry entries,
+ground-return extraction and a new `ComponentCategory.System`. **No electrical behaviour**: none of
+them names an engine component that exists, so a placed tile fails at elaboration the way any
+unimplemented primitive does. That is the brief's own design — the owner approves the artwork before
+anything is built on it, because the artwork is the part users read most.
+
+### Display names are the component's own word, not its abbreviation
+
+Owner instruction, 2026-08-31, after the first pass shipped four-letter codes: the tiles read
+**Filter, Circulator, Attenuator, Directional Coupler, Switch, Amp, Hybrid90, Hybrid180** — never
+FLT, CIRC, ATT, CPL, SW, AMP, HYB90, HYB180. `SwitchD` and `Duplexer` were not enumerated and were
+renamed under the same rule, because a palette reading *Switch, Circulator, Attenuator, Filter, SWD,
+DPX* is half-renamed.
+
+**The abbreviation did not go away — it moved to where it belongs.** It is what a user TYPES: the
+instance prefix (`FLT1`, `CPL2`) and the short type code, both unchanged. The display name is what
+they READ, on the palette tile and under the symbol, and a four-letter code there is a thing to be
+decoded rather than a name. `TryParseCode` now takes both spellings for each tile, since making
+someone learn that the tile reading "Attenuator" is typed "ATT" buys nothing.
+
+One consequence worth stating: the type label is drawn left-aligned from x = −155 under the glyph,
+so "Directional Coupler" — the only name here over twelve characters — runs a couple of grid squares
+past the coupler's own right-hand pins. That is how every long label behaves (a VAR row or a MEAS
+formula is far longer) and the label is draggable, but it is a real difference from `CPL`. The
+documentation figures are unaffected: the widest caption measures ~152 px in a 240 px box.
+
+### Two owner decisions taken at the milestone-1 gate
+
+- **The balun keeps its frame.** The alternative — a bare transformer with its primary drawn down to
+  a ground stub — is more traditional and costs the family resemblance with every other block, and it
+  makes the tile taller than anything else in the palette.
+- **A 180° hybrid ships beside the 90° one**, taking the brief's count from ten tiles to eleven. It
+  was free: `BuildCoupler` already took a flag to decide whether to write a phase inside the frame,
+  so it became a `SymbolKind` argument and the third tile is a third string.
+
+### The `90°` label could not go where the brief put it, and the arithmetic says why
+
+The brief specified `Txt("90°", 0, 15, 44)` at the body's centre, on the reasoning that "the arms
+cross the box at y = ±100, so the centre is free for the label". The arms are — but the **coupling
+arrow is not**. It runs from (−40, −100) to (40, +100), which passes through (0, 0) exactly, and at
+the label's own vertical extent (y ≈ ±16 at 44 pt) the shaft sits at x ≈ ±6. A centred label is
+struck through by it.
+
+It is drawn at `HybridPhaseLabelX = −85` instead, one constant for both hybrids, chosen so the WIDER
+of the two clears the frame: `"180°"` then clears the frame by ~26 units and the arrow by ~36, and
+`"90°"` has more room again. `Hybrid_PhaseLabelClearsBothTheCouplingArrowAndTheFrame` computes the
+shaft's x at the label's own top edge and asserts the gap, so the next person to move either one is
+told immediately.
+
+**This is the same class of error the brief's own duplexer corrections came from**, and the general
+lesson is stated there too: a coordinate list cannot show a collision, and only a rendered sheet can.
+Both duplexer corrections (the antenna lead reaching its pin; the TX/RX labels moved inside the body
+and *beside* their own stacks) were right as written and are asserted with clearances rather than
+containment — `Duplexer_LabelsSitInsideTheBody_WithRealClearance` measures the gap to the frame AND
+to the wave stacks, because a label that merely fits is exactly what a coordinate list hides.
+
+### `SwitchThrow` is numbered from ONE, and that is load-bearing
+
+The SPDT's position is written `State = 1` or `State = 2`, matching the throw numerals the glyph
+itself carries. `EditableSchematic.GetEnumParam` reads it through `Enum.TryParse`, **which resolves a
+bare numeral against the enum's UNDERLYING value** — so an enum numbered from zero would silently
+read `"1"` as the second throw. The failure has nothing to see: the switch draws itself in the wrong
+position, the file is correct, and nothing throws. `SwitchThrow` is therefore `{ T1 = 1, T2 = 2 }`,
+and `SwitchD_StateParsesTheNumeralsTheGlyphItselfLabels` pins all four spellings.
+
+### The filter glyph is the match glyph BY CONSTRUCTION
+
+Owner decision, 2026-08-31: the same picture, not a related one — impedance matching is a form of
+filtering, and a library that draws them the same way says so. `PrimitivesForFilter(form)` returns
+`Sym([.. PrimitivesForMatch(form, 1).Primitives], SymbolKind.Filter)`, the `TermG` pattern, so the
+two cannot drift apart when either is next touched. `Filter_PrimitivesAreElementForElementMatchsOwn`
+asserts **reference identity of every primitive**, for all three forms rather than the default one —
+a copy that happens to agree on bandpass is precisely what that catches — while `Sym` re-derives the
+pin list per kind, so a `Filter` keeps its own pins.
+
+`MatchWaveStack` needed no factoring out: it was already a private method taking a scale and a
+centre, which is what let the duplexer draw two of them at 0.45 without touching Match at all.
+`BuildingTheFilterLeavesMatchsOwnPrimitivesUntouched` asserts both halves anyway — Match's cached
+symbol is the same instance and the same content afterwards, and the two symbols hold *different*
+lists, so a future in-place edit of one cannot rewrite the other.
+
+### One extraction branch, not eleven copies
+
+`NetExtractor`'s single-ended-mixer branch — N pins, 2N nets, every port's − tied to `"0"` — became
+`GroundReferencedPortBlocks`, a `HashSet<SymbolKind>` the branch tests. Every new tile is
+ground-referenced by construction (a system block diagram draws a signal path, and its return is the
+ground plane), so eleven copies of one rule would have been eleven chances for the eleventh to be
+subtly different. **`MixerD` is the deliberate non-member** — it brings all six of its nets out as
+pins, which is the entire difference between the two mixer tiles — and
+`MixerD_IsStillNotAGroundReferencedBlock` exists to stop a later edit folding it in.
+
+### The two dispatch sites for a per-instance glyph had already been duplicated once
+
+`ToRenderComponent` and `ComputeGlyphBb` each carried their own if-chain over SnP / the Tuner family
+/ Match. Four more dynamic kinds would have made that eight branches in two places, and **a kind
+added to one and not the other renders at one size and is hit-tested at another**. Both now call one
+`InstanceGlyph()` that returns the per-instance symbol or `null`.
+
+### What is deliberately NOT here
+
+- **Parameters that do anything.** Only the five the artwork needs are declared: `Direction`,
+  `State` (twice) and `Form` choose which cached glyph variant is drawn, and `Gain`/`Loss` are the
+  numbers the amplifier's empty triangle and the attenuator's bowtie were specified around — both
+  glyphs are drawn empty precisely so the number lives in the label beside them. Declaring a full
+  datasheet's worth of rows now would be inventing each model's interface a brief early, and every
+  row would silently do nothing.
+- **Anything in `src/Core` or `src/Engine`.** Untouched, as the series requires.
+
+### Doc Gen
+
+22 new symbol figures (11 tiles × light/dark) and a `## System-level blocks` section in
+`docs/user/src/reference/components.md` — needed now rather than in SYS-7, because
+`DocsFactoryTests` requires a figure and a resolvable `#anchor` for every user-placeable kind. The
+entries state plainly that the artwork ships ahead of the models; SYS-7 replaces them with the real
+chapter.
+
+Everything else the run touched was classified rather than committed blind. The seven other changed
+figures are all **one line each**: a scrollbar thumb shrinking from 284 to 232 units, because the
+Library Palette gained eleven tiles. The palette figure itself shows only its pinned rows, so the new
+tiles are below its fold — the shorter thumb is the whole of the visible change, and it is correct.
+Two figures changed for reasons that had nothing to do with this work and were put back:
+`harmonica-instrument-dark.svg` carries a live "n HB solves" counter that reads differently on every
+capture (40 → 813 → 40 across three runs), and `analysis-editor-hb-dark.svg` differed only in a
+`translate` becoming a `matrix(0.99…)`, the known fourth-decimal rotation churn.
+
+
 ## User-docs search, and hierarchy documented as a procedure (2026-08-31)
 
 Owner asked for two things: a way to search the user docs from a browser (a box in each page header,
@@ -14777,3 +14907,204 @@ Tests` gained the new id in three places and asserts the `[false, true, false, t
 whole pattern, because it is the alternation, not the membership, that makes every layer solvable;
 `PcbTechnology_HasViaStackupEntry_WithFillModelAndSpan` widened from `Assert.Single` to every via
 entry, having assumed one per technology — true only while every PCB file was 2-layer.
+
+
+## PIM / PIMPc on the three tiles that can carry it (brief-sys-4, 2026-08-31)
+
+`ComponentTypeRegistry` gained two parameters — `PIM` (−200 dBm) and `PIMPc` (43 dBm) — on
+`Atten`, `Circulator`, `Coupler`, `Hybrid90` and `Hybrid180`, neither shown on the schematic. Both
+are `UnitDimension.Power` in dBm, the same shape as the mixer's `Plo` and `IIP3`. Nothing else in
+`src/Ui` changed: the glyphs, the pin counts, the palette membership and net extraction are all
+SYS-1's and are untouched by an electrical parameter.
+
+**They are ONE specification in two fields and are worded as a pair.** Either number alone says
+nothing — a product level means nothing without the carriers it was measured against — so both
+descriptions name the other, and `PIM`'s says how a dBc figure converts (add `PIMPc`: −153 dBc at
++43 dBm is −110 dBm). The dBm form is D4's decision and the dBc form is the same arithmetic in
+different clothes.
+
+**The default is a sentinel and the model treats it as one.** −200 dBm means there is no intermod
+here and none is calculated at all; the block stays `ModelKind.Linear` and stamps the exact ideal S.
+The threshold is −190 dBm rather than the family's usual 150 dB, because 150 dB is a SUPPRESSION and
+this is an absolute level — −150 dBm is an ordinary claim for a good passive part. See
+`src/Core/RESOLVED.md`, which also records that this was found by a wrong answer rather than by
+review.
+
+**A tile that cannot carry PIM is refused below the firewall, not by omission here.** Leaving the
+parameters off the balun, the switch, the filter and the duplexer stops a user typing one in the
+parameter editor, but says nothing to a hand-written `.cnl`;
+`ComponentModelFactory.RefusePimWhereItCannotLive` names the component and says to place a
+small-loss attenuator with the specification in front of it instead.
+
+
+## The filter's and the duplexer's parameters (brief-sys-6, 2026-08-31)
+
+`ComponentTypeRegistry` gained the filter's eleven parameters — `Response`, `Form`, `Order`, `Fc`,
+`F1`, `F2`, `Ripple`, `Astop`, `Zin`, `Zout`, `IL` — and the duplexer's twenty-one, which are the
+filter's twice over with a `Tx`/`Rx` prefix plus one shared `Zant`. **Nothing in the drawing side
+changed**: the glyphs, the dynamic `Form` variant, the pin counts, the palette membership and the
+`NetExtractor` ground returns are all SYS-1's, and `MatchWaveStack` was already factored (the filter
+glyph is built out of `PrimitivesForMatch`'s own primitive list rather than a copy), so brief-sys-6's
+"do not copy `MatchWaveStack`" was already satisfied on arrival.
+
+**Nothing shows on the schematic, and that is the same choice `Match` makes with the same glyph.**
+The picture already says lowpass/bandpass/highpass, so captioning `Form` would say it twice — and
+the band cannot be captioned in one line at all, because `Fc` and `F1`/`F2` are ALTERNATIVES:
+whichever pair the selected form does not read would be a caption naming a frequency the filter is
+not at. The amplifier and the attenuator caption their numbers because their glyphs are drawn empty;
+this one is not.
+
+**`Ripple` and `Astop` are both declared even though no single `Response` reads both.** A user
+switching Chebyshev to Butterworth must not have to clear a field first, so a parameter the family
+does not read is ignored rather than refused — the same rule the band edges follow across a form
+change. Each description says which families read it.
+
+**The duplexer's twenty descriptions are a prefix strip, not twenty sentences.**
+`DuplexerParameterDescription` takes the `Tx`/`Rx` off the name and delegates to the filter's own
+(`TxZ`/`RxZ` map to `Zout`, since from an arm's point of view the antenna is port 1), then appends
+the sentence about there being no isolation parameter. Twenty hand-copied sentences would drift from
+the filter's the first time one was improved, and the drift would be invisible — each half would
+still read correctly on its own.
+
+**The two default bands do not overlap.** `Tx` is 0.9–1.0 GHz and `Rx` 1.1–1.2 GHz, so a freshly
+placed duplexer is a working one rather than two filters fighting over the same frequency. Every tile
+default equals the factory's fallback for the same key, which is what makes a placed tile and a
+hand-written line with nothing said about it the same component — held by
+`SystemBlockElaborationTests`.
+
+`docs/user/src/reference/dynamic-symbols.md` gained a **Match & Filter — the picture follows the
+Form** section (the two share one glyph, what each `Form` strikes through, why `Form` is not
+captioned, and why the duplexer's own glyph is fixed while its two arms are not), and a pointer to it
+from the chapter's opening. Regenerated with `dotnet run --project tools/DocGen -- --out docs/user`;
+the only outputs that moved are that page and the search index.
+
+*One unrelated figure moves on every DocGen run:* `analysis-editor-hb-dark.svg`'s expander chevron is
+captured mid-rotation (`translate(113 365)` one run, a rotation matrix the next). Reverted here
+rather than committed, since it is an animation-state artifact and not a change to anything.
+
+## The System Components chapter (brief-sys-7, 2026-08-31)
+
+`docs/user/src/reference/system-components.html` — a new Reference Guide chapter for the eleven
+ideal system blocks plus the two mixer tiles, and the four things a new page in this factory has to
+keep in step: `_nav.txt`, `reference/index.md`, the per-component entries `components.md` owes the
+in-app Help contract, and the generated parameter tables. `dynamic-symbols.md`,
+`schematic-editor.md` and `simulations.md` moved with it.
+
+### Three of the brief's own claims are false against what SYS-2…SYS-6 actually shipped
+
+Each was written the way the code behaves, not the way the brief describes it.
+
+1. **"An attenuator at `Loss = 0` with a PIM figure is a PIM generator."** It is not, and it cannot
+   be: a perfectly matched 0 dB pad is a wire, `det(I + S) = 0` exactly, and `PimOverlay.Build`
+   refuses it by name (`src/Core/RESOLVED.md` § *The `Loss = 0` standalone PIM generator cannot
+   exist*). The chapter documents the working form — a **small** loss — and carries SYS-4's own
+   measured error table so a reader can choose one, with the standing recommendation of **1 dB**
+   rather than the 0.01 dB that merely clears the refusal.
+2. **"Circulator, coupler, 90° hybrid, switch and attenuator can carry PIM."** The switch cannot —
+   it was excluded by SYS-2/SYS-3's own decisions, has no `PIM`/`PIMPc` row in the registry, and
+   `ComponentModelFactory._pimCapableTypes` is `{ Atten, Circulator, Coupler }` (the `Coupler`
+   component serving all three coupler tiles). The chapter lists five **tiles**: attenuator,
+   circulator, directional coupler, 90° hybrid, 180° hybrid.
+3. **"Fifth and seventh order products come out at the limiter's own fixed ratios."** True, and
+   stated — but the brief also asks that every number be measured first, and there is no gate
+   anywhere for an IM5 level. So the chapter makes the **structural** claim only (one scale
+   parameter sets every odd order, so IM5 is not independently specifiable and was never fitted to
+   anything) and quotes no number for it. The IM3 deviation it *does* quote — 0.06 dB at 30 dB
+   below the equivalent intercept, 0.6 dB at 20 dB below — is `AmplifierHbTests`' measured figure
+   for the same `tanh`.
+
+### SYS-4's multi-tone quadrature gap is documented as a user-facing warning, not left in the code
+
+`PassiveIntermodHbTests.The90DegreeHybridsQuadratureHalfIsLostInAMultiToneRun` gates a known engine
+gap: only single-tone `HbNewton` honours `NonlinearResult.Terms`, so a 90° hybrid with PIM on
+degenerates to four open circuits in a **two-tone** run — which is precisely the analysis PIM exists
+for. A reader who does that gets a wrong answer, so the chapter says so in a `callout warn`, names
+the blocks that are unaffected (every real-S one), and gives the workaround already in use for the
+filter: put the PIM on an attenuator beside it. A gap that only a test knows about is a gap a user
+walks into.
+
+### One section-level callout, not eleven
+
+The brief asks each `components.md` system entry to carry "a callout linking on to the chapter", on
+the `### Matching Network (Match)` precedent. That precedent is **one** component in a section of
+its own; eleven consecutive identical boxes is a different document. What shipped is one prominent
+callout at the head of `## System-level blocks` plus a one-line **In depth:** pointer closing every
+entry — so each entry still links on, and the section still reads as a catalogue. The part of the
+contract that is actually checked is untouched: every kind keeps its `#<symbolkind-lowercase>`
+anchor, its glyph and its `{{table: components/<Kind>}}`.
+
+The same pass **removed a stale callout** ("the artwork ships first … their electrical models are
+not here yet"), which SYS-1 wrote truthfully and SYS-2…SYS-6 made false, and added the five
+parameter tables SYS-1 could not emit because the parameters did not exist: `Balun`, `Coupler`,
+`Hybrid90`, `Hybrid180`, `Duplexer`.
+
+### `{{anchor: …}}` cannot be used inside a Markdown table cell
+
+The placeholder's optional link text is separated by a `|`, which is also the cell separator, and
+escaping it as `\|` for Markdown leaves the backslash inside the captured argument — the target then
+resolves to `…#tline\` and the run fails. Table cells use ordinary `<a href>` links instead; the
+checked form is for running prose. Worth knowing before the next page tries it.
+
+An anchor **label** is HTML-encoded on the way out, so a named entity written in one (`&rsaquo;`)
+ships as the literal text `&rsaquo;`. Write the character itself.
+
+### The figure triage: zero real figure changes, one artifact, twice
+
+Counted against a snapshot of `docs/user/` taken immediately before the run rather than against
+`HEAD`, so SYS-1…SYS-6's own uncommitted regeneration is not double-counted.
+
+| | Count | What |
+|---|---|---|
+| Generated pages that really changed | 6 | `index.html` and `reference/index.html` (both carry `{{toc:}}`), `components.html`, `dynamic-symbols.html`, `schematic-editor.html`, `simulations.html` |
+| New pages | 1 | `reference/system-components.html` |
+| Search index | 1 | `assets/js/search-index.js` |
+| **Figures that really changed** | **0** | the twelve new symbol pairs and the palette figure were already regenerated by SYS-1 and this run reproduced them byte for byte |
+| Figures reverted as noise | 1 (in 2 files) | `analysis-editor-hb-dark.svg` — the expander chevron caught mid-rotation, already recorded above as moving on every run. Reverted **and** the same element put back in `schematic-editor.html`, which inlines it |
+
+The inlined copy is the half that is easy to miss: reverting the `.svg` alone leaves the figure and
+the page that embeds it disagreeing, and nothing checks that they match.
+
+### Gates
+
+`dotnet test tests/Ui.Tests` — 10,563 passed, 0 failed (`DocsFactoryTests` covers the unexpanded
+placeholder, the broken `{{anchor:}}`, the orphan page, the duplicate element id and the Help anchor
+that does not resolve); `dotnet test tests/Firewall.Tests` — 10 passed. The Previous/Next chain runs
+`components.html → system-components.html → dynamic-symbols.html` in both directions and the site
+table of contents lists the new page, both derived from the single `_nav.txt` entry.
+
+---
+
+## Enum-named component parameters are pickers, not text boxes (2026-08-31)
+
+Owner request: "the component parameter values in the Parameters dialog must use a combobox
+selection wherever possible."
+
+**Why it is not cosmetic.** `ComponentModelFactory.EnumNamed` reads an unrecognised spelling as the
+type's DEFAULT and says nothing, so `Response=Butterwoth` is a Chebyshev filter with no message —
+the same silent-substitution shape as the complex-parameter bug recorded in `src/Core/RESOLVED.md`
+the same day. A closed picker removes the only way to type one.
+
+**Two mechanisms already existed and neither fitted.** `EnumParamOptions` (MBend's `Miter`) is for a
+parameter whose stored value is a raw INDEX; these store the NAME. `ChoiceOptions`/`SetRuntimeChoices`
+is the right rendering, but it was reached only from a cell's `.ccell` declaration or from a model
+file, and a built-in primitive has no cell. `ComponentTypeRegistry.NamedParamOptions` is the third
+source, applied in `ParameterRowViewModel`'s constructor AFTER the cell pass and only where that
+found nothing — a kit part's own declaration stays the authority on its own values.
+
+- **Every option is spelled with `nameof` against the enum the factory parses it with.** A hand-typed
+  option that drifts from its enum member is not a broken picker; it is a picker that silently
+  commits a value nothing reads. `EveryFilterOptionOfferedIsOneTheFactoryCanActuallyParse` elaborates
+  all 15 Response × Form pairs rather than comparing the list with itself.
+- **A registry picker must NOT float to the top of the dialog.** `BuildRows` promotes choice rows
+  ahead of the numbers — right for a kit part (which FILE, then which FORMULATION, then the values),
+  and wrong for a built-in, where `IP3Ref` above `Gain` is just a shuffled dialog. Hence
+  `IsRegistryChoiceParam` and `IsFloatedChoice`: the promotion now applies to cell- and
+  runtime-sourced choices only.
+- SnP's and wBond's name-valued parameters are deliberately absent — both components REPLACE the
+  generic rows with their own panel, which already offers those as pickers.
+
+Covered: `Filter` Response/Form, `Duplexer` Tx/Rx Response/Form, `Circulator` Direction, `Switch` and
+`SwitchD` OffState, `Amp` IP3Ref. `Switch`'s `State` stays a number on purpose — it is swept, and the
+glyph follows the sweep.
+
+Gate: `tests/Ui.Tests/SystemBlockParameterPickerTests.cs`.

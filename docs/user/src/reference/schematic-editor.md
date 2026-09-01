@@ -58,10 +58,16 @@ different jobs:
 - **The category picker.** **All** is the default and shows the whole built-in library in the
   palette's own pinned order — the parts you reach for most, first. **All - Alphabetical** is the
   same set sorted by name, **Common** is a short curated set, and **Recently Used** is what you have
-  placed lately. Below those come the built-in categories — Lumped, Devices, Nonlinear, Sources,
-  Terminals, Transmission Line, Microstrip, Matching, Data Files — and then one entry per imported
-  kit, with the kit's own groupings indented beneath it. See
+  placed lately. Below those come the built-in categories — Lumped, Devices, **System**, Nonlinear,
+  Sources, Terminals, Transmission Line, Microstrip, Matching, Data Files — and then one entry per
+  imported kit, with the kit's own groupings indented beneath it. See
   [PDK integration](pdk-integration.html) for where kit entries come from.
+
+  **System** sits directly after Devices, because a system block is a signal-path part and a user who
+  has found Devices is one row away from the blocks they want. It holds the ideal blocks a system
+  block diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator,
+  filter, duplexer — plus the two mixer tiles, which keep Devices as their primary category and
+  appear under both. See [System Components](system-components.html).
 - **The search box.** Matches a part's display name and its search terms, and a kit part's kit name
   as well. Searching inside a built-in category narrows within it; searching from All searches
   everything, built-ins and kits together.

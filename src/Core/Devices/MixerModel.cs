@@ -95,14 +95,14 @@ public sealed class MixerModel : ComponentModel
         _aLI = Leak(isoLoIfDb, zIf, zLo);
         _aRI = Leak(isoRfIfDb, zIf, zRf);
 
-        // The RF path's soft limiter. tanh is used rather than the textbook a1·x − a3·x³ because a
-        // bare cubic turns over and goes NEGATIVE past its peak: Newton then finds the wrong root
-        // and the run converges cleanly to nonsense. tanh is monotone and bounded everywhere, and
-        // its own expansion x − x³/3 + … fixes the intercept exactly — matching the third-order
-        // term to a1=1, a3=1/(3·Vsat²) in IIP3 = √(4·a1/(3·a3)) gives IIP3 = 2·Vsat in volts.
+        // The RF path's soft limiter. The tanh law, why it is not the textbook cubic, and what
+        // IIP3 = 2·Vsat rests on are all one derivation, shared with the ideal amplifier since
+        // brief-sys-5 — see ThirdOrderLimiter. Only the threshold at which "off" begins is the
+        // mixer's own, because the sentinel is (its IIP3 default is 100 dBm; the amplifier's IP3
+        // is 200).
         _vsat = iip3Dbm >= CompressionOff
               ? 0.0
-              : 0.5 * Math.Sqrt(2.0 * 1e-3 * Math.Pow(10.0, iip3Dbm / 10.0) * zRf);
+              : ThirdOrderLimiter.SaturationVolts(iip3Dbm, zRf);
     }
 
     /// <summary>
@@ -151,18 +151,7 @@ public sealed class MixerModel : ComponentModel
         double vRf = v[0], vLo = v[1], vIf = v[2];
 
         // u = the RF voltage the mixing core actually sees, and du = ∂u/∂v_rf.
-        double u, du;
-        if (_vsat > 0.0)
-        {
-            double t = Math.Tanh(vRf / _vsat);
-            u  = _vsat * t;
-            du = 1.0 - t * t;
-        }
-        else
-        {
-            u  = vRf;
-            du = 1.0;
-        }
+        ThirdOrderLimiter.Apply(_vsat, vRf, out double u, out double du);
 
         i[0] = (vRf - _aLR * vLo) * _grf;
         i[1] =  vLo * _glo;

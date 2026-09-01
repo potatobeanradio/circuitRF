@@ -97,7 +97,10 @@ R:R1  n1 0  R=50 Ohm
     // ── Gate 2: Buried Terms are inert and warned ─────────────────────────────
 
     /// <summary>
-    /// Sub-cell "Amp" has an internal Port:BuriedTerm that should be ignored.
+    /// Sub-cell "Stage" has an internal Port:BuriedTerm that should be ignored. (It was called
+    /// "Amp" until brief-sys-5 made that a PRIMITIVE reference. A primitive name shadows a user cell
+    /// of the same spelling — true of every name in this family — and here it is a loud refusal
+    /// rather than a silent substitution, because the net count disagrees.)
     /// Top testbench has Port:P1 (Num=1) only.
     /// Expected: 1-port S-matrix; a warning naming the buried Term.
     /// </summary>
@@ -105,13 +108,13 @@ R:R1  n1 0  R=50 Ohm
     public void SParam_BuriedTerm_IsInert_OnlyTopLevelPortCounted()
     {
         var cnl = @"
-define Amp (p q)
+define Stage (p q)
   R:R1  p q  R=50 Ohm
   Port:BuriedTerm  p 0  Num=2 Z=50 Ohm
 end
 
 Port:P1  n1 0  Num=1 Z=50 Ohm
-Amp:X1  n1 n2
+Stage:X1  n1 n2
 R:RLoad  n2 0  R=50 Ohm
 ";
         var (lib, tb) = new CnlReader().Read(cnl);
@@ -142,13 +145,13 @@ R:R1  n1 n2  R=50 Ohm
 R:RLoad  n2 0  R=50 Ohm
 ";
         const string hierarchicalCnl = @"
-define Amp (p q)
+define Stage (p q)
   R:R1  p q  R=50 Ohm
   Port:BuriedTerm  p 0  Num=2 Z=50 Ohm
 end
 
 Port:P1  n1 0  Num=1 Z=50 Ohm
-Amp:X1  n1 n2
+Stage:X1  n1 n2
 R:RLoad  n2 0  R=50 Ohm
 ";
         var (lib1, tb1) = new CnlReader().Read(flatCnl);

@@ -31,12 +31,17 @@ connected. Almost every early surprise is one of those two.</p>
 </div>
 
 <div class="callout note">
-<span class="label">Three chapters that are easy to miss</span>
+<span class="label">Four chapters that are easy to miss</span>
+<p>Three of these are tools in their own right rather than components with a dialog, and the fourth
+is a whole class of parts.</p>
 <p><b><a href="match.html">The Match Component</a></b> synthesises a bandpass matching network that
 absorbs both terminations — closed-form, no optimiser. <b><a href="harmonicarf.html">harmonicaRF</a></b>
 runs harmonic load-pull on one device while you drag a marker. <b><a href="wbond.html">wBond</a></b>
-models bondwire arrays as geometry rather than as a number you looked up. Each is a tool in its own
-right rather than a component with a dialog.</p>
+models bondwire arrays as geometry rather than as a number you looked up. And
+<b><a href="system-components.html">System Components</a></b> covers the ideal blocks a system block
+diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator, filter,
+duplexer and mixer — including where passive intermodulation comes from and what "ideal" costs
+you.</p>
 </div>
 
 <!-- =====================================================================

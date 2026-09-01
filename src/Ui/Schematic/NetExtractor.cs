@@ -16,6 +16,25 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public static class NetExtractor
 {
+    /// <summary>
+    /// The tiles that show N pins for a model declaring N ground-referenced PORTS, so extraction
+    /// emits 2N nets by appending <c>"0"</c> after each pin's own net.
+    ///
+    /// <para>One set rather than one branch per kind: the rule is a single rule, and repeating it
+    /// eleven times is eleven chances for the eleventh to be subtly different. A kind belongs here
+    /// when its GLYPH hides the return path, not when its model happens to be N-port —
+    /// <c>MixerD</c>, which brings all six of its nets out as pins, is deliberately not a member.</para>
+    /// </summary>
+    private static readonly HashSet<SymbolKind> GroundReferencedPortBlocks =
+    [
+        SymbolKind.Mixer,
+        // The system blocks (brief-sys-1). Every one of them is ground-referenced by construction:
+        // a system block diagram draws a signal path, and its return is the ground plane.
+        SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
+        SymbolKind.Amp, SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180,
+        SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer,
+    ];
+
     /// <param name="TestBench">The emitted Design model.</param>
     /// <param name="Conflicts">
     /// Non-fatal naming conflicts, e.g. two different label names on the same physical net.
@@ -1738,21 +1757,24 @@ public static class NetExtractor
             return new Instance(comp.InstanceName, reference, termgNets, overrides2);
         }
 
-        // Mixer (single-ended): 3 symbol pins but MixerModel declares 3 PORTS, i.e. 6 nets in ±
-        // pair order [rf+, rf−, lo+, lo−, if+, if−]. Each port's − is hard-wired to ground ("0"),
-        // exactly as TermG does with Term's port 2 and Tuner does with its reference — a packaging
-        // convenience over the SAME engine component, never a parallel model. MixerD emits all six
-        // from its own pins and falls through to the ordinary path below.
-        if (comp.Symbol is SymbolKind.Mixer)
+        // GROUND-REFERENCED N-PORT BLOCKS: N symbol pins, but the model declares N PORTS — i.e. 2N
+        // nets in ± pair order — with every port's − hard-wired to ground ("0"). Exactly what TermG
+        // does with Term's port 2 and Tuner does with its reference: a packaging convenience over
+        // the SAME engine component, never a parallel model.
+        //
+        // A SET rather than a dozen copies of one branch, because the rule is one rule. MixerD is
+        // deliberately absent: it emits all six nets from its own pins and falls through to the
+        // ordinary path below, which is the whole difference between the two mixer tiles.
+        if (GroundReferencedPortBlocks.Contains(comp.Symbol))
         {
-            var mixerNets = new List<string>(6);
+            var portNets = new List<string>();
             foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
             {
                 var (px, py) = model.PortWorldOf(comp, def);
-                mixerNets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
-                mixerNets.Add("0");
+                portNets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+                portNets.Add("0");
             }
-            return new Instance(comp.InstanceName, reference, mixerNets, overrides2);
+            return new Instance(comp.InstanceName, reference, portNets, overrides2);
         }
 
         // R-pc-8: microstrip components get their substrate injected as extra parameter overrides,

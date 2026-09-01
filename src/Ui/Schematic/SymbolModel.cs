@@ -25,6 +25,36 @@ public enum SnpPinConfig { Standard, SplitLR, DualRow }
 /// <summary>Pitch between same-side pins for SnP symbols with N ≥ 4.</summary>
 public enum SnpPitch { Tight, Loose }
 
+// ── Per-instance glyph variants for the system blocks (brief-sys-1) ───────────
+// The same mechanism SnpPinConfig/SnpPitch serve above and Match's NetworkForm serves for the
+// match glyph: a value the user sets on the INSTANCE that changes what is drawn. Each is read off
+// a parameter expression by name, so a schematic saved before these existed reads as the default.
+
+/// <summary>Which way an ideal circulator circulates. <see cref="CW"/> is 1→2→3→1.</summary>
+public enum CirculatorDirection { CW, CCW }
+
+/// <summary>
+/// An SPST switch's position — <see cref="On"/> closed, <see cref="Off"/> open.
+///
+/// <para>The members are numbered to match the ENGINE's <c>State</c> parameter, for the reason
+/// <see cref="SwitchThrow"/> spells out below: <c>State</c> names which throw is closed, so 0 is
+/// "none of them" and 1 is the SPST's only throw, and <c>Enum.TryParse</c> resolves a bare numeral
+/// against the underlying value. Numbering these 0,1 in declaration order would silently draw a
+/// closed switch open. Both spellings parse, so <c>State = Off</c> saved before the model existed
+/// still reads as Off.</para>
+/// </summary>
+public enum SwitchState { Off = 0, On = 1 }
+
+/// <summary>
+/// Which throw an SPDT switch is connected to.
+///
+/// <para>The members are numbered <b>1 and 2 rather than 0 and 1</b> on purpose: the parameter is
+/// written <c>State = 1</c> or <c>State = 2</c>, matching the throws' own labels on the glyph, and
+/// <c>Enum.TryParse</c> resolves a bare numeral against the UNDERLYING value. Starting at 0 would
+/// silently read "1" as <c>T2</c> — a switch drawn in the wrong position, with nothing to see.</para>
+/// </summary>
+public enum SwitchThrow { T1 = 1, T2 = 2 }
+
 // ── Primitive base ────────────────────────────────────────────────────────────
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]

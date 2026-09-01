@@ -1,0 +1,7 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 75L151.17 75" /><ellipse fill="#9684FA" cx="88.83" cy="75" rx="3.74" ry="3.74" /><ellipse fill="#9684FA" cx="151.17" cy="75" rx="3.74" ry="3.74" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="96.15, 105.32, 117.6, 121.73, 127.34, 135.03" y="172.32">
+			Switch
+	</text></svg>

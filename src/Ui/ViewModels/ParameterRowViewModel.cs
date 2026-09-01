@@ -245,6 +245,18 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     public bool IsChoiceParam => ChoiceOptions.Count > 0;
 
     /// <summary>
+    /// True when this row's choices came from the REGISTRY — a built-in component's enum-named
+    /// parameter (<c>Response</c>, <c>Form</c>, <c>Direction</c>, <c>OffState</c>, <c>IP3Ref</c>) —
+    /// rather than from a cell's declaration or a model file.
+    ///
+    /// <para>It exists for exactly one reason: the editor floats a choice row to the TOP of the
+    /// dialog, which is right for a kit part (which FILE, then which FORMULATION, then the values)
+    /// and wrong here, where the registry already states the order the parameters read in and
+    /// <c>IP3Ref</c> floating above <c>Gain</c> is just a shuffled dialog.</para>
+    /// </summary>
+    public bool IsRegistryChoiceParam { get; private set; }
+
+    /// <summary>
     /// Offers a closed set of choices worked out at RUNTIME rather than declared by a cell — today,
     /// the device types a compiled model file turned out to declare.
     ///
@@ -256,6 +268,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// </summary>
     internal void SetRuntimeChoices(IReadOnlyList<string> choices)
     {
+        IsRegistryChoiceParam = false;
         if (choices.Count == 0)
         {
             if (ChoiceOptions.Count == 0) return;
@@ -485,6 +498,22 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         CanRemove       = ownerComp is not null
                        && ComponentTypeRegistry.IsRemovableParameter(ownerSymbol, param.Name);
         LoadCellDeclaredChoices();
+        // A built-in component's enum-NAMED parameters, as a picker. After the cell pass, and only
+        // where it found nothing: a kit part's own declaration is the authority on its own values,
+        // and a built-in primitive has no cell for it to have come from.
+        if (ChoiceOptions.Count == 0 &&
+            ComponentTypeRegistry.NamedParamOptions(ownerSymbol, param.Name) is { } named)
+        {
+            var display = new List<string>(named);
+            string current = _stagedExpression.Trim();
+            // A spelling the picker does not offer is still listed rather than dropped: a ComboBox
+            // whose SelectedItem is absent from its ItemsSource renders BLANK, which reads as the
+            // value having been lost. The same rule the layer and cell-declared pickers keep.
+            if (current.Length > 0 && !display.Contains(current, StringComparer.Ordinal))
+                display.Add(current);
+            ChoiceOptions = display;
+            IsRegistryChoiceParam = true;
+        }
         _isRefreshing = false;
 
         RecomputePreview();

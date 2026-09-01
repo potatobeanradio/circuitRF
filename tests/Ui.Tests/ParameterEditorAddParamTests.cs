@@ -193,7 +193,7 @@ public sealed class ParameterEditorAddParamTests
     {
         var input = new List<EditableParameter>
         {
-            P("V", "1", "V"), P("Freq", "2", "GHz"),
+            P("V", "1", "V"), P("Freq", "2", "GHz"), P("Phase", "30", "deg"),
         };
 
         var result = ParameterEditorViewModel.MigrateToneSourceToIndexed(input);
@@ -203,6 +203,12 @@ public sealed class ParameterEditorAddParamTests
         Assert.Contains(result, p => p.Name == "NumFreqs" && p.Expression == "1");
         Assert.DoesNotContain(result, p => p.Name == "V");
         Assert.DoesNotContain(result, p => p.Name == "Freq");
+
+        // Phase migrates WITH them, unit and all: the multi-tone factory branch reads Phase[i] and
+        // nothing else, so a scalar Phase left behind would be dropped the moment a second tone was
+        // added — tone 1 would quietly lose its angle.
+        Assert.Contains(result, p => p.Name == "Phase[1]" && p.Expression == "30" && p.Unit == "deg");
+        Assert.DoesNotContain(result, p => p.Name == "Phase");
     }
 
     [Fact]

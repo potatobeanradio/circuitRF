@@ -58,6 +58,8 @@ src/Core/Devices/ComponentModelFactory.cs|Z_Port: ZPortCount is required
 src/Core/Devices/ComponentModelFactory.cs|wBond: its linked wirebond file was not found: '{path}'. Either restore the file, 
 src/Core/Devices/ComponentModelFactory.cs|wBond: neither 'Design' (the embedded wires) nor 'File' (a .wBond to load) is set.
 src/Core/Devices/ComponentModelFactory.cs|wBond: the 'Design' parameter could not be read as a wirebond design. Re-import 
+src/Core/Devices/ComponentModelFactory.cs|{typeName}: '{kv.Key}' was given the complex value {z.Real:G6}
+src/Core/Devices/ComponentModelFactory.cs|{typeName}: this component cannot carry a passive intermod. A nonlinearity here is 
 src/Core/Devices/External/DeviceWorkerInstance.cs|'{Descriptor.TypeId}' has {n} nodes, but evaluation point {k} supplied {v.Count} voltages.
 src/Core/Devices/External/DeviceWorkerInstance.cs|'{Descriptor.TypeId}' returned {data.Length} values for {count} evaluation points; 
 src/Core/Devices/External/DeviceWorkerInstance.cs|Asked '{Descriptor.TypeId}' for {count} points of {n} nodes and was answered with 
@@ -93,6 +95,11 @@ src/Core/Devices/SddModel.cs|SDD '{_name}': I[p,{w}] used but H[{w}] is not defi
 src/Core/Devices/SnpModel.cs|{who}: Touchstone file not found: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: its 'File' parameter names a folder, not a Touchstone file: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: no Touchstone file is specified. Open the component's parameters and set 
+src/Core/Devices/System/AmplifierModel.cs|Amp: this amplifier's reverse path closes a loop with unity gain, so it has no 
+src/Core/Devices/System/IdealSBlockModel.cs|{GetType().Name} has no passive intermod, so it is not a nonlinear model
+src/Core/Devices/System/IdealSBlockModel.cs|{GetType().Name}: a complex port impedance ({z.Real:G6}
+src/Core/Devices/System/PimOverlay.cs|{blockName}: passive intermod needs an S-matrix this block can write as a 
+src/Core/Devices/System/PimOverlay.cs|{blockName}: this block carries nothing from the port the carriers enter to the 
 src/Core/Devices/VccsModel.cs|VCCS '{c.InstancePath}': expected 4 nets (out+, out−, ctrl+, ctrl−); 
 src/Core/Devices/WBondModel.cs|The wBond design '{sourceDescription}' has no wires, so the component has no pins. 
 src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' ({_sourceDescription}) has its ground plane disabled and no array 
@@ -107,11 +114,11 @@ src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): pins 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): the model writes no equation for 
 src/Core/Elaboration/Elaborator.cs|Failed to create model for primitive '{inst.Reference}' at '{childPath}'
-src/Core/Elaboration/Elaborator.cs|Mixer '{inst.InstanceName}': expected 6 nets (rf+, rf−, lo+, lo−, if+, if−); 
 src/Core/Elaboration/Elaborator.cs|SDD '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); 
 src/Core/Elaboration/Elaborator.cs|SDD equation references '{name}' which resolved to a Complex value; 
 src/Core/Elaboration/Elaborator.cs|Z_Port '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); got {netCount}.
 src/Core/Elaboration/Elaborator.cs|Z_Port '{inst.InstanceName}': expected {2 * portCount} nets (2 per port: +,−) for a {portCount}-port 
+src/Core/Elaboration/Elaborator.cs|{inst.Reference} '{inst.InstanceName}': expected {expected.Value.Nets} nets 
 src/Core/Expressions/CompiledSddExpr.cs|SDD '{modelName}': this equation contains a conditional and has no grid form — 
 src/Core/Expressions/Evaluator.cs|'[...]' indexing requires a cube (e.g. HB1.V[...]); got {target.Kind}.
 src/Core/Expressions/Evaluator.cs|'{cl.Name}' requires real arguments
@@ -214,6 +221,8 @@ src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': missing or empt
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': missing or empty Var= key.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': needs Values= or Start=/Stop=.
 src/Core/Pdk/PdkImporter.cs|not a number
+src/Core/Systems/FilterPrototype.cs|A response polynomial in Ω has mixed parity; it cannot be rewritten in s as a 
+src/Core/Systems/FilterPrototype.cs|Spectral factorisation produced a non-positive scale ({lambda:G6}); the response 
 src/Design/Cells/CellFolder.cs|Invalid cell name '{cellName}': {reason}
 src/Design/Cells/CellPersistence.cs|.ccell format_version {cell.FormatVersion} does not match 
 src/Design/Cells/CellPersistence.cs|Failed to deserialize .ccell file.

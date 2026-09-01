@@ -219,6 +219,45 @@ public static class MatchPoly
         return result;
     }
 
+    /// <summary>The Chebyshev polynomial of the first kind, <c>T_n(x)</c>, descending.</summary>
+    /// <remarks>
+    /// <b>Shared rather than copied.</b> It was <see cref="MatchPrototypes"/>'s private helper until
+    /// the ideal filter (brief-sys-6) needed the same polynomial for the same reason — the Chebyshev
+    /// and inverse-Chebyshev characteristic functions. Two copies of a three-term recurrence would
+    /// never disagree noisily; they would disagree in the last digits of one family's stopband.
+    /// </remarks>
+    public static double[] ChebyshevT(int n)
+    {
+        double[] t0 = [1.0], t1 = [1.0, 0.0];
+        if (n == 0) return t0;
+        for (int k = 1; k < n; k++)
+            (t0, t1) = (t1, Sub(Mul([2.0, 0.0], t1), t0));
+        return t1;
+    }
+
+    /// <summary>
+    /// The reverse Bessel polynomial <c>theta_n(s)</c>, descending, normalised to
+    /// <c>theta_n(0) = 1</c> — which is the normalisation that makes the group delay exactly 1 at
+    /// DC, and therefore the one both the Bessel match prototype and the Bessel filter want.
+    /// </summary>
+    public static double[] ReverseBessel(int n)
+    {
+        var a = new double[n + 1];
+        for (int k = 0; k <= n; k++)
+            a[k] = Factorial(2 * n - k) / (Math.Pow(2, n - k) * Factorial(k) * Factorial(n - k));
+        double a0 = a[0];
+        var desc = new double[n + 1];
+        for (int i = 0; i <= n; i++) desc[i] = a[n - i] / a0;
+        return desc;
+    }
+
+    private static double Factorial(int k)
+    {
+        double v = 1.0;
+        for (int i = 2; i <= k; i++) v *= i;
+        return v;
+    }
+
     /// <summary>Evaluates a complex-coefficient polynomial at a complex point (Horner).</summary>
     public static Complex EvalComplex(Complex[] a, Complex x)
     {
@@ -573,7 +612,7 @@ public static class MatchPrototypes
             {
                 double alpha = shapeParam, cc = otherParam;
                 if (alpha <= 0 || cc <= 0) return (null, null);
-                double[] theta = ReverseBessel(n);                     // descending in s, theta(0)=1
+                double[] theta = MatchPoly.ReverseBessel(n);                     // descending in s, theta(0)=1
                 int d = theta.Length - 1;
                 var ths = new double[d + 1];
                 var thm = new double[d + 1];
@@ -592,7 +631,7 @@ public static class MatchPrototypes
                 if (kk <= 0 || kk >= 1 || eps <= 0) return (null, null);
                 double[] f2 = shape == ResponseShape.Butterworth
                     ? MonomialSquared(n)
-                    : MatchPoly.Mul(ChebyshevT(n), ChebyshevT(n));
+                    : MatchPoly.Mul(MatchPoly.ChebyshevT(n), MatchPoly.ChebyshevT(n));
                 double[] scaled = Scale(f2, eps * eps);
                 double[] den = SubstituteOmega(MatchPoly.Add(scaled, [1.0]));
                 double[] num = SubstituteOmega(MatchPoly.Add(scaled, [kk]));
@@ -623,40 +662,22 @@ public static class MatchPrototypes
         return f2;
     }
 
-    private static double[] ChebyshevT(int n)
-    {
-        double[] t0 = [1.0], t1 = [1.0, 0.0];
-        if (n == 0) return t0;
-        for (int k = 1; k < n; k++)
-            (t0, t1) = (t1, MatchPoly.Sub(MatchPoly.Mul([2.0, 0.0], t1), t0));
-        return t1;
-    }
-
-    /// <summary>theta_n(s), descending, normalised to theta_n(0) = 1.</summary>
-    private static double[] ReverseBessel(int n)
-    {
-        var a = new double[n + 1];
-        for (int k = 0; k <= n; k++)
-            a[k] = Factorial(2 * n - k) / (Math.Pow(2, n - k) * Factorial(k) * Factorial(n - k));
-        double a0 = a[0];
-        var desc = new double[n + 1];
-        for (int i = 0; i <= n; i++) desc[i] = a[n - i] / a0;
-        return desc;
-    }
-
-    private static double Factorial(int k)
-    {
-        double v = 1.0;
-        for (int i = 2; i <= k; i++) v *= i;
-        return v;
-    }
-
     private static double[] Scale(double[] a, double k) => [.. a.Select(x => x * k)];
 
     private static double[]? NullIfEmpty(double[] a) => a.Length == 0 ? null : a;
 
-    /// <summary>The left-half-plane factor, monic.</summary>
-    private static double[] Hurwitz(double[] poly)
+    /// <summary>
+    /// The left-half-plane factor, monic — the spectral factorisation every response synthesis in
+    /// this repository turns on.
+    /// </summary>
+    /// <remarks>
+    /// <b>Public because the ideal filter (brief-sys-6) needs exactly this and nothing else.</b> The
+    /// filter component's <c>E(s)</c> is the Hurwitz factor of <c>|E(jw)|^2</c> in precisely the
+    /// sense used here, so <c>CircuitRF.Core.Systems.FilterPrototype</c> calls it rather than
+    /// carrying a second root-find that could disagree with this one. Nothing else about the two is
+    /// shared: the match synthesises a ladder, the filter stamps an S-matrix.
+    /// </remarks>
+    public static double[] Hurwitz(double[] poly)
     {
         var roots = MatchPoly.Roots(poly);
         if (roots.Length == 0) return [];

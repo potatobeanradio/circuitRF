@@ -206,6 +206,88 @@ public enum SymbolKind
     /// return is not ground; otherwise the single-ended tile is the same circuit with three fewer
     /// wires to draw.</summary>
     MixerD,
+
+    // ── System-level blocks (brief-sys-series.md) ─────────────────────────────
+    // Ten tiles that let a user draw a SYSTEM block diagram — the level above a transistor, where a
+    // signal path is a chain of named boxes. They share one drawing grammar with the mixer above: a
+    // signal block reads LEFT TO RIGHT (inputs left, outputs right, a third port at the bottom), and
+    // a block whose leads are not interchangeable LABELS them, because a reader who connects the
+    // wrong one gets a circuit that solves and is wrong.
+    //
+    // SYS-1 adds the ARTWORK, the pins, the palette category and the ground-return extraction, and
+    // nothing else: none of these ten has a model yet, so a placed tile simulates the way any
+    // unimplemented primitive does. SYS-2 onwards makes each one real.
+
+    /// <summary>Ideal balun (engine "Balun"). Three pins — UNB (−300,0) left, BAL+ (300,−100) and
+    /// BAL− (300,+100) right — a single unbalanced end against a balanced pair, which is what the
+    /// one-lead-against-two glyph says without spending text on it.</summary>
+    Balun,
+
+    /// <summary>Ideal circulator (engine "Circulator"). Three pins in port order — P1 (−300,0),
+    /// P2 (300,0), P3 (0,+300). DYNAMIC on <c>Direction</c>: the arrow inside the body circulates
+    /// 1→2→3→1 for <see cref="CirculatorDirection.CW"/> and reverses for
+    /// <see cref="CirculatorDirection.CCW"/>, so which way it goes is read off the schematic rather
+    /// than out of a parameter dialog.</summary>
+    Circulator,
+
+    /// <summary>Ideal SPST switch (engine "Switch"). Two pins, (−300,0) and (300,0), which are
+    /// interchangeable and therefore unlabelled. DYNAMIC on <c>State</c>: the blade is drawn closed
+    /// for <see cref="SwitchState.On"/> and lifted for <see cref="SwitchState.Off"/>.</summary>
+    Switch,
+
+    /// <summary>Ideal SPDT switch (engine "Switch" — the SAME component as <see cref="Switch"/>).
+    /// Three pins — COM (−300,0), T1 (300,−100), T2 (300,+100). DYNAMIC on <c>State</c>: the blade
+    /// points at the throw it is actually set to, so a <c>State</c> swept parametrically reads off
+    /// the schematic.</summary>
+    SwitchD,
+
+    /// <summary>Ideal amplifier (engine "Amp"). Two pins, IN (−300,0) and OUT (300,0). Nothing is
+    /// drawn inside the triangle: the gain shows as the parameter label under the symbol, which is
+    /// where a reader looks for a number.</summary>
+    Amp,
+
+    /// <summary>Ideal directional coupler (engine "Coupler"). Four pins in port order — P1 IN
+    /// (−300,−100), P2 THRU (300,−100), P3 CPL (300,+100), P4 ISO (−300,+100). The coupling arrow
+    /// is not decoration: it is the whole of what separates the coupled port from the isolated one,
+    /// and a coupler drawn without it is ambiguous in exactly the way that produces a silently wrong
+    /// circuit.</summary>
+    Coupler,
+
+    /// <summary>Ideal 90° hybrid (engine "Coupler" — the SAME component as <see cref="Coupler"/> at
+    /// 3.01 dB and 90°). Identical body, identical pins, identical arrow, plus the quadrature label
+    /// inside the frame.</summary>
+    Hybrid90,
+
+    /// <summary>Ideal 180° hybrid — a rat race (engine "Coupler", the SAME component again, at
+    /// 3.01 dB and 180°). Identical body, identical pins, identical arrow; only the phase written
+    /// inside the frame differs, because only the phase differs. Owner decision, 2026-08-31: it
+    /// ships beside <see cref="Hybrid90"/> because the geometry was already shared and an in-phase
+    /// or anti-phase combiner is as ordinary a system block as a quadrature one.</summary>
+    Hybrid180,
+
+    /// <summary>Ideal filter (engine "Filter"). Two pins, (−200,0) and (200,0).
+    ///
+    /// <para><b>Its glyph IS <see cref="Match"/>'s glyph</b> — the same picture, built out of
+    /// Match's own primitives, not a copy of them (owner decision, 2026-08-31). Impedance matching
+    /// is a form of filtering, the two are built out of the same idea, and a library that draws them
+    /// the same way says so. The two are told apart on the schematic by their type label and their
+    /// instance name (<c>FLT1</c> against <c>MN1</c>) — the same way the five FET laws, which also
+    /// share one glyph, are told apart today. The duplicate is deliberate; do not "fix" it.</para>
+    ///
+    /// <para>DYNAMIC on <c>Form</c>, through Match's own struck-line convention: a slash through
+    /// every wave the network blocks.</para></summary>
+    Filter,
+
+    /// <summary>Ideal attenuator (engine "Atten"). Two pins, (−300,0) and (300,0), interchangeable
+    /// and therefore unlabelled. The pinched bowtie reads as "signal made smaller" and collides with
+    /// nothing else in the library; the loss shows as the parameter label.</summary>
+    Atten,
+
+    /// <summary>Ideal duplexer (engine "Duplexer"). Three pins — ANT (−300,0), TX (300,−100),
+    /// RX (300,+100). One junction splitting into two filters is what a duplexer IS, and the glyph
+    /// says so: the antenna lead runs from its pin to the body edge, the junction fans into two
+    /// arms, and each arm carries its own passband stack with its name beside it.</summary>
+    Duplexer,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

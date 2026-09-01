@@ -51,7 +51,7 @@ public class CurrentSourceComponentTests
     public void ITone_DefaultParameters_UseTheCurrentSourceKeys()
     {
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.CurrentToneSource, 0);
-        Assert.Equal(["I", "Freq", "Idc"], ps.Select(p => p.Name));
+        Assert.Equal(["I", "Freq", "Phase", "Idc"], ps.Select(p => p.Name));
         Assert.DoesNotContain(ps, p => p.Name is "V" or "Vdc");
     }
 
@@ -194,12 +194,14 @@ public class CurrentSourceComponentTests
     public void MigrateToneSourceToIndexed_RenamesWhicheverAmplitudeIsPresent()
     {
         var v = ParameterEditorViewModel.MigrateToneSourceToIndexed(
-            [new() { Name = "V" }, new() { Name = "Freq" }, new() { Name = "Vdc" }]);
-        Assert.Equal(["V[1]", "Freq[1]", "Vdc", "NumFreqs"], v.Select(p => p.Name));
+            [new() { Name = "V" }, new() { Name = "Freq" }, new() { Name = "Phase" },
+             new() { Name = "Vdc" }]);
+        Assert.Equal(["V[1]", "Freq[1]", "Phase[1]", "Vdc", "NumFreqs"], v.Select(p => p.Name));
 
         var i = ParameterEditorViewModel.MigrateToneSourceToIndexed(
-            [new() { Name = "I" }, new() { Name = "Freq" }, new() { Name = "Idc" }]);
-        Assert.Equal(["I[1]", "Freq[1]", "Idc", "NumFreqs"], i.Select(p => p.Name));
+            [new() { Name = "I" }, new() { Name = "Freq" }, new() { Name = "Phase" },
+             new() { Name = "Idc" }]);
+        Assert.Equal(["I[1]", "Freq[1]", "Phase[1]", "Idc", "NumFreqs"], i.Select(p => p.Name));
     }
 
     // ── Owner report, 2026-08-29: an added tone rendered no schematic label ───

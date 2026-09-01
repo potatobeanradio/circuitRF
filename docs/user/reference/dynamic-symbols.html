@@ -31,7 +31,7 @@
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Dynamic symbols</p>
 
   <h1>Dynamic Symbols (SDD, ZPort, SnP)</h1>
-  <p class="lede">Most components have a fixed glyph. Three do not — their symbol and pin count are generated from the port count (and, for SnP, from arrangement options). This chapter explains how those symbols are built and how to control them.</p>
+  <p class="lede">Most components have a fixed glyph. Some do not — their symbol is generated from a parameter rather than drawn once. For three of them the pin count itself follows the port count; for others the picture changes while the pins stay put. This chapter explains how those symbols are built and how to control them.</p>
 
 <nav class="toc">
     <h2>On this page</h2>
@@ -40,6 +40,9 @@
       <li><a href="#sdd">SDD — 2N differential pins</a></li>
       <li><a href="#zport">ZPort — N signal pins</a></li>
       <li><a href="#snp">SnP — arrangement, pitch &amp; floating reference</a></li>
+      <li><a href="#form">Match &amp; Filter — the picture follows the Form</a></li>
+      <li><a href="#circulator">Circulator — the arrow follows the Direction</a></li>
+      <li><a href="#state">Switch &amp; Transfer Switch — the blade follows the State</a></li>
     </ol>
   </nav>
 <h2 id="why">Why some symbols are dynamic</h2>
@@ -48,6 +51,11 @@ pins. For the <a href="components.html#sdd">SDD</a>, <a href="components.html#zp
 <a href="components.html#snp">SnP</a>, circuitRF <strong>generates</strong> the body and pins from the <code>NumPorts</code>
 parameter. Change the port count and the symbol regrows, with pins landing on the connection grid
 so wiring stays clean.</p>
+<p>A second, smaller group keeps its pins and changes only what is drawn between them: the
+<a href="match.html">Match</a> network and the <a href="components.html#filter">Filter</a> redraw their passband picture
+from <code>Form</code>, the <a href="components.html#circulator">Circulator</a> turns the way <code>Direction</code> names, and the
+two switch tiles draw their blade in the position <code>State</code> names. Those three are covered in the last
+three sections below.</p>
 <h2 id="sdd">SDD — 2N differential pins</h2>
 <figure class="symbol"><span class="frame">
     <img class="sym-light" src="../assets/symbols/sdd.svg" alt="SDD symbol">
@@ -95,12 +103,130 @@ block's reference is not circuit ground (a floating measurement).</p>
 <p class="small">Interpolation (<code>InterpMode</code>) and out-of-range behavior (<code>ExtrapMode</code>)
   control how the file's data is sampled onto the analysis sweep — see
   <a href="components.html#snp">Components › SnP</a>.</p>
+<h2 id="form">Match &amp; Filter — the picture follows the Form</h2>
+<figure class="symbol"><span class="frame">
+    <img class="sym-light" src="../assets/symbols/filter.svg" alt="Filter symbol">
+    <img class="sym-dark"  src="../assets/symbols/filter-dark.svg" alt="">
+  </span><figcaption>Filter, drawn for <code>Form = Bandpass</code></figcaption></figure>
+<p>The <strong>Filter</strong> and the <strong>Match</strong> network share one glyph — the same picture, not a related one.
+Impedance matching is a form of filtering, and the library says so. You tell the two apart by the
+type label and the instance name (<code>FLT1</code> against <code>MN1</code>), the same way the FET laws that share a
+glyph are told apart.</p>
+<p>The picture is a stack of waves with a line struck through each one the network <strong>blocks</strong>, so the
+shape is read straight off the schematic:</p>
+<table>
+<thead>
+<tr>
+<th><code>Form</code></th>
+<th>What is drawn</th>
+<th>What passes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Lowpass</code></td>
+<td>the high wave struck through</td>
+<td>low frequencies</td>
+</tr>
+<tr>
+<td><code>Highpass</code></td>
+<td>the low wave struck through</td>
+<td>high frequencies</td>
+</tr>
+<tr>
+<td><code>Bandpass</code></td>
+<td>the outer waves struck through</td>
+<td>the band between <code>F1</code> and <code>F2</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both pins stay where they are, so changing <code>Form</code> never disturbs your wiring. Because the glyph
+already says which shape the network is, <code>Form</code> is <strong>not</strong> captioned beside the symbol — it would
+say the same thing twice. Nor is the band: <code>Fc</code> and <code>F1</code>/<code>F2</code> are alternatives, so whichever pair
+the form does not read would be a caption naming a frequency the filter is not at. Open the
+properties panel for the numbers.</p>
+<div class="callout note">
+    <span class="label">The duplexer draws two of them</span>
+    <p>The <a href="components.html#duplexer">Duplexer</a>'s glyph carries the same passband stack twice,
+    once in each arm, because a duplexer <em>is</em> two filters sharing an antenna node. Its own picture is
+    fixed — the two arms each have their own <code>TxForm</code> and <code>RxForm</code>, and a body drawn
+    from both would be unreadable at tile size.</p>
+  </div>
+<h2 id="circulator">Circulator — the arrow follows the Direction</h2>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="57.41" rx="33.41" ry="33.41" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.91 41.98Q129.29 42.2 129.66 42.43Q130.02 42.67 130.38 42.92Q130.73 43.18 131.08 43.45Q131.42 43.72 131.75 44.01Q132.08 44.3 132.39 44.6Q132.71 44.91 133 45.23Q133.3 45.55 133.59 45.88Q133.87 46.21 134.14 46.56Q134.4 46.91 134.65 47.27Q134.9 47.63 135.13 48Q135.36 48.37 135.57 48.75Q135.79 49.13 135.98 49.53Q136.17 49.92 136.35 50.32Q136.52 50.72 136.68 51.13Q136.83 51.54 136.96 51.96Q137.1 52.37 137.21 52.79Q137.32 53.22 137.42 53.64Q137.51 54.07 137.58 54.5Q137.65 54.94 137.7 55.37Q137.75 55.8 137.78 56.24Q137.81 56.68 137.81 57.11Q137.82 57.55 137.81 57.99Q137.79 58.43 137.76 58.86Q137.72 59.3 137.66 59.73Q137.61 60.17 137.53 60.6Q137.45 61.03 137.35 61.45Q137.25 61.88 137.13 62.3Q137.01 62.72 136.87 63.13Q136.73 63.55 136.57 63.95Q136.41 64.36 136.23 64.76Q136.05 65.16 135.85 65.55Q135.65 65.94 135.43 66.31Q135.21 66.69 134.97 67.06Q134.74 67.43 134.48 67.78Q134.23 68.14 133.96 68.48Q133.68 68.82 133.4 69.15Q133.11 69.48 132.8 69.8Q132.5 70.11 132.18 70.41Q131.86 70.71 131.53 70.99Q131.19 71.27 130.85 71.54Q130.5 71.81 130.14 72.06Q129.78 72.31 129.41 72.54Q129.04 72.77 128.66 72.98Q128.27 73.19 127.88 73.39Q127.49 73.58 127.09 73.75Q126.69 73.93 126.28 74.08Q125.87 74.23 125.45 74.37Q125.03 74.5 124.61 74.62Q124.19 74.73 123.76 74.82Q123.33 74.91 122.9 74.98Q122.47 75.06 122.04 75.11Q121.6 75.16 121.17 75.18Q120.73 75.21 120.29 75.22Q119.85 75.23 119.42 75.21Q118.98 75.2 118.54 75.16Q118.11 75.13 117.67 75.07Q117.24 75.01 116.81 74.93Q116.38 74.86 115.95 74.76Q115.53 74.66 115.11 74.54Q114.69 74.42 114.27 74.28Q113.86 74.14 113.45 73.98Q113.05 73.82 112.65 73.63Q112.25 73.45 111.86 73.25Q111.47 73.05 111.09 72.84Q110.76 72.64 110.43 72.43Q110.1 72.22 109.78 72Q109.46 71.78 109.15 71.54Q108.85 71.3 108.55 71.05Q108.25 70.8 107.96 70.54Q107.68 70.28 107.4 70Q107.13 69.73 106.86 69.44Q106.6 69.16 106.35 68.86Q106.1 68.56 105.87 68.25Q105.63 67.94 105.41 67.63Q105.18 67.31 104.97 66.98Q104.77 66.65 104.57 66.31Q104.38 65.98 104.2 65.63Q104.02 65.29 103.85 64.94Q103.69 64.58 103.54 64.22Q103.39 63.87 103.26 63.5Q103.13 63.13 103.01 62.76Q102.89 62.39 102.79 62.02Q102.69 61.64 102.61 61.26Q102.52 60.88 102.45 60.5Q102.39 60.12 102.34 59.73Q102.29 59.35 102.25 58.96Q102.22 58.57 102.2 58.18Q102.18 57.79 102.18 57.41Q102.18 57.02 102.2 56.63Q102.22 56.24 102.25 55.85Q102.29 55.47 102.34 55.08Q102.39 54.7 102.45 54.31Q102.52 53.93 102.61 53.55Q102.69 53.17 102.79 52.79Q102.89 52.42 103.01 52.05Q103.13 51.68 103.26 51.31" /><path fill="#2D14C3" d="M104.55 47.75L105.1 56.01L98.82 53.73L104.55 47.75Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.19 57.41L86.59 57.41" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M153.41 57.41L186.81 57.41" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 90.81L120 124.22" /><text fill="#2D14C3" transform="translate(72.12 50.72)" font-size="6.68" font-family="IBM Plex Sans" x="-2" y="2.51">
+			1
+	</text><text fill="#2D14C3" transform="translate(167.88 50.72)" font-size="6.68" font-family="IBM Plex Sans" x="-2" y="2.51">
+			2
+	</text><text fill="#2D14C3" transform="translate(133.36 109.74)" font-size="6.68" font-family="IBM Plex Sans" x="-2" y="2.51">
+			3
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="50.19" y="54.41" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="183.81" y="54.41" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121.22" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="85.54, 95.17, 99.3, 105.2, 112.89, 121.71, 126.12, 134.51, 140.11, 148.56" y="172.32">
+			Circulator
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><ellipse fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" cx="120" cy="57.41" rx="33.41" ry="33.41" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.91 41.98Q129.29 42.2 129.66 42.43Q130.02 42.67 130.38 42.92Q130.73 43.18 131.08 43.45Q131.42 43.72 131.75 44.01Q132.08 44.3 132.39 44.6Q132.71 44.91 133 45.23Q133.3 45.55 133.59 45.88Q133.87 46.21 134.14 46.56Q134.4 46.91 134.65 47.27Q134.9 47.63 135.13 48Q135.36 48.37 135.57 48.75Q135.79 49.13 135.98 49.53Q136.17 49.92 136.35 50.32Q136.52 50.72 136.68 51.13Q136.83 51.54 136.96 51.96Q137.1 52.37 137.21 52.79Q137.32 53.22 137.42 53.64Q137.51 54.07 137.58 54.5Q137.65 54.94 137.7 55.37Q137.75 55.8 137.78 56.24Q137.81 56.68 137.81 57.11Q137.82 57.55 137.81 57.99Q137.79 58.43 137.76 58.86Q137.72 59.3 137.66 59.73Q137.61 60.17 137.53 60.6Q137.45 61.03 137.35 61.45Q137.25 61.88 137.13 62.3Q137.01 62.72 136.87 63.13Q136.73 63.55 136.57 63.95Q136.41 64.36 136.23 64.76Q136.05 65.16 135.85 65.55Q135.65 65.94 135.43 66.31Q135.21 66.69 134.97 67.06Q134.74 67.43 134.48 67.78Q134.23 68.14 133.96 68.48Q133.68 68.82 133.4 69.15Q133.11 69.48 132.8 69.8Q132.5 70.11 132.18 70.41Q131.86 70.71 131.53 70.99Q131.19 71.27 130.85 71.54Q130.5 71.81 130.14 72.06Q129.78 72.31 129.41 72.54Q129.04 72.77 128.66 72.98Q128.27 73.19 127.88 73.39Q127.49 73.58 127.09 73.75Q126.69 73.93 126.28 74.08Q125.87 74.23 125.45 74.37Q125.03 74.5 124.61 74.62Q124.19 74.73 123.76 74.82Q123.33 74.91 122.9 74.98Q122.47 75.06 122.04 75.11Q121.6 75.16 121.17 75.18Q120.73 75.21 120.29 75.22Q119.85 75.23 119.42 75.21Q118.98 75.2 118.54 75.16Q118.11 75.13 117.67 75.07Q117.24 75.01 116.81 74.93Q116.38 74.86 115.95 74.76Q115.53 74.66 115.11 74.54Q114.69 74.42 114.27 74.28Q113.86 74.14 113.45 73.98Q113.05 73.82 112.65 73.63Q112.25 73.45 111.86 73.25Q111.47 73.05 111.09 72.84Q110.76 72.64 110.43 72.43Q110.1 72.22 109.78 72Q109.46 71.78 109.15 71.54Q108.85 71.3 108.55 71.05Q108.25 70.8 107.96 70.54Q107.68 70.28 107.4 70Q107.13 69.73 106.86 69.44Q106.6 69.16 106.35 68.86Q106.1 68.56 105.87 68.25Q105.63 67.94 105.41 67.63Q105.18 67.31 104.97 66.98Q104.77 66.65 104.57 66.31Q104.38 65.98 104.2 65.63Q104.02 65.29 103.85 64.94Q103.69 64.58 103.54 64.22Q103.39 63.87 103.26 63.5Q103.13 63.13 103.01 62.76Q102.89 62.39 102.79 62.02Q102.69 61.64 102.61 61.26Q102.52 60.88 102.45 60.5Q102.39 60.12 102.34 59.73Q102.29 59.35 102.25 58.96Q102.22 58.57 102.2 58.18Q102.18 57.79 102.18 57.41Q102.18 57.02 102.2 56.63Q102.22 56.24 102.25 55.85Q102.29 55.47 102.34 55.08Q102.39 54.7 102.45 54.31Q102.52 53.93 102.61 53.55Q102.69 53.17 102.79 52.79Q102.89 52.42 103.01 52.05Q103.13 51.68 103.26 51.31" /><path fill="#9684FA" d="M104.55 47.75L105.1 56.01L98.82 53.73L104.55 47.75Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.19 57.41L86.59 57.41" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M153.41 57.41L186.81 57.41" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 90.81L120 124.22" /><text fill="#9684FA" transform="translate(72.12 50.72)" font-size="6.68" font-family="IBM Plex Sans" x="-2" y="2.51">
+			1
+	</text><text fill="#9684FA" transform="translate(167.88 50.72)" font-size="6.68" font-family="IBM Plex Sans" x="-2" y="2.51">
+			2
+	</text><text fill="#9684FA" transform="translate(133.36 109.74)" font-size="6.68" font-family="IBM Plex Sans" x="-2" y="2.51">
+			3
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="50.19" y="54.41" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="183.81" y="54.41" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="121.22" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="85.54, 95.17, 99.3, 105.2, 112.89, 121.71, 126.12, 134.51, 140.11, 148.56" y="172.32">
+			Circulator
+	</text></svg></span>
+</span><figcaption>Circulator</figcaption></figure>
+<p>A circulator is the one component in circuitRF that behaves differently in each direction, so which
+way it turns is the first thing a reader needs off the page. <code>Direction</code> puts it there: <strong><code>CW</code>
+circulates 1 → 2 → 3 → 1 and <code>CCW</code> reverses it</strong>, and the arrow drawn inside the circle follows.</p>
+<p><code>Direction</code> is not a caption — it is the same parameter the model stamps from, so <strong>the picture and
+the electrical behaviour cannot disagree</strong>. It is hidden from the schematic labels for that reason:
+the arrow already says what a <code>Direction = CW</code> caption would say. The three pins stay exactly where
+they are when it changes, so reversing a circulator never disturbs your wiring.</p>
+<p>Full treatment: <a href="system-components.html#circulator">System Components › Circulator</a>. Parameters:
+<a href="components.html#circulator">Components › Circulator</a>.</p>
+<h2 id="state">Switch &amp; Transfer Switch — the blade follows the State</h2>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 75L151.17 75" /><ellipse fill="#2D14C3" cx="88.83" cy="75" rx="3.74" ry="3.74" /><ellipse fill="#2D14C3" cx="151.17" cy="75" rx="3.74" ry="3.74" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="96.15, 105.32, 117.6, 121.73, 127.34, 135.03" y="172.32">
+			Switch
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 75L151.17 75" /><ellipse fill="#9684FA" cx="88.83" cy="75" rx="3.74" ry="3.74" /><ellipse fill="#9684FA" cx="151.17" cy="75" rx="3.74" ry="3.74" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="96.15, 105.32, 117.6, 121.73, 127.34, 135.03" y="172.32">
+			Switch
+	</text></svg></span>
+</span><figcaption>Switch</figcaption></figure>
+<p>Both switch tiles draw themselves <strong>in the position they are set to</strong>. <code>State</code> is a plain number
+naming which throw is closed — <code>0</code> opens everything, <code>1</code> is the SPST's only throw, <code>1</code> or <code>2</code>
+selects one of the SPDT's — and the blade lifts or points accordingly.</p>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 43.83L213.51 43.83" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 106.17L213.51 106.17" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 75L151.17 43.83" /><ellipse fill="#2D14C3" cx="88.83" cy="75" rx="3.74" ry="3.74" /><ellipse fill="#2D14C3" cx="151.17" cy="43.83" rx="3.74" ry="3.74" /><ellipse fill="#2D14C3" cx="151.17" cy="106.17" rx="3.74" ry="3.74" /><text fill="#2D14C3" transform="translate(171.43 26.69)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">
+			1
+	</text><text fill="#2D14C3" transform="translate(171.43 123.31)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">
+			2
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="40.83" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="103.17" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="90.98, 100.15, 112.43, 116.56, 122.17, 129.86, 138.68" y="172.32">
+			SwitchD
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 43.83L213.51 43.83" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 106.17L213.51 106.17" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 75L151.17 43.83" /><ellipse fill="#9684FA" cx="88.83" cy="75" rx="3.74" ry="3.74" /><ellipse fill="#9684FA" cx="151.17" cy="43.83" rx="3.74" ry="3.74" /><ellipse fill="#9684FA" cx="151.17" cy="106.17" rx="3.74" ry="3.74" /><text fill="#9684FA" transform="translate(171.43 26.69)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">
+			1
+	</text><text fill="#9684FA" transform="translate(171.43 123.31)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">
+			2
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="40.83" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="103.17" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="90.98, 100.15, 112.43, 116.56, 122.17, 129.86, 138.68" y="172.32">
+			SwitchD
+	</text></svg></span>
+</span><figcaption>SwitchD</figcaption></figure>
+<p>That is worth more than tidiness. Because <code>State</code> is a <strong>parameter and not a pin</strong>, a
+<a href="simulations.html#parametric-sweep">parametric sweep</a> over it simulates every switch position in one
+run — and the schematic redraws itself at each point, so a swept state is readable rather than
+hidden in a dialog. <code>State</code> is therefore hidden from the schematic labels: the blade already says
+it.</p>
+<p>The pins never move; <code>Throws</code> (1 for the SPST tile, 2 for the SPDT) is what sets the pin count and
+is not something to change by hand.</p>
+<p>Full treatment: <a href="system-components.html#switch">System Components › Switch</a>. Parameters:
+<a href="components.html#switch">Components › Switch</a> and
+<a href="components.html#switchd">Transfer Switch</a>.</p>
 <hr />
 <p class="small">See also: <a href="components.html">Components</a> ·
+  <a href="system-components.html">System Components</a> ·
   <a href="pins-ports-terms.html">Pins, Ports &amp; Terms</a> · <a href="netlist.html">Netlist format</a>.</p>
 
 <nav class="page-nav">
-  <a class="prev" href="components.html"><span class="dir">Previous</span><span class="name">Components</span></a>
+  <a class="prev" href="system-components.html"><span class="dir">Previous</span><span class="name">System Components</span></a>
   <a class="next" href="symbol-editor.html"><span class="dir">Next</span><span class="name">Symbol Editor</span></a>
 </nav>
 </main>

@@ -80,6 +80,17 @@ public static class BuiltInSymbols
     private static readonly Symbol _bjtNpn        = BuildBjt(npn: true);
     private static readonly Symbol _bjtPnp        = BuildBjt(npn: false);
 
+    // ── System blocks (brief-sys-1) ───────────────────────────────────────────
+    // Six are fixed and cached once here; the other four vary per instance and are cached per
+    // variant beside the Match cache below.
+    private static readonly Symbol _balun         = BuildBalun();
+    private static readonly Symbol _amp           = BuildAmp();
+    private static readonly Symbol _coupler       = BuildCoupler(SymbolKind.Coupler);
+    private static readonly Symbol _hybrid90      = BuildCoupler(SymbolKind.Hybrid90);
+    private static readonly Symbol _hybrid180     = BuildCoupler(SymbolKind.Hybrid180);
+    private static readonly Symbol _atten         = BuildAtten();
+    private static readonly Symbol _duplexer      = BuildDuplexer();
+
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
     private static readonly Dictionary<int, Symbol> _zportCache = new();
@@ -90,6 +101,13 @@ public static class BuiltInSymbols
     private static readonly Dictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
     // Match cache key: (form, bandCount) — per-instance glyph variant (match.md §8.4).
     private static readonly Dictionary<(NetworkForm, int), Symbol> _matchCache = new();
+    // The four DYNAMIC system glyphs, cached per variant exactly as Match is: a circulator shows
+    // which way it turns, a switch shows the position it is set to, and a filter shows what it
+    // passes. Each is small and closed, so the whole variant set is built at most once.
+    private static readonly Dictionary<CirculatorDirection, Symbol> _circulatorCache = new();
+    private static readonly Dictionary<SwitchState, Symbol>        _switchCache      = new();
+    private static readonly Dictionary<SwitchThrow, Symbol>        _switchDCache     = new();
+    private static readonly Dictionary<NetworkForm, Symbol>        _filterCache      = new();
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.
@@ -151,6 +169,20 @@ public static class BuiltInSymbols
             case SymbolKind.Vccs:       return _vccs;
             case SymbolKind.Mixer:      return _mixer;
             case SymbolKind.MixerD:     return _mixerD;
+            case SymbolKind.Balun:      return _balun;
+            case SymbolKind.Amp:        return _amp;
+            case SymbolKind.Coupler:    return _coupler;
+            case SymbolKind.Hybrid90:   return _hybrid90;
+            case SymbolKind.Hybrid180:  return _hybrid180;
+            case SymbolKind.Atten:      return _atten;
+            case SymbolKind.Duplexer:   return _duplexer;
+            // The four dynamic ones answer here with their DEFAULT variant — the same contract
+            // Match keeps, so a caller that has no instance to ask (the palette tile, the ghost
+            // preview, the documentation figure) still gets a real drawing.
+            case SymbolKind.Circulator: return PrimitivesForCirculator(CirculatorDirection.CW);
+            case SymbolKind.Switch:     return PrimitivesForSwitch(SwitchState.On);
+            case SymbolKind.SwitchD:    return PrimitivesForSwitchD(SwitchThrow.T1);
+            case SymbolKind.Filter:     return PrimitivesForFilter(NetworkForm.Bandpass);
             case SymbolKind.Ground:     return _ground;
             case SymbolKind.Term:       return _term;
             case SymbolKind.Pin:        return _pin;
@@ -930,6 +962,307 @@ public static class BuiltInSymbols
             prims.Add(L(cx - MatchSlashHalfX * s, wy + nudge - MatchSlashHalfY * s,
                         cx + MatchSlashHalfX * s, wy + nudge + MatchSlashHalfY * s));
         }
+    }
+
+    // ══ System-level blocks (brief-sys-1-symbols-and-palette.md) ══════════════════════════════
+    //
+    // Ten glyphs for the level ABOVE a transistor, where a signal path is a chain of named boxes.
+    // Two conventions are inherited from the mixer and are not redesigned here: a signal block reads
+    // LEFT TO RIGHT (inputs left, outputs right, a third port at the bottom), and a block whose
+    // leads are NOT interchangeable labels them — a reader who connects the wrong one gets a circuit
+    // that solves and is wrong. A block whose leads ARE interchangeable (the SPST switch, the
+    // attenuator) is left unlabelled, because a name on a symmetric pin is noise that reads as
+    // meaning.
+
+    /// <summary>
+    /// A straight arrow from (x1,y1) to (x2,y2): the shaft, shortened by the head's own length, and
+    /// a filled triangular head whose TIP lands exactly on (x2,y2).
+    ///
+    /// <para>The shaft is shortened rather than drawn full length because a stroked line running the
+    /// whole way into a filled head thickens its spine at the join — visible at the zoom a schematic
+    /// is actually read at, and the sort of thing that reads as a drawing mistake.</para>
+    /// </summary>
+    private static void ArrowTo(List<SymbolPrimitive> prims,
+                                double x1, double y1, double x2, double y2,
+                                double headLen = 30, double headHalfW = 14)
+    {
+        double dx = x2 - x1, dy = y2 - y1;
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-9) return;
+        double ux = dx / len, uy = dy / len;      // along the arrow
+        double nx = -uy,      ny = ux;            // across it
+        double bx = x2 - headLen * ux, by = y2 - headLen * uy;   // the head's base centre
+        prims.Add(L(x1, y1, bx, by));
+        prims.Add(Poly(true, x2, y2,
+                             bx + headHalfW * nx, by + headHalfW * ny,
+                             bx - headHalfW * nx, by - headHalfW * ny));
+    }
+
+    /// <summary>
+    /// A filled arrowhead sitting ON a circular arc at angle <paramref name="endDeg"/>, pointing
+    /// along the direction of travel — clockwise when <paramref name="cw"/>, otherwise anticlockwise.
+    /// Degrees are Skia's: 0 is +x and a POSITIVE sweep turns clockwise on screen, because +y is down.
+    /// </summary>
+    private static PolygonPrimitive ArcArrowhead(double cx, double cy, double r, double endDeg, bool cw,
+                                                 double headLen = 34, double headHalfW = 15)
+    {
+        double a  = endDeg * Math.PI / 180.0;
+        double px = cx + r * Math.Cos(a), py = cy + r * Math.Sin(a);
+        // The tangent at that point, in the direction the arc was drawn.
+        double tx = -Math.Sin(a), ty = Math.Cos(a);
+        if (!cw) { tx = -tx; ty = -ty; }
+        double nx = -ty, ny = tx;
+        double bx = px - headLen * tx * 0.5, by = py - headLen * ty * 0.5;
+        double sx = px + headLen * tx * 0.5, sy = py + headLen * ty * 0.5;
+        return Poly(true, sx, sy, bx + headHalfW * nx, by + headHalfW * ny,
+                                  bx - headHalfW * nx, by - headHalfW * ny);
+    }
+
+    // ── Balun — a transformer inside a system-block frame ─────────────────────
+    // Pins: UNB (-300,0) left · BAL+ (300,-100) · BAL- (300,+100) right.
+    //
+    // The box keeps it in the same family as its neighbours; the coils say what it is; and the
+    // single left lead against a ± pair on the right says which end is unbalanced without spending
+    // text on it. The polarity marks are the same "+"/"-" pair in the same SymbolPlus role the VCCS
+    // and MixerD use — a reader who has learned one ± convention in this library has learned them all.
+
+    private static Symbol BuildBalun() => Sym([
+        RRect( 0,    0,  240,  300,   12),      // body, x in [-120,120]  y in [-150,150]
+        A(  -45,  -60,   30,   90,  180),       // primary coil, three arcs bulging -x
+        A(  -45,    0,   30,   90,  180),
+        A(  -45,   60,   30,   90,  180),
+        A(   45,  -60,   30,  -90,  180),       // secondary coil, three arcs bulging +x
+        A(   45,    0,   30,  -90,  180),
+        A(   45,   60,   30,  -90,  180),
+        L(   -8,  -80,   -8,   80),             // transformer core, two lines
+        L(    8,  -80,    8,   80),
+        L( -300,    0, -120,    0),             // UNB lead
+        L(  120, -100,  300, -100),             // BAL+ lead
+        L(  120,  100,  300,  100),             // BAL- lead
+        Txt("+", 215, -155, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−", 215,  155, fontSize: PolarityFontSize),
+    ], SymbolKind.Balun);
+
+    // ── Circulator — the universal circle with a rotation arrow ───────────────
+    // Pins: 1 (-300,0) · 2 (+300,0) · 3 (0,+300).
+    //
+    // The arrow is the whole content of the symbol, and it is DYNAMIC: `Direction = CW` circulates
+    // 1 -> 2 -> 3 -> 1 and `CCW` reverses it. A circulator drawn without saying which way it turns
+    // is a component whose entire behaviour is unstated, so the glyph states it.
+    //
+    // The arc's ~100 degree GAP sits at the top of the circle in both directions, which is the one
+    // place no port lead arrives, so the gap never reads as a break in a connection.
+
+    /// <summary>
+    /// Per-instance <c>Circulator</c> symbol: the rotation arrow follows <paramref name="dir"/>.
+    /// Cached per direction, mirroring the Match and Tuner paths.
+    /// </summary>
+    public static Symbol PrimitivesForCirculator(CirculatorDirection dir)
+    {
+        if (!_circulatorCache.TryGetValue(dir, out var sym))
+            _circulatorCache[dir] = sym = BuildCirculator(dir);
+        return sym;
+    }
+
+    private static Symbol BuildCirculator(CirculatorDirection dir)
+    {
+        bool cw = dir == CirculatorDirection.CW;
+        // CW  sweeps +260 from -60, ending at 200 (upper left).
+        // CCW sweeps -260 from 240, ending at -20 (upper right).
+        double start = cw ? -60 : 240;
+        double sweep = cw ? 260 : -260;
+        return Sym([
+            Circ(0, 0, 150),                                  // body circle
+            A(0, 0, 80, start, sweep),                         // the rotation arrow's arc
+            ArcArrowhead(0, 0, 80, start + sweep, cw),         // its head, at the arc's end
+            L(-300,   0, -150,   0),
+            L( 150,   0,  300,   0),
+            L(   0, 150,    0, 300),
+            Txt("1", -215, -30, fontSize: MixerPortFontSize),
+            Txt("2",  215, -30, fontSize: MixerPortFontSize),
+            Txt("3",   60, 235, fontSize: MixerPortFontSize),
+        ], SymbolKind.Circulator);
+    }
+
+    // ── Switch (SPST) and SwitchD (SPDT) — drawn in the position they are SET to ──
+    // SPST pins: (-300,0) · (+300,0), interchangeable and therefore unlabelled.
+    // SPDT pins: COM (-300,0) · T1 (+300,-100) · T2 (+300,+100), which are NOT.
+    //
+    // Both are DYNAMIC on `State`, and that is the whole point: a switch drawn in the position it is
+    // actually set to is readable at a glance, and a `State` swept parametrically then reads off the
+    // schematic rather than out of the sweep definition.
+
+    /// <summary>Per-instance SPST <c>Switch</c> symbol — the blade closed or lifted.</summary>
+    public static Symbol PrimitivesForSwitch(SwitchState state)
+    {
+        if (!_switchCache.TryGetValue(state, out var sym))
+            _switchCache[state] = sym = BuildSwitch(state);
+        return sym;
+    }
+
+    private static Symbol BuildSwitch(SwitchState state) => Sym([
+        L(-300, 0, -100, 0),                    // leads
+        L( 100, 0,  300, 0),
+        state == SwitchState.On
+            ? L(-100, 0, 100,   0)              // the blade, closed
+            : L(-100, 0,  80, -90),             // the blade, lifted
+        Circ(-100, 0, 12, filled: true),        // the two contacts, drawn OVER the blade so the
+        Circ( 100, 0, 12, filled: true),        // pivot reads as a pivot rather than as a crossing
+    ], SymbolKind.Switch);
+
+    /// <summary>Per-instance SPDT <c>SwitchD</c> symbol — the blade on the throw it is set to.</summary>
+    public static Symbol PrimitivesForSwitchD(SwitchThrow thrown)
+    {
+        if (!_switchDCache.TryGetValue(thrown, out var sym))
+            _switchDCache[thrown] = sym = BuildSwitchD(thrown);
+        return sym;
+    }
+
+    private static Symbol BuildSwitchD(SwitchThrow thrown) => Sym([
+        L(-300,    0, -100,    0),              // COM lead
+        L( 100, -100,  300, -100),              // T1 lead
+        L( 100,  100,  300,  100),              // T2 lead
+        thrown == SwitchThrow.T1
+            ? L(-100, 0, 100, -100)             // blade to throw 1
+            : L(-100, 0, 100,  100),            // blade to throw 2
+        Circ(-100,    0, 12, filled: true),
+        Circ( 100, -100, 12, filled: true),
+        Circ( 100,  100, 12, filled: true),
+        Txt("1", 165, -155, fontSize: MixerPortFontSize),
+        Txt("2", 165,  155, fontSize: MixerPortFontSize),
+    ], SymbolKind.SwitchD);
+
+    // ── Amp — the amplifier triangle ──────────────────────────────────────────
+    // Pins: IN (-300,0) · OUT (+300,0).
+    //
+    // Nothing inside it. The gain shows as the parameter label under the symbol, which is where a
+    // reader looks for a number — and a triangle with a number written inside it is the one
+    // amplifier drawing that stops being readable the moment the number has three digits.
+
+    private static Symbol BuildAmp() => Sym([
+        Poly(false, -140, -150, -140, 150, 160, 0),   // the amplifier triangle, stroked
+        L(-300, 0, -140, 0),
+        L( 160, 0,  300, 0),
+    ], SymbolKind.Amp);
+
+    // ── Coupler and the two hybrids — one body, one arrow, one pin layout ─────
+    // Pins: 1 IN (-300,-100) · 2 THRU (+300,-100) · 3 CPL (+300,+100) · 4 ISO (-300,+100).
+    //
+    // THREE tiles over ONE engine component and one drawing: the 90° hybrid is that component at
+    // 3.01 dB and quadrature, the 180° hybrid the same at anti-phase, and the only thing that
+    // differs on the page is the phase written inside the frame — because the only thing that
+    // differs is the phase.
+    //
+    // The two arms run straight THROUGH the body, leads and all, because that is what a coupler is:
+    // two transmission lines that happen to be close to each other. The arrow does the real work —
+    // it is what separates the coupled port from the isolated one, and a coupler drawn without it is
+    // ambiguous in exactly the way that produces a silently wrong circuit.
+    //
+    // A hybrid's phase label is placed to the LEFT of centre, NOT at it. The arrow crosses the
+    // body's exact centre on its way from the main arm to the coupled one, so a label centred there
+    // is struck through by it — precisely what a coordinate list hides and a reader sees
+    // immediately. One x for both hybrids, chosen so the WIDER of the two ("180°") still clears the
+    // frame: at -85 the 4-character label clears the frame by ~26 and the arrow by ~36, and the
+    // 3-character one has more room again.
+
+    /// <summary>Symbol-local x of a hybrid's phase label. See the note above for why it is not 0.</summary>
+    private const double HybridPhaseLabelX = -85;
+
+    private static Symbol BuildCoupler(SymbolKind kind)
+    {
+        var prims = new List<SymbolPrimitive>
+        {
+            RRect(0, 0, 320, 300, 12),          // body, x in [-160,160]  y in [-150,150]
+            L(-300, -100, 300, -100),           // the main arm, lead to lead
+            L(-300,  100, 300,  100),           // the coupled arm
+        };
+        ArrowTo(prims, -40, -100, 40, 100);     // coupling: main arm -> coupled arm
+        string phase = kind switch
+        {
+            SymbolKind.Hybrid90  => "90°",
+            SymbolKind.Hybrid180 => "180°",
+            _                    => "",         // a plain coupler states its coupling as a parameter
+        };
+        if (phase.Length > 0) prims.Add(Txt(phase, HybridPhaseLabelX, 0, fontSize: 44));
+        prims.Add(Txt("1", -215, -140, fontSize: MixerPortFontSize));
+        prims.Add(Txt("2",  215, -140, fontSize: MixerPortFontSize));
+        prims.Add(Txt("3",  215,  145, fontSize: MixerPortFontSize));
+        prims.Add(Txt("4", -215,  145, fontSize: MixerPortFontSize));
+        return Sym(prims, kind);
+    }
+
+    // ── Filter — Match's glyph, by construction ───────────────────────────────
+    // Pins: (-200,0) · (+200,0) — Match's own pins, at Match's own spacing.
+    //
+    // THE FILTER GLYPH IS THE MATCH GLYPH: the same picture, not a related one (owner decision,
+    // 2026-08-31). Impedance matching is a form of filtering, the two are built out of the same
+    // idea, and a library that draws them the same way says so. It is built by reusing Match's own
+    // primitive list rather than by copying its geometry — the TermG pattern — so the two are
+    // identical BY CONSTRUCTION and cannot drift apart when either is next touched.
+    //
+    // The duplicate is deliberate. The two are told apart on the schematic by their type label and
+    // their instance name (FLT1 against MN1), which is the same way the five FET laws — which also
+    // share one glyph — are told apart today.
+    //
+    // bandCount is always 1: a filter has ONE band. A multi-band MATCH is a different statement
+    // about a different component, and drawing a filter as several stacks would claim a passband
+    // count it has no parameter for.
+
+    /// <summary>Per-instance <c>Filter</c> symbol — Match's own primitives for the same form.</summary>
+    public static Symbol PrimitivesForFilter(NetworkForm form)
+    {
+        if (!_filterCache.TryGetValue(form, out var sym))
+            _filterCache[form] = sym = Sym([.. PrimitivesForMatch(form, 1).Primitives], SymbolKind.Filter);
+        return sym;
+    }
+
+    // ── Atten — the pinched bowtie ────────────────────────────────────────────
+    // Pins: (-300,0) · (+300,0), interchangeable and therefore unlabelled.
+    //
+    // Two filled triangles meeting at a point read as "signal made smaller", and the shape collides
+    // with nothing else in the library. The loss shows as the parameter label.
+
+    private static Symbol BuildAtten() => Sym([
+        RRect(0, 0, 240, 160, 12),                    // body, x in [-120,120]  y in [-80,80]
+        Poly(true, -80, -60, -80, 60, 0, 0),          // the bowtie, left half
+        Poly(true,  80, -60,  80, 60, 0, 0),          // and right half
+        L(-300, 0, -120, 0),
+        L( 120, 0,  300, 0),
+    ], SymbolKind.Atten);
+
+    // ── Duplexer — a junction that splits into two filters ────────────────────
+    // Pins: ANT (-300,0) · TX (+300,-100) · RX (+300,+100).
+    //
+    // One junction splitting into two filters is what a duplexer IS, and the glyph says so: the two
+    // branches carry MATCH's own passband stack, at 0.45 scale, so the block reads as "two filters"
+    // in the same visual language the filter tile uses.
+    //
+    // Two details are owner corrections, 2026-08-31, and both are the kind a rendered figure makes
+    // obvious and a coordinate list hides. The ANT lead runs from its PIN all the way to the body
+    // edge — a port whose lead stops short of the frame reads as unconnected. And the TX and RX
+    // labels sit INSIDE the body, beside their own stack rather than above it, because that is where
+    // the room is: at 0.45 scale a stack reaches |y| = 122 including its strike lines, leaving 38
+    // units to the frame at |y| = 160, and a 30-point label cannot fit in that with clearance at
+    // both ends. Beside, the stack spans x in [28,82], so a label centred at x = 130 clears the
+    // waves by 31 and the frame by 24 — and it names the arm it is level with.
+
+    private static Symbol BuildDuplexer()
+    {
+        var prims = new List<SymbolPrimitive>
+        {
+            RRect(0, 0, 340, 320, 14),          // body, x in [-170,170]  y in [-160,160]
+            L(-300,   0, -170,   0),            // ANT lead, pin to body edge
+            L(-170,   0,  -90,   0),            // the common line, into the junction
+            L( -90,   0,  -30, -90),            // and its two arms
+            L( -90,   0,  -30,  90),
+        };
+        MatchWaveStack(prims, NetworkForm.Bandpass, 0.45, 55, -90);   // TX passband
+        MatchWaveStack(prims, NetworkForm.Bandpass, 0.45, 55,  90);   // RX passband
+        prims.Add(L(170, -100, 300, -100));
+        prims.Add(L(170,  100, 300,  100));
+        prims.Add(Txt("TX", 130, -90, fontSize: MixerPortFontSize));
+        prims.Add(Txt("RX", 130,  90, fontSize: MixerPortFontSize));
+        return Sym(prims, SymbolKind.Duplexer);
     }
 
     // ── Microstrip built-ins (brief-L5a-pcell-contract-and-microstrip.md) ──────────

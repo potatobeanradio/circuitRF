@@ -712,6 +712,10 @@ that harmonic-balance analysis in a <a href="simulations.html#parametric-sweep">
 of the RF frequency — that is the swept measurement an S-parameter run cannot be.</p>
 </div>
 
+The mixer is also a **System** block, and the class it belongs to — what the ideal blocks in a
+system diagram can and cannot answer — is covered in
+[System Components](system-components.html).
+
 {{table: components/Mixer}}
 
 ### Differential Mixer (MixerD) {#mixerd}
@@ -742,6 +746,176 @@ drawn on it, because circuitRF does not know what the model *is*: drawing a tran
 assert something the file has not said.
 
 {{table: components/VerilogA}}
+
+## System-level blocks
+
+The blocks a **system block diagram** is drawn out of: the level above a transistor, where a signal
+path is a chain of named boxes rather than a circuit. They share the mixer's drawing grammar — a
+block reads left to right, inputs on the left and outputs on the right, and a block whose leads are
+not interchangeable labels them, because connecting the wrong one gives a circuit that solves and is
+wrong. Every one of them is in the palette's **System** filter, along with the two mixer tiles.
+
+<div class="callout note">
+<span class="label">These blocks have their own chapter</span>
+<p>What each block is for, what "ideal by construction" costs you, which analysis answers which
+question, and the whole of the passive-intermodulation story — the datasheet conversion, which
+blocks can carry it, and how to give one to a block that cannot — are in
+<b><a href="system-components.html">System Components</a></b>. Read that before placing one; the
+entries below are the glyph, the pins and the parameter table.</p>
+</div>
+
+### Balun {#balun}
+
+{{symbol: balun}}
+
+A transformer between a single **unbalanced** port and a **balanced** pair. `UNB` is on the left;
+`BAL+` and `BAL−` are on the right, and the `+`/`−` marks say which is which — swapping them inverts
+the balanced signal, which is a circuit that still solves. `Zbal` is the impedance of **each**
+balanced port to ground, so the differential impedance across the pair is twice it.
+
+In depth: [System Components › Balun](system-components.html#balun).
+
+{{table: components/Balun}}
+
+### Circulator {#circulator}
+
+{{symbol: circulator}}
+
+A three-port non-reciprocal junction: power entering port 1 leaves at port 2, power entering port 2
+leaves at port 3, and power entering port 3 leaves at port 1. **The arrow inside the circle is drawn
+from the `Direction` parameter** — `CW` circulates 1 → 2 → 3 → 1 and `CCW` reverses it — so which way
+a circulator turns is read off the schematic rather than out of a dialog. Terminate the unused port
+and it is an isolator. It can carry a passive-intermod specification.
+
+In depth: [System Components › Circulator](system-components.html#circulator).
+
+{{table: components/Circulator}}
+
+### Switch {#switch}
+
+{{symbol: switch}}
+
+An SPST switch. Its two pins are interchangeable, so they carry no names. **The blade is drawn in the
+position `State` sets** — lifted at `0`, closed at `1` — which is what makes a swept `State`
+readable on the page.
+
+In depth: [System Components › Switch](system-components.html#switch).
+
+{{table: components/Switch}}
+
+### Transfer Switch (SwitchD) {#switchd}
+
+{{symbol: switch-d}}
+
+An SPDT switch: one common port on the left and two throws on the right. `State` selects the throw —
+`1` or `2`, or `0` for both open — and the blade in the symbol points at it. Both switch tiles use
+the `SW` instance prefix, so swapping one for the other does not renumber a schematic.
+
+In depth: [System Components › Transfer Switch](system-components.html#switchd).
+
+{{table: components/SwitchD}}
+
+### Amplifier (Amp) {#amp}
+
+{{symbol: amp}}
+
+An ideal amplifier: `IN` on the left, `OUT` on the right. Nothing is drawn inside the triangle
+because the gain belongs where a reader looks for a number — the label beside the symbol. It has no
+bias pins and consumes no DC power, and one third-order intercept sets its intermodulation and its
+compression together.
+
+In depth: [System Components › Amplifier](system-components.html#amp).
+
+{{table: components/Amp}}
+
+### Directional Coupler {#coupler}
+
+{{symbol: coupler}}
+
+Four ports in the order a coupler is always specified: **1** in, **2** through, **3** coupled, **4**
+isolated. The two arms run straight through the body, because that is what a coupler is — two lines
+that happen to be close to one another. The arrow does real work: it is the whole of what separates
+the coupled port from the isolated one, and a coupler drawn without it is ambiguous in exactly the
+way that produces a silently wrong circuit.
+
+In depth: [System Components › Directional Coupler](system-components.html#coupler).
+
+{{table: components/Coupler}}
+
+### 90° Hybrid (Hybrid90) {#hybrid90}
+
+{{symbol: hybrid90}}
+
+The same component as the coupler above, at 3.01 dB with the coupled port in quadrature. Same body,
+same pins, same arrow; the phase written inside the frame is the difference, because the phase *is*
+the difference.
+
+In depth: [System Components › 90° Hybrid](system-components.html#hybrid90).
+
+{{table: components/Hybrid90}}
+
+### 180° Hybrid (Hybrid180) {#hybrid180}
+
+{{symbol: hybrid180}}
+
+The rat race: again the same component, at 3.01 dB with the coupled port in anti-phase — a sum port
+and a difference port. Both hybrids share the `HYB` instance prefix with each other, and all three
+tiles share one engine component.
+
+In depth: [System Components › 180° Hybrid](system-components.html#hybrid180).
+
+{{table: components/Hybrid180}}
+
+### Filter {#filter}
+
+{{symbol: filter}}
+
+A two-port filter synthesised from a prototype — Butterworth, Chebyshev, inverse Chebyshev, Bessel
+or elliptic, as lowpass, bandpass or highpass. **Its symbol is the [Match](#match) symbol** — the
+same picture, not a related one. Impedance matching is a form of filtering, the two are built out of
+the same idea, and the library says so. The three stacked waves read as a frequency axis with the
+highest at the top, and a slash is struck through every wave the network blocks, following the
+`Form` parameter:
+
+| `Form` | Struck | Passes |
+|---|---|---|
+| `Lowpass` | the top two | the lowest |
+| `Bandpass` | the top and the bottom | the middle |
+| `Highpass` | the bottom two | the highest |
+
+Tell a filter from a matching network by its type label and its instance name — `FLT1` against `MN1`
+— the same way the five FET laws, which also share one glyph, are told apart. `Order` is the
+**prototype** order, so a 3rd-order bandpass is a 6th-degree network.
+
+In depth: [System Components › Filter](system-components.html#filter).
+
+{{table: components/Filter}}
+
+### Attenuator {#atten}
+
+{{symbol: atten}}
+
+A fixed pad. Its two pins are interchangeable, so they carry no names, and the pinched bowtie reads
+as "signal made smaller". The loss shows as the label beside the symbol. With a small loss and a
+passive-intermod specification it is a **PIM generator** you can place in front of anything.
+
+In depth: [System Components › Attenuator](system-components.html#atten).
+
+{{table: components/Atten}}
+
+### Duplexer {#duplexer}
+
+{{symbol: duplexer}}
+
+An antenna port that splits into a transmit branch and a receive branch, each through its own
+passband — which is what the glyph draws: one junction fanning into two filters, each wave stack
+labelled with the arm it belongs to. `ANT` is on the left, `TX` and `RX` on the right. It takes a
+complete filter specification per arm, and its isolation is a consequence of the two responses
+meeting at one node rather than a parameter.
+
+In depth: [System Components › Duplexer](system-components.html#duplexer).
+
+{{table: components/Duplexer}}
 
 ## Annotation components
 

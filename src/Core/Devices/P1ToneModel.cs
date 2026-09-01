@@ -23,6 +23,12 @@ namespace CircuitRF.Core.Devices;
 /// |Vs| = sqrt(8 · Re(Z_at_fundamental) · Pavl_W)  (matched-load maximum power transfer).
 ///
 /// SetToneContext must be called by HbEngine before any Stamp() in HB mode.
+///
+/// <para><b>Phase reaches this model in RADIANS.</b> The Elaborator has already applied the
+/// parameter's own angle unit (deg→rad via <c>Units.Scale</c>) by the time the factory runs, exactly
+/// as it does for <see cref="TLineModel"/>'s <c>E</c>, so an authored <c>Phase=45 deg</c> arrives
+/// here as 0.7854. Do NOT re-apply π/180. A hand-written netlist line saying a bare
+/// <c>Phase=45</c> is asking for 45 RADIANS and gets them; write the unit.</para>
 /// </summary>
 public sealed class P1ToneModel : ComponentModel, IDriveScalable
 {
@@ -38,7 +44,7 @@ public sealed class P1ToneModel : ComponentModel, IDriveScalable
     private readonly Complex                  _zDefault;
     private readonly double                   _pavlDbm;
     private readonly double                   _freqHz;
-    private readonly double                   _phaseDeg;
+    private readonly double                   _phaseRad;   // RADIANS — see the class doc
 
     // Set by SetToneContext() before each HB run.
     private double _fc;           // band-center frequency (Hz); 0 = S-param mode
@@ -53,14 +59,14 @@ public sealed class P1ToneModel : ComponentModel, IDriveScalable
         Complex                  zDefault,
         double                   pavlDbm,
         double                   freqHz,
-        double                   phaseDeg)
+        double                   phaseRad)
     {
         _ = instanceName;
         _harmonicZ = harmonicZ;
         _zDefault  = zDefault;
         _pavlDbm   = pavlDbm;
         _freqHz    = freqHz;
-        _phaseDeg  = phaseDeg;
+        _phaseRad  = phaseRad;
 
         // Pre-compute |Vs| using S-param-mode Z[1] (before SetToneContext is called).
         // SetToneContext will recompute with the correct band-mapped impedance.
@@ -147,7 +153,7 @@ public sealed class P1ToneModel : ComponentModel, IDriveScalable
         double omegaDrv = 2.0 * Math.PI * _driveFreqHz;
         bool   isTone   = Math.Abs(omega - omegaDrv) < OmegaTolRad;
         var    driveV   = isTone
-            ? Complex.FromPolarCoordinates(DriveScale * _vsMagnitude, _phaseDeg * Math.PI / 180.0)
+            ? Complex.FromPolarCoordinates(DriveScale * _vsMagnitude, _phaseRad)
             : Complex.Zero;
 
         int brDrive = mna.AddBranch();

@@ -112,6 +112,22 @@ public static class SymbolArtworkGenerator
         // the same reasoning as the BJT pair above, and the opposite of the FET laws.
         (SymbolKind.Mixer,           "mixer",             3),
         (SymbolKind.MixerD,          "mixer-d",           6),
+        // The eleven system-level blocks (brief-sys-1). Four of them draw a DIFFERENT picture per
+        // instance — the circulator's direction, each switch's position, the filter's form — and the
+        // figure here is each one's DEFAULT variant, exactly as match.svg is Match's bandpass. The
+        // other variants are documented in place, through DocSymbolGlyph, where the prose can say
+        // what changed.
+        (SymbolKind.Balun,           "balun",             3),
+        (SymbolKind.Circulator,      "circulator",        3),
+        (SymbolKind.Switch,          "switch",            2),
+        (SymbolKind.SwitchD,         "switch-d",          3),
+        (SymbolKind.Amp,             "amp",               2),
+        (SymbolKind.Coupler,         "coupler",           4),
+        (SymbolKind.Hybrid90,        "hybrid90",          4),
+        (SymbolKind.Hybrid180,       "hybrid180",         4),
+        (SymbolKind.Filter,          "filter",            2),
+        (SymbolKind.Atten,           "atten",             2),
+        (SymbolKind.Duplexer,        "duplexer",          3),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

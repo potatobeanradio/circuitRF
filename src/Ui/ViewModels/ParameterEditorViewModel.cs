@@ -468,9 +468,14 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             bool IsOwnOverride(ParameterRowViewModel r) =>
                 r.Name.Equals(PdkPartInstaller.ModelLibraryParameter, StringComparison.Ordinal);
 
+            // A REGISTRY-declared picker (a Filter's Response, an Amp's IP3Ref) is not floated: the
+            // reordering above is about a kit part, whose file and formulation genuinely come first,
+            // and a built-in's parameters already arrive in the order they read in.
+            bool IsFloatedChoice(ParameterRowViewModel r) => r.IsChoiceParam && !r.IsRegistryChoiceParam;
+
             foreach (var row in built.Where(r => r.IsFilePathParam && !IsOwnOverride(r))) Rows.Add(row);
-            foreach (var row in built.Where(r => !r.IsFilePathParam && r.IsChoiceParam)) Rows.Add(row);
-            foreach (var row in built.Where(r => !r.IsFilePathParam && !r.IsChoiceParam)) Rows.Add(row);
+            foreach (var row in built.Where(r => !r.IsFilePathParam && IsFloatedChoice(r))) Rows.Add(row);
+            foreach (var row in built.Where(r => !r.IsFilePathParam && !IsFloatedChoice(r))) Rows.Add(row);
             foreach (var row in built.Where(IsOwnOverride)) Rows.Add(row);
         }
 
@@ -1292,8 +1297,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     /// <summary>
     /// Converts a tone source with scalar amplitude/Freq params to the indexed form plus
-    /// NumFreqs=1 — V/Freq → V[1]/Freq[1] for a VTone, I/Freq → I[1]/Freq[1] for an ITone.
-    /// No-op if already in indexed form.
+    /// NumFreqs=1 — V/Freq/Phase → V[1]/Freq[1]/Phase[1] for a VTone, I/Freq/Phase →
+    /// I[1]/Freq[1]/Phase[1] for an ITone. No-op if already in indexed form.
     ///
     /// <para>One function serves both because the two amplitude spellings cannot collide: a VTone
     /// never carries an <c>I</c> parameter and an ITone never carries a <c>V</c> one, so renaming
@@ -1311,9 +1316,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         foreach (var p in existing)
         {
             var clone = p.Clone();
-            if      (p.Name == "V")    clone.Name = "V[1]";
-            else if (p.Name == "I")    clone.Name = "I[1]";
-            else if (p.Name == "Freq") clone.Name = "Freq[1]";
+            if      (p.Name == "V")     clone.Name = "V[1]";
+            else if (p.Name == "I")     clone.Name = "I[1]";
+            else if (p.Name == "Freq")  clone.Name = "Freq[1]";
+            // `Phase` has to travel with them. The multi-tone factory branch reads Phase[i] and
+            // nothing else, so a scalar Phase left behind by the migration would be silently
+            // dropped the moment a second tone was added — tone 1 would quietly lose its angle.
+            else if (p.Name == "Phase") clone.Name = "Phase[1]";
             result.Add(clone);
         }
 

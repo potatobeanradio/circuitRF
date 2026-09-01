@@ -1,0 +1,11 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 43.83L213.51 43.83" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 106.17L213.51 106.17" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 75L151.17 43.83" /><ellipse fill="#9684FA" cx="88.83" cy="75" rx="3.74" ry="3.74" /><ellipse fill="#9684FA" cx="151.17" cy="43.83" rx="3.74" ry="3.74" /><ellipse fill="#9684FA" cx="151.17" cy="106.17" rx="3.74" ry="3.74" /><text fill="#9684FA" transform="translate(171.43 26.69)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">
+			1
+	</text><text fill="#9684FA" transform="translate(171.43 123.31)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">
+			2
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="40.83" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="103.17" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="90.98, 100.15, 112.43, 116.56, 122.17, 129.86, 138.68" y="172.32">
+			SwitchD
+	</text></svg>

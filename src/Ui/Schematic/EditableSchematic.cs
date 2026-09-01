@@ -152,6 +152,45 @@ public static class SymbolPortDefs
                 return [("rf+", -300f, -100f), ("rf-", -300f, 100f),
                         ("lo+",  -100f, 300f), ("lo-",  100f, 300f),
                         ("if+",  300f, -100f), ("if-",  300f, 100f)];
+            // ── System blocks (brief-sys-1) ───────────────────────────────────
+            // Every one of these shows N pins for a component the engine will see as N PORTS, i.e.
+            // 2N nets: NetExtractor appends "0" after each, exactly as it does for the single-ended
+            // mixer. Pin ORDER is the engine contract in every case — a coupler whose THRU and CPL
+            // pins are swapped still solves, and is wrong — so it is asserted by test rather than
+            // left to the geometry.
+
+            // Balun: UNB left, BAL+ / BAL− right. One unbalanced end against a balanced pair.
+            case SymbolKind.Balun:
+                return [("UNB", -300f, 0f), ("BAL+", 300f, -100f), ("BAL-", 300f, 100f)];
+            // Circulator: port order 1, 2, 3 — which is also the direction the CW arrow turns.
+            case SymbolKind.Circulator:
+                return [("1", -300f, 0f), ("2", 300f, 0f), ("3", 0f, 300f)];
+            // SPST switch: two interchangeable pins, so they carry numbers only.
+            case SymbolKind.Switch:
+                return [("1", -300f, 0f), ("2", 300f, 0f)];
+            // SPDT switch: COM left, the two throws right, in the order the glyph labels them.
+            case SymbolKind.SwitchD:
+                return [("COM", -300f, 0f), ("T1", 300f, -100f), ("T2", 300f, 100f)];
+            // Amplifier: unilateral and therefore NOT symmetric — in and out are named.
+            case SymbolKind.Amp:
+                return [("IN", -300f, 0f), ("OUT", 300f, 0f)];
+            // Coupler and the two hybrids: ONE pin layout for all three, because they are one component.
+            // The four ports in the order a coupler is always specified — in, through, coupled,
+            // isolated — which is what the numerals on the glyph name.
+            case SymbolKind.Coupler:
+            case SymbolKind.Hybrid90:
+            case SymbolKind.Hybrid180:
+                return [("1", -300f, -100f), ("2", 300f, -100f),
+                        ("3", 300f, 100f),   ("4", -300f, 100f)];
+            // Filter: Match's own two pins, because it is Match's own glyph.
+            case SymbolKind.Filter:
+                return [("1", -200f, 0f), ("2", 200f, 0f)];
+            // Attenuator: two interchangeable pins.
+            case SymbolKind.Atten:
+                return [("1", -300f, 0f), ("2", 300f, 0f)];
+            // Duplexer: the antenna against the two branches it splits into.
+            case SymbolKind.Duplexer:
+                return [("ANT", -300f, 0f), ("TX", 300f, -100f), ("RX", 300f, 100f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);
@@ -517,6 +556,53 @@ public sealed class EditableComponent
         return p is not null && int.TryParse(p.Expression, out int n) && n >= 1 ? n : 1;
     }
 
+    // ── The four DYNAMIC system glyphs (brief-sys-1) ──────────────────────────
+    // Each reads ONE instance parameter and picks a cached variant, the same mechanism SnP's
+    // RefNode/PinConfig/Pitch and Match's Form already use. A schematic saved before these existed
+    // carries no such parameter and reads as the default, which is what it was.
+
+    /// <summary>The direction the <c>Circulator</c> glyph's arrow turns.</summary>
+    private CirculatorDirection CirculatorGlyphDirection()
+        => GetEnumParam("Direction", CirculatorDirection.CW);
+
+    /// <summary>The position the SPST <c>Switch</c> glyph's blade is drawn in.</summary>
+    private SwitchState SwitchGlyphState() => GetEnumParam("State", SwitchState.On);
+
+    /// <summary>
+    /// The throw the SPDT <c>SwitchD</c> glyph's blade points at.
+    ///
+    /// <para><see cref="SwitchThrow"/>'s members are numbered 1 and 2 rather than 0 and 1 precisely
+    /// so this can go through the ordinary enum reader: the parameter is written <c>1</c> or
+    /// <c>2</c>, and <c>Enum.TryParse</c> resolves a bare numeral against the underlying value.</para>
+    /// </summary>
+    private SwitchThrow SwitchDGlyphThrow() => GetEnumParam("State", SwitchThrow.T1);
+
+    /// <summary>The network form the <c>Filter</c> glyph draws — Match's own <c>Form</c> spelling,
+    /// because it is Match's own glyph.</summary>
+    private NetworkForm FilterGlyphForm() => GetEnumParam("Form", NetworkForm.Bandpass);
+
+    /// <summary>
+    /// The per-instance glyph for a kind that draws itself differently depending on a parameter, or
+    /// null for every other kind. ONE definition, read by both <see cref="ToRenderComponent"/> and
+    /// <see cref="ComputeGlyphBb"/> — the two used to repeat the same if-chain, and a kind added to
+    /// one and not the other renders at one size and is hit-tested at another.
+    /// </summary>
+    private Symbol? InstanceGlyph() => Symbol switch
+    {
+        SymbolKind.Snp => BuiltInSymbols.PrimitivesForSnp(
+            PortCount, GetBoolParam("RefNode"),
+            GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
+            GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose)),
+        SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
+            => BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias")),
+        SymbolKind.Match      => BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands()),
+        SymbolKind.Circulator => BuiltInSymbols.PrimitivesForCirculator(CirculatorGlyphDirection()),
+        SymbolKind.Switch     => BuiltInSymbols.PrimitivesForSwitch(SwitchGlyphState()),
+        SymbolKind.SwitchD    => BuiltInSymbols.PrimitivesForSwitchD(SwitchDGlyphThrow()),
+        SymbolKind.Filter     => BuiltInSymbols.PrimitivesForFilter(FilterGlyphForm()),
+        _ => null,
+    };
+
     /// <summary>
     /// The parameters this component renders as schematic labels, in display order — the single
     /// definition every label consumer reads, so the renderer, the bounding box and the label-offset
@@ -593,25 +679,9 @@ public sealed class EditableComponent
         Symbol? instanceSymbol = null;
 
         // Per-instance glyph: SnP varies by RefNode/PinConfig/Pitch; the Tuner family varies by
-        // ShowBias; Match varies by Form and Bands (match.md §8.4).
-        if (cellRefResolution is null)
-        {
-            if (Symbol == SymbolKind.Snp)
-            {
-                bool refNode   = GetBoolParam("RefNode");
-                SnpPinConfig cfg = GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
-                SnpPitch pitch   = GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose);
-                instanceSymbol = BuiltInSymbols.PrimitivesForSnp(PortCount, refNode, cfg, pitch);
-            }
-            else if (Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
-            {
-                instanceSymbol = BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias"));
-            }
-            else if (Symbol == SymbolKind.Match)
-            {
-                instanceSymbol = BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands());
-            }
-        }
+        // ShowBias; Match varies by Form and Bands (match.md §8.4); the circulator, the two
+        // switches and the filter vary by Direction / State / Form (brief-sys-1).
+        if (cellRefResolution is null) instanceSymbol = InstanceGlyph();
 
         if (cellRefResolution is not null)
         {
@@ -756,17 +826,8 @@ public sealed class EditableComponent
         IReadOnlyList<SymbolPrimitive> prims;
         if (overridePrimitives is not null)
             prims = overridePrimitives;
-        else if (Symbol == SymbolKind.Snp)
-            prims = BuiltInSymbols.PrimitivesForSnp(PortCount,
-                GetBoolParam("RefNode"),
-                GetEnumParam<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
-                GetEnumParam<SnpPitch>("Pitch", SnpPitch.Loose)).Primitives;
-        else if (Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
-            prims = BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias")).Primitives;
-        else if (Symbol == SymbolKind.Match)
-            prims = BuiltInSymbols.PrimitivesForMatch(MatchGlyphForm(), MatchGlyphBands()).Primitives;
         else
-            prims = BuiltInSymbols.Primitives(Symbol, PortCount).Primitives;
+            prims = (InstanceGlyph() ?? BuiltInSymbols.Primitives(Symbol, PortCount)).Primitives;
 
         if (prims.Count == 0) return (X - 160, Y - 60, X + 160, Y + 60);
 

@@ -25,6 +25,11 @@ namespace CircuitRF.Core.Devices;
 /// HbEngine calls <see cref="SetToneContext"/> before extraction (single-tone f_c = f0; two-tone
 /// f_c = (f1+f2)/2). In S-parameter mode (_fc ≤ 0) the source is passive: it presents Z[1] between
 /// the external and reference nodes and ties off its (undriven) internal node — no port role.
+///
+/// <para><b>Phase[i] reaches this model in RADIANS</b>, for the same reason and by the same route as
+/// <see cref="P1ToneModel"/>'s: the Elaborator applies the parameter's angle unit before the factory
+/// runs. An authored <c>Phase[1]=45 deg</c> arrives as 0.7854; a bare <c>Phase[1]=45</c> is 45
+/// radians.</para>
 /// </summary>
 public sealed class PnToneModel : ComponentModel, IDriveScalable
 {
@@ -36,8 +41,11 @@ public sealed class PnToneModel : ComponentModel, IDriveScalable
     public override int       PortCount => 1;
     public override ModelKind Kind      => ModelKind.Linear;
 
-    /// <summary>One declared tone: available power (dBm), frequency (Hz), phase (deg).</summary>
-    public readonly record struct Tone(double PavlDbm, double FreqHz, double PhaseDeg);
+    /// <summary>
+    /// One declared tone: available power (dBm), frequency (Hz), phase (<b>RADIANS</b> — see the
+    /// class doc).
+    /// </summary>
+    public readonly record struct Tone(double PavlDbm, double FreqHz, double PhaseRad);
 
     private readonly Tone[]                    _tones;
     private readonly Dictionary<int, Complex>  _harmonicZ;
@@ -114,7 +122,7 @@ public sealed class PnToneModel : ComponentModel, IDriveScalable
             if (Math.Abs(omega - omegaTone) < OmegaTolRad)
             {
                 driveV = Complex.FromPolarCoordinates(
-                    DriveScale * _vsMagnitude[i], _tones[i].PhaseDeg * Math.PI / 180.0);
+                    DriveScale * _vsMagnitude[i], _tones[i].PhaseRad);
                 break;
             }
         }
