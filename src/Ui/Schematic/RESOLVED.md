@@ -2,6 +2,134 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## Importing a SPICE `.subckt` as a cell (2026-09-01)
+
+The same two doors now take a `.subckt` definition as well as a `.model` card — the project tree's
+**Copy to Workspace as Cell…** and **File ▸ Import ▸ Model or Subcircuit…**, which is one gesture
+because a supplier's file routinely holds both (the subcircuit that is the part, and the cards that
+are its transistors) and a user opening it has "the file for this part", not a classification.
+`SpiceCellImport` reads the file once and lists everything importable in one picker.
+
+**Which extensions the TREE offers it on is a separate, narrower question from the file picker's**,
+because the tree's item appears on a bookmarked file with nothing having read it — so the extension
+is the whole of what decides, and a dead menu item on most of a workspace is the cost of casting too
+wide. The line is "does this extension name a SPICE deck and nothing else?": `.model`, `.mod`,
+`.subckt`, `.sub`, `.ckt`, `.sp`, `.spi`, `.cir` pass — **`.sp` was missed on the first pass and is at
+least as common a spelling for a file holding a `.subckt` as `.subckt` itself** (owner, 2026-09-01).
+`.lib` and `.txt` do not and stay picker-only: `.lib` is a static library everywhere outside this
+dialect, and `.txt` is anything at all.
+
+A subcircuit becomes a cell whose schematic holds the definition's own components, wired to each
+other as the file wires them, one `Pin` per declared port, and `AutoSymbolGenerator`'s generic N-port
+box for a symbol — the same box an SnP gets, reused rather than reinvented, and for the same reason:
+circuitRF does not know what the user's subcircuit IS, so any glyph more specific asserts something
+untrue.
+
+### Geometry IS connectivity, so the router is not a cosmetic component
+
+This is the whole difficulty and it is not obvious from the outside. circuitRF reads a schematic's
+nets off the drawing (`SchematicEditModel.ComputeConnectivityGeometry`), so a wire laid across
+another net's wire in the wrong way **does not look wrong — it JOINS the two nets**, and the imported
+cell then simulates as a different circuit with nothing reporting it. `SchematicAutoRouter` is that
+contract restated as three routing rules:
+
+- **A pure crossing is safe.** Two wires passing through a point with neither having a vertex there
+  is not a connection; it joins only through a user-placed dot. This is what makes routing possible
+  at all — a route may cross another net at right angles.
+- **A vertex on another net's wire IS a connection.** Three or more incident segments with a vertex
+  among them auto-dots, so a route may never BEND or END on a cell any other net's wire touches.
+  Note this is *not* the same test as the crossing one and a crossing-only check misses it: the
+  dangerous case is our corner landing on their straight run.
+- **Collinear overlap is not a connection but is a lie** — two nets' wires along one line read as one
+  wire. Forbidden for the same reason, one step weaker.
+
+**The A\* state is (cell, arrival direction), not (cell).** Whether a cell may be used depends on how
+the wire passes through it — straight through is legal where a corner is not — so a plain per-cell
+search either forbids legal crossings or permits illegal corners. That doubled state space is the
+reason this is A\* rather than a flood fill.
+
+**A route that cannot be found falls back to a net label, and the fallback is reported.** A net label
+is a real connection (same-name labels are one net), so the cell is still the circuit the file wrote;
+only the drawing suffered. Leaving a terminal open instead would produce a different circuit in
+silence. `ADenseDefinition_…` asserts `Empty(model.NetLabels)` for exactly this reason — the fallback
+would otherwise make every round-trip test pass on a schematic with no wires in it.
+
+### Placement, and the one keep-out subtlety
+
+Components go on a 1000-unit grid in breadth-first net order seeded from the declared ports (nothing
+is optimised; connected things end up near each other, which is most of what makes an auto-drawn
+netlist readable and what keeps the router's paths findable). **Ground is not walked through** — it
+touches nearly every element, so following it makes one hop out of any two components in the circuit.
+
+Each component's keep-out is its footprint one grid square proud of everything it draws, **minus each
+port's own cell AND the cell immediately outside it**. Both halves are load-bearing: without the
+exemption the pin is walled in and unreachable; without the footprint a wire creeps along the device
+body and arrives at the pin sideways, drawn across the glyph.
+
+### Ground is drawn, not routed
+
+Net `0` is every SPICE netlist's busiest net and routing it lays a rail across the sheet. Each
+terminal on it gets its own `Ground` on a 200-unit lead instead. **Each ground is given a PRIVATE net
+name** (`0#3`, not a name any SPICE net can have) — handing them all `"0"` would ask the router to
+join every ground to every other one, which is the rail this avoids. Extraction names them all `0`
+regardless, because a `Ground` component NAMES its net. Skipped entirely when the definition declares
+`0` as a port, since the `Pin` then has to be able to reach it.
+
+### Refusals: one bad element refuses the whole definition
+
+A netlist with a line missing is not a smaller circuit, it is a DIFFERENT one — and a different one
+that elaborates, simulates and produces numbers. So a definition is refused whole when the reader
+marked it incomplete, when any element is refused, when a nested call is refused, or when the calls
+form a cycle (**refused rather than cut**: cutting one builds a hierarchy that terminates and is not
+the file's). Named refusals: a model the file does not define, a card circuitRF has no model for
+(carrying the CARD's own reason, which is what says whether the fix is a different file or a
+feature), a net count that disagrees with the component's terminal count, a definition with no ports,
+and `SemiC` — whose engine model exists but which has no schematic component to draw.
+
+**A terminal count is never reconciled.** A four-net bipolar line (the fourth is the substrate)
+against a three-terminal component is refused; tying the substrate somewhere plausible is a different
+circuit that solves.
+
+### Nesting creates more cells, and says so
+
+A circuitRF cell instance references a cell FOLDER, so a nested `.subckt` has nowhere else to live: a
+call becomes a `CellRef` instance and the called definition becomes its own cell folder beside the
+parent, named after itself. **All-or-nothing across every folder**, not just the one asked for — a
+half-written nested import leaves a parent pointing at a child that is not there, which the workspace
+scanner lists and a user places. Every extra cell is named in the report.
+
+### Two reader gaps this exposed, both silent
+
+- **`M` required four nets.** A lateral MOSFET states drain/gate/source/bulk; a VERTICAL one states
+  three, because the source-to-body short is inside the silicon — and both are written with an `M`.
+  So every VDMOS line was refused outright with a message about a missing net the file was right not
+  to have. The minimum is 3 now; the existing name-is-the-last-bare-word rule already separates the
+  nets from the model name at either width, so nothing else changed.
+- **There was no `J`.** circuitRF has had a JFET model since the model-card work, but with no element
+  letter for one, a netlist instantiating a JFET was skipped as an unreadable kind — which marked the
+  cell incomplete and took the whole subcircuit down with it.
+
+### The oracle is extraction, not the drawing
+
+`SubcircuitImportTests` asserts what has to be true rather than what the router happens to draw: the
+built schematic read BACK through `NetExtractor` — the same path a run takes — is the netlist the
+file wrote, compared as a PARTITION (the map from the file's net names to the extracted ones must be
+a bijection, which is exactly "the same terminals are shorted together, and no others"). Ground is
+pinned by name rather than merely mapped, since `0` is the one net whose name is a fact. Two of the
+tests run the whole thing through the files on disk, one of them nested, because every other
+round-trip test works on the in-memory model.
+
+### The case-insensitivity trap, one layer up from the reader's
+
+An element line writing `AREA=4` against a registry row declared `Area` is the same parameter to
+every simulator that reads the format, and a name circuitRF has never heard of — it compares
+ordinally. `ModelCardCellBuilder.ImportedParameter` now takes the ROW's spelling when only the case
+differs, which is the only direction that cannot invent a parameter. **The device multiplier is
+exempt and that is not a detail**: this dialect's `m=4` means four devices in parallel while
+upper-case `M` on the same diode is the junction grading coefficient, so re-spelling it would give
+that diode a grading coefficient of 4, no multiplier at all, and an ordinary-looking simulation.
+`SpiceNetlistReader.NormaliseInstanceParameter` guards the same pair one layer down.
+
 ## Importing a SPICE `.model` card as a cell (2026-09-01)
 
 A `.MODEL` file dropped into the Project Tree gets **Copy to Workspace as Cell…** on its right-click

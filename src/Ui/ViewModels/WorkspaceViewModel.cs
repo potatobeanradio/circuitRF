@@ -9499,21 +9499,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
-    // ── SPICE model cards (.model) ────────────────────────────────────────────
+    // ── SPICE model cards and subcircuits ────────────────────────────────────
 
     /// <inheritdoc/>
     public Task CreateCellFromModelCardAsync(ProjectTreeNodeViewModel node)
         => CreateCellFromModelCardFromPathAsync(node.AbsolutePath);
 
     /// <summary>
-    /// Turns one <c>.model</c> card into a cell — the project tree's "Copy to Workspace as Cell…"
-    /// on a model file, and File ▸ Import ▸ Model Card…, are the SAME method, so the two doors
-    /// cannot disagree about what an import produces.
+    /// Turns one <c>.model</c> card or one <c>.subckt</c> definition into a cell — the project
+    /// tree's "Copy to Workspace as Cell…" on a SPICE file, and File ▸ Import ▸ Model or
+    /// Subcircuit…, are the SAME method, so the two doors cannot disagree about what an import
+    /// produces.
     ///
-    /// <para>The point of the whole feature is that a user never types a parameter table in by
-    /// hand, so everything the card states is carried and everything it states that circuitRF has
-    /// no home for is REPORTED. An import that says only "created" would let a dropped substrate
-    /// junction reach a measurement.</para>
+    /// <para>The point of the whole feature is that a user never types a parameter table or a
+    /// netlist in by hand, so everything the file states is carried and everything it states that
+    /// circuitRF has no home for is REPORTED. An import that says only "created" would let a
+    /// dropped substrate junction reach a measurement.</para>
     /// </summary>
     public async Task CreateCellFromModelCardFromPathAsync(string modelPath)
     {
@@ -9523,10 +9524,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
-        // The file is READ BEFORE the user is asked to name anything: a file with no card circuitRF
+        // The file is READ BEFORE the user is asked to name anything: a file with nothing circuitRF
         // can build should not first ask what to call the cell it is not going to create. This is
         // CopyKnownFileToWorkspaceAsCellAsync's own rule, and for the same reason.
-        var scan = ModelCardCellBuilder.Scan(modelPath);
+        var scan = SpiceCellImport.Scan(modelPath);
         if (scan.Error is { } error)
         {
             Messages.Error(error, modelPath);
@@ -9540,26 +9541,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Every refusal, not just the first: a kit file holding four MOSFETs and a bead should
             // say so once rather than one card at a time across four attempts.
             Messages.Error(
-                $"{fileName} holds {scan.Translations.Count} model card(s) and circuitRF can build "
-                + "none of them.", modelPath);
-            foreach (var t in scan.Translations)
-                Messages.Info("  " + t.Refusal, modelPath);
+                $"{fileName} holds {scan.Candidates.Count} model card(s) and subcircuit(s), and "
+                + "circuitRF can build none of them.", modelPath);
+            foreach (var c in scan.Candidates)
+                Messages.Info($"  {c.TypeLabel} {c.Name}: {c.Detail}", modelPath);
             return;
         }
 
         var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
 
-        // One buildable card in a file of one is not a choice, and a dialog offering a single option
-        // is a click that asks nothing. Anything else goes to the picker — which lists the refused
-        // cards too, with their reasons.
-        var picked = scan.Translations.Count == 1
+        // One buildable definition in a file of one is not a choice, and a dialog offering a single
+        // option is a click that asks nothing. Anything else goes to the picker — which lists the
+        // refused ones too, with their reasons.
+        var picked = scan.Candidates.Count == 1
             ? scan.Supported[0]
-            : await ModelCardPickerDialog.ShowAsync(mainWindow, fileName, scan.Translations);
+            : await SpiceCellPickerDialog.ShowAsync(mainWindow, fileName, scan.Candidates);
         if (picked is not { } chosen) return;
 
         var dialog = new InputNameDialog(
-            "Import Model Card as Cell", "Cell name:", SuggestCellName(chosen.Card.Name));
+            "Import SPICE Definition as Cell", "Cell name:", SpiceCellImport.SuggestCellName(chosen));
         var name = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
@@ -9573,7 +9574,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
-            var result = ModelCardCellBuilder.Write(workspaceDir, name, chosen);
+            var result = SpiceCellImport.Write(workspaceDir, name, chosen, scan);
 
             _factory.ProjectTreeTool?.Refresh();
 
@@ -9591,20 +9592,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
-    /// A card name made safe to seed the name box with. Only the characters a path component cannot
-    /// hold are replaced — the name is otherwise the card's own, because that is what the user is
-    /// looking for in the tree afterwards.
-    /// </summary>
-    private static string SuggestCellName(string cardName)
-    {
-        var cleaned = new string([.. cardName.Select(
-            c => c <= 0x1F || c is '<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*' ? '_' : c)])
-            .Trim().TrimEnd('.');
-        return NameValidator.IsValid(cleaned) ? cleaned : "Model";
-    }
-
-    /// <summary>
-    /// File ▸ Import ▸ Model Card… — the same import, reached without bookmarking the file first.
+    /// File ▸ Import ▸ Model or Subcircuit… — the same import, reached without bookmarking the
+    /// file first.
     /// </summary>
     /// <remarks>
     /// The picker's filter is WIDER than the project tree's own extension test, deliberately: the
@@ -9621,13 +9610,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Import SPICE Model Card",
+            Title = "Import SPICE Model Card or Subcircuit",
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("SPICE model card")
+                new FilePickerFileType("SPICE model card or subcircuit")
                 {
-                    Patterns = ["*.model", "*.mod", "*.lib", "*.cir", "*.sp", "*.spi", "*.txt"],
+                    Patterns =
+                    [
+                        "*.model", "*.mod", "*.subckt", "*.sub", "*.ckt",
+                        "*.lib", "*.cir", "*.sp", "*.spi", "*.txt",
+                    ],
                 },
                 new FilePickerFileType("All files") { Patterns = ["*"] },
             ],

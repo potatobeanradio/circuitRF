@@ -399,7 +399,7 @@
                                         <MenuItem Header="Copy to Workspace as Cell…"
                                                   Command="{Binding CreateCellFromModelCardCommand}"
                                                   IsVisible="{Binding IsModelCardFile}"
-                                                  ToolTip.Tip="Build a new cell from a SPICE .model card in this file: the native circuitRF component carrying the card's parameters, its pins already wired, and an editable copy of that component's symbol. The file is read first; a card naming a device circuitRF has no model for is refused by name.">
+                                                  ToolTip.Tip="Build a new cell from a SPICE .model card or .subckt definition in this file. A card becomes the native circuitRF component carrying its parameters with an editable copy of that component's symbol; a subcircuit becomes its own netlist, wired as the file wires it, with a generic box for a symbol. Either way the pins are already wired. The file is read first; anything circuitRF has no model for is refused by name.">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
                                         <MenuItem Header="Remove Reference"

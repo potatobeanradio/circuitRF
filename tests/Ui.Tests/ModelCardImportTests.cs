@@ -87,12 +87,12 @@ public class ModelCardImportTests : IDisposable
             .model QSECOND NPN (IS=1e-16 BF=120)
             """);
 
-        var scan = ModelCardCellBuilder.Scan(path);
+        var scan = SpiceCellImport.Scan(path);
 
         Assert.Null(scan.Error);
-        Assert.Equal(2, scan.Translations.Count);
-        Assert.Equal("DFIRST",  scan.Translations[0].Card.Name);
-        Assert.Equal("QSECOND", scan.Translations[1].Card.Name);
+        Assert.Equal(2, scan.Candidates.Count);
+        Assert.Equal("DFIRST",  scan.Candidates[0].Name);
+        Assert.Equal("QSECOND", scan.Candidates[1].Name);
     }
 
     // ── The unit trap ─────────────────────────────────────────────────────────
@@ -819,9 +819,10 @@ public class ModelCardImportTests : IDisposable
     {
         string axaml = File.ReadAllText(RepoFile("src", "Ui", "Views", "WorkspaceWindow.axaml"));
 
+        // The item is named for BOTH things it imports since subcircuits landed; the wording itself
+        // is held by SubcircuitImportTests, and what this one holds is that there are still two of
+        // them bound to the one command.
         Assert.Equal(2, CountOf(axaml, "ImportModelCardCommand"));
-        Assert.Contains("<NativeMenuItem Header=\"Model Card…\"", axaml, StringComparison.Ordinal);
-        Assert.Contains("<MenuItem Header=\"_Model Card…\"", axaml, StringComparison.Ordinal);
     }
 
     /// <summary>

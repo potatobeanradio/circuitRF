@@ -192,7 +192,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         Kind == NodeKind.KnownFile
         && !IsDirectory
         && !IsWarning
-        && ModelCardCellBuilder.IsModelCardFile(AbsolutePath);
+        && ModelCardCellBuilder.IsSpiceCellFile(AbsolutePath);
 
     /// <summary>True when this node has unsaved work — drives the "Save" context item.
     /// Resolved through the host so it reflects live dirty state when the menu opens.</summary>

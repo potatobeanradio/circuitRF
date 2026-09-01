@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="CircuitRF.Ui.Views.Dialogs.ModelCardPickerDialog"
-        Title="Import Model Card"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SpiceCellPickerDialog"
+        Title="Import Model or Subcircuit"
         Width="620"
         SizeToContent="Height"
         CanResize="False"
@@ -13,9 +13,9 @@
         <TextBlock x:Name="Intro" Grid.Row="0" TextWrapping="Wrap" FontSize="12" Opacity="0.7"
                    Margin="0,0,0,10"/>
 
-        <!-- Every card in the file, supported or not. A refused one is listed WITH its reason
-             rather than hidden: "my VDMOS is missing" is otherwise a mystery, and the reason is
-             the answer to the question the user is about to ask. -->
+        <!-- Every card AND subcircuit in the file, supported or not. A refused one is listed WITH
+             its reason rather than hidden: "my VDMOS is missing" is otherwise a mystery, and the
+             reason is the answer to the question the user is about to ask. -->
         <ListBox x:Name="ChoiceList" Grid.Row="1" MaxHeight="340" FontSize="12">
             <ListBox.ItemTemplate>
                 <DataTemplate x:CompileBindings="False">

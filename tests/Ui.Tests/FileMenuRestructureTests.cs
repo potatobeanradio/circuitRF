@@ -288,9 +288,9 @@ public class FileMenuRestructureTests
         // outward handoff. ExportSubmenu_* below is what holds that asymmetry shut.
         string[] expected =
         [
-            // "Model Card" sits beside "PDK" and not with the geometry importers above it: both
-            // bring in a DEVICE MODEL, and a user looking for one is looking at the other.
-            "Data", "GDSII", "DXF", "Board", "PDK", "Model Card", "Technology", "Into Open Technology",
+            // "Model or Subcircuit" sits beside "PDK" and not with the geometry importers above it:
+            // both bring in a DEVICE MODEL, and a user looking for one is looking at the other.
+            "Data", "GDSII", "DXF", "Board", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
             "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
         ];
 

@@ -6,6 +6,22 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## Two element letters the SPICE reader was missing (2026-09-01)
+
+Found while building the `.subckt` importer (`src/Ui/Schematic/RESOLVED.md`), and both were silent in
+the way that matters — the reader refused a line the file was right to have written.
+
+- **`M` required FOUR nets.** A lateral MOSFET states drain/gate/source/bulk; a **vertical** one
+  states three, because the source-to-body short is inside the silicon — and both are written with an
+  `M`. Every VDMOS line was therefore refused outright, with a message about a missing net. The
+  minimum is 3 now. Nothing else changed: the name-is-the-last-bare-word rule the reader already uses
+  separates the nets from the model name at either width, which is exactly the reasoning `N` (a
+  compiled-model instance, whose terminal count is its model's) was given when it was added.
+- **There was no `J`.** circuitRF has had a JFET model since the model-card work, but with no element
+  letter, a netlist instantiating one was skipped as "a kind this reader does not read" — which marks
+  the enclosing cell INCOMPLETE, so one JFET took the whole subcircuit with it.
+
+
 ## Six engine models for the refused model-card types (2026-09-01)
 
 The device half of the SPICE `.model` import work. The importer already refused `NJF`/`PJF`, `PMF`,

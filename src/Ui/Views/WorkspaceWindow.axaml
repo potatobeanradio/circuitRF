@@ -88,7 +88,7 @@
                                     <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ImportBoardCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
-                                    <NativeMenuItem Header="Model Card…" Command="{Binding ImportModelCardCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Model or Subcircuit…" Command="{Binding ImportModelCardCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Into Open Technology…" Command="{Binding ImportIntoTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Wirebond Table…" Command="{Binding ImportWireTableCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -448,10 +448,10 @@
                     <MenuItem Header="_PDK…"
                               Command="{Binding ImportPdkCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>
-                    <MenuItem Header="_Model Card…"
+                    <MenuItem Header="_Model or Subcircuit…"
                               Command="{Binding ImportModelCardCommand}"
                               CommandParameter="{Binding $parent[Window]}"
-                              ToolTip.Tip="Build a cell from a SPICE .model card: the native circuitRF component carrying the card's parameters, its pins already wired, and an editable copy of that component's symbol. A card naming a device circuitRF has no model for is refused by name rather than approximated."/>
+                              ToolTip.Tip="Build a cell from a SPICE .model card or .subckt definition. A card becomes the native circuitRF component carrying its parameters, with an editable copy of that component's symbol; a subcircuit becomes its own netlist, wired as the file wires it, with a generic box for a symbol. Anything circuitRF has no model for is refused by name rather than approximated."/>
                     <MenuItem Header="_Technology…"
                               Command="{Binding ImportTechnologyCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>

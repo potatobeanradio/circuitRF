@@ -663,7 +663,17 @@ public static class SpiceNetlistReader
             ['L'] = (2, false),
             ['D'] = (2, true),
             ['Q'] = (3, true),      // a fourth net is the substrate; handled below
-            ['M'] = (4, true),
+            // The MINIMUM a MOS-family line can have, not the usual four. A lateral MOSFET states
+            // drain, gate, source and bulk; a VERTICAL one states three, because the source-to-body
+            // short is inside the silicon — and both are written with an 'M'. Requiring four
+            // refused every vertical-MOSFET line outright, with a message about a missing net that
+            // the file was right not to have. The name-is-the-last-bare-word rule below already
+            // separates the nets from the model name at either width, so this needed no other change.
+            ['M'] = (3, true),
+            // The junction FET. circuitRF has had a JFET model since the model-card work; without a
+            // letter for it, a netlist that instantiates one was skipped as an unreadable kind and
+            // took the whole subcircuit with it.
+            ['J'] = (3, true),
             // How a device backed by a COMPILED model is instantiated. Its terminal count is the
             // model's, not the letter's, so the minimum is the smallest a device can have and the
             // name-is-the-last-bare-word rule covers the rest — which is why that rule was written

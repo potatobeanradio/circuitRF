@@ -3,24 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist.Spice;
 using CircuitRF.Design.Cells;
 
 namespace CircuitRF.Ui.Schematic;
-
-/// <summary>What one <c>.model</c> file holds, once read.</summary>
-/// <param name="Translations">Every card in the file, supported or not, in file order.</param>
-/// <param name="Notes">The reader's own notes — lines it skipped, definitions it could not use.</param>
-/// <param name="Error">Why nothing could be read at all. Null when the file was read.</param>
-public sealed record ModelCardScan(
-    IReadOnlyList<ModelCardTranslation> Translations,
-    IReadOnlyList<SpiceNetlistNote>     Notes,
-    string?                             Error)
-{
-    /// <summary>The cards that can actually become a cell.</summary>
-    public IReadOnlyList<ModelCardTranslation> Supported
-        => [.. Translations.Where(t => t.IsSupported)];
-}
 
 /// <summary>Where a built cell landed, and what is worth saying about it.</summary>
 /// <param name="CellDir">The cell folder.</param>
@@ -85,29 +72,23 @@ public static class ModelCardCellBuilder
         Path.GetExtension(path).ToLowerInvariant() is ".model" or ".mod";
 
     /// <summary>
-    /// Reads every <c>.model</c> card in <paramref name="path"/> and says what circuitRF can make of
-    /// each. Never throws for a file it cannot read — that is the <c>Error</c> field, because this
-    /// runs behind a menu item and a stack trace is not an answer.
+    /// Extensions the project tree offers the command on, now that a <c>.subckt</c> definition
+    /// becomes a cell by the same gesture.
+    ///
+    /// <para><b>The line is drawn at "does this extension name a SPICE deck and nothing else?"</b>,
+    /// which is what the "deliberately narrow" rule above is actually protecting: the item appears
+    /// on a bookmarked file with nothing having read it, so a dead item on most of a workspace is
+    /// the cost of getting it wrong. <c>.sp</c>, <c>.spi</c> and <c>.cir</c> pass that test — a
+    /// subcircuit is at least as often written into one of them as into a <c>.subckt</c> (owner,
+    /// 2026-09-01). <c>.lib</c> and <c>.txt</c> do NOT and stay picker-only: <c>.lib</c> is a static
+    /// library everywhere outside this dialect, and <c>.txt</c> is anything at all. File ▸ Import ▸
+    /// Model or Subcircuit… is where the wide net belongs, because there the user has already said
+    /// what the file is by choosing it.</para>
     /// </summary>
-    public static ModelCardScan Scan(string path)
-    {
-        SpiceNetlistResult result;
-        try
-        {
-            result = SpiceNetlistReader.ReadFile(path);
-        }
-        catch (Exception ex)
-        {
-            return new ModelCardScan([], [], $"{Path.GetFileName(path)} could not be read: {ex.Message}");
-        }
-
-        return new ModelCardScan(
-            SpiceModelCardTranslation.TranslateAll(result.ModelCards),
-            result.Notes,
-            result.ModelCards.Count > 0
-                ? null
-                : $"{Path.GetFileName(path)} contains no '.model' cards.");
-    }
+    public static bool IsSpiceCellFile(string path) =>
+        IsModelCardFile(path)
+        || Path.GetExtension(path).ToLowerInvariant()
+            is ".subckt" or ".sub" or ".ckt" or ".sp" or ".spi" or ".cir";
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Component identity
@@ -325,25 +306,62 @@ public static class ModelCardCellBuilder
     private static void ApplyParameters(
         EditableComponent device, SymbolKind kind, IReadOnlyList<ModelCardParameter> parameters)
     {
-        var defaults = ComponentTypeRegistry.DefaultParameters(kind, 0)
-            .ToDictionary(d => d.Name, StringComparer.Ordinal);
-
         foreach (var p in parameters)
-        {
-            // A name with no declared row is dimensionless by construction here: every dimensioned
-            // parameter of every supported device HAS a row, and the ones that do not (a resistor's
-            // TC1, a temperature in °C) carry no unit token in circuitRF's scheme either.
-            var dimension = defaults.TryGetValue(p.Name, out var d) ? d.Dimension : UnitDimension.None;
+            device.Parameters.Add(ImportedParameter(kind, p.Name, p.Expression));
+    }
 
-            device.Parameters.Add(new EditableParameter
-            {
-                Name            = p.Name,
-                Expression      = p.Expression,
-                Unit            = BaseUnit(dimension),
-                Dimension       = dimension,
-                ShowOnSchematic = d.ShowOnSchematic,
-            });
+    /// <summary>
+    /// One schematic row for a value that arrived from a SPICE file, in <b>base SI units</b>.
+    ///
+    /// <para>Shared with the subcircuit importer rather than restated there, because the unit is the
+    /// whole of the difficulty and two copies of it would be two chances to get it wrong. A row the
+    /// registry declares carries that row's own dimension and visibility; a name with no declared
+    /// row is dimensionless by construction here — every dimensioned parameter of every supported
+    /// device HAS a row, and the ones that do not (a resistor's TC1, a temperature in °C) carry no
+    /// unit token in circuitRF's scheme either.</para>
+    /// </summary>
+    public static EditableParameter ImportedParameter(
+        SymbolKind kind, string name, string expression)
+    {
+        var rows = ComponentTypeRegistry.DefaultParameters(kind, 0);
+
+        DefaultParam? Find(StringComparison how)
+        {
+            foreach (var r in rows)
+                if (r.Name.Equals(name, how)) return r;
+            return null;
         }
+
+        var declared = Find(StringComparison.Ordinal);
+
+        // The dialect is case-insensitive and circuitRF compares parameter names ORDINALLY, so a
+        // line writing `AREA=4` against a row declared `Area` is the same parameter to every
+        // simulator that reads the format, and a name circuitRF has never heard of. Taking the row's
+        // own spelling is the only direction that cannot invent a parameter — an unmatched name is
+        // left exactly as written, so a genuine typo is still visible as one.
+        //
+        // **The device MULTIPLIER is exempt, and that is not a detail.** This dialect's `m=4` means
+        // four devices in parallel, while upper-case `M` on the very same diode is the junction
+        // grading coefficient. Re-spelling it would give that diode a grading coefficient of 4, no
+        // multiplier at all, and a perfectly ordinary-looking simulation. SpiceNetlistReader guards
+        // the same pair one layer down, for the same reason.
+        if (declared is null && !name.Equals(Elaborator.MultiplierParamName, StringComparison.Ordinal))
+        {
+            declared = Find(StringComparison.OrdinalIgnoreCase);
+            if (declared is { } d) name = d.Name;
+        }
+
+        // A name with no row at all is dimensionless and not shown. Both are right: every dimensioned
+        // parameter of every supported device HAS a row, and a row the registry never declared is not
+        // one to put on the drawing uninvited.
+        return new EditableParameter
+        {
+            Name            = name,
+            Expression      = expression,
+            Unit            = BaseUnit(declared?.Dimension ?? UnitDimension.None),
+            Dimension       = declared?.Dimension ?? UnitDimension.None,
+            ShowOnSchematic = declared?.ShowOnSchematic ?? false,
+        };
     }
 
     /// <summary>
