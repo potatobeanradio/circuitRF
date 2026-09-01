@@ -73,15 +73,15 @@ These install for you alone, need no administrator rights, and update themselves
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.0.0-beta.6-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.6/circuitRF-1.0.0-beta.6-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.0.0-beta.6-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.6/circuitRF-1.0.0-beta.6-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.0.0-beta.6-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.6/circuitRF-1.0.0-beta.6-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.0.0-beta.7-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.7/circuitRF-1.0.0-beta.7-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.0-beta.7-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.7/circuitRF-1.0.0-beta.7-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.0-beta.7-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.7/circuitRF-1.0.0-beta.7-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.0.0-beta.6-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.6/circuitRF-1.0.0-beta.6-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.0.0-beta.6-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.6/circuitRF-1.0.0-beta.6-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.0.0-beta.7-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.7/circuitRF-1.0.0-beta.7-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.0-beta.7-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.7/circuitRF-1.0.0-beta.7-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.0.0-beta.6-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.6/circuitRF-1.0.0-beta.6-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.0.0-beta.6-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.6/circuitRF-1.0.0-beta.6-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.0.0-beta.7-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.7/circuitRF-1.0.0-beta.7-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.0-beta.7-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.7/circuitRF-1.0.0-beta.7-linux-arm64.tar.gz) |
 
 **Not sure which?** Windows: Settings ▸ System ▸ About ▸ *System type*. macOS: Apple menu ▸ About This Mac — an
 *Apple M-series chip* is Apple Silicon. Linux: `uname -m` — `x86_64` or `aarch64`.
@@ -92,8 +92,8 @@ These install for you alone, need no administrator rights, and update themselves
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.0.0-beta.6-linux-x64.tar.gz
-./circuitRF-1.0.0-beta.6/install.sh
+tar xzf circuitRF-1.0.0-beta.7-linux-x64.tar.gz
+./circuitRF-1.0.0-beta.7/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
