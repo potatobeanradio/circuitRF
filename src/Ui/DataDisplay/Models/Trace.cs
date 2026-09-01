@@ -931,7 +931,14 @@ namespace CircuitRF.Ui.DataDisplay
                     ? CubeName
                     : $"{TransformFunctionName(Transform)}({CubeName})";
             var parts = Slice.Select(s =>
-                s.Role == AxisRole.KeepAsX         ? ":"
+                // A narrowed X must re-emit as "a..b", the same end-exclusive spelling
+                // SliceTokenParser reads back. Emitting a bare ":" here was the other half of the
+                // dropped-range bug: the shortcut above already excludes IsNarrowedRange, but this
+                // mapping widened the range anyway, so anything that regenerates the spec text —
+                // an S/Z/Y toggle, a signal reselection — silently threw the narrowing away
+                // mid-session, with no edit by the user.
+                s.IsNarrowedRange                  ? $"{s.RangeStart}..{s.RangeEndExclusive}"
+                : s.Role == AxisRole.KeepAsX       ? ":"
                 : s.Role == AxisRole.FamilyIterate ? "~"
                 : (s.AxisName is "i" or "j")       ? (s.Index + 1).ToString()   // 1-based port number (S[:, 2, 1] = S21)
                 : !string.IsNullOrEmpty(s.Label)   ? $"\"{s.Label}\""

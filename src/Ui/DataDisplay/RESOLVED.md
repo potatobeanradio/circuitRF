@@ -1,5 +1,37 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A narrowed X range survives being written down (2026-09-01)
+
+`AxisSlice` carries six fields. `AxisSliceConfig` carried three, written and read by two
+hand-maintained field lists a couple of hundred lines apart in `DataDisplayViewModel` — so
+`RangeStart`, `RangeEndExclusive` and `Label` were dropped on every `.cdd` save/load. A trace typed
+as `SP1.S[10..50, 1, 1]` came back as the whole axis.
+
+**It was invisible rather than merely wrong.** A trace with both `CubeName` and `Slice` set resolves
+through the SLICE, never through `Expression` (`SetCubeDataFrom`'s `singleCube` branch) — so the
+card went on displaying the typed `[10..50, …]` while the plot drew all 101 points. Nothing
+disagreed out loud.
+
+**There were two halves, and fixing only the persistence would have looked like a fix.**
+`Trace.BuildPickerExpression` rendered every `KeepAsX` axis as a bare `":"`, so anything that
+regenerates the spec text from the slice — an S/Z/Y toggle, a signal reselection — threw the
+narrowing away mid-session with no edit by the user. It now emits `a..b`, the same end-exclusive
+spelling `SliceTokenParser` reads back. (The "a single whole-axis X reads bare" shortcut just above
+already excluded `IsNarrowedRange`, so half of this was anticipated; the `parts` mapping below it was
+not.)
+
+**The mapping now lives in one place**, `AxisSliceConfig.From`/`ToSlice`, next to the DTO — two
+hand-written field lists that must agree is what produced the bug.
+
+**`RangeEndExclusive` defaults to −1 and must.** −1 means the whole axis, which is `AxisSlice`'s own
+default and therefore what every `.cdd` written before the field existed has to read back as. Letting
+it default to 0 would be far worse than the bug: 0 is a legal EMPTY range, so every restored narrowed
+trace would load with no points at all. Held by
+`NarrowedSliceRoundTripTests.ACddWrittenBeforeTheseFieldsExisted_StillMeansTheWholeAxis`.
+
+Also restored: a pinned axis's net-name `Label`, so a reloaded spec reads `V[:, "X1.drain"]` again
+instead of falling back to a bare index. Same defect, same three-of-six DTO.
+
 ## A trace that cannot be resolved says so; it does not end the session (2026-09-01)
 
 Reported twice from the field (Windows, 1.0.0-beta.6 then -beta.7, not reproducible on macOS or on

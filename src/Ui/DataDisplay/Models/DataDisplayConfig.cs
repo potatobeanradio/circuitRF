@@ -162,6 +162,41 @@ public sealed class AxisSliceConfig
     public AxisRole Role { get; set; } = AxisRole.PinToIndex;
 
     public int Index { get; set; }
+
+    /// <summary>Start of a kept sub-range on a KeepAsX axis — the "10" of a typed <c>S[10..50, 1, 1]</c>.</summary>
+    public int RangeStart { get; set; }
+
+    /// <summary>
+    /// End (exclusive) of that sub-range. <b>Defaults to −1, and must:</b> −1 means "the whole axis",
+    /// which is <see cref="AxisSlice"/>'s own default and therefore what a <c>.cdd</c> written before
+    /// this field existed has to read back as. Letting it default to 0 would be far worse than the
+    /// bug it fixes — 0 is a legal EMPTY range, so every restored trace would load with no points.
+    /// </summary>
+    public int RangeEndExclusive { get; set; } = -1;
+
+    /// <summary>Net-name label for a pinned axis, so a restored spec reads <c>V[:, "X1.drain"]</c>
+    /// rather than falling back to a bare index.</summary>
+    public string Label { get; set; } = "";
+
+    // The two halves of the .cdd mapping, kept adjacent on purpose. AxisSlice has six fields and this
+    // DTO carried three, written and read by two hand-maintained field lists a couple of hundred
+    // lines apart in DataDisplayViewModel — so a narrowed X range and a net-name label were dropped
+    // on every save/load. The range loss was invisible rather than merely wrong: the trace card went
+    // on showing the typed spec while the plot drew the whole axis, because a trace with both
+    // CubeName and Slice set resolves through the SLICE, not through Expression.
+
+    public static AxisSliceConfig From(AxisSlice s) => new()
+    {
+        AxisName          = s.AxisName,
+        Role              = s.Role,
+        Index             = s.Index,
+        RangeStart        = s.RangeStart,
+        RangeEndExclusive = s.RangeEndExclusive,
+        Label             = s.Label ?? "",
+    };
+
+    public AxisSlice ToSlice() =>
+        new(AxisName, Role, Index, RangeStart, RangeEndExclusive, Label ?? "");
 }
 
 public sealed class TraceConfig

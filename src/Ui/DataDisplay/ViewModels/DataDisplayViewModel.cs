@@ -1510,7 +1510,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 trace.CubeName   = traceConfig.CubeName;
                 trace.Transform  = traceConfig.CubeTransform;
                 trace.Slice      = traceConfig.CubeSlice.Count > 0
-                    ? traceConfig.CubeSlice.Select(s => new AxisSlice(s.AxisName, s.Role, s.Index)).ToArray()
+                    ? traceConfig.CubeSlice.Select(s => s.ToSlice()).ToArray()
                     : null;
                 trace.Expression = traceConfig.Expression;
             }
@@ -1722,12 +1722,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             CubeTransform = t.Transform,
             CubeSlice     = t.Slice is null
                 ? new()
-                : t.Slice.Select(s => new AxisSliceConfig
-                  {
-                      AxisName = s.AxisName,
-                      Role     = s.Role,
-                      Index    = s.Index,
-                  }).ToList(),
+                : t.Slice.Select(AxisSliceConfig.From).ToList(),
             Expression    = t.Expression,
             XSpec         = t.XSpec,
             XSourcePath   = t.XSourcePath is { Length: > 0 } xp
