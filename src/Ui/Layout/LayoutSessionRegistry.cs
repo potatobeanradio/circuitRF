@@ -26,6 +26,11 @@ internal sealed class LayoutSessionRegistry
     private readonly HashSet<string> _dirtyPaths
         = new(StringComparer.OrdinalIgnoreCase);
 
+    // One dirty-state subscription per SESSION, not one per Register call — see the schematic
+    // registry's own field of the same name for why a captured path is the wrong thing to hold.
+    private readonly Dictionary<LayoutEditorViewModel, System.ComponentModel.PropertyChangedEventHandler> _hooks
+        = new();
+
     // ── Query ─────────────────────────────────────────────────────────────────
 
     public bool TryGet(string normalizedPath, out LayoutEditorViewModel? vm)
@@ -52,15 +57,50 @@ internal sealed class LayoutSessionRegistry
     /// </summary>
     public void Register(string normalizedPath, LayoutEditorViewModel vm, Action<string> onDirtyChanged)
     {
+        // A session answers to exactly ONE path, so re-registering a live session — which is what a
+        // Save As does — must retire the path it used to answer to. Leaving the old key bound to the
+        // same VM makes a later open of that path hand back THIS document's session, so the two tabs
+        // render one model (the schematic form of this was the reported bug; layout had it too).
+        foreach (var stale in PathsOf(vm))
+        {
+            if (StringComparer.OrdinalIgnoreCase.Equals(stale, normalizedPath)) continue;
+            _sessions.Remove(stale);
+            _dirtyPaths.Remove(stale);
+        }
+
+        // A DIFFERENT session taking over this path (a scratch document materialised onto a path a
+        // retired session still held) drops the displaced one's hook the same way.
+        if (_sessions.TryGetValue(normalizedPath, out var displaced) && !ReferenceEquals(displaced, vm))
+            Unbind(normalizedPath);
+
         _sessions[normalizedPath] = vm;
         if (vm.IsDirty) _dirtyPaths.Add(normalizedPath);  // seed an already-dirty session
-        vm.PropertyChanged += (_, e) =>
+        else            _dirtyPaths.Remove(normalizedPath);
+
+        if (_hooks.ContainsKey(vm)) return;   // already subscribed — one hook per session, see _hooks
+        System.ComponentModel.PropertyChangedEventHandler hook = (_, e) =>
         {
             if (e.PropertyName is not nameof(LayoutEditorViewModel.IsDirty)) return;
-            if (vm.IsDirty) _dirtyPaths.Add(normalizedPath);
-            else            _dirtyPaths.Remove(normalizedPath);
-            onDirtyChanged(normalizedPath);
+            if (!TryGetPath(vm, out var path) || path is null) return;  // retired or discarded
+            if (vm.IsDirty) _dirtyPaths.Add(path);
+            else            _dirtyPaths.Remove(path);
+            onDirtyChanged(path);
         };
+        _hooks[vm] = hook;
+        vm.PropertyChanged += hook;
+    }
+
+    /// <summary>Every path currently bound to <paramref name="vm"/> (normally zero or one).</summary>
+    private List<string> PathsOf(LayoutEditorViewModel vm)
+        => _sessions.Where(kv => ReferenceEquals(kv.Value, vm)).Select(kv => kv.Key).ToList();
+
+    /// <summary>Unbinds one path, detaching the session's dirty hook once nothing refers to it.</summary>
+    private void Unbind(string normalizedPath)
+    {
+        if (!_sessions.Remove(normalizedPath, out var vm)) return;
+        _dirtyPaths.Remove(normalizedPath);
+        if (PathsOf(vm).Count == 0 && _hooks.Remove(vm, out var hook))
+            vm.PropertyChanged -= hook;
     }
 
     /// <summary>
@@ -87,7 +127,7 @@ internal sealed class LayoutSessionRegistry
     {
         if (_dirtyPaths.Contains(normalizedPath)) return;
         if (isReferenced(normalizedPath)) return;
-        _sessions.Remove(normalizedPath);
+        Unbind(normalizedPath);
     }
 
     /// <summary>
@@ -105,13 +145,14 @@ internal sealed class LayoutSessionRegistry
     public void DiscardIfUnreferenced(string normalizedPath, Func<string, bool> isReferenced)
     {
         if (isReferenced(normalizedPath)) return;
-        _sessions.Remove(normalizedPath);
-        _dirtyPaths.Remove(normalizedPath);
+        Unbind(normalizedPath);
     }
 
     /// <summary>Removes all sessions and dirty flags (called on workspace switch / reset).</summary>
     public void Clear()
     {
+        foreach (var (vm, hook) in _hooks) vm.PropertyChanged -= hook;
+        _hooks.Clear();
         _sessions.Clear();
         _dirtyPaths.Clear();
     }

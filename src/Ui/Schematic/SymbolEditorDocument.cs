@@ -129,8 +129,7 @@ public sealed class SymbolEditorDocument : Document, IUndoableDocument, IActivat
     {
         FilePath                    = filePath;
         ViewModel.CurrentSymbolPath = filePath;   // fires SyncTitleToPath via the ctor subscription
-        _baseTitle                  = cellName;   // overrides SyncTitleToPath's file-name guess
-        Id                          = cellName;
+        Id                          = cellName;   // Id stays the stem; the TAB reads the file name
         ViewModel.UndoRedo.MarkSaved();           // clean baseline → ViewModel.IsModified/IsDirty false
         Title                       = _isDirty ? $"• {_baseTitle}" : _baseTitle; // explicit refresh
     }

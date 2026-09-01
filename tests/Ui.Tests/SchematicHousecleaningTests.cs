@@ -127,9 +127,9 @@ public sealed class SchematicHousecleaningTests
 
         doc.OnSavedAs("/tmp/NewName.csch", "NewName");
 
-        Assert.Equal("NewName", doc.Title);
+        Assert.Equal("NewName.csch", doc.Title);   // the tab reads the file name, as a re-open does
         Assert.Equal("/tmp/NewName.csch", doc.FilePath);
-        Assert.Equal("NewName", doc.Id);
+        Assert.Equal("NewName", doc.Id);           // …Id stays the stem
     }
 
     // T7 — OnSavedAs on dirty doc: clears dirty bullet after rename

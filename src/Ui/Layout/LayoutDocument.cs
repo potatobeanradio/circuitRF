@@ -428,9 +428,8 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     internal void OnSavedAs(string filePath, string cellName)
     {
         FilePath                    = filePath;
-        ViewModel.CurrentLayoutPath = filePath;
-        _baseTitle                  = cellName;
-        Id                          = cellName;
+        ViewModel.CurrentLayoutPath = filePath;   // fires SyncTitleToPath — the tab reads the FILE name
+        Id                          = cellName;   // …and Id stays the stem: picker name, cell name
         ViewModel.MarkSaved();
         // Through UpdateTitle() (not a direct Title= assignment) so §4's foreign-workspace suffix is
         // recomputed for the NEW path too — a Save As can change IsForeign either direction ("adopts"

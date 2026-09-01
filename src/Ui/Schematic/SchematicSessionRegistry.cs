@@ -23,6 +23,13 @@ internal sealed class SchematicSessionRegistry
     private readonly HashSet<string> _dirtyPaths
         = new(StringComparer.OrdinalIgnoreCase);
 
+    // One dirty-state subscription per SESSION, not one per Register call. A Save As re-registers a
+    // LIVE session under its new path, and a handler that CAPTURED the path stayed attached to the
+    // old one — so a single edit went on marking a file the document is no longer backed by.
+    // The handler below resolves the session's current path at fire time instead.
+    private readonly Dictionary<SchematicViewModel, System.ComponentModel.PropertyChangedEventHandler> _hooks
+        = new();
+
     // ── Query ─────────────────────────────────────────────────────────────────
 
     public bool TryGet(string normalizedPath, out SchematicViewModel? vm)
@@ -53,15 +60,55 @@ internal sealed class SchematicSessionRegistry
     /// </summary>
     public void Register(string normalizedPath, SchematicViewModel vm, Action<string> onDirtyChanged)
     {
+        // A session answers to exactly ONE path. Re-registering a live session — which is what a
+        // Save As does — must therefore RETIRE the path it used to answer to. Leaving the old key
+        // bound to the same VM is what let "save 01.csch as 02.csch, then reopen 01.csch" hand the
+        // second tab the FIRST tab's session: two documents, one model, so dragging a component in
+        // one moved it in the other (owner report, 2026-09-01).
+        foreach (var stale in PathsOf(vm))
+        {
+            if (StringComparer.OrdinalIgnoreCase.Equals(stale, normalizedPath)) continue;
+            _sessions.Remove(stale);
+            _dirtyPaths.Remove(stale);
+        }
+
+        // A DIFFERENT session taking over this path (a scratch document materialised onto a path a
+        // retired session still held) drops the displaced one's hook the same way.
+        if (_sessions.TryGetValue(normalizedPath, out var displaced) && !ReferenceEquals(displaced, vm))
+            Unbind(normalizedPath);
+
         _sessions[normalizedPath] = vm;
         if (vm.UndoRedo.IsModified) _dirtyPaths.Add(normalizedPath);  // seed an already-dirty session
-        vm.UndoRedo.PropertyChanged += (_, e) =>
+        else                        _dirtyPaths.Remove(normalizedPath);
+
+        if (_hooks.ContainsKey(vm)) return;   // already subscribed — one hook per session, see _hooks
+        System.ComponentModel.PropertyChangedEventHandler hook = (_, e) =>
         {
             if (e.PropertyName is not nameof(UndoRedoStack.IsModified)) return;
-            if (vm.UndoRedo.IsModified) _dirtyPaths.Add(normalizedPath);
-            else                        _dirtyPaths.Remove(normalizedPath);
-            onDirtyChanged(normalizedPath);
+            if (!TryGetPath(vm, out var path) || path is null) return;  // retired or discarded
+            if (vm.UndoRedo.IsModified) _dirtyPaths.Add(path);
+            else                        _dirtyPaths.Remove(path);
+            onDirtyChanged(path);
         };
+        _hooks[vm] = hook;
+        vm.UndoRedo.PropertyChanged += hook;
+    }
+
+    /// <summary>Every path currently bound to <paramref name="vm"/> (normally zero or one).</summary>
+    private List<string> PathsOf(SchematicViewModel vm)
+        => _sessions.Where(kv => ReferenceEquals(kv.Value, vm)).Select(kv => kv.Key).ToList();
+
+    /// <summary>
+    /// Unbinds one path, and detaches the session's dirty hook once no path refers to it any more —
+    /// otherwise a retired session keeps a live subscription (and keeps the VM alive) for the rest
+    /// of the workspace's life.
+    /// </summary>
+    private void Unbind(string normalizedPath)
+    {
+        if (!_sessions.Remove(normalizedPath, out var vm)) return;
+        _dirtyPaths.Remove(normalizedPath);
+        if (PathsOf(vm).Count == 0 && _hooks.Remove(vm, out var hook))
+            vm.UndoRedo.PropertyChanged -= hook;
     }
 
     /// <summary>
@@ -88,7 +135,7 @@ internal sealed class SchematicSessionRegistry
     {
         if (_dirtyPaths.Contains(normalizedPath)) return;
         if (isReferenced(normalizedPath)) return;
-        _sessions.Remove(normalizedPath);
+        Unbind(normalizedPath);
     }
 
     /// <summary>
@@ -106,13 +153,14 @@ internal sealed class SchematicSessionRegistry
     public void DiscardIfUnreferenced(string normalizedPath, Func<string, bool> isReferenced)
     {
         if (isReferenced(normalizedPath)) return;
-        _sessions.Remove(normalizedPath);
-        _dirtyPaths.Remove(normalizedPath);
+        Unbind(normalizedPath);
     }
 
     /// <summary>Removes all sessions and dirty flags (called on workspace switch / reset).</summary>
     public void Clear()
     {
+        foreach (var (vm, hook) in _hooks) vm.UndoRedo.PropertyChanged -= hook;
+        _hooks.Clear();
         _sessions.Clear();
         _dirtyPaths.Clear();
     }

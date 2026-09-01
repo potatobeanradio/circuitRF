@@ -753,8 +753,8 @@ public class FileMenuRestructureTests
 
         Assert.Equal("/tmp/NewName.csym", doc.FilePath);
         Assert.Equal("/tmp/NewName.csym", vm.CurrentSymbolPath);
-        Assert.Equal("NewName", doc.Id);
-        Assert.Equal("NewName", doc.Title);
+        Assert.Equal("NewName", doc.Id);           // Id is the stem — picker name, cell name
+        Assert.Equal("NewName.csym", doc.Title);   // …the TAB reads the file name, as a re-open does
         Assert.False(doc.IsDirty);
     }
 
@@ -771,6 +771,6 @@ public class FileMenuRestructureTests
 
         Assert.Equal("/tmp/C.csym", doc.FilePath);
         Assert.Equal("C", doc.Id);
-        Assert.Equal("C", doc.Title);
+        Assert.Equal("C.csym", doc.Title);
     }
 }

@@ -1,5 +1,65 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Two documents rendering one model, and a tab that lost its extension (2026-09-01)
+
+Two owner reports, filed together as "could be related". They are not the same defect, but they are
+the same *shape*: **a document's identity is derived in more than one place, and the places disagree.**
+
+### Bug 2 — "Save As, then re-open the original, and the two tabs move together"
+
+Save a scratch schematic as `01.csch`; File ▸ Save As it to `02.csch`; open `01.csch` again. Dragging
+a component in the 02 tab moved it in the 01 tab too. They were never two documents with a
+synchronisation bug — **they were one editing session behind two tabs.**
+
+`SchematicSessionRegistry` (and `LayoutSessionRegistry`, its exact mirror) maps an absolute path to
+one live view model, and `GetOrCreateSession` is deliberately a **cache**: a cell open as its own tab
+and pushed into from somewhere else has to be the same instance or hierarchy edits go missing. A Save
+As re-registers the live session under its new path — and nothing ever unbound the old one. The old
+key still pointed at the same VM, so re-opening `01.csch` hit the cache and was handed *02's* model
+instead of loading the file from disk. Both documents then rendered one `SchematicEditModel`.
+
+**The fix is in `Register`, not at the call sites.** A session answers to exactly one path — which
+`TryGetPath`'s "returns *the* registered path for this VM" already assumed — so registering a live VM
+under a new path now unbinds every path it used to answer to. Putting it there covers every Save As
+route (workspace tier, plain-file tier, layout's own) without each having to remember, and it is the
+only place that can see both halves. **The owner asked specifically whether `.clay` could do this
+too: it could, identically, and both registries are fixed and pinned.**
+
+Symbols, technology, EM setups and Data Displays have no session registry, so a re-open there always
+loads from disk; their Save As already re-keys `_openDocsByPath`, which is enough.
+
+**A second defect fell out of the same line.** `Register` subscribed a fresh dirty-state handler on
+every call, each *capturing* the path it was registered with. After a Save As the old closure was
+still attached, so one edit marked both paths dirty; after a retirement it was still attached, so an
+edit to an unreferenced session put its path straight back into the dirty set where the
+leave-workspace prompt would find it. There is now one hook per session, it resolves the path at fire
+time instead of capturing it, and it is detached when nothing refers to the session any more.
+
+### Bug 1 — a saved tab reads `01`, a re-opened tab reads `01.csch`
+
+Same file, two names, decided in two places: `OpenOrActivateSchematic` titles a document
+`Path.GetFileName` (extension and all), while every save path retitled it from the **cell** name (the
+plan executor) or the file **stem** (Save As). Closing and re-opening was the only way to see the
+extension — which is exactly the symptom the owner described.
+
+The tab now always reads the file name, via a `SyncTitleToPath` on `SchematicDocument` mirroring the
+one `LayoutDocument` and `SymbolEditorDocument` already had. **Those two had the bug as well**, in a
+form easy to miss: their `SyncTitleToPath` fired correctly on the path assignment, and then
+`OnSavedAs`'s very next line overwrote `_baseTitle` with the extension-less stem.
+
+**`Id` is deliberately not the same string.** It stays the stem/cell name: it is what the save picker
+suggests (`SchematicPickerName`, which exists to strip a `.csch` that leaked into it and produced
+`SParamTest.csch.csch`) and what gets written into the file as its `CellName`. Titling the tab off
+`Id` is what coupled the two in the first place.
+
+### Gates
+
+`tests/Ui.Tests/SaveAsSessionIdentityTests.cs` (8 tests: both registries, the unbind, the dirty flag
+moving rather than doubling, an already-dirty session carrying over, two distinct sessions left
+alone, and the retired-session handler) and the reworked
+`tests/Ui.Tests/SchematicSaveAsTitleTests.cs`. Three older tests asserted the extension-less title
+and were re-pointed, not deleted — they were pinning the reported behaviour.
+
 ## SYS-1 — the system-block glyphs, and a `System` palette filter (2026-08-31)
 
 `brief-sys-1-symbols-and-palette.md`, the first of the `brief-sys-*` series. Eleven new

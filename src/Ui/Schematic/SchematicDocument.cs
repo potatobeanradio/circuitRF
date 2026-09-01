@@ -270,11 +270,8 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
     internal void Materialize(string filePath, string? cellName = null)
     {
         FilePath = filePath;
-        if (cellName is not null && cellName != _baseTitle)
-        {
-            _baseTitle = cellName;
-            Id         = cellName;
-        }
+        if (cellName is not null) Id = cellName;
+        SyncTitleToPath();
         IsDirty = false;   // only calls UpdateTitle() when the flag actually CHANGES…
         UpdateTitle();     // …so refresh unconditionally — a rename of an already-clean document
                            // would otherwise leave the tab showing the old title.
@@ -284,12 +281,31 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
     /// Updates path and title after "Save As" on an already-materialized document.
     /// Unlike <see cref="Materialize"/>, this may be called repeatedly.
     /// </summary>
-    internal void OnSavedAs(string filePath, string cellName)
+    internal void OnSavedAs(string filePath, string? cellName = null)
     {
-        FilePath   = filePath;
-        _baseTitle = cellName;
-        Id         = cellName;
+        FilePath = filePath;
+        if (cellName is not null) Id = cellName;
+        SyncTitleToPath();
         UpdateTitle();
+    }
+
+    /// <summary>
+    /// The tab reads the FILE NAME, extension and all — the same thing
+    /// <c>WorkspaceViewModel.OpenOrActivateSchematic</c> titles a document opened from disk,
+    /// and what <c>LayoutDocument</c>/<c>SymbolEditorDocument</c>'s own SyncTitleToPath already do.
+    ///
+    /// <para>Owner report, 2026-09-01: saving a scratch schematic left the tab reading "01" while
+    /// closing and reopening the same file read "01.csch". The save paths were retitling from the
+    /// CELL name (the plan executor) or the file STEM (Save As), so the one name a document showed
+    /// depended on how it had last been opened.</para>
+    ///
+    /// <para><c>Id</c> is deliberately NOT this: it stays the cell/stem name, which
+    /// is what the save picker suggests and what gets written into the <c>.csch</c> as its
+    /// <c>CellName</c>.</para>
+    /// </summary>
+    private void SyncTitleToPath()
+    {
+        if (FilePath is { Length: > 0 } path) _baseTitle = System.IO.Path.GetFileName(path);
     }
 }
 
