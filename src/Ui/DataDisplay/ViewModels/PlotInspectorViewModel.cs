@@ -925,6 +925,67 @@ public partial class PlotInspectorViewModel : ViewModelBase
     internal static void SetCubeDataFrom(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit,
                                         DataSet? xDs = null)
     {
+        try
+        {
+            SetCubeDataFromCore(t, ds, plotType, freqUnit, xDs);
+        }
+        catch (Exception ex)
+        {
+            // Resolving a trace against a data source is a READ. Every foreseeable way it can fail —
+            // missing source, missing cube, wrong rank, unparseable spec — already ends as
+            // "<invalid>" on the trace card, so an UNforeseen one has no business taking the session
+            // down with it: the user loses an unsaved workspace over a curve that could simply have
+            // said it could not be drawn.
+            //
+            // This exists because a reproducible field crash (Windows, 1.0.0-beta.7) landed here as a
+            // bare IndexOutOfRangeException out of DataCube's gather, and the report named only the
+            // reader — no source, no cube, no slice. The trail note below is what turns the next one
+            // into a diagnosis: it records exactly which cube was being sliced and with what.
+            Diagnostics.CrashReporter.Note($"trace resolve FAILED: {DescribeCubeResolve(t, ds, plotType)} — "
+                                           + $"{ex.GetType().Name}: {ex.Message}");
+            t.ExpressionError = ex.Message;
+            t.InvalidSpecText = t.Expression ?? t.CubeName;
+            t.Points.Clear();
+            t.FamilyCurves.Clear();
+        }
+    }
+
+    /// <summary>
+    /// One line naming everything the crash trail needs to identify a failed resolve: the cube spec,
+    /// the shape the DataSet actually holds for it, and the slice the trace asked for. Every step is
+    /// individually guarded — this runs while something is already wrong, so it must not throw.
+    /// </summary>
+    private static string DescribeCubeResolve(Trace t, DataSet? ds, PlotType plotType)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"plot={plotType} cube='{t.CubeName ?? "(null)"}' expr='{t.Expression ?? "(null)"}'");
+
+        try
+        {
+            if (ds is not null && t.CubeName is { } name && ds.Contains(name))
+            {
+                var c = ds[name];
+                sb.Append($" shape=[{string.Join(" x ", c.Axes.Select(a => $"{a.Name}[{a.Length}]"))}]");
+                sb.Append($" kind={c.DataKind}");
+            }
+            else sb.Append(" shape=(cube not in source)");
+        }
+        catch (Exception e) { sb.Append($" shape=(unreadable: {e.GetType().Name})"); }
+
+        try
+        {
+            sb.Append(t.Slice is { } s
+                ? $" slice=[{string.Join(", ", s.Select(a => $"{a.AxisName}:{a.Role}:{a.Index}"))}]"
+                : " slice=(null)");
+        }
+        catch (Exception e) { sb.Append($" slice=(unreadable: {e.GetType().Name})"); }
+
+        return sb.ToString();
+    }
+
+    private static void SetCubeDataFromCore(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit,
+                                            DataSet? xDs)
+    {
         if (!t.IsCubeBound) return;
 
         // "Plot versus": the X side resolves against its own source when one is set, else against

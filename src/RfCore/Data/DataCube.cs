@@ -195,6 +195,14 @@ namespace RfCore.Data
                 throw new ArgumentException(
                     $"Expected {Rank} slice arguments, got {args.Length}.");
 
+            // Every constructor validates shape-vs-buffer, so this can only fire for a cube that
+            // reached a reader without one. Check anyway, HERE, because the alternative is what the
+            // field keeps reporting: the gather walks off the buffer and surfaces as a bare
+            // IndexOutOfRangeException on a stack that names only the reader, with nothing in it to
+            // identify the cube (src/RfCore/RESOLVED.md). One multiply per slice buys a message that
+            // says which shape and how short.
+            RequireShapeConsistent();
+
             // Determine which axes survive (Range args) vs collapse (int args)
             var survivingAxes = new List<Axis>();
             var axisRanges    = new (bool isPin, int pin, int offset, int length)[Rank];
@@ -636,6 +644,23 @@ namespace RfCore.Data
 
         private int ElementCount() =>
             DataKind == DataKind.Complex ? _complexData!.Length : _realData!.Length;
+
+        /// <summary>
+        /// The read-side half of <see cref="ValidateSize"/> — same arithmetic, applied to the cube's
+        /// own state rather than to constructor arguments. See <see cref="Slice"/> for why it exists.
+        /// </summary>
+        private void RequireShapeConsistent()
+        {
+            int expected = Rank == 0 ? 1 : _strides[0] * Axes[0].Length;
+            int actual   = ElementCount();
+            if (actual == expected) return;
+
+            string shape = Rank == 0
+                ? "scalar"
+                : string.Join(" x ", Axes.Select(a => $"{a.Name}[{a.Length}]"));
+            throw new InvalidOperationException(
+                $"Malformed cube: axes {shape} claim {expected} elements, buffer holds {actual}.");
+        }
 
         private Axis[] AxesArray() => Axes.ToArray();
 

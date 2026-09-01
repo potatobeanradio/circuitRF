@@ -72,6 +72,46 @@ solution green).
 Held by `DataCubeTests.ShapeMismatch_InAdoptingConstructor_ThrowsAndNamesTheShape` and
 `EveryInternalBufferAdoptingPath_BuildsAShapeConsistentCube`.
 
+### Follow-up (2026-09-01): the same crash, on a build that PROVABLY contains the guard above — so this theory is refuted
+
+A second report arrived, same stack, from **1.0.0-beta.7** — the release built *after* the guard
+landed. That changes the conclusion, and the evidence is direct rather than inferred:
+
+- The released `circuitRF.exe` (win-x64, single-file, self-contained — the `.msi` installs the same
+  one binary, so there is no loose `RfCore.dll` for a stale copy to shadow) contains the string
+  literals `" x "`, `"scalar"` and `"does not match axes shape "` adjacent in its string heap.
+  Those three exist together **only** in the rewritten `ValidateSize`, so that build is at or after
+  the guard commit, and the private buffer-adopting constructors in it call it.
+- Therefore a cube whose buffer is short of its axes would have thrown `ArgumentException` **naming
+  the shape**, at construction. The user got `IndexOutOfRangeException` out of the gather instead.
+
+**A malformed cube can no longer explain this crash.** Nor can the slice arguments, re-confirmed on
+.NET 10: every out-of-range form — an over-long `Range`, a `Range` past the axis, a pin at or beyond
+the axis length, a negative pin — throws `ArgumentOutOfRangeException`, from `Slice`'s own guard or
+from `Range.GetOffsetAndLength`. Never `IndexOutOfRangeException`, never from inside `GatherComplex`.
+
+The reporter's own scenario does not reproduce it either. Driven end to end against the real
+artifacts (the reporter's `.cnl` and `.s1p`, a **1-port** run, 101 points, 0.1–3 GHz, exported to
+`.npy`, reloaded through `DataSourceLibraryViewModel` and added to successive Smith plots through
+`PlotInspectorViewModel.AddTrace`): clean. The cubes are `S: freq[101] x i[1] x j[1]` and
+`Z0: port[1]`, both shape-consistent. Clean under `da-DK` as well (the reporter's locale — a decimal
+comma changes nothing on this path), and clean across 12,000 randomized Data Display operations on
+that source: add/remove trace, S/Z/Y matrix toggles, signal reselection, Z0-override toggles, plot
+type changes, and reopening the inspector.
+
+### The read side now refuses it too, and names it
+
+`Slice` repeats the constructor's arithmetic against the cube's own state before gathering
+(`RequireShapeConsistent`). It costs one multiply per slice and it cannot fire for a cube built
+through any constructor — which is exactly why it is worth having: if the field keeps reporting this,
+the next report says `Malformed cube: axes freq[101] x i[1] x j[1] claim 101 elements, buffer holds
+N` instead of a bare index error on a stack that names only the reader. Held by
+`DataCubeTests.MalformedCube_IsRefusedByTheRead_NotByAnIndexOutOfRange`, which has to corrupt a cube
+past its constructor by reflection to reach the check at all.
+
+The Data Display no longer dies on it either — see `src/Ui/DataDisplay/RESOLVED.md`, "A trace that
+cannot be resolved says so".
+
 ### Still open
 
 **This relabels the crash; it does not explain the reported one.** The originating malformed cube
@@ -89,4 +129,6 @@ look next:
   look is file-shaped input (a `.npy`/Touchstone/loadpull artifact) rather than a computation.
 
 The offending artifact was requested from the owner; when it arrives, dumping every cube's declared
-shape against its actual buffer length names the culprit in one pass.
+shape against its actual buffer length names the culprit in one pass. **Still not received** — the
+second report's workspace folder carries the `.cnl`, the `.cdd` and the technology, but no `.npy`,
+which is the one file the Data Display actually reads.

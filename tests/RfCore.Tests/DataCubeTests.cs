@@ -144,6 +144,32 @@ public class DataCubeTests
         Assert.Equal(0, DataCube.Scalar(1.0).Rank);
     }
 
+    // ---- ...and the READ refuses one too, however it got built -----------------
+    //
+    //  The constructor guard above should make a malformed cube unreachable, and under test it
+    //  does. The field kept reporting the old symptom anyway — a bare IndexOutOfRangeException out
+    //  of the gather, on a build that provably CONTAINS that guard — so Slice repeats the check on
+    //  its own state before gathering. The only way to reach it from a test is to corrupt the cube
+    //  past the constructor, which is exactly the situation the check exists for.
+
+    [Fact]
+    public void MalformedCube_IsRefusedByTheRead_NotByAnIndexOutOfRange()
+    {
+        var cube  = new DataCube(new[] { FreqAxis, IAxis }, new Complex[3 * 2]);
+        var field = typeof(DataCube).GetField("_complexData",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(field);
+        field!.SetValue(cube, new Complex[4]);   // axes still claim 6
+
+        var ex = Assert.Throws<InvalidOperationException>(() => cube[DataCube.All, 0]);
+
+        Assert.DoesNotContain("Index was outside", ex.Message);
+        Assert.Contains("6", ex.Message);           // what the axes claim
+        Assert.Contains("4", ex.Message);           // what the buffer holds
+        Assert.Contains("freq[3]", ex.Message);     // and WHICH cube it is
+        Assert.Contains("i[2]", ex.Message);
+    }
+
     // ================================================================
     //  Slice semantics — int collapses rank, Range keeps it
     // ================================================================

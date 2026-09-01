@@ -1,5 +1,38 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A trace that cannot be resolved says so; it does not end the session (2026-09-01)
+
+Reported twice from the field (Windows, 1.0.0-beta.6 then -beta.7, not reproducible on macOS or on
+Windows under emulation): adding a trace to a second Smith plot after a 1-port S-parameter run
+terminated the application with a bare `IndexOutOfRangeException` out of `DataCube`'s gather, on the
+stack `AddTrace` → `TrySetCubeData` → `SetCubeDataFrom` → `DataCube.get_Item`.
+
+**Why the root cause is still open, and why containment is the right move anyway.** The cube and the
+slice arguments are both excluded, provably and on the shipped binary — the analysis is in
+`src/RfCore/RESOLVED.md`. What is NOT in doubt is the consequence: the user loses an unsaved
+workspace over a curve. And that is out of proportion, because **every foreseen way this resolve can
+fail already has a defined non-fatal outcome** — a missing source, a missing cube, a wrong rank, an
+unparseable spec and a mismatched versus-X all end as `<invalid>` on the trace card, which is the
+whole shape of `SetCubeDataFrom`. An unforeseen failure had no reason to be the one exception.
+
+`SetCubeDataFrom` is now a wrapper over `SetCubeDataFromCore`. On any exception it marks the trace
+invalid exactly as the foreseen failures do, and writes ONE crash-trail line naming what the next
+report needs and this one lacked entirely:
+
+```
+trace resolve FAILED: plot=Smith cube='SP1.S' expr='SP1.S[:, 1, 1]' shape=[freq[101] x i[1] x j[1]]
+kind=Complex slice=[freq:KeepAsX:0, i:PinToIndex:0, j:PinToIndex:0] — <Type>: <message>
+```
+
+Two deliberate choices in that line. It is written **only on failure** — a note on every resolve
+would flood the ring-buffered trail on every redraw and destroy the thing that makes it useful. And
+every step of building it is individually guarded (`DescribeCubeResolve`), because it runs when
+something is already wrong and a diagnostic that throws is worse than none.
+
+This is containment plus instrumentation, **not a fix** — it converts an unexplained fatal crash into
+a named, non-fatal, self-describing one. Held by `TraceResolveContainmentTests`.
+
+
 `CLAUDE.md` in this directory was getting bloated from per-brief write-ups. Going forward, a
 completed brief's detail lands here instead; `CLAUDE.md` stays for durable, still-true
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
