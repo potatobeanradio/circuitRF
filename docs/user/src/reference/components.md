@@ -47,6 +47,40 @@ An ideal, linear capacitor. `C` is the capacitance. For a voltage-dependent capa
 
 {{table: components/Capacitor}}
 
+### Series RLC (SRLC) {#srlc}
+
+{{symbol: srlc}}
+
+A resistance, an inductance and a capacitance **in series**, as one part. `R`, `L` and `C` are the
+three values; the branch impedance is `R + jωL + 1/(jωC)`.
+
+This is the shape a real capacitor takes above a few hundred megahertz, which is the usual reason to
+place one: a ceramic capacitor's datasheet gives an ESR and an ESL, and those go straight into `R`
+and `L`. The part is series-resonant at `1/(2π√(LC))`, where its impedance falls to `R` — below that
+frequency it behaves as a capacitor, above it as an inductor. At DC the series capacitance makes the
+branch an open circuit.
+
+Its pins sit exactly where a plain [R](#resistor), [L](#inductor) or [C](#capacitor)'s do, so you can
+swap one in for another without moving any wires. Its inductance can be coupled with a
+[Mutual](#mutual), which names the SRLC instance in place of an inductor.
+
+{{table: components/Srlc}}
+
+### Parallel RLC (PRLC) {#prlc}
+
+{{symbol: prlc}}
+
+The same three values **in parallel** — a tank. `R`, `L` and `C` all sit across the same two nodes,
+giving an admittance of `1/R + jωC + 1/(jωL)`.
+
+At the parallel resonance `1/(2π√(LC))` the reactive parts cancel and the part is purely resistive
+at `R`, which is what makes it the natural way to enter a measured resonance: `R` sets the peak
+impedance, `L` and `C` set where it sits and how sharp it is. At DC the ideal inductor shorts it out.
+
+Pin positions and [Mutual](#mutual) coupling work exactly as they do for the SRLC above.
+
+{{table: components/Prlc}}
+
 ### Nonlinear Capacitor (NonlinearC) {#nonlinearc}
 
 {{symbol: nonlinear-c}}
@@ -66,6 +100,10 @@ the C–V Editor. Full treatment:
 Couples two existing inductors — named by instance — with a mutual inductance, the basis for
 transformers and coupled resonators. It has no pins of its own; `Inductor1` and `Inductor2` are the
 instance names of the two coupled inductors and `M` is the mutual inductance between them.
+
+Either name may be an [L](#inductor), an [SRLC](#srlc) or a [PRLC](#prlc) — all three carry an
+inductor the coupling can act on, and all three spell its value `L`. Naming anything else is
+reported as an error when the design is elaborated.
 
 {{table: components/Mutual}}
 

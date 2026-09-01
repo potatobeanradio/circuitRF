@@ -2088,7 +2088,7 @@ public sealed class HbEngine
     private static int GetControlBranchIndexHb(
         string sddName, int n, int port, ElaboratedComponent target)
     {
-        const string Allowed = "Vdc, V_1Tone/V_nTone, IProbe, L (Inductor), SnP, Z_Port";
+        const string Allowed = "Vdc, V_1Tone/V_nTone, IProbe, L (Inductor), SRLC, PRLC, SnP, Z_Port";
         return target.Model switch
         {
             VdcModel        vdc  => ValidateSinglePortBranchHb(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),
@@ -2101,7 +2101,8 @@ public sealed class HbEngine
                 $"its current is an input, not a solved unknown, so it has no branch to reference. " +
                 $"Put an IProbe in series with it and reference that instead."),
             IProbeModel probe => ValidateSinglePortBranchHb(sddName, n, port, probe.LastBranchIndex, "IProbe"),
-            InductorModel ind => ValidateSinglePortBranchHb(sddName, n, port, ind.LastBranchIndex,   "Inductor"),
+            // L, SRLC and PRLC — every model carrying an inductor branch (IInductiveBranch).
+            IInductiveBranch ind => ValidateSinglePortBranchHb(sddName, n, port, ind.LastBranchIndex, target.ComponentType),
             SnpModel    snp   => ValidateMultiPortBranchHb(sddName, n, port, snp.PortBranchIndices,  "SnP"),
             ZPortModel  zp    => ValidateMultiPortBranchHb(sddName, n, port, zp.PortBranchIndices,   "Z_Port"),
             _ => throw new InvalidOperationException(

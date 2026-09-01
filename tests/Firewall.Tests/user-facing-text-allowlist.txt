@@ -85,8 +85,7 @@ src/Core/Devices/External/VerilogAFileResolver.cs|The compiled model file '{mode
 src/Core/Devices/External/VerilogAFileResolver.cs|circuitRF's own model-hosting helper ('{WorkerCommand}') was not found beside the 
 src/Core/Devices/MatchModel.cs|Match: ladder element '{e.Name}' has the unusable value {e.Value}. 
 src/Core/Devices/Microstrip/KlopfensteinTaper.cs|Klopfenstein taper: GammaMax={gammaMax:G6} must be strictly less than 
-src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path1}' is not an InductorModel
-src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path2}' is not an InductorModel
+src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': '{path}' is a '{target.ComponentType}', which carries
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path1}' not found
 src/Core/Devices/MutualInductanceModel.cs|Mutual '{selfEc.InstancePath}': inductor '{path2}' not found
 src/Core/Devices/MutualInductanceModel.cs|MutualInductanceModel '{c.InstancePath}': Resolve() was not called

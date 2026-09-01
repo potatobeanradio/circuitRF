@@ -14,6 +14,14 @@ namespace CircuitRF.Core.Devices;
 ///   2. Then Stamp is called for each mutual.
 ///
 /// Resolve() must be called (by the Elaborator post-flatten) before any stamping.
+///
+/// <para><b>Either end may be an L, an SRLC or a PRLC</b> — anything implementing
+/// <see cref="IInductiveBranch"/>, whose contract is that the branch it reports carries the
+/// element's inductor current with a −jωL diagonal. That is what makes the −jωM off-diagonal the
+/// correct stamp in all three cases: an SRLC's own R and C sit on the same diagonal and a PRLC's sit
+/// in the admittance block, and neither is what this touches. Both read their inductance from the
+/// same <c>L</c> parameter a plain inductor does, so the k ≥ 1 check below needs no special
+/// case.</para>
 /// </summary>
 public sealed class MutualInductanceModel : ComponentModel
 {
@@ -23,8 +31,8 @@ public sealed class MutualInductanceModel : ComponentModel
     private readonly string _ind1Name;
     private readonly string _ind2Name;
 
-    private InductorModel? _i1;
-    private InductorModel? _i2;
+    private IInductiveBranch? _i1;
+    private IInductiveBranch? _i2;
     private double _l1;
     private double _l2;
 
@@ -39,7 +47,7 @@ public sealed class MutualInductanceModel : ComponentModel
 
     /// <summary>
     /// Called by the Elaborator after all components are flattened.
-    /// Resolves the inductor names to InductorModel instances.
+    /// Resolves the inductor names to the models that carry those branches.
     /// The inductor names are relative to the mutual's parent scope:
     /// "L1" in a top-level mutual → instance path "L1";
     /// "L1" in a mutual inside cell "X1" → path "X1.L1".
@@ -62,17 +70,26 @@ public sealed class MutualInductanceModel : ComponentModel
                   ?? throw new InvalidOperationException(
                       $"Mutual '{selfEc.InstancePath}': inductor '{path2}' not found");
 
-        _i1 = (ec1.Model as InductorModel)
-              ?? throw new InvalidOperationException(
-                  $"Mutual '{selfEc.InstancePath}': '{path1}' is not an InductorModel");
-        _i2 = (ec2.Model as InductorModel)
-              ?? throw new InvalidOperationException(
-                  $"Mutual '{selfEc.InstancePath}': '{path2}' is not an InductorModel");
+        _i1 = AsInductive(selfEc, ec1, path1);
+        _i2 = AsInductive(selfEc, ec2, path2);
 
-        // Cache L1, L2 for the k ≥ 1 coupling check at stamp time.
+        // Cache L1, L2 for the k ≥ 1 coupling check at stamp time. All three referenceable kinds
+        // spell their inductance "L", so there is one lookup rather than one per kind.
         _l1 = ec1.Parameters["L"].AsReal();
         _l2 = ec2.Parameters["L"].AsReal();
     }
+
+    /// <summary>
+    /// The referenced component as an inductive branch, or a refusal naming what it actually is.
+    /// The message lists the kinds that DO work, because "is not an InductorModel" left a user who
+    /// had pointed a Mutual at a resistor with nothing to do next.
+    /// </summary>
+    private static IInductiveBranch AsInductive(
+        ElaboratedComponent selfEc, ElaboratedComponent target, string path)
+        => target.Model as IInductiveBranch
+           ?? throw new InvalidOperationException(
+               $"Mutual '{selfEc.InstancePath}': '{path}' is a '{target.ComponentType}', which carries" +
+               " no inductor branch to couple to. A Mutual can reference an L, an SRLC or a PRLC.");
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {

@@ -710,12 +710,15 @@ public static class SParameterEngine
                 $"its current is an input, not a solved unknown, so it has no branch to reference. " +
                 $"Put an IProbe in series with it and reference that instead."),
             IProbeModel   probe => probe.LastBranchIndex,
-            InductorModel   ind => ind.LastBranchIndex,
+            // L, SRLC and PRLC all carry their inductor current on a branch of their own — the
+            // IInductiveBranch contract — so all three are referenceable, by that contract rather
+            // than by a list of type names that the next inductive model would silently miss.
+            IInductiveBranch ind => ind.LastBranchIndex,
             SnpModel        snp => PortBranch(snp.PortBranchIndices, port),
             ZPortModel       zp => PortBranch(zp.PortBranchIndices, port),
             _ => throw new InvalidOperationException(
                 $"SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' " +
-                $"which is not a referenceable device class (Vdc, V_1Tone/V_nTone, IProbe, L, SnP, Z_Port).")
+                $"which is not a referenceable device class (Vdc, V_1Tone/V_nTone, IProbe, L, SRLC, PRLC, SnP, Z_Port).")
         };
         if (br < 0)
             throw new InvalidOperationException(
@@ -760,7 +763,7 @@ public static class SParameterEngine
             // Cures rank-deficient coupled-inductance D-block (zero eigenvalue of inductance matrix).
             var rReg = new Complex(-settings.InductanceRegR, 0.0);
             foreach (var ec in netlist.Components)
-                if (ec.Model is InductorModel im && im.LastBranchIndex >= 0)
+                if (ec.Model is IInductiveBranch im && im.LastBranchIndex >= 0)
                     mna.AddBranchConstraint(im.LastBranchIndex, im.LastBranchIndex, rReg);
         }
     }

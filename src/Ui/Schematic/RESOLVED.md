@@ -2,6 +2,42 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## SRLC and PRLC: the pin contract is the whole design constraint (2026-08-31)
+
+Two new lumped tiles, `SymbolKind.Srlc` and `SymbolKind.Prlc`, over the engine components `SRLC` and
+`PRLC`. Owner-approved glyphs.
+
+**The brief's real requirement was not "draw a smaller R, L and C" — it was "put the pins where R, L
+and C already put theirs".** Small was the means: three borrowed glyphs have to fit inside one
+400-unit span so the leads can still reach (0,∓200). Everything about the geometry follows from
+that — the resistor drops to 4 zigs, the inductor to 3 coils at r=20, the capacitor's plates to 60
+wide — and none of it is a free aesthetic choice. Both kinds fall through `SymbolPortDefs.For`'s
+DEFAULT arm, which already returns exactly R/L/C's two pins, so there is no second copy of the
+coordinates to drift.
+
+**That contract needed a test, because breaking it is invisible.** The glyph lives in
+`BuiltInSymbols.cs` and the pin table in `EditableSchematic.cs`; a redraw that nudged a pin would
+leave a part that still places, still saves, still simulates — while every schematic it had been
+dropped into came apart at the wires. `RlcPaletteWiringTests.R2` asserts the pins against R, L and
+C's OWN values, read live, rather than against copied literals that would move together with the
+mistake — and it first checks that R, L and C still agree with each other, since otherwise it is
+measuring the wrong thing. `R2b` adds the complementary claim from the primitive geometry: nothing
+drawn crosses y = ±200, and the leads reach both pins exactly.
+
+**PRLC's ±110 symmetry is deliberate.** The three branches sit at x = −80 / 0 / +80; the resistor
+keeps its full ±30 zig amplitude (there is room sideways) and the capacitor's plates are 60 wide, so
+the extreme left and right land at exactly ∓110. An asymmetric glyph would sit visibly off-centre
+against its own wire.
+
+**One docs-generation trap, unrelated to this work but found by it.**
+`docs/user/assets/figures/analysis-editor-hb-dark.svg` is NOT deterministic: it contains a `use`
+whose transform is a rotation matrix that changes on every DocGen run (measured 7.46° then 10.75°,
+same tree, same command). Anyone running `tools/DocGen/check-docs-current.sh` will see that one file
+dirty no matter what they changed. It is a capture-time artefact, not a drift — leave it out of an
+otherwise-clean change set rather than committing a random phase.
+
+---
+
 ## A file inside the workspace was listed twice: in place, and again under Known Files (2026-08-30)
 
 Owner report. A Known File is a **bookmark to a file the tree cannot otherwise show**; once the file

@@ -47,6 +47,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _resistor     = BuildResistor();
     private static readonly Symbol _inductor     = BuildInductor();
     private static readonly Symbol _capacitor    = BuildCapacitor();
+    private static readonly Symbol _srlc         = BuildSrlc();
+    private static readonly Symbol _prlc         = BuildPrlc();
     private static readonly Symbol _vdcSrc       = BuildVdc();
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _iToneSrc     = BuildCurrentToneSource();
@@ -153,6 +155,8 @@ public static class BuiltInSymbols
             case SymbolKind.Resistor:   return _resistor;
             case SymbolKind.Inductor:   return _inductor;
             case SymbolKind.Capacitor:  return _capacitor;
+            case SymbolKind.Srlc:       return _srlc;
+            case SymbolKind.Prlc:       return _prlc;
             case SymbolKind.NonlinearC: return _nonlinearC;
             case SymbolKind.Mutual:     return _mutual;
             case SymbolKind.Tline:      return _tline;
@@ -354,6 +358,70 @@ public static class BuiltInSymbols
         QC( -50,   22,   0,    2,  50,  22),// curved bottom plate (bows toward gap)
         L(   0,   12,   0,  200),           // bottom lead (from curve apex)
     ], SymbolKind.Capacitor);
+
+    // ── SRLC — R over L over C, in series, on one branch ──────────────────────
+    // Pins: (0,-200) top / (0,+200) bottom — IDENTICAL to R, L and C, so a designer can swap a
+    // plain element for this one without moving a wire. That is the whole point of the kind.
+    //
+    // The three glyphs are the SAME pictures the standalone R, L and C draw, shrunk to share one
+    // 400-unit span: the resistor loses two of its six zigs (4 remain, amplitude +/-25 against 30),
+    // the inductor loses a coil and 5 units of radius (3 at r=20 against 4 at r=25), and the
+    // capacitor keeps its flat-plate-plus-curve exactly, at 60 wide against 100. Nothing is a new
+    // picture — a reader who knows the library recognises all three at a glance, stacked in the
+    // order the netlist stamps them.
+    //
+    // The polarity dot is the inductor's own, carried over: this kind's L can be one end of a
+    // Mutual, and the dot is what says which end.
+
+    private static Symbol BuildSrlc() => Sym([
+        L(   0, -200,   0, -160),                             // top lead
+        PLine(0, -160,  25, -150, -25, -130,  25, -110,
+                       -25,  -90,   0,  -80),                 // R — 4 zigs, amp +/-25
+        L(   0,  -80,   0,  -60),                             // R -> L link
+        A(   0,  -40,  20, -90, 180),                         // coil 1
+        A(   0,    0,  20, -90, 180),                         // coil 2
+        A(   0,   40,  20, -90, 180),                         // coil 3
+        Circ(30,  -55,   5, filled: true),                    // polarity dot (L's own convention)
+        L(   0,   60,   0,  110),                             // L -> C link
+        L( -30,  110,  30,  110),                             // flat top plate
+        QC(-30,  133,   0,  119,  30,  133),                  // curved bottom plate (apex y=126)
+        L(   0,  126,   0,  200),                             // bottom lead (from curve apex)
+    ], SymbolKind.Srlc);
+
+    // ── PRLC — R, L and C side by side, in parallel between two rails ─────────
+    // Pins: (0,-200) top / (0,+200) bottom — again identical to R, L and C.
+    //
+    // Same three borrowed pictures, laid out left-to-right instead of top-to-bottom, hung between a
+    // top and a bottom rail at y = -/+150. The resistor keeps its full +/-30 zig amplitude here (it
+    // has the room sideways) but only 4 zigs; the branch spacing of 80 and the capacitor's 60-wide
+    // plates put the glyph's extent at exactly +/-110, symmetric about the lead.
+
+    private static Symbol BuildPrlc() => Sym([
+        L(   0, -200,   0, -150),                             // top lead
+        L( -80, -150,  80, -150),                             // top rail
+        L( -80,  150,  80,  150),                             // bottom rail
+        L(   0,  150,   0,  200),                             // bottom lead
+
+        // R — leftmost branch
+        L( -80, -150, -80,  -60),
+        PLine(-80, -60, -50, -45, -110, -15, -50,  15,
+                       -110,  45, -80,  60),                  // 4 zigs, amp +/-30
+        L( -80,   60, -80,  150),
+
+        // L — middle branch, on the lead's own axis
+        L(   0, -150,   0,  -60),
+        A(   0,  -40,  20, -90, 180),                         // coil 1
+        A(   0,    0,  20, -90, 180),                         // coil 2
+        A(   0,   40,  20, -90, 180),                         // coil 3
+        Circ(30,  -55,   5, filled: true),                    // polarity dot
+        L(   0,   60,   0,  150),
+
+        // C — rightmost branch
+        L(  80, -150,  80,  -12),
+        L(  50,  -12, 110,  -12),                             // flat top plate
+        QC( 50,   22,  80,    2, 110,   22),                  // curved bottom plate (apex y=12)
+        L(  80,   12,  80,  150),
+    ], SymbolKind.Prlc);
 
     // ── NonlinearC — capacitor glyph + three diagonal "nonlinear" slashes ──────
     // Identical plates/leads to the linear capacitor; three parallel diagonal strokes

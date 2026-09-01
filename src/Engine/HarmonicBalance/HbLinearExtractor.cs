@@ -308,11 +308,12 @@ public sealed class HbLinearExtractor
         var rReg = new Complex(-_settings.InductanceRegR, 0.0);
         foreach (var ec in _netlist.Components)
         {
-            if (ec.Model is InductorModel im && im.LastBranchIndex >= 0)
+            // Every model carrying an inductor branch — L, SRLC, PRLC (IInductiveBranch).
+            if (ec.Model is IInductiveBranch im && im.LastBranchIndex >= 0)
                 mna.AddBranchConstraint(im.LastBranchIndex, im.LastBranchIndex, rReg);
 
             // TunerModel's internal RF choke (stamped inline by TunerModel.StampInductor)
-            // must also be regularized — it is NOT an InductorModel, so the check above
+            // must also be regularized — it does NOT implement IInductiveBranch, so the check above
             // won't catch it. ChokeBranchIndex is set during the most recent Stamp() call.
             if (ec.Model is TunerModel tm && tm.ChokeBranchIndex >= 0)
                 mna.AddBranchConstraint(tm.ChokeBranchIndex, tm.ChokeBranchIndex, rReg);
@@ -774,8 +775,11 @@ public sealed class HbLinearExtractor
 
             switch (ec.Model)
             {
-                case InductorModel im when im.LastBranchIndex >= _nonGroundCount:
-                    names[im.LastBranchIndex - _nonGroundCount] = $"L:{ec.InstancePath}";
+                // L, SRLC and PRLC alike — the label names the component TYPE rather than always
+                // saying "L", because a singularity diagnostic that calls an SRLC an inductor sends
+                // the reader looking for a component the schematic does not contain.
+                case IInductiveBranch im when im.LastBranchIndex >= _nonGroundCount:
+                    names[im.LastBranchIndex - _nonGroundCount] = $"{ec.ComponentType}:{ec.InstancePath}";
                     break;
 
                 case VdcModel vm when vm.LastBranchIndex >= _nonGroundCount:

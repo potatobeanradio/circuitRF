@@ -25,6 +25,8 @@ public static class ComponentModelFactory
             { "R",     () => new ResistorModel()       },
             { "C",     () => new CapacitorModel()    },
             { "L",     () => new InductorModel()     },
+            { "SRLC",  () => new SeriesRlcModel()   },
+            { "PRLC",  () => new ParallelRlcModel() },
             { "Vdc",   () => new VdcModel() },
             { "Port",  () => new PortModel()          },
             { "Term",  () => new TermModel()          },

@@ -18,7 +18,7 @@ namespace CircuitRF.Core.Devices;
 /// The optional R= parameter is required for physically-lossy inductors (Hero 1B carries R per
 /// inductor). Stamping it correctly is a correctness requirement, not a workaround.
 /// </summary>
-public sealed class InductorModel : ComponentModel
+public sealed class InductorModel : ComponentModel, IInductiveBranch
 {
     public override int       PortCount => 2;
     public override ModelKind Kind      => ModelKind.Linear;
@@ -26,7 +26,8 @@ public sealed class InductorModel : ComponentModel
     /// <summary>
     /// Branch index assigned on the most recent Stamp call.
     /// Set during each frequency pass; stable across frequencies for a fixed topology.
-    /// Used by MutualInductanceModel to stamp off-diagonal coupling terms.
+    /// Used by MutualInductanceModel to stamp off-diagonal coupling terms — through
+    /// <see cref="IInductiveBranch"/>, which SRLC and PRLC implement too.
     /// </summary>
     public int LastBranchIndex { get; private set; } = -1;
 

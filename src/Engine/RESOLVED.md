@@ -4,6 +4,33 @@ Mirrors `src/Engine/Loadpull/RESOLVED.md`'s pattern: a completed brief's detail 
 section per brief, sparingly — only for findings that are still true, still surprising, and would cost
 someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## Inductor branches are found by interface now, not by type (2026-08-31)
+
+Adding `SRLC` and `PRLC` — see `src/Core/RESOLVED.md` for the models themselves — turned up six
+engine-side sites that reached an inductor's Group-2 branch by pattern-matching `InductorModel`:
+`SParameterEngine`'s inductance regularization and its SDD control-current resolution,
+`HbLinearExtractor`'s regularization and its branch-name map, and both `NonlinearDcEngine`'s and
+`HbEngine`'s SDD reference validation. All six now match `IInductiveBranch` instead.
+
+**Why the type check was worse than it looked.** Two of the six are diagnostics, and the other four
+decide whether a branch gets regularized at all. A regularization pass that silently skips an
+inductive branch produces no message — it produces a singular matrix, reported against whatever row
+the factorization happened to fail on, which is usually somewhere else in the circuit. So the
+symptom of "forgot to add the new model to the list" is a solve failure that reads as a bug in an
+unrelated component. Nothing in the type-check version would have said so.
+
+`TunerModel`'s internal RF choke is still handled separately at both regularization sites, and
+deliberately: it stamps its choke inline through `StampInductor` rather than being an inductive model
+in its own right, so it has a `ChokeBranchIndex` and not a `LastBranchIndex`. The comment beside it
+now says "does not implement IInductiveBranch" rather than "is not an InductorModel", which is the
+condition that actually matters.
+
+`HbLinearExtractor`'s branch labels changed with it — they name the component TYPE now
+(`SRLC:X1`) rather than always saying `L:`, so a singularity diagnostic about an SRLC does not send
+the reader looking for an inductor the schematic never contained.
+
+---
+
 ## Match MN-4 — probing the external network (2026-08-19)
 
 `docs/design/match.md` §10, `src/Engine/Match/TerminationProbe.cs`. Looks outward from one pin of a

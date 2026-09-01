@@ -288,6 +288,27 @@ public enum SymbolKind
     /// says so: the antenna lead runs from its pin to the body edge, the junction fans into two
     /// arms, and each arm carries its own passband stack with its name beside it.</summary>
     Duplexer,
+
+    // ── The RLC pair ───────────────────────────────────────────────────────────────
+    // Two kinds, not one with a series/parallel selector: the two DRAW differently, and the
+    // topology is the whole of what tells them apart. A selector would leave the schematic showing
+    // a series branch while the netlist carried a parallel one.
+    //
+    // Both are 2-pin at (0,−200)/(0,+200) — the SAME pin positions as R, L and C — so a designer can
+    // swap a plain R, L or C for one of these without touching a single wire. That is a contract,
+    // not a coincidence; SrlcPrlcPinCompatibilityTests holds it shut.
+
+    /// <summary>Series RLC branch (engine "SRLC"). R, L and C in series on one branch — the shape a
+    /// real ceramic capacitor takes, with the vendor's ESR and ESL entered as <c>R</c> and <c>L</c>.
+    /// Its inductance lives on a Group-2 branch current, so a <see cref="Mutual"/> can couple to it
+    /// exactly as it couples to a plain <see cref="Inductor"/>.</summary>
+    Srlc,
+
+    /// <summary>Parallel RLC branch (engine "PRLC"). R, L and C all across the same two nodes — a
+    /// tank. The R and C stamp as admittances; the L takes its own Group-2 branch, both because an
+    /// ideal inductor's admittance diverges at DC and because that branch is what a
+    /// <see cref="Mutual"/> couples to.</summary>
+    Prlc,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

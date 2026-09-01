@@ -56,6 +56,8 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Resistor,        "resistor",          2),
         (SymbolKind.Inductor,        "inductor",          2),
         (SymbolKind.Capacitor,       "capacitor",         2),
+        (SymbolKind.Srlc,            "srlc",              2),
+        (SymbolKind.Prlc,            "prlc",              2),
         (SymbolKind.NonlinearC,      "nonlinear-c",       2),
         (SymbolKind.Vdc,             "vdc",               2),
         (SymbolKind.ToneSource,      "tone-source",       2),

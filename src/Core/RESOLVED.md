@@ -6,6 +6,51 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## SRLC and PRLC, and the interface that let a Mutual reach them (2026-08-31)
+
+Two lumped parts — `SeriesRlcModel` (`SRLC`) and `ParallelRlcModel` (`PRLC`), both linear,
+two-terminal, R/L/C parameters, defaults 1 Ω / 1 nH / 1 pF. The owner's brief said `C = 1 pH`; pH is
+an inductance, so it was read as 1 pF (also the standalone capacitor's own default) and confirmed
+before building.
+
+**1. SRLC is arithmetically the same branch `InductorModel` already stamps for optional `R=` plus
+`C=`, and it is a separate model anyway.** The shared arithmetic is deliberate and is pinned by a
+test that runs both and requires bit-identical S-parameters. What is NOT shared is everything a user
+sees: a series-RLC glyph rather than a coil, three required and shown parameters rather than one
+required and two optional, and a netlist line reading `SRLC:` rather than `L:`. The commonest reason
+to place one is a ceramic capacitor whose vendor states an ESR and an ESL — a part that *is* a series
+RLC, and which as three wired elements is three instance names and a schematic that no longer matches
+the bill of materials. Folding it into `L` would have saved a file and cost the whole point.
+
+**2. PRLC's inductor cannot be an admittance, and that is what makes a Mutual possible.** R and C go
+in through `AddAdmittance`; L takes its own Group-2 branch, because `1/(jωL)` diverges as ω→0 and
+there is no Group-1 form of an ideal inductor at DC. The branch constraint `V_a − V_b − jωL·i = 0`
+degenerates cleanly to `V_a − V_b = 0` at DC — the exact short, no gmin fudge. The side benefit is
+the one the brief asked for: that branch carries a bare `−jωL` diagonal with no R or C mixed in, so a
+mutual's `−jωM` off-diagonal lands on exactly the term it means to.
+
+**3. Six sites pattern-matched `InductorModel` by TYPE, and a pattern match was the wrong shape.**
+`IInductiveBranch` (one member, `LastBranchIndex`) now carries the contract, and
+`MutualInductanceModel`, `SParameterEngine`'s regularization and SDD control-current resolution,
+`HbLinearExtractor`'s regularization and branch labelling, and both engines' SDD validation read it
+instead. The failure mode a type check leaves behind has no error message: inductance regularization
+that silently skips a branch is not a warning, it is a singular matrix reported somewhere else
+entirely, and an SDD reference that "is not a referenceable device class" for a part that obviously
+carries a current reads as a bug in the SDD. Two follow-on repairs came with it — the Mutual's
+refusal now names the kinds that DO work instead of an internal class name (`is not an
+InductorModel` gave a user who had pointed a Mutual at a resistor nothing to act on), and
+`HbLinearExtractor`'s branch labels now name the component TYPE rather than always saying `L`, so a
+diagnostic about an SRLC does not send the reader hunting for an inductor the schematic never had.
+
+**4. The oracle is a closed-form impedance, never a second circuitRF path.** `SeriesParallelRlcTests`
+computes each element's own `Z(ω)` by hand and turns it into S11 with the one-port reflection
+formula; the mutual cases build the coupled 2×2 Z (SRLC) or invert the coupled inductive block and
+add the shunt admittance (PRLC). Comparing an SRLC against three wired elements would have been
+cheaper to write and much weaker — the two paths share the whole engine underneath, so a sign error
+in a constraint diagonal would have agreed with itself.
+
+---
+
 ## The ideal mixer: what it can be, and why S-parameters say nothing (2026-08-31)
 
 `MixerModel` (`Mixer`), placed by two schematic tiles — `SymbolKind.Mixer` (3 pins, ground-referenced)

@@ -645,7 +645,7 @@ public sealed class NonlinearDcEngine
 
     private static int GetControlBranchIndex(string sddName, int n, int port, ElaboratedComponent target)
     {
-        const string AllowedKinds = "Vdc, V_1Tone/V_nTone, IProbe, L (Inductor), SnP, Z_Port";
+        const string AllowedKinds = "Vdc, V_1Tone/V_nTone, IProbe, L (Inductor), SRLC, PRLC, SnP, Z_Port";
         return target.Model switch
         {
             VdcModel        vdc  => ValidateSinglePortBranch(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),
@@ -658,7 +658,8 @@ public sealed class NonlinearDcEngine
                 $"its current is an input, not a solved unknown, so it has no branch to reference. " +
                 $"Put an IProbe in series with it and reference that instead."),
             IProbeModel probe => ValidateSinglePortBranch(sddName, n, port, probe.LastBranchIndex, "IProbe"),
-            InductorModel ind => ValidateSinglePortBranch(sddName, n, port, ind.LastBranchIndex,   "Inductor"),
+            // L, SRLC and PRLC — every model carrying an inductor branch (IInductiveBranch).
+            IInductiveBranch ind => ValidateSinglePortBranch(sddName, n, port, ind.LastBranchIndex, target.ComponentType),
             SnpModel    snp   => ValidateMultiPortBranch(sddName, n, port, snp.PortBranchIndices,  "SnP"),
             ZPortModel  zp    => ValidateMultiPortBranch(sddName, n, port, zp.PortBranchIndices,   "Z_Port"),
             _ => throw new InvalidOperationException(

@@ -217,7 +217,7 @@ public class LibraryCatalogTests
         Assert.Equal(new HashSet<SymbolKind>
         {
             SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
-            SymbolKind.Mutual,
+            SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc,
         }, kinds);
     }
 
@@ -304,13 +304,14 @@ public class LibraryCatalogTests
     [Fact]
     public void SingleCategoryItems_UnchangedByExtraCategoryFeature()
     {
-        // Lumped returns exactly R/L/C/NLC/Mutual — no extra-category bleed from other components.
+        // Lumped returns exactly R/L/C/NLC/Mutual/SRLC/PRLC — no extra-category bleed from other
+        // components.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Lumped).Select(i => i.Kind).ToHashSet();
         Assert.Equal(
             new HashSet<SymbolKind>
             {
                 SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
-                SymbolKind.Mutual,
+                SymbolKind.Mutual, SymbolKind.Srlc, SymbolKind.Prlc,
             },
             kinds);
     }

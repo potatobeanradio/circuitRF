@@ -170,6 +170,19 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Lumped,
             SearchTerms: ["C", "Capacitor", "cap", "capacitance"],
             IsCommon: true),
+        // SRLC / PRLC: two tiles, two engine components, one purpose — an R, an L and a C in one
+        // part, so a real component (a ceramic capacitor with its vendor ESR and ESL, a tank) is one
+        // symbol instead of three wired together. Their pins sit exactly where R/L/C's do, so
+        // swapping one in costs no rewiring; the search terms say so, because "ESR"/"ESL" is what a
+        // user reading a datasheet actually types.
+        [SymbolKind.Srlc]          = new("SRLC",  "SRLC",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["SRLC", "Series RLC", "RLC", "series", "ESR", "ESL", "ceramic", "capacitor"],
+            IsCommon: true),
+        [SymbolKind.Prlc]          = new("PRLC",  "PRLC",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["PRLC", "Parallel RLC", "RLC", "parallel", "tank", "resonator"],
+            IsCommon: true),
         [SymbolKind.Vdc]           = new("Vdc",   "V",
             Category: ComponentCategory.Sources,
             SearchTerms: ["Vdc", "DC", "bias", "supply", "voltage", "V"],
@@ -552,6 +565,8 @@ public static class ComponentTypeRegistry
         SymbolKind.Resistor      => "R",
         SymbolKind.Inductor      => "L",
         SymbolKind.Capacitor     => "C",
+        SymbolKind.Srlc          => "SRLC",
+        SymbolKind.Prlc          => "PRLC",
         SymbolKind.Vdc           => "Vdc",
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.CurrentToneSource => "I_1Tone",
@@ -992,6 +1007,12 @@ public static class ComponentTypeRegistry
             case SymbolKind.Resistor:  return [new("R",   "1", "Ω",   true, UnitDimension.Resistance)];
             case SymbolKind.Inductor:  return [new("L",   "1", "nH",  true, UnitDimension.Inductance)];
             case SymbolKind.Capacitor: return [new("C",   "1", "pF",  true, UnitDimension.Capacitance)];
+            // SRLC / PRLC carry all three, all shown: the reason to place one instead of a plain C
+            // is that the R and the L are the interesting numbers, so hiding either would defeat it.
+            case SymbolKind.Srlc:
+            case SymbolKind.Prlc:      return [new("R",   "1", "Ω",   true, UnitDimension.Resistance),
+                                               new("L",   "1", "nH",  true, UnitDimension.Inductance),
+                                               new("C",   "1", "pF",  true, UnitDimension.Capacitance)];
             case SymbolKind.Vdc:       return [new("Vdc", "0", "V",   true, UnitDimension.Voltage)];
             // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
             // Vdc (hidden) provides a DC bias offset on the tone source.
@@ -1772,6 +1793,8 @@ public static class ComponentTypeRegistry
             case "R":      kind = SymbolKind.Resistor;      return true;
             case "L":      kind = SymbolKind.Inductor;      return true;
             case "C":      kind = SymbolKind.Capacitor;     return true;
+            case "SRLC":   kind = SymbolKind.Srlc;          return true;
+            case "PRLC":   kind = SymbolKind.Prlc;          return true;
             case "V":
             case "VDC":    kind = SymbolKind.Vdc;           return true;
             case "VTONE":  kind = SymbolKind.ToneSource;    return true;
