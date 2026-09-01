@@ -2820,9 +2820,31 @@ public partial class TraceRowViewModel : ViewModelBase
 
         // Keep per-port Z0 fields fresh when the library changes in place (e.g. auto-refresh) —
         // WITHOUT clearing an override the user set. See RefreshSourceZ0PreservingOverride.
+        //
+        // A cube-bound NETWORK-PARAM trace (S/Z/Y element) is RE-STAMPED from its own group's Z0
+        // cube, never cleared. This method runs AFTER PlotInspectorViewModel.TrySetCubeData on both
+        // the .cdd load path (the row VM's constructor calls it) and the post-run library refresh
+        // (OnLibraryChanged stamps, then calls RefreshDataSources), so clearing here threw away the
+        // only faithful record of the run's port references and left every reflection readout
+        // against the trace's default 50 Ω — a Term at 5+j100 into 5−j100 plotted at the Smith
+        // centre and reported "impedance=50+j0 Ω". Anything else (an ordinary cube, or no match at
+        // all) genuinely has no per-port Z0 and is still cleared.
         if (match is not null && !match.IsCubeBound)
+        {
             RefreshSourceZ0PreservingOverride(match.Entry);
-        else if (match is null || match.IsCubeBound)
+        }
+        else if (match?.Entry.Data is { } matchDs && match.CubeName is { } matchCube
+                 && PlotInspectorViewModel.StampSourceZ0FromCube(matchDs, _trace, matchCube))
+        {
+            _sourceZ0Kind = null;   // network-path stash only; the cube path reads SourceZ0PerPort
+            // With Override off, Trace.Z0 is documented as a read-only MIRROR of the source's port-1
+            // reference — so it has to follow the array we just stamped. A .cdd persists whatever Z0
+            // the box last held (50 for any display authored before the port was complex), and
+            // nothing on the load path re-seeded it, so the card showed 50 Ω for a 5+j100 port and
+            // ticking Override would then renormalize to a value the user never typed.
+            if (!Z0OverrideEnabled) SeedZ0FromSource();
+        }
+        else
         {
             _trace.SourceZ0PerPort   = null;
             _trace.SourceZ0IsUnusual = false;

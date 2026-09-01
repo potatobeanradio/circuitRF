@@ -5,6 +5,66 @@ completed brief's detail lands here instead; `CLAUDE.md` stays for durable, stil
 conventions only. See the root `CLAUDE.md`'s own note about `src/Ui/HISTORY.md` for the same
 pattern applied at the `src/Ui` level.
 
+## A reflection marker read 50 Ω against a COMPLEX port reference (2026-08-31)
+
+**Reported:** a Term at `Z = 5+j100` driving a 1-port `Z = 5-j100` is a perfect power-wave match, so
+`S(1,1)` plotted at the Smith centre — correct. The marker's info box, however, said
+`impedance=50+j0 Ω` instead of the `5-j100` the port actually looks into. The owner's first read was
+that the Kurokawa mapping was being applied wrongly for a complex reference.
+
+**It was not the arithmetic.** `Trace.FormatImpedance` computes `Z = (Z0* + Γ·Z0)/(1-Γ)`, the exact
+inverse of `Γ = (Z - Z0*)/(Z + Z0)`, and for `Γ = 0` that is `conj(Z0)` — the right answer for any
+reference, real or complex. It was simply handed 50 Ω: the trace's `SourceZ0PerPort` array had been
+cleared, and `Trace.MarkerReferenceZ0` then falls through to the trace's own `Z0`, whose default is
+50 Ω.
+
+**An ORDERING bug between the two view models.** `PlotInspectorViewModel.TrySetCubeData` stamps the
+per-port references (via `ResolveNetworkParamCube`); `TraceRowViewModel.RebuildSignals` then cleared
+them for **every** cube-bound trace. `RebuildSignals` runs *after* the stamp on both paths that
+matter:
+
+- the row VM's own **constructor** — so every `.cdd` load, plot-type switch, undo/redo and paste;
+- `OnLibraryChanged`, which stamps every trace and then calls `RefreshDataSources()` on every row —
+  so every post-run refresh.
+
+Hence a correct plot with a wrong readout, and hence a symptom that "healed" the moment the user
+touched the picker (the signal-change path ends in a `RebuildAndNotify`, which re-stamps).
+
+### Why the plot could not reveal it
+
+The circuit is a zero-length thru: `S11 = (Z2 - Z1*)/(Z1 + Z2)`, which is 0 both at the ports' own
+conjugate references AND at any uniform reference. So the dot sits at the centre either way, and the
+marker readout was the only observable that differed. Any investigation that trusts the chart to
+disambiguate the reference will chase the wrong half.
+
+### The fix
+
+`PlotInspectorViewModel.StampSourceZ0FromCube(ds, trace, cubeSpec)` is now the single stamping site
+(`ResolveNetworkParamCube` calls it), and `RebuildSignals` **re-stamps** a cube-bound
+network-param trace from its own group's `Z0` cube instead of nulling it. Only a genuinely
+non-network-param cube (or no matching item at all) still clears.
+
+Second half, same site: with Override off, `Trace.Z0` is documented as a read-only MIRROR of the
+source's port-1 reference, but nothing on the load path re-seeded it — a `.cdd` persists whatever
+the box last held. A display authored before the port became complex reloaded showing 50 Ω, and
+ticking Override would then have renormalized to a value the user never typed. `RebuildSignals` now
+calls `SeedZ0FromSource()` after a successful stamp when Override is off.
+
+Gate: `tests/Ui.Tests/Z0ComplexPortMarkerTests.cs` (7 tests; 4 fail without the fix). The oracle is
+hand-computed and reference-independent — `Γ = 0` at reference `Z0` is `conj(Z0)`, full stop.
+
+### Two unrelated defects found while reproducing this, NOT fixed here
+
+- **`RfCore/TouchstoneIO.cs:322-328`** emits `! NOTE: Original data had complex Z0.` on *every*
+  non-strict export regardless of the actual Z0, and prints `snp.Z0` — one uniform value — once per
+  port, so a genuinely per-port run is misreported (port 2's `5-j100` printed as `5+j100`). `SNP`
+  carries a single reference by design, so the per-port note cannot be made truthful without the
+  caller's array. The option line also keeps only the real part (`# GHz S RI R 5`), so a Touchstone
+  round-trip of a complex-referenced run silently loses the reactance.
+- **`Trace.FormatImpedance` formats with `Marker.FormatComplex`, not `FormatImpedanceComplex`** — so
+  the S-parameter impedance readout ignores `MatrixFormatImpedance` and can print an impedance as
+  `40.01 dB ∠-87.14°`. The contour path (`Trace.cs`, `ContourImpedance`) uses the right one.
+
 ## Every derived trace vanished when the analysis was re-run (2026-08-29)
 
 **Reported:** after re-running the S-parameter analysis, the Max Gain trace disappeared from the

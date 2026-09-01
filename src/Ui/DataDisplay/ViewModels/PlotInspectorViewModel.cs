@@ -1182,6 +1182,38 @@ public partial class PlotInspectorViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Stamps <see cref="Trace.SourceZ0PerPort"/>/<see cref="Trace.SourceZ0IsUnusual"/> on a
+    /// cube-bound network-parameter trace from its OWN group's Z0 cube. Returns false — leaving the
+    /// trace untouched — when <paramref name="cubeSpec"/> is not a network-parameter cube, which is
+    /// the caller's cue that there are no per-port references to carry.
+    ///
+    /// <para><b>The single stamping site, and it must stay single.</b> The per-port array is the
+    /// only faithful record of a run's port references — <c>Data.Z0</c> is one uniform value and
+    /// <see cref="Trace.MarkerReferenceZ0"/> falls back to the trace's own (default 50 Ω) <c>Z0</c>
+    /// when the array is null, so a trace that loses it silently reports every reflection against
+    /// 50 Ω. That is exactly what happened when <c>TraceRowViewModel.RebuildSignals</c> cleared the
+    /// array for every cube-bound trace: it runs AFTER <see cref="TrySetCubeData"/> on both the
+    /// <c>.cdd</c> load path and the post-run library refresh, so a conjugately-matched port pair
+    /// (Term Z = 5+j100 against 5−j100) plotted at the Smith centre — correctly — while its marker
+    /// read "impedance=50+j0 Ω" instead of the 5−j100 the port actually sees. Re-stamp here rather
+    /// than clearing; never add a second copy of this logic.</para>
+    /// </summary>
+    internal static bool StampSourceZ0FromCube(DataSet ds, Trace t, string cubeSpec)
+    {
+        if (!RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, cubeSpec)) return false;
+
+        int dot = cubeSpec.LastIndexOf('.');
+        string group  = dot < 0 ? "" : cubeSpec[..dot];
+        string z0Spec = group.Length == 0 ? RfCore.Data.NetworkMetrics.Z0CubeName
+                                          : $"{group}.{RfCore.Data.NetworkMetrics.Z0CubeName}";
+
+        var z0Cube = ds[z0Spec];
+        t.SourceZ0PerPort   = z0Cube.ComplexValues;
+        t.SourceZ0IsUnusual = RfCore.Data.DataSetBuilder.ClassifyZ0(z0Cube) != RfCore.Data.Z0Kind.UniformReal;
+        return true;
+    }
+
+    /// <summary>
     /// Resolves the effective DataCube for a network-parameter cube trace (S/Z/Y element) at the
     /// trace's OWN reference <see cref="Trace.Z0"/> — brief-dd-z0-renormalization.md §1. Also stamps
     /// <see cref="Trace.SourceZ0PerPort"/>/<see cref="Trace.SourceZ0IsUnusual"/> from the group's Z0
@@ -1216,8 +1248,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         int nPorts = sCube.Axes[sCube.Rank - 1].Length;
         var z0Src  = z0Cube.ComplexValues;
 
-        t.SourceZ0PerPort  = z0Src;
-        t.SourceZ0IsUnusual = RfCore.Data.DataSetBuilder.ClassifyZ0(z0Cube) != RfCore.Data.Z0Kind.UniformReal;
+        StampSourceZ0FromCube(ds, t, cubeSpec);
 
         // Override OFF ⇒ absolutely no renormalization, whatever the source's per-port references
         // are (brief-dd-z0-nonuniform-override). The cube is returned exactly as simulated/loaded:
