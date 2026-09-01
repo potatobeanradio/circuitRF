@@ -359,6 +359,16 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
             IsCommon: true),
+        // SpiceModel — a SPICE .model card or .subckt definition placed as a component, run from
+        // the file rather than copied into a cell. ComponentCategory.DataFiles for the same reason
+        // SnP is there: what the user is placing is a FILE they already have, and that is how they
+        // look for it. It is the reference half of a pair whose other half is the project tree's
+        // "Copy to Workspace as Cell…"; both read the same file through SpiceCellImport.
+        [SymbolKind.SpiceModel]    = new("SPICE", "X",
+            Category: ComponentCategory.DataFiles,
+            SearchTerms: ["SPICE", "SpiceModel", "spice model", "model card", ".model", ".subckt",
+                          "subckt", "subcircuit", "netlist", "model file", "lib"],
+            IsCommon: true),
         // wBond — a wirebond design placed as a component. ONE tile, not one per `.wBond` in the
         // workspace (§5 question 4): a wBond is like SnP — one component type with a file parameter
         // — rather than like a PDK part, where one tile per part is the point. Surfacing a
@@ -712,6 +722,12 @@ public static class ComponentTypeRegistry
         SymbolKind.P1Tone        => "P1Tone",
         SymbolKind.PnTone        => "PnTone",
         SymbolKind.Snp           => "SnP",
+        // Sentinel, like Var and Meas: no ComponentModelFactory entry exists and none can. A
+        // SpiceModel resolves at EXTRACTION to whatever its file describes — a primitive for a
+        // .model card, a subcircuit cell for a .subckt — so this string never reaches the engine.
+        // It exists so every SymbolKind answers, and so a stray emission fails by name rather than
+        // by silently stamping something.
+        SymbolKind.SpiceModel    => "SpiceModel",
         SymbolKind.NonlinearC    => "NonlinearC",
         SymbolKind.Mutual        => "Mutual",
         SymbolKind.Tline         => "TLIN",
@@ -1452,6 +1468,30 @@ public static class ComponentTypeRegistry
                     new("ExtrapMode",  "NearestEdge",   "",  false, UnitDimension.None),
                 ];
             }
+
+            // SpiceModel: a .model card or .subckt definition the user points at.
+            //
+            // `File` and `Name` are the whole interface — WHICH file, and WHICH definition in it.
+            // Both are shown on the schematic: the type label already renders the definition's name
+            // (EditableComponent.TypeLabelText), so what these rows add is the two questions a
+            // reader of someone else's schematic actually asks.
+            //
+            // `PinConfig` and `Pitch` are SnP's own spellings and SnP's own values, meaning the same
+            // two things, because they answer the same question about the same box — a .subckt draws
+            // as an N-port box and its pins need laying out. They are ARTWORK and are hidden, as
+            // SnP's are; a .model card ignores them entirely (it draws as the device).
+            //
+            // There is deliberately no port-count parameter. A SnP has one because a Touchstone file
+            // states its ports in the FILE NAME, so the count is known before anything is read; a
+            // .subckt states them on its own definition line, so a second copy on the instance could
+            // only ever go stale.
+            case SymbolKind.SpiceModel:
+                return [
+                    new(SpiceModelSymbolProvider.FileParameter, "", "", true,  UnitDimension.None),
+                    new(SpiceModelSymbolProvider.NameParameter, "", "", true,  UnitDimension.None),
+                    new("PinConfig", "Standard", "", false, UnitDimension.None),
+                    new("Pitch",     "Loose",    "", false, UnitDimension.None),
+                ];
 
             // VerilogA: a compiled model the user points at. Only `File` is required — everything
             // else the model needs is one of ITS parameters, added by the user in the dialog and

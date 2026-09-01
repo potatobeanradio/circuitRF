@@ -573,6 +573,86 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <!-- SpiceModel custom panel: which FILE, which DEFINITION in it, and — for a
+                     .subckt only — how its box is laid out. The generic rows above are the chosen
+                     subcircuit's own declared parameters. -->
+                <StackPanel IsVisible="{Binding IsSpiceModel}"
+                            Margin="6,4"
+                            Spacing="8">
+                    <!-- File -->
+                    <Grid ColumnDefinitions="60,*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="File"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding SpiceModelFilePath}"
+                                 FontSize="11"
+                                 Padding="4,3"
+                                 VerticalAlignment="Center"
+                                 IsReadOnly="True"
+                                 ToolTip.Tip="The SPICE file holding the .model card or .subckt definition"/>
+                        <Button Grid.Column="2"
+                                Content="Browse…"
+                                FontSize="11"
+                                Padding="6,3"
+                                Margin="4,0,0,0"
+                                Command="{Binding PickSpiceModelFileCommand}"/>
+                        <Button Grid.Column="3"
+                                Content="Show"
+                                FontSize="11"
+                                Padding="6,3"
+                                Margin="4,0,0,0"
+                                ToolTip.Tip="Reveal this file in the system file manager"
+                                Command="{Binding ShowSpiceModelFileCommand}"/>
+                    </Grid>
+                    <!-- Name: which definition in that file -->
+                    <Grid ColumnDefinitions="60,*">
+                        <TextBlock Grid.Column="0" Text="Name"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SpiceModelNameOptions}"
+                                  SelectedIndex="{Binding SpiceModelNameIndex}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11"
+                                  Padding="4,3"
+                                  ToolTip.Tip="Which definition in the file to run. A file often holds a part plus the pieces it is built from."/>
+                    </Grid>
+                    <!-- What was found, or exactly why nothing will simulate. Two blocks rather
+                         than one restyled: a refusal has to READ as one, and the warning brush is
+                         how every other refusal in this dialog says so. -->
+                    <TextBlock Text="{Binding SpiceModelStatus}"
+                               IsVisible="{Binding !SpiceModelStatusIsProblem}"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Margin="0,-2,0,0"/>
+                    <TextBlock Text="{Binding SpiceModelStatus}"
+                               IsVisible="{Binding SpiceModelStatusIsProblem}"
+                               Foreground="{DynamicResource CrfWarningBrush}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Margin="0,-2,0,0"/>
+                    <!-- PinConfig + Pitch: a .subckt draws as a box and the box needs laying out.
+                         Hidden for a .model card, which draws as the device itself. -->
+                    <Grid ColumnDefinitions="60,*,Auto,*"
+                          IsVisible="{Binding SpiceModelShowPinLayout}">
+                        <TextBlock Grid.Column="0" Text="Pins"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SnpPinConfigOptions}"
+                                  SelectedIndex="{Binding SpiceModelPinConfigIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                        <TextBlock Grid.Column="2" Text="Pitch"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   Margin="8,0,6,0"/>
+                        <ComboBox Grid.Column="3"
+                                  ItemsSource="{Binding SnpPitchOptions}"
+                                  SelectedIndex="{Binding SpiceModelPitchIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                    </Grid>
+                </StackPanel>
+
                 <!-- SnP custom panel: file picker + layout controls -->
                 <StackPanel IsVisible="{Binding IsSnp}"
                             Margin="6,4"

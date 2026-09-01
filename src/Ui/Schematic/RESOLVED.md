@@ -2,6 +2,139 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## The SnP `File` base was wrong in the editor, and is now ONE function (2026-09-01)
+
+`SnpPathPolicy.ToStored` writes a picked path relative to the WORKSPACE ROOT (that is what makes a
+design portable) and `Elaborator.ResolveSnpFilePath` resolves it against the same root at Run, which
+`WorkspaceViewModel` supplies as `CurrentWorkspaceRoot`. **`SetSnpFileCommand` resolved it against
+the SCHEMATIC's own directory** when it sniffed the port count off disk.
+
+The two bases agree only when the schematic sits at the workspace root — the usual layout, and why
+nothing ever reported it. For a schematic in a sub-folder (`cells/Amp/schematic/`, which is where a
+cell's schematic actually lives) the sniff missed a perfectly readable file, `TryGetPortCount`
+failed, and the command fell back to the OLD `NumPorts` — so an inline edit of `File` from a 2-port
+to a 3-port left the symbol drawing two pins and the netlist binding two nets, silently. Only the
+INLINE edit path was affected; the dialog's Browse… sniffs the absolute picked path.
+
+**It was already known and worked around rather than fixed**: `EmBackAnnotation`'s
+`SetSnpReferenceCommand` cited exactly this as its reason for not reusing the command. That
+workaround stands on its own merits — the EM kernel knows the port count exactly and has no reason
+to re-read it — and its comment has been corrected so it no longer describes a live defect.
+
+The fix is `SnpPathPolicy.Resolve(stored, workspaceRoot, schematicDirectory)`: one function, placed
+beside `ToStored` because the two are halves of one contract, mirroring the elaborator's rule
+including its tolerance of a Windows-authored `\` in a relative path. `SetSnpFileCommand` now takes
+the workspace root as a constructor parameter — **it is passed, not derived**, because the run's own
+root is `CurrentWorkspaceRoot` and a command holding only a `SchematicEditModel` cannot see it;
+walking up to the nearest `.cws` would give a different answer for a foreign document. The Reveal
+button and `SpiceModelSymbolProvider.ResolvePath` call the same function.
+
+`SpiceModelSymbolProvider` DOES derive the root by walking up to the nearest `.cws`, because it is
+reached from `CellSymbolResolver` and `NetExtractor` — both framework-free, neither holding a view
+model. For a document inside the open workspace the two agree; for a foreign document the walk-up is
+the one that is right. Editor and extractor call the same function, so the drawn pins and the
+simulated circuit cannot disagree about which file was read.
+
+Gate: `tests/Ui.Tests/SnpFilePathResolutionTests.cs`. The two tests that drive the command through a
+sub-folder schematic were confirmed to FAIL against the old base before the fix went in.
+
+## The `SpiceModel` component — a SPICE file placed, not copied (2026-09-01)
+
+The reference half of the pair whose other half is the import above: **Copy to Workspace as Cell…**
+makes an editable cell out of a `.model` card or `.subckt`, and `SymbolKind.SpiceModel` places a
+component that runs the file where it lies. Both read it through the same `SpiceCellImport.Scan`,
+deliberately — a definition that imports as one thing and places as another is a bug neither side
+can detect. There is no pop-in: there is no `.csch` behind it, and `HierarchyResolver.CanPushInto`
+already refuses on `CellRef is null` with nothing added.
+
+### The symbol is a FOURTH virtual reference, and the alternatives were each ruled out
+
+`SpiceModelSymbolProvider` registers a `spicemodel://` scheme on the seam `CellSymbolResolver`
+already holds open for `pdk://` and `wbond://`. The three existing mechanisms each fail on a
+different point:
+
+- **A fixed `SymbolKind`** draws one glyph. This one draws a *diode* for a diode card and a
+  *four-pin box* for a four-port subcircuit, and which is a property of the FILE.
+- **A variadic `SymbolKind` + `PortCount`** (SnP, SDD, ZPort) lets the USER set the count. Here the
+  file already knows it, and the pins carry the subcircuit's own port NAMES, which that route has
+  nowhere to put — the same objection `WBondSymbolProvider` records.
+- **A `CellRef` to a folder** needs a `.csym` on disk, which is a second copy of the interface that
+  goes stale on the next edit of the file. That is the whole reason the reference form exists.
+
+The reference is `pitch | pinconfig | name | file`, derived from the instance's parameters on every
+access and never persisted. **The file's CONTENT is deliberately not in it**: `SpiceModelPeek` keys
+its own cache on mtime, so editing the `.subckt` and returning to the schematic redraws the pins
+with nothing here invalidated.
+
+### An unconfigured instance resolves to `Resolved`, not `NotFound`
+
+A blank `File` draws the generic two-port and IS wirable. That is not tidiness: the
+broken-reference placeholder has no pins at all, so a component drawn as one cannot be dropped and
+wired first and pointed at a file second, which is the order people actually work in. A file that is
+SET and does not read is `NotFound`, and a definition that is named and refused is `PrimaryMissing`
+— both report.
+
+### A MESFET card is the one `.model` that emits a CELL rather than a device
+
+`RD`/`RS` on a MESFET card are real series resistors and circuitRF's MESFET has no parameter for
+them (unlike the diode's `Rs` and the BJT's `Rb`/`Re`/`Rc`, which the elaborator mints internal
+nodes for). There is nowhere on a bare device instance to put them, and dropping them is ohms in the
+source and drain leads of a power device — so `SpiceModelNetlist` mints a cell holding the device
+and its two resistors, exactly as importing the same card as a cell already builds, and says so in
+the extraction report. Every other card emits the primitive directly, which keeps probe paths flat.
+
+### Two files defining one name is reported, never resolved by read order
+
+`NetlistImports.SpiceCells` records which cell name came from which file for the whole extraction, so
+two instances of the SAME file share one cell (one definition placed twice) while two instances of
+DIFFERENT files that both define `lowpass` refuse the second rather than binding it to the first
+one's circuit. A design's own cell of that name always wins, as it does on the kit path.
+
+### Known and deliberate: the first peek of a large file happens on the render path
+
+`SpiceModelPeek.Read` is reached from `CellSymbolResolver.Resolve`, which runs during a schematic
+model rebuild, and it parses the whole file through `SpiceCellImport.Scan`. The mtime cache makes
+that **once per file per session**, so the cost is a single first-resolve stall, not a per-frame one
+— but on a very large vendor library that one stall is real.
+
+Not guarded by a size limit, on purpose: refusing to read a legitimate 40 MB model library would be
+worse than the stall it avoids, and `LooksLikeSpice`'s own 32 MB cutoff exists for a different
+question (deciding a FORMAT from content, where reading the whole file buys nothing). If this ever
+needs fixing the answer is an async first load with the generic two-port shown meanwhile, not a
+refusal — recorded here so that decision is made rather than discovered.
+
+### The gate is that the TWO DOORS agree, numerically
+
+Owner instruction, 2026-09-01: placing the file and importing the same definition as a cell must
+give the same simulation results. `SpiceModelVersusImportedCellTests` runs both doors over one
+`.subckt` — a shunt-branch two-port, an asymmetric three-port, and a nested part — and compares the
+S-parameter `DataSet`s at 1e-9. **Neither side is the reference**: a disagreement says one of them
+is wrong without saying which, which is the finding worth having. It also happens to be the only
+check that can catch the IMPORT path's own characteristic failure, because circuitRF reads
+connectivity off the drawing and a wire laid a grid square out does not look wrong — it joins two
+nets.
+
+Two things the test has to do to be worth anything, both learned by getting them wrong first:
+
+- **Assert the ports are actually connected.** An all-ports-open network is every `|S|` exactly 0
+  or 1 on BOTH sides, which agrees perfectly and tests nothing. The guard is one entry strictly
+  between 0 and 1, written without depending on the cube's axis order.
+- **Use an ASYMMETRIC fixture.** A symmetric two-port agrees with its own ports swapped. Reversing
+  the port order on one door only is the mutation the suite was checked against; the three-port tee
+  and the L-then-R lowpass both fail it, and the symmetric nested part does not.
+
+The `DataSet` an S-parameter run returns holds ONE cube named `S` (N x N x freq), not a cube per
+element — there is no `S(2,1)` key to look up.
+
+### `Name` defaults to the HIGHEST-LEVEL definition, not the first
+
+Owner instruction. A vendor file is a part plus every piece the part is built from, each a definition
+in its own right and usually written leaf-first, so "the first supported one" places an internal
+transistor where the user asked for the package. `SpiceModelPeek` marks a subcircuit top-level when
+nothing else in the file calls it — read straight off `SubcircuitTranslation.Dependencies`, which the
+translator has already resolved transitively — and a card is never top-level, because a card in a
+file that also defines subcircuits is there to support one of them.
+
 ## Importing a SPICE `.subckt` as a cell (2026-09-01)
 
 The same two doors now take a `.subckt` definition as well as a `.model` card — the project tree's

@@ -134,6 +134,7 @@ public static class LibraryCatalog
         (SymbolKind.CurrentToneSource, 0), // "I_1Tone" — its current-source dual, displayed as ITone.
         (SymbolKind.Snp,         2),   // S2P
         (SymbolKind.Snp,         3),   // S3P
+        (SymbolKind.SpiceModel,  0),   // SPICE — a .model card or .subckt run from its own file
         (SymbolKind.Tline,       0),   // TLIN
         (SymbolKind.Mlin,        0),   // MLIN
         (SymbolKind.SourceTuner, 0),

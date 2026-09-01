@@ -246,6 +246,11 @@ public static class SymbolPortDefs
             // is the order its own netlist line uses, so pin 1 is the model's first terminal.
             case SymbolKind.VerilogA:
                 return GenerateGenericDevicePorts(portCount >= 1 ? portCount : 2);
+            // SpiceModel: the unconfigured two-port, matching BuiltInSymbols' own answer for the
+            // same kind. A PLACED instance never asks — its pins come from the file, through the
+            // external-symbol-reference path — so this serves the palette tile and the ghost only.
+            case SymbolKind.SpiceModel:
+                return GenerateSnpPorts(2, refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
             default:
                 return [("1", 0f, -200f), ("2", 0f, 200f)];
         }
@@ -511,6 +516,18 @@ public sealed class EditableComponent
                       WBondSymbolProvider.ParsePitch(
                           Parameters.FirstOrDefault(p => p.Name == "SymbolPitch")?.Expression),
                       GetBoolParam("RefPin"))
+                : null)
+        // A SpiceModel's symbol is GENERATED from the SPICE file it names, so the file and the
+        // definition IN it are part of the reference, exactly as a wBond's array list is. It is
+        // non-null even with a blank File — that case resolves to the generic two-port, which is
+        // what a freshly placed, not-yet-configured instance is, rather than falling back to
+        // built-in geometry that would then disagree with the file the moment one is chosen.
+        ?? (Symbol == SymbolKind.SpiceModel
+                ? SpiceModelSymbolProvider.RefFor(
+                      Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression,
+                      Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression,
+                      GetEnumParam("PinConfig", SnpPinConfig.Standard),
+                      GetEnumParam("Pitch", SnpPitch.Loose))
                 : null);
 
     public double         X            { get; set; }
@@ -701,10 +718,33 @@ public sealed class EditableComponent
     /// text's own length, so a second copy here puts the zone somewhere the text is not — which is
     /// exactly how a kit part's Type label became unclickable.</para>
     /// </summary>
-    public string TypeLabelText() =>
-        CellRef is not null
-            ? Path.GetFileName(CellRef.TrimEnd('/', '\\'))
-            : ComponentTypeRegistry.DisplayName(Symbol, PortCount);
+    public string TypeLabelText()
+    {
+        if (CellRef is not null) return Path.GetFileName(CellRef.TrimEnd('/', '\\'));
+
+        // A SpiceModel labels itself with the DEFINITION it runs, for the same reason a cell
+        // reference labels itself with the cell folder: "SPICE" on every one of them says nothing a
+        // reader needs, and the model's own name is the one fact that distinguishes two instances
+        // sitting side by side. Derived, never a second persisted field that could drift. Falls back
+        // to the file's own stem while the definition is unset (a single-definition file is the
+        // common case and never needs one typed), and to the registry name while both are blank.
+        if (Symbol == SymbolKind.SpiceModel)
+        {
+            string name = (Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)
+                               ?.Expression ?? "").Trim();
+            if (name.Length > 0) return name;
+
+            string file = (Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)
+                               ?.Expression ?? "").Trim();
+            if (file.Length > 0)
+            {
+                string stem = Path.GetFileNameWithoutExtension(file.Replace('\\', '/'));
+                if (stem.Length > 0) return stem;
+            }
+        }
+
+        return ComponentTypeRegistry.DisplayName(Symbol, PortCount);
+    }
 
     /// <summary>Convert to the immutable render type, with port connection state.</summary>
     /// <param name="isPointConnected">World-coordinate connectivity predicate.</param>

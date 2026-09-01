@@ -4236,6 +4236,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // outside circuitRF, and this is the one moment the whole session's assumptions are already
         // being rebuilt.
         WBondSymbolProvider.InvalidateAll();
+        // A peeked SPICE file is keyed by mtime, so an edit made OUTSIDE circuitRF is already picked
+        // up on the next read; this drops the entries for files the departing workspace named, which
+        // will not be asked for again.
+        SpiceModelPeek.InvalidateAll();
 
         string? wsRoot = CurrentWorkspacePath is null
             ? null

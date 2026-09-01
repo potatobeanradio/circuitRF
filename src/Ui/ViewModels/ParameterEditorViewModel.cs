@@ -67,6 +67,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         ShowSnpFileCommand    = new AsyncRelayCommand(RevealSnpFileAsync,
             () => !string.IsNullOrWhiteSpace(SnpFilePath));
         OpenCvEditorCommand   = new AsyncRelayCommand(OpenCvEditorAsync);
+        PickSpiceModelFileCommand = new AsyncRelayCommand(PickSpiceModelFileAsync);
+        ShowSpiceModelFileCommand = new AsyncRelayCommand(RevealSpiceModelFileAsync,
+            () => !string.IsNullOrWhiteSpace(SpiceModelFilePath));
 
         ToggleMklopfImpedanceEntryCommand = new RelayCommand(ToggleMklopfImpedanceEntry, () => IsMklopfTarget);
         ToggleMklopfLengthEntryCommand    = new RelayCommand(ToggleMklopfLengthEntry,    () => IsMklopfTarget);
@@ -171,6 +174,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// <summary>Callback set by the view to reveal a file in the OS file manager.</summary>
     public Func<string, Task>? RevealFileAsync { get; set; }
 
+    /// <summary>Callback set by the view so a SpiceModel can offer a Browse… picker over SPICE
+    /// files. A separate seam from <see cref="PickSnpFileAsync"/> only because the FILTER differs —
+    /// the reveal side is shared, as it should be: revealing a file is the same act either way.</summary>
+    public Func<Task<string?>>? PickSpiceFileAsync { get; set; }
+
     public static string[] SnpPinConfigOptions   { get; } = ["Standard", "SplitLR", "DualRow"];
     public static string[] SnpPitchOptions       { get; } = ["Tight",    "Loose"];
 
@@ -256,10 +264,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     private async Task RevealSnpFileAsync()
     {
-        if (RevealFileAsync is null || string.IsNullOrWhiteSpace(SnpFilePath)) return;
-        string path = SnpFilePath;
-        if (!System.IO.Path.IsPathRooted(path) && _schematicVm?.WorkspaceRoot is { Length: > 0 } root)
-            path = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, path.Replace('\\', '/')));
+        if (RevealFileAsync is null) return;
+        // One resolver, so Show reveals exactly the file the port-count sniff read and the engine
+        // will open. This used to spell the same rule out inline, minus the no-workspace fallback.
+        if (SnpPathPolicy.Resolve(SnpFilePath, _schematicVm?.WorkspaceRoot,
+                                  _schematicVm?.EditModel.SchematicDirectory) is not { } path) return;
         await RevealFileAsync(path);
     }
 
@@ -426,6 +435,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (_schematicVm is not null && comp.Symbol != SymbolKind.Snp)
         {
             AdoptCellDeclaredParameters(comp);
+            if (comp.Symbol == SymbolKind.SpiceModel) AdoptSpiceModelDeclaredParameters(comp);
 
             var built = new List<ParameterRowViewModel>();
             foreach (var param in comp.Parameters)
@@ -447,6 +457,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 // edit box that changes a label and not the circuit — see IsMatchPanelParameter for
                 // the reasoning. A name the registry does not declare still gets its row.
                 if (comp.Symbol == SymbolKind.Match && IsMatchPanelParameter(param.Name)) continue;
+
+                // A SpiceModel's own panel owns File, Name, PinConfig and Pitch — the file it runs
+                // and how the box is drawn. What is left as a generic row is exactly the chosen
+                // .subckt's declared parameters, which is what a row is FOR.
+                if (comp.Symbol == SymbolKind.SpiceModel
+                    && SpiceModelSymbolProvider.IsPanelParameter(param.Name)) continue;
+
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
                 built.Add(row);
@@ -484,6 +501,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _isRefreshing = false;
 
         OnPropertyChanged(nameof(IsSnp));
+        OnPropertyChanged(nameof(IsSpiceModel));
         OnPropertyChanged(nameof(IsWBond));
         OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(ShowAddModelParameter));
@@ -491,6 +509,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         NotifyMklopfState();
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        if (comp.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
         RefreshMatchProperties();
         SyncVerilogAFromModelFile();
@@ -1169,6 +1188,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // The Match panel is a READOUT of the design, so it has to follow every change to it —
         // including the ones the Designer window makes, and including an undo of one.
         if (_target.Symbol == SymbolKind.Match) RefreshMatchProperties();
+        // The SpiceModel panel is a readout of the FILE, and this is the path a card-backed one
+        // takes: its panel parameters are not rows (see VisibleParams), so an instance with no
+        // .subckt parameters has an EMPTY row set, which matches the empty row set after a Pitch
+        // change or an undo of a File change — nothing looks different and nothing rebuilds.
+        // Without this the panel goes on describing the file that was chosen before.
+        if (_target.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
@@ -1363,6 +1388,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (comp.Symbol == SymbolKind.Snp) return [];
         return comp.Parameters
             .Where(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name))
+            // A SpiceModel's panel owns File/Name/PinConfig/Pitch, so they are not rows and must not
+            // be counted as ones here — this list IS the comparison OnModelChanged rebuilds on, and
+            // a set that can never match the row set makes that comparison say "rebuild" to
+            // everything, which is not an answer.
+            .Where(p => comp.Symbol != SymbolKind.SpiceModel
+                        || !SpiceModelSymbolProvider.IsPanelParameter(p.Name))
             .ToList();
     }
 

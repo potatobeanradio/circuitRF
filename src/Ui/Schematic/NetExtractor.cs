@@ -275,6 +275,17 @@ public static class NetExtractor
             if (comp.Symbol == SymbolKind.Var)    continue;  // VAR rows routed to Variables, not instances
             if (comp.Symbol == SymbolKind.Meas)   continue;  // MEAS rows routed to Measurements, not instances
 
+            // A SpiceModel is not a cell reference and not a primitive: it is a file, and what it
+            // emits — a device or a subcircuit — is a property of that file. Checked before both,
+            // because it carries neither a CellRef nor an engine component of its own.
+            if (comp.Symbol == SymbolKind.SpiceModel)
+            {
+                var sm = EmitSpiceModelInstance(comp, model, uf, QK, netNames, detachedKeys,
+                                                cellRefResolutions, lib, imports, conflicts);
+                if (sm is not null) instances.Add(sm);
+                continue;
+            }
+
             if (comp.CellRef is not null)
             {
                 // A part whose definition is a CIRCUIT comes first: a package is a subcircuit, not a
@@ -576,6 +587,17 @@ public static class NetExtractor
 
         private readonly Dictionary<string, Netlist> _byPath =
             new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Cell names this extraction has minted from a SPICE file, and which file each came from.
+        ///
+        /// <para>Lives here because this object is the one thing already threaded through the whole
+        /// recursive extraction, and the claim has to be extraction-wide: two SpiceModel instances
+        /// pointed at the SAME file must share one set of cells (a subcircuit named twice is one
+        /// definition placed twice), while two pointed at DIFFERENT files that happen to define the
+        /// same name must be reported rather than silently bound to whichever was read first.</para>
+        /// </summary>
+        public Dictionary<string, string> SpiceCells { get; } = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<UserFunction> _functions = [];
         private readonly List<Variable>     _variables = [];
         private readonly HashSet<string>    _merged    = new(StringComparer.OrdinalIgnoreCase);
@@ -897,6 +919,129 @@ public static class NetExtractor
         foreach (var ov in inst.Overrides)             Put(ov.Name, ov.Expression, ov.Unit);
 
         return overrides;
+    }
+
+    /// <summary>
+    /// Emits a <see cref="SymbolKind.SpiceModel"/> — a <c>.model</c> card or a <c>.subckt</c>
+    /// definition, run straight from the file it names.
+    ///
+    /// <para><b>Every failure is reported and none of them falls back.</b> A missing file, an
+    /// unreadable one, a definition circuitRF has no model for: each ends in a conflict naming the
+    /// instance and skips it. Emitting something else instead — the generic two-port the symbol
+    /// happens to be drawn as, say — would answer with a circuit the user never placed.</para>
+    ///
+    /// <para><b>Pin k binds to port k, and the counts must agree.</b> Both come from the same peek
+    /// of the same file, so a disagreement means the symbol on screen is not the definition being
+    /// run, and guessing an alignment would wire the design wrong in silence — the same contract
+    /// the kit-netlist path states for the same reason.</para>
+    /// </summary>
+    private static Instance? EmitSpiceModelInstance(
+        EditableComponent comp,
+        SchematicEditModel model,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK,
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions,
+        Library lib,
+        NetlistImports imports,
+        List<string> conflicts)
+    {
+        string file = (comp.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression ?? "").Trim();
+
+        if (file.Length == 0)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': no SPICE model file is set, so there is " +
+                          "nothing to simulate. Open its parameters and choose one.");
+            return null;
+        }
+
+        string? path = SpiceModelSymbolProvider.ResolvePath(file, model.SchematicDirectory);
+        if (path is null)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': '{file}' is a relative path and this " +
+                          "schematic has not been saved, so there is no directory to resolve it " +
+                          "against. Save the schematic, or point it at an absolute path.");
+            return null;
+        }
+
+        var peeked = SpiceModelPeek.Read(path);
+        if (peeked.Error is { } error)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': {error}");
+            return null;
+        }
+
+        string wanted = (comp.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression ?? "").Trim();
+
+        var definition = SpiceModelPeek.Select(peeked, wanted);
+        if (definition is null)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': '{wanted}' is not defined in " +
+                          $"{System.IO.Path.GetFileName(path)}. It defines: " +
+                          string.Join(", ", peeked.Definitions.Select(d => d.Name)) + ".");
+            return null;
+        }
+
+        var emission = SpiceModelNetlist.Build(definition, peeked.Scan, path, lib, imports.SpiceCells);
+        if (emission.Refusal is { } refusal)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}' ({definition.Name}): {refusal}");
+            return null;
+        }
+
+        var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
+                          .OrderBy(d => d.PortIndex)
+                          .ToList();
+
+        if (pinDefs.Count != emission.Ports.Count)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': the symbol exposes {pinDefs.Count} " +
+                          $"pin(s) but '{definition.Name}' has {emission.Ports.Count}. The symbol is " +
+                          "generated from the same file, so this means it was drawn against an " +
+                          "older version of it — reopen the schematic; skipped.");
+            return null;
+        }
+
+        var nets = new List<string>(pinDefs.Count);
+        foreach (var def in pinDefs)
+        {
+            var (px, py) = model.PortWorldOf(comp, def);
+            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+        }
+
+        var overrides = new List<ParameterAssignment>(emission.Overrides);
+
+        // The instance's own rows, which for a .subckt are the definition's declared parameters as
+        // the dialog populated them. Only what the definition actually declares is forwarded: a
+        // subcircuit handed a parameter it never named is an error in the elaborator.
+        var declared = emission.CellName is not null && lib.Find(emission.CellName) is { } cellDef
+            ? new HashSet<string>(cellDef.Parameters.Select(x => x.Name), StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        foreach (var p in comp.Parameters)
+        {
+            if (SpiceModelSymbolProvider.IsPanelParameter(p.Name)) continue;
+            if (string.IsNullOrWhiteSpace(p.Name))           continue;
+            if (string.IsNullOrWhiteSpace(p.Expression))     continue;   // unset — the file's default stands
+            if (declared is not null && !declared.Contains(p.Name)) continue;
+
+            var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+            overrides.RemoveAll(o => o.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase));
+            overrides.Add(new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null));
+        }
+
+        // Everything the translation decided that a user could want to see. Reported once per
+        // DEFINITION rather than once per instance: a card's dropped parameters are a property of
+        // the card, and ten instances of one part would otherwise post the same line ten times.
+        foreach (var note in emission.Notes)
+            if (!conflicts.Contains(note)) conflicts.Add(note);
+
+        return new Instance(comp.InstanceName,
+                            emission.CellName ?? emission.PrimitiveReference!,
+                            nets, overrides);
     }
 
     /// <summary>Emitted reference for a device an external provider evaluates.</summary>

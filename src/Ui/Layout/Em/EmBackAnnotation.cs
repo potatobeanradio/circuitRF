@@ -211,11 +211,16 @@ public static class EmBackAnnotation
 /// Sets an existing SnP's <c>File</c> and <c>NumPorts</c> together, undoably.
 ///
 /// <para>Deliberately NOT <see cref="SetSnpFileCommand"/>: that command re-SNIFFS the port count off
-/// disk, resolving a relative path against the SCHEMATIC's directory — while the engine resolves the
-/// same string against the workspace root (<c>netlist.cnl</c>'s own directory). For a schematic in a
-/// sub-folder those two bases differ, so the sniff can quietly fail and leave <c>NumPorts</c> at its
-/// previous value. Back-annotation does not need to sniff anything: the kernel just solved the
-/// problem and knows the port count exactly.</para>
+/// disk, and back-annotation has no reason to — the kernel just solved the problem and knows the
+/// port count exactly, so reading it back out of a file it wrote is a way to be wrong rather than a
+/// way to be sure.</para>
+///
+/// <para><b>The base-directory defect this used to cite is FIXED</b> (2026-09-01): that command
+/// resolved a relative path against the SCHEMATIC's directory while the engine resolved the same
+/// string against the workspace root, so for a schematic in a sub-folder the sniff quietly failed
+/// and left <c>NumPorts</c> at its previous value. Both now go through
+/// <see cref="SnpPathPolicy.Resolve"/>. The reason above stands on its own and is why this command
+/// still exists.</para>
 /// </summary>
 internal sealed class SetSnpReferenceCommand : IUiCommand
 {

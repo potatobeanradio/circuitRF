@@ -39,6 +39,7 @@ public partial class ParameterEditorView : UserControl
         if (DataContext is ParameterEditorViewModel vm)
         {
             vm.PickSnpFileAsync       = PickSnpFileAsync;
+            vm.PickSpiceFileAsync     = PickSpiceFileAsync;
             vm.PickModelFileAsync     = PickModelFileAsync;
             vm.PickModelParameterAsync = PickModelParameterAsync;
             vm.RevealFileAsync        = RevealFileAsync;
@@ -89,6 +90,41 @@ public partial class ParameterEditorView : UserControl
                                 "*.S1P","*.S2P","*.S3P","*.S4P","*.S5P","*.S6P","*.S7P","*.S8P",
                                 "*.S9P","*.S10P","*.S11P","*.S12P","*.SNP"],
                 },
+                FilePickerFileTypes.All,
+            ],
+        });
+
+        return files.Count == 1 ? files[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>
+    /// Picks the SPICE file a <c>SpiceModel</c> component runs.
+    ///
+    /// <para>The filter is wide on purpose, and wider than the project tree's own "Copy to Workspace
+    /// as Cell…" menu item offers. That item appears on a bookmarked file with nothing having read
+    /// it, so its extension list is the whole of what decides; here the user has already said what
+    /// the file is by choosing it, and a vendor writes a model deck into whatever extension it
+    /// pleases — <c>.lib</c> and <c>.txt</c> included.</para>
+    /// </summary>
+    private async Task<string?> PickSpiceFileAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+
+        var patterns = new List<string>();
+        foreach (var ext in CircuitRF.Ui.Schematic.SpiceModelPeek.FileExtensions)
+        {
+            patterns.Add("*" + ext);
+            patterns.Add("*" + ext.ToUpperInvariant());
+        }
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Open SPICE Model or Subcircuit",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("SPICE model or subcircuit") { Patterns = [.. patterns] },
                 FilePickerFileTypes.All,
             ],
         });

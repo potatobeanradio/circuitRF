@@ -464,6 +464,42 @@ The symbol is dynamic; the pin arrangement, the pitch and the floating-reference
 
 {{table: components/Snp}}
 
+### SPICE Model or Subcircuit {#spicemodel}
+
+{{symbol: spicemodel}}
+
+A SPICE `.model` card or `.subckt` definition placed as a component and **run from its own file**.
+Nothing is copied: edit the file and the schematic follows it.
+
+- `File` — the path to the SPICE file.
+- `Name` — which definition in that file to run. A vendor file usually holds a part *and* every
+  piece the part is built from, each of them a definition in its own right; leaving `Name` blank
+  picks the highest-level one, the one nothing else in the file calls.
+- `PinConfig` and `Pitch` — the pin arrangement and spacing, for a `.subckt` only. A `.model` card
+  draws as the device itself, whose terminals are where that device's terminals are.
+
+Any parameter the chosen `.subckt` declares appears as an ordinary editable row below the panel,
+seeded at the definition's own default.
+
+The symbol is dynamic and is generated from the file. A `.model` card circuitRF has a device for
+draws as **that device** — a diode card draws as a diode — so the schematic says which lead is
+which without anything being opened. A `.subckt` draws as a box carrying the definition's own port
+names. Until a file is chosen it draws as a generic two-port, which can be placed and wired first.
+
+A model type circuitRF has no equivalent for is **refused by name**, in the parameter dialog at the
+moment the file is chosen and again at Run. Nothing is approximated: the nearest native device
+would simulate and be quantitatively wrong.
+
+<div class="note">
+<p><b>This is the reference; the import is the copy.</b> The project tree's <b>Copy to Workspace as
+Cell…</b> reads the same file and builds an editable cell out of it — a schematic you can open,
+re-symbol and change. Use that when the model is a starting point. Use this component when the file
+is the authority and must stay so. Because there is no <code>.csch</code> behind it, a SpiceModel
+has no pop-in: there is nothing to push into.</p>
+</div>
+
+{{table: components/SpiceModel}}
+
 ### Impedance N-Port (Z) {#zport}
 
 {{symbol: zport}}

@@ -99,6 +99,26 @@ block's reference is not circuit ground (a floating measurement).
   control how the file's data is sampled onto the analysis sweep — see
   <a href="components.html#snp">Components › SnP</a>.</p>
 
+## SPICE Model — the whole glyph follows the file {#spicemodel}
+
+{{symbol: spicemodel}}
+
+The others on this page change **size** with a number you set. The `SpiceModel` component changes
+**what it is a picture of**, and you set nothing: it reads the file its `File` and `Name` parameters
+name, and draws whatever is in there.
+
+- A **`.model` card** circuitRF has a device for draws as **that device** — a diode card draws as a
+  diode, with its anode where a diode's anode is. The point is that the schematic then says which
+  lead is which without anything being opened.
+- A **`.subckt`** draws as an N-port box carrying the definition's own **port names**, not port
+  numbers. `PinConfig` and `Pitch` lay that box out, meaning exactly what they mean on an SnP.
+- **Before a file is chosen** it draws as a generic two-port. That is deliberate, not a placeholder:
+  it can be dropped and wired first and pointed at a file second.
+
+Edit the file and the schematic follows it — there is no copy of the interface anywhere to go stale,
+which is why this component has no pop-in and no `.csch` of its own. See
+{{anchor: components#spicemodel|Components › SPICE Model or Subcircuit}}.
+
 ## Match &amp; Filter — the picture follows the Form {#form}
 
 <figure class="symbol"><span class="frame">

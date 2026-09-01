@@ -422,6 +422,24 @@ public enum SymbolKind
     /// ideal inductor's admittance diverges at DC and because that branch is what a
     /// <see cref="Mutual"/> couples to.</summary>
     Prlc,
+
+    /// <summary>
+    /// A SPICE model placed as a component (no engine component of its own — the extractor
+    /// resolves it to whatever the file describes).
+    ///
+    /// <para>Points at a file holding a <c>.model</c> card or a <c>.subckt</c> definition and runs
+    /// THAT, with no cell folder anywhere: the import gesture (Copy to Workspace as Cell…) makes an
+    /// editable cell out of the same file, and this is the other half of the same pair — a
+    /// reference, not a copy. There is deliberately no pop-in: a SpiceModel has no <c>.csch</c> to
+    /// push into, and the file it names is the authority.</para>
+    ///
+    /// <para><b>The symbol is GENERATED from the file</b> (<see cref="SpiceModelSymbolProvider"/>) —
+    /// a supported <c>.model</c> card draws as the circuitRF device that implements it, a
+    /// <c>.subckt</c> draws as an N-port box carrying the definition's own port names, and an
+    /// unconfigured instance draws as a generic 2-port. Which one is a property of the FILE, so
+    /// there is no pin count on this kind to keep in step.</para>
+    /// </summary>
+    SpiceModel,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

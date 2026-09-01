@@ -3370,6 +3370,41 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// symbol mid-keystroke would be a second question the user never asked. A cell whose symbol
     /// does not resolve still swaps in and draws the same placeholder a placed one would.</para>
     /// </summary>
+    /// <summary>
+    /// Points a placed SpiceModel at a different definition IN THE FILE IT ALREADY NAMES. Returns
+    /// false when the file names no such definition, which the caller reports.
+    ///
+    /// <para><b>A blank value is accepted and means "choose again"</b> — it re-resolves to the
+    /// highest-level supported definition, the same as a freshly browsed file. Clearing a label is
+    /// how a user undoes a choice they made by typing.</para>
+    /// </summary>
+    private bool TryChangeSpiceModelDefinition(EditableComponent comp, string wanted)
+    {
+        string want = wanted.Trim();
+
+        string file = comp.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression?.Trim() ?? "";
+        if (file.Length == 0) return false;
+
+        if (want.Length > 0)
+        {
+            string? path = SpiceModelSymbolProvider.ResolvePath(file, EditModel.SchematicDirectory);
+            if (path is null) return false;
+
+            var peeked = SpiceModelPeek.Read(path);
+            if (peeked.Error is not null) return false;
+            if (!peeked.Definitions.Any(d => d.Name.Equals(want, StringComparison.OrdinalIgnoreCase)))
+                return false;
+        }
+
+        var nameParam = comp.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter);
+        if (nameParam is null) return false;
+
+        Execute(new EditParameterCommand(EditModel, nameParam, want, nameParam.Unit, nameParam.Name));
+        return true;
+    }
+
     private bool TryChangeToCellType(EditableComponent comp, string cellName)
     {
         // A loaded kit's part is asked for FIRST: it exists only in memory, so no directory walk
@@ -3890,6 +3925,20 @@ public sealed partial class SchematicViewModel : ObservableObject
                 // cannot parse a cell name, and answered a no-op with a bogus warning.
                 if (newVal == comp.TypeLabelText()) break;
 
+                // A SpiceModel's type label IS its `Name` parameter — which definition in the file
+                // it runs (EditableComponent.TypeLabelText). Editing the label therefore picks a
+                // different definition rather than a different COMPONENT TYPE, which is what the
+                // label says it does; without this the text fell through to TryParseCode and
+                // answered with a warning listing R, L, C and Z2P.
+                if (comp.Symbol == SymbolKind.SpiceModel)
+                {
+                    if (TryChangeSpiceModelDefinition(comp, newVal)) break;
+                    _messageSink?.Warning(
+                        $"'{newVal}' is not defined in this component's SPICE file. Open its " +
+                        "parameters to see what the file holds.");
+                    break;
+                }
+
                 if (!ComponentTypeRegistry.TryParseCode(newVal, out var newKind, out int parsedPortCount))
                 {
                     // Not a built-in code — try a cell of that name. This is what makes swapping
@@ -3977,7 +4026,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                 {
                     var comp = EditModel.FindComponent(targetId ?? "");
                     if (comp?.Symbol == SymbolKind.Snp && param.Name == "File")
-                        Execute(new SetSnpFileCommand(EditModel, comp, expr));
+                        Execute(new SetSnpFileCommand(EditModel, comp, expr, WorkspaceRoot));
                     else
                         Execute(new EditParameterCommand(EditModel, param, expr, unit, newName));
                 }

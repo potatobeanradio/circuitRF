@@ -162,6 +162,13 @@ public static class BuiltInSymbols
                     _verilogACache[n] = sym = BuildVerilogASymbol(n);
                 return sym;
             }
+            // SpiceModel answers here with the UNCONFIGURED glyph, the same contract the four
+            // dynamic system blocks keep: a caller with no instance to ask — the palette tile, the
+            // placement ghost, a documentation figure — still gets a real drawing. A PLACED instance
+            // never reaches this: its symbol comes from the file, through
+            // SpiceModelSymbolProvider, by way of the ordinary external-symbol-reference path.
+            case SymbolKind.SpiceModel:
+                return SpiceModelSymbolProvider.UnconfiguredSymbol(SnpPinConfig.Standard, SnpPitch.Loose);
             case SymbolKind.Resistor:   return _resistor;
             case SymbolKind.Inductor:   return _inductor;
             case SymbolKind.Capacitor:  return _capacitor;
@@ -987,10 +994,63 @@ public static class BuiltInSymbols
         return Sym(prims, SymbolKind.VerilogA, n);
     }
 
+    /// <summary>
+    /// The SnP box, drawn around port names the CALLER supplies rather than port numbers —
+    /// what a <see cref="SymbolKind.SpiceModel"/> pointed at a <c>.subckt</c> shows
+    /// (<see cref="SpiceModelSymbolProvider"/>).
+    ///
+    /// <para><b>Geometry is SnP's own, not a second copy of it.</b> Pin positions, body height and
+    /// body centre all come from the same <see cref="SymbolPortDefs"/> calls
+    /// <see cref="BuildSnpSymbol"/> makes, so the Pins/Pitch options mean on a subcircuit exactly
+    /// what they mean on a Touchstone file — which is the whole reason those two controls are
+    /// offered on both. Only the WIDTH differs: a subcircuit's ports are named (<c>vdd</c>,
+    /// <c>bulk</c>) where a Touchstone's are numbered, and SnP's 200-wide body would print two
+    /// four-letter names over each other.</para>
+    ///
+    /// <para>Not cached here: the caller keys its own cache on the file's mtime, which is the thing
+    /// that can actually change. Caching by name list underneath that would hold a second copy of
+    /// every symbol for no additional hit.</para>
+    /// </summary>
+    public static Symbol PrimitivesForNamedPortBox(
+        IReadOnlyList<string> portNames, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        ArgumentNullException.ThrowIfNull(portNames);
+        int n = Math.Max(portNames.Count, 1);
+
+        var geometry = SymbolPortDefs.GenerateSnpPorts(n, refNode: false, cfg, pitch);
+        var ports = new (string Name, float LocalX, float LocalY)[geometry.Length];
+        for (int i = 0; i < geometry.Length; i++)
+            ports[i] = (i < portNames.Count && !string.IsNullOrWhiteSpace(portNames[i])
+                            ? portNames[i]
+                            : geometry[i].Name,
+                        geometry[i].LocalX, geometry[i].LocalY);
+
+        // Wide enough for the two longest names that can face each other across the body, and never
+        // wider than the pins it has to stay inside of (they sit at ±200, and a lead of at least 30
+        // has to remain visible or the box reads as touching the wire).
+        int longest = ports.Max(q => q.Name.Length);
+        double halfW = Math.Clamp(60 + longest * 9.0, 100, 170);
+
+        return BuildPortBox(ports, n, cfg, pitch, halfW * 2);
+    }
+
     private static Symbol BuildSnpSymbol(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
     {
         var ports = SymbolPortDefs.GenerateSnpPorts(n, refNode, cfg, pitch);
-        var (w, halfH) = SymbolPortDefs.SnpBodyRect(n, cfg, pitch);
+        return BuildPortBox(ports, n, cfg, pitch, SymbolPortDefs.SnpBodyRect(n, cfg, pitch).W);
+    }
+
+    /// <summary>
+    /// The shared body-and-leads drawing for every box-shaped N-port glyph: SnP's numbered ports and
+    /// a SpiceModel subcircuit's named ones. <paramref name="ports"/> supplies the pins as placed;
+    /// <paramref name="n"/> is the SIGNAL port count (a Ref pin is not one of them) and is what the
+    /// height and centre are measured from.
+    /// </summary>
+    private static Symbol BuildPortBox(
+        (string Name, float LocalX, float LocalY)[] ports,
+        int n, SnpPinConfig cfg, SnpPitch pitch, double w)
+    {
+        float halfH = SymbolPortDefs.SnpBodyRect(n, cfg, pitch).HalfH;
         float cy = SymbolPortDefs.SnpBodyCenterYPublic(n, cfg, pitch);
 
         double bodyTop  = cy - halfH, bodyBot = cy + halfH;

@@ -69,7 +69,13 @@ public static class CellSymbolResolver
     /// the drop having done nothing at all. A third virtual form must not be able to repeat that.</para>
     /// </summary>
     public static bool NeedsNoBaseDirectory(string cellRef)
-        => PdkKitRegistry.IsKitRef(cellRef) || WBondSymbolProvider.IsWBondRef(cellRef);
+        => PdkKitRegistry.IsKitRef(cellRef) || WBondSymbolProvider.IsWBondRef(cellRef)
+        // A SpiceModel DOES resolve a path, so it is not exempt in general — but an unconfigured one
+        // (blank File) draws its generic two-port with nothing looked up, and an ABSOLUTE path needs
+        // no base either. Both have to work on an unsaved scratch schematic, where a component that
+        // resolved to nothing would render pin-less and read as the drop having failed.
+        || (SpiceModelSymbolProvider.Parse(cellRef) is { } r
+                && (r.File.Length == 0 || System.IO.Path.IsPathRooted(r.File)));
 
     /// <summary>
     /// Resolves <paramref name="cellRef"/> relative to <paramref name="baseDir"/> and returns
@@ -93,6 +99,12 @@ public static class CellSymbolResolver
         //     See WBondSymbolProvider for why this is a fourth mechanism rather than a .csym on disk.
         if (WBondSymbolProvider.IsWBondRef(cellRef))
             return WBondSymbolProvider.Resolve(cellRef, baseDir);
+
+        // 0c. A SpiceModel's symbol is GENERATED from the SPICE file its reference names, and the
+        //     definition it picks out of that file decides both the artwork and the pin count. Same
+        //     placement and the same reason as the two above: the reference is not a cell path.
+        if (SpiceModelSymbolProvider.IsSpiceModelRef(cellRef))
+            return SpiceModelSymbolProvider.Resolve(cellRef, baseDir);
 
         // 1. Resolve path. A cell reference is relative to the schematic's own directory, so an
         //    unsaved schematic has nothing to resolve it against — NotFound, not a crash.
