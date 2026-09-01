@@ -23,6 +23,7 @@ namespace CircuitRF.Ui.Views.Dialogs;
 public partial class ArchiveWorkspaceDialog : Window
 {
     private readonly WorkspaceArchivePlan? _plan;
+    private ObservableCollection<ArchiveTreeNode> _roots = [];
 
     public ArchiveWorkspaceDialog() => InitializeComponent();
 
@@ -32,7 +33,7 @@ public partial class ArchiveWorkspaceDialog : Window
 
         HeaderText.Text = $"Archive “{Path.GetFileName(plan.WorkspaceDir.TrimEnd(Path.DirectorySeparatorChar))}”";
 
-        var roots = BuildRoots(plan);
+        var roots = _roots = BuildRoots(plan);
         Tree.ItemsSource = roots;
 
         UpdateTotal();
@@ -123,6 +124,27 @@ public partial class ArchiveWorkspaceDialog : Window
             $"Approximate uncompressed size: {WorkspaceArchivePlan.FormatSize(_plan.SelectedBytes)}  " +
             $"({WorkspaceArchivePlan.FormatSize(_plan.AlwaysIncludedBytes)} of workspace files, {ticked} item(s) ticked)";
     }
+
+    /// <summary>
+    /// Ticks or unticks everything optional.
+    ///
+    /// <para>The plan's options are set FIRST and the tree second. A group that has never been
+    /// expanded is standing in for rows it has not built yet — writing through the node alone would
+    /// reach only the rows on screen, which is the shape this dialog's laziness makes easy to get
+    /// wrong.</para>
+    /// </summary>
+    private void SetAll(bool included)
+    {
+        if (_plan is null) return;
+
+        foreach (var option in _plan.Options) option.Selected = included;
+        foreach (var root in _roots) root.IsChecked = included;
+
+        UpdateTotal();
+    }
+
+    private void OnIncludeAllClick(object? sender, RoutedEventArgs e)  => SetAll(true);
+    private void OnIncludeNoneClick(object? sender, RoutedEventArgs e) => SetAll(false);
 
     private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(false);
     private void OnArchiveClick(object? sender, RoutedEventArgs e) => Close(true);

@@ -24,6 +24,13 @@ public sealed class ArchiveWriteResult
     /// rather than silently carried: the recipient WILL hit these, and finding out now is the point.
     /// </summary>
     public List<string> StillExternal { get; init; } = [];
+
+    /// <summary>
+    /// Files under <c>results/</c> that a document in the archive references and the user unticked.
+    /// The reference still resolves to the right PLACE, so nothing can be repointed — the file is
+    /// simply not there, and a Data Display that plots it will come up empty on the other machine.
+    /// </summary>
+    public List<string> ExcludedResults { get; init; } = [];
 }
 
 /// <summary>
@@ -69,28 +76,11 @@ public static class WorkspaceArchiveWriter
                         result.Repointed.Add(".cws");
                         continue;
                     }
-                }
-                else if (DocumentFileRefs.IsDocument(abs) && included.Count > 0)
-                {
-                    var docDir = Path.GetDirectoryName(Path.GetFullPath(abs))!;
-                    var rewritten = DocumentFileRefs.Rewrite(abs, referenced =>
-                        RefFromDocument(referenced, docDir, plan, included, result));
-                    if (rewritten is not null)
-                    {
-                        WriteText(zip, entryName, rewritten, result);
-                        result.Repointed.Add(rel);
-                        continue;
-                    }
-                }
-                else if (DocumentFileRefs.IsDocument(abs))
-                {
-                    // Nothing to repoint, but still worth NOTICING an outside reference.
-                    var docDir = Path.GetDirectoryName(Path.GetFullPath(abs))!;
-                    foreach (var referenced in DocumentFileRefs.Find(abs))
-                        RefFromDocument(referenced, docDir, plan, included, result);
+                    WriteFile(zip, entryName, abs, result);
+                    continue;
                 }
 
-                WriteFile(zip, entryName, abs, result);
+                WriteMaybeRepointed(zip, entryName, abs, rel, plan, included, result);
             }
 
             // ── Everything the user ticked ────────────────────────────────────
@@ -98,8 +88,13 @@ public static class WorkspaceArchiveWriter
             {
                 if (!option.IsDirectory)
                 {
-                    if (File.Exists(option.SourcePath))
-                        WriteFile(zip, $"{rootName}/{option.ArchivePath}", option.SourcePath, result);
+                    if (!File.Exists(option.SourcePath)) continue;
+
+                    // A ticked RESULT is a document too — a `.cdd` naming an outside Touchstone has
+                    // to be repointed exactly like a schematic, or it arrives plotting a path that
+                    // exists only on the sender's machine (2026-09-01).
+                    WriteMaybeRepointed(zip, $"{rootName}/{option.ArchivePath}", option.SourcePath,
+                                        option.ArchivePath, plan, included, result);
                     continue;
                 }
 
@@ -114,6 +109,42 @@ public static class WorkspaceArchiveWriter
 
         result.ZipBytes = WorkspaceArchiveScanner.SizeOf(zipPath);
         return result;
+    }
+
+    /// <summary>
+    /// Writes one file, repointing its references first when it is a document. A document with
+    /// nothing to change is written VERBATIM — re-serializing JSON that did not need to change would
+    /// churn every archive for no gain, and would drop anything this build's parser round-trips
+    /// imperfectly.
+    /// </summary>
+    private static void WriteMaybeRepointed(
+        ZipArchive zip, string entryName, string abs, string reportAs,
+        WorkspaceArchivePlan plan, Dictionary<string, string> included, ArchiveWriteResult result)
+    {
+        if (DocumentFileRefs.IsDocument(abs))
+        {
+            var docDir = Path.GetDirectoryName(Path.GetFullPath(abs))!;
+
+            if (included.Count > 0)
+            {
+                var rewritten = DocumentFileRefs.Rewrite(abs, plan.WorkspaceDir, (referenced, refBase) =>
+                    RefFromDocument(referenced, docDir, refBase, plan, included, result));
+                if (rewritten is not null)
+                {
+                    WriteText(zip, entryName, rewritten, result);
+                    result.Repointed.Add(reportAs);
+                    return;
+                }
+            }
+            else
+            {
+                // Nothing to repoint, but still worth NOTICING a reference that will not resolve.
+                foreach (var referenced in DocumentFileRefs.Find(abs, plan.WorkspaceDir))
+                    RefFromDocument(referenced, docDir, RefBase.Document, plan, included, result);
+            }
+        }
+
+        WriteFile(zip, entryName, abs, result);
     }
 
     // ── Reference mapping ─────────────────────────────────────────────────────
@@ -160,14 +191,28 @@ public static class WorkspaceArchiveWriter
     /// The replacement a DOCUMENT should carry: a path relative to the document's own folder, which
     /// is how a document reference resolves once the archive is unpacked anywhere at all.
     /// </summary>
+    /// <summary>
+    /// The replacement a DOCUMENT should carry, written against <paramref name="refBase"/> — the same
+    /// base the original was written against, which is the only base its loader will read the
+    /// replacement with. Getting this wrong is silent: the archive reports success and opens with a
+    /// reference pointing into a folder that does not exist.
+    /// </summary>
     private static string? RefFromDocument(
-        string referenced, string documentDir, WorkspaceArchivePlan plan,
+        string referenced, string documentDir, RefBase refBase, WorkspaceArchivePlan plan,
         Dictionary<string, string> included, ArchiveWriteResult result)
     {
         var full = Path.GetFullPath(referenced);
 
         // Inside the workspace already — it travels untouched, and rewriting it would only churn.
-        if (WorkspaceArchiveScanner.IsInside(full, plan.WorkspaceDir)) return null;
+        if (WorkspaceArchiveScanner.IsInside(full, plan.WorkspaceDir))
+        {
+            // …unless the user unticked it. Then it is not a reference to repoint, it is a file the
+            // recipient will not have, and the only useful thing left to do is say so.
+            var excluded = plan.Options.FirstOrDefault(
+                o => !o.Selected && DocumentFileRefs.PathComparer.Equals(Path.GetFullPath(o.SourcePath), full));
+            if (excluded is not null && !result.ExcludedResults.Contains(full)) result.ExcludedResults.Add(full);
+            return null;
+        }
 
         if (WorkspaceRelativeDestination(full, included) is not { } destination)
         {
@@ -176,7 +221,15 @@ public static class WorkspaceArchiveWriter
         }
 
         var destinationAbs = Path.Combine(plan.WorkspaceDir, destination.Replace('/', Path.DirectorySeparatorChar));
-        return Path.GetRelativePath(documentDir, destinationAbs).Replace('\\', '/');
+
+        var baseDir = refBase switch
+        {
+            RefBase.Workspace => plan.WorkspaceDir,
+            RefBase.Results   => Path.Combine(plan.WorkspaceDir, WorkspaceArchiveScanner.ResultsFolder),
+            _                 => documentDir,
+        };
+
+        return Path.GetRelativePath(baseDir, destinationAbs).Replace('\\', '/');
     }
 
     /// <summary>

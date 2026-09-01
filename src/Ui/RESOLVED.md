@@ -1,5 +1,80 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Archive Workspace: the references it never saw, and the results it left behind (2026-09-01)
+
+Owner report: a colleague archived a workspace and sent it over; it could not be run, because it
+arrived **without its Touchstone files**. The same report asked for `results/` `.npy` to travel too,
+so a `.cdd` renders on arrival without the recipient re-simulating.
+
+Two of the three are real defects, both **silent** — the archive reported success, and the loss only
+showed up on the other machine. Reproduced with failing tests before anything was changed, so this
+was not user error.
+
+### Bug 1 — a relative reference was only ever tried against the DOCUMENT's own folder
+
+`DocumentFileRefs.TryResolve` resolved a stored reference two ways: rooted as-is, or relative to the
+document's directory. **circuitRF has three conventions, not one**, and the walk only knew the least
+common of them:
+
+| Reference | Written against | Written by / read by |
+|---|---|---|
+| bitmap underlay `ImagePathRef` | the document's own folder | `LayoutPersistence` / `SymbolPersistence` |
+| SnP component `File` parameter | the **workspace root** | `SnpPathPolicy.ToStored` / `Elaborator.ResolveSnpFilePath` |
+| Data Display data source | the **`results/` folder** | `DataDisplayConfig.SourceAliases` |
+
+So `"../refdata/dut.s2p"` in `ws/Amp/schematic/Amp.csch` — the ordinary stored form for a Touchstone
+one level above the workspace, which `SnpPathPolicy` explicitly permits up to two levels — resolved
+to `ws/Amp/schematic/../refdata/dut.s2p`, which does not exist. The scan therefore concluded the
+document referenced nothing, the dialog offered nothing, and the file never travelled. **The failure
+is invisible on the sending machine**, where the absolute path it came from still resolves.
+
+Resolution now tries all three bases and **reports which one answered**, and the writer repoints
+against *that same base* — the only one the reference's own loader will read the replacement with.
+
+**The one place a property name is consulted, and why it cannot be avoided:** an ABSOLUTE reference
+carries no evidence of the convention its loader uses, and the conventions disagree, so a single
+global rule for repointing is wrong whichever one it picks. One schematic can hold both (a bitmap and
+an SnP `File`). `DocumentFileRefs.BaseForOpaqueRef` therefore names the two non-default cases — a
+parameter object whose `Name` is `File` → workspace root; a `.cdd` → `results/` — and everything else
+keeps the document-folder rule. Discovery stays name-free; only the write-back base is named.
+
+### Bug 2 — a Data Display's own sources were never scanned, and never repointed
+
+`AddExternalFiles` walked `plan.AlwaysIncluded` only. A `.cdd` lives under `results/`, which makes it
+an **option**, not unconditional material — so no `.cdd` was ever read for references, and the
+writer's repointing pass (also keyed to `AlwaysIncluded`) copied every ticked `.cdd` **verbatim**,
+still naming paths that exist only on the sender's machine.
+
+Compounding it: a `.cdd` stores `SourceAliases` as a map **keyed by each source's path**, and the JSON
+walk visited values only. `Walk` now visits keys as well, re-keying the object in place while
+preserving entry order.
+
+### The `.npy` default, and what it was actually trading
+
+`ClassifyResult` left `.npy`/`.mat` off "because the recipient can re-simulate it". Re-simulating
+needs the whole kit chain; the recipient of an archive frequently has none of it, and a `.cdd` with
+no data behind it renders nothing. Every `results/` file is now ticked by default, `.spl`/`.lpcwave`
+gained their own **Loadpull** heading, and the dialog grew **Include All / Include None** so the bulk
+can still be dropped in one click. Nothing is forced: rows remain individually tickable under their
+expanders.
+
+### What is now reported rather than left to be discovered
+
+- an external reference the user unticked → `StillExternal` (already existed)
+- a `results/` file a document plots that the user unticked → **`ExcludedResults`** (new). Nothing is
+  repointable here — the path is right, the file is simply absent — so the only useful action is to
+  say so before the zip is handed over.
+
+### Traps for anyone editing this again
+
+- **`Include All` must write the OPTIONS, not just the tree.** A collapsed `ArchiveTreeNode` stands in
+  for rows it has not built; pushing state through visible nodes alone reaches only what is on screen.
+- **A document with nothing to change is archived verbatim.** Re-serializing JSON that did not need to
+  change would churn every archive and would drop anything this build's parser round-trips imperfectly.
+- `src/Ui/CLAUDE.md`'s archive paragraph still says references are repointed "document-relative in a
+  document". That was true and is now only one of three cases.
+
+
 ## Two documents rendering one model, and a tab that lost its extension (2026-09-01)
 
 Two owner reports, filed together as "could be related". They are not the same defect, but they are

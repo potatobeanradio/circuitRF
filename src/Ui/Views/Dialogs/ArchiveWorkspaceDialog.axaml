@@ -15,9 +15,23 @@
         <SelectableTextBlock Grid.Row="0" x:Name="HeaderText"
                              FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"/>
 
-        <SelectableTextBlock Grid.Row="1" x:Name="SubHeaderText"
-                             FontSize="11" Opacity="0.7" TextWrapping="Wrap" Margin="0,4,0,8"
-                             Text="Every cell, technology and workspace file is included automatically. Tick anything below that should travel with it."/>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,4,0,8">
+            <SelectableTextBlock Grid.Column="0" x:Name="SubHeaderText"
+                                 FontSize="11" Opacity="0.7" TextWrapping="Wrap" VerticalAlignment="Center"
+                                 Text="Every cell, technology and workspace file is included automatically. Everything below is included too — untick anything that should not travel."/>
+
+            <!-- All-or-nothing, next to the tree that does it row by row: the two extremes are one
+                 click each, and the expanders are still there for the file-by-file choice. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                        VerticalAlignment="Center" Margin="12,0,0,0">
+                <Button Content="Include All" FontSize="11" Padding="8,3"
+                        ToolTip.Tip="Tick every kit, referenced file and result"
+                        Click="OnIncludeAllClick"/>
+                <Button Content="Include None" FontSize="11" Padding="8,3"
+                        ToolTip.Tip="Untick everything optional — the workspace's own files still travel"
+                        Click="OnIncludeNoneClick"/>
+            </StackPanel>
+        </Grid>
 
         <Border Grid.Row="2" BorderThickness="1" CornerRadius="3"
                 BorderBrush="{DynamicResource SystemBaseLowColor}">

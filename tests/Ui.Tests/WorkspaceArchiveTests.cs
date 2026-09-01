@@ -99,18 +99,23 @@ public sealed class WorkspaceArchiveTests : IDisposable
     }
 
     [Theory]
-    [InlineData("Amp.cdd",  "Data Displays", true)]
-    [InlineData("em.s2p",   "Touchstone",    true)]
-    [InlineData("x.s16p",   "Touchstone",    true)]
-    [InlineData("Amp.npy",  "Analysis",      false)]
-    [InlineData("notes.txt","Other",         false)]
-    public void ResultsAreGroupedByExtension_WithTheOwnersDefaults(string file, string group, bool selected)
+    [InlineData("Amp.cdd",     "Data Displays")]
+    [InlineData("em.s2p",      "Touchstone")]
+    [InlineData("x.s16p",      "Touchstone")]
+    [InlineData("sweep.spl",   "Loadpull")]
+    [InlineData("g.lpcwave",   "Loadpull")]
+    [InlineData("Amp.npy",     "Analysis")]
+    [InlineData("Amp.mat",     "Analysis")]
+    [InlineData("notes.txt",   "Other")]
+    public void ResultsAreGroupedByExtension_AndEveryGroupIsOnByDefault(string file, string group)
     {
-        // .npy is off because the recipient can re-simulate it; .cdd is authored work; a Touchstone
-        // in results/ is very often EM output that costs hours to reproduce.
+        // Owner, 2026-09-01: a colleague could not run what they were sent, and a `.cdd` that arrives
+        // with no `.npy` behind it renders nothing at all — so what is being SENT is the result, and
+        // every results file is ticked. The earlier "the recipient can re-simulate it" default for
+        // `.npy` assumed the recipient had the whole kit chain to re-simulate WITH.
         var (g, s) = WorkspaceArchiveScanner.ClassifyResult(file);
         Assert.Equal(group, g);
-        Assert.Equal(selected, s);
+        Assert.True(s);
     }
 
     [Fact]
@@ -121,8 +126,7 @@ public sealed class WorkspaceArchiveTests : IDisposable
         var results = plan.Results.ToList();
         Assert.Equal(4, results.Count);
         Assert.All(results, r => Assert.StartsWith("results/", r.ArchivePath));
-        Assert.True(results.Single(r => r.DisplayName == "Amp.cdd").Selected);
-        Assert.False(results.Single(r => r.DisplayName == "Amp.npy").Selected);
+        Assert.All(results, r => Assert.True(r.Selected));         // every one, by default
         Assert.All(results, r => Assert.True(r.SizeBytes >= 0));   // a size to show the user
     }
 
@@ -399,6 +403,128 @@ public sealed class WorkspaceArchiveTests : IDisposable
     }
 
     [Fact]
+    public void AWorkspaceRelativeSnpRefPointingOutsideTheWorkspace_IsOffered_AndRepointedAgainstTheWorkspaceRoot()
+    {
+        // The bug a colleague hit (2026-09-01): "I couldn't run it because it was missing its
+        // Touchstone files." SnpPathPolicy stores an SnP `File` parameter WORKSPACE-relative and
+        // tolerates up to two levels ABOVE the root, and Elaborator.ResolveSnpFilePath reads it back
+        // the same way — but the archive scan only ever tried the DOCUMENT's own folder, so this
+        // file resolved to nothing, was never offered, and never travelled.
+        var touch = File_("refdata/dut.s2p", "! touchstone");
+        var ws    = BuildWorkspace();
+        File_("ws/Amp/schematic/Amp.csch", """
+            {"FormatVersion":2,"Components":[{"InstanceName":"S1","Parameters":[
+              {"Name":"File","Expression":"../refdata/dut.s2p"}]}]}
+            """);
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+
+        var offered = Assert.Single(plan.ExternalFiles, e => e.SourcePath == touch);
+        Assert.True(offered.Selected);
+
+        var zip = Path.Combine(_root, "out.zip");
+        WorkspaceArchiveWriter.Write(plan, zip);
+
+        Assert.Contains("ws/external/dut.s2p", EntryNames(zip));
+
+        // Repointed against the WORKSPACE ROOT, because that is the base the elaborator will resolve
+        // it with. A document-relative "../../external/dut.s2p" would read as <ws>/../../external/…
+        // and open with nothing behind the component.
+        var csch = JsonNode.Parse(ReadEntry(zip, "ws/Amp/schematic/Amp.csch"))!;
+        Assert.Equal("external/dut.s2p",
+                     csch["Components"]![0]!["Parameters"]![0]!["Expression"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void AnAbsoluteSnpRef_IsRepointedAgainstTheWorkspaceRootToo()
+    {
+        // SnpPathPolicy falls back to an absolute path for a file more than two levels above the
+        // workspace — which is the ordinary case for a shared reference library. An absolute path
+        // says nothing about how its replacement will be READ, so the `File` parameter's own
+        // convention decides.
+        var touch = File_("far/away/lib/dut.s2p", "! touchstone");
+        var ws    = BuildWorkspace();
+        File_("ws/Amp/schematic/Amp.csch", $$"""
+            {"FormatVersion":2,"Components":[{"Parameters":[
+              {"Name":"File","Expression":"{{touch.Replace("\\", "/")}}"}]}]}
+            """);
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+        var zip  = Path.Combine(_root, "out.zip");
+        WorkspaceArchiveWriter.Write(plan, zip);
+
+        var csch = JsonNode.Parse(ReadEntry(zip, "ws/Amp/schematic/Amp.csch"))!;
+        Assert.Equal("external/dut.s2p",
+                     csch["Components"]![0]!["Parameters"]![0]!["Expression"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ABitmapKeepsTheDocumentRelativeConvention_WhileAnSnpInTheSameFileGetsTheWorkspaceOne()
+    {
+        // The two conventions live side by side in one schematic, so a single global rule for
+        // repointing is wrong whichever one it picks.
+        var png   = File_("elsewhere/underlay.png", "PNG");
+        var touch = File_("elsewhere/dut.s2p", "! touchstone");
+        var ws    = BuildWorkspace();
+        File_("ws/Amp/schematic/Amp.csch", $$"""
+            {"FormatVersion":2,
+             "Shapes":[{"$type":"Bitmap","ImagePathRef":"{{png.Replace("\\", "/")}}"}],
+             "Components":[{"Parameters":[{"Name":"File","Expression":"{{touch.Replace("\\", "/")}}"}]}]}
+            """);
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+        var zip  = Path.Combine(_root, "out.zip");
+        WorkspaceArchiveWriter.Write(plan, zip);
+
+        var csch = JsonNode.Parse(ReadEntry(zip, "ws/Amp/schematic/Amp.csch"))!;
+        Assert.Equal("../../external/underlay.png", csch["Shapes"]![0]!["ImagePathRef"]!.GetValue<string>());
+        Assert.Equal("external/dut.s2p", csch["Components"]![0]!["Parameters"]![0]!["Expression"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ADataDisplaysOwnSources_AreFoundAndRepointed_EvenThoughItLivesUnderResults()
+    {
+        // A `.cdd` is an OPTION, not unconditional material, so the scan's document walk never
+        // reached one and the writer never repointed one — an archive carried the display and left
+        // its data behind (2026-09-01). The reference sits in a map KEY, which a values-only walk
+        // cannot see either.
+        var meas = File_("elsewhere/meas.s2p", "! touchstone");
+        var ws   = BuildWorkspace();
+        File_("ws/results/Amp.cdd",
+            "{\"FormatVersion\":2,\"SelectedDataSource\":\"" + meas.Replace("\\", "/") + "\"," +
+            "\"SourceAliases\":{\"" + meas.Replace("\\", "/") + "\":\"measured\"}}");
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+
+        Assert.Single(plan.ExternalFiles, e => e.SourcePath == meas);
+
+        var zip = Path.Combine(_root, "out.zip");
+        var result = WorkspaceArchiveWriter.Write(plan, zip);
+
+        Assert.Contains("ws/external/meas.s2p", EntryNames(zip));
+        Assert.Contains("results/Amp.cdd", result.Repointed);
+
+        // Relative to results/, which is how a Data Display reads a data source back.
+        var cdd = JsonNode.Parse(ReadEntry(zip, "ws/results/Amp.cdd"))!.AsObject();
+        Assert.Equal("../external/meas.s2p", cdd["SelectedDataSource"]!.GetValue<string>());
+        Assert.Equal("measured", cdd["SourceAliases"]!["../external/meas.s2p"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void AResultTheUserUnticked_ButADisplayPlots_IsReportedRatherThanSilentlyMissing()
+    {
+        var ws = BuildWorkspace();
+        File_("ws/results/Amp.cdd", """{"FormatVersion":2,"SelectedDataSource":"Amp.npy"}""");
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);
+        plan.Results.Single(r => r.DisplayName == "Amp.npy").Selected = false;
+
+        var result = WorkspaceArchiveWriter.Write(plan, Path.Combine(_root, "out.zip"));
+
+        Assert.Contains(result.ExcludedResults, p => p.EndsWith("Amp.npy", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AnExpressionThatIsNotAPath_IsNotMistakenForOne()
     {
         var ws = BuildWorkspace();
@@ -439,7 +565,7 @@ public sealed class WorkspaceArchiveTests : IDisposable
     }
 
     [Fact]
-    public void OnlyTickedResultsAreWritten()
+    public void EveryResultIsWrittenByDefault_AndUntickingOneLeavesItOut()
     {
         var ws   = BuildWorkspace();
         var plan = WorkspaceArchiveScanner.Scan(ws);
@@ -450,8 +576,16 @@ public sealed class WorkspaceArchiveTests : IDisposable
         var names = EntryNames(zip);
         Assert.Contains("ws/results/Amp.cdd", names);
         Assert.Contains("ws/results/em.s2p", names);
-        Assert.DoesNotContain("ws/results/Amp.npy", names);      // off by default
-        Assert.DoesNotContain("ws/results/notes.txt", names);
+        Assert.Contains("ws/results/Amp.npy", names);            // the data the .cdd plots
+        Assert.Contains("ws/results/notes.txt", names);
+
+        // …and the choice is still the user's, file by file.
+        plan.Results.Single(r => r.DisplayName == "Amp.npy").Selected = false;
+        var zip2 = Path.Combine(_root, "out2.zip");
+        WorkspaceArchiveWriter.Write(plan, zip2);
+
+        Assert.DoesNotContain("ws/results/Amp.npy", EntryNames(zip2));
+        Assert.Contains("ws/results/Amp.cdd", EntryNames(zip2));
     }
 
     [Fact]
@@ -584,6 +718,59 @@ public sealed class WorkspaceArchiveTests : IDisposable
     }
 
     [Fact]
+    public void TheDefaultArchive_ArrivesCompleteOnAnotherMachine()
+    {
+        // The owner's own check (2026-09-01): "double check that these are getting archived — I
+        // didn't get all of the files I needed." One workspace carrying every reference shape at
+        // once, archived with NOTHING touched in the dialog, and unpacked somewhere else.
+        var known    = File_("elsewhere/measured.s2p", "! a Known File, outside the workspace");
+        var wsRel    = File_("refdata/dut.s2p",        "! workspace-relative, one level above");
+        var absolute = File_("far/away/lib/pad.s2p",   "! too far above to be relative");
+
+        var ws = BuildWorkspace("ws", $$"""
+            {"FormatVersion":2,"LibraryRefs":[],"KnownFiles":["{{known.Replace("\\", "/")}}"]}
+            """);
+
+        File_("ws/Amp/schematic/Amp.csch", $$"""
+            {"FormatVersion":2,"Components":[
+              {"InstanceName":"S1","Parameters":[{"Name":"File","Expression":"../refdata/dut.s2p"}]},
+              {"InstanceName":"S2","Parameters":[{"Name":"File","Expression":"{{absolute.Replace("\\", "/")}}"}]}]}
+            """);
+        File_("ws/results/Amp.cdd", """{"FormatVersion":2,"SelectedDataSource":"Amp.npy"}""");
+
+        var plan = WorkspaceArchiveScanner.Scan(ws);          // defaults only — nothing is ticked here
+        var zip  = Path.Combine(_root, "out.zip");
+        WorkspaceArchiveWriter.Write(plan, zip);
+
+        var opened = WorkspaceArchiveExtractor.Extract(zip, Dir("landing"));
+        var root   = opened.WorkspaceDir;
+
+        // Every external reference travelled …
+        foreach (var name in new[] { "measured.s2p", "dut.s2p", "pad.s2p" })
+            Assert.True(System.IO.File.Exists(Path.Combine(root, "external", name)), $"missing external/{name}");
+
+        // … the results the displays plot travelled …
+        Assert.True(System.IO.File.Exists(Path.Combine(root, "results", "Amp.npy")));
+        Assert.True(System.IO.File.Exists(Path.Combine(root, "results", "Amp.cdd")));
+
+        // … and each reference RESOLVES the way its own loader resolves it, from the new location.
+        var cws = JsonNode.Parse(System.IO.File.ReadAllText(opened.CwsPath!))!.AsObject();
+        var storedKnown = cws["KnownFiles"]![0]!.GetValue<string>();
+        Assert.True(System.IO.File.Exists(
+            CircuitRF.Ui.Schematic.WorkspaceRefs.Resolve(storedKnown, root)), storedKnown);
+
+        var comps = JsonNode.Parse(System.IO.File.ReadAllText(
+            Path.Combine(root, "Amp", "schematic", "Amp.csch")))!["Components"]!.AsArray();
+        foreach (var comp in comps)
+        {
+            // Elaborator.ResolveSnpFilePath: relative resolves against the WORKSPACE ROOT.
+            var stored = comp!["Parameters"]![0]!["Expression"]!.GetValue<string>();
+            Assert.False(Path.IsPathRooted(stored), $"still absolute: {stored}");
+            Assert.True(System.IO.File.Exists(Path.Combine(root, stored.Replace('/', Path.DirectorySeparatorChar))), stored);
+        }
+    }
+
+    [Fact]
     public void UnarchivingOntoAnExistingWorkspace_RefusesRatherThanMerging()
     {
         var ws  = BuildWorkspace();
@@ -614,6 +801,26 @@ public sealed class WorkspaceArchiveTests : IDisposable
 
         Assert.Contains(opened.Rejected, r => r.Contains("escaped"));
         Assert.False(System.IO.File.Exists(Path.Combine(_root, "escaped.txt")));
+    }
+
+    [Fact]
+    public void TickingAGroupThatWasNeverOpened_StillReachesTheRowsItStandsFor()
+    {
+        // What Include All / Include None rely on. A collapsed heading holds a placeholder, not its
+        // real rows, so a group that decides for rows it has not built has to write through to the
+        // OPTIONS — the rows are built later and read their state from there.
+        var plan = WorkspaceArchiveScanner.Scan(BuildWorkspace());
+        var node = ArchiveTreeNode.Group("Results", () => plan.Results.Select(ArchiveTreeNode.Leaf));
+
+        node.IsChecked = false;
+        Assert.All(plan.Results, r => Assert.False(r.Selected));
+
+        node.IsChecked = true;
+        Assert.All(plan.Results, r => Assert.True(r.Selected));
+
+        // …and opening it afterwards shows what was decided, rather than the state it was built with.
+        node.IsExpanded = true;
+        Assert.All(node.Children, c => Assert.Equal(true, c.IsChecked));
     }
 
     [Fact]

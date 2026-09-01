@@ -1418,6 +1418,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // that will arrive broken, and the user is the only one who can still do anything about it.
             foreach (var external in result.StillExternal)
                 Messages.Warning($"Not included, so this reference will not resolve for the recipient: {external}");
+
+            // The same warning for the other way a reference arrives dead: a results file a document
+            // plots that the user unticked. Nothing is broken about the PATH, so the repointing pass
+            // has nothing to say about it — only the writer knows the file is not in the zip.
+            foreach (var excluded in result.ExcludedResults)
+                Messages.Warning($"Not included, so a display that plots it will come up empty: {excluded}");
         }
         catch (Exception ex)
         {

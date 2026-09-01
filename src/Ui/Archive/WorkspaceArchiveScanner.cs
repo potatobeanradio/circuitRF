@@ -72,12 +72,15 @@ public static class WorkspaceArchiveScanner
     // ── Defaults ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Whether a results file starts ticked, and which heading it sits under.
+    /// Which heading a results file sits under, and whether it starts ticked.
     ///
-    /// <para>The owner's rule, and its reasoning: analysis output can be re-simulated by whoever
-    /// receives the archive, so <c>.npy</c> is off. A Data Display is authored work, not output, so
-    /// <c>.cdd</c> is on. A Touchstone in <c>results/</c> is very often EM output that costs hours to
-    /// reproduce, so it is on too.</para>
+    /// <para><b>Everything under <c>results/</c> is ticked by default</b> (owner, 2026-09-01). The
+    /// earlier rule left <c>.npy</c> off on the grounds that the recipient can re-simulate it — but
+    /// re-simulating needs the whole kit chain, and a <c>.cdd</c> that arrives with no data behind it
+    /// renders nothing at all. What the recipient is being sent is the RESULT; an archive that
+    /// carries the Data Display and drops the data it plots is the one combination that is never
+    /// wanted. The size is on every row and the group headings untick in one click, so the cost of
+    /// this default is one tick for the rare sender who does not want the bulk.</para>
     /// </summary>
     public static (string Group, bool Selected) ClassifyResult(string fileName)
     {
@@ -91,9 +94,15 @@ public static class WorkspaceArchiveScanner
 
         if (string.Equals(ext, ".npy", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(ext, ".mat", StringComparison.OrdinalIgnoreCase))
-            return ("Analysis", false);
+            return ("Analysis", true);
 
-        return ("Other", false);
+        // The loadpull interchange a Data Display reads back (see the CLI's `lp` verb) — data, not
+        // clutter, and unreproducible without re-running the sweep that made it.
+        if (string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase))
+            return ("Loadpull", true);
+
+        return ("Other", true);
     }
 
     /// <summary>`.s1p`…`.s99p`, plus the `.ts` spelling.</summary>
@@ -110,7 +119,7 @@ public static class WorkspaceArchiveScanner
     }
 
     /// <summary>Order the dialog shows the results headings in.</summary>
-    public static readonly string[] ResultGroupOrder = ["Data Displays", "Touchstone", "Analysis", "Other"];
+    public static readonly string[] ResultGroupOrder = ["Data Displays", "Touchstone", "Loadpull", "Analysis", "Other"];
 
     // ── The scan ──────────────────────────────────────────────────────────────
 
@@ -288,12 +297,19 @@ public static class WorkspaceArchiveScanner
                     externals.TryAdd(abs, "Known File");
             }
 
-        foreach (var rel in plan.AlwaysIncluded)
+        // EVERY document in the archive is read, not only the unconditional ones. A `.cdd` lives
+        // under `results/` and is therefore an OPTION, so scanning `AlwaysIncluded` alone was blind
+        // to exactly the references a Data Display needs to render without re-simulating — which is
+        // the other half of why an archive arrived with no data behind its displays (2026-09-01).
+        var documents = plan.AlwaysIncluded
+            .Select(rel => Path.Combine(plan.WorkspaceDir, rel.Replace('/', Path.DirectorySeparatorChar)))
+            .Concat(plan.Options.Where(o => o.Kind == ArchiveOptionKind.Result).Select(o => o.SourcePath));
+
+        foreach (var abs in documents)
         {
-            var abs = Path.Combine(plan.WorkspaceDir, rel.Replace('/', Path.DirectorySeparatorChar));
             if (!DocumentFileRefs.IsDocument(abs)) continue;
 
-            foreach (var referenced in DocumentFileRefs.Find(abs))
+            foreach (var referenced in DocumentFileRefs.Find(abs, plan.WorkspaceDir))
                 if (!IsInside(referenced, plan.WorkspaceDir))
                     externals.TryAdd(referenced, Path.GetFileName(abs));
         }
