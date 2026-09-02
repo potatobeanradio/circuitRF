@@ -26,8 +26,8 @@ namespace CircuitRF.Ui.Schematic;
 /// </list>
 ///
 /// <h3>What the reference carries, and what it deliberately does not</h3>
-/// <para>The reference is <c>pitch | pinconfig | name | file</c> — every input the symbol depends
-/// on, in a form derived from the instance's own parameters on each access
+/// <para>The reference is <c>pitch | pinconfig | section | name | file</c> — every input the symbol
+/// depends on, in a form derived from the instance's own parameters on each access
 /// (<c>EditableComponent.ExternalSymbolRef</c>) and never written to a file. The FILE'S CONTENT is
 /// not in it and cannot be: it is read through <see cref="SpiceModelPeek"/>, which keys its own
 /// cache on the file's mtime, so editing the <c>.subckt</c> and returning to the schematic redraws
@@ -53,6 +53,12 @@ public static class SpiceModelSymbolProvider
     public const string NameParameter = "Name";
 
     /// <summary>
+    /// The instance parameter naming which <c>.lib</c> SECTION of that file to read. Blank — the
+    /// default, and what every instance placed before sections existed carries — is the whole file.
+    /// </summary>
+    public const string SectionParameter = "Section";
+
+    /// <summary>
     /// The parameters the SpiceModel's own dialog panel owns — which file, which definition, and how
     /// the box is drawn. <b>One definition, read by three places</b>: the panel (to keep them out of
     /// the generic rows), the extractor (to keep them out of the netlist), and the row adopter (to
@@ -60,7 +66,7 @@ public static class SpiceModelSymbolProvider
     /// hand-maintained lists, which is the shape of bug this repository has already paid for twice.
     /// </summary>
     public static bool IsPanelParameter(string? name)
-        => name is FileParameter or NameParameter or "PinConfig" or "Pitch";
+        => name is FileParameter or NameParameter or SectionParameter or "PinConfig" or "Pitch";
 
     // ── The reference form ────────────────────────────────────────────────────
 
@@ -70,27 +76,35 @@ public static class SpiceModelSymbolProvider
     ///
     /// <para><b>The file goes LAST, positionally</b>, and the reference is split with a field limit,
     /// so a path containing the separator cannot be mistaken for one of the leading fields. The
-    /// leading three are all drawn from closed vocabularies.</para>
+    /// leading fields are a closed vocabulary each, or a bare <c>.lib</c>/<c>.subckt</c> token.</para>
+    ///
+    /// <para><b>The SECTION is part of the reference and cannot be left out.</b> Two sections of one
+    /// file are two different sets of definitions, so a reference that named only the file and the
+    /// definition would be the same string for both — and <see cref="CellSymbolResolver"/>'s cache,
+    /// which is keyed on exactly this string, would hand back the previous section's symbol when the
+    /// section is the only thing that changed.</para>
     /// </summary>
-    public static string RefFor(string? file, string? name, SnpPinConfig cfg, SnpPitch pitch)
-        => Scheme + pitch + Separator + cfg + Separator
+    public static string RefFor(string? file, string? name, SnpPinConfig cfg, SnpPitch pitch,
+                               string? section = null)
+        => Scheme + pitch + Separator + cfg + Separator + (section ?? "").Trim() + Separator
                   + (name ?? "").Trim() + Separator + (file ?? "").Trim();
 
     /// <summary>True when this reference names a SPICE file's definition.</summary>
     public static bool IsSpiceModelRef(string? symbolRef)
         => symbolRef is not null && symbolRef.StartsWith(Scheme, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The four fields of a reference, or null when it is not one.</summary>
-    public static (SnpPitch Pitch, SnpPinConfig Config, string Name, string File)? Parse(string? symbolRef)
+    /// <summary>The five fields of a reference, or null when it is not one.</summary>
+    public static (SnpPitch Pitch, SnpPinConfig Config, string Section, string Name, string File)?
+        Parse(string? symbolRef)
     {
         if (!IsSpiceModelRef(symbolRef)) return null;
 
-        var fields = symbolRef![Scheme.Length..].Split(Separator, 4);
-        if (fields.Length < 4) return null;
+        var fields = symbolRef![Scheme.Length..].Split(Separator, 5);
+        if (fields.Length < 5) return null;
 
         return (Enum.TryParse<SnpPitch>(fields[0], ignoreCase: true, out var pitch) ? pitch : SnpPitch.Loose,
                 Enum.TryParse<SnpPinConfig>(fields[1], ignoreCase: true, out var cfg) ? cfg : SnpPinConfig.Standard,
-                fields[2], fields[3]);
+                fields[2], fields[3], fields[4]);
     }
 
     // ── Path resolution ───────────────────────────────────────────────────────
@@ -142,7 +156,7 @@ public static class SpiceModelSymbolProvider
         string? path = ResolvePath(r.File, schematicDir);
         if (path is null) return CellSymbolResolution.NotFoundResult;
 
-        var file = SpiceModelPeek.Read(path);
+        var file = SpiceModelPeek.Read(path, r.Section);
         if (file.Error is not null || file.Definitions.Count == 0)
             return CellSymbolResolution.NotFoundResult;
 

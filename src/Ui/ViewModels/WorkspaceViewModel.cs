@@ -9532,15 +9532,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // can build should not first ask what to call the cell it is not going to create. This is
         // CopyKnownFileToWorkspaceAsCellAsync's own rule, and for the same reason.
         var scan = SpiceCellImport.Scan(modelPath);
-        if (scan.Error is { } error)
+
+        string fileName = Path.GetFileName(modelPath);
+
+        // A file that declares `.lib` SECTIONS and was read with none chosen has read nothing on
+        // purpose — sections are alternatives. So it reaches the picker (which is where the section
+        // is chosen) rather than the "holds nothing" refusal, which would be true of the read and
+        // false of the file.
+        bool offersSections = scan.SectionNames.Count > 0;
+
+        if (scan.Error is { } error && !offersSections)
         {
             Messages.Error(error, modelPath);
             return;
         }
 
-        string fileName = Path.GetFileName(modelPath);
-
-        if (scan.Supported.Count == 0)
+        if (scan.Supported.Count == 0 && !offersSections)
         {
             // Every refusal, not just the first: a kit file holding four MOSFETs and a bead should
             // say so once rather than one card at a time across four attempts.
@@ -9557,28 +9564,45 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // One buildable definition in a file of one is not a choice, and a dialog offering a single
         // option is a click that asks nothing. Anything else goes to the picker — which lists the
-        // refused ones too, with their reasons.
-        var picked = scan.Candidates.Count == 1
-            ? scan.Supported[0]
-            : await SpiceCellPickerDialog.ShowAsync(mainWindow, fileName, scan.Candidates);
-        if (picked is not { } chosen) return;
+        // refused ones too, with their reasons, and offers the sections when there are any.
+        var pick = scan.Candidates.Count == 1 && !offersSections
+            ? new SpiceCellPick([scan.Supported[0]], scan, null)
+            : await SpiceCellPickerDialog.ShowAsync(mainWindow, modelPath, scan);
+        if (pick is null) return;
 
-        var dialog = new InputNameDialog(
-            "Import SPICE Definition as Cell", "Cell name:", SpiceCellImport.SuggestCellName(chosen));
-        var name = await dialog.ShowDialog<string?>(mainWindow);
-        if (name is null) return;
+        // ONE definition is still named by the user — that is the gesture as it has always been.
+        // SEVERAL are not: a dialog per definition is worse than none, and a .subckt name is already
+        // a folder name in every file that ships one, which is why it is the suggestion in the
+        // single case too.
+        var chosen = new List<(SpiceCellCandidate Candidate, string CellName)>();
 
-        if (NameValidator.Validate(name) is { } reason)
+        if (pick.Candidates.Count == 1)
         {
-            Messages.Error($"Invalid cell name: {reason}");
-            return;
+            var dialog = new InputNameDialog(
+                "Import SPICE Definition as Cell", "Cell name:",
+                SpiceCellImport.SuggestCellName(pick.Candidates[0]));
+            var name = await dialog.ShowDialog<string?>(mainWindow);
+            if (name is null) return;
+
+            if (NameValidator.Validate(name) is { } reason)
+            {
+                Messages.Error($"Invalid cell name: {reason}");
+                return;
+            }
+
+            chosen.Add((pick.Candidates[0], name));
+        }
+        else
+        {
+            foreach (var c in pick.Candidates)
+                chosen.Add((c, SpiceCellImport.SuggestCellName(c)));
         }
 
         string workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
 
         try
         {
-            var result = SpiceCellImport.Write(workspaceDir, name, chosen, scan);
+            var result = SpiceCellImport.WriteMany(workspaceDir, chosen, pick.Scan, modelPath);
 
             _factory.ProjectTreeTool?.Refresh();
 

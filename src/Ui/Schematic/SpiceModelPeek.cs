@@ -75,7 +75,7 @@ public sealed record SpiceModelFile(
 /// </summary>
 public static class SpiceModelPeek
 {
-    private sealed record CacheKey(string Path);
+    private sealed record CacheKey(string Path, string Section);
     private sealed record CacheEntry(DateTime Mtime, long Length, SpiceModelFile File);
 
     private static readonly Dictionary<CacheKey, CacheEntry> _cache = new();
@@ -91,7 +91,12 @@ public static class SpiceModelPeek
     /// Reads <paramref name="absolutePath"/>, or returns a file with <see cref="SpiceModelFile.Error"/>
     /// set. <b>Never throws</b> — this runs inside a render-path resolve and inside a dialog refresh.
     /// </summary>
-    public static SpiceModelFile Read(string? absolutePath)
+    /// <param name="section">
+    /// Which <c>.lib</c> section of the file to read — a placed instance's <c>Section</c> parameter.
+    /// Null or blank is the whole file, which is what every instance placed before sections existed
+    /// carries and therefore has to stay the default.
+    /// </param>
+    public static SpiceModelFile Read(string? absolutePath, string? section = null)
     {
         if (string.IsNullOrWhiteSpace(absolutePath))
             return SpiceModelFile.Empty with { Error = "No model file is set." };
@@ -112,12 +117,15 @@ public static class SpiceModelPeek
             return SpiceModelFile.Empty with { Error = $"{absolutePath} could not be read: {ex.Message}" };
         }
 
-        var key = new CacheKey(absolutePath);
+        // The section is part of the KEY, not of the value: one file read for two sections is two
+        // different sets of definitions, and a cache that kept only the last would hand the previous
+        // section's part to whichever instance asked second.
+        var key = new CacheKey(absolutePath, (section ?? "").Trim());
         lock (_gate)
             if (_cache.TryGetValue(key, out var hit) && hit.Mtime == mtime && hit.Length == length)
                 return hit.File;
 
-        var built = Build(absolutePath);
+        var built = Build(absolutePath, section);
 
         lock (_gate) _cache[key] = new CacheEntry(mtime, length, built);
         return built;
@@ -160,10 +168,10 @@ public static class SpiceModelPeek
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static SpiceModelFile Build(string absolutePath)
+    private static SpiceModelFile Build(string absolutePath, string? section)
     {
         SpiceCellScan scan;
-        try { scan = SpiceCellImport.Scan(absolutePath); }
+        try { scan = SpiceCellImport.Scan(absolutePath, section); }
         catch (Exception ex)
         {
             return SpiceModelFile.Empty with
@@ -171,7 +179,7 @@ public static class SpiceModelPeek
         }
 
         if (scan.Error is { } err && scan.Candidates.Count == 0)
-            return new SpiceModelFile([], scan, err);
+            return new SpiceModelFile([], scan, DescribeEmpty(err, scan));
 
         // Every subcircuit that some OTHER subcircuit calls, transitively. What is left is the
         // part(s) the file exists to publish. `Dependencies` is already the transitive, leaf-first
@@ -187,6 +195,17 @@ public static class SpiceModelPeek
 
         return new SpiceModelFile(defs, scan, null);
     }
+
+    /// <summary>
+    /// Why a file yielded nothing — with the alternatives named when the reason is that it offers
+    /// several and none was chosen. "Contains no definitions" is true and useless for a file whose
+    /// whole content sits inside <c>.LIB</c>/<c>.ENDL</c> frames the reader deliberately skipped.
+    /// </summary>
+    private static string DescribeEmpty(string error, SpiceCellScan scan)
+        => scan.SectionNames.Count > 0 && string.IsNullOrWhiteSpace(scan.Section)
+            ? $"{error} It offers {scan.SectionNames.Count} section(s) and none is chosen: "
+              + string.Join(", ", scan.SectionNames) + "."
+            : error;
 
     private static SpiceModelDefinition Describe(SpiceCellCandidate c, HashSet<string> called)
     {

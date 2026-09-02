@@ -33,7 +33,15 @@ public static class SpiceNetlistReader
     /// <summary>Nesting limit for inclusion. A cycle is caught by identity; this catches depth.</summary>
     private const int MaxIncludeDepth = 32;
 
-    public static SpiceNetlistResult ReadFile(string path)
+    /// <summary>
+    /// Reads a file, optionally reading only one of the <c>.lib</c> SECTIONS it declares.
+    ///
+    /// <para><b>The default is no section, which is not the same as "all of them".</b> Sections are
+    /// ALTERNATIVES, so a whole-file read skips every one of them and records their names — that
+    /// pass is exactly how a caller learns what a file offers before asking for one
+    /// (<see cref="SpiceNetlistResult.Sections"/>).</para>
+    /// </summary>
+    public static SpiceNetlistResult ReadFile(string path, string? section = null)
     {
         string full  = Path.GetFullPath(path);
         var    lines = File.ReadAllLines(full);
@@ -43,7 +51,7 @@ public static class SpiceNetlistReader
         // back to the top is caught by the same rule as any other cycle. Registering only what
         // inclusion opens would leave the root as the one file that can be entered twice.
         session.MarkOpen(full);
-        session.Run(lines, full, Path.GetDirectoryName(full), section: null, depth: 0);
+        session.Run(lines, full, Path.GetDirectoryName(full), Blank(section), depth: 0);
         return session.Finish(lines.Length);
     }
 
@@ -54,13 +62,22 @@ public static class SpiceNetlistReader
     /// circuitRF happened to be started.
     /// </summary>
     public static SpiceNetlistResult Read(
-        string text, string? sourceDirectory = null, string fileLabel = "<text>")
+        string text, string? sourceDirectory = null, string fileLabel = "<text>", string? section = null)
     {
         var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
         var session = new Session();
-        session.Run(lines, fileLabel, sourceDirectory, section: null, depth: 0);
+        session.Run(lines, fileLabel, sourceDirectory, Blank(section), depth: 0);
         return session.Finish(lines.Length);
     }
+
+    /// <summary>
+    /// A blank section name is NO section, not a section called "". The value arrives from a stored
+    /// component parameter and from a combo box, both of which spell "unset" as an empty string, and
+    /// a "" that reached <c>Session.Run</c> would report every section as one the file does not
+    /// declare and then read nothing at all.
+    /// </summary>
+    private static string? Blank(string? section)
+        => string.IsNullOrWhiteSpace(section) ? null : section.Trim();
 
     // ─────────────────────────────────────────────────────────────────────────
     //  the reader's state

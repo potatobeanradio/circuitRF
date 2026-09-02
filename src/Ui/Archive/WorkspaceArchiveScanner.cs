@@ -314,6 +314,10 @@ public static class WorkspaceArchiveScanner
                     externals.TryAdd(referenced, Path.GetFileName(abs));
         }
 
+        // A SPICE reference is rarely ONE file. Whatever turns out to be a deck with an include
+        // closure is taken out of the flat list here and offered as one subtree row instead.
+        var groups = TakeSpiceGroups(plan, externals);
+
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (abs, _) in externals.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
         {
@@ -334,7 +338,200 @@ public static class WorkspaceArchiveScanner
                 SizeBytes   = SizeOf(abs),
             });
         }
+
+        var usedGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in groups.OrderBy(g => g.Title, StringComparer.OrdinalIgnoreCase))
+        {
+            var folder = UniqueName(usedGroups, FolderName(g.Root) ?? "spice");
+            plan.Options.Add(new ArchiveOption
+            {
+                Kind        = ArchiveOptionKind.ExternalFile,
+                DisplayName = g.Title,
+                Detail      = g.Detail,
+                SourcePath  = g.Root,
+                ArchivePath = $"{ExternalFolder}/{SpiceFolder}/{folder}",
+                IsDirectory = true,
+                Members     = g.Members,
+                Selected    = true,
+                SizeBytes   = g.Members.Sum(m => Math.Max(0, SizeOf(m.SourcePath))),
+            });
+        }
     }
+
+    // ── SPICE include closures ────────────────────────────────────────────────
+
+    /// <summary>Sub-folder of <see cref="ExternalFolder"/> that receives copied SPICE decks.</summary>
+    public const string SpiceFolder = "spice";
+
+    /// <summary>
+    /// Above this, a file is not read as a SPICE deck. The extension list has to include the ones a
+    /// supplier actually uses (<c>.txt</c> among them), and a Known File that happens to be a large
+    /// log must not be parsed line by line to discover it includes nothing.
+    /// </summary>
+    private const long SpiceReadCap = 32L * 1024 * 1024;
+
+    /// <summary>One SPICE deck (or several sharing a directory) travelling as one subtree.</summary>
+    private sealed class SpiceGroup
+    {
+        public required string Root { get; set; }
+        public List<string> Files   { get; } = [];
+        public List<string> Entries { get; } = [];      // the files a document actually names
+        public List<string> Why     { get; } = [];      // what pulled each entry in
+
+        public string Title => string.Join(", ", Entries.Select(Path.GetFileName));
+
+        /// <summary>
+        /// What the row says: how many files travel, and which document asked for them. A recipient's
+        /// "why is there a folder of model files in here?" is answered on the row.
+        /// </summary>
+        public string Detail =>
+            $"{Files.Count} files, including everything {Title} reads · referenced by "
+            + string.Join(", ", Why.Distinct(StringComparer.OrdinalIgnoreCase)) + " · " + Root;
+
+        public IReadOnlyList<ArchiveMember> Members =>
+            [.. Files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                     .Select(f => new ArchiveMember(f, Rel(Root, f)))];
+    }
+
+    /// <summary>
+    /// Finds every external reference that is a SPICE deck reading MORE THAN ITSELF, and turns each
+    /// into one subtree row — removing its members from <paramref name="externals"/> so nothing is
+    /// offered twice.
+    ///
+    /// <para><b>A closure of one file is left exactly as it was.</b> That is the common case (one
+    /// self-contained <c>.lib</c>), it already works, and a subtree row for it would be a folder
+    /// containing one file.</para>
+    ///
+    /// <para><b>The subtree is rooted at the deepest common ancestor of the closure and preserves
+    /// relative structure</b>, which is the whole point: a deck saying <c>.include ../shared/x.lib</c>
+    /// resolves inside the archive exactly as it does outside it, so the copy needs no rewriting and
+    /// only the entry point is repointed.</para>
+    /// </summary>
+    private static List<SpiceGroup> TakeSpiceGroups(
+        WorkspaceArchivePlan plan, Dictionary<string, string> externals)
+    {
+        var kitRoots = plan.Options
+            .Where(o => o.Kind == ArchiveOptionKind.Kit)
+            .Select(o => o.SourcePath)
+            .ToList();
+
+        var groups = new List<SpiceGroup>();
+
+        foreach (var (abs, why) in externals.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToList())
+        {
+            if (!IsSpiceDeck(abs)) continue;
+
+            var closure = CloseOver(abs, plan.WorkspaceDir, kitRoots);
+            if (closure.Count <= 1) continue;                 // one file: today's row, unchanged
+
+            var g = new SpiceGroup { Root = CommonAncestor(closure) };
+            g.Files.AddRange(closure);
+            g.Entries.Add(abs);
+            g.Why.Add(why);
+            groups.Add(g);
+        }
+
+        Merge(groups);
+
+        foreach (var g in groups)
+            foreach (var f in g.Files) externals.Remove(f);
+
+        return groups;
+    }
+
+    /// <summary>
+    /// Every file the deck at <paramref name="entry"/> reads, minus what already travels: anything
+    /// inside the workspace (archived unconditionally) and anything inside a referenced kit (part of
+    /// that kit's own row — <c>spice-models.md</c> §12.4). Empty when it cannot be read at all.
+    /// </summary>
+    private static List<string> CloseOver(string entry, string workspaceDir, List<string> kitRoots)
+    {
+        IReadOnlyList<string> read;
+        try
+        {
+            if (SizeOf(entry) is < 0 or > SpiceReadCap) return [entry];
+            read = SpiceModelPeek.Read(entry).Scan.FilesRead;
+        }
+        catch { return [entry]; }
+
+        var kept = new List<string>();
+        var seen = new HashSet<string>(DocumentFileRefs.PathComparer);
+
+        foreach (var f in read)
+        {
+            string full;
+            try { full = Path.GetFullPath(f); } catch { continue; }
+
+            if (!File.Exists(full)) continue;
+            if (!seen.Add(full)) continue;
+            if (IsInside(full, workspaceDir)) continue;
+            if (kitRoots.Any(k => IsInside(full, k))) continue;
+
+            kept.Add(full);
+        }
+
+        // The entry point itself always travels, even in the odd case where the reader never got to
+        // record it (an unreadable file, a read that threw) — the reference names it and the
+        // recipient must have it.
+        if (!kept.Any(f => DocumentFileRefs.PathComparer.Equals(f, Path.GetFullPath(entry))))
+            kept.Insert(0, Path.GetFullPath(entry));
+
+        return kept;
+    }
+
+    /// <summary>
+    /// Folds together groups whose subtrees would overlap — two decks in one directory, or one
+    /// rooted inside the other. Two overlapping subtree rows would copy the shared files twice and
+    /// leave the recipient with two divergent copies of one model file.
+    /// </summary>
+    private static void Merge(List<SpiceGroup> groups)
+    {
+        bool merged = true;
+        while (merged)
+        {
+            merged = false;
+            for (int i = 0; i < groups.Count && !merged; i++)
+                for (int j = i + 1; j < groups.Count && !merged; j++)
+                {
+                    var a = groups[i];
+                    var b = groups[j];
+                    if (!DocumentFileRefs.PathComparer.Equals(a.Root, b.Root) &&
+                        !IsInside(a.Root, b.Root) && !IsInside(b.Root, a.Root)) continue;
+
+                    foreach (var f in b.Files)
+                        if (!a.Files.Contains(f, DocumentFileRefs.PathComparer)) a.Files.Add(f);
+                    a.Entries.AddRange(b.Entries);
+                    a.Why.AddRange(b.Why);
+                    a.Root = CommonAncestor(a.Files);
+
+                    groups.RemoveAt(j);
+                    merged = true;
+                }
+        }
+    }
+
+    /// <summary>The deepest directory holding every one of these files.</summary>
+    private static string CommonAncestor(IReadOnlyList<string> files)
+    {
+        string root = Path.GetDirectoryName(files[0]) ?? "";
+        foreach (var f in files.Skip(1))
+        {
+            var dir = Path.GetDirectoryName(f) ?? "";
+            while (root.Length > 0 && !IsInside(dir, root) &&
+                   !DocumentFileRefs.PathComparer.Equals(dir, root))
+                root = Path.GetDirectoryName(root) ?? "";
+        }
+        return root.Length > 0 ? root : (Path.GetDirectoryName(files[0]) ?? "");
+    }
+
+    /// <summary>
+    /// True for a file the reader should be asked to read. The extension list is
+    /// <see cref="SpiceModelPeek.FileExtensions"/>' — the one the SpiceModel picker offers — so the
+    /// archive and the component cannot disagree about what counts as a deck.
+    /// </summary>
+    private static bool IsSpiceDeck(string path)
+        => SpiceModelPeek.FileExtensions.Contains(
+               Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

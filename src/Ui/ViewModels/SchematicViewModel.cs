@@ -3391,7 +3391,8 @@ public sealed partial class SchematicViewModel : ObservableObject
             string? path = SpiceModelSymbolProvider.ResolvePath(file, EditModel.SchematicDirectory);
             if (path is null) return false;
 
-            var peeked = SpiceModelPeek.Read(path);
+            var peeked = SpiceModelPeek.Read(path, comp.Parameters
+                .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression);
             if (peeked.Error is not null) return false;
             if (!peeked.Definitions.Any(d => d.Name.Equals(want, StringComparison.OrdinalIgnoreCase)))
                 return false;

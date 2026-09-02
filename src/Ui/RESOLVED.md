@@ -1,5 +1,99 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## SPICE library workflow: the include closure, `.lib` sections, and multi-definition import (2026-09-01)
+
+Three independent defects, all of them silent, all in the same sentence: *a SPICE deck is rarely one
+file, rarely offers one alternative, and rarely holds one part.*
+
+### The archive carried the entry point and none of its contents
+
+`DocumentFileRefs` walks a design document as **JSON**. A `.lib`'s own `.include` lines are inside a
+text file it never opens, so a library file that pulls in a shared model file contributed exactly one
+row to the Archive Workspace dialog. `SpiceNetlistResult.FilesRead` has always recorded the transitive
+set; nothing asked for it.
+
+**And the failure is quiet in the worst way**: the recipient's reader notes the missing file, marks the
+enclosing cell incomplete, and the subcircuit is refused *at simulate time*, in a different session, on
+a different machine, with a message about a file they have never heard of.
+
+`WorkspaceArchiveScanner` now reads any external reference whose extension is one of
+`SpiceModelPeek.FileExtensions` through that same mtime cache and takes `FilesRead` as the closure.
+
+- **The subtree, not the folder, is the deliverable.** A flat `external/` cannot hold a deck saying
+  `.include ../shared/models.lib` — `UniqueName` would rename a collision to `foo-2.lib` and the
+  directory structure the include was written against is gone either way. A group is rooted at the
+  **deepest common ancestor** of its closure and preserves relative offsets, so every `.include`
+  resolves after the copy exactly as before and **repointing rewrites only the entry point**. The gate
+  test extracts the archive and re-reads the deck from inside it; counting three copied files would
+  pass just as well with the structure flattened, which is precisely the failure mode.
+- **`ArchiveOption.Members` exists because a root directory is not a payload.** The common ancestor
+  routinely holds a whole model library the deck never reads. A directory row with no members still
+  copies its whole folder, which is what a kit is; a row that names members copies exactly those, and
+  `BuildIncludedMap` maps the MEMBERS rather than the root — mapping the root would repoint a
+  reference to a sibling file that is not in the archive.
+- **Two decks in one directory merge into one subtree.** Two overlapping subtree rows would copy the
+  shared model file twice and hand the recipient two divergent copies of one file. Roots that are
+  equal or nested are folded until stable.
+- **A closure of ONE file stays a flat row at `external/<name>`**, byte-identical to before. That is
+  the common case and there was nothing wrong with it.
+- **32 MB read cap.** The extension list has to include the spellings suppliers actually use — `.txt`
+  among them — and a Known File that happens to be a large log must not be parsed line by line to
+  discover it includes nothing.
+
+### A shared core permanently blocked a library's second part
+
+`SubcircuitCellBuilder.Write` **threw** when a planned cell folder already existed, and the picker was
+single-select. Two of four measured library files have two top-level parts over a shared core (4
+shared cells in one, 1 in the other), so importing one variant wrote the core and importing the other
+tripped the refusal *on the core*, not on anything the user had chosen. **Never overwriting is right
+and does not bend**; what was missing was a way to tell "the cell I already wrote" from "a different
+cell with the same name".
+
+- **One gesture, one plan.** `WriteMany` takes N chosen definitions, assigns the chosen names FIRST
+  (so a definition that is both chosen and another's dependency is written once under the name the
+  user gave it), then walks each one's transitive leaf-first dependencies. A shared core is planned
+  once, and the collision is impossible rather than recoverable.
+- **The cell that OPENS is the first one the user chose, not the first one written.** The plan is
+  leaf-first so a parent's reference resolves, which means the shared core is always written first —
+  opening it would answer the wrong question.
+- **Reuse requires TWO hash comparisons, not one.** `CcellFile.ImportedFrom` records a SHA-256 over the
+  schematic, the symbol and the declared interface. Comparing it only against what a fresh import
+  would write would reuse a cell the user had since **edited**, silently adopting their edits into
+  someone else's part; comparing it only against what is on disk would not notice that the name now
+  belongs to a different definition. Both must match, and the two failures get different sentences —
+  "has been edited since it was imported" and "is a different definition" — because the generic
+  already-exists message sends the reader hunting for a name clash that is not the problem.
+- **A cell with no provenance keeps the old refusal.** A cell the user drew cannot be proven identical
+  to anything, and guessing is the one thing this must not do.
+- **The provenance records the file's NAME, never its path.** A `.ccell` travels into archives and onto
+  other machines, where the sender's absolute path means nothing and should not have gone. Nothing
+  resolves through the field; it exists to be read.
+- **The folder layout stays FLAT, deliberately** — the reasoning, and what a per-import subfolder would
+  actually cost, is in `docs/design/spice-models.md` §4.1. The short version: it would break every
+  placement already made, and it would not reduce the cell count, which is set by the dependency graph.
+
+### A `.lib` section could be read but never asked for
+
+Reader side in `src/Core/RESOLVED.md`. On this side: `SpiceCellImport.Scan` takes a section and returns
+the scanned file's own `SectionNames`; `SpiceModelPeek` keys its cache on **(path, section)**, because
+one file read for two sections is two different sets of definitions and a cache keeping only the last
+would hand the previous section's part to whichever instance asked second; and the section is a field
+of the `spicemodel://` reference — `CellSymbolResolver`'s cache is keyed on that exact string, so a
+reference naming only file and definition would be identical for both sections and the symbol would
+not change when the section did.
+
+**Only the scanned file's own sections are offered.** A kit states one axis per file, so an included
+file's sections are an independent choice; flattening them into one list would offer a single pick
+where the deck offers several. `SpiceNetlistResult.Sections` is grouped by file for that reason, and
+the scan matches on the full path.
+
+**The trap this created twice.** A file that offers sections and is asked for none reads *nothing* —
+that is correct, sections are alternatives — so "this file holds no `.model` cards and no `.subckt`
+definitions" is a true sentence about the read and a misleading one about the file. Two places had to
+learn the difference: the SpiceModel panel's status line (checked BEFORE the generic error, or the
+generic one wins) and `CreateCellFromModelCardFromPathAsync`, which must send such a file to the
+PICKER — where the section is chosen — rather than to the holds-nothing refusal.
+
 ## Archive Workspace: the references it never saw, and the results it left behind (2026-09-01)
 
 Owner report: a colleague archived a workspace and sent it over; it could not be run, because it

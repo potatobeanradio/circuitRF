@@ -1499,6 +1499,11 @@ public static class ComponentTypeRegistry
                 return [
                     new(SpiceModelSymbolProvider.FileParameter, "", "", true,  UnitDimension.None),
                     new(SpiceModelSymbolProvider.NameParameter, "", "", true,  UnitDimension.None),
+                    // `Section` is blank for every file that declares none, which is nearly all of
+                    // them — and blank is the whole file, today's behaviour exactly. Hidden on the
+                    // schematic for that reason: a row that is empty on every instance but the rare
+                    // sectioned one is noise on the sheet.
+                    new(SpiceModelSymbolProvider.SectionParameter, "", "", false, UnitDimension.None),
                     new("PinConfig", "Standard", "", false, UnitDimension.None),
                     new("Pitch",     "Loose",    "", false, UnitDimension.None),
                 ];

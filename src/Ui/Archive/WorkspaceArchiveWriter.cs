@@ -98,6 +98,20 @@ public static class WorkspaceArchiveWriter
                     continue;
                 }
 
+                // A row that names its own members copies EXACTLY those, at exactly those offsets —
+                // a SPICE deck's include closure, rooted at a directory that routinely holds a great
+                // deal the deck never reads. Everything else (a kit) copies its whole folder.
+                if (option.Members.Count > 0)
+                {
+                    foreach (var member in option.Members)
+                    {
+                        if (!File.Exists(member.SourcePath)) continue;
+                        WriteFile(zip, $"{rootName}/{option.ArchivePath}/{member.RelativePath}",
+                                  member.SourcePath, result);
+                    }
+                    continue;
+                }
+
                 foreach (var file in WorkspaceArchiveScanner.EnumerateFilesSafe(option.SourcePath))
                 {
                     var rel = WorkspaceArchiveScanner.Rel(option.SourcePath, file);
@@ -160,6 +174,17 @@ public static class WorkspaceArchiveWriter
         {
             if (!o.Selected) continue;
             if (o.Kind == ArchiveOptionKind.Result) continue;   // results keep their own paths
+
+            // A row with named members maps each MEMBER, not its root folder: the root is a real
+            // directory on this machine and the row copies only part of it, so mapping the folder
+            // would repoint a reference to a sibling file that is not in the archive.
+            if (o.Members.Count > 0)
+            {
+                foreach (var m in o.Members)
+                    map[Path.GetFullPath(m.SourcePath)] = $"{o.ArchivePath}/{m.RelativePath}";
+                continue;
+            }
+
             map[Path.GetFullPath(o.SourcePath)] = o.ArchivePath;
         }
         return map;

@@ -175,11 +175,51 @@ public sealed class CcellFile
     public string? MatchDesign { get; set; }
 
     /// <summary>
+    /// Where this cell came from, when an importer built it rather than a person drawing it.
+    /// <c>WhenWritingNull</c>, so every hand-drawn cell's <c>.ccell</c> stays byte-identical.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CcellImportProvenance? ImportedFrom { get; set; }
+
+    /// <summary>
     /// Number of electrical ports this cell exposes to instantiating parents.
     /// Default 0 so existing alpha .ccell files (which omit this field) load cleanly.
     /// The primary symbol's ExternalPortCount is fed from this value, not the other way around.
     /// </summary>
     public int NumPorts { get; set; }
+}
+
+/// <summary>
+/// What an import wrote a cell FROM — recorded so a second import of the same file can tell "this
+/// is the cell I already wrote" from "this is a different cell that happens to share a name".
+///
+/// <para><b>Without it that question has no answer.</b> A library file routinely holds two variants
+/// of a part over one shared core, so importing the second one hits a folder the first one wrote and
+/// there is nothing on disk to say whether the two agree. Never overwriting is the right rule, so
+/// the only way for the second import to succeed is to PROVE the existing cell is the same thing.
+/// </para>
+/// </summary>
+public sealed class CcellImportProvenance
+{
+    /// <summary>
+    /// The file this was read from, by NAME only — not a path.
+    ///
+    /// <para>A <c>.ccell</c> travels: into an archive, onto a colleague's machine, into a repository.
+    /// The sender's absolute path means nothing at any of those destinations and is exactly the kind
+    /// of thing that should not leave the machine it was typed on. The name is what a reader needs in
+    /// order to recognise the file, which is all this field is for — nothing resolves through it.</para>
+    /// </summary>
+    public string Source { get; set; } = "";
+
+    /// <summary>The definition inside that file — a <c>.subckt</c> name, verbatim.</summary>
+    public string Definition { get; set; } = "";
+
+    /// <summary>
+    /// Hex SHA-256 over exactly what the import wrote — the schematic, the symbol, and the declared
+    /// parameter list. Compared two ways when a folder already exists: against what a fresh import
+    /// WOULD write (same definition?) and against what is on disk now (edited since?).
+    /// </summary>
+    public string ContentHash { get; set; } = "";
 }
 
 // ── Serializer ────────────────────────────────────────────────────────────────

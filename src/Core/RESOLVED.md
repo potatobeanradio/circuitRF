@@ -6,6 +6,31 @@ only for findings that are still true, still surprising, and would cost someone 
 rediscover. Mirrors `src/Ui/DataDisplay/RESOLVED.md`'s own pattern.
 
 
+## A `.lib` section could be read but never asked for (2026-09-01)
+
+`Session.Run` has tracked `.LIB <name>`/`.ENDL` framing since it was written — above conditionals,
+because a section frame outranks one — records every name it sees into `SpiceNetlistResult.Sections`
+grouped by file, and skips every section when none was requested. `PdkCorners` used all of it.
+**`SpiceNetlistReader.ReadFile` and `Read` both hard-coded `section: null`**, so nothing else could
+reach any of it. Both now take an optional `section`; nothing inside the session changed.
+
+Three things worth keeping:
+
+- **A blank section name is NO section, not a section called `""`.** The value now arrives from a
+  stored component parameter and from a combo box, and both spell "unset" as an empty string. A `""`
+  that reached the framing test would match no declared section, so `foundWanted` would stay false,
+  every section would be skipped, and the file would read as empty — while reporting that it does not
+  declare a section nobody named. `Blank()` at the entry points is the whole fix, and it belongs there
+  rather than in `Session.Run`, whose `null` genuinely means "the whole file".
+- **One read learns both halves.** The `.LIB` framing line is recorded whether or not that section is
+  the one being read, so a read FOR a section still populates `Sections` — which is what lets a picker
+  keep offering the other alternatives after a choice has been made, with no second parse.
+- **A requested section the file does not declare leaves `IncompleteCells` EMPTY.** `MarkIncomplete`
+  records the *enclosing* subcircuit and there is none at end-of-file, so the reader's note is all it
+  can say and the read looks exactly like an empty file. Anything upstream that wants to distinguish
+  "this file has nothing in it" from "this file has alternatives and you picked none" has to consult
+  `Sections` itself — which is what the SpiceModel panel and the import picker now do.
+
 ## Two element letters the SPICE reader was missing (2026-09-01)
 
 Found while building the `.subckt` importer (`src/Ui/Schematic/RESOLVED.md`), and both were silent in

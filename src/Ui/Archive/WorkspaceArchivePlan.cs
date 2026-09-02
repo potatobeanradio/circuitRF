@@ -23,6 +23,18 @@ public enum ArchiveOptionKind
 }
 
 /// <summary>
+/// One file inside a group row, and where it lands relative to that row's own folder in the archive.
+/// </summary>
+/// <param name="SourcePath">Absolute path on this machine.</param>
+/// <param name="RelativePath">
+/// '/'-separated, relative to the row's <see cref="ArchiveOption.ArchivePath"/>. <b>This is the
+/// deliverable</b> for a SPICE deck: the copy preserves the relative offsets the original was written
+/// against, so every <c>.include</c> inside it resolves after the copy exactly as it did before, and
+/// repointing has to rewrite only the entry point.
+/// </param>
+public sealed record ArchiveMember(string SourcePath, string RelativePath);
+
+/// <summary>
 /// One thing the user can tick in the Archive Workspace dialog.
 ///
 /// <para>An option is never <i>required</i> — everything a workspace cannot be read without (its
@@ -51,6 +63,16 @@ public sealed class ArchiveOption
     public required string ArchivePath { get; init; }
 
     public bool IsDirectory { get; init; }
+
+    /// <summary>
+    /// For a directory row, the EXACT files it copies — empty meaning "everything under
+    /// <see cref="SourcePath"/>", which is what a kit folder is.
+    ///
+    /// <para>A SPICE deck's row is a subtree rooted at the deepest common ancestor of its include
+    /// closure, and that folder routinely holds a great deal the deck never reads. Copying the folder
+    /// would archive a whole model directory to carry three files out of it.</para>
+    /// </summary>
+    public IReadOnlyList<ArchiveMember> Members { get; init; } = [];
 
     /// <summary>
     /// Size in bytes, or -1 when not measured yet. A kit folder is measured lazily (walking a vendor

@@ -471,90 +471,165 @@ public static class SubcircuitCellBuilder
     /// circuitRF cell instance references a cell FOLDER and a nested definition has nowhere else to
     /// live.
     /// </summary>
-    /// <remarks>
-    /// <b>All or nothing across every folder</b>, not merely the one that was asked for: a nested
-    /// import that half-succeeded would leave a parent cell pointing at a child that is not there,
-    /// which the workspace scanner lists and a user places. An EXISTING folder — the parent's or any
-    /// child's — is refused rather than merged into or written over.
-    /// </remarks>
     public static SubcircuitCellResult Write(
         string                               parentDir,
         string                               cellName,
         SubcircuitTranslation                top,
-        IReadOnlyList<SubcircuitTranslation> all)
-    {
-        ArgumentNullException.ThrowIfNull(top);
-        ArgumentNullException.ThrowIfNull(all);
+        IReadOnlyList<SubcircuitTranslation> all,
+        string?                              sourceFile = null)
+        => WriteMany(parentDir, [(top, cellName)], all, sourceFile);
 
-        if (top.Refusal is { } refusal)
-            throw new InvalidOperationException($"'{top.Name}' was refused; nothing to write. {refusal}");
+    /// <summary>
+    /// Writes several chosen definitions from one file in ONE gesture, over ONE shared dependency
+    /// plan — so a core two of them are built from is written once and neither blocks the other.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Why this is not N calls to <see cref="Write"/>.</b> Two top-level parts in a library
+    /// file routinely share a core (measured: 4 shared cells in one file, 1 in another). Importing A
+    /// writes that core; importing B then plans the same folder, finds it there, and — under the
+    /// never-overwrite rule, which is right — refuses. The second variant was permanently
+    /// unimportable. One plan across every chosen definition makes the collision impossible rather
+    /// than merely recoverable.</para>
+    ///
+    /// <para><b>All or nothing across every folder</b>, not merely the ones that were asked for: a
+    /// nested import that half-succeeded would leave a parent cell pointing at a child that is not
+    /// there, which the workspace scanner lists and a user places.</para>
+    ///
+    /// <para><b>An EXISTING folder is still never written over.</b> It is REUSED when the cell in it
+    /// can be PROVEN to be the same definition — its recorded provenance hash matches both what this
+    /// import would write and what is on disk right now — and refused otherwise, with a sentence that
+    /// says which of the two it was. "Identical" is proven, never assumed from the name.</para>
+    /// </remarks>
+    public static SubcircuitCellResult WriteMany(
+        string                                                       parentDir,
+        IReadOnlyList<(SubcircuitTranslation Top, string CellName)>  tops,
+        IReadOnlyList<SubcircuitTranslation>                         all,
+        string?                                                      sourceFile = null)
+    {
+        ArgumentNullException.ThrowIfNull(tops);
+        ArgumentNullException.ThrowIfNull(all);
+        if (tops.Count == 0) throw new InvalidOperationException("Nothing was chosen to import.");
+
+        foreach (var (t, _) in tops)
+            if (t.Refusal is { } refusal)
+                throw new InvalidOperationException($"'{t.Name}' was refused; nothing to write. {refusal}");
 
         var byName = new Dictionary<string, SubcircuitTranslation>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in all) byName.TryAdd(t.Name, t);
 
-        // Every cell this import creates, leaf-first, with the folder name each gets. The top cell
-        // takes the name the user typed; a nested one takes its own, because there is nobody to ask
-        // and its .subckt name is what the file already calls it.
-        var plan = new List<(SubcircuitTranslation T, string Name)>();
-        foreach (string dep in top.Dependencies)
-        {
-            if (!byName.TryGetValue(dep, out var t))
-                throw new InvalidOperationException($"'{dep}' is called but was not translated.");
-            plan.Add((t, SafeCellName(dep)));
-        }
-        plan.Add((top, cellName));
+        // ── The plan ──────────────────────────────────────────────────────────
+        // Every cell this import creates, leaf-first, with the folder name each gets. A CHOSEN
+        // definition takes the name the user typed; one that is only a dependency takes its own,
+        // because there is nobody to ask and its .subckt name is what the file already calls it.
+        //
+        // The chosen names are assigned FIRST, so a definition that is both chosen and a dependency
+        // of another chosen one is written once, under the name the user gave it.
+        var folderName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (t, name) in tops) folderName[t.Name] = name;
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (_, name) in plan)
+        var plan = new List<(SubcircuitTranslation T, string Name, bool Chosen)>();
+        var planned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(SubcircuitTranslation t, bool chosen)
         {
-            if (!seen.Add(name))
+            if (!planned.Add(t.Name)) return;
+            plan.Add((t, folderName.TryGetValue(t.Name, out var n) ? n : SafeCellName(t.Name), chosen));
+        }
+
+        foreach (var (t, _) in tops)
+        {
+            foreach (string dep in t.Dependencies)
+            {
+                if (!byName.TryGetValue(dep, out var d))
+                    throw new InvalidOperationException($"'{dep}' is called but was not translated.");
+                Add(d, chosen: folderName.ContainsKey(dep));
+            }
+            Add(t, chosen: true);
+        }
+
+        var byFolder = new Dictionary<string, SubcircuitTranslation>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (t, name, _) in plan)
+            if (!byFolder.TryAdd(name, t))
                 throw new IOException(
                     $"Two of the subcircuits this import needs would both be called '{name}'. "
                     + "Rename one in the file, or import them separately.");
-
-            if (Directory.Exists(Path.Combine(parentDir, name)))
-                throw new IOException(
-                    $"A cell named '{name}' already exists here"
-                    + (string.Equals(name, cellName, StringComparison.Ordinal)
-                        ? ""
-                        : $", and '{top.Name}' needs it because it calls that subcircuit")
-                    + ". Importing a subcircuit never writes over a cell that is already in the "
-                    + "workspace.");
-        }
 
         // Every cell lands in the same folder, so a parent's schematic reaches a child by climbing
         // out of its own schematic/ sub-folder and its own cell folder. Written with forward slashes
         // because that is what a stored CellRef is.
         var refByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (t, name) in plan) refByName[t.Name] = "../../" + name;
+        foreach (var (t, name, _) in plan) refByName[t.Name] = "../../" + name;
+
+        // ── What each cell WOULD be, before anything touches the disk ─────────
+        var built = new List<(SubcircuitTranslation T, string Name, bool Chosen, CellContent Content)>();
+        foreach (var (t, name, chosen) in plan)
+            built.Add((t, name, chosen, BuildContent(name, t, n => refByName[n], sourceFile)));
+
+        // ── Existing folders: reuse what is provably the same, refuse the rest ─
+        var reuse = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (t, name, _, content) in built)
+        {
+            string dir = Path.Combine(parentDir, name);
+            if (!Directory.Exists(dir)) continue;
+
+            if (ExistingCellVerdict(dir, name, content) is { } why) throw new IOException(why);
+            reuse.Add(name);
+        }
 
         var written = new List<string>();
         var report  = new List<string>();
+        string primaryName = folderName[tops[0].Top.Name];
 
         try
         {
-            string? topDir = null, topSchematic = null;
+            string? firstDir = null, firstSchematic = null;
 
-            foreach (var (t, name) in plan)
+            foreach (var (t, name, chosen, content) in built)
             {
-                var lines = new List<string>();
-                var (dir, schematic) = WriteOne(parentDir, name, t, n => refByName[n], lines);
-                written.Add(dir);
+                string dir, schematic;
 
-                report.Add(Summary(t, name));
-                report.AddRange(lines);
-                report.AddRange(NotCarried(t));
+                if (reuse.Contains(name))
+                {
+                    dir       = Path.Combine(parentDir, name);
+                    schematic = Path.Combine(
+                        CellFolder.SubFolderPath(dir, ViewType.Schematic), content.SchematicFile);
+                    report.Add(
+                        $"'{name}' is already in this workspace and is the same definition, so it was "
+                        + "reused rather than written again.");
+                }
+                else
+                {
+                    (dir, schematic) = WriteOne(parentDir, name, content);
+                    written.Add(dir);
+                    report.Add(Summary(t, name));
+                    report.AddRange(content.Report);
+                    report.AddRange(NotCarried(t));
+                }
 
-                if (ReferenceEquals(t, top)) { topDir = dir; topSchematic = schematic; }
+                // The cell the caller opens is the FIRST one the user chose, not the first chosen
+                // entry in plan order — a chosen definition that another chosen one depends on is
+                // planned ahead of it, and opening the core instead of the part is the wrong answer.
+                if (string.Equals(name, primaryName, StringComparison.OrdinalIgnoreCase))
+                    { firstDir = dir; firstSchematic = schematic; }
             }
 
-            if (plan.Count > 1)
+            int extra = built.Count - tops.Count;
+            if (extra > 0)
                 report.Add(
-                    $"'{cellName}' calls {plan.Count - 1} other subcircuit(s), so a cell was created "
-                    + "for each: " + string.Join(", ", plan.Take(plan.Count - 1).Select(p => p.Name)) + ".");
+                    $"{string.Join(", ", tops.Select(p => $"'{p.CellName}'"))} "
+                    + $"call{(tops.Count == 1 ? "s" : "")} {extra} other subcircuit(s), so a cell was "
+                    + "created for each: "
+                    + string.Join(", ", built.Where(b => !b.Chosen).Select(b => b.Name)) + ".");
 
-            return new SubcircuitCellResult(
-                topDir!, topSchematic!, [.. written.Take(written.Count - 1)], report);
+            // Everything created that is not the cell the caller will open — the shared cores and
+            // the OTHER chosen definitions alike. Reported rather than left to be discovered: an
+            // import that silently adds cells to a workspace is one nobody can undo without knowing
+            // which ones.
+            var also = built.Select(b => Path.Combine(parentDir, b.Name))
+                            .Where(d => !string.Equals(d, firstDir, StringComparison.Ordinal))
+                            .ToList();
+
+            return new SubcircuitCellResult(firstDir!, firstSchematic!, also, report);
         }
         catch
         {
@@ -563,31 +638,110 @@ public static class SubcircuitCellBuilder
         }
     }
 
-    private static (string CellDir, string SchematicPath) WriteOne(
-        string parentDir, string cellName, SubcircuitTranslation translation,
-        Func<string, string> cellRefFor, ICollection<string> report)
+    /// <summary>
+    /// Why an existing cell folder cannot be reused, or null when it provably can.
+    ///
+    /// <para>Three outcomes, and the difference between them is the whole point of recording
+    /// provenance: a cell this import already wrote (reuse), a cell that was written from this
+    /// definition and has been EDITED since (refuse, and say so — overwriting would discard the
+    /// user's work), and a cell that is simply something else under the same name (refuse, today's
+    /// sentence).</para>
+    /// </summary>
+    private static string? ExistingCellVerdict(string cellDir, string name, CellContent content)
     {
-        string cellDir = CellFolder.CreateCellFolder(parentDir, cellName);
+        string generic =
+            $"A cell named '{name}' already exists here, and this import needs that name. Importing a "
+            + "subcircuit never writes over a cell that is already in the workspace.";
 
-        var schematic = BuildSchematic(translation, cellName, cellRefFor, report);
+        CcellFile existing;
+        try { existing = CellPersistence.LoadFromFile(Path.Combine(cellDir, CellFolder.CcellFileName)); }
+        catch { return generic; }
+
+        if (existing.ImportedFrom is not { } provenance || provenance.ContentHash.Length == 0)
+            return generic;
+
+        string? onDisk = HashOnDisk(cellDir, existing, content);
+
+        if (onDisk is null || !string.Equals(onDisk, provenance.ContentHash, StringComparison.Ordinal))
+            return
+                $"A cell named '{name}' already exists here and has been edited since it was imported "
+                + $"from {Describe(provenance)}, so it is no longer that definition. Importing never "
+                + "writes over a cell in the workspace — rename or remove it first if the edit is no "
+                + "longer wanted.";
+
+        if (!string.Equals(content.Hash, provenance.ContentHash, StringComparison.Ordinal))
+            return
+                $"A cell named '{name}' already exists here and was imported from "
+                + $"{Describe(provenance)}, which is a different definition from the one being "
+                + "imported now. Importing never writes over a cell that is already in the workspace.";
+
+        return null;
+
+        static string Describe(CcellImportProvenance p)
+            => p.Source.Length > 0 ? $"'{p.Definition}' in {p.Source}" : $"'{p.Definition}'";
+    }
+
+    /// <summary>
+    /// The hash of what is on disk RIGHT NOW, over exactly the same three inputs the recorded hash
+    /// was taken over. Null when a piece of it cannot be read — which is itself a difference.
+    /// </summary>
+    private static string? HashOnDisk(string cellDir, CcellFile existing, CellContent content)
+    {
+        try
+        {
+            string schematic = Path.Combine(
+                CellFolder.SubFolderPath(cellDir, ViewType.Schematic),
+                existing.PrimarySchematic ?? content.SchematicFile);
+            string symbol = Path.Combine(
+                CellFolder.SubFolderPath(cellDir, ViewType.Symbol),
+                existing.PrimarySymbol ?? content.SymbolFile);
+
+            if (!File.Exists(schematic) || !File.Exists(symbol)) return null;
+
+            return HashOf(File.ReadAllText(schematic), File.ReadAllText(symbol), existing.Parameters);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  One cell's content, built before anything is written
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Everything one cell folder will hold, as text — built with no disk access at all, so an import
+    /// can decide what it would write BEFORE it starts writing any of it.
+    /// </summary>
+    private sealed record CellContent(
+        string                SchematicFile,
+        string                SymbolFile,
+        string                SchematicJson,
+        string                SymbolJson,
+        CcellFile             Ccell,
+        string                Hash,
+        IReadOnlyList<string> Report);
+
+    private static CellContent BuildContent(
+        string cellName, SubcircuitTranslation translation,
+        Func<string, string> cellRefFor, string? sourceFile)
+    {
+        var lines     = new List<string>();
+        var schematic = BuildSchematic(translation, cellName, cellRefFor, lines);
 
         string schematicFile = cellName + CellFolder.ViewExtension(ViewType.Schematic);
-        string schematicPath = Path.Combine(
-            CellFolder.SubFolderPath(cellDir, ViewType.Schematic), schematicFile);
-        SchematicPersistence.SaveToFile(schematicPath, schematic, cellName: cellName);
+        string symbolFile    = cellName + CellFolder.ViewExtension(ViewType.Symbol);
 
         int ports = translation.Definition.Ports.Count;
 
-        string symbolFile = cellName + CellFolder.ViewExtension(ViewType.Symbol);
-        string symbolPath = Path.Combine(
-            CellFolder.SubFolderPath(cellDir, ViewType.Symbol), symbolFile);
-        SymbolPersistence.SaveToFile(symbolPath, AutoSymbolGenerator.Generate(cellName, ports));
+        string schematicJson = SchematicPersistence.Serialize(schematic, cellName);
+        string symbolJson    = SymbolPersistence.Serialize(AutoSymbolGenerator.Generate(cellName, ports));
 
-        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-        var ccell = CellPersistence.LoadFromFile(ccellPath);
-        ccell.PrimarySchematic = schematicFile;
-        ccell.PrimarySymbol    = symbolFile;
-        ccell.NumPorts         = ports;
+        var ccell = new CcellFile
+        {
+            PrimarySchematic = schematicFile,
+            PrimarySymbol    = symbolFile,
+            NumPorts         = ports,
+        };
+
         // The .subckt line's own parameter defaults become the cell's published interface — which is
         // what an instance of it is seeded from, and what a caller's overrides bind against.
         foreach (var p in translation.Definition.Parameters)
@@ -597,7 +751,53 @@ public static class SubcircuitCellBuilder
                 DefaultExpression = p.DefaultExpression,
                 ShowOnSchematic   = false,
             });
-        CellPersistence.SaveToFile(ccellPath, ccell);
+
+        string hash = HashOf(schematicJson, symbolJson, ccell.Parameters);
+
+        ccell.ImportedFrom = new CcellImportProvenance
+        {
+            Source      = sourceFile is null ? "" : Path.GetFileName(sourceFile),
+            Definition  = translation.Definition.Name,
+            ContentHash = hash,
+        };
+
+        return new CellContent(
+            schematicFile, symbolFile, schematicJson, symbolJson, ccell, hash, lines);
+    }
+
+    /// <summary>
+    /// The identity of a written cell: its schematic, its symbol and its declared interface.
+    ///
+    /// <para><b>The provenance record itself is deliberately not in it</b> — it CARRIES the hash, so
+    /// including it would be circular; and the source file name is not part of what the cell IS.
+    /// Two imports of the same definition from two copies of one file are the same cell.</para>
+    /// </summary>
+    private static string HashOf(string schematicJson, string symbolJson, IEnumerable<CcellParameter> parameters)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(schematicJson).Append('\u0000').Append(symbolJson).Append('\u0000');
+        foreach (var p in parameters)
+            sb.Append(p.Name).Append('=').Append(p.DefaultExpression).Append('\u0000');
+
+        var bytes = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexStringLower(bytes);
+    }
+
+    private static (string CellDir, string SchematicPath) WriteOne(
+        string parentDir, string cellName, CellContent content)
+    {
+        string cellDir = CellFolder.CreateCellFolder(parentDir, cellName);
+
+        string schematicPath = Path.Combine(
+            CellFolder.SubFolderPath(cellDir, ViewType.Schematic), content.SchematicFile);
+        AtomicFile.WriteAllText(schematicPath, content.SchematicJson);
+
+        string symbolPath = Path.Combine(
+            CellFolder.SubFolderPath(cellDir, ViewType.Symbol), content.SymbolFile);
+        AtomicFile.WriteAllText(symbolPath, content.SymbolJson);
+
+        CellPersistence.SaveToFile(Path.Combine(cellDir, CellFolder.CcellFileName), content.Ccell);
 
         return (cellDir, schematicPath);
     }

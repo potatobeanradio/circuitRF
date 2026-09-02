@@ -533,7 +533,10 @@ public sealed class EditableComponent
                       Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression,
                       Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression,
                       GetEnumParam("PinConfig", SnpPinConfig.Standard),
-                      GetEnumParam("Pitch", SnpPitch.Loose))
+                      GetEnumParam("Pitch", SnpPitch.Loose),
+                      // The section too: two sections of one file are two different parts, and the
+                      // reference IS the symbol cache's key.
+                      Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression)
                 : null);
 
     public double         X            { get; set; }

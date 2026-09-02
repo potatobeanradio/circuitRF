@@ -8,15 +8,31 @@
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="20,16,20,16">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="20,16,20,16">
 
         <TextBlock x:Name="Intro" Grid.Row="0" TextWrapping="Wrap" FontSize="12" Opacity="0.7"
                    Margin="0,0,0,10"/>
 
+        <!-- Section: which .lib alternative to read. A file offering sections and asked for none
+             reads NOTHING from any of them, so this sits ABOVE the list it decides the contents
+             of. Hidden entirely for the files that declare none, which is nearly all of them. -->
+        <Grid x:Name="SectionRow" Grid.Row="1" ColumnDefinitions="60,*" IsVisible="False"
+              Margin="0,0,0,10">
+            <TextBlock Grid.Column="0" Text="Section" FontSize="12" VerticalAlignment="Center"/>
+            <ComboBox x:Name="SectionCombo" Grid.Column="1"
+                      HorizontalAlignment="Stretch" FontSize="12" Padding="4,3"
+                      ToolTip.Tip="Sections are alternatives. Choosing one re-reads the file."/>
+        </Grid>
+
         <!-- Every card AND subcircuit in the file, supported or not. A refused one is listed WITH
              its reason rather than hidden: "my VDMOS is missing" is otherwise a mystery, and the
-             reason is the answer to the question the user is about to ask. -->
-        <ListBox x:Name="ChoiceList" Grid.Row="1" MaxHeight="340" FontSize="12">
+             reason is the answer to the question the user is about to ask.
+
+             MULTI-SELECT, because a library file's two variants of a part routinely share a core
+             cell: importing them one at a time writes that core with the first and then refuses the
+             second on it, which made the second variant permanently unimportable. -->
+        <ListBox x:Name="ChoiceList" Grid.Row="2" MaxHeight="340" FontSize="12"
+                 SelectionMode="Multiple">
             <ListBox.ItemTemplate>
                 <DataTemplate x:CompileBindings="False">
                     <StackPanel Margin="0,3,0,3" Spacing="1">
@@ -32,10 +48,10 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <TextBlock x:Name="Footnote" Grid.Row="2" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+        <TextBlock x:Name="Footnote" Grid.Row="3" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                    Margin="0,10,0,0" IsVisible="False"/>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8"
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8"
                     Margin="0,16,0,0">
             <Button x:Name="CancelButton" Content="Cancel" Width="90" FontSize="12"
                     HorizontalContentAlignment="Center"/>

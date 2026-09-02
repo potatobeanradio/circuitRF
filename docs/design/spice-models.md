@@ -179,9 +179,9 @@ transitive dependency, leaf-first, each under its own `.subckt` name (the chosen
 the user typed; a nested one takes its own, because there is nobody to ask). Every cell lands in the
 same parent folder and reaches its children by `"../../" + name`.
 
-**Siblings do not, and the second one cannot be imported at all.** The picker is single-select
-(`SpiceCellPickerDialog` uses `SelectedItem`), and `SubcircuitCellBuilder.Write` refuses outright
-when a planned cell folder already exists:
+**Siblings did not, and the second one could not be imported at all** (fixed 2026-09-01; the rest of
+this section is the diagnosis it came from). The picker was single-select, and
+`SubcircuitCellBuilder.Write` refused outright when a planned cell folder already existed:
 
 > A cell named '…' already exists here, and '…' needs it because it calls that subcircuit. Importing
 > a subcircuit never writes over a cell that is already in the workspace.
@@ -200,7 +200,7 @@ So in two of the four files, importing one variant of a part **permanently block
 share a core, and the second import trips the existing-folder refusal on that core rather than on
 anything the user chose.
 
-Three changes, in dependency order:
+Three changes, in dependency order — **all three are built**:
 
 1. **A multi-select picker.** One gesture, one shared dependency plan, each shared core written
    once. This is the change that matches what someone holding a library file actually wants — both
@@ -212,9 +212,35 @@ Three changes, in dependency order:
    no source file, no definition name, no content hash — so (2) can only be a content diff. Storing
    the file, the definition and a hash turns reuse into a lookup.
 
-**Open:** importing file C's top-level part writes **30 cell folders flat** into the parent
-directory. A per-import subfolder would fix the clutter but changes the `"../../" + name` reference
-convention every written cell depends on. Worth deciding deliberately rather than discovering.
+**Decided (2026-09-01): the layout stays FLAT, and the reason is not clutter.** Importing file C's
+top-level part writes 30 cell folders into the parent directory, and a per-import subfolder was
+weighed against three facts:
+
+- **It breaks every placement already made.** A placed cell's `CellRef` is stored relative to the
+  schematic that places it, so moving imported cells one level down re-points nothing and breaks
+  every `.csch` in every workspace that already places one. That is a silent, retroactive cost paid
+  by users who asked for nothing.
+- **It buys less than it looks.** Inside the subfolder the cells are still siblings, so the
+  `"../../" + name` convention between them is unchanged — the *only* thing that moves is where the
+  top-level cell sits relative to the workspace root, which is precisely the part everything else
+  references.
+- **The count is not the layout's doing.** Thirty dependencies are thirty cells under any layout: a
+  circuitRF cell instance references a cell folder. What multi-select removes is the *collision*
+  (§4.1's real defect), not the count, and the collision was the part that made a file's second part
+  unimportable.
+
+It stays reversible — nothing in the builder assumes flatness beyond that one reference string — and
+would be worth revisiting alongside a migration for existing placements, never as a side effect.
+
+**Provenance is what the layout question was really about.** A written cell now records
+`ImportedFrom` in its `.ccell` (`CcellImportProvenance`: source file NAME, definition name, and a
+SHA-256 over the schematic, symbol and declared interface). That is what turns "is this the cell I
+already wrote?" from a content diff into a lookup, and it is what lets an existing folder be REUSED
+without the never-overwrite rule bending: reuse requires the recorded hash to match both what a fresh
+import would write *and* what is on disk right now, so an edited cell is a refusal that says it was
+edited rather than the generic already-exists sentence. The file's NAME is recorded, not its path — a
+`.ccell` travels into archives and onto other machines, where the sender's absolute path means
+nothing and should not have gone.
 
 ### 4.2 `.func` and global `.param` are read and then dropped
 
@@ -592,11 +618,11 @@ There is exactly one consumer: `PdkCorners`, which discovers a kit's corner axes
 corner by asking the reader for `.lib <file> <section>` — the format's own mechanism, so the
 section's conditionals and nested includes are handled by the one reader that already handles them.
 
-**But `SpiceNetlistReader.ReadFile` and `Read` both hard-code `section: null`.** There is no way for
-the import gesture or a placed `SpiceModel` to ask for a section, and no UI anywhere surfaces
-`Sections`. A sectioned library file opened through either gesture therefore reports *"section '…'
-is one of several alternatives in this file and none was requested; skipped rather than chosen"* for
-each section and imports whatever sits outside them — which for a purely sectioned file is nothing.
+`ReadFile` and `Read` used to hard-code `section: null`, so there was no way for the import gesture or
+a placed `SpiceModel` to ask for one and no UI anywhere surfaced `Sections`. **Both now take an
+optional `section`** (§10), and blank is treated as *no section* rather than as a section named "" —
+the value arrives from a stored parameter and from a combo box, both of which spell "unset" as an
+empty string.
 
 ---
 
@@ -836,7 +862,8 @@ gate that is not "it ran". Three, in increasing strength:
 
 ## 10. Design — selecting a `.lib` section from the import and place gestures
 
-The reader half exists (§8.8). What is missing is a way to ask, and a place to show the answer.
+The reader half existed (§8.11). What was missing was a way to ask, and a place to show the answer.
+**Built 2026-09-01; every bullet below is now the implementation.**
 
 - `SpiceNetlistReader.ReadFile(path, section)` and `Read(text, …, section)` — the parameter is
   already threaded all the way through `Session.Run`; only the public entry points hard-code null.
@@ -852,6 +879,13 @@ The reader half exists (§8.8). What is missing is a way to ask, and a place to 
   changes and nothing else does.
 - The default is **no section**, which is today's behaviour exactly, and a file that declares
   sections but has none chosen keeps saying so in its notes rather than picking one.
+
+**Two things the implementation added that the design did not say.** A file offering sections and
+asked for none reads *nothing*, so "this file holds no `.model` cards and no `.subckt` definitions" is
+a true sentence about the read and a misleading one about the file — both the placed component's
+status line and the picker's intro name the alternatives instead. And the same case must reach the
+IMPORT picker rather than the holds-nothing refusal, because the picker is where the section is
+chosen; `CreateCellFromModelCardFromPathAsync` branches on `SectionNames.Count > 0` for exactly that.
 
 ---
 
@@ -869,6 +903,9 @@ knows the transitive file set of any SPICE reference it has read — it simply n
 §6 is correct as far as it goes: an external `SpiceModel` file is found, offered, ticked by default,
 copied to `external/<name>` and repointed. Three things break the moment the referenced file is a
 library file that is not self-contained.
+
+**Built 2026-09-01.** What follows is the diagnosis; the state now is at the end of the section
+(§12.5).
 
 ### 12.1 The include closure is invisible
 
@@ -913,6 +950,37 @@ a single file stays a single row and behaves exactly as it does today.
   gesture (§1), and it is a different decision — made once, at import time — from *"send this design
   to a colleague"*.
 
+### 12.5 What the archive actually does now
+
+`WorkspaceArchiveScanner.AddExternalFiles` reads every external reference whose extension is one of
+`SpiceModelPeek.FileExtensions` (the same list the SpiceModel picker offers, so the archive and the
+component cannot disagree about what a deck is) through the same `SpiceModelPeek` mtime cache the
+editor and the extractor use, and takes `SpiceNetlistResult.FilesRead` as its closure. From that:
+
+- **A closure of one file is left exactly as it was** — one flat row at `external/<name>`. That is the
+  common case and it already worked; a subtree row for it would be a folder containing one file.
+- **A closure of several becomes ONE row with its own subtree**, rooted at the deepest common ancestor
+  and preserving relative offsets, at `external/spice/<group>/…`. Repointing rewrites only the entry
+  point; the `.include` lines inside the deck are untouched and resolve after the copy exactly as they
+  did before. That is the property that makes it robust rather than clever, and the gate test proves
+  it by extracting the archive and re-reading the deck from inside it — not by counting copied files,
+  which would pass with the structure flattened.
+- **Only the closure travels, not the folder it is rooted at.** `ArchiveOption.Members` names the exact
+  files and their offsets; a directory row with no members still copies its whole folder, which is
+  what a kit is. Without this, carrying three files out of a model directory would archive the
+  directory.
+- **Two decks sharing a directory are ONE subtree**, merged when their roots are equal or nested. Two
+  overlapping subtree rows would copy the shared model file twice and leave the recipient with two
+  divergent copies of one file.
+- **A closure member inside the workspace or inside a referenced kit is skipped** — the same rule
+  `AddExternalFiles` already applied to the workspace, and §12.4's rule for kits.
+- **Ticked by default, unchanged**, and the row says how many files travel and which document pulled
+  them in.
+
+One measured guard rail: a file is not read as a deck above 32 MB. The extension list has to include
+the spellings suppliers actually use (`.txt` among them), and a Known File that happens to be a large
+log must not be parsed line by line to discover that it includes nothing.
+
 ---
 
 ## 13. Open questions
@@ -929,9 +997,11 @@ a single file stays a single row and behaves exactly as it does today.
    discontinuous by construction.
 3. **`.model` inside `.subckt`** — is per-subcircuit card scoping worth implementing, or is the
    redefinition note sufficient? Two files here declare local cards; neither collides today.
-4. **A sectioned file** was not among the three measured — none of them uses `.LIB`/`.ENDL` at all.
-   §10's design comes from the reader's implementation and from `PdkCorners`, not from a file in
-   hand.
+4. **A sectioned file** was not among the four measured — none of them uses `.LIB`/`.ENDL` at all.
+   §10's design came from the reader's implementation and from `PdkCorners`, not from a file in hand,
+   and it is now built and gated on a synthetic two-section fixture. **Still open in the same way:**
+   no real supplier file has exercised it here, so the one thing unverified is whether a real kit's
+   section names and nesting look like the fixture's.
 5. ~~**Is the collapsed charge path (§9.5.2) worth building at all?**~~ **Answered, and the
    dependency ran the other way: it is BUILT, and it is what completes M4.** It is not an
    optimisation that saves a node and a branch row — **it is the only formulation harmonic balance

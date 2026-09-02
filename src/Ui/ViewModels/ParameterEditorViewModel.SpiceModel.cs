@@ -69,6 +69,25 @@ public sealed partial class ParameterEditorViewModel
     /// <summary>True only while the selected definition is a <c>.subckt</c> — see the class remarks.</summary>
     [ObservableProperty] private bool _spiceModelShowPinLayout;
 
+    /// <summary>
+    /// The <c>.lib</c> sections the chosen file offers, with "Whole file" first — which is what a
+    /// blank <c>Section</c> means and what every file that declares none is read as.
+    /// </summary>
+    public ObservableCollection<string> SpiceModelSectionOptions { get; } = [];
+
+    [ObservableProperty] private int _spiceModelSectionIndex;
+
+    /// <summary>
+    /// True only when the file declares sections. <b>Hidden rather than disabled</b> for the files
+    /// that do not — which is nearly all of them — for the same reason Pins and Pitch are hidden on a
+    /// <c>.model</c> card: a combo with one entry that can never change is a question with no answer.
+    /// </summary>
+    [ObservableProperty] private bool _spiceModelShowSections;
+
+    /// <summary>The section names behind <see cref="SpiceModelSectionOptions"/>, offset by the leading
+    /// "Whole file" entry. Index 0 of the combo is no section at all.</summary>
+    private IReadOnlyList<string> _spiceModelSections = [];
+
     [ObservableProperty] private int _spiceModelPinConfigIndex;
     [ObservableProperty] private int _spiceModelPitchIndex = 1;   // Loose
 
@@ -83,6 +102,21 @@ public sealed partial class ParameterEditorViewModel
         if ((uint)newValue >= (uint)_spiceModelDefinitions.Count) return;
 
         ApplySpiceModelChoice(SpiceModelFilePath, _spiceModelDefinitions[newValue].Name);
+    }
+
+    /// <summary>
+    /// Choosing a section re-reads the file, so the definition list, the declared parameter rows and
+    /// the symbol all change together — the same all-at-once rule choosing a FILE follows, and for
+    /// the same reason: the previous section's definition almost certainly is not in this one.
+    /// </summary>
+    partial void OnSpiceModelSectionIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        if ((uint)newValue > (uint)_spiceModelSections.Count) return;
+
+        ApplySpiceModelChoice(
+            SpiceModelFilePath, "",
+            newValue <= 0 ? "" : _spiceModelSections[newValue - 1]);
     }
 
     partial void OnSpiceModelPinConfigIndexChanged(int oldValue, int newValue)
@@ -120,7 +154,7 @@ public sealed partial class ParameterEditorViewModel
         // A NEW file means a new set of definitions, so the name is cleared and re-resolved rather
         // than carried over: the old name almost certainly does not exist in the new file, and a
         // stale one would report "not defined in" for something the user never typed.
-        ApplySpiceModelChoice(stored, "");
+        ApplySpiceModelChoice(stored, "", "");
     }
 
     private async Task RevealSpiceModelFileAsync()
@@ -142,16 +176,24 @@ public sealed partial class ParameterEditorViewModel
     /// actually declares). This is the one place rows are REMOVED — a plain refresh only ever adds,
     /// because opening a dialog is not an edit.</para>
     /// </summary>
-    private void ApplySpiceModelChoice(string file, string name)
+    /// <param name="section">
+    /// Which section, or null to keep whatever the instance already carries — the ordinary case, since
+    /// only the Section combo itself changes it. Choosing a new FILE passes "" instead, because a
+    /// section named in one file means nothing in another.
+    /// </param>
+    private void ApplySpiceModelChoice(string file, string name, string? section = null)
     {
         if (_target is null || _schematicVm is null) return;
 
         var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
 
+        section ??= ParamValue(_target, SpiceModelSymbolProvider.SectionParameter);
+
         Set(SpiceModelSymbolProvider.FileParameter, file);
         Set(SpiceModelSymbolProvider.NameParameter, name);
+        Set(SpiceModelSymbolProvider.SectionParameter, section);
 
-        var declared = DeclaredParametersOf(file, name);
+        var declared = DeclaredParametersOf(file, name, section);
 
         // Out with the previous definition's rows, in with this one's — keeping any value the user
         // had already typed for a name that survives the change.
@@ -202,7 +244,8 @@ public sealed partial class ParameterEditorViewModel
         string file = ParamValue(comp, SpiceModelSymbolProvider.FileParameter);
         string name = ParamValue(comp, SpiceModelSymbolProvider.NameParameter);
 
-        foreach (var d in DeclaredParametersOf(file, name))
+        foreach (var d in DeclaredParametersOf(
+                     file, name, ParamValue(comp, SpiceModelSymbolProvider.SectionParameter)))
         {
             if (comp.Parameters.Any(p => p.Name.Equals(d.Name, StringComparison.OrdinalIgnoreCase))) continue;
             comp.Parameters.Add(d);
@@ -214,9 +257,9 @@ public sealed partial class ParameterEditorViewModel
     /// card, for a file that does not read, and for a definition that is refused — in every one of
     /// those there is nothing the user could usefully set.
     /// </summary>
-    private List<EditableParameter> DeclaredParametersOf(string file, string name)
+    private List<EditableParameter> DeclaredParametersOf(string file, string name, string section)
     {
-        var def = ResolveDefinition(file, name, out _);
+        var def = ResolveDefinition(file, name, section, out _);
         if (def?.Candidate.Subcircuit is not { IsSupported: true } sub) return [];
 
         return [.. sub.Definition.Parameters
@@ -231,7 +274,8 @@ public sealed partial class ParameterEditorViewModel
     }
 
     /// <summary>Reads a file + name pair through the peek, resolved against this schematic.</summary>
-    private SpiceModelDefinition? ResolveDefinition(string file, string name, out SpiceModelFile peeked)
+    private SpiceModelDefinition? ResolveDefinition(
+        string file, string name, string section, out SpiceModelFile peeked)
     {
         peeked = SpiceModelFile.Empty;
         if (string.IsNullOrWhiteSpace(file)) return null;
@@ -240,7 +284,7 @@ public sealed partial class ParameterEditorViewModel
             file, _schematicVm?.EditModel.SchematicDirectory);
         if (path is null) return null;
 
-        peeked = SpiceModelPeek.Read(path);
+        peeked = SpiceModelPeek.Read(path, section);
         return peeked.Error is null ? SpiceModelPeek.Select(peeked, name) : null;
     }
 
@@ -248,10 +292,11 @@ public sealed partial class ParameterEditorViewModel
     {
         if (_target?.Symbol != SymbolKind.SpiceModel) return;
 
-        string file = ParamValue(_target, SpiceModelSymbolProvider.FileParameter);
-        string name = ParamValue(_target, SpiceModelSymbolProvider.NameParameter);
+        string file    = ParamValue(_target, SpiceModelSymbolProvider.FileParameter);
+        string name    = ParamValue(_target, SpiceModelSymbolProvider.NameParameter);
+        string section = ParamValue(_target, SpiceModelSymbolProvider.SectionParameter);
 
-        var def = ResolveDefinition(file, name, out var peeked);
+        var def = ResolveDefinition(file, name, section, out var peeked);
 
         int cfgIdx = Array.IndexOf(SnpPinConfigOptions,
             ParamValue(_target, "PinConfig") is { Length: > 0 } c ? c : "Standard");
@@ -269,7 +314,20 @@ public sealed partial class ParameterEditorViewModel
         foreach (var d in peeked.Definitions) SpiceModelNameOptions.Add(d.DisplayLabel);
         SpiceModelNameIndex = def is null ? -1 : peeked.Definitions.ToList().IndexOf(def);
 
-        (SpiceModelStatus, SpiceModelStatusIsProblem) = DescribeSpiceModelState(file, name, def, peeked);
+        // The section names come from the same read: the reader records a `.LIB` frame it is
+        // SKIPPING as well as one it is reading, so one pass answers both "which are there" and
+        // "what is in the chosen one".
+        _spiceModelSections = peeked.Scan.SectionNames;
+        SpiceModelSectionOptions.Clear();
+        SpiceModelSectionOptions.Add("Whole file (no section)");
+        foreach (var sec in _spiceModelSections) SpiceModelSectionOptions.Add(sec);
+        SpiceModelShowSections = _spiceModelSections.Count > 0;
+
+        int secIdx = section.Length == 0 ? 0 : IndexOfSection(_spiceModelSections, section) + 1;
+        SpiceModelSectionIndex = secIdx > 0 ? secIdx : 0;
+
+        (SpiceModelStatus, SpiceModelStatusIsProblem) =
+            DescribeSpiceModelState(file, name, section, def, peeked);
         SpiceModelShowPinLayout = def is { IsSubcircuit: true, Refusal: null };
         SpiceModelPinConfigIndex = cfgIdx;
         SpiceModelPitchIndex     = pitchIdx;
@@ -286,11 +344,26 @@ public sealed partial class ParameterEditorViewModel
     /// difference between a minute and a wrong measurement built on a part that never resolved.
     /// This is the SAME sentence the extractor reports, because both come from the same peek.</para>
     /// </summary>
+    private static int IndexOfSection(IReadOnlyList<string> sections, string wanted)
+    {
+        for (int i = 0; i < sections.Count; i++)
+            if (sections[i].Equals(wanted, StringComparison.OrdinalIgnoreCase)) return i;
+        return -1;
+    }
+
     private static (string Text, bool IsProblem) DescribeSpiceModelState(
-        string file, string name, SpiceModelDefinition? def, SpiceModelFile peeked)
+        string file, string name, string section, SpiceModelDefinition? def, SpiceModelFile peeked)
     {
         if (file.Length == 0)
             return ("No file chosen — this component draws as a generic two-port and will not simulate.", true);
+
+        // Checked BEFORE the generic error, because a section the file does not declare is exactly
+        // what makes it read nothing — and "this file holds no definitions" would then be a true
+        // sentence about the read and a false one about the file.
+        if (section.Length > 0 && peeked.Scan.SectionNames.Count > 0 &&
+            IndexOfSection(peeked.Scan.SectionNames, section) < 0)
+            return ($"This file does not declare a section called '{section}'. It offers: "
+                    + string.Join(", ", peeked.Scan.SectionNames) + ".", true);
 
         if (peeked.Error is { } error) return (error, true);
 

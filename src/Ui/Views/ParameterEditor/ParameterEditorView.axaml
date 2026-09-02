@@ -604,6 +604,20 @@
                                 ToolTip.Tip="Reveal this file in the system file manager"
                                 Command="{Binding ShowSpiceModelFileCommand}"/>
                     </Grid>
+                    <!-- Section: which .lib alternative in that file. Present only when the file
+                         declares any — nearly none do, and a combo with a single entry that can
+                         never change is a question with no answer. -->
+                    <Grid ColumnDefinitions="60,*" IsVisible="{Binding SpiceModelShowSections}">
+                        <TextBlock Grid.Column="0" Text="Section"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SpiceModelSectionOptions}"
+                                  SelectedIndex="{Binding SpiceModelSectionIndex}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11"
+                                  Padding="4,3"
+                                  ToolTip.Tip="Which .lib section to read. Sections are alternatives — a file that offers several and has none chosen reads nothing from any of them."/>
+                    </Grid>
                     <!-- Name: which definition in that file -->
                     <Grid ColumnDefinitions="60,*">
                         <TextBlock Grid.Column="0" Text="Name"

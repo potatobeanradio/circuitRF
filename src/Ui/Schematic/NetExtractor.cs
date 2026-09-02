@@ -966,7 +966,10 @@ public static class NetExtractor
             return null;
         }
 
-        var peeked = SpiceModelPeek.Read(path);
+        string section = (comp.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression ?? "").Trim();
+
+        var peeked = SpiceModelPeek.Read(path, section);
         if (peeked.Error is { } error)
         {
             conflicts.Add($"Instance '{comp.InstanceName}': {error}");
