@@ -9,7 +9,7 @@ lede: Bondwire arrays: geometry, inductance, the 3D kernel, and S-parameters out
 <nav class="toc">
 <h2>On this page</h2>
 <ol>
-<li><a href="#what">What wBond is</a></li>
+<li><a href="#what">What wBond is: a bondwire model</a></li>
 <li><a href="#schematic">The schematic side: one symbol, one pin pair per array</a></li>
 <li><a href="#layout">Drawing wires: the layout view</a></li>
 <li><a href="#loop-span">Loop height and span</a></li>
@@ -28,20 +28,22 @@ lede: Bondwire arrays: geometry, inductance, the 3D kernel, and S-parameters out
 </ol>
 </nav>
 
-## What wBond is {#what}
+## What wBond is: a bondwire model {#what}
 
-A bond wire is a thin curved conductor arcing through air over a ground reference. Below a few GHz you
-can call it 1 nH and move on; above that its inductance depends on the loop you actually bonded, on the
-wires beside it, and on how far the return path is — and by then it is often the dominant element in
-your match.
+A bond wire, or bondwire, is a thin curved conductor arcing through air over a ground reference. Below
+a few GHz you can call it 1 nH and move on; above that its inductance depends on the loop you actually
+bonded, on the wires beside it, and on how far the return path is — and by then it is often the
+dominant element in your match.
 
-**wBond models the geometry you drew.** You draw the wires over the pads they land on, group them into
-arrays, and the component computes each array's inductance, the mutual inductance between arrays, and
-the capacitance to the plane below — as a circuit element you simulate with, or as a Touchstone file.
+**wBond models the bondwire geometry you drew.** You draw the wires over the pads they land on, group
+them into arrays, and the component computes each array's inductance, the mutual inductance between
+arrays, and the capacitance to the plane below — as a circuit element you simulate with, or as a
+Touchstone file.
 
 Everything in the fast path is **frequency-domain, quasi-static and closed-form**: no meshing, no
 solver, no Sommerfeld integral. That is what lets it re-solve inside a drag. A **3D method-of-moments
-kernel** sits behind it for when the quasi-static assumptions run out; both are described below.
+kernel** sits behind it for when the quasi-static assumptions run out; both are described below. It is a
+bondwire solver and nothing else — the geometry it knows about is wires, pads and one ground plane.
 
 ## The schematic side: one symbol, one pin pair per array {#schematic}
 

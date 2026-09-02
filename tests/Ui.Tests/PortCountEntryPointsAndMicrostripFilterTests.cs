@@ -41,6 +41,30 @@ public class PortCountEntryPointsAndMicrostripFilterTests
     }
 
     [Fact]
+    public void PlainZTile_IsGone_ButZ1PAndZ2PRemain()
+    {
+        // Owner report, 2026-09-01: the bare "Z" tile placed a 2-port impedance network, which is
+        // precisely what the Z2P tile beside it places — one part with two spellings in the palette.
+        // The plain tile is suppressed; the port-count entry points are what a user picks.
+        Assert.DoesNotContain(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.ZPort && i.PortCount == 0);
+        Assert.DoesNotContain(LibraryCatalog.AllItems, i => i.DisplayName == "Z");
+        Assert.Contains(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.ZPort && i.PortCount == 1);
+        Assert.Contains(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.ZPort && i.PortCount == 2);
+    }
+
+    [Fact]
+    public void PlainZTileRemoval_LeavesZPortPlaceableAndSearchable()
+    {
+        // Suppressing the tile must not retire the KIND: Z stays in AllItems (via its entry points),
+        // still answers a search for its registry terms, and every other dynamic type keeps its own
+        // plain tile.
+        Assert.Contains(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.ZPort);
+        Assert.Contains(LibraryCatalog.Search("impedance"), i => i.Kind == SymbolKind.ZPort);
+        Assert.Contains(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.Snp && i.PortCount == 0);
+        Assert.Contains(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.Sdd && i.PortCount == 0);
+    }
+
+    [Fact]
     public void Z1P_Alone_HasTerminalsFilterKeyword_Z2PAndZ3PDoNot()
     {
         var z1p = LibraryCatalog.AllItems.Single(i => i.Kind == SymbolKind.ZPort && i.PortCount == 1);

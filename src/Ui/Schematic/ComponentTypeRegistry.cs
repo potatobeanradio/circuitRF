@@ -370,11 +370,17 @@ public static class ComponentTypeRegistry
         // SnP is there: what the user is placing is a FILE they already have, and that is how they
         // look for it. It is the reference half of a pair whose other half is the project tree's
         // "Copy to Workspace as Cell…"; both read the same file through SpiceCellImport.
+        // Its primary category stays DataFiles — a SPICE component IS a file reference, and that is
+        // where a user browsing by artifact looks for it. Devices and Nonlinear are FILTER keywords
+        // added on the owner's request (2026-09-01): what the referenced card usually contains is a
+        // transistor or diode, so a user shopping for an active part must find it there too. Same
+        // kind, same glyph, same engine component, still one AllItems row.
         [SymbolKind.SpiceModel]    = new("SPICE", "X",
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SPICE", "SpiceModel", "spice model", "model card", ".model", ".subckt",
                           "subckt", "subcircuit", "netlist", "model file", "lib"],
-            IsCommon: true),
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Devices, ComponentCategory.Nonlinear]),
         // wBond — a wirebond design placed as a component. ONE tile, not one per `.wBond` in the
         // workspace (§5 question 4): a wBond is like SnP — one component type with a file parameter
         // — rather than like a PDK part, where one tile per part is the point. Surfacing a
@@ -2621,6 +2627,20 @@ public static class ComponentTypeRegistry
     private static readonly string[] Ip3ReferenceOptions =
         [nameof(Ip3Reference.Input), nameof(Ip3Reference.Output)];
 
+    /// <summary>The Tuner family's <c>BiasTee</c> switch. Not an enum anywhere — the engine
+    /// string-compares the resolved value against "on" (<see cref="ComponentModelFactory"/>'s
+    /// tuner branch), so these two spellings ARE the contract and there is no type to
+    /// <c>nameof</c> against. Committed bare, exactly as
+    /// <see cref="DefaultParameters"/> writes the default: <c>CnlReader</c> is what quotes it on
+    /// the way to the elaborator, so a quoted spelling here would arrive double-quoted.</summary>
+    private static readonly string[] BiasTeeOptions = ["off", "on"];
+
+    /// <summary>The Tuner family's <c>ShowBias</c> switch — display-only, dropped at extraction
+    /// (<c>NetExtractor</c>), read back by <c>EditableComponent.GetBoolParam</c> as a
+    /// case-insensitive "true". Lower-case to match the default and every other boolean parameter
+    /// the schematic writes.</summary>
+    private static readonly string[] ShowBiasOptions = ["false", "true"];
+
     /// <summary>
     /// The closed set of NAMES a parameter accepts, for a parameter whose value is an enum name
     /// rather than a number — <c>Response</c>, <c>Form</c>, <c>Direction</c>, <c>OffState</c>,
@@ -2651,6 +2671,12 @@ public static class ComponentTypeRegistry
         (SymbolKind.Duplexer, "TxResponse" or "RxResponse")       => FilterResponseOptions,
         (SymbolKind.Duplexer, "TxForm" or "RxForm")               => NetworkFormOptions,
         (SymbolKind.Amp, "IP3Ref")                                => Ip3ReferenceOptions,
+        // The Tuner family (owner request, 2026-09-01). Both parameters accept a closed set of two
+        // spellings and neither is a number, so a free-text box could only ever be got wrong — a
+        // typo'd "ON " or "0" reads as the default with nothing said anywhere, which is exactly the
+        // class of bug this picker exists to remove. All three tiles share one parameter list.
+        (SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner, "BiasTee")  => BiasTeeOptions,
+        (SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner, "ShowBias") => ShowBiasOptions,
         _ => null,
     };
 

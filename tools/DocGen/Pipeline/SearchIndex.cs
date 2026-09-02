@@ -55,11 +55,25 @@ public sealed class SearchIndex
     {
         var sections = new List<(string, string, string)>();
 
-        foreach (var (anchor, heading, body) in Sections(Strippable(bodyHtml)))
+        var found = Sections(Strippable(bodyHtml)).ToList();
+
+        // A page whose body opens straight into its first heading — most of the Reference Guide,
+        // because an on-page contents card is a <nav> and is stripped — has NO lead section for
+        // Sections to produce, and its lede was therefore dropped from the index entirely. That is
+        // 19 of 35 pages, and the lede is the one sentence written to say what the page is about:
+        // wBond's own reads "Bondwire arrays: …", so a search for "bondwire" could not find the
+        // bondwire page through it. Give such a page an empty lead section and the line below fills
+        // it with the lede.
+        if (page.Lede.Length > 0 && !found.Any(s => s.Anchor.Length == 0))
+            found.Insert(0, ("", "", ""));
+
+        foreach (var (anchor, heading, body) in found)
         {
             // The lead section carries the lede too: it is the page's own one-line summary and the
             // best thing a query for the page's subject can match against.
-            string full = anchor.Length == 0 && page.Lede.Length > 0 ? page.Lede + " " + body : body;
+            string full = anchor.Length == 0 && page.Lede.Length > 0
+                ? (body.Length == 0 ? page.Lede : page.Lede + " " + body)
+                : body;
             if (heading.Length == 0 && full.Length == 0) continue;
             sections.Add((anchor, heading, Truncate(full)));
         }

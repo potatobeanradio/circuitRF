@@ -99,12 +99,13 @@ public class PaletteFilterOrderingTests
 
         // NonlinearC, VerilogA, Diode, the 5 n-channel FET laws, the 3 p-channel ones, the 2 JFET
         // channels, the 4 lateral MOS tiles (two levels x two channels), the 2 vertical power MOS
-        // channels, the 2 IGBT channels, the 2 BJT polarities, the 2 mixer tiles, and every SDD row
-        // (plain SDD + SDD1/SDD2/SDD3).
+        // channels, the 2 IGBT channels, the 2 BJT polarities, the 2 mixer tiles, every SDD row
+        // (plain SDD + SDD1/SDD2/SDD3), and SPICE (owner request 2026-09-01 — a referenced .model
+        // or .subckt is normally a transistor or diode, so it must be reachable from here).
         //
         // The ferrite bead is deliberately NOT here: it is a linear impedance and belongs with the
         // lumped elements, which is where a user looking for one goes.
-        Assert.Equal(29, nonlinear.Count);
+        Assert.Equal(30, nonlinear.Count);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.NonlinearC);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.VerilogA);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Diode);
@@ -134,10 +135,27 @@ public class PaletteFilterOrderingTests
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.Mixer);
         Assert.Contains(nonlinear, i => i.Kind == SymbolKind.MixerD);
         Assert.Equal(4, nonlinear.Count(i => i.Kind == SymbolKind.Sdd));   // SDD, SDD1, SDD2, SDD3
+        Assert.Contains(nonlinear, i => i.Kind == SymbolKind.SpiceModel);
 
         // Nothing else leaks in — no lumped R/L/C, no terminals.
         Assert.DoesNotContain(nonlinear, i => i.Kind == SymbolKind.Resistor);
         Assert.DoesNotContain(nonlinear, i => i.Kind == SymbolKind.Term);
+    }
+
+    [Fact]
+    public void Spice_ReachableFromDevicesAndNonlinear_ButKeepsDataFilesAsItsPrimary()
+    {
+        // Owner request, 2026-09-01. What a SPICE component REFERENCES is usually a transistor or a
+        // diode, so somebody shopping for an active part has to find it under Devices and Nonlinear
+        // — but it IS a file reference, so DataFiles stays its primary category and the tile still
+        // sorts (and appears) exactly once.
+        Assert.Contains(LibraryCatalog.ByCategory(ComponentCategory.Devices),   i => i.Kind == SymbolKind.SpiceModel);
+        Assert.Contains(LibraryCatalog.ByCategory(ComponentCategory.Nonlinear), i => i.Kind == SymbolKind.SpiceModel);
+        Assert.Contains(LibraryCatalog.ByCategory(ComponentCategory.DataFiles), i => i.Kind == SymbolKind.SpiceModel);
+
+        var item = Assert.Single(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.SpiceModel);
+        Assert.Equal(ComponentCategory.DataFiles, item.Category);
+        Assert.Equal("SPICE", item.DisplayName);
     }
 
     [Fact]

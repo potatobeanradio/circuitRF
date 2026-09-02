@@ -2,6 +2,64 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## Palette and Parameter-dialog polish: the plain Z tile, SPICE's filters, the Tuner pickers (2026-09-01)
+
+Four small owner requests, one of which turned out to have a real defect underneath it.
+
+**The bare "Z" tile is gone; Z1P/Z2P/Z3P stay.** The plain (PortCount == 0) tile for
+`SymbolKind.ZPort` placed a 2-PORT impedance network — precisely what the Z2P tile beside it places
+— so the palette offered one part under two names and the second name did not say what it did.
+`LibraryCatalog.NoPlainTileKinds` suppresses it. **It is deliberately NOT `InternalOnlyKinds`**: that
+set removes a KIND from the catalog entirely, and ZPort must stay — it is still in `AllItems` (via
+its port-count entry points), still searchable, still placeable. `RecentlyUsed` needed nothing: its
+`FirstOrDefault(PortCount == 0) ?? g.First()` already falls through to Z1P.
+
+**SPICE lists under Devices and Nonlinear as EXTRA categories, keeping DataFiles as its primary.**
+What a `SpiceModel` references is usually a transistor or a diode, so somebody shopping for an active
+part has to find it there — but the component itself IS a file reference, and its primary category is
+what decides where it sorts and that it appears exactly once. Same shape as R-hk-4's Z1P/Terminals
+and the SDD1/SDD2 Devices keyword.
+
+**`BiasTee` and `ShowBias` are pickers now** (`ComponentTypeRegistry.NamedParamOptions`, shared by all
+three Tuner tiles). Neither is a number and each takes one of two spellings, so a text box could only
+ever be got wrong: a typo'd `ON ` or `0` reads as the default with nothing said anywhere. **Both
+commit BARE, not quoted** — `off`/`on`, `false`/`true` — matching what `DefaultParameters` writes,
+because `CnlReader` is what quotes `BiasTee` on the way to the elaborator (a quoted spelling here
+would arrive double-quoted) and `ShowBias` never reaches the engine at all. They ride the
+`IsRegistryChoiceParam` path, so they keep their place in the registry's parameter order rather than
+floating to the top of the dialog the way a kit part's choice row does.
+
+**What the Tuner's frequency response actually is**, since the user docs now state it and it was
+worth checking rather than assuming (`TunerModel.GetZ`):
+
+| | What it presents |
+|---|---|
+| DC (\|ω\| < 1 rad/s) | `Zdefault`, behind the ideal DC-block cap |
+| S-parameters (`_toneFreqHz == 0`) | **`Z[1]`, flat over the whole band** — `Z[2]`, `Z[3]`, … are ignored |
+| HB | `Z[k]` at k = round(ω/ω₀); undeclared or off-grid → `Zdefault` |
+| Loadpull / pursuit | the same, except the tuned harmonic comes from the grid point |
+
+And the SourceTuner's RF generator is stamped only when something has called `SetSourceDrive` — which
+only `LoadpullEngine`/`LoadpullPursuitEngine` do. **On a plain HB testbench a SourceTuner is a passive
+termination**, because `HbEngine.GiveTunerItsBandRuler` sets a tone only for `TunerRole.Load` and
+nothing outside the loadpull engines ever assigns a role.
+
+## A page whose body opens on a heading lost its LEDE from the docs search index (2026-09-01)
+
+Reported as "searching *bondwire* does not find the wBond page", which it should have: that page's own
+lede reads "Bondwire arrays: geometry, inductance, …". It was never indexed.
+
+`SearchIndex.Sections` yields a lead section only when there is prose BEFORE the first heading, and
+`Add` attaches the lede to that lead section. But a Reference Guide page opens with its on-page
+contents card — a `<nav>`, which `Strippable` removes — and then its first `h2`. So there is no lead
+section, and the lede is dropped. **19 of the 35 pages**, including every long reference page, were
+carrying their one-sentence summary nowhere in the index. `Add` now inserts an empty lead section when
+a page has a lede and no lead section of its own, and the existing line fills it.
+
+The wBond page also names the one-word spelling in its opening sentence and in its first heading;
+with the heading match ("bondwire" scores 8 + 5 in a heading, plus the 40-point whole-phrase bonus)
+the page goes from a 6% margin over the landing page to a 3× one.
+
 ## Behavioural sources become two different things, chosen by SHAPE (2026-09-01)
 
 `brief-spice-behavioural-sources.md` M2–M4. A controlled source line is translated by looking at what

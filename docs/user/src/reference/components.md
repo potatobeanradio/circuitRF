@@ -372,25 +372,71 @@ measurements reference that current: `I("Iout", 1)`. No parameters.
 
 ### Tuner / SourceTuner / LoadTuner {#tuner}
 
+<div class="symbol-row">
 {{symbol: tuner}}
+{{symbol: source-tuner}}
+{{symbol: load-tuner}}
+</div>
 
-A programmable RF termination used by loadpull and sourcepull. The three variants are the *same*
-engine component with different glyphs and net ordering — match the symbol to its role.
-**SourceTuner** sits on the source side, **LoadTuner** on the load side.
+A programmable RF termination. The three variants are the *same* engine component with different
+glyphs and net ordering — match the symbol to its role. **SourceTuner** sits on the source side,
+**LoadTuner** on the load side.
 
 - `Z[1]` — the fundamental termination. Required, and it accepts complex literals such as `50+j*10`.
   Add `Z[2]`, … in the editor, or `G[k]` to give a reflection coefficient instead.
-- `Zdefault` — the catch-all termination for harmonics not otherwise specified.
+- `Zdefault` — the catch-all termination for harmonics not otherwise specified, and the impedance the
+  tuner presents at DC.
 - `Z0` — the reference impedance for any `G[k]` entry.
-- `BiasTee` — turns on the internal bias-tee and DC supply, which the loadpull directive requires.
+- `BiasTee` — `on` or `off`, chosen from a picker. `on` builds the internal bias-tee and DC supply,
+  which the loadpull directive requires. With it `off` the tuner is RF-only: there is no DC path
+  through it to the reference node.
 - `Vbias` — the DC bias at the DUT-facing port when the bias-tee is on.
-- `ShowBias` — display only: draws the bias-tee on the glyph. It never reaches the engine.
+- `ShowBias` — `true` or `false`, chosen from a picker. Display only: it draws the bias-tee on the
+  glyph and never reaches the engine, so the extracted netlist is identical either way.
 
 {{table: components/Tuner}}
 
-{{symbol: source-tuner}}
+#### Which analyses a tuner works in {#tuner-analyses}
 
-{{symbol: load-tuner}}
+All five that terminate a circuit: {{anchor: simulations#dc|DC}}, {{anchor: simulations#s-parameters|S-parameters}},
+{{anchor: simulations#harmonic-balance|harmonic balance}}, {{anchor: simulations#loadpull|loadpull}} and
+{{anchor: simulations#loadpull-pursuit|loadpull pursuit}}. It is an ordinary linear component, so a
+parametric sweep wrapping any of them sweeps it like anything else.
+
+#### How its frequency response is defined {#tuner-frequency}
+
+**A tuner is not a fitted network.** It presents the impedance you declared, exactly, with no
+interpolation between entries and no roll-off. Which entry it presents depends on the analysis:
+
+| Analysis | What the tuner presents |
+|---|---|
+| DC | `Zdefault` — but behind the ideal DC-block capacitor, so with `BiasTee=on` the DC seen at the pin is the supply through the choke, and with `BiasTee=off` the pin is open at DC. |
+| S-parameters | **`Z[1]`, flat across the whole frequency sweep.** There is no harmonic structure outside harmonic balance, so the declared fundamental is the only value in play — `Z[2]`, `Z[3]`, … are ignored. |
+| Harmonic balance | `Z[k]` at harmonic *k*, where *k* is the analysis fundamental's *k*-th multiple. Anything not declared falls back to `Zdefault`, as does any frequency that is not on the harmonic grid. |
+| Loadpull / pursuit | The same per-harmonic rule, except that the harmonic being tuned takes its value from the grid point under test rather than from `Z[k]`. |
+
+So the answer to "what does `Z[2]` do in an S-parameter run?" is *nothing*: declare the band you care
+about in `Z[1]`, and use several S-parameter analyses if you want several terminations.
+
+#### In loadpull and pursuit, the SourceTuner is also the RF generator {#tuner-drive}
+
+A loadpull run needs a drive as well as terminations, and the **SourceTuner supplies it**: the
+loadpull and pursuit engines assign it the source role, which stamps a single-tone RF generator inside
+it, behind the impedance it presents. The generator is calibrated to *available* power —
+|V<sub>s</sub>| = √(8·P<sub>avl</sub>·Re Z<sub>1</sub>) — so the power you ask for and the impedance the
+DUT is driven from stay consistent as either one moves across the sweep.
+
+**The drive level is not a tuner parameter.** There is no `Pavl` row on the component, because the
+sweep over drive belongs to the run, not to the part. The ladder is set in the analysis: **Pin start
+(dBm)**, **Pin max (dBm)** and **Pin step (dB)** in the Loadpull and Loadpull Pursuit setup, walked
+upward from the start until compression is reached or the cap stops it.
+
+<div class="callout note">
+<span class="label">Outside loadpull, a SourceTuner does not drive</span>
+<p>The source role is assigned by the loadpull and pursuit engines only. Place a SourceTuner on a plain
+harmonic-balance testbench and it behaves as a passive termination like the other two glyphs — put a
+{{anchor: components#p1tone|P1Tone}} or a tone source on the bench for the drive.</p>
+</div>
 
 ## Transmission lines
 

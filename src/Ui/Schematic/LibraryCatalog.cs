@@ -223,10 +223,20 @@ public static class LibraryCatalog
     /// </summary>
     private static readonly HashSet<SymbolKind> InternalOnlyKinds = [SymbolKind.Generic, SymbolKind.Unknown];
 
+    /// <summary>
+    /// Dynamic types whose PLAIN (PortCount == 0) tile is suppressed because it is redundant with
+    /// its own explicit port-count entry points (owner report, 2026-09-01). The bare "Z" tile placed
+    /// a 2-port impedance network — exactly what the Z2P tile beside it places — so it was a second
+    /// spelling of one part rather than a part of its own. The kind is NOT internal-only: Z1P/Z2P/Z3P
+    /// from <see cref="BuildPortCountEntryPoints"/> still carry it, so <see cref="SymbolKind.ZPort"/>
+    /// remains placeable, searchable and present in <see cref="AllItems"/>.
+    /// </summary>
+    private static readonly HashSet<SymbolKind> NoPlainTileKinds = [SymbolKind.ZPort];
+
     private static IReadOnlyList<PaletteItem> BuildAllItems()
         => Array.AsReadOnly(
             Enum.GetValues<SymbolKind>()
-                .Where(kind => !InternalOnlyKinds.Contains(kind))
+                .Where(kind => !InternalOnlyKinds.Contains(kind) && !NoPlainTileKinds.Contains(kind))
                 .Select(kind =>
                 {
                     var info = ComponentTypeRegistry.Get(kind);

@@ -238,6 +238,21 @@ figure.symbol svg, figure.symbol img { max-width: 240px; height: auto; vertical-
 figure.symbol figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
 figure.symbol .sym-dark { display: none; }
 figure.symbol .sym-light svg, figure.symbol .sym-dark svg { max-width: 240px; height: auto; }
+/* Several glyphs of one component family side by side, so a reader comparing them
+   sees all of them at once rather than scrolling between them. The glyph cap drops
+   from 240px to 200px in here because three frames at the full size (3 x 234px plus
+   the gaps) overrun the 52rem reading column and the third would wrap onto its own
+   row - which is the arrangement this rule exists to avoid. Narrower viewports still
+   wrap, as they should. */
+.symbol-row {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  align-items: flex-end; gap: 0 1rem; margin: 1.2rem 0;
+}
+.symbol-row figure.symbol { margin: 0.4rem 0; }
+.symbol-row figure.symbol svg,
+.symbol-row figure.symbol .sym-light svg,
+.symbol-row figure.symbol .sym-dark svg { max-width: 200px; }
+
 .symbol-inline { vertical-align: middle; height: 1.6em; width: auto; }
 .symbol-inline.sym-dark { display: none; }
 @media (prefers-color-scheme: dark) {
