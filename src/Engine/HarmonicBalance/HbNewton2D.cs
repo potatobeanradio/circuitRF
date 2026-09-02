@@ -25,8 +25,40 @@ namespace CircuitRF.Engine.HarmonicBalance;
 /// </summary>
 public static class HbNewton2D
 {
-    /// <param name="PortITime">
-    /// Per-device, per-port terminal current over the 2-D time grid — <c>[deviceOrdinal][port][t1, t2]</c>
+    /// <summary>
+    /// One device's per-port time-domain terminal contributions over the 2-D grid: the conduction
+    /// current (H=1) and the charge (H=jω). A port's current spectrum is the weighted sum of the
+    /// two, so a branch whose only nonlinear content is charge — where <c>res.I[p]</c> is
+    /// identically zero — is reported as its actual current rather than as zero.
+    /// </summary>
+    public sealed class PortTermTimes2D
+    {
+        public PortTermTimes2D(int portCount, int n1, int n2)
+        {
+            PortCount = portCount; N1 = n1; N2 = n2;
+            W0 = new double[portCount][,];
+            W1 = new double[portCount][,];
+            for (int p = 0; p < portCount; p++)
+            {
+                W0[p] = new double[n1, n2];
+                W1[p] = new double[n1, n2];
+            }
+        }
+
+        public int PortCount { get; }
+        public int N1        { get; }
+        public int N2        { get; }
+        public double[][,] W0 { get; }   // conduction current I[p,0]
+        public double[][,] W1 { get; }   // charge I[p,1]
+    }
+
+    /// <param name="INl">
+    /// The TOTAL nonlinear injection over the mixing lattice — <c>iNl[n,m] + jω(m)·qNl[n,m]</c>,
+    /// the same sum <see cref="BuildF2D"/> adds to the residual, and therefore what the linear
+    /// back-solve must inject to recover a branch current or a linear-interior node voltage.
+    /// </param>
+    /// <param name="PortTerms">
+    /// Per-device, per-port terminal contributions over the 2-D time grid — <c>[deviceOrdinal]</c>
     /// — from the LAST device evaluation of this solve, which is the one at the returned <c>V</c>.
     /// <see cref="ComputeDevicePortCurrents2D"/> takes it instead of re-evaluating every device at
     /// every sample for numbers already in hand (HB-P2 M3). This path has no control-current form,
@@ -35,7 +67,7 @@ public static class HbNewton2D
     public record SolveResult(bool Converged, int Iterations,
         IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace,
         Complex[,] INl,
-        double[][][,]? PortITime = null);  // I_nl[node, mixIdx] at the returned point
+        PortTermTimes2D[]? PortTerms = null);
 
     // ── Newton loop ──────────────────────────────────────────────────────────────
 
@@ -69,8 +101,8 @@ public static class HbNewton2D
         Complex[,] iNlLast = new Complex[N, M];
 
         // One buffer for the whole solve, overwritten per pass, so the last pass leaves its
-        // per-port terminal currents behind for the post-solve extraction (M3).
-        var portITime = AllocPortITime(netlist, N1, N2);
+        // per-port terminal contributions behind for the post-solve extraction (M3).
+        var portITime = AllocPortTerms(netlist, N1, N2);
 
         // The line search's scratch iterate, and the one evaluation that precedes the loop — the
         // identical transcription of HbNewton.Solve's structure (HB-P3 M1); see HbNewton.Backtrack
@@ -87,7 +119,8 @@ public static class HbNewton2D
             if (fN < tol)
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
-                return new SolveResult(true, iter + 1, trace, iNlLast, portITime);
+                return new SolveResult(true, iter + 1, trace,
+                    TotalInjection2D(iNl, qNl, grid, N, f1, f2), portITime);
             }
 
             var J = BuildJ2D(yNN, G, C, grid, N, f1, f2, guardOrder);
@@ -99,7 +132,8 @@ public static class HbNewton2D
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 Console.Error.WriteLine($"[HB2D] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
-                return new SolveResult(false, iter + 1, trace, iNlLast, portITime);
+                return new SolveResult(false, iter + 1, trace,
+                    TotalInjection2D(iNl, qNl, grid, N, f1, f2), portITime);
             }
 
             double fEntry = fN;
@@ -119,7 +153,29 @@ public static class HbNewton2D
         }
 
         trace.Add(new HbConvergenceTrace.IterRecord(maxIter, fN));
-        return new SolveResult(false, maxIter, trace, iNlLast, portITime);
+        return new SolveResult(false, maxIter, trace,
+            TotalInjection2D(iNl, qNl, grid, N, f1, f2), portITime);
+    }
+
+    /// <summary>
+    /// The TOTAL nonlinear injection over the mixing lattice — <c>iNl[n,m] + jω(m)·qNl[n,m]</c>,
+    /// exactly the nonlinear part <see cref="BuildF2D"/> adds to the residual. The DC product
+    /// (m=0) carries no charge current, matching BuildF2D's own <c>mix != 0</c> guard.
+    /// </summary>
+    internal static Complex[,] TotalInjection2D(
+        Complex[,] iNl, Complex[,] qNl, MixingGrid grid, int N, double f1, double f2)
+    {
+        int M = grid.MixCount;
+        var tot = new Complex[N, M];
+        for (int mix = 0; mix < M; mix++)
+        {
+            double omegaMix = mix == 0 ? 0.0 : OmegaOf(grid, mix, f1, f2);
+            for (int n = 0; n < N; n++)
+                tot[n, mix] = mix == 0
+                    ? iNl[n, mix]
+                    : iNl[n, mix] + new Complex(0, omegaMix) * qNl[n, mix];
+        }
+        return tot;
     }
 
     private static void ApplyUpdate2D(Complex[,] V, double[] dV, int N, int M, double lambda)
@@ -152,7 +208,7 @@ public static class HbNewton2D
     /// </summary>
     public static (Complex[,] iNl, Complex[,] qNl, Complex[][,] G, Complex[][,] C)
         EvaluateNonlinear2D(Complex[,] V, MixingGrid grid, int N, int N1, int N2,
-            ElaboratedNetlist netlist, int[] interfaceNodes, double[][][,]? portITime = null)
+            ElaboratedNetlist netlist, int[] interfaceNodes, PortTermTimes2D[]? portITime = null)
     {
         int M = grid.MixCount;
 
@@ -183,7 +239,7 @@ public static class HbNewton2D
             var portPlusIdx  = new int[portCount];
             var portMinusIdx = new int[portCount];
 
-            var devPortI = portITime is not null && devOrd < portITime.Length ? portITime[devOrd] : null;
+            var devPort = portITime is not null && devOrd < portITime.Length ? portITime[devOrd] : null;
 
             for (int p = 0; p < portCount; p++)
             {
@@ -234,7 +290,11 @@ public static class HbNewton2D
 
                 for (int p = 0; p < portCount; p++)
                 {
-                    if (devPortI is not null) devPortI[p][t1, t2] = res.I[p];
+                    if (devPort is not null)
+                    {
+                        devPort.W0[p][t1, t2] = res.I[p];
+                        devPort.W1[p][t1, t2] = res.Q[p];
+                    }
                     PortAdd(iTime, portPlusIdx[p], portMinusIdx[p], t1, t2, res.I[p]);
                     PortAdd(qTime, portPlusIdx[p], portMinusIdx[p], t1, t2, res.Q[p]);
                     for (int q = 0; q < portCount; q++)
@@ -553,6 +613,10 @@ public static class HbNewton2D
     /// Returns a dict keyed "instancePath:terminalName" → Complex[M] (one per mixing product).
     /// Values are numerically identical to INl at nodes belonging exclusively to this device
     /// (both follow the passive-sign convention: positive = current INTO the device port = FROM node).
+    ///
+    /// <para>A terminal current is <c>FT{I[p,0]} + jω(m)·FT{I[p,1]}</c> — conduction PLUS charge,
+    /// the same sum the residual forms at the node. The conduction term alone reports a
+    /// charge-only branch as exactly zero.</para>
     /// </summary>
     public static Dictionary<string, Complex[]> ComputeDevicePortCurrents2D(
         Complex[,]        V,
@@ -560,9 +624,11 @@ public static class HbNewton2D
         int               N,
         int               N1,
         int               N2,
+        double            f1,
+        double            f2,
         ElaboratedNetlist netlist,
         int[]             interfaceNodes,
-        double[][][,]?    portITime = null)
+        PortTermTimes2D[]? portITime = null)
     {
         int M = grid.MixCount;
 
@@ -596,10 +662,10 @@ public static class HbNewton2D
             int    portCount = ec.Model.PortCount;
             string[] terms   = ec.Model.TerminalNames;
 
-            double[][,] portI;
+            PortTermTimes2D portTerms;
             if (useLastPass)
             {
-                portI = portITime![devOrd];
+                portTerms = portITime![devOrd];
             }
             else
             {
@@ -613,8 +679,7 @@ public static class HbNewton2D
                     portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
                 }
 
-                portI = new double[portCount][,];
-                for (int p = 0; p < portCount; p++) portI[p] = new double[N1, N2];
+                portTerms = new PortTermTimes2D(portCount, N1, N2);
 
                 var portV = new double[portCount];
                 for (int t1 = 0; t1 < N1; t1++)
@@ -628,7 +693,10 @@ public static class HbNewton2D
                     }
                     var res = ec.Evaluate(new PortVoltages(portV));
                     for (int p = 0; p < portCount; p++)
-                        portI[p][t1, t2] = res.I[p];
+                    {
+                        portTerms.W0[p][t1, t2] = res.I[p];
+                        portTerms.W1[p][t1, t2] = res.Q[p];
+                    }
                 }
             }
 
@@ -638,12 +706,16 @@ public static class HbNewton2D
                 string term = p < terms.Length ? terms[p] : (p + 1).ToString();
                 string key  = $"{ec.InstancePath}:{term}";
 
-                var iSpec = ForwardConv2D(portI[p], N1, N2);
+                var iSpec = ForwardConv2D(portTerms.W0[p], N1, N2);
+                var qSpec = ForwardConv2D(portTerms.W1[p], N1, N2);
                 var iAmpl = new Complex[M];
                 for (int m = 0; m < M; m++)
                 {
                     var (k1, k2) = grid.ToneOf(m);
                     iAmpl[m] = HbFft2D.SpecGet(iSpec, k1, k2);
+                    if (m != 0)
+                        iAmpl[m] += new Complex(0, OmegaOf(grid, m, f1, f2))
+                                  * HbFft2D.SpecGet(qSpec, k1, k2);
                 }
                 result[key] = iAmpl;
 
@@ -657,32 +729,28 @@ public static class HbNewton2D
         return result;
     }
 
-    /// <summary>A <c>[deviceOrdinal][port][t1, t2]</c> buffer sized for this netlist's nonlinear
+    /// <summary>A per-device <see cref="PortTermTimes2D"/> buffer sized for this netlist's nonlinear
     /// devices, or null when there are none.</summary>
-    internal static double[][][,]? AllocPortITime(ElaboratedNetlist netlist, int N1, int N2)
+    internal static PortTermTimes2D[]? AllocPortTerms(ElaboratedNetlist netlist, int N1, int N2)
     {
         int count = netlist.NonlinearComponents.Count;
         if (count == 0) return null;
-        var buf = new double[count][][,];
+        var buf = new PortTermTimes2D[count];
         for (int i = 0; i < count; i++)
-        {
-            int pc = netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount;
-            buf[i] = new double[pc][,];
-            for (int p = 0; p < pc; p++) buf[i][p] = new double[N1, N2];
-        }
+            buf[i] = new PortTermTimes2D(
+                netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount, N1, N2);
         return buf;
     }
 
     /// <summary>Whether a last-pass buffer describes THIS netlist at THIS grid size.</summary>
-    private static bool MatchesShape(double[][][,]? buf, ElaboratedNetlist netlist, int N1, int N2)
+    private static bool MatchesShape(PortTermTimes2D[]? buf, ElaboratedNetlist netlist, int N1, int N2)
     {
         if (buf is null || buf.Length != netlist.NonlinearComponents.Count) return false;
         for (int i = 0; i < buf.Length; i++)
         {
             var ec = netlist.Components[netlist.NonlinearComponents[i]];
-            if (buf[i].Length != ec.Model.PortCount) return false;
-            foreach (var g in buf[i])
-                if (g.GetLength(0) != N1 || g.GetLength(1) != N2) return false;
+            if (buf[i].PortCount != ec.Model.PortCount) return false;
+            if (buf[i].N1 != N1 || buf[i].N2 != N2) return false;
         }
         return true;
     }

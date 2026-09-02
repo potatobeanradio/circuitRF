@@ -157,10 +157,15 @@ transfer through the linear interstage network at every harmonic.
 **INl[n,k] = current flowing FROM interface node n INTO the nonlinear device.**
 Positive = current entering the device (passive sign convention on the device ports).
 
-Source: `EvaluateNonlinear` (HbNewton) accumulates `res.I[p]` — the SDD port current with
-passive-sign convention — into `iTime[nodeIdx]`, then FFTs.  The HB residual
-`F = Y_NN·(V−V_oc) + INl = 0` confirms this: at DC, `INl[drain,0] = +Idd` (drain current
-leaving n_drain into FET) is balanced by `Y_NN·(V_oc−V[drain]) = +Idd` from the supply.
+Source: `EvaluateNonlinear` (HbNewton) accumulates each port's `res.I[p]`/`res.Q[p]`/`w≥2` terms —
+passive-sign convention — into `iTime`/`qTime`/the bucket buffers at `nodeIdx`, FFTs them, and
+`HbNewton.TotalInjection` forms the weighted sum `iNl + jkω₀·qNl + Σ_w H[w](kω₀)·WNl` that
+`SolveResult.INl` reports. **INl is that TOTAL, not the conduction term alone** — the same sum
+`BuildF` adds to the residual, and therefore what the linear back-solve must inject (2026-09-01; see
+`src/Engine/RESOLVED.md` for what reporting only the w=0 term did to a charge-carrying branch). The
+HB residual `F = Y_NN·(V−V_oc) + INl = 0` confirms the direction: at DC, `INl[drain,0] = +Idd`
+(drain current leaving n_drain into FET) is balanced by `Y_NN·(V_oc−V[drain]) = +Idd` from the
+supply.
 
 **Consequences for all consumers (derived from KCL at the interface node; NOT ad-hoc sign patches):**
 

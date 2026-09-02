@@ -4,6 +4,76 @@ Mirrors `src/Engine/Loadpull/RESOLVED.md`'s pattern: a completed brief's detail 
 section per brief, sparingly — only for findings that are still true, still surprising, and would cost
 someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## A charge-carrying branch reported no current — HB read w=0 and nothing else (2026-09-01)
+
+Reported against the unified `I` cube: `ds["I"][probe, k]` on a branch whose nonlinear content is
+charge came back at the wrong order of magnitude, and the device's own port rows read **exactly
+zero**. Reproduced on the smallest circuit that can show it — a 1 V tone through 1 Ω into an
+`IProbe` and a constant-`C0` `NonlinearC` — where the closed form is an ordinary series divider,
+`I = jωC/(1 + jωRC)` = 0.000986 + j0.031385 A. Before the fix the probe read 9.9996e-13 + j0 A and
+both `C1:*` rows read 0.
+
+### The reported figure was a coincidence; the mechanism is not
+
+The report read the probe's value as `C0·V_k` — the linear charge with the `jkω` missing. It is not:
+the number is **gmin·V**, and it stays at 1e-12 when `C0` is changed to 5e-12 while `C0·V` would
+have moved with it. Both readings are consistent with the same cause, and the gmin one names it —
+with **no** nonlinear current injected at that node, the only path the back-solve finds to ground is
+the regularization conductance. Chase the invariant, not the first arithmetic that fits.
+
+### One omission, in two places, both of the same shape
+
+A device terminal current is a sum over SDD weighting indices,
+`I[p,k] = Σ_w H[w](k·ω₀)·FT{I[p,w](t)}` — `H[0]=1` conduction, `H[1]=jω` charge, `H[w≥2]` the
+device's own weight function. `BuildF` has always formed exactly that sum at the interface node.
+Two consumers formed only the `w=0` term:
+
+- **`HbNewton.SolveResult.INl`** carried `iNl` alone. Everything downstream treats it as *the*
+  nonlinear injection: `HbLinearBackSolver` subtracts it from the RHS to recover IProbe currents and
+  linear-only node voltages, `ComputeDevicePortCurrents` back-solves the converged `_c_ref` from it,
+  the `INl` cube publishes it, and the loadpull/pursuit FOMs read `INl[drain]`/`INl[gate]` for
+  Pout/Pin/Zin. It now carries the total (`TotalInjection`, and its 2-D/N-D twins), assembled at each
+  `return` from the same `iNl`/`qNl`/bucket arrays `BuildF` was handed.
+- **`ComputeDevicePortCurrents`** FFT'd `res.I[p]` and nothing else. `NonlinearCModel.EvaluateInto`
+  sets `i[0] = 0` unconditionally — the whole device is charge — so its port rows were the FFT of a
+  zero array. It now FFTs the per-`w` series and sums them with `Model.Weight(w, k·ω₀)`.
+
+**The Newton solve itself was never wrong**, which is why this survived: `V` was right the whole
+time (that is why the report's oracles, reading current from node voltages, agreed with physics).
+Only what the run *reported* was short a term.
+
+### The seed is the one place w=0 alone is deliberate
+
+`EvaluateNonlinear`'s pass 1 takes a `_c_ref` frozen at the previous iterate's **conduction**
+spectrum — its own comment says "(w=0)" — and pass 2 recomputes `_c_ref` from the total. `iNlLast`
+is therefore kept as a separate local rather than being repointed at the total, so the solve is
+untouched by this change and only the reporting moved.
+
+### What the buffer had to grow
+
+`SolveResult.PortITime` was `[device][port, t]` — one row per port, holding `res.I[p]`. It is now
+`PortTermTimes[]` (2-D and N-D get `PortTermTimes2D`/`PortTermTimesNd`), carrying the conduction row,
+the charge row, and lazily-allocated rows for any `w≥2` the device actually produced. The HB-P2 M3
+fast path is unchanged in kind — the post-solve step is still one FFT per port per weighting index
+against a buffer the last Newton pass filled, never a second device sweep. The reuse test's
+"a garbage buffer must change the answer" probe now poisons **both** rows: poisoning the conduction
+row alone leaves a charge-only device unaffected and the probe goes vacuous.
+
+### Blast radius, checked rather than assumed
+
+Every SDD in `testdata/` declares `I[1,0]`/`I[2,0]` and nothing else, so the charge and bucket terms
+are identically zero on all five heroes and no golden moved. The change is visible only on a circuit
+that actually carries charge in its nonlinear partition — which is exactly the class that was
+reported wrong.
+
+Gate: `tests/Engine.Tests/HarmonicBalance/HbChargeBranchCurrentTests.cs` (5 tests) — the probe row,
+the device port row, the linear-only node between them (an `IProbe` is a short, so `V(n_a)` must
+equal `V(n_c)`; before the fix it read the undropped source voltage), the same branch written as an
+SDD `I[1,1]` charge equation, and the two-tone lattice at both carriers. All five compare against
+the closed-form divider, never against another circuitRF path.
+
+---
+
 ## Inductor branches are found by interface now, not by type (2026-08-31)
 
 Adding `SRLC` and `PRLC` — see `src/Core/RESOLVED.md` for the models themselves — turned up six

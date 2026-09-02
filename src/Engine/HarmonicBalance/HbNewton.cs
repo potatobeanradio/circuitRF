@@ -18,6 +18,52 @@ public sealed record HigherWeightBucket(
     Complex[,,]    Dw);    // [N, N, Kj+1]
 
 /// <summary>
+/// Per-device, per-port time-domain terminal contributions kept by one device pass, indexed by the
+/// SDD weighting index w: w=0 is the conduction current I[p,0], w=1 the charge I[p,1], and w≥2 the
+/// device's own weighted terms. The port current spectrum is
+/// <c>I[p,k] = Σ_w H[w](k·ω₀)·FT{value_w[p](t)}_k</c> — the SAME sum the HB residual forms at the
+/// node, just kept per named terminal.
+///
+/// <para><b>Why w=1 is carried and not dropped.</b> A branch whose only nonlinear content is charge
+/// (a NonlinearC, or an SDD written with I[p,1] alone) has <c>res.I[p] ≡ 0</c> at every sample, so a
+/// buffer holding only the conduction current reports that branch as exactly zero — which is what
+/// the unified I cube used to publish.</para>
+/// </summary>
+public sealed class PortTermTimes
+{
+    public PortTermTimes(int portCount, int gridN)
+    {
+        PortCount = portCount;
+        GridN     = gridN;
+        W0        = new double[portCount, gridN];
+        W1        = new double[portCount, gridN];
+    }
+
+    public int PortCount { get; }
+    public int GridN     { get; }
+
+    /// <summary>Conduction current I[p,0] over the time grid — H[0] = 1.</summary>
+    public double[,] W0 { get; }
+
+    /// <summary>Charge I[p,1] over the time grid — H[1] = jω.</summary>
+    public double[,] W1 { get; }
+
+    private Dictionary<int, double[,]>? _higher;
+
+    /// <summary>The w≥2 buckets this device actually produced, or null when it produced none.</summary>
+    public IReadOnlyDictionary<int, double[,]>? Higher => _higher;
+
+    /// <summary>The w≥2 buffer for weighting index <paramref name="w"/>, allocated on first use.</summary>
+    public double[,] HigherFor(int w)
+    {
+        _higher ??= [];
+        if (!_higher.TryGetValue(w, out var buf))
+            _higher[w] = buf = new double[PortCount, GridN];
+        return buf;
+    }
+}
+
+/// <summary>
 /// Carries the linear extractor + per-harmonic source RHS into HbNewton.Solve so the per-iterate
 /// _c_ref recompute can call SolveFullNetwork inside the Newton loop (brief #2).
 /// Null for circuits with no SDD C[n] references — zero overhead on the common path.
@@ -83,23 +129,35 @@ public static class HbNewton
     /// <inheritdoc cref="_evaluations"/>
     public static void ResetEvaluations() => _evaluations = 0;
 
-    /// <param name="INl">I_nl per [node, harmonic] — caller reads I_nl[n,0] for DC-current trend.</param>
-    /// <param name="PortITime">
-    /// Per-device, per-port terminal current over the time grid — <c>[deviceOrdinal][port, t]</c>,
-    /// where deviceOrdinal indexes <c>netlist.NonlinearComponents</c> — as computed by the LAST
-    /// device evaluation this solve performed, which is the one at the returned <c>V</c>.
+    /// <param name="INl">
+    /// The TOTAL nonlinear injection spectrum per [node, harmonic] — <c>iNl + jkω₀·qNl + Σ_w
+    /// H[w](kω₀)·WNl</c>, the same sum <see cref="BuildF"/> adds to the linear part of the residual.
+    /// Caller reads <c>INl[n,0]</c> for the DC-current trend.
+    ///
+    /// <para><b>Why the total and not the conduction current alone.</b> This is what KCL at the
+    /// interface node balances, so it is what the linear back-solve must inject to recover a branch
+    /// current or a linear-interior node voltage. Carrying only the w=0 part reported every
+    /// charge-carrying branch as its leakage current: a probe in series with a <c>NonlinearC</c>
+    /// read <c>gmin·V</c> instead of <c>jωC·V</c>, and Zin/Pin at a gate with a Cgs term dropped the
+    /// capacitive half. At k=0 the charge term vanishes, so DC readings are unchanged.</para>
+    /// </param>
+    /// <param name="PortTerms">
+    /// Per-device, per-port terminal contributions over the time grid — <c>[deviceOrdinal]</c>
+    /// indexes <c>netlist.NonlinearComponents</c> — as computed by the LAST device evaluation this
+    /// solve performed, which is the one at the returned <c>V</c>. See <see cref="PortTermTimes"/>
+    /// for why the charge row is carried alongside the current row.
     ///
     /// <para><b>Why it is returned rather than recomputed (HB-P2 M3).</b>
     /// <see cref="ComputeDevicePortCurrents"/> used to re-evaluate every device at every sample
     /// after convergence purely to re-house currents by named terminal — measured at ~150 us of a
     /// ~750 us warm Hero-2 <c>Run</c>, for numbers the final Newton pass had already computed and
-    /// thrown away (its own comment says the values are INl re-housed per port). Keeping them turns
-    /// the post-solve step into one FFT per port. Null when the caller asked for no buffer.</para>
+    /// thrown away. Keeping them turns the post-solve step into one FFT per port per weighting
+    /// index. Null when the caller asked for no buffer.</para>
     /// </param>
     public record SolveResult(bool Converged, int Iterations,
         IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace,
         Complex[,] INl,
-        double[][,]? PortITime = null);
+        PortTermTimes[]? PortTerms = null);
 
     /// <summary>
     /// Run Newton loop. V is modified in-place ([N, K+1] complex).
@@ -128,12 +186,15 @@ public static class HbNewton
         var    trace   = new List<HbConvergenceTrace.IterRecord>();
         int    maxIter = settings.HbMaxIter;
 
-        Complex[,] iNlLast  = new Complex[N, K + 1]; // last computed I_nl (for reporting)
+        // The last computed CONDUCTION spectrum, and only that: it is the frozen w=0 seed pass 1 of
+        // the control-current evaluation is documented to take (see EvaluateNonlinear). What the
+        // solve REPORTS is the total injection, assembled at each return by TotalInjection.
+        Complex[,] iNlLast  = new Complex[N, K + 1];
 
         // One buffer for the whole solve, overwritten by each device pass, so the pass that
-        // happens to be the last one leaves its per-port terminal currents behind (M3). Allocated
-        // once — a per-iteration allocation would trade one cost for another.
-        var portITime = AllocPortITime(netlist, gridN);
+        // happens to be the last one leaves its per-port terminal contributions behind (M3).
+        // Allocated once — a per-iteration allocation would trade one cost for another.
+        var portITime = AllocPortTerms(netlist, gridN);
 
         // Scratch the line search steps FROM — the accepted iterate every trial restarts at.
         var V0 = new Complex[N, K + 1];
@@ -155,7 +216,8 @@ public static class HbNewton
             if (fN < tol)
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
-                return new SolveResult(true, iter + 1, trace, iNlLast, portITime);
+                return new SolveResult(true, iter + 1, trace,
+                    TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime);
             }
 
             // ── 2. Jacobian J (real-split 2×2 blocks, §7.2 + Maas §7.3) ───────
@@ -170,7 +232,8 @@ public static class HbNewton
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 Console.Error.WriteLine($"[HB] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
-                return new SolveResult(false, iter + 1, trace, iNlLast, portITime);
+                return new SolveResult(false, iter + 1, trace,
+                    TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime);
             }
 
             // ── 4. Update V[k=0..K] += λ·ΔV, λ from the backtracking line search ──
@@ -195,7 +258,8 @@ public static class HbNewton
         // Max iterations. ‖F‖ at the final iterate is already known — the last accepted trial
         // computed it — so the tail costs no evaluation of its own.
         trace.Add(new HbConvergenceTrace.IterRecord(settings.HbMaxIter, fN));
-        return new SolveResult(false, settings.HbMaxIter, trace, iNlLast, portITime);
+        return new SolveResult(false, settings.HbMaxIter, trace,
+            TotalInjection(iNl, qNl, higherBuckets, N, K, omega0), portITime);
     }
 
     // ── Backtracking line search (HB-P3 M1) ──────────────────────────────────
@@ -264,18 +328,44 @@ public static class HbNewton
     }
 
     /// <summary>
-    /// A <c>[deviceOrdinal][port, t]</c> buffer sized for this netlist's nonlinear devices, or null
-    /// when there are none. The ordinal is the position in <c>netlist.NonlinearComponents</c> —
-    /// the order every device pass and <see cref="ComputeDevicePortCurrents"/> both iterate in.
+    /// A per-device <see cref="PortTermTimes"/> buffer sized for this netlist's nonlinear devices,
+    /// or null when there are none. The ordinal is the position in
+    /// <c>netlist.NonlinearComponents</c> — the order every device pass and
+    /// <see cref="ComputeDevicePortCurrents"/> both iterate in.
     /// </summary>
-    internal static double[][,]? AllocPortITime(ElaboratedNetlist netlist, int gridN)
+    internal static PortTermTimes[]? AllocPortTerms(ElaboratedNetlist netlist, int gridN)
     {
         int count = netlist.NonlinearComponents.Count;
         if (count == 0) return null;
-        var buf = new double[count][,];
+        var buf = new PortTermTimes[count];
         for (int i = 0; i < count; i++)
-            buf[i] = new double[netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount, gridN];
+            buf[i] = new PortTermTimes(
+                netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount, gridN);
         return buf;
+    }
+
+    /// <summary>
+    /// The TOTAL nonlinear injection spectrum at the interface — <c>iNl[n,k] + jkω₀·qNl[n,k] +
+    /// Σ_w H[w](kω₀)·WNl[n,k]</c>. This is exactly the nonlinear part <see cref="BuildF"/> adds to
+    /// the residual, kept as one array so every consumer of the converged solve (the linear
+    /// back-solve, the INl cube, the loadpull FOMs) reads the same quantity KCL balanced.
+    /// </summary>
+    internal static Complex[,] TotalInjection(
+        Complex[,] iNl, Complex[,] qNl, IReadOnlyList<HigherWeightBucket>? higherBuckets,
+        int N, int K, double omega0)
+    {
+        var tot = new Complex[N, K + 1];
+        for (int n = 0; n < N; n++)
+        for (int k = 0; k <= K; k++)
+        {
+            Complex f = iNl[n, k];
+            if (k > 0) f += new Complex(0, k * omega0) * qNl[n, k];
+            if (higherBuckets is { Count: > 0 })
+                foreach (var buc in higherBuckets)
+                    f += buc.Model.Weight(buc.W, k * omega0) * buc.WNl[n, k];
+            tot[n, k] = f;
+        }
+        return tot;
     }
 
     // ── Time-domain nonlinear evaluation ─────────────────────────────────────
@@ -309,7 +399,7 @@ public static class HbNewton
         EvaluateNonlinear(Complex[,] V, int N, int K, int gridN,
             ElaboratedNetlist netlist, int[] interfaceNodes,
             ControlCurrentContext? cc, Complex[,]? iNlPrev, out ControlJacData? ctrlJac,
-            double[][,]? portITime = null)
+            PortTermTimes[]? portITime = null)
     {
         _evaluations++;
         ctrlJac = null;
@@ -397,7 +487,7 @@ public static class HbNewton
             ElaboratedNetlist netlist, int[] interfaceNodes,
             Dictionary<int, double[,]>? cRefByDevice,
             IReadOnlyList<(int nlIdx, int ci, int branchIdx, ComponentModel model)>? controlEntries,
-            double[][,]? portITime = null)
+            PortTermTimes[]? portITime = null)
     {
         var iTime  = new double[N, gridN];
         var qTime  = new double[N, gridN];
@@ -430,10 +520,10 @@ public static class HbNewton
             var portPlusIdx  = new int[portCount];
             var portMinusIdx = new int[portCount];
 
-            // Per-port terminal currents for THIS device, when the caller asked for them (M3).
-            // Written alongside the accumulation into iTime, from the same res.I[p] — the post-solve
+            // Per-port terminal contributions for THIS device, when the caller asked for them (M3).
+            // Written alongside the accumulation into iTime/qTime, from the same res — the post-solve
             // extraction re-derived exactly these by evaluating every device all over again.
-            var devPortI = portITime is not null && devOrd < portITime.Length ? portITime[devOrd] : null;
+            var devPort = portITime is not null && devOrd < portITime.Length ? portITime[devOrd] : null;
 
             for (int p = 0; p < portCount; p++)
             {
@@ -503,7 +593,11 @@ public static class HbNewton
 
                 for (int p = 0; p < portCount; p++)
                 {
-                    if (devPortI is not null) devPortI[p, t] = res.I[p];
+                    if (devPort is not null)
+                    {
+                        devPort.W0[p, t] = res.I[p];
+                        devPort.W1[p, t] = res.Q[p];
+                    }
                     PortAdd(iTime, portPlusIdx[p], portMinusIdx[p], t, res.I[p]);
                     PortAdd(qTime, portPlusIdx[p], portMinusIdx[p], t, res.Q[p]);
                     for (int q = 0; q < portCount; q++)
@@ -523,8 +617,10 @@ public static class HbNewton
                         bucketBuffers[key] = (ec.Model,
                             new double[N, gridN], new double[N, N, gridN]);
                     var buf = bucketBuffers[key];
+                    var devW = devPort?.HigherFor(term.W);
                     for (int p = 0; p < portCount; p++)
                     {
+                        if (devW is not null) devW[p, t] = term.Value[p];
                         PortAdd(buf.wTime, portPlusIdx[p], portMinusIdx[p], t, term.Value[p]);
                         for (int q = 0; q < portCount; q++)
                             PortAdd4(buf.dwTime, portPlusIdx[p], portMinusIdx[p],
@@ -1441,9 +1537,16 @@ public static class HbNewton
     // FFTs each device's per-port terminal current to recover the complex harmonic spectrum.
     //
     // Returns dict keyed by "instancePath:terminalName" → Complex[K+1] spectrum.
-    // Sign: res.I[p] = current INTO the device at port p (passive sign convention),
-    // matching INl[portPlusIdx[p], k] when that node belongs exclusively to this device.
+    // Sign: current INTO the device at port p (passive sign convention), matching
+    // INl[portPlusIdx[p], k] when that node belongs exclusively to this device.
     // Values are therefore numerically identical to INl — just re-housed by named branch.
+    //
+    // A TERMINAL CURRENT IS A SUM OVER WEIGHTING INDICES, not res.I alone:
+    //   I[p,k] = Σ_w H[w](k·ω₀) · FT{ I[p,w](t) }_k
+    // with H[0]=1 (conduction), H[1]=jω (charge) and H[w≥2] the device's own weight function —
+    // the same sum the residual forms at the node. Taking only w=0 published every charge-carrying
+    // port as exactly zero (a NonlinearC's res.I[p] is identically 0 at every sample), and dropped
+    // the displacement half of a FET terminal current.
     //
     // WHERE THE TIME SERIES COMES FROM (HB-P2 M3). Preferably from `portITime` — the buffer the
     // last Newton device pass filled, which is by construction an evaluation at the same converged
@@ -1464,13 +1567,15 @@ public static class HbNewton
         int               N,
         int               K,
         int               gridN,
+        double            f0,
         ElaboratedNetlist netlist,
         int[]             interfaceNodes,
         ControlCurrentContext? cc           = null,
         Complex[,]?            iNlConverged = null,
-        double[][,]?           portITime    = null)
+        PortTermTimes[]?       portITime    = null)
     {
-        bool useLastPass = cc is null && MatchesShape(portITime, netlist, gridN);
+        double omega0     = 2.0 * Math.PI * f0;
+        bool   useLastPass = cc is null && MatchesShape(portITime, netlist, gridN);
 
         // IFFT V to time domain — needed only when a device is actually re-evaluated.
         double[][]? vTime = null;
@@ -1497,7 +1602,7 @@ public static class HbNewton
 
             if (useLastPass)
             {
-                Emit(result, ec, terms, portCount, gridN, K, portITime![devOrd]);
+                Emit(result, ec, terms, portCount, gridN, K, omega0, portITime![devOrd]);
                 continue;
             }
 
@@ -1542,7 +1647,7 @@ public static class HbNewton
                 }
             }
 
-            var portITimeLocal = new double[portCount, gridN];
+            var portTermsLocal = new PortTermTimes(portCount, gridN);
 
             // Same rule as the Newton pass: one round trip for the grid where an evaluation costs
             // one, and the untouched scalar path everywhere else.
@@ -1595,20 +1700,29 @@ public static class HbNewton
                         res = ec.Evaluate(new PortVoltages(portV));
                 }
                 for (int p = 0; p < portCount; p++)
-                    portITimeLocal[p, t] = res.I[p];
+                {
+                    portTermsLocal.W0[p, t] = res.I[p];
+                    portTermsLocal.W1[p, t] = res.Q[p];
+                }
+                foreach (var term in res.Terms)
+                {
+                    var devW = portTermsLocal.HigherFor(term.W);
+                    for (int p = 0; p < portCount; p++) devW[p, t] = term.Value[p];
+                }
             }
 
-            Emit(result, ec, terms, portCount, gridN, K, portITimeLocal);
+            Emit(result, ec, terms, portCount, gridN, K, omega0, portTermsLocal);
         }
 
         return result;
     }
 
-    /// <summary>FFT each port's time series → harmonic spectrum, under both its terminal name and a
-    /// 0-based port-index alias ("M1:0", "M1:1", …) so a generic SDD can be addressed by port number
-    /// regardless of terminal names.</summary>
+    /// <summary>FFT each port's per-weighting-index time series, weight them by H[w](k·ω₀) and sum →
+    /// the terminal current spectrum, emitted under both the terminal name and a 0-based port-index
+    /// alias ("M1:0", "M1:1", …) so a generic SDD can be addressed by port number regardless of
+    /// terminal names.</summary>
     private static void Emit(Dictionary<string, Complex[]> result, ElaboratedComponent ec,
-        string[] terms, int portCount, int gridN, int K, double[,] portI)
+        string[] terms, int portCount, int gridN, int K, double omega0, PortTermTimes pt)
     {
         var iX = new double[gridN];
         for (int p = 0; p < portCount; p++)
@@ -1616,8 +1730,23 @@ public static class HbNewton
             string term = p < terms.Length ? terms[p] : (p + 1).ToString();
             string key  = $"{ec.InstancePath}:{term}";
 
-            for (int t = 0; t < gridN; t++) iX[t] = portI[p, t];
+            for (int t = 0; t < gridN; t++) iX[t] = pt.W0[p, t];
             HbFft.Forward(iX, K, out var iAmpl, out _);
+
+            for (int t = 0; t < gridN; t++) iX[t] = pt.W1[p, t];
+            HbFft.Forward(iX, K, out var qAmpl, out _);
+            for (int k = 1; k <= K; k++)
+                iAmpl[k] += ec.Model.Weight(1, k * omega0) * qAmpl[k];
+
+            if (pt.Higher is { Count: > 0 })
+                foreach (var (w, wTime) in pt.Higher)
+                {
+                    for (int t = 0; t < gridN; t++) iX[t] = wTime[p, t];
+                    HbFft.Forward(iX, K, out var wAmpl, out _);
+                    for (int k = 0; k <= K; k++)
+                        iAmpl[k] += ec.Model.Weight(w, k * omega0) * wAmpl[k];
+                }
+
             result[key] = iAmpl;
 
             string numKey = $"{ec.InstancePath}:{p}";
@@ -1630,13 +1759,13 @@ public static class HbNewton
     /// port count and sample count all checked. A mismatch is a caller error rather than a data
     /// error, so it falls back to re-evaluation instead of throwing.
     /// </summary>
-    private static bool MatchesShape(double[][,]? buf, ElaboratedNetlist netlist, int gridN)
+    private static bool MatchesShape(PortTermTimes[]? buf, ElaboratedNetlist netlist, int gridN)
     {
         if (buf is null || buf.Length != netlist.NonlinearComponents.Count) return false;
         for (int i = 0; i < buf.Length; i++)
         {
             var ec = netlist.Components[netlist.NonlinearComponents[i]];
-            if (buf[i].GetLength(0) != ec.Model.PortCount || buf[i].GetLength(1) != gridN) return false;
+            if (buf[i].PortCount != ec.Model.PortCount || buf[i].GridN != gridN) return false;
         }
         return true;
     }

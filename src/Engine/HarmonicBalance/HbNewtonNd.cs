@@ -45,16 +45,47 @@ namespace CircuitRF.Engine.HarmonicBalance;
 /// </summary>
 public static class HbNewtonNd
 {
-    /// <param name="PortITime">
-    /// Per-device, per-port terminal current over the APFT sample set — <c>[deviceOrdinal][port][s]</c>
+    /// <summary>
+    /// One device's per-port time-domain terminal contributions over the APFT sample set: the
+    /// conduction current (H=1) and the charge (H=jω). A port's current spectrum is the weighted
+    /// sum of the two, so a branch whose only nonlinear content is charge — where <c>res.I[p]</c>
+    /// is identically zero — is reported as its actual current rather than as zero.
+    /// </summary>
+    public sealed class PortTermTimesNd
+    {
+        public PortTermTimesNd(int portCount, int sampleCount)
+        {
+            PortCount = portCount; SampleCount = sampleCount;
+            W0 = new double[portCount][];
+            W1 = new double[portCount][];
+            for (int p = 0; p < portCount; p++)
+            {
+                W0[p] = new double[sampleCount];
+                W1[p] = new double[sampleCount];
+            }
+        }
+
+        public int PortCount   { get; }
+        public int SampleCount { get; }
+        public double[][] W0 { get; }   // conduction current I[p,0]
+        public double[][] W1 { get; }   // charge I[p,1]
+    }
+
+    /// <param name="INl">
+    /// The TOTAL nonlinear injection over the lattice — <c>iNl[n,m] + jω(m)·qNl[n,m]</c>, the same
+    /// sum <see cref="BuildFNd"/> adds to the residual, and therefore what the linear back-solve
+    /// must inject to recover a branch current or a linear-interior node voltage.
+    /// </param>
+    /// <param name="PortTerms">
+    /// Per-device, per-port terminal contributions over the APFT sample set — <c>[deviceOrdinal]</c>
     /// — from the LAST device evaluation of this solve, which is the one at the returned <c>V</c>.
     /// <see cref="ComputeDevicePortCurrentsNd"/> takes it instead of re-evaluating every device at
     /// every sample for numbers already in hand (HB-P2 M3). This path has no control-current form.
     /// </param>
     public record SolveResult(bool Converged, int Iterations,
         IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace,
-        Complex[,] INl,   // I_nl[node, mixIdx] at the returned point
-        double[][][]? PortITime = null);
+        Complex[,] INl,   // total nonlinear injection [node, mixIdx] at the returned point
+        PortTermTimesNd[]? PortTerms = null);
 
     // ── Newton loop ──────────────────────────────────────────────────────────────
 
@@ -86,8 +117,8 @@ public static class HbNewtonNd
         Complex[,] iNlLast = new Complex[N, M];
 
         // One buffer for the whole solve, overwritten per pass, so the last pass leaves its
-        // per-port terminal currents behind for the post-solve extraction (M3).
-        var portITime = AllocPortITime(netlist, apft.SampleCount);
+        // per-port terminal contributions behind for the post-solve extraction (M3).
+        var portITime = AllocPortTerms(netlist, apft.SampleCount);
 
         // The line search's scratch iterate, and the one evaluation that precedes the loop — the
         // identical transcription of HbNewton.Solve's structure (HB-P3 M1); see HbNewton.Backtrack
@@ -104,7 +135,8 @@ public static class HbNewtonNd
             if (fN < tol)
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
-                return new SolveResult(true, iter + 1, trace, iNlLast, portITime);
+                return new SolveResult(true, iter + 1, trace,
+                    TotalInjectionNd(iNl, qNl, lattice, N, toneFreqsHz), portITime);
             }
 
             var J = BuildJNd(yNN, dg, dc, apft, N, toneFreqsHz, guardOrder);
@@ -116,7 +148,8 @@ public static class HbNewtonNd
             {
                 trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
                 Console.Error.WriteLine($"[HBnD] Jacobian singular at iter {iter}, ‖F‖={fN:E3}");
-                return new SolveResult(false, iter + 1, trace, iNlLast, portITime);
+                return new SolveResult(false, iter + 1, trace,
+                    TotalInjectionNd(iNl, qNl, lattice, N, toneFreqsHz), portITime);
             }
 
             double fEntry = fN;
@@ -136,7 +169,27 @@ public static class HbNewtonNd
         }
 
         trace.Add(new HbConvergenceTrace.IterRecord(maxIter, fN));
-        return new SolveResult(false, maxIter, trace, iNlLast, portITime);
+        return new SolveResult(false, maxIter, trace,
+            TotalInjectionNd(iNl, qNl, lattice, N, toneFreqsHz), portITime);
+    }
+
+    /// <summary>
+    /// The TOTAL nonlinear injection over the lattice — <c>iNl[n,m] + jω(m)·qNl[n,m]</c>, exactly
+    /// the nonlinear part <see cref="BuildFNd"/> adds to the residual. The DC product (m=0) carries
+    /// no charge current, matching BuildFNd's own <c>mix != 0</c> guard.
+    /// </summary>
+    internal static Complex[,] TotalInjectionNd(
+        Complex[,] iNl, Complex[,] qNl, MixingLattice lattice, int N, double[] toneFreqsHz)
+    {
+        int M = lattice.MixCount;
+        var omega = Omegas(lattice, toneFreqsHz);
+        var tot   = new Complex[N, M];
+        for (int n = 0; n < N; n++)
+        for (int mix = 0; mix < M; mix++)
+            tot[n, mix] = mix == 0
+                ? iNl[n, mix]
+                : iNl[n, mix] + new Complex(0, omega[mix]) * qNl[n, mix];
+        return tot;
     }
 
     private static void ApplyUpdateNd(Complex[,] V, double[] dV, int N, int M, double lambda)
@@ -168,7 +221,7 @@ public static class HbNewtonNd
     /// </summary>
     public static (Complex[,] iNl, Complex[,] qNl, double[][] dg, double[][] dc)
         EvaluateNonlinearNd(Complex[,] V, HbApft apft, int N,
-            ElaboratedNetlist netlist, int[] interfaceNodes, double[][][]? portITime = null)
+            ElaboratedNetlist netlist, int[] interfaceNodes, PortTermTimesNd[]? portITime = null)
     {
         int M = apft.MixCount;
         int S = apft.SampleCount;
@@ -201,7 +254,7 @@ public static class HbNewtonNd
             var portPlusIdx  = new int[portCount];
             var portMinusIdx = new int[portCount];
 
-            var devPortI = portITime is not null && devOrd < portITime.Length ? portITime[devOrd] : null;
+            var devPort = portITime is not null && devOrd < portITime.Length ? portITime[devOrd] : null;
 
             for (int p = 0; p < portCount; p++)
             {
@@ -247,7 +300,11 @@ public static class HbNewtonNd
 
                 for (int p = 0; p < portCount; p++)
                 {
-                    if (devPortI is not null) devPortI[p][s] = res.I[p];
+                    if (devPort is not null)
+                    {
+                        devPort.W0[p][s] = res.I[p];
+                        devPort.W1[p][s] = res.Q[p];
+                    }
                     PortAdd(iTime, portPlusIdx[p], portMinusIdx[p], s, res.I[p]);
                     PortAdd(qTime, portPlusIdx[p], portMinusIdx[p], s, res.Q[p]);
                     for (int q = 0; q < portCount; q++)
@@ -531,15 +588,22 @@ public static class HbNewtonNd
     /// "instancePath:terminalName" (plus a 0-based "instancePath:portIndex" alias) →
     /// Complex[M]. The T-tone twin of <see cref="HbNewton2D.ComputeDevicePortCurrents2D"/>,
     /// including its passive-sign convention.
+    ///
+    /// <para>A terminal current is <c>FT{I[p,0]} + jω(m)·FT{I[p,1]}</c> — conduction PLUS charge,
+    /// the same sum the residual forms at the node. The conduction term alone reports a
+    /// charge-only branch as exactly zero.</para>
     /// </summary>
     public static Dictionary<string, Complex[]> ComputeDevicePortCurrentsNd(
         Complex[,]        V,
         HbApft            apft,
         int               N,
+        MixingLattice     lattice,
+        double[]          toneFreqsHz,
         ElaboratedNetlist netlist,
         int[]             interfaceNodes,
-        double[][][]?     portITime = null)
+        PortTermTimesNd[]? portITime = null)
     {
+        var omega = Omegas(lattice, toneFreqsHz);
         int M = apft.MixCount;
         int S = apft.SampleCount;
 
@@ -570,10 +634,10 @@ public static class HbNewtonNd
             int      portCount = ec.Model.PortCount;
             string[] terms     = ec.Model.TerminalNames;
 
-            double[][] portI;
+            PortTermTimesNd portTerms;
             if (useLastPass)
             {
-                portI = portITime![devOrd];
+                portTerms = portITime![devOrd];
             }
             else
             {
@@ -587,8 +651,7 @@ public static class HbNewtonNd
                     portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
                 }
 
-                portI = new double[portCount][];
-                for (int p = 0; p < portCount; p++) portI[p] = new double[S];
+                portTerms = new PortTermTimesNd(portCount, S);
 
                 var portV = new double[portCount];
                 for (int s = 0; s < S; s++)
@@ -600,17 +663,25 @@ public static class HbNewtonNd
                         portV[p] = vp - vm;
                     }
                     var res = ec.Evaluate(new PortVoltages(portV));
-                    for (int p = 0; p < portCount; p++) portI[p][s] = res.I[p];
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        portTerms.W0[p][s] = res.I[p];
+                        portTerms.W1[p][s] = res.Q[p];
+                    }
                 }
             }
 
+            var qAmpl = new Complex[M];
             for (int p = 0; p < portCount; p++)
             {
                 string term = p < terms.Length ? terms[p] : (p + 1).ToString();
                 string key  = $"{ec.InstancePath}:{term}";
 
                 var iAmpl = new Complex[M];
-                apft.Analyze(portI[p], iAmpl);
+                apft.Analyze(portTerms.W0[p], iAmpl);
+                apft.Analyze(portTerms.W1[p], qAmpl);
+                for (int m = 1; m < M; m++)
+                    iAmpl[m] += new Complex(0, omega[m]) * qAmpl[m];
                 result[key] = iAmpl;
 
                 string numKey = $"{ec.InstancePath}:{p}";
@@ -621,31 +692,28 @@ public static class HbNewtonNd
         return result;
     }
 
-    /// <summary>A <c>[deviceOrdinal][port][s]</c> buffer sized for this netlist's nonlinear devices,
-    /// or null when there are none.</summary>
-    internal static double[][][]? AllocPortITime(ElaboratedNetlist netlist, int sampleCount)
+    /// <summary>A per-device <see cref="PortTermTimesNd"/> buffer sized for this netlist's
+    /// nonlinear devices, or null when there are none.</summary>
+    internal static PortTermTimesNd[]? AllocPortTerms(ElaboratedNetlist netlist, int sampleCount)
     {
         int count = netlist.NonlinearComponents.Count;
         if (count == 0) return null;
-        var buf = new double[count][][];
+        var buf = new PortTermTimesNd[count];
         for (int i = 0; i < count; i++)
-        {
-            int pc = netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount;
-            buf[i] = new double[pc][];
-            for (int p = 0; p < pc; p++) buf[i][p] = new double[sampleCount];
-        }
+            buf[i] = new PortTermTimesNd(
+                netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount, sampleCount);
         return buf;
     }
 
     /// <summary>Whether a last-pass buffer describes THIS netlist at THIS sample count.</summary>
-    private static bool MatchesShape(double[][][]? buf, ElaboratedNetlist netlist, int sampleCount)
+    private static bool MatchesShape(PortTermTimesNd[]? buf, ElaboratedNetlist netlist, int sampleCount)
     {
         if (buf is null || buf.Length != netlist.NonlinearComponents.Count) return false;
         for (int i = 0; i < buf.Length; i++)
         {
             var ec = netlist.Components[netlist.NonlinearComponents[i]];
-            if (buf[i].Length != ec.Model.PortCount) return false;
-            foreach (var g in buf[i]) if (g.Length != sampleCount) return false;
+            if (buf[i].PortCount != ec.Model.PortCount) return false;
+            if (buf[i].SampleCount != sampleCount) return false;
         }
         return true;
     }

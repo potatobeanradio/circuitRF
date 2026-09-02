@@ -291,12 +291,12 @@ public sealed class HbExtractorReuseTests(ITestOutputHelper output)
 
         var sr = HbNewton.Solve(V, yNN, iSrc, f0, K, N, netlist, ifNodes, gridN, settings, p.Tol);
         Assert.True(sr.Converged);
-        Assert.NotNull(sr.PortITime);
+        Assert.NotNull(sr.PortTerms);
 
         var fromLastPass = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, netlist, ifNodes, null, sr.INl, sr.PortITime);
+            V, N, K, gridN, f0, netlist, ifNodes, null, sr.INl, sr.PortTerms);
         var reEvaluated = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, netlist, ifNodes, null, sr.INl);
+            V, N, K, gridN, f0, netlist, ifNodes, null, sr.INl);
 
         AssertSpectraMatch(fromLastPass, reEvaluated, 1e-13);
         output.WriteLine($"{hero}: {fromLastPass.Count} port-current keys agree to 1e-13 " +
@@ -320,11 +320,15 @@ public sealed class HbExtractorReuseTests(ITestOutputHelper output)
         // not needed to decide (and the goldens already gate convergence itself).
         var V = SeedInterfaceV(netlist, settings, ifNodes, N, grid.MixCount);
 
-        var buf = AllocPortITime2D(netlist, N1, N2);
+        double f1 = p.ToneFreqsHz[0], f2 = p.ToneFreqsHz[1];
+
+        var buf = AllocPortTerms2D(netlist, N1, N2);
         HbNewton2D.EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, ifNodes, buf);
 
-        var fromLastPass = HbNewton2D.ComputeDevicePortCurrents2D(V, grid, N, N1, N2, netlist, ifNodes, buf);
-        var reEvaluated  = HbNewton2D.ComputeDevicePortCurrents2D(V, grid, N, N1, N2, netlist, ifNodes);
+        var fromLastPass = HbNewton2D.ComputeDevicePortCurrents2D(
+            V, grid, N, N1, N2, f1, f2, netlist, ifNodes, buf);
+        var reEvaluated  = HbNewton2D.ComputeDevicePortCurrents2D(
+            V, grid, N, N1, N2, f1, f2, netlist, ifNodes);
 
         AssertSpectraMatch(fromLastPass, reEvaluated, 1e-13);
         output.WriteLine($"two-tone: {fromLastPass.Count} port-current keys agree to 1e-13.");
@@ -343,11 +347,15 @@ public sealed class HbExtractorReuseTests(ITestOutputHelper output)
 
         var V = SeedInterfaceV(netlist, settings, ifNodes, N, apft.MixCount);
 
-        var buf = AllocPortITimeNd(netlist, apft.SampleCount);
+        var lattice = new MixingLattice(p.ToneFreqsHz.Length, p.MaxMixOrder);
+
+        var buf = AllocPortTermsNd(netlist, apft.SampleCount);
         HbNewtonNd.EvaluateNonlinearNd(V, apft, N, netlist, ifNodes, buf);
 
-        var fromLastPass = HbNewtonNd.ComputeDevicePortCurrentsNd(V, apft, N, netlist, ifNodes, buf);
-        var reEvaluated  = HbNewtonNd.ComputeDevicePortCurrentsNd(V, apft, N, netlist, ifNodes);
+        var fromLastPass = HbNewtonNd.ComputeDevicePortCurrentsNd(
+            V, apft, N, lattice, p.ToneFreqsHz, netlist, ifNodes, buf);
+        var reEvaluated  = HbNewtonNd.ComputeDevicePortCurrentsNd(
+            V, apft, N, lattice, p.ToneFreqsHz, netlist, ifNodes);
 
         AssertSpectraMatch(fromLastPass, reEvaluated, 1e-13);
         output.WriteLine($"{p.ToneFreqsHz.Length}-tone: {fromLastPass.Count} port-current keys " +
@@ -384,26 +392,22 @@ public sealed class HbExtractorReuseTests(ITestOutputHelper output)
         var sr = HbNewton.Solve(V, yNN, iSrc, p.ToneHz, K, N, netlist, ifNodes, gridN, settings, p.Tol);
         Assert.True(sr.Converged);
 
-        var real = HbNewton.ComputeDevicePortCurrents(V, N, K, gridN, netlist, ifNodes, null, sr.INl);
+        var real = HbNewton.ComputeDevicePortCurrents(
+            V, N, K, gridN, p.ToneHz, netlist, ifNodes, null, sr.INl);
 
         // A buffer of the RIGHT shape carrying deliberately wrong numbers must change the answer —
         // otherwise "it agrees with the re-evaluation" would be satisfied by never reading it.
-        var garbage = sr.PortITime!.Select(d =>
-        {
-            var g = new double[d.GetLength(0), d.GetLength(1)];
-            for (int i = 0; i < g.GetLength(0); i++)
-                for (int t = 0; t < g.GetLength(1); t++) g[i, t] = 1.0 + i;
-            return g;
-        }).ToArray();
+        var garbage = GarbageLike(sr.PortTerms!, (i, t) => 1.0 + i);
         var fromGarbage = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, netlist, ifNodes, null, sr.INl, garbage);
+            V, N, K, gridN, p.ToneHz, netlist, ifNodes, null, sr.INl, garbage);
         Assert.NotEqual(real.First().Value[0], fromGarbage.First().Value[0]);
 
         // A buffer of the WRONG shape (a different grid size) is not read at all — the shape check
         // falls back to re-evaluation rather than indexing into it.
-        var wrongShape = sr.PortITime!.Select(d => new double[d.GetLength(0), d.GetLength(1) + 2]).ToArray();
+        var wrongShape = sr.PortTerms!
+            .Select(d => new PortTermTimes(d.PortCount, d.GridN + 2)).ToArray();
         var fromWrong = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, netlist, ifNodes, null, sr.INl, wrongShape);
+            V, N, K, gridN, p.ToneHz, netlist, ifNodes, null, sr.INl, wrongShape);
         AssertSpectraMatch(fromWrong, real, 0.0);
     }
 
@@ -458,29 +462,24 @@ analysis HB1 type=hb Tone=1e9 MaxHarm=3 FFTOverSample=1 Tol=1e-9 MaxIter=60
         var sr = HbNewton.Solve(V, yNN, iSrc, f0, K, N, netlist, ifNodes, gridN, settings, p.Tol,
                                 cc: cc);
         Assert.True(sr.Converged);
-        Assert.NotNull(sr.PortITime);
+        Assert.NotNull(sr.PortTerms);
 
-        var reference = HbNewton.ComputeDevicePortCurrents(V, N, K, gridN, netlist, ifNodes, cc, sr.INl);
+        var reference = HbNewton.ComputeDevicePortCurrents(
+            V, N, K, gridN, f0, netlist, ifNodes, cc, sr.INl);
 
         // The last Newton pass's own buffer is NOT the post-solve answer here: the post-solve
         // currents are evaluated at the converged _c_ref, which that pass (one iterate behind on
         // its seed) did not use. Handing over a buffer — even a deliberately wrong one — must
         // change nothing, because the control path must not read it.
-        var garbage = sr.PortITime!.Select(d =>
-        {
-            var g = new double[d.GetLength(0), d.GetLength(1)];
-            for (int i = 0; i < g.GetLength(0); i++)
-                for (int t = 0; t < g.GetLength(1); t++) g[i, t] = 7.0;
-            return g;
-        }).ToArray();
+        var garbage = GarbageLike(sr.PortTerms!, (_, _) => 7.0);
 
         var withBuffer = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, netlist, ifNodes, cc, sr.INl, garbage);
+            V, N, K, gridN, f0, netlist, ifNodes, cc, sr.INl, garbage);
         AssertSpectraMatch(withBuffer, reference, 0.0);
 
         // And the exemption is not vacuous — the same garbage DOES reach the answer with cc = null.
         var noCcGarbage = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, netlist, ifNodes, null, sr.INl, garbage);
+            V, N, K, gridN, f0, netlist, ifNodes, null, sr.INl, garbage);
         Assert.NotEqual(reference.First().Value[0], noCcGarbage[reference.First().Key][0]);
     }
 
@@ -595,29 +594,42 @@ analysis HB1 type=hb Tone=1e9 MaxHarm=3 FFTOverSample=1 Tol=1e-9 MaxIter=60
         return V;
     }
 
-    private static double[][][,] AllocPortITime2D(ElaboratedNetlist netlist, int n1, int n2)
+    private static HbNewton2D.PortTermTimes2D[] AllocPortTerms2D(
+        ElaboratedNetlist netlist, int n1, int n2)
     {
-        var buf = new double[netlist.NonlinearComponents.Count][][,];
+        var buf = new HbNewton2D.PortTermTimes2D[netlist.NonlinearComponents.Count];
         for (int i = 0; i < buf.Length; i++)
-        {
-            int pc = netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount;
-            buf[i] = new double[pc][,];
-            for (int q = 0; q < pc; q++) buf[i][q] = new double[n1, n2];
-        }
+            buf[i] = new HbNewton2D.PortTermTimes2D(
+                netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount, n1, n2);
         return buf;
     }
 
-    private static double[][][] AllocPortITimeNd(ElaboratedNetlist netlist, int samples)
+    private static HbNewtonNd.PortTermTimesNd[] AllocPortTermsNd(
+        ElaboratedNetlist netlist, int samples)
     {
-        var buf = new double[netlist.NonlinearComponents.Count][][];
+        var buf = new HbNewtonNd.PortTermTimesNd[netlist.NonlinearComponents.Count];
         for (int i = 0; i < buf.Length; i++)
-        {
-            int pc = netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount;
-            buf[i] = new double[pc][];
-            for (int q = 0; q < pc; q++) buf[i][q] = new double[samples];
-        }
+            buf[i] = new HbNewtonNd.PortTermTimesNd(
+                netlist.Components[netlist.NonlinearComponents[i]].Model.PortCount, samples);
         return buf;
     }
+
+    /// <summary>A same-shaped buffer whose CONDUCTION and CHARGE rows both carry deliberately wrong
+    /// numbers — both, because a terminal current is the weighted sum of the two and poisoning only
+    /// one would leave a device that carries no charge unaffected.</summary>
+    private static PortTermTimes[] GarbageLike(
+        PortTermTimes[] like, Func<int, int, double> value)
+        => like.Select(d =>
+        {
+            var g = new PortTermTimes(d.PortCount, d.GridN);
+            for (int i = 0; i < d.PortCount; i++)
+                for (int t = 0; t < d.GridN; t++)
+                {
+                    g.W0[i, t] = value(i, t);
+                    g.W1[i, t] = value(i, t);
+                }
+            return g;
+        }).ToArray();
 
     private static void AssertSpectraMatch(
         Dictionary<string, Complex[]> a, Dictionary<string, Complex[]> b, double tol)

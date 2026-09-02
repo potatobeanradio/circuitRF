@@ -581,7 +581,7 @@ public sealed class HbEngine
         // C2: Post-convergence per-device port-current extraction (not in Newton hot path).
         // Pass cc + converged INl so SDDs with C[n] refs get the correct _cn values.
         var pointPortCurrents = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, _netlist, ifNodes, cc, solveResult.INl, solveResult.PortITime);
+            V, N, K, gridN, f0, _netlist, ifNodes, cc, solveResult.INl, solveResult.PortTerms);
         foreach (var (key, spec) in pointPortCurrents)
         {
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
@@ -891,7 +891,7 @@ public sealed class HbEngine
 
         // C2: post-convergence per-device port-current extraction over the mixing lattice.
         var pointPortCurrents = HbNewton2D.ComputeDevicePortCurrents2D(
-            V, grid, N, N1, N2, _netlist, ifNodes, solveResult.PortITime);
+            V, grid, N, N1, N2, f1, f2, _netlist, ifNodes, solveResult.PortTerms);
         foreach (var (key, spec) in pointPortCurrents)
         {
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
@@ -1166,7 +1166,7 @@ public sealed class HbEngine
 
         // Post-convergence per-device port-current extraction over the lattice.
         var pointPortCurrents = HbNewtonNd.ComputeDevicePortCurrentsNd(
-            V, apft, N, _netlist, ifNodes, solveResult.PortITime);
+            V, apft, N, lattice, f, _netlist, ifNodes, solveResult.PortTerms);
         foreach (var (key, spec) in pointPortCurrents)
         {
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
