@@ -941,8 +941,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
             // bare IndexOutOfRangeException out of DataCube's gather, and the report named only the
             // reader — no source, no cube, no slice. The trail note below is what turns the next one
             // into a diagnosis: it records exactly which cube was being sliced and with what.
+            //
+            // The STACK is the half the first instrumented report (1.0.0-beta.8) still lacked, and it
+            // is the half that ends the hunt: every reported failure so far names a well-formed cube
+            // and an in-range slice, so the throw is somewhere in this method OTHER than the read the
+            // stack was assumed to name. Recording it costs one string on a path that is already
+            // failing.
             Diagnostics.CrashReporter.Note($"trace resolve FAILED: {DescribeCubeResolve(t, ds, plotType)} — "
-                                           + $"{ex.GetType().Name}: {ex.Message}");
+                                           + $"{DescribeException(ex)}");
             t.ExpressionError = ex.Message;
             t.InvalidSpecText = t.Expression ?? t.CubeName;
             t.Points.Clear();
@@ -965,21 +971,97 @@ public partial class PlotInspectorViewModel : ViewModelBase
             if (ds is not null && t.CubeName is { } name && ds.Contains(name))
             {
                 var c = ds[name];
-                sb.Append($" shape=[{string.Join(" x ", c.Axes.Select(a => $"{a.Name}[{a.Length}]"))}]");
+                sb.Append($" shape=[{DescribeShape(c)}]");
                 sb.Append($" kind={c.DataKind}");
             }
             else sb.Append(" shape=(cube not in source)");
         }
         catch (Exception e) { sb.Append($" shape=(unreadable: {e.GetType().Name})"); }
 
+        // The slice's RANGE fields are printed too. A narrowed X axis is stored beside the pin index,
+        // not in it, so the first instrumented reports could not tell a whole-axis X from a narrowed
+        // one — and a narrowing is exactly the kind of carried-over state that outlives the shape it
+        // was authored against.
         try
         {
             sb.Append(t.Slice is { } s
-                ? $" slice=[{string.Join(", ", s.Select(a => $"{a.AxisName}:{a.Role}:{a.Index}"))}]"
+                ? $" slice=[{string.Join(", ", s.Select(DescribeAxisSlice))}]"
                 : " slice=(null)");
         }
         catch (Exception e) { sb.Append($" slice=(unreadable: {e.GetType().Name})"); }
 
+        // The rest of the trace state this resolve actually branches on. Every one of these selects a
+        // different path through SetCubeDataFromCore, and none of them was in the first report.
+        try
+        {
+            sb.Append($" transform={t.Transform} z0={t.Z0.Real:G6}{(t.Z0.Imaginary >= 0 ? "+" : "-")}j{Math.Abs(t.Z0.Imaginary):G6}");
+            sb.Append($" override={(t.Z0OverrideEnabled ? "on" : "off")}");
+            sb.Append($" srcZ0={(t.SourceZ0PerPort is { } z ? z.Length.ToString() : "(null)")}");
+            sb.Append($" versus={(t.XSpec is { } xs ? $"'{xs}'" : "(none)")}");
+            sb.Append($" family={t.FamilyCurves.Count} markers={t.Markers.Count}");
+            sb.Append($" src='{SafeFileName(t.SourcePath)}'");
+        }
+        catch (Exception e) { sb.Append($" state=(unreadable: {e.GetType().Name})"); }
+
+        // What the group actually holds. "The cube resolved" and "the group is well-formed" are
+        // different claims, and the S/Z0 pair is what every network-parameter branch reads.
+        try
+        {
+            if (ds is not null && t.CubeName is { } n2)
+            {
+                int dot = n2.LastIndexOf('.');
+                string group = dot < 0 ? RfCore.Data.DataSet.DefaultGroup : n2[..dot];
+                if (ds.ContainsGroup(group))
+                    sb.Append($" group[{group}]={{{string.Join(", ",
+                        ds.CubesIn(group).Select(kv => $"{kv.Key}:[{DescribeShape(kv.Value)}]:{kv.Value.DataKind}"))}}}");
+            }
+        }
+        catch (Exception e) { sb.Append($" group=(unreadable: {e.GetType().Name})"); }
+
+        return sb.ToString();
+    }
+
+    private static string DescribeShape(DataCube c)
+        => string.Join(" x ", c.Axes.Select(a => $"{a.Name}[{a.Length}]"));
+
+    private static string DescribeAxisSlice(AxisSlice a)
+    {
+        string s = $"{a.AxisName}:{a.Role}:{a.Index}";
+        if (a.IsNarrowedRange) s += $"({a.RangeStart}..{a.RangeEndExclusive})";
+        if (!string.IsNullOrEmpty(a.Label)) s += $"\"{a.Label}\"";
+        return s;
+    }
+
+    private static string SafeFileName(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return "(null)";
+        try { return System.IO.Path.GetFileName(path); } catch { return "(unreadable)"; }
+    }
+
+    /// <summary>
+    /// The exception, its inner chain, and its stack — the one thing the previous round's trail note
+    /// left out, and the only thing that can name the throwing line when (as here) every value the
+    /// note DOES print is in range. Frames are capped so one failure cannot flood the ring-buffered
+    /// trail, and every step is guarded because this runs while something is already wrong.
+    /// </summary>
+    private static string DescribeException(Exception ex)
+    {
+        var sb = new System.Text.StringBuilder();
+        try
+        {
+            for (Exception? e = ex; e is not null; e = e.InnerException)
+            {
+                sb.Append(ReferenceEquals(e, ex) ? "" : " <- ");
+                sb.Append($"{e.GetType().Name}: {e.Message}");
+            }
+
+            var frames = (ex.StackTrace ?? "").Split('\n')
+                .Select(f => f.TrimEnd('\r').Trim())
+                .Where(f => f.Length > 0)
+                .Take(16);
+            foreach (var f in frames) sb.Append("\n    ").Append(f);
+        }
+        catch (Exception e) { sb.Append($" (exception unreadable: {e.GetType().Name})"); }
         return sb.ToString();
     }
 

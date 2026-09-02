@@ -491,7 +491,13 @@ namespace RfCore.Data
             {
                 var z0Cube = ds[z0Spec];
                 var z0Kind = ClassifyZ0(z0Cube);
-                refZ0 = z0Cube.ComplexValues[0];
+                var z0Vals = z0Cube.ComplexValues;
+                // A "Z0" cube with no entries is what ClassifyZ0 (thirty lines up) already treats as a
+                // legitimate shape, so reading port 1 out of it unguarded was the one place that
+                // disagreed — and it disagreed with a bare IndexOutOfRangeException rather than a
+                // message. An empty reference is no reference: fall back the same way a DataSet with
+                // no Z0 cube at all does.
+                refZ0 = z0Vals.Length > 0 ? z0Vals[0] : new Complex(50, 0);
                 if (z0Kind == Z0Kind.NonUniform)
                 {
                     // SNP/Touchstone is uniform-only; use port-1's value and warn.

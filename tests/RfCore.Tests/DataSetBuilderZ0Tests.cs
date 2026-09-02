@@ -165,6 +165,25 @@ public class DataSetBuilderZ0Tests
         Assert.Equal(0.0,  snp.Z0.Imaginary, precision: 12);
     }
 
+    /// <summary>
+    /// An EMPTY "Z0" cube falls back to 50 Ω, exactly as an absent one does. <c>ClassifyZ0</c> —
+    /// thirty lines above the read — already treats a zero-length reference array as a legitimate
+    /// shape; the port-1 read was the one place that disagreed, and it disagreed by throwing a bare
+    /// <c>IndexOutOfRangeException</c> instead of saying anything.
+    /// </summary>
+    [Fact]
+    public void ToSnp_EmptyZ0Cube_Fallback50Ohm_RatherThanThrowing()
+    {
+        var dsSrc = DataSetBuilder.FromSnp(MakeUniformSnp(nPorts: 2));
+        var ds    = new DataSet();
+        ds.Add("S",  dsSrc["S"]);
+        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(Array.Empty<Complex>()));
+
+        var snp = DataSetBuilder.ToSnp(ds);
+        Assert.Equal(50.0, snp.Z0.Real,      precision: 12);
+        Assert.Equal(0.0,  snp.Z0.Imaginary, precision: 12);
+    }
+
     [Fact]
     public void ToSnp_NonUniformZ0_UsesPort1AndFiresWarning()
     {

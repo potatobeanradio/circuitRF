@@ -234,7 +234,11 @@ namespace CircuitRF.Ui.DataDisplay
             {
                 int nPorts = Data.Ports;
                 int inIdx  = Math.Clamp(InputPort - 1, 0, Math.Max(0, nPorts - 1));
-                return new Complex(SourceZ0PerPortResolved(nPorts)[inIdx].Real, 0.0);
+                var refs   = SourceZ0PerPortResolved(nPorts);
+                // A port-less SNP makes the clamp above resolve to index 0 of an EMPTY array — the
+                // clamp cannot express "there is no port to report". 50 Ω is what every other
+                // reference-impedance fallback in this file uses for an unlabelled source.
+                return inIdx < refs.Length ? new Complex(refs[inIdx].Real, 0.0) : new Complex(50, 0);
             }
         }
 
@@ -727,6 +731,23 @@ namespace CircuitRF.Ui.DataDisplay
         // Non-null only for single-tone HB spectrum traces; null for all other trace types.
         private double[]? _f0ByX;
         public void SetSpectrumFundamentals(double[]? f0ByX) => _f0ByX = f0ByX;
+
+        /// <summary>
+        /// How many samples of this single-curve cube trace are readable — the SHORTER of the X array
+        /// and the value array, never the X array alone.
+        ///
+        /// <para>The two are separate arrays. Every read below bounds-checked the index against
+        /// <c>_cubeXValues.Length</c> and then indexed <c>_cubeComplexValues</c>/<c>_cubeRealValues</c>
+        /// with it, so a pair that ever disagreed would produce a bare
+        /// <c>IndexOutOfRangeException</c> from a line whose guard looks correct. Nothing in the
+        /// repository builds such a pair today (probed across the whole UI suite), which is precisely
+        /// why the guard must not depend on that staying true: a torn pair should draw the samples it
+        /// has, not end the session.</para>
+        /// </summary>
+        private int CubeSampleCount =>
+            _cubeXValues is null ? 0
+                : Math.Min(_cubeXValues.Length,
+                           _cubeComplexValues?.Length ?? _cubeRealValues?.Length ?? 0);
 
         private bool _cubeIsScalar;
         private PlotType _lastPlotType = PlotType.Rect;
@@ -1389,7 +1410,7 @@ namespace CircuitRF.Ui.DataDisplay
             if (_cubeXValues is null) return;
             if (_cubeComplexValues is null && _cubeRealValues is null) return;
 
-            int  n         = _cubeXValues.Length;
+            int  n         = CubeSampleCount;
             bool isComplex = _cubeComplexValues is not null;
 
             if (!plotType.IsRect())
@@ -2304,7 +2325,7 @@ namespace CircuitRF.Ui.DataDisplay
         /// or when this is a family trace (use the family overload). Mirrors FormatCubeCell's numeric path.</summary>
         private double CubeScalarAt(int i)
         {
-            if (_cubeXValues is null || i < 0 || i >= _cubeXValues.Length) return double.NaN;
+            if (_cubeXValues is null || i < 0 || i >= CubeSampleCount) return double.NaN;
             if (_cubeComplexValues is not null)
             {
                 var z = _cubeComplexValues[i];
@@ -2575,7 +2596,7 @@ namespace CircuitRF.Ui.DataDisplay
         public string FormatCubeCell(int i, PrecisionFormat fmt, int fracDigits)
         {
             if (InvalidSpecText is not null) return "";
-            if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= _cubeXValues.Length)
+            if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= CubeSampleCount)
                 return "NaN";
             string f = $"{fmt}{fracDigits}";
 
@@ -2692,7 +2713,7 @@ namespace CircuitRF.Ui.DataDisplay
         public string FormatCubeCellForMarker(int i, Marker m)
         {
             if (InvalidSpecText is not null) return "";
-            if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= _cubeXValues.Length)
+            if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= CubeSampleCount)
                 return "NaN";
 
             if (_cubeComplexValues is not null &&

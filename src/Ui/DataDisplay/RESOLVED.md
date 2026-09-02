@@ -1,5 +1,72 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The instrumented report arrived, and it excluded the read it was built to catch (2026-09-02)
+
+Third round of the field `IndexOutOfRangeException` (Windows, da-DK, 1.0.0-beta.8 — the release
+carrying the previous round's containment). Three crash trails, same shape every time:
+
+```
+trace resolve FAILED: plot=Smith cube='SP1.S' expr='SP1.S[:, 1, 1]'
+shape=[freq[601] x i[1] x j[1]] kind=Complex
+slice=[freq:KeepAsX:0, i:PinToIndex:0, j:PinToIndex:0]
+— IndexOutOfRangeException: Index was outside the bounds of the array.
+```
+
+**The note did its job and eliminated its own prime suspect.** The cube is well formed and the
+slice is in range on its face — and `DataCube.Slice`'s `RequireShapeConsistent`, which shipped in
+this very build, did **not** fire. A malformed cube would have thrown `InvalidOperationException`
+naming the shape; an out-of-range slice argument throws `ArgumentOutOfRangeException`. So the throw
+is somewhere in `SetCubeDataFromCore` OTHER than the read that three rounds of analysis assumed,
+and the note recorded every field except the one that would say where.
+
+**Excluded this round, by measurement rather than by argument:**
+
+- **Trace state.** ~5,000 resolves over the reported shape: 2 port counts × {S, Z, Y} × 4 plot
+  types × 9 transforms × Z0-override on/off × two Z0 values × all 27 role combinations of the three
+  axes, plus a 1- and 2-port placeholder SNP. No `IndexOutOfRangeException`.
+- **The gesture.** Eight plots driven end to end through the real `DataSourceLibraryViewModel` and
+  `PlotInspectorViewModel.AddTrace` against a 601-point 1-port `.npy`, three traces each, every one
+  cycled S→Z→Y→S through `TraceRowViewModel.MatrixType`, with every plot re-resolved after each
+  step (what a re-run does). Clean.
+- **A torn X/value pair.** A probe throwing on `xValues.Length != values.Length` inside
+  `Trace.SetCubeData`, run across the whole UI suite (10,904 tests): never fires. Nothing in the
+  repository builds one.
+- **A threading race.** Every `DataSet` the Data Display loads is built inside `Task.Run` and
+  assigned after the `await`, on the UI thread; nothing mutates a live `DataSet` off-thread. The
+  lazy `Z`/`Y` materialisation in `DataSourceEntryViewModel.Data` does mutate a group dictionary,
+  but only from the UI thread.
+
+**"The other three plots still work" is not evidence that they were healthy.** The reporter observed
+that after the 4th plot went `<invalid>`, plots 1–3 still toggled between graph types. A plot-type
+toggle rebuilds geometry from the trace's CACHED `_cubeXValues`/`_cubeComplexValues` and never
+re-touches the `DataSet` (`Plot.SetPlotType` → `BuildPath`). The first thing that re-resolves them
+all is the next run — and the trail shows exactly that: one failure before the re-simulate, nine
+immediately after it. Every trace was already broken; only one of them had been asked.
+
+**So the stack is now recorded**, along with the branch-selecting state the first note omitted:
+the slice's narrowed-range and label fields (a narrowing lives beside the pin index, not in it, so
+it was previously invisible), `Transform`, `Z0` and the override flag, the versus spec, the family
+and marker counts, the source file name, and the whole group's cube inventory with shapes and
+kinds. Held by `TraceResolveContainmentTests`.
+
+**Two genuine defects found while looking, neither able to explain the report on its own:**
+
+- **Four cube reads in `Trace` bounds-checked the index against `_cubeXValues.Length` and then
+  indexed `_cubeComplexValues`/`_cubeRealValues`** — different arrays (`BuildCubePath`,
+  `CubeScalarAt`, `FormatCubeCell`, `FormatCubeCellForMarker`). A pair that ever disagreed would
+  throw a bare `IndexOutOfRangeException` from a guard that reads as correct. They now share
+  `CubeSampleCount`, the shorter of the two, so a torn pair draws the samples it has.
+- **`Trace.DerivedGammaReferenceZ0` indexed `[0]` of an empty array** when `Data.Ports == 0` — the
+  `Math.Clamp` above it cannot express "there is no port", so it clamps to 0 and reads off the end.
+
+The reporter's own hypothesis — a race in the custom S/Z/Y control — is aimed at the right kind of
+thing: that control is `IconSelectButton`, which has already had one re-entrancy defect of exactly
+this family (see the Match round-7 note), and it still publishes its choice through
+`Dispatcher.UIThread.Post`, i.e. onto a later turn, when the row it belonged to may have been
+rebuilt. But a deferred `MatrixType` write can only rewrite `CubeName` between `S`/`Z`/`Y`, and
+every trail shows the cube it was actually asked for. It is not ruled out as a *trigger*; it cannot
+be the *throw*.
+
 ## A narrowed X range survives being written down (2026-09-01)
 
 `AxisSlice` carries six fields. `AxisSliceConfig` carried three, written and read by two

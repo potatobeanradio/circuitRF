@@ -99,6 +99,26 @@ comma changes nothing on this path), and clean across 12,000 randomized Data Dis
 that source: add/remove trace, S/Z/Y matrix toggles, signal reselection, Z0-override toggles, plot
 type changes, and reopening the inspector.
 
+### Follow-up (2026-09-02): the instrumented report clears `DataCube` entirely
+
+Three more trails, from 1.0.0-beta.8 — the release carrying both the constructor guard and
+`Slice`'s own `RequireShapeConsistent`. Every one names a cube of `freq[601] x i[1] x j[1]`,
+Complex, sliced `[freq:KeepAsX, i:0, j:0]`, and **`RequireShapeConsistent` did not fire**. That
+closes this file's part of the question:
+
+- a short buffer would now throw `InvalidOperationException` naming the shape, from the read;
+- an out-of-range slice argument throws `ArgumentOutOfRangeException`, from `Slice`'s own guard.
+
+Neither happened, so the throw is not in `DataCube`. The hunt moves to the caller — see
+`src/Ui/DataDisplay/RESOLVED.md` for what the caller's own instrumentation now records, and for the
+two unguarded reads found there.
+
+**One unguarded read in this project, found while looking and fixed:** `DataSetBuilder.ToSnp` read
+`z0Cube.ComplexValues[0]` with no length check, thirty lines below a `ClassifyZ0` that explicitly
+treats a zero-length reference array as a legitimate shape. An empty `Z0` cube now falls back to
+50 Ω, the same way an absent one already did. Held by
+`DataSetBuilderZ0Tests.ToSnp_EmptyZ0Cube_Fallback50Ohm_RatherThanThrowing`.
+
 ### The read side now refuses it too, and names it
 
 `Slice` repeats the constructor's arithmetic against the cube's own state before gathering

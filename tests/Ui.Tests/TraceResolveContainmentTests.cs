@@ -100,6 +100,20 @@ public sealed class TraceResolveContainmentTests
             Assert.Contains("SP1.S", trail);                 // which cube
             Assert.Contains("freq[3]", trail);               // the shape the source actually holds
             Assert.Contains("freq:KeepAsX", trail);          // and the slice that was asked for
+
+            // The STACK. Every field above was already in range in the reports that followed the
+            // first instrumented release, so the throwing line is the only thing left to record and
+            // the only thing that can end the hunt.
+            Assert.Contains("   at ", trail);
+            Assert.Contains("RfCore.Data.DataCube", trail);
+
+            // The branch-selecting state the first note omitted: which transform, whether the Z0
+            // override was on, whether this was a versus trace, and what the group actually held.
+            Assert.Contains("transform=", trail);
+            Assert.Contains("override=", trail);
+            Assert.Contains("versus=", trail);
+            Assert.Contains("group[SP1]=", trail);
+            Assert.Contains("Z0:[port[1]]", trail);
         }
         finally
         {
@@ -129,5 +143,33 @@ public sealed class TraceResolveContainmentTests
         Assert.Equal(3, t.Points.Count);
         Assert.Null(t.InvalidSpecText);
         Assert.Null(t.ExpressionError);
+    }
+
+    /// <summary>
+    /// A trace whose X array and value array disagree in length draws the samples it HAS.
+    ///
+    /// <para>Every cube read in <c>Trace</c> bounds-checked the index against <c>_cubeXValues</c> and
+    /// then indexed <c>_cubeComplexValues</c> — two different arrays — so a torn pair threw a bare
+    /// <c>IndexOutOfRangeException</c> from a guard that looks correct. Nothing in the repository
+    /// builds a torn pair today; the point is that the guard must not depend on that.</para>
+    /// </summary>
+    [Fact]
+    public void ATornXAndValuePair_DrawsWhatItHas_RatherThanThrowing()
+    {
+        var t = CubeTrace();
+        t.SetCubeData(new double[] { 1e9, 2e9, 3e9 },
+                      new[] { new Complex(0.1, 0.2), new Complex(0.3, 0.4), new Complex(0.5, 0.6) },
+                      null, "freq", "Hz", PlotType.Smith, FreqUnit.GHz);
+        Assert.Equal(3, t.Points.Count);
+
+        // Tear the pair past SetCubeData, which is the only way to reach the guard at all.
+        var vf = typeof(Trace).GetField("_cubeComplexValues",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        vf!.SetValue(t, new[] { new Complex(0.1, 0.2) });
+
+        t.BuildPath(PlotType.Smith, FreqUnit.GHz);          // no throw
+        Assert.Single(t.Points);                            // the one sample it genuinely has
+        Assert.Equal("NaN", t.FormatCubeCell(1, PrecisionFormat.G, 4));
+        Assert.Equal("NaN", t.FormatCubeCellForMarker(2, new Marker(t, 2e9, false, false, 1)));
     }
 }
