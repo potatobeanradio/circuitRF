@@ -422,29 +422,38 @@ public partial class PlotContainerViewModel : ViewModelBase
 
     /// <summary>
     /// Re-shapes the container box to match the current plot type after a live plot-type switch
-    /// (brief-dd-plot-type-integrity.md §2). Smith/Polar → square (preserving the larger dimension,
-    /// via the same rule <see cref="ResizeTo"/> enforces on every drag); Table → natural column
+    /// (brief-dd-plot-type-integrity.md §2). Smith/Polar → square; Table → natural column
     /// total; Rect → the configured aspect ratio (golden by default), width kept and height derived
     /// — the same rule <see cref="DataDisplayViewModel.AddPlot"/> applies to a freshly-added Rect
     /// plot and <c>PlotContainerView</c> enforces on every drag-resize.
+    ///
+    /// <para>Arriving at Smith/Polar FROM a non-square type adopts
+    /// <see cref="DataDisplayViewModel.DefaultSquareSize"/> — the same box the toolbar's Add Smith
+    /// Chart creates — so a converted plot and an added one are the same size. The old rule here
+    /// preserved the larger dimension, which handed a converted Rect its own 520 width and produced
+    /// a Smith noticeably bigger than every added one. Smith↔Polar (already square) and an ordinary
+    /// trace add/remove still preserve the box, so a user's manual resize survives both.</para>
     ///
     /// <para>The Rect branch fires ONLY on an actual plot-type transition, not on every call — this
     /// method also runs on ordinary trace add/remove (both raise the same
     /// <c>PlotStructureChanged</c> broadcast; brief §2 says to reuse it rather than add a new
     /// back-reference), and re-snapping to the golden ratio on every trace add would silently
-    /// discard a user's manual resize. The Smith/Polar and Table branches stay unconditional — both
-    /// are idempotent invariants (already-square / already-fitted is a no-op) that pre-date this
-    /// brief.</para>
+    /// discard a user's manual resize. The Table branch stays unconditional — fitting an
+    /// already-fitted table is a no-op — as does the squaring half of the Smith/Polar branch.</para>
     /// </summary>
     private void CoerceAspectForPlotType()
     {
         var plotType    = PlotVM.Plot.PlotType;
-        bool typeChanged = plotType != _lastCoercedPlotType;
+        var prevType    = _lastCoercedPlotType;
+        bool typeChanged = plotType != prevType;
         _lastCoercedPlotType = plotType;
 
         if (IsSquareAspect)
         {
-            double size = Math.Max(200, Math.Max(Width, Height));
+            bool wasSquare = prevType is PlotType.Smith or PlotType.Polar;
+            double size = typeChanged && !wasSquare
+                ? DataDisplayViewModel.DefaultSquareSize
+                : Math.Max(200, Math.Max(Width, Height));
             if (Width != size || Height != size) { Width = size; Height = size; }
         }
         else if (plotType == PlotType.Table)

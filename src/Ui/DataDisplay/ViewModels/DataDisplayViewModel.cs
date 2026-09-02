@@ -594,6 +594,13 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// executes immediately, adding the container and selecting it), then
     /// returns the new container.
     /// </summary>
+    /// <summary>Default box size for a square plot (Smith/Polar) in logical units. Also what a
+    /// live plot-type switch INTO Smith/Polar adopts, so a converted plot matches an added one.</summary>
+    public const double DefaultSquareSize = 420;
+
+    /// <summary>Default box width for a non-square plot (Rect/Table) in logical units.</summary>
+    public const double DefaultPlotWidth = 520;
+
     public PlotContainerViewModel AddPlot(
         PlotType plotType  = PlotType.Smith,
         FreqUnit freqUnit  = FreqUnit.GHz,
@@ -604,7 +611,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         bool square = plotType is PlotType.Smith or PlotType.Polar;
 
-        double w = width > 0 ? width : (square ? 420 : 520);
+        double w = width > 0 ? width : (square ? DefaultSquareSize : DefaultPlotWidth);
 
         // A NEW Rect plot must open at the configured aspect ratio (golden by default) — the same
         // `height = width / RectAspectRatio` rule PlotContainerView enforces on every resize and on
@@ -617,7 +624,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             double ratio = AppSettingsViewModel.Instance.RectAspectRatio;
             h = ratio > 0 ? w / ratio : 360;
         }
-        else                               h = square ? 420 : 360;
+        else                               h = square ? DefaultSquareSize : 360;
 
         // Auto-place when the caller did not specify a position. ComputeNewPlotPosition
         // centers the first in-view plot and otherwise grows a square grid (see its docs).

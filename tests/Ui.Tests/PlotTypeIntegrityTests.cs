@@ -342,6 +342,69 @@ public sealed class PlotTypeIntegrityTests
     }
 
     [Fact]
+    public void RectToSmith_IsTheSameSizeAsAnAddedSmith()
+    {
+        // Reported bug: converting a Rect plot to a Smith chart via the Plot Properties inspector
+        // produced a visibly larger chart than the toolbar's Add Smith Chart. The square branch
+        // preserved max(Width, Height), which is the Rect's own 520 width, not the 420 default.
+        var vm       = new DataDisplayViewModel(new DataSourceLibraryViewModel());
+        var added    = vm.AddPlot(PlotType.Smith, FreqUnit.GHz);
+        var converted = vm.AddPlot(PlotType.Rect, FreqUnit.GHz);
+
+        converted.Inspector.PlotType = PlotType.Smith;
+
+        Assert.Equal(added.Width,  converted.Width,  3);
+        Assert.Equal(added.Height, converted.Height, 3);
+        Assert.Equal(converted.Width, converted.Height, 3);
+    }
+
+    [Fact]
+    public void TableToSmith_IsTheSameSizeAsAnAddedSmith()
+    {
+        // The other non-square starting point: a Table's box is its natural column width, which is
+        // NARROWER than the square default — so the old max() rule under-sized this one instead.
+        var vm    = new DataDisplayViewModel(new DataSourceLibraryViewModel());
+        var added = vm.AddPlot(PlotType.Smith, FreqUnit.GHz);
+        var c     = vm.AddPlot(PlotType.Table, FreqUnit.GHz);
+
+        c.Inspector.PlotType = PlotType.Smith;
+
+        Assert.Equal(added.Width,  c.Width,  3);
+        Assert.Equal(added.Height, c.Height, 3);
+    }
+
+    [Fact]
+    public void SmithToPolar_KeepsTheUsersOwnSize()
+    {
+        // Square → square is not a re-shape: the standard size is adopted only when ARRIVING at a
+        // square type from a non-square one, so a manual resize survives a Smith/Polar swap.
+        var vm = new DataDisplayViewModel(new DataSourceLibraryViewModel());
+        var c  = vm.AddPlot(PlotType.Smith, FreqUnit.GHz);
+        c.ResizeTo(700, 700);
+
+        c.Inspector.PlotType = PlotType.Polar;
+
+        Assert.Equal(700.0, c.Width,  3);
+        Assert.Equal(700.0, c.Height, 3);
+    }
+
+    [Fact]
+    public void OrdinaryTraceAdd_DoesNotResnapSmithToTheStandardSize()
+    {
+        // Same guard as the Rect case below: CoerceAspectForPlotType also runs on a plain trace
+        // add/remove, and must not undo a user's manual resize of a Smith chart.
+        var vm = new DataDisplayViewModel(new DataSourceLibraryViewModel());
+        var c  = vm.AddPlot(PlotType.Smith, FreqUnit.GHz);
+        c.ResizeTo(700, 700);
+
+        c.PlotVM.Plot.Traces.Add(new Trace(new SNP(new[] { 1e9 }, 2), MatrixType.S, 0, 0, DependentVarFormat.Db));
+        c.Inspector.NotifyStructureChanged();
+
+        Assert.Equal(700.0, c.Width,  3);
+        Assert.Equal(700.0, c.Height, 3);
+    }
+
+    [Fact]
     public void TableToRect_AdoptsGoldenRatio()
     {
         var vm = new DataDisplayViewModel(new DataSourceLibraryViewModel());
