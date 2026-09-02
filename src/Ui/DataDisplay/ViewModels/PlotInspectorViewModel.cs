@@ -893,6 +893,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 string.Equals(e.FilePath, t.SourcePath, StringComparison.OrdinalIgnoreCase));
         }
 
+        // NOTE the ordering below: `entry.Data` is not a field read. The first touch of it MATERIALIZES
+        // the group's virtual Z and Y cubes, which means N matrix inversions — real work that can fail.
+        // It was being evaluated in the argument list of SetCubeDataFrom, OUTSIDE that method's own
+        // containment, so a failure there was fatal while the identical failure one line later was not.
+        // Resolving a trace is a read either way.
+
         // "Plot versus" may take its X from a DIFFERENT loaded file (measured Pout against simulated
         // Gain). Null XSourcePath — the ordinary case — means "same source as Y".
         DataSourceEntryViewModel? xEntry = entry;
@@ -909,7 +915,26 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 : System.IO.Path.GetFileNameWithoutExtension(xEntry.DisplayName))
             : null;
 
-        SetCubeDataFrom(t, entry?.Data, plotType, freqUnit, xEntry?.Data);
+        SetCubeDataFrom(t, DataOf(entry, t), plotType, freqUnit, DataOf(xEntry, t));
+    }
+
+    /// <summary>
+    /// A source's DataSet, or null when producing it throws. See the note in
+    /// <see cref="TrySetCubeData"/>: the first read materializes virtual cubes, so this is a
+    /// computation, and a trace whose source cannot be built reports itself unresolvable exactly
+    /// like one whose source is missing.
+    /// </summary>
+    private static DataSet? DataOf(DataSourceEntryViewModel? entry, Trace t)
+    {
+        if (entry is null) return null;
+        try { return entry.Data; }
+        catch (Exception ex)
+        {
+            Diagnostics.CrashReporter.Note(
+                $"trace resolve FAILED (building source): src='{SafeFileName(entry.FilePath)}' "
+                + $"cube='{t.CubeName ?? "(null)"}' — {DescribeException(ex)}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -1115,7 +1140,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 sb.Append($"{e.GetType().Name}: {e.Message}");
             }
 
-            var frames = (ex.StackTrace ?? "").Split('\n')
+            // The stack of the DEEPEST exception, not the outermost. A wrapper that adds context —
+            // DataCube's gather now rethrows with the bounds arithmetic attached — carries the stack
+            // of the rethrow site, which is the one frame nobody needs. The throwing line lives on
+            // the innermost.
+            Exception deepest = ex;
+            while (deepest.InnerException is { } inner) deepest = inner;
+
+            var frames = (deepest.StackTrace ?? ex.StackTrace ?? "").Split('\n')
                 .Select(f => f.TrimEnd('\r').Trim())
                 .Where(f => f.Length > 0)
                 .Take(16);

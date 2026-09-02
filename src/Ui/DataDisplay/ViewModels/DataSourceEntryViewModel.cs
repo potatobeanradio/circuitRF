@@ -42,7 +42,11 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         }
     }
 
-    private bool _networkParamCubesMaterialized;
+    private volatile bool _networkParamCubesMaterialized;
+
+    /// <summary>Serialises the lazy materialisation below. See its remarks for why a flag alone is not
+    /// enough, and why this is hardening rather than a fix for anything observed.</summary>
+    private readonly object _materializeGate = new();
 
     /// <summary>
     /// Materializes virtual "Z" and "Y" cubes into every NAMED analysis group that carries both
@@ -64,7 +68,29 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     private void EnsureNetworkParamCubesMaterialized()
     {
         if (_networkParamCubesMaterialized) return;
-        _networkParamCubesMaterialized = true;
+
+        // The flag used to be raised BEFORE the work, which makes a second caller worse off than no
+        // flag at all: it is told the cubes are materialised and goes on to read a DataSet that is
+        // still being written, and DataSet's group maps are ordinary Dictionaries. Driving that shape
+        // directly — several threads racing this insertion against readers resolving "SP1.S" out of
+        // the same DataSet — produces sporadic KeyNotFoundException for a key that is certainly
+        // present (6 of 300 trials), which is the mild end of what a torn Dictionary does; the same
+        // corruption also surfaces as IndexOutOfRangeException, or as a read that never returns.
+        //
+        // Nothing in the Data Display is known to touch Data off the UI thread, so this is not a
+        // diagnosis of the field report — it is the removal of a hazard that would be indistinguishable
+        // from one, on the exact object that report is about. Raising the flag only once the cubes are
+        // actually there is the substance; the lock is what makes that safe to do.
+        lock (_materializeGate)
+        {
+            if (_networkParamCubesMaterialized) return;
+            MaterializeNetworkParamCubes();
+            _networkParamCubesMaterialized = true;
+        }
+    }
+
+    private void MaterializeNetworkParamCubes()
+    {
         if (_data is not { } ds) return;
 
         foreach (var group in ds.Groups)

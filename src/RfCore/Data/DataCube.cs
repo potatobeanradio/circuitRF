@@ -97,24 +97,32 @@ namespace RfCore.Data
 
         // ---- Constructors --------------------------------------
 
+        // Every constructor SNAPSHOTS `axes` once and derives both `Axes` and `_strides` from that one
+        // snapshot. Reading the caller's array twice — once for each — is what would let a cube end up
+        // with axes and strides that describe different shapes, and a cube like that is invisible to
+        // any check written in terms of one or the other. No caller does that today; the point is that
+        // the invariant should not depend on none of them ever doing it.
+
         /// <summary>Create a Complex DataCube with pre-filled data.</summary>
         public DataCube(Axis[] axes, Complex[] data)
         {
-            Axes         = axes.ToList().AsReadOnly();
+            var ax       = (Axis[])axes.Clone();
+            Axes         = ax.ToList().AsReadOnly();
             DataKind     = DataKind.Complex;
             _complexData = (Complex[])data.Clone();
-            _strides     = ComputeStrides(axes);
-            ValidateSize(_strides, axes, data.Length);
+            _strides     = ComputeStrides(ax);
+            ValidateSize(_strides, ax, data.Length);
         }
 
         /// <summary>Create a Real DataCube with pre-filled data.</summary>
         public DataCube(Axis[] axes, double[] data)
         {
-            Axes      = axes.ToList().AsReadOnly();
+            var ax    = (Axis[])axes.Clone();
+            Axes      = ax.ToList().AsReadOnly();
             DataKind  = DataKind.Real;
             _realData = (double[])data.Clone();
-            _strides  = ComputeStrides(axes);
-            ValidateSize(_strides, axes, data.Length);
+            _strides  = ComputeStrides(ax);
+            ValidateSize(_strides, ax, data.Length);
         }
 
         // The internal buffer-adopting constructors validate their shape too, for the same reason the
@@ -125,20 +133,22 @@ namespace RfCore.Data
         // does, the throw lands on the code that made the cube.
         private DataCube(Axis[] axes, Complex[] data, bool noCopy)
         {
-            Axes         = axes.ToList().AsReadOnly();
+            var ax       = (Axis[])axes.Clone();
+            Axes         = ax.ToList().AsReadOnly();
             DataKind     = DataKind.Complex;
             _complexData = noCopy ? data : (Complex[])data.Clone();
-            _strides     = ComputeStrides(axes);
-            ValidateSize(_strides, axes, _complexData.Length);
+            _strides     = ComputeStrides(ax);
+            ValidateSize(_strides, ax, _complexData.Length);
         }
 
         private DataCube(Axis[] axes, double[] data, bool noCopy)
         {
-            Axes      = axes.ToList().AsReadOnly();
+            var ax    = (Axis[])axes.Clone();
+            Axes      = ax.ToList().AsReadOnly();
             DataKind  = DataKind.Real;
             _realData = noCopy ? data : (double[])data.Clone();
-            _strides  = ComputeStrides(axes);
-            ValidateSize(_strides, axes, _realData.Length);
+            _strides  = ComputeStrides(ax);
+            ValidateSize(_strides, ax, _realData.Length);
         }
 
         // ---- Scalar (0-rank) factory ----------------------------
@@ -257,16 +267,23 @@ namespace RfCore.Data
             var axArr = survivingAxes.ToArray();
             int totalElements = axArr.Aggregate(1, (acc, a) => acc * a.Length);
 
+            // The gather is wrapped only so that an IndexOutOfRangeException can be answered with the
+            // arithmetic that says whether it was REACHABLE. Zero cost until one is thrown, and on the
+            // path that matters it turns "index was outside the bounds of the array" — a sentence with
+            // no cube, no bound and no index in it — into a statement of which bound, by how much, and
+            // whether the slice could have got there at all.
             if (DataKind == DataKind.Complex)
             {
                 var buf = new Complex[totalElements];
-                GatherComplex(axisRanges, axArr, buf, 0, 0, 0);
+                try { GatherComplex(axisRanges, axArr, buf, 0, 0, 0); }
+                catch (IndexOutOfRangeException ex) { throw GatherWalkedOff(axisRanges, axArr, buf.Length, ex); }
                 return new SliceResult(new DataCube(axArr, buf, noCopy: true));
             }
             else
             {
                 var buf = new double[totalElements];
-                GatherReal(axisRanges, axArr, buf, 0, 0, 0);
+                try { GatherReal(axisRanges, axArr, buf, 0, 0, 0); }
+                catch (IndexOutOfRangeException ex) { throw GatherWalkedOff(axisRanges, axArr, buf.Length, ex); }
                 return new SliceResult(new DataCube(axArr, buf, noCopy: true));
             }
         }
@@ -664,15 +681,47 @@ namespace RfCore.Data
         /// </summary>
         private void RequireShapeConsistent()
         {
-            int expected = Rank == 0 ? 1 : _strides[0] * Axes[0].Length;
-            int actual   = ElementCount();
-            if (actual == expected) return;
+            // The FULL relationship, not just the leading one. The previous form compared
+            // `_strides[0] * Axes[0].Length` against the buffer, which is the whole element count and
+            // therefore a real check — but only of the count. It could not see a cube whose INNER
+            // strides disagree with its own axes, and such a cube passes every count-based test while
+            // the gather walks a different shape than the one every diagnostic prints. That is exactly
+            // the state the round-5 field report implies, so the check is now written so that state
+            // cannot pass it.
+            int rank = Rank;
+            if (rank == 0)
+            {
+                if (ElementCount() == 1) return;
+                throw new InvalidOperationException(
+                    $"Malformed cube: scalar claims 1 element, buffer holds {ElementCount()}.");
+            }
 
-            string shape = Rank == 0
-                ? "scalar"
-                : string.Join(" x ", Axes.Select(a => $"{a.Name}[{a.Length}]"));
+            long expected = 1;
+            bool stridesAgree = _strides.Length == rank;
+            for (int d = rank - 1; d >= 0 && stridesAgree; d--)
+            {
+                if (_strides[d] != expected) stridesAgree = false;
+                expected *= Axes[d].Length;
+            }
+
+            int actual = ElementCount();
+            if (stridesAgree && actual == expected) return;
+
+            string shape   = string.Join(" x ", Axes.Select(a => $"{a.Name}[{a.Length}]"));
+            string strides = _strides.Length == 0 ? "" : string.Join(",", _strides);
             throw new InvalidOperationException(
-                $"Malformed cube: axes {shape} claim {expected} elements, buffer holds {actual}.");
+                $"Malformed cube: axes {shape} claim {expected} elements with strides "
+                + $"[{string.Join(",", ExpectedStrides())}], buffer holds {actual} with strides "
+                + $"[{strides}].");
+        }
+
+        /// <summary>The strides the cube's OWN axes imply — the reference the stored ones are held to.</summary>
+        private int[] ExpectedStrides()
+        {
+            var s = new int[Rank];
+            int acc = 1;
+            for (int d = Rank - 1; d >= 0; d--) { s[d] = acc; acc *= Axes[d].Length; }
+            return s;
         }
 
         private Axis[] AxesArray() => Axes.ToArray();
@@ -798,6 +847,49 @@ namespace RfCore.Data
             for (int d = 0; d < dim; d++)
                 if (!axisRanges[d].isPin) count++;
             return count;
+        }
+
+        /// <summary>
+        /// The message for a gather that indexed outside a buffer — and, crucially, whether it COULD.
+        ///
+        /// <para>The highest index the walk can reach is a closed form: the last element of every
+        /// surviving axis and the pinned index of every collapsed one. Computing it here answers the
+        /// question a bare <c>IndexOutOfRangeException</c> cannot. If both maxima are inside their
+        /// buffers, the read was in range and still threw — which is not a shape fault and must not be
+        /// reported as one; every shape-based explanation has already been spent on this bug.</para>
+        /// </summary>
+        private Exception GatherWalkedOff(
+            (bool isPin, int pin, int offset, int length)[] axisRanges,
+            Axis[] surviving, int bufLength, Exception inner)
+        {
+            long maxSrc = 0, maxDst = 0;
+            string detail;
+            try
+            {
+                for (int d = 0; d < Rank; d++)
+                {
+                    var (isPin, pin, offset, length) = axisRanges[d];
+                    int last = isPin ? pin : offset + Math.Max(0, length - 1);
+                    maxSrc += (long)last * _strides[d];
+                }
+                for (int d = 0; d < surviving.Length; d++)
+                    maxDst += (long)Math.Max(0, surviving[d].Length - 1) * DstStride(surviving, d);
+
+                int srcLength = ElementCount();
+                bool reachable = maxSrc >= srcLength || maxDst >= bufLength;
+                detail = reachable
+                    ? "The slice reaches past the buffer — the cube and the slice disagree."
+                    : "BOTH INDICES ARE IN RANGE: this read cannot have gone out of bounds from this "
+                      + "state, so the fault is not in the cube's shape or the slice.";
+                detail = $"max source index {maxSrc} of {srcLength}, max destination index {maxDst} "
+                       + $"of {bufLength}. {detail}";
+            }
+            catch (Exception e) { detail = $"(bounds unreadable: {e.GetType().Name})"; }
+
+            string shape   = string.Join(" x ", Axes.Select(a => $"{a.Name}[{a.Length}]"));
+            string strides = string.Join(",", _strides);
+            return new InvalidOperationException(
+                $"Gather walked off its buffer on cube {shape} (strides [{strides}]): {detail}", inner);
         }
 
         private static int DstStride(Axis[] surviving, int dstDim)

@@ -132,6 +132,46 @@ past its constructor by reflection to reach the check at all.
 The Data Display no longer dies on it either — see `src/Ui/DataDisplay/RESOLVED.md`, "A trace that
 cannot be resolved says so".
 
+### Follow-up (2026-09-02, round 5): the stack arrives, and it names the gather after all
+
+The instrumented build (1.0.0-beta.9) reports
+`at RfCore.Data.DataCube.GatherComplex` -> `Slice` -> `get_Item` ->
+`PlotInspectorViewModel.SetCubeDataFromCore`. The read is where the throw is; the previous
+follow-up's conclusion that it is elsewhere in `SetCubeDataFromCore` is withdrawn.
+
+The state it names is `freq[101] x i[2] x j[2]` Complex, sliced `(All, 0, 0)`, `override=off` so no
+renormalization runs, no transform on one trace and `dB20` on another, no versus, no family, no
+markers. **On that state the gather cannot overflow**, and that is now measured rather than argued:
+a scratch console against real RfCore slices the exact cube 18,000,000 times in Release with every
+pin combination and never fails, and a full run-shaped `DataSet` (S + Z0, then Z/Y materialized the
+way the Data Display does) slices every element clean while printing a group inventory identical to
+the crash note's.
+
+#### The leading-stride check was not the whole check
+
+`RequireShapeConsistent` compared `_strides[0] * Axes[0].Length` against the buffer. That is a real
+element-COUNT check — `_strides[0]` is the product of the trailing axes — but only of the count. It
+could not see a cube whose INNER strides disagree with its own axes: the count still matches, every
+diagnostic still prints a healthy shape, and the gather walks a layout nothing reports. It now
+recomputes the strides the axes imply and holds the stored ones to them, naming both vectors when
+they differ.
+
+Two more places where that class of inconsistency could have originated are closed with it. Every
+constructor read the caller's `Axis[]` TWICE — once for `Axes`, once for `ComputeStrides` — and now
+snapshots it once; and `Slice`'s gather is wrapped so an `IndexOutOfRangeException` is rethrown with
+the closed-form maxima:
+
+    Gather walked off its buffer on cube freq[101] x i[2] x j[2] (strides [4,2,1]): max source
+    index 400 of 404, max destination index 100 of 101. BOTH INDICES ARE IN RANGE: this read
+    cannot have gone out of bounds from this state, so the fault is not in the cube's shape or
+    the slice.
+
+That last sentence is the point. Every shape-based explanation for this report has now been spent,
+so the next trail has to be able to say that the arithmetic was fine — otherwise the fifth round of
+analysis starts by re-deriving it. Zero cost until an exception is thrown. Held by
+`DataCubeShapeIntegrityTests` (7), which reaches the private helper by reflection because no
+constructor can produce the state any more.
+
 ### Still open
 
 **This relabels the crash; it does not explain the reported one.** The originating malformed cube

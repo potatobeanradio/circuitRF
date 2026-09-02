@@ -1706,3 +1706,50 @@ Four slices, C1–C4. `src/Ui/Harmonica` untouched (verified via `git status`).
 (§2/§3 gates). `dotnet test tests/Ui.Tests` then `dotnet test tests/Firewall.Tests` — see the
 in-repo `CLAUDE.md` §"`dotnet test` is fast by default" for why these are two separate
 invocations.
+
+
+## Round 5 of the trace-resolve `IndexOutOfRangeException`: what the note could not say, and two defects found beside it (2026-09-02)
+
+The 1.0.0-beta.9 trail carries the stack, and it names `DataCube.GatherComplex` — see
+`src/RfCore/RESOLVED.md` for why that state provably cannot overflow and what changed there. This
+file records the Data Display half.
+
+### The note described the DataSet, not the read
+
+Every field it printed was either authored trace state (`slice=`, `transform=`, `override=`) or a
+re-read of the source in the CATCH handler (`shape=`, `group[...]=`). Neither can say what the
+indexer actually received. A `ResolveProbe` now captures the cube and the positional arguments BY
+REFERENCE at each of the four indexer call sites — the rank-0 scalar, the all-pinned scalar, the
+main read, and each family curve — and the note prints:
+
+    read=[freq[101] x i[2] x j[2]] buf=404 expect=404 same=yes args=[All, 0, 0]
+
+`buf` vs `expect` is the pair that matters: `Slice` validates the buffer against the axes product
+before gathering, so a report where those two disagree is one where the validation and the gather
+are looking at different state. `same` says whether the cube the read saw is still the object the
+note's own `shape=` field goes on to describe. Nothing is formatted on the success path — a resolve
+that works costs two field writes and no allocation. `DescribeException` now prints the INNERMOST
+exception's stack, since a wrapper that adds context carries the stack of the rethrow site.
+
+### A read that could still end the session
+
+`TrySetCubeData` evaluated `entry?.Data` in the ARGUMENT LIST of `SetCubeDataFrom` — outside that
+method's own containment. The first read of `Data` materializes the group's virtual Z and Y cubes,
+which is N matrix inversions: real work, and work that can fail. So a failure there was fatal while
+the identical failure one line later was contained. It goes through a guarded `DataOf` now, and a
+source that cannot be built makes its traces unresolvable exactly like a source that is missing.
+
+### The lazy materialization raised its flag before doing the work
+
+`EnsureNetworkParamCubesMaterialized` set `_networkParamCubesMaterialized = true` and THEN inserted
+the cubes. That makes a second caller worse off than no flag at all: it is told the cubes are there
+and goes on to read a `DataSet` still being written, and `DataSet`'s group maps are ordinary
+`Dictionary`s. Driving that shape directly — several threads racing the insertion against readers
+resolving `SP1.S` out of the same `DataSet` — gives sporadic `KeyNotFoundException` for a key that is
+certainly present, 6 of 300 trials. That is the mild end of a torn `Dictionary`; the same corruption
+also surfaces as `IndexOutOfRangeException`, or as a read that never returns.
+
+**This is hardening, not a diagnosis.** Nothing in the Data Display is known to touch `Data` off the
+UI thread, and the field stack names the gather rather than a dictionary lookup. It is the removal of
+a hazard that would be indistinguishable from the reported one, on the exact object that report is
+about. Now under a lock, with the flag raised last.
