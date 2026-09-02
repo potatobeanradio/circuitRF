@@ -105,8 +105,14 @@ public sealed class LoadpullEngine
         // Tone is the only frequency-unit-sensitive field; resolve it with HB's var-unit-wins rule.
         // (Pin/Compression/etc. are dBm/dB/counts, not frequencies — they stay on Num().)
         double tone;
+        // Refused, not defaulted — see HbEngine.Resolve's ToneHz for why a substituted 1 GHz is
+        // worse than no answer: every later message then describes a grid nobody asked for.
         try   { tone = FreqUnit.ResolveHz(lpa.ToneExpr, lpa.ToneUnit, globals, globalsWithUnit); }
-        catch { tone = 1e9; }
+        catch (ExpressionException ex)
+        {
+            throw new InvalidOperationException(
+                "Loadpull " + FreqUnit.UnresolvedFieldMessage("Tone", lpa.Name, lpa.ToneExpr, ex), ex);
+        }
         int    maxH    = (int)Num(lpa.MaxHarmonicExpr,   5);
         int    osamp   = Math.Max(1, (int)Num(lpa.FFTOverSampleExpr, 1));
         double tol     = Num(lpa.TolExpr,            1e-6);

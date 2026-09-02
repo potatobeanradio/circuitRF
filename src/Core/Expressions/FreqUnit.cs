@@ -45,6 +45,29 @@ public static class FreqUnit
     }
 
     /// <summary>
+    /// The refusal an unresolvable frequency FIELD earns, phrased as the fact the reader needs:
+    /// the field is undefined, and which name in it could not be resolved.
+    ///
+    /// <para>Every caller of <see cref="ResolveHz"/> used to swallow the failure and substitute
+    /// 1 GHz. Nothing downstream can tell that apart from a tone the user actually typed, so the
+    /// first symptom was a commensurability refusal reporting a grid the design never asked for
+    /// (<c>f0=1E+09 Hz</c>) and blaming the SOURCE — while the analysis card, which does not
+    /// substitute, was already saying "unknown". Fail here instead, naming the field and the name,
+    /// so the run says what the card says.</para>
+    /// </summary>
+    /// <param name="what">The field, as the user sees it in the dialog — e.g. <c>Tone</c>, <c>Tone[2]</c>.</param>
+    /// <param name="owner">Analysis name, for the "which analysis" half.</param>
+    public static string UnresolvedFieldMessage(string what, string owner, string expr, System.Exception cause)
+    {
+        string quoted = string.IsNullOrWhiteSpace(expr) ? "(empty)" : $"\"{expr.Trim()}\"";
+        string why = cause is UnresolvedNameException u
+            ? $"'{u.Name}' is not a variable of this design"
+            : cause.Message;
+        return $"'{owner}': {what} is undefined — {what}={quoted}, and {why}. " +
+               $"Define the variable, or type a frequency in {what}.";
+    }
+
+    /// <summary>
     /// Returns the power-of-1000 exponent n if |a/b| ≈ 1000ⁿ (n = 1, 2, 3, …), otherwise 0.
     /// Typical use: detect a unit-scale mismatch, e.g. 2 Hz vs 2 GHz → ratio 10⁹ = 1000³ → 3.
     /// </summary>

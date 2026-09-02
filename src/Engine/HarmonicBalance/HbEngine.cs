@@ -268,10 +268,17 @@ public sealed class HbEngine
             catch { return def; }
         }
 
-        double ToneHz(string expr, string unit)
+        // An unresolvable Tone is REFUSED, not defaulted. Substituting 1 GHz here produced a run
+        // whose every later message described a tone grid the design never asked for — most
+        // visibly the commensurability check, which then blamed the source for sitting off it.
+        double ToneHz(string what, string expr, string unit)
         {
             try { return FreqUnit.ResolveHz(expr, unit, globals, globalsWithUnit); }
-            catch { return 1e9; }
+            catch (ExpressionException ex)
+            {
+                throw new InvalidOperationException(
+                    "HB " + FreqUnit.UnresolvedFieldMessage(what, hba.Name, expr, ex), ex);
+            }
         }
 
         int    maxH    = (int)Num(hba.MaxHarmonicExpr, 7);
@@ -290,13 +297,13 @@ public sealed class HbEngine
             for (int i = 0; i < numFreqs; i++)
             {
                 string unit = i < hba.ToneUnits.Length ? hba.ToneUnits[i] : "Hz";
-                toneFreqsHz[i] = ToneHz(hba.ToneExprs[i], unit);
+                toneFreqsHz[i] = ToneHz($"Tone[{i + 1}]", hba.ToneExprs[i], unit);
             }
         }
         else
         {
             // Single-tone: use scalar Tone= / ToneUnit=.
-            toneFreqsHz = [ToneHz(hba.ToneExpr, hba.ToneUnit)];
+            toneFreqsHz = [ToneHz("Tone", hba.ToneExpr, hba.ToneUnit)];
         }
 
         int maxMixOrder = Math.Max(1, (int)Num(hba.MaxMixOrderExpr, 5));

@@ -4,6 +4,55 @@ Mirrors `src/Engine/Loadpull/RESOLVED.md`'s pattern: a completed brief's detail 
 section per brief, sparingly — only for findings that are still true, still surprising, and would cost
 someone real time to rediscover. `CLAUDE.md` stays for durable, still-true conventions.
 
+## An unresolvable analysis Tone resolved to 1 GHz, and every later message described that grid (2026-09-02)
+
+Reported against a single-tone HB whose `Tone` named a variable the schematic does not define
+(`RFfreq`; the design has `RFfreq1`). The **Analysis card was already correct** — it renders
+`f0=unknown: RFfreq` via `AnalysisPreviewHelper`, which does not substitute. The RUN said something
+else entirely:
+
+```
+'HB3': Commensurability check failed: source 'P2' Freq=1.805E+09 Hz is not on the HB tone grid
+{f0=1E+09 Hz, MaxHarm=5} — the source's frequency follows the variable 'RFfreq1' ...
+```
+
+Every number in that sentence is real except the one that matters. `HbEngine.Resolve`'s local
+`ToneHz` was `try { FreqUnit.ResolveHz(...) } catch { return 1e9; }`, so an `UnresolvedNameException`
+became a **1 GHz tone indistinguishable from one the user typed**. The engine then did exactly the
+right thing with the wrong input: 1.805 GHz is genuinely off a 1 GHz grid, so the commensurability
+check fired, and `SweptToneHint` — which exists for the real swept-tone case — found `RFfreq1` sitting
+at that value and appended a confident remedy for a defect that was not present. **The check was not
+wrong; it was answering a question about a tone nobody had asked for.**
+
+### The rule the fix encodes
+
+A field the user can leave undefined must **refuse by name**, never substitute. A substituted value
+propagates into every downstream message as if it were authored, and the further from the
+substitution the symptom appears, the more convincing the wrong explanation gets. `ToneHz` now
+throws an `InvalidOperationException` built by `FreqUnit.UnresolvedFieldMessage`, naming the analysis,
+the field (`Tone`, or `Tone[2]` on the multi-tone spelling), the expression as typed, and the name
+that could not be resolved.
+
+Three engines carried the same `catch { tone = 1e9; }` — `HbEngine`, `LoadpullEngine`,
+`LoadpullPursuitEngine` — and all three are fixed together; a loadpull tone is the same field with
+the same failure. Only `ExpressionException` (which covers both `UnresolvedNameException` and
+`ParseException`) is caught, so a parse error like `Tone="2 GHz"` — the unit is a field of its own,
+not part of the expression — is also a refusal rather than a silent 1 GHz.
+
+### Where the refusal surfaces
+
+`SchematicRunService.DescribePlanned` also calls `Resolve`, and it is **already** guarded by a
+`try/catch` whose comment says describing can fail the same way running would. So the plan line
+degrades to "cannot be described before running (…)" carrying the real sentence, and `Execute` reports
+it per-analysis on the normal error path. Nothing needed changing there.
+
+`Resolve`'s sibling `Num()` helper still defaults `MaxHarm`/`Tol`/`MaxIter` on an unresolved name —
+the same shape of silence, not touched here, and worth the same treatment if it ever bites.
+
+Gate: `FreqExprUnitTests.Hb_Resolve_UnknownToneVariable_IsRefusedByName` and its multi-tone,
+unparseable and loadpull siblings, which assert the name and field appear AND that the message
+carries neither a substituted grid nor a blamed source.
+
 ## A charge-carrying branch reported no current — HB read w=0 and nothing else (2026-09-01)
 
 Reported against the unified `I` cube: `ds["I"][probe, k]` on a branch whose nonlinear content is
