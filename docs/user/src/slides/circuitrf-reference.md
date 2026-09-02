@@ -78,6 +78,13 @@ Drawing circuits, the component library, and synthesis.
 
 {{ui: library-palette}}
 
+## Importing a SPICE model
+
+- A `.model` card or a `.subckt`, either **referenced** from its own file or **copied in** as an editable cell.
+- **Every parameter not carried is named**, in the card's own spelling, and the list is written onto the imported cell so it is still there later.
+- Why one is not carried: no analysis to feed it, no node to attach it to, no term in the formulation, it belongs in the schematic, or it belongs to a law circuitRF does not implement.
+- A type circuitRF has no device for is **refused by name**, never approximated into the nearest one.
+
 ## Dynamic symbols and the symbol editor
 
 - **Dynamic symbols** — components whose drawn symbol changes with their parameters, so the sheet shows what the part actually is.

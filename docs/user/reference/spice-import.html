@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Importing a SPICE Model</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/spice-import.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › SPICE import</p>
+
+  <h1>Importing a SPICE Model</h1>
+  <p class="lede">What circuitRF carries across from a .model card or a .subckt, what it leaves behind, and why — including where to read the list of parameters that did not come with it.</p>
+
+<nav class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#surfaces">Two ways a SPICE file becomes a circuit</a></li>
+      <li><a href="#report">Nothing is dropped silently</a></li>
+      <li><a href="#why">Why a parameter is not carried</a></li>
+      <li><a href="#families">What each card type leaves behind</a></li>
+      <li><a href="#refused">When the whole card is refused</a></li>
+      <li><a href="#matters">Working out whether it matters</a></li>
+    </ol>
+  </nav>
+<h2 id="surfaces">Two ways a SPICE file becomes a circuit</h2>
+<p>Both start from the same file and use the same translation, so everything on this page applies
+equally to either.</p>
+<table class="param-table"><thead><tr><th>Route</th><th>What you get</th><th>Use it when</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>The SpiceModel component</b><br><a href="components.html#spicemodel">Components › SPICE Model or Subcircuit</a></td>
+        <td>A component that <b>runs from the file</b>. Nothing is copied; edit the file and the schematic follows it.</td>
+        <td>The file is the authority and must stay so.</td>
+      </tr>
+      <tr>
+        <td><b>Copy to Workspace as Cell…</b><br>(the project tree's context menu)</td>
+        <td>An editable cell — a schematic you can open, re-symbol and change.</td>
+        <td>The model is a starting point rather than the last word.</td>
+      </tr>
+    </tbody>
+  </table>
+<p>A <code>.model</code> card circuitRF has a device for becomes <strong>that device</strong>, with its terminals where that
+device's terminals are. A <code>.subckt</code> becomes a <strong>schematic</strong> — every element inside it placed as an
+ordinary component, wired as the definition wires them, with the definition's own port names on the
+pins.</p>
+<div class="callout note">
+<span class="label">A packaged part's parasitics are components, not parameters</span>
+<p>A vendor file for a real transistor is usually a <code>.subckt</code>: a <code>.model</code> card
+for the die, wrapped in the lead inductances and package capacitances that dominate its behaviour
+above a gigahertz or two. Those wrappers come across as ordinary R, L and C instances, because that
+is what they are. If you import the bare card instead, you get the die and no package — a far larger
+difference than anything else on this page. Leave <code>Name</code> blank and the highest-level
+definition is chosen, which is the wrapper.</p>
+</div>
+<h2 id="report">Nothing is dropped silently</h2>
+<p>Every parameter on a card that circuitRF does not carry is <strong>named</strong>, every time:</p>
+<pre><code class="language-text">RF_NPN_DIE   NPN  —  34 parameter(s) — 6 not carried: AF, CJS, KF, MJS, PTF, VJS
+</code></pre>
+<p>Three things about that line are deliberate:</p>
+<ul>
+<li><strong>It is exhaustive.</strong> The translation walks a table of the parameters circuitRF has a home for;
+everything the table did not consume goes into the list. A parameter cannot be quietly absorbed,
+because absorbing it is not one of the outcomes.</li>
+<li><strong>The spellings are your file's, not circuitRF's.</strong> They are echoed exactly as the card writes
+them, so you can search for them in the file rather than translating a name back.</li>
+<li><strong>It survives the import.</strong> For a cell built with <em>Copy to Workspace as Cell…</em> the same list — and
+the notes below — are written onto the cell's own schematic as a text annotation. Weeks later, the
+cell still says what it was built from and what did not come with it.</li>
+</ul>
+<p>Alongside the not-carried list, the translation reports <strong>notes</strong>: decisions it made that you could
+reasonably want to see. Which of two published MESFET laws a card was read as and what said so; that
+a gate capacitance on the card switched the FET's charge model from a constant capacitance to a
+bias-dependent junction; that a card's <code>RD</code>/<code>RS</code> were placed as resistors beside the transistor; that
+a MOS card states no <code>TOX</code> and therefore has no intrinsic gate charge. These are not warnings — they
+are the reasoning, written down.</p>
+<h2 id="why">Why a parameter is not carried</h2>
+<p>There are five reasons, and every dropped parameter is one of them.</p>
+<h3 id="there-is-no-analysis-that-would-read-it">1. There is no analysis that would read it</h3>
+<p><code>KF</code> and <code>AF</code> — the flicker-noise coefficients — appear on every semiconductor card and are carried
+by none of them. circuitRF has <strong>no noise analysis</strong> for them to feed. Accepting them would put two
+rows on the built cell that look honoured and change no result, which is worse than an empty space:
+a parameter this model does not read is not offered.</p>
+<h3 id="the-device-has-no-node-for-it">2. The device has no node for it</h3>
+<p>A bipolar card's <code>CJS</code>/<code>VJS</code>/<code>MJS</code> describe the <strong>collector–substrate junction</strong>. A discrete RF
+transistor has no substrate terminal to attach one to, and adding a fourth pin would change what the
+symbol means.</p>
+<p><strong>Self-heating</strong> is the same shape of omission across every family. The junction temperature is a
+<code>Temp</code> parameter, not a solved node, so there is no electrothermal feedback and nothing for a card's
+thermal parameters to connect to. A thermal model belongs <em>around</em> the part.</p>
+<h3 id="circuitrfs-formulation-cannot-express-it">3. circuitRF's formulation cannot express it</h3>
+<p>A bipolar card's <code>PTF</code> is <strong>excess phase</strong> — a delay. circuitRF's weighting functions carry 1 and
+jω, not exp(−jωτ), so there is no term in the device for a delay to become. The same reasoning
+retires the MESFET family's transit-time delay.</p>
+<p>Also here: subthreshold conduction (<code>NFS</code>) on the MOS cards, because the classical law goes to
+exactly zero at threshold; quasi-saturation on a VDMOS card, which needs a drift-region model and a
+second internal node; the level-3 impact-ionisation substrate current; and the Statz/TOM charge
+formulation, which works on a smoothed effective voltage rather than on Vgs and Vgd separately and
+is a different scheme rather than a parameter change.</p>
+<h3 id="it-belongs-in-the-schematic-not-in-the-device">4. It belongs in the schematic, not in the device</h3>
+<p>A <strong>MESFET</strong> card's <code>RD</code> and <code>RS</code> are not carried, because circuitRF's MESFET family has no drain or
+source parasitic resistance of its own. They are not lost either: the import places them as ordinary
+series resistors beside the transistor and says so in a note.</p>
+<div class="callout warn">
+<span class="label">The same two spellings mean different things on a JFET card</span>
+<p>A <b>JFET</b> card's <code>RD</code> and <code>RS</code> <i>are</i> carried, as model parameters —
+circuitRF's JFET puts them on internal nodes of its own, so the schematic shows one device rather
+than a transistor with two resistors beside it. The two cards spell them identically and the
+difference is invisible once the cell is built, which is why the translation states which happened
+every time.</p>
+</div>
+<h3 id="it-belongs-to-a-law-circuitrf-does-not-implement">5. It belongs to a law circuitRF does not implement</h3>
+<p>A JFET card stating <code>B</code>, <code>ALPHA</code> or <code>VK</code> is stating parameters of a higher published JFET level — a
+doping-profile knee and that level's own channel-length modulation. There is no square-law parameter
+that means the same thing, so they are named rather than folded into <code>LAMBDA</code>, which is a different
+quantity. The card is still read as the square law rather than refused, with a note saying the device
+will be optimistic where those terms matter.</p>
+<p>The MOS rule runs <strong>both ways</strong>. On a level-1 binding the six short-channel parameters (<code>ETA</code>,
+<code>THETA</code>, <code>KAPPA</code>, <code>VMAX</code>, <code>DELTA</code>, <code>XJ</code>) are not carried; on a level-3 binding <code>LAMBDA</code> is not, because
+level 3 computes the output slope from a real shortening of the channel rather than fitting it. Carrying
+a parameter onto a level that never reads it is the worse failure: it lands on the cell as an ordinary
+row, looks honoured, and is discovered much later by wondering why changing it does nothing.</p>
+<div class="callout note">
+<span class="label">A card's LEVEL number is never simply obeyed</span>
+<p>On a <b>MESFET</b> card the level numbering is not portable — the same integer selects a different
+law in different dialects — so which law a card states is decided from its <i>parameters</i>:
+<code>B</code> appears in the Statz law and in no other, so stating it is the file's own unambiguous
+answer. <code>LEVEL</code> is listed as not carried so nobody concludes it was honoured.</p>
+<p>On a <b>MOS</b> card the classical numbering <i>is</i> portable — 1, 2 and 3 mean the same three
+published models everywhere — so the number is read, and 4 and above are refused (see below).
+<code>LEVEL</code> itself is still not carried: it selects a model rather than being one of its
+parameters.</p>
+</div>
+<h2 id="families">What each card type leaves behind</h2>
+<p>Named omissions only — the ones circuitRF has made a decision about. Anything else your card states
+still appears in the not-carried list by name. The last column links to the device's own physics, where
+each omission is stated again from the model's side.</p>
+<table class="param-table"><thead><tr><th>Card</th><th>Built as</th><th>Named omissions</th><th>The device</th></tr></thead>
+    <tbody>
+      <tr><td><code>D</code></td><td>Junction diode</td>
+          <td><code>KF</code>/<code>AF</code>; <code>IKF</code> — the high-injection knee, which this diode has no term for</td>
+          <td><a href="components.html#diode">Diode</a></td></tr>
+      <tr><td><code>NPN</code>, <code>PNP</code></td><td>Bipolar transistor</td>
+          <td><code>CJS</code>/<code>VJS</code>/<code>MJS</code>, <code>PTF</code>, <code>KF</code>/<code>AF</code></td>
+          <td><a href="components.html#bjt-equations">What is modelled</a></td></tr>
+      <tr><td><code>NMF</code>, <code>PMF</code></td><td>MESFET — Curtice quadratic, or Statz where the card states <code>B</code></td>
+          <td><code>RD</code>/<code>RS</code> (placed as resistors instead), <code>LEVEL</code>, <code>KF</code>/<code>AF</code>; the Statz/TOM charge formulation, transit delay and breakdown</td>
+          <td><a href="components.html#fets">The FET family</a></td></tr>
+      <tr><td><code>NJF</code>, <code>PJF</code></td><td>Junction FET, square law</td>
+          <td><code>B</code>, <code>ALPHA</code>, <code>VK</code>, <code>KF</code>/<code>AF</code>; gate breakdown and transit-time charge</td>
+          <td><a href="components.html#jfets">The junction FET</a></td></tr>
+      <tr><td><code>NMOS</code>, <code>PMOS</code></td><td>MOS level 1 or level 3, chosen by the card's own <code>LEVEL</code></td>
+          <td><code>LEVEL</code>, <code>NFS</code>, <code>KF</code>/<code>AF</code>; the six short-channel parameters on level 1, <code>LAMBDA</code> on level 3; the level-3 substrate current</td>
+          <td><a href="components.html#mos">The MOS transistor</a></td></tr>
+      <tr><td><code>VDMOS</code></td><td>Vertical power MOSFET, n- or p-channel from a bare keyword on the card</td>
+          <td>Quasi-saturation and subthreshold shaping parameters; flicker noise; self-heating, which for a power device is a real omission</td>
+          <td><a href="components.html#vdmos">The vertical power MOSFET</a></td></tr>
+      <tr><td><code>BEAD</code></td><td>Ferrite bead, four-element equivalent</td>
+          <td>Saturation — a bead's inductance falls with DC bias current and this is a linear element, so it is not representable at all</td>
+          <td><a href="components.html#bead">Ferrite Bead</a></td></tr>
+      <tr><td><code>RES</code>, <code>R</code></td><td>Resistor</td>
+          <td>Everything beyond <code>R</code>, <code>TC1</code> and <code>TC2</code></td><td>—</td></tr>
+      <tr><td><code>CAP</code>/<code>C</code>, <code>IND</code>/<code>L</code></td><td>Capacitor, inductor</td>
+          <td>Every temperature coefficient. circuitRF's resistor has <code>TC1</code>/<code>TC2</code> and its capacitor and inductor do not — which is a real loss of fidelity, and is exactly why it is reported rather than absorbed</td>
+          <td>—</td></tr>
+    </tbody>
+  </table>
+<div class="callout note">
+<span class="label">A p-channel VDMOS is a bare keyword, and a bare negative threshold is not one</span>
+<p>A <code>VDMOS</code> card is <code>VDMOS</code> for both channels; a lone <code>pchan</code> keyword
+is what makes it p-channel. A card with <b>no</b> keyword and a <b>negative</b> <code>VTO</code> looks
+like a p-channel part — and equally like a (rare, real) depletion-mode n-channel one. Nothing on the
+card separates them, so it is read as n-channel, which is what the absent keyword means, and the
+ambiguity is reported rather than guessed at. If it is a p-channel part, build it against the
+p-channel component instead.</p>
+</div>
+<h2 id="refused">When the whole card is refused</h2>
+<p>A model type circuitRF has no device for is <strong>refused by name</strong> — in the parameter dialog the moment
+the file is chosen, and again at Run. Nothing is approximated. The temptation is real: a JFET's square
+law looks like the Curtice quadratic with the tanh ignored, and a ferrite bead looks like a parallel
+RLC. Every one of those produces a cell that simulates and is quantitatively wrong, with nothing
+anywhere reporting it. Being told costs a minute; a plausible wrong transistor costs the measurement
+built around it.</p>
+<p>Refusals fall into two groups.</p>
+<p><strong>circuitRF has no model for this</strong> — the refusal names the type and says what is missing, because
+&quot;unsupported&quot; sends you looking for a setting that does not exist:</p>
+<ul>
+<li>An <strong>IGBT</strong> card. circuitRF <em>has</em> an IGBT, and still cannot take this card: its parameters belong to
+the ambipolar-transport model and describe the silicon (base width, doping, carrier lifetime), while
+circuitRF's is an equivalent-circuit model parameterised by what a data sheet gives. Neither set is
+derivable from the other by renaming.</li>
+<li>A <strong>controlled-switch</strong> card. circuitRF's Switch is an ideal RF block set by its own parameters, not
+a card-driven behavioural switch.</li>
+<li>A <strong>MOS card at <code>LEVEL</code> 4 or above.</strong> Those are the compact-model families, whose parameters name
+different quantities under different spellings — almost nothing would be carried, and what came out
+would be this transistor wearing default numbers.</li>
+<li>Any other type, and a card naming <strong>no</strong> type at all.</li>
+</ul>
+<p>In each of those the suggested route is the same: run the model through
+<a href="components.html#veriloga">the VerilogA component</a>, which takes its parameters from the model file
+itself rather than from a card.</p>
+<p><strong>The card does not say enough to build anything</strong> — refused for being incomplete, not unsupported:</p>
+<ul>
+<li>A <code>BEAD</code> stating only a DC resistance. What could be built is a resistor of a few milliohms, which
+is not a bead and would simulate perfectly.</li>
+<li>A resistor card stating only <code>RSH</code>. A sheet resistance is a resistance per square and needs a width
+and a length to become a value, neither of which a model card carries.</li>
+<li>A <code>CAP</code> or <code>IND</code> card stating no value.</li>
+</ul>
+<p>The principle behind all three: <strong>a value of zero simulates</strong>. Refusing is the only outcome that
+reaches you.</p>
+<h2 id="matters">Working out whether it matters</h2>
+<p>Ask these in order — most of the time the first one settles it.</p>
+<ol class="steps">
+  <li><b>Read the value on your own card.</b> A parameter stated as zero was doing nothing in the
+  simulator the card was written for either. A bipolar card very often states <code>CJS = 0</code> and
+  <code>KF = 0</code>, in which case the substrate junction and the flicker noise are absent from the
+  source model too and nothing at all has been lost.</li>
+  <li><b>Put a number on what is left.</b> Most omissions have an arithmetic you can do in a line.
+  Excess phase is the clearest: <code>PTF</code> is the phase in <i>degrees</i> at
+  f&nbsp;=&nbsp;1/(2π·<code>TF</code>), so a card with <code>TF</code>&nbsp;=&nbsp;17&nbsp;ps and
+  <code>PTF</code>&nbsp;=&nbsp;0.4 is describing 0.4° at 9.2&nbsp;GHz — below the extraction
+  uncertainty of the package parasitics around it, and not worth a second thought. The same card at
+  <code>PTF</code>&nbsp;=&nbsp;30 would be a different conversation.</li>
+  <li><b>Check you imported the wrapper, not the die.</b> See the note at the top of this page. For a
+  packaged part this is nearly always the largest term.</li>
+  <li><b>If the omission is load-bearing, change models rather than parameters.</b> A compiled model
+  through <a href="components.html#veriloga">VerilogA</a> takes its parameters from the model file itself,
+  so nothing has to be mapped onto circuitRF's parameter set and nothing is left behind.</li>
+</ol>
+
+<nav class="page-nav">
+  <a class="prev" href="components.html"><span class="dir">Previous</span><span class="name">Components</span></a>
+  <a class="next" href="system-components.html"><span class="dir">Next</span><span class="name">System Components</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

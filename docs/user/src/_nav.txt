@@ -32,6 +32,7 @@ reference/file-formats.html     | Every circuitRF document type and what is insi
 == Design
 reference/schematic-editor.html    | Drawing a circuit: the palette, placing and wiring, and setting up the analysis that runs it.
 reference/components.html          | Every component in the standard library: symbol, purpose and parameters.
+reference/spice-import.html        | Importing a SPICE .model card or .subckt: what is carried, what is not, and why.
 reference/system-components.html   | The ideal blocks a system diagram is drawn out of, and where passive intermod comes from.
 reference/dynamic-symbols.html     | Components whose symbol changes with their parameters.
 reference/symbol-editor.html       | Drawing and editing a symbol.

@@ -577,6 +577,20 @@ schematic shows one device either way.
 
 {{table: components/Diode}}
 
+<div class="callout warn">
+<span class="label">What is NOT modelled</span>
+<p><strong>High-level injection</strong> (a card's <code>IKF</code>) — at high forward bias the
+current of a real diode rolls off from the ideal exponential towards a square root of it, and this
+model has no term for that knee, so it stays exponential and is optimistic there. An extracted
+<code>Rs</code> often absorbs some of that roll-off, which is a fit rather than the physics and does
+not follow temperature the way the real mechanism does.
+<strong>Flicker noise</strong> (<code>Kf</code>/<code>Af</code>) — there is no noise analysis for it
+to feed. <strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
+<strong>Sidewall junction capacitance</strong> as a separate term — <code>Cj0</code>, <code>Vj</code>
+and <code>M</code> describe one junction. A parameter this model does not read is not offered in the
+palette; a card stating one has it {{anchor: spice-import#families|named on import}}.</p>
+</div>
+
 ### The FET family {#fets}
 
 Five native large-signal FET models, one per published drain-current law. They are five separate

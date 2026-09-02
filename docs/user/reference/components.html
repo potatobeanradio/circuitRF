@@ -956,6 +956,7 @@ has no pop-in: there is nothing to push into.</p>
 <tbody>
 <tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td></tr>
 <tr><td>Name</td><td>&mdash;</td><td>&mdash;</td><td>shown</td></tr>
+<tr><td>Section</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>PinConfig</td><td><code>Standard</code></td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Pitch</td><td><code>Loose</code></td><td>&mdash;</td><td>&mdash;</td></tr>
 </tbody></table>
@@ -1079,6 +1080,19 @@ schematic shows one device either way.</p>
 <tr><td>Temp</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Tnom</td><td><code>26.85</code></td><td>&mdash;</td><td>&mdash;</td></tr>
 </tbody></table>
+<div class="callout warn">
+<span class="label">What is NOT modelled</span>
+<p><strong>High-level injection</strong> (a card's <code>IKF</code>) — at high forward bias the
+current of a real diode rolls off from the ideal exponential towards a square root of it, and this
+model has no term for that knee, so it stays exponential and is optimistic there. An extracted
+<code>Rs</code> often absorbs some of that roll-off, which is a fit rather than the physics and does
+not follow temperature the way the real mechanism does.
+<strong>Flicker noise</strong> (<code>Kf</code>/<code>Af</code>) — there is no noise analysis for it
+to feed. <strong>Self-heating</strong> — the device temperature is a parameter, not a solved node.
+<strong>Sidewall junction capacitance</strong> as a separate term — <code>Cj0</code>, <code>Vj</code>
+and <code>M</code> describe one junction. A parameter this model does not read is not offered in the
+palette; a card stating one has it <a href="spice-import.html#families">named on import</a>.</p>
+</div>
 <h3 id="fets">The FET family</h3>
 <p>Five native large-signal FET models, one per published drain-current law. They are five separate
 components rather than one component with a model selector, because they are not variants of one
@@ -3064,7 +3078,7 @@ in the same multi-line editor as VAR. No fixed parameters.</p>
 
 <nav class="page-nav">
   <a class="prev" href="schematic-editor.html"><span class="dir">Previous</span><span class="name">The Schematic Editor</span></a>
-  <a class="next" href="system-components.html"><span class="dir">Next</span><span class="name">System Components</span></a>
+  <a class="next" href="spice-import.html"><span class="dir">Next</span><span class="name">Importing a SPICE Model</span></a>
 </nav>
 </main>
 

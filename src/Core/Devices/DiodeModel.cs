@@ -49,6 +49,14 @@ namespace CircuitRF.Core.Devices;
 /// balance, where the internal node carries its own harmonic content: at RF the junction
 /// capacitance shunts <c>Rs</c>, and a quasi-static collapse cannot represent that. This is the
 /// same reason `ExtDevice` internal nodes get ordinary matrix rows.</para>
+///
+/// <para><b>What is NOT modelled, deliberately:</b> high-level injection (a card's <c>Ikf</c>) — the
+/// forward current stays exponential where a real junction's rolls off towards its square root, so
+/// the model is optimistic at high bias and an extracted <c>Rs</c> is where that roll-off usually
+/// ends up instead; a separate sidewall junction — <c>Cj0</c>/<c>Vj</c>/<c>M</c> describe one
+/// junction, not a bottom and a perimeter; <c>Kf</c>/<c>Af</c> flicker noise — there is no noise
+/// analysis for it to feed; and self-heating — the device temperature is a parameter, not a solved
+/// node. A parameter this model does not read is not offered.</para>
 /// </summary>
 public sealed class DiodeModel : ComponentModel
 {
