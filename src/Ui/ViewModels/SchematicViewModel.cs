@@ -3811,6 +3811,20 @@ public sealed partial class SchematicViewModel : ObservableObject
             {
                 var param = comp.Parameters.ElementAtOrDefault(hit.SubIndex);
                 if (param is null) return;
+
+                // A SpiceModel's panel parameters are the DIALOG's to set, and the label on the
+                // sheet is a readout of them (owner, 2026-09-01). `Name` says which definition in
+                // the file this instance runs; picking it is choosing from what the file actually
+                // holds, which is what the dialog's combo is. The inline editor cannot do that — it
+                // writes the typed string straight through EditParameterCommand, with nothing
+                // resolved and nothing re-read, so a typo leaves an instance naming a definition
+                // that is not there and a symbol still drawn for the old one. `File`, `Section`,
+                // `PinConfig` and `Pitch` are the same kind of answer (a picker, a browse, a closed
+                // vocabulary) and go with it. The TYPE label stays editable and is not this case:
+                // it re-resolves against the file and refuses a name the file does not hold.
+                if (comp.Symbol == SymbolKind.SpiceModel
+                    && SpiceModelSymbolProvider.IsPanelParameter(param.Name)) return;
+
                 _inlineEditParam = param;
 
                 bool nameMode = comp.Symbol is SymbolKind.Var or SymbolKind.Meas or SymbolKind.Sdd;

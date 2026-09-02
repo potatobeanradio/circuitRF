@@ -54,6 +54,28 @@ public sealed partial class ParameterEditorViewModel
 
     [ObservableProperty] private int _spiceModelNameIndex = -1;
 
+    /// <summary>
+    /// Whether the <c>Name</c> parameter draws its own label on the sheet — the standard
+    /// "Show in schematic" checkbox every generic parameter row carries, brought onto this panel
+    /// because <c>Name</c> has no generic row to carry it (owner, 2026-09-01).
+    ///
+    /// <para>It is the same flag and the same undo entry the row checkbox writes
+    /// (<see cref="SetParameterVisibilityCommand"/>) — not a second setting that could disagree with
+    /// it — so an instance saved with the label off reads back with the box clear.</para>
+    /// </summary>
+    [ObservableProperty] private bool _spiceModelShowNameOnSchematic = true;
+
+    partial void OnSpiceModelShowNameOnSchematicChanged(bool value)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        var p = _target.Parameters.FirstOrDefault(
+            q => q.Name == SpiceModelSymbolProvider.NameParameter);
+        if (p is null || p.ShowOnSchematic == value) return;
+
+        _schematicVm.Execute(new SetParameterVisibilityCommand(_schematicVm.EditModel, p, value));
+    }
+
     /// <summary>What was found, or the reason it cannot be run. Never both, never empty when a file is set.</summary>
     [ObservableProperty] private string _spiceModelStatus = "";
 
@@ -308,6 +330,9 @@ public sealed partial class ParameterEditorViewModel
         _isRefreshing = true;
 
         SpiceModelFilePath = file;
+        SpiceModelShowNameOnSchematic = _target.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)
+            ?.ShowOnSchematic ?? true;
 
         _spiceModelDefinitions = peeked.Definitions;
         SpiceModelNameOptions.Clear();

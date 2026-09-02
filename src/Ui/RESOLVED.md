@@ -1,5 +1,117 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Four owner reports: undo routing, a false recovery prompt, the SPICE `Name` label, a labelled pin (2026-09-01)
+
+### Cmd+Z in a floating Data Display undid an edit in a schematic that was not in focus
+
+**Two independent defects, both needed.**
+
+*The routing.* `SetActiveUndoTarget` was reached only from the shell's own document dock
+(`ActivateDocument`, driven by `OnDocumentDockPropertyChanged` and `FocusedDockableChanged`). A
+TORN-OFF window taking focus never moved it. `_focusedWindowDocument` — the R-menu-4 per-window
+resolution every File-menu command already uses — existed and Undo simply did not read it. On macOS
+that is not a cosmetic gap: `AttachSharedNativeMenuIfMacOS` puts the SAME `NativeMenu` instance on
+every floated window, so Edit ▸ Undo's `Meta+Z` fires the SHELL's command from whichever window is
+key. The shell was still pointed at the schematic left behind in its dock, so the schematic undid.
+Fixed by retargeting Undo from `RaiseFileMenuEnablementChanged`, the one place the per-window focus
+fan-out happens — so "the active document" has one answer for Undo and for Save alike. **Only when
+the resolution names a document, never to null:** that fan-out has nine call sites, several of them a
+dirty notification firing on every keystroke in a `.ctech` or `.cem` form, and blanking the target
+from one of those would grey Undo out mid-edit. Clearing stays where it already was —
+`ActivateDocument(null)` and the three workspace-reset points.
+
+*The target.* Routed correctly, the command still could not have reached a Data Display: it was typed
+to `IUndoableDocument`, whose whole content is `UndoRedoStack UndoRedo { get; }`, and a Data Display
+keeps the ported `UndoRedoManager` instead (a per-tab stack for plot/marker edits, a window-level one
+for tab add/remove, with `DisplayWindowViewModel` choosing between them). Hence
+**`IEditHistoryDocument`** — the six questions Undo/Redo actually ask (`UndoLast`/`RedoLast`,
+`CanUndoLast`/`CanRedoLast`, and the two descriptions) with no claim about the mechanism.
+`IUndoableDocument` now extends it and supplies all six as explicit default implementations, so every
+existing document type is unchanged and `LayoutDocument`'s own two-history overrides still win.
+
+*The enablement channel goes with it.* `HookActiveStack` subscribed to
+`UndoRedoStack.PropertyChanged`; a Data Display has none, and says its history moved by raising its
+own commands' `CanExecuteChanged`. Both the shell and `WireWindowUndo` (the torn-off window's key
+bindings) now subscribe to whichever channel the target actually has. Without it the menu item — and
+with it the app-global Cmd+Z — freezes at whatever it was when the document took focus.
+
+Gate: `tests/Ui.Tests/FloatingDocumentUndoRoutingTests.cs`. The routing half lives in
+`WorkspaceViewModel`, which needs the Avalonia application and the dock factory to construct, so it
+has no headless test; `SplitDocumentAreaActiveDocumentTests` covers the one-path rule by source scan.
+
+### New Workspace from the macOS background menu offered to restore a file
+
+The prompt is `CheckForRecovery`, which every `WorkspaceViewModel` runs at construction and which
+reads any recovery directory that is not its own as a prior session left by an ungraceful exit.
+
+**`WorkspaceWindow.OnClosing` called `OnCleanExit` only on the branch that had something to prompt
+about.** `if (_vm is null || !_vm.HasAnyDirtyWork()) return;` — so a window closed with nothing dirty
+returned before reaching it, and `OnCleanExit` is what stops the autosave timer, flushes the pending
+`.cws` write, deletes the generated-cells folder and clears the recovery session. macOS is where it
+shows because closing the last window there does not end the process
+(`ShutdownMode.OnExplicitShutdown` — the app stays resident with its Dock icon and the background
+File menu), so the very next `WorkspaceViewModel` was built while the previous one's remnants were
+still on disk and offered the user work they had deliberately, cleanly, finished.
+
+**A second, narrower hole went with it.** `FindPriorSessions` excluded only the CALLER's directory, so
+two workspace windows open at once meant the second one's launch scan read the first, still-open
+one's autosaves as an ungraceful exit — the same false prompt, reached another way. `RecoveryManager`
+now tracks every session live in the process and skips all of them, dropping the mark in
+`ClearSession` so a genuine remnant at that same path is still found later.
+
+Gate: `tests/Ui.Tests/RecoverySessionLifecycleTests.cs`, which establishes the control (an abandoned
+session IS still offered) before narrowing.
+
+### The SPICE component's `Name`: rendered, but the dialog's to set
+
+`Name` already rendered — `ComponentTypeRegistry.DefaultParameters` declares it
+`ShowOnSchematic: true` and `BuildRenderModel` drew it (measured, not assumed). What it had no way to
+be was TURNED OFF or safely edited: `SpiceModelSymbolProvider.IsPanelParameter` keeps the panel's
+five out of the generic row list, so `Name` had no row to carry the standard "Show in schematic"
+checkbox, and nothing stopped the inline label editor from writing it.
+
+**The inline editor is the wrong control for it, and not merely a redundant one.** It commits the
+typed string through `EditParameterCommand` — nothing resolved, nothing re-read — so a typo leaves an
+instance naming a definition the file does not hold while the symbol is still drawn for the old one.
+Choosing a definition means choosing from what the file actually holds, which is what the dialog's
+combo is. `BeginInlineEditForHit` now refuses every panel parameter (`File`, `Name`, `Section`,
+`PinConfig`, `Pitch` — each answered by a browse button, a picker or a closed vocabulary), and
+`SchematicView.OnTextLabelDoubleTapped` answers the gesture by opening the Parameter dialog instead
+of leaving a dead double-click.
+
+**The TYPE label is deliberately still editable and is not the same case.** A SpiceModel's type label
+IS its definition name (`EditableComponent.TypeLabelText`), and typing there goes through
+`TryChangeSpiceModelDefinition`, which re-resolves against the file and refuses a name the file does
+not hold. That path validates; the parameter-label path did not.
+
+The checkbox on the panel writes the SAME flag and the SAME undoable command
+(`SetParameterVisibilityCommand`) the generic rows' checkbox does — not a second setting that could
+disagree with the sheet — and reads back from the instance when the dialog opens.
+
+Gate: `tests/Ui.Tests/SpiceModelNameLabelTests.cs`.
+
+### A pin whose net is labelled was drawn with the unconnected warning
+
+**The netlist already agreed with the owner; only the visuals did not.** `NetExtractor` seeds every
+pin's P-cell into the union-find, and `FindLabelNetKey` resolves a label sitting on one straight to
+that key — so the pin extracts on the label's net and joins every same-named label. That is exactly
+what `SubcircuitCellBuilder` relies on when its router cannot reach a terminal and connects it by
+name instead, which is how an imported `.subckt` produces this shape without the user drawing
+anything. `EditableSchematic.BuildRenderModel`'s `IsConnected` counted wire vertices and other pins
+and knew nothing about labels, so a pin connected by name was drawn as an error.
+
+`ConnectivityGeometry` now carries `FreeNetLabelKeys` and `IsConnected` honours it.
+**Unanchored labels only**, for two reasons: a label anchored to a wire rides that wire, so the pin
+under it is already connected through the wire; and its stored `X`/`Y` at that moment is the previous
+build's, since `RecomputePosition` runs later in `BuildRenderModel`. Junction dots are untouched — the
+new set is read by `IsConnected` alone and never by `AssembleConnectionDots`, because a label is not
+a junction.
+
+Gate: `tests/Ui.Tests/NetLabelPinConnectionTests.cs`, whose first test is the control that a bare pin
+still reads unconnected.
+
+---
+
 ## SPICE library workflow: the include closure, `.lib` sections, and multi-definition import (2026-09-01)
 
 Three independent defects, all of them silent, all in the same sentence: *a SPICE deck is rarely one

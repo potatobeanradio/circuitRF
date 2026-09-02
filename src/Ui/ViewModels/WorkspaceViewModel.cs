@@ -153,7 +153,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ---- Per-document undo routing ------------------------------------------
 
     // The active editable document; null when no undoable document is active.
-    private IUndoableDocument? _activeUndoTarget;
+    private IEditHistoryDocument? _activeUndoTarget;
 
     // Last schematic document made active — kept so the Analyses panel + Run button survive focusing a
     // data display / symbol / cell tab. Cleared when this doc is closed or the workspace changes.
@@ -2416,7 +2416,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void Redo() => _activeUndoTarget?.RedoLast();
     private bool CanRedo() => _activeUndoTarget?.CanRedoLast ?? false;
 
-    private void SetActiveUndoTarget(IUndoableDocument? target)
+    private void SetActiveUndoTarget(IEditHistoryDocument? target)
     {
         if (_subscribedUndoStack is { } old)
             old.PropertyChanged -= OnActiveStackPropertyChanged;
@@ -2469,6 +2469,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // The active schematic doc whose ActiveViewModelChanged we're following (hierarchy retarget).
     private SchematicDocument? _activeUndoDoc;
 
+    // The Data Display Undo command whose CanExecuteChanged is currently driving the shell's own
+    // Undo/Redo enablement — the Data Display counterpart of _subscribedUndoStack.
+    private System.Windows.Input.ICommand? _subscribedDisplayUndoCommand;
+
+    // A Data Display's history moved. Redo rides the same notification: DisplayWindowViewModel
+    // raises both commands' CanExecuteChanged from one StateChanged handler, so one subscription
+    // is enough and a second would only fire the same fan-out twice.
+    private void OnActiveDisplayUndoStateChanged(object? sender, EventArgs e)
+    {
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(UndoDescription));
+        OnPropertyChanged(nameof(RedoDescription));
+    }
+
     // (Re)subscribe to the active target's CURRENT stack and refresh Undo/Redo command + labels.
     private void HookActiveStack()
     {
@@ -2476,10 +2491,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             old.PropertyChanged -= OnActiveStackPropertyChanged;
         _subscribedUndoStack = null;
 
-        if (_activeUndoTarget?.UndoRedo is { } stack)
+        if (_activeUndoTarget is IUndoableDocument { UndoRedo: { } stack })
         {
             _subscribedUndoStack = stack;
             stack.PropertyChanged += OnActiveStackPropertyChanged;
+        }
+
+        // A Data Display keeps no UndoRedoStack (see IEditHistoryDocument), so the notification that
+        // its history moved arrives on its own commands' CanExecuteChanged instead. Without this the
+        // Edit menu item and the toolbar button stay stuck at whatever they were when the document
+        // took focus — disabled after the first plot move, which on macOS also means the app-global
+        // Cmd+Z is inert.
+        if (_subscribedDisplayUndoCommand is { } oldDisplayCmd)
+            oldDisplayCmd.CanExecuteChanged -= OnActiveDisplayUndoStateChanged;
+        _subscribedDisplayUndoCommand = null;
+
+        if (_activeUndoTarget is DataDisplay.DataDisplayDocument ddUndo)
+        {
+            _subscribedDisplayUndoCommand = ddUndo.ViewModel.Window.UndoCommand;
+            _subscribedDisplayUndoCommand.CanExecuteChanged += OnActiveDisplayUndoStateChanged;
         }
 
         if (_subscribedWireHistory is { } oldWires)
@@ -11003,8 +11033,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Analyses/Properties routing just above.
         UpdateHarmonicaDockedMenuFocus(activeDockable as HarmonicaDocument);
 
-        // Undo routing — follows any IUndoableDocument for main-window tabs.
-        SetActiveUndoTarget(activeDockable as IUndoableDocument);
+        // Undo routing — follows any document with an edit history for main-window tabs. Through
+        // IEditHistoryDocument rather than IUndoableDocument so a Data Display is reachable too.
+        SetActiveUndoTarget(activeDockable as IEditHistoryDocument);
 
         // Save-scope: "Save" when a document tab is active, "Save All" otherwise.
         ActiveSaveScope = activeDockable is IUndoableDocument
@@ -11262,6 +11293,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var doc = ResolveActiveDocumentForCommands();
         ActiveSaveScope = doc is IUndoableDocument ? SaveScope.SingleDoc : SaveScope.AllDocs;
 
+        // Undo/Redo ride this fan-out too, and that is the whole of the owner's 2026-09-01 report: a
+        // FLOATING Data Display in focus, Cmd+Z, and a schematic that was not in focus undid an edit.
+        // Undo was routed ONLY from the shell's own dock (OnDocumentDockPropertyChanged), so a
+        // torn-off window taking focus never moved it — yet the macOS menu bar is app-global and the
+        // same NativeMenu is attached to every torn-off window, so Edit ▸ Undo's Cmd+Z fires the
+        // shell's command from a window the shell was not tracking. Resolved through exactly the
+        // per-window rule (R-menu-4) every File-menu command already uses, so "the active document"
+        // has ONE answer.
+        //
+        // Retargets only when the resolution NAMES a document, never to null. This fan-out has nine
+        // call sites, several of them a dirty-state notification that fires on every keystroke in a
+        // .ctech or .cem form, and blanking the undo target from any of them would grey Undo out
+        // mid-edit. Clearing it stays where it already was — ActivateDocument(null) and the three
+        // workspace-reset points.
+        if (doc is IEditHistoryDocument focusedHistory) SetActiveUndoTarget(focusedHistory);
+
         ExportGdsiiCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
         // the active document type is NOT re-evaluated on its own — it must be added to BOTH
@@ -11306,20 +11353,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
-    // Finds the first IUndoableDocument reachable from a window's DataContext.
+    // Finds the first document with an edit history reachable from a window's DataContext.
     // Dock's HostWindow sets DataContext to the IDockWindow (an IDock) that contains
     // the layout with the floated dockable.
-    private static IUndoableDocument? FindUndoDocInWindow(Window window)
+    private static IEditHistoryDocument? FindUndoDocInWindow(Window window)
     {
-        if (window.DataContext is IUndoableDocument direct) return direct;
+        if (window.DataContext is IEditHistoryDocument direct) return direct;
         if (window.DataContext is IDock dock) return FindUndoDocInDock(dock);
         return null;
     }
 
-    private static IUndoableDocument? FindUndoDocInDock(IDock dock)
+    private static IEditHistoryDocument? FindUndoDocInDock(IDock dock)
     {
-        if (dock is IUndoableDocument ud) return ud;
-        if (dock.ActiveDockable is IUndoableDocument active) return active;
+        if (dock is IEditHistoryDocument ud) return ud;
+        if (dock.ActiveDockable is IEditHistoryDocument active) return active;
         if (dock.ActiveDockable is IDock nestedActive)
         {
             var result = FindUndoDocInDock(nestedActive);
@@ -11328,7 +11375,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (dock.VisibleDockables is null) return null;
         foreach (var dockable in dock.VisibleDockables)
         {
-            if (dockable is IUndoableDocument ud2) return ud2;
+            if (dockable is IEditHistoryDocument ud2) return ud2;
             if (dockable is IDock childDock)
             {
                 var result = FindUndoDocInDock(childDock);
@@ -11341,14 +11388,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // Injects Ctrl+Z / Cmd+Z / Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y key bindings
     // onto a Dock-created host window, pointing at the given document's own stack.
     // Mirrors the pattern used in SetActiveUndoTarget (PropertyChanged subscribe).
-    private void WireWindowUndo(Window window, IUndoableDocument undoDoc)
+    private void WireWindowUndo(Window window, IEditHistoryDocument undoDoc)
     {
         _wiredHostWindows.Add(window);
 
         // Through the DOCUMENT's UndoLast/CanUndoLast, exactly as the shell's own Undo command is: a
         // torn-off layout window showing a wirebond cell has the same two histories, and Ctrl+Z there
         // has to reach the same one.
-        var stack   = undoDoc.UndoRedo;
         var undoCmd = new RelayCommand(undoDoc.UndoLast, () => undoDoc.CanUndoLast);
         var redoCmd = new RelayCommand(undoDoc.RedoLast, () => undoDoc.CanRedoLast);
 
@@ -11357,7 +11403,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) undoCmd.NotifyCanExecuteChanged();
             if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) redoCmd.NotifyCanExecuteChanged();
         }
-        stack.PropertyChanged += OnStackChanged;
+        // Only a stack-backed document HAS a stack to watch. A Data Display keeps its history in the
+        // ported UndoRedoManager instead (see IEditHistoryDocument), and says it moved by raising its
+        // own commands' CanExecuteChanged — so it needs its own subscription, exactly as the wire
+        // history below does, or a torn-off display's Ctrl+Z stays disabled after the first edit.
+        var stack       = (undoDoc as IUndoableDocument)?.UndoRedo;
+        var displayUndo = (undoDoc as DataDisplay.DataDisplayDocument)?.ViewModel.Window.UndoCommand;
+
+        void OnDisplayHistoryChanged(object? _, EventArgs __)
+        { undoCmd.NotifyCanExecuteChanged(); redoCmd.NotifyCanExecuteChanged(); }
+
+        if (stack is not null)       stack.PropertyChanged     += OnStackChanged;
+        if (displayUndo is not null) displayUndo.CanExecuteChanged += OnDisplayHistoryChanged;
 
         // …and the WIRE history raises no UndoRedoStack notification of its own, so it needs its own
         // subscription or the binding stays disabled after a wire edit (WB40).
@@ -11399,7 +11456,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         window.Closed += (_, _) =>
         {
-            stack.PropertyChanged -= OnStackChanged;
+            if (stack is not null)       stack.PropertyChanged        -= OnStackChanged;
+            if (displayUndo is not null) displayUndo.CanExecuteChanged -= OnDisplayHistoryChanged;
             if (wireVm is not null) wireVm.WireHistoryChanged -= OnWiresChanged;
             _wiredHostWindows.Remove(window);
         };

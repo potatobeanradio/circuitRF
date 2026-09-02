@@ -618,8 +618,10 @@
                                   Padding="4,3"
                                   ToolTip.Tip="Which .lib section to read. Sections are alternatives — a file that offers several and has none chosen reads nothing from any of them."/>
                     </Grid>
-                    <!-- Name: which definition in that file -->
-                    <Grid ColumnDefinitions="60,*">
+                    <!-- Name: which definition in that file. The checkbox is the SAME
+                         "Show in schematic" every generic parameter row carries — Name has no
+                         generic row (the panel owns it), so it is carried here instead. -->
+                    <Grid ColumnDefinitions="60,*,Auto">
                         <TextBlock Grid.Column="0" Text="Name"
                                    FontSize="11" VerticalAlignment="Center"/>
                         <ComboBox Grid.Column="1"
@@ -629,6 +631,11 @@
                                   FontSize="11"
                                   Padding="4,3"
                                   ToolTip.Tip="Which definition in the file to run. A file often holds a part plus the pieces it is built from."/>
+                        <CheckBox Grid.Column="2"
+                                  IsChecked="{Binding SpiceModelShowNameOnSchematic}"
+                                  ToolTip.Tip="Show on schematic"
+                                  Margin="6,0,2,0"
+                                  VerticalAlignment="Center"/>
                     </Grid>
                     <!-- What was found, or exactly why nothing will simulate. Two blocks rather
                          than one restyled: a refusal has to READ as one, and the warning brush is

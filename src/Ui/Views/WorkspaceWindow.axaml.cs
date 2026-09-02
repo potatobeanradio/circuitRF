@@ -305,7 +305,30 @@ public partial class WorkspaceWindow : Window
     {
         base.OnClosing(e);
         if (_closingConfirmed) return;
-        if (_vm is null || !_vm.HasAnyDirtyWork()) return;
+        if (_vm is null) return;
+
+        // Nothing dirty: the close IS the clean exit, and it has to be announced as one. OnCleanExit
+        // was reached only through the save-prompt branch below, so a window closed with no unsaved
+        // work left its autosave timer running, its .cws write unflushed, its generated-cells folder
+        // on disk — and, the visible one, its recovery session directory undeleted.
+        //
+        // Owner report, 2026-09-01: on macOS, closing the workspace window and then using the
+        // background File menu's New Workspace raised a prompt offering to restore or discard a file.
+        // That is CheckForRecovery, which every new WorkspaceViewModel runs and which reads any
+        // recovery directory that is not its OWN as a prior session left by an ungraceful exit. The
+        // window that just closed cleanly had left exactly one — so the app offered to recover work
+        // from a session the user had deliberately, and cleanly, finished.
+        //
+        // macOS is where it shows because closing the last window there does not end the process
+        // (ShutdownMode.OnExplicitShutdown — the app stays resident with its Dock icon), so a second
+        // WorkspaceViewModel is built while the first one's remnants are still on disk.
+        if (!_vm.HasAnyDirtyWork())
+        {
+            _vm.OnCleanExit();
+            _closingConfirmed = true;
+            return;
+        }
+
         e.Cancel = true;
         try
         {

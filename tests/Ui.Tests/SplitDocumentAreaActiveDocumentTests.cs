@@ -171,8 +171,11 @@ public sealed class SplitDocumentAreaActiveDocumentTests
         Assert.True(end > at);
         string body = vm[at..end];
 
-        // The undo target is set by the shared path, so both entry points get it.
-        Assert.Contains("SetActiveUndoTarget(activeDockable as IUndoableDocument);", body, System.StringComparison.Ordinal);
+        // The undo target is set by the shared path, so both entry points get it. Widened to
+        // IEditHistoryDocument on 2026-09-01 (a Data Display keeps no UndoRedoStack, so it cannot be
+        // an IUndoableDocument, and Cmd+Z on a floating one reached a schematic instead) — the rule
+        // this test is about, that ONE path sets the target, is unchanged.
+        Assert.Contains("SetActiveUndoTarget(activeDockable as IEditHistoryDocument);", body, System.StringComparison.Ordinal);
 
         // …and SetActiveUndoTarget must not be reachable from the tab change ALONE any more.
         Assert.Contains("ActivateDocument(pane?.ActiveDockable);", vm, System.StringComparison.Ordinal);

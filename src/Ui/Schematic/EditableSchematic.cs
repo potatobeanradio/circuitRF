@@ -1186,6 +1186,8 @@ public sealed class SchematicEditModel
         {
             var key = QuantKey(wx, wy);
             if (cg.ConPointCounts.TryGetValue(key, out int cnt) && cnt >= 2) return true;
+            // A net label sitting on the pin IS the connection — see FreeNetLabelKeys.
+            if (cg.FreeNetLabelKeys.Contains(key)) return true;
             // Fallback: port on wire body interior (not at any vertex/endpoint).
             foreach (var w in Wires)
             {
@@ -1410,7 +1412,8 @@ public sealed class SchematicEditModel
         Dictionary<(long, long), int> ConPointCounts,
         HashSet<(long, long)> AutoDotKeys,
         List<(double X, double Y)> AutoDotPts,
-        Func<double, double, bool> IsCrossingAtDot);
+        Func<double, double, bool> IsCrossingAtDot,
+        HashSet<(long, long)> FreeNetLabelKeys);
 
     /// <summary>
     /// Computes the connectivity geometry from the current Wires/Components in O(N) via a
@@ -1648,7 +1651,24 @@ public sealed class SchematicEditModel
             }
         }
 
-        return new ConnectivityGeometry(wirePointHash, conPointCounts, autoDotKeys, autoDotPts, IsCrossingAtDot);
+        // ── Net labels that stand alone (§2.1.6) ──────────────────────────────
+        // A label with no owner wire names the net at the point it SITS on, which is how a component
+        // terminal gets connected by name with no wire drawn at all — SubcircuitCellBuilder emits
+        // exactly this for a terminal its router could not reach, and NetExtractor already reads it
+        // as a real connection (FindLabelNetKey finds the pin's own key, which is seeded into the
+        // union-find for every pin). Recorded here so the CONNECTION VISUALS agree with the netlist:
+        // without it a labelled pin was drawn with the unconnected warning while extracting as a
+        // named net, which says the schematic is broken when it is not (owner, 2026-09-01).
+        //
+        // Only the unanchored ones. A label anchored to a wire rides that wire's geometry, so the
+        // pin under it already counts as connected through the wire — and its X/Y here is the
+        // PREVIOUS build's, since RecomputePosition runs later in BuildRenderModel.
+        var freeNetLabelKeys = new HashSet<(long, long)>();
+        foreach (var lbl in NetLabels)
+            if (!lbl.IsAnchored) freeNetLabelKeys.Add(QuantKey(lbl.X, lbl.Y));
+
+        return new ConnectivityGeometry(wirePointHash, conPointCounts, autoDotKeys, autoDotPts,
+                                        IsCrossingAtDot, freeNetLabelKeys);
     }
 
     /// <summary>

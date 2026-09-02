@@ -15,7 +15,9 @@ namespace CircuitRF.Ui.Schematic;
 /// Lifecycle:
 ///   AutoSave   — called periodically for each dirty scratch doc (atomic write).
 ///   ClearDoc   — called when a scratch doc is saved/materialized (removes one file).
-///   ClearSession — called on clean exit (removes the whole session dir).
+///   ClearSession — called on clean exit (removes the whole session dir). WorkspaceWindow.OnClosing
+///                  calls it through WorkspaceViewModel.OnCleanExit on BOTH close paths — the
+///                  save-prompt one and the nothing-was-dirty one.
 ///
 /// At next launch, FindPriorSessions returns session dirs left by ungraceful exits.
 /// LoadSession deserializes their .csch files for restore-offer.
@@ -28,11 +30,21 @@ public sealed class RecoveryManager
     /// <summary>Absolute path of this session's recovery directory.</summary>
     public string SessionDir { get; }
 
+    /// <summary>
+    /// Every session directory belonging to a manager alive in THIS process. A "prior session" means
+    /// one left behind by an ungraceful exit, and a directory another live window is autosaving into
+    /// is not that — offering to restore it would offer the user their own open work, from a session
+    /// that has not ended.
+    /// </summary>
+    private static readonly HashSet<string> LiveSessionDirs =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public RecoveryManager()
     {
         // 12-char hex session id — collision-safe for a local app.
         var sessionId = Guid.NewGuid().ToString("N")[..12];
         SessionDir = Path.Combine(RecoveryRoot, sessionId);
+        lock (LiveSessionDirs) LiveSessionDirs.Add(SessionDir);
     }
 
     // ── Write ─────────────────────────────────────────────────────────────────
@@ -72,6 +84,7 @@ public sealed class RecoveryManager
     /// <summary>Removes the entire session recovery directory on clean exit.</summary>
     public void ClearSession()
     {
+        lock (LiveSessionDirs) LiveSessionDirs.Remove(SessionDir);
         try
         {
             if (Directory.Exists(SessionDir))
@@ -98,6 +111,10 @@ public sealed class RecoveryManager
             {
                 if (string.Equals(dir, currentSessionDir, StringComparison.OrdinalIgnoreCase))
                     continue;
+                // Nor any OTHER session still live in this process. Two workspace windows are two
+                // managers, and the second one's launch scan would otherwise read the first one's
+                // autosaves as an ungraceful exit and offer to restore work that is open on screen.
+                lock (LiveSessionDirs) { if (LiveSessionDirs.Contains(dir)) continue; }
                 if (Directory.GetFiles(dir, "*.csch").Length > 0)
                     result.Add(dir);
             }

@@ -8,8 +8,42 @@ namespace CircuitRF.Ui.DataDisplay;
 /// <summary>
 /// Dock Document representing an open Data Display.
 /// </summary>
-public sealed class DataDisplayDocument : Document, IActivatableDocument, IFileBackedDocument
+public sealed class DataDisplayDocument : Document, IActivatableDocument, IFileBackedDocument,
+                                          IEditHistoryDocument
 {
+    // ── Undo / Redo — the shell's own Ctrl/Cmd+Z, routed here ────────────────────────────────────
+    //
+    // Through IEditHistoryDocument and not IUndoableDocument: a Data Display's history is the ported
+    // UndoRedoManager (a per-tab stack for plot/marker edits, a window-level one for tab add/remove),
+    // not an UndoRedoStack, so there is no stack to hand the shell. DisplayWindowViewModel already
+    // decides which of its two the next Undo takes, so all six answers delegate straight to its own
+    // commands rather than re-deciding here.
+    //
+    // Owner report, 2026-09-01: with a FLOATING Data Display in focus, Cmd+Z undid an edit in a
+    // schematic that was not in focus. On macOS the menu bar is app-global — the same NativeMenu
+    // instance is attached to every torn-off window (AttachSharedNativeMenuIfMacOS) — so Edit ▸ Undo's
+    // Cmd+Z fires the SHELL's Undo command from whichever window is key, and that command had no way
+    // to reach a Data Display: it was typed to IUndoableDocument, which this document could not be.
+
+    /// <inheritdoc/>
+    public void UndoLast() => ViewModel.Window.UndoCommand.Execute(null);
+
+    /// <inheritdoc/>
+    public void RedoLast() => ViewModel.Window.RedoCommand.Execute(null);
+
+    /// <inheritdoc/>
+    public bool CanUndoLast => ViewModel.Window.UndoCommand.CanExecute(null);
+
+    /// <inheritdoc/>
+    public bool CanRedoLast => ViewModel.Window.RedoCommand.CanExecute(null);
+
+    /// <summary>Plain "Undo": the ported UndoRedoManager records no per-entry description, so there
+    /// is nothing truthful to name. Better a bare verb than a label describing the wrong edit.</summary>
+    public string UndoLastDescription => "Undo";
+
+    /// <inheritdoc cref="UndoLastDescription"/>
+    public string RedoLastDescription => "Redo";
+
     // ── Activation focus — view grabs keyboard focus on tab-switch (Select All etc. without a click) ──
     private bool _activationFocusPending;
     public event Action? ActivationFocusRequested;

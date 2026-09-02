@@ -704,6 +704,21 @@ public partial class SchematicView : UserControl
     private void OnTextLabelDoubleTapped(object? sender, TextLabelHitArgs e)
     {
         if (Vm is null) return;
+
+        // A SpiceModel's File / Name / Section / PinConfig / Pitch label is a readout of its own
+        // dialog panel, so double-clicking it opens THAT (owner, 2026-09-01) rather than an inline
+        // box the view model would refuse anyway. Answering the gesture with the control that can
+        // actually set the value — the Name combo lists what the file holds — beats a dead
+        // double-click, and it is the same dialog the component body and the context menu open.
+        if (e.HitResult.Kind == SchematicHitTest.HitKind.ComponentParam
+            && Vm.EditModel.FindComponent(e.HitResult.Id) is { Symbol: SymbolKind.SpiceModel } smComp
+            && SpiceModelSymbolProvider.IsPanelParameter(
+                   smComp.Parameters.ElementAtOrDefault(e.HitResult.SubIndex)?.Name))
+        {
+            OpenParameterEditorFor(smComp);
+            return;
+        }
+
         Vm.BeginInlineEditForHit(e.HitResult, e.ScreenX, e.ScreenY);
 
         // Build world-space anchor so the box can reposition on zoom/pan.
