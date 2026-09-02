@@ -114,6 +114,16 @@ public sealed class TraceResolveContainmentTests
             Assert.Contains("versus=", trail);
             Assert.Contains("group[SP1]=", trail);
             Assert.Contains("Z0:[port[1]]", trail);
+
+            // What the READ was actually handed, which is not the same claim as any field above.
+            // `shape=` is re-read from the DataSet in the catch handler and `slice=` is authored
+            // trace state; neither can say whether the gather saw that cube, or with what. This
+            // fixture's cube claims three elements and holds one — the axes alone look perfectly
+            // healthy, and `buf` vs `expect` is the only pair that shows otherwise.
+            Assert.Contains("read=[freq[3]", trail);
+            Assert.Contains("buf=1 expect=3", trail);
+            Assert.Contains("same=yes", trail);      // still the object `shape=` describes
+            Assert.Contains("args=[All, 0, 0]", trail);
         }
         finally
         {

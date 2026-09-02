@@ -925,9 +925,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
     internal static void SetCubeDataFrom(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit,
                                         DataSet? xDs = null)
     {
+        var probe = new ResolveProbe();
         try
         {
-            SetCubeDataFromCore(t, ds, plotType, freqUnit, xDs);
+            SetCubeDataFromCore(t, ds, plotType, freqUnit, xDs, probe);
         }
         catch (Exception ex)
         {
@@ -947,7 +948,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             // and an in-range slice, so the throw is somewhere in this method OTHER than the read the
             // stack was assumed to name. Recording it costs one string on a path that is already
             // failing.
-            Diagnostics.CrashReporter.Note($"trace resolve FAILED: {DescribeCubeResolve(t, ds, plotType)} — "
+            Diagnostics.CrashReporter.Note($"trace resolve FAILED: {DescribeCubeResolve(t, ds, plotType, probe)} — "
                                            + $"{DescribeException(ex)}");
             t.ExpressionError = ex.Message;
             t.InvalidSpecText = t.Expression ?? t.CubeName;
@@ -957,11 +958,34 @@ public partial class PlotInspectorViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// What the failing read was ACTUALLY handed — the one thing the note could not otherwise say.
+    ///
+    /// <para>Everything else in the note is authored trace state: <c>t.Slice</c> is what the trace
+    /// asks for, not what <see cref="DataCube.Slice"/> received, and the shape is re-read from the
+    /// DataSet in the catch handler rather than captured at the moment of the throw. The round-5
+    /// field report is exactly the case where those two must be compared: the cube it describes is
+    /// well formed and the slice is in range, and on that cube the gather provably cannot walk off
+    /// its buffer — so the interesting question became whether the cube the READ saw is the same
+    /// object, with the same buffer, as the one the note goes on to describe.</para>
+    ///
+    /// <para>Recorded by reference only. Nothing is formatted on the success path, so a resolve that
+    /// works pays two field writes and no allocation.</para>
+    /// </summary>
+    private sealed class ResolveProbe
+    {
+        /// <summary>The cube handed to the indexer — after any network-parameter substitution.</summary>
+        public DataCube? Cube;
+
+        /// <summary>The positional slice arguments handed with it.</summary>
+        public object[]? Args;
+    }
+
+    /// <summary>
     /// One line naming everything the crash trail needs to identify a failed resolve: the cube spec,
     /// the shape the DataSet actually holds for it, and the slice the trace asked for. Every step is
     /// individually guarded — this runs while something is already wrong, so it must not throw.
     /// </summary>
-    private static string DescribeCubeResolve(Trace t, DataSet? ds, PlotType plotType)
+    private static string DescribeCubeResolve(Trace t, DataSet? ds, PlotType plotType, ResolveProbe probe)
     {
         var sb = new System.Text.StringBuilder();
         sb.Append($"plot={plotType} cube='{t.CubeName ?? "(null)"}' expr='{t.Expression ?? "(null)"}'");
@@ -989,6 +1013,33 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 : " slice=(null)");
         }
         catch (Exception e) { sb.Append($" slice=(unreadable: {e.GetType().Name})"); }
+
+        // What the READ was handed, as opposed to what the trace asked for. `buf` vs `expect` is the
+        // pair that matters: every slice validates the buffer against the axes product before it
+        // gathers, so a report where these two disagree is a report where that validation and the
+        // gather are looking at different state. `same` says whether the cube the read saw is still
+        // the object this note's own `shape=` field describes.
+        try
+        {
+            if (probe.Cube is { } rc)
+            {
+                long expect = 1;
+                foreach (var a in rc.Axes) expect *= a.Length;
+                sb.Append($" read=[{DescribeShape(rc)}] buf={rc.BufferLength} expect={expect}");
+                sb.Append($" same={(ds is not null && t.CubeName is { } cn && ds.Contains(cn)
+                                     && ReferenceEquals(ds[cn], rc) ? "yes" : "no")}");
+            }
+            else sb.Append(" read=(no slice reached)");
+        }
+        catch (Exception e) { sb.Append($" read=(unreadable: {e.GetType().Name})"); }
+
+        try
+        {
+            sb.Append(probe.Args is { } pa
+                ? $" args=[{string.Join(", ", pa.Select(DescribeSliceArg))}]"
+                : " args=(none)");
+        }
+        catch (Exception e) { sb.Append($" args=(unreadable: {e.GetType().Name})"); }
 
         // The rest of the trace state this resolve actually branches on. Every one of these selects a
         // different path through SetCubeDataFromCore, and none of them was in the first report.
@@ -1023,6 +1074,15 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     private static string DescribeShape(DataCube c)
         => string.Join(" x ", c.Axes.Select(a => $"{a.Name}[{a.Length}]"));
+
+    /// <summary>One positional slice argument as the indexer sees it: an int pins, a Range keeps.</summary>
+    private static string DescribeSliceArg(object? a) => a switch
+    {
+        int i     => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Range r   => r.Equals(Range.All) ? "All" : $"{r.Start}..{r.End}",
+        null      => "(null)",
+        _         => $"({a.GetType().Name})",
+    };
 
     private static string DescribeAxisSlice(AxisSlice a)
     {
@@ -1066,7 +1126,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     }
 
     private static void SetCubeDataFromCore(Trace t, DataSet? ds, PlotType plotType, FreqUnit freqUnit,
-                                            DataSet? xDs)
+                                            DataSet? xDs, ResolveProbe probe)
     {
         if (!t.IsCubeBound) return;
 
@@ -1178,6 +1238,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, t.CubeName))
             cube = ResolveNetworkParamCube(ds, t, t.CubeName, cube);
 
+        // From here down, `cube` is what the indexer will read. Record it now so the crash note
+        // describes the object the gather saw rather than re-deriving one from the DataSet later.
+        probe.Cube = cube;
+
         // Cube + slice resolved → clear any stale invalid flag left by a prior bad source
         // (covers the scalar, family, all-pinned, and rank-1 success paths below).
         t.InvalidSpecText = null;
@@ -1187,7 +1251,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (cube.Rank == 0)
         {
             if (RejectVersusOnScalar(t)) return;
-            var sr = cube[Array.Empty<object>()];
+            probe.Args = Array.Empty<object>();
+            var sr = cube[probe.Args];
             t.InvalidSpecText = null;
             t.ExpressionError = null;
             t.SetScalarCubeData(
@@ -1200,7 +1265,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // ── Family path (Phase 7.3b) ──────────────────────────────────────────
         if (Array.Exists(slice, s => s.Role == AxisRole.FamilyIterate))
         {
-            ResolveFamily(t, cube, slice, plotType, freqUnit, ds, xDataSet);
+            ResolveFamily(t, cube, slice, plotType, freqUnit, ds, xDataSet, probe);
             return;
         }
 
@@ -1235,6 +1300,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (xDim < 0)
         {
             if (RejectVersusOnScalar(t)) return;
+            probe.Args = args;
             var sr = cube[args];
             t.InvalidSpecText = null;
             t.ExpressionError = null;
@@ -1245,6 +1311,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             return;
         }
 
+        probe.Args = args;
         var result = cube[args];
         if (!result.IsCube)
         {
@@ -1414,7 +1481,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     private static void ResolveFamily(Trace t, DataCube cube, AxisSlice[] slice,
                                       PlotType plotType, FreqUnit freqUnit, DataSet? ds = null,
-                                      DataSet? xDs = null)
+                                      DataSet? xDs = null, ResolveProbe? probe = null)
     {
         // Find family and X axes by name (slice is name-keyed, order-independent).
         int fDim = -1, xDim = -1;
@@ -1452,6 +1519,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
                     args[d] = s.IsNarrowedRange ? new Range(s.RangeStart, s.RangeEndExclusive) : Range.All;
                 else args[d] = Math.Clamp(s.Index, 0, Math.Max(0, ax.Length - 1));
             }
+            if (probe is not null) probe.Args = args;
             var res = cube[args];
             if (!res.IsCube || res.Cube!.Rank != 1) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
             var sliced = res.Cube!;

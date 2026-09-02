@@ -169,6 +169,19 @@ namespace RfCore.Data
                 ? (double[])_realData!.Clone()
                 : throw new InvalidOperationException("Cube is Complex.");
 
+        /// <summary>
+        /// How many elements the backing buffer actually holds, whichever kind it is — WITHOUT
+        /// copying it. <see cref="ComplexValues"/>/<see cref="RealValues"/> clone, so asking them
+        /// for a length duplicates the whole cube; a diagnostic that runs while something is already
+        /// wrong must not do that to a 600-point sweep.
+        ///
+        /// <para>Exposed for the crash note, and it is the number that matters there: every read
+        /// path is validated against the axes product (<see cref="RequireShapeConsistent"/>), so a
+        /// report where this disagrees with that product is a report where the validation itself is
+        /// not seeing what the gather sees.</para>
+        /// </summary>
+        public int BufferLength => ElementCount();
+
         // ---- Axis accessor -------------------------------------
 
         public Axis Axis(string name)
