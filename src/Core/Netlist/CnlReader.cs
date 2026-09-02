@@ -372,13 +372,28 @@ public sealed class CnlReader
 
     // ── SDD-specific line parser ──────────────────────────────────────────────
 
-    // Matches SDD-style equation assignments: I[p,w]=, Q[p,w]=, F[p,w]=, C[n]=,
+    // Matches SDD-style equation assignments: I[p,w]=, Q[p,w]=, F[p,w]=, V[p]=, C[n]=,
     // Cport[n]=, In[p,w]=, Nc[p,q]= — used for boundary detection.
     // Single-index forms I[p]= and Q[p]= are also accepted (sugar for I[p,0] and Q[p,1]).
     // Optional whitespace around '=' is allowed (spaced form: I[1,0] = expr).
-    // Capture group 3 captures the '=' (to find where the RHS expression starts).
+    //
+    // V[p] (the BRANCH equation) was missing here until 2026-09-02, and the way it failed hid it:
+    // an SDD line whose ONLY assignment is V[p] never reaches this scanner at all — the generic
+    // whitespace-token path handles it, which is why every existing V[p] test passes. Add any other
+    // equation to the same line and V[p] stops being a boundary, so the PRECEDING equation swallows
+    // "…  V[1]=0" into its own expression text and the line dies with a parse error pointing at a
+    // column in an expression the user never wrote.
+    //
+    // The last alternative is a PLAIN NAME — a per-instance constant the equations reference by name
+    // (a device width, a scaling factor). The elaborator resolves it to a number and SddModel binds
+    // it in the scope the equations evaluate in, so it has always been a supported parameter; it just
+    // could not be WRITTEN beside an equation, failing the same way V[p] did. It is guarded on both
+    // sides: `(?<![\w\]])` so it can only start a token, and `=(?!=)` so an `==` inside an
+    // unparenthesised comparison is not read as the start of a new assignment (a parenthesised one is
+    // already at depth > 0, where the scanner does not look).
     private static readonly Regex SddAssignmentHeader = new(
-        @"(I|Q|F|In|Nc)\[\d+(,\d+)?\]\s*(=)|(C(?:port)?)\[\d+\]\s*(=)|H\[\d+\]\s*(=)",
+        @"(I|Q|F|In|Nc)\[\d+(,\d+)?\]\s*(=)|(C(?:port)?)\[\d+\]\s*(=)|H\[\d+\]\s*(=)"
+        + @"|V\[\d+\]\s*(=)|(?<![\w\]])[A-Za-z_]\w*\s*=(?!=)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>

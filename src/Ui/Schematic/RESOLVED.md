@@ -2,6 +2,89 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## What the "+" button offered a ZNP and an SDD — neither could use it (2026-09-02)
+
+Reported against the ZNP: on a Z1P the Parameter Editor's "+" creates a `Z[1]`, which does nothing.
+It is worse than nothing, and the SDD, checked at the same time, was worse still.
+
+### `IndexedParamGroup` cannot describe either component's parameters
+
+The "+"/"−" buttons add and remove one `Name[n]` group for an ever-increasing n. That fits P1Tone's
+`Z[k]`, a tone source's `Freq[n]`/`V[n]`/`Phase[n]`, a VAR row. It fits neither of these:
+
+- **A ZNP's parameters are exactly the N×N `Z[p,q]` matrix its port count fixes**, all of them
+  seeded at placement. There is nothing to add. `ComponentModelFactory` reads a Z entry through
+  `^Z\[(\d+),(\d+)\]$` only, so the added `Z[n]` matched nothing, fell through to `numericParams`
+  under a name no expression can reference, and was inert in every path on every run.
+- **An SDD's slots are two-dimensional and bounded by the port count.** `TryParseTemplateIndex` reads
+  one index, so it saw the seeded `I[1,0]` as an unindexed name: the first "+" offered `I[1]` —
+  which IS valid sugar for `I[1,0]`, so `ValidateAndBind`'s `target[p-1] = …` **silently replaced
+  the seeded equation**, whichever of the two the parameter dictionary happened to yield last. Press
+  on and `I[3]` on a 2-port is a hard refusal at Run ("references port 3 but only 2 port(s) of nets
+  were given"). And every added row arrived BLANK, which is a `ParseException` at Run, because an
+  SDD parameter reaches the factory verbatim and is parsed there.
+
+### ZNP: no "+", and no row rename either
+
+`UserParamTemplate` returns null for `ZPort` now, which removes both — and the rename is the same
+fact from the other side, since a renamed `Z[i,j]` stops being read at all. A helper constant reaches
+`Z[i,j]` expressions from a VAR component, which `Elaborator.InjectZPortScopeVars` already resolves,
+so nothing was lost. `IsRemovableParameter` gained a ZPort arm so a design already carrying an inert
+`Z[n]` can still delete it: a matrix entry is structural and never removable, anything else is.
+
+### SDD: a picker over the slots THIS device can still use
+
+`SddEquationSlots.Available(portCount, existing)` enumerates them and `SddEquationPickerDialog`
+shows them; `ComponentTypeRegistry.AllowsIndexedParamAdd` excludes the SDD from the generic "+"
+while it KEEPS its template, which still drives row-name editing and canonical sorting. The rules
+that make an offer safe are the catalog's, not the dialog's:
+
+- Nothing already present, **under either spelling** — `I[p]` and `Q[p]` occupy `I[p,0]` and
+  `I[p,1]`. That is the duplicate that was silently replacing a seeded equation.
+- No port past the port count.
+- `V[p]` and any current equation at the same port are **mutually exclusive** (the factory refuses a
+  port stating both), so each suppresses the other. On a freshly placed SDD every port carries an
+  `I[p,0]`, so the branch equation is offered nowhere — `SddEquationSlots.Notes` says so in the
+  dialog, because a silently absent slot reads as a missing feature.
+- A weighted `I[p,w]` for a NEW w is created **together with its `H[w]`**, in one command so one
+  undo takes both: the factory refuses an `I[p,w]` whose `H[w]` is undefined, and an `H[w]` nothing
+  references does nothing.
+- `C[n]` is offered **only once an equation already reads `_cn`** — its value is an instance NAME,
+  not an expression, so there is no seed that runs, and it is the one slot deliberately created
+  blank. Offered speculatively it would be exactly the defect being fixed.
+- **Nothing else is ever created blank.** A current or charge is seeded at `0`, which is not a guess:
+  `SddModel` documents an absent equation as zero, so the seeded row means what the absent slot means.
+
+Per-row "✕" replaces the footer's "−" for the SDD (`IsRemovableParameter`), which is what a picker
+implies — one named slot added, one named slot removed.
+
+### Two more holes the picker's own gate test found
+
+Both are cases where the shape being added was legal and the surrounding machinery refused it.
+
+- **`ParameterRowViewModel.TryValidateSddName` had drifted behind the factory.** It accepted only
+  `I[p]`, `I[p,w]`, `Q[p]` and `H[w]`, so `V[p]`, `C[n]`/`Cport[n]` and a plainly-named constant —
+  all read by `CreateSddModel` — were refused by a dialog whose own engine runs them. It now accepts
+  what the picker creates, rejects a leading `_` (a constant shadowing `_v1`/`_c1` would change what
+  every equation using it means), and takes a `portCount` so `I[3]` on a 2-port is refused HERE
+  rather than as the factory's own message a simulation later.
+- **`CnlReader.SddAssignmentHeader` recognised neither `V[p]=` nor a plain `name=`.** That regex
+  decides where one assignment's expression ENDS, and the failure hid perfectly: a line whose ONLY
+  assignment is one of those never reaches the scanner — the generic whitespace-token path handles
+  it, which is why every existing `V[p]` test passes. Put one beside an equation and the PRECEDING
+  equation swallows it, and the line dies with `Parse error at position 12: Unexpected '='` pointing
+  into an expression nobody wrote. So `V[1]=0.5*_v2` alone worked and
+  `I[1,0]=_v1/50  V[1]=0.5*_v2` did not; likewise a per-instance constant could not be written
+  beside an equation at all. The plain-name alternative is guarded on both sides — `(?<![\w\]])` so
+  it can only start a token, and `=(?!=)` so an unparenthesised `==` is not read as a new assignment
+  (a parenthesised one is already at depth > 0, where the scanner does not look).
+
+Gates: `tests/Ui.Tests/SddEquationSlotsTests.cs` — every offered slot is added at its seeded value
+and ELABORATED, against the real factory rather than against the catalog's own idea of the grammar,
+with the two parameters the old "+" produced as the counter-case that must still refuse;
+`tests/Core.Tests/Netlist/SddWhitespaceTests.cs` for the two reader boundaries;
+`ParameterEditorAddParamTests` and `SddEquationNameValidationTests` for the gating and the grammar.
+
 ## Palette and Parameter-dialog polish: the plain Z tile, SPICE's filters, the Tuner pickers (2026-09-01)
 
 Four small owner requests, one of which turned out to have a real defect underneath it.

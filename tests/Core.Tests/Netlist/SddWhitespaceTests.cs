@@ -168,4 +168,58 @@ SDD:M1  gate 0 drain 0  I[1,0] = _v1 / 50  I[2,0] = {heroI2Spaced}
         Assert.Equal(r0.Dg[1,0], r1.Dg[1,0], 6);
         Assert.Equal(r0.Dg[1,1], r1.Dg[1,1], 6);
     }
+
+    // ── Assignment-boundary gaps found 2026-09-02 ─────────────────────────────
+    //
+    // SddAssignmentHeader is the scanner that decides where one assignment's expression ENDS. It
+    // knew I[…], Q[…], F[…], H[…], C[…] and Cport[…] — and neither V[p] nor a plainly-named
+    // constant, both of which the factory reads. The failure hid because a line whose ONLY
+    // assignment is one of those never reaches this scanner: the generic whitespace-token path
+    // handles it, so every existing test of V[p] passes. Put one beside an equation and the
+    // PRECEDING equation swallows it, and the line dies pointing at a column of an expression
+    // nobody wrote ("Parse error at position 12: Unexpected '='").
+
+    [Fact]
+    public void BranchEquation_IsAnAssignmentBoundary_NotPartOfThePreviousExpression()
+    {
+        var sdd = ParseSdd(@"
+SDD:S1  n1 0  n2 0  I[1,0]=_v1/50  V[2]=0.5*_v1
+");
+        // Port 2's voltage is held, so it carries a branch row; port 1 states a current.
+        // BranchPorts is 0-based (it indexes the per-port arrays), so V[2] reads as 1.
+        Assert.Equal([1], sdd.BranchPorts);
+
+        var r = sdd.Evaluate(new PortVoltages([10.0, 0.0]));
+        Assert.Equal(10.0 / 50.0, r.I[0], 10);
+    }
+
+    [Fact]
+    public void APlainlyNamedConstant_IsAnAssignmentBoundary_AndReachesTheEquations()
+    {
+        // Rscale is an ordinary per-instance value: resolved once at elaboration and bound in the
+        // scope the equations evaluate in. Before the fix this text did not parse at all.
+        var sdd = ParseSdd(@"
+SDD:S1  n1 0  I[1,0]=_v1/Rscale  Rscale=25
+");
+        var r = sdd.Evaluate(new PortVoltages([10.0]));
+        Assert.Equal(10.0 / 25.0, r.I[0], 10);
+    }
+
+    /// <summary>
+    /// The guard on that new alternative: an unparenthesised <c>==</c> must not read as the start of
+    /// a new assignment. Without <c>=(?!=)</c> the scanner takes "_v1 =" as a header and hands the
+    /// rest, "= Vth", to the parser — so this line would not read at all.
+    ///
+    /// <para>Asserted as "the line parses", not as a value: a comparison is Bool and the SDD refuses
+    /// a Bool as a scalar at EVALUATE time, which is a different (and correct) refusal.</para>
+    /// </summary>
+    [Fact]
+    public void AnUnparenthesisedComparison_IsNotMistakenForAnAssignment()
+    {
+        var ex = Record.Exception(() => ParseSdd(@"
+Vth = 1
+SDD:S1  n1 0  I[1,0]=_v1 == Vth
+"));
+        Assert.Null(ex);
+    }
 }

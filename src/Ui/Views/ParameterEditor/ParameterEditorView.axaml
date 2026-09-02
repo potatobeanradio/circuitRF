@@ -566,7 +566,7 @@
                                         Padding="5,1"
                                         Margin="2,0,0,0"
                                         VerticalAlignment="Center"
-                                        ToolTip.Tip="Remove this parameter — the model's own default applies again"
+                                        ToolTip.Tip="{Binding RemoveTooltip}"
                                         Click="OnParamRemoveClick"/>
                             </Grid>
                         </DataTemplate>
@@ -798,6 +798,16 @@
                     IsVisible="{Binding AllowsAddParameter}"
                     ToolTip.Tip="Add parameter group"
                     Command="{Binding AddGroupCommand}"/>
+            <!-- An SDD's slots are two-dimensional and bounded by its port count, so the generic
+                 "+" above cannot express them (it offered I[n], which duplicated a seeded I[n,0]
+                 and then named ports that do not exist). It gets a picker over what this device
+                 can still take instead. -->
+            <Button Content="Add Equation…"
+                    FontSize="11"
+                    Padding="8,3"
+                    IsVisible="{Binding ShowAddSddEquation}"
+                    ToolTip.Tip="Choose an equation slot this SDD can use"
+                    Command="{Binding AddSddEquationCommand}"/>
             <!-- The model's parameters are chosen from what the FILE declares, not typed from
                  memory of it. A parameter not added stays absent, which already means "use the
                  model's own default" — so this list is deliberately not materialised as rows. -->

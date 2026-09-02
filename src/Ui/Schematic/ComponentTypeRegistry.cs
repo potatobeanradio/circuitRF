@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Text.RegularExpressions;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
@@ -838,9 +839,33 @@ public static class ComponentTypeRegistry
     /// neighbours.</para>
     /// </summary>
     public static bool IsRemovableParameter(SymbolKind kind, string parameterName)
-        => kind == SymbolKind.VerilogA
-        && parameterName is not ("File" or "Model" or "Pins")
-        && !string.IsNullOrWhiteSpace(parameterName);
+    {
+        if (string.IsNullOrWhiteSpace(parameterName)) return false;
+
+        return kind switch
+        {
+            SymbolKind.VerilogA => parameterName is not ("File" or "Model" or "Pins"),
+
+            // SDD: every visible row is a user-authored equation or a named constant — SddName and
+            // SddPortCount are minted at elaboration and never stored, NumPorts is not shown. Each is
+            // independent of its neighbours, which is the condition above. Per-row removal is also
+            // what the equation PICKER implies: you add one named slot, so you remove one named slot,
+            // and "remove the last one you happened to add" was never the right gesture here.
+            SymbolKind.Sdd => true,
+
+            // ZPort: the Z[i,j] matrix is structural — its shape is the port count — so an entry is
+            // never removable. Anything ELSE on a ZPort is removable, and that is not a hypothetical:
+            // it is how a design already carrying an inert Z[n] from the old "+" button gets rid of
+            // it, now that the button and the row rename are both gone.
+            SymbolKind.ZPort => !RxZMatrixEntry.IsMatch(parameterName) && parameterName != "NumPorts",
+
+            _ => false,
+        };
+    }
+
+    /// <summary>The Z-matrix entry spelling <c>ComponentModelFactory</c> reads — nothing else on a
+    /// ZPort is one, whatever it looks like.</summary>
+    private static readonly Regex RxZMatrixEntry = new(@"^Z\[\d+,\d+\]$", RegexOptions.Compiled);
 
     public static string ParameterDescription(SymbolKind kind, string parameterName)
         => kind is SymbolKind.Mixer or SymbolKind.MixerD ? MixerParameterDescription(parameterName)
@@ -2464,6 +2489,20 @@ public static class ComponentTypeRegistry
     }
 
     /// <summary>
+    /// True when the parameter editor's generic "+"/"−" indexed-group buttons apply to this type.
+    ///
+    /// <para><b>SDD is excluded even though it HAS a template</b> (owner report, 2026-09-02). Its
+    /// usable slots depend on the port count and are spelled with TWO indices (<c>I[p,w]</c>), which
+    /// the generic index parser cannot read — so "+" offered <c>I[n]</c>, which silently
+    /// overwrote the seeded <c>I[n,0]</c> for a port that had one and was a hard run error
+    /// ("references port 3 but only 2 port(s)") for a port that does not exist. It gets
+    /// <see cref="SddEquationSlots"/> and its own picker instead. The template stays because it
+    /// still drives row-name editing and canonical sorting.</para>
+    /// </summary>
+    public static bool AllowsIndexedParamAdd(SymbolKind kind)
+        => kind is not SymbolKind.Sdd && UserParamTemplate(kind) is not null;
+
+    /// <summary>
     /// Returns the indexed-parameter group descriptor for component types whose parameter set
     /// can be extended by the user via the "+" button in the parameter editor.
     /// Returns null for ordinary fixed-parameter types (R, L, C, V, Term, Pin, Ground, …).
@@ -2515,15 +2554,17 @@ public static class ComponentTypeRegistry
             SkipIndices:     null,
             DefaultExpressions: ["1", "0", "0"]),
 
-        // ZPort: user adds extra Z[n] scalar params (1D; existing Z[i,j] 2D params are unaffected).
-        SymbolKind.ZPort => new IndexedParamGroup(
-            NameFormats:     ["Z[{0}]"],
-            DefaultUnits:    ["Ω"],
-            ShowOnSchematic: [true],
-            Dimensions:      [UnitDimension.Resistance],
-            FirstAddIndex:   1,
-            SkipIndices:     null,
-            DefaultExpressions: ["50"]),
+        // ZPort is DELIBERATELY ABSENT (owner report, 2026-09-02). It used to add Z[n] scalars, and
+        // the component cannot use one: ComponentModelFactory reads Z-matrix entries through
+        // ^Z\[(\d+),(\d+)\]$ only, so a Z[n] matched nothing and landed in numericParams under a
+        // name no expression can reference — inert in every path, on every run. Nor is there
+        // anything for a "+" to add: the parameter set is exactly the N×N matrix its port count
+        // fixes, and every entry is seeded at placement. A helper constant reaches Z[i,j]
+        // expressions from a VAR component, which the elaborator already injects
+        // (Elaborator.InjectZPortScopeVars).
+        //
+        // Being absent here also makes ZPort row names non-editable, which is the same fact from
+        // the other side: a renamed Z[i,j] stops being read at all.
 
         // SDD: user adds named I[…] equation slots.
         SymbolKind.Sdd => new IndexedParamGroup(

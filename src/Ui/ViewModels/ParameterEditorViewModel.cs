@@ -325,9 +325,69 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     // ── Extensible parameter types ─────────────────────────────────────────────
 
-    /// <summary>True when the current target type supports user-added parameter groups (P1Tone, VTone, ITone, ZPort, SDD, VAR).</summary>
+    /// <summary>True when the current target type supports the generic "+"/"−" indexed groups
+    /// (P1Tone, VTone, ITone, PnTone, Tuner, NonlinearC, VAR, MEAS). ZPort and SDD are both absent
+    /// and for different reasons — see <see cref="ComponentTypeRegistry.AllowsIndexedParamAdd"/>.</summary>
     public bool AllowsAddParameter
-        => ComponentTypeRegistry.UserParamTemplate(_target?.Symbol ?? SymbolKind.Ground) is not null;
+        => ComponentTypeRegistry.AllowsIndexedParamAdd(_target?.Symbol ?? SymbolKind.Ground);
+
+    /// <summary>True for an SDD — the one type whose additions come from a picker over the slots
+    /// its port count and its existing equations leave available.</summary>
+    public bool ShowAddSddEquation => _target?.Symbol == SymbolKind.Sdd;
+
+    /// <summary>Supplied by the view: shows the SDD equation picker and returns the chosen slot,
+    /// or null on cancel. Null in contexts with no UI.</summary>
+    public Func<string, int, IReadOnlyList<SddEquationSlot>, IReadOnlyList<string>,
+                Task<SddEquationSlot?>>? PickSddEquationAsync { get; set; }
+
+    /// <summary>The slots this SDD can still take — the picker's contents, and the gate tests' too.</summary>
+    public IReadOnlyList<SddEquationSlot> AvailableSddSlots()
+        => _target is null || _target.Symbol != SymbolKind.Sdd
+            ? []
+            : SddEquationSlots.Available(
+                _target.PortCount,
+                _target.Parameters.Select(p => (p.Name, p.Expression)));
+
+    /// <summary>
+    /// Adds one equation slot the user chose, seeded at a value that RUNS.
+    ///
+    /// <para>Replaces the generic "+" for the SDD (owner report, 2026-09-02): that button offered
+    /// <c>I[n]</c> for an ever-increasing n, which duplicated a seeded <c>I[n,0]</c> on a port that
+    /// had one and named a port that does not exist on the rest. Every entry the picker offers is a
+    /// slot this SDD can use, at the value it is created with — see
+    /// <see cref="SddEquationSlots"/>.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task AddSddEquation()
+    {
+        if (_target is null || _schematicVm is null || PickSddEquationAsync is null) return;
+        if (_target.Symbol != SymbolKind.Sdd) return;
+
+        var slots = AvailableSddSlots();
+        if (slots.Count == 0) return;
+
+        var notes  = SddEquationSlots.Notes(
+            _target.PortCount, _target.Parameters.Select(p => (p.Name, p.Expression)));
+        var picked = await PickSddEquationAsync(_target.InstanceName, _target.PortCount, slots, notes);
+        if (picked is null) return;
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        updated.Add(new EditableParameter
+        {
+            Name = picked.Name, Expression = picked.DefaultExpression,
+            Unit = "", ShowOnSchematic = false, Dimension = UnitDimension.None,
+        });
+        // The companion is added in the same command, so one undo takes both back — a weighted
+        // current and its weighting are one edit, and the run refuses either one alone.
+        if (picked.CompanionName.Length > 0)
+            updated.Add(new EditableParameter
+            {
+                Name = picked.CompanionName, Expression = picked.CompanionExpression,
+                Unit = "", ShowOnSchematic = false, Dimension = UnitDimension.None,
+            });
+
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
 
     // ── MKlopf entry-mode switch (brief-cell-first-and-ui-fixes.md follow-up: R-klp-3a/R-klp-3's
     // Z1/Z2<->W1/W2 and L<->F3db alternate entry routes had no UI to actually reach them — the
@@ -413,6 +473,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             IsEmptyState = true;
             Rows.Clear();
             OnPropertyChanged(nameof(AllowsAddParameter));
+            OnPropertyChanged(nameof(ShowAddSddEquation));
             NotifyMklopfState();
             UpdateCanRemoveTopGroup();
             return;
@@ -506,6 +567,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(ShowAddModelParameter));
         OnPropertyChanged(nameof(AllowsAddParameter));
+        OnPropertyChanged(nameof(ShowAddSddEquation));
         NotifyMklopfState();
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();

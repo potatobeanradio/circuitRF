@@ -45,6 +45,13 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     private static readonly Regex RxSddI1 = new(@"^I\[(\d+)\]$",      RegexOptions.Compiled);
     private static readonly Regex RxSddI2 = new(@"^I\[(\d+),(\d+)\]$", RegexOptions.Compiled);
     private static readonly Regex RxSddQ  = new(@"^Q\[(\d+)\]$",      RegexOptions.Compiled);
+    private static readonly Regex RxSddV  = new(@"^V\[(\d+)\]$",      RegexOptions.Compiled);
+    private static readonly Regex RxSddC  = new(@"^C\[(\d+)\]$",      RegexOptions.Compiled);
+    private static readonly Regex RxSddCp = new(@"^Cport\[(\d+)\]$",  RegexOptions.Compiled);
+    /// <summary>A plain identifier — a named constant the equations reference. Leading underscore is
+    /// excluded because <c>_v1</c>/<c>_c1</c> are the injected port-voltage and control-current
+    /// names, and a constant shadowing one would change what every equation using it means.</summary>
+    private static readonly Regex RxSddConst = new(@"^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.Compiled);
 
     public string Name         => _param.Name;
     public bool   NameEditable { get; }
@@ -497,6 +504,14 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         Description     = ComponentTypeRegistry.ParameterDescription(ownerSymbol, param.Name);
         CanRemove       = ownerComp is not null
                        && ComponentTypeRegistry.IsRemovableParameter(ownerSymbol, param.Name);
+        // What removal MEANS differs by type, and the difference matters: a VerilogA parameter falls
+        // back to the model's own default, while an SDD equation slot simply stops contributing.
+        RemoveTooltip   = ownerSymbol switch
+        {
+            SymbolKind.VerilogA => "Remove this parameter — the model's own default applies again",
+            SymbolKind.Sdd      => "Remove this equation — the slot goes back to contributing nothing",
+            _                   => "Remove this parameter",
+        };
         LoadCellDeclaredChoices();
         // A built-in component's enum-NAMED parameters, as a picker. After the cell pass, and only
         // where it found nothing: a kit part's own declaration is the authority on its own values,
@@ -554,7 +569,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         // SDD-specific grammar validation — only for SDD owners.
         if (_ownerSymbol is SymbolKind.Sdd)
         {
-            if (!TryValidateSddName(name, out string sddError))
+            if (!TryValidateSddName(name, out string sddError, _ownerComp?.PortCount ?? 0))
             {
                 NameError = sddError;
                 return;
@@ -566,13 +581,41 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Validates an SDD equation parameter name against the accepted grammar.
-    /// Returns true (error = "") when the name is valid.
-    /// Returns false with a user-facing error message when it is not.
+    /// Validates an SDD parameter name against the grammar <c>ComponentModelFactory.CreateSddModel</c>
+    /// actually reads. Returns true (error = "") when the name is valid; false with a user-facing
+    /// message when it is not.
+    ///
+    /// <para><b>The grammar here had drifted behind the factory's</b> (owner report, 2026-09-02).
+    /// It accepted only <c>I[p]</c>, <c>I[p,w]</c>, <c>Q[p]</c> and <c>H[w]</c>, so three slots the
+    /// engine has supported for some time — the branch equation <c>V[p]</c>, the control-current
+    /// reference <c>C[n]</c>/<c>Cport[n]</c> — and a plainly-named constant were all refused by a
+    /// dialog that could not run them. The <c>Add Equation…</c> picker creates exactly these, so
+    /// what it creates and what this accepts are now one set.</para>
+    ///
+    /// <para><paramref name="portCount"/> bounds a port index; pass 0 to leave it unbounded (for a
+    /// caller with no component in hand). A port beyond the count is refused HERE because the
+    /// alternative is a run that stops with "references port 3 but only 2 port(s) of nets were
+    /// given" — the same fact, learned much later.</para>
     /// </summary>
-    internal static bool TryValidateSddName(string name, out string error)
+    internal static bool TryValidateSddName(string name, out string error, int portCount = 0)
     {
-        // H[w] — check first because it has distinct error messages.
+        const string Grammar =
+            "Not a valid SDD equation name (use I[p], I[p,w], Q[p], V[p], H[w], C[n] — "
+            + "or a plain name for a constant)";
+
+        bool PortOk(int p, out string err)
+        {
+            if (p < 1)                              { err = Grammar; return false; }
+            if (portCount > 0 && p > portCount)
+            {
+                err = $"This SDD has {portCount} port(s) — there is no port {p}";
+                return false;
+            }
+            err = "";
+            return true;
+        }
+
+        // H[w] — checked first because it has distinct error messages.
         var mH = RxSddH.Match(name);
         if (mH.Success)
         {
@@ -595,34 +638,37 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         // I[p,w] — two-index form.
         var mI2 = RxSddI2.Match(name);
         if (mI2.Success)
+            return PortOk(int.Parse(mI2.Groups[1].Value, CultureInfo.InvariantCulture), out error);
+
+        // I[p] / Q[p] / V[p] — single-index current, charge, branch equation.
+        foreach (var rx in new[] { RxSddI1, RxSddQ, RxSddV })
         {
-            int p = int.Parse(mI2.Groups[1].Value, CultureInfo.InvariantCulture);
-            if (p >= 1) { error = ""; return true; }
-            error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
+            var m = rx.Match(name);
+            if (m.Success)
+                return PortOk(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), out error);
+        }
+
+        // C[n] / Cport[n] — a control-current reference indexes OTHER instances, not this device's
+        // ports, so the port count says nothing about it.
+        foreach (var rx in new[] { RxSddC, RxSddCp })
+        {
+            var m = rx.Match(name);
+            if (!m.Success) continue;
+            if (int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) >= 1) { error = ""; return true; }
+            error = Grammar;
             return false;
         }
 
-        // I[p] — single-index current.
-        var mI1 = RxSddI1.Match(name);
-        if (mI1.Success)
+        // A plain identifier is a named constant: the elaborator resolves it to a number and binds
+        // it in the scope the equations evaluate in. Anything bracketed that reached here is not a
+        // slot the factory reads — In[…]/Nc[…] noise entries and F[…] implicit equations included.
+        if (!name.Contains('[') && !name.Contains(']') && RxSddConst.IsMatch(name))
         {
-            int p = int.Parse(mI1.Groups[1].Value, CultureInfo.InvariantCulture);
-            if (p >= 1) { error = ""; return true; }
-            error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
-            return false;
+            error = "";
+            return true;
         }
 
-        // Q[p] — single-index charge.
-        var mQ = RxSddQ.Match(name);
-        if (mQ.Success)
-        {
-            int p = int.Parse(mQ.Groups[1].Value, CultureInfo.InvariantCulture);
-            if (p >= 1) { error = ""; return true; }
-            error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
-            return false;
-        }
-
-        error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
+        error = Grammar;
         return false;
     }
 
@@ -645,6 +691,9 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// hundred independent names.
     /// </summary>
     public bool CanRemove { get; }
+
+    /// <summary>Tooltip for the per-row "✕" — see the constructor for why it is per-type.</summary>
+    public string RemoveTooltip { get; } = "";
 
     /// <summary>
     /// Removes this one parameter from the component, as a single undo entry.

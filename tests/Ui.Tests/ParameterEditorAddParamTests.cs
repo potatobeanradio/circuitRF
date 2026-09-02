@@ -239,8 +239,12 @@ public sealed class ParameterEditorAddParamTests
     [InlineData(SymbolKind.P1Tone,    true)]
     [InlineData(SymbolKind.PnTone,    true)]
     [InlineData(SymbolKind.ToneSource, true)]
-    [InlineData(SymbolKind.ZPort,     true)]
-    [InlineData(SymbolKind.Sdd,       true)]
+    // ZPort and SDD both lost the generic "+" on 2026-09-02, for different reasons: a ZNP has
+    // nothing addable at all (its Z[p,q] matrix is exactly its port count, seeded at placement, and
+    // the Z[n] the button used to add was read by nothing), while an SDD has plenty addable but not
+    // in a shape one increasing index can express — it gets its own picker.
+    [InlineData(SymbolKind.ZPort,     false)]
+    [InlineData(SymbolKind.Sdd,       false)]
     [InlineData(SymbolKind.Var,       true)]
     [InlineData(SymbolKind.Resistor,  false)]
     [InlineData(SymbolKind.Inductor,  false)]
@@ -250,8 +254,44 @@ public sealed class ParameterEditorAddParamTests
     [InlineData(SymbolKind.Pin,       false)]
     [InlineData(SymbolKind.Ground,    false)]
     public void AllowsAddParameter_CorrectForKind(SymbolKind kind, bool expected)
-    {
-        bool actual = ComponentTypeRegistry.UserParamTemplate(kind) is not null;
-        Assert.Equal(expected, actual);
-    }
+        => Assert.Equal(expected, ComponentTypeRegistry.AllowsIndexedParamAdd(kind));
+
+    /// <summary>The ZNP has no template at all — which is also what makes its row names
+    /// non-editable, since a renamed Z[i,j] is read by nothing.</summary>
+    [Fact]
+    public void ZPort_HasNoIndexedTemplate()
+        => Assert.Null(ComponentTypeRegistry.UserParamTemplate(SymbolKind.ZPort));
+
+    /// <summary>The SDD keeps its template — it still drives row-name editing and canonical
+    /// sorting — and is excluded from the "+" by the predicate above, not by losing it.</summary>
+    [Fact]
+    public void Sdd_KeepsItsTemplateEvenThoughThePlusButtonIsGone()
+        => Assert.NotNull(ComponentTypeRegistry.UserParamTemplate(SymbolKind.Sdd));
+
+    // ── ZNP row removal ───────────────────────────────────────────────────────
+    //
+    // A Z[i,j] entry is structural — its existence is the port count — so it is never removable.
+    // Anything else on a ZNP is, and that is not hypothetical: it is how a design already carrying
+    // an inert Z[n] from the old "+" gets rid of it, now that both the button and the row rename
+    // are gone.
+
+    [Theory]
+    [InlineData("Z[1,1]", false)]
+    [InlineData("Z[2,1]", false)]
+    [InlineData("NumPorts", false)]
+    [InlineData("Z[1]", true)]     // the stray the old "+" created
+    [InlineData("Z[3]", true)]
+    public void ZPort_RemovableParameters(string name, bool expected)
+        => Assert.Equal(expected, ComponentTypeRegistry.IsRemovableParameter(SymbolKind.ZPort, name));
+
+    /// <summary>Every visible SDD row is a user-authored equation or a named constant, each
+    /// independent of its neighbours — so each gets its own "✕". That is also what the equation
+    /// picker implies: one named slot added, one named slot removed.</summary>
+    [Theory]
+    [InlineData("I[1,0]")]
+    [InlineData("V[2]")]
+    [InlineData("H[2]")]
+    [InlineData("Param1")]
+    public void Sdd_EveryEquationRowIsRemovable(string name)
+        => Assert.True(ComponentTypeRegistry.IsRemovableParameter(SymbolKind.Sdd, name));
 }

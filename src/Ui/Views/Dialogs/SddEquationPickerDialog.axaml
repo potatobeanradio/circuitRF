@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SddEquationPickerDialog"
+        Title="Add SDD Equation"
+        Width="560"
+        Height="480"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock x:Name="HeaderText" Grid.Row="0"
+                   FontSize="12" Opacity="0.7" Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+        <TextBox x:Name="SearchBox" Grid.Row="1"
+                 FontSize="12"
+                 PlaceholderText="Search…"
+                 Margin="0,0,0,8"/>
+
+        <ListBox x:Name="ChoiceList" Grid.Row="2" FontSize="12">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:CompileBindings="False">
+                    <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                CornerRadius="3" Padding="5,1" Margin="0,0,8,0"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Category}" FontSize="10" Opacity="0.75"/>
+                        </Border>
+                        <TextBlock Grid.Column="1" Text="{Binding Summary}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock x:Name="EmptyText" Grid.Row="2"
+                   FontSize="12" Opacity="0.6" TextWrapping="Wrap"
+                   IsVisible="False"/>
+
+        <TextBlock x:Name="DetailText" Grid.Row="3"
+                   FontSize="11" Opacity="0.7" Margin="0,8,0,0" TextWrapping="Wrap"
+                   MinHeight="46"/>
+
+        <TextBlock x:Name="NoteText" Grid.Row="4"
+                   FontSize="11" Opacity="0.6" Margin="0,6,0,0" TextWrapping="Wrap"
+                   IsVisible="False"/>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button x:Name="CancelButton" Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center"/>
+            <Button x:Name="OkButton"     Content="Add"    Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

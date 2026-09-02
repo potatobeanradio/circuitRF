@@ -42,6 +42,7 @@ public partial class ParameterEditorView : UserControl
             vm.PickSpiceFileAsync     = PickSpiceFileAsync;
             vm.PickModelFileAsync     = PickModelFileAsync;
             vm.PickModelParameterAsync = PickModelParameterAsync;
+            vm.PickSddEquationAsync   = PickSddEquationAsync;
             vm.RevealFileAsync        = RevealFileAsync;
             vm.OpenCvEditorDialogAsync = OpenCvEditorDialogAsync;
         }
@@ -313,6 +314,18 @@ public partial class ParameterEditorView : UserControl
         if (TopLevel.GetTopLevel(this) is not Window owner) return null;
         var dlg = new ModelParameterPickerDialog(modelName, declared, alreadyPresent);
         return await dlg.ShowDialog<CircuitRF.Ui.Schematic.VerilogAParameterInfo?>(owner);
+    }
+
+    /// <summary>Shows the slots this SDD can still use and returns the chosen one, or null.</summary>
+    private async Task<CircuitRF.Ui.Schematic.SddEquationSlot?> PickSddEquationAsync(
+        string instanceName,
+        int portCount,
+        IReadOnlyList<CircuitRF.Ui.Schematic.SddEquationSlot> slots,
+        IReadOnlyList<string> notes)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner) return null;
+        var dlg = new SddEquationPickerDialog(instanceName, portCount, slots, notes);
+        return await dlg.ShowDialog<CircuitRF.Ui.Schematic.SddEquationSlot?>(owner);
     }
 
     private void OnParamRemoveClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

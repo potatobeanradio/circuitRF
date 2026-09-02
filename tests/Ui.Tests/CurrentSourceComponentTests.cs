@@ -214,7 +214,8 @@ public class CurrentSourceComponentTests
     [InlineData(SymbolKind.CurrentToneSource)]
     [InlineData(SymbolKind.PnTone)]
     [InlineData(SymbolKind.P1Tone)]
-    [InlineData(SymbolKind.ZPort)]
+    // ZPort was here until 2026-09-02, when it stopped having a template at all: its Z[p,q] matrix
+    // is fixed by its port count and the Z[n] the "+" used to add was read by nothing.
     public void EveryShownMemberOfAnAddedGroup_HasANonBlankDefault(SymbolKind kind)
     {
         var t = ComponentTypeRegistry.UserParamTemplate(kind);
