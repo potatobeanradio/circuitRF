@@ -1,5 +1,44 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## SPICE import: the omissions had no user-facing home, and two DocGen findings (2026-09-01)
+
+An imported bipolar card reported "34 parameter(s) — 6 not carried: AF, CJS, KF, MJS, PTF, VJS",
+and the question it prompts — does that matter? — could only be answered by reading
+`SpiceModelCardTranslation.cs` and `BjtModel.cs`.
+
+**The device physics was already documented; the TRANSLATION was not.** Every nonlinear family bar
+one carries a "What is NOT modelled" callout on the Components page and the matching block in its
+model's XML summary. What had no home anywhere was the layer between a card and those devices: that
+the not-carried list is exhaustive rather than a sample, that it is spelled the way the card spells
+it, that it is written onto the imported cell's own schematic and survives, and the grounds on which
+a parameter lands in it. New chapter `reference/spice-import.html`.
+
+**The one asymmetry worth knowing about is `RD`/`RS`.** A MESFET card's are NOT carried — the FET
+family has no lead resistance — and the import places them as ordinary series resistors, while a
+JFET card's ARE carried, onto internal nodes the elaborator mints. The two cards spell them
+identically and the difference is invisible once the cell is built, which is why the translation
+emits a note either way.
+
+**The diode was the only nonlinear family with no omissions block, in the docs or the code**, and
+`DiodeMap` carries no `IKF` — so an imported card's high-level injection was dropped with nothing on
+either side recording it. `DiodeModel` now says so, as its five siblings do.
+
+### Two DocGen findings, neither caused by this change
+
+- **A committed page can be stale without anything reporting it.** `docs/user/reference/data-display.html`
+  regenerated with different loadpull contour paths: that figure is built from a live run, and the
+  previous commit's terminal-current fix moved it. `check-docs-current.sh` exists precisely to catch
+  this and there is still no CI step running it, so the drift only surfaced because an unrelated
+  regeneration happened to include it.
+- **One figure is NOT deterministic across runs, so `check-docs-current.sh` is inherently flaky on
+  it.** Two consecutive `--out docs/user` runs, no source change between them, produced different
+  `analysis-editor-hb-dark.svg` and `schematic-editor.html`: one glyph's
+  `transform="translate(113 365)"` became `matrix(0.9922 0.1248 -0.1248 0.9922 113.49 364.15)` — a
+  7.2° rotation, an animated indicator captured at whatever angle the frame landed on. It is a
+  one-line diff in two files and always the same shape, so it is recognisable on sight; revert those
+  two paths rather than committing the angle. **Do not read it as id churn** — the hex-counter churn
+  documented elsewhere in this file looks nothing like it.
+
 ## Four owner reports: undo routing, a false recovery prompt, the SPICE `Name` label, a labelled pin (2026-09-01)
 
 ### Cmd+Z in a floating Data Display undid an edit in a schematic that was not in focus
