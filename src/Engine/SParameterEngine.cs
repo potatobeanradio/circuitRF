@@ -683,11 +683,10 @@ public static class SParameterEngine
             for (int i = 0; i < sdd.ControlRefs.Length; i++)
             {
                 var (n, refInst, port) = sdd.ControlRefs[i];
-                ElaboratedComponent? target = null;
-                foreach (var cc in netlist.Components)
-                    if (string.Equals(cc.InstancePath, refInst, StringComparison.Ordinal)) { target = cc; break; }
-                if (target is null)
-                    throw new InvalidOperationException(
+                // Sibling-first, exactly as the DC engine resolves it — the two must agree, or a
+                // design's S-parameters are taken about a bias its own sensed current never reached.
+                var target = NonlinearDcEngine.FindControlTarget(netlist, ec, refInst)
+                    ?? throw new InvalidOperationException(
                         $"SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' " +
                         $"found in the netlist.");
                 sdd.ControlBranchIndices[i] = ResolveSParamBranchIndex(sdd.Name, n, port, target);
@@ -710,6 +709,8 @@ public static class SParameterEngine
                 $"its current is an input, not a solved unknown, so it has no branch to reference. " +
                 $"Put an IProbe in series with it and reference that instead."),
             IProbeModel   probe => probe.LastBranchIndex,
+            // The ideal voltage-gain source — see the DC engine's own list for why.
+            VcvsModel      vcvs => vcvs.LastBranchIndex,
             // L, SRLC and PRLC all carry their inductor current on a branch of their own — the
             // IInductiveBranch contract — so all three are referenceable, by that contract rather
             // than by a list of type names that the next inductive model would silently miss.
@@ -718,7 +719,7 @@ public static class SParameterEngine
             ZPortModel       zp => PortBranch(zp.PortBranchIndices, port),
             _ => throw new InvalidOperationException(
                 $"SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' " +
-                $"which is not a referenceable device class (Vdc, V_1Tone/V_nTone, IProbe, L, SRLC, PRLC, SnP, Z_Port).")
+                $"which is not a referenceable device class (Vdc, VCVS, V_1Tone/V_nTone, IProbe, L, SRLC, PRLC, SnP, Z_Port).")
         };
         if (br < 0)
             throw new InvalidOperationException(

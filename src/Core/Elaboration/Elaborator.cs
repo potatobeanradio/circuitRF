@@ -1,3 +1,4 @@
+using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.External;
@@ -66,6 +67,19 @@ public sealed class Elaborator
         // temperature-aware one bakes its temperature in at construction.
         _ambientC = ResolveAmbient(tb, globalScope, netlist);
         netlist.AmbientC = _ambientC;
+
+        // THE AMBIENT IS READABLE BY NAME FROM ANY EXPRESSION, whether or not the design states a
+        // global for it. A design that does state one already binds it above and is untouched here;
+        // what this adds is the case where nothing states it, where the ambient is nonetheless a
+        // known number and there is nowhere for an expression naming it to resolve.
+        //
+        // A netlist read from the SPICE dialect refers to the simulator's own temperature variable
+        // by exactly this name — a device that drives its thermal node from the global ambient
+        // rather than exposing a pin has no other way to say so — and an unbound name fails the
+        // whole cell rather than that one expression.
+        if (globalScope.Lookup(Temperature.AmbientGlobalName) is null)
+            globalScope.Bind(Temperature.AmbientGlobalName,
+                             _ambientC.ToString(CultureInfo.InvariantCulture));
 
         // The TestBench's instance list IS the root frame — no TopCell lookup.
         FlattenInstances(
@@ -1949,8 +1963,11 @@ public sealed class Elaborator
     private static readonly Regex RxPortVoltage = new(@"^_v\d+$", RegexOptions.Compiled);
     // Control current names — _c1, _c2, … (injected by the engine, not scope vars).
     private static readonly Regex RxControlCurrent = new(@"^_c\d+$", RegexOptions.Compiled);
-    // SDD equation parameter name pattern — matches I[...], Q[...], F[...], C[...], i[...].
-    private static readonly Regex RxSddEquation = new(@"^[IFCQiH][^\[]*\[", RegexOptions.Compiled);
+    // SDD equation parameter name pattern — matches I[...], Q[...], F[...], C[...], i[...], V[...].
+    // V[p] is the BRANCH equation (a port's voltage held at an expression), and it has to be here
+    // for the same reason the others are: an equation is stored VERBATIM and parsed by the factory,
+    // never evaluated in the design scope, because it names port voltages that do not exist yet.
+    private static readonly Regex RxSddEquation = new(@"^[IFCQiHV][^\[]*\[", RegexOptions.Compiled);
 
     private IReadOnlyDictionary<string, Value> ResolveSddParameters(
         Instance inst,

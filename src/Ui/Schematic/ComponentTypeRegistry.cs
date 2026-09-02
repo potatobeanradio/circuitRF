@@ -205,6 +205,12 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["VCCS", "G", "transconductance", "controlled", "dependent", "gm", "vccs"],
             IsCommon: false),
+        // VCVS: "E" is its instance prefix by the same long convention (the SPICE E element), and
+        // unlike the VCCS the direction needs no apology — a voltage gain has no arrow to get wrong.
+        [SymbolKind.Vcvs]          = new("VCVS", "E",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["VCVS", "E", "voltage gain", "controlled", "dependent", "amplifier", "vcvs"],
+            IsCommon: false),
         // Mixer / MixerD: ONE engine component ("Mixer"), two tiles — the TermG pattern. Primary
         // category is Devices rather than Sources because a mixer is a thing you put IN the signal
         // path, not a thing that drives it; the Nonlinear filter carries it too, since it is one.
@@ -694,6 +700,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.CurrentToneSource => "I_1Tone",
         SymbolKind.Vccs          => "VCCS",
+        SymbolKind.Vcvs          => "VCVS",
         SymbolKind.Mixer         => "Mixer",
         SymbolKind.MixerD        => "Mixer",  // SAME engine component as Mixer — no parallel model
         // The system blocks. NONE of these resolves yet — no ComponentModelFactory entry exists for
@@ -1183,6 +1190,9 @@ public static class ComponentTypeRegistry
                                                 new("Idc",   "0", "mA",  false, UnitDimension.Current)];
             // VCCS: one parameter, the transconductance. I = G·(V(ctrl+) − V(ctrl−)).
             case SymbolKind.Vccs:       return [new("G", "10", "mS", true, UnitDimension.Conductance)];
+            // VCVS: one parameter, the voltage gain. V(out+) − V(out−) = E·(V(ctrl+) − V(ctrl−)).
+            // Dimensionless, so it carries no unit at all rather than a blank one.
+            case SymbolKind.Vcvs:       return [new("E", "1", "", true, UnitDimension.None)];
             // Mixer / MixerD: identical parameter list, because they are the same component.
             //
             // The first two are the whole of the ideal device and they belong together: the mixing

@@ -22,6 +22,10 @@ public sealed class SddModel : ComponentModel
     private readonly Expr?[] _currentAst;
     // Charge equations I[p,1] — index = port-1. Null = absent.
     private readonly Expr?[] _chargeAst;
+    // BRANCH equations V[p] — index = port-1. Null = absent. A port carrying one is CONSTRAINED:
+    // its voltage is held at the equation's value and its current is whatever the rest of the
+    // circuit draws through the branch unknown this device allocates for it.
+    private readonly Expr?[] _voltageAst;
     // Higher-weighting buckets I[p,w≥2] — per port (index = port-1), list of (w, ast).
     private readonly IReadOnlyList<(int W, Expr Ast)>[] _higherAst;
     // Weight-function ASTs H[w] for w≥2: w → AST evaluated in the frequency domain.
@@ -37,6 +41,7 @@ public sealed class SddModel : ComponentModel
     // the corresponding *Ast entry (no equation for that port).
     private readonly CompiledSddExpr?[] _compiledCurrent;
     private readonly CompiledSddExpr?[] _compiledCharge;
+    private readonly CompiledSddExpr?[] _compiledVoltage;
     private readonly (int W, CompiledSddExpr Compiled)[][] _compiledHigher;
 
     // HB-P4 M2 — the grid door. True only when EVERY compiled equation has a register program
@@ -114,12 +119,14 @@ public sealed class SddModel : ComponentModel
         IReadOnlyDictionary<string, double> parameters,
         IReadOnlyList<(int W, Expr Ast)>[]? higherAst = null,
         IReadOnlyDictionary<int, Expr>? weightAst = null,
-        IReadOnlyList<(int N, string RefInstance, int Port)>? controlRefs = null)
+        IReadOnlyList<(int N, string RefInstance, int Port)>? controlRefs = null,
+        Expr?[]? voltageAst = null)
     {
         _name       = name;
         _portCount  = portCount;
         _currentAst = currentAst;
         _chargeAst  = chargeAst;
+        _voltageAst = voltageAst ?? new Expr?[portCount];
         _params     = parameters;
         _higherAst  = higherAst
             ?? Enumerable.Range(0, portCount).Select(_ => (IReadOnlyList<(int, Expr)>)[]).ToArray();
@@ -136,11 +143,18 @@ public sealed class SddModel : ComponentModel
         var controlNs = ControlRefs.Select(r => r.N).ToArray();
         _compiledCurrent = new CompiledSddExpr?[_portCount];
         _compiledCharge  = new CompiledSddExpr?[_portCount];
+        _compiledVoltage = new CompiledSddExpr?[_portCount];
         _compiledHigher  = new (int W, CompiledSddExpr Compiled)[_portCount][];
+        var branchPorts  = new List<int>();
         for (int p = 0; p < _portCount; p++)
         {
             if (_currentAst[p] is { } ca) _compiledCurrent[p] = CompiledSddExpr.Compile(ca, _params, _portCount, controlNs, _name);
             if (_chargeAst[p]  is { } qa) _compiledCharge[p]  = CompiledSddExpr.Compile(qa, _params, _portCount, controlNs, _name);
+            if (_voltageAst[p] is { } va)
+            {
+                _compiledVoltage[p] = CompiledSddExpr.Compile(va, _params, _portCount, controlNs, _name);
+                branchPorts.Add(p);
+            }
 
             var higher = _higherAst[p];
             var compiled = new (int, CompiledSddExpr)[higher.Count];
@@ -148,6 +162,10 @@ public sealed class SddModel : ComponentModel
                 compiled[j] = (higher[j].W, CompiledSddExpr.Compile(higher[j].Ast, _params, _portCount, controlNs, _name));
             _compiledHigher[p] = compiled;
         }
+
+        BranchPorts    = [.. branchPorts];
+        _branchIndices = new int[BranchPorts.Length];
+        Array.Fill(_branchIndices, -1);
 
         // HB-P4 — the grid door opens only if every equation can walk it.
         bool grid = true;
@@ -182,9 +200,51 @@ public sealed class SddModel : ComponentModel
         => _portCount < _termNames.Length ? _termNames[_portCount] :
            Enumerable.Range(1, _portCount).Select(i => i.ToString()).ToArray();
 
-    // SDD contributes nothing to linear stamps — fully nonlinear.
+    /// <summary>
+    /// The ports whose voltage a <c>V[p]</c> equation constrains, ascending. One branch-current
+    /// unknown and one Newton row each; empty for every ordinary SDD.
+    /// </summary>
+    public int[] BranchPorts { get; }
+
+    private readonly int[] _branchIndices;
+
+    /// <inheritdoc/>
+    public override int BranchEquationCount => BranchPorts.Length;
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<int> BranchIndices => _branchIndices;
+
+    /// <summary>
+    /// An SDD contributes nothing to a linear stamp unless it CONSTRAINS a port voltage, in which
+    /// case it contributes the constant half of that constraint and nothing else.
+    ///
+    /// <para><b>The constant half is free, and taking it is the whole reason this is small.</b> A
+    /// branch unknown is allocated during the engines' linear pass, so the same pass can write the
+    /// <c>+1</c>/<c>−1</c> KCL coupling and the <c>V(p+) − V(p−)</c> side of the constraint row into
+    /// the engine's CONSTANT matrix. What is left for the per-iteration path is only the right-hand
+    /// side <c>g(v, i)</c> and its derivatives — which is what
+    /// <see cref="NonlinearResult.BranchResidual"/> carries.</para>
+    ///
+    /// <para><b>The source value is zero, not the equation.</b> The right-hand side moves with the
+    /// solution, so it cannot be a constant RHS entry; it is subtracted from the residual at every
+    /// Newton step instead. Writing it here would hold the source at its first guess forever.</para>
+    /// </summary>
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
-    { }
+    {
+        for (int k = 0; k < BranchPorts.Length; k++)
+        {
+            int p  = BranchPorts[k];
+            int np = c.Nodes.Length > 2 * p     ? c.Nodes[2 * p]     : 0;
+            int nm = c.Nodes.Length > 2 * p + 1 ? c.Nodes[2 * p + 1] : 0;
+
+            int br = mna.AddBranch();
+            _branchIndices[k] = br;
+            mna.AddBranchCurrent(br, np, nm);
+            mna.AddConstraint(br, np, new Complex(+1, 0));
+            mna.AddConstraint(br, nm, new Complex(-1, 0));
+            mna.AddSourceValue(br, Complex.Zero);
+        }
+    }
 
     // w<2: built-in weights (1 for current, jω for charge) — fall through to base.
     // w≥2: evaluate H[w] expression at this frequency using the Complex Evaluator.
@@ -214,6 +274,7 @@ public sealed class SddModel : ComponentModel
     /// </summary>
     public override NonlinearResult Evaluate(in PortVoltages v)
         => Evaluate(v, ControlCurrents.Empty);
+
 
     /// <summary>
     /// Evaluate the SDD at the given port voltages and control currents.
@@ -265,6 +326,30 @@ public sealed class SddModel : ComponentModel
                 for (int k = 0; k < nC; k++) dCtrlCharge![p, k] = grad[n + k];  // ∂Q[p]/∂_cn (brief #3 §2)
         }
 
+        // Evaluate each BRANCH equation — the right-hand side the constrained port's voltage is
+        // held at, and its derivatives. Same AD path; there is deliberately no charge counterpart
+        // (see NonlinearResult.BranchResidual for why one would double-count).
+        double[]?  branchRes = null;
+        double[,]? dBranchV  = null;
+        double[,]? dBranchC  = null;
+        if (BranchPorts.Length > 0)
+        {
+            int nB = BranchPorts.Length;
+            branchRes = new double[nB];
+            dBranchV  = new double[nB, n];
+            dBranchC  = nC > 0 ? new double[nB, nC] : null;
+
+            for (int k = 0; k < nB; k++)
+            {
+                var compiled = _compiledVoltage[BranchPorts[k]]!;
+                (double val, double[] grad) = compiled.EvalDual(vArr, ctrlSeeds, _name);
+                branchRes[k] = val;
+                for (int t = 0; t < n; t++) dBranchV[k, t] = grad[t];
+                if (nC > 0)
+                    for (int t = 0; t < nC; t++) dBranchC![k, t] = grad[n + t];
+            }
+        }
+
         // Collect all distinct w≥2 values referenced across all ports.
         var wSet = new SortedSet<int>();
         foreach (var list in _higherAst)
@@ -272,7 +357,8 @@ public sealed class SddModel : ComponentModel
                 wSet.Add(ww);
 
         if (wSet.Count == 0)
-            return new NonlinearResult(i, q, dg, dc, null, dCtrl, dCtrlCharge);
+            return new NonlinearResult(i, q, dg, dc, null, dCtrl, dCtrlCharge,
+                                       branchRes, dBranchV, dBranchC);
 
         // Build one WeightedTerm per distinct w, accumulating contributions from all ports.
         var terms = new List<WeightedTerm>(wSet.Count);
@@ -299,7 +385,8 @@ public sealed class SddModel : ComponentModel
             terms.Add(new WeightedTerm(w, val, jac, jacCtrl));
         }
 
-        return new NonlinearResult(i, q, dg, dc, terms, dCtrl, dCtrlCharge);
+        return new NonlinearResult(i, q, dg, dc, terms, dCtrl, dCtrlCharge,
+                                   branchRes, dBranchV, dBranchC);
     }
 
     /// <summary>
@@ -321,6 +408,47 @@ public sealed class SddModel : ComponentModel
             : ControlCurrents.Empty;
         var r = Evaluate(bias, ctrl);
         int P = PortCount;
+
+        // ── the BRANCH rows, linearised about the same bias ───────────────────
+        //
+        // A constrained port states V(p+) − V(p−) = g(v, i). Its small-signal form is that relation
+        // differentiated at the operating point, which is a constraint row exactly as the DC engine
+        // builds one — the branch unknown, the ±1 KCL coupling, and the derivative of the
+        // right-hand side moved to the left. The branch is re-allocated here rather than reused,
+        // because branch numbering belongs to whichever assembly is being built.
+        for (int k = 0; k < BranchPorts.Length; k++)
+        {
+            int p  = BranchPorts[k];
+            int np = c.Nodes.Length > 2 * p     ? c.Nodes[2 * p]     : 0;
+            int nm = c.Nodes.Length > 2 * p + 1 ? c.Nodes[2 * p + 1] : 0;
+
+            int br = mna.AddBranch();
+            _branchIndices[k] = br;
+            mna.AddBranchCurrent(br, np, nm);
+            mna.AddConstraint(br, np, new Complex(+1, 0));
+            mna.AddConstraint(br, nm, new Complex(-1, 0));
+
+            for (int q = 0; q < P; q++)
+            {
+                double d = r.DBranchV?[k, q] ?? 0.0;
+                if (d == 0.0) continue;
+                int qp = c.Nodes.Length > 2 * q     ? c.Nodes[2 * q]     : 0;
+                int qm = c.Nodes.Length > 2 * q + 1 ? c.Nodes[2 * q + 1] : 0;
+                mna.AddConstraint(br, qp, new Complex(-d, 0));
+                mna.AddConstraint(br, qm, new Complex(+d, 0));
+            }
+
+            for (int nCtrl = 0; nCtrl < ControlRefs.Length; nCtrl++)
+            {
+                double d = r.DBranchC?[k, nCtrl] ?? 0.0;
+                if (d == 0.0) continue;
+                int other = ControlBranchIndices[nCtrl];
+                if (other < 0) continue;
+                mna.AddBranchConstraint(br, other, new Complex(-d, 0));
+            }
+
+            mna.AddSourceValue(br, Complex.Zero);
+        }
 
         // ── Y[p,q] admittance block (same as the base implementation) ─────────
         for (int p = 0; p < P; p++)
@@ -384,7 +512,8 @@ public sealed class SddModel : ComponentModel
     /// it. The engine's own <c>cRefTime is null</c> test stays as well.</para>
     /// </remarks>
     public override bool PrefersGridEvaluate
-        => _supportsGrid && ControlRefs.Length == 0 && !NonlinearEvalDiagnostics.DisableGridEvaluate;
+        => _supportsGrid && ControlRefs.Length == 0 && BranchPorts.Length == 0
+        && !NonlinearEvalDiagnostics.DisableGridEvaluate;
 
     /// <summary>
     /// HB-P4 — evaluates every equation of this SDD at every sample of the grid, writing the

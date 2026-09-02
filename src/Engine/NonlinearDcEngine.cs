@@ -278,7 +278,13 @@ public sealed class NonlinearDcEngine
         mna.Reset();
         foreach (var ec in nl.Components)
         {
-            if (ec.Model.Kind != ModelKind.Linear) continue;
+            // A NONLINEAR model is stamped here too when it OWNS A BRANCH. That is not an
+            // exception to the partition, it is where a branch unknown comes from: allocation
+            // happens once, in this pass, and the constant half of a voltage constraint —
+            // the ±1 KCL coupling and the V(p+) − V(p−) side of the row — is constant and belongs
+            // in _gAug with everything else. Only the right-hand side moves with the solution, and
+            // that is added per iteration in BuildResidualAndJacobian.
+            if (ec.Model.Kind != ModelKind.Linear && ec.Model.BranchEquationCount == 0) continue;
             // Term/Port branches are driven ports for S-parameter analysis only; inert in DC.
             if (ec.Model is PortModel or TermModel) continue;
 
@@ -613,29 +619,18 @@ public sealed class NonlinearDcEngine
         {
             if (ec.Model is not SddModel sdd) continue;
             if (sdd.ControlRefs.Length == 0) continue;
-            ResolveForSdd(sdd);
+            ResolveForSdd(sdd, ec);
         }
     }
 
-    private void ResolveForSdd(SddModel sdd)
+    private void ResolveForSdd(SddModel sdd, ElaboratedComponent owner)
     {
         for (int i = 0; i < sdd.ControlRefs.Length; i++)
         {
             var (n, refInst, port) = sdd.ControlRefs[i];
 
-            // Find the sibling component by InstancePath.
-            ElaboratedComponent? target = null;
-            foreach (var ec in _nl.Components)
-            {
-                if (string.Equals(ec.InstancePath, refInst, StringComparison.Ordinal))
-                {
-                    target = ec;
-                    break;
-                }
-            }
-
-            if (target is null)
-                throw new InvalidOperationException(
+            var target = FindControlTarget(_nl, owner, refInst)
+                ?? throw new InvalidOperationException(
                     $"SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' " +
                     $"found in the netlist. Check the instance name.");
 
@@ -643,9 +638,39 @@ public sealed class NonlinearDcEngine
         }
     }
 
+/// <summary>
+/// Finds the component a <c>C[n]</c> reference names, SIBLING-FIRST.
+///
+/// <para><b>A control-current reference is written in the netlist that declares it, so it names a
+/// SIBLING</b> — <c>C[1]=V_sense</c> inside a cell means that cell's own <c>V_sense</c>. After
+/// flattening every instance carries its path (<c>X1.V_sense</c>), so matching the bare name against
+/// the full path finds a top-level device and nothing else: an imported subcircuit whose behavioural
+/// source reads a sensed current would resolve at the top level and fail the moment the same
+/// definition was placed as a cell, which is the ordinary way to use it.</para>
+///
+/// <para>The device's own path prefix is tried first, then the name as written — so a reference that
+/// already states a full path, and every top-level design that works today, is unchanged.</para>
+/// </summary>
+    internal static ElaboratedComponent? FindControlTarget(
+        ElaboratedNetlist nl, ElaboratedComponent owner, string refInst)
+    {
+        int cut = owner.InstancePath.LastIndexOf('.');
+        if (cut > 0)
+        {
+            string sibling = string.Concat(owner.InstancePath.AsSpan(0, cut + 1), refInst);
+            foreach (var ec in nl.Components)
+                if (string.Equals(ec.InstancePath, sibling, StringComparison.Ordinal)) return ec;
+        }
+
+        foreach (var ec in nl.Components)
+            if (string.Equals(ec.InstancePath, refInst, StringComparison.Ordinal)) return ec;
+
+        return null;
+    }
+
     private static int GetControlBranchIndex(string sddName, int n, int port, ElaboratedComponent target)
     {
-        const string AllowedKinds = "Vdc, V_1Tone/V_nTone, IProbe, L (Inductor), SRLC, PRLC, SnP, Z_Port";
+        const string AllowedKinds = "Vdc, VCVS, V_1Tone/V_nTone, IProbe, L (Inductor), SRLC, PRLC, SnP, Z_Port";
         return target.Model switch
         {
             VdcModel        vdc  => ValidateSinglePortBranch(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),
@@ -658,6 +683,10 @@ public sealed class NonlinearDcEngine
                 $"its current is an input, not a solved unknown, so it has no branch to reference. " +
                 $"Put an IProbe in series with it and reference that instead."),
             IProbeModel probe => ValidateSinglePortBranch(sddName, n, port, probe.LastBranchIndex, "IProbe"),
+            // The ideal voltage-GAIN source. Its branch current is a solved unknown exactly as a
+            // Vdc's is, so it is referenceable for the same reason — and a behavioural source that
+            // reads the current out of another behavioural source is an ordinary thing to write.
+            VcvsModel   vcvs  => ValidateSinglePortBranch(sddName, n, port, vcvs.LastBranchIndex, "VCVS"),
             // L, SRLC and PRLC — every model carrying an inductor branch (IInductiveBranch).
             IInductiveBranch ind => ValidateSinglePortBranch(sddName, n, port, ind.LastBranchIndex, target.ComponentType),
             SnpModel    snp   => ValidateMultiPortBranch(sddName, n, port, snp.PortBranchIndices,  "SnP"),
@@ -1199,6 +1228,52 @@ public sealed class NonlinearDcEngine
                         int col = sddModel.ControlBranchIndices[ci]; // 0-based branch index
                         if (np > 0) j.Add((np - 1, col, +dc));
                         if (nm > 0) j.Add((nm - 1, col, -dc));
+                    }
+                }
+            }
+
+            // ── the BRANCH rows ───────────────────────────────────────────────
+            //
+            // The device states V(p+) − V(p−) = g(v, i) at the port it constrains. The left-hand
+            // side is already in _gAug (stamped as a constant during the linear pass), so what is
+            // left is to subtract the right-hand side from that row's residual and put its
+            // derivatives into the row. The signs follow from moving g to the left: ∂/∂x of
+            // (V(p+) − V(p−) − g) is the constant ±1 already stamped, minus ∂g/∂x.
+            if (res.BranchResidual is { } branch)
+            {
+                var rows = ec.Model.BranchIndices;
+                for (int k = 0; k < branch.Length && k < rows.Count; k++)
+                {
+                    int br = rows[k];
+                    if (br < 0) continue;
+                    f[br] -= branch[k];
+
+                    if (res.DBranchV is { } dv)
+                    {
+                        for (int q = 0; q < portCount; q++)
+                        {
+                            double d = dv[k, q];
+                            if (d == 0.0) continue;
+                            int qp = ec.Nodes.Length > 2 * q     ? ec.Nodes[2 * q]     : 0;
+                            int qm = ec.Nodes.Length > 2 * q + 1 ? ec.Nodes[2 * q + 1] : 0;
+                            if (qp > 0) j.Add((br, qp - 1, -d));
+                            if (qm > 0) j.Add((br, qm - 1, +d));
+                        }
+                    }
+
+                    // ∂g/∂i_n — the entry a source whose expression reads ANOTHER source's branch
+                    // current needs. Not an edge case: the first real device that works leans on it
+                    // twice, and without it Newton is quasi-Newton at best on those circuits.
+                    if (res.DBranchC is { } dcb && sddModel is not null)
+                    {
+                        for (int ci = 0; ci < sddModel.ControlRefs.Length; ci++)
+                        {
+                            double d = dcb[k, ci];
+                            if (d == 0.0) continue;
+                            int col = sddModel.ControlBranchIndices[ci];
+                            if (col < 0) continue;
+                            j.Add((br, col, -d));
+                        }
                     }
                 }
             }

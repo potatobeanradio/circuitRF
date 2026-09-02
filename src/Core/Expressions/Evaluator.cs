@@ -189,7 +189,15 @@ public sealed class Evaluator
         var r = EvalExpr(lg.Right, scope);
         if (r.Kind != ValueKind.Bool)
             throw new TypeErrorException($"Operator '{lg.Op}' requires Bool, got {r.Kind}");
-        return Value.And(l, r); // works for both since we already short-circuited
+
+        // ONCE THE SHORT-CIRCUIT HAS NOT FIRED, THE RESULT IS THE RIGHT OPERAND — for both
+        // operators, and for the same reason: `&&` got here only with a true left (so the answer is
+        // the right one), and `||` only with a false left (so the answer is the right one again).
+        //
+        // This used to return And(l, r), which is right for `&&` and silently wrong for `||`:
+        // `false || true` came back FALSE. Nothing failed and nothing was reported — a conditional
+        // simply took its else-branch, everywhere, whenever the first alternative did not hold.
+        return r;
     }
 
     private Value EvalConditional(ConditionalExpr cd, Scope scope)

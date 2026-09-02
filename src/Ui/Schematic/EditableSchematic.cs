@@ -181,6 +181,12 @@ public static class SymbolPortDefs
             case SymbolKind.Vccs:
                 return [("out+", 0f, -200f), ("out-", 0f, 200f),
                         ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
+            // VCVS: the same four pins in the same order, for the same reason — the tile differs
+            // from the VCCS only in what the diamond carries, so a reader who knows one knows the
+            // other, and swapping either pair still reverses the source's sign.
+            case SymbolKind.Vcvs:
+                return [("out+", 0f, -200f), ("out-", 0f, 200f),
+                        ("ctrl+", -300f, -100f), ("ctrl-", -300f, 100f)];
             // Mixer (single-ended): the three signal pins of the classic glyph — RF left, LO
             // bottom, IF right. The engine's other three nets (each port's −) are tied to ground by
             // NetExtractor, the same way TermG's port 2 is; they are deliberately NOT pins.

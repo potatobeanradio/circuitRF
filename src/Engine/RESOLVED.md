@@ -1192,3 +1192,142 @@ Below it the fork/join loses (S=128: 368 ns/sample parallel against 280 serial);
 win (199 against 265); from 512 up it is 2-3x (S=1024: 102 against 243). `HbNewtonNd`'s 124-172
 samples therefore stay serial, which is the correct call for the fixtures as they run today — the
 parallel path is there for the larger grids a denser APFT or the lattice engine produces.
+
+## The nonlinear branch row — an equation-defined device that holds a VOLTAGE (2026-09-01)
+
+`docs/sonnet-briefs/brief-spice-behavioural-sources.md` M4. A behavioural voltage source states
+`V(a) − V(b) = f(v, i)`, which is a Group-2 relation: it is *between* node voltages, and no
+combination of currents expresses it. The device carries a branch-current unknown of its own and a
+row in the Newton system that is not a KCL row.
+
+**It is spelled `V[p]` on the SDD, not `F[…]`.** `sdd.md` recorded a free-form implicit equation as
+out of scope and `ComponentModelFactory` hard-errored on `F[`. A free-form `F[…] = 0` would need the
+engine to work out which unknown each equation belongs to; `V[p]` says which port is constrained,
+reads the way `I[p,w]` reads, and is exactly what a behavioural voltage source is. The `F[…]` error
+now points at it. A port stating both `V[p]` and a current equation is refused — that is a
+contradiction, and one of them would silently win.
+
+### Three facts the brief got wrong about where the seam is, all in the same direction
+
+1. **`NonlinearDcEngine`'s linear stamp pass SKIPS nonlinear models** (`if (ec.Model.Kind !=
+   ModelKind.Linear) continue;`). The brief's fact 1 says it "runs for nonlinear models too", which is
+   how `Vdc` and `IProbe` come to have branches — but they are linear. So a nonlinear model owning a
+   branch needs the pass to be opened for it explicitly: `ComponentModel.BranchEquationCount` is what
+   that loop now asks, and it is the only reason that property exists.
+2. **The S-parameter engine never calls `Stamp` on a nonlinear device at all** — it calls
+   `StampLinearized`. So the branch, the ±1 KCL coupling and the linearised constraint row are all
+   stamped there too, and the branch is RE-ALLOCATED rather than reused: branch numbering belongs to
+   whichever assembly is being built, which is the same rule the SDD's control-branch indices already
+   follow.
+3. **Harmonic balance cannot carry it, and "one stamping loop in the HB extractor" understates it by
+   a long way.** The HB unknowns are the voltage phasors at the nonlinear-facing nodes — that is the
+   formulation, not an implementation choice. A nonlinear branch unknown is neither a node voltage nor
+   reducible into the linear network (its own row is nonlinear), so carrying one means bordering the
+   Newton system with an extra unknown per constraint per harmonic and threading that through the
+   extractor, `BuildJ`, the back-solver, the warm start and both the 2-D and N-D variants. **Not
+   built.** `HbEngine`'s constructor refuses such a circuit by name instead — which it must, because
+   the device evaluates to zero port current, so an HB run that ignored the constraint would converge
+   quickly on a circuit in which the source is simply absent.
+
+### Charge: the collapse WAS built, and it is what makes M4 complete (2026-09-01)
+
+`spice-models.md` §8.8's idiom — a behavioural voltage source driving a linear capacitor — works
+exactly at DC and in S-parameters through the general path, with no pattern recognition:
+`SddBranchEquationTests.T7` compares the port susceptance against the **analytic derivative of the
+charge function** at three biases and holds to 1e-7 relative; `T8` shows the pair is bit-comparable
+to the plain capacitor it degenerates to; `T6` pins §8.8's own claim that the interior node is
+non-singular at DC with the capacitor open (KCL there forces the branch current to zero and the branch
+row fixes the voltage — two equations, two unknowns).
+
+**§13's open question 5 has a better answer than the brief expected.** The collapsed path
+(`E` + `C` → one SDD charge equation) is not an optimisation that saves a node and a branch row: it is
+the ONLY formulation harmonic balance can carry, because the collapsed device states a charge and HB
+has applied `jkω` to charge harmonics since it was written. The algebra is exact and unconditional —
+with the `E` from `n+` to `mid` and a linear `K` from `mid` to `n−`, the stored charge is
+`K·(v_port − f)` and the capacitor value cancels — and it needs one extra condition beyond "nothing
+else on `mid`": **the expression must not sense the constrained pair itself**, since that pair ceases
+to exist.
+
+**So it is the default, not an optimisation gated on a measurement.** `SpiceChargePairCollapse`
+rewrites the pair at import, unconditionally, whenever the pattern holds exactly. The brief made M4b
+conditional on an HB measurement justifying it; that measurement cannot be taken while the general
+path refuses HB, and the conditional had the dependency backwards — the collapse is what makes the
+measurement possible at all, not what a measurement would justify.
+
+**The two paths are held together entry-by-entry** (`SddBranchEquationTests.M4b1`, three
+frequencies): the same physics written as the pair a file writes and as the one charge equation it
+becomes, agreeing to 10 decimal places in S₁₁ at a bias where the charge is nonlinear. If they ever
+disagree the collapse is wrong, not the general path.
+
+**Mirrored spellings give one formula, which is worth stating because it looks like it should need
+two.** Either terminal of the source may be the interior one — the source's minus into the capacitor,
+or the capacitor into the source's plus — and both work out to `Q = K·(v_port − f)` over the pair's
+two outer terminals. The collapse tries both ends and needs no case analysis beyond that.
+
+**Ground is never an interior node, and neither is a port**, whatever the definition's own element
+list says: a port is wired by the call site, and ground is shared by the whole design. Counting
+elements alone would collapse a pair whose "interior" node is the ground rail of the entire circuit.
+
+### The HB `I` cube reports a charge branch wrongly, and it predates all of this
+
+Found while writing the charge oracles, and **not caused by this work**: for a series probe feeding a
+charge-carrying device, `ds["I"][probe, k]` reports `C0·V_k` — the LINEAR charge, missing both the
+`jkω` and the nonlinear part — and the SDD's own rows read exactly zero. A plain `NonlinearC` in the
+same circuit produces byte-identical wrong numbers, so it is a pre-existing defect on the reporting
+path and not in the solve: the node voltages are exact, and the current derived from them and the
+feed resistor matches the analytic Fourier coefficients to four digits.
+
+The oracles therefore read the current as the drop across the feed resistor — node voltages are HB's
+own unknowns, so that is the solved answer and nothing else. **The `I` cube defect is unfixed and
+deliberately not worked around**; it needs its own look.
+
+### Charge, and what the general path is verified against
+
+### The two HB charge oracles the brief asked for, now that they can be run
+
+`spice-models.md` §9.5.4's gates 2 and 3, which need a large-signal run and so could not exist while
+the pair was a branch row:
+
+- **Charge conservation** (`M4b2`) — `∮ i dt = 0` over one period is, in the frequency domain,
+  exactly "the DC member of a pure charge's current is zero". Measured at 9e-11 of the fundamental.
+  The drive carries a **DC offset** so the question is not vacuous: at 0 V a charge device is an open
+  and every formulation passes trivially; at 0.4 V any resistive contamination of the charge term
+  would pass a DC current, and nothing else catches that.
+- **Harmonic content** (`M4b3`) — the gate that fails if the charge were linearised about the DC
+  point rather than evaluated in time and transformed, because a linearisation generates NO second
+  harmonic at all and still converges. With `Q(v) = C0·v + a·v²/2` driven at `V₀ + A·cos ωt`, the
+  amplitude ratio `|I₂|/|I₁|` is `a·A / 2(C0 + a·V₀)` — **independent of ω and of whatever phasor
+  normalisation the engine uses**, which is why the RATIO is what is asserted rather than either
+  harmonic. Measured 0.3572 against 0.35714.
+
+**What HB still refuses** is a voltage constraint that is not a charge — a logic or behavioural block
+written as one. That is unchanged, and `HbEngine`'s message now names the charge form as the thing to
+write instead, because the earlier wording asserted that the importer collapsed such pairs at a point
+when nothing did.
+
+### `DBranchC` is on the critical path, as the brief said
+
+`∂g/∂i` with respect to another device's branch current. `SddBranchEquationTests.T4`/`T5` gate it on
+the answer AND on the iteration count: the constraint is linear in `_c1`, so with the exact entry
+stamped the augmented system is linear and Newton settles in ≤3 steps. A missing entry still
+converges — quasi-Newton does — which is why the count is what is asserted.
+
+### A control-current reference names a SIBLING, and did not used to
+
+`C[1]=V_sense` inside a cell means that cell's own `V_sense`. Both engines matched the bare name
+against the flattened `InstancePath`, so it resolved at the top level and nowhere else — an imported
+subcircuit whose behavioural source reads a sensed current would work as a testbench and fail the
+moment the same definition was placed as a cell, which is the ordinary way to use it.
+`NonlinearDcEngine.FindControlTarget` tries the owner's own path prefix first, then the name as
+written; the S-parameter engine calls the same method, because the two disagreeing means a design's
+S-parameters are taken about a bias its own sensed current never reached.
+
+### `VCVS`
+
+The E element's linear half, and a real component rather than an SDD with an affine equation:
+53 of the 234 controlled-source lines measured are ideal, and turning each into a nonlinear device
+would make a linear macromodel nonlinear — an S-parameter run on it would start needing an operating
+point it has no reason to need. Group 2 where `VccsModel` is Group 1, frequency-INDEPENDENT unlike
+`VdcModel` (a bias becomes a short away from DC; a transfer holds at every frequency), and
+referenceable by `C[n]` for the same reason a `Vdc` is.
+

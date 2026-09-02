@@ -129,9 +129,15 @@ public sealed class ElaboratedComponent(
         for (int k = 0; k < i.Length; k++) i[k] = r.I[k] * m;
         for (int k = 0; k < q.Length; k++) q[k] = r.Q[k] * m;
 
+        // The BRANCH block is carried through UNSCALED, and it is unreachable with m ≠ 1 anyway:
+        // a branch equation costs a branch-current unknown, and MultipliedMnaContext refuses to
+        // allocate one — m ideal voltage sources in parallel is not a circuit. Multiplying a
+        // voltage CONSTRAINT by the number of copies would be meaningless even if it were: m
+        // identical sources hold the same voltage as one, and share the current.
         return new NonlinearResult(i, q, ScaleMatrix(r.Dg, m)!, ScaleMatrix(r.Dc, m)!,
                                    ScaleTerms(r.Terms, m),
-                                   ScaleMatrix(r.DControl, m), ScaleMatrix(r.DControlCharge, m));
+                                   ScaleMatrix(r.DControl, m), ScaleMatrix(r.DControlCharge, m),
+                                   r.BranchResidual, r.DBranchV, r.DBranchC);
     }
 
     private static double[,]? ScaleMatrix(double[,]? a, double m)

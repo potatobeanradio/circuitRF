@@ -53,6 +53,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _iToneSrc     = BuildCurrentToneSource();
     private static readonly Symbol _vccs         = BuildVccs();
+    private static readonly Symbol _vcvs         = BuildVcvs();
     private static readonly Symbol _mixer        = BuildMixer();
     private static readonly Symbol _mixerD       = BuildMixerD();
     private static readonly Symbol _ground       = BuildGround();
@@ -188,6 +189,7 @@ public static class BuiltInSymbols
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.CurrentToneSource: return _iToneSrc;
             case SymbolKind.Vccs:       return _vccs;
+            case SymbolKind.Vcvs:       return _vcvs;
             case SymbolKind.Mixer:      return _mixer;
             case SymbolKind.MixerD:     return _mixerD;
             case SymbolKind.Balun:      return _balun;
@@ -739,6 +741,27 @@ public static class BuiltInSymbols
         Txt("+", -150, -100, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
         Txt("−", -150, +100, fontSize: PolarityFontSize),
     ], SymbolKind.Vccs);
+
+    // ── VCVS — the same diamond, carrying a voltage instead of a current ──────
+    //
+    // The body, the leads and the stopped-short control pair are the VCCS's exactly, because the two
+    // differ in one thing only and a reader who knows one should recognise the other at a glance.
+    // What differs is what sits INSIDE the diamond: a controlled voltage source is drawn with a ±
+    // pair down its axis, not an arrow, because there is no current direction to point at — the
+    // element states a potential difference and its current is whatever the rest of the circuit
+    // draws through it.
+
+    private static Symbol BuildVcvs() => Sym([
+        L(   0, -200,    0,  -90),          // output lead, top (out+)
+        L(   0,   90,    0,  200),          // output lead, bottom (out-)
+        Poly(false, 0, -90,  90, 0,  0, 90,  -90, 0),   // diamond body (stroked, closed)
+        Txt("+",   0,  -40, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−", 0,  40, fontSize: PolarityFontSize),
+        L(-300, -100, -170, -100),          // control lead, upper (ctrl+)
+        L(-300,  100, -170,  100),          // control lead, lower (ctrl-)
+        Txt("+", -150, -100, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),
+        Txt("−", -150, +100, fontSize: PolarityFontSize),
+    ], SymbolKind.Vcvs);
 
     // ── Mixer — the universal circle-and-✕ ────────────────────────────────────
     // Pins: RF (-300,0) left · LO (0,+300) bottom · IF (+300,0) right.

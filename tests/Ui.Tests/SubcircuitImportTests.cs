@@ -482,10 +482,14 @@ public class SubcircuitImportTests : IDisposable
     [Fact]
     public void ADefinitionHoldingALineTheReaderCouldNotUse_IsRefusedWhole()
     {
+        // The unreadable line is a SWITCH, which circuitRF genuinely has no device for and no
+        // analysis to resolve one in. It used to be a `V` line, which this reader now reads — the
+        // rule under test is that ONE such line refuses the whole definition, not which lines they
+        // are.
         var t = Only("""
-            .subckt HASVSOURCE a b
+            .subckt HASSWITCH a b
             R1 a n1 10
-            V1 n1 b DC 5
+            S1 n1 b a b SWMOD
             .ends
             """);
 

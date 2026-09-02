@@ -1,0 +1,15 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 25.96L146.73 52.93" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 97.07L146.73 124.04" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 52.93L168.79 75L146.73 97.07L124.66 75L146.73 52.93Z" /><text fill="#F58C4B" transform="translate(146.73 65.19)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#9684FA" transform="translate(146.73 84.81)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 50.48L105.04 50.48" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 99.52L105.04 99.52" /><text fill="#F58C4B" transform="translate(109.95 50.48)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#9684FA" transform="translate(109.95 99.52)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="143.73" y="22.96" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="143.73" y="121.04" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="70.17" y="47.48" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="70.17" y="96.52" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="101.03, 110.6, 120.23, 129.8" y="172.32">
+			VCVS
+	</text></svg>

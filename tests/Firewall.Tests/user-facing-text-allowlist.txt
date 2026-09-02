@@ -41,9 +41,11 @@ src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': Cport[{n}]={portStr} 
 src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': H[{w}] is a built-in weighting function and cannot be redefined
 src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': H[{w}] must be stored as a String expression, got {kv.Value.Kind}
 src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': I[p,{w}] references weighting H[{w}] which is not defined
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': a free-form implicit equation F[...] is not supported. Use 
 src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': equation references '_c{refN}' but C[{refN}] is not defined
 src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': equation references port {p} but only {portCount} port(s) of nets were given
-src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': implicit equation F[...] not supported; use I[...] for explicit current
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': port {k + 1} states both V[{k + 1}] and a current equation. 
+src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': {ex.Message}
 src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': {key} must be stored as a String expression, got {kv.Value.Kind}
 src/Core/Devices/ComponentModelFactory.cs|SDD '{sddName}': {key} must be stored as a String expression, got {val.Kind}
 src/Core/Devices/ComponentModelFactory.cs|SDD: SddPortCount is required
@@ -100,6 +102,7 @@ src/Core/Devices/System/IdealSBlockModel.cs|{GetType().Name}: a complex port imp
 src/Core/Devices/System/PimOverlay.cs|{blockName}: passive intermod needs an S-matrix this block can write as a 
 src/Core/Devices/System/PimOverlay.cs|{blockName}: this block carries nothing from the port the carriers enter to the 
 src/Core/Devices/VccsModel.cs|VCCS '{c.InstancePath}': expected 4 nets (out+, out−, ctrl+, ctrl−); 
+src/Core/Devices/VcvsModel.cs|VCVS '{c.InstancePath}': expected 4 nets (out+, out−, ctrl+, ctrl−); 
 src/Core/Devices/WBondModel.cs|The wBond design '{sourceDescription}' has no wires, so the component has no pins. 
 src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' ({_sourceDescription}) has its ground plane disabled and no array 
 src/Core/Elaboration/Elaborator.cs|'{inst.Reference}:{inst.InstanceName}' parameter '{ov.Name}' is frequency-dependent, 
@@ -186,6 +189,9 @@ src/Core/Expressions/SddRegisterProgram.cs|Unknown register op: {ins.Op}
 src/Core/Expressions/Token.cs|Unexpected '=' (did you mean '=='?)
 src/Core/Expressions/Token.cs|Unexpected character '{c}'
 src/Core/Expressions/Token.cs|Unterminated string literal
+src/Core/Expressions/UserFunctionInliner.cs|'{fn.Name}' is declared with {fn.Parameters.Length} parameter(s) and called 
+src/Core/Expressions/UserFunctionInliner.cs|'{fn.Name}' is defined in terms of itself ({string.Join(
+src/Core/Expressions/UserFunctionInliner.cs|'{function}' expands past {Limit:N0} nodes when its definition is substituted at 
 src/Core/Expressions/Value.cs|Bool value used in arithmetic context
 src/Core/Expressions/Value.cs|Cannot apply unary + to a {a.Kind}
 src/Core/Expressions/Value.cs|Cannot compare Bool values with ==
@@ -219,6 +225,7 @@ src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': cannot parse Va
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': missing or empty Inner= key.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': missing or empty Var= key.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': needs Values= or Start=/Stop=.
+src/Core/Netlist/Spice/SpiceBehaviouralSource.cs|its expression contains a construct circuitRF cannot write back out ({e.GetType().Name})
 src/Core/Pdk/PdkImporter.cs|not a number
 src/Core/Systems/FilterPrototype.cs|A response polynomial in Ω has mixed parity; it cannot be rewritten in s as a 
 src/Core/Systems/FilterPrototype.cs|Spectral factorisation produced a non-positive scale ({lambda:G6}); the response 
@@ -267,6 +274,7 @@ src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': Cport[{n}]={port} ou
 src/Engine/HarmonicBalance/HbEngine.cs|HB: SDD '{sddName}': Cport[{n}]={port} — {kind} is two-terminal; 
 src/Engine/HarmonicBalance/HbEngine.cs|HB: {tones} tones at MaxMixOrder={maxMixOrder} retains {products:N0} mixing products 
 src/Engine/HarmonicBalance/HbEngine.cs|HB: {tones} tones declared, but this engine supports at most {_settings.HbMaxTones} 
+src/Engine/HarmonicBalance/HbEngine.cs|Harmonic balance cannot run this circuit: {string.Join(
 src/Engine/HarmonicBalance/HbEngine.cs|Vstar dimensions [{Vstar.GetLength(0)},{Vstar.GetLength(1)}] 
 src/Engine/HarmonicBalance/TwoToneMeasurements.cs|Interface node '{node}' not found among [{string.Join(
 src/Engine/HarmonicBalance/TwoToneMeasurements.cs|Mixing product {MixingLattice.Label(k)} and its conjugate are not in the retained set 

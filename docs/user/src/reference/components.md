@@ -283,6 +283,38 @@ need any of those, the device you want is an <a href="sdd.html">SDD</a>, whose e
 them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
 </div>
 
+### Voltage-Controlled Voltage Source (VCVS) {#vcvs}
+
+{{symbol: vcvs}}
+
+An ideal voltage gain: the voltage it holds across its output pair is `E` times the voltage across a
+separate, purely-sensing control pair.
+
+`V(out+) − V(out−) = E · (V(ctrl+) − V(ctrl−))`
+
+Four terminals in two pairs, laid out exactly as the [VCCS](#vccs)'s are — the **output** pair
+(`out+` top, `out−` bottom) and the **control** pair (`ctrl+`, `ctrl−`, on the left), which draws
+**no current at all**. `E` is a voltage ratio and carries no unit.
+
+The two tiles differ in one thing: what the diamond carries. The VCCS's arrow points at the current
+it delivers; the VCVS has a **± pair** down its axis instead, because there is no current direction
+to point at. A VCVS states a *potential difference* and whatever current the rest of the circuit
+draws through it flows — including none, if nothing is connected across the output pair. That is the
+ideal source's own behaviour, not a limitation.
+
+Being ideal, its output impedance is **zero**: it holds `E` times the control voltage no matter what
+it is loaded with. Put a series resistor after it if you want a source with an impedance.
+
+<div class="callout note">
+<span class="label">It works in every analysis, harmonic balance included</span>
+<p>Like the VCCS, the VCVS is a <b>linear</b> device stamped at every frequency the simulator solves
+at, harmonic balance included, so <code>E</code> is the same number at every harmonic. It carries a
+branch-current unknown of its own where the VCCS carries none — a relation <i>between</i> node
+voltages is not something admittances can express — but nothing about that is visible from outside.
+For a gain that varies with frequency, drive or bias, the device you want is an
+<a href="sdd.html">SDD</a>.</p>
+</div>
+
 <div class="callout note">
 <span class="label">An ideal current source is an open circuit</span>
 <p>The output pair gets no conductance of its own, so — exactly as with ITone — an output node with

@@ -298,6 +298,14 @@ public enum SymbolKind
     /// stage is inverting across a grounded load.</summary>
     Vccs,
 
+    /// <summary>Ideal voltage-controlled voltage source (engine "VCVS"). Four pins in ± pair order —
+    /// [0]=out+, [1]=out−, [2]=ctrl+, [3]=ctrl− — constraining V(out+) − V(out−) = E·(V(ctrl+) −
+    /// V(ctrl−)). The control pair senses only and draws no current, which is what makes it ideal.
+    /// Group 2 where the VCCS is Group 1: a controlled VOLTAGE source states a relation between node
+    /// voltages, which no combination of admittances expresses, so it carries a branch-current
+    /// unknown of its own.</summary>
+    Vcvs,
+
     // ── Ideal mixer ───────────────────────────────────────────────────────────
     // TWO kinds over ONE engine component ("Mixer"), the TermG pattern rather than the BJT one:
     // nothing electrical differs between them, so there is no parallel model — only how many of the

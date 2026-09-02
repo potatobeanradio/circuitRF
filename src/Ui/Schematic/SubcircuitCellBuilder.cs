@@ -315,19 +315,29 @@ public static class SubcircuitCellBuilder
         else
         {
             comp.Symbol = element.Symbol!.Value;
-            ports = [.. SymbolPortDefs.For(comp.Symbol).Select(p => (p.LocalX, p.LocalY))];
+            // The PARAMETERS go on first, because a variadic symbol reads its own port count off
+            // one of them (NumPorts). Asking for the pins before they are there gives an SDD of any
+            // width the two-port default — four pins for a device the netlist binds six nets to,
+            // which is a wiring failure and not a drawing one.
+            foreach (var q in element.Parameters) comp.Parameters.Add(q);
+            ports = [.. SymbolPortDefs.For(comp.Symbol, comp.PortCount).Select(p => (p.LocalX, p.LocalY))];
+            return Finish();
         }
 
         foreach (var p in element.Parameters) comp.Parameters.Add(p);
-        model.Components.Add(comp);
+        return Finish();
 
-        return new Placed
+        Placed Finish()
         {
-            Component     = comp,
-            LocalPorts    = ports,
-            LocalApproach = [.. ports.Select(Outward)],
-            Nets          = [.. element.Nets],
-        };
+            model.Components.Add(comp);
+            return new Placed
+            {
+                Component     = comp,
+                LocalPorts    = ports,
+                LocalApproach = [.. ports.Select(Outward)],
+                Nets          = [.. element.Nets],
+            };
+        }
     }
 
     /// <summary>

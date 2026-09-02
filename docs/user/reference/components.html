@@ -472,6 +472,53 @@ harmonic — an ideal transconductance has no frequency dependence, no compressi
 need any of those, the device you want is an <a href="sdd.html">SDD</a>, whose equations can state
 them. The same is true of <a href="#currenttonesource">ITone</a>.</p>
 </div>
+<h3 id="vcvs">Voltage-Controlled Voltage Source (VCVS)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 25.96L146.73 52.93" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 97.07L146.73 124.04" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 52.93L168.79 75L146.73 97.07L124.66 75L146.73 52.93Z" /><text fill="#D26328" transform="translate(146.73 65.19)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#2D14C3" transform="translate(146.73 84.81)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 50.48L105.04 50.48" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 99.52L105.04 99.52" /><text fill="#D26328" transform="translate(109.95 50.48)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#2D14C3" transform="translate(109.95 99.52)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="143.73" y="22.96" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="143.73" y="121.04" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="70.17" y="47.48" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="70.17" y="96.52" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="101.03, 110.6, 120.23, 129.8" y="172.32">
+			VCVS
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 25.96L146.73 52.93" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 97.07L146.73 124.04" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M146.73 52.93L168.79 75L146.73 97.07L124.66 75L146.73 52.93Z" /><text fill="#F58C4B" transform="translate(146.73 65.19)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#9684FA" transform="translate(146.73 84.81)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 50.48L105.04 50.48" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M73.17 99.52L105.04 99.52" /><text fill="#F58C4B" transform="translate(109.95 50.48)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			+
+	</text><text fill="#9684FA" transform="translate(109.95 99.52)" font-size="8.83" font-family="IBM Plex Sans" x="-2.65" y="3.31">
+			−
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="143.73" y="22.96" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="143.73" y="121.04" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="70.17" y="47.48" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="70.17" y="96.52" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="101.03, 110.6, 120.23, 129.8" y="172.32">
+			VCVS
+	</text></svg></span>
+</span><figcaption>VCVS</figcaption></figure>
+<p>An ideal voltage gain: the voltage it holds across its output pair is <code>E</code> times the voltage across a
+separate, purely-sensing control pair.</p>
+<p><code>V(out+) − V(out−) = E · (V(ctrl+) − V(ctrl−))</code></p>
+<p>Four terminals in two pairs, laid out exactly as the <a href="#vccs">VCCS</a>'s are — the <strong>output</strong> pair
+(<code>out+</code> top, <code>out−</code> bottom) and the <strong>control</strong> pair (<code>ctrl+</code>, <code>ctrl−</code>, on the left), which draws
+<strong>no current at all</strong>. <code>E</code> is a voltage ratio and carries no unit.</p>
+<p>The two tiles differ in one thing: what the diamond carries. The VCCS's arrow points at the current
+it delivers; the VCVS has a <strong>± pair</strong> down its axis instead, because there is no current direction
+to point at. A VCVS states a <em>potential difference</em> and whatever current the rest of the circuit
+draws through it flows — including none, if nothing is connected across the output pair. That is the
+ideal source's own behaviour, not a limitation.</p>
+<p>Being ideal, its output impedance is <strong>zero</strong>: it holds <code>E</code> times the control voltage no matter what
+it is loaded with. Put a series resistor after it if you want a source with an impedance.</p>
+<div class="callout note">
+<span class="label">It works in every analysis, harmonic balance included</span>
+<p>Like the VCCS, the VCVS is a <b>linear</b> device stamped at every frequency the simulator solves
+at, harmonic balance included, so <code>E</code> is the same number at every harmonic. It carries a
+branch-current unknown of its own where the VCCS carries none — a relation <i>between</i> node
+voltages is not something admittances can express — but nothing about that is visible from outside.
+For a gain that varies with frequency, drive or bias, the device you want is an
+<a href="sdd.html">SDD</a>.</p>
+</div>
 <div class="callout note">
 <span class="label">An ideal current source is an open circuit</span>
 <p>The output pair gets no conductance of its own, so — exactly as with ITone — an output node with
@@ -2946,6 +2993,7 @@ in the same multi-line editor as VAR. No fixed parameters.</p>
 <tr><td><a href="#tonesource">VTone</a></td><td>ToneSource</td><td>Sources</td></tr>
 <tr><td><a href="#currenttonesource">ITone</a></td><td>CurrentToneSource</td><td>Sources</td></tr>
 <tr><td><a href="#vccs">VCCS</a></td><td>Vccs</td><td>Sources</td></tr>
+<tr><td><a href="#vcvs">VCVS</a></td><td>Vcvs</td><td>Sources</td></tr>
 <tr><td><a href="#p1tone">P1Tone</a></td><td>P1Tone</td><td>Sources</td></tr>
 <tr><td><a href="#pntone">PnTone</a></td><td>PnTone</td><td>Sources</td></tr>
 <tr><td><a href="#ground">GND</a></td><td>Ground</td><td>Terminals</td></tr>

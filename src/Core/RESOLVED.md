@@ -2118,3 +2118,194 @@ the conjugate-vs-equal termination pair; unitarity with a complex reference; `Zo
 satisfied by refusing everything), `tests/Core.Tests/Devices/CirculatorDetuneTests.cs`,
 `tests/Engine.Tests/Devices/CirculatorDetuneSParamTests.cs` (what a PA on port 1 sees, and the
 `conj(ρ²)` closed form for the rejected design).
+
+## Behavioural sources: what a real library file actually needed (2026-09-01)
+
+`docs/sonnet-briefs/brief-spice-behavioural-sources.md`, measured against four supplied library
+files. **45 subcircuits, 1 importable before, 33 after.** The brief predicted 22, and 37 once
+`time`-in-a-condition was read as steady state; the difference is entirely accounted for below, and
+in both directions.
+
+### The two cheapest fixes were not in the brief at all, and one of them was worth 28 subcircuits
+
+**This dialect writes the logical connectives with ONE character.** `V(a) > 0.5 & V(b) < 0.5` is an
+AND; circuitRF spells it `&&`. The parser stopped at the character with *"Expected '&&'"*, the value
+was unreadable, the element was refused, and one refused element refuses the whole subcircuit —
+**28 of one gate driver's 34 subcircuits**, every logic block in it. It is a pure spelling change
+(circuitRF has no bitwise operators at all, so neither character can mean anything else), and it was
+invisible in the brief's own measurement because that measurement stopped at "the element is of a
+kind this reader does not read".
+
+**The dialect is case-insensitive and circuitRF is not.** `IF(…)`, `MAX(…)`, `TANH(…)` parse cleanly
+as calls to unknown functions and then fail at SIMULATE time with "unknown function" — long after the
+file was read, in a message naming neither the file nor the element.
+`SpiceExpression.CanonicaliseFunctionNames` re-spells a name **only when a bracket follows it** and
+only when it is one of circuitRF's own (`KnownFunctions`), so a parameter or a net called `MAX` is
+left exactly as written. `arctan`/`arcsin`/`arccos` join `sgn` in the alias table, which carries pure
+spelling changes and nothing else.
+
+### `time` in a condition: the COMPARISON is what is read, not the conditional around it
+
+The brief says `if(time > 0, a, b)` → `a`. That rule is wrong on real files, and wrong in the
+direction that converges. A gate driver writes
+
+```
+E_Q Q 0 VALUE={IF( V(S) > 0.5 & V(R) < 0.5, 1, IF( (V(R) > 0.5) | TIME < 1NS, 0, …))}
+```
+
+where `TIME < 1n` is **false** in steady state, not true — taking the then-branch sticks that output
+at 0 forever, which is a different circuit that solves. `SpiceExpression.RewriteTimeConditions` works
+at the AST level and replaces only the comparison (`>`/`>=` → true, `<`/`<=` → false, `==` → false,
+`!=` → true, mirrored when `time` is on the right), leaving the rest of the condition to decide. Each
+one is noted individually.
+
+Two ordering traps in that pass, both silent:
+- **Literals must be normalised BEFORE it**, because it parses the expression and circuitRF's parser
+  cannot read `1n`. Left in the old order, `time < 1n` failed to parse, was returned unchanged, and
+  was then refused for naming `time` outside a comparison — which is not what the file says.
+- **It only re-prints when something changed.** Every other expression keeps its exact text, so
+  nothing is re-spelled merely for passing through a printer.
+
+### A refusal is worth more than an import when the alternative is a solver exception
+
+With the file's own `.func`s substituted, **any call left in an expression is one circuitRF does not
+have**, and the translator refuses it there by name. That took the importable count from 36 to 33 —
+and the number that reach a DC operating point from 2 to 22, because every one it removed was a
+subcircuit that imported and then threw from inside the solver.
+
+### Measured after-counts
+
+| File | `.subckt` | importable before | after | reader notes before → after |
+|---|---|---|---|---|
+| A — power switch | 2 | 0 | **2** | 14 → 0 |
+| B — switch + diode library | 6 | 0 | **6** | 56 → 4 |
+| C — gate driver | 34 | 1 | **22** | 171 → 9 |
+| D — power switch + core | 3 | 0 | **3** | 17 → 0 |
+
+**33 of 45.** The 12 that remain trace to exactly three causes, all deliberate: a `TABLE(…)` transfer
+(7 subcircuits, refused as a table), two voltage-controlled switches, and one source that reads
+`V(TIME)` as a delay ramp — which has no steady-state value at all and is refused by name.
+
+**22 of the 33 reach a DC operating point**, measured in a scratch harness that flattens each
+definition and grounds every port through 1 MΩ. Two logic-macromodel blocks do not converge, which is
+`spice-models.md` §13's own open question 2 answered: a device built from ~100 `if()` sources is
+discontinuous by construction. The remaining failures are the harness's own — flattening loses the
+per-cell parameter scoping a real import keeps.
+
+## Four reader/translator defects found by reviewing the above (2026-09-01)
+
+**The 33-of-45 figure above was measured BEFORE these, and two of them refuse strictly more.** The
+`time`-taint refusal and the narrowed device-equation function set both turn a definition that
+imported-and-then-failed-at-simulate into one that is refused at the file, which is the trade this
+whole exercise keeps making deliberately — but it means the after-count needs re-measuring against
+the owner's own files before it is quoted again. Nothing here can raise it.
+
+All four are the same shape — something read correctly and then answered for by the wrong rule — and
+three of the four are silent.
+
+**A stated DC value lost to a waveform on the same line.** `V1 a b AC 1 DC 5` read as **0 V**.
+`TryReadIndependentSource` stopped at the first thing that looked like an answer (`dc is null` in the
+loop condition), and the AC branch's own `dc ??= "0"` was that thing — so the result depended on
+which of the two was written first, and a bias supply silently became a short. The whole word run is
+read now, with what the line STATES (a `DC` keyword, a `DC=` binding, or the positional value)
+beating what a waveform merely CONTRIBUTES.
+
+**`,IC=` splitting reached a comma that was not one.** The rule exists for `CQB b 0 1u,IC=0`, where
+the tokeniser leaves the value and the initial condition in one word. It was written as "split at any
+top-level comma", which also splits `TC=0.1,0.2` — one assignment — leaving a bare `0.2` that the
+element rule then reported as an unexpected extra word. The tail now has to say what it is; the `=`
+may be a separate token, because this dialect allows spaces around one.
+
+**`time` one hop away from the element was not refused.** The reader refuses `time` written on an
+element line. Through a `.param` the element's own text names no time at all — `.param tr = time*2`
+then `R1 a b {tr}` — so nothing on the line could see it, and `CarryGlobals` then put the unevaluable
+variable on **every cell in the file**, including every cell that never mentions it.
+`SubcircuitTranslator.RefuseTransientTime` follows the taint to a fixed point through the definition's
+own parameters and variables and refuses only an element that actually READS one; a global that is
+tainted is not carried at all. A default no call site uses is still a default.
+
+**One function list served two evaluators that do not implement the same set.** `KnownFunctions`
+carried the rounding family (`floor`, `ceil`, `round`, `int`), which `Evaluator` has and
+`SddEvaluator` and its two compiled counterparts do not — they carry a DERIVATIVE alongside every
+value, and a step function has none. So `UnknownCall`, whose whole purpose is to move an "unknown
+function" from inside the solver forward to the file, waved `INT(V(a,b))` through import and let it
+throw at simulate time. `SpiceExpression.DeviceEquationFunctions` is the subset a device equation may
+call, and the check asks which evaluator will actually run the value.
+
+## A capacitance that varies with its own voltage (2026-09-01)
+
+`spice-models.md` §9.5's third charge spelling, and the one whose failure mode is silent: **`C = f(v)`
+declares the small-signal CAPACITANCE, so the stored charge is `∫₀ᵛ f(u) du` and NOT `f(v)·v`.** The
+two agree only for constant `f`, and the wrong one converges and produces plausible numbers.
+
+A polynomial has that integral exactly and `NonlinearCModel` already performs it, so
+`SpiceChargeSpelling.CapacitorCapacitance` reads the value as a polynomial in the device's own port
+voltage — on the AST, so `C0+C1*v`, `v*C1+C0`, `C1*v^2/2` and `-(C1*v)` are all read for what they
+are, and a coefficient may itself be any expression that senses no voltage. Anything else is
+**refused by name**, with the spelling that has no conversion to get wrong (`Q={…}`) — including a
+capacitance that reads somewhere else in the circuit, which is a different device entirely rather
+than a harder integral.
+
+`.model` cards with `VC1`/`VC2` are the same physics through the card path and were **not** built:
+`ModelCardCellBuilder.SymbolFor` maps a card type to a symbol without seeing its parameters, so
+routing a `CAP` card to `NonlinearC` conditionally is a change to that mapping's shape rather than an
+addition to it. No measured file uses the spelling.
+
+## `false || true` was FALSE (2026-09-01)
+
+Found while chasing the above, and it has nothing to do with the SPICE reader.
+`Evaluator.EvalLogic` short-circuited correctly and then combined the two operands with
+`Value.And(l, r)` under a comment saying that "works for both since we already short-circuited". It
+does not: `&&` reaches that line only with a true left (so the answer is the right operand), and
+`||` only with a FALSE left — where `And(false, r)` is always false.
+
+So **every `||` whose first alternative did not hold answered false**, in every expression circuitRF
+evaluates: cell parameters, variables, measurements, SDD equations. Nothing threw and nothing was
+reported; a conditional simply took its else-branch. Four of the eight rows of the truth table had
+never been exercised anywhere in the suite.
+
+The fix is `return r;` — after the short-circuit has not fired, the result IS the right operand, for
+both operators and for the same reason. Gated by `LogicalOperatorTruthTableTests`, which asserts all
+eight rows rather than the two that used to be tested.
+
+## `.func` is inlined at TRANSLATION time, not at model construction (2026-09-01)
+
+`UserFunctionInliner` substitutes a `UserFunction`'s body at its call site with the arguments bound.
+The brief placed this at `CompiledSddExpr` construction; that is too late for the gesture that
+matters. **An imported subcircuit becomes a cell FOLDER on disk, and there is nowhere in it for a
+function definition to live** — `UserFunction` exists only on a `TestBench`, one flat namespace for a
+whole design. A written cell whose equations still called `ni(T)` would resolve only in a design that
+happened to declare `ni`, and would collide with any other file that declared one.
+
+So `SubcircuitTranslator` inlines into everything it emits, and the cell is self-contained. The
+SDD-side inlining exists as well (`ComponentModelFactory.CreateSddModel`, which already received the
+function list and ignored it) so a hand-written `.cnl` can call a `.func` too; it is a no-op once
+translation has run.
+
+**Two things that make inlining safe rather than merely convenient:** substitution DUPLICATES an
+argument once per occurrence, so it is exponential in nesting depth — the expanded node count is
+budgeted and refused **by name and by number** rather than truncated, because a truncated equation is
+a different device that still evaluates. And a function defined in terms of itself is refused with
+the chain that got there, because there is no depth at which it terminates.
+
+## A file's global `.param`s become the CELL's variables (2026-09-01)
+
+`SubcircuitTranslator.TranslateAll` read `Library.Cells`, `ModelCards` and `IncompleteCells` and
+nothing else, so every `.param` written outside a `.subckt` was parsed correctly and then discarded
+by both consumers. They are now carried into the definition's own `Cell.Variables` rather than pushed
+into the design's globals: a design has ONE global namespace, and two library files that each declare
+`Rd` would meet in it silently. A name the definition already declares is skipped — a variable
+binding over a cell parameter would seal that parameter shut, which is the whole point of the
+parameter gone.
+
+## `TEMP` resolves because the elaborator always binds the ambient (2026-09-01)
+
+`Temperature.AmbientGlobalName` is `"temp"`, and `ResolveAmbient` reads it from
+`TestBench.GlobalVariables` — so a design that does not state one has the ambient as a NUMBER and no
+name for it. `Elaborator` now binds `temp` into the global scope when nothing else does, so an
+expression naming it resolves everywhere. A design that states its own `temp` is untouched.
+
+The reader's half is a spelling change (`TEMP` → `temp`, via the alias table) plus the same
+normalisation applied to a `.param`/`.subckt` DECLARATION of that name — circuitRF's scopes are
+ordinal, so a file writing `.PARAM TEMP=40` and `{TEMP}` would otherwise declare one name and
+reference another.

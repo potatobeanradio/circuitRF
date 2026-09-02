@@ -134,6 +134,61 @@ public sealed class HbEngine
         _netlist  = netlist;
         _tb       = tb;
         _settings = settings ?? AnalysisSettings.Default;
+        RefuseNonlinearBranchEquations(netlist);
+    }
+
+    /// <summary>
+    /// Refuses, up front and by name, a device that CONSTRAINS a port voltage nonlinearly.
+    ///
+    /// <para><b>Why this cannot simply work.</b> The harmonic-balance unknowns are the voltage
+    /// phasors at the nonlinear-facing nodes — that is the formulation, not an implementation
+    /// choice: the linear subnetwork is characterised in the frequency domain and reduced onto those
+    /// nodes, and the residual is KCL there. A device whose relation is <i>between</i> node voltages
+    /// carries a branch-current unknown that is neither a node voltage nor reducible into the linear
+    /// network, because its own row is nonlinear. Carrying it would mean bordering the Newton system
+    /// with one extra unknown per constraint per harmonic and threading that through the extractor,
+    /// the Jacobian, the back-solver and the warm start.</para>
+    ///
+    /// <para><b>And it must be a refusal rather than an omission.</b> Such a device evaluates to
+    /// zero port current, so an HB run that ignored the constraint would converge, quickly, on a
+    /// circuit in which the source is simply absent — a plausible answer with nothing wrong on the
+    /// face of it. DC and S-parameter analysis both carry these devices exactly.</para>
+    ///
+    /// <para><b>The charge idiom should not reach here, and where it does that is the bug.</b> A
+    /// behavioural source driving a linear capacitor states a nonlinear CHARGE, and
+    /// <c>SpiceChargePairCollapse</c> rewrites that pair, at import, into the device's own charge
+    /// equation — which HB has carried since it was written. That rewrite is exact and
+    /// unconditional, but it only fires when the pattern holds exactly (nothing else on the interior
+    /// node, and the expression not sensing the pair it constrains), so a charge written some other
+    /// way still lands on this refusal. It is worth checking the pattern before concluding that
+    /// harmonic balance is what is missing.</para>
+    ///
+    /// <para><b>What is genuinely absent</b> is a voltage constraint that is not a charge — a logic
+    /// or behavioural block written as one. Carrying those means bordering the Newton system with
+    /// one extra unknown per constraint per harmonic, through the extractor, the Jacobian, the
+    /// back-solver, the warm start and both the 2-D and N-D variants; it was not built.</para>
+    /// </summary>
+    private static void RefuseNonlinearBranchEquations(ElaboratedNetlist netlist)
+    {
+        var offenders = netlist.Components
+            .Where(ec => ec.Model.Kind == CircuitRF.Core.ModelKind.Nonlinear && ec.Model.BranchEquationCount > 0)
+            .Select(ec => ec.InstancePath)
+            .ToList();
+        if (offenders.Count == 0) return;
+
+        throw new InvalidOperationException(
+            $"Harmonic balance cannot run this circuit: {string.Join(", ", offenders)} "
+            + (offenders.Count == 1 ? "holds" : "hold")
+            + " a nonlinear voltage constraint (an SDD 'V[p]' equation, which is what a behavioural "
+            + "voltage source becomes). Harmonic balance solves for the voltage phasors at the "
+            + "nonlinear-facing nodes, and such a device adds a branch-current unknown that is not "
+            + "one of them. DC and S-parameter analysis both carry it exactly, so an operating point "
+            + "and a small-signal linearisation about it are available; a large-signal run is not. "
+            + "A source of this kind that exists to carry a nonlinear CHARGE — one driving a linear "
+            + "capacitor and nothing else — has a form harmonic balance does solve: state it as the "
+            + "capacitor's stored charge (an SDD 'I[p,1]' equation, which an import writes for you "
+            + "when the source drives one capacitor and nothing else touches the node between "
+            + "them).");
     }
 
     // ── The linear extractor outlives one solve (HB-P2) ───────────────────────

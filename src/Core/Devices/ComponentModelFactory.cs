@@ -37,6 +37,9 @@ public static class ComponentModelFactory
             { "Short",  () => new ShortModel()          },
             { "IProbe", () => new IProbeModel()        },
             { "VCCS",  () => new VccsModel()          },
+            // The E element's linear half. Group 2 where the VCCS is Group 1 — see VcvsModel for
+            // why a controlled VOLTAGE source cannot be stamped as admittances.
+            { "VCVS",  () => new VcvsModel()          },
         };
 
     // Types that require resolved parameters at construction time.
@@ -2033,6 +2036,9 @@ public static class ComponentModelFactory
     private static readonly Regex RxControlVarRef = new(@"^_c(\d+)$", RegexOptions.Compiled);
     // Regex for unsupported constructs that must hard-error.
     private static readonly Regex RxImplicitEq = new(@"^F\[",  RegexOptions.Compiled);
+    // V[p] — the BRANCH equation: port p's voltage is held at this expression. The equation-defined
+    // device's Group-2 half, and the only shape in which a behavioural VOLTAGE source can be stated.
+    private static readonly Regex RxVoltageEq  = new(@"^V\[(\d+)\]$", RegexOptions.Compiled);
     // Noise entries (In, Nc) — silently skip.
     private static readonly Regex RxNoise = new(@"^(In|Nc)\[", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -2046,7 +2052,7 @@ public static class ComponentModelFactory
     public static bool IsSddEquationName(string name) =>
         RxCurrentEq.IsMatch(name) || RxCurrentEq1.IsMatch(name) || RxChargeEq1.IsMatch(name) ||
         RxWeightFn.IsMatch(name) || RxControlRef.IsMatch(name) || RxControlPort.IsMatch(name) ||
-        RxNoise.IsMatch(name);
+        RxVoltageEq.IsMatch(name) || RxNoise.IsMatch(name);
 
     private static SddModel CreateSddModel(IReadOnlyDictionary<string, Value> parameters,
         IReadOnlyList<UserFunction>? functions = null)
@@ -2078,6 +2084,7 @@ public static class ComponentModelFactory
         // Build equation arrays — indexed by port-1
         var currentAst = new Expr?[portCount];
         var chargeAst  = new Expr?[portCount];
+        var voltageAst = new Expr?[portCount];
         var higherAst  = new List<(int W, Expr Ast)>[portCount];
         for (int k = 0; k < portCount; k++) higherAst[k] = [];
         var weightAst  = new Dictionary<int, Expr>();
@@ -2090,10 +2097,23 @@ public static class ComponentModelFactory
         {
             var key = kv.Key;
 
-            // Hard error for implicit F[...] equations (unsupported physics).
+            // A general implicit equation stays out of scope. The one shape that was actually
+            // needed — a device that CONSTRAINS a port's voltage — has its own spelling, V[p], which
+            // says which port is constrained and reads the same way I[p,w] does. A free-form
+            // F[...] = 0 would need the engine to work out which unknown each equation belongs to.
             if (RxImplicitEq.IsMatch(key))
                 throw new InvalidOperationException(
-                    $"SDD '{sddName}': implicit equation F[...] not supported; use I[...] for explicit current");
+                    $"SDD '{sddName}': a free-form implicit equation F[...] is not supported. Use "
+                    + "I[p,w] to state a port's current, or V[p] to hold a port's VOLTAGE at an "
+                    + "expression — which is what a behavioural voltage source is.");
+
+            // V[p] — the branch equation.
+            var mV = RxVoltageEq.Match(key);
+            if (mV.Success)
+            {
+                ValidateAndBind(key, int.Parse(mV.Groups[1].Value), portCount, kv.Value, sddName, voltageAst);
+                continue;
+            }
 
             // Silently skip noise entries (In, Nc — out of v1 scope, don't affect solve)
             if (RxNoise.IsMatch(key)) continue;
@@ -2192,6 +2212,36 @@ public static class ComponentModelFactory
             // key is SddName, SddPortCount, H[w], or a resolved numeric param — already handled above
         }
 
+        // ── user functions are INLINED, once, here ────────────────────────────
+        //
+        // An SDD equation may call a function the netlist declared, and the three compiled paths
+        // beneath this model all end their function switch in "unknown function" — teaching each of
+        // them to look one up would put a name lookup on the hottest path in the simulator. The body
+        // is substituted at the call site instead, once per model rather than once per evaluation,
+        // and the name never enters the TestBench's one flat function namespace where two imported
+        // files would collide on it. See UserFunctionInliner for the cost and the cap.
+        if (functions is { Count: > 0 })
+        {
+            try
+            {
+                for (int k = 0; k < portCount; k++)
+                {
+                    if (currentAst[k] is { } ca) currentAst[k] = UserFunctionInliner.Inline(ca, functions);
+                    if (chargeAst[k]  is { } qa) chargeAst[k]  = UserFunctionInliner.Inline(qa, functions);
+                    if (voltageAst[k] is { } va) voltageAst[k] = UserFunctionInliner.Inline(va, functions);
+                    for (int h = 0; h < higherAst[k].Count; h++)
+                        higherAst[k][h] = (higherAst[k][h].W,
+                                           UserFunctionInliner.Inline(higherAst[k][h].Ast, functions));
+                }
+                foreach (int w in weightAst.Keys.ToList())
+                    weightAst[w] = UserFunctionInliner.Inline(weightAst[w], functions);
+            }
+            catch (UserFunctionInlineException ex)
+            {
+                throw new InvalidOperationException($"SDD '{sddName}': {ex.Message}", ex);
+            }
+        }
+
         // Cross-validate: every w≥2 referenced by some I[p,w] must have a matching H[w] declared.
         var referencedW = new HashSet<int>();
         foreach (var list in higherAst)
@@ -2215,6 +2265,7 @@ public static class ComponentModelFactory
         }
         foreach (var ast in currentAst) CollectControlVarRefs(ast);
         foreach (var ast in chargeAst)  CollectControlVarRefs(ast);
+        foreach (var ast in voltageAst) CollectControlVarRefs(ast);
         foreach (var list in higherAst)
             foreach (var (_, ast) in list) CollectControlVarRefs(ast);
 
@@ -2232,7 +2283,20 @@ public static class ComponentModelFactory
         var higherAstRo = Array.ConvertAll(higherAst,
             list => (IReadOnlyList<(int W, Expr Ast)>)list);
 
-        return new SddModel(sddName, portCount, currentAst, chargeAst, numericParams, higherAstRo, weightAst, controlRefs);
+        // A port cannot state both what its voltage IS and what its current is: the two are a
+        // contradiction, and one of them would silently win. Refused rather than resolved.
+        for (int k = 0; k < portCount; k++)
+        {
+            if (voltageAst[k] is null) continue;
+            if (currentAst[k] is not null || chargeAst[k] is not null || higherAst[k].Count > 0)
+                throw new InvalidOperationException(
+                    $"SDD '{sddName}': port {k + 1} states both V[{k + 1}] and a current equation. "
+                    + "A port whose VOLTAGE is held carries whatever current the rest of the circuit "
+                    + "draws through it — stating both is a contradiction, not a refinement.");
+        }
+
+        return new SddModel(sddName, portCount, currentAst, chargeAst, numericParams, higherAstRo,
+                            weightAst, controlRefs, voltageAst);
     }
 
     private static void ValidateAndBind(

@@ -29,6 +29,30 @@ public abstract class ComponentModel
     /// Linear contribution — the model contributes stamps; the engine owns the matrix.
     /// Called once per frequency point during analysis assembly.
     /// </summary>
+    /// <summary>
+    /// How many BRANCH equations this model owns — voltage relations it constrains, each costing a
+    /// branch-current unknown and a row of its own in the Newton system.
+    ///
+    /// <para>Zero for every model but the behavioural voltage source. It is asked because a NONLINEAR
+    /// model that owns a branch has to have its <see cref="Stamp"/> called during the engines'
+    /// linear pass — that is where a branch unknown is allocated, and where the constant half of its
+    /// constraint row is written — while every other nonlinear model contributes nothing there and
+    /// is skipped.</para>
+    /// </summary>
+    public virtual int BranchEquationCount => 0;
+
+    /// <summary>
+    /// The matrix branch index of each branch equation, in the order
+    /// <see cref="NonlinearResult.BranchResidual"/> states them, as allocated by the most recent
+    /// <see cref="Stamp"/> or <see cref="StampLinearized"/>.
+    ///
+    /// <para><b>Per-run, never carried between engines.</b> Branch numbering is a property of one
+    /// assembly: the DC engine, the S-parameter engine and the harmonic-balance extractor each build
+    /// their own, so an index resolved for one is not an index in another. This is the same rule the
+    /// SDD's control-branch indices already follow.</para>
+    /// </summary>
+    public virtual IReadOnlyList<int> BranchIndices => [];
+
     public virtual void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
         => throw new NotImplementedException($"{GetType().Name}.Stamp is not implemented");
 
@@ -307,6 +331,37 @@ public readonly struct NonlinearResult
     /// <summary>∂Q[p]/∂_cn (port × control-index), charge/w=1 path; null when no control currents (brief #3 §2).</summary>
     public double[,]? DControlCharge { get; }
 
+    /// <summary>
+    /// The right-hand side of each BRANCH equation the model owns — the value <c>g(v, i)</c> that
+    /// the constrained port's voltage is held at. Null for every device that constrains no voltage,
+    /// which is all of them but the behavioural voltage source.
+    ///
+    /// <para><b>Why this is a separate block rather than another port current.</b> A device that
+    /// states <c>V(a) − V(b) = g(…)</c> is a Group-2 element: the relation is between node voltages,
+    /// and no combination of currents expresses it. It needs a branch-current unknown of its own and
+    /// a row in the Newton system that is not a KCL row — which is what these three arrays fill in.
+    /// The engine reads them at the branch rows the model allocated during its stamp.</para>
+    ///
+    /// <para><b>There is deliberately no charge counterpart.</b> The residual is algebraic in
+    /// <c>v</c> and <c>i</c>; a nonlinear charge driven through such a source lives entirely in the
+    /// linear capacitor the source drives, where <c>jkω·C·V</c> applied to the harmonics of the
+    /// stored charge is already exactly its time derivative. A <c>Q</c> term here would count it
+    /// twice.</para>
+    /// </summary>
+    public double[]? BranchResidual { get; }
+
+    /// <summary>∂g_k/∂v_q — branch equation × port. Null when <see cref="BranchResidual"/> is.</summary>
+    public double[,]? DBranchV { get; }
+
+    /// <summary>
+    /// ∂g_k/∂_cn — branch equation × control-index. Null when the equation reads no branch current.
+    ///
+    /// <para><b>Not an edge case.</b> A behavioural voltage source whose expression is a function of
+    /// another source's branch current is an ordinary thing to write, and the first real device that
+    /// works at all leans on it twice.</para>
+    /// </summary>
+    public double[,]? DBranchC { get; }
+
     // Existing 4-arg ctor — Terms = [], DControl = null (fast path, unchanged).
     public NonlinearResult(double[] i, double[] q, double[,] dg, double[,] dc)
     {
@@ -332,5 +387,14 @@ public readonly struct NonlinearResult
         IReadOnlyList<WeightedTerm>? terms, double[,]? dControl, double[,]? dControlCharge)
     {
         I = i; Q = q; Dg = dg; Dc = dc; Terms = terms ?? []; DControl = dControl; DControlCharge = dControlCharge;
+    }
+
+    // 10-arg ctor — also carries the BRANCH block, for a device that constrains a port voltage.
+    public NonlinearResult(double[] i, double[] q, double[,] dg, double[,] dc,
+        IReadOnlyList<WeightedTerm>? terms, double[,]? dControl, double[,]? dControlCharge,
+        double[]? branchResidual, double[,]? dBranchV, double[,]? dBranchC)
+    {
+        I = i; Q = q; Dg = dg; Dc = dc; Terms = terms ?? []; DControl = dControl; DControlCharge = dControlCharge;
+        BranchResidual = branchResidual; DBranchV = dBranchV; DBranchC = dBranchC;
     }
 }

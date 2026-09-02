@@ -73,6 +73,12 @@ public static class SpiceNetlistReader
         private readonly List<Variable>             _globals    = [];
         private readonly List<UserFunction>         _functions  = [];
         private readonly List<SpiceModelCard>       _cards      = [];
+
+        /// <summary>
+        /// The subcircuit a model card was declared inside, by card name. Absent for a card declared
+        /// at file level. Read only to say WHERE a redefinition came from.
+        /// </summary>
+        private readonly Dictionary<string, string>  _cardOwner  = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string>            _incomplete = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<SpiceStatisticalUse>  _statistics = [];
         private readonly List<string>               _filesRead  = [];
@@ -303,9 +309,10 @@ public static class SpiceNetlistReader
                 cell.Ports.Add(p);
             }
 
-            foreach (var (name, value) in assignments)
+            foreach (var (rawName, value) in assignments)
             {
-                string expr = Rewrite(value);
+                string name = NormaliseDeclaredName(rawName);
+                string expr = Rewrite(value, file, number);
                 cell.Parameters.Add(new ParameterDeclaration(name, expr));
                 _conditionScope.Bind(name, expr);
             }
@@ -346,13 +353,14 @@ public static class SpiceNetlistReader
                 return;
             }
 
-            foreach (var (name, value) in assignments)
+            foreach (var (rawName, value) in assignments)
             {
                 // The function form: `.param f(a,b) = expr`. It is a declaration, not a binding, and
                 // reading it as one would put a name with brackets in it into the scope.
-                if (TryReadFunctionForm(name, value, file, number)) continue;
+                if (TryReadFunctionForm(rawName, value, file, number)) continue;
 
-                string expr = Rewrite(value);
+                string name = NormaliseDeclaredName(rawName);
+                string expr = Rewrite(value, file, number);
                 _conditionScope.Bind(name, expr);
 
                 if (Current is null) { _globals.Add(new Variable(name, expr)); continue; }
@@ -405,7 +413,7 @@ public static class SpiceNetlistReader
             if (args.Length == 0 || !args.All(IsIdentifier) || !IsIdentifier(name)) return false;
 
             // The body is the file's, not ours — an unreadable one is reported, never approximated.
-            try { _functions.Add(new UserFunction(name, args, Rewrite(body))); }
+            try { _functions.Add(new UserFunction(name, args, Rewrite(body, file, number))); }
             catch (Exception ex)
             {
                 Note(file, number, $"'{name}' could not be read as a function ({ex.Message}); skipped.");
@@ -478,13 +486,35 @@ public static class SpiceNetlistReader
             var (bare, assignments) = SplitBareAndAssignments(Words(body));
 
             var parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (k, v) in assignments) parameters[k] = Rewrite(v);
+            foreach (var (k, v) in assignments) parameters[k] = Rewrite(v, file, number);
 
+            // WHERE EACH CARD WAS DECLARED, so a collision is legible rather than merely reported.
+            // This dialect scopes a card declared inside a '.subckt' to that subcircuit; circuitRF
+            // holds one global card list, so two subcircuits each declaring their own 'DBODY' land
+            // on the same name. The redefinition is already noted — what the note has to say is that
+            // the two were LOCAL to different definitions, because "already defined" reads like a
+            // duplicated line in a file where nothing is duplicated.
             var existing = _cards.FindIndex(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (existing >= 0)
+            {
+                _cardOwner.TryGetValue(name, out string? previousOwner);
+                string where =
+                    previousOwner is not null && Current is not null
+                        ? $" Both are local to a subcircuit — the first to '{previousOwner}', this one to '{CurrentName}' — "
+                          + "and circuitRF holds one card list for the whole file, so they meet on the name."
+                    : previousOwner is not null
+                        ? $" The first was local to subcircuit '{previousOwner}'."
+                        : Current is not null
+                            ? $" This one is local to subcircuit '{CurrentName}'."
+                            : "";
+
                 Note(file, number,
                      $"model '{name}' was already defined; the later definition is the one kept, " +
-                     "and the two are not necessarily the same parameter set.");
+                     "and the two are not necessarily the same parameter set." + where);
+            }
+
+            if (Current is not null) _cardOwner[name] = CurrentName;
+            else _cardOwner.Remove(name);
 
             var card = new SpiceModelCard(name, type, parameters, [.. bare]);
             if (existing >= 0) _cards[existing] = card; else _cards.Add(card);
@@ -682,21 +712,348 @@ public static class SpiceNetlistReader
             ['X'] = (0, true),      // a subcircuit call: as many nets as the definition has ports
         };
 
+        /// <summary>
+        /// Element letters circuitRF does not implement, and what each one IS.
+        ///
+        /// <para><b>Named, because the generic message sends the reader looking for the wrong
+        /// thing.</b> "A kind this reader does not read" reads like an omission somebody could fix
+        /// by extending a table. These are not that: circuitRF is an RF circuit simulator with no
+        /// transient analysis, so a switch is a discontinuity it has no analysis for rather than a
+        /// device nobody got round to. Saying which device it is, and what circuitRF does not have,
+        /// is the whole difference between a refusal a user can act on and one they cannot.</para>
+        /// </summary>
+        private static readonly Dictionary<char, string> Unimplemented = new()
+        {
+            ['S'] = "a voltage-controlled switch, and circuitRF has no switch device — a switch is a "
+                  + "discontinuity, and circuitRF has no transient analysis to resolve one in",
+            ['W'] = "a current-controlled switch, and circuitRF has no switch device — a switch is a "
+                  + "discontinuity, and circuitRF has no transient analysis to resolve one in",
+            ['T'] = "a lossless transmission line stated in the time domain. circuitRF's own line "
+                  + "models are frequency-domain and are placed from the palette, not read from here",
+            ['O'] = "a lossy transmission line, which circuitRF does not read from this dialect",
+            ['U'] = "a distributed or digital-behavioural element, which circuitRF does not have",
+        };
+
+        /// <summary>
+        /// Splits a passive's transient initial condition off the value it is glued to —
+        /// <c>CQB b 0 1u,IC=0</c>. The tokeniser splits on whitespace, so the comma keeps the value
+        /// and the condition in one word; nothing then reads as a value and the component is refused
+        /// for having none, which loses a capacitor over a setting circuitRF has no analysis for
+        /// anyway.
+        ///
+        /// <para><b>It splits at <c>,IC=</c> and at nothing else, which is narrower than it looks
+        /// like it should be and deliberately so.</b> A top-level comma is not on its own a suffix
+        /// marker: a temperature-coefficient list is written <c>TC=0.1,0.2</c> and is ONE
+        /// assignment, and splitting it leaves a bare <c>0.2</c> that the element rule then reports
+        /// as an unexpected extra word. So the tail has to say what it is.</para>
+        ///
+        /// <para>Only a TOP-LEVEL comma is even considered: a comma inside brackets or quotes
+        /// belongs to an argument list — <c>if(a,b,c)</c> is one word and must stay one.</para>
+        /// </summary>
+        /// <summary>
+        /// Whether what follows a comma is a transient initial condition.
+        ///
+        /// <para>The <c>=</c> may be a separate word — this dialect allows spaces around one, and
+        /// the tokeniser splits on whitespace — so the name on its own is enough, and it is only
+        /// ever reached as the tail of a value that something was glued to.</para>
+        /// </summary>
+        private static bool IsInitialCondition(ReadOnlySpan<char> tail)
+            => tail.StartsWith("IC", StringComparison.OrdinalIgnoreCase)
+            && (tail.Length == 2 || tail[2] == '=');
+
+        internal static List<string> SplitCommaSuffix(IEnumerable<string> words)
+        {
+            var result = new List<string>();
+            foreach (string w in words)
+            {
+                int depth = 0;
+                char quote = '\0';
+                int at = -1;
+
+                for (int i = 0; i < w.Length && at < 0; i++)
+                {
+                    char c = w[i];
+                    if (quote != '\0') { if (c == quote) quote = '\0'; continue; }
+                    if (c is '"' or '\'') { quote = c; continue; }
+                    if (c is '(' or '{') depth++;
+                    else if (c is ')' or '}') depth--;
+                    else if (c == ',' && depth == 0) at = i;
+                }
+
+                if (at <= 0 || at == w.Length - 1) { result.Add(w); continue; }
+                if (!IsInitialCondition(w.AsSpan(at + 1))) { result.Add(w); continue; }
+                result.Add(w[..at]);
+                result.Add(w[(at + 1)..]);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// The independent and controlled sources — <c>V</c>, <c>I</c>, <c>E</c>, <c>G</c>,
+        /// <c>F</c>, <c>H</c>.
+        ///
+        /// <para><b>Read separately, because their shape is stated by FORM rather than by a fixed
+        /// net count.</b> The generic element rule takes the name of what implements a line from the
+        /// end of its bare-word run; a source names nothing, and how many of its leading words are
+        /// nets depends on whether it was written positionally (<c>E out 0 in 0 2.5</c>, four nets)
+        /// or behaviourally (<c>E out 0 VALUE={…}</c>, two).</para>
+        ///
+        /// <para><b>Every form is normalised to the behavioural one</b> — two nets and one
+        /// expression, with any other node or branch it senses named INSIDE that expression. A
+        /// positional gain is exactly <c>k*V(c+,c-)</c> and a current-controlled source exactly
+        /// <c>k*I(Vname)</c>, so writing them that way is a spelling change and leaves one shape for
+        /// the translation to read instead of four.</para>
+        /// </summary>
+        private void ReadSourceElement(List<string> words, string name, char letter, string file, int number)
+        {
+            var (bare, assignments) = SplitBareAndAssignments(SplitCommaSuffix(words.Skip(1)));
+            bare.RemoveAll(w => w.Equals("params:", StringComparison.OrdinalIgnoreCase));
+
+            if (bare.Count < 2)
+            {
+                Note(file, number, $"'{name}' gives {bare.Count} net(s), needs 2; skipped.");
+                MarkIncomplete();
+                return;
+            }
+
+            var nets = bare.Take(2).ToList();
+            var rest = bare.Skip(2).ToList();
+
+            // The transfer forms circuitRF has no analysis for, refused BY NAME. Each is a perfectly
+            // ordinary thing to write and none of them is an omission somebody could fix by
+            // extending a table, so the message says what the form is and what circuitRF does not
+            // have rather than reporting an unreadable line.
+            foreach (string w in rest.Concat(assignments.Select(a => a.Name)))
+            {
+                string? why = w.ToUpperInvariant() switch
+                {
+                    "TABLE"   => "states its transfer as a piecewise-linear table. circuitRF has no "
+                               + "table-driven source: a table is a chain of breakpoints, and a "
+                               + "breakpoint is a discontinuity in the derivative that harmonic "
+                               + "balance cannot resolve",
+                    "LAPLACE" => "states its transfer as a Laplace expression, which circuitRF does "
+                               + "not read from this dialect — a frequency-domain block is placed "
+                               + "from the palette instead",
+                    "FREQ"    => "states its transfer as a tabulated frequency response, which "
+                               + "circuitRF reads from a Touchstone file rather than from a netlist "
+                               + "line",
+                    _         => w.StartsWith("POLY(", StringComparison.OrdinalIgnoreCase)
+                               ? "states its transfer as a polynomial in its controlling quantities "
+                                 + "(POLY), which this reader does not expand"
+                               : null,
+                };
+                if (why is null) continue;
+                Note(file, number, $"'{name}' {why}; skipped.");
+                MarkIncomplete();
+                return;
+            }
+
+            var overrides = new List<ParameterAssignment>();
+
+            if (letter is 'V' or 'I')
+            {
+                if (!TryReadIndependentSource(name, letter, rest, assignments, overrides, file, number)) return;
+            }
+            else
+            {
+                string? value = TryReadControlledSource(name, letter, rest, assignments, file, number);
+                if (value is null) return;
+                overrides.Add(new ParameterAssignment(SourceValueParameter, Rewrite(value, file, number)));
+            }
+
+            foreach (var (k, v) in assignments)
+            {
+                if (k.Equals("VALUE", StringComparison.OrdinalIgnoreCase)) continue;
+                if (k.Equals("DC", StringComparison.OrdinalIgnoreCase)) continue;
+                overrides.Add(new ParameterAssignment(k, Rewrite(v, file, number)));
+            }
+
+            foreach (var o in overrides)
+            {
+                if (!SpiceExpression.ReferencesTime(o.Expression)) continue;
+                Note(file, number,
+                     $"'{name}' is a function of the transient time variable ('{Shorten(o.Expression)}'). "
+                     + "circuitRF has no transient analysis, and outside a condition there is no "
+                     + "steady-state value to read it as; skipped.");
+                MarkIncomplete();
+                return;
+            }
+
+            // The reference is the LETTER's own normalised family — 'E' for either behavioural
+            // voltage source, 'G' for either behavioural current source — because F and H differ
+            // from G and E only in what they sense, and that is now inside the expression.
+            string reference = letter switch { 'H' => "E", 'F' => "G", _ => letter.ToString() };
+            Current!.Instances.Add(new Instance(name, reference, nets, overrides));
+        }
+
+        /// <summary>
+        /// A <c>V</c> or <c>I</c> line: its DC value, and a note for every stimulus circuitRF drives
+        /// from its own TestBench instead.
+        ///
+        /// <para><b>The whole word run is read before anything is decided, and a STATED value beats
+        /// what a waveform merely contributes.</b> A line may carry both — <c>V1 a b AC 1 DC 5</c>
+        /// is ordinary, and so is the reverse order — and stopping at the first thing that looks
+        /// like an answer makes the result depend on which was written first. It read as 0 V, which
+        /// is a bias supply silently becoming a short.</para>
+        /// </summary>
+        private bool TryReadIndependentSource(
+            string name, char letter, List<string> rest,
+            List<(string Name, string Value)> assignments,
+            List<ParameterAssignment> overrides, string file, int number)
+        {
+            // What the line STATES as its DC value: a `DC=v` binding, a `DC v` keyword pair, or the
+            // positional value. Distinct from what a WAVEFORM contributes, which is only the answer
+            // when nothing states one.
+            string? stated   = null;
+            string? fallback = null;
+
+            var dcBinding = assignments.FirstOrDefault(a => a.Name.Equals("DC", StringComparison.OrdinalIgnoreCase));
+            if (dcBinding.Name is not null) stated = dcBinding.Value;
+
+            for (int i = 0; i < rest.Count; i++)
+            {
+                string w = rest[i];
+
+                if (w.Equals("DC", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (i + 1 < rest.Count) { stated ??= rest[i + 1]; i++; }
+                    continue;
+                }
+
+                // A stimulus this dialect states as a waveform. circuitRF drives a design from its
+                // own TestBench — a source placed in a subcircuit is part of the DEVICE, and its
+                // steady-state contribution is its DC value. Said out loud, because a waveform read
+                // as a number is indistinguishable from a source that never had one.
+                int paren = w.IndexOf('(');
+                string head = paren > 0 ? w[..paren] : w;
+                if (Waveforms.Contains(head))
+                {
+                    // A waveform's FIRST argument is its DC contribution — the initial level of a
+                    // pulse, the offset of a sinusoid — so it is read rather than assumed zero. A
+                    // shape that states none contributes nothing.
+                    string level = "0";
+                    if (paren > 0 && w.EndsWith(')'))
+                    {
+                        string first = SpiceExpression.SplitTopLevelArguments(
+                            w[(paren + 1)..^1].Replace('\t', ' ')).FirstOrDefault()?.Trim() ?? "";
+                        string firstWord = Words(first).FirstOrDefault() ?? "";
+                        if (SpiceNumber.TryParse(firstWord, out _)) level = firstWord;
+                    }
+
+                    Note(file, number,
+                         $"'{name}' states a {head.ToUpperInvariant()} stimulus. circuitRF drives a "
+                         + "design from its own TestBench, not from a source inside a device "
+                         + $"definition, so it contributes its DC level ({level}) and the waveform "
+                         + "was dropped.");
+                    fallback ??= level;
+                    continue;
+                }
+
+                if (w.Equals("AC", StringComparison.OrdinalIgnoreCase))
+                {
+                    Note(file, number,
+                         $"'{name}' states an AC stimulus. circuitRF drives a design from its own "
+                         + "TestBench, so it contributes its DC value and the AC magnitude was dropped.");
+                    i++;                                   // the magnitude, and its optional phase
+                    if (i + 1 < rest.Count && SpiceNumber.TryParse(rest[i + 1], out _)) i++;
+                    fallback ??= "0";                      // an AC-ONLY source sits at zero volts
+                    continue;
+                }
+
+                stated ??= w;
+            }
+
+            string? dc = stated ?? fallback;
+
+            if (dc is null)
+            {
+                Note(file, number,
+                     $"'{name}' states no value; circuitRF will not place a source at a default, "
+                     + "because zero simulates. Skipped.");
+                MarkIncomplete();
+                return false;
+            }
+
+            overrides.Add(new ParameterAssignment(SourceDcParameter, Rewrite(dc, file, number)));
+            return true;
+        }
+
+        /// <summary>Stimulus shapes stated as a waveform, all of which reduce to their DC contribution.</summary>
+        private static readonly HashSet<string> Waveforms =
+            new(StringComparer.OrdinalIgnoreCase) { "PULSE", "SIN", "SINE", "EXP", "PWL", "SFFM", "AM", "NOISE" };
+
+        /// <summary>
+        /// An <c>E</c>, <c>G</c>, <c>F</c> or <c>H</c> line, as one behavioural expression.
+        /// Returns null when the line was refused (and said so).
+        /// </summary>
+        private string? TryReadControlledSource(
+            string name, char letter, List<string> rest,
+            List<(string Name, string Value)> assignments, string file, int number)
+        {
+            // `VALUE={…}` — one assignment, because the '=' is at bracket depth zero.
+            var binding = assignments.FirstOrDefault(a => a.Name.Equals("VALUE", StringComparison.OrdinalIgnoreCase));
+            if (binding.Name is not null) return binding.Value;
+
+            // `VALUE {…}` — two bare words, which is how rather more than half of them are written.
+            if (rest.Count >= 2 && rest[0].Equals("VALUE", StringComparison.OrdinalIgnoreCase))
+                return rest[1];
+
+            if (letter is 'F' or 'H')
+            {
+                // `F out 0 Vsense 3` — the controlling SOURCE by name, then the gain.
+                if (rest.Count < 1)
+                {
+                    Note(file, number,
+                         $"'{name}' names no controlling source; a current-controlled source is "
+                         + "written with the name of the voltage source whose branch it senses. Skipped.");
+                    MarkIncomplete();
+                    return null;
+                }
+                string gain = rest.Count >= 2 ? rest[1] : "1";
+                return $"({gain})*I({rest[0]})";
+            }
+
+            // `E out 0 in 0 2.5` — the controlling PAIR, then the gain. Written as the expression it
+            // is, so the translation reads one shape.
+            if (rest.Count >= 3)
+                return $"({rest[2]})*V({rest[0]},{rest[1]})";
+
+            Note(file, number,
+                 $"'{name}' states neither a VALUE expression nor a controlling pair and a gain; skipped.");
+            MarkIncomplete();
+            return null;
+        }
+
         private void ReadElement(string s, string file, int number)
         {
             var words = Words(s);
             string name = words[0];
             char letter = char.ToUpperInvariant(name[0]);
 
+            if (letter is 'V' or 'I' or 'E' or 'G' or 'F' or 'H')
+            {
+                ReadSourceElement(words, name, letter, file, number);
+                return;
+            }
+
             if (!Elements.TryGetValue(letter, out var shape))
             {
-                Note(file, number,
-                     $"element '{name}' is of a kind this reader does not read ('{letter}'); skipped.");
+                Note(file, number, Unimplemented.TryGetValue(letter, out string? what)
+                        ? $"'{name}' is {what}; skipped."
+                        : $"element '{name}' is of a kind this reader does not read ('{letter}'); skipped.");
                 MarkIncomplete();
                 return;
             }
 
-            var (bare, assignments) = SplitBareAndAssignments(words.Skip(1));
+            var (bare, assignments) = SplitBareAndAssignments(SplitCommaSuffix(words.Skip(1)));
+
+            // `params:` separates a call's nets from its bindings, exactly as it does on the
+            // definition line — which is where the reader already skips it. Left in, it is a bare
+            // word like any other, so the name-is-the-LAST-bare-word rule takes it for the name of
+            // the subcircuit being called and the line reports a missing definition called
+            // 'PARAMS:'. That refusal names the wrong thing entirely, and it is the one the file's
+            // own reader would never make.
+            bare.RemoveAll(w => w.Equals("params:", StringComparison.OrdinalIgnoreCase));
 
             string? area = null;
             if (shape.NamesModel && letter != 'X' && bare.Count > shape.Nets + 1 &&
@@ -730,7 +1087,7 @@ public static class SpiceNetlistReader
                 if (rest.Count > 0 && LooksLikeValue(rest[0]))
                 {
                     reference = letter.ToString();
-                    overrides.Add(new ParameterAssignment(letter.ToString(), Rewrite(rest[0])));
+                    overrides.Add(new ParameterAssignment(letter.ToString(), Rewrite(rest[0], file, number)));
                     rest.RemoveAt(0);
                 }
                 else if (rest.Count > 0)
@@ -742,8 +1099,16 @@ public static class SpiceNetlistReader
                 {
                     // No positional value: it has to have arrived as `R=…`, and if it did not, the
                     // component has no value at all and saying so beats emitting a default.
+                    //
+                    // A CAPACITOR is the one exception, and it is not a special case so much as the
+                    // other thing a capacitor can state: `Q={…}` gives the stored charge directly
+                    // instead of the small-signal capacitance, which is how a supplier writes a
+                    // nonlinear capacitance when they do not write it as a behavioural source.
                     reference = letter.ToString();
-                    if (!assignments.Any(a => a.Name.Equals(letter.ToString(), StringComparison.OrdinalIgnoreCase)))
+                    bool statesCharge = letter == 'C'
+                        && assignments.Any(a => a.Name.Equals("Q", StringComparison.OrdinalIgnoreCase));
+                    if (!statesCharge &&
+                        !assignments.Any(a => a.Name.Equals(letter.ToString(), StringComparison.OrdinalIgnoreCase)))
                     {
                         Note(file, number, $"'{name}' has no value and names no model; skipped.");
                         MarkIncomplete();
@@ -776,9 +1141,35 @@ public static class SpiceNetlistReader
             if (area is not null) overrides.Add(new ParameterAssignment("area", area));
             foreach (var (k, v) in assignments)
             {
+                // A transient initial condition. circuitRF has no transient analysis, so there is
+                // nothing for it to set — but the value it is attached to is the component's, and
+                // the component is not in doubt. Noted and dropped; the line keeps its value.
+                if (k.Equals("IC", StringComparison.OrdinalIgnoreCase))
+                {
+                    Note(file, number,
+                         $"'{name}' states an initial condition (IC={v}). circuitRF has no transient "
+                         + "analysis, so it sets nothing and was dropped; the component's own value "
+                         + "is unaffected.");
+                    continue;
+                }
+
                 string spelling = NormaliseInstanceParameter(k);
                 if (letter is 'R' or 'C' or 'L') spelling = NormalisePassiveParameter(letter, spelling);
-                overrides.Add(new ParameterAssignment(spelling, Rewrite(v)));
+                overrides.Add(new ParameterAssignment(spelling, Rewrite(v, file, number)));
+            }
+
+            // A transient stimulus that survived the steady-state reading of a CONDITION (see
+            // SpiceExpression.RewriteTimeConditions) is a ramp, and a ramp has no steady-state value
+            // at all. Refused by name rather than evaluated at some arbitrary instant.
+            foreach (var o in overrides)
+            {
+                if (!SpiceExpression.ReferencesTime(o.Expression)) continue;
+                Note(file, number,
+                     $"'{name}' is a function of the transient time variable ('{Shorten(o.Expression)}'). "
+                     + "circuitRF has no transient analysis, and outside a condition there is no "
+                     + "steady-state value to read it as; skipped.");
+                MarkIncomplete();
+                return;
             }
 
             Current!.Instances.Add(new Instance(name, reference, nets, overrides));
@@ -854,6 +1245,32 @@ public static class SpiceNetlistReader
 
         private string Rewrite(string value) => SpiceExpression.Rewrite(value, _statistics);
 
+        /// <summary>
+        /// Rewrites a value and reports every INTERPRETATION it needed at the line it was written
+        /// on. The plain overload above is for values whose line is not in hand; prefer this one.
+        /// </summary>
+        private string Rewrite(string value, string file, int number)
+        {
+            var notes = new List<string>();
+            string expr = SpiceExpression.Rewrite(value, _statistics, notes);
+            foreach (string n in notes) Note(file, number, n);
+            return expr;
+        }
+
+        /// <summary>
+        /// circuitRF's spelling for a name the dialect reserves.
+        ///
+        /// <para>Only the temperature variable is reserved, and only its CASE differs: circuitRF
+        /// holds the ambient under the lower-case name its elaborator already reserves, and
+        /// <see cref="SpiceExpression.RewriteIdentifiers"/> rewrites every reference to it that way.
+        /// A file that also DECLARES the name has to be aligned to the same spelling, or the
+        /// declaration and the references stop meeting — circuitRF's scopes are ordinal.</para>
+        /// </summary>
+        private static string NormaliseDeclaredName(string name)
+            => name.Equals(SpiceExpression.TemperatureIdentifier, StringComparison.OrdinalIgnoreCase)
+                ? SpiceExpression.TemperatureIdentifier
+                : name;
+
         private void Note(string file, int line, string message)
             => _notes.Add(new SpiceNetlistNote(file, line, message));
 
@@ -877,6 +1294,12 @@ public static class SpiceNetlistReader
             ".protect", ".unprotect", ".alter", ".del", ".step", ".control", ".endc", ".csparam",
         };
     }
+
+    /// <summary>The parameter an <c>E</c>/<c>G</c> instance carries its transfer expression in.</summary>
+    public const string SourceValueParameter = "VALUE";
+
+    /// <summary>The parameter a <c>V</c>/<c>I</c> instance carries its DC value in.</summary>
+    public const string SourceDcParameter = "DC";
 
     // ─────────────────────────────────────────────────────────────────────────
     //  line assembly and tokenising — static, and shared by the session

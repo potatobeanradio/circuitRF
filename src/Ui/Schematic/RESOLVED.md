@@ -2,6 +2,44 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## Behavioural sources become two different things, chosen by SHAPE (2026-09-01)
+
+`brief-spice-behavioural-sources.md` M2–M4. A controlled source line is translated by looking at what
+its transfer IS, not at which letter wrote it (`SpiceSourceTranslation`):
+
+- **One sensed quantity, one coefficient, no offset** → the ideal `VCVS`/`VCCS`, a LINEAR element.
+  That matters beyond neatness: 53 of the 234 controlled-source lines measured are ideal, and turning
+  each into an equation-defined device would make a linear macromodel nonlinear — an S-parameter run
+  on it would start needing an operating point it has no reason to need.
+- **Anything else** → the equation-defined device, carrying the expression as a port current
+  (`I[1,0]`, behavioural current source) or as a held port voltage (`V[1]`, behavioural voltage
+  source — see `src/Engine/RESOLVED.md`).
+
+Every form is normalised to the `VALUE` one by the reader first, so translation reads ONE shape: a
+positional gain is exactly `k*V(c+,c−)` and a current-controlled source exactly `k*I(Vname)`.
+`SpiceBehaviouralSource` then parses that expression with circuitRF's own parser — never the text —
+and turns each `V(…)` into a port and each `I(…)` into a control reference. **The source's own pair is
+port 1 whether the expression names it or not**, and an expression that reads it reads `_v1` rather
+than opening a second port onto the same two nodes.
+
+**A zero-volt `V` line is an `IProbe`, not a zero-volt supply.** That idiom is the majority of the `V`
+lines in these files, it exists so something else can name the branch current, and `IProbe` is
+precisely the component a control reference can name.
+
+### Two traps, both silent
+
+- **A variadic symbol reads its own port count off a PARAMETER.** `SubcircuitCellBuilder.PlaceElement`
+  asked `SymbolPortDefs.For(kind)` before the parameters were on the component, so an equation-defined
+  device of any width got the two-port default — four pins for a device the netlist binds six nets to.
+  Nothing looks wrong on screen; the extra nets are simply bound nowhere. Gated by
+  `SpiceSourceImportTests.S18`, which extracts the built schematic back and checks the terminals.
+- **A `.func` must be inlined at TRANSLATION, not at model construction**, or the written cell is not
+  self-contained — see `src/Core/RESOLVED.md`. With the file's own functions substituted, any call
+  LEFT in an expression is one circuitRF does not have, and the translator refuses it there by name.
+  That cost 3 of the 36 subcircuits that would otherwise have "imported" — and took the number that
+  reach a DC operating point from 2 to 22, because every one it removed threw from inside the solver
+  instead.
+
 ## The SnP `File` base was wrong in the editor, and is now ONE function (2026-09-01)
 
 `SnpPathPolicy.ToStored` writes a picked path relative to the WORKSPACE ROOT (that is what makes a
@@ -807,3 +845,35 @@ reads as arbitrary unless you know the category priority order. Three owner-requ
 does not exist anywhere in the codebase — the actual single-tone voltage source is `SymbolKind.ToneSource`,
 `DisplayName` "VTone" (no "n"; `EngineReference` is `V_1Tone`, which is likely where the "V1Tone"
 naming came from). Confirmed with the owner directly — pinned row 14 is `ToneSource`.
+
+## The charge pair collapses at import — and that is what completes M4 (2026-09-01)
+
+`SpiceChargePairCollapse`. A behavioural voltage source driving a linear capacitor, with nothing else
+on the node between them, is how this whole family of models writes a nonlinear CHARGE — and the pair
+is algebraically one charge: `Q = K·(v_port − f)`, the capacitor's own value cancelling out of
+whatever `f` divided by it.
+
+**It is not an optimisation.** The uncollapsed pair is a branch equation, which DC and S-parameter
+analysis solve exactly and harmonic balance refuses — HB's unknowns are the voltage phasors at the
+nonlinear-facing nodes, and a branch current is neither one of them nor reducible into the linear
+subnetwork. The collapsed device states a charge, which HB has carried since it was written. So this
+is the only form in which the idiom runs in the analysis the physics is written for.
+
+Three conditions, and the first is the whole correctness of it:
+
+- **Nothing else on the interior node**, checked against the definition's own port list and every
+  other element in it — never against the text. A port is wired by the CALL SITE and ground is shared
+  by the whole design, so neither is ever an interior node however few elements name it.
+- **The expression must not sense the pair it constrains.** That pair is exactly what the collapse
+  dissolves; a source reading its own output is implicit in itself and has no collapsed form.
+- The other element must be a plain linear capacitor.
+
+A pattern that does not hold exactly is left as the general branch-row device, which still solves at
+DC and in S-parameters. Held by `SpiceSourceImportTests.M1`–`M4` (the collapse, and the three things
+that must PREVENT it) and by `Engine.Tests`' `SddBranchEquationTests.M4b1`, which asserts the two
+paths agree to 10 decimal places in S₁₁ at three frequencies.
+
+**Where the collapse lives is not arbitrary.** It runs after `.func` inlining and after the
+time-taint refusal, so what it wraps is already the final expression text and a refused pair is never
+rewritten. It touches `Elements`, which is what `SubcircuitCellBuilder` iterates — the interior node
+disappears from the built cell because nothing names it any more.

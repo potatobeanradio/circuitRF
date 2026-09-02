@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist.Spice;
 
 namespace CircuitRF.Ui.Schematic;
@@ -84,9 +85,266 @@ public static class SubcircuitTranslator
 
         var first = new List<SubcircuitTranslation>();
         foreach (var cell in result.Library.Cells)
-            first.Add(TranslateOne(cell, cards, byName, result.IncompleteCells));
+        {
+            CarryGlobals(cell, result.Variables);
+            var t = Inlined(TranslateOne(cell, cards, byName, result.IncompleteCells),
+                            result.Functions);
+            first.Add(SpiceChargePairCollapse.Collapse(RefuseTransientTime(t, result.Variables)));
+        }
 
         return ResolveDependencies(first);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  What a definition needs from the rest of its FILE
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Gives a cell the file's own global <c>.param</c>s, which its elements reference by bare name.
+    ///
+    /// <para><b>They are carried as the CELL's variables rather than pushed into the design's
+    /// globals, and that is the difference between working and colliding.</b> A design has one
+    /// global namespace; two library files that each declare <c>Rd</c> would meet in it, silently,
+    /// first one winning. A cell's own variables are scoped to the cell, so two imported parts each
+    /// keep their own — which is exactly what one-cell-per-subcircuit already buys for a
+    /// <c>.param</c> written INSIDE a definition, extended to the ones written outside it.</para>
+    ///
+    /// <para>A name the definition already declares is left alone. A cell parameter is the call
+    /// site's to override, and a variable of the same name would bind over it and seal it
+    /// shut.</para>
+    /// </summary>
+    private static void CarryGlobals(Cell cell, IReadOnlyList<Variable> globals)
+    {
+        if (globals.Count == 0) return;
+
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in cell.Parameters) taken.Add(p.Name);
+        foreach (var v in cell.Variables)  taken.Add(v.Name);
+
+        foreach (var g in globals)
+        {
+            // A global stated in terms of the transient time variable has NO steady-state value, so
+            // carrying it would put an unevaluable variable on every cell in the file — including
+            // every cell that never mentions it. It is dropped here and refused, by name, at
+            // whichever element actually reads it (RefuseTransientTime).
+            if (SpiceExpression.ReferencesTime(g.Expression)) continue;
+            if (taken.Add(g.Name)) cell.Variables.Add(g);
+        }
+    }
+
+    /// <summary>
+    /// Refuses, by name, a definition whose elements depend on the transient time variable.
+    ///
+    /// <para><b>The reader refuses a <c>time</c> written on an element line; this is the same
+    /// refusal one hop further out.</b> A file writes <c>.param tr = time*2</c> and then
+    /// <c>R1 a b {tr}</c>: the element's own text names no time at all, so nothing on the line can
+    /// see the problem, and left alone it becomes a cell carrying a variable that fails to evaluate
+    /// at simulate time with an unbound name and no mention of the file it came from.</para>
+    ///
+    /// <para>The taint is followed to a FIXED POINT through the definition's own parameters and
+    /// variables, because <c>.param a = time</c>, <c>.param b = a*2</c> is the same statement
+    /// written twice. Only an element that actually reads a tainted name is refused: a default no
+    /// call site uses is a default, and refusing on it would refuse definitions that work.</para>
+    /// </summary>
+    private static SubcircuitTranslation RefuseTransientTime(
+        SubcircuitTranslation t, IReadOnlyList<Variable> globals)
+    {
+        var tainted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in globals)
+            if (SpiceExpression.ReferencesTime(g.Expression)) tainted.Add(g.Name);
+
+        var candidates = new List<(string Name, string Expression)>();
+        foreach (var p in t.Definition.Parameters) candidates.Add((p.Name, p.DefaultExpression));
+        foreach (var v in t.Definition.Variables)  candidates.Add((v.Name, v.Expression));
+
+        for (bool grew = true; grew;)
+        {
+            grew = false;
+            foreach (var (name, expr) in candidates)
+                if (!tainted.Contains(name) && Reads(expr, tainted) is not null)
+                    grew = tainted.Add(name);
+        }
+
+        string? refusal = null;
+        var elements = new List<SubcircuitElement>(t.Elements.Count);
+        foreach (var e in t.Elements)
+        {
+            string? via = null;
+            if (e.Refusal is null)
+                foreach (var q in e.Parameters)
+                    if ((via = Reads(q.Expression, tainted)) is not null) break;
+
+            if (via is null) { elements.Add(e); continue; }
+
+            string why =
+                $"'{e.InstanceName}' depends on the transient time variable"
+                + (via.Equals(SpiceExpression.TimeIdentifier, StringComparison.OrdinalIgnoreCase)
+                    ? ". " : $", through '{via}'. ")
+                + "circuitRF has no transient analysis, and outside a condition there is no "
+                + "steady-state value to read it as.";
+            refusal ??= why;
+            elements.Add(e with { Refusal = why });
+        }
+
+        return refusal is null
+            ? t
+            : t with { Elements = elements, Refusal = t.Refusal ?? $"'{t.Name}': {refusal}" };
+
+        // The first name an expression reads that has no steady-state value — `time` itself, or a
+        // name that resolves to it. Null when the expression is clean.
+        static string? Reads(string expression, IReadOnlySet<string> tainted)
+        {
+            if (SpiceExpression.ReferencesTime(expression)) return SpiceExpression.TimeIdentifier;
+            if (tainted.Count == 0) return null;
+
+            Expr ast;
+            try { ast = Parser.Parse(expression); }
+            catch { return null; }
+
+            foreach (string r in AstWalker.CollectRefs(ast))
+                if (tainted.Contains(r)) return r;
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Substitutes every <c>.func</c> the file declared at its call sites, in everything the
+    /// translation emits.
+    ///
+    /// <para><b>Here, and not later, because a written cell has to be self-contained.</b> An
+    /// imported subcircuit becomes a cell FOLDER on disk; there is nowhere in it for a function
+    /// definition to live (<c>UserFunction</c> exists only on a TestBench, one flat namespace for a
+    /// whole design). A cell whose equations still called <c>ni(T)</c> would resolve only in a design
+    /// that happened to declare <c>ni</c>, and would collide with any other file that declared one.
+    /// A body substituted at its call site never enters a namespace at all.</para>
+    ///
+    /// <para>An expression the substitution does not touch keeps its exact text — the AST is only
+    /// printed back out when something actually changed, so nothing is re-spelled for the sake of
+    /// passing through.</para>
+    /// </summary>
+    private static SubcircuitTranslation Inlined(
+        SubcircuitTranslation t, IReadOnlyList<UserFunction> functions)
+    {
+        // A parameter DECLARATION is immutable, so a default that calls a function is replaced in
+        // place in the list rather than edited.
+        for (int k = 0; k < t.Definition.Parameters.Count; k++)
+        {
+            var d = t.Definition.Parameters[k];
+            if (Inline(d.DefaultExpression, functions) is { } changed && changed != d.DefaultExpression)
+                t.Definition.Parameters[k] = new ParameterDeclaration(d.Name, changed, d.Unit, d.Hidden);
+        }
+
+        for (int k = 0; k < t.Definition.Variables.Count; k++)
+        {
+            var v = t.Definition.Variables[k];
+            if (Inline(v.Expression, functions) is { } changed && changed != v.Expression)
+                t.Definition.Variables[k] = new Variable(v.Name, changed, v.Unit);
+        }
+
+        var elements = new List<SubcircuitElement>(t.Elements.Count);
+        string? refusal = null;
+
+        foreach (var e in t.Elements)
+        {
+            if (e.Refusal is not null || e.Parameters.Count == 0) { elements.Add(e); continue; }
+
+            var replaced = new List<EditableParameter>(e.Parameters.Count);
+            foreach (var p in e.Parameters)
+            {
+                string? changed;
+                try { changed = Inline(p.Expression, functions); }
+                catch (UserFunctionInlineException ex)
+                {
+                    refusal ??= $"'{e.InstanceName}': {ex.Message}";
+                    replaced.Add(p);
+                    continue;
+                }
+                string text = changed ?? p.Expression;
+
+                // WITH THE FILE'S OWN FUNCTIONS SUBSTITUTED, ANY CALL LEFT IS ONE CIRCUITRF DOES NOT
+                // HAVE — and this is the last moment it can be said usefully. Left alone it parses,
+                // elaborates, and throws "unknown function" from inside the solver at simulate time,
+                // in a message that names neither the file nor the line nor the element.
+                if (UnknownCall(text, e.Symbol == SymbolKind.Sdd) is { } unknown)
+                    refusal ??= unknown.Equals("TABLE", StringComparison.OrdinalIgnoreCase)
+                        ? $"'{e.InstanceName}' states part of its transfer as a piecewise-linear "
+                        + "table. circuitRF has no table-driven source: a table is a chain of "
+                        + "breakpoints, and a breakpoint is a discontinuity in the derivative that "
+                        + "harmonic balance cannot resolve."
+                        : $"'{e.InstanceName}' calls '{unknown}', which is not a function "
+                        + "circuitRF has and which this file does not define.";
+
+                replaced.Add(changed is null || changed == p.Expression
+                    ? p
+                    : new EditableParameter { Name = p.Name, Expression = changed, Unit = p.Unit });
+            }
+            elements.Add(e with { Parameters = replaced });
+        }
+
+        return t with
+        {
+            Elements = elements,
+            Refusal  = t.Refusal ?? (refusal is null ? null : $"'{t.Name}': {refusal}"),
+        };
+    }
+
+    /// <summary>
+    /// One expression with its function calls substituted, or null when nothing changed.
+    ///
+    /// <para>A value that is not an expression at all — a file path, an enum name, an instance name
+    /// on a control reference — is left exactly as written rather than refused: this is a
+    /// substitution pass, and a value with no function call in it has nothing to substitute.</para>
+    /// </summary>
+    /// <summary>
+    /// The name of the first call in an expression that whatever will EVALUATE it cannot, or null.
+    ///
+    /// <para><b>Which evaluator that is has to be asked, because the two do not implement the same
+    /// set.</b> A device equation is evaluated with a derivative alongside every value, so the
+    /// rounding family (<c>floor</c>, <c>ceil</c>, <c>round</c>, <c>int</c>) is absent there and
+    /// present in an ordinary parameter expression. Reading them from one list let <c>INT(V(a,b))</c>
+    /// through import and threw it from inside the solver — which is precisely the failure this
+    /// check exists to move forward to the file.</para>
+    /// </summary>
+    private static string? UnknownCall(string expression, bool deviceEquation)
+    {
+        if (!expression.Contains('(')) return null;
+
+        Expr ast;
+        try { ast = Parser.Parse(expression); }
+        catch { return null; }        // not an expression at all; someone else's problem to report
+
+        var known = deviceEquation
+            ? SpiceExpression.DeviceEquationFunctions
+            : SpiceExpression.KnownFunctions;
+        return Walk(ast, known);
+
+        static string? Walk(Expr e, IReadOnlySet<string> known)
+        {
+            switch (e)
+            {
+                case CallExpr c:
+                    if (!known.Contains(c.Name)) return c.Name;
+                    foreach (var a in c.Args) if (Walk(a, known) is { } n) return n;
+                    return null;
+                case UnaryExpr u:       return Walk(u.Operand, known);
+                case BinaryExpr b:      return Walk(b.Left, known)  ?? Walk(b.Right, known);
+                case CompareExpr cp:    return Walk(cp.Left, known) ?? Walk(cp.Right, known);
+                case LogicExpr l:       return Walk(l.Left, known)  ?? Walk(l.Right, known);
+                case ConditionalExpr d: return Walk(d.Condition, known) ?? Walk(d.Then, known)
+                                            ?? Walk(d.Else, known);
+                default:                return null;
+            }
+        }
+    }
+
+    private static string? Inline(string expression, IReadOnlyList<UserFunction> functions)
+    {
+        Expr ast;
+        try { ast = Parser.Parse(expression); }
+        catch { return null; }
+
+        var inlined = UserFunctionInliner.Inline(ast, functions);
+        return ReferenceEquals(inlined, ast) ? null : SpiceBehaviouralSource.Print(inlined);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -132,6 +390,13 @@ public static class SubcircuitTranslator
             inst.InstanceName, inst.Reference, inst.NetBindings,
             null, null, [], [], [], why);
 
+        // A source line. Dispatched FIRST, and on the instance's own leading letter as well as on
+        // the reference, so a file that happens to define a subcircuit called 'E' still calls it.
+        if (SpiceSourceTranslation.Handles(inst.Reference) &&
+            inst.InstanceName.Length > 0 &&
+            char.ToUpperInvariant(inst.InstanceName[0]) is 'V' or 'I' or 'E' or 'G' or 'F' or 'H')
+            return SpiceSourceTranslation.Translate(inst);
+
         // A subcircuit call. Whether the definition it names can itself be built is settled in the
         // dependency pass, because the answer may not exist yet.
         if (byName.TryGetValue(inst.Reference, out var target))
@@ -151,6 +416,32 @@ public static class SubcircuitTranslator
         // positionally or as R=/C=/L=, and whether it came from a passive model card.
         if (PassiveSymbol(inst.Reference) is { } passive)
         {
+            // A capacitor may state its stored CHARGE instead of its capacitance, which is a
+            // nonlinear capacitance written directly rather than through a behavioural source. It is
+            // an equation, so it becomes the equation-defined device's charge bucket — where
+            // harmonic balance already applies jkω to its harmonics.
+            //
+            // The trap this AVOIDS, stated once because getting it wrong is silent: a capacitance
+            // C(v) is the DERIVATIVE of the charge, so Q = ∫C dv and NOT C(v)·v. A charge stated
+            // directly has no such conversion to get wrong, which is why it is the spelling to
+            // recommend for anything that is not a polynomial.
+            if (passive == SymbolKind.Capacitor &&
+                inst.Overrides.FirstOrDefault(o =>
+                    o.Name.Equals(SpiceChargeSpelling.ChargeParameter, StringComparison.OrdinalIgnoreCase))
+                is { } chargeOverride)
+                return SpiceChargeSpelling.CapacitorCharge(inst, chargeOverride.Expression);
+
+            // And it may state a capacitance that VARIES with its own voltage, which is the other
+            // way the same physics is written. Only a polynomial has a symbolic integral here, and
+            // the integral is the whole point: C(v) is dQ/dv, so the charge is ∫C dv and never
+            // C(v)·v. Anything else is refused by name rather than approximated.
+            if (passive == SymbolKind.Capacitor &&
+                inst.Overrides.FirstOrDefault(o =>
+                    o.Name.Equals(ValueParameter(SymbolKind.Capacitor), StringComparison.OrdinalIgnoreCase))
+                is { } valueOverride &&
+                SpiceChargeSpelling.CapacitorCapacitance(inst, valueOverride.Expression) is { } varying)
+                return varying;
+
             var parameters = InstanceParameters(inst, passive).ToList();
             if (parameters.All(p => !p.Name.Equals(ValueParameter(passive), StringComparison.Ordinal)))
                 return Refuse(
