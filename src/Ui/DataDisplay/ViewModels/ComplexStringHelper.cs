@@ -89,12 +89,22 @@ internal static class ComplexStringHelper
         return false;
     }
 
-    /// <summary>Formats a complex number as a short string suitable for display and round-trip parsing.</summary>
+    /// <summary>
+    /// Formats a complex number as a short string suitable for display and round-trip parsing.
+    ///
+    /// <para><b>Every part is InvariantCulture, and it has to be:</b> <see cref="TryParse"/>'s
+    /// grammar admits <c>'.'</c> as the decimal separator and nothing else, so this is one half of
+    /// a round trip rather than a display formatter. The imaginary branch used to format its two
+    /// components with the ambient culture while the real branch was already invariant — on a
+    /// comma-decimal machine that wrote <c>50,5+j10,2</c> into the Z0 box and then rejected it as
+    /// "Invalid Z0", a value the application itself had produced.</para>
+    /// </summary>
     internal static string Format(Complex z, string fmt = "G6")
     {
         if (z.Imaginary == 0) return z.Real.ToString(fmt, CultureInfo.InvariantCulture);
         string sign = z.Imaginary >= 0 ? "+" : "-";
-        return $"{z.Real.ToString(fmt)}{sign}j{Math.Abs(z.Imaginary).ToString(fmt)}";
+        return $"{z.Real.ToString(fmt, CultureInfo.InvariantCulture)}{sign}j" +
+               $"{Math.Abs(z.Imaginary).ToString(fmt, CultureInfo.InvariantCulture)}";
     }
 
     private static bool D(string s, out double v) =>
