@@ -1,5 +1,35 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Two blank-or-partial readouts: the Known Files tooltip and the HB analysis card (2026-09-02)
+
+Both owner-reported, unrelated in code, and the same shape: a display read ONE field where the data
+it was describing lived in another.
+
+**The Known Files folder had an empty tooltip.** `ProjectTreeView.axaml` renders one tooltip for
+every tree node — a warning line, then `TooltipPath`. `WorkspaceScanner` synthesises the Known Files
+GROUP node with an empty relative path (it is a heading, not a file), and `TooltipPath` returned
+`RelativePath` for everything that was not a Known File directory, so the group's tooltip was a
+popup containing an empty string. It now returns a sentence describing what the folder holds, keyed
+on `NodeKind.KnownFilesGroup`; the Known File directory case (absolute path, because the LABEL
+already shows the relative one) and every other node are untouched.
+
+*Note, not fixed:* the other synthetic group nodes reach the same code path and would render the
+same empty tooltip. Only Known Files was reported, and only Known Files has copy written for it.
+
+**The HB analysis card named one tone for a multi-tone run.** `AnalysisRowViewModel.FormatHbSummary`
+read the scalar `ToneExpr` and printed `f₀=…`. A multi-tone analysis carries its real tone set in
+`ToneExprs`/`ToneUnits` and only MIRRORS tone 1 into the scalar — `HbBodyViewModel` does this
+deliberately, for the consumers that read the scalar — so a two-tone run showed its first fundamental
+and gave no sign the second existed. The card now lists every tone as `f₁=…, f₂=…`, each resolved
+through its OWN unit, and a single-tone run still reads `f₀=…`.
+
+**The multi-tone TEST is `HbEngine`'s own, on purpose:** `NumFreqs > 1` **and**
+`ToneExprs.Length >= NumFreqs`, taking the first `NumFreqs` entries. A declared count the tone list
+cannot cover is what the engine silently runs as single-tone, so a card using a looser test (say,
+`ToneExprs.Length > 1`) would name a tone set the run does not use — a readout that disagrees with
+the simulation is worse than the incomplete one it replaced. Gated by four cases in
+`AnalysisFreqCardSummaryTests`, including that fallback.
+
 ## SPICE import: the omissions had no user-facing home, and two DocGen findings (2026-09-01)
 
 An imported bipolar card reported "34 parameter(s) — 6 not carried: AF, CJS, KF, MJS, PTF, VJS",

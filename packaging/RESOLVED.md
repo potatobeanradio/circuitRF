@@ -5,6 +5,76 @@ symptom first, because that is what the next person will have in front of them.
 
 ---
 
+## The Desktop shortcut the .msi lays down draws the generic Windows icon (2026-09-02)
+
+**Symptom:** install the packaged Windows build from the `.msi`; the shortcut placed on the Desktop
+carries the default Windows application icon rather than circuitRF's. Owner-reported.
+
+**The stub had no `.rsrc` section at all.** Windows draws a non-advertised shortcut with the icon
+embedded in the PE resources of the file it points at, and `circuitRF.wxs` named neither shortcut's
+`Icon`, so both relied on that inheritance. In **perMachine** scope the target is the published
+`circuitRF.exe`, which the `.csproj`'s `ApplicationIcon` does embed on a Windows publish, so it
+looked right. In **perUser** scope `[INSTALLFOLDER]circuitRF.exe` is not the application at all - it
+is the launcher stub, and the application lives under `app-<version>\`. That stub is one C file
+compiled by `stub/build-stub.ps1` with **no resource script on any of its five compiler routes**, so
+it carried nothing. Read back out of a built stub: seven sections, no `.rsrc`, zero resources.
+
+**The blast radius was wider than the shortcut.** The same stub is what Explorer draws for the
+install-root `.exe`, and every file association in the `.wxs` registers `Icon="CircuitRfExe"` - so in
+a per-user install every `.cws`, `.csch`, `.cdd` and `.cem` on the machine had a generic document
+icon too. One root cause, four visible symptoms.
+
+**Fixed by compiling the icon into the stub**, in both `build-stub.ps1` and `build-stub.sh` (their
+headers require the two to agree). Two things about `.rc` files were measured against zig 0.16.0's
+resource compiler and neither is guessable:
+
+- **A path in a `.rc` resolves relative to the `.rc` file's OWN directory**, not the working
+  directory.
+- **An absolute POSIX path is rejected outright** - `FileNotFound`, reported at column 1 rather than
+  at the path, so it does not even look like a path problem.
+
+So the `.ico` is **copied next to a generated `.rc` and named with a bare filename** - the one
+spelling that needs no include path, no host-specific quoting and no escaping. (A `.rc` string
+escapes backslashes, which makes a Windows path written into one a trap in its own right.)
+
+`zig cc` compiles a `.rc` given on the command line, so routes 1-3 need only the extra argument.
+`cl.exe` cannot - `rc.exe` compiles the `.rc` to a `.res` and cl forwards that to the linker like any
+other input - so routes 4 and 5 run `rc.exe` first and fall back to an icon-less build if it is
+absent or refuses.
+
+**Measured, on all three architectures, from the real script:** the stub gains a `.rsrc` section
+carrying `RT_ICON` ids 1-7 and `RT_GROUP_ICON` id 1, with the correct machine and subsystem 2 still
+read back; and all seven embedded images (16, 24, 32, 48, 64, 128, 256 px) are **byte-identical to
+the source artwork**.
+
+**Two rules the fix is built around, both from this repository's own history.**
+
+- **The icon must never cost a stub.** Every zig route compiles the `.rc` alongside the C, so an
+  icon this script could not compile would otherwise fail all four routes and produce nothing - and
+  a release short of its per-user installer is the exact failure this script was rewritten to
+  prevent (see the 2026-08-25 entry below). A fifth route builds **without** the icon as a last
+  resort, so the worst case is exactly the stub that shipped before.
+- **Never trust a toolchain to have done what it was asked** - the rule the machine and subsystem
+  read-backs already existed for, and the icon needs it more: a resource compiler that quietly did
+  nothing exits 0 and yields a stub that launches perfectly and draws the wrong icon. Both scripts
+  now parse the resource directory of the PE they just built and print `(with icon)` or a warning.
+  A missing icon is a **warning, never a rejection**.
+
+**The shortcuts also name their icon explicitly** (`Icon="circuitRFIcon.ico"` on both `Shortcut`
+elements). That is belt to the stub's braces: it costs one attribute and keeps the shortcuts right
+even when the embed is deliberately skipped - which it is whenever the `.ico` has not been generated
+yet, or the only available toolchain cannot compile a resource script.
+
+**Why nothing caught it:** `wix build` is perfectly happy with an icon-less shortcut, and the stub
+build was equally happy producing an executable with no resources - no warning, no error, in either
+place. The first report comes from a user looking at their Desktop after an install.
+`tests/Ui.Tests/PackagingScriptTests.cs` now holds both halves: `WindowsInstallerShortcutsNameTheirIcon`
+requires every `Shortcut` to name a declared `Icon`, and `LauncherStubScriptsCompileTheIconIntoTheStub`
+requires both stub scripts to find the `.ico`, generate the `.rc`, and actually pass it to the
+compiler.
+
+---
+
 ## A Windows release shipped 5 of 9 artifacts: the launcher stub "could not be built" for arm64 and x86 (2026-08-25)
 
 **Symptom:** `.\packaging\windows\build-windows.ps1` on a Windows-on-ARM machine builds the x64

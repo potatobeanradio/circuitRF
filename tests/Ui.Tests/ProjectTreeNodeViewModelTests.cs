@@ -199,6 +199,45 @@ public class ProjectTreeNodeViewModelTests : IDisposable
         Assert.True(cellVm.IsExpanded);
     }
 
+    // ── Tooltips ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The Known Files GROUP is synthesised by the scanner with an empty relative path, and the
+    /// tree's one shared tooltip renders TooltipPath — so hovering it showed an empty tooltip
+    /// (owner-reported). It describes what the folder holds instead.
+    /// </summary>
+    [Fact]
+    public void KnownFilesGroup_TooltipExplainsTheFolder_RatherThanBeingBlank()
+    {
+        var node = new ProjectTreeNode(NodeKind.KnownFilesGroup, "Known Files", _root, "");
+        var vm   = new ProjectTreeNodeViewModel(node, AllOn());
+
+        Assert.Equal("External files that are known to this workspace are listed here.", vm.TooltipPath);
+    }
+
+    /// <summary>A Known File DIRECTORY still shows its absolute path — the group is the only case
+    /// that changed.</summary>
+    [Fact]
+    public void KnownFileDirectory_TooltipStillShowsTheAbsolutePath()
+    {
+        string abs = Path.Combine(_root, "elsewhere");
+        var node = new ProjectTreeNode(NodeKind.KnownFile, "elsewhere", abs, "../elsewhere",
+                                       isDirectory: true);
+        var vm   = new ProjectTreeNodeViewModel(node, AllOn());
+
+        Assert.Equal(abs, vm.TooltipPath);
+    }
+
+    /// <summary>Every other node still shows its relative path.</summary>
+    [Fact]
+    public void OrdinaryNode_TooltipStillShowsTheRelativePath()
+    {
+        var node = new ProjectTreeNode(NodeKind.Cell, "Amp", Path.Combine(_root, "Amp"), "Amp");
+        var vm   = new ProjectTreeNodeViewModel(node, AllOn());
+
+        Assert.Equal("Amp", vm.TooltipPath);
+    }
+
     // ── Context-menu visibility helpers ───────────────────────────────────────
 
     private static ProjectTreeNodeViewModel MakeVm(NodeKind kind, string absPath)

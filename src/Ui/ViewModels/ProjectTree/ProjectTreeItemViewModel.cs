@@ -59,13 +59,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         : _node.Name;
 
     /// <summary>
-    /// Path shown in the node tooltip.
+    /// Text shown in the node tooltip.
+    /// The Known Files GROUP is a synthetic node built by the scanner with an empty relative path,
+    /// so the shared tooltip rendered blank for it — it describes what the folder holds instead.
     /// Known File directories show the absolute path (the label already shows relative).
     /// All other nodes show the relative path.
     /// </summary>
-    public string TooltipPath => (Kind == NodeKind.KnownFile && _node.IsDirectory)
-        ? _node.AbsolutePath
-        : _node.RelativePath;
+    public string TooltipPath => Kind switch
+    {
+        NodeKind.KnownFilesGroup                  => "External files that are known to this workspace are listed here.",
+        NodeKind.KnownFile when _node.IsDirectory => _node.AbsolutePath,
+        _                                         => _node.RelativePath,
+    };
 
     // ── Computed display properties (bind → render; never re-derive flags) ────
 

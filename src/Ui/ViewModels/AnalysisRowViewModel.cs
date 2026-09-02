@@ -92,10 +92,43 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         return n == 1 ? range : $"{range}, {n} segments";
     }
 
+    /// <summary>
+    /// The tone half of the HB card. A multi-tone analysis carries its fundamentals in
+    /// <c>ToneExprs</c> and only MIRRORS tone 1 into the scalar <c>ToneExpr</c>, so reading the
+    /// scalar alone reported an N-tone analysis as a single "f₀" and hid every other tone.
+    /// The multi-tone test is HbEngine's own (<c>NumFreqs &gt; 1</c> and enough entries to satisfy
+    /// it, first <c>NumFreqs</c> taken) so the card can never name a tone set the run would not use.
+    /// </summary>
     private static string FormatHbSummary(HarmonicBalanceAnalysis hb, SchematicEditModel model)
     {
-        string tone = hb.ToneExpr == "0" ? "?" : AnalysisPreviewHelper.ComputeFreqSummary(hb.ToneExpr, hb.ToneUnit, model);
-        return $"f₀={tone}, {hb.MaxHarmonicExpr} harmonics";
+        int numFreqs = int.TryParse(hb.NumFreqsExpr.Trim(), NumberStyles.Integer,
+                                    CultureInfo.InvariantCulture, out int n) ? n : 1;
+
+        if (numFreqs > 1 && hb.ToneExprs.Length >= numFreqs)
+        {
+            var tones = new string[numFreqs];
+            for (int i = 0; i < numFreqs; i++)
+            {
+                string unit = i < hb.ToneUnits.Length ? hb.ToneUnits[i] : "Hz";
+                tones[i] = $"f{Subscript(i + 1)}={FormatTone(hb.ToneExprs[i], unit, model)}";
+            }
+            return $"{string.Join(", ", tones)}, {hb.MaxHarmonicExpr} harmonics";
+        }
+
+        return $"f₀={FormatTone(hb.ToneExpr, hb.ToneUnit, model)}, {hb.MaxHarmonicExpr} harmonics";
+    }
+
+    /// <summary>An unset tone reads "?" rather than "0 Hz", which would look like a real setting.</summary>
+    private static string FormatTone(string expr, string unit, SchematicEditModel model) =>
+        expr == "0" ? "?" : AnalysisPreviewHelper.ComputeFreqSummary(expr, unit, model);
+
+    /// <summary>Subscript digits for the tone index (HbMaxTones is 6, but any index formats).</summary>
+    private static string Subscript(int i)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (char c in i.ToString(CultureInfo.InvariantCulture))
+            sb.Append(c is >= '0' and <= '9' ? (char)('\u2080' + (c - '0')) : c);
+        return sb.ToString();
     }
 
     private static string FormatSweepSummary(ParametricSweepAnalysis psa)

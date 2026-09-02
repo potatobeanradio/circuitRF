@@ -154,6 +154,80 @@ public class AnalysisFreqCardSummaryTests
         Assert.Equal("f₀=?, 7 harmonics", Row(hb, model).Summary);
     }
 
+    // ── Multi-tone: the card names EVERY fundamental, not just tone 1 ───────────────────────────
+
+    /// <summary>
+    /// A multi-tone HB analysis mirrors tone 1 into the scalar <c>ToneExpr</c> and carries the real
+    /// tone set in <c>ToneExprs</c>. The card read only the scalar, so a two-tone run displayed a
+    /// single "f₀" and the second fundamental was nowhere on screen (owner-reported).
+    /// </summary>
+    [Fact]
+    public void HbAnalysisCard_MultiTone_ListsEveryTone()
+    {
+        var model = Model();
+        var hb = new HarmonicBalanceAnalysis("HB1")
+        {
+            ToneExpr = "2", ToneUnit = "GHz",          // the mirror of tone 1
+            NumFreqsExpr = "2",
+            ToneExprs = ["2", "2.4"],
+            ToneUnits = ["GHz", "GHz"],
+            MaxHarmonicExpr = "7",
+        };
+
+        Assert.Equal("f₁=2 GHz, f₂=2.4 GHz, 7 harmonics", Row(hb, model).Summary);
+    }
+
+    /// <summary>Each tone resolves through its OWN unit, not tone 1's.</summary>
+    [Fact]
+    public void HbAnalysisCard_MultiTone_ResolvesEachToneInItsOwnUnit()
+    {
+        var model = Model();
+        var hb = new HarmonicBalanceAnalysis("HB1")
+        {
+            ToneExpr = "2", ToneUnit = "GHz",
+            NumFreqsExpr = "3",
+            ToneExprs = ["2", "10", "100"],
+            ToneUnits = ["GHz", "MHz", "kHz"],
+            MaxHarmonicExpr = "5",
+        };
+
+        Assert.Equal("f₁=2 GHz, f₂=10 MHz, f₃=100 kHz, 5 harmonics", Row(hb, model).Summary);
+    }
+
+    /// <summary>
+    /// The card's multi-tone test is <c>HbEngine</c>'s own: <c>NumFreqs &gt; 1</c> AND enough
+    /// entries to satisfy it. A declared count the tone list cannot cover is what the engine runs
+    /// as single-tone, so the card must say the same rather than invent a tone set.
+    /// </summary>
+    [Fact]
+    public void HbAnalysisCard_NumFreqsWithoutEnoughTones_FallsBackToSingleTone()
+    {
+        var model = Model();
+        var hb = new HarmonicBalanceAnalysis("HB1")
+        {
+            ToneExpr = "2", ToneUnit = "GHz",
+            NumFreqsExpr = "3",
+            ToneExprs = ["2", "2.001"],
+            ToneUnits = ["GHz", "GHz"],
+            MaxHarmonicExpr = "7",
+        };
+
+        Assert.Equal("f₀=2 GHz, 7 harmonics", Row(hb, model).Summary);
+    }
+
+    /// <summary>Single-tone still says f₀ — the multi-tone path must not capture it.</summary>
+    [Fact]
+    public void HbAnalysisCard_SingleTone_KeepsTheF0Spelling()
+    {
+        var model = Model();
+        var hb = new HarmonicBalanceAnalysis("HB1")
+        {
+            ToneExpr = "2", ToneUnit = "GHz", NumFreqsExpr = "1", MaxHarmonicExpr = "7",
+        };
+
+        Assert.Equal("f₀=2 GHz, 7 harmonics", Row(hb, model).Summary);
+    }
+
     // ── Gate 6c: the parametric-sweep summary path is untouched ─────────────────────────────────
 
     [Fact]

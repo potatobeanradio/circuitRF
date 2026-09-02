@@ -54,9 +54,31 @@ rm -f "$exe"
 # script used to do, and after build-stub.ps1 moved to a bare token this one was left behind: the
 # name arrived as "circuitRF" INCLUDING the quotes, so the stub went looking for a file literally
 # called "circuitRF".exe. See the note in circuitrf-stub.c.
+#
+# THE ICON. In a per-user install the file at the install root is this stub, not the application, so
+# the stub's own PE resources are what Explorer draws, what a shortcut inherits, and what the .wxs
+# file associations resolve through. build-stub.ps1 does exactly this; the two must agree.
+#
+# The .ico is COPIED next to a generated .rc and named without a path. Both halves were measured
+# against zig 0.16.0's resource compiler: a path in a .rc resolves relative to THE .rc FILE'S OWN
+# DIRECTORY rather than the working directory, and an absolute path is rejected outright.
+#
+# A MISSING .ico IS NOT AN ERROR - they are build products of tools/IconGen, which the packaging
+# scripts run first, and an icon-less stub still launches the application.
+rc_arg=""
+ico="$here/../../../src/Ui/Assets/${app}Icon.ico"
+if [ -f "$ico" ]; then
+    cp "$ico" "$out/$app-icon.ico"
+    printf '1 ICON "%s-icon.ico"\n' "$app" > "$out/$app-icon.rc"
+    rc_arg="$out/$app-icon.rc"
+else
+    echo "no ${app}Icon.ico in src/Ui/Assets - building without an icon."
+    echo "generate it with: dotnet run --project tools/IconGen"
+fi
+
 "$ZIG" cc -target "$target" -mcpu=baseline -O2 -municode -Wl,--subsystem,windows \
     "-DCRF_APP_NAME=$app" \
-    "$here/circuitrf-stub.c" -o "$exe" -luser32
+    "$here/circuitrf-stub.c" ${rc_arg:+"$rc_arg"} -o "$exe" -luser32
 
 # Read back what was actually built, exactly as build-stub.ps1 does: never trust a toolchain to have
 # done what it was asked. Both fields ship silently wrong otherwise.
@@ -75,4 +97,37 @@ if [ "$got_subsys" != "0002" ]; then
     rm -f "$exe"; exit 1
 fi
 
-echo "built $exe"
+# The icon, read back out of the PE for the same reason the two fields above are: a resource
+# compiler that quietly did nothing exits 0. RT_ICON (3) holds the images and RT_GROUP_ICON (14) is
+# the directory the shell asks for; one without the other draws nothing. A WARNING, NOT A FAILURE -
+# the stub launches the application either way.
+icon_note=""
+if [ -n "$rc_arg" ]; then
+    nsec=$(( 16#$(read_le16 $(( pe + 6 ))) ))
+    optsz=$(( 16#$(read_le16 $(( pe + 20 ))) ))
+    sec=$(( pe + 24 + optsz ))
+    types=""
+    i=0
+    while [ "$i" -lt "$nsec" ]; do
+        o=$(( sec + i * 40 ))
+        if [ "$(od -An -c -j "$o" -N5 "$exe" | tr -d ' \n')" = ".rsrc" ]; then
+            root=$(( $(od -An -tu4 -j $(( o + 20 )) -N4 "$exe" | tr -d ' ') ))
+            n=$(( 16#$(read_le16 $(( root + 12 ))) + 16#$(read_le16 $(( root + 14 ))) ))
+            e=0
+            while [ "$e" -lt "$n" ]; do
+                id=$(( $(od -An -tu4 -j $(( root + 16 + e * 8 )) -N4 "$exe" | tr -d ' ') & 2147483647 ))
+                types="$types $id"
+                e=$(( e + 1 ))
+            done
+        fi
+        i=$(( i + 1 ))
+    done
+    case " $types " in
+        *" 3 "*) case " $types " in *" 14 "*) icon_note=" (with icon)" ;; esac ;;
+    esac
+    if [ -z "$icon_note" ]; then
+        echo "WARNING: the icon is NOT in this stub's resources; it will draw the generic one." >&2
+    fi
+fi
+
+echo "built $exe$icon_note"

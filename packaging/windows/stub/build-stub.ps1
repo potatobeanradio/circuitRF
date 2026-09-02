@@ -164,6 +164,44 @@ function Test-StubBinary {
 }
 
 
+function Test-StubHasIcon {
+    param([string]$Path)
+
+    # NEVER TRUST A TOOLCHAIN TO HAVE DONE WHAT IT WAS ASKED - the same rule the machine and
+    # subsystem checks above exist for, and the icon needs it more, not less: a resource compiler
+    # that quietly did nothing exits 0 and produces a stub that launches perfectly and draws the
+    # wrong icon. So the resource directory is read back out of the PE that was actually built.
+    #
+    # BOTH TYPES OR NEITHER. RT_ICON (3) holds the images and RT_GROUP_ICON (14) is the directory
+    # the shell asks for by name; an executable carrying only one of them draws nothing.
+    try {
+        $b  = [System.IO.File]::ReadAllBytes($Path)
+        $pe = [BitConverter]::ToInt32($b, 0x3C)
+        $nSections = [BitConverter]::ToUInt16($b, $pe + 6)
+        $optSize   = [BitConverter]::ToUInt16($b, $pe + 20)
+        $sec       = $pe + 24 + $optSize
+
+        for ($i = 0; $i -lt $nSections; $i++) {
+            $o = $sec + ($i * 40)
+            if ([System.Text.Encoding]::ASCII.GetString($b, $o, 8).TrimEnd([char]0) -ne '.rsrc') { continue }
+
+            # IMAGE_RESOURCE_DIRECTORY: the named entries come first, then the id entries, and a
+            # resource TYPE is an id entry whose top bit (the name/id flag) is clear.
+            $root  = [BitConverter]::ToInt32($b, $o + 20)
+            $named = [BitConverter]::ToUInt16($b, $root + 12)
+            $ids   = [BitConverter]::ToUInt16($b, $root + 14)
+            $types = @()
+            for ($e = 0; $e -lt ($named + $ids); $e++) {
+                $types += ([BitConverter]::ToUInt32($b, $root + 16 + ($e * 8)) -band 0x7FFFFFFF)
+            }
+            return (($types -contains 3) -and ($types -contains 14))
+        }
+        return $false   # no .rsrc section at all - which is exactly what the icon-less stub had
+    }
+    catch { return $false }
+}
+
+
 # == The routes ================================================================
 
 $zigTarget = @{ 'x64' = 'x86_64-windows-gnu'; 'arm64' = 'aarch64-windows-gnu'; 'x86' = 'x86-windows-gnu' }[$Arch]
@@ -174,6 +212,44 @@ $zigTarget = @{ 'x64' = 'x86_64-windows-gnu'; 'arm64' = 'aarch64-windows-gnu'; '
 # (owner-reported, 2026-08-25). The stub now takes a BARE TOKEN and stringifies it itself, so there
 # is nothing here to escape and nothing for a future route to get wrong. See circuitrf-stub.c.
 $appDefine = "-DCRF_APP_NAME=$AppName"
+
+
+# == The icon ==================================================================
+#
+# THE STUB IS WHAT EXPLORER DRAWS. In a per-user install the file at the install root is this stub,
+# not the application, so the stub's own PE resources are what give the .exe its icon in Explorer,
+# what a shortcut inherits when it names no icon of its own, and what circuitRF.wxs' file
+# associations resolve through Icon="CircuitRfExe". Built without one, the stub had NO .rsrc SECTION
+# AT ALL - read back out of the PE, not inferred - and the first report of it was a Desktop shortcut
+# wearing the generic Windows icon (owner-reported, 2026-09-02).
+#
+# THE ICON IS COPIED NEXT TO A GENERATED .rc AND NAMED WITHOUT A PATH. Two things were measured
+# against zig 0.16.0's resource compiler and neither is obvious: a path in a .rc resolves relative
+# to THE .rc FILE'S OWN DIRECTORY (not the working directory), and an absolute POSIX path is
+# rejected outright. A bare filename beside the .rc is the one spelling that needs no include path,
+# no path escaping and no host-specific quoting - and a .rc string escapes backslashes, so a
+# Windows path written into one is a trap in its own right.
+$rcFile  = $null
+$resFile = Join-Path $out "$AppName-icon.res"
+$icoSrc  = Join-Path $PSScriptRoot "..\..\..\src\Ui\Assets\${AppName}Icon.ico"
+
+# Stale ones are removed for the same reason the stub is: the MSVC route below tests `if exist` on
+# the .res, and one left by an earlier run would be linked into a stub built from a different icon.
+if (Test-Path $resFile) { Remove-Item $resFile -Force }
+
+if (Test-Path $icoSrc) {
+    $icoDst = Join-Path $out "$AppName-icon.ico"
+    Copy-Item $icoSrc $icoDst -Force
+    $rcFile = Join-Path $out "$AppName-icon.rc"
+    Set-Content -Path $rcFile -Value "1 ICON `"$AppName-icon.ico`"" -Encoding Ascii
+}
+else {
+    # NOT AN ERROR, and it must not become one. The .ico files are build products of tools/IconGen,
+    # which build-windows.ps1 runs before it reaches this script; someone running this script on its
+    # own has simply not made them yet, and an icon-less stub still launches the application.
+    Write-Host "  No ${AppName}Icon.ico in src\Ui\Assets - building the stub without an icon."
+    Write-Host "  Generate it with: dotnet run --project tools\IconGen"
+}
 
 # WHY EACH ROUTE IS RETRIED: ON THIS CLASS OF MACHINE ZIG CRASHES AT RANDOM.
 #
@@ -229,6 +305,11 @@ $zigCache = Join-Path $out 'zig-cache-scratch'
 # whole thing this script was rewritten to prevent. Forty attempts take it to 0.2% per architecture.
 # It costs nothing when it is not needed: a crash returns instantly, so a losing streak is seconds,
 # and a machine with a healthy zig never sees attempt two.
+# THE LAST ROUTE DROPS THE ICON, and it is the only reason the icon can never cost us a stub. Every
+# route above compiles the .rc alongside the C, so an icon this script cannot compile would
+# otherwise fail all four and produce nothing - and a release short of its per-user installer is the
+# exact failure this script was rewritten to prevent (see the 2026-08-25 note above). An icon-less
+# stub is what shipped before this feature existed, so falling back to one costs nothing.
 $zigRoutes = @(
     @{ Label = "baseline CPU";                Retries = 14
        Flags = @('-mcpu=baseline', '-O2') },
@@ -238,7 +319,9 @@ $zigRoutes = @(
     @{ Label = "baseline CPU, -O0";           Retries = 6
        Flags = @('-mcpu=baseline', '-O0') },
     @{ Label = "native CPU";                  Retries = 6
-       Flags = @('-O2') }
+       Flags = @('-O2') },
+    @{ Label = "baseline CPU, no icon";       Retries = 2
+       Flags = @('-mcpu=baseline', '-O2');    Icon = $false }
 )
 
 $tried        = @()
@@ -290,7 +373,22 @@ function Complete-Route {
     }
 
     if (Test-Path $script:zigCache) { Remove-Item $script:zigCache -Recurse -Force -ErrorAction SilentlyContinue }
-    Write-Host "OK  $script:exe"
+
+    # A MISSING ICON IS A WARNING, NEVER A REJECTION. The stub launches the application either way,
+    # and refusing a working stub over its icon would trade a cosmetic fault for the one this
+    # script guards hardest against - a release with no per-user installer.
+    $icon = ''
+    if ($script:rcFile) {
+        if (Test-StubHasIcon $script:exe) {
+            $icon = ' (with icon)'
+        }
+        else {
+            Write-Host "    WARNING: the icon is NOT in this stub's resources."
+            Write-Host "    It will launch the application correctly, but Explorer, the Desktop"
+            Write-Host "    shortcut and every file association will draw the generic Windows icon."
+        }
+    }
+    Write-Host "OK  $script:exe$icon"
     if ($script:crashes -gt 0) {
         # THE ADVICE IS TRIGGERED BY THE SYMPTOM, NOT BY A VERSION STRING. A hard-coded list of bad
         # zig versions rots the moment one is released; "this compiler just crashed N times" is
@@ -347,12 +445,20 @@ if ($zigExe) {
     Write-Host "Building the launcher stub with zig$zigVer cc ($zigTarget) ..."
     if ($env:CRF_ZIG) { Write-Host "  using CRF_ZIG: $zigExe" }
     foreach ($route in $zigRoutes) {
+
+        # A route with no Icon key has no `Icon` member, so $route.Icon is $null and the icon is
+        # used - which is what every route above the last one wants. Skip the icon-less fallback
+        # entirely when there was no icon to begin with; it would just repeat the first route.
+        $useIcon  = $rcFile -and ($route.Icon -ne $false)
+        if (($route.Icon -eq $false) -and -not $rcFile) { continue }
+        $iconArgs = if ($useIcon) { @($rcFile) } else { @() }
+
         for ($try = 1; $try -le $route.Retries; $try++) {
             $attempts++
             $r = Invoke-Compiler -Exe $zigExe -Environment $route.Env -Arguments (
                      @('cc', '-target', $zigTarget) + $route.Flags +
-                     @('-municode', '-Wl,--subsystem,windows', $appDefine,
-                       $src, '-o', $exe, '-luser32'))
+                     @('-municode', '-Wl,--subsystem,windows', $appDefine, $src) + $iconArgs +
+                     @('-o', $exe, '-luser32'))
             if (Complete-Route $route.Label $r) { return }
 
             # A route that FAILED FOR A REASON is not worth repeating: only a crash is random, and
@@ -372,9 +478,20 @@ if (Get-Command cl -ErrorAction SilentlyContinue) {
     Write-Host 'Building the launcher stub with cl.exe (on PATH) ...'
     Push-Location $out
     try {
-        $r = Invoke-Compiler cl @('/nologo', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', $appDefine, $src,
-                                  '/link', '/SUBSYSTEM:WINDOWS', '/ENTRY:wWinMainCRTStartup',
-                                  'user32.lib', "/OUT:$exe")
+        # cl.exe CANNOT COMPILE A .rc - that is rc.exe's job, and cl forwards the .res it produces
+        # to the linker like any other input. rc.exe ships in the Windows SDK and is on PATH in the
+        # Developer PowerShell this route exists for. If it is not there, or refuses, the stub is
+        # built WITHOUT an icon rather than not built at all.
+        $resArgs = @()
+        if ($rcFile -and (Get-Command rc -ErrorAction SilentlyContinue)) {
+            $rcr = Invoke-Compiler rc @('/nologo', '/fo', $resFile, $rcFile)
+            if ($rcr.ExitCode -eq 0 -and (Test-Path $resFile)) { $resArgs = @($resFile) }
+            else { Write-Host '    rc.exe could not compile the icon; building without it.' }
+        }
+        $r = Invoke-Compiler cl (@('/nologo', '/O2', '/W3', '/DUNICODE', '/D_UNICODE', $appDefine, $src) +
+                                 $resArgs +
+                                 @('/link', '/SUBSYSTEM:WINDOWS', '/ENTRY:wWinMainCRTStartup',
+                                   'user32.lib', "/OUT:$exe"))
     }
     finally { Pop-Location }
     if (Complete-Route 'cl.exe (on PATH)' $r) { return }
@@ -439,14 +556,32 @@ if (-not (Test-Path $exe)) {
         Write-Host "Building the launcher stub with cl.exe (Visual Studio, $pair) ..."
 
         $bat = Join-Path $out 'build-stub-msvc.cmd'
+        $clHead = "cl /nologo /O2 /W3 /DUNICODE /D_UNICODE $appDefine `"$src`""
+        $clTail = "/link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup user32.lib `"/OUT:$exe`""
         $lines = @(
             '@echo off',
             "cd /d `"$out`"",
             "call `"$vcvars`" $pair > nul",
-            'if errorlevel 1 exit /b 90',
-            ("cl /nologo /O2 /W3 /DUNICODE /D_UNICODE $appDefine `"$src`" " +
-             "/link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup user32.lib `"/OUT:$exe`"")
+            'if errorlevel 1 exit /b 90'
         )
+        if ($rcFile) {
+            # vcvarsall puts the Windows SDK on PATH, so rc.exe is there. A FAILURE HERE IS NOT
+            # FATAL: no .res appears and the second cl line builds the same icon-less stub this
+            # script produced before it had an icon at all.
+            #
+            # LABELS, NOT `if exist (...) else (...)`. cmd matches parentheses without regard for
+            # quotes, so a single ')' anywhere in a path - and these are full paths from whatever
+            # directory the repository was cloned into - silently splits the block.
+            $lines += "rc /nologo /fo `"$resFile`" `"$rcFile`" > nul"
+            $lines += "if not exist `"$resFile`" goto noicon"
+            $lines += "$clHead `"$resFile`" $clTail"
+            $lines += 'goto :eof'
+            $lines += ':noicon'
+            $lines += "$clHead $clTail"
+        }
+        else {
+            $lines += "$clHead $clTail"
+        }
         Set-Content -Path $bat -Value $lines -Encoding Ascii
 
         try {

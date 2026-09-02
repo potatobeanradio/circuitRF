@@ -291,6 +291,100 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>Both launcher-stub scripts must compile the application icon into the stub.</b> In a
+    /// per-user install the file at the install root is the stub, not the application, so the
+    /// stub's own PE resources are what Explorer draws for the <c>.exe</c>, what a shortcut
+    /// inherits, and what every <c>Icon="CircuitRfExe"</c> file association in the <c>.wxs</c>
+    /// resolves to. Built without one the stub had <b>no <c>.rsrc</c> section at all</b> - read
+    /// back out of the PE - and the reported symptom was a Desktop shortcut wearing the generic
+    /// Windows icon (owner-reported, 2026-09-02).
+    ///
+    /// <para><c>build-stub.sh</c> is checked alongside <c>build-stub.ps1</c> because THE TWO MUST
+    /// AGREE - its own header says so, and it has drifted from the .ps1 before and produced a stub
+    /// that could not work at all, which nothing noticed because a release is cut on Windows.</para>
+    ///
+    /// <para>This checks the wiring, not the output: that each script finds the <c>.ico</c>, writes
+    /// a resource script, and hands it to the compiler. Whether the icon actually landed is checked
+    /// at build time by each script itself, against the PE it just produced.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("build-stub.ps1")]
+    [InlineData("build-stub.sh")]
+    public void LauncherStubScriptsCompileTheIconIntoTheStub(string script)
+    {
+        var text = File.ReadAllText(RepoFile("packaging", "windows", "stub", script));
+
+        Assert.True(text.Contains("Icon.ico", StringComparison.Ordinal),
+            $"{script} no longer locates the application .ico in src/Ui/Assets, so the stub it "
+            + "builds carries no icon and the Desktop shortcut falls back to the Windows default.");
+
+        Assert.True(text.Contains("ICON", StringComparison.Ordinal) &&
+                    text.Contains("-icon.rc", StringComparison.Ordinal),
+            $"{script} no longer generates the .rc resource script that carries the icon into the "
+            + "stub's PE resources.");
+
+        // The icon is worth nothing if the resource script never reaches the compiler. Each script
+        // spells that differently - the .ps1 through an $iconArgs/$resArgs splat, the .sh through
+        // $rc_arg on the zig line - so this asserts the variable that carries it is USED, not just
+        // assigned.
+        int uses = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? Occurrences(text, "$iconArgs") + Occurrences(text, "$resArgs")
+            : Occurrences(text, "rc_arg");
+
+        Assert.True(uses >= 2,
+            $"{script} builds the resource script but never passes it to the compiler - the stub "
+            + "would compile cleanly and still have no icon.");
+    }
+
+    private static int Occurrences(string haystack, string needle)
+    {
+        int n = 0, i = 0;
+        while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) >= 0) { n++; i += needle.Length; }
+        return n;
+    }
+
+    /// <summary>
+    /// <b>Every <c>Shortcut</c> must NAME its icon.</b> Windows draws a non-advertised shortcut with
+    /// the icon embedded in its TARGET, and in perUser scope the target is the launcher stub
+    /// <c>build-stub.ps1</c> compiles from one C file with no resource script — so it carries no
+    /// icon at all and the Desktop shortcut the installer laid down drew the generic default
+    /// (owner-reported). Naming <c>Icon</c> fixes both scopes without depending on the stub's
+    /// toolchain, and the <c>Icon</c> element it points at is the one <c>ARPPRODUCTICON</c> already
+    /// uses.
+    ///
+    /// <para>This is the kind of regression nothing else catches: <c>wix build</c> is perfectly
+    /// happy with an icon-less shortcut, so the first report comes from a user looking at their
+    /// Desktop after an install.</para>
+    /// </summary>
+    [Fact]
+    public void WindowsInstallerShortcutsNameTheirIcon()
+    {
+        var wxs = XDocument.Load(RepoFile("packaging", "windows", "circuitRF.wxs"));
+        XNamespace w = "http://wixtoolset.org/schemas/v4/wxs";
+
+        var declaredIcons = wxs.Descendants(w + "Icon")
+                               .Select(i => (string?)i.Attribute("Id"))
+                               .Where(id => id is not null)
+                               .ToHashSet();
+
+        var shortcuts = wxs.Descendants(w + "Shortcut").ToList();
+        Assert.True(shortcuts.Count > 0, "circuitRF.wxs declares no Shortcut at all.");
+
+        var offenders = shortcuts
+            .Select(sc => new { Id = (string?)sc.Attribute("Id"), Icon = (string?)sc.Attribute("Icon") })
+            .Where(x => string.IsNullOrEmpty(x.Icon) || !declaredIcons.Contains(x.Icon))
+            .Select(x => $"{x.Id} (Icon=\"{x.Icon}\")")
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "circuitRF.wxs has a Shortcut that does not name a declared Icon: "
+            + string.Join("; ", offenders)
+            + ". Without it the shortcut inherits its target's embedded icon, and the perUser "
+            + "target is the icon-less launcher stub — so the Desktop shortcut shows the generic "
+            + "Windows default. Add Icon=\"circuitRFIcon.ico\" IconIndex=\"0\".");
+    }
+
+    /// <summary>
     /// Each macOS <c>CFBundleExecutable</c> must name the renamed host for ITS application. macOS
     /// refuses to launch a bundle whose CFBundleExecutable is not a file in Contents/MacOS/, and it
     /// says so only in the system log.

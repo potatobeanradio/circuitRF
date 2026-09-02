@@ -93,11 +93,27 @@
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="AppStartMenuFolder" Name="circuitRF">
+        <!--
+          THE ICON IS NAMED, NOT INHERITED, and that is belt to the stub's braces. Windows draws a
+          non-advertised shortcut with its TARGET's embedded icon; in perUser scope the target is
+          the launcher stub, which carried no icon at all - no .rsrc section whatsoever - so the
+          Desktop shortcut the installer laid down drew the generic Windows default
+          (owner-reported, 2026-09-02).
+
+          build-stub.ps1 now compiles the .ico into the stub, which is the fix that also gives the
+          .exe its icon in Explorer and makes the Icon="CircuitRfExe" file associations below
+          resolve to real artwork. Naming Icon here as well costs one attribute and makes the
+          SHORTCUTS correct even if that embed is ever skipped - and it is skipped by design when
+          the .ico has not been generated, or when the only available C toolchain cannot compile a
+          resource script. The Icon element referenced is the one ARPPRODUCTICON already uses.
+        -->
         <Component Id="StartMenuShortcutComp">
           <Shortcut Id="StartMenuShortcut"
                     Name="circuitRF"
                     Description="RF circuit simulator — DC, S-parameters, harmonic balance, loadpull"
                     Target="[INSTALLFOLDER]circuitRF.exe"
+                    Icon="circuitRFIcon.ico"
+                    IconIndex="0"
                     WorkingDirectory="INSTALLFOLDER" />
           <RemoveFolder Id="RemoveAppStartMenuFolder" Directory="AppStartMenuFolder" On="uninstall" />
           <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
@@ -112,6 +128,8 @@
                   Name="circuitRF"
                   Description="RF circuit simulator — DC, S-parameters, harmonic balance, loadpull"
                   Target="[INSTALLFOLDER]circuitRF.exe"
+                  Icon="circuitRFIcon.ico"
+                  IconIndex="0"
                   WorkingDirectory="INSTALLFOLDER" />
         <RegistryValue Root="HKCU" Key="Software\circuitRF\circuitRF"
                        Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
