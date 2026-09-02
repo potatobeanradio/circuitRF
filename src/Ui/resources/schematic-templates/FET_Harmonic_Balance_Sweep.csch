@@ -23,7 +23,7 @@
         },
         {
           "Name": "Periphery_mm",
-          "Expression": "1.0",
+          "Expression": "1.25",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

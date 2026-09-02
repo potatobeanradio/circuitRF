@@ -6,29 +6,17 @@
   "AuthorGridDivisor": 20,
   "Components": [
     {
-      "InstanceName": "GND3",
-      "Symbol": "Ground",
-      "X": -200,
-      "Y": 300,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [],
-      "ShowTypeLabel": false,
-      "ShowInstanceName": false
-    },
-    {
       "InstanceName": "VAR1",
       "Symbol": "Var",
-      "X": -400,
-      "Y": -1000,
+      "X": -1400,
+      "Y": -800,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
           "Name": "VGS",
-          "Expression": "-2",
+          "Expression": "-3.05",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -47,12 +35,34 @@
           "ShowOnSchematic": true,
           "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          70,
+          -75
+        ],
+        [
+          70,
+          -75
+        ],
+        [
+          70,
+          -75
+        ],
+        [
+          70,
+          -75
+        ],
+        [
+          70,
+          -75
+        ]
       ]
     },
     {
       "InstanceName": "SourceTuner1",
       "Symbol": "SourceTuner",
-      "X": -1000,
+      "X": -1200,
       "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
@@ -119,8 +129,8 @@
     {
       "InstanceName": "LoadTuner1",
       "Symbol": "LoadTuner",
-      "X": 600,
-      "Y": -100,
+      "X": 500,
+      "Y": 100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -155,7 +165,7 @@
         },
         {
           "Name": "ShowBias",
-          "Expression": "on",
+          "Expression": "true",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
@@ -184,185 +194,153 @@
       ]
     },
     {
-      "InstanceName": "Q1",
-      "Symbol": "FetAngelov",
-      "X": -200,
-      "Y": 100,
+      "InstanceName": "FET_DUT",
+      "Symbol": "Sdd",
+      "X": -400,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "Ipk",
-          "Expression": "0.1",
-          "Unit": "A",
-          "ShowOnSchematic": true,
-          "Dimension": "Current"
-        },
-        {
-          "Name": "Vpk",
-          "Expression": "-1",
-          "Unit": "V",
-          "ShowOnSchematic": true,
-          "Dimension": "Voltage"
-        },
-        {
-          "Name": "P1",
-          "Expression": "1",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
-          "Name": "P2",
-          "Expression": "0",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "P3",
-          "Expression": "0",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "Alpha",
+          "Name": "NumPorts",
           "Expression": "2",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Lambda",
-          "Expression": "0",
+          "Name": "Periphery_mm",
+          "Expression": "1.25",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Cgs",
-          "Expression": "0",
-          "Unit": "pF",
-          "ShowOnSchematic": false,
-          "Dimension": "Capacitance"
-        },
-        {
-          "Name": "Cgd",
-          "Expression": "0",
-          "Unit": "pF",
-          "ShowOnSchematic": false,
-          "Dimension": "Capacitance"
-        },
-        {
-          "Name": "CapModel",
-          "Expression": "1",
+          "Name": "Sv",
+          "Expression": "-0.837",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Vbi",
-          "Expression": "1",
-          "Unit": "V",
-          "ShowOnSchematic": false,
-          "Dimension": "Voltage"
-        },
-        {
-          "Name": "Mj",
-          "Expression": "0.5",
+          "Name": "Sc",
+          "Expression": "0.71",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Fc",
-          "Expression": "0.5",
+          "Name": "TV0",
+          "Expression": "4.268",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Is",
-          "Expression": "0",
-          "Unit": "A",
-          "ShowOnSchematic": false,
-          "Dimension": "Current"
-        },
-        {
-          "Name": "N",
-          "Expression": "1",
+          "Name": "TC",
+          "Expression": "1.507",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Xti",
-          "Expression": "0",
+          "Name": "th",
+          "Expression": "0.001",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Eg",
-          "Expression": "1.16",
-          "Unit": "V",
-          "ShowOnSchematic": false,
-          "Dimension": "Voltage"
-        },
-        {
-          "Name": "Temp",
-          "Expression": "26.85",
+          "Name": "a",
+          "Expression": "0.176",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Tnom",
-          "Expression": "26.85",
+          "Name": "g",
+          "Expression": "0.089",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Alphatc",
-          "Expression": "0",
+          "Name": "lam",
+          "Expression": "0.0012",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
-          "Name": "Vtotc",
-          "Expression": "0",
+          "Name": "B",
+          "Expression": "1130",
           "Unit": "",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "I[1,0]",
+          "Expression": "_v1/50",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "I[2,0]",
+          "Expression": "Periphery_mm*(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 \u002B _v2*th \u002B Sc*ln(exp(-(Sv - _v1)/Sc) \u002B 1)))\u002B1))*ln(exp(-(2*TV0 - 2*_v1 \u002B2*_v2*th \u002B 2*Sc*ln(exp(-(Sv - _v1)/Sc) \u002B 1))/TC) \u002B 1) * (_v2*lam \u002B 1))/2",
+          "Unit": "",
+          "ShowOnSchematic": true,
           "Dimension": "None"
         }
       ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -600,
+      "Y": 300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": -200,
+      "Y": 300,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
     }
   ],
   "Wires": [
     {
       "Points": [
         [
-          -200,
-          -100
+          -600,
+          100
         ],
         [
-          300,
-          -100
+          -900,
+          100
         ]
       ]
     },
     {
       "Points": [
         [
-          -400,
+          -200,
           100
         ],
         [
-          -700,
+          200,
           100
         ]
       ]
