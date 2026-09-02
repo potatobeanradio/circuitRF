@@ -562,7 +562,7 @@ public sealed class EditableComponent
     public bool ShowInstanceName { get; set; } = true;
 
     public (double DX, double DY) GetLabelOffset(int index)
-        => index < LabelOffsets.Count ? LabelOffsets[index] : (0, 0);
+        => SchematicComponent.LabelOffsetAt(LabelOffsets, index);
 
     private const double HalfBound = 200.0;  // matches SchematicModelBuilder
 
@@ -873,8 +873,8 @@ public sealed class EditableComponent
         for (int li = 0; li < labels.Count; li++)
         {
             if (string.IsNullOrEmpty(labels[li])) continue;
-            var (oDx, oDy) = li < LabelOffsets.Count ? LabelOffsets[li] : (0.0, 0.0);
-            double lx  = X + SchematicComponent.LabelBaseOffsetX + oDx;
+            var (oDx, oDy) = SchematicComponent.LabelOffsetAt(LabelOffsets, li);
+            double lx  = X + SchematicComponent.LabelBaseXFor(Symbol) + oDx;
             double ly  = Y + SchematicComponent.LabelBaseYFor(Symbol, PortCount, glyphMaxY - Y) + oDy + li * SchematicComponent.LabelWorldStep;
             fullMinX = Math.Min(fullMinX, lx);
             fullMinY = Math.Min(fullMinY, ly - SchematicComponent.LabelWorldHeight);

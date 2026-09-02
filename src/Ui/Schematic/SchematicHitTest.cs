@@ -324,7 +324,7 @@ public static class SchematicHitTest
             };
             if (suppressed) continue;
 
-            var (oDx, oDy) = row < comp.LabelOffsets.Count ? comp.LabelOffsets[row] : (0.0, 0.0);
+            var (oDx, oDy) = SchematicComponent.LabelOffsetAt(comp.LabelOffsets, row);
             // SnP and the Tuner family grow their glyph downward (Tuner: a bias branch when
             // ShowBias=true), so the label band must clear the real glyph extent — matching the
             // renderer's DrawLabels. Passing null left the clickable zone too high over those tuners.

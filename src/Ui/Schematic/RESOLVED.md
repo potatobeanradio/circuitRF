@@ -2,6 +2,58 @@
 
 Per-topic notes that don't belong in the standing `CLAUDE.md` file. Newest first.
 
+## VAR/MEAS label placement, and a parameter added after the labels were moved (2026-09-02)
+
+Two reports about the same label block. Both are geometry, and both were single-source-of-truth
+problems rather than drawing bugs.
+
+### The anchor was sized for a part with leads
+
+`SchematicComponent.LabelBaseOffsetX` (-155) and `LabelBaseY` (280) are one shared anchor for every
+symbol. They were chosen for a two-terminal part, whose leads run out to ±200 — the block has to
+clear them, so it starts left of the body and hangs well below it. **A VAR or a MEAS has no leads.**
+Its glyph is an ±80 × ±60 box, so on those two the shared anchor put the type, the instance name and
+every row down and to the LEFT of a box with nothing to clear: adrift of the symbol they belong to,
+which is what the report was about.
+
+`LabelBaseXFor(SymbolKind)` is now the X half of the anchor, mirroring the existing `LabelBaseYFor`,
+and `LabelRowGeometry` — the one helper the renderer, the hit-test, the cull box and the inline
+editor all read — calls it. For VAR/MEAS it returns the box's own left edge (-80, left-justified to
+the glyph), and `LabelBaseYFor` returns `glyphBottom + AnnotationLabelPadY + LabelWorldHeight`, so
+the first row's CAP TOPS clear the box bottom by the padding rather than its baseline doing so. The
+Y is measured from the REAL glyph extent the caller passes, not from the constant, so it stays right
+if the box ever changes size. Row pitch is untouched.
+
+This moves existing VAR/MEAS instances too, not only newly placed ones — the anchor is computed, not
+persisted, and a saved `LabelOffsets` is a delta from it. That is deliberate: seeding the placement
+with per-instance offsets instead would bake one geometry decision into every file and guarantee the
+drift this shared helper exists to prevent.
+
+### A parameter added after a label move rendered back at the default position
+
+`LabelOffsets` is parallel to `Labels` (0 = type, 1 = instance name, 2+ = shown parameters) and is
+written whole by `MoveLabelsCommand`, so it is exactly as long as the label list was **when the move
+happened**. Add a parameter afterwards and the new row has no entry — and every reader spelled the
+same fallback, `row < Count ? offsets[row] : (0,0)`, which put that one row back at the un-moved
+default anchor while the rest of the block stayed where the user dragged it.
+
+`SchematicComponent.LabelOffsetAt(offsets, i)` replaces all five copies of that expression (renderer,
+hit-test, `EditableComponent.GetLabelOffset`, the FullBb pass, the Match label reader) and falls back
+to the LAST stored offset instead of to zero: rows below the last moved one belong directly under it.
+`CommitMoveLabels` and `ResetLabelOffsets` pad their snapshots the same way, so a second move does
+not re-orphan the row the first one never knew about.
+
+### Two stale copies of the label arithmetic, found on the way
+
+`SchematicCanvas.RaiseLabelDoubleTap` and `BeginInlineParamEdit` each recomputed the label anchor by
+hand — `cpx - zoom*155`, `cpy + zoom*120 + textSize + row*(textSize+2)` — an approximation of a
+helper that had already moved on (the real first-row baseline is 280, not ~190, and the real pitch is
+72 world units, not `textSize + 2`). It survived because the double-tap position is immediately
+recomputed by `SchematicView.RepositionInlineEditBox` from the real helper, and because
+`BeginInlineParamEdit` sweeps candidate rows and accepts only a probe the real hit-test agrees with —
+a search that absorbed the error. It could not have absorbed a per-symbol anchor, so both now call
+`LabelRowGeometry` through one small `LabelRowAnchorWorld` helper.
+
 ## What the "+" button offered a ZNP and an SDD — neither could use it (2026-09-02)
 
 Reported against the ZNP: on a Z1P the Parameter Editor's "+" creates a `Z[1]`, which does nothing.

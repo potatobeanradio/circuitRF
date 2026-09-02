@@ -190,7 +190,7 @@ public static class MatchSchematicLabels
         SchematicComponent c, int row)
     {
         ArgumentNullException.ThrowIfNull(c);
-        var (oDx, oDy) = row < c.LabelOffsets.Count ? c.LabelOffsets[row] : (0.0, 0.0);
+        var (oDx, oDy) = SchematicComponent.LabelOffsetAt(c.LabelOffsets, row);
         return SchematicComponent.LabelRowGeometry(
             c.X, c.Y, row, oDx, oDy, c.Symbol, c.Ports.Count / 2, c.GlyphBbMaxY - c.Y);
     }

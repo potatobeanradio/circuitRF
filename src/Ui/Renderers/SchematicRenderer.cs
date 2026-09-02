@@ -915,7 +915,7 @@ public static class SchematicRenderer
         {
             string label = c.Labels[i];
             if (string.IsNullOrEmpty(label)) continue;
-            var (oDx, oDy) = i < c.LabelOffsets.Count ? c.LabelOffsets[i] : (0.0, 0.0);
+            var (oDx, oDy) = SchematicComponent.LabelOffsetAt(c.LabelOffsets, i);
             if (dragDelta is { } dd) { oDx += dd.DX; oDy += dd.DY; }
             var (worldX, worldY, _, _) = SchematicComponent.LabelRowGeometry(cx, cy, i, oDx, oDy, c.Symbol, portCount, c.GlyphBbMaxY - c.Y);
             var (lx, ly) = ToPixel(worldX, worldY, panX, panY, zoom);

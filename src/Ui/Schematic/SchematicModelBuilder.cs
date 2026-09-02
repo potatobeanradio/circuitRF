@@ -301,7 +301,7 @@ public static class SchematicModelBuilder
         for (int li = 0; li < labels.Count; li++)
         {
             if (string.IsNullOrEmpty(labels[li])) continue;
-            double lx  = cx + SchematicComponent.LabelBaseOffsetX;
+            double lx  = cx + SchematicComponent.LabelBaseXFor(kind);
             double ly  = cy + SchematicComponent.LabelBaseYFor(kind, n, gMaxY - cy) + li * SchematicComponent.LabelWorldStep;
             fullMinX = Math.Min(fullMinX, lx);
             fullMinY = Math.Min(fullMinY, ly - SchematicComponent.LabelWorldHeight);

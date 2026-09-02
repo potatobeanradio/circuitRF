@@ -470,7 +470,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             int n = LabelCount(c);
             var oldOffsets = new List<(double DX, double DY)>(c.LabelOffsets);
-            while (oldOffsets.Count < n) oldOffsets.Add((0, 0));
+            while (oldOffsets.Count < n) oldOffsets.Add(SchematicComponent.LabelOffsetAt(oldOffsets, n));
             var newOffsets = Enumerable.Repeat((0.0, 0.0), n).ToList();
             return new MoveLabelSnapshot(c, oldOffsets, newOffsets);
         });
@@ -2721,7 +2721,10 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             int labelCount = 2 + c.LabelParameters().Count();
             var oldOffsets = new List<(double DX, double DY)>(c.LabelOffsets);
-            while (oldOffsets.Count < labelCount) oldOffsets.Add((0, 0));
+            // Pad a row added since the last move with the LAST stored offset, not (0,0) — that is
+            // where it is already being drawn, and padding with zero would snap it back to the
+            // default anchor the moment anything else moved the block.
+            while (oldOffsets.Count < labelCount) oldOffsets.Add(SchematicComponent.LabelOffsetAt(oldOffsets, labelCount));
             var newOffsets = oldOffsets.Select(o => (o.DX + dx, o.DY + dy)).ToList();
             return new MoveLabelSnapshot(c, oldOffsets, newOffsets);
         });

@@ -474,6 +474,40 @@ public sealed class SchematicComponent
                                                      // rows, MEAS formulas) need this so the cull BB covers
                                                      // their full width and they don't vanish at the edge.
 
+    // ── Annotation symbols (VAR / MEAS) ──────────────────────────────────────
+    // A VAR or a MEAS is all text: the glyph is a small ±80 x ±60 box and the rows beneath it are
+    // the content. The shared -155/280 anchor was chosen for a two-terminal part whose leads run to
+    // ±200, and on these it hangs the block down and to the LEFT of a box it has no lead to clear —
+    // so the type, the instance name and every row sit adrift of the symbol they belong to. These
+    // two constants pull the block back under the glyph: left edge flush with the box's own left
+    // edge, and the first row just below its bottom.
+    public const double AnnotationBodyHalfW = 80.0;  // VAR/MEAS box half-width  (BuiltInSymbols)
+    public const double AnnotationBodyHalfH = 60.0;  // VAR/MEAS box half-height (BuiltInSymbols)
+    public const double AnnotationLabelPadY = 22.0;  // clear air between the box bottom and the cap tops
+
+    /// <summary>True for the port-less, text-carrying annotation symbols whose labels hug the glyph.</summary>
+    public static bool IsAnnotationSymbol(SymbolKind symbol)
+        => symbol is SymbolKind.Var or SymbolKind.Meas;
+
+    /// <summary>
+    /// Label anchor X (from component center) for this symbol. Annotation symbols left-justify their
+    /// text to the glyph's own left edge; everything else keeps the shared
+    /// <see cref="LabelBaseOffsetX"/>.
+    /// </summary>
+    public static double LabelBaseXFor(SymbolKind symbol)
+        => IsAnnotationSymbol(symbol) ? -AnnotationBodyHalfW : LabelBaseOffsetX;
+
+    /// <summary>
+    /// The offset for label row <paramref name="i"/>, falling back to the LAST stored offset rather
+    /// than to (0,0) when the row has none of its own. A parameter added AFTER the labels were moved
+    /// has no saved offset, and reading (0,0) for it dropped that one row back at the un-moved
+    /// default position — visibly detached from the block it belongs to. The rows below the last
+    /// stored one belong directly under it.
+    /// </summary>
+    public static (double DX, double DY) LabelOffsetAt(
+        IReadOnlyList<(double DX, double DY)> offsets, int i)
+        => offsets.Count == 0 ? (0.0, 0.0) : offsets[Math.Min(i, offsets.Count - 1)];
+
     /// <summary>Generous world width of a label string for bounding-box culling: a per-character estimate
     /// (over-estimating is safe — it only widens the cull BB), floored at <see cref="LabelWidthEstimate"/>.</summary>
     public static double LabelWidthFor(string label) =>
@@ -489,6 +523,15 @@ public sealed class SchematicComponent
     /// </summary>
     public static double LabelBaseYFor(SymbolKind symbol, int portCount, double? glyphHalfH = null)
     {
+        // VAR/MEAS: sit the first row just under the box rather than at the shared 280, which was
+        // sized for a part with leads. Measured from the REAL glyph bottom so it stays right if the
+        // box ever grows; LabelWorldHeight is added because the returned Y is a Skia BASELINE and
+        // the padding is meant to be visible air above the cap tops.
+        if (IsAnnotationSymbol(symbol))
+        {
+            double halfH = glyphHalfH ?? AnnotationBodyHalfH;
+            return halfH + AnnotationLabelPadY + LabelWorldHeight;
+        }
         if (symbol is SymbolKind.Sdd or SymbolKind.ZPort)
         {
             double halfH = SymbolPortDefs.SddBodyRect(portCount).HalfH;
@@ -528,7 +571,7 @@ public sealed class SchematicComponent
                          SymbolKind symbol, int portCount, double? glyphHalfH = null)
     {
         double baseY     = LabelBaseYFor(symbol, portCount, glyphHalfH);
-        double baselineX = cx + LabelBaseOffsetX + oDx;
+        double baselineX = cx + LabelBaseXFor(symbol) + oDx;
         double baselineY = cy + baseY + oDy + i * LabelWorldStep;
         const double comfort = 6.0;
         double bandTopY  = baselineY - LabelWorldHeight - comfort;

@@ -24,7 +24,7 @@ public sealed class VarMeasCullBbTests
 
         // Reconstruct the widest label exactly as the model builder does ("<Name> = <Expr> <Unit>").
         string label = "RFfreq = 2000000000 GHz";
-        double anchorX  = rc.X + SchematicComponent.LabelBaseOffsetX;
+        double anchorX  = rc.X + SchematicComponent.LabelBaseXFor(SymbolKind.Var);
         double oldRight = anchorX + SchematicComponent.LabelWidthEstimate;             // old fixed estimate
         double newRight = anchorX + SchematicComponent.LabelWidthFor(label);           // length-based
 

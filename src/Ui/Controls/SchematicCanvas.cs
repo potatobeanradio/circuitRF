@@ -634,6 +634,22 @@ public sealed class SchematicCanvas : Control
         return RaiseLabelDoubleTap(hit);
     }
 
+    /// <summary>
+    /// World anchor (left edge, Skia baseline) of one component label row — the renderer's own
+    /// <see cref="SchematicComponent.LabelRowGeometry"/>, given the real glyph extent so a resolved
+    /// cell symbol and the annotation symbols land where they are actually drawn.
+    /// </summary>
+    private (double X, double Y) LabelRowAnchorWorld(
+        EditableComponent comp, int row, double oDx, double oDy)
+    {
+        double? glyphHalfH = _editContext is null
+            ? null
+            : _editContext.EditModel.EffectiveGlyphBbOf(comp).MaxY - comp.Y;
+        var (bx, by, _, _) = SchematicComponent.LabelRowGeometry(
+            comp.X, comp.Y, row, oDx, oDy, comp.Symbol, comp.PortCount, glyphHalfH);
+        return (bx, by);
+    }
+
     /// <summary>Position the edit box over the rendered label and raise the event the view listens to.</summary>
     private bool RaiseLabelDoubleTap(SchematicHitTest.HitResult hit)
     {
@@ -662,11 +678,12 @@ public sealed class SchematicCanvas : Control
                 }
 
                 var (oDx, oDy)  = editComp.GetLabelOffset(row);
-                var (cpx, cpy)  = WorldToScreen(editComp.X, editComp.Y);
                 double textSize = Math.Max(_zoom * 70, 4.0);        // matches renderer (no upper cap)
-                double lx = cpx - _zoom * 155 + oDx * _zoom;  // text left edge
-                double ly = cpy + _zoom * 120 + textSize
-                            + row * (textSize + 2) + oDy * _zoom;  // Skia baseline
+                // The anchor comes from LabelRowGeometry, the same helper the renderer draws with —
+                // the arithmetic that used to be repeated here approximated it, and an approximation
+                // cannot follow a per-symbol anchor (VAR/MEAS hug their glyph).
+                var (lxw, lyw) = LabelRowAnchorWorld(editComp, row, oDx, oDy);
+                var (lx, ly)   = WorldToScreen(lxw, lyw);
 
                 // For parameter rows the rendered label is "<Name> = <Expression> <Unit>".
                 // Offset lx past the "<Name> = " prefix so the edit box overlays only the
@@ -728,7 +745,6 @@ public sealed class SchematicCanvas : Control
         // exact match is not a guess; one unverified point was, and it silently opened the editor on
         // the instance name.
         double textSize = Math.Max(_zoom * 70, 4.0);
-        var (cpx, cpy) = WorldToScreen(comp.X, comp.Y);
 
         SchematicHitTest.HitResult? found = null;
         double foundLx = 0, foundLy = 0;
@@ -737,8 +753,8 @@ public sealed class SchematicCanvas : Control
         for (int probeRow = 0; probeRow <= 3 + shownBefore && found is null; probeRow++)
         {
             var (oDx, oDy) = comp.GetLabelOffset(probeRow);
-            double lx = cpx - _zoom * 155 + oDx * _zoom;
-            double ly = cpy + _zoom * 120 + textSize + probeRow * (textSize + 2) + oDy * _zoom;
+            var (lxw, lyw) = LabelRowAnchorWorld(comp, probeRow, oDx, oDy);
+            var (lx, ly)   = WorldToScreen(lxw, lyw);
 
             foreach (double dy in (double[])[0.35, 0.15, 0.55])
             {
