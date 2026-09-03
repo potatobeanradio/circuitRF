@@ -39,7 +39,6 @@ public static class WorkspaceScanner
         // Libraries/Known Files already are — never as a peer UserFolder full of machine-named cells.
         foreach (string subDir in SubDirsSorted(workspaceRootDir))
         {
-            if (IsReservedTreeDir(subDir)) continue;
             root.AddChild(File.Exists(Path.Combine(subDir, CellFolder.CcellFileName))
                 ? BuildCellNode(subDir, workspaceRootDir)
                 : BuildUserFolderNode(subDir, workspaceRootDir));
@@ -298,7 +297,7 @@ public static class WorkspaceScanner
             if (string.IsNullOrEmpty(displayName)) displayName = libRef;
             return new ProjectTreeNode(
                 NodeKind.Library, displayName, resolved, Rel(resolved, workspaceRoot),
-                warningReason: $"Library path unresolved: {libRef}");
+                warningReason: UnresolvedReason("Library path unresolved", libRef));
         }
 
         var libNode = new ProjectTreeNode(
@@ -307,12 +306,13 @@ public static class WorkspaceScanner
             absolutePath: libDir,
             relativePath: Rel(libDir, workspaceRoot));
 
-        // Scan cells within the library (same cell logic)
-        foreach (string cellDir in SubDirsSorted(libDir)
-            .Where(d => File.Exists(Path.Combine(d, CellFolder.CcellFileName))))
-        {
-            libNode.AddChild(BuildCellNode(cellDir, workspaceRoot));
-        }
+        // Cells at ANY depth (R-sl1-1), by the same rule the workspace's own scan uses: a folder
+        // that is not a cell is a folder, and a cell inside it is an ordinary cell node. A library of
+        // two hundred parts is organised into folders on the first day, and until R-sl1-1 such a
+        // library rendered EMPTY here while every reference into it still resolved — resolution is
+        // path arithmetic and never consults the tree, so only the browsing was missing.
+        foreach (var child in BuildReferencedChildren(libDir, workspaceRoot))
+            libNode.AddChild(child);
 
         return libNode;
     }
@@ -332,7 +332,7 @@ public static class WorkspaceScanner
             return new ProjectTreeNode(
                 NodeKind.ReferencedWorkspace, entry.Alias,
                 ResolveRef(entry.Path, workspaceRoot), "",
-                warningReason: $"Referenced workspace unresolved: {entry.Path}");
+                warningReason: UnresolvedReason("Referenced workspace unresolved", entry.Path));
 
         var node = new ProjectTreeNode(
             NodeKind.ReferencedWorkspace,
@@ -340,18 +340,64 @@ public static class WorkspaceScanner
             absolutePath: otherRoot,
             relativePath: "");
 
-        // Cells only, and only the top level of them — the same shape a Library sub-tree has. The
+        // Cells at any depth (R-sl1-1), and cells only — the same shape a Library sub-tree has. The
         // other workspace's own libraries, known files and referenced workspaces are ITS business:
         // rendering them here would let a reference reach transitively through a chain nobody chose,
         // and R-mw2-17's "a reference is to one cell, its sub-cells come along by reference" is about
-        // a cell's own hierarchy, not about a second workspace's configuration.
-        foreach (string cellDir in SubDirsSorted(otherRoot)
-            .Where(d => File.Exists(Path.Combine(d, CellFolder.CcellFileName))))
-        {
-            node.AddChild(BuildCellNode(cellDir, otherRoot));
-        }
+        // a cell's own hierarchy, not about a second workspace's configuration. R-sl1-2 keeps that
+        // standing decision verbatim and adds the depth rule to it: recurse through FOLDERS, never
+        // through another .cws.
+        foreach (var child in BuildReferencedChildren(otherRoot, otherRoot))
+            node.AddChild(child);
 
         return node;
+    }
+
+    // ── Referenced sub-trees: cells at any depth (SL1) ────────────────────────
+
+    /// <summary>
+    /// The children of one referenced root — a library folder or another workspace's root — as
+    /// cell nodes and folder nodes, recursively (R-sl1-1).
+    ///
+    /// <para>Three rules, and they are the whole of it:</para>
+    /// <list type="bullet">
+    /// <item><b>Cells at any depth.</b> A cell folder becomes an ordinary <see cref="BuildCellNode"/>
+    /// wherever it sits, with the same icon, tooltip and double-click behaviour it has anywhere else.
+    /// There is no second rule to learn and no depth limit.</item>
+    /// <item><b>Folders, never another <c>.cws</c></b> (R-sl1-2). The recursion crosses directories;
+    /// it never opens a nested workspace's configuration, so one reference cannot reach transitively
+    /// through a chain nobody chose. A folder that is itself a workspace root renders as a folder and
+    /// its cells are reached the same way any other folder's are — what stops is the CONFIGURATION,
+    /// which is what "the other workspace's libraries are its business" was always about.</item>
+    /// <item><b>A folder with no cell anywhere beneath it is not rendered.</b> A referenced sub-tree
+    /// carries cells and nothing else — no loose files, exactly as before this change — so an empty
+    /// folder node here is a dead end the user opens once and learns to distrust. The workspace's OWN
+    /// scan keeps such folders because it renders their files too.</item>
+    /// </list>
+    /// </summary>
+    private static List<ProjectTreeNode> BuildReferencedChildren(string dir, string relativeTo)
+    {
+        var children = new List<ProjectTreeNode>();
+        foreach (string subDir in SubDirsSorted(dir))
+        {
+            if (File.Exists(Path.Combine(subDir, CellFolder.CcellFileName)))
+            {
+                children.Add(BuildCellNode(subDir, relativeTo));
+                continue;
+            }
+
+            var grandChildren = BuildReferencedChildren(subDir, relativeTo);
+            if (grandChildren.Count == 0) continue;      // no cell anywhere beneath — not a folder worth showing
+
+            var folder = new ProjectTreeNode(
+                NodeKind.UserFolder,
+                name: FolderDisplayName(subDir),
+                absolutePath: subDir,
+                relativePath: Rel(subDir, relativeTo));
+            foreach (var gc in grandChildren) folder.AddChild(gc);
+            children.Add(folder);
+        }
+        return children;
     }
 
     // ── Known File ────────────────────────────────────────────────────────────
@@ -365,7 +411,7 @@ public static class WorkspaceScanner
         bool exists = isDir || File.Exists(resolved);
         return new ProjectTreeNode(
             NodeKind.KnownFile, name, resolved, Rel(resolved, workspaceRoot),
-            warningReason: exists ? null : $"Known File path not found: {kfRef}",
+            warningReason: exists ? null : UnresolvedReason("Known File path not found", kfRef),
             isDirectory: isDir);
     }
 
@@ -387,14 +433,49 @@ public static class WorkspaceScanner
         catch { return new CwsFile(); }
     }
 
+    /// <summary>
+    /// The sub-directories of <paramref name="dir"/> the tree may show, alphabetical
+    /// (OrdinalIgnoreCase). This is the ONE place the reserved generated-cells folder is excluded
+    /// (R-sl1-3): every walk — the root loop, <see cref="BuildUserFolderNode"/>'s recursion, and both
+    /// referenced-subtree builders — passes through here, so the exclusion cannot be true in three
+    /// places and false in the fourth. It used to be applied only in <see cref="Scan"/>'s root loop,
+    /// which was latent rather than correct: <c>.generated-cells</c> only ever exists at a workspace
+    /// root, and the "has a .ccell" predicate happened to skip it there.
+    /// </summary>
     private static IEnumerable<string> SubDirsSorted(string dir)
     {
         if (!Directory.Exists(dir)) return Array.Empty<string>();
-        return Directory.GetDirectories(dir).OrderBy(d => Path.GetFileName(d) ?? d, StringComparer.OrdinalIgnoreCase);
+        return Directory.GetDirectories(dir)
+            .Where(d => !IsReservedTreeDir(d))
+            .OrderBy(d => Path.GetFileName(d) ?? d, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// A stored ref (a library ref, a Known File) as an absolute path: rooted stays as it is,
+    /// relative resolves against the workspace root, and <c>${NAME}</c> is expanded from the
+    /// environment first (R-sl1-5/-6).
+    ///
+    /// <para>An UNSET token returns the stored text unchanged rather than a half-expanded path
+    /// (R-sl1-7). Nothing on disk is named <c>${CRF_LIB}/stdlib</c>, so the node builders' existence
+    /// checks fail as they should, and <see cref="UnresolvedReason"/> is what turns that into a
+    /// sentence naming the variable to set.</para>
+    /// </summary>
     private static string ResolveRef(string path, string baseDir)
-        => Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(baseDir, path));
+    {
+        if (!PathTokens.TryExpand(path, out string expanded, out _)) return path;
+        return Path.IsPathRooted(expanded) ? expanded : Path.GetFullPath(Path.Combine(baseDir, expanded));
+    }
+
+    /// <summary>
+    /// The <c>WarningReason</c> for a reference that did not resolve. When the cause is an unset
+    /// <c>${NAME}</c> the message names the VARIABLE — the user's repair is one environment setting,
+    /// and "path unresolved: ${CRF_LIB}/stdlib/.cws" makes them work that out for themselves
+    /// (R-sl1-7).
+    /// </summary>
+    private static string UnresolvedReason(string prefix, string storedRef)
+        => PathTokens.UnsetTokenIn(storedRef) is { } token
+            ? $"{prefix}: {token} is not set on this machine."
+            : $"{prefix}: {storedRef}";
 
     private static string Rel(string absPath, string workspaceRoot)
     {

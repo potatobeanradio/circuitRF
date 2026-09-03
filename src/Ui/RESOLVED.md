@@ -1,5 +1,120 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## SL1 — reaching a shared library: recursive browsing, portable roots (2026-09-03)
+
+`brief-shared-library-1-reaching-the-library.md`, the first of the four-brief shared-library series
+(`brief-shared-library-0-overview.md` is the map). The workflow it is measured against: one workspace of
+cells on a network share, referenced by every engineer's own design, read-only to everyone but the
+librarian.
+
+### A library organised into folders rendered EMPTY, and only the BROWSING was missing
+
+`WorkspaceScanner`'s own scan has always recursed (`Scan` → `BuildUserFolderNode` → itself), but both
+referenced-tree builders made exactly one pass and kept only the sub-directories holding a `.ccell`:
+
+```
+ResolveLibrary             → SubDirsSorted(libDir).Where(has .ccell)   → BuildCellNode
+ResolveReferencedWorkspace → SubDirsSorted(otherRoot).Where(has .ccell) → BuildCellNode
+```
+
+So `stdlib/passives/R0402` — the first shape any librarian with two hundred parts arrives at — produced a
+library node with no children. **The defect is invisible from the file formats**, which is why it survived:
+a `CellRef` is a relative path, resolution is pure path arithmetic and never consults the tree, so every
+reference into a nested library cell resolved correctly the whole time. Nothing was broken except the one
+thing a library is for.
+
+Both builders now go through one `BuildReferencedChildren`, and the depth rule is the workspace's own.
+Three bounds, each of which had to be decided rather than inherited:
+
+- **Recurse through FOLDERS, never through another `.cws`.** `ResolveReferencedWorkspace`'s standing note
+  survives verbatim — the other workspace's libraries, Known Files and referenced workspaces are its
+  business, and rendering them here lets one reference reach transitively through a chain nobody chose.
+  A nested workspace's DIRECTORY is walked like any other; its CONFIGURATION is not. Gated directly: a
+  referenced workspace containing a second workspace that references a third library renders the nested
+  folder's own cells and reaches the third library not at all.
+- **A referenced sub-tree carries cells and nothing else** — no loose files, which is what it did before —
+  so a folder with no cell anywhere beneath it is dropped rather than rendered as an empty node. Rendering
+  loose files there was considered and rejected as a second visible change the brief did not ask for; the
+  consequence is that a folder node in a referenced sub-tree always leads somewhere.
+- **`.generated-cells` is excluded in ONE place now** (`SubDirsSorted`), not in the root loop only.
+
+### The reserved-folder exclusion was already wrong before this change, on the workspace's own side
+
+R-sl1-3 predicted this and it is worth separating from the new work: `IsReservedTreeDir` was applied only
+in `Scan`'s root loop. `BuildUserFolderNode` never applied it, and `SubDirsSorted` was a plain
+`Directory.GetDirectories`. **A `.generated-cells` folder inside a user folder was therefore browsable
+already** — a folder of machine-named cells that R-L5g-9 says must never appear in the tree in any form.
+It went unnoticed only because the store is created at a workspace ROOT in practice, where the "has a
+`.ccell`" predicate happened to skip it. `GeneratedCells_NestedInTheWorkspacesOwnUserFolder_IsNotRendered`
+fails against the pre-SL1 tree and is a fix to pre-existing behaviour, not to the recursion.
+
+### The cost of the recursion, as a COUNT — the number SL4 starts from
+
+Measured with temporary counters around every filesystem call in `WorkspaceScanner` and
+`CellFolder.ResolvePrimary`, then removed (a scratch harness, not a `Category=Benchmark` test — a timing
+number measures the machine). One scan of a referenced workspace holding 200 cells:
+
+| Shape | DirExists | GetDirectories | GetFiles | File.Exists | reads | **total** |
+|---|---|---|---|---|---|---|
+| 200 cells in 10 folders (recursive) | 1,212 | 12 | 1,200 | 210 | 200 | **2,834** |
+| 200 cells flat at the root (what the old scan reached) | 1,202 | 2 | 1,200 | 200 | 200 | **2,804** |
+| 1 cell at the root | 8 | 2 | 6 | 1 | 1 | **18** |
+
+**The recursion costs ~1%.** A folder is ~3 calls; a CELL is ~14, and that is where all of it is —
+`BuildCellNode` resolves primacy for all three view types (`Directory.Exists` + `Directory.GetFiles` each),
+lists each present view sub-folder again, and reads the `.ccell`. On a share, an alt-tab rescan of a
+200-cell library is ~2,800 round trips, and **the answer to that is SL4 R-sl4-10 (walk a referenced subtree
+on Refresh, on first expansion and on open — not on every focus), not a cheaper recursion.** Deliberately
+not pre-optimised here.
+
+### Named roots: `${NAME}`, in three fields, and an unset one is BROKEN
+
+`CwsWorkspaceRef.Path` is workspace-relative where it can be and absolute otherwise; a library on a share
+is always the absolute branch, and that spelling is per-machine. The alias indirection means each user
+repairs it once — but it also means a librarian cannot hand out a starter workspace with a working library
+reference in it. `${CRF_LIB}/stdlib/v2.3/.cws` fixes that in one place, and it is also the whole of version
+pinning (R-sl-6 refuses a version resolver; an alias points wherever the librarian says, and two versions
+side by side are two aliases).
+
+- **`src/Design/Workspace/PathTokens.cs`**, beside `ExternalCellRef` and not beside `WorkspaceRefs` — a
+  headless `circuitrf convert`/`em` resolves these references too, which is the same constraint
+  `ExternalCellRef.ResolveOtherRoot` already records for re-implementing `WorkspaceRefs.Resolve`'s rule in
+  three lines rather than calling it.
+- **An unset token returns null and the node names the token** — *"Referenced workspace unresolved:
+  `${CRF_LIB}` is not set on this machine."* Substituting empty would produce `/stdlib/v2.3/.cws`: rooted,
+  real on some machines, a missing-folder report on others. Nothing is ever half-expanded, and an
+  unterminated `${` is literal text rather than a failure.
+- **`WorkspaceRefs.Resolve` was deliberately NOT changed.** It also resolves `PdkRefs`, and R-sl1-6 bounds
+  expansion to the three fields that name a location outside the workspace. The Known Files paths that feed
+  the Data Display's data-source library go through a new `WorkspaceRefs.ResolveExternalRef`, which returns
+  null for an unset token so a broken ref is dropped rather than turned into a rooted path meaning something
+  else on this machine. A `CellRef` is never expanded, in either the `ws://` or the relative form — gated.
+
+### What else assumed one level of depth — reported, not absorbed
+
+Nothing in the builders did; two things downstream are worth knowing, and neither is a regression:
+
+- **A `UserFolder` node inside a referenced sub-tree rides the *Workspace File-System* filter toggle**
+  (`ProjectTreeItemViewModel.IsVisibleUnderFilter`), while the branch above it rides *Libraries* and its
+  cells ride *Cells*. No cells are ever lost — the filter preserves any ancestor with a visible descendant —
+  so the only visible artifact is an empty library folder shown when *Workspace File-System* is on and
+  *Cells* is off. Fixing it needs the node to know it is inside a referenced subtree, which it does not
+  record; left alone rather than given a field for a cosmetic case.
+- **`CanCreateInside` is true for `UserFolder`**, so *New Cell here* is now offered inside a nested library
+  folder. It was already true for `NodeKind.Library` (the library root), so this extends an existing
+  property to depth rather than creating one. **The refusal belongs to SL2** (read-only workspaces), which
+  is where writability is discovered at all.
+- Pre-existing, unchanged, and noted in passing: a cell in a referenced WORKSPACE gets its `RelativePath`
+  against that workspace's own root, so `ProjectTreeItemViewModel.IsInsideWorkspace` reads true for it and
+  *Copy to Workspace* is disabled. A cell in a referenced LIBRARY gets `../…` and behaves correctly. Not
+  touched here.
+
+### Gate
+
+`tests/Ui.Tests/SharedLibraryReachTests.cs`, 13 tests. **10 of them fail against the pre-SL1 tree** —
+verified by restoring `WorkspaceScanner.cs` from HEAD and running them, not asserted from inspection.
+`dotnet test tests/Ui.Tests` 11,291 passed; `Firewall.Tests` 10 passed.
+
 ## MW2 follow-up — a technology is its layer table, and a cell is its folder (2026-09-03)
 
 Two defects the multi-workspace series shipped, both found by the owner on a real two-project pair, both

@@ -53,6 +53,22 @@ public static class WorkspaceRefs
     }
 
     /// <summary>
+    /// SL1 R-sl1-6 — <see cref="Resolve"/> plus <c>${NAME}</c> expansion, for the stored fields that
+    /// name a location OUTSIDE the workspace and may therefore carry a token: a Known File and a
+    /// library ref. Returns <b>null</b> when a token is unset (R-sl1-7), which is a broken reference
+    /// and not an empty expansion — a caller listing files drops it, and one rendering a node says
+    /// which variable to set.
+    ///
+    /// <para><see cref="Resolve"/> itself is deliberately left alone: it is also the resolver for
+    /// <c>PdkRefs</c>, and R-sl1-6 bounds expansion to three fields rather than letting a second
+    /// place a cross-workspace path can hide arrive by a different door.</para>
+    /// </summary>
+    public static string? ResolveExternalRef(string storedRef, string workspaceRootDir)
+        => CircuitRF.Design.Workspace.PathTokens.ExpandOrNull(storedRef) is { } expanded
+            ? Resolve(expanded, workspaceRootDir)
+            : null;
+
+    /// <summary>
     /// True when the reference points outside the workspace and therefore will NOT travel with it
     /// (R-stb-12). Drives the Datasets list's "external" status so a user about to share a
     /// workspace can see which sources will break on someone else's machine — without that, the

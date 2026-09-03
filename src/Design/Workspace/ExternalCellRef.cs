@@ -226,9 +226,13 @@ public static class ExternalCellRef
     private static string? ResolveOtherRoot(string workspaceRoot, string storedPath)
     {
         if (string.IsNullOrWhiteSpace(storedPath)) return null;
+        // ${NAME} from the environment (R-sl1-5), so one site template resolves on every machine.
+        // An unset token is a BROKEN reference, not an empty expansion (R-sl1-7) — PathTokens returns
+        // null and the caller reports it naming the token.
+        if (PathTokens.ExpandOrNull(storedPath) is not { } storedPathExpanded) return null;
         try
         {
-            string native = storedPath.Replace('/', Path.DirectorySeparatorChar);
+            string native = storedPathExpanded.Replace('/', Path.DirectorySeparatorChar);
             string abs = Path.IsPathRooted(native)
                 ? native
                 : Path.GetFullPath(Path.Combine(workspaceRoot, native));

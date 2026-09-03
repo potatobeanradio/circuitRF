@@ -7669,7 +7669,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return ext.StartsWith(".s", StringComparison.OrdinalIgnoreCase)
                     && (ext.EndsWith("p", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".snp", StringComparison.OrdinalIgnoreCase));
             })
-            .Select(p => WorkspaceRefs.Resolve(p, root))
+            // ${NAME} expanded (R-sl1-6); an unset token is a broken ref, dropped rather than
+            // resolved to a rooted path that means something else on this machine (R-sl1-7).
+            .Select(p => WorkspaceRefs.ResolveExternalRef(p, root))
+            .Where(p => p is not null)
+            .Select(p => p!)
             .ToList();
     }
 
@@ -7687,7 +7691,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase);
             })
-            .Select(p => WorkspaceRefs.Resolve(p, lpRoot))
+            .Select(p => WorkspaceRefs.ResolveExternalRef(p, lpRoot))
+            .Where(p => p is not null)
+            .Select(p => p!)
             .ToList();
     }
 

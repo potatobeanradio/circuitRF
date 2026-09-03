@@ -1,5 +1,42 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## `${NAME}` in a stored cross-workspace path, and why it lives here (2026-09-03)
+
+`brief-shared-library-1-reaching-the-library.md` R-sl1-5/-8. `PathTokens` expands `${NAME}` from the
+environment in the three `.cws` fields that name a location OUTSIDE the workspace —
+`ReferencedWorkspaces[].Path`, `LibraryRefs`, `KnownFiles` — so a librarian can hand out a starter
+workspace whose library reference works on every engineer's machine. One user's `Z:\eda\stdlib` is
+another's `\\server\eda\stdlib` and a third's `/Volumes/eda/stdlib`; the alias indirection already meant
+each user repaired that once, but a site-wide `.cws` template was impossible.
+
+**It is in `src/Design/Workspace/`, not in `src/Ui`, and that is the load-bearing part of the decision.**
+`ExternalCellRef.ResolveOtherRoot` already re-implements `WorkspaceRefs.Resolve`'s rule in three lines
+rather than calling it, and its own comment says why: `WorkspaceRefs` is in `src/Ui`, on the far side of
+the firewall, and a headless `circuitrf convert` or `em` run resolves these references too. A token
+expander sitting in `src/Ui` would resolve a tokenised alias in the GUI and silently fail to in the CLI —
+the two would disagree about what the same `.cws` means. Gated by a test that resolves a tokenised
+`ws://` reference through `src/Design` types alone.
+
+**Three traps, all of which produce a plausible wrong answer rather than an error:**
+
+- **An unset variable must NOT expand to empty.** `Environment.GetEnvironmentVariable` returns null, and
+  substituting empty turns `${CRF_LIB}/stdlib/v2.3/.cws` into `/stdlib/v2.3/.cws` — a ROOTED path that
+  resolves to somewhere real on some machines and reports a missing folder on others. `TryExpand` returns
+  false with the offending token, callers report a broken reference naming it, and nothing is ever
+  half-expanded (an unset token in the middle leaves the whole string untouched).
+- **One syntax on every platform.** `${NAME}` only — never `%NAME%`, never bare `$NAME`. A `.cws` travels
+  between machines; a per-platform spelling resolves on the machine that wrote it and nowhere else.
+- **A `CellRef` is never expanded.** It is the workspace-relative remainder and has no business naming a
+  machine — a token there would be a second place a cross-workspace path can hide, which is exactly what
+  the `ws://` alias form exists to prevent. `ExternalCellRef.ResolveCellDir` expands the alias's stored
+  PATH and leaves the remainder verbatim, in both the `ws://` and the plain relative form.
+
+Nothing ever WRITES a token: circuitRF writes a plain path, and a token is what a librarian or a site
+template types by hand — the same treatment R-mw2-5 gives the raw relative `CellRef` (resolve it, never
+produce it). There is deliberately no token *definition* mechanism: the environment is where a site
+already configures this on all three platforms, and a second definition site would need precedence rules
+of its own.
+
 ## The interchange stack moved here, and `circuitrf convert` is what it bought (2026-09-02)
 
 The layout interchange readers and writers — GDSII, DXF, Gerber, Excellon and `.kicad_pcb`, ~16,700

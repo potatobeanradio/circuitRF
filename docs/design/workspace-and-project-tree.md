@@ -209,6 +209,32 @@ callers expect a finished tree on return.
   sub-tree shape as a referenced library, read-only), and **Known Files** (§5).
 - **User folders render recursively, and a cell inside one renders as an ordinary cell node** (§1.1) — the
   same icon, the same context menu, the same double-click. Depth is not a special case anywhere in the tree.
+- **A referenced library and a referenced workspace render their cells at ANY depth too, by the same rule**
+  *(SL1 R-sl1-1, 2026-09-03)*. Both used to make one pass over the referenced root and keep only the folders
+  holding a `.ccell`, so a librarian who organised two hundred cells into `passives/`, `amplifiers/` and
+  `footprints/` — the first thing anyone does with two hundred cells — published a library that rendered
+  **empty**. References into those cells resolved the whole time (resolution is path arithmetic and never
+  consults the tree), so only the browsing was missing, which is the entire point of a library. Three rules
+  bound the recursion:
+  - **Folders, never another `.cws`** (R-sl1-2). A workspace nested inside a referenced one is walked as an
+    ordinary folder; its own libraries, Known Files and referenced workspaces are **its** business, and
+    rendering them here would let one reference reach transitively through a chain nobody chose. What stops
+    at the nested `.cws` is the CONFIGURATION, not the directory walk.
+  - **A referenced sub-tree carries cells and nothing else** — no loose files, which is unchanged from before
+    the recursion — so **a folder with no cell anywhere beneath it is not rendered**. It would otherwise be a
+    dead end the user opens once and learns to distrust. The workspace's OWN scan keeps such folders because
+    it renders their files too.
+  - **`.generated-cells` never appears, at any depth.** The reserved-folder exclusion (§3.1's R-L5g-9) used
+    to be applied only in the root loop, which was latent rather than correct — the folder only ever exists at
+    a workspace root, where the "has a `.ccell`" predicate happened to skip it. It now lives in the one
+    directory-listing helper every walk passes through, so it cannot be true in three places and false in the
+    fourth. **This also fixed a pre-existing hole on the workspace's own side**: a `.generated-cells` folder
+    inside a user folder was browsable before SL1.
+- **Cost, measured rather than assumed** *(2026-09-03)*: scanning a referenced workspace of 200 cells in 10
+  folders costs **2,834 filesystem calls**, against **2,804** for the same 200 cells flat at its root. The
+  recursion itself is ~1% — about **3 calls per folder**; the cost is **~14 calls per CELL**
+  (`BuildCellNode`'s three `ResolvePrimary` probes plus its own per-view listing and the `.ccell` read). Over
+  a network that is what an alt-tab rescan pays, and it is SL4's problem, not the recursion's.
 - **Empty view sub-folders show no disclosure triangle** (a cell with no symbols yet shows no `symbol/`
   expander). Don't render empty expanders.
 - **Attachments (§1.2.1) render as children of the view file they attach to**, not as siblings of it —
@@ -453,6 +479,31 @@ The `.cws` records **configuration only — never membership** (membership is th
 - **Known Files** — an arbitrary list of paths to other files the user finds convenient to keep at hand while
   working (no semantic role; just convenient bookmarks). Unresolvable → System.Warning + italics, same as a
   broken library.
+- **Those three path fields — and only those three — accept `${NAME}` tokens, expanded from the environment
+  at resolution time** *(SL1 R-sl1-5/-6, 2026-09-03)*: `ReferencedWorkspaces[].Path`, `LibraryRefs` and
+  `KnownFiles`. A library on a share is always the absolute branch, and the absolute spelling is per-machine
+  — `Z:\eda\stdlib\.cws`, `\\server\eda\stdlib\.cws`, `/Volumes/eda/stdlib/.cws` — so a librarian could
+  not hand out a starter workspace with a working library reference in it, which is the one thing a librarian
+  most wants to hand out. A `.cws` naming `${CRF_LIB}/stdlib/v2.3/.cws` is portable to everyone who has
+  `CRF_LIB` set, and **version pinning is then a path the librarian publishes** rather than a resolver anyone
+  has to build (two versions side by side = two aliases).
+  - **One syntax on every platform: `${NAME}`.** Never `%NAME%`, never bare `$NAME` — a `.cws` travels between
+    machines, and a per-platform spelling resolves on the machine that wrote it and nowhere else.
+  - **A `CellRef` is NEVER expanded.** It is the workspace-relative remainder (§5C R45) and has no business
+    naming a machine; a token there would be a second place a cross-workspace path can hide, which is what
+    the alias form exists to prevent. Nor is `PdkRefs`, which SL1 deliberately left outside the rule.
+  - **An unset token is a BROKEN reference that NAMES the token**, never an empty expansion:
+    *"Referenced workspace unresolved: `${CRF_LIB}` is not set on this machine."* Substituting empty turns
+    `${CRF_LIB}/stdlib/v2.3/.cws` into `/stdlib/v2.3/.cws` — a rooted path that resolves to somewhere real on
+    some machines and reports a missing folder on others, and both are worse than the truth.
+  - **Nothing is ever WRITTEN with a token in it.** circuitRF writes a plain path; a token is what a librarian
+    or a site template puts there by hand. Resolve it, never produce it — the same treatment R-mw2-5 gives the
+    raw relative `CellRef`.
+  - **There is no token DEFINITION mechanism**, no settings page and no `.cws` field mapping names to paths:
+    the environment is where a site already configures this on all three platforms, and a second definition
+    site would need its own precedence rules. No `~`, no `%USERPROFILE%`, no path variables of our own.
+  - Expansion lives in `src/Design/Workspace/PathTokens.cs`, beside `ExternalCellRef`, because a headless
+    `circuitrf convert` or `em` run resolves these references too.
 - **Active color scheme name** (`ColorSchemeName`, nullable) — resolved workspace dir → user themes →
   `/Assets/Color` → `BuiltIn` (`color-themes.md`).
 - **Tree view state** (optional): the user's custom ordering and active filter set (§3.1/§3.3), so the tree
