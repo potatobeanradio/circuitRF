@@ -116,20 +116,18 @@ public partial class WorkspaceViewModel
     /// <summary>
     /// Why this cell cannot be referenced where it is, or null when it can be.
     ///
-    /// <para>Both MW2 gates are asked, and a refusal from either stands: the workspace-level one
-    /// because this gesture CREATES the alias <c>File ▸ Reference Workspace…</c> would have refused
-    /// to create, and the cell-level one because the cell's own layout may deviate from its
-    /// workspace default. Being no looser than the deliberate gesture is the point — a drag must not
-    /// be a way around a refusal.</para>
+    /// <para>The CELL gate is what is asked, and it is the same one <c>File ▸ Reference Workspace…</c>
+    /// leaves to placement: this gesture names a specific cell, so the two workspaces' DEFAULT
+    /// technologies have nothing to add over the technology that cell's own layout actually resolves.
+    /// A drag is still no looser than the deliberate gesture — the deliberate gesture creates an
+    /// alias and refuses nothing on technology grounds, and placing a cell through either route
+    /// meets this same check.</para>
     /// </summary>
     private string? ReferenceRefusal(string myRoot, string? sourceRoot, string sourceCellDir)
     {
         if (sourceRoot is null)
             return $"'{Path.GetFileName(sourceCellDir)}' is not inside a workspace, so there is nothing "
                  + "to reference it through — a ws:// reference names a workspace. It can be copied in.";
-
-        var workspaceCheck = ExternalWorkspaceGate.CheckWorkspaceTechnology(myRoot, sourceRoot, _techCache);
-        if (!workspaceCheck.Permitted) return workspaceCheck.Refusal;
 
         var cellCheck = ExternalWorkspaceGate.CheckCellTechnology(null, myRoot, sourceCellDir, _techCache);
         return cellCheck.Permitted ? null : cellCheck.Refusal;

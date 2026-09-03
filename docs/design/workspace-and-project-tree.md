@@ -721,15 +721,30 @@ references it.
 
 ### 5C.2 Technology — the constraint that shapes the feature
 
-**R47. An external reference into a LAYOUT is permitted only when both workspaces resolve to the same
-`.ctech`.** Different technology → the reference is refused at creation, naming both technologies and both
-workspaces, and pointing at the two routes the user actually has: copy the cell instead, or `Change
-Technology…`.
+**R47. An external cell may be PLACED in a layout only when the two layouts resolve to the same
+technology.** Different technology → the placement is refused, naming both technologies, both workspaces
+and what actually differs between them, and pointing at the two routes the user has: copy the cell
+instead, or `Change Technology…`.
 
 The reason is R32's, arriving through a third door. A layout's whole instance hierarchy is compiled against
 **one** technology and layers are matched by numeric key; both starter technologies use `(1,0)`–`(8,0)`, so
 A's Drill would silently become B's Substrate — right colours, right geometry, wrong meaning, nothing
 missing and no warning (`layout-view.md` §13).
+
+**R47a. "The same technology" means the same LAYER TABLE, not the same file.** The key set, and each key's
+name and purpose. That is exactly what can be reinterpreted; a shape carries nothing but its key across the
+boundary. Two workspaces holding COPIES of one process technology — the ordinary way to lay out two boards
+for one fab — are therefore the same technology, and two identical files at different paths were the false
+refusal the original path comparison produced. Colour, z-order, visibility and stipple are how a workspace
+chose to DRAW a layer and are not compared; neither are the stackup or the DRC rules, which change what a
+solver computes rather than what the layout view means.
+
+**R47b. The refusal is at PLACEMENT, not at creation of the reference.** Creating a reference writes one
+alias into a `.cws` and draws nothing, and a workspace holds as many `.ctech` files as it likes — so its
+DEFAULT technology cannot decide anything about the one cell someone will place. `File ▸ Reference
+Workspace…` warns when the two defaults disagree and creates the reference anyway; a workspace-default
+refusal would also have blocked a purely schematic reference, which the paragraph below exempts outright.
+*(Supersedes this section's original "refused at creation" — see `src/Ui/RESOLVED.md`, MW2 follow-up.)*
 
 **Per-instance technology is an explicit non-goal**, not an oversight. Rendering a sub-hierarchy under a
 different layer table changes what a single layout view *means*, and makes DRC's answer ambiguous. It is a

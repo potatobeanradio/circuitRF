@@ -285,6 +285,100 @@ public class NetExtractorHierarchyTests
         Assert.Contains(result.Conflicts, c => c.Contains("cycle") || c.Contains("instantiates itself"));
     }
 
+    // ── Test 5c/5d: cell IDENTITY is the folder, not the leaf name (MW2) ──────
+    //
+    //  Two workspaces that reference each other routinely both hold a cell called Amp. Both defects
+    //  below were silent: the elaborated netlist simply contained a circuit nobody drew.
+
+    [Fact]
+    public void TwoDifferentCellsWithTheSameLeafName_AreTwoCELLS_NotOne()
+    {
+        // A/Amp is a two-port sub-cell holding R_A; B/Amp holds R_B. Name-keyed, the second
+        // instance was handed the first cell's contents and the design simulated R_A twice.
+        var ampA = new CellResolution("Amp", TwoPortSubCell("R_A"), [], "/ws/A/Amp");
+        var ampB = new CellResolution("Amp", TwoPortSubCell("R_B"), [], "/ws/B/Amp");
+        var resolver = Resolver(("Amp", ampA), ("ws://Other/Amp", ampB));
+
+        var model = new SchematicEditModel();
+        model.Components.Add(new EditableComponent
+        { InstanceName = "X1", Symbol = SymbolKind.Resistor, CellRef = "Amp",            X = 0, Y = 200 });
+        model.Components.Add(new EditableComponent
+        { InstanceName = "X2", Symbol = SymbolKind.Resistor, CellRef = "ws://Other/Amp", X = 0, Y = 1000 });
+
+        var result = NetExtractor.Extract(model, "tb", resolver);
+
+        Assert.Equal(2, result.Library.Cells.Count);
+        var byResistor = result.Library.Cells.ToDictionary(
+            c => c.Instances.Single(i => i.InstanceName.StartsWith("R_")).InstanceName, c => c.Name);
+        Assert.Equal(2, byResistor.Count);          // R_A and R_B both survived, in different cells
+        Assert.Contains("R_A", byResistor.Keys);
+        Assert.Contains("R_B", byResistor.Keys);
+
+        // The two top instances name the two different cells, and one of them kept the leaf name.
+        var names = result.TestBench.Instances
+            .Where(i => i.InstanceName is "X1" or "X2").Select(i => i.Reference).ToList();
+        Assert.Equal(2, names.Distinct().Count());
+        Assert.Contains("Amp", names);
+    }
+
+    [Fact]
+    public void ASameNamedCellInAnotherWorkspace_IsNotMistakenForASelfInstantiation()
+    {
+        // A/Amp instantiates B/Amp. Name-keyed, the cycle guard saw "Amp" already in progress and
+        // dropped the instance with an "instantiates itself" conflict — a real sub-circuit deleted
+        // from the netlist because two unrelated cells share a folder name.
+        var innerAmp = new CellResolution("Amp", TwoPortSubCell("R_B"), [], "/ws/B/Amp");
+
+        var outerSchematic = new SchematicEditModel();
+        outerSchematic.Components.Add(Pin(1, -100, 0));
+        outerSchematic.Components.Add(new EditableComponent
+        { InstanceName = "XB", Symbol = SymbolKind.Resistor, CellRef = "ws://Other/Amp", X = 0, Y = 400 });
+        outerSchematic.Components.Add(Pin(2, -100, 400));
+        outerSchematic.Wires.Add(Wire((0, 0), (0, 200)));
+        outerSchematic.Wires.Add(Wire((0, 400), (0, 600)));
+
+        var outerAmp = new CellResolution("Amp", outerSchematic, [], "/ws/A/Amp");
+        var resolver = Resolver(("Amp", outerAmp), ("ws://Other/Amp", innerAmp));
+
+        var model = new SchematicEditModel();
+        model.Components.Add(new EditableComponent
+        { InstanceName = "X1", Symbol = SymbolKind.Resistor, CellRef = "Amp", X = 0, Y = 200 });
+
+        var result = NetExtractor.Extract(model, "tb", resolver);
+
+        Assert.DoesNotContain(result.Conflicts, c => c.Contains("instantiates itself"));
+        Assert.Equal(2, result.Library.Cells.Count);
+        // The inner one is really there, with its own contents.
+        Assert.Contains(result.Library.Cells,
+            c => c.Instances.Any(i => i.InstanceName == "R_B"));
+    }
+
+    [Fact]
+    public void AGenuineCycleACROSSWorkspaces_IsStillDetected()
+    {
+        // A/Amp -> B/Buf -> A/Amp. Two workspaces, one loop, and the key-based guard must still
+        // catch it rather than recursing until the stack gives out.
+        var ampSchematic = new SchematicEditModel();
+        ampSchematic.Components.Add(new EditableComponent
+        { InstanceName = "XBUF", Symbol = SymbolKind.Resistor, CellRef = "ws://Other/Buf", X = 0, Y = 200 });
+
+        var bufSchematic = new SchematicEditModel();
+        bufSchematic.Components.Add(new EditableComponent
+        { InstanceName = "XAMP", Symbol = SymbolKind.Resistor, CellRef = "Amp", X = 0, Y = 200 });
+
+        var resolver = Resolver(
+            ("Amp",            new CellResolution("Amp", ampSchematic, [], "/ws/A/Amp")),
+            ("ws://Other/Buf", new CellResolution("Buf", bufSchematic, [], "/ws/B/Buf")));
+
+        var model = new SchematicEditModel();
+        model.Components.Add(new EditableComponent
+        { InstanceName = "X1", Symbol = SymbolKind.Resistor, CellRef = "Amp", X = 0, Y = 200 });
+
+        var result = NetExtractor.Extract(model, "tb", resolver);
+
+        Assert.Contains(result.Conflicts, c => c.Contains("cycle") || c.Contains("instantiates itself"));
+    }
+
     // ── Test 5b: Pin-vs-label regression (the bug this brief fixes) ──────────
 
     [Fact]

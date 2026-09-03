@@ -54,10 +54,10 @@ public sealed class CrossWorkspaceDropTests : IDisposable
         WorkspaceRootFinder.InvalidateCache();
     }
 
-    private static string WriteTechnology(string root, string fileName)
+    private static string WriteTechnology(string root, string fileName, Technology? tech = null)
     {
         string path = Path.Combine(root, fileName);
-        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+        TechPersistence.SaveToFile(path, tech ?? StarterTechnologies.Pcb2Layer());
         return path;
     }
 
@@ -282,18 +282,37 @@ public sealed class CrossWorkspaceDropTests : IDisposable
     public void R_mw3_7_DifferingTechnologies_RefuseTheReferencedMode()
     {
         // The negative §6.3 asks for: "keep them referenced" creates external references and is
-        // therefore subject to every MW2 rule, R-mw2-7 included.
-        string techA = WriteTechnology(_wsA, "processA.ctech");
+        // therefore subject to every MW2 rule, R-mw2-7 included. The gate the drop asks is the CELL
+        // one — the drop names a cell, so its layout's own technology is the whole answer and the two
+        // workspaces' defaults have nothing to add.
+        string techA = WriteTechnology(_wsA, "processA.ctech", StarterTechnologies.MmicGaAs());
         string techB = WriteTechnology(_wsB, "processB.ctech");
         WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
         WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
-        CreateCell(_wsA, "Amp");
+        string amp = CreateCell(_wsA, "Amp");
         WorkspaceRootFinder.InvalidateCache();
 
-        var check = ExternalWorkspaceGate.CheckWorkspaceTechnology(_wsB, _wsA, new TechnologyCache());
+        var check = ExternalWorkspaceGate.CheckCellTechnology(null, _wsB, amp, new TechnologyCache());
         Assert.False(check.Permitted);
         Assert.Contains("processA.ctech", check.Refusal);
         Assert.Contains("processB.ctech", check.Refusal);
+    }
+
+    [Fact]
+    public void R_mw3_7_TwoCopiesOfOneTechnology_DoNotRefuseTheReferencedMode()
+    {
+        // Two projects on one process, each keeping its own copy of the .ctech beside it — the
+        // ordinary shape of two boards for one fab, and what the path comparison refused while
+        // printing two identical file names.
+        string techA = WriteTechnology(_wsA, "pcb-2layer.ctech");
+        string techB = WriteTechnology(_wsB, "pcb-2layer.ctech");
+        WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
+        WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
+        string amp = CreateCell(_wsA, "Amp");
+        WorkspaceRootFinder.InvalidateCache();
+
+        Assert.True(ExternalWorkspaceGate
+            .CheckCellTechnology(null, _wsB, amp, new TechnologyCache()).Permitted);
     }
 
     // ── §6.4 — the kit trap ───────────────────────────────────────────────────

@@ -3306,7 +3306,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             catch { /* malformed .ccell → no declared params; instance overrides still apply */ }
         }
 
-        return new CellResolution(cellName, schematic, parameters);
+        // CellKey is the FOLDER, not the leaf name: two workspaces that reference each other both
+        // holding an 'Amp' is ordinary, and the elaborator's library and cycle guard key on this.
+        return new CellResolution(cellName, schematic, parameters, Path.GetFullPath(cellDir));
     }
 
     // ---- Help ----------------------------------------------------------------

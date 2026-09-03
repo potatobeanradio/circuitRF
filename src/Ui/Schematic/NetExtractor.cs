@@ -79,10 +79,10 @@ public static class NetExtractor
         var lib        = new Library("netlist");
         var imports    = new NetlistImports();
         var conflicts  = new List<string>();
-        var inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var scope      = new CellScope();
         var labeled    = new HashSet<string>(StringComparer.Ordinal);
 
-        var (instances, cellPorts, topVars, topMeas) = ExtractModel(model, cells, lib, imports, inProgress, conflicts, labeled);
+        var (instances, cellPorts, topVars, topMeas) = ExtractModel(model, cells, lib, imports, scope, conflicts, labeled);
 
         var tb = new TestBench(testBenchName);
         tb.Instances.AddRange(instances);
@@ -138,7 +138,7 @@ public static class NetExtractor
         ICellResolver?      cells,
         Library             lib,
         NetlistImports      imports,
-        HashSet<string>     inProgress,
+        CellScope           scope,
         List<string>        conflicts,
         HashSet<string>?    labeledNetsOut = null)
     {
@@ -307,7 +307,7 @@ public static class NetExtractor
                 if (ext is not null) { instances.Add(ext); continue; }
 
                 var ci = EmitCellInstance(comp, model, uf, QK, netNames, detachedKeys,
-                                          cells, lib, imports, inProgress, conflicts, cellRefResolutions);
+                                          cells, lib, imports, scope, conflicts, cellRefResolutions);
                 if (ci is not null) instances.Add(ci);
                 continue;
             }
@@ -1226,6 +1226,63 @@ public static class NetExtractor
         return null;
     }
 
+    /// <summary>
+    /// Cell identity for the duration of one extraction: which cells are currently being built (the
+    /// cycle guard), and what each distinct cell is CALLED in the elaborated library.
+    ///
+    /// <para><b>Keyed by the cell's absolute folder, never by its leaf name.</b> Two workspaces that
+    /// reference each other (MW2) routinely both hold a cell called <c>Amp</c>, and both defects a
+    /// name-keyed scope produced were silent: <c>Library.Find</c> handed the second <c>Amp</c> the
+    /// FIRST one's contents, so a design elaborated with a circuit nobody drew; and the cycle guard
+    /// reported the pair as a cell instantiating itself and skipped the instance outright. This is
+    /// the same class as the last-path-segment defect MW2 fixed in
+    /// <c>CellUsageScanner.RewriteCellReferences</c>, arriving in the elaborator instead.</para>
+    ///
+    /// <para>The library itself stays name-keyed — <c>Instance</c> names its cell by string, and
+    /// that is the netlist's own contract, which <c>CnlWriter</c> also writes — so a second distinct
+    /// cell whose leaf name is taken is given a suffixed one. <b>That is not MW3's R-mw3-9</b>, which
+    /// forbids auto-suffixing a CELL FOLDER on a cross-workspace copy: nothing here creates a file,
+    /// renames anything on disk, or appears in the Project Tree. It is an internal netlist key, and
+    /// it is deliberately NOT reported as a conflict — a conflict blocks Match and the CLI, and being
+    /// handed a correctly-distinguished cell is not a problem the user has to solve.</para>
+    ///
+    /// <para>The suffix is <c>_2</c> rather than something a folder name could never hold (<c>:</c>
+    /// is barred by <c>NameValidator</c> and would be collision-proof) because the elaborated name
+    /// reaches <c>CnlWriter</c>, and a tokenized text format is the wrong place to introduce a
+    /// character no reader was written for. Uniqueness comes from the loop instead.</para>
+    /// </summary>
+    private sealed class CellScope
+    {
+        /// <summary>Cell KEYS on the path from the extraction root to here.</summary>
+        public readonly HashSet<string> InProgress = new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly Dictionary<string, string> _names = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _taken = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The library name for the cell at <paramref name="key"/> — its own leaf name where that is
+        /// free, else the first free <c>name_2</c>, <c>name_3</c>… Stable within one extraction, and
+        /// deterministic across runs of the same design, because it is assigned in the order the
+        /// components are visited and that order is the file's own.
+        ///
+        /// <para><c>_taken</c> is not redundant with <c>lib.Find</c>: a cell is registered here when
+        /// its name is CHOSEN and added to the library only when its recursive build FINISHES, so
+        /// during that window the library cannot yet answer for it.</para>
+        /// </summary>
+        public string NameFor(string key, string leafName, Library lib)
+        {
+            if (_names.TryGetValue(key, out var known)) return known;
+
+            string name = leafName;
+            for (int n = 2; lib.Find(name) is not null || _taken.Contains(name); n++)
+                name = $"{leafName}_{n}";
+
+            _names[key] = name;
+            _taken.Add(name);
+            return name;
+        }
+    }
+
     private static Instance? EmitCellInstance(
         EditableComponent comp,
         SchematicEditModel model,
@@ -1236,7 +1293,7 @@ public static class NetExtractor
         ICellResolver? cells,
         Library lib,
         NetlistImports imports,
-        HashSet<string> inProgress,
+        CellScope scope,
         List<string> conflicts,
         Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
@@ -1250,21 +1307,25 @@ public static class NetExtractor
             return null;
         }
 
-        var cellName = res.CellName;
+        // Identity is the cell FOLDER; the leaf name is only what it is CALLED. See CellScope.
+        var cellKey  = res.Key;
+        var cellName = scope.NameFor(cellKey, res.CellName, lib);
 
-        // Cycle guard: a cell currently being extracted up the stack instantiates itself.
-        if (inProgress.Contains(cellName))
+        // Cycle guard: a cell currently being extracted up the stack instantiates itself. Asked of
+        // the KEY, so A/Amp instancing B/Amp is not mistaken for a self-instantiation — and so a
+        // genuine A/Amp -> B/Buf -> A/Amp loop across two workspaces still is one.
+        if (scope.InProgress.Contains(cellKey))
         {
             conflicts.Add($"Cell '{cellName}' instantiates itself (cycle); " +
                           $"instance '{comp.InstanceName}' skipped.");
             return null;
         }
 
-        // Build the cell once (dedupe by name); children are added before parents → leaf-first lib.
+        // Build the cell once (dedupe by key); children are added before parents → leaf-first lib.
         if (lib.Find(cellName) is null)
         {
-            inProgress.Add(cellName);
-            var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, imports, inProgress, conflicts);
+            scope.InProgress.Add(cellKey);
+            var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, imports, scope, conflicts);
             if (subMeas.Count > 0)
                 conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");
             var cell = new Cell(cellName);
@@ -1273,7 +1334,7 @@ public static class NetExtractor
             cell.Variables.AddRange(subVars);
             foreach (var p in res.Parameters) cell.Parameters.Add(p);
             lib.Cells.Add(cell);
-            inProgress.Remove(cellName);
+            scope.InProgress.Remove(cellKey);
         }
 
         var cellDef = lib.Find(cellName)!;

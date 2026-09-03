@@ -1,5 +1,152 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MW2 follow-up — a technology is its layer table, and a cell is its folder (2026-09-03)
+
+Two defects the multi-workspace series shipped, both found by the owner on a real two-project pair, both
+silent in opposite directions. The first was a false refusal that printed two identical file names; the
+second was a false permit that produced a netlist nobody drew.
+
+### The refusal that named two identical technologies
+
+`ExternalWorkspaceGate` compared technologies by RESOLVED ABSOLUTE PATH. MW2's own completion note called
+this out as the decision most likely to need revisiting and named the exact fixture that would break it —
+two workspaces holding COPIES of one `.ctech` — and it broke on the first real pair. The refusal read:
+
+```
+'ProjectB' uses a different technology from 'ProjectA' …
+    ProjectA: pcb-2layer_<laminate>_20mil_1oz.ctech
+    ProjectB: pcb-2layer_<laminate>_20mil_1oz.ctech
+```
+
+Two projects on one process, each keeping the process technology beside it, is the ordinary way to lay out
+two boards for one fab — not an edge case. And the refusal could not be acted on: it named the two things
+that differ and they were the same string.
+
+**Identity is now the LAYER TABLE**: the key set, and each key's `Name` and `Purpose`. That is precisely
+what the hazard is about — `LayoutRenderer.Instances` passes one `Technology` down every level and looks
+layers up by numeric key, so what can be reinterpreted is a key's meaning and nothing else. Equal paths
+still short-circuit without a load, which is the common shared-file case.
+
+**What is deliberately NOT compared, and why each:**
+
+- **Colour, z-order, visibility, opacity, stipple** — how a workspace chose to DRAW a layer, not what it
+  means. A shape carries nothing but its key across the boundary. Comparing them would refuse two copies
+  of one process that differ by somebody's palette, which is the false refusal again with extra steps.
+- **The stackup, the DRC rules, the technology's own `Name`** — a stackup difference changes what a
+  SOLVER computes, and this gate is about what the layout VIEW means. It is a real problem and it is not
+  one an instance reference introduces: both technologies already had it.
+
+The refusal now also names WHAT differs (`layer 7/0 is 'Drill' here and 'Substrate' there`) and spells
+each `.ctech` as a workspace-relative path. Naming the difference is not decoration — it is what makes the
+sentence actionable when both files are called the same thing.
+
+**The MW2 note's argument against content comparison — "it trades a false refusal for a false permit
+whenever two files agree today and diverge tomorrow" — does not survive contact.** A divergence tomorrow
+is caught by the same gate at the next placement, and an already-placed instance is exposed to a
+technology edit within a single workspace in exactly the same way. The path comparison bought nothing
+against that and cost the ordinary case.
+
+### The workspace-default gate is a WARNING, not a refusal
+
+Asked separately by the owner: a workspace holds as many `.ctech` files as it likes, so why should its
+DEFAULT decide anything? It should not. `File ▸ Reference Workspace…` writes one alias into a `.cws` and
+draws nothing; the hazard arrives when a cell is PLACED, and the cell gate is asked there with both real
+documents in hand. Refusing on the defaults blocked two legitimate cases outright:
+
+- a workspace holding several technologies whose default is not the one the cell in question uses, and
+- a purely schematic reference — which §3 exempts in as many words, and which a default-technology
+  refusal nonetheless stopped.
+
+`CheckWorkspaceTechnology` is now `WorkspaceTechnologyWarning`, returning a sentence or null; the
+reference is created and the warning is raised beside it. The MW3 drop path drops the workspace check
+altogether — a drop NAMES a cell, so the cell's own layout answers the question completely and the
+defaults have nothing to add. The refusal still exists, in one place, where the cell is known.
+
+This is a deliberate departure from R-mw2-7's "refuse the reference at creation". §5B of
+`workspace-and-project-tree.md` and MW2's own section above are the notes that describe the old rule.
+
+### Two cells called Amp are two cells
+
+`CellResolution.CellName` was the cell folder LEAF NAME, and the elaborator used it for both its library
+key (`Library.Find`) and its cycle guard (`inProgress`). Within one workspace that is unambiguous. With
+external references it is not, and two workspaces that reference each other both holding an `Amp` is the
+expected shape, not a contrivance. Both failures were silent:
+
+- **`Library.Find("Amp")` handed the second `Amp` the FIRST one's contents.** A design instantiating
+  `Amp` and `ws://Other/Amp` elaborated, simulated and reported results for a circuit nobody drew.
+- **The cycle guard reported the pair as a self-instantiation and SKIPPED the instance.** A real
+  sub-circuit vanished from the netlist because two unrelated cells share a folder name.
+
+This is the same class as the last-path-segment defect MW2 itself fixed in
+`CellUsageScanner.RewriteCellReferences` — MW2 found it in the rewriter and did not look for it in the
+elaborator.
+
+`CellResolution` now carries a `CellKey` (the absolute cell folder; null falls back to the name, so every
+pre-existing caller behaves exactly as before), and `NetExtractor` keys a new `CellScope` on it. The
+library stays name-keyed because `Instance` names its cell by string and `CnlWriter` writes that string,
+so a second distinct cell whose leaf name is taken gets the first free `Amp_2`. **That is not MW3's
+R-mw3-9**, which forbids auto-suffixing a cell FOLDER on a copy: nothing here creates a file, renames
+anything on disk, or appears in the Project Tree. It is not reported as a conflict either — a conflict
+blocks Match and the CLI, and being handed a correctly-distinguished cell is not a problem the user has
+to solve.
+
+### Mutual references and cycles, asked and answered
+
+Two workspaces CAN reference each other, and it is useful. The alias table is a per-workspace `.cws`
+read with no recursion in it, so a mutual pair costs nothing and resolves in both directions.
+
+A cycle THROUGH such a pair — `A/Amp` instances `B/Board` instances `A/Amp` — is rejected at edit time by
+the existing `CellHierarchy.WouldCreateCycle`, with no change and no special case: its visiting set holds
+absolute cell FOLDERS, so it crosses a workspace boundary without needing to know one exists. Now gated
+directly rather than inferred (`ExternalCellReferenceTests`), together with the negative — an unrelated
+cell in the same referenced workspace is not rejected.
+
+### A schematic now refuses a cycle at the gesture, as a layout always has
+
+Reported first as out of scope, then asked for. A layout placement has run `CheckNotCyclic` since
+R-L3a-2; a schematic ran nothing. The instance was placed, the file was saved, and the loop surfaced only
+at extraction — `NetExtractor`'s `CellScope` guard — as a conflict, long after the edit and phrased as a
+property of the netlist rather than of the thing the user just did. Pre-existing, and it applies inside
+one workspace; MW2's external references only made it easier to reach, since `A/Amp → ws://B/Buf →
+ws://A/Amp` spans two projects and **no single file shows the loop**.
+
+`SchematicHierarchy` (`src/Ui/Schematic/`) is the counterpart of `CellHierarchy`, wired into the two
+gestures that write a `CellRef`: `CommitCellPlacementAsync` (the drop) and `TryChangeToCellType` (retyping
+a component into a cell instance — the schematic's retarget). It reuses `CellHierarchy.MaxDepth` rather
+than choosing its own: a cell's schematic and its layout describe one hierarchy and must not disagree
+about how deep it may be.
+
+Three decisions worth the ink:
+
+- **It reads DISK, not sessions, and that is the layout rule rather than an oversight.** Walking through
+  `ICellResolver` would see unsaved edits — but it would also call `GetOrCreateSession` for every cell
+  reachable from the candidate, registering sessions the user never opened and emitting their
+  unknown-component warnings into Messages, on a gesture as ordinary as dropping a part. So the
+  consequence is stated instead of hidden: **a cycle closed entirely through unsaved edits is not refused
+  here**, and is caught at extraction. The layout view has always had exactly this limitation.
+- **The refusal names the LOOP, not just its existence** (`Amp → Buf → Bias → Amp`). A bare "that would
+  create a cycle" leaves the user hunting for an edge they cannot see, and with an external reference the
+  middle of the loop can live in a project that is not on screen. `DescribeCycle` walks a second time to
+  build the route, so the answer — asked on every placement — carries no list.
+- **A virtual reference is skipped by asking `CellSymbolResolver.NeedsNoBaseDirectory`**, never by
+  listing the schemes here. A `pdk://` part, a wBond design or an unconfigured SPICE model is not a path
+  and can never name a cell folder that reaches back; re-deriving that list at a call site is the trap
+  that method's own note records. The `ws://` form needs no case at all — `ExternalCellRef.ResolveCellDir`
+  handles both spellings, so a loop through another workspace is found by the same walk that finds a
+  local one.
+
+**Not extended to PASTE, on either side.** A pasted `CellRef` is relative to the SOURCE schematic's
+directory, so pasting a cell instance into a different cell generally produces a reference that does not
+resolve at all — a separate pre-existing issue, and the layout clipboard has the same shape. Guarding
+paste without first settling what a pasted reference should mean would be guessing.
+
+The gate is `tests/Ui.Tests/SchematicCycleRejectionTests.cs` — the direct case, a three-cell indirect
+loop with its named route, a loop through a second workspace, and four must-not-hang cases (a
+pre-existing cycle already in the sub-graph, a virtual reference, a scratch document, a cell with no
+schematic view). The two gesture-level tests were watched RED with the guard disabled: the cycle-closing
+cell placed with nothing said.
+
+
 ## MW3 — workspace-to-workspace drag and drop (2026-09-03)
 
 `docs/sonnet-briefs/brief-multi-workspace-3-workspace-dnd.md`, on top of MW1 and MW2. Drag a cell or a

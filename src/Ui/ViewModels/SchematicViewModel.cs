@@ -3219,6 +3219,42 @@ public sealed partial class SchematicViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>The absolute CELL folder this schematic belongs to — one level above
+    /// <see cref="SchematicEditModel.SchematicDirectory"/>, which is the cell's <c>schematic/</c>
+    /// sub-folder. Null for a scratch document or a loose <c>.csch</c> saved outside a cell folder,
+    /// where cycle detection is simply skipped: nothing can reference back to a path that does not
+    /// exist yet. Mirrors <c>LayoutEditorViewModel.CurrentCellDir</c> exactly.</summary>
+    public string? CurrentCellDir
+    {
+        get
+        {
+            if (EditModel.SchematicDirectory is not { Length: > 0 } dir) return null;
+            try { return Path.GetDirectoryName(Path.GetFullPath(dir)); }
+            catch { return null; }
+        }
+    }
+
+    /// <summary>
+    /// Refuses (reports via the message sink, does nothing else) a cell placement or retype that
+    /// would close a reference cycle, naming the loop. Returns true when the caller should proceed.
+    ///
+    /// <para>The layout view has had this since R-L3a-2 and a schematic never did — the instance was
+    /// placed and saved, and the loop surfaced only at extraction, as a conflict, phrased as a
+    /// property of the netlist rather than of the edit that caused it. See
+    /// <see cref="SchematicHierarchy"/> for what the walk reads and what it therefore cannot
+    /// see.</para>
+    /// </summary>
+    private bool CheckNotCyclic(string candidateCellRef)
+    {
+        var loop = SchematicHierarchy.DescribeCycle(
+            CurrentCellDir, candidateCellRef, EditModel.SchematicDirectory);
+        if (loop is null) return true;
+
+        _messageSink?.Error(
+            $"Can't place this cell — it would create a reference cycle: {string.Join(" → ", loop)}.");
+        return false;
+    }
+
     /// <summary>
     /// Places a cell reference at the snapped world position.  Called by the canvas drop handler.
     /// Mirrors <see cref="CommitPlacement"/> but uses the cell folder as the component source
@@ -3257,6 +3293,11 @@ public sealed partial class SchematicViewModel : ObservableObject
         // otherwise. The ghost that preceded this placement asked the same question of the same
         // helper, so the two cannot disagree about which form the reference takes.
         cellRef = ExternalCellRef.MakeCellRef(EditModel.SchematicDirectory, cellAbsDir);
+
+        // Asked on the REFERENCE rather than on cellAbsDir, so a ws:// form is walked by the same
+        // rule that will resolve it later — and asked before the symbol is resolved or auto-generated,
+        // because a refused placement must not have created a .csym on its way to being refused.
+        if (!CheckNotCyclic(cellRef)) return;
 
         // Resolve the primary symbol to determine the render path.
         // Three-state: Resolved → proceed; NotFound → abort; PrimaryMissing → proceed with
@@ -3444,6 +3485,10 @@ public sealed partial class SchematicViewModel : ObservableObject
             _messageSink?.Warning($"Cell not found: \"{cellName}\".");
             return true;   // handled — a named-but-unreachable cell is not "unknown type"
         }
+
+        // Retyping a component into a cell instance is the schematic's retarget, and it can close a
+        // cycle exactly as a placement can. Handled (true), not unrecognised: the type WAS a cell.
+        if (!CheckNotCyclic(cellRef)) return true;
 
         var remaining = EditModel.Components.Where(c => c.Id != comp.Id);
         var newComp = new EditableComponent

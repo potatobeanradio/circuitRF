@@ -238,7 +238,17 @@ component **context menu** (existing `CtxPushIn` + a new `CtxOpenInNewTab`), the
 - **Hierarchical net extraction** (the §4 memory-if-open-else-disk rule, `Cell:Inst` emission, recursion
   guard) — its own phase.
 - **Breadcrumb overflow** for very deep hierarchies (ellipsis / dropdown) — v1 assumes shallow depth.
-- **Recursion/cycle guard** at navigation time (a cell that instances itself transitively) — surface and
-  refuse the push; flesh out with the extractor phase.
+- ~~**Recursion/cycle guard** at navigation time~~ — **done at PLACEMENT time**, which is the earlier and
+  better moment: a cycle-closing cell placement or retype is refused at the gesture and the loop is named
+  (`Amp → Buf → Bias → Amp`), so there is no cycle left for a push to walk into.
+  `SchematicHierarchy.WouldCreateCycle`, the counterpart of the layout view's `CellHierarchy` guard, wired
+  into `CommitCellPlacementAsync` and `TryChangeToCellType`. It reads the primary `.csch` of each level
+  from DISK, so a loop closed entirely through UNSAVED edits is still caught only by the extractor —
+  stated rather than hidden, and the same limitation the layout view has always had. Detail and the three
+  design decisions in `src/Ui/RESOLVED.md`.
+- **Paste is not guarded**, on either the schematic or the layout side. A pasted `CellRef` is relative to
+  the SOURCE schematic's directory, so pasting a cell instance into a different cell generally produces a
+  reference that does not resolve at all; what a pasted reference should MEAN has to be settled before
+  guarding it is anything but a guess.
 - **`FileSystemWatcher`-driven** external-edit reconciliation of an open session — out of scope (matches
   the tree's manual/on-focus refresh, `workspace-and-project-tree.md`).

@@ -54,15 +54,14 @@ public partial class WorkspaceViewModel
             return;
         }
 
-        // §3, and it is settled BEFORE anything is written. A layout's whole instance hierarchy is
-        // compiled against one technology, so an external cell whose workspace uses a different one
-        // would be drawn with the host's layer table — right geometry, wrong meaning, nothing said.
-        var check = ExternalWorkspaceGate.CheckWorkspaceTechnology(myRoot, otherRoot, _techCache);
-        if (!check.Permitted)
-        {
-            Messages.Error(check.Refusal!);
-            return;
-        }
+        // §3, said BEFORE anything is written but NOT a refusal. Creating the reference writes one
+        // alias and draws nothing; the hazard — a layout's whole instance hierarchy compiled against
+        // one layer table — arrives when a cell is PLACED, and the placement gate is asked there with
+        // both real documents in hand. Refusing on the two workspaces' DEFAULT technologies instead
+        // would block a workspace that holds several of them, and a purely schematic reference, which
+        // §3 exempts outright.
+        string? techWarning =
+            ExternalWorkspaceGate.WorkspaceTechnologyWarning(myRoot, otherRoot, _techCache);
 
         string suggested = UniqueAlias(myRoot, FolderLeaf(otherRoot));
         var dialog = new Views.Dialogs.InputNameDialog(
@@ -87,6 +86,7 @@ public partial class WorkspaceViewModel
 
         Messages.Success($"'{FolderLeaf(otherRoot)}' is now referenced as \"{alias}\". "
                        + "Its cells appear in the Project Tree under Referenced Workspaces.");
+        if (techWarning is not null) Messages.Warning(techWarning);
         _factory.ProjectTreeTool?.Refresh();
     }
 

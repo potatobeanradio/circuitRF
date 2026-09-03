@@ -55,10 +55,10 @@ public sealed class ExternalCellReferenceTests : IDisposable
 
     /// <summary>Writes one <c>.ctech</c> at <paramref name="root"/> and makes it that workspace's
     /// default — the technology §3's gate compares.</summary>
-    private static string WriteTechnology(string root, string fileName)
+    private static string WriteTechnology(string root, string fileName, Technology? tech = null)
     {
         string path = Path.Combine(root, fileName);
-        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+        TechPersistence.SaveToFile(path, tech ?? StarterTechnologies.Pcb2Layer());
         return path;
     }
 
@@ -184,20 +184,109 @@ public sealed class ExternalCellReferenceTests : IDisposable
     // ── §9.2 — the technology refusal ─────────────────────────────────────────
 
     [Fact]
-    public void DifferentTechnologies_RefuseTheReference_NamingBoth()
+    public void DifferentTechnologies_RefuseThePLACEMENT_NamingBothAndWhatDiffers()
     {
-        string techA = WriteTechnology(_wsA, "processA.ctech");
+        string techA = WriteTechnology(_wsA, "processA.ctech", StarterTechnologies.MmicGaAs());
         string techB = WriteTechnology(_wsB, "processB.ctech");
         WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
         WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
+        string amp = CreateCell(_wsA, "Amp");
+        WorkspaceRootFinder.InvalidateCache();
 
-        var check = ExternalWorkspaceGate.CheckWorkspaceTechnology(_wsB, _wsA, new TechnologyCache());
+        var check = ExternalWorkspaceGate.CheckCellTechnology(null, _wsB, amp, new TechnologyCache());
 
         Assert.False(check.Permitted);
         Assert.Contains("processA.ctech", check.Refusal);
         Assert.Contains("processB.ctech", check.Refusal);
         Assert.Contains("workspaceA", check.Refusal);
         Assert.Contains("workspaceB", check.Refusal);
+        // The refusal has to be actionable, which means naming what actually disagrees. Key (1,0) is
+        // Top Copper on the PCB starter and Metal1 on the MMIC one.
+        Assert.Contains("layer 1/0", check.Refusal);
+        Assert.Contains("Top Copper", check.Refusal);
+        Assert.Contains("Metal1", check.Refusal);
+    }
+
+    [Fact]
+    public void TwoCOPIESOfOneTechnology_ArePermitted_AndTheWorkspaceGateSaysNothing()
+    {
+        // The case MW2 shipped refusing and recorded as the one most likely to need revisiting: two
+        // projects on one process, each keeping its own copy of the .ctech. The path comparison
+        // refused them and printed two identical file names, so the refusal could not be acted on.
+        string techA = WriteTechnology(_wsA, "pcb-2layer_20mil.ctech");
+        string techB = WriteTechnology(_wsB, "pcb-2layer_20mil.ctech");
+        WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
+        WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
+        string amp = CreateCell(_wsA, "Amp");
+        WorkspaceRootFinder.InvalidateCache();
+
+        Assert.True(ExternalWorkspaceGate
+            .CheckCellTechnology(null, _wsB, amp, new TechnologyCache()).Permitted);
+        Assert.Null(ExternalWorkspaceGate.WorkspaceTechnologyWarning(_wsB, _wsA, new TechnologyCache()));
+    }
+
+    [Fact]
+    public void ACopyThatDiffersOnlyInHOWALayerIsDRAWN_IsStillTheSameTechnology()
+    {
+        // Colour, z-order, visibility and opacity are how a workspace chose to DRAW a layer, not what
+        // the layer means, and a shape carries nothing but its key across the boundary. Requiring
+        // them to match would refuse two copies of one process that differ by somebody's palette.
+        var repainted = StarterTechnologies.Pcb2Layer();
+        repainted.Layers[0].Color = new Rgba(0x11, 0x22, 0x33);
+        repainted.Layers[0].ZOrder = 99;
+        repainted.Layers[0].Visible = false;
+
+        string techA = WriteTechnology(_wsA, "processA.ctech", repainted);
+        string techB = WriteTechnology(_wsB, "processB.ctech");
+        WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
+        WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
+        string amp = CreateCell(_wsA, "Amp");
+        WorkspaceRootFinder.InvalidateCache();
+
+        Assert.True(ExternalWorkspaceGate
+            .CheckCellTechnology(null, _wsB, amp, new TechnologyCache()).Permitted);
+    }
+
+    [Fact]
+    public void ACopyThatRENAMESOneLayerKey_IsNotTheSameTechnology()
+    {
+        // The other side of the same rule, and the collision the gate exists for: same key, different
+        // meaning, right colours, wrong layer, nothing said.
+        var renamed = StarterTechnologies.Pcb2Layer();
+        renamed.Layers[6].Name = "Substrate";   // key (7,0) — Drill on the starter
+
+        string techA = WriteTechnology(_wsA, "processA.ctech", renamed);
+        string techB = WriteTechnology(_wsB, "processB.ctech");
+        WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
+        WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
+        string amp = CreateCell(_wsA, "Amp");
+        WorkspaceRootFinder.InvalidateCache();
+
+        var check = ExternalWorkspaceGate.CheckCellTechnology(null, _wsB, amp, new TechnologyCache());
+        Assert.False(check.Permitted);
+        Assert.Contains("layer 7/0", check.Refusal);
+        Assert.Contains("Substrate", check.Refusal);
+        Assert.Contains("Drill", check.Refusal);
+    }
+
+    [Fact]
+    public void TheWORKSPACEGateWarns_ItDoesNotRefuse()
+    {
+        // A workspace holds as many .ctech files as it likes, and creating a reference writes one
+        // alias and draws nothing — so the two DEFAULTS disagreeing is something to say, not a
+        // reason to stop. The refusal lives at placement, where the cell is known.
+        string techA = WriteTechnology(_wsA, "processA.ctech", StarterTechnologies.MmicGaAs());
+        string techB = WriteTechnology(_wsB, "processB.ctech");
+        WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, techA));
+        WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, techB));
+
+        string? warning = ExternalWorkspaceGate.WorkspaceTechnologyWarning(_wsB, _wsA, new TechnologyCache());
+
+        Assert.NotNull(warning);
+        Assert.Contains("processA.ctech", warning);
+        Assert.Contains("processB.ctech", warning);
+        Assert.Contains("workspaceA", warning);
+        Assert.Contains("workspaceB", warning);
     }
 
     [Fact]
@@ -206,7 +295,7 @@ public sealed class ExternalCellReferenceTests : IDisposable
         // A .clay may deviate from its workspace default by carrying its own TechRef, so the
         // placement gate asks the renderer's own answer rather than re-deriving one.
         string shared = WriteTechnology(_root, "shared.ctech");
-        string other  = WriteTechnology(_root, "other.ctech");
+        string other  = WriteTechnology(_root, "other.ctech", StarterTechnologies.MmicGaAs());
         WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, shared));
         WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, shared));
         CreateCell(_wsA, "Amp");
@@ -255,7 +344,53 @@ public sealed class ExternalCellReferenceTests : IDisposable
         WriteCws(_wsA, c => c.DefaultTechRef = Path.GetRelativePath(_wsA, tech));
         WriteCws(_wsB, c => c.DefaultTechRef = Path.GetRelativePath(_wsB, tech));
 
-        Assert.True(ExternalWorkspaceGate.CheckWorkspaceTechnology(_wsB, _wsA, new TechnologyCache()).Permitted);
+        Assert.Null(ExternalWorkspaceGate.WorkspaceTechnologyWarning(_wsB, _wsA, new TechnologyCache()));
+    }
+
+    // ── Mutual references, and the cycle they make reachable ──────────────────
+
+    [Fact]
+    public void TwoWorkspacesCanReferenceEachOther_AndACycleTHROUGHThemIsRejected()
+    {
+        // A and B each declare the other. That is legal and useful — two boards that borrow one
+        // cell each — and the alias table is a per-workspace .cws read, so it cannot recurse.
+        string tech = WriteTechnology(_root, "shared.ctech");
+        WriteCws(_wsA, c =>
+        {
+            c.DefaultTechRef = Path.GetRelativePath(_wsA, tech);
+            c.ReferencedWorkspaces =
+                [new CwsWorkspaceRef { Alias = "B", Path = Path.GetRelativePath(_wsA, Path.Combine(_wsB, ".cws")) }];
+        });
+        WriteCws(_wsB, c =>
+        {
+            c.DefaultTechRef = Path.GetRelativePath(_wsB, tech);
+            c.ReferencedWorkspaces =
+                [new CwsWorkspaceRef { Alias = "A", Path = Path.GetRelativePath(_wsB, Path.Combine(_wsA, ".cws")) }];
+        });
+
+        string amp   = CreateCell(_wsA, "Amp");
+        string board = CreateCell(_wsB, "Board");
+        WorkspaceRootFinder.InvalidateCache();
+
+        // Both directions resolve.
+        Assert.Equal(Path.GetFullPath(board), ExternalCellRef.ResolveCellDir(
+            ExternalCellRef.RefFor("B", "Board"), CellFolder.SubFolderPath(amp, ViewType.Layout)));
+        Assert.Equal(Path.GetFullPath(amp), ExternalCellRef.ResolveCellDir(
+            ExternalCellRef.RefFor("A", "Amp"), CellFolder.SubFolderPath(board, ViewType.Layout)));
+
+        // A/Amp's layout now instances B/Board. Closing the loop from the other side — adding
+        // A/Amp to B/Board — must be rejected: the visiting set is absolute cell FOLDERS, so it
+        // crosses the workspace boundary without needing to know one exists.
+        SaveLayoutWithRef(amp, ExternalCellRef.RefFor("B", "Board"));
+
+        Assert.True(CellHierarchy.WouldCreateCycle(
+            board, ExternalCellRef.RefFor("A", "Amp"), CellFolder.SubFolderPath(board, ViewType.Layout)));
+
+        // And an unrelated cell in the same referenced workspace is NOT rejected — the guard is a
+        // reachability question, not "anything in a workspace that reaches back".
+        CreateCell(_wsA, "Bias");
+        Assert.False(CellHierarchy.WouldCreateCycle(
+            board, ExternalCellRef.RefFor("A", "Bias"), CellFolder.SubFolderPath(board, ViewType.Layout)));
     }
 
     // ── §9.3 — the three kit rules ────────────────────────────────────────────
