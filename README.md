@@ -73,15 +73,15 @@ These install for you alone, need no administrator rights, and update themselves
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.0.0-beta.8-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.8/circuitRF-1.0.0-beta.8-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.0.0-beta.8-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.8/circuitRF-1.0.0-beta.8-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.0.0-beta.8-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.8/circuitRF-1.0.0-beta.8-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.0.0-beta.9-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.9/circuitRF-1.0.0-beta.9-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.0-beta.9-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.9/circuitRF-1.0.0-beta.9-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.0-beta.9-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.9/circuitRF-1.0.0-beta.9-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.0.0-beta.8-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.8/circuitRF-1.0.0-beta.8-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.0.0-beta.8-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.8/circuitRF-1.0.0-beta.8-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.0.0-beta.9-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.9/circuitRF-1.0.0-beta.9-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.0-beta.9-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.9/circuitRF-1.0.0-beta.9-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.0.0-beta.8-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.8/circuitRF-1.0.0-beta.8-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.0.0-beta.8-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.8/circuitRF-1.0.0-beta.8-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.0.0-beta.9-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.9/circuitRF-1.0.0-beta.9-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.0-beta.9-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.0-beta.9/circuitRF-1.0.0-beta.9-linux-arm64.tar.gz) |
 
 **Not sure which?** Windows: Settings ▸ System ▸ About ▸ *System type*. macOS: Apple menu ▸ About This Mac — an
 *Apple M-series chip* is Apple Silicon. Linux: `uname -m` — `x86_64` or `aarch64`.
@@ -92,8 +92,8 @@ These install for you alone, need no administrator rights, and update themselves
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.0.0-beta.8-linux-x64.tar.gz
-./circuitRF-1.0.0-beta.8/install.sh
+tar xzf circuitRF-1.0.0-beta.9-linux-x64.tar.gz
+./circuitRF-1.0.0-beta.9/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
@@ -548,11 +548,11 @@ with vias and z-directed current. See [`docs/design/mom-engine.md`](docs/design/
 **Done: harmonicaRF.** A waveform engineering solver with convenient UI that shows you what the current generator is actually doing, and what it costs in power and efficiency. It mimics what an active loadpull measurement system does.  View loadpull contours, time-domain waveforms and loadline simultaneously in a realtime envrionment. See [`docs/design/harmonicarf.md`](docs/design/harmonicarf.md).
 
 
-What's left for the v1 release is **hardening** — improved UX and broader
-docs.
+What's left for the v1 release is **beta test**.
 
 **Deferred to v2:**
 ** open green fields for development**
+- **AI interface** for automated design
 - Parameter **tuning** and design **optimization**
 - **Advanced stability** analysis (NDF, Winslow Probe etc)
 - **Noise analysis** — noise figure, phase noise, or noise-parameter (Fmin, Γopt, Rn) extraction. 
@@ -560,7 +560,6 @@ docs.
 - **Transient Analysis**
 - **Envelope Analysis** for modulated waveforms
 - **FEM Analysis?** (electromagnetic and thermal)
-- **Sparse block Jacobian for HB at scale.** v1 uses a dense per-block Jacobian; a sparse solve is the path to very large nonlinear problems.
 
 Full roadmap and current status: [`docs/Development_Plan.md`](docs/Development_Plan.md).
 
