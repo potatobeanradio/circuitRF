@@ -65,6 +65,22 @@ public abstract class LayoutShape
 
     /// <summary>Nullable net name (docs/design/layout-view.md §3.4 R10a). Unpopulated until L5.</summary>
     public string? Net { get; set; }
+
+    /// <summary>
+    /// The component reference this shape belongs to, when the artwork it came from DECLARED one
+    /// (brief-L4g-gerber-import-orchestration.md R-L4g-12: Gerber's <c>%TO.C</c>).
+    ///
+    /// <para><b>Carried, not acted on.</b> circuitRF builds no hierarchy from it — see
+    /// <c>GerberImport</c>'s own note at the site where footprint inference would otherwise go — but
+    /// discarding data the file went to the trouble of declaring is not a neutral act, and this is the
+    /// natural key for a later "group by component" editor action. Additive and nullable, so every
+    /// existing <c>.clay</c> re-serializes byte-for-byte with no <c>FormatVersion</c> bump.</para>
+    /// </summary>
+    public string? Component { get; set; }
+
+    /// <summary>The pad/pin name within <see cref="Component"/>, when declared (<c>%TO.P</c>). Same
+    /// rules as <see cref="Component"/>: carried, unread, additive, nullable.</summary>
+    public string? Pin { get; set; }
 }
 
 /// <summary>Axis-aligned rectangle. Normalized so X1&lt;X2, Y1&lt;Y2.</summary>

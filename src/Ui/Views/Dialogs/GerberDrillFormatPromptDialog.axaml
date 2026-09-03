@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.GerberDrillFormatPromptDialog"
+        Title="Import Gerber — Drill Format"
+        Width="520"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" x:Name="MessageText" FontSize="12" TextWrapping="Wrap"/>
+
+        <!-- R-L4h-6: the EVIDENCE behind the inference — which sources were available, what the tool
+             diameters imply, and how the hits compare against the artwork's own bounding box. -->
+        <Border Grid.Row="1" Margin="0,10,0,0" Padding="8" BorderThickness="1"
+                BorderBrush="{DynamicResource ThemeBorderMidBrush}">
+            <TextBlock x:Name="EvidenceText" FontSize="11" TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- Two separate unknowns, two separate controls (R-L4h-6). -->
+        <StackPanel Grid.Row="2" Margin="0,12,0,0" Spacing="4">
+            <TextBlock Text="Units" FontSize="11" FontWeight="Bold"/>
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <RadioButton x:Name="MmRadio" GroupName="DrillUnits" Content="Millimeters" FontSize="11"/>
+                <RadioButton x:Name="InchRadio" GroupName="DrillUnits" Content="Inches" FontSize="11"/>
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Margin="0,12,0,0" Spacing="4">
+            <TextBlock Text="Zero suppression" FontSize="11" FontWeight="Bold"/>
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <RadioButton x:Name="LeadingRadio" GroupName="DrillZeros" Content="Leading zeros suppressed" FontSize="11"/>
+                <RadioButton x:Name="TrailingRadio" GroupName="DrillZeros" Content="Trailing zeros suppressed" FontSize="11"/>
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" x:Name="DigitsPanel" Margin="0,12,0,0" Spacing="4">
+            <TextBlock Text="Digits (integer : decimal)" FontSize="11" FontWeight="Bold"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <NumericUpDown x:Name="IntegerDigitsBox" Minimum="1" Maximum="8" Increment="1"
+                               FormatString="0" Width="90" FontSize="11"/>
+                <TextBlock Text=":" VerticalAlignment="Center" FontSize="12"/>
+                <NumericUpDown x:Name="DecimalDigitsBox" Minimum="1" Maximum="8" Increment="1"
+                               FormatString="0" Width="90" FontSize="11"/>
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="5"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="90" FontSize="12" HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"
+                    ToolTip.Tip="Abort the whole import. Nothing is created."/>
+            <Button Content="Import" Width="90" IsDefault="True" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnImportClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

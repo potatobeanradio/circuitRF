@@ -1,0 +1,33 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.GerberImportScopeDialog"
+        Title="Import Gerber — One File, or the Folder?"
+        Width="480"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" x:Name="MessageText" FontSize="12" TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="90" FontSize="12" HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button Content="Another Folder…" Width="130" FontSize="12" HorizontalContentAlignment="Center"
+                    Click="OnAnotherFolderClick"
+                    ToolTip.Tip="Point at a different folder and import everything in it."/>
+            <Button Content="This File Only" Width="110" FontSize="12" HorizontalContentAlignment="Center"
+                    Click="OnThisFileClick"
+                    ToolTip.Tip="Import the one file chosen: one layer, no drill data, no vias."/>
+            <Button Content="Whole Folder" Width="110" IsDefault="True" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnWholeFolderClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

@@ -1,5 +1,753 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Gerber import review: seven defects the hand-authored fixtures could not see (2026-09-02)
+
+A review of the L4e-L4h Gerber/Excellon import series, run against **third-party production file sets
+rather than the phases' own fixtures**. Every phase's gate was green before and after; all seven
+findings below are things a self-authored fixture cannot express, which is precisely the gap L4e §11
+and L4h's R-L4h-16 both name in advance. Two of them lost a whole board's worth of data silently.
+
+Gates: `dotnet test tests/Ui.Tests` and `tests/Firewall.Tests` green. Seven regression tests added
+(`GerberReaderTests`, `ExcellonReaderTests`, `GerberImportTests`); one existing test re-pointed, §3.
+
+### 1. A drill file whose tools are never selected — 751 of 751 holes dropped
+
+`T1C.01378F095S3` **defines and selects** when it appears in the body. One dialect writes no `M48`
+header and no separate `T<n>` select line at all: the file opens with `%`, then a tool definition,
+then that tool's coordinates, then the next definition and its own. `ExcellonReader.ProcessLine`
+recognized the line as a definition and returned, so `_currentTool` stayed 0 and every hit was
+dropped as "hole with no tool selected" — counted, reported, and never imported. **A board that
+arrives with no holes whatsoever.**
+
+`DefineTool` now selects too, gated on a new `_inHeader` flag (`M48` opens it, `%` or `M95` closes
+it), because the opposite case is real as well: an `M48` header that declares T1..T4 up front has not
+selected T4, and a body that then drills with no select is a file we cannot read rather than one to
+guess the last-declared tool for. Both halves are gated.
+
+### 2. Vias lost to a 12-nanometre disagreement between two files of one set
+
+R-L4f-9's "exact coordinate equality in DBU, never a tolerance" is right about circuitRF's own export
+— the writer emits the pad flash and the drill hit from one X/Y — and wrong about everyone else's. A
+measured four-layer set put a blind via's pad at (177.500001, -45.000012) mm against a drill hit at
+(177.5, -45.0): 12 nm apart, in two files that unquestionably describe one via, because the artwork
+and the drill data were written in different units and digit formats. Under exact-only pairing **every
+blind and buried via on that board became an unpaired hole plus an orphaned pad.**
+
+`DrillViaPairing` now buckets flashes on a grid and snaps by at most `SnapMicrons` = 1 micron,
+nearest-wins, exact matches never displaced. The brief's own reason for exactness is what bounds it:
+a tolerance must never reach a neighbouring pad on a fine-pitch part, and one micron is two orders of
+magnitude short of the 100 µm neighbour its gate 12 test uses and three short of the tightest pitch in
+circulation. That test is unchanged and still passes; a new one pins the nanometre case.
+
+### 3. `.g1` is not top copper, and the "11 of 11" heuristic measurement was fixture-shaped
+
+The `g<n>` extension is ambiguous by one between two conventions in circulation — number the whole
+copper stack, or number only the mid layers. L4g chose the first and recorded it as measured ("naming
+it Inner 2 made the heuristic disagree with the declared answer"), but the measurement was against a
+fixture the phase wrote itself. A real four-layer set spells its outer layers `.gtl`/`.gbl` and its
+inner ones `.g1`/`.g2`, and reading `.g1` as top copper produced **two layers both named Top Copper,
+both ranked "Top", and a copper order of top/top/inner/bottom** — the silently-wrong stack R-L4g-10
+exists to prevent.
+
+Every `g<n>` is now inner copper, numbered n. That cannot collide with either outer layer under either
+convention, and it orders `.g1`, `.g2`, `.g3` correctly among themselves whichever one wrote them.
+What it can still get wrong is the index LABEL on a set using the other convention, which is reported
+as a guess like every rung-3 answer and settled exactly by an attribute or a job file.
+`TheGenericHeuristic_…` is re-pointed accordingly: **9 of 11, not 11 of 11**, with the two that differ
+named and their order asserted.
+
+### 4. `bot` was missing from every row of the rung-3 table while `bottom` was in all of them
+
+The side words were written out row by row, and one spelling was absent throughout — the format's OWN
+abbreviation, the one a `FileFunction` uses. A set naming its files that way had its top layers
+guessed and its bottom layers dropped to the mapping dialog: an asymmetry nobody would choose and
+nothing announced. The table now carries `TopWords`/`BotWords` once and each row states its side by
+group, which also collapsed 29 rows to 19 and fixed a second latent miss (`edge_cuts` never matched
+its own `edge`+`cut` row, because "cut" is short enough to need a word boundary and the file says
+"cuts").
+
+### 5. The sibling-drill scan read every file in every neighbouring folder — over ten minutes
+
+`FindSiblingDrillCandidates` classified first and filtered by stem second. Classifying is a 16 KB read
+per file, and "one level up" is whatever folder the board happens to sit in — a downloads folder, a
+home directory, a scratch directory with a thousand neighbours. **Measured at over ten minutes on an
+import that in the end offered nothing**, because nothing there shared the board's name. The name test
+now runs before any file is opened: same result, 0.8 s.
+
+### 6. Every aperture-macro comment was reported as a primitive we could not read
+
+Primitive `0` is a comment and its text is free-form prose. The reader strips whitespace out of a
+block before parsing it — which every other block genuinely needs — so `0 Free polygon` became
+`0Freepolygon`, parsed as no integer, and was counted by name. One four-layer board produced **27
+distinct phantom "unknown primitive" names over 150 occurrences, all of them comments**, burying the
+real skips in R-L4e-6's report. Comments are now recognized on the raw block, before anything touches
+it, on the leading digit run being exactly "0" — so a zero-padded `01` is still primitive 1 and still
+draws.
+
+### 7. Two smaller ones, and one thing the design got right
+
+- `GerberFileClassifier.ReadHead` used a single `Stream.Read`, which may return short even when the
+  file has the bytes. A short head does not fail — it classifies a real Gerber file as "no Gerber or
+  drill content" and drops a whole layer. Now `ReadAtLeast`.
+- `GerberImport.Import` is public and keys three maps on the file path, so a repeated path was an
+  exception out of the middle of an import. Deduplicated at entry.
+- A set whose only drill data is emitted in the BINARY (EIA-coded) form never reaches the drill reader
+  — the classifier sees bytes that are not text and skips the file as a sibling, so the import
+  succeeds and the board simply has no holes. R-L4f-3's refusal exists but is unreachable by that
+  route. "Skipped, not text" is true and unactionable; the no-drill-data message now names the one
+  cause a user can do something about, and only when the set actually came out with no drill data.
+
+**What the design got right, and it is worth saying because it is the reason two of these were even
+findable:** R-L4f-1's extents cross-check caught a wrong drill format on a headerless file
+immediately and stated it as a number. It was only being PRINTED, though, not used — so
+`GerberImport` now does what R-L4f-1 ranks it for: where the file left something to guess and the
+guess disagrees with the artwork, the alternatives to that guess are tried and one that agrees is
+taken, flipping only what was guessed and never what the file declared. On the file that prompted
+this, 175 of 751 holes fell outside the board under the defaulted suppression and all 751 land on it
+under the other. The prompt still fires; it is now pre-filled with an answer the artwork settled.
+
+### What this does NOT close
+
+The dialect coverage gap L4e §11 names is narrower now but still real. These findings came from four
+production sets; the constructs still proven only by hand-authored fixtures are incremental notation
+(`%FSI`), `G74` single-quadrant arcs, `%SR` step-and-repeat, `%MI`/`%SF`/`%AS` refusals, `%IPNEG`,
+holed apertures, and the `;TYPE=` and two-file spellings of the plated/non-plated split — none of the
+four sets used any of them. The two that DID show up in real files and were already correct are
+`%LPC` compositing and the `; #@! ` attribute comments.
+
+
+## Phase L4h — COMPLETE: `File ▸ Import ▸ Gerber…`, and the round trip (2026-09-02)
+
+Two deliverables, and the second one is where all the value was. The menu entry took a morning over
+L4g's existing entry point (`GerberImportEntry.cs`, 209 lines, plus two small dialogs); **the round
+trip found four real defects, all four in the WRITER, and every one of them had been sitting behind a
+green test suite** — which is exactly the failure mode R-L4h's §3 says a round trip is the only test
+that can catch: a reader and a writer wrong in the same direction.
+
+Gates: `tests/Ui.Tests/GerberRoundTripTests.cs` (13 tests, §3) and
+`tests/Ui.Tests/GerberImportEntryTests.cs` (19 tests, §1). `dotnet test tests/Ui.Tests` and
+`tests/Firewall.Tests` green.
+
+### 1. Which cycle each property stabilizes at — the measurement, not a smoothing
+
+**Everything stabilizes at cycle 1, and after the fixes in §2 the first cycle reproduces the file set
+BYTE FOR BYTE except one line.** That is stronger than the brief asked for (it only requires byte
+identity from cycle 2 onward), and it is asserted as such rather than left implicit, because "export2
+already equals export1" is a much sharper statement than "export3 equals export2" and it degrades
+loudly if a later change makes the first cycle lossy again.
+
+| Property | Stabilizes at | Asserted by |
+|---|---|---|
+| per-layer geometry (Clipper XOR, exact, in DBU) | **cycle 1** — empty on every layer | `Cycle1_PerLayerXorAgainstTheOriginal_IsEmptyInDbu_Exactly` |
+| the file SET (names and membership) | **cycle 1** | `Cycle1_AlreadyReproducesEveryFile_…` |
+| the `.gbrjob` | **cycle 1**, byte for byte | `TheJobFile_SettlesEveryLayersIdentity_…` |
+| drill tools, diameters and the full hit set | **cycle 1**, exact at 1, 2 and 3 | `DrillData_IsIdenticalAtEveryCycle_…` |
+| via `PadSize`/`DrillSize`, and barrel-vs-landing | **cycle 1** | `Vias_ComeBackAsVias_…` |
+| shape identity (circle→`CircleShape`, stroke→`PathShape`, arcs kept) | **cycle 1** | `ShapeIdentity_IsPreserved_…` |
+| net names, including `*` `%` `,` `\` | **cycle 1** | the two net tests |
+| a COMPOSITED layer's per-object net names | **lost in cycle 1**, stable after | `Cycle1_AlreadyReproducesEveryFile_…` |
+
+**The single line that differs between export1 and export2 is `%TO.N,GND*%` → `%TD.N*%` on the
+composited layer**, and the test pins that exact string rather than allowing "some difference" — a
+looser assertion would let a second, real loss hide behind the documented one. That loss is
+structural: a layer that painted in clear polarity is composited through Clipper in paint order, and
+per-object net names have nowhere left to live.
+
+### 2. Every round-trip failure, and where it was actually fixed — all four in the writer
+
+**All four are `GerberExport`/`GerberWriter` changes. None is in a reader.** §4 permits a writer change
+only with the failing cycle named as evidence, so each is named with its own cycle below, and each
+means **files people already hold differ from the files we write now**.
+
+**(a) A via's pad flash was written into the DRILL layer's Gerber file, not the copper layer's.**
+`GerberWriter` emits `PadSize` — the copper pad — but `GerberExport` grouped it by `LayoutShape.Layer`,
+which on a `ViaShape` is the BARREL (`ViaShape`'s own doc comment, R-via-9), so the pad landed in a
+Gerber file for the drill layer. *Failing cycle:* export1 wrote 5 files; the import identified the
+drill layer's copper file as a **second** drill layer of its own; export2 came back with 4. Fixed by
+`GerberExport.GerberLayerOf`, which answers `LandingLayer` for a via and `Layer` for everything else.
+**This is also a fabrication bug independent of the round trip** — brief-L4c-gerber-export.md §5 says
+"a pad flash **in copper**" in as many words, and a fab reading the old output etches copper on the
+drill layer and gets a hole with no annular ring on the copper layer.
+
+> **Two L4f tests were pinning the OLD behaviour and were changed:**
+> `ExcellonReaderTests.ADesignExportedByL4c_ReimportsWithItsViasRebuilt_AndReExportsToTheSameBytes`
+> read the pad out of the drill layer's `.TXT`, and
+> `GettingTheOrientationBackwards_PutsCopperWhereTheHoleShouldBe` asserted that the CORRECT orientation
+> produces no copper file. Both were describing what the writer happened to do rather than what
+> `ViaShape` and the L4c brief say, and their "deliberate wrong answer" was the right answer. **A gate
+> written against an existing writer is not evidence about the contract**, which is the general lesson
+> and the reason this phase exists.
+
+**(b) The Excellon file name could silently clobber a Gerber layer file.** A drawing layer whose
+`GerberSuffix` is `drl`/`DRL` produced `board.DRL`, then the drill write created `board.drl` — a
+different file on Linux and **the same file on macOS and Windows**, where the drill data overwrote a
+whole layer's copper with no error anywhere. Fixed by reserving `{cell}.drl` in `usedFileNames` before
+the layer loop, so the drill file keeps the name a fab looks for and the LAYER is the one
+disambiguated. Held by `ALayerWhoseSuffixIsDrl_DoesNotLoseItsFileToTheExcellonWrite`.
+
+**(c) A bare circle on a drill layer (R-via-5) was written twice — as a drill hit AND as copper.**
+*Failing cycle, measured:* the disc came back as a pad, paired with its own hole into a fourth via, and
+put **7.06e10 DBU² of copper on the top layer that the design never had** (exactly πr²); the drill
+layer split into two; export2 had one fewer file than export1. Fixed by excluding those circles from
+the artwork grouping — they are holes, and a Gerber file full of copper discs on the drill layer is
+copper for the fab to etch where the hole goes. They still reach `ExportPlan.UnpairedDrillCircles`, so
+the fidelity dialog's R-via-6 "Convert to Via" advice is unchanged. Held by
+`ABareCircleOnADrillLayer_ClosesToo_AndIsNotWrittenAsCopper`.
+
+**(d) R-L4h-9's net-name escaping, which the brief predicted.** `GerberWriter.EscapeAttribute` replaced
+`*`, `%` and `,` with `_`. *Failing cycle, proven first as §2 demands:* a net named `A,B*C%D` went out
+as `A_B_C_D` and came back as `A_B_C_D` — a silent, permanent rename after one cycle, on a name a
+third-party tool round-trips fine. **Only the writer half was missing**: `GerberReader` has undone
+`\uXXXX` since L4e (its R-L4e-18), and the format defines the escape for exactly this. The writer now
+emits `\uXXXX` — for `\` too, which the brief's list omits and which must be escaped or the reader
+undoes an escape the writer never wrote.
+
+**One more change, forced by gate 17 rather than by a defect.** Export order was
+`Dictionary` insertion order, i.e. the order shapes happened to sit in the `.clay` — unspecified by
+contract, and genuinely different for a design that was itself imported (an import adds shapes file by
+file, alphabetically). Gate 17 requires export2's `.gbrjob` to match export1's, and it did not: the
+same two-layer board listed `GTL, GBL` when drawn by hand and `GBL, GTL` after a round trip.
+`GroupByLayer` now orders by the technology's own layer order, unknown layers last by key.
+
+### 3. R-L4h-16's honest statement — what is proven ONLY by our two sides agreeing
+
+**This gate proves agreement between `GerberExport`/`GerberWriter`/`ExcellonWriter` and
+`GerberReader`/`ExcellonReader`/`GerberImport`, and nothing more.** The fixture is a design; no file in
+the loop was written by anything but us. Concretely:
+
+* **Proven only by self-agreement:** arc encoding (`G75` + `G02`/`G03` with I/J offsets — we always
+  emit multi-quadrant, absolute, one G-code per D01, and never test a modal or `G74` file this way);
+  region syntax (`G36`/`G37` with `%LPD`/`%LPC` polarity blocks, one clear region per hole); the
+  aperture set we emit, which is circles only — **no `R`, `O` or `P` aperture and no aperture macro
+  ever reaches this gate, because L4c writes rectangles as regions**; the `.gbrjob` schema and its
+  `FilesAttributes` shape; Excellon in exactly one dialect (`METRIC`, decimal-point coordinates,
+  `G90`/`G05`); `%TO.N` net attributes and now their `\uXXXX` escapes.
+* **Proven against files we did not write:** nothing here. That coverage lives entirely in L4e's and
+  L4f's own fixtures — inch and metric formats, leading and trailing zero suppression, headerless
+  drill files, modal coordinates, `%SR` step-and-repeat, aperture macros with expressions, `R`/`O`/`P`
+  apertures, negative and incremental notation. **And those fixtures are HAND-AUTHORED too** (L4e's
+  §11 rule: no vendor file is redistributable). So the honest summary is that **no part of the format
+  is proven against third-party output anywhere in the L4e-L4h series** — what L4e and L4f prove is
+  that the reader handles constructs the writer never emits, which is a different and weaker claim
+  than dialect coverage, and it is the gap a real production file set would close.
+* One rung further out than the round trip can reach is asserted directly anyway:
+  `ARectangularApertureFlash_ComesBackAsARectShape_ThroughTheFullImport` drives an `R` aperture through
+  the whole import, because R-L4h-13's middle item is unreachable from a fixture L4c wrote.
+
+### 4. What the entry flow felt like — R-L4h-5 was right, and the prompt fires less than expected
+
+**File-picker-first is right, and the reason is one the brief did not name:** the file picker is also
+the only picker that SHOWS what is in the folder. A folder picker shows folder names, so a user
+choosing blind between `gerber/` and `gerber_v2/` gets no help at all, while the file picker puts the
+whole set in front of them and the escalation prompt then states its counts a second time. The
+`Another Folder…` third option carries the rarer case at no cost to anyone else.
+
+**The enclosing-folder prompt fires LESS often than R-L4h-3 implies, because of one decision made
+during the build:** `NeedsPrompt` counts other artwork, other drill files **and job files**, and is
+false otherwise — so a lone Gerber in a folder of unrelated files imports silently as one layer. That
+matters more than it sounds: the alternative reading ("no prompt means import the folder") would take a
+single `.gtl` sitting in a downloads folder and import a hundred unrelated files as a cell named after
+that folder. **A job file counts even though it is neither artwork nor drill data**, because it is rung
+0 of L4g's cascade — importing the folder settles every layer's identity with no heuristic, importing
+the file alone does not, so the two answers genuinely differ.
+
+**The drill-format prompt is rarer still: it never fired on anything circuitRF wrote.** Our own
+`ExcellonWriter` emits `METRIC` plus decimal-point coordinates, which settles all three unknowns, so
+`RequiredAGuess` is false on every round-trip cycle in this gate. It is reachable only from a genuinely
+headerless file, which is what its own test hand-authors. Also settled during the build and worth
+keeping: **an override from that prompt is what the file is RE-READ with**, not a label applied to an
+already-parsed result — `AnOverrideFromThePrompt_ChangesWhatTheFileIsReadAs` proves it by reading the
+same holes as inches and watching every diameter move by exactly 25.4×.
+
+**The flow itself lives in `GerberImportEntry.Run`, not in `WorkspaceViewModel`.** A `Window` cannot be
+constructed in this headless suite, so a decision left in the code-behind is a decision with no gate;
+`Run` takes the two prompts as delegates and the view model supplies the two pickers, the two dialogs
+and `Messages`. Gates 3-7 — including "cancel creates nothing", asserted against the FILESYSTEM — are
+properties of that method.
+
+### 5. The measured cost of a full cycle
+
+**49,500 shapes (4 layers, 4,500 vias, 3 tool diameters) → 5 files, 4.79 MB → 576 ms for a full cycle**
+(export 226 ms, import 245 ms, re-export 105 ms). A 9,900-shape set is 161 ms. Measured with a throwaway
+harness, not a `Category=Benchmark` test — **R-L4h-17 is honoured: there is no wall-clock assertion
+anywhere in either gate file.** Two caveats for anyone sizing against it: this is a **DEBUG** build
+(`dotnet test` never builds Release), and the shape mix is uniform, so a real board with long vector-
+filled pours will not track it linearly. The number worth carrying forward is that the round trip is
+roughly **linear in shape count at ~12 µs/shape**, and the import half is never more than a little over
+the export half.
+
+### 6. A headless import verb, and what moving L4e-L4g to `src/Design` would cost
+
+**Worth a follow-up brief, yes — but the firewall move is the whole of the work, not the verb.** A
+`Cli gerber-import` verb over `GerberImportEntry.RunFolder` is a handful of lines: the entry point
+already takes a resolved file list, returns a result and asks nothing (both prompt callbacks are
+optional, and a headless run wants the drill-format one to REFUSE rather than guess, which the existing
+null-cancels contract already expresses).
+
+What it needs first is the move, and the move is bigger than the Gerber stack:
+
+* **The stack itself is ~5,450 lines** across 17 files (`GerberReader` ×4, `GerberPrimitives`,
+  `GerberMacro` ×2, `GerberCoordinateFormat`, `GerberFileClassifier`, `GerberLayerIdentity`,
+  `GerberStackupMapping`, `GerberImport`, `GerberImportEntry`, `ExcellonReader` ×2, `ExcellonFormat`,
+  `DrillViaPairing`) and is already framework-free — no Avalonia, no Skia, no `Messages`.
+* **Three `src/Ui` helpers would have to move with it**, ~720 lines: `LayoutLayerMapping` (169),
+  `LayoutFragment` (475) and `FallbackPalette` (75). All three are framework-free as written, but they
+  are shared with GDSII, DXF, board import and the layout editor's paste path, so moving them is a
+  change to five other consumers' `using` lines and to `src/Ui/GlobalUsings.cs`, not a file move.
+  `FallbackPalette` additionally reaches into `CircuitRF.Ui.Theming`, which would have to be checked
+  the same way `Rgba` already was when it landed in `src/Design/Theming`.
+* `InterchangeStructure` (13 lines) is the neutral model both sides exchange and moves trivially.
+* **`GerberExport` must NOT move**, and that is the thing to decide before starting: it depends on
+  `LayoutDesignFlatten` and `LayoutTextOutline`, and the latter is Skia. So the split would be
+  import-in-`Design`, export-in-`Ui`, which puts the two halves of this phase's round trip in different
+  projects and means the gate itself has to live in `Ui.Tests` regardless.
+
+That last point is why this is a firewall question and not a UI one, exactly as §4 says. Nothing here
+was attempted.
+
+## Phase L4g — COMPLETE: a Gerber file set becomes a cell and a technology (2026-09-02)
+
+`GerberImport` is `PcbImport` to L4e/L4f's `PcbReader`: the only piece of the Gerber stack that touches
+`CellFolder`, layer reconciliation, `Technology` and `Messages`. Four new files under
+`src/Ui/Layout/Interchange/` — `GerberFileClassifier.cs` (what is in a folder at all),
+`GerberLayerIdentity.cs` (the identity cascade and its generic table), `GerberStackupMapping.cs` (a job
+file's `MaterialStackup`), `GerberImport.cs` (the orchestrator) — plus a reading half added to the
+existing `GerberJobFile.cs`. Gate: `tests/Ui.Tests/GerberImportTests.cs`, 29 tests.
+
+Two changes outside this folder, both additive: `LayoutShape` gained nullable `Component`/`Pin` so
+`%TO.C`/`%TO.P` have somewhere to live (R-L4g-12), and `LayoutGeometry.Clone` copies them. Nothing
+reads either field yet; `DefaultIgnoreCondition.WhenWritingNull` means every existing `.clay`
+re-serializes byte-for-byte and no `FormatVersion` bump was needed.
+
+### 1. How the identity cascade actually performed, per rung
+
+Measured on ONE eleven-file board (4 copper, 2 mask, 2 legend, 2 paste, 1 outline), imported three ways
+from the same artwork:
+
+| The set carries | Rung that identified it | Files exact | Guessed | Dialog |
+|---|---|---|---|---|
+| a `.gbrjob` + `%TF.FileFunction` | 0 — job file | 11 / 11 | 0 | 0 |
+| `%TF.FileFunction` only | 1 — the file's own attribute | 11 / 11 | 0 | 0 |
+| neither | 3 — the generic table | 0 | 11 | 0 |
+
+and separately, a real L4c export re-imported against the technology that produced it: **2 of 2 at
+rung 2**, no dialog, no heuristic.
+
+**The ratio that matters is that rung 4 is empty on every well-formed set.** The dialog appears for
+exactly one fixture in the gate — a file called `layer_one.zzz`, whose name and extension say nothing
+at all — and that is the only way to reach it. Anything a modern export produces (X2 attributes, a job
+file) and anything circuitRF itself wrote (a `GerberSuffix` alias) is settled without a question.
+
+**The dialog is gated on rung 4 ALONE, not on `LayoutLayerMapping.RequiresConfirmation`.** Using the
+shared "requires confirmation" predicate would interrupt an exactly-identified set, because a minted
+layer that matches nothing in the workspace technology is a `NoMatch` row by construction — and gates 6
+and 7 say precisely that such a set must not prompt. The shared *reconciliation* is still the only one
+(R-L4g-0); what changed is the trigger, exactly as L4d changed the default choice for the same reason.
+
+### 2. What the generic table ended up containing, and what genericity cost — as a number
+
+29 name patterns plus a structural reading of the conventional extension family. **No row names a tool,
+a vendor or a product** (root `CLAUDE.md` §"Commercial Vendor References"); the patterns describe what
+a layer IS (`copper` + `top`, `mask` + `bottom`, `silk`, `paste`, `outline`/`profile`/`keepout`), and the
+extension rule DECOMPOSES `g<side><function>` rather than enumerating extensions somebody has seen —
+`t`/`b` for the side, then `l` copper, `s` mask, `o` silk overlay, `p` paste, with `gko`/`gm<n>` and
+`g<digit>` handled separately. That generalizes to extensions nobody has seen, which a lookup table
+cannot.
+
+**Cost of keeping it generic, measured: zero on this board — but only after fixing an off-by-one the
+measurement caught.** Comparing the heuristic's layer names against the declared ones file by file, the
+first run agreed on **9 of 11**. The two failures were `board.g2` and `board.g3`: the table read the
+digit as "the n-th INNER layer" and named them `Inner 2`/`Inner 3`, while X2's `Copper,L2,Inr` names the
+n-th COPPER layer and gives `Inner 1`/`Inner 2`. Both conventions count the stack from the top, so the
+digit means the same thing in both and the table was simply reading it wrong. Fixed, the two agree on
+**11 of 11**, and `TheGenericHeuristic_NamesTheSameLayersAsTheDeclaredAttributes_OnTheSameSet` pins
+that agreement so the next edit to the table cannot silently reintroduce it.
+
+**The honest caveat, in L4f's own words about its own distribution: this is AUTHORED, not observed.**
+Every fixture is hand-written (L4e's §11 rule), and a folder of real production output would very
+likely reach rung 3 more often and agree with it less. Nothing here measures that.
+
+### 3. The new-`.ctech` decision as it landed, and what argued against it
+
+Landed exactly as R-L4g-8 states: a new `.ctech` beside the cell inside the import folder, the `.clay`
+pointing at it by a relative `TechRef`, and the workspace's technology **not touched** — asserted
+directly (field by field, plus its stackup length) rather than inferred, because that is the divergence
+from board import.
+
+**Nothing found argues for the board-import live-override model, and one thing found argues harder
+against it.** A rung-2 or ExactName match donates the destination layer's key, name and colour, and the
+import then COPIES that `LayerDef` into its own technology rather than referencing it — which is what
+makes "the workspace technology is unmodified" true even in the case where the two technologies share
+layer identities. Under a live-override model that same case would write the import's own
+`GerberSuffix` onto a layer other cells share, which is a mutation of shared state as a side effect of
+reading a file. The copy costs a few hundred bytes per layer and removes the question entirely.
+
+**One deliberate divergence from a literal reading of gate 12.** A `StackupKind.Via` entry naming each
+drill layer is added in BOTH branches — with a job file and without. It is not substrate: it carries no
+thickness, no permittivity and no conductivity, nothing simulates it, and it is directly declared by a
+drill file that was actually read. Without it `GerberExport.UnpairedDrillCircles` cannot recognize the
+drill layer, and a bare unpaired hole re-exports as copper on the drill layer instead of as a drill
+hit — a round-trip loss L4h would inherit. Gate 12 therefore asserts no `Conductor` and no `Dielectric`
+entry, which is what R-L4g-9's own reasoning is about.
+
+### 4. How much of a stackup a job file actually delivered — the concrete list
+
+From an eleven-file board whose `.gbrjob` carries a full `MaterialStackup`:
+
+| Field | Present? | What the import did |
+|---|---|---|
+| entry order, top to bottom | yes | kept verbatim; 4 conductors and 3 dielectrics built in the file's order |
+| entry type (`Copper`/`Dielectric`) | yes | mapped to `Conductor`/`Dielectric`; 4 `SolderMask`/`Legend` entries skipped |
+| per-entry `Thickness` | yes | converted through `PcbUnits.Length` (0.035 mm → 35,000 DBU) |
+| `LayerNumber`, `BoardThickness` | yes | reported; a disagreement with the copper file count is reported by name |
+| material name | yes | **read and never used** — it is a trade name, not electrical data |
+| `DielectricConstant` | OPTIONAL | present on 1 of 3 dielectrics; the other 2 left unset and NAMED as unset |
+| `LossTangent` | OPTIONAL | same: 1 of 3 |
+| conductivity | **never** | defaulted to `PcbStackupMapping.DefaultCopperConductivitySm`, named as a default |
+| relative permeability | **never** | defaulted to 1.0, named as a default |
+| top/bottom boundary condition | **never** | left at the technology's own defaults, named as such |
+
+**So what an imported set still needs before the EM path can run** is: a relative permittivity and a
+loss tangent for every dielectric the job file left unset (all of them, when there is no job file), a
+thickness for every entry that carried none, and the two boundary conditions. With no job file at all
+the stackup is empty and the message says so — no substrate is invented, in either branch.
+
+### 5. The largest set imported — measured
+
+16 files given (11 artwork, 2 drill, 1 `.gbrjob`, 2 companions skipped by name) → **11 layers, 1,388
+shapes** (1,320 flashes read, 60 consumed into vias, plus 60 vias and 68 unpaired holes), **0
+instances**. `.clay` **254,551 bytes**; `.ctech` **8,712 bytes** for 13 layers and a 9-entry stackup
+(4 conductor, 3 dielectric, 2 via). The same set stripped of its job file yields a 6,113-byte `.ctech`
+with the same 13 layers and only the 2 via entries — the difference IS the substrate, and it is exactly
+what the job file bought.
+
+### 6. Three smaller findings the measurement exposed
+
+* **A cross-check disagreement is not format uncertainty.** The first cut prompted for the drill format
+  whenever `ExcellonReader.CrossCheckExtents` disagreed, which fired on a file that had DECLARED its own
+  units and digit format — there is nothing for the user to answer there, and R-L4h-6 says the prompt
+  appears only when the inference is uncertain. The condition is now `RequiredAGuess` alone; the
+  disagreement is still reported loudly, and the cross-check still travels to the prompt as evidence
+  whenever the prompt does appear.
+* **The sibling-drill offer could offer a file already imported.** The search reaches the parent folder
+  and its other sub-folders (the case R-L4g-3 actually names — artwork in one folder, drill in a
+  sibling), so a second copy of the same output tree produced an offer for `board.drl` when
+  `board.drl` was already in the set. Candidates now exclude any file NAME already chosen, not only the
+  same path.
+* **Classification by content separates a drill file from its own listing, which extensions cannot.**
+  The drill test requires a `T<n>C<diameter>` tool table over coordinate lines that carry NO `*` — the
+  Gerber block terminator is what makes `X100Y100D03*` and `X100Y100` unambiguous. A human-readable
+  drill report names the same tools in prose and fails both halves. Gate 2 proves the direction that
+  matters by swapping two files' extensions outright: artwork wearing `.drl` and drill data wearing
+  `.gtl` still import as artwork and drill data, and still pair into a via.
+
+## Phase L4f — COMPLETE: Excellon drill reading, and rebuilding vias (2026-09-02)
+
+`ExcellonReader` reads one drill file: text in, tools and hits out. `DrillViaPairing` turns those hits
+plus L4e's artwork back into `ViaShape`s. Both are pure — no `CellFolder`, no `Technology`, no
+`Messages`, no dialog, no prompt — so the whole gate runs headlessly with no workspace anywhere.
+Three new files under `src/Ui/Layout/Interchange/`: `ExcellonFormat.cs` (the inference, its evidence
+and the override), `ExcellonReader.cs` (result types, refusals, the pre-scan) and
+`ExcellonReader.Parse.cs` (the state machine), plus `DrillViaPairing.cs`. One additive change
+elsewhere: `GerberCoordinateFormat.DecimalToDbu` gained an `out bool exact` overload, which is what
+lets a tool diameter report that it was rounded. Gate: `tests/Ui.Tests/ExcellonReaderTests.cs`,
+37 tests.
+
+### 1. How often the format inference actually had to guess — measured, not estimated
+
+**4 of 24 fixtures (17%).** Measured by running every fixture in the gate back through the real
+reader and reading the evidence off the result, not counted by eye. Per unknown:
+
+| Settled by | Units | Digit counts | Zero suppression |
+|---|---|---|---|
+| `INCH`/`METRIC` keyword | 23 | 1 | 5 (its `LZ`/`TZ` word) |
+| An explicit `;FILE_FORMAT=` comment | — | 7 | — |
+| Literal decimal points (question does not arise) | — | 15 | 15 |
+| The tool table (INFERRED) | 1 | — | — |
+| Nothing — DEFAULTED | 0 | 1 | 4 |
+
+**In all four guesses the missing piece was the zero-suppression word**, and in exactly one of them
+(the deliberately headerless fixture) the units and the digit counts were missing too. So on this
+evidence R-L4h-6's prompt is not the normal path — but it is also not rare, and **the part it most
+often has to ask about is suppression, not units**, which is worth knowing because suppression is the
+harder one to explain to a user and the one whose two answers differ by four orders of magnitude on
+identical text.
+
+**The honest caveat, stated because the number invites over-reading:** this distribution is *authored*,
+not observed. Every fixture is hand-written (§6's rule, L4e's precedent), and 15 of the 24 carry
+literal decimal points because that is what circuitRF's own `ExcellonWriter` emits and much of the
+gate round-trips against it. A folder of real production files would very likely guess more often, not
+less — §2's whole premise is that a *missing* format statement is the common case in circulation, and
+nothing here measures that.
+
+### 2. The zero-suppression trap: Excellon's `LZ`/`TZ` is the INVERSE of Gerber's `%FS`
+
+The one finding that would have been a silent, four-orders-of-magnitude bug. **Gerber's `%FS<L|T>`
+names the zeros that are OMITTED. Excellon's `LZ`/`TZ` names the zeros that are KEPT.** `INCH,LZ` is a
+file whose *leading* zeros are present, which means its *trailing* zeros are the suppressed ones —
+the opposite mapping to the one the sibling reader's identical-looking letter implies.
+
+`GerberZeroOmission` therefore keeps its Gerber meaning (what is omitted) everywhere, and the
+inversion happens in exactly one place, `ExcellonFormat`'s `ScanUnitsKeyword`, with the reasoning
+written above it. `TheLzTzWord_IsReadAsTheZerosKEPT_NotTheZerosOmitted` is the gate; reversing that
+one mapping turns a 0.5 mm coordinate into 0.00005 mm and every test that reads an integer-coordinate
+fixture goes red at once, which is the point.
+
+### 3. The via orientation proof, and what the wrong answer looked like
+
+R-L4f-9 and L4d's R-L4d-10 both forbid proving this by reading the two fields back, so it is proven by
+**exporting and comparing bytes**. `ADesignExportedByL4c_ReimportsWithItsViasRebuilt_AndReExportsToTheSameBytes`
+exports a via through the real `GerberExport`, re-imports both halves, pairs them, exports the
+reconstructed via again, and asserts the `.drl` is **byte-identical** and the artwork file identical
+line for line (minus `%TF.CreationDate`, which the format carries by design).
+
+**The deliberate wrong answer was tried, and it is worse than "a field is wrong":**
+`GettingTheOrientationBackwards_PutsCopperWhereTheHoleShouldBe` swaps `Layer` and `LandingLayer` on
+the same via and exports it. The pad flash **moves into a different FILE** — the copper layer's
+`.GTL` instead of the drill layer's `.TXT` — because `GerberExport` groups by `Layer`. Nothing errors,
+both files render plausibly, and the board comes back with copper where the hole should be. Swapping
+`PadSize`/`DrillSize` instead is quieter still: the same file set, with the drill file's tool table
+reading `T1C0.500000` where it should read `T1C0.300000`.
+
+### 4. How often the via/component distinction was actually DECLARED
+
+**Declared in 2 of 5 pairing fixtures; inferred in 3.** Where `TA.AperFunction,…,ViaDrill` /
+`ComponentDrill` is present the classification is a lookup, and there is **no geometric tiebreak
+anywhere in `DrillViaPairing`** — no diameter ratio, no annular-ring test — precisely so that a
+heuristic cannot overrule a declaration later (R-L4f-10 calls that a bug, and the gate fixture is
+built to fool a size heuristic: the via has the big pad and the big drill, the component hole the
+small ones).
+
+**What the fallback gets wrong when it has to guess, stated as two specific things rather than as a
+disclaimer:**
+
+* A plated component hole becomes a `ViaShape`. That is structurally what it is and it is what the EM
+  path needs, but the component pad is *consumed* into the via, so a re-export writes it as a via pad
+  on the drill layer rather than as pad copper on the copper layer.
+* **A non-circular pad never pairs at all.** The flash index holds `CircleShape` only, so an obround
+  or rectangular through-hole pad — the common spelling for a real component pad — leaves its hit
+  unpaired and it lands as a plain circle on the drill layer (R-L4f-11), with the pad copper untouched.
+  This is deliberate and it is the safe direction: pairing a rectangular pad into a round `ViaShape`
+  would *delete* the copper the rectangle covers. It does mean the unpaired count on a real
+  through-hole board will be higher than the "drill file and artwork do not belong together" wording
+  of that diagnostic implies.
+
+One more decision that only shows up on a real multilayer board: a through-hole pad exists on *every*
+copper layer, and the via consumes **exactly one** flash (the landing layer's, else the drill layer's,
+else the largest). Consuming all of them would delete real copper from the layers a single-landing-layer
+`ViaShape` cannot represent.
+
+### 5. Blind and buried vias: the declared span does NOT map cleanly onto `ViaShape`
+
+**It maps two-thirds of the way, and the missing third is named rather than fudged.**
+`TF.FileFunction,Plated,1,2,Blind` names **two** copper layers; `ViaShape` carries a barrel layer and
+**one** landing layer. `DrillViaPairing.MapSpan` therefore returns the landing layer *and a separate
+`FarSide`* that the shape has nowhere to hold, with a `Note` that says so in the same words to whoever
+reports the import.
+
+Today the far side is carried only by the drill layer L4g mints per drill file — which is enough to
+keep two different blind vias on two different layers distinguishable in the design, and not enough
+for anything that wants to ask a via which two layers it connects (the EM path, eventually). If that
+is ever needed, the shape needs a second layer field, not a convention. It is not needed to import the
+files correctly today, and inventing it here on speculation is exactly what R-L4f-5 warns against for
+the neighbouring field.
+
+### 6. Should `InterchangeMapping` gain a plated/non-plated field? Not yet — and the blocker is elsewhere
+
+The reader now recovers plating in all three spellings R-L4f-5 names (a `;TYPE=` section split, a
+`; #@! TF.FileFunction` attribute, and — for two files that differ only in name —
+`ExcellonReader.PlatingFromFileName`, a generic-pattern helper L4g calls). So the distinction *does*
+arrive, per file and per tool, and the summary says out loud that export will flatten it again. (A file
+carrying BOTH `;TYPE=` sections reports no file-level plating at all rather than the first section's —
+the distinction lives on the tools there, and a single file-level answer would be a quiet lie.)
+
+**But a `.ctech` field would not un-flatten it.** `ExcellonWriter.Write` takes every via in the design
+and writes **one** drill file, regardless of layer; giving `InterchangeMapping` a plated flag would let
+a layer *say* it is non-plated and change nothing about what is written. The capability that is
+actually missing is in the writer — group hits by drill layer and emit one file per group — and once
+that exists the layer itself already carries the distinction, leaving the mapping field with only one
+job: naming the plating in the second file's own header. **Recommendation: add nothing to
+`InterchangeMapping` now**; revisit it in whichever phase changes `ExcellonWriter`, where the evidence
+for the field is a file that cannot be written without it.
+
+### 7. Stated limitations — refused by name, and skipped by count
+
+**Refused (nothing imported, the sentence says why):** a binary EIA-coded drill file, detected on
+*bytes* before any decode, because a decoder replaces the very bytes the detection reads; a
+human-readable drill listing or report handed to this reader by mistake (fewer than half its content
+lines are drill commands); a file with Excellon shape that defines no tools and drills no holes; a
+file over the shared import ceiling; and — from the pairing, R-L4f-12 — hits with no drill layer to
+land on, which never scatter circles onto whatever layer was nearest.
+
+**Read but degraded, counted by name:** a circular routed segment `G02`/`G03` (its endpoint is kept so
+the opening keeps its length, its curvature is not); `G93` zero set; a routed pass that cut nothing; a
+hole or slot with no tool selected; an `R` repeat with no preceding hit; and every unrecognized `G`,
+`M` or other-letter command, by name, once, with a count. Rout positioning moves that correctly drill
+nothing are counted and reported too, so the hit count and the coordinate count can be reconciled.
+
+**Untested because only a real file can carry it:** which suppression convention a given toolchain
+actually writes when it omits the `LZ`/`TZ` word entirely; whether `; #@!` attributes appear in
+circulation anywhere except at the head of a file and immediately before a tool definition; real
+per-layer-pair drill sets (ours are authored, one hole each); and binary drill files beyond the
+non-printable-byte signature, since none was available to test against.
+
+## Phase L4e — COMPLETE: the Gerber reader (2026-09-02)
+
+`GerberReader` reads one artwork file: text in, `LayoutShape` geometry out. It touches no
+`CellFolder`, no `Technology`, no `Messages`, no dialog — that split is L4g's, and it is what lets the
+whole gate run headlessly with no workspace anywhere. Five new files, all under
+`src/Ui/Layout/Interchange/`: `GerberReader.cs` (result + entry + the ceiling census),
+`GerberReader.Parse.cs` (tokenizer, extended commands, modal state), `GerberReader.Objects.cs`
+(apertures, the three operations, strokes), `GerberReader.Regions.cs` (arcs, regions, compositing),
+plus `GerberCoordinateFormat.cs`, `GerberPrimitives.cs`, `GerberMacro.cs` and
+`GerberMacroExpression.cs`. Gate: `tests/Ui.Tests/GerberReaderTests.cs`, 45 tests.
+
+### 1. Every fixture is hand-authored — so here is exactly what that does NOT prove
+
+No real third-party file was committed. §11 permits a redistributable one; none was available that
+also satisfies root `CLAUDE.md` §"Commercial Vendor References", and a hand-authored fixture costs
+nothing to redistribute. The honest consequence, stated because L4h's round trip cannot close it (a
+self-written file only proves we read what we wrote):
+
+**Exercised by an authored fixture, and therefore proven only against our own reading of the spec:**
+`%FS` at four digit pairs including trailing-zero omission and incremental notation; `%MO` and
+`G70`/`G71`; the four standard aperture shapes with and without hole modifiers; macro primitives 1,
+4, 5, 6, 7, 21, 22 and the modifier grammar; `G74`/`G75` arcs including a full circle; regions with
+nested contours and arc boundaries; `%LPD`/`%LPC`; `%SR`; `%IPNEG`, `%MI`, `%SF`, `%AS`, `%AB`,
+`%OF`; the X2 attribute set; `G54`, a bare `D02`, a zero-padded `%ADD`, an empty block, `G04`.
+
+**Untested dialect properties, because only a real file can carry them:** how a given toolchain
+actually spells a `FileFunction` value in practice; whether a real writer emits `%LPC` for anything
+other than a region hole; real vector-fill output (ours is synthesised); files that switch quadrant
+mode mid-stream after their arcs are drawn; macros whose modifier arithmetic came out of a real PCB
+tool rather than out of this brief; and — most consequential — whether any file in circulation mixes
+`%SR` with `%AB`, which we refuse.
+
+**One real file WAS read end to end: our own writer's.** `GerberWriter.Write` output was fed straight
+back through the reader as a scratch probe (not committed — the round trip is L4h's gate, this was
+evidence-gathering). Two findings that L4h needs, both writer-side, neither fixed here per §10:
+
+* **A `RectShape` does not survive as a `RectShape`.** The reader maps a rectangle-aperture FLASH to
+  `RectShape` exactly as R-L4e-9 requires — but L4c's writer never emits a rectangle flash. It writes
+  every `RectShape` as a `G36` region, so it comes back a `PolygonShape`. The reader is right and the
+  round trip is still lossy; closing it is a one-line writer change (mint an `R` aperture and flash
+  it), and it is L4h's call to make.
+* **`ViaShape` comes back as a `CircleShape`**, which is correct and expected — the writer flashes a
+  via pad through a circular aperture and the drill information lives in the Excellon file. L4f
+  rebuilds vias from that file; nothing here should try to guess one.
+
+### 2. The polarity decision, as it actually landed (R-L4e-13)
+
+**Decided per layer, from the file's own content: composite if and only if the file painted at least
+one CLEAR OBJECT** — not merely "the file contains the token `%LPC`". A `%LPC*%` that no object
+follows is common as writer state-resetting noise, and compositing on the token alone would destroy
+shape identity for nothing. A file in that shape imports primitive-for-primitive and says so in a
+diagnostic. Held by `ClearPolarityThatPaintsNothing_DoesNotCompositeTheLayer`.
+
+When compositing does happen it is the whole layer, in paint order, batched by polarity run (one
+Clipper boolean per polarity SWITCH, not per object — otherwise a vector-filled layer becomes tens of
+thousands of Clipper calls for an identical answer). What a composited layer costs, measured on the
+probe above rather than asserted: **everything except the geometry.** Shape identities go
+(`CircleShape` + `PolygonShape` came back as one 70-vertex `PolygonShape` with a hole, because the
+circle happened to touch the polygon), and with them go every per-object net name, aperture function,
+component reference and pin number, because a welded polygon has nowhere to carry them.
+
+**That cost lands on our own writer's output more often than it looks**, and this is the single most
+important thing for L4h to know: `GerberWriter.WriteRegionWithHoles` emits every hole as a `%LPC`
+region. **So any layer we export containing one shape with a hole re-imports as a composited layer,
+and every OTHER shape on that layer loses its identity too.** That follows from R-L4e-13 as written
+("a layer that does use `%LPC*%` must be composited"), and it is implemented as written. The
+alternative — recognising a clear object that lies inside the immediately preceding dark object, and
+that no later dark object touches, as that object's hole — would preserve identity for exactly the
+pattern our own writer produces. It was deliberately NOT built here: it is a change to the rule the
+brief states, it needs its own evidence, and R-L4e-13's warning that "compositing is always correct
+and is therefore tempting as a uniform rule" cuts both ways.
+
+### 3. The macro evaluator (R-L4e-8)
+
+`GerberMacroExpression` is ~90 lines of recursive descent. What the grammar turned out to require,
+and what that argues:
+
+* **`x` and `X` are both the multiplication operator.** This alone settles it. In circuitRF's own
+  expression language `x` is an ordinary identifier, so `$1x2` is either a syntax error there or, far
+  worse, a silent reference to a variable someone named `x`. Teaching the circuit engine a second,
+  conflicting tokenizer to read this would make it worse at its real job.
+* There are no named variables (operands are positional `$1`, `$2`, …), no functions, no
+  conditionals, and no Real/Complex/Bool kinding — every value is a plain double in the file's own
+  length unit. Nothing in the circuit engine's feature set is USED here; the overlap is `+ - / ( )`.
+* The one feature beyond arithmetic is **assignment to `$n` in a preceding block**, which is three
+  lines against a variable dictionary and would need real scoping machinery inside a general engine.
+
+So the dedicated evaluator is argued FOR, not merely tolerated, and the reason lives in that file's
+header rather than only in the brief.
+
+### 4. The four-candidate single-quadrant arc (R-L4e-11)
+
+Under `G74` the I/J words are unsigned magnitudes, so the centre is one of `(x0±|I|, y0±|J|)`. The
+resolution is both halves of the rule together — radius agreement at **both** endpoints, and a sweep
+that stays inside one quadrant — with the quadrant test dominating: a candidate inside one quadrant
+beats one outside it however good its radius agreement.
+
+**Proven with a fixture whose wrong candidate is not merely plausible but radius-IDENTICAL.** Chord
+`(0,0) → (1.2mm, 0)`, `I=0.6mm`, `J=0.8mm`: both `(0.6, 0.8)` and `(0.6, −0.8)` are exactly 1.0 mm
+from *both* endpoints, so radius eliminates neither — only the sweep does (under `G03` the mirror
+sweeps 286°). The other two candidates fall to radius. The test asserts the recovered bulge is
+exactly 1/3 and then re-derives the centre through `LayoutArc.FromBulge` to `(600000, 800000)`,
+because asserting the bulge alone would not distinguish sign conventions.
+
+Related, and worth knowing: **a bulge cannot express a full turn** (`tan(π/2)` is infinite), so a
+`G75` full-circle arc — an ordinary way to paint a ring — is split into two half-turn edges of bulge
+1.0 each. Splitting happens for any sweep past 1.5π.
+
+### 5. Stated limitations
+
+**Refuses by name, importing nothing** (each names the command in its own sentence):
+
+| Command | Why |
+|---|---|
+| `%IPNEG` | inverts the image against a bounding frame the file does not supply |
+| `%MI` non-identity | a mirrored board looks entirely plausible and is entirely wrong |
+| `%SF` non-identity, `%AS` non-`AXBY`, `%LM` non-`N`, `%LR` non-zero, `%LS` non-one | same reasoning |
+| `%AB` block apertures | not implemented; R-L4e-15 permits "flatten, or refuse by name" |
+| no `%FS`, or no `%MO`/`G70`/`G71`, with geometry present | coordinates would have no format or no scale |
+| over `GerberReader.EntityHardCeiling` (500,000, shared with `LayoutFlatten`) | census is a raw `D0x` scan of the text, before one token is allocated |
+
+The identity forms of all the deprecated transforms are accepted silently, and `%OF` is APPLIED
+rather than refused — it is a translation, which is trivial.
+
+**Read but degraded, counted by name in `SkippedConstructCounts`:** a stroke with a non-circular
+aperture (swept into a region through Clipper's Minkowski sum — path identity and width both gone); a
+circular aperture carrying a hole modifier (the one case R-L4e-9's shape-identity mapping structurally
+cannot apply, since `CircleShape` has no holes); macro primitive 6 (moiré); an unimplemented macro
+primitive code; a macro modifier that will not evaluate; a degenerate region contour (fewer than three
+distinct vertices); a `D03` inside a `G36` region.
+
+**Reported once with a count in `UnknownCommandCounts`:** any unrecognised `%XX`, `Gnn`, `Dnn` or
+`Mnn`, an undefined aperture, a `D01`/`D03` with no aperture selected, a coordinate block before any
+D-code, and an unknown word letter. Nothing is dropped silently.
+
+**Accuracy notes.** Coordinates are exact integer arithmetic on every format whose output unit is a
+whole number of DBU — which is every millimetre format up to 6 decimals and inch at 4 and 5 decimals
+at `DbuPerMicron`=1000. Inch at 6 decimals is 25.4 DBU per unit; it rounds (away from zero, never a
+cast — `(long)(x*s)` is wrong only for negative coordinates, and board origins sit at board centres)
+and reports `WorstCaseRoundingErrorDbu = 0.5`. Aperture modifiers, `%SR` steps and `%OF` offsets are
+parsed as exact scaled integers rather than through `double`. Only macro geometry goes through
+`double`, because the macro arithmetic itself is floating point, and circular boundaries that must
+become polygons use a 0.1 µm chord tolerance capped at 256 segments.
+
+**Not attempted, by scope:** drill files (L4f), file-set classification and layer identity (L4g), the
+menu entry and the round-trip gate (L4h), and any change to `GerberWriter`.
+
+### 6. The largest file read
+
+**3.2 MB, 150,000 draw/move operations, 75,000 `PathShape`s** — R-L4e-19's own "a modest board's
+vector-filled pour" figure, synthesised and read as a scratch probe. Every stroke arrived; nothing was
+merged, coalesced or dropped; `StrokeCount` reported 75,000 so L4g can tell the user a pour arrived as
+strokes and that Merge is the fix. Well inside the 500k-shape envelope the layout performance work
+already covers. No wall-clock assertion exists anywhere in this phase's tests (R-L4e-21) — the
+committed vector-fill gate asserts 500 strokes in, 500 `PathShape`s out, and nothing about how long
+it took.
+
 ## Two blank-or-partial readouts: the Known Files tooltip and the HB analysis card (2026-09-02)
 
 Both owner-reported, unrelated in code, and the same shape: a display read ONE field where the data

@@ -369,6 +369,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ImportBoardCommand.NotifyCanExecuteChanged();
+        ImportGerberCommand.NotifyCanExecuteChanged();
         ManagePdksCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
@@ -3723,6 +3724,118 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             $"Imported {result.CreatedCellDirs.Count} cell(s) from the board file into "
             + $"'{Path.GetFileName(importDir)}'.");
         if (result.BoardCellDir is { } boardDir) OpenPrimaryLayoutIfResolvable(boardDir);
+    }
+
+    // ── Import Gerber (docs/sonnet-briefs/brief-L4h-gerber-import-ui-and-round-trip.md §1) ────────
+    // GerberImport does the read/reconcile/CellFolder-creation work and GerberImportEntry decides what
+    // the user actually pointed at; this method is only picking, prompting and reporting (UI firewall),
+    // mirroring ImportBoardAsync with two extra prompts — the enclosing-folder question (R-L4h-3) and
+    // the drill-format one (R-L4h-6). Everything else is Messages (R-L4h-7): GDSII, DXF and board
+    // import all report through it and only interrupt for the shared layer-mapping dialog, and an
+    // import's losses are visible in the cell that just opened and reported in the summary above it —
+    // which is why there is no import fidelity dialog to match the export one.
+    //
+    // FILE PICKER FIRST, deliberately (R-L4h-5): Avalonia's StorageProvider exposes OpenFilePickerAsync
+    // and OpenFolderPickerAsync as separate calls and one dialog cannot return both, so something has
+    // to go first. The file picker does, because it is the common intent, because it shows the folder's
+    // contents so the user can see what they are choosing among, and because the scope prompt already
+    // escalates from a file to its folder — and carries a third option that opens the folder picker for
+    // the user who wants to point somewhere else outright. The alternative considered and rejected: a
+    // small "Files… / Folder…" chooser before any picker opens, which costs every user a click to serve
+    // the rarer case.
+
+    [RelayCommand(CanExecute = nameof(CanImportGerber))]
+    private Task ImportGerber(Window? owner) => ImportGerberAsync(owner);
+    private bool CanImportGerber() => CurrentWorkspacePath is not null;
+
+    private async Task ImportGerberAsync(Window? owner)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Import Gerber",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Gerber / Drill")
+                {
+                    Patterns = ["*.gbr", "*.gbrjob", "*.gtl", "*.gbl", "*.gts", "*.gbs", "*.gto", "*.gbo",
+                                "*.gtp", "*.gbp", "*.gko", "*.gm1", "*.drl", "*.xln", "*.txt"],
+                },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0) return;
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techRes = ResolveTechFor(null, null); // the workspace's own default technology
+        string chosen = files[0].Path.LocalPath;
+
+        // Both prompts have to be answerable from the background thread the import runs on, and both
+        // are dialogs, so both hop back to the UI thread the same way the shared layer-mapping bridge
+        // already does in every other import here.
+        CircuitRF.Ui.Layout.Interchange.GerberImport.ImportResult result;
+        try
+        {
+            result = await Task.Run(() =>
+                CircuitRF.Ui.Layout.Interchange.GerberImportEntry.Run(
+                    chosen, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                    promptForScope: survey => Dispatcher.UIThread
+                        .InvokeAsync(() => new CircuitRF.Ui.Views.Dialogs.GerberImportScopeDialog(survey)
+                            .ShowDialog<CircuitRF.Ui.Layout.Interchange.GerberImportScope?>(window))
+                        .GetAwaiter().GetResult(),
+                    pickFolder: () => Dispatcher.UIThread
+                        .InvokeAsync(async () =>
+                        {
+                            var folders = await window.StorageProvider.OpenFolderPickerAsync(
+                                new FolderPickerOpenOptions { Title = "Import Gerber — Folder", AllowMultiple = false });
+                            return folders.Count == 0 ? null : folders[0].Path.LocalPath;
+                        })
+                        .GetAwaiter().GetResult(),
+                    resolveLayerMapping: rows =>
+                    {
+                        var settled = Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .GetAwaiter().GetResult();
+                        return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
+                    },
+                    resolveDrillFormat: (fileName, inferred, crossCheck) => Dispatcher.UIThread
+                        .InvokeAsync(() => ResolveGerberDrillFormatAsync(window, fileName, inferred, crossCheck))
+                        .GetAwaiter().GetResult()));
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import Gerber: {ex.Message}");
+            return;
+        }
+
+        foreach (var msg in result.Messages) Messages.Info(msg);
+
+        if (result.Cancelled)
+        {
+            Messages.Info("Import Gerber cancelled — nothing was created.");
+            return;
+        }
+
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success(
+            $"Imported {result.Layers.Count} layer(s) from Gerber into "
+            + $"'{Path.GetFileName(result.ImportDir!)}'.");
+        if (result.CellDir is { } gerberCellDir) OpenPrimaryLayoutIfResolvable(gerberCellDir);
+    }
+
+    /// <summary>R-L4h-6's own prompt — raised only when L4f's inference had to guess. Null aborts the
+    /// whole import (GerberImport.Import's own resolveDrillFormat contract).</summary>
+    private async Task<CircuitRF.Ui.Layout.Interchange.GerberImport.DrillFormatChoice?> ResolveGerberDrillFormatAsync(
+        Window owner, string fileName,
+        CircuitRF.Ui.Layout.Interchange.DrillFormatInference inferred,
+        CircuitRF.Ui.Layout.Interchange.DrillExtentsCheck crossCheck)
+    {
+        var dialog = new CircuitRF.Ui.Views.Dialogs.GerberDrillFormatPromptDialog(fileName, inferred, crossCheck);
+        return await dialog.ShowDialog<CircuitRF.Ui.Layout.Interchange.GerberImport.DrillFormatChoice?>(owner);
     }
 
     /// <summary>

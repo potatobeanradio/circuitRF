@@ -87,6 +87,7 @@
                                     <NativeMenuItem Header="GDSII…" Command="{Binding ImportGdsiiLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ImportBoardCommand}"        CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Gerber…" Command="{Binding ImportGerberCommand}"      CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Model or Subcircuit…" Command="{Binding ImportModelCardCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -445,6 +446,10 @@
                               Command="{Binding ImportBoardCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="Import a .kicad_pcb board: its stackup, nets, tracks, vias, zone fills and footprints. The file's version is reported, never branched on — every epoch reads."/>
+                    <MenuItem Header="Ge_rber…"
+                              Command="{Binding ImportGerberCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="Import a Gerber/Excellon file set as one flat cell and a technology of its own. Point at a folder, or at one file and say whether its folder was meant. Vias are rebuilt where the drill data comes too."/>
                     <MenuItem Header="_PDK…"
                               Command="{Binding ImportPdkCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>

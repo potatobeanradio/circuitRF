@@ -265,13 +265,13 @@ public class FileMenuRestructureTests
     private static int IndexOfHeaderContaining(IReadOnlyList<MenuNode> nodes, string substring)
         => nodes.ToList().FindIndex(n => n.Header.Replace("_", "").Contains(substring, StringComparison.Ordinal));
 
-    // ── Gate 6a — Import submenu contents: Data/GDSII/DXF/PDK, never Gerber ──────────────────────
+    // ── Gate 6a — Import submenu contents: Data/GDSII/DXF/Board/Gerber/PDK ───────────────────────
     //
     // The count is pinned to the exact expected item SET rather than a bare number, so adding a
-    // format has to name it here. Gerber stays absent on purpose — it is export-only (L4c).
+    // format has to name it here.
 
     [Fact]
-    public void ImportSubmenu_ContainsExpectedFormats_NoGerber()
+    public void ImportSubmenu_ContainsExpectedFormats()
     {
         // "Technology" joined with C0 (process technology import); "Into Open Technology" with the
         // technology-merge work, which is a genuinely different destination — one creates a `.ctech`,
@@ -290,7 +290,10 @@ public class FileMenuRestructureTests
         [
             // "Model or Subcircuit" sits beside "PDK" and not with the geometry importers above it:
             // both bring in a DEVICE MODEL, and a user looking for one is looking at the other.
-            "Data", "GDSII", "DXF", "Board", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
+            // "Gerber" (L4h) joined the geometry importers when Gerber stopped being export-only. It
+            // sits after Board because the two are the same kind of thing — a whole fabricated board
+            // arriving as one flat cell — and because the export side already lists them in that order.
+            "Data", "GDSII", "DXF", "Board", "Gerber", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
             "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
         ];
 
@@ -303,8 +306,32 @@ public class FileMenuRestructureTests
                 .ToArray();
 
             Assert.Equal(expected, actual);
-            Assert.DoesNotContain(import.Children, c => c.Header.Contains("Gerber", StringComparison.OrdinalIgnoreCase));
         }
+    }
+
+    /// <summary>
+    /// Gate 2 of brief-L4h: <b>File ▸ Import ▸ Gerber…</b> exists on every surface, is bound to a real
+    /// command, and is gated on the same condition as the other import commands. The header assertion
+    /// above covers the two menus this file parses as XML; this adds the third surface — a torn-off
+    /// document window's own File menu, which is hand-mirrored and has drifted before — and the
+    /// enablement, which no header scan can see.
+    /// </summary>
+    [Fact]
+    public void ImportGerber_IsOnEverySurface_AndGatedOnAnOpenWorkspace()
+    {
+        foreach (var view in (string[])
+                 [
+                     Path.Combine("src", "Ui", "Views", "WorkspaceWindow.axaml"),
+                     Path.Combine("src", "Ui", "Views", "Shared", "TornOffFileMenuView.axaml"),
+                 ])
+            Assert.Contains("ImportGerberCommand", ReadRepoFile(view));
+
+        var vm = StripComments(ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs")));
+        Assert.Contains("private bool CanImportGerber() => CurrentWorkspacePath is not null;", vm);
+
+        // The re-notification trap EveryWorkspaceGatedCommand_IsRenotifiedWhenTheWorkspaceChanges
+        // covers generically — asserted by name too, because this is the entry the phase adds.
+        Assert.Contains("ImportGerberCommand.NotifyCanExecuteChanged()", vm);
     }
 
     /// <summary>

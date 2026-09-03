@@ -161,7 +161,33 @@ public static class GerberWriter
         currentNet = net;
     }
 
-    private static string EscapeAttribute(string s) => s.Replace('*', '_').Replace('%', '_').Replace(',', '_');
+    /// <summary>
+    /// R-L4h-9: the four characters an attribute VALUE cannot carry literally, written as the
+    /// <c>\uXXXX</c> escape the format defines for exactly this — <c>*</c> and <c>%</c> terminate a
+    /// block, <c>,</c> separates fields, and <c>\</c> introduces an escape and so must escape itself
+    /// or the reader undoes one the writer never wrote.
+    ///
+    /// <para><b>This replaced a substitution with <c>_</c>, on L4h round-trip evidence.</b> A net named
+    /// <c>A,B*C%D</c> went out as <c>A_B_C_D</c> and came back as <c>A_B_C_D</c> — a rename, silent, and
+    /// permanent after one cycle. It was the one loss on L4h §2's table that was ours and not the
+    /// format's: a third-party tool round-trips such a name because it writes the escape, and
+    /// <c>GerberReader</c> has undone <c>\uXXXX</c> since L4e (its R-L4e-18), so only this half was
+    /// missing. <b>Files exported before this change carry the underscores</b> and re-import with the
+    /// renamed nets; files exported after it carry the real name.</para>
+    /// </summary>
+    internal static string EscapeAttribute(string s)
+    {
+        if (s.AsSpan().IndexOfAny('*', '%', ',') < 0 && !s.Contains('\\')) return s;
+        var sb = new System.Text.StringBuilder(s.Length + 8);
+        foreach (char c in s)
+        {
+            if (c is '*' or '%' or ',' or '\\')
+                sb.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
+            else
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
 
     // ── Regions (Line/Arc boundary + Line-only holes) ─────────────────────────
 

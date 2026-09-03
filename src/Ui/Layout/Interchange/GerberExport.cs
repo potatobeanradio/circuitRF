@@ -147,7 +147,7 @@ public static class GerberExport
                 Diagnostics: [ex.Message], Tech: rootTech);
         }
 
-        var byLayer = GroupByLayer(geometry);
+        var byLayer = GroupByLayer(geometry, rootTech);
         var now = DateTime.UtcNow;
         int cubics = 0, strokes = 0, regions = 0;
         foreach (var (key, shapes) in byLayer)
@@ -177,12 +177,18 @@ public static class GerberExport
     /// were drawn on it instead of placed as a real <see cref="ViaShape"/>.</summary>
     private static List<CircleShape> UnpairedDrillCircles(IReadOnlyList<LayoutShape> geometry, Technology? tech)
     {
-        if (tech is null) return [];
-        var drillLayers = new HashSet<LayerKey>(
-            tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).SelectMany(l => l.DrawingLayers));
+        var drillLayers = DrillFunctionLayers(tech);
         if (drillLayers.Count == 0) return [];
         return geometry.OfType<CircleShape>().Where(c => drillLayers.Contains(c.Layer)).ToList();
     }
+
+    /// <summary>Every drawing layer named in some <see cref="StackupKind.Via"/> entry — the one
+    /// definition of "this layer means holes", shared by the bare-circle report and by the artwork
+    /// grouping that must leave those circles out of the Gerber files.</summary>
+    private static HashSet<LayerKey> DrillFunctionLayers(Technology? tech)
+        => tech is null
+            ? []
+            : [.. tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).SelectMany(l => l.DrawingLayers)];
 
     /// <summary>Writes the real file set into <paramref name="outputFolderDir"/> — one Gerber file per
     /// layer (named <c>{cellName}.{GerberSuffix}</c>, falling back to a synthetic suffix when a layer
@@ -205,7 +211,22 @@ public static class GerberExport
         // files reach the fab, and the .gbrjob names both.
         var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (key, shapes) in GroupByLayer(plan.Shapes))
+        // The Excellon file's name is CLAIMED FIRST, before any layer can take it. It is not one more
+        // suffix competing on equal terms: `.drl` is the conventional drill-file name, the .gbrjob
+        // names it, and a fab looks for it — whereas a drawing layer whose GerberSuffix happens to be
+        // "drl" has no such claim and can perfectly well be disambiguated. Reserving it also removes a
+        // failure that was invisible on one platform and silent on the other: the layer loop wrote
+        // `board.DRL`, the drill write then created `board.drl`, and on a case-insensitive filesystem
+        // (macOS, Windows) the second CLOBBERED the first, so a whole layer's copper left the building
+        // as a drill file. Found by L4h's round trip, which imported the surviving file and produced a
+        // board missing one layer. (L4h §4: a writer change, named as such.)
+        var vias = plan.Shapes.OfType<ViaShape>().ToList();
+        var unpairedCircles = UnpairedDrillCircles(plan.Shapes, plan.Tech);
+        bool writesDrill = vias.Count > 0 || unpairedCircles.Count > 0;
+        string drillFileName = $"{cellName}.drl";
+        if (writesDrill) usedFileNames.Add(drillFileName);
+
+        foreach (var (key, shapes) in GroupByLayer(plan.Shapes, plan.Tech))
         {
             var layerDef = plan.Tech?.Layers.FirstOrDefault(l => l.Key == key);
             string suffix = layerDef?.Interchange?.GerberSuffix is { Length: > 0 } s ? s : $"G{key.Layer}_{key.Datatype}";
@@ -225,11 +246,9 @@ public static class GerberExport
         }
 
         int tools = 0, hits = 0;
-        var vias = plan.Shapes.OfType<ViaShape>().ToList();
-        var unpairedCircles = UnpairedDrillCircles(plan.Shapes, plan.Tech);
-        if (vias.Count > 0 || unpairedCircles.Count > 0)
+        if (writesDrill)
         {
-            string drillPath = Path.Combine(outputFolderDir, $"{cellName}.drl");
+            string drillPath = Path.Combine(outputFolderDir, drillFileName);
             using (var stream = File.Create(drillPath))
             {
                 var r = ExcellonWriter.Write(stream, vias, plan.Format, unpairedCircles);
@@ -247,16 +266,75 @@ public static class GerberExport
         return new WriteResult(filesWritten, tools, hits);
     }
 
-    private static Dictionary<LayerKey, List<LayoutShape>> GroupByLayer(IReadOnlyList<LayoutShape> shapes)
+    /// <summary>
+    /// One entry per layer that has artwork, <b>in the technology's own layer order</b> — layers the
+    /// technology does not define come last, ordered by their key.
+    ///
+    /// <para><b>The order is the file set's order</b>: it is what the <c>.gbrjob</c> lists and the
+    /// sequence the files are written in. It used to be <see cref="Dictionary{TKey,TValue}"/> insertion
+    /// order, i.e. the order shapes happened to sit in the <c>.clay</c> — unspecified by contract, and
+    /// in practice different for a design that was itself imported (an import adds shapes file by file,
+    /// alphabetically). L4h's gate 17 is what named it: export2's job file has to match export1's, and
+    /// with insertion order the same two-layer board listed its layers one way when drawn by hand and
+    /// the other way after a round trip. Ordering by the technology is stable across that, and across
+    /// any edit that reorders shapes.</para>
+    /// </summary>
+    private static List<(LayerKey Key, List<LayoutShape> Shapes)> GroupByLayer(
+        IReadOnlyList<LayoutShape> shapes, Technology? tech)
     {
+        // R-via-5's bare circles are HOLES, not copper, and belong only in the Excellon file. They used
+        // to be written twice — a drill hit AND a filled disc in a Gerber file for the drill layer,
+        // which a fab reads as copper to etch where the hole goes. L4h's round trip is what forced the
+        // question: the disc came back as a pad, paired with its own hole into a via, and put a copper
+        // landing on the top layer that the design never had, so the cycle did not close. Excluded here
+        // rather than upstream so ExportPlan.Shapes still carries them and the fidelity dialog can go
+        // on counting them (R-via-6's "Convert to Via" advice).
+        var drillLayers = DrillFunctionLayers(tech);
+
         var map = new Dictionary<LayerKey, List<LayoutShape>>();
         foreach (var s in shapes)
         {
-            if (!map.TryGetValue(s.Layer, out var list)) map[s.Layer] = list = [];
+            if (s is CircleShape && drillLayers.Contains(s.Layer)) continue;
+            var key = GerberLayerOf(s);
+            if (!map.TryGetValue(key, out var list)) map[key] = list = [];
             list.Add(s);
         }
-        return map;
+
+        var rank = new Dictionary<LayerKey, int>();
+        if (tech is not null)
+            for (int i = 0; i < tech.Layers.Count; i++) rank.TryAdd(tech.Layers[i].Key, i);
+
+        return [.. map
+            .OrderBy(kv => rank.TryGetValue(kv.Key, out int r) ? r : int.MaxValue)
+            .ThenBy(kv => kv.Key.Layer)
+            .ThenBy(kv => kv.Key.Datatype)
+            .Select(kv => (kv.Key, kv.Value))];
     }
+
+    /// <summary>
+    /// Which layer's FILE a shape's artwork belongs in. Every shape but one answers with its own
+    /// <see cref="LayoutShape.Layer"/>; a <see cref="ViaShape"/> answers with its
+    /// <see cref="ViaShape.LandingLayer"/>, because what the writer emits for a via is its
+    /// <see cref="ViaShape.PadSize"/> flash — copper — while <c>Layer</c> is the BARREL
+    /// (<c>ViaShape</c>'s own doc comment, R-via-9), whose artwork is the drill file's hit and not a
+    /// Gerber object at all.
+    ///
+    /// <para><b>Fixed here in L4h, on round-trip evidence (§4's "only with the failing cycle named").</b>
+    /// Grouping the pad by <c>Layer</c> wrote copper into the DRILL layer's own Gerber file, which is
+    /// wrong for fabrication on its face — a fab reading that file etches copper where the annular ring
+    /// should be and the copper layer has no pad at all. The round trip is what made it undeniable:
+    /// export wrote a copper file for the drill layer, the import identified that file as a second
+    /// drill layer of its own, and export2 came back with one fewer file than export1 — so the file set
+    /// was not closed after one cycle. Files exported before this change put via pads in the drill
+    /// layer's file; files exported after it put them in the landing layer's, as
+    /// brief-L4c-gerber-export.md's own §5 line ("a pad flash in copper") always said they should.</para>
+    ///
+    /// <para>A via carrying NO landing layer keeps the old answer, because there is then no copper
+    /// layer to name — the pad has to go somewhere and the barrel's layer is the only one stated. The
+    /// layout editor's Via tool always sets one; a hand-edited <c>.clay</c> need not.</para>
+    /// </summary>
+    private static LayerKey GerberLayerOf(LayoutShape shape)
+        => shape is ViaShape { LandingLayer: { } landing } ? landing : shape.Layer;
 
     /// <summary>The largest coordinate MAGNITUDE across every shape's own defining fields — mirrors
     /// <c>GdsiiCoordinateValidation</c>'s per-shape field walk, but computes a max rather than validating

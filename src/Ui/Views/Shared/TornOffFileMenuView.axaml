@@ -143,6 +143,9 @@
                 <MenuItem Header="_Board…"
                           Command="{Binding ImportBoardCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="Ge_rber…"
+                          Command="{Binding ImportGerberCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
                 <MenuItem Header="_PDK…"
                           Command="{Binding ImportPdkCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
