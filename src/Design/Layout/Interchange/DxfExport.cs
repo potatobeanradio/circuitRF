@@ -100,9 +100,8 @@ public static class DxfExport
             var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
             foreach (var inst in view.Instances)
             {
-                string targetDir;
-                try { targetDir = Path.GetFullPath(Path.Combine(layoutDir, inst.CellRef)); }
-                catch { continue; }
+                if (Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) is not { } targetDir)
+                    continue;
                 if (!Directory.Exists(targetDir)) continue;
                 if (visited.Add(targetDir))
                 {
@@ -128,9 +127,7 @@ public static class DxfExport
             var layoutDir = CellFolder.SubFolderPath(dir, ViewType.Layout);
             var instances = view.Instances.Select(inst =>
             {
-                string targetDir;
-                try { targetDir = Path.GetFullPath(Path.Combine(layoutDir, inst.CellRef)); }
-                catch { targetDir = ""; }
+                string targetDir = Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) ?? "";
                 if (!dirToBlockName.TryGetValue(targetDir, out var targetBlockName))
                 {
                     targetBlockName = inst.CellRef;

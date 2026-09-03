@@ -308,6 +308,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         => CurrentWorkspacePath is null ? null : Path.GetDirectoryName(CurrentWorkspacePath);
 
     /// <summary>
+    /// The workspace roots open in this process OTHER than this window's own (MW2 R-mw2-14). An
+    /// external cell reference makes a cell in another workspace a possible referrer, so the two
+    /// operations that ask "who points at this?" — Remove Cell and Rename Cell — have to ask every
+    /// window, not just this one. A workspace nobody has open still cannot be asked, which is what
+    /// the confirmations' wording has to admit.
+    /// </summary>
+    private IReadOnlyList<string> OtherOpenWorkspaceRoots()
+    {
+        var mine = CurrentWorkspaceRoot;
+        return [.. Views.WorkspaceLocator.AllWindows()
+            .Select(w => (w.DataContext as WorkspaceViewModel)?.CurrentWorkspaceRoot)
+            .OfType<string>()
+            .Where(r => mine is null || !string.Equals(
+                Path.GetFullPath(r), Path.GetFullPath(mine), StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
     /// The workspace scope this window currently owns entries in, across the process-wide registries
     /// (MW1 R-mw1-4). Recorded rather than re-derived because a workspace SWITCH has to withdraw the
     /// scope it is leaving, and by the time that runs <see cref="CurrentWorkspacePath"/> already names
@@ -385,6 +403,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
         ArchiveWorkspaceCommand.NotifyCanExecuteChanged();
+        ReferenceWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ImportBoardCommand.NotifyCanExecuteChanged();
@@ -10068,22 +10087,60 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         return string.Equals(defaultAbsPath, node.AbsolutePath, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Refuses a workspace-scoped cell operation on a cell that belongs to a DIFFERENT workspace —
+    /// which the Project Tree can now show, because MW2 renders each referenced workspace as its own
+    /// sub-tree of cells. Renaming or removing one from here would reach into another project
+    /// through a window that is not showing it, and would break every OTHER workspace that
+    /// references the same cell with nothing said.
+    ///
+    /// <para>The same rule <c>brief-foreign-documents.md</c> already applies to Save All's
+    /// <c>.cws</c> write and to Remove/Rename on a foreign DOCUMENT; this is the cell-folder half of
+    /// it, and it uses the same <c>IsOutside</c> test.</para>
+    /// </summary>
+    private bool OwnedByThisWorkspace(string cellDir, string workspaceRoot, string verb)
+    {
+        if (!WorkspaceRootFinder.IsOutside(cellDir, workspaceRoot)) return true;
+
+        Messages.Warning(
+            $"'{Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}' "
+          + $"belongs to another workspace, so it cannot be {verb}d from here. "
+          + "Open that workspace in its own window and do it there.");
+        return false;
+    }
+
     /// <inheritdoc/>
     public async Task RemoveCellAsync(ProjectTreeNodeViewModel cellNode)
     {
         if (CurrentWorkspacePath is null) return;
         var workspaceRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        if (!OwnedByThisWorkspace(cellNode.AbsolutePath, workspaceRoot, "remove")) return;
 
         var window = ResolveOwner(null);
         if (window is null) return;
 
-        int usedIn = CellUsageScanner.CountReferencingCells(workspaceRoot, cellNode.AbsolutePath);
+        var usage  = CellUsageScanner.CountReferencingCells(
+            workspaceRoot, cellNode.AbsolutePath, OtherOpenWorkspaceRoots());
+        int usedIn = usage.Count;
 
         var msg = $"Remove cell '{cellNode.Name}'?\n\nThis moves the entire cell folder to the Trash/Recycle Bin. There is no in-app undo.";
         if (usedIn == 1)
             msg += "\n\n⚠ This cell is used in 1 other cell. Removing it will break that reference.";
         else if (usedIn > 1)
             msg += $"\n\n⚠ This cell is used in {usedIn} cells. Removing it will break those references.";
+
+        // MW2 R-mw2-14: a referrer in ANOTHER open workspace is named, because "1 other cell" would
+        // otherwise send the user hunting through this workspace for something that is not in it.
+        // And when nothing is found, the claim is scoped to what was actually searched — a workspace
+        // nobody has open cannot be scanned, so "nothing references this" would be a claim the scan
+        // never made.
+        if (usage.OtherWorkspaceRoots.Count > 0)
+            msg += "\n\nReferences come from: "
+                 + string.Join(", ", usage.OtherWorkspaceRoots.Select(r => Path.GetFileName(
+                       r.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))))
+                 + ".";
+        else if (usedIn == 0)
+            msg += "\n\nNo other open workspace references this cell.";
 
         var dlg = new Views.Dialogs.SaveChangesDialog(
             msg,
@@ -10667,6 +10724,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (CurrentWorkspacePath is null) return;
         var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        if (!OwnedByThisWorkspace(cellNode.AbsolutePath, workspaceDir, "rename")) return;
         var oldDir       = cellNode.AbsolutePath;
         var oldName      = cellNode.Name;
         var parentDir    = Path.GetDirectoryName(oldDir) ?? workspaceDir;
@@ -10717,8 +10775,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try { Directory.Move(oldDir, newDir); }
         catch (Exception ex) { Messages.Error($"Rename failed: {ex.Message}"); return; }
 
-        // Rewrite all schematics that reference the old cell name.
-        var rewritten = CellUsageScanner.RewriteCellReferences(workspaceDir, oldName, newName, out var failed);
+        // Repoint every reference that RESOLVES to the folder that just moved — including one from
+        // another open workspace, which an external reference makes possible (MW2 R-mw2-15). Matching
+        // by resolution rather than by the last path segment is what keeps a same-named cell that was
+        // never renamed from being repointed at something that does not exist.
+        var rewritten = CellUsageScanner.RewriteCellReferences(
+            workspaceDir, oldDir, newName, out var failed, OtherOpenWorkspaceRoots());
         foreach (var f in failed)
             Messages.Warning($"Reference rewrite failed: {f}");
         if (rewritten.Count > 0)

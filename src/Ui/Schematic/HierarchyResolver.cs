@@ -21,8 +21,11 @@ internal static class HierarchyResolver
         if (parentModel.SchematicDirectory is null)
         { reason = "parent schematic has no directory (scratch document)"; return false; }
 
-        var cellDir = Path.GetFullPath(Path.Combine(parentModel.SchematicDirectory, comp.CellRef));
-        if (!Directory.Exists(cellDir))
+        // A ws:// reference resolves through the referencing workspace's alias table; a plain one is
+        // the path relative to this schematic's own folder (MW2 R-mw2-2). Both land here, so push-in
+        // and the elaborator's descent — which both go through this file — need no second rule.
+        var cellDir = ExternalCellRef.ResolveCellDir(comp.CellRef, parentModel.SchematicDirectory);
+        if (cellDir is null || !Directory.Exists(cellDir))
         { reason = "cell reference not found"; return false; }
 
         var pr = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
@@ -45,7 +48,7 @@ internal static class HierarchyResolver
     public static string? ResolvePrimaryPath(EditableComponent comp, SchematicEditModel parentModel)
     {
         if (!CanPushInto(comp, parentModel, out _)) return null;
-        var cellDir = Path.GetFullPath(Path.Combine(parentModel.SchematicDirectory!, comp.CellRef!));
+        var cellDir = ExternalCellRef.ResolveCellDir(comp.CellRef, parentModel.SchematicDirectory)!;
         var pr      = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
         return Path.Combine(cellDir, CellFolder.SchematicSubFolder, pr.ResolvedName!);
     }

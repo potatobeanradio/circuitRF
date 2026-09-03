@@ -645,6 +645,17 @@ public sealed class SchematicComponent
     /// fallback. Null for components whose glyph is a pure function of SymbolKind + port count.
     /// </summary>
     public Symbol? InstanceSymbol { get; init; }
+
+    /// <summary>
+    /// The workspace alias a <c>ws://</c> cell reference carries, or null for every other component
+    /// (MW2 R-mw2-13). Baked in here rather than derived in the renderer for the same reason
+    /// <see cref="CellRefState"/> is: the render model is built once per change and read every frame.
+    ///
+    /// <para>Taken from the reference's own spelling, not from a resolution — the mark says "this
+    /// cell is not this workspace's own", which is true whether or not it currently resolves, and
+    /// which is exactly the fact a broken external reference most needs to state.</para>
+    /// </summary>
+    public string? ExternalAlias { get; init; }
 }
 
 /// <summary>A wire segment (orthogonal polyline) with pre-computed world bounding box.</summary>

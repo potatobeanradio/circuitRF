@@ -65,6 +65,19 @@ public static class WorkspaceScanner
             root.AddChild(libGroup);
         }
 
+        // Referenced workspaces (from .cws) — alphabetical by alias. Rendered beside the libraries
+        // and by the same rule: each is its own sub-tree of cells, and one that does not resolve is a
+        // node carrying its reason rather than a silently absent row (§3.1/§3.2 — MW2 R-mw2-11's
+        // "broken" state, already designed and already built for libraries).
+        if (cws.ReferencedWorkspaces is { Count: > 0 } refs)
+        {
+            var wsGroup = new ProjectTreeNode(
+                NodeKind.ReferencedWorkspacesGroup, "Referenced Workspaces", workspaceRootDir, "");
+            foreach (var entry in refs.OrderBy(r => r.Alias, StringComparer.OrdinalIgnoreCase))
+                wsGroup.AddChild(ResolveReferencedWorkspace(entry, workspaceRootDir));
+            root.AddChild(wsGroup);
+        }
+
         // Known Files (from .cws) — alphabetical by ref string.
         //
         // A reference that resolves to something the scan has ALREADY placed in the tree is skipped.
@@ -302,6 +315,43 @@ public static class WorkspaceScanner
         }
 
         return libNode;
+    }
+
+    // ── Referenced workspace (MW2) ────────────────────────────────────────────
+
+    /// <summary>
+    /// One referenced workspace as a sub-tree of its cells. The node's own path is the OTHER
+    /// workspace's root, so everything downstream — placement, Reveal, the properties header — sees
+    /// where the cell really lives rather than a path inside this workspace.
+    /// </summary>
+    private static ProjectTreeNode ResolveReferencedWorkspace(CwsWorkspaceRef entry, string workspaceRoot)
+    {
+        string? otherRoot = ExternalCellRef.WorkspaceRootForAlias(workspaceRoot, entry.Alias);
+
+        if (otherRoot is null)
+            return new ProjectTreeNode(
+                NodeKind.ReferencedWorkspace, entry.Alias,
+                ResolveRef(entry.Path, workspaceRoot), "",
+                warningReason: $"Referenced workspace unresolved: {entry.Path}");
+
+        var node = new ProjectTreeNode(
+            NodeKind.ReferencedWorkspace,
+            name: entry.Alias,
+            absolutePath: otherRoot,
+            relativePath: "");
+
+        // Cells only, and only the top level of them — the same shape a Library sub-tree has. The
+        // other workspace's own libraries, known files and referenced workspaces are ITS business:
+        // rendering them here would let a reference reach transitively through a chain nobody chose,
+        // and R-mw2-17's "a reference is to one cell, its sub-cells come along by reference" is about
+        // a cell's own hierarchy, not about a second workspace's configuration.
+        foreach (string cellDir in SubDirsSorted(otherRoot)
+            .Where(d => File.Exists(Path.Combine(d, CellFolder.CcellFileName))))
+        {
+            node.AddChild(BuildCellNode(cellDir, otherRoot));
+        }
+
+        return node;
     }
 
     // ── Known File ────────────────────────────────────────────────────────────

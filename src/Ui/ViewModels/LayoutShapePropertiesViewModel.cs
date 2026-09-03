@@ -970,7 +970,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         {
             var inst = _vm.EffectiveInstanceAt(indices[0]);
             var resolution = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
-            SelectionSummaryText = InstanceSummary(inst, resolution);
+            ApplyExternalStatus(ExternalCellStatusResolver.Classify(inst.CellRef, _vm.InstanceBaseDir));
+            SelectionSummaryText = InstanceSummary(inst, resolution, ExternalSourceName);
             IsSelectedInstancePCell = resolution is
                 { State: CellLayoutState.Resolved, View.PCellOrigin: not null };
             ShowPCellParameterList = IsSelectedInstancePCell;
@@ -1020,6 +1021,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             _pcellEntryModeSelectionIndex = null;
             ToggleMklopfImpedanceEntryCommand.NotifyCanExecuteChanged();
             ToggleMklopfLengthEntryCommand.NotifyCanExecuteChanged();
+            ApplyExternalStatus(ExternalCellStatus.NotExternal);
             InstanceCellRefText = ""; InstanceXText = ""; InstanceYText = "";
             InstanceRotationText = ""; InstanceMirrorXValue = null;
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
@@ -2019,16 +2021,59 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// is the thing the user recognises, and it is shown BARE: a "(PCell)" tag was tried and removed
     /// at the owner's request — "MLIN" already tells an RF engineer what it is, so the tag was noise.</para>
     /// </summary>
-    private static string InstanceSummary(LayoutInstance inst, CellLayoutResolution resolution)
+    private static string InstanceSummary(
+        LayoutInstance inst, CellLayoutResolution resolution, string? externalSourceName)
     {
         string what =
             resolution is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
                 ? origin.GeneratorId
                 : CellNameOf(inst.CellRef);
 
+        // MW2 R-mw2-13: a cell that is not this workspace's own says so in its own header, in the
+        // convention brief-foreign-documents.md R-fgn-7 already set for title bars — "Amp —
+        // [RfFrontEnd]". A resolved external reference is marked too, not only a broken one; being
+        // able to see at a glance that a cell in your layout is not yours IS the safety story.
+        if (externalSourceName is { Length: > 0 })
+            what = $"{what} — [{externalSourceName}]";
+
         // SchematicId is the schematic component's InstanceName (R-L5's idempotency key), so it is
         // exactly the name shown on the schematic — present only for a schematic-generated instance.
         return string.IsNullOrWhiteSpace(inst.SchematicId) ? what : $"{what} · {inst.SchematicId}";
+    }
+
+    // ── External cell reference (MW2 §5) ──────────────────────────────────────
+
+    /// <summary>The referenced workspace's own name, or null when this instance is not external.
+    /// Drives the header suffix and the notice band below it.</summary>
+    [ObservableProperty] private string? _externalSourceName;
+
+    /// <summary>Non-empty when the reference is external — one line, whether it is fine or not, so
+    /// the panel never has to be read twice to find out which.</summary>
+    [ObservableProperty] private string _externalRefNoticeText = "";
+
+    /// <summary>True when the reference does not fully resolve, which the view renders as a warning
+    /// rather than as ordinary chrome (R-mw2-12: mark the CHROME, never tint the geometry).</summary>
+    [ObservableProperty] private bool _externalRefIsProblem;
+
+    /// <summary>The repair offered, in the user's words, or empty when nothing is wrong.</summary>
+    [ObservableProperty] private string _externalRefRepairText = "";
+
+    public bool HasExternalRef => !string.IsNullOrEmpty(ExternalRefNoticeText);
+
+    private void ApplyExternalStatus(ExternalCellStatus status)
+    {
+        ExternalSourceName = status.State == ExternalCellState.NotExternal ? null : status.SourceName;
+
+        ExternalRefNoticeText = status.State switch
+        {
+            ExternalCellState.NotExternal      => "",
+            ExternalCellState.Resolved         => $"Referenced from the workspace '{status.SourceName}'. "
+                                                + "Editing it changes that project, not this one.",
+            _                                  => status.Explanation ?? "",
+        };
+        ExternalRefIsProblem   = status.State is ExternalCellState.WorkspaceNotOpen or ExternalCellState.Broken;
+        ExternalRefRepairText  = status.Repair ?? "";
+        OnPropertyChanged(nameof(HasExternalRef));
     }
 
     /// <summary>

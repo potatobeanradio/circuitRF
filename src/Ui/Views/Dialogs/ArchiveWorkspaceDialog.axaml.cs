@@ -53,7 +53,7 @@ public partial class ArchiveWorkspaceDialog : Window
         MeasureKitsInBackground(roots, plan);
     }
 
-    /// <summary>The three branches, in the order the owner described them.</summary>
+    /// <summary>The branches, in the order the owner described them.</summary>
     private static ObservableCollection<ArchiveTreeNode> BuildRoots(WorkspaceArchivePlan plan)
     {
         var roots = new ObservableCollection<ArchiveTreeNode>();
@@ -62,6 +62,14 @@ public partial class ArchiveWorkspaceDialog : Window
             roots.Add(ArchiveTreeNode.Group(
                 $"Referenced Kits ({plan.Kits.Count()})",
                 () => plan.Kits.Select(ArchiveTreeNode.Leaf)));
+
+        // MW2 R-mw2-16 — cells this workspace instances out of another one. Its own branch rather
+        // than a row among the kits: a kit is the vendor's content and starts unticked, while these
+        // are the user's own design and an archive without them opens showing placeholders.
+        if (plan.ReferencedWorkspaces.Any())
+            roots.Add(ArchiveTreeNode.Group(
+                $"Referenced Workspaces ({plan.ReferencedWorkspaces.Count()})",
+                () => plan.ReferencedWorkspaces.Select(ArchiveTreeNode.Leaf)));
 
         if (plan.ExternalFiles.Any())
             roots.Add(ArchiveTreeNode.Group(

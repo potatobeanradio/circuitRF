@@ -85,6 +85,10 @@ public static class WorkspaceRootFinder
     public static void InvalidateCache()
     {
         lock (_memoGate) _rootMemo.Clear();
+        // The alias table an external cell reference resolves through is memoised on exactly the
+        // same terms and for exactly the same reason (MW2 §2), and a .cws appearing, disappearing or
+        // being rewritten changes the answer to both questions at once.
+        ExternalCellRef.InvalidateCache();
     }
 
     /// <summary>

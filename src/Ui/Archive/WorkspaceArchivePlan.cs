@@ -20,6 +20,15 @@ public enum ArchiveOptionKind
 
     /// <summary>A file under the workspace's own <c>results/</c> folder.</summary>
     Result,
+
+    /// <summary>
+    /// Cells this workspace instances BY REFERENCE out of another workspace (MW2 R-mw2-16), with the
+    /// sub-cells they instantiate and enough of that workspace's spine for the alias to keep
+    /// resolving. Ticked by default: unlike a kit, this is the user's own design content, and an
+    /// archive that arrives with its instances drawing placeholders is the failure the row exists to
+    /// prevent.
+    /// </summary>
+    ReferencedWorkspace,
 }
 
 /// <summary>
@@ -116,6 +125,8 @@ public sealed class WorkspaceArchivePlan
     public IEnumerable<ArchiveOption> Kits          => Options.Where(o => o.Kind == ArchiveOptionKind.Kit);
     public IEnumerable<ArchiveOption> ExternalFiles => Options.Where(o => o.Kind == ArchiveOptionKind.ExternalFile);
     public IEnumerable<ArchiveOption> Results       => Options.Where(o => o.Kind == ArchiveOptionKind.Result);
+    public IEnumerable<ArchiveOption> ReferencedWorkspaces =>
+        Options.Where(o => o.Kind == ArchiveOptionKind.ReferencedWorkspace);
 
     /// <summary>Bytes of the always-included material, measured during the scan.</summary>
     public long AlwaysIncludedBytes { get; set; }

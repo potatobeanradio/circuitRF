@@ -381,9 +381,8 @@ public static class SchematicToLayoutGenerator
         }
         else if (comp.CellRef is not null)
         {
-            string cellAbsDir;
-            try { cellAbsDir = Path.GetFullPath(Path.Combine(schematicDir, comp.CellRef)); }
-            catch { resolveWarning = "cell reference could not be resolved"; return null; }
+            if (ExternalCellRef.ResolveCellDir(comp.CellRef, schematicDir) is not { } cellAbsDir)
+            { resolveWarning = "cell reference could not be resolved"; return null; }
 
             if (!Directory.Exists(cellAbsDir)) { resolveWarning = "referenced cell not found"; return null; }
 

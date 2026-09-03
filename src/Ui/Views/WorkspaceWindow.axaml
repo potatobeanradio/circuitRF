@@ -79,6 +79,8 @@
                         <NativeMenuItem Header="Save Layout As…"     Command="{Binding SaveLooseLayoutCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Save Workspace As…"  Command="{Binding SaveWorkspaceAsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
                         <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Reference Workspace…" Command="{Binding ReferenceWorkspaceCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Archive Workspace…"   Command="{Binding ArchiveWorkspaceCommand}"   CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Unarchive Workspace…" Command="{Binding UnarchiveWorkspaceCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
@@ -430,6 +432,13 @@
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+Shift+S">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveEdit" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Reference Workspace…"
+                          Command="{Binding ReferenceWorkspaceCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Let this workspace instance cells that live in another project, by reference.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderNetworkOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Archive Workspace…"

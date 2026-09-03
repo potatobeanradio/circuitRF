@@ -61,9 +61,8 @@ public static class PcbExport
 
         foreach (var inst in view.Instances)
         {
-            string targetDir;
-            try { targetDir = Path.GetFullPath(Path.Combine(layoutDir, inst.CellRef)); }
-            catch { unresolved++; continue; }
+            if (Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) is not { } targetDir)
+            { unresolved++; continue; }
             if (!Directory.Exists(targetDir)) { unresolved++; continue; }
 
             LayoutView cellView;

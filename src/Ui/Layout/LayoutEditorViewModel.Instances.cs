@@ -5,6 +5,7 @@ using System.Linq;
 using Avalonia.Input;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Layout;
+using CircuitRF.Ui.Schematic;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Layout;
@@ -181,6 +182,30 @@ public sealed partial class LayoutEditorViewModel
         return false;
     }
 
+    /// <summary>
+    /// MW2 R-mw2-7 — an EXTERNAL cell may only be instanced when its workspace resolves to the same
+    /// technology this layout is drawing with. Refuses at placement, naming both technologies and
+    /// both workspaces, because the alternative is silent: a layout's whole instance hierarchy is
+    /// compiled against one layer table and both starter technologies use keys (1,0)–(8,0), so the
+    /// external cell's shapes would be drawn in the right colours with the wrong meaning.
+    ///
+    /// <para>An ordinary in-workspace reference is not asked — it resolves the same technology by
+    /// construction, and a check that runs on every placement would cost a <c>.ctech</c> load per
+    /// drop for an answer that cannot differ.</para>
+    /// </summary>
+    private bool CheckExternalTechnology(string candidateCellRef)
+    {
+        if (!ExternalCellRef.IsExternalRef(candidateCellRef)) return true;
+        if (ExternalCellRef.ResolveCellDir(candidateCellRef, InstanceBaseDir) is not { } cellDir) return true;
+
+        var check = ExternalWorkspaceGate.CheckCellTechnology(
+            ResolvedTechPath, WorkspaceRootFinder.WorkspaceDirOf(InstanceBaseDir), cellDir);
+        if (check.Permitted) return true;
+
+        _messageSink?.Error(check.Refusal!);
+        return false;
+    }
+
     // ── Instance-place tool (§6) — reuses L1f's paste-placement ghost-follows-cursor gesture ───────
 
     private string? _instancePlacementCellRef;
@@ -249,6 +274,7 @@ public sealed partial class LayoutEditorViewModel
     private bool TryPlaceNewInstance(string cellRef, long x, long y)
     {
         if (!CheckNotCyclic(cellRef)) return false;
+        if (!CheckExternalTechnology(cellRef)) return false;
         var instance = new LayoutInstance { CellRef = cellRef, X = x, Y = y, Mag = 1.0 };
         Execute(new AddInstanceCommand(Model, instance));
         int newIndex = Model.Instances.Count - 1;
@@ -401,6 +427,7 @@ public sealed partial class LayoutEditorViewModel
     {
         if (string.IsNullOrWhiteSpace(newCellRef)) return;
         if (!CheckNotCyclic(newCellRef)) return;
+        if (!CheckExternalTechnology(newCellRef)) return;
         ReplaceSelectedInstance(src => { var c = LayoutGeometry.Clone(src); c.CellRef = newCellRef; return c; });
     }
 
@@ -417,6 +444,18 @@ public sealed partial class LayoutEditorViewModel
         foreach (var cellRef in cellRefs)
         {
             if (!_warnedMissingCellRefs.Add(cellRef)) continue;
+
+            // MW2 R-mw2-11: an external reference has three distinct failure modes with three
+            // different repairs, so "could not be resolved" is the wrong sentence for it — the user
+            // needs to know whether to open a workspace, relocate one, or copy the cell.
+            var status = ExternalCellStatusResolver.Classify(cellRef, InstanceBaseDir);
+            if (status.State is ExternalCellState.WorkspaceNotOpen or ExternalCellState.Broken)
+            {
+                _messageSink?.Warning(
+                    $"Instance references '{cellRef}' — showing a placeholder. {status.Explanation} {status.Repair}");
+                continue;
+            }
+
             _messageSink?.Warning($"Instance references '{cellRef}', which could not be resolved — showing a placeholder.");
         }
     }

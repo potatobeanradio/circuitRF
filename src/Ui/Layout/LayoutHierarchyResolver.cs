@@ -61,7 +61,7 @@ internal static class LayoutHierarchyResolver
     public static string? ResolvePrimaryPath(LayoutInstance instance, LayoutEditorViewModel parentVm)
     {
         if (!CanPushInto(instance, parentVm, out _)) return null;
-        var cellAbsDir = Path.GetFullPath(Path.Combine(parentVm.InstanceBaseDir, instance.CellRef));
+        var cellAbsDir = ExternalCellRef.ResolveCellDir(instance.CellRef, parentVm.InstanceBaseDir)!;
         var pr         = CellFolder.ResolvePrimary(cellAbsDir, ViewType.Layout);
         var layoutDir  = CellFolder.SubFolderPath(cellAbsDir, ViewType.Layout);
         return Path.Combine(layoutDir, pr.ResolvedName!);

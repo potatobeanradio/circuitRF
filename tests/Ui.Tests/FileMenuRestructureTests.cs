@@ -119,6 +119,10 @@ public class FileMenuRestructureTests
         // Sharing a workspace with someone on another machine (owner request, 2026-08-15) — placed
         // under Save Workspace As… behind its own separator, because it is a different KIND of
         // save: it writes one portable file, not the workspace itself.
+        // MW2 §2.1: Reference Workspace… is its own band above the archive pair. It is neither a
+        // save nor a share — it is a change to what this workspace can REACH — and putting it beside
+        // Archive would read as a third way of packaging one.
+        "_Reference Workspace…", "---",
         "_Archive Workspace…", "_Unarchive Workspace…", "---",
         "_Import", "_Export", "_Manage PDKs…", "---",
         // "Close Workspace Window", not "Close Window": that name is already taken by the item
@@ -133,6 +137,7 @@ public class FileMenuRestructureTests
         "New", "New Workspace…", "New Window", "---",
         "Open Workspace…", "Open Workspace in New Window…", "Open Recent", "Open", "---",
         "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Workspace As…", "---",
+        "Reference Workspace…", "---",
         "Archive Workspace…", "Unarchive Workspace…", "---",
         "Import", "Export", "Manage PDKs…", "---",
         "Close Window", "Close Workspace", "Close Workspace Window",

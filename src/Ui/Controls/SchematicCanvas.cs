@@ -1010,7 +1010,7 @@ public sealed class SchematicCanvas : Control
             {
                 try
                 {
-                    var cellRef    = Path.GetRelativePath(schDir, payload.CellAbsPath);
+                    var cellRef    = ExternalCellRef.MakeCellRef(schDir, payload.CellAbsPath);
                     var resolution = CellSymbolResolver.Resolve(cellRef, schDir);
                     if (resolution.State == CellSymbolState.Resolved && resolution.Symbol is { } sym)
                         ghost = new PlacementGhost(sx, sy, SymbolKind.Generic, rotation, false,

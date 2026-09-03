@@ -164,9 +164,44 @@ public static class WorkspaceArchiveScanner
         }
 
         AddKits(plan);
+        AddReferencedWorkspaces(plan);
         AddExternalFiles(plan);
 
         return plan;
+    }
+
+    /// <summary>
+    /// One row per referenced WORKSPACE this workspace's documents actually instance a cell from
+    /// (MW2 R-mw2-16). Before this, an external cell reference was invisible to the archive: a
+    /// <c>CellRef</c> names a directory, and the reference scan recognises a reference by whether it
+    /// resolves to a FILE that exists — so the dialog never offered it and the recipient's layouts
+    /// referenced nothing.
+    ///
+    /// <para><b>Ticked by default</b>, unlike a kit. A kit is the vendor's content and its bulk makes
+    /// including it a judgement call; a referenced cell is the user's own design, and an archive
+    /// missing it does not open correctly at all.</para>
+    /// </summary>
+    private static void AddReferencedWorkspaces(WorkspaceArchivePlan plan)
+    {
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var content in ExternalCellArchive.Collect(plan.WorkspaceDir))
+        {
+            long bytes = content.Members.Sum(m => Math.Max(0, SizeOf(m.SourcePath)));
+
+            plan.Options.Add(new ArchiveOption
+            {
+                Kind        = ArchiveOptionKind.ReferencedWorkspace,
+                DisplayName = content.Alias,
+                Detail      = $"Referenced workspace · {content.OtherWorkspaceRoot}",
+                SourcePath  = content.OtherWorkspaceRoot,
+                ArchivePath = $"{ExternalCellArchive.RefsFolder}/{UniqueName(used, content.Alias)}",
+                IsDirectory = true,
+                Members     = content.Members,
+                Selected    = true,
+                SizeBytes   = bytes,
+            });
+        }
     }
 
     /// <summary>

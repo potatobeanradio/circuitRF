@@ -130,6 +130,45 @@ recursion/cycle guard — is its own later phase, not part of these navigation b
 
 ---
 
+## 4A. External cell references — a cell in another workspace *(built 2026-09-03)*
+
+A `CellRef` may name a cell that lives in a **different workspace**, spelled as an alias the referencing
+document's own `.cws` resolves:
+
+```
+CellRef:   ws://RfFrontEnd/cells/Amp
+.cws:      ReferencedWorkspaces: [ { Alias: "RfFrontEnd", Path: "../rf-front-end/.cws" } ]
+```
+
+`workspace-and-project-tree.md` §5C is the authority on the form and on why it is an alias rather than a
+raw path. What matters **here** is that navigation and extraction need nothing new for it:
+
+- **Both go through `HierarchyResolver`**, which asks `ExternalCellRef.ResolveCellDir` for the absolute
+  cell folder and then does exactly what it always did. Push In, Open Cell in New Tab and §4's resolution
+  rule are therefore identical for an external cell — including the WYSIWYG half, since an external cell
+  open in its own workspace's window is the same `SchematicEditModel`.
+- **The one thing an external reference cannot do is be open twice.** MW1's R-mw1-10 already refuses a
+  second edit session on a file open in another window, which is what keeps a referenced cell from being
+  editable both in its own workspace's window and through the window that references it.
+
+**What it refuses**, and where the refusal lives:
+
+| Situation | Answer |
+|---|---|
+| The alias is not declared, or its workspace has moved | `NotFound` — the existing placeholder, explaining itself as a **Broken** external reference |
+| The cell is gone from a workspace that does resolve | the same, naming the alias |
+| The cell uses a kit whose workspace is not open | resolves as a cell; its kit parts are `NotFound` and the repair offered is *open that workspace* |
+| The cell has kit content and **no ancestor `.cws` at all** | permanent — there is nothing to resolve the kit against, and a kit cannot be chosen the way a technology can |
+| A **layout** view whose technologies differ | refused at placement, naming both technologies and both workspaces (`layout-view.md` §7) |
+
+A schematic-only external reference is never gated on technology: a schematic carries none.
+
+**A resolved external instance is marked**, not only a broken one — `Amp — [RfFrontEnd]` in the parameter
+dialog's type field and an `[alias]` tag beside the glyph on the canvas. Seeing without clicking that a
+cell is not yours is the whole safety story; see §5C.3/R51.
+
+---
+
 ## 5. Enablement (don't suggest what can't happen)
 
 **Push In / Open Cell in New Tab** enabled only when ALL hold:

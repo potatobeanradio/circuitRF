@@ -170,6 +170,45 @@ public sealed class CwsFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<CwsPdkRef>? PdkRefs { get; set; }
+
+    /// <summary>
+    /// Other WORKSPACES this one may reference cells in — the alias table a <c>ws://</c> cell
+    /// reference resolves through (MW2 R-mw2-2).
+    ///
+    /// <para><b>This is the one place a cross-workspace path is written.</b> Relocating the other
+    /// project is one edit here rather than a rewrite of every document that referenced it, which is
+    /// the concern <c>workspace-and-project-tree.md</c> §5A R37 names when it defers the choice
+    /// between an alias and a raw path in every file. It sits beside <see cref="LibraryRefs"/>
+    /// because it is the same kind of entry for a workspace rather than a <c>.clib</c> folder:
+    /// configuration, never membership.</para>
+    ///
+    /// <para>Null or empty means this workspace references no other, which is the overwhelmingly
+    /// common case. No <c>FormatVersion</c> bump — an absent field on an older <c>.cws</c> loads as
+    /// null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CwsWorkspaceRef>? ReferencedWorkspaces { get; set; }
+}
+
+/// <summary>
+/// One referenced workspace: the name cells are addressed by, and where that workspace is.
+///
+/// <para>The alias is what a <c>ws://</c> reference in a design document carries, so it is not
+/// cosmetic — change it and every external instance placed through it stops resolving, exactly as
+/// renaming a <see cref="CwsPdkRef.Provider"/> does.</para>
+/// </summary>
+public sealed class CwsWorkspaceRef
+{
+    /// <summary>The name <c>ws://&lt;alias&gt;/…</c> uses. Defaults to the other workspace's folder
+    /// name at the moment the reference is created; unique within one <c>.cws</c>.</summary>
+    public string Alias { get; set; } = "";
+
+    /// <summary>
+    /// The other workspace's <c>.cws</c> file — workspace-relative where it can be, absolute across
+    /// volumes, which is <c>WorkspaceRefs.ToStoredRef</c>'s rule. Two sibling project folders are
+    /// the ordinary case, so relative is the ordinary answer and the pair travels together.
+    /// </summary>
+    public string Path { get; set; } = "";
 }
 
 /// <summary>

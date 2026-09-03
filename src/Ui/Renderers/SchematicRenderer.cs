@@ -312,6 +312,13 @@ public static class SchematicRenderer
                 DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
             }
 
+            // MW2 R-mw2-13 — a cell from ANOTHER workspace names its source beside the glyph, so a
+            // user can see without clicking that this part of the schematic is not theirs. Marked
+            // whether or not it resolves: a broken external reference most needs to say which
+            // project it was supposed to come from, which "Not Found" alone never does.
+            if (c.ExternalAlias is { Length: > 0 } alias && !isLod)
+                DrawExternalAliasTag(canvas, alias, c, cx, cy, panX, panY, zoom, textFont, instNamePaint);
+
             // DisableState overlay (drawn on top of body)
             if (c.DisableState != DisableState.None && !isLod)
                 DrawDisableOverlay(canvas, c, cx, cy, panX, panY, zoom, warnStrokePaint, warnFillPaint);
@@ -966,6 +973,23 @@ public static class SchematicRenderer
     /// Draws the "Not Found" warning glyph for a cell-ref component whose cell folder
     /// does not resolve.  Warning box (fill + stroke) with centred "Not Found" label.
     /// </summary>
+    /// <summary>
+    /// The <c>[alias]</c> tag on an external cell instance (MW2 R-mw2-13). Drawn above the glyph's
+    /// own bounding box, in the instance-name paint, so it reads as part of the instance's chrome
+    /// rather than as one of its parameter labels — and so it never overlaps the label stack, which
+    /// grows downward from the glyph's bottom.
+    /// </summary>
+    private static void DrawExternalAliasTag(
+        SKCanvas canvas, string alias, SchematicComponent c,
+        double cx, double cy, double panX, double panY, double zoom,
+        SKFont font, SKPaint paint)
+    {
+        _ = cx; _ = cy;
+        float x = (float)((c.GlyphBbMinX + panX) * zoom);
+        float y = (float)((c.GlyphBbMinY + panY) * zoom) - 3f;
+        canvas.DrawText($"[{alias}]", x, y, SKTextAlign.Left, font, paint);
+    }
+
     private static void DrawCellRefNotFoundGlyph(
         SKCanvas canvas,
         double cx, double cy,

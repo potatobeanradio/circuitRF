@@ -15,6 +15,16 @@ namespace CircuitRF.Ui.Schematic;
 /// <c>.csch</c>-specific, not the matching itself. <see cref="ScannedKinds"/> is the one list that
 /// needs a new entry for any future view kind that grows its own <c>CellRef</c>-bearing array.
 /// </summary>
+/// <summary>
+/// How many cells reference one cell, and — MW2 R-mw2-14 — whether any of them are in a DIFFERENT
+/// open workspace. The two are reported separately because the confirmation has to word them
+/// differently: a referrer in a workspace nobody has open cannot be found at all, so the honest
+/// sentence is "no other open workspace references this," never "nothing references this."
+/// </summary>
+/// <param name="Count">Referencing cells in every scanned workspace, the target's own excluded.</param>
+/// <param name="OtherWorkspaceRoots">The other open workspaces that hold at least one referrer.</param>
+public readonly record struct CellUsage(int Count, IReadOnlyList<string> OtherWorkspaceRoots);
+
 public static class CellUsageScanner
 {
     private readonly record struct ScanKind(ViewType ViewType, string FilePattern, string ArrayPropertyName);
@@ -26,29 +36,51 @@ public static class CellUsageScanner
     ];
 
     /// <summary>
-    /// Counts DISTINCT cells in the workspace (excluding the target itself) that contain at
-    /// least one component/instance (schematic or layout) whose CellRef resolves to
+    /// Counts DISTINCT cells (excluding the target itself) that contain at least one
+    /// component/instance — schematic or layout — whose <c>CellRef</c> resolves to
     /// <paramref name="targetCellDir"/>. Best-effort: unreadable files are skipped.
     /// </summary>
-    public static int CountReferencingCells(string workspaceRootDir, string targetCellDir)
+    /// <param name="otherOpenWorkspaceRoots">
+    /// Every OTHER workspace open in this process (MW2 R-mw2-14). An external reference means a cell
+    /// in another workspace can be a referrer, and this scan enumerated one workspace only — so
+    /// deleting a cell in A that B references reported "0 references", deleted it, and broke B with
+    /// nothing said. A referrer in a workspace nobody has open still cannot be found, which is why
+    /// the caller's wording has to be "no other OPEN workspace references this."
+    /// </param>
+    public static CellUsage CountReferencingCells(
+        string workspaceRootDir, string targetCellDir,
+        IEnumerable<string>? otherOpenWorkspaceRoots = null)
     {
-        targetCellDir = Path.GetFullPath(targetCellDir).TrimEnd(
-            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string target = Normalize(targetCellDir);
 
-        var count = 0;
+        int count = CountIn(workspaceRootDir, target);
+        List<string>? others = null;
 
-        foreach (var cellDir in EnumerateCellFolders(workspaceRootDir))
+        foreach (var root in otherOpenWorkspaceRoots ?? [])
         {
-            var normCell = Path.GetFullPath(cellDir).TrimEnd(
-                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-            if (string.Equals(normCell, targetCellDir, StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(root)) continue;
+            if (string.Equals(Normalize(root), Normalize(workspaceRootDir), StringComparison.OrdinalIgnoreCase))
                 continue;
-
-            if (CellReferencesTarget(cellDir, targetCellDir))
-                count++;
+            int n = CountIn(root, target);
+            if (n == 0) continue;
+            count += n;
+            (others ??= []).Add(root);
         }
 
+        return new CellUsage(count, others ?? []);
+    }
+
+    private static int CountIn(string workspaceRootDir, string normalizedTargetCellDir)
+    {
+        var count = 0;
+        foreach (var cellDir in EnumerateCellFolders(workspaceRootDir))
+        {
+            if (string.Equals(Normalize(cellDir), normalizedTargetCellDir, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (CellReferencesTarget(cellDir, normalizedTargetCellDir))
+                count++;
+        }
         return count;
     }
 
@@ -91,14 +123,33 @@ public static class CellUsageScanner
             var cellRef = item["CellRef"]?.GetValue<string?>();
             if (cellRef is null) continue;
 
-            var resolved = Path.GetFullPath(Path.Combine(fileDir, cellRef))
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-            if (string.Equals(resolved, targetCellDir, StringComparison.OrdinalIgnoreCase))
-                return true;
+            if (ResolvesToTarget(cellRef, fileDir, targetCellDir)) return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether one stored <c>CellRef</c>, read against the file that holds it, names
+    /// <paramref name="targetCellDir"/> — the ONE matching rule, shared by the counter and the
+    /// rewriter (MW2 R-mw2-15). A <c>ws://</c> reference expands through the referencing workspace's
+    /// alias table first, so an external reference is compared by what it resolves to rather than by
+    /// how it is spelled.
+    /// </summary>
+    private static bool ResolvesToTarget(string cellRef, string fileDir, string targetCellDir)
+    {
+        if (ExternalCellRef.ResolveCellDir(cellRef, fileDir) is not { } resolved) return false;
+        return string.Equals(Normalize(resolved), targetCellDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Normalize(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path).TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch { return path; }
     }
 
     // Enumerate every cell folder (contains .ccell) under rootDir, recursively.
@@ -114,27 +165,55 @@ public static class CellUsageScanner
     }
 
     /// <summary>
-    /// Finds every schematic/layout view file in the workspace that contains a CellRef whose
-    /// resolved cell name equals <paramref name="oldCellName"/>, rewrites it to
-    /// <paramref name="newCellName"/>, and returns the list of updated paths (for logging).
-    /// Best-effort: unreadable or unwritable files are skipped and their paths are added
-    /// to <paramref name="failed"/>.
+    /// Repoints every schematic/layout view file whose <c>CellRef</c> RESOLVES to
+    /// <paramref name="oldCellDirAbs"/> so it names <paramref name="newCellName"/> instead, and
+    /// returns the list of updated paths (for logging). Best-effort: unreadable or unwritable files
+    /// are skipped and their paths are added to <paramref name="failed"/>.
     /// </summary>
     /// <remarks>
-    /// A CellRef is stored as a relative path like "../../OldName" inside the file's JSON. The last
-    /// path segment (folder name) equals the cell name. We match on the EXACT folder name so we
-    /// never do substring replacement.
+    /// <para><b>Matched by RESOLUTION, not by the last path segment</b> — MW2 R-mw2-15, and the
+    /// reason external cell references could not ship without it. The old rule rewrote EVERY
+    /// <c>CellRef</c> ending in the renamed name, including one pointing at a different cell of the
+    /// same name that was never renamed. <c>workspace-and-project-tree.md</c> §4.1 stated that
+    /// deliberately and named its own consequence — a name-keyed rewriter cannot tell
+    /// <c>parts/R0402</c> from <c>board/R0402</c> — as a bounded, accepted risk. It stops being
+    /// bounded the moment <c>ws://Other/cells/Amp</c> also ends in <c>Amp</c>: repointing that
+    /// produces a reference to something that does not exist, in a workspace the rename had no
+    /// business touching. <see cref="ResolvesToTarget"/> is the same rule the counter above already
+    /// used correctly in this same file.</para>
+    ///
+    /// <para><b>It is called AFTER the folder has been moved</b>, so <paramref name="oldCellDirAbs"/>
+    /// no longer exists — which is fine and is the point: a stored reference still SPELLS the old
+    /// name, so resolving it lands on exactly that path. Path arithmetic needs no filesystem.</para>
     /// </remarks>
+    /// <param name="oldCellDirAbs">The cell folder's absolute path BEFORE the rename.</param>
+    /// <param name="alsoScanWorkspaceRoots">
+    /// Other workspaces open in this process. A reference from one of them resolves to the same
+    /// folder and is repaired in the same pass; leaving them out would rename a cell in A and break
+    /// B silently, which is the failure R-mw2-14 names for deletion arriving through the rename door.
+    /// </param>
     public static IReadOnlyList<string> RewriteCellReferences(
-        string            workspaceRootDir,
-        string            oldCellName,
-        string            newCellName,
-        out List<string>  failed)
+        string               workspaceRootDir,
+        string               oldCellDirAbs,
+        string               newCellName,
+        out List<string>     failed,
+        IEnumerable<string>? alsoScanWorkspaceRoots = null)
     {
         failed = [];
         var rewritten = new List<string>();
+        string target = Normalize(oldCellDirAbs);
 
-        foreach (var cellDir in EnumerateCellFolders(workspaceRootDir))
+        var roots = new List<string> { workspaceRootDir };
+        foreach (var extra in alsoScanWorkspaceRoots ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(extra)) continue;
+            if (roots.Any(r => string.Equals(Normalize(r), Normalize(extra), StringComparison.OrdinalIgnoreCase)))
+                continue;
+            roots.Add(extra);
+        }
+
+        foreach (var root in roots)
+        foreach (var cellDir in EnumerateCellFolders(root))
         {
             foreach (var kind in ScannedKinds)
             {
@@ -145,7 +224,7 @@ public static class CellUsageScanner
                 {
                     try
                     {
-                        if (RewriteFileCellRefs(filePath, kind.ArrayPropertyName, oldCellName, newCellName))
+                        if (RewriteFileCellRefs(filePath, kind.ArrayPropertyName, target, newCellName))
                             rewritten.Add(filePath);
                     }
                     catch (Exception ex)
@@ -159,11 +238,12 @@ public static class CellUsageScanner
         return rewritten;
     }
 
-    // Returns true if the file was modified. Matches CellRef path segments — last segment is the
-    // cell name. Both .csch and .clay use PascalCase JSON property names (no naming policy), so
-    // "CellRef" is the literal key in both.
-    private static bool RewriteFileCellRefs(string filePath, string arrayPropertyName, string oldCellName, string newCellName)
+    // Returns true if the file was modified. Both .csch and .clay use PascalCase JSON property names
+    // (no naming policy), so "CellRef" is the literal key in both.
+    private static bool RewriteFileCellRefs(
+        string filePath, string arrayPropertyName, string targetCellDir, string newCellName)
     {
+        var fileDir = Path.GetDirectoryName(Path.GetFullPath(filePath))!;
         var json = File.ReadAllText(filePath);
         var node = JsonNode.Parse(json);
         if (node is null) return false;
@@ -180,16 +260,9 @@ public static class CellUsageScanner
 
             var cellRef = cellRefNode.GetValue<string?>();
             if (cellRef is null) continue;
+            if (!ResolvesToTarget(cellRef, fileDir, targetCellDir)) continue;
 
-            // The last path segment of the CellRef is the cell folder name.
-            var lastName = Path.GetFileName(
-                cellRef.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (!string.Equals(lastName, oldCellName, StringComparison.OrdinalIgnoreCase)) continue;
-
-            // Replace the last path segment with newCellName.
-            var dir        = Path.GetDirectoryName(cellRef) ?? "";
-            var newCellRef = string.IsNullOrEmpty(dir) ? newCellName : dir + "/" + newCellName;
-            item["CellRef"] = JsonValue.Create(newCellRef);
+            item["CellRef"] = JsonValue.Create(WithLastSegment(cellRef, newCellName));
             changed = true;
         }
 
@@ -198,6 +271,27 @@ public static class CellUsageScanner
         var opts = new JsonSerializerOptions { WriteIndented = true };
         File.WriteAllText(filePath, node.ToJsonString(opts));
         return true;
+    }
+
+    /// <summary>
+    /// The same reference with its final segment replaced — the one thing a rename changes.
+    ///
+    /// <para>A <c>ws://</c> reference is taken apart by its own parser rather than by
+    /// <c>Path.GetDirectoryName</c>: on a platform whose separator is <c>/</c> that call collapses
+    /// <c>ws://</c> to <c>ws:/</c>, which produces a reference that resolves to nothing and looks
+    /// like a typo the user made.</para>
+    /// </summary>
+    private static string WithLastSegment(string cellRef, string newCellName)
+    {
+        if (ExternalCellRef.TryParse(cellRef, out string alias, out string rel))
+        {
+            var segments = rel.Split('/');
+            segments[^1] = newCellName;
+            return ExternalCellRef.RefFor(alias, string.Join('/', segments));
+        }
+
+        var dir = Path.GetDirectoryName(cellRef.TrimEnd('/', '\\')) ?? "";
+        return string.IsNullOrEmpty(dir) ? newCellName : dir.Replace('\\', '/') + "/" + newCellName;
     }
 
     // ── wBond links ───────────────────────────────────────────────────────────

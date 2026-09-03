@@ -743,6 +743,30 @@ New concerns specific to layout hierarchy:
 - **`CellUsageScanner` extension** so `.clay` cell references are counted on Remove Cell and rewritten
   on Rename Cell, exactly as `.csch` references are today. Easy to forget; breaks designs when omitted.
 
+### 7.1 An instance may reference a cell in ANOTHER workspace *(built 2026-09-03)*
+
+`ws://<alias>/<workspace-relative path>` names a cell in a workspace this one references; the alias is
+declared once in the referencing `.cws`. `CellLayoutResolver` resolves it through
+`ExternalCellRef.ResolveCellDir` and everything downstream — arrays, cycle detection, push-in, flatten,
+the spatial index, every exporter — is untouched. `workspace-and-project-tree.md` §5C is the authority.
+
+**The one constraint the layout view imposes, and the reason it exists.** §13's own record already says
+it: a layout's whole instance hierarchy is compiled against **one** technology, and layers are matched by
+numeric key. Both starter technologies use `(1,0)`–`(8,0)`, so an external cell's Drill would silently
+become this workspace's Substrate — right colours, right geometry, wrong meaning, nothing missing and no
+warning. So **an external cell may only be instanced when both sides resolve to the same `.ctech`**
+(`ExternalWorkspaceGate`), refused at placement with both technologies and both workspaces named.
+
+**Per-instance technology is an explicit non-goal.** Rendering a sub-hierarchy under a second layer table
+changes `CompileCell`'s signature and its caching, makes DRC's answer ambiguous, and makes one layout view
+mean two things at once. It is a real feature and it is a different one.
+
+**Marking is chrome, never the geometry** (R36's rule, unchanged): a resolved external instance draws a
+dashed surround and an `[alias]` tag; a broken one keeps the existing dashed placeholder with the alias
+prefixed to its label, so "Not Found" no longer sends the user hunting through the wrong workspace. Layer
+colours are literal user-authored `Rgba` and tinting them would corrupt the one thing the reference exists
+to show.
+
 ---
 
 ## 8. Interchange — GDSII, DXF, Gerber

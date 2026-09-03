@@ -891,8 +891,10 @@ public sealed class LayoutCanvas : Control
 
     private static string RelativeCellRefForDrag(string cellAbsDir, LayoutEditorViewModel vm)
     {
-        try { return Path.GetRelativePath(vm.InstanceBaseDir, cellAbsDir); }
-        catch { return cellAbsDir; }
+        // MW2 R-mw2-2: a cell that lives inside a REFERENCED workspace is written as ws://alias/…,
+        // everything else keeps the relative path it has always had. Asked here rather than decided
+        // here, so the one rule serves every producing site.
+        return ExternalCellRef.MakeCellRef(vm.InstanceBaseDir, cellAbsDir);
     }
 
     /// <summary>R-bmp-5 — the Insert Bitmap toolbar button's entry point; centres the placed rect on

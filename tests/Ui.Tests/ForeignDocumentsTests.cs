@@ -543,13 +543,13 @@ public sealed class ForeignDocumentIsolationTests : IDisposable
         WriteLayoutReferencing(
             Path.Combine(foreignReferencerDir, "layout", "cell.clay"), "../../Target");
 
-        var count = CellUsageScanner.CountReferencingCells(currentWs, targetDir);
+        var count = CellUsageScanner.CountReferencingCells(currentWs, targetDir).Count;
 
         Assert.Equal(1, count); // only the in-workspace Referencer counts, never the foreign one
 
         // Rename must likewise never touch the foreign workspace's own identically-named cell/files.
         var beforeForeignClay = File.ReadAllText(Path.Combine(foreignReferencerDir, "layout", "cell.clay"));
-        CellUsageScanner.RewriteCellReferences(currentWs, "Target", "Renamed", out _);
+        CellUsageScanner.RewriteCellReferences(currentWs, targetDir, "Renamed", out _);
         var afterForeignClay = File.ReadAllText(Path.Combine(foreignReferencerDir, "layout", "cell.clay"));
 
         Assert.Equal(beforeForeignClay, afterForeignClay); // untouched

@@ -84,15 +84,11 @@ public static class CellLayoutResolver
 
     public static CellLayoutResolution Resolve(string cellRef, string baseDir)
     {
-        string cellAbsDir;
-        try
-        {
-            cellAbsDir = Path.GetFullPath(Path.Combine(baseDir, cellRef));
-        }
-        catch
-        {
+        // A ws:// reference resolves through the referencing workspace's alias table, a plain one
+        // against baseDir (MW2 R-mw2-2). Both answer with an absolute cell folder or null, and null
+        // lands on the same NotFound a missing folder does — the reported, repairable state.
+        if (Workspace.ExternalCellRef.ResolveCellDir(cellRef, baseDir) is not { } cellAbsDir)
             return CellLayoutResolution.NotFoundResult;
-        }
 
         if (!Directory.Exists(cellAbsDir))
             return CellLayoutResolution.NotFoundResult;

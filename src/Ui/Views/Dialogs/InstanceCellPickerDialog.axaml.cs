@@ -80,7 +80,7 @@ public partial class InstanceCellPickerDialog : Window
 
     private string RelativeCellRef(string absoluteCellDir)
     {
-        try { return Path.GetRelativePath(_baseDir, absoluteCellDir); }
+        try { return ExternalCellRef.MakeCellRef(_baseDir, absoluteCellDir); }
         catch { return absoluteCellDir; }
     }
 

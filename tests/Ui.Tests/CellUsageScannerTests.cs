@@ -69,7 +69,7 @@ public class CellUsageScannerTests : IDisposable
         SaveSchematicWithCellRef(cellB, "../../cellA");
         SaveSchematicWithCellRef(cellC, "../../cellA");
 
-        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA).Count;
         Assert.Equal(2, result);
     }
 
@@ -89,7 +89,7 @@ public class CellUsageScannerTests : IDisposable
         model.Components.Add(new EditableComponent { InstanceName = "X2", Symbol = SymbolKind.Resistor, CellRef = "../../cellA" });
         SchematicPersistence.SaveToFile(cschPath, model);
 
-        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA).Count;
         Assert.Equal(1, result);
     }
 
@@ -100,7 +100,7 @@ public class CellUsageScannerTests : IDisposable
         var cellB = CreateCell("cellB");
         // cellB has no schematic — nobody references cellA.
 
-        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA).Count;
         Assert.Equal(0, result);
     }
 
@@ -111,7 +111,7 @@ public class CellUsageScannerTests : IDisposable
         var cellA = CreateCell("cellA");
         SaveSchematicWithCellRef(cellA, "..");   // relative from cellA/schematic/ to cellA/
 
-        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA).Count;
         Assert.Equal(0, result);
     }
 
@@ -126,7 +126,7 @@ public class CellUsageScannerTests : IDisposable
         var cellA   = CreateCell("cellA");
         SaveSchematicWithCellRef(cellA, "../../oldCell");
 
-        CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out _);
+        CellUsageScanner.RewriteCellReferences(_ws, Path.Combine(_ws, "oldCell"), "newCell", out _);
 
         // Reload the schematic and verify the CellRef was updated.
         var schDir = CellFolder.SubFolderPath(cellA, ViewType.Schematic);
@@ -145,7 +145,7 @@ public class CellUsageScannerTests : IDisposable
         SaveSchematicWithCellRef(cellA, "../../oldCell");
         SaveSchematicWithCellRef(cellB, "../../unrelated");
 
-        CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out _);
+        CellUsageScanner.RewriteCellReferences(_ws, Path.Combine(_ws, "oldCell"), "newCell", out _);
 
         var schDirB  = CellFolder.SubFolderPath(cellB, ViewType.Schematic);
         var cschPathB = Path.Combine(schDirB, "cellB.csch");
@@ -160,7 +160,7 @@ public class CellUsageScannerTests : IDisposable
         var cellA = CreateCell("cellA");
         SaveSchematicWithCellRef(cellA, "../../oldCell");
 
-        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, Path.Combine(_ws, "oldCell"), "newCell", out var failed);
 
         Assert.Empty(failed);
         Assert.Single(updated);
@@ -173,7 +173,7 @@ public class CellUsageScannerTests : IDisposable
         var cellA = CreateCell("cellA");
         SaveSchematicWithCellRef(cellA, "../../differentCell");
 
-        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, Path.Combine(_ws, "oldCell"), "newCell", out var failed);
 
         Assert.Empty(failed);
         Assert.Empty(updated);
@@ -188,7 +188,7 @@ public class CellUsageScannerTests : IDisposable
         var cellB = CreateCell("cellB");
         SaveLayoutWithCellRef(cellB, "../../cellA");
 
-        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA).Count;
         Assert.Equal(1, result);
     }
 
@@ -201,7 +201,7 @@ public class CellUsageScannerTests : IDisposable
         SaveSchematicWithCellRef(cellB, "../../cellA");
         SaveLayoutWithCellRef(cellC, "../../cellA");
 
-        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA).Count;
         Assert.Equal(2, result);
     }
 
@@ -213,7 +213,7 @@ public class CellUsageScannerTests : IDisposable
         SaveSchematicWithCellRef(cellB, "../../cellA");
         SaveLayoutWithCellRef(cellB, "../../cellA");
 
-        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA).Count;
         Assert.Equal(1, result);
     }
 
@@ -224,7 +224,7 @@ public class CellUsageScannerTests : IDisposable
         var cellA   = CreateCell("cellA");
         SaveLayoutWithCellRef(cellA, "../../oldCell");
 
-        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, Path.Combine(_ws, "oldCell"), "newCell", out var failed);
 
         Assert.Empty(failed);
         Assert.Single(updated);
@@ -243,7 +243,7 @@ public class CellUsageScannerTests : IDisposable
         SaveSchematicWithCellRef(cellA, "../../oldCell");
         SaveLayoutWithCellRef(cellA, "../../oldCell");
 
-        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, Path.Combine(_ws, "oldCell"), "newCell", out var failed);
 
         Assert.Empty(failed);
         Assert.Equal(2, updated.Count);   // one .csch + one .clay

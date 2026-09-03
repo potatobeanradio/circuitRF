@@ -436,6 +436,17 @@ public static class LayoutFragment
             string? sourceCellDir = i < cellDirs.Count ? cellDirs[i] : null;
             string? workspaceRelativeDir = i < workspaceRelativeDirs.Count ? workspaceRelativeDirs[i] : null;
 
+            // A ws:// reference is base-independent already, and every rebasing form below would
+            // turn it into a path — losing the alias, and with it the technology check and the kit
+            // walk-up that only an explicitly named workspace can answer (MW2 R-mw2-2). It is kept
+            // verbatim; a paste into a workspace that does not declare the alias reports NotFound,
+            // which is the honest answer rather than a silently repointed instance.
+            if (Workspace.ExternalCellRef.IsExternalRef(clone.CellRef))
+            {
+                result.Add(clone);
+                continue;
+            }
+
             if (sourceCellDir is { Length: > 0 } && destBaseDir is { Length: > 0 })
             {
                 try

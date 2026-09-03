@@ -71,6 +71,18 @@ public enum NodeKind
 
     /// <summary>Synthetic group node that contains all KnownFile children.</summary>
     KnownFilesGroup,
+
+    /// <summary>
+    /// Another WORKSPACE this one references cells in (MW2 R-mw2-2), rendered as its own sub-tree of
+    /// cells exactly as <see cref="Library"/> is. It is not a library: it brings a technology, a kit
+    /// set and a <c>.cws</c> of its own, which is why the reference names it rather than pointing at
+    /// a path, and why a cell placed from it carries a <c>ws://</c> reference rather than a relative
+    /// one.
+    /// </summary>
+    ReferencedWorkspace,
+
+    /// <summary>Synthetic group node that contains all <see cref="ReferencedWorkspace"/> children.</summary>
+    ReferencedWorkspacesGroup,
 }
 
 /// <summary>

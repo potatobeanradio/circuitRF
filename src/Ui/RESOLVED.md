@@ -1,5 +1,138 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MW2 — referencing a cell in another workspace (2026-09-03)
+
+`docs/sonnet-briefs/brief-multi-workspace-2-external-cell-refs.md`, on top of MW1. The design note's
+authority is `docs/design/workspace-and-project-tree.md` §5C, updated to match what was built.
+
+### It already half-worked, and that was the whole problem
+
+`CellRef` is written as `Path.GetRelativePath(schematicDir, cellAbsDir)` at every producing site and read
+back as a plain `Path.Combine`, and nothing rejected a `../../OtherWorkspace/cells/Amp` form. So a
+cross-workspace reference already resolved — symbol, pins, `.ccell` interface, push-in — while everything
+*around* it was wrong. The form was never chosen either; it was whatever `GetRelativePath` happened to
+produce, which is exactly what §5A R37 said must not be allowed to settle the question by accident.
+
+**The form chosen is an alias** (`ws://RfFrontEnd/cells/Amp`) resolved through the referencing document's
+own `.cws`. `ExternalCellRef` owns the scheme, the resolution and the *production* — `MakeCellRef(baseDir,
+cellAbsDir)` returns the alias form only for a cell inside a workspace this one REFERENCES, and the
+ordinary relative path otherwise, so a cell in a referenced **library** is untouched. A library is not a
+workspace: it brings no technology and no kit set, and rewriting those references would be the second
+convention R37 warns about arriving through a different door.
+
+### The routing, and why it is one function
+
+Every path-shaped cell reference now resolves through `ExternalCellRef.ResolveCellDir(cellRef, baseDir)`:
+`CellSymbolResolver` (symbol + `.ccell`), `HierarchyResolver` (push-in AND the elaborator's descent, which
+share it), `CellLayoutResolver`, `LayoutHierarchyResolver`, `SchematicToLayoutGenerator`, the GDSII/DXF/PCB
+exporters, and `CellUsageScanner`. A call site that split the two forms itself would be the one missed when
+a third arrives — the trap `CellSymbolResolver.NeedsNoBaseDirectory` already records for the virtual forms.
+
+**Two places deliberately do NOT resolve it: the two rebasers.** `LayoutFlatten.RebaseCellRef` and
+`LayoutFragment.RebaseInstances` turn a reference into a path relative to a new directory, and a `ws://`
+reference means nothing relative to a directory — rebasing one would silently destroy the alias, and with
+it the technology check and the kit walk-up that only a named workspace can answer. Both now return it
+verbatim.
+
+**The alias table is memoised** on exactly the terms MW1's workspace walk-up is, and dropped by the same
+`WorkspaceRootFinder.InvalidateCache()`: it is asked per cell instance per render, and a `.cws` appearing,
+disappearing or being rewritten changes the answer to both questions at once.
+
+### The technology gate is the constraint that shapes the feature
+
+`ExternalWorkspaceGate`. Asked twice, at two granularities, because the two gestures know different things:
+`File ▸ Reference Workspace…` compares the two workspaces' DEFAULT technologies (all either side has stated
+yet), and instance placement compares the host layout's ALREADY-RESOLVED `.ctech` — the renderer's own
+answer, not a second derivation — against the external cell's own. Two workspaces with no default between
+them are permitted: that is the schematic-only case, and refusing it would make the reference impossible to
+create in exactly the situation where it can do no harm.
+
+**Asked whether R-mw2-7's same-technology restriction is too strict in practice: on the fixtures reachable
+here, no — but the measurement is weaker than the question deserves.** Both shipped starter technologies
+use layer keys (1,0)–(8,0), so the collision the gate exists to prevent is not hypothetical; and any two
+projects sharing a process share a `.ctech` file, which is the ordinary case and passes. What is NOT
+covered is two workspaces holding byte-identical COPIES of one technology at different paths: the gate
+compares resolved absolute paths, so it refuses them, and a user who copied a `.ctech` beside each project
+rather than sharing one will hit that. Comparing content instead would trade a false refusal for a false
+permit whenever two files agree today and diverge tomorrow, so the path comparison stands — but this is the
+decision most likely to need revisiting, and it should be revisited on a real two-project workspace pair
+rather than on the fixtures here.
+
+### §6 — the two defects that were the price of admission
+
+**`RewriteCellReferences` matched the LAST PATH SEGMENT.** This was documented, not undiscovered: §4.1
+states it deliberately and names its own consequence. External references took it from bounded to
+corrupting, and worse than the brief expected — on a platform whose separator is `/`,
+`Path.GetDirectoryName("ws://A/Amp")` collapses the scheme, so renaming a same-named cell rewrote the
+external reference to **`ws:/A/Preamp`**: not merely pointing at the wrong cell but malformed, resolving to
+nothing and reading like a typo the user made. The gate test was written first and watched produce exactly
+that string against the old rule.
+
+It now takes the renamed cell's absolute path (it is called after `Directory.Move`, which is fine — a
+stored reference still SPELLS the old name, and path arithmetic needs no filesystem), resolves each
+`CellRef` against the file that holds it, and compares absolute paths. **It also takes the other OPEN
+workspaces** — not in the brief, and reported here as §10 asks: renaming a cell in A that B references
+would otherwise break B silently, which is the failure R-mw2-14 names for deletion arriving through the
+rename door.
+
+**`CountReferencingCells` enumerated one workspace**, so deleting a cell another workspace referenced
+reported "0 references". It now returns a `CellUsage` — the count plus which OTHER open workspaces hold a
+referrer — and the confirmation names them. When nothing is found it says *"No other open workspace
+references this cell"*, never "nothing references this": a referrer in a workspace nobody has open cannot
+be found, and the claim has to be scoped to what was actually searched.
+
+**A third thing §6 does not list, found while building it.** The Project Tree now renders each referenced
+workspace as its own sub-tree of cells — which means Rename Cell and Remove Cell can be invoked on a cell
+belonging to another project, from a window that is not showing it. Both now refuse
+(`OwnedByThisWorkspace`), using the same `IsOutside` test `brief-foreign-documents.md` already applies to a
+foreign document.
+
+### The archive dropped external references silently, and the alias is what makes the fix one line
+
+`DocumentFileRefs` recognises a reference by whether the string resolves to a **file that exists**, and a
+`CellRef` names a **directory** — so the scan never saw one, the dialog never offered it, and the recipient
+got an archive whose layouts referenced nothing. `ExternalCellArchive` walks each `ws://` reference the
+workspace's documents actually use, follows that cell's own hierarchy *inside its workspace*, and copies
+those folders at their **workspace-relative** offsets under `refs/<alias>/`, beside that workspace's `.cws`
+and default `.ctech`. Keeping the offsets is what lets each level's own relative `CellRef` resolve
+untouched; copying the spine is what keeps the alias pointing at a workspace — so the repoint is a single
+`ReferencedWorkspaces[].Path` rewrite rather than a rewrite of every document. That is R44's first reason
+paying for itself, in the one place it can be measured.
+
+The row is **ticked by default**, unlike a kit: a kit is the vendor's content and its bulk makes including
+it a judgement call, while these are the user's own design and an archive without them opens showing
+placeholders.
+
+### The CLI needed nothing, and the brief's premise for it was wrong
+
+R-mw2-18 assumed `circuitrf elab` would have to walk an alias. It cannot: `elab`/`sparam`/`hb` read a
+**`.cnl`**, and a `.cnl` carries every cell inline as a `define … end` block. **Extraction is where a cell
+reference is resolved and absorbed** — by the time a file exists for the CLI to read, there is no cell
+reference in it and no workspace to walk up to. Either extraction resolved the kit (the definition is in
+the `.cnl`) or it did not (and `NetExtractor` reported the conflict, identically in the GUI and headlessly).
+`tests/Ui.Tests/ExternalCellRefCliTests.cs` gates that the two elaborate to the same netlist. The
+**archive** is the portability case that actually needed work, and it is above.
+
+### Explicit non-goals, recorded so they are not read as oversights
+
+- **Per-instance technology.** §3's own instruction. It changes `CompileCell`'s signature and its caching,
+  makes DRC's meaning ambiguous, and makes one layout view mean two things at once.
+- **A raw `../../Other/cells/Amp` reference stays working and is never produced** (R-mw2-5). Breaking it
+  would break the LIBRARY case, which legitimately points outside the workspace.
+- **The other workspace's own libraries, known files and referenced workspaces are not rendered** under
+  its sub-tree. R-mw2-17's "sub-cells come along by reference" is about a cell's own hierarchy, not about
+  a second workspace's configuration, and following the latter would let a reference reach transitively
+  through a chain nobody chose.
+
+### Gate
+
+`tests/Ui.Tests/ExternalCellReferenceTests.cs` (15) and `ExternalCellRefCliTests.cs` (1). Every fixture
+builds two real workspaces on disk, because the whole feature is about the boundary between them and an
+in-memory double would agree with itself about a rule the filesystem is the authority on.
+
+---
+
+
 ## MW1 — multiple workspace windows: what actually blocked it, and the audit (2026-09-03)
 
 `docs/sonnet-briefs/brief-multi-workspace-1-windows.md`, built on `-0-overview.md`. Two or more

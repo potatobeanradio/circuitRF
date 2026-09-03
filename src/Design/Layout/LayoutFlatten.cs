@@ -154,6 +154,10 @@ public static class LayoutFlatten
     {
         if (string.IsNullOrEmpty(cellRef) || string.IsNullOrEmpty(fromDir) || string.IsNullOrEmpty(toDir))
             return cellRef;
+        // A ws:// reference does not MEAN anything relative to a directory — it is an alias plus a
+        // path inside the workspace that alias names — so rebasing it is both unnecessary and
+        // destructive. It survives a move within one workspace untouched (MW2 R-mw2-2).
+        if (Workspace.ExternalCellRef.IsExternalRef(cellRef)) return cellRef;
         try
         {
             string abs = Path.GetFullPath(Path.Combine(fromDir, cellRef));

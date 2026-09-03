@@ -3253,7 +3253,10 @@ public sealed partial class SchematicViewModel : ObservableObject
             return;
         }
 
-        cellRef = Path.GetRelativePath(EditModel.SchematicDirectory, cellAbsDir);
+        // MW2 R-mw2-2: ws://alias/… for a cell inside a referenced workspace, the relative path
+        // otherwise. The ghost that preceded this placement asked the same question of the same
+        // helper, so the two cannot disagree about which form the reference takes.
+        cellRef = ExternalCellRef.MakeCellRef(EditModel.SchematicDirectory, cellAbsDir);
 
         // Resolve the primary symbol to determine the render path.
         // Three-state: Resolved → proceed; NotFound → abort; PrimaryMissing → proceed with

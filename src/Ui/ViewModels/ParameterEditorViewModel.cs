@@ -1474,7 +1474,15 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// was actually placed. Derived from CellRef so it can never drift from what the canvas draws.
     /// </summary>
     private static string TypeDisplayNameFor(EditableComponent comp)
-        => comp.CellRef is { Length: > 0 } cr
-            ? System.IO.Path.GetFileName(cr.TrimEnd('/', '\\'))
-            : ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount);
+    {
+        if (comp.CellRef is not { Length: > 0 } cr)
+            return ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount);
+
+        // MW2 R-mw2-13: a cell from ANOTHER workspace names its source here, in the convention
+        // brief-foreign-documents.md R-fgn-7 set for title bars — "Amp — [RfFrontEnd]". The alias is
+        // taken from the reference itself rather than resolved, so this stays a string operation on
+        // a dialog's header and says the same thing whether or not the reference currently resolves.
+        string name = System.IO.Path.GetFileName(cr.TrimEnd('/', '\\'));
+        return ExternalCellRef.TryParse(cr, out string alias, out _) ? $"{name} — [{alias}]" : name;
+    }
 }

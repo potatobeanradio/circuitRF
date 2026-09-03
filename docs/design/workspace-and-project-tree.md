@@ -1,7 +1,7 @@
 # circuitRF — Workspace & Project Tree Design
 
 **Status:** Steps 1–7 done · project-tree arc complete · §5A added · §1.2.1 attachments added 2026-08-17 ·
-**§5B / §5C added 2026-09-03 (design only — not built)** ·
+**§5B / §5C added AND built 2026-09-03** ·
 **Date:** 2026-09-03 · **Phase:** 6g (post-symbol-editor)
 
 Specifies the **workspace model** (filesystem structure), the **Project Tree** (the tree view that reads it),
@@ -388,14 +388,24 @@ a move would have to settle first, both of which folders make reachable for the 
 - **What else points at a cell** beyond `.csch`/`.clay` `CellRef`s — `.cws` entries, `.cdd` datasets, wBond
   links — each of which the rename path handles separately today.
 
-**§5C changes the first of those two, and forces the change rather than merely enabling it**
-*(recorded 2026-09-03; specified by `brief-multi-workspace-2-external-cell-refs.md` R-mw2-15)*. Once a
-`ws://Other/cells/Amp` reference can exist, the last-segment match is no longer a bounded risk between two
+**§5C changed the first of those two, and forced the change rather than merely enabling it**
+*(built 2026-09-03; `brief-multi-workspace-2-external-cell-refs.md` R-mw2-15)*. Once a
+`ws://Other/cells/Amp` reference can exist, the last-segment match stops being a bounded risk between two
 same-named cells the user owns — it silently repoints a reference into a workspace the rename had no
-business touching. So the rewriter must resolve each `CellRef` (alias-expanded) and compare **absolute
-paths**, which `CellUsageScanner.FileReferencesTarget` already does correctly in the same file for the
-*counting* path. That closes the same-named-cells blocker above; **the path-prefix blocker is untouched**,
-so an in-tree move remains deferred for the reason that survives (§9).
+business touching, and the reference it produces is not merely wrong but malformed: on a platform whose
+separator is `/`, `Path.GetDirectoryName("ws://A/Amp")` collapses the scheme to `ws:/A`, so the rewrite
+yields `ws:/A/Preamp`, which resolves to nothing and reads like a typo the user made.
+
+**`RewriteCellReferences` now takes the renamed cell's absolute path, not its name**, resolves each stored
+`CellRef` (alias-expanded) against the file that holds it, and compares absolute paths — the rule
+`CellUsageScanner`'s *counting* path already used correctly in the same file. It is called after
+`Directory.Move`, so the old folder no longer exists; that is fine and is the point, since a stored
+reference still SPELLS the old name and path arithmetic needs no filesystem. It also takes the other OPEN
+workspaces, so a reference that genuinely names the renamed cell from another workspace is repaired in the
+same pass rather than left dangling.
+
+**That closes the same-named-cells blocker above; the path-prefix blocker is untouched**, so an in-tree
+move remains deferred for the reason that survives (§9).
 
 So: an in-tree move is a real feature with a real design, and until it is built, a moved cell reports itself
 the way any other Finder edit does — the referencing view shows "Not Found" until it is re-pointed (§4.2),
@@ -580,8 +590,10 @@ different things and neither implies the other:
 
 ## 5B. Multiple open workspaces (one window each)
 
-**Status:** design · specified by `docs/sonnet-briefs/brief-multi-workspace-0-overview.md` and
-`-1-windows.md` · **not built** *(added 2026-09-03)*.
+**Status:** BUILT 2026-09-03 · `docs/sonnet-briefs/brief-multi-workspace-0-overview.md` and
+`-1-windows.md` · the per-window/per-process boundary §5B.2 records is also §5A of
+`ui-architecture.md` *(the status line was left saying "not built" when MW1 landed; corrected while
+building §5C, which depends on R41/R42)*.
 
 More than one workspace open at once, each in its own window, so two designs can be viewed and inspected
 side by side. §5A already made the *file* case deliberate; this makes the *workspace* case deliberate.
@@ -652,8 +664,8 @@ designed.
 
 ## 5C. External cell references (instancing a cell from another workspace)
 
-**Status:** design · specified by `docs/sonnet-briefs/brief-multi-workspace-2-external-cell-refs.md` ·
-**not built** · supersedes the deferral in R37 *(added 2026-09-03)*.
+**Status:** BUILT 2026-09-03 · `docs/sonnet-briefs/brief-multi-workspace-2-external-cell-refs.md` ·
+supersedes the deferral in R37 *(specified 2026-09-03, built the same day)*.
 
 A design in workspace **B** instances a cell that lives in workspace **A**, by reference — A's cell stays
 the single copy, and B sees changes to it.
@@ -688,6 +700,24 @@ same way any workspace-relative path already is. One convention, not a second.
 §4's resolution constrains a relative path to the workspace — and it will go on resolving, because breaking
 it would help nobody. But circuitRF never *writes* one, and it is not a documented feature. Blessing it
 would create exactly the second convention R37 warned against.
+
+**R44a. There are exactly two ways one comes into existence** *(built 2026-09-03)*: **`File ▸ Reference
+Workspace…`**, which picks the other workspace's `.cws`, applies §5C.2's check BEFORE writing anything, and
+names the alias (defaulting to that workspace's folder name); and MW3's drag-drop gesture, which reuses an
+existing alias for the same target rather than adding a second one — two aliases for one workspace would
+make the same cell reachable under two names, and a repair would then have to guess which.
+
+**The palette and every existing placement path stay workspace-scoped.** An external reference is a
+deliberate act, never something a user arrives at by not noticing. The tree renders each referenced
+workspace as its own sub-tree of cells (§3.1's library shape), and a cell placed from there gets the alias
+form because `ExternalCellRef.MakeCellRef` — the ONE producing rule, which every placement site now calls
+instead of `Path.GetRelativePath` — returns it only for a cell inside a workspace this one references. A
+cell in a referenced **library** keeps its relative path: a library is not a workspace.
+
+**Cells shown from a referenced workspace are not this workspace's to change.** Rename Cell and Remove Cell
+refuse on one, by the same `IsOutside` test §5A already applies to a foreign document — otherwise a window
+that is not showing another project could rename a cell inside it and break every other workspace that
+references it.
 
 ### 5C.2 Technology — the constraint that shapes the feature
 
@@ -745,14 +775,33 @@ are part of building §5C, not follow-ups to it.
   must word its confirmation honestly: a referrer in a workspace that is not open cannot be found, so the
   prompt says *"no other open workspace references this"*, never *"nothing references this."*
 - **Workspace archive** — a reference is recognised by whether the string resolves to a **file**, and a
-  `CellRef` names a **directory**, so external references are invisible to the archive scan and the
-  recipient gets an archive referencing nothing. The scan must list them and the writer must bring the
-  referenced cell along and repoint the alias.
+  `CellRef` names a **directory**, so external references were invisible to the archive scan and the
+  recipient got an archive referencing nothing.
 
-**R52. Headless behaves identically, including the refusals.** A `.cnl` run has no other open workspace, so
-R49's "not open" state cannot arise — an alias must resolve from the target workspace's own `.cws` on disk
-by the same rules, or the run refuses with a sentence naming the workspace and the kit. Elaborating a
-design with a silently unresolved device is the failure this whole section exists to prevent.
+**R53. An archive carries the referenced CELLS and enough of the other workspace's spine for the alias to
+keep resolving** *(built 2026-09-03)*. `ExternalCellArchive` walks each `ws://` reference the workspace's
+documents actually use, follows that cell's own hierarchy inside its workspace (bounded there — a reference
+that leaves it is a chain nobody chose), and copies those cell folders at their own **workspace-relative**
+offsets under `refs/<alias>/`, beside that workspace's `.cws` and its default `.ctech`. Keeping the offsets
+is what lets each level's own relative `CellRef` go on resolving untouched (R48); copying the spine is what
+keeps the alias pointing at a *workspace*. **The repoint is then one line** — `ReferencedWorkspaces[].Path`
+in the referencing `.cws` — which is R44's first reason paying for itself. The row is **ticked by default**,
+unlike a kit: a kit is the vendor's content and its bulk makes including it a judgement call, while these
+are the user's own design and an archive without them opens showing placeholders. A `pdk://` reference
+inside a copied cell travels only as the kit row it already belongs to; there is no second kit-packaging
+path.
+
+**R52. Headless behaves identically, including the refusals** — and the way it does so turned out to be
+structural rather than new code *(corrected at build, 2026-09-03)*. The brief assumed the CLI would have to
+walk an alias itself. It does not, and cannot: `circuitrf elab`/`sparam`/`hb` read a **`.cnl`**, and a
+`.cnl` carries every cell inline as a `define … end` block (`CnlWriter.Write(tb, library)`). **Extraction is
+where a cell reference — external or not — is resolved and absorbed**, so by the time a file exists for the
+CLI to read there is no cell reference left in it and no workspace to walk up to. Either extraction resolved
+the kit, and the definition is in the `.cnl`; or it did not, and `NetExtractor` reported the conflict — the
+same conflict, in the same words, in the GUI and headlessly. The gate
+(`tests/Ui.Tests/ExternalCellRefCliTests.cs`) is that the two elaborate to the same netlist.
+
+An **archive** is the case that actually needed work here, and it is R53's.
 
 ---
 

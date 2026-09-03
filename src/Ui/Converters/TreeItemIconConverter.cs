@@ -26,6 +26,8 @@ public class TreeItemIconConverter : IValueConverter
                 NodeKind.Cell            => MaterialIconKind.IntegratedCircuitChip,
                 NodeKind.Library         => MaterialIconKind.BookOpenPageVariant,
                 NodeKind.LibrariesGroup  => MaterialIconKind.BookOpenPageVariant,
+                NodeKind.ReferencedWorkspace       => MaterialIconKind.FolderNetworkOutline,
+                NodeKind.ReferencedWorkspacesGroup => MaterialIconKind.FolderNetworkOutline,
                 NodeKind.CellViewFolder  => MaterialIconKind.FolderOutline,
                 NodeKind.ViewFile        => MaterialIconKind.FileOutline,
                 NodeKind.DataDisplayFile => MaterialIconKind.ChartLine,

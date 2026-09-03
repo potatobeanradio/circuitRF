@@ -86,6 +86,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.Cell,            false) => MaterialIconKind.IntegratedCircuitChip,
         (NodeKind.Library,         _)     => MaterialIconKind.BookOpenPageVariant,
         (NodeKind.LibrariesGroup,  _)     => MaterialIconKind.BookOpenPageVariant,
+        // MW2: a referenced WORKSPACE is not a library — it brings a technology, a kit set and a
+        // .cws of its own — so it gets its own glyph rather than borrowing the book.
+        (NodeKind.ReferencedWorkspace,      _) => MaterialIconKind.FolderNetworkOutline,
+        (NodeKind.ReferencedWorkspacesGroup,_) => MaterialIconKind.FolderNetworkOutline,
         (NodeKind.CellViewFolder,  _)     => MaterialIconKind.FolderOutline,
         (NodeKind.ViewFile,        _)     => MaterialIconKind.FileOutline,
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
@@ -706,6 +710,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.ViewFile        => f.Cells,
             NodeKind.Library         => f.Libraries,
             NodeKind.LibrariesGroup  => f.Libraries,
+            // A referenced workspace's cells are cells; the branch itself rides the Libraries
+            // toggle, which is the "things this workspace REACHES rather than contains" filter.
+            NodeKind.ReferencedWorkspace       => f.Libraries,
+            NodeKind.ReferencedWorkspacesGroup => f.Libraries,
             NodeKind.DataDisplayFile => f.DataDisplays,
             // A .charm is a results-facing document beside a .cdd — same toggle, no seventh checkbox.
             NodeKind.HarmonicaFile   => f.DataDisplays,

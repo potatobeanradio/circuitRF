@@ -341,6 +341,25 @@
                                 <Button Grid.Column="2" Content="Re-target…" Click="OnInstanceRetargetClick" FontSize="11" Padding="6,2"/>
                             </Grid>
 
+                            <!-- MW2 R-mw2-11/-12/-13: an external cell reference marks the CHROME and
+                                 says which of the three states it is in. A resolved one is marked too,
+                                 not only a broken one — seeing that a cell is not yours without having
+                                 to click is the whole safety story. The geometry is never tinted: layer
+                                 colours are literal user-authored values and the reference exists to
+                                 show them as they are. -->
+                            <Border IsVisible="{Binding HasExternalRef}"
+                                    BorderThickness="0,0,0,0" CornerRadius="3" Padding="6,4" Margin="0,2,0,2"
+                                    Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding ExternalRefNoticeText}" FontSize="11" TextWrapping="Wrap"
+                                               Classes.warn="{Binding ExternalRefIsProblem}"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ExternalRefRepairText}" FontSize="11" TextWrapping="Wrap"
+                                               IsVisible="{Binding ExternalRefIsProblem}"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                </StackPanel>
+                            </Border>
+
                             <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
                                 <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>

@@ -117,18 +117,12 @@ public static class CellSymbolResolver
             return SpiceModelSymbolProvider.Resolve(cellRef, baseDir);
 
         // 1. Resolve path. A cell reference is relative to the schematic's own directory, so an
-        //    unsaved schematic has nothing to resolve it against — NotFound, not a crash.
-        if (baseDir is null) return CellSymbolResolution.NotFoundResult;
-
-        string cellAbsDir;
-        try
-        {
-            cellAbsDir = Path.GetFullPath(Path.Combine(baseDir, cellRef));
-        }
-        catch
-        {
+        //    unsaved schematic has nothing to resolve it against — NotFound, not a crash. A ws://
+        //    reference is resolved through the referencing workspace's alias table instead (MW2
+        //    R-mw2-2); an alias the workspace does not declare, or one whose target has moved, comes
+        //    back null and lands on the same reported, repairable NotFound.
+        if (ExternalCellRef.ResolveCellDir(cellRef, baseDir) is not { } cellAbsDir)
             return CellSymbolResolution.NotFoundResult;
-        }
 
         if (!Directory.Exists(cellAbsDir))
             return CellSymbolResolution.NotFoundResult;
@@ -205,6 +199,14 @@ public static class CellSymbolResolver
         // A virtual reference is not a path and must never be taken apart as one.
         if (NeedsNoBaseDirectory(cellDirOrRef)) return Resolve(cellDirOrRef, null, workspaceRoot);
 
+        // A ws:// reference is not a path either, and it also cannot be resolved from here: it names
+        // an alias the REFERENCING DOCUMENT's workspace declares, and this overload is reached only
+        // from a palette tile or a drag ghost, which have no document. NotFound is the honest answer;
+        // splitting it with GetDirectoryName would produce "ws:/A" and report a path nobody wrote.
+        // Unreachable today — a tree drag carries the ABSOLUTE cell folder and the alias form is
+        // produced at the drop by ExternalCellRef.MakeCellRef — and guarded so it stays that way.
+        if (ExternalCellRef.IsExternalRef(cellDirOrRef)) return CellSymbolResolution.NotFoundResult;
+
         try
         {
             string trimmed = cellDirOrRef.TrimEnd('/', '\\');
@@ -246,8 +248,8 @@ public static class CellSymbolResolver
 
         try
         {
-            string cellAbsDir = Path.GetFullPath(Path.Combine(baseDir, cellRef));
-            string ccellPath  = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
+            if (ExternalCellRef.ResolveCellDir(cellRef, baseDir) is not { } cellAbsDir) return null;
+            string ccellPath = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
             return File.Exists(ccellPath) ? CellPersistence.LoadFromFile(ccellPath) : null;
         }
         catch

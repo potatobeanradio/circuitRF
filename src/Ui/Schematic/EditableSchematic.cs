@@ -902,6 +902,7 @@ public sealed class EditableComponent
             FullBbMaxX = fullMaxX, FullBbMaxY = fullMaxY,
             CellRefState     = cellRefState,
             CellRefPrimitives = cellRefPrimitives,
+            ExternalAlias    = ExternalCellRef.TryParse(CellRef, out string extAlias, out _) ? extAlias : null,
             InstanceSymbol   = instanceSymbol,
         };
     }

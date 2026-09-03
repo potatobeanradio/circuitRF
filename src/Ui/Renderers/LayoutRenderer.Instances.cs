@@ -656,6 +656,46 @@ public static partial class LayoutRenderer
             // skipped before it could ever look at the cell's own pin list.
             if (opts.ShowPCellPins && (subView.Pins.Count > 0 || subView.PCellOrigin is not null))
                 DrawPCellPinOverlay(canvas, inst, subView, tech, ps, scaleUm, opts.Theme, rows, cols);
+
+            // MW2 R-mw2-12/-13 — a RESOLVED external cell is marked too, not only a broken one: being
+            // able to see without clicking that a cell in this layout is not this workspace's own is
+            // the whole safety story for a reference. The mark is CHROME around the placement, never a
+            // tint on the geometry — layer colours are literal user-authored Rgba, and the reference
+            // exists to show the artwork exactly as its own tool does.
+            if (ExternalCellRef.TryParse(inst.CellRef, out string extAlias, out _))
+                DrawExternalInstanceChrome(canvas, extAlias, overallBbox, ps, scaleUm, opts.Theme, counters);
+        }
+    }
+
+    /// <summary>The dashed surround plus alias tag that marks a resolved external instance. Drawn
+    /// once per instance rather than once per array cell: the mark answers "whose cell is this",
+    /// which an array does not multiply.</summary>
+    private static void DrawExternalInstanceChrome(
+        SKCanvas canvas, string alias, Bbox overallBbox, PathSpace ps, double scaleUm,
+        LayoutRenderTheme theme, LayoutFrameCounters counters)
+    {
+        var rect = NormalizedRect(ps.X(overallBbox.MinX), ps.Y(overallBbox.MinY),
+                                  ps.X(overallBbox.MaxX), ps.Y(overallBbox.MaxY));
+
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
+            Color = theme.Selection.WithAlpha(150),
+            PathEffect = SKPathEffect.CreateDash([3f, 3f], 0),
+        };
+        canvas.DrawRect(rect, stroke);
+        counters.DrawCalls++;
+
+        using var font = new SKFont(LayoutTextOutline.ResolveTypeface(LabelFontStyle.Regular),
+                                    Math.Max(1f, DevicePixelsToPathSpace(scaleUm, 10.0)));
+        using var textPaint = new SKPaint { IsAntialias = true, Color = theme.Selection.WithAlpha(200) };
+        string label = $"[{alias}]";
+        if (font.MeasureText(label) < rect.Width * 2f)
+        {
+            canvas.DrawText(label, rect.Left, rect.Top - DevicePixelsToPathSpace(scaleUm, 2.0),
+                            SKTextAlign.Left, font, textPaint);
+            counters.DrawCalls++;
         }
     }
 
@@ -713,6 +753,12 @@ public static partial class LayoutRenderer
             InstanceResolutionState.DepthExceeded  => "Too Deep",
             _                                       => "Broken",
         };
+
+        // MW2 R-mw2-11: the same placeholder in the same colours, but naming the workspace it was
+        // supposed to come from — "Not Found" alone sends the user hunting through THIS workspace for
+        // a cell that never lived in it.
+        if (ExternalCellRef.TryParse(inst.CellRef, out string alias, out _))
+            label = $"[{alias}] {label}";
 
         using var strokePaint = new SKPaint
         {
