@@ -134,6 +134,61 @@ public sealed partial class LayoutEditorViewModel
     public string? SourceWorkspaceCwsPath
         => OwnAncestorWorkspaceRootDir is { } dir ? Path.Combine(dir, ".cws") : null;
 
+    // ── SL2: read-only (brief-shared-library-2-read-only-workspaces.md R-sl2-9) ─────
+
+    /// <summary>
+    /// R-sl2-4: true when this layout's own directory cannot be written — asked of the DOCUMENT's
+    /// directory, not of the open workspace, because a document open from a read-only library sits in
+    /// a workspace this window did not open at all. A scratch layout (no path yet) is never read-only.
+    ///
+    /// <para>R-sl2-8: this does NOT make the document un-editable. Reading a library cell and pulling
+    /// it about to understand it is a legitimate and common thing to do, and a file must not become
+    /// un-scrollable because it is un-writable. What changes is where the edits can land — Save As,
+    /// which §5A.3 already defines as the adopt gesture.</para>
+    /// </summary>
+    public bool IsDocumentReadOnly
+        => WorkspaceWritability.IsDocumentReadOnly(CurrentLayoutPath);
+
+    /// <summary>
+    /// R-sl2-9: the band is shown for a foreign document OR a read-only one. It is the same band —
+    /// §5A.4's three surfaces already say <i>this belongs to another workspace</i>, which is true and
+    /// is half the message; read-only is the other half and belongs in the same wording rather than in
+    /// a fourth surface or a second colour. §5A.4's "unusual-but-fine accent, never an error colour"
+    /// applies unchanged: a read-only library document is a normal, supported, desirable state.
+    /// </summary>
+    public bool ShowProvenanceBand => IsForeign || IsDocumentReadOnly;
+
+    /// <summary>
+    /// The band's "Open Workspace" affordance (§4 item 2) applies to the FOREIGN half only: offering
+    /// to open the workspace a document belongs to is meaningless when the file already belongs to the
+    /// one that is open and is merely unwritable, and it needs a <c>.cws</c> to open (a loose file
+    /// with no ancestor workspace is foreign to everything and has none).
+    /// </summary>
+    public bool CanOpenSourceWorkspace => IsForeign && SourceWorkspaceCwsPath is not null;
+
+    /// <summary>
+    /// R-sl2-9: the band's one sentence, covering both halves. Five cases, which is why this is a
+    /// property rather than five mutually-exclusive <c>IsVisible</c> bindings in the XAML: the two the
+    /// old two-TextBlock band expressed are both still here, and the three new ones are read-only with
+    /// no workspace, read-only AND foreign (the corporate-library case itself), and read-only but NOT
+    /// foreign — the whole open workspace being the share, which previously had no band at all.
+    /// </summary>
+    public string ProvenanceBandText
+    {
+        get
+        {
+            string? ws = SourceWorkspaceName;
+            if (!IsDocumentReadOnly)
+                return ws is null ? "Not part of any workspace" : $"From workspace: {ws}";
+
+            return ws is null
+                ? "Read-only — this file's folder cannot be written. Use Save As."
+                : IsForeign
+                    ? $"From workspace: {ws} — read-only. Use Save As to keep your edits."
+                    : $"'{ws}' is read-only — use Save As to keep your edits.";
+        }
+    }
+
     /// <summary>
     /// Resolves the workspace-default technology (as if <c>TechRef</c> were null) — set once by
     /// <c>WorkspaceViewModel</c> at document-open time, same seam as <see cref="WorkspaceTechDir"/>.

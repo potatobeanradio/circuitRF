@@ -193,6 +193,18 @@ public sealed partial class LayoutEditorViewModel
             return null;
         }
 
+        // SL2 R-sl2-10: the same pre-check as LayoutEditorViewModel.PCells.cs's edit path, and for
+        // the same reason — the catch below reports the GENERATOR's own output, which on a read-only
+        // workspace describes a directory failure in a sentence about artwork.
+        if (WorkspaceWritability.IsReadOnly(workspaceRoot))
+        {
+            _messageSink?.Error(
+                $"Can't place this component — '{Path.GetFileName(workspaceRoot)}' is read-only on " +
+                "this machine, and a generated PCell cell has to be written into the workspace. Save " +
+                "a copy of this layout into a workspace you can write, and place it there.");
+            return null;
+        }
+
         string cellDir;
         IReadOnlyList<string>? diagnostics;
         try

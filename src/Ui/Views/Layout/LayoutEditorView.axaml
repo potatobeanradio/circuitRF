@@ -78,22 +78,29 @@
              not belong to the currently open workspace, R-fgn-1: regardless of docked/torn-off) shows
              an amber strip naming its source workspace, with an affordance to switch to it. Amber, not
              red (R-fgn-7: a foreign document is a normal, supported state) — never tints the rendered
-             geometry, only this chrome band. -->
+             geometry, only this chrome band.
+
+             SL2 R-sl2-9: READ-ONLY is added to THIS band's wording rather than to a fourth surface or
+             a second colour. §5A.4's three surfaces already say "this belongs to another workspace",
+             which is true and is half the message; the other half is whether you can save to it. The
+             two text cases the band used to spell out in two TextBlocks are now one property
+             (ProvenanceBandText) because there are FIVE of them once read-only is a second dimension,
+             and five mutually-exclusive IsVisible bindings is a state machine expressed as visibility.
+             R-sl2-9 also keeps the accent unchanged: a read-only library document is a normal,
+             supported, DESIRABLE state, and red would mislabel the whole workflow. -->
         <Border DockPanel.Dock="Top"
-                IsVisible="{Binding IsForeign}"
+                IsVisible="{Binding ShowProvenanceBand}"
                 Background="{DynamicResource CrfForeignBandBrush}"
                 BorderBrush="{DynamicResource CrfForeignAccentBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="10,4">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11"
-                           Text="{Binding SourceWorkspaceName, StringFormat='From workspace: {0}'}"
-                           IsVisible="{Binding SourceWorkspaceName, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-                <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11"
-                           Text="Not part of any workspace"
-                           IsVisible="{Binding SourceWorkspaceName, Converter={x:Static ObjectConverters.IsNull}}"/>
+                           Text="{Binding ProvenanceBandText}"/>
+                <!-- Only for a FOREIGN document: "open the workspace this belongs to" is meaningless
+                     when the file already belongs to the one that is open and is merely unwritable. -->
                 <Button Grid.Column="1" Content="Open Workspace" FontSize="11" Padding="6,2"
-                        IsVisible="{Binding SourceWorkspaceCwsPath, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        IsVisible="{Binding CanOpenSourceWorkspace}"
                         Click="OnOpenSourceWorkspaceClick"/>
             </Grid>
         </Border>

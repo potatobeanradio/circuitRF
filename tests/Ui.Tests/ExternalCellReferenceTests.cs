@@ -430,6 +430,58 @@ public sealed class ExternalCellReferenceTests : IDisposable
         Assert.Contains("workspaceA", status.Repair);
     }
 
+    /// <summary>
+    /// SL2 R-sl2-12 / §5 item 5 — the direct test that R49's repair now WORKS, sitting beside the
+    /// <c>WorkspaceNotOpen</c> case above because it is that case's other half.
+    ///
+    /// <para><b>R49 is unchanged, and this is what makes obeying it free.</b> R49 refuses to mount
+    /// another workspace's kits without opening that workspace, for a reason that still holds — it
+    /// would make "which workspace is this part from" unanswerable. The problem was never that rule:
+    /// it was that "open it" implied "write to it", so on a locked-down corporate share the product
+    /// recommended a repair it could not carry out and reported the failure as a save error at an
+    /// unrelated moment. Once a workspace can be opened READ-ONLY, the repair costs a window and
+    /// nothing else, and needs no exception to R49.</para>
+    ///
+    /// <para>Kit resolution never consults writability, which is exactly the point: this test would
+    /// pass on the day SL2 was written, and it is here so that a later change which makes resolution
+    /// depend on a writable workspace fails loudly rather than quietly re-breaking the workflow. The
+    /// <c>.cws</c> byte assertion is the other half — opening A must leave A alone.</para>
+    /// </summary>
+    [Fact]
+    public void R_sl2_12_KitPartResolves_WhenItsWorkspaceIsOpenReadOnly()
+    {
+        BuildSharedTechFixture();
+        SaveSchematicWithRef(Path.Combine(_wsA, "Amp"), PdkKitRegistry.RefFor("KitOne", "P1"));
+
+        string cwsA = Path.Combine(_wsA, ".cws");
+        byte[] before = File.ReadAllBytes(cwsA);
+
+        // A is open — READ-ONLY. Opening a workspace is what mounts its kits (R42/R49); being
+        // unwritable changes nothing about that.
+        WorkspaceWritability.WritabilityProbe = dir =>
+            !dir.StartsWith(Path.GetFullPath(_wsA), StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            PdkKitRegistry.SetKit(_wsA, "KitOne", [MakePart("P1")]);
+
+            var status = ExternalCellStatusResolver.Classify(
+                ExternalCellRef.RefFor("A", "Amp"), Path.Combine(_wsB, "Board", "schematic"));
+            Assert.Equal(ExternalCellState.Resolved, status.State);
+
+            var res = CellSymbolResolver.Resolve(
+                PdkKitRegistry.RefFor("KitOne", "P1"),
+                CellFolder.SubFolderPath(Path.Combine(_wsA, "Amp"), ViewType.Schematic));
+            Assert.Equal(CellSymbolState.Resolved, res.State);
+
+            // R-sl2-5: and the read-only workspace was not written to on the way through.
+            Assert.Equal(before, File.ReadAllBytes(cwsA));
+        }
+        finally
+        {
+            WorkspaceWritability.WritabilityProbe = null;
+        }
+    }
+
     [Fact]
     public void R_mw2_10_KitPartInAnUnownedCell_IsNotFoundAndDoesNotThrow()
     {

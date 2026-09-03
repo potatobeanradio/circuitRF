@@ -101,7 +101,7 @@
                       Command="{Binding SaveAllDocumentsCommand}"
                       CommandParameter="{Binding $parent[Window]}"
                       InputGesture="Ctrl+S"
-                      ToolTip.Tip="Nothing to save.">
+                      ToolTip.Tip="{Binding SaveMenuTooltip}">
                 <MenuItem.Icon><mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/></MenuItem.Icon>
             </MenuItem>
             <MenuItem Header="Save Schematic _As…"

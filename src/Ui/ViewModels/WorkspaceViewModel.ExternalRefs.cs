@@ -143,7 +143,19 @@ public partial class WorkspaceViewModel
 
         cws.ReferencedWorkspaces.Add(new CwsWorkspaceRef { Alias = alias, Path = stored });
 
-        try { WorkspacePersistence.SaveToFileAtomic(cwsPath, cws); }
+        // SL2 R-sl2-6: one of the two write sites that has something better to say than silence. An
+        // alias the user has just typed is not convenience state about a session — it is the whole
+        // gesture, and it would be gone at the next open — so this one reads the choke point's
+        // answer and refuses out loud rather than appearing to succeed.
+        try
+        {
+            if (!WorkspacePersistence.SaveToFileAtomic(cwsPath, cws))
+            {
+                error = $"'{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' is read-only on this " +
+                        "machine, so the reference could not be recorded in its .cws.";
+                return false;
+            }
+        }
         catch (Exception ex) { error = $"Could not write this workspace's .cws: {ex.Message}"; return false; }
 
         // The alias table is memoised per workspace root and is asked per cell instance per render,

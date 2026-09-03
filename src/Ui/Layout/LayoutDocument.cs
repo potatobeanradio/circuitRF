@@ -255,6 +255,10 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
         OnPropertyChanged(nameof(IsForeign));
         OnPropertyChanged(nameof(SourceWorkspaceName));
         OnPropertyChanged(nameof(SourceWorkspaceCwsPath));
+        OnPropertyChanged(nameof(ShowProvenanceBand));
+        OnPropertyChanged(nameof(CanOpenSourceWorkspace));
+        OnPropertyChanged(nameof(ProvenanceBandText));
+        OnPropertyChanged(nameof(IsDocumentReadOnly));
         ActiveViewModelChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -354,6 +358,22 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     /// Null exactly when <see cref="SourceWorkspaceName"/> is null.</summary>
     public string? SourceWorkspaceCwsPath => ActiveViewModel.SourceWorkspaceCwsPath;
 
+    /// <summary>SL2 R-sl2-9: whether the provenance band is shown at all — foreign, read-only, or
+    /// both. See <see cref="LayoutEditorViewModel.ShowProvenanceBand"/>.</summary>
+    public bool ShowProvenanceBand => ActiveViewModel.ShowProvenanceBand;
+
+    /// <summary>SL2 R-sl2-9: whether the band's "Open Workspace" affordance applies. See
+    /// <see cref="LayoutEditorViewModel.CanOpenSourceWorkspace"/>.</summary>
+    public bool CanOpenSourceWorkspace => ActiveViewModel.CanOpenSourceWorkspace;
+
+    /// <summary>SL2 R-sl2-9: the band's one sentence, covering foreignness and read-only-ness together
+    /// rather than in two surfaces. See <see cref="LayoutEditorViewModel.ProvenanceBandText"/>.</summary>
+    public string ProvenanceBandText => ActiveViewModel.ProvenanceBandText;
+
+    /// <summary>SL2 R-sl2-7: true when this document's own directory cannot be written, so Save is
+    /// disabled and Save As is offered in its place.</summary>
+    public bool IsDocumentReadOnly => ActiveViewModel.IsDocumentReadOnly;
+
     /// <summary>
     /// Re-raises <see cref="IsForeign"/>/<see cref="SourceWorkspaceName"/>/<see cref="SourceWorkspaceCwsPath"/>/
     /// <see cref="Title"/> change notifications. Call after the CURRENTLY open workspace changes — those
@@ -365,6 +385,10 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
         OnPropertyChanged(nameof(IsForeign));
         OnPropertyChanged(nameof(SourceWorkspaceName));
         OnPropertyChanged(nameof(SourceWorkspaceCwsPath));
+        OnPropertyChanged(nameof(ShowProvenanceBand));
+        OnPropertyChanged(nameof(CanOpenSourceWorkspace));
+        OnPropertyChanged(nameof(ProvenanceBandText));
+        OnPropertyChanged(nameof(IsDocumentReadOnly));
         UpdateTitle();
     }
 

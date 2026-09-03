@@ -127,6 +127,21 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
+        // SL2 R-sl2-10: ask BEFORE calling GetOrCreate, because the catch below cannot tell the two
+        // apart and gets it wrong in the way that costs the most. GetOrCreate's first act is
+        // Directory.CreateDirectory under the DOCUMENT's own workspace root — the correct root, and
+        // on a read-only library an unwritable one — so the throw arrives at a catch whose whole
+        // sentence blames the PARAMETERS. The generator was fine; the directory was not, and a user
+        // told the parameters are wrong will spend the afternoon on the parameters.
+        if (WorkspaceWritability.IsReadOnly(workspaceRoot))
+        {
+            _messageSink?.Error(
+                $"'{Path.GetFileName(workspaceRoot)}' is read-only on this machine, so a generated " +
+                "cell cannot be written into it and the parameters are unchanged. Save a copy of this " +
+                "layout into a workspace you can write, and edit it there.");
+            return false;
+        }
+
         var merged = new Dictionary<string, PCellValue>(origin.Parameters);
         foreach (var kv in newParameters) merged[kv.Key] = kv.Value;
 

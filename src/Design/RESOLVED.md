@@ -1,5 +1,44 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## Writability is DISCOVERED, and `.cws` writes now have a choke point (2026-09-03)
+
+`brief-shared-library-2-read-only-workspaces.md` R-sl2-1/-2/-3/-6. Two changes here; the behaviour that
+hangs off them is in `src/Ui/RESOLVED.md`.
+
+**`WorkspaceWritability` sits beside `WorkspaceRootFinder`, not in `src/Ui`,** for the ordinary reason:
+`src/Cli` writes workspaces too and cannot reference Avalonia. It answers "can a file be created in this
+directory?" by creating one and deleting it. `File.GetAttributes` reports the DOS read-only bit and says
+nothing about a share ACL, a POSIX mode or a read-only mount option; `Directory.Exists` says nothing at
+all. **The only portable answer is to try**, which is why there is no cheaper implementation waiting to
+replace this one.
+
+Its memo is dropped by `WorkspaceRootFinder.InvalidateCache` rather than on a lifecycle of its own —
+that call already drops the ancestor walk-up and `ExternalCellRef`'s alias table, and a third memo that
+had to be invalidated separately would be the one that went stale.
+
+**`WorkspacePersistence.SaveToFileAtomic` returns `bool` and is now the guard.** It skips the write and
+returns `false` when the containing directory is unwritable. The guard is at the LOWEST level on purpose:
+there were fifteen call sites and no choke point (reads have had one — `TryLoadCws` — since the
+beginning), and a rule fifteen callers have to remember is a rule that is true in fourteen places. A
+sixteenth site inherits it without knowing the rule exists.
+
+**A trap for anyone adding a `.cws` writer:** `SaveToFile` (non-atomic) is still public and is NOT
+guarded — it exists for test fixtures and for the doc-fixture generator, which build throwaway workspaces
+under a scratch directory. Production code must use `SaveToFileAtomic`;
+`ReadOnlyWorkspaceTests.EveryCwsWriteInProductionCodeGoesThroughTheChokePoint` is what says so.
+
+**`FileOptions.DeleteOnClose` is not a crash guarantee on Unix — measured.** It is a kernel flag on
+Windows; on Unix .NET emulates it by unlinking at handle close, and a `SIGKILL` closes no handles, so
+a process killed mid-probe leaves the file. `Probe` therefore sweeps stale `.crf-write-probe-*` files
+(age cut-off five minutes, so a concurrent probe is never touched) rather than trusting the flag. It
+matters because the project tree hides only `.DS_Store` and `*.source`, not dotfiles generally.
+
+**A second trap, in the probe's failure mode:** `AtomicFile.WriteAllText` has never created the target
+directory, so a `.cws` write into a directory that does not exist used to throw. It now returns `false`
+silently instead, because a probe of a non-existent directory answers "read-only" — the same answer, for
+the same underlying reason, delivered quietly. A caller that depended on the exception must check the
+return value.
+
 ## `${NAME}` in a stored cross-workspace path, and why it lives here (2026-09-03)
 
 `brief-shared-library-1-reaching-the-library.md` R-sl1-5/-8. `PathTokens` expands `${NAME}` from the

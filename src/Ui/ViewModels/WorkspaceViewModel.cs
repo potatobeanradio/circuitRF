@@ -1256,6 +1256,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        // SL2 R-sl2-13: refuse HERE, naming the directory, rather than part-way through creating the
+        // workspace. The steps below create the folder, then a tech/ folder, then the .ctech, then
+        // the .cws — so discovering the parent is unwritable at any of them leaves a half-made
+        // workspace to clean up, and reports it as a file error about whichever step happened to be
+        // first to fail.
+        if (UnwritableParentRefusal(result.ParentDir, "The workspace was not created") is { } refusal)
+        {
+            Messages.Error(refusal);
+            return;
+        }
+
         var cwsPath = Path.Combine(workspaceDir, ".cws");
 
         try
@@ -1464,7 +1475,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         });
 
         if (result is null) return;
-        CurrentWorkspacePath = result.Path.LocalPath;
+
+        // SL2 R-sl2-13: refuse at the picker rather than accepting the path, adopting it as
+        // CurrentWorkspacePath, and then writing nothing — the choke point (R-sl2-6) would skip the
+        // write silently and correctly, leaving the shell pointed at a workspace that does not exist.
+        string picked = result.Path.LocalPath;
+        if (UnwritableParentRefusal(Path.GetDirectoryName(picked), "The workspace was not saved") is { } refusal)
+        {
+            Messages.Error(refusal);
+            return;
+        }
+
+        CurrentWorkspacePath = picked;
         WriteWorkspaceFile(CurrentWorkspacePath);
     }
 
@@ -1598,7 +1620,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     // silent = true suppresses the "Saved: …" message (used on debounce tick + clean exit).
-    private void WriteWorkspaceFile(string path, bool silent = false)
+    // internal (not private) so SL2's gate can drive the whole session-state assembly — the dock
+    // layout, the tree view state, the open-document list, the active document, the colour scheme,
+    // which is R-sl2-5's list in full — against a read-only workspace and assert the .cws bytes.
+    internal void WriteWorkspaceFile(string path, bool silent = false)
     {
         try
         {
@@ -1735,7 +1760,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 ws.ActiveDocumentPath = activePath;
             }
 
-            WorkspacePersistence.SaveToFileAtomic(path, ws);
+            // SL2 R-sl2-5/-6: the choke point returns false when the workspace is read-only and it
+            // wrote nothing. Everything this method assembles — the dock arrangement, the tree view
+            // state, the open-document list, the active document, the colour scheme — is convenience
+            // state about a session, so there is nothing to warn about; what there IS is a "Saved"
+            // line that would be a lie, and the explicit Save gesture (silent: false) deserves an
+            // answer rather than silence.
+            if (!WorkspacePersistence.SaveToFileAtomic(path, ws))
+            {
+                if (!silent)
+                    Messages.Info(
+                        $"'{Path.GetFileName(Path.GetDirectoryName(path))}' is read-only on this " +
+                        "machine, so this session's window layout and open tabs were not recorded " +
+                        "into it. Your documents are unaffected.");
+                return;
+            }
+
             if (!silent)
                 Messages.Success("Saved", path);
         }
@@ -1854,6 +1894,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void DeleteGeneratedCellsFolder(string cwsPath)
     {
         if (!GeneratedCellsLifecycle.WipeOnOpenAndClose) return;
+        // SL2 R-sl2-5: a read-only workspace writes nothing, and `.generated-cells` is named in that
+        // list explicitly. Skipping the wipe is also what makes a read-only library WORK rather than
+        // merely not-fail: the librarian's committed generated cells stay on disk and resolve, which
+        // is the only way they can, since nothing on this machine can regenerate them there.
+        if (WorkspaceWritability.IsReadOnly(Path.GetDirectoryName(cwsPath))) return;
 
         try { GeneratedCellsLifecycle.DeleteGeneratedCellsFolder(Path.GetDirectoryName(cwsPath)!); }
         catch (Exception ex) { Messages.Warning($"Could not clear the generated-cell cache: {ex.Message}"); }
@@ -1863,6 +1908,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// a small memoized <c>.ctech</c> loader as the technology resolver.</summary>
     private void RegenerateAllGeneratedCells(string cwsPath, IReadOnlySet<string>? skipPaths = null)
     {
+        // SL2 R-sl2-5, paired with DeleteGeneratedCellsFolder above: regeneration writes cell folders
+        // AND rewrites the .clay files whose instances it repoints. On a read-only workspace every one
+        // of those fails, and the Report callback below would turn that into one warning per distinct
+        // generator — a flood describing a single fact the open message has already stated once.
+        if (WorkspaceWritability.IsReadOnly(Path.GetDirectoryName(cwsPath))) return;
+
         var techCache = new Dictionary<string, Technology?>(StringComparer.OrdinalIgnoreCase);
         Technology? ResolveTech(string? techIdentity)
         {
@@ -2003,12 +2054,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         PushRecent(cwsPath);
         Messages.Clear();
         Messages.Info("Opened", cwsPath);
+        // SL2 R-sl2-11: an unwritable workspace OPENS — it is never refused — and says so once, here,
+        // where it reads as part of the open rather than as an interruption later.
+        ReportWorkspaceReadOnlyIfNeeded(cwsPath);
 
         ApplyRestoredDockLayout(dockLayoutRead);
 
         // R-res-11 — migrate any results/<key>/run.npy directories left from the earlier layout to
         // the flat results/<key>.npy one, reporting what moved. Cheap no-op on an already-flat workspace.
-        RunResultsWriter.MigrateOldLayout(Path.Combine(workspaceDir, "results"), Messages);
+        // SL2 R-sl2-5: this MOVES directories inside the workspace. Nothing about a read-only share
+        // needs migrating, since nothing on this machine put anything there.
+        if (!WorkspaceWritability.IsReadOnly(workspaceDir))
+            RunResultsWriter.MigrateOldLayout(Path.Combine(workspaceDir, "results"), Messages);
     }
 
     /// <summary>
@@ -4150,7 +4207,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 {
                     var latest = TryLoadCws(CurrentWorkspacePath!);
                     latest.PdkRefs = refs;
-                    WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, latest);
+                    // SL2 R-sl2-6: the second site with something better to say than silence — see
+                    // WorkspaceViewModel.ExternalRefs.cs. A kit reference the user has just repaired
+                    // by hand is the gesture itself, not session state, and it would be gone at the
+                    // next open.
+                    if (!WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, latest))
+                        Messages.Info(
+                            $"'{Path.GetFileName(Path.GetDirectoryName(CurrentWorkspacePath!))}' is " +
+                            "read-only on this machine, so this kit change applies to the open session " +
+                            "only and will not be there next time.");
                 }
                 catch (Exception ex)
                 {
@@ -11447,6 +11512,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
+        RefreshReadOnlyMenuState(); // SL2 R-sl2-7: the Save item's tooltip changes with it
 
         // File ▸ Close Window is enabled only when there IS an active document to close, so it rides
         // BOTH fan-outs (this one for the shell's own tab changes, RaiseFileMenuEnablementChanged for
@@ -11697,6 +11763,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveLooseLayoutCommand.NotifyCanExecuteChanged();
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
+        RefreshReadOnlyMenuState(); // SL2 R-sl2-7: the Save item's tooltip changes with it
         CloseWindowCommand.NotifyCanExecuteChanged();
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
@@ -12082,16 +12149,29 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// enabled/disabled APPEARANCE can lag until the next refresh point (tab switch, window focus
     /// change, or a completed save), which is the deliberate, narrower scope of this gate.
     /// </summary>
-    private bool CanSaveAllDocuments() => ResolveActiveDocumentForCommands() switch
+    private bool CanSaveAllDocuments()
     {
-        DataDisplayDocument dd   => dd.ViewModel.Window.HasUnsavedChanges(),
-        SchematicDocument sd     => sd.IsDirty,
-        SymbolEditorDocument syd => syd.IsDirty,
-        LayoutDocument ld        => ld.IsDirty,
-        TechDocument td          => td.IsDirty,
-        EmSetupDocument emd   => emd.IsDirty,
-        _                        => HasAnyDirtyWork(),
-    };
+        var active = ResolveActiveDocumentForCommands();
+
+        // SL2 R-sl2-7: Save is DISABLED on a read-only document, and Save As is offered in its place
+        // — disabled before the edit, not refused after it. This is the one case §5A.3's "fully
+        // editable and saveable to their own path" never had to consider: that rule was written for a
+        // colleague's file on your own disk, where Save really does succeed, and it is unchanged for
+        // every writable case. The menu item's tooltip states the reason
+        // (ActiveDocumentReadOnlyReason), so the greyed-out item is not a mystery.
+        if (IsDocumentReadOnly(active)) return false;
+
+        return active switch
+        {
+            DataDisplayDocument dd   => dd.ViewModel.Window.HasUnsavedChanges(),
+            SchematicDocument sd     => sd.IsDirty,
+            SymbolEditorDocument syd => syd.IsDirty,
+            LayoutDocument ld        => ld.IsDirty,
+            TechDocument td          => td.IsDirty,
+            EmSetupDocument emd   => emd.IsDirty,
+            _                        => HasAnyDirtyWork(),
+        };
+    }
 
     /// <summary>
     /// Routes ⌘S/Ctrl+S.  When a document tab is active (SingleDoc scope) saves only that
@@ -12199,29 +12279,45 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
 
             // AllDocs scope: save every dirty document.
+            //
+            // SL2 R-sl2-7/-8: a READ-ONLY document is excluded from every list below and reported
+            // instead. Save All is a SWEEP, not a per-document act, so the quit prompt's Save-As
+            // route is the wrong answer here — it would open one picker per read-only document, in a
+            // gesture the user made to avoid dialogs. Skipping loses nothing: the document stays open
+            // and stays dirty, and Save As on it (the route the message names) is one gesture away.
+            var readOnlyDirty = new List<IDockable>();
+            List<T> Writable<T>(IEnumerable<T> docs) where T : IDockable
+            {
+                var kept = new List<T>();
+                foreach (var d in docs)
+                {
+                    if (IsDocumentReadOnly(d)) readOnlyDirty.Add(d);
+                    else kept.Add(d);
+                }
+                return kept;
+            }
+
             var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
-            var dirtyMaterialized = _openDocsByPath.Values
+            var dirtyMaterialized = Writable(_openDocsByPath.Values
                 .OfType<SchematicDocument>()
-                .Where(d => d.IsDirty && !d.IsScratch)
-                .ToList();
+                .Where(d => d.IsDirty && !d.IsScratch));
             var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
-            var dirtyMaterializedSymbols = _openDocsByPath.Values
+            var dirtyMaterializedSymbols = Writable(_openDocsByPath.Values
                 .OfType<SymbolEditorDocument>()
-                .Where(d => d.IsDirty && !d.IsScratch)
-                .ToList();
+                .Where(d => d.IsDirty && !d.IsScratch));
             var dirtyScratchLayouts = _scratchLayouts.Where(d => d.IsDirty).ToList();
-            var dirtyMaterializedLayouts = _openDocsByPath.Values
+            var dirtyMaterializedLayouts = Writable(_openDocsByPath.Values
                 .OfType<LayoutDocument>()
-                .Where(d => d.IsDirty && !d.IsScratch)
-                .ToList();
-            var dirtyTechDocs = _openDocsByPath.Values
+                .Where(d => d.IsDirty && !d.IsScratch));
+            var dirtyTechDocs = Writable(_openDocsByPath.Values
                 .OfType<TechDocument>()
-                .Where(d => d.IsDirty)
-                .ToList();
-            var dirtyEmDocs = _openDocsByPath.Values
+                .Where(d => d.IsDirty));
+            var dirtyEmDocs = Writable(_openDocsByPath.Values
                 .OfType<EmSetupDocument>()
-                .Where(d => d.IsDirty)
-                .ToList();
+                .Where(d => d.IsDirty));
+
+            foreach (var skipped in readOnlyDirty)
+                ReportReadOnlySaveAsRoute(skipped, sweep: true);
 
             bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
                          || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
@@ -12229,7 +12325,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                          || dirtyTechDocs.Count > 0 || dirtyEmDocs.Count > 0;
             if (!anyDirty)
             {
-                Messages.Info("Nothing to save.");
+                // "Nothing to save" would be a lie when the only dirty work was read-only — the
+                // per-document messages above have already said what actually happened.
+                if (readOnlyDirty.Count == 0) Messages.Info("Nothing to save.");
                 return;
             }
 
@@ -12348,6 +12446,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var existingWsDir = CurrentWorkspacePath is not null
             ? Path.GetDirectoryName(CurrentWorkspacePath)
             : null;
+
+        // SL2 R-sl2-13: SavePlanExecutor runs AFTER a plan the user has already confirmed, and it
+        // creates the workspace folder and its .cws before it creates any cell — so an unwritable
+        // parent discovered inside the executor means a confirmed plan that cannot be carried out and
+        // a partially-created workspace to clean up. Ask before starting.
+        string? targetParent = plan.WorkspaceStep is { } step ? step.ParentDir : existingWsDir;
+        if (UnwritableParentRefusal(targetParent, "Nothing was saved") is { } refusal)
+        {
+            Messages.Error(refusal);
+            return;
+        }
 
         IReadOnlyList<string> written;
         try
@@ -12535,8 +12644,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     if (confirmed is null) return false; // plan cancelled → abort
                     ExecuteSavePlan(confirmed);
                 }
-                // Materialized dirty schematics → direct write.
-                foreach (var doc in dirtyMat)
+                // Materialized dirty schematics → direct write, EXCEPT the read-only ones, which
+                // SL2 R-sl2-8 routes through Save As: offering a Save that cannot succeed at the one
+                // moment the user is trying to close is how a session's work gets lost, and the quit
+                // prompt is exactly where that costs the most.
+                foreach (var doc in dirtyMat.Where(IsDocumentReadOnly).ToList())
+                {
+                    ReportReadOnlySaveAsRoute(doc);
+                    await SaveSchematicAs(doc, owner);
+                }
+                foreach (var doc in dirtyMat.Where(d => !IsDocumentReadOnly(d)))
                 {
                     if (doc.FilePath is null) continue;
                     try
@@ -12570,15 +12687,37 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Scratch symbols → per-doc offer dialog (same as AllDocs scope).
                 foreach (var symDoc in dirtyScratchSymbols)
                     await SaveScratchSymbol(symDoc, owner);
-                // Materialized dirty symbols → write directly via VM.
+                // Materialized dirty symbols → write directly via VM; read-only ones via Save As
+                // (R-sl2-8, same reasoning as the schematics above).
                 foreach (var symDoc in dirtyMatSymbols)
-                    await SaveMaterializedSymbolDoc(symDoc, owner);
+                {
+                    if (IsDocumentReadOnly(symDoc))
+                    {
+                        ReportReadOnlySaveAsRoute(symDoc);
+                        await SaveSymbolAs(symDoc, owner);
+                    }
+                    else
+                    {
+                        await SaveMaterializedSymbolDoc(symDoc, owner);
+                    }
+                }
                 // Scratch layouts → per-doc offer dialog (same as AllDocs scope).
                 foreach (var layDoc in dirtyScratchLayouts)
                     await SaveScratchLayout(layDoc, owner);
-                // Materialized dirty layouts → write directly via VM.
+                // Materialized dirty layouts → write directly via VM; read-only ones via Save As
+                // (R-sl2-8, same reasoning as the schematics above).
                 foreach (var layDoc in dirtyMatLayouts)
-                    await SaveMaterializedLayoutDoc(layDoc, owner);
+                {
+                    if (IsDocumentReadOnly(layDoc))
+                    {
+                        ReportReadOnlySaveAsRoute(layDoc);
+                        await SaveLayoutAs(layDoc, owner);
+                    }
+                    else
+                    {
+                        await SaveMaterializedLayoutDoc(layDoc, owner);
+                    }
+                }
                 // Orphaned dirty layout sessions (no open tab) → write directly.
                 foreach (var sessionPath in dirtyOrphanedLayoutSessions)
                 {
@@ -12807,6 +12946,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        await SaveSchematicAs(doc, window);
+    }
+
+    /// <summary>
+    /// The per-document half of <see cref="SaveLooseSchematic"/>, split out so SL2 R-sl2-8 can offer
+    /// exactly this route for a READ-ONLY schematic at the quit prompt — where there is no "active"
+    /// document and each dirty one has to be routed on its own.
+    /// </summary>
+    private async Task SaveSchematicAs(SchematicDocument doc, Window window)
+    {
         if (CurrentWorkspacePath is not null)
             await SaveLooseToWorkspace(doc, window);
         else
@@ -12994,6 +13143,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        await SaveLayoutAs(doc, window);
+    }
+
+    /// <summary>
+    /// The per-document half of <see cref="SaveLooseLayout"/>, split out for SL2 R-sl2-8's quit-prompt
+    /// route (see <see cref="SaveSchematicAs"/> for why).
+    /// </summary>
+    private async Task SaveLayoutAs(LayoutDocument doc, Window window)
+    {
         if (doc.IsScratch)
         {
             await SaveScratchLayoutAsFile(doc, window);
@@ -13208,6 +13366,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        await SaveSymbolAs(doc, window);
+    }
+
+    /// <summary>
+    /// The per-document half of <see cref="SaveLooseSymbol"/>, split out for SL2 R-sl2-8's quit-prompt
+    /// route (see <see cref="SaveSchematicAs"/> for why).
+    /// </summary>
+    private async Task SaveSymbolAs(SymbolEditorDocument doc, Window window)
+    {
         if (doc.IsScratch)
         {
             await SaveScratchSymbolAsFile(doc, window);

@@ -330,9 +330,35 @@ public static class WorkspacePersistence
     /// <summary>
     /// Atomic write: serializes to a temp file then renames over the target.
     /// A crash mid-write leaves the old file intact (never a half-written .cws).
+    ///
+    /// <para><b>SL2 R-sl2-5/-6: this is the choke point, and it is the choke point precisely because
+    /// it is the LOWEST level.</b> Reads have had one since the beginning (<c>TryLoadCws</c>); writes
+    /// had fifteen call sites and no single place to ask a question. R-sl2-5 says a read-only
+    /// workspace writes NOTHING — not the dock layout, not the open-document list, not the active
+    /// document, not the settled interpreter, not the kit settings, not the tree view state — and a
+    /// rule enforced by fifteen callers agreeing is a rule that is true in fourteen places and found
+    /// by a user in the fifteenth. Enforcing it here means a SIXTEENTH call site inherits it without
+    /// knowing this rule exists.</para>
+    ///
+    /// <para>Returns <c>false</c> when the write was skipped because the containing directory is not
+    /// writable. Skipped SILENTLY, on purpose: every one of those fifteen sites is recording
+    /// convenience state about a session, and none of it is worth a diagnostic, a warning banner or
+    /// a modal at the end of a session the user is trying to close. Callers that have something
+    /// better to say — a repair the user just made by hand, which really is lost — read the return
+    /// value; the rest ignore it, which is the correct amount of code for "the dock layout was not
+    /// recorded on a library nobody can write to".</para>
     /// </summary>
-    public static void SaveToFileAtomic(string path, CwsFile ws)
-        => AtomicFile.WriteAllText(path, Serialize(ws));
+    public static bool SaveToFileAtomic(string path, CwsFile ws)
+    {
+        string? dir;
+        try { dir = Path.GetDirectoryName(Path.GetFullPath(path)); }
+        catch { return false; }
+
+        if (WorkspaceWritability.IsReadOnly(dir)) return false;
+
+        AtomicFile.WriteAllText(path, Serialize(ws));
+        return true;
+    }
 
     public static CwsFile Deserialize(string json)
     {

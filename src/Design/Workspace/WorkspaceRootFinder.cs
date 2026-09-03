@@ -89,6 +89,10 @@ public static class WorkspaceRootFinder
         // same terms and for exactly the same reason (MW2 §2), and a .cws appearing, disappearing or
         // being rewritten changes the answer to both questions at once.
         ExternalCellRef.InvalidateCache();
+        // SL2 R-sl2-3: whether a workspace's files can be WRITTEN is memoised on exactly the same
+        // terms, and is dropped here rather than on a lifecycle of its own — a third memo that had
+        // to be invalidated separately would be the one that went stale.
+        WorkspaceWritability.InvalidateCache();
     }
 
     /// <summary>

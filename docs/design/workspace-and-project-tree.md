@@ -575,16 +575,24 @@ the result would look like the document rendering incorrectly.
 
 ### 5A.3 What a foreign document participates in
 
-It is fully **editable and saveable**, to its own path.
+It is fully **editable and saveable**, to its own path — **when its own path can be written.**
 
-| | Foreign document |
-|---|---|
-| Edit, save, undo | **Yes** |
-| Hierarchy navigation (push-in) | **Yes** — cell references are relative to their own file (§4), so they resolve against its own workspace on disk |
-| Save All, quit prompt | **Yes** — R34 |
-| Project-tree node, dirty dot | No — it is not in this workspace |
-| Remove Cell / Rename Cell rewriting (§4.1) | **No**, and those operations must not reach it |
-| `.cws` session membership (§5) | **No** — R35 |
+| | Foreign document | Foreign **read-only** document *(added 2026-09-03, §5D)* |
+|---|---|---|
+| Edit, undo | **Yes** | **Yes** — R-sl2-8: a file must not become un-scrollable because it is un-writable |
+| Save | **Yes** | **No** — disabled, with the reason stated (R-sl2-7) |
+| Save As | Yes | **Yes**, and it is the offered route |
+| Hierarchy navigation (push-in) | **Yes** — cell references are relative to their own file (§4), so they resolve against its own workspace on disk | **Yes**, unchanged — resolution is a read |
+| Save All, quit prompt | **Yes** — R34 | **Yes** — R34 still sweeps it, but through Save As (R-sl2-8) |
+| Project-tree node, dirty dot | No — it is not in this workspace | No |
+| Remove Cell / Rename Cell rewriting (§4.1) | **No**, and those operations must not reach it | **No** |
+| `.cws` session membership (§5) | **No** — R35 | **No** — R35 |
+
+**The read-only column does not contradict the first one; it is the case this section never had to
+consider.** §5A was written for a colleague's file on your own disk, where "fully editable and saveable"
+is correct because Save really does succeed. Applied to a locked-down share the same rule offers Save on
+a master cell and the user learns otherwise *after* the edit. Read-only is a property of the filesystem,
+discovered by probing it — never a flag in a file (§5D).
 
 **R34. Save All and the quit prompt sweep open documents, not tree nodes.** A dirty document with no tree
 node that Save All cannot reach, and that stays silent on quit, is a data-loss trap created by a convenience
@@ -614,6 +622,15 @@ Three surfaces, all of them:
 Use the palette's *unusual-but-fine* accent rather than an error colour — a foreign document is a normal,
 supported state, and red would mislabel it. When there is no parent workspace, the band says so rather than
 naming one.
+
+**§5D adds READ-ONLY to surface 2's wording, and to nothing else** *(2026-09-03)*. The band already says
+*this belongs to another workspace*, which is half the message; whether you can save to it is the other
+half, and a fourth surface or a second colour for it would be two marks for one fact. Two consequences:
+the band now appears for a read-only document that is **not** foreign (the whole open workspace is the
+read-only share, so surfaces 1 and 3 correctly stay quiet), and the accent rule above applies unchanged —
+a read-only library document is a normal, supported, *desirable* state. The band's "open it" affordance
+belongs to the FOREIGN half only: offering to open the workspace a file belongs to is meaningless when the
+file already belongs to the one that is open and is merely unwritable.
 
 ### 5A.5 Foreignness is a runtime concept
 
@@ -815,6 +832,16 @@ cell whose workspace is not open has unresolved parts; that is repaired by openi
 **not** offer to mount another workspace's kit without opening that workspace. Mounting a kit is a side
 effect nobody asked for, and it would make "which workspace is this part from" unanswerable.
 
+**R49 is unchanged, and §5D is what makes obeying it free** *(added 2026-09-03).* The repair R49 offers —
+"open that workspace" — was previously unperformable against a read-only share, because opening a
+workspace meant writing its dock layout, its open-document list and its settled interpreter back into a
+`.cws` the user cannot write; the product recommended a repair it could not carry out and reported the
+failure as a save error at an unrelated moment. The problem was never this rule. It was that *"open it"*
+implied *"write to it"*. A workspace now opens **read-only** and writes nothing (§5D R-sl2-5/-11), so the
+repair costs a window and needs no exception here. Gated directly by
+`ExternalCellReferenceTests.R_sl2_12_KitPartResolves_WhenItsWorkspaceIsOpenReadOnly`, beside the
+`WorkspaceNotOpen` case it completes.
+
 **R50. An external reference has three states, and they stay distinct** — the same discipline §4.2 applies
 to the three missing-symbol states, and for the same reason: the right user response differs.
 
@@ -868,6 +895,69 @@ same conflict, in the same words, in the GUI and headlessly. The gate
 (`tests/Ui.Tests/ExternalCellRefCliTests.cs`) is that the two elaborate to the same netlist.
 
 An **archive** is the case that actually needed work here, and it is R53's.
+
+---
+
+## 5D. Read-only workspaces *(added 2026-09-03)*
+
+**Status:** BUILT · `docs/sonnet-briefs/brief-shared-library-2-read-only-workspaces.md` · findings and the
+per-site table in `src/Ui/RESOLVED.md`, the probe itself in `src/Design/RESOLVED.md`.
+
+The workflow this exists for: a company keeps one workspace of cells on a network share, engineers
+reference cells from it into their own designs, and **the share is read-only to everyone but the
+librarian**, so nobody can overwrite the masters. Before this section circuitRF had no concept of
+read-only at all — every path took the optimistic branch and discovered the truth at the write, which
+means after the work rather than before it.
+
+**R-sl2-A. circuitRF observes; it never enforces.** Read-only is a property of the filesystem, discovered
+by attempting a write — never a `ReadOnly: true` field in `.cws`, which would be advisory, would have to
+be maintained by hand, and would be wrong on precisely the machine where it mattered. The share's own
+permissions are the enforcement, and a product-level permission model on top of a filesystem that already
+has one is two sources of truth. `File.GetAttributes` reports the DOS read-only bit and says nothing about
+a share ACL or a POSIX mode, so **the only portable answer is to try**: create a uniquely-named file in
+the directory, delete it, and treat ANY failure as read-only. One probe per directory, memoised for the
+session and dropped by the same `WorkspaceRootFinder.InvalidateCache` that drops the ancestor walk-up and
+the alias table.
+
+**R-sl2-B. There are two questions, and the per-DOCUMENT one is the one that decides Save.** "Is this
+workspace writable" governs session state; "is this document's own directory writable" governs Save,
+because a document open from a read-only library sits in a workspace this window did not open at all, and
+a workspace can be writable while one cell folder inside it is not.
+
+**R-sl2-C. A read-only workspace writes NOTHING** — not the dock layout, not the open-document list, not
+the active document, not the settled interpreter, not the kit settings, not the tree view state, not
+`.generated-cells`, not the results-layout migration. All of it is convenience state about a session, and
+none of it is worth a failed write, a diagnostic, or a modal at the end of a session the user is trying
+to close. Enforced in **one** method (`WorkspacePersistence.SaveToFileAtomic`, which now returns `bool`),
+because the rule had fifteen call sites and a rule fifteen callers must remember is a rule that is true in
+fourteen places. The two writes that ARE the user's own gesture — an alias just typed, a kit reference
+just repaired — read the return value and refuse out loud; everything else is skipped silently.
+
+**R-sl2-D. Opening a library read-only is the point of the feature, so it is never a refusal.** `File ▸
+Open Workspace` on an unwritable workspace opens it, says so once, and carries on: browsing it, reading a
+schematic, pushing into a hierarchy, seeing a cell's parameters and resolving the kits a referenced cell
+needs are all read operations. This is what makes §5C R49's repair performable — see R49's own note.
+
+**R-sl2-E. Save is disabled before the edit; editing is not.** Save is greyed with its reason stated, and
+Save As is offered in its place — *"`Amp` belongs to `stdlib`, which is read-only on this machine. Save a
+copy into your own workspace instead."* Editing stays allowed: reading a library cell and pulling it about
+to understand it is legitimate and common, and the product must not make a file un-scrollable because it
+is un-writable. The quit prompt routes each read-only document through Save As rather than offering a Save
+that cannot succeed; Save All skips them and says so, because a sweep must not open one picker per
+document. `Save As` into the current workspace is §5A.3's adopt gesture, unchanged.
+
+**R-sl2-F. The marking is §5A.4's band, with read-only added to its wording** — not a fourth surface and
+not a second colour. §5A.4's three surfaces already say *this belongs to another workspace*, which is half
+the message; read-only is the other half. Two consequences: the band now appears for a read-only document
+that is **not** foreign at all (the whole open workspace is the share), and §5A.4's "unusual-but-fine
+accent, never an error colour" applies unchanged — **a read-only library document is a normal, supported,
+desirable state**, and colouring it as a problem would mislabel the workflow this exists to support.
+
+**R-sl2-G. Creating INTO an unwritable place refuses at the picker, naming the directory.** New Workspace,
+Save Workspace As and the save-plan dialog's workspace step share one rule. The save plan is the reason it
+has to be at the picker: `SavePlanExecutor` runs after a plan the user has *confirmed* and creates the
+workspace folder and its `.cws` before it creates any cell, so discovering the parent is unwritable inside
+the executor means a confirmed plan that cannot be carried out and a half-made workspace to clean up.
 
 ---
 

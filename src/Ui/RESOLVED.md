@@ -1,5 +1,182 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## SL2 — read-only workspaces: noticing before the work, not after (2026-09-03)
+
+`brief-shared-library-2-read-only-workspaces.md`, the second of the four-brief shared-library series
+(`brief-shared-library-0-overview.md` is the map). Nothing here enforces anything — the share's own
+permissions are the enforcement (R-sl-2) — and nothing here was silent before it:
+`FileAccessDiagnostics.TryDescribe` has turned an `UnauthorizedAccessException` into a readable
+sentence for a year. **Every failure SL2 addresses was LATE, and lateness was the whole complaint:** a
+refusal before the work is a supported state, a failure after it is lost work.
+
+### The probe, and why it is a probe
+
+`WorkspaceWritability` (`src/Design/Workspace/`, framework-free beside `WorkspaceRootFinder`) creates a
+uniquely-named file in the directory and deletes it. `File.GetAttributes` reports the DOS read-only bit
+and says nothing about a share ACL, a POSIX mode or a read-only mount; `Directory.Exists` says less than
+that. The only answer that is the same answer on all three platforms is to try.
+
+Three details that are load-bearing rather than defensive:
+
+- **Any failure means read-only** (R-sl2-2) — not "unless it was `UnauthorizedAccessException`". A full
+  disk, a disconnected share and a locked-down directory all mean the same thing to every caller
+  downstream. The guard is on the ANSWER, not only inside the real probe: `IsWritable` catches whatever
+  the installed predicate throws, because a writability question that throws takes down a menu
+  enablement, a render or a save for a question whose whole purpose is to be answerable.
+- **Uniquely named**, because two circuitRF windows — or two engineers on one share — probe the same
+  root in the same second, and a fixed name would make them collide and report each other as read-only.
+  `FileOptions.DeleteOnClose` *and* an explicit delete, since DeleteOnClose is advisory on some network
+  filesystems and a probe that littered a librarian's share would be worse than the problem it solves.
+- **Memoised, and dropped by `WorkspaceRootFinder.InvalidateCache`** (R-sl2-3) — the third memo hung on
+  the call that already drops the walk-up and the alias table. A memo with a lifecycle of its own is the
+  one that goes stale. It is asked per Save-menu refresh and per band render, which is why it is memoised
+  at all; nothing else needed it on a hot path.
+
+### The choke point is the LOWEST level, and that is the whole point
+
+Fifteen `WorkspacePersistence.SaveToFileAtomic` call sites, no choke point — reads have had one since the
+beginning (`TryLoadCws`). The guard went **inside `SaveToFileAtomic`**, which now returns `bool`, rather
+than into fifteen callers agreeing: a rule fifteen callers have to remember is a rule that is true in
+fourteen places and found by a user in the fifteenth, and a SIXTEENTH site now inherits it without knowing
+the rule exists. `EveryCwsWriteInProductionCodeGoesThroughTheChokePoint` is what keeps that true.
+
+**Skipped silently, deliberately.** All fifteen sites were reachable on a read-only workspace and thirteen
+of them record convenience state about a session:
+
+| Site | What it was recording | On a read-only workspace |
+|---|---|---|
+| `WriteWorkspaceFile` (`:1738`) | dock layout, tree view state, open-document list, active document, colour scheme — R-sl2-5's list, in full, in one `CwsFile` | skipped; the explicit gesture says so, the debounce tick stays silent |
+| `RecordPythonInterpreter` (`:927`) | the settled interpreter, so the next open is fast | skipped |
+| `RecordKit…` (`:4829`), `SetAsWorkspaceDefault` (`:10054`), the two `SetAsDefault` tech writes (`:5276`, `:5585`) | the workspace's default technology / kit settings | skipped |
+| `AddKnownFile` (`:9683`), the copy-in and remove paths (`:9782`, `:10032`), `SaveLooseToWorkspace` (`:12860`) | the Known Files list | skipped |
+| `NewWorkspace` (`:1281`), `SavePlanExecutor` (`:38`) | a workspace being CREATED | refused earlier, at the picker (R-sl2-13) |
+| `ManagePdksDialog`'s Save (`:4153`) | a kit reference the user just repaired **by hand** | says so — this one is the gesture itself |
+| `TryAddWorkspaceReference` (`ExternalRefs.cs:146`) | an alias the user just typed | refuses out loud, for the same reason |
+
+The two that speak are the two where the write IS the user's gesture rather than a note about their
+session; they would be gone at the next open and the user would have no way to know. Everything else is
+worth neither a diagnostic nor a modal at the end of a session someone is trying to close.
+
+Three more writers were found that are not `.cws` writes at all and would have failed the same way:
+`DeleteGeneratedCellsFolder` + `RegenerateAllGeneratedCells` (R-sl2-5 names `.generated-cells`
+explicitly) and `RunResultsWriter.MigrateOldLayout`. Skipping the generated-cell wipe is what makes a
+read-only library WORK rather than merely not-fail — the librarian's committed generated cells stay on
+disk and resolve, which is the only way they can, since nothing on this machine can regenerate them there.
+
+### Save is disabled BEFORE the edit; editing is not
+
+`CanSaveAllDocuments` asks the per-DOCUMENT question (R-sl2-4: the document's own directory, not the open
+workspace — a library document sits in a workspace this window never opened, and a workspace can be
+writable while one cell folder is not) and the menu item's tooltip, which had always been the static
+"Nothing to save.", now states the real reason. **§5A.3 is unchanged for every writable case**: it says a
+foreign document is fully editable and saveable to its own path, which is correct for the case it was
+written for — a colleague's file on your own disk, where Save really does succeed. Read-only is the case
+that section never had to consider, and it is now in its table.
+
+**Editing stays allowed** (R-sl2-8). Reading a library cell and pulling it about to understand it is a
+legitimate and common thing to do, and the product must not make a file un-scrollable because it is
+un-writable. What changes is where the edits can land. Save All SKIPS a read-only document and says so
+(a sweep must not open one picker per document); the QUIT PROMPT routes each one through Save As, which
+meant splitting the per-document halves out of `SaveLooseSchematic`/`-Symbol`/`-Layout` — those three
+commands operate on the ACTIVE document and the quit prompt has no active document.
+
+### R49 is unchanged, and this is what makes obeying it free
+
+Said here because the next reader should not mistake this brief for having quietly dropped it. **§5C R49
+stands exactly as written**: circuitRF still refuses to mount another workspace's kits without opening
+that workspace, for the reason it gives — it would make *"which workspace is this part from"*
+unanswerable. The problem was never that rule. It was that *"open it"* implied *"write to it"*, so on a
+locked-down share the product recommended a repair it could not carry out and reported the failure as a
+save error at an unrelated moment. Once a workspace opens read-only, the repair costs a window and
+nothing else. `ExternalCellReferenceTests.R_sl2_12_KitPartResolves_WhenItsWorkspaceIsOpenReadOnly` is the
+direct test, sitting beside the `WorkspaceNotOpen` case it completes — and it asserts the `.cws` bytes
+are unchanged, because opening A must leave A alone.
+
+### The PCell refusal blamed the parameters, and the parameters were fine
+
+`LayoutEditorViewModel.PCells.cs:141` and `PaletteDrag.cs:200` caught everything `GeneratedCellStore.GetOrCreate`
+threw and reported *"could not generate artwork for these parameters"*. `GetOrCreate`'s first act is
+`Directory.CreateDirectory` under the **document's own** workspace root — the correct root, and on a
+read-only library an unwritable one. The generator was fine and the directory was not, and a user told
+the parameters are wrong will spend the afternoon on the parameters. Both sites now ask before calling,
+and the existing catch stays as the backstop for a genuine generator failure. The gate asserts the
+refusal names the workspace and does **not** contain the word "parameters".
+
+### The marking is the same band, not a fourth surface
+
+R-sl2-9. §5A.4's three surfaces already say *this belongs to another workspace*, which is true and is half
+the message; read-only is the other half. The band's three mutually-exclusive `IsVisible` TextBlocks
+collapsed into one `ProvenanceBandText` property, because once read-only is a second dimension there are
+six cases and six visibility bindings is a state machine expressed as visibility. Two consequences worth
+stating:
+
+- **The band now appears for a read-only document that is not foreign at all** — the case where the whole
+  open workspace IS the read-only share, which previously had no band because `IsForeign` was false.
+- **The accent is unchanged.** §5A.4's "unusual-but-fine, never an error colour" applies as written: a
+  read-only library document is a normal, supported, *desirable* state, and colouring it as a problem
+  would teach users that the workflow this whole series exists to support is going wrong. The open-time
+  notice is Info for the same reason.
+
+`CanOpenSourceWorkspace` was added because the band's "Open Workspace" button used to key off
+`SourceWorkspaceCwsPath is not null`: offering to open the workspace a file belongs to is meaningless when
+the file already belongs to the one that is open and is merely unwritable.
+
+### Creating INTO an unwritable place is one rule, not three checks
+
+R-sl2-13. `UnwritableParentRefusal` serves File ▸ New Workspace, Save Workspace As and the save-plan
+dialog's workspace step. `SavePlanExecutor` runs after a plan the user has CONFIRMED and creates the
+workspace folder and its `.cws` before it creates any cell, so discovering the parent is unwritable inside
+the executor means both a confirmed plan that cannot be carried out and a half-made workspace to clean up.
+Save Workspace As needed it for a second reason: without it, the picked path is adopted as
+`CurrentWorkspacePath`, the choke point then correctly skips the write, and the shell is left pointing at
+a workspace that does not exist.
+
+### A crash mid-probe leaves the file, and `DeleteOnClose` does not save you
+
+Found by asking what a crash does to an open workspace, and **measured rather than reasoned about**:
+`FileOptions.DeleteOnClose` is a kernel flag on Windows (the OS removes the file however the process
+dies) but on Unix .NET emulates it by unlinking when the handle closes, and a `SIGKILL` closes no
+handles. A process killed while holding an open DeleteOnClose stream on macOS leaves the 1-byte file
+in the directory, every time.
+
+**This is worse than ordinary litter for one specific reason:** `WorkspaceScanner.IsHiddenTreeFile`
+hides only `.DS_Store` and `*.source` — **not dotfiles in general** — so an orphaned
+`.crf-write-probe-…` would appear as a loose file node at the workspace root, and would travel into
+an archive. The probe therefore **sweeps** stale probe files after a successful probe (once per
+directory per session, since the answer is memoised), with a five-minute age cut-off so a live probe
+belonging to another window — or another engineer on the same share — is never touched. Deleting one
+would in fact be survivable on both platforms (Unix keeps the open handle valid, Windows refuses the
+delete and the per-file catch swallows it), but not racing at all is one line and needs no
+per-platform reasoning to stay true. `DeleteOnClose` is still passed: it is free, and it is the right
+behaviour on Windows.
+
+### Gate — and the platform problem, named rather than discovered
+
+`tests/Ui.Tests/ReadOnlyWorkspaceTests.cs` (19 tests) plus the R49 test in
+`ExternalCellReferenceTests.cs`. Two halves, deliberately:
+
+- **The behavioural tests drive an injectable predicate** (`WorkspaceWritability.WritabilityProbe`) and
+  run identically on all three platforms.
+- **One real-filesystem test drives the actual probe**, against a directory it made unwritable, and
+  **skips with a reason** where the platform cannot express that (`UnwritableDirFactAttribute`, the
+  `FixtureFact` pattern). **The Windows leg SKIPS**, stating why: making a directory unwritable there
+  needs an ACL edit, and a test host running elevated could write to it anyway — so the probe's own
+  correctness is gated on macOS and Linux, and Windows is covered by the behavioural half only. A gate
+  that silently passed on one platform would not be a gate; one that says which leg is not running is
+  honest.
+
+Two things could not be asserted from a headless test and are asserted at SOURCE level instead, with
+comments stripped first: that every `.cws` write goes through the choke point, and that
+`PromptSaveBeforeClose` routes a read-only document through Save As (it shows a modal and needs a real
+`Window`).
+
+**One flake found and removed rather than tolerated.** The two `WorkspaceViewModel`-level tests first
+asserted on the message list; `MessagesTool.Post` marshals through `Dispatcher.UIThread`, which is a
+direct call in an isolated run and a queued one nobody pumps once another test in the same process has
+established an Avalonia dispatcher thread. They passed alone and failed under full-suite load. They now
+assert the `.cws` BYTES, which is what those tests were actually about; the wording is checked by the
+tests that need no view model.
+
 ## SL1 — reaching a shared library: recursive browsing, portable roots (2026-09-03)
 
 `brief-shared-library-1-reaching-the-library.md`, the first of the four-brief shared-library series
