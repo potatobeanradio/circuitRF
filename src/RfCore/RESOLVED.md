@@ -55,6 +55,9 @@ The JIT collapses the recursive tail calls once the method is promoted, so a rea
 one-shot test without disabling tiering, or the numbers will disagree with the field for reasons
 that have nothing to do with the bug.
 
+(The gather stopped being recursive in round 6 below, partly for this reason. The table stays because
+it is how every report up to and including 1.0.0-beta.9 has to be read.)
+
 ### The guard
 
 Every `DataCube` constructor that takes external data already validated shape-vs-data. The two
@@ -192,3 +195,100 @@ The offending artifact was requested from the owner; when it arrives, dumping ev
 shape against its actual buffer length names the culprit in one pass. **Still not received** — the
 second report's workspace folder carries the `.cnl`, the `.cdd` and the technology, but no `.npy`,
 which is the one file the Data Display actually reads.
+
+### Follow-up (2026-09-03, round 6): the state-based explanations are spent, and the stale-file lead is dead
+
+Two more trails, both 1.0.0-beta.9 with the round-5 instrumentation in it (`4c8dd48` + `2dfa4a3`).
+Every failure names `freq[601] x i[1] x j[1]` Complex, strides `[1,1,1]`, sliced `(All, 0, 0)`,
+`override=off`, no versus, no family, no markers — and the new probe fields say `buf=601 expect=601
+same=yes`, so the cube the gather saw **is** `ds["SP1.S"]` and its backing `Complex[]` is exactly the
+axes product. `RequireShapeConsistent` ran immediately before the gather and passed.
+
+**The two things that changed:**
+
+- **The stack settles where the throw is.** Three frames, `GatherComplex` -> `GatherComplex` ->
+  `Slice`, stopping at `Slice` because that is where the wrapper catches. Per the frame-count table
+  above, two gather frames is what a promoted JIT gives at *any* rank, so this is the terminal write
+  `buf[dstFlat] = _complexData![srcFlat]`. The 2026-09-02 follow-up's conclusion that the throw was
+  elsewhere in `SetCubeDataFromCore` stays withdrawn.
+- **The stale-`.npy` lead is refuted, and it was this file's only remaining one.** The second trail
+  carries a complete run — `begin 'SP1'` / `end 'SP1'` at 07.34.56.101–.170 — and the first resolve
+  failure lands 76 ms later, on the file that run had just written. The same session had also failed
+  at 07.34.38.891, before the run, reading the pre-existing file. So the fault is deterministic for
+  this data, is not a corrupt legacy artifact, and survives a rewrite by the current binary. The
+  earlier report's empty trail meant only that no analysis had run in *that* session.
+
+Comparing `GatherWalkedOff`'s closed form against the gather term by term — pin branch, range branch,
+and the `CountSurvivingBefore`/`DstStride` source-dim-to-destination-dim mapping — they are the same
+arithmetic. On `(All, 0, 0)` over `601 x 1 x 1` with strides `[1,1,1]` both indices run `0..600`
+against 601-element arrays. **An in-range index, on a sealed type whose every field is `readonly`,
+threw `IndexOutOfRangeException`.** That is no longer a shape, slice or stale-state bug: all three are
+now positively excluded rather than merely unreproduced. It is also not shape-specific — the reports
+across rounds are `freq[101] x i[1] x j[1]`, `freq[101] x i[2] x j[2]` and `freq[601] x i[1] x j[1]`.
+
+#### The gather is no longer recursive, and the note now reports the faulting index
+
+Two changes, in that order of importance.
+
+**`GatherComplex`/`GatherReal` plan the walk once and run it flat** (`BuildGatherPlan` + an odometer
+over the surviving axes). Three reasons, and only the third is about this bug:
+
+- **The destination needs no strides at all.** It is dense row-major in the order the surviving axes
+  appear, which is the order the non-pinned source dimensions appear, so the walk carries a single
+  running `dst`. `CountSurvivingBefore` is gone with it.
+- **The common shape is now a block copy.** One surviving axis with unit source step — a swept
+  quantity with everything else pinned, which is nearly every Data Display trace — is one
+  `Array.Copy` with one bounds check, instead of N recursive calls with three. Any contiguous inner
+  run inside a larger walk gets the same treatment.
+- **It removes the self-tail-recursion the JIT collapses.** That collapse is why five rounds of
+  reports carried a stack that could not be read for rank, and why the faulting index was never
+  recoverable from one. If the report survives an `Array.Copy` of an in-range range, the cause is not
+  in this method — and that is a conclusion the recursive form could not support.
+
+A zero-length axis has to be *said* now: the recursive form got the empty result for free from a
+for-loop that ran no times, whereas a plan whose inner run is non-empty under an empty outer axis
+would block-copy into a zero-length buffer. Held by
+`AnAxisOfLengthZero_GathersNothing_RatherThanCopyingARun`.
+
+`Slice`'s wrapper also catches `ArgumentException` alongside `IndexOutOfRangeException`, because the
+same walk-vs-buffer disagreement now surfaces out of `Array.Copy` as an argument fault. Nothing else
+inside the try can raise either — the slice arguments are validated above it.
+
+**The note carries two new fields, both computed only on the failing path:**
+
+- **`checked walk:`** — the identical walk with every index pair compared against the live buffer
+  lengths and no array touched, reporting the FIRST offending pair and its position, or that all N
+  pairs are in range with the observed maxima. This is the fact the closed form cannot give: a
+  maximum that is in range says the read should not have thrown, not which index did.
+- **`replay:`** — the identical gather run again into a fresh buffer. A repeat failure keeps the
+  fault deterministic and hands over the index; a **success** is the more informative outcome,
+  because the cube, the slice and the code are unchanged between the two attempts, so it excludes
+  every explanation that is a property of any of them.
+
+On the exact state the two trails name, the message is now:
+
+    Gather walked off its buffer on cube freq[601] x i[1] x j[1] (strides [1,1,1]): max source
+    index 600 of 601, max destination index 600 of 601. BOTH INDICES ARE IN RANGE: ... checked
+    walk: every one of 601 index pairs is in range (src<=600 of 601, dst<=600 of 601). replay:
+    SUCCEEDED on a fresh buffer — the identical read is NOT reproducible from this state, so the
+    fault is not a property of the cube or the slice.
+
+**Held by `DataCubeShapeIntegrityTests`** (now 13): the two diagnostic tests assert both new clauses
+in both directions — an in-range walk that reports every pair clean and a replay that succeeds, and a
+genuine 200-point overrun of a 404-element buffer that names `walk position [101] (pair 102 of 200)`
+and replays into the same exception. The walk itself is gated by
+`TheGather_MatchesAnIndependentIndexOracle`, six shapes (rank 1 to 4, including `601 x 1 x 1` and a
+degenerate middle axis) crossed with whole-axis / first / last / interior-narrowed arguments per
+dimension, checked against index arithmetic **the test derives itself from the axis lengths** rather
+than from the cube's strides — agreeing with our own old arithmetic would prove nothing here.
+Verified to catch a regression rather than assumed: an off-by-one in the odometer carry fails 4 of
+the 6 shapes, and dropping the zero-length-axis guard fails the empty-axis test.
+
+**What is still open, precisely.** The read is now provably sound and self-reporting; nothing in
+`DataCube` explains the field report, and no further printing of the cube's state can. The next
+report either names the faulting pair — in which case the walk and the buffer genuinely disagree and
+the plan says where — or says the replay succeeded, which localises the fault outside this code
+(environment or codegen on that machine) and is the point at which asking the reporter to run with
+`DOTNET_TieredCompilation=0` becomes worthwhile. The artifact request stands and is now cheap to
+satisfy: the trail names the workspace folder, and a run rewrites `Sparam1.npy` in it, so the
+reporter can produce the file on demand.

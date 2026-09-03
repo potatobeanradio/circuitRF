@@ -267,23 +267,31 @@ namespace RfCore.Data
             var axArr = survivingAxes.ToArray();
             int totalElements = axArr.Aggregate(1, (acc, a) => acc * a.Length);
 
-            // The gather is wrapped only so that an IndexOutOfRangeException can be answered with the
+            // The gather is wrapped only so that an out-of-bounds read can be answered with the
             // arithmetic that says whether it was REACHABLE. Zero cost until one is thrown, and on the
             // path that matters it turns "index was outside the bounds of the array" — a sentence with
-            // no cube, no bound and no index in it — into a statement of which bound, by how much, and
-            // whether the slice could have got there at all.
+            // no cube, no bound and no index in it — into a statement of which bound, by how much,
+            // whether the slice could have got there at all, and whether the identical read succeeds
+            // on a second attempt.
+            //
+            // ArgumentException is caught alongside IndexOutOfRangeException because the gather now
+            // block-copies its contiguous runs: the same disagreement between the walk and the buffer
+            // surfaces from Array.Copy as an argument fault rather than an index one. Nothing else
+            // inside the try can raise either — the slice arguments were validated above.
             if (DataKind == DataKind.Complex)
             {
                 var buf = new Complex[totalElements];
-                try { GatherComplex(axisRanges, axArr, buf, 0, 0, 0); }
-                catch (IndexOutOfRangeException ex) { throw GatherWalkedOff(axisRanges, axArr, buf.Length, ex); }
+                try { GatherComplex(axisRanges, buf); }
+                catch (Exception ex) when (ex is IndexOutOfRangeException or ArgumentException)
+                { throw GatherWalkedOff(axisRanges, axArr, buf.Length, ex); }
                 return new SliceResult(new DataCube(axArr, buf, noCopy: true));
             }
             else
             {
                 var buf = new double[totalElements];
-                try { GatherReal(axisRanges, axArr, buf, 0, 0, 0); }
-                catch (IndexOutOfRangeException ex) { throw GatherWalkedOff(axisRanges, axArr, buf.Length, ex); }
+                try { GatherReal(axisRanges, buf); }
+                catch (Exception ex) when (ex is IndexOutOfRangeException or ArgumentException)
+                { throw GatherWalkedOff(axisRanges, axArr, buf.Length, ex); }
                 return new SliceResult(new DataCube(axArr, buf, noCopy: true));
             }
         }
@@ -777,76 +785,141 @@ namespace RfCore.Data
                 $"Data length {dataLength} does not match axes shape {expected} ({shape}).");
         }
 
-        // ---- Gather helpers (recursive dimension walk) ---------
+        // ---- Gather helpers (planned once, walked iteratively) ---------
+
+        /// <summary>
+        /// The gather, planned instead of recursed: one base source offset carrying every pinned
+        /// axis, and for each SURVIVING axis its source step and run length. The destination is dense
+        /// row-major in the order the surviving axes appear, which is the order the non-pinned source
+        /// dimensions appear — so the walk below needs no destination strides at all.
+        ///
+        /// <para><b>Why this is not the recursive walk it replaces.</b> The old form recursed once per
+        /// dimension and, on any promoted build, the JIT collapsed the self-tail-calls into a single
+        /// frame — which is why five rounds of field reports (see <c>RESOLVED.md</c>) carried a stack
+        /// that could not be read for rank, and why the faulting index was never recoverable from one.
+        /// A planned walk is flat: the innermost surviving axis is a contiguous run whenever its source
+        /// step is 1, so the common shape — one swept axis with every other pinned — becomes a single
+        /// <see cref="Array.Copy"/> with one bounds check instead of N recursive calls with three.</para>
+        /// </summary>
+        private void BuildGatherPlan(
+            (bool isPin, int pin, int offset, int length)[] axisRanges,
+            out int baseSrc, out int[] steps, out int[] lens)
+        {
+            int rank = axisRanges.Length;
+            int nOut = 0;
+            for (int d = 0; d < rank; d++) if (!axisRanges[d].isPin) nOut++;
+
+            baseSrc = 0;
+            steps   = nOut == 0 ? Array.Empty<int>() : new int[nOut];
+            lens    = nOut == 0 ? Array.Empty<int>() : new int[nOut];
+
+            int k = 0;
+            for (int d = 0; d < rank; d++)
+            {
+                var (isPin, pin, offset, length) = axisRanges[d];
+                if (isPin) { baseSrc += pin * _strides[d]; continue; }
+                baseSrc  += offset * _strides[d];
+                steps[k]  = _strides[d];
+                lens[k]   = length;
+                k++;
+            }
+        }
 
         private void GatherComplex(
-            (bool isPin, int pin, int offset, int length)[] axisRanges,
-            Axis[] surviving, Complex[] buf,
-            int srcDim, int srcFlat, int dstFlat)
+            (bool isPin, int pin, int offset, int length)[] axisRanges, Complex[] buf)
         {
-            if (srcDim == Rank)
+            BuildGatherPlan(axisRanges, out int baseSrc, out var steps, out var lens);
+            int nOut = steps.Length;
+
+            // Every axis pinned — a single element. Slice takes that case itself; this keeps the
+            // gather total so a replay driven from the diagnostic below cannot fall off the end.
+            if (nOut == 0) { buf[0] = _complexData![baseSrc]; return; }
+
+            // A zero-length axis makes the whole result empty. The recursive form got this from a
+            // for-loop that ran no times; here it has to be said.
+            for (int k = 0; k < nOut; k++) if (lens[k] == 0) return;
+
+            int inner = nOut - 1;
+            int innerLen = lens[inner], innerStep = steps[inner];
+
+            // The shape the Data Display reads on nearly every trace: one surviving axis over
+            // contiguous source elements.
+            if (nOut == 1 && innerStep == 1)
             {
-                buf[dstFlat] = _complexData![srcFlat];
+                Array.Copy(_complexData!, baseSrc, buf, 0, innerLen);
                 return;
             }
-            var (isPin, pin, offset, length) = axisRanges[srcDim];
-            if (isPin)
+
+            var idx = new int[nOut];
+            int src = baseSrc, dst = 0;
+            while (true)
             {
-                GatherComplex(axisRanges, surviving, buf,
-                              srcDim + 1, srcFlat + pin * _strides[srcDim], dstFlat);
-            }
-            else
-            {
-                // Find which surviving axis this maps to, to compute dst stride
-                int dstDim   = CountSurvivingBefore(axisRanges, srcDim);
-                int dstStride = DstStride(surviving, dstDim);
-                for (int i = 0; i < length; i++)
+                if (innerStep == 1)
                 {
-                    GatherComplex(axisRanges, surviving, buf,
-                                  srcDim + 1,
-                                  srcFlat + (offset + i) * _strides[srcDim],
-                                  dstFlat  + i * dstStride);
+                    Array.Copy(_complexData!, src, buf, dst, innerLen);
                 }
+                else
+                {
+                    int s = src;
+                    for (int i = 0; i < innerLen; i++, s += innerStep) buf[dst + i] = _complexData![s];
+                }
+                dst += innerLen;
+
+                int k = inner - 1;
+                for (; k >= 0; k--)
+                {
+                    src += steps[k];
+                    if (++idx[k] < lens[k]) break;
+                    src   -= steps[k] * lens[k];
+                    idx[k] = 0;
+                }
+                if (k < 0) return;
             }
         }
 
         private void GatherReal(
-            (bool isPin, int pin, int offset, int length)[] axisRanges,
-            Axis[] surviving, double[] buf,
-            int srcDim, int srcFlat, int dstFlat)
+            (bool isPin, int pin, int offset, int length)[] axisRanges, double[] buf)
         {
-            if (srcDim == Rank)
+            BuildGatherPlan(axisRanges, out int baseSrc, out var steps, out var lens);
+            int nOut = steps.Length;
+
+            if (nOut == 0) { buf[0] = _realData![baseSrc]; return; }
+            for (int k = 0; k < nOut; k++) if (lens[k] == 0) return;
+
+            int inner = nOut - 1;
+            int innerLen = lens[inner], innerStep = steps[inner];
+
+            if (nOut == 1 && innerStep == 1)
             {
-                buf[dstFlat] = _realData![srcFlat];
+                Array.Copy(_realData!, baseSrc, buf, 0, innerLen);
                 return;
             }
-            var (isPin, pin, offset, length) = axisRanges[srcDim];
-            if (isPin)
-            {
-                GatherReal(axisRanges, surviving, buf,
-                           srcDim + 1, srcFlat + pin * _strides[srcDim], dstFlat);
-            }
-            else
-            {
-                int dstDim    = CountSurvivingBefore(axisRanges, srcDim);
-                int dstStride = DstStride(surviving, dstDim);
-                for (int i = 0; i < length; i++)
-                {
-                    GatherReal(axisRanges, surviving, buf,
-                               srcDim + 1,
-                               srcFlat + (offset + i) * _strides[srcDim],
-                               dstFlat  + i * dstStride);
-                }
-            }
-        }
 
-        private static int CountSurvivingBefore(
-            (bool isPin, int pin, int offset, int length)[] axisRanges, int dim)
-        {
-            int count = 0;
-            for (int d = 0; d < dim; d++)
-                if (!axisRanges[d].isPin) count++;
-            return count;
+            var idx = new int[nOut];
+            int src = baseSrc, dst = 0;
+            while (true)
+            {
+                if (innerStep == 1)
+                {
+                    Array.Copy(_realData!, src, buf, dst, innerLen);
+                }
+                else
+                {
+                    int s = src;
+                    for (int i = 0; i < innerLen; i++, s += innerStep) buf[dst + i] = _realData![s];
+                }
+                dst += innerLen;
+
+                int k = inner - 1;
+                for (; k >= 0; k--)
+                {
+                    src += steps[k];
+                    if (++idx[k] < lens[k]) break;
+                    src   -= steps[k] * lens[k];
+                    idx[k] = 0;
+                }
+                if (k < 0) return;
+            }
         }
 
         /// <summary>
@@ -886,10 +959,137 @@ namespace RfCore.Data
             }
             catch (Exception e) { detail = $"(bounds unreadable: {e.GetType().Name})"; }
 
+            // The closed form above gives the MAXIMUM the walk can reach. It cannot give the index
+            // that actually faulted, and five rounds of field reports have now all said the maximum
+            // is in range — so the two things still missing are the offending pair itself and whether
+            // the same read fails twice. Both are computed here, on a path that is already failing.
+            string walk, replay;
+            try   { walk = CheckedWalk(axisRanges, surviving, bufLength); }
+            catch (Exception e) { walk = $"(unwalkable: {e.GetType().Name})"; }
+            try   { replay = ReplayGather(axisRanges, bufLength); }
+            catch (Exception e) { replay = $"(unreplayable: {e.GetType().Name})"; }
+
             string shape   = string.Join(" x ", Axes.Select(a => $"{a.Name}[{a.Length}]"));
             string strides = string.Join(",", _strides);
+
+            // The cube's OBJECT IDENTITY, because its shape does not identify it. A run's group holds
+            // S, Z and Y at exactly the same shape and strides, so every message printed so far has
+            // been equally consistent with all three; the caller records the identity of the cube IT
+            // handed to the indexer, and the two together say whether they are the same object.
+            int id = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this);
             return new InvalidOperationException(
-                $"Gather walked off its buffer on cube {shape} (strides [{strides}]): {detail}", inner);
+                $"Gather walked off its buffer on cube {shape} (strides [{strides}], id=0x{id:x8}, "
+                + $"buffer {BufferTypeName()}[{ElementCount()}]): {detail}"
+                + $" checked walk: {walk}. replay: {replay}.", inner);
+        }
+
+        /// <summary>
+        /// The same walk the gather performs, computing every index pair WITHOUT touching either
+        /// array, and reporting the first pair that lies outside its buffer.
+        ///
+        /// <para>This is the fact <see cref="GatherWalkedOff"/>'s closed form cannot supply. A maximum
+        /// that is in range says the read should not have thrown; it does not say which index did.
+        /// If this reports every pair in range as well, then the arithmetic and the bounds check that
+        /// fired disagree — which is not a state that any further printing of the state can explain,
+        /// and is the finding rather than a step towards one.</para>
+        /// </summary>
+        private string CheckedWalk(
+            (bool isPin, int pin, int offset, int length)[] axisRanges,
+            Axis[] surviving, int bufLength)
+        {
+            BuildGatherPlan(axisRanges, out int baseSrc, out var steps, out var lens);
+            int  nOut   = steps.Length;
+            int  srcLen = ElementCount();
+
+            if (nOut == 0)
+                return baseSrc >= 0 && baseSrc < srcLen && bufLength > 0
+                    ? $"the single pinned pair is in range (src={baseSrc} of {srcLen})"
+                    : $"FIRST OFFENDING PAIR: src={baseSrc} of {srcLen}, dst=0 of {bufLength}";
+
+            long total = 1;
+            for (int k = 0; k < nOut; k++) total *= lens[k];
+            long dstShape = 1;
+            for (int k = 0; k < surviving.Length; k++) dstShape *= surviving[k].Length;
+            if (total == 0) return "the walk visits no index pairs (an axis of length 0)";
+
+            var  idx   = new int[nOut];
+            int  inner = nOut - 1;
+            long src = baseSrc, dst = 0, maxSrc = -1, maxDst = -1, visited = 0;
+
+            while (true)
+            {
+                for (int i = 0; i < lens[inner]; i++)
+                {
+                    long s = src + (long)i * steps[inner];
+                    long d = dst + i;
+                    visited++;
+                    if (s < 0 || s >= srcLen || d < 0 || d >= bufLength)
+                    {
+                        idx[inner] = i;
+                        return $"FIRST OFFENDING PAIR at walk position [{string.Join(",", idx)}] "
+                             + $"(pair {visited} of {total}): src={s} of {srcLen}, dst={d} of {bufLength}";
+                    }
+                    if (s > maxSrc) maxSrc = s;
+                    if (d > maxDst) maxDst = d;
+                }
+                dst += lens[inner];
+
+                int k = inner - 1;
+                for (; k >= 0; k--)
+                {
+                    src += steps[k];
+                    if (++idx[k] < lens[k]) break;
+                    src   -= (long)steps[k] * lens[k];
+                    idx[k] = 0;
+                }
+                if (k < 0) break;
+            }
+
+            // The destination SHAPE and the walk's own element count are separate claims. They are
+            // built two lines apart in Slice from one GetOffsetAndLength, so they cannot differ — and
+            // that is exactly why a report saying they do would be worth having.
+            string dstNote = dstShape == total
+                ? ""
+                : $" — destination axes claim {dstShape} elements, the walk visits {total}";
+            return $"every one of {total} index pairs is in range (src<={maxSrc} of {srcLen}, "
+                 + $"dst<={maxDst} of {bufLength}){dstNote}";
+        }
+
+        /// <summary>
+        /// Runs the identical gather a second time, into a fresh buffer, and says what happened.
+        ///
+        /// <para>A repeat failure hands over the faulting index through <see cref="CheckedWalk"/> and
+        /// keeps the fault deterministic; a SUCCESS is the more informative outcome, because it rules
+        /// out every explanation that is a property of the cube, the slice or this code — all of which
+        /// are unchanged between the two attempts — and leaves only ones that are not reproducible from
+        /// the state. Nothing is mutated: the replay writes into its own buffer and discards it.</para>
+        /// </summary>
+        private string ReplayGather(
+            (bool isPin, int pin, int offset, int length)[] axisRanges, int bufLength)
+        {
+            try
+            {
+                if (DataKind == DataKind.Complex) GatherComplex(axisRanges, new Complex[bufLength]);
+                else                              GatherReal(axisRanges, new double[bufLength]);
+                return "SUCCEEDED on a fresh buffer — the identical read is NOT reproducible from this "
+                     + "state, so the fault is not a property of the cube or the slice";
+            }
+            catch (Exception e)
+            {
+                return $"threw {e.GetType().Name} again — the fault is deterministic on this state";
+            }
+        }
+
+        /// <summary>
+        /// The backing array's REAL element type, not the one <see cref="DataKind"/> claims. They can
+        /// only differ if a reference was type-punned past the constructors, which is one of the very
+        /// few remaining mechanisms that turns an in-range index into a fault — so a report that says
+        /// <c>Complex[601]</c> rules it out, and one that says anything else names it.
+        /// </summary>
+        private string BufferTypeName()
+        {
+            var arr = (Array?)_complexData ?? _realData;
+            return arr?.GetType().GetElementType()?.Name ?? "(none)";
         }
 
         private static int DstStride(Axis[] surviving, int dstDim)
