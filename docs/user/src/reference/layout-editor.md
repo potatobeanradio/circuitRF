@@ -407,7 +407,7 @@ The two places it *does* come out are the two where a measurement is the point:
 
 ## Interchange {#interchange}
 
-**File ▸ Import** offers GDSII, DXF and Board; **File ▸ Export** offers GDSII, DXF, Gerber and Board.
+**File ▸ Import** offers GDSII, DXF, Gerber and Board; **File ▸ Export** offers the same four.
 
 **Every export says what it could not carry at full fidelity before it writes anything**, and that
 preview is produced by running the *real* write into a null stream — so it can never disagree with what
@@ -418,8 +418,8 @@ A layer is identified by its integer **(layer, datatype)** pair, not by its name
 and it is the right one, since names are for humans and change, while the numeric pair is what a fab's
 process assumption is keyed to. DXF and board files are name-keyed instead, so bringing one in goes
 through an explicit name↔pair mapping held in the technology; one shared mapping dialog serves every
-import that needs it. Gerber has no layer concept at all: one file per layer, mapping declared at
-export.
+import that needs it. Gerber has no layer concept at all — one file per layer — so the mapping
+is declared on the way out and reconstructed on the way in.
 
 ### GDSII {#gdsii}
 
@@ -454,11 +454,88 @@ mode meant on screen.
 
 ### Gerber and Excellon {#gerber}
 
-Export only — these are fabrication outputs, and nothing reads them back in. One Gerber file per layer,
-plus an Excellon drill file. Arcs are native (`G02`/`G03`) and a hole is a clear region, so neither is a
-lossy conversion; the pre-flight report lists only genuinely structural changes. A bare circle drawn
-directly on a drill-function layer still contributes a drill hit — it is never silently dropped — but it
-is *unpaired*: no matching pad, no annular-ring data, and the report suggests **Convert to Via** for it.
+Import **and** export. A board goes out to the fab house as artwork plus drill, and the same set comes
+back in as a cell you can edit, crop and mesh — your own, or someone else's.
+
+#### Export
+
+One Gerber file per layer, plus an Excellon drill file. Arcs are native (`G02`/`G03`) and a hole is a
+clear region, so neither is a lossy conversion; the pre-flight report lists only genuinely structural
+changes. A bare circle drawn directly on a drill-function layer still contributes a drill hit — it is
+never silently dropped — but it is *unpaired*: no matching pad, no annular-ring data, and the report
+suggests **Convert to Via** for it.
+
+#### Import — **File ▸ Import ▸ Gerber…**
+
+Point at a **folder** and you get the whole board. Point at a **single file** and circuitRF asks whether
+its folder was the real intent, telling you what that folder holds — one Gerber file is one layer, with
+no drill data, no other copper and no board outline, which is occasionally what you want and usually
+not. The folder is the default. There is a third option for pointing at a different folder outright, and
+Cancel creates nothing.
+
+**What a file is gets decided by content, never by extension.** Anything in the folder that is not
+artwork or drill data is skipped and named in the summary, so a folder of mixed junk is safe to point at.
+
+**Which layer is which** comes from the strongest source available, in this order:
+
+1. the `.gbrjob` **job file**, if the set has one — it settles set membership and identity together, and
+   carries the stackup;
+2. the file's own **X2 attributes** (`%TF.FileFunction`), which also give the copper's position in the
+   stack;
+3. a **`GerberSuffix` in your technology** that matches the file's extension — this is what closes the
+   loop on a set circuitRF itself exported;
+4. a **generic name heuristic** (copper top/bottom/inner, mask, silk, paste, outline, drill);
+5. the shared **layer-mapping dialog** for anything left.
+
+The summary reports which rung identified each layer, and flags the ones that came from the heuristic —
+that is the rung that can be confidently wrong.
+
+**Drill data.** Excellon files often do not say what their numbers mean, so units and zero suppression
+are inferred from the format comment, the `INCH`/`METRIC` word, `M71`/`M72`, the tool diameters, and a
+cross-check of where the hits land against the artwork's own bounding box. You are only prompted when
+that inference actually had to guess or the cross-check disagrees, and the prompt shows you the evidence.
+Cancelling it cancels the import — a board read at the wrong scale is the worst kind of silent failure.
+
+**Vias are rebuilt** wherever a drill hit and a copper flash share a coordinate exactly: pad diameter,
+drill diameter, barrel and landing layer, back to a real `ViaShape`. Unpaired hits become circles on the
+drill layer, counted in the summary — a lot of them usually means the artwork and the drill file do not
+belong to the same board. Where the files declare via-vs-component drilling (X2 `ViaDrill` /
+`ComponentDrill`) that declaration is used; where they don't, the two are genuinely indistinguishable
+from artwork alone and both come back as vias, and the summary says so.
+
+**What you get** is one **flat cell** — Gerber has no hierarchy, and reconstructing footprints from
+artwork would be guesswork — inside its own import folder, with its **own new `.ctech`**. Your workspace
+technology is read but never modified. The stackup is built from the job file when there is one and left
+**empty** when there is not, because a single Gerber file carries no substrate data at all and an
+invented substrate is worse than none: nothing downstream questions it, and it *will* be simulated. The
+summary says what is still needed before the EM path can run, and reminds you to crop the region of
+interest first — a whole board is not a MoM problem.
+
+Also worth reading in the summary: the **stroke count** per layer. A copper pour that arrived as a few
+thousand parallel strokes is correct artwork but is neither editable copper nor meshable; **Merge** fixes
+it, and the summary names the layer and the count.
+
+#### What a round trip does and does not preserve
+
+Export → import is **not** lossless, because the format has no such types — but it is **closed after one
+pass**: whatever the first cycle collapses, every later cycle preserves exactly, byte for byte.
+
+| Leaves as | Comes back as |
+|---|---|
+| rectangle, rounded rectangle, curve | polygon |
+| label | polygons (labels become geometry on export) |
+| path with a non-round end style | region |
+| via | via — but only if the drill file came too |
+| a layer using clear polarity | composited polygons; individual shape identities gone |
+
+Circle and rectangle flashes, round-capped strokes with their width, arcs, holes, nets and multiple
+drill diameters all survive intact.
+
+**Refused rather than mangled**, each by name: negative image (`%IPNEG`), non-identity mirror, scale or
+rotation, block apertures (`%AB`), a file with no coordinate format or no units, a binary drill file, a
+drill *listing* mistaken for a drill file, and anything over the 500,000-entity import ceiling. Anything
+read but degraded — a stroke with a non-circular aperture, a moiré macro primitive, a routed arc — is
+counted by name in the summary rather than dropped quietly.
 
 ### Board files (`.kicad_pcb`) {#board}
 

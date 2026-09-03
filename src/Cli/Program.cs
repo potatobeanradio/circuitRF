@@ -48,6 +48,7 @@ return args[0].ToLowerInvariant() switch
     "lpp" or "loadpull_pursuit" or "pursuit"
                                 => RunLoadpull(args[1..], pursuit: true),
     "em"     => RunEm(args[1..]),
+    "convert" => CircuitRF.Cli.LayoutConvert.Run(args[1..]),
     "elab"   => RunElab(args[1..]),
     _        => PrintHelp()
 };
@@ -1683,6 +1684,7 @@ static int PrintHelp()
     Console.WriteLine("  lpp    <file.cnl>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
     Console.WriteLine("  elab   <file.cnl>   (dump elaborated netlist)");
+    Console.WriteLine("  convert <in> -o <out>  (layout interchange: any format to any other)");
     Console.WriteLine();
     Console.WriteLine("hb options:");
     Console.WriteLine("  -a, --analysis <name>   which analysis to run (default: the only HB chain)");
@@ -1707,6 +1709,21 @@ static int PrintHelp()
     Console.WriteLine("  --workspace <file.cws>  the workspace paths resolve against. Default: the");
     Console.WriteLine("                          nearest .cws above the .cem, then its own directory.");
     Console.WriteLine();
+    Console.WriteLine("convert options:");
+    Console.WriteLine("  formats: clay | gdsii | dxf | gerber | board — inferred from the paths");
+    Console.WriteLine("           (.clay .gds .dxf .kicad_pcb; a FOLDER is a Gerber file set)");
+    Console.WriteLine("  -o, --output <path>     the file to write, or the FOLDER for gerber / clay");
+    Console.WriteLine("  --from f, --to f        say the format when the path does not");
+    Console.WriteLine("  --cell <name>           which cell, when the source holds several");
+    Console.WriteLine("  --name <stem>           what to call the written file set (gerber)");
+    Console.WriteLine("  --list-cells            report what the input holds, write nothing");
+    Console.WriteLine("  --tech <file.ctech>     the technology to convert against");
+    Console.WriteLine("  --keep-cells <dir>      keep the cells an import produced");
+    Console.WriteLine("  --dxf-version AC1032    AC1015 | AC1018 | AC1032   --dxf-units <n>");
+    Console.WriteLine("  --drill-units mm|inch   --drill-format <int>:<dec>");
+    Console.WriteLine("  --drill-zeros leading|trailing");
+    Console.WriteLine("  --accept-inferred-drill-format   proceed on a guessed Excellon format");
+    Console.WriteLine();
     Console.WriteLine("Options (any command):");
     Console.WriteLine("  --kits <dir>        folder of installed kits, for externally-provided");
     Console.WriteLine("                      devices (ExtDevice Provider=...). Repeatable.");
@@ -1717,5 +1734,7 @@ static int PrintHelp()
     Console.WriteLine("Example: circuitrf lp hero3.cnl --pin -20:1:15 -o hero3.spl");
     Console.WriteLine("Example: circuitrf lpp hero3B.cnl --out-grid found.gam -o hero3B.npy");
     Console.WriteLine("Example: circuitrf em  Amp.cem -o /tmp/amp.s2p");
+    Console.WriteLine("Example: circuitrf convert Filter.dxf -o gerbers/");
+    Console.WriteLine("Example: circuitrf convert fab/ -o board.kicad_pcb");
     return 0;
 }

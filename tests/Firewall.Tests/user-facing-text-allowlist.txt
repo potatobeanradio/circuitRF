@@ -545,3 +545,34 @@ src/WBond/WireTableCsv.cs|Line {lineNumber}: the wire's two feet are at the same
 src/WBond/WireTableCsv.cs|Line {lineNumber}: the wirebond table header is missing required column(s) 
 src/WBond/WireTableCsv.cs|Line {lineNumber}: wire diameter must be positive, got {diameter} nm.
 src/WBond/WireTableCsv.cs|The wirebond table has no header row. Expected a line naming at least: 
+
+# ── Moved, not authored (2026-09-02) ────────────────────────────────────────────────
+# The interchange readers and writers moved from src/Ui to src/Design so `circuitrf convert`
+# could reach them across the firewall. Every sentence below is unchanged text that has been
+# in the tree since GDSII/DXF/Gerber import and export were written — it crossed the wall
+# with its code rather than being added to it. All of them are format invariants (a truncated
+# record, a shape type no writer has a case for, an unbalanced macro expression), which is
+# the exception this file's own header calls a deliberate plain-exception choice.
+src/Design/Layout/Interchange/DxfUnits.cs|Unsupported/unset $INSUNITS value {insunits}.
+src/Design/Layout/Interchange/DxfWriter.cs|DXF export does not support shape type {shape.GetType().Name}.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII BOUNDARY is missing its ENDEL record.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII PATH is missing its ENDEL record.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII TEXT is missing its ENDEL record.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII structure is missing its ENDSTR record.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII {(isArray ? 
+src/Design/Layout/Interchange/GdsiiReal8.cs|GDSII 8-byte real requires exactly 8 bytes.
+src/Design/Layout/Interchange/GdsiiRecordIo.cs|GDSII record {type} exceeds the 16-bit length field ({length} bytes) — split into multiple elements.
+src/Design/Layout/Interchange/GdsiiRecordIo.cs|Invalid GDSII record length {length}.
+src/Design/Layout/Interchange/GdsiiRecordIo.cs|Truncated GDSII record header.
+src/Design/Layout/Interchange/GdsiiRecordIo.cs|Truncated GDSII record payload.
+src/Design/Layout/Interchange/GerberExport.cs|Gerber export is blocked — resolve the pending item(s) first.
+src/Design/Layout/Interchange/GerberMacroExpression.cs|'$' with no index in macro modifier \"{s}\".
+src/Design/Layout/Interchange/GerberMacroExpression.cs|Division by zero in macro modifier \"{s}\".
+src/Design/Layout/Interchange/GerberMacroExpression.cs|Macro modifier \"{s}\" ends mid-expression.
+src/Design/Layout/Interchange/GerberMacroExpression.cs|Unclosed '(' in macro modifier \"{s}\".
+src/Design/Layout/Interchange/GerberMacroExpression.cs|Unexpected '{c}' in macro modifier \"{s}\".
+src/Design/Layout/Interchange/GerberMacroExpression.cs|Unexpected '{text[pos]}' at position {pos} in macro modifier \"{text}\".
+src/Design/Layout/Interchange/GerberUnits.cs|DbuPerMicron must be positive (was {dbuPerMicron}).
+src/Design/Layout/Interchange/GerberUnits.cs|DbuPerMicron={dbuPerMicron} is not an exact power of ten — Gerber export requires this 
+src/Design/Layout/Interchange/GerberWriter.cs|Gerber export does not support shape type {shape.GetType().Name}.
+src/Design/Layout/Interchange/GerberWriter.cs|{shape.GetType().Name} must be resolved by GerberExport before reaching GerberWriter.

@@ -8,7 +8,7 @@
 // Gate 18: COUNTERS ONLY. There is no wall-clock assertion anywhere in this file.
 
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
 

@@ -1,5 +1,128 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The interchange stack moved here, and `circuitrf convert` is what it bought (2026-09-02)
+
+The layout interchange readers and writers — GDSII, DXF, Gerber, Excellon and `.kicad_pcb`, ~16,700
+lines across 61 files — moved from `src/Ui/Layout/Interchange` to `src/Design/Layout/Interchange`,
+namespace and all. The `em` verb's own carve-out (`brief-cli-em-verb.md` R-emcli-1/R-emcli-4) is the
+precedent it followed, including the rule that the namespace changes with the project.
+
+The point of the move is the CLI: `src/Cli` cannot reference `src/Ui`, so a headless conversion had
+to have the readers on this side of the wall. `src/Ui/RESOLVED.md` §"A headless import verb, and what
+moving L4e-L4g to `src/Design` would cost" scoped exactly this and left it unattempted; the numbers
+below are what it actually cost.
+
+### 1. What had to move with it, and the one thing that could not
+
+Seven `src/Ui/Layout` files went too, all framework-free as written: `LayoutFragment`,
+`LayoutLayerMapping`, `FallbackPalette`, `LayoutViewport`, `PinInference`, `LayoutDesignFlatten` and
+`LayoutTextFlatten`. None of them needed an edit beyond its namespace line, and none of their five
+other consumers in `src/Ui` needed one either — `src/Ui/GlobalUsings.cs` already carries
+`CircuitRF.Design.Layout`, so a type moving INTO that namespace is invisible to every file that used
+it. The whole `using` churn across `src/Ui` was one added line for `…Layout.Interchange`.
+
+**`LayoutTextOutline` was the one genuine obstacle, and `src/Ui/RESOLVED.md`'s scoping said it was:
+it depends on Skia, so "GerberExport must NOT move".** That prediction was half right. SkiaSharp is
+explicitly ALLOWED across the firewall (`tests/Firewall.Tests`: "headless 2D graphics is not a UI
+framework"), so glyph geometry crosses fine; what does not is `SkiaFonts`, which loads the embedded
+IBM Plex faces through Avalonia's `AssetLoader` and needs a live app host. So the split is not
+import-here/export-there. It is **one line lower down**: `LayoutTextOutline` moved with everything
+else and gave up only its font SOURCE, now a
+`Func<LabelFontStyle, SKTypeface>? TypefaceSource` that `src/Ui` fills in from a `[ModuleInitializer]`
+(`UiTypefaceInstaller`) and that falls back to `SKTypeface.Default` when nothing did.
+
+A module initializer rather than a call from `App.Initialize` because `src/Ui` has three entry points
+(circuitRF, harmonicaRF, wBond) and a startup step that must run in all three is a startup step
+somebody eventually forgets in one.
+
+**The consequence is real and is reported rather than hidden:** a label flattened headlessly is a
+different SHAPE from the same label flattened in the app, because the glyph outlines come from a
+different face. `LayoutTextOutline.HasEmbeddedTypefaces` is false in that case and `convert` prints a
+note whenever it flattened a label without them.
+
+`ResolveLabelAnchor` moved out of `LayoutRenderer` into `LayoutTextOutline` for the same reason it
+was shared in the first place: the renderer draws a label with it and the flattener places glyphs
+with it, and the property worth protecting is that those two can never disagree. One copy, in the
+project both callers reach.
+
+### 2. `convert` is one import and one export, and the intermediate is a real cell
+
+Every reader lands on a cell folder plus a technology and every writer starts from one, so the
+N x N table of conversions is not N x N pieces of code. A conversion whose target is `.clay` stops
+after the import; every other one runs the import into a scratch directory and exports out of it
+(`--keep-cells` keeps that directory, which is the way to see what a conversion understood).
+
+Two things the GUI answers with a dialog had to be answered another way:
+
+- **The layer-mapping dialog** — handed a null callback, every importer already falls through to
+  `LayoutLayerMapping.BuildChoices`, which is the same default the dialog pre-selects. Nothing to
+  decide; the CLI just does not pass one.
+- **The drill-format prompt is a REFUSAL, not a default.** Leading versus trailing zero suppression
+  differ by four orders of magnitude on identical text (L4f §2), so `convert` prints the inference,
+  its evidence and the artwork cross-check, names the three flags that answer it, and exits 1 having
+  created nothing. `--accept-inferred-drill-format` takes the inference as it stands.
+
+### 3. A null destination technology silently drops every layer — measured, not reasoned
+
+The first working conversion wrote Gerber files named `via.G-2_0` from a technology with **zero**
+layers. The cause is not in the move: every importer reconciles the file's layers against the
+DESTINATION technology and returns the ones it would ADD, and handed a `null` destination there is
+nothing to compare against, so `LayersToAdd` comes back empty and the layers arrive as bare numeric
+keys with no names, no colours and no `GerberSuffix`. A re-export then names its files from a
+synthetic suffix.
+
+The fix is one line — `destTech ??= new Technology { Name = name }` — and the reasoning is that an
+EMPTY technology is the honest destination for a conversion that has none: every source layer is then
+an unmatched row, which is exactly what it is. **This is the failure mode to remember whenever a
+headless caller reuses an importer**, because nothing errors and the result looks structurally fine.
+
+### 4. GDSII is the one format that cannot carry names through, and that is the format's doing
+
+The same fix does nothing for GDSII, deliberately. `GdsiiImport` does not apply the
+NoMatch → AddToTechnology default that DXF, board and Gerber import all do (L4b's own divergence, and
+it was reasoned about name-keyed formats). GDSII identifies a layer by a NUMBER, so an import has
+nothing to name it with: numbers come through exactly, names do not. `--tech` pointing at the
+technology those numbers belong to is the answer, and it is documented as such rather than papered
+over. The gate asserts a non-empty layer table for every source EXCEPT gdsii, and says why.
+
+### 5. Two smaller things the matrix exposed
+
+- **`$MODEL` is DxfReader's own name for model space**, not something anyone typed, and it reached
+  the Gerber writer as a file stem: `$MODEL.gbr`. A DXF's drawing is named after the file, so that is
+  what `convert` calls it; `--name` overrides.
+- **A `--to clay` result is not shaped the same way for every source.** Gerber import puts its whole
+  result inside an `ImportFolder` of its own (R-L4g-13) while the others create cells directly under
+  the parent. That is a real difference between the importers, and `convert` does not normalize it
+  away — the gate searches recursively rather than pretending otherwise.
+
+### 6. The firewall's text gate fired, and it was right to
+
+23 exception messages appeared "below the UI firewall" the moment the code crossed it — unchanged
+sentences that have been in the tree since the importers were written. They are all format invariants
+(a truncated GDSII record, a shape type no writer has a case for, an unbalanced macro expression),
+which is the deliberate plain-exception case `user-facing-text-allowlist.txt` describes, so they were
+added there under a heading that says they moved rather than being authored.
+
+### 7. What the gate proves, and what it does not
+
+`tests/Ui.Tests/ConvertCliVerbTests.cs`, 32 tests, 7 s, untagged and in the routine gate. It launches
+the built `CircuitRF.Cli.dll` as a real process (EmCliVerbTests' pattern, for its recorded reason) and
+checks all 24 ordered format pairs plus byte identity against the in-process `GdsiiExport` and
+`GerberExport` calls the GUI's own File ▸ Export makes.
+
+**A GDSII file is not byte-comparable raw**, and the first version of this gate only looked like it
+was: BGNLIB and BGNSTR record when the library and each structure were written, so two writes of the
+same design differ at byte 21 unless they land in the same second. It passed for an afternoon and
+then failed on a second boundary. Masked by record type and named, the way `EmCliVerbTests` names the
+Touchstone provenance line — everything else still compares byte for byte, which is the point.
+
+**It proves the two sides agree and nothing more.** The matrix's sources are built by `convert`
+itself, so a pair is tested against our own writer's output, not against a third party's dialect —
+the same limitation L4h's round-trip gate states about itself (R-L4h-16), and for the same reason.
+
+**Stale after this change:** the root `CLAUDE.md` source map still describes `src/Ui` as the home of
+the layout interchange code and lists seven CLI verbs. Neither is true now. Left for the owner.
+
 ## MIM-7 — a dielectric that is patterned with its plate, so ONE MMIC technology serves both (2026-08-30)
 
 `docs/sonnet-briefs/brief-em-mim-7-one-technology.md`. The extraction half is here; the shipped-file

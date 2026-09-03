@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.WBond;

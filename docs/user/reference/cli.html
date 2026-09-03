@@ -31,7 +31,7 @@
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › The command line</p>
 
   <h1>The Command Line</h1>
-  <p class="lede">Every engine circuitRF has runs without the GUI. One executable, seven verbs — S-parameters, DC, harmonic balance, loadpull, loadpull pursuit, electromagnetic extraction, and an elaborated-netlist dump. This chapter is the operational reference for all of them, including a worked EM run from an empty folder.</p>
+  <p class="lede">Every engine circuitRF has runs without the GUI. One executable, eight verbs — S-parameters, DC, harmonic balance, loadpull, loadpull pursuit, electromagnetic extraction, layout interchange conversion, and an elaborated-netlist dump. This chapter is the operational reference for all of them, including a worked EM run from an empty folder.</p>
 
 <nav class="toc">
 <h2>On this page</h2>
@@ -46,6 +46,7 @@
 <li><a href="#lp"><code>lp</code> — loadpull</a></li>
 <li><a href="#lpp"><code>lpp</code> — loadpull pursuit</a></li>
 <li><a href="#em"><code>em</code> — electromagnetic extraction</a></li>
+<li><a href="#convert"><code>convert</code> — layout interchange</a></li>
 <li><a href="#elab"><code>elab</code> — the elaborated netlist</a></li>
 <li><a href="#exit">Exit codes</a></li>
 <li><a href="#scripting">Scripting patterns</a></li>
@@ -114,6 +115,12 @@ convention behind both.</p>
 <td><code>.cem</code></td>
 <td>The EM kernel the setup resolves to</td>
 <td>A Touchstone <code>.sNp</code> <strong>and</strong> a grouped <code>.npy</code>, where <strong>Simulate</strong> writes them</td>
+</tr>
+<tr>
+<td><code>convert</code></td>
+<td>any layout format</td>
+<td>The same importer and exporter <strong>File ▸ Import/Export</strong> runs</td>
+<td>The layout in the format you asked for</td>
 </tr>
 <tr>
 <td><code>elab</code></td>
@@ -618,6 +625,194 @@ analyse. Point this EM setup at a layout that exists.
 </tr>
 </tbody>
 </table>
+<h2 id="convert"><code>convert</code> — layout interchange</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert &lt;input&gt; -o &lt;output&gt; [options]</code></pre>
+<p>Reads a layout in any format circuitRF understands and writes it in any other. It is the same reader
+and the same writer <strong>File ▸ Import</strong> and <strong>File ▸ Export</strong> run — see
+<a href="layout-editor.html#interchange">Interchange</a> for what each format can and cannot carry — so a
+conversion here and the same conversion through the GUI produce the same bytes.</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Named by</th>
+<th>As input</th>
+<th>As output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>circuitRF layout</td>
+<td><code>.clay</code></td>
+<td>the file</td>
+<td>a <strong>folder</strong> of cells plus a <code>.ctech</code></td>
+</tr>
+<tr>
+<td>GDSII</td>
+<td><code>.gds</code>, <code>.gdsii</code>, <code>.gds2</code></td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>DXF</td>
+<td><code>.dxf</code></td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Gerber + Excellon</td>
+<td>a <strong>folder</strong>, or one Gerber/drill file</td>
+<td>✓</td>
+<td>a <strong>folder</strong></td>
+</tr>
+<tr>
+<td>Board</td>
+<td><code>.kicad_pcb</code></td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Every ordered pair works</strong> — DXF to Gerber, Gerber to board, GDSII to DXF, board to GDSII, and the
+rest. There is no privileged direction and no hub format you have to route through by hand: a
+conversion is an import followed by an export, and <code>convert</code> does both.</p>
+<p>Formats are read off the paths. A folder means Gerber; a file with no telling extension is classified
+by its <em>content</em>, through the same classifier the Gerber import uses. <code>--from</code> and <code>--to</code> override
+that, and <code>--to</code> is <strong>required</strong> when the output is a folder, since a folder could be either Gerber or
+<code>.clay</code>.</p>
+<h3 id="convert-examples">Examples</h3>
+<p>Board file out to a fab house as artwork plus drill:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o fab/ --to gerber</code></pre>
+<p>A folder of Gerbers back to a board file:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert fab/ -o recovered.kicad_pcb</code></pre>
+<p>A mechanical drawing straight to artwork — no board tool in the middle:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert outline.dxf -o gerbers/ --to gerber</code></pre>
+<p>A mask set to a drawing your mechanical engineer can open, at the DXF version their tool wants:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert mmic.gds -o mmic.dxf --dxf-version AC1015</code></pre>
+<p>Bring a board in as editable circuitRF cells and keep the technology it declared:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o cells/ --to clay</code></pre>
+<p>One cell out of a GDSII library that holds many:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert lib.gds --list-cells
+<span class="prompt">$ </span>circuitrf convert lib.gds -o coupler.dxf --cell COUPLER</code></pre>
+<p>Convert a directory of drawings in one line:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>for f in dxf/*.dxf; do circuitrf convert "$f" -o "gds/$(basename "${f%.dxf}").gds"; done</code></pre>
+<h3 id="convert-options">Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-o, --output &lt;path&gt;</code></td>
+<td>The file to write — or the <strong>folder</strong>, for <code>gerber</code> and <code>clay</code>. Required.</td>
+</tr>
+<tr>
+<td><code>--from &lt;fmt&gt;</code>, <code>--to &lt;fmt&gt;</code></td>
+<td><code>clay</code>, <code>gdsii</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>. Say it when the path does not.</td>
+</tr>
+<tr>
+<td><code>--cell &lt;name&gt;</code></td>
+<td>Which cell to export, when the source holds several.</td>
+</tr>
+<tr>
+<td><code>--list-cells</code></td>
+<td>Report what the input holds and write nothing.</td>
+</tr>
+<tr>
+<td><code>--name &lt;stem&gt;</code></td>
+<td>What to call the written Gerber file set. Default: the cell's name.</td>
+</tr>
+<tr>
+<td><code>--tech &lt;file.ctech&gt;</code></td>
+<td>The technology to convert against, instead of the one the layout resolves.</td>
+</tr>
+<tr>
+<td><code>--workspace &lt;file.cws&gt;</code></td>
+<td>The workspace a <code>.clay</code>'s references resolve against. Default: the nearest one above it.</td>
+</tr>
+<tr>
+<td><code>--keep-cells &lt;dir&gt;</code></td>
+<td>Keep the cells the import produced instead of discarding them.</td>
+</tr>
+<tr>
+<td><code>--dbu &lt;n&gt;</code></td>
+<td>Database units per micron for an imported design. Default <code>1000</code> — one DBU is one nanometre.</td>
+</tr>
+<tr>
+<td><code>--dxf-version &lt;v&gt;</code></td>
+<td><code>AC1015</code> (R2000), <code>AC1018</code> (R2004), <code>AC1032</code> (R2018, the default).</td>
+</tr>
+<tr>
+<td><code>--dxf-units &lt;n&gt;</code></td>
+<td>The <code>$INSUNITS</code> value for a DXF that declares none.</td>
+</tr>
+<tr>
+<td><code>--drill-units &lt;mm or inch&gt;</code></td>
+<td>Excellon coordinate units, when the file does not say.</td>
+</tr>
+<tr>
+<td><code>--drill-format &lt;int&gt;:&lt;dec&gt;</code></td>
+<td>Excellon digit counts, e.g. <code>2:4</code>.</td>
+</tr>
+<tr>
+<td><code>--drill-zeros &lt;leading or trailing&gt;</code></td>
+<td>Excellon zero suppression.</td>
+</tr>
+<tr>
+<td><code>--accept-inferred-drill-format</code></td>
+<td>Proceed on the inference rather than refusing.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="convert-cell">Which cell gets exported</h3>
+<p>A GDSII library, a DXF drawing and a board file can all hold more than one cell, and an export writes
+one design. Unless <code>--cell</code> says otherwise, <code>convert</code> takes the source's own idea of the top: the
+GDSII structure nothing else instances, DXF's model space (the drawing itself, not a <code>BLOCK</code>
+definition), the board rather than one of its footprints. A Gerber set is always one flat cell. When
+the source genuinely has no unambiguous top, the conversion stops and tells you to name one —
+<code>--list-cells</code> prints the choices.</p>
+<h3 id="convert-tech">The technology, and why it matters here</h3>
+<p>An import brings a layer table with it, and in the GUI those layers land on the technology your
+workspace already has open. Headless there is no open workspace, so <code>convert</code> <strong>writes a <code>.ctech</code> of
+its own</strong> from what the file declared, exactly as <strong>File ▸ Import ▸ Gerber</strong> does. That is what keeps
+layer names, colours and Gerber file suffixes alive across a conversion instead of leaving every layer
+a bare number.</p>
+<p>Two consequences worth knowing:</p>
+<ul>
+<li><strong><code>--tech</code> is how you convert against a process you already have.</strong> Point it at a <code>.ctech</code> and the
+source's layers reconcile against it — matched layers keep your names and your Gerber suffixes,
+unmatched ones are added. Without it, an intermediate technology is invented from the file alone,
+and a Gerber export then names its files from synthetic suffixes.</li>
+<li><strong><code>--keep-cells &lt;dir&gt;</code> leaves a design you can open.</strong> Cells plus the technology they point at —
+the honest way to see what a conversion actually understood before you send the result anywhere.</li>
+</ul>
+<p><strong>GDSII is the one exception, and it is the format's own doing.</strong> GDSII identifies a layer by a
+number, not a name, so an import has nothing to name it <em>with</em>: the numbers come through exactly, the
+names do not. Convert from GDSII with <code>--tech</code> pointing at the technology those numbers belong to and
+the names come back.</p>
+<h3 id="convert-refusals">When it refuses</h3>
+<div class="callout note">
+<span class="label">A drill file that does not state its format is a refusal, not a guess</span>
+<p>Most Excellon files do not say whether their coordinates are inches or millimetres, or whether
+leading or trailing zeros are suppressed — and leading versus trailing differ by <em>four orders of
+magnitude</em> on identical text. The GUI asks you. There is nobody to ask here, so the conversion
+stops, prints what it inferred and the evidence behind it — including whether the holes land inside
+the artwork's own outline — and names the flags that answer it. Accept the inference with
+<code>--accept-inferred-drill-format</code>, or state it outright with <code>--drill-units</code>,
+<code>--drill-format</code> and <code>--drill-zeros</code>.</p>
+</div>
+<p>It also stops, rather than guessing, when a design instantiates cells drawn against a <em>different</em>
+technology and the layer mapping needs confirming; when coordinates overflow GDSII's 32-bit range; and
+when the source holds several cells and none of them is an unambiguous top. Every refusal exits <code>1</code>
+and writes nothing at all.</p>
+<p>Everything short of a refusal is a <strong>note on stderr</strong>, counted and named: labels flattened to
+geometry, curves turned into polygons, holes keyholed, bitmaps dropped, unresolved instance
+references, layers with no mapping in the target format. stdout carries only the paths written, one
+per line, so a script can consume them directly:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o fab/ --to gerber 2&gt; convert.log | zip -j fab.zip -@</code></pre>
 <h2 id="elab"><code>elab</code> — the elaborated netlist</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf elab &lt;file.cnl&gt;</code></pre>
 <p>Elaborates and stops: flattens the hierarchy, resolves every parameter and expression top-down, and

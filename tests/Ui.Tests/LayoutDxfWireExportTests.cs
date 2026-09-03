@@ -2,7 +2,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 using Xunit;

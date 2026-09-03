@@ -15,7 +15,7 @@
 using Clipper2Lib;
 
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
 

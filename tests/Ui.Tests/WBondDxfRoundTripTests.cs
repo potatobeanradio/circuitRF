@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.WBond;
 using Xunit;
 

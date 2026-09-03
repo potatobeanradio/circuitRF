@@ -1197,7 +1197,7 @@ public static partial class LayoutRenderer
         // DrawLabelText's own anchor offsets, in its own (pre-rotation, Y-down) local frame, taken from
         // the SAME resolver it draws with. A text aligner shifts the origin by a fraction of the ADVANCE
         // width (not of the tight bounds, which is only what the glyphs happen to ink).
-        var (align, baselineDy) = ResolveLabelAnchor(label, font, centred);
+        var (align, baselineDy) = LayoutTextOutline.ResolveLabelAnchor(label, font, centred);
         float alignDx = align switch
         {
             SKTextAlign.Center => -advance / 2f,
@@ -2426,7 +2426,7 @@ public static partial class LayoutRenderer
         float rotationDeg = -(float)label.RotationDegrees;
         if (rotationDeg != 0f) canvas.RotateDegrees(rotationDeg);
 
-        var (align, dy) = ResolveLabelAnchor(label, font, centred);
+        var (align, dy) = LayoutTextOutline.ResolveLabelAnchor(label, font, centred);
         canvas.DrawText(label.Text, 0, dy, align, font, paint);
         canvas.Restore();
     }
@@ -2441,30 +2441,8 @@ public static partial class LayoutRenderer
     /// centred on its anchor regardless of what the label itself says, which is what every port in every
     /// existing <c>.clay</c> already did.</para>
     /// </summary>
-    internal static (SKTextAlign Align, float BaselineDy) ResolveLabelAnchor(
-        LabelShape label, SKFont font, bool centred)
-    {
-        var h = centred ? LabelHAlign.Center : label.HAlign ?? LabelHAlign.Left;
-        var v = centred ? LabelVAlign.Middle : label.VAlign ?? LabelVAlign.Baseline;
-
-        var align = h switch
-        {
-            LabelHAlign.Center => SKTextAlign.Center,
-            LabelHAlign.Right  => SKTextAlign.Right,
-            _                  => SKTextAlign.Left,
-        };
-
-        // Skia's Ascent is NEGATIVE (up from the baseline) and Descent positive, both in this Y-down
-        // frame — so "hang the text below the anchor" is a POSITIVE baseline shift of -Ascent.
-        float dy = v switch
-        {
-            LabelVAlign.Top    => -font.Metrics.Ascent,
-            LabelVAlign.Bottom => -font.Metrics.Descent,
-            // Half an x-height, not half the em box: a baseline through the anchor puts the whole
-            // glyph above it. This is the exact expression every port has always used.
-            LabelVAlign.Middle => -0.5f * font.Metrics.Ascent * 0.5f,
-            _                  => 0f,
-        };
-        return (align, dy);
-    }
+    // ResolveLabelAnchor moved to LayoutTextOutline (CircuitRF.Design) when the interchange stack
+    // crossed the UI firewall: the flattener needs the SAME anchor arithmetic the renderer draws with,
+    // and `circuitrf convert` runs the flattener with no Avalonia in the process. One copy, in the
+    // project both callers can reach — the property being protected is that these two never disagree.
 }

@@ -286,7 +286,7 @@ public sealed partial class LayoutEditorViewModel
     private static IReadOnlyList<PolygonShape> FlattenLabel(LabelShape label, long tolDbu)
     {
         if (label.IsPort) return [];
-        var contours = Renderers.LayoutTextOutline.BuildGlyphContours(label);
+        var contours = LayoutTextOutline.BuildGlyphContours(label);
         return LayoutTextFlatten.FlattenContoursToPolygons(contours, tolDbu, label.Layer, label.Net);
     }
 

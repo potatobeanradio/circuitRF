@@ -12,7 +12,7 @@
 // declares.
 
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Layout.TechImport;
 using CircuitRF.Ui.Schematic;
 using Xunit;

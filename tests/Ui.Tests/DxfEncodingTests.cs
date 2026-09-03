@@ -1,6 +1,6 @@
 using System.Text;
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 
 namespace CircuitRF.Ui.Tests;
 

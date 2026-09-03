@@ -2,7 +2,7 @@ using System.IO;
 using System.Linq;
 using CircuitRF.Design.Cells;
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Renderers;
 using SkiaSharp;
 using Xunit;

@@ -17,7 +17,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels.ProjectTree;
 using Xunit;

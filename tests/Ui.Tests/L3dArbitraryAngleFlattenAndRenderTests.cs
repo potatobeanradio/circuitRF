@@ -409,17 +409,17 @@ public sealed class L3dArbitraryAngleFlattenAndRenderTests : IDisposable
         LayoutPersistence.SaveToFile(Path.Combine(topLayoutDir, "Top.clay"), topView);
 
         var tech = MakeTech();
-        var plan = CircuitRF.Ui.Layout.Interchange.GdsiiExport.Analyze(topDir, tech, 1000);
+        var plan = CircuitRF.Design.Layout.Interchange.GdsiiExport.Analyze(topDir, tech, 1000);
         Assert.True(plan.CanWrite);
         var gdsPath = Path.Combine(_root, "export.gds");
-        CircuitRF.Ui.Layout.Interchange.GdsiiExport.Write(gdsPath, plan);
+        CircuitRF.Design.Layout.Interchange.GdsiiExport.Write(gdsPath, plan);
 
         var importDir = Directory.CreateTempSubdirectory("l3d-gds-").FullName;
         try
         {
             CellLayoutResolver.InvalidateUnder(importDir);
             using var stream = File.OpenRead(gdsPath);
-            var import = CircuitRF.Ui.Layout.Interchange.GdsiiImport.Import(
+            var import = CircuitRF.Design.Layout.Interchange.GdsiiImport.Import(
                 stream, importDir, tech, destDbuPerMicron: 1000, preferSourceResolution: false);
             Assert.False(import.Cancelled);
             Assert.DoesNotContain(import.Messages, m => m.Contains("snapped", StringComparison.OrdinalIgnoreCase));

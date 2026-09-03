@@ -5,7 +5,7 @@
 //
 // R-L4e-21: counters only. There is no wall-clock assertion anywhere in this file.
 
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 
 using System.Text;
 

@@ -3454,7 +3454,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
         var techRes = ResolveTechFor(null, null); // the workspace's own default technology
 
-        CircuitRF.Ui.Layout.Interchange.GdsiiImport.ImportResult result;
+        CircuitRF.Design.Layout.Interchange.GdsiiImport.ImportResult result;
         try
         {
             result = await Task.Run(() =>
@@ -3471,7 +3471,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 if (rulesProblem is not null)
                     Dispatcher.UIThread.Post(() => Messages.Warning(rulesProblem));
 
-                return CircuitRF.Ui.Layout.Interchange.GdsiiImport.Import(
+                return CircuitRF.Design.Layout.Interchange.GdsiiImport.Import(
                     stream, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
                     preferSourceResolution: false,
                     pinRules: pinRules,
@@ -3599,13 +3599,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
         var techRes = ResolveTechFor(null, null); // the workspace's own default technology
 
-        CircuitRF.Ui.Layout.Interchange.DxfImport.ImportResult result;
+        CircuitRF.Design.Layout.Interchange.DxfImport.ImportResult result;
         try
         {
             result = await Task.Run(() =>
             {
                 using var stream = File.OpenRead(files[0].Path.LocalPath);
-                return CircuitRF.Ui.Layout.Interchange.DxfImport.Import(
+                return CircuitRF.Design.Layout.Interchange.DxfImport.Import(
                     stream, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
                     resolveUnits: rawInsUnits => Dispatcher.UIThread
                         .InvokeAsync(() => ResolveDxfUnitsAsync(window))
@@ -3680,15 +3680,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // relative path) and PcbImport already took its parent directory as a parameter.
         // ImportFolder.UniqueName is what stops a second import of the same board merging into the
         // first one's folder.
-        var importDir = CircuitRF.Ui.Layout.Interchange.ImportFolder.Create(workspaceDir, boardName);
+        var importDir = CircuitRF.Design.Layout.Interchange.ImportFolder.Create(workspaceDir, boardName);
 
-        CircuitRF.Ui.Layout.Interchange.PcbImport.ImportResult result;
+        CircuitRF.Design.Layout.Interchange.PcbImport.ImportResult result;
         try
         {
             result = await Task.Run(() =>
             {
                 using var stream = File.OpenRead(files[0].Path.LocalPath);
-                return CircuitRF.Ui.Layout.Interchange.PcbImport.Import(
+                return CircuitRF.Design.Layout.Interchange.PcbImport.Import(
                     stream, importDir, boardName, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
                     resolveLayerMapping: rows =>
                     {
@@ -3703,7 +3703,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             // "nothing was created" has to stay literally true, so the folder made for this import
             // goes with it — RemoveIfEmpty declines if the import got far enough to write into it.
-            CircuitRF.Ui.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
+            CircuitRF.Design.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
             Messages.Error($"Import Board: {ex.Message}");
             return;
         }
@@ -3712,7 +3712,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (result.Cancelled)
         {
-            CircuitRF.Ui.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
+            CircuitRF.Design.Layout.Interchange.ImportFolder.RemoveIfEmpty(importDir);
             Messages.Info("Import Board cancelled — nothing was created.");
             return;
         }
@@ -3777,15 +3777,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Both prompts have to be answerable from the background thread the import runs on, and both
         // are dialogs, so both hop back to the UI thread the same way the shared layer-mapping bridge
         // already does in every other import here.
-        CircuitRF.Ui.Layout.Interchange.GerberImport.ImportResult result;
+        CircuitRF.Design.Layout.Interchange.GerberImport.ImportResult result;
         try
         {
             result = await Task.Run(() =>
-                CircuitRF.Ui.Layout.Interchange.GerberImportEntry.Run(
+                CircuitRF.Design.Layout.Interchange.GerberImportEntry.Run(
                     chosen, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
                     promptForScope: survey => Dispatcher.UIThread
                         .InvokeAsync(() => new CircuitRF.Ui.Views.Dialogs.GerberImportScopeDialog(survey)
-                            .ShowDialog<CircuitRF.Ui.Layout.Interchange.GerberImportScope?>(window))
+                            .ShowDialog<CircuitRF.Design.Layout.Interchange.GerberImportScope?>(window))
                         .GetAwaiter().GetResult(),
                     pickFolder: () => Dispatcher.UIThread
                         .InvokeAsync(async () =>
@@ -3829,13 +3829,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>R-L4h-6's own prompt — raised only when L4f's inference had to guess. Null aborts the
     /// whole import (GerberImport.Import's own resolveDrillFormat contract).</summary>
-    private async Task<CircuitRF.Ui.Layout.Interchange.GerberImport.DrillFormatChoice?> ResolveGerberDrillFormatAsync(
+    private async Task<CircuitRF.Design.Layout.Interchange.GerberImport.DrillFormatChoice?> ResolveGerberDrillFormatAsync(
         Window owner, string fileName,
-        CircuitRF.Ui.Layout.Interchange.DrillFormatInference inferred,
-        CircuitRF.Ui.Layout.Interchange.DrillExtentsCheck crossCheck)
+        CircuitRF.Design.Layout.Interchange.DrillFormatInference inferred,
+        CircuitRF.Design.Layout.Interchange.DrillExtentsCheck crossCheck)
     {
         var dialog = new CircuitRF.Ui.Views.Dialogs.GerberDrillFormatPromptDialog(fileName, inferred, crossCheck);
-        return await dialog.ShowDialog<CircuitRF.Ui.Layout.Interchange.GerberImport.DrillFormatChoice?>(owner);
+        return await dialog.ShowDialog<CircuitRF.Design.Layout.Interchange.GerberImport.DrillFormatChoice?>(owner);
     }
 
     /// <summary>
@@ -3855,7 +3855,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// runs in this direction too. What was recovered is reported either way, so the user can compare.</para>
     /// </summary>
     private void ApplyBoardImportToTechnology(
-        TechResolution techRes, CircuitRF.Ui.Layout.Interchange.PcbImport.ImportResult result)
+        TechResolution techRes, CircuitRF.Design.Layout.Interchange.PcbImport.ImportResult result)
     {
         if (techRes.Tech is not { } tech || techRes.ResolvedPath is not { } techPath) return;
         if (result.LayersToAdd.Count == 0 && result.Stackup is null) return;

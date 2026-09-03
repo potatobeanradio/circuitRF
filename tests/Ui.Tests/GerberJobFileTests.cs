@@ -1,6 +1,6 @@
 using System.Linq;
 using System.Text.Json;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 
 namespace CircuitRF.Ui.Tests;
 

@@ -3,7 +3,7 @@ using System.Linq;
 using Avalonia.Input;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels;

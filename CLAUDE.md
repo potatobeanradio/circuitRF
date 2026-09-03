@@ -50,7 +50,7 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
 - Build:   `dotnet build`
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
-  Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, **`em`**, `elab`. **The CLI has its own design doc —
+  Verbs: `sparam`, `dc`, **`hb`**, **`lp`**, **`lpp`**, **`em`**, **`convert`**, `elab`. **The CLI has its own design doc —
   `docs/design/cli.md`** — covering the five-step anatomy of a run verb, the stdout/stderr split, and
   the rules below; read it before adding a verb. `hb`/`lp`/`lpp` run the netlist's harmonic-balance,
   loadpull and loadpull-pursuit analyses, and each runs the whole sweep when a `parametric_sweep`
@@ -71,6 +71,19 @@ Instead, briefly paraphrase owner/user messages. Pre-existing quotes are ok.
   The gate is `tests/Ui.Tests/Em/EmCliVerbTests.cs`, which compares the CLI's `.sNp` **byte for byte**
   against `EmRunService.Run`'s — every line but the provenance write-timestamp, which the file carries
   by design; the `.npy` matches with no exception.
+  **`convert` is one import and one export** (2026-09): every ordered pair of `clay`/`gdsii`/`dxf`/
+  `gerber`/`board` works because every reader lands on a cell folder plus a technology and every
+  writer starts from one — a `.clay` target stops after the import, anything else exports out of a
+  scratch directory (`--keep-cells` keeps it). Formats infer from the paths (a FOLDER is a Gerber file
+  set; an unknown extension is classified by CONTENT through the import's own classifier); `--from`/
+  `--to` override. Two things the GUI asks in a dialog: the layer mapping takes the same default the
+  dialog pre-selects, and **an unstated Excellon coordinate format is a REFUSAL, never a guess** —
+  leading vs trailing suppression differ by four orders of magnitude on identical text, so it prints
+  the inference and the flags that answer it. Headless there is no open workspace to graft layers
+  onto, so it writes a `.ctech` of its own; **passing a null destination technology to any importer
+  silently drops every layer** — `src/Design/RESOLVED.md` records why. Gate:
+  `tests/Ui.Tests/ConvertCliVerbTests.cs` (all 24 pairs, plus byte identity against the in-process
+  `GdsiiExport`/`GerberExport` the GUI's own File ▸ Export calls).
 - Package: **exactly one script per platform, and each builds everything that platform ships** —
   `packaging/windows/build-windows.ps1` (9 files: `.msi` x64/arm64/x86 in both install scopes, plus
   the `.zip` the updater fetches), `packaging/macos/build-macos.sh` (2 `.dmg`s, both architectures;
@@ -291,8 +304,9 @@ Source map: `src/Core` (layers 1–2 + the expression engine), `src/Engine` (lay
 `src/RfCore` (Touchstone I/O, network params, `DataSet`/`DataCube`, `.npy` export), `src/Design`
 (the design-layer DOCUMENT artifacts — the layout model and `.clay` reader, the technology model and
 `.ctech` reader, the `.ccell` cell-folder format, the `.cem` EM setup and the extractors that turn
-geometry + stackup into an `EmProblem`), `src/Ui` (Avalonia), `src/Cli` (headless driver + test
-harness). `RfCore` is an ordinary first-party project alongside the rest — see §Stack for why it is
+geometry + stackup into an `EmProblem`, **and `Layout/Interchange/` — every GDSII, DXF, Gerber,
+Excellon and `.kicad_pcb` reader and writer**), `src/Ui` (Avalonia), `src/Cli` (headless driver +
+test harness). `RfCore` is an ordinary first-party project alongside the rest — see §Stack for why it is
 no longer at the repo root, and why that changed nothing architecturally.
 
 **`src/Design` is not a second `src/Core`.** Core is the CIRCUIT design layer — cells as netlists,
@@ -302,6 +316,16 @@ without pulling Avalonia across the firewall (`docs/sonnet-briefs/brief-cli-em-v
 nothing, docks nothing and observes no canvas — the layout EDITOR, the DRC engine, the PCell
 generators and the `.cem` editor all stayed in `src/Ui`. The namespaces that moved with it are
 listed once in `src/Ui/GlobalUsings.cs` rather than in ~300 `using` lines.
+
+**The interchange readers and writers moved here in 2026-09** for the same reason and by the same
+route — `circuitrf convert` needs them, and `src/Cli` cannot reference `src/Ui`. The exports come
+too, not just the imports: SkiaSharp is allowed across the firewall (`tests/Firewall.Tests`), so
+`LayoutTextOutline` flattens a label's glyphs here and gives up only its font SOURCE, which loads
+through Avalonia's `AssetLoader` and stays in `src/Ui` behind
+`LayoutTextOutline.TypefaceSource` (installed by `UiTypefaceInstaller`, a module initializer, because
+`src/Ui` has three entry points). Unset, it falls back to `SKTypeface.Default` — so a label flattened
+headlessly is a different SHAPE from the same label flattened in the app, which every label-carrying
+export reports rather than hides. Detail and the traps in `src/Design/RESOLVED.md`.
 
 `tools/` holds programs that are not part of the application. **A program in there that exists to be
 tested against deliberately references no other project in this repo** — an independent

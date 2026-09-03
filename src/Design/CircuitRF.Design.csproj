@@ -41,6 +41,13 @@
          Boost licence, integer coordinates matching our DBU storage type — already a src/Ui
          dependency before this project existed, and it moves with the code that uses it. -->
     <PackageReference Include="Clipper2" Version="1.5.4" />
+
+    <!-- Glyph outlines for LayoutTextOutline — the one thing in this project that needs a font
+         engine, and the reason `circuitrf convert` can flatten a label to polygons headlessly.
+         SkiaSharp is explicitly ALLOWED across the UI firewall (tests/Firewall.Tests: headless 2D
+         graphics is not a UI framework); the Avalonia-bound part, loading the embedded IBM Plex
+         faces, stays in src/Ui behind LayoutTextOutline.TypefaceSource. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
   <ItemGroup>

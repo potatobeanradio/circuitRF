@@ -16,7 +16,7 @@ using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Docking;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Drc;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.WBond;

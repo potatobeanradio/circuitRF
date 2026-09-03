@@ -1,6 +1,6 @@
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
-using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange;
 
 namespace CircuitRF.Ui.Tests;
 
