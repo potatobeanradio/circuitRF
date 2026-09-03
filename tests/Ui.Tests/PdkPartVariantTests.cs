@@ -40,14 +40,14 @@ public sealed class PdkPartVariantTests : IDisposable
 
     public PdkPartVariantTests()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         Directory.CreateDirectory(KitDir);
         Directory.CreateDirectory(SchematicDir);
     }
 
     public void Dispose()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_scratch, recursive: true); } catch { /* best effort */ }
     }
 
@@ -93,7 +93,7 @@ public sealed class PdkPartVariantTests : IDisposable
             Parameters: declared.Length > 0 ? declared : null));
 
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
         _lastSettings = outcome.Settings;
         return outcome.Items[0].Pdk!.CellDir!;
     }
@@ -112,7 +112,7 @@ public sealed class PdkPartVariantTests : IDisposable
     /// a kit part is not the user's cell and no longer has a folder of its own.
     /// </summary>
     private static CcellFile Installed(string cellRef)
-        => PdkKitRegistry.Find(cellRef)?.Ccell
+        => PdkKitRegistry.Find(cellRef, null)?.Ccell
            ?? throw new Xunit.Sdk.XunitException($"no kit part is loaded for '{cellRef}'");
 
     private (SchematicEditModel Model, EditableComponent Comp) Placed(string cellRef)
@@ -637,7 +637,7 @@ public sealed class PdkPartVariantTests : IDisposable
             """);
 
         var outcome = PdkPartInstaller.Install(PdkImporter.Import(AdditionsDir));
-        PdkKitRegistry.SetKit("SampleKit", outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, "SampleKit", outcome.Parts ?? []);
         return outcome.Items[0].Pdk!.CellDir!;
     }
 
@@ -952,7 +952,7 @@ public sealed class PdkPartVariantTests : IDisposable
         report.Parts.Add(new PdkPart("HELPER_CELL", "Helper", SymbolArtwork: art));
 
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
         var items = outcome.Items;
 
         Assert.Contains(Installed(items[0].Pdk!.CellDir!).Parameters, p => p.Name == "ModelAs");
@@ -1037,7 +1037,7 @@ public sealed class PdkPartVariantTests : IDisposable
                                        PdkAssetSupport.Supported, "netlist"));
 
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit("SampleKit", outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, "SampleKit", outcome.Parts ?? []);
         return outcome.Settings;
     }
 

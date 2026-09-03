@@ -44,6 +44,19 @@ public class CrfHostWindow : HostWindow
     // lets that close through instead of re-entering its own teardown.
     private bool _closingForLayoutRebuild;
 
+    /// <summary>
+    /// The workspace this float belongs to (MW1 R-mw1-11).
+    ///
+    /// <para><b>Stamped by the factory that creates it, never inferred.</b> Every
+    /// <c>CrfHostWindow</c> in the process is built through one <c>CircuitRfDockFactory</c>'s
+    /// <c>DefaultHostWindowLocator</c>, and the factory is per view model — so the creating factory
+    /// already knows the answer. With two workspace windows open, the alternatives (window position,
+    /// z-order, title) are guesses, and every one of them would sometimes attribute a panel to the
+    /// wrong workspace: its Window menu would list it, its close prompt would count its dirty work,
+    /// and on macOS it would be handed the wrong shell's menu.</para>
+    /// </summary>
+    public WorkspaceViewModel? OwningWorkspace { get; set; }
+
     public CrfHostWindow()
     {
         this[!BackgroundProperty] = new DynamicResourceExtension("SystemChromeLowColor");
@@ -52,13 +65,13 @@ public class CrfHostWindow : HostWindow
         // presented — otherwise the toggle dies after two presses and only a click on the shell revives it
         // (owner, 2026-08-17). This is a second TopLevel, so it needs its own registration; the shortcut
         // itself, and why it is not solved by keeping focus in the shell, is in Views.WirePanelKeys.
-        Views.WirePanelKeys.Attach(this, Views.WirePanelKeys.ResolveWorkspace);
+        Views.WirePanelKeys.Attach(this, () => Views.WorkspaceLocator.For(this));
 
         // The ✕ on this float's tool chrome is inert in Dock 12.0.0.2 — see Views.ToolChromeCloseButton,
         // which is shared with the shell because the docked chrome has exactly the same dead button. The
         // fallback is this window: a floating tool window exists to hold panels, so closing it is what
         // the ✕ means even when no single panel can be named.
-        Views.ToolChromeCloseButton.Attach(this, Views.WirePanelKeys.ResolveWorkspace, CloseFloatedToolPanels);
+        Views.ToolChromeCloseButton.Attach(this, () => Views.WorkspaceLocator.For(this), CloseFloatedToolPanels);
     }
 
     /// <summary>

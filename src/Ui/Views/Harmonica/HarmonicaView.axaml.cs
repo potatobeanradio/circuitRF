@@ -601,11 +601,7 @@ public partial class HarmonicaView : UserControl
     /// </summary>
     private ViewModels.WorkspaceViewModel? Workspace
         => (TopLevel.GetTopLevel(this) as Window)?.DataContext as ViewModels.WorkspaceViewModel
-           ?? (Avalonia.Application.Current?.ApplicationLifetime
-                   is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
-               ? desktop.Windows.OfType<Views.WorkspaceWindow>().FirstOrDefault()?.DataContext
-                     as ViewModels.WorkspaceViewModel
-               : null);
+           ?? WorkspaceLocator.For(this);
 
     /// <summary>
     /// File ▸ New — a new harmonicaRF document, from EITHER host.

@@ -48,7 +48,7 @@ public sealed class PdkInMemoryLoadBudgetTests : IDisposable
 
     public void Dispose()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -129,7 +129,7 @@ public sealed class PdkInMemoryLoadBudgetTests : IDisposable
         {
             var sw = Stopwatch.StartNew();
             var outcome = PdkPartInstaller.Install(report, recorded?.DeepClone());
-            PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+            PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
             sw.Stop();
 
             Assert.Equal(SymbolCount, outcome.SymbolsInstalled);

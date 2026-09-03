@@ -29,13 +29,13 @@ public sealed class PdkNoProgramMessageTests : IDisposable
 
     public PdkNoProgramMessageTests()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         Directory.CreateDirectory(KitDir);
     }
 
     public void Dispose()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_scratch, recursive: true); } catch { /* best effort */ }
     }
 

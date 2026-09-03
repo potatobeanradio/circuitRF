@@ -749,7 +749,11 @@ public sealed class DockWindowBehaviourTests
 
         // The float passes a fallback — closing its own window — because a tool float exists to hold
         // panels. The shell passes none: it must never close itself over an unidentifiable panel.
-        Assert.Contains("ToolChromeCloseButton.Attach(this, Views.WirePanelKeys.ResolveWorkspace, CloseFloatedToolPanels)",
+        //
+        // Since MW1 (R-mw1-11/14) the float resolves the workspace that OWNS it rather than whichever
+        // workspace window is first in the process — with two windows open, the ✕ on a panel torn off
+        // window B would otherwise hide a panel in window A.
+        Assert.Contains("ToolChromeCloseButton.Attach(this, () => Views.WorkspaceLocator.For(this), CloseFloatedToolPanels)",
                         ReadRepoFile("src/Ui/ViewModels/Dock/CrfHostWindow.cs"));
     }
 

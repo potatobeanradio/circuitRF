@@ -58,6 +58,11 @@ public partial class WorkspaceWindow : Window
             // Cheap (a handful of windows) and idempotent; RaiseFloatingToolWindows re-entering
             // Activated simply rebuilds again, which is harmless.
             _vm?.RebuildWindowMenuItems();
+            // Which window the user was last in front of — the answer for anything that arrives with
+            // no window of its own (MW1 R-mw1-15), and, on macOS, which shell's menu the app-scope
+            // fallback should be (R-mw1-13).
+            App.NoteWorkspaceActivated(this);
+            AttachNativeMenuAtApplicationScope();
         };
     }
 
@@ -192,9 +197,22 @@ public partial class WorkspaceWindow : Window
         return await dialog.ShowDialog<Dialogs.SaveChangesResult>(this) == Dialogs.SaveChangesResult.Save;
     }
 
+    /// <summary>
+    /// This window's OWN <c>NativeMenu</c>, captured the first time AppKit has built it.
+    ///
+    /// <para><b>Its own, not the application-scope one</b> (MW1 R-mw1-13). The app-scope menu is a
+    /// fallback for when no window is key, and with two shells open it is whichever activated last —
+    /// so restoring a shell's menu bar from it would hand window B the menu whose commands bind to
+    /// window A. A window's <c>NativeMenu</c> instance is fixed for its lifetime (see
+    /// <c>src/Ui/CLAUDE.md</c>), so capturing it once is safe and re-setting the SAME instance is
+    /// what the restore path has always done.</para>
+    /// </summary>
+    internal NativeMenu? OwnNativeMenu { get; private set; }
+
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        OwnNativeMenu ??= NativeMenu.GetMenu(this);
         (App.Current as App)?.NotifyWindowCountChanged();
         // AppKit has now built the native menu from the XAML — safe to find and populate.
         RebuildNativeRecentMenu();
@@ -336,10 +354,8 @@ public partial class WorkspaceWindow : Window
         e.Cancel = true;
         try
         {
-            if (await _vm.PromptSaveBeforeClose(this, "closing"))
+            if (await ConfirmCloseAsync())
             {
-                _vm.OnCleanExit();
-                _closingConfirmed = true;
                 Close();
             }
             else
@@ -353,6 +369,35 @@ public partial class WorkspaceWindow : Window
             _vm.Messages.Error($"Couldn't complete close/save: {ex.Message}");
             (App.Current as App)?.AbortQuit();
         }
+    }
+
+    /// <summary>
+    /// Settles this window's unsaved work and marks it clear to close. Returns false when the user
+    /// cancelled, in which case nothing has been saved or discarded and the window must stay open.
+    ///
+    /// <para><b>Separated from <see cref="OnClosing"/> for File ▸ Quit</b> (MW1 R-mw1-18). Quit has to
+    /// ask EVERY workspace window BEFORE closing any of them, so that cancelling the second window's
+    /// prompt leaves the first one open too — closing as it went would already have destroyed the
+    /// window the user was trying to keep. Idempotent: a window that has already confirmed says yes
+    /// without asking again.</para>
+    /// </summary>
+    internal async Task<bool> ConfirmCloseAsync()
+    {
+        if (_closingConfirmed) return true;
+        if (_vm is null) return true;
+
+        if (!_vm.HasAnyDirtyWork())
+        {
+            _vm.OnCleanExit();
+            _closingConfirmed = true;
+            return true;
+        }
+
+        if (!await _vm.PromptSaveBeforeClose(this, "closing")) return false;
+
+        _vm.OnCleanExit();
+        _closingConfirmed = true;
+        return true;
     }
 
     // About menu item click (used for the in-window Help menu on Windows/Linux).

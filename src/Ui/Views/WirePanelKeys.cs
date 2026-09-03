@@ -71,10 +71,15 @@ public static class WirePanelKeys
     /// standalone wBond app, which has no workspace, so the shortcut is simply absent there rather than
     /// needing a second gate.</para>
     /// </summary>
-    public static WorkspaceViewModel? ResolveWorkspace() =>
-        Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-            ? desktop.Windows.OfType<WorkspaceWindow>().FirstOrDefault()?.DataContext as WorkspaceViewModel
-            : null;
+    public static WorkspaceViewModel? ResolveWorkspace() => WorkspaceLocator.Any();
+
+    /// <summary>
+    /// The workspace the key press belongs to — resolved from the window it arrived in
+    /// (MW1 R-mw1-14), so a shortcut pressed in one workspace window never toggles a panel in
+    /// another. <see cref="ResolveWorkspace"/> stays for the callers that genuinely have no visual.
+    /// </summary>
+    public static WorkspaceViewModel? ResolveWorkspaceFor(object? source)
+        => WorkspaceLocator.For(source);
 
     /// <summary>
     /// Whether focus is in a text field — the same three control types <c>WBondEditorView</c> uses for its

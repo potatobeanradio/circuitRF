@@ -45,6 +45,15 @@ public sealed partial class SchematicViewModel : ObservableObject
     public string? WorkspaceRoot => WorkspaceRootProvider?.Invoke();
 
     /// <summary>
+    /// Whose kits this session resolves against (MW1 R-mw1-5). The schematic's OWN parent workspace
+    /// first — a foreign document edited in this window belongs to the workspace it came from, and
+    /// its kit parts resolve there — falling back to the window's workspace for a scratch session
+    /// that has never been saved anywhere.
+    /// </summary>
+    public string? KitWorkspaceRoot
+        => WorkspaceRootFinder.WorkspaceDirOf(EditModel.SchematicDirectory) ?? WorkspaceRoot;
+
+    /// <summary>
     /// What this session's document is CALLED — "matchedRFTest.csch", or a scratch tab's title, or
     /// empty when neither is known.
     /// </summary>
@@ -3003,7 +3012,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                 // click placed the kit's real symbol. Drag-and-drop looked right only because it was
                 // already going through this one accessor. See src/Ui/CLAUDE.md: do not split that
                 // field by hand again.
-                var res = CellSymbolResolver.ResolveCellDirOrRef(cellDir);
+                var res = CellSymbolResolver.ResolveCellDirOrRef(cellDir, KitWorkspaceRoot);
                 if (res.State == CellSymbolState.Resolved)
                 {
                     prims = res.Symbol!.Primitives;
@@ -3224,7 +3233,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         // no saved schematic — and no symbol to offer to generate, because a kit supplies its own.
         if (PdkKitRegistry.IsKitRef(cellAbsDir))
         {
-            if (PdkKitRegistry.Find(cellAbsDir) is null)
+            if (PdkKitRegistry.Find(cellAbsDir, KitWorkspaceRoot) is null)
             {
                 _messageSink?.Warning(
                     PdkKitRegistry.TryParse(cellAbsDir, out string kit, out string part)
@@ -3414,7 +3423,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         // A loaded kit's part is asked for FIRST: it exists only in memory, so no directory walk
         // could ever find it, and a kit part is the case this path is most often used for.
         string? cellAbsDir = null;
-        string? cellRef    = PdkKitRegistry.FindRefByPartId(cellName);
+        string? cellRef    = PdkKitRegistry.FindRefByPartId(KitWorkspaceRoot, cellName);
 
         if (cellRef is null)
         {

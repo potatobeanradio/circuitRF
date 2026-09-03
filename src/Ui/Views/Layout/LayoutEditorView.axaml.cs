@@ -293,7 +293,7 @@ public partial class LayoutEditorView : UserControl
     /// <c>LayoutEditorViewModel</c> built without one (a torn-off window, a test) would otherwise run
     /// silently, and the panel is where the EM run already reports.</para>
     /// </summary>
-    private static IMessageSink? ResolveMessages() => ResolveWorkspace()?.Messages;
+    private IMessageSink? ResolveMessages() => ResolveWorkspace()?.Messages;
 
     /// <summary>
     /// The shared half: find this layout's wirebond design and a window to parent a dialog on, run the
@@ -343,13 +343,10 @@ public partial class LayoutEditorView : UserControl
     /// <c>TornOffFileMenuView</c> and this view's own DRC and EM buttons already use, and for the same
     /// reason: this view's DataContext is a <see cref="LayoutDocument"/>, not the workspace.</para>
     /// </summary>
-    private static WorkspaceViewModel? ResolveWorkspace() =>
-        Avalonia.Application.Current?.ApplicationLifetime
-                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
-            ? desktop.Windows.OfType<WorkspaceWindow>()
-                              .Select(w => w.DataContext as WorkspaceViewModel)
-                              .FirstOrDefault(v => v is not null)
-            : null;
+    /// <para><b>Resolved from THIS view's own window</b> (MW1 R-mw1-14). It used to take the first
+    /// workspace window in the process, which with two open is an arbitrary one — so a DRC run, a
+    /// panel toggle or an EM setup started in window B drove window A's workspace.</para>
+    private WorkspaceViewModel? ResolveWorkspace() => WorkspaceLocator.For(this);
 
     private WBondRenderTheme ResolveWireTheme() =>
         WBondRenderTheme.FromTheme(
@@ -727,13 +724,8 @@ public partial class LayoutEditorView : UserControl
             return;
         }
 
-        if (Avalonia.Application.Current?.ApplicationLifetime
-                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var workspace = desktop.Windows
-                .OfType<WorkspaceWindow>()
-                .Select(w => w.DataContext as WorkspaceViewModel)
-                .FirstOrDefault(v => v is not null);
+            var workspace = ResolveWorkspace();
 
             if (workspace is not null)
             {
@@ -752,13 +744,8 @@ public partial class LayoutEditorView : UserControl
     {
         if (DataContext is not LayoutDocument doc) return;
 
-        if (Avalonia.Application.Current?.ApplicationLifetime
-                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var workspace = desktop.Windows
-                .OfType<WorkspaceWindow>()
-                .Select(w => w.DataContext as WorkspaceViewModel)
-                .FirstOrDefault(v => v is not null);
+            var workspace = ResolveWorkspace();
 
             if (workspace?.CheckDesignRulesCommand.CanExecute(null) == true)
             {
@@ -1714,29 +1701,12 @@ public partial class LayoutEditorView : UserControl
             return;
         }
 
-        if (Avalonia.Application.Current?.ApplicationLifetime
-                is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
-            return;
-
-        desktop.Windows
-            .OfType<WorkspaceWindow>()
-            .Select(w => w.DataContext as ViewModels.WorkspaceViewModel)
-            .FirstOrDefault(v => v is not null)
-            ?.OpenTechnologyDocumentBesideLayout(techPath, doc, Bounds.Width);
+        ResolveWorkspace()?.OpenTechnologyDocumentBesideLayout(techPath, doc, Bounds.Width);
     }
 
     private void OnOpenSourceWorkspaceClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LayoutDocument doc) return;
-        if (Avalonia.Application.Current?.ApplicationLifetime
-                is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
-            return;
-
-        var vm = desktop.Windows
-            .OfType<WorkspaceWindow>()
-            .Select(w => w.DataContext as ViewModels.WorkspaceViewModel)
-            .FirstOrDefault(v => v is not null);
-
-        vm?.OpenSourceWorkspaceCommand.Execute(doc.SourceWorkspaceCwsPath);
+        ResolveWorkspace()?.OpenSourceWorkspaceCommand.Execute(doc.SourceWorkspaceCwsPath);
     }
 }

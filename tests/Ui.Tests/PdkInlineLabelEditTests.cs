@@ -35,7 +35,7 @@ public sealed class PdkInlineLabelEditTests : IDisposable
 
     public void Dispose()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -80,7 +80,7 @@ public sealed class PdkInlineLabelEditTests : IDisposable
         }
 
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(WorkspaceDir, outcome.KitName, outcome.Parts ?? []);
         return outcome.Items[0].Pdk!.CellDir!;
     }
 

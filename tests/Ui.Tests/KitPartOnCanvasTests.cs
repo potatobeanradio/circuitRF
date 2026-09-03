@@ -23,11 +23,11 @@ public sealed class KitPartOnCanvasTests : IDisposable
 
     public KitPartOnCanvasTests()
     {
-        PdkKitRegistry.Clear();
-        PdkKitRegistry.SetKit(Kit, [MakePart(Part)]);
+        PdkKitRegistry.ResetAllForTests();
+        PdkKitRegistry.SetKit(null, Kit, [MakePart(Part)]);
     }
 
-    public void Dispose() => PdkKitRegistry.Clear();
+    public void Dispose() => PdkKitRegistry.ResetAllForTests();
 
     /// <summary>A part with artwork of its own, so a resolved symbol is distinguishable from none.</summary>
     private static PdkKitPart MakePart(string id)
@@ -74,7 +74,7 @@ public sealed class KitPartOnCanvasTests : IDisposable
     [Fact]
     public void C3_AnUnloadedKitIsNotFound_RatherThanReportedAsABadPath()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
 
         Assert.Equal(CellSymbolState.NotFound,
                      CellSymbolResolver.ResolveCellDirOrRef(Ref).State);

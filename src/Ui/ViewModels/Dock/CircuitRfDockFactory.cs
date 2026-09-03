@@ -85,6 +85,13 @@ public class CircuitRfDockFactory : Factory
     public WBondProfileTool?    WBondProfileTool    { get; private set; }
     public WBondInductanceTool? WBondInductanceTool { get; private set; }
 
+    /// <summary>
+    /// The workspace this factory serves. Set once, immediately after construction — a factory is
+    /// per view model, which is what makes it the authority on who owns a float it creates
+    /// (MW1 R-mw1-11).
+    /// </summary>
+    public WorkspaceViewModel? Owner { get; set; }
+
     public CircuitRfDockFactory()
     {
         // Required for tab tear-off: tells Dock what window type to create when a tab
@@ -92,7 +99,11 @@ public class CircuitRfDockFactory : Factory
         // is also set in WorkspaceWindow code-behind (belt-and-suspenders).
         // CrfHostWindow redirects the OS close box for TOOL tear-offs to its own teardown (Dock's
         // own close path crashes for a tool); document tear-offs still close normally.
-        DefaultHostWindowLocator = () => new CrfHostWindow();
+        //
+        // Every float is STAMPED with its owning workspace here, at the one point Dock ever asks for
+        // a host window (see InitDockWindow's note on why the locator is unconditional). Ownership is
+        // then a fact rather than a heuristic — see CrfHostWindow.OwningWorkspace.
+        DefaultHostWindowLocator = () => new CrfHostWindow { OwningWorkspace = Owner };
     }
 
     // ── Layout construction ───────────────────────────────────────────────────

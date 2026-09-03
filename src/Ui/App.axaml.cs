@@ -153,10 +153,9 @@ public partial class App : Application
             // exception the backstop above deliberately swallows.
             Diagnostics.CrashReporter.WireDispatcherLogging();
 
-            var firstWindow = new WorkspaceWindow
-            {
-                DataContext = new WorkspaceViewModel(),
-            };
+            // Through the same factory as every other route (R-mw1-2) — shown and given its
+            // preferences by the branches below, which is what the first window's startup duties are.
+            var firstWindow = CreateWorkspaceWindow();
             desktop.MainWindow = firstWindow;
 
             WireAboutMenuItem();
@@ -326,6 +325,156 @@ public partial class App : Application
         catch { /* non-critical — fall back to default startup state */ }
     }
 
+    // ---- Window creation (MW1 R-mw1-2) ----------------------------------------
+
+    /// <summary>
+    /// The ONE place a workspace window is created.
+    ///
+    /// <para><b>One place, because a fourth construction site added later is exactly how the layout
+    /// preference gets silently skipped for one route</b> — that has already happened once, and the
+    /// note at the startup-file branch above records it. Every route that wants a workspace window
+    /// comes through here: the first window, a forwarded file with nowhere to go, the macOS
+    /// background menu, and File ▸ New Window.</para>
+    ///
+    /// <para>The window is SHOWN and its layout preferences applied; the launch ACTION is
+    /// deliberately not run (R-mw1-2). Opening the user's start-up workspace into a window they asked
+    /// to be empty is not what "New Window" means, and the first window's own startup duties — the
+    /// crash announcement, release notes, the update check — belong to it alone.</para>
+    /// </summary>
+    /// <param name="workspacePath">A <c>.cws</c> to open into the new window, or null for an empty one.</param>
+    /// <summary>
+    /// Constructs a workspace window and nothing else — the ONE <c>new WorkspaceWindow</c> in the
+    /// application. Shown, given its preferences and pointed at a workspace by
+    /// <see cref="NewWorkspaceWindow"/>, or by the first window's own startup branches.
+    /// </summary>
+    private static WorkspaceWindow CreateWorkspaceWindow()
+        => new WorkspaceWindow { DataContext = new WorkspaceViewModel() };
+
+    internal static WorkspaceWindow NewWorkspaceWindow(string? workspacePath = null)
+    {
+        var window = CreateWorkspaceWindow();
+        window.Show();
+
+        var vm = (WorkspaceViewModel)window.DataContext!;
+
+        // Deferred to Background for the same reason every other route defers it: ApplyWindowLayout
+        // REBUILDS the dock, so the window has to be realised first, and a workspace opened into it
+        // rebuilds the layout again.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () =>
+            {
+                ApplyLayoutPreferences(vm);
+                if (!string.IsNullOrWhiteSpace(workspacePath)) OpenFiles(vm, [workspacePath!]);
+            },
+            Avalonia.Threading.DispatcherPriority.Background);
+
+        window.Activate();
+        return window;
+    }
+
+    /// <summary>
+    /// The workspace window already showing <paramref name="workspacePath"/>, or null when none is
+    /// (R-mw1-9). Compared by fully-resolved absolute path, case-insensitively — the rule
+    /// <c>TechnologyCache</c> already uses, and for the same reason.
+    /// </summary>
+    internal static WorkspaceWindow? WindowShowing(string? workspacePath)
+    {
+        if (string.IsNullOrWhiteSpace(workspacePath)) return null;
+        if ((Application.Current as App)?._desktop is not { } desktop) return null;
+
+        string wanted;
+        try { wanted = Path.GetFullPath(workspacePath); } catch { return null; }
+
+        foreach (var w in desktop.Windows.OfType<WorkspaceWindow>())
+        {
+            if (w.DataContext is not WorkspaceViewModel vm) continue;
+            if (vm.CurrentWorkspacePath is not { } open) continue;
+
+            string resolved;
+            try { resolved = Path.GetFullPath(open); } catch { continue; }
+            if (string.Equals(resolved, wanted, StringComparison.OrdinalIgnoreCase)) return w;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The workspace window most recently brought to the front. The answer to "which window did the
+    /// user mean" for anything that arrives without one — a file forwarded by the operating system
+    /// that no open workspace contains (R-mw1-15).
+    ///
+    /// <para>Recorded rather than inferred from <c>desktop.Windows</c> order, which is creation order
+    /// and says nothing about what the user was last looking at.</para>
+    /// </summary>
+    private WorkspaceWindow? _lastActiveWorkspace;
+
+    /// <summary>Called by <see cref="WorkspaceWindow"/> whenever it becomes active.</summary>
+    internal static void NoteWorkspaceActivated(WorkspaceWindow window)
+    {
+        if (Application.Current is App app) app._lastActiveWorkspace = window;
+    }
+
+    /// <summary>The workspace window most recently brought to the front, for
+    /// <see cref="Views.WorkspaceLocator"/>'s last-resort fallback.</summary>
+    internal static WorkspaceWindow? LastActiveWorkspace => (Application.Current as App)?._lastActiveWorkspace;
+
+    /// <summary>
+    /// Which window a set of forwarded documents should open into (R-mw1-15): the one whose workspace
+    /// CONTAINS them, when exactly one does; otherwise the most recently active workspace window.
+    ///
+    /// <para>The containment test is the same ancestor walk-up everything else uses. It is the answer
+    /// the user expects — double-clicking a cell of a project already open in one window should not
+    /// land it in a different project's window — and it costs nothing extra.</para>
+    /// </summary>
+    private WorkspaceWindow? WindowForForwardedFiles(IReadOnlyList<string> paths)
+    {
+        if (_desktop is null) return null;
+        var windows = _desktop.Windows.OfType<WorkspaceWindow>().ToList();
+        if (windows.Count == 0) return null;
+        if (windows.Count == 1) return windows[0];
+
+        var containing = new List<WorkspaceWindow>();
+        foreach (string path in paths)
+        {
+            string? owner = WorkspaceRootFinder.WorkspaceDirOf(
+                Directory.Exists(path) ? path : Path.GetDirectoryName(path));
+            if (owner is null) continue;
+
+            foreach (var w in windows)
+            {
+                if (w.DataContext is not WorkspaceViewModel vm) continue;
+                if (vm.CurrentWorkspacePath is not { } cws) continue;
+                if (Path.GetDirectoryName(cws) is not { } root) continue;
+                if (!string.Equals(WorkspaceRootFinder.Normalize(root), owner, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!containing.Contains(w)) containing.Add(w);
+            }
+        }
+
+        if (containing.Count == 1) return containing[0];
+
+        // Ambiguous (documents from two open workspaces at once) or foreign to all of them — the
+        // window the user was last in front of is the only defensible answer.
+        return _lastActiveWorkspace is { } last && windows.Contains(last) ? last : windows[0];
+    }
+
+    /// <summary>
+    /// Opens a workspace in a window of its own, or raises the window already showing it (R-mw1-9).
+    ///
+    /// <para><b>A workspace may be open in at most one window.</b> Two <c>WorkspaceViewModel</c>s over
+    /// one <c>.cws</c> means two independent edit-session registries over the same files: two undo
+    /// stacks, two dirty flags, last-save-wins. Refusing that is both correct and cheaper than
+    /// reconciling it — and "activate the window that has it" is what the user meant anyway.</para>
+    /// </summary>
+    internal static WorkspaceWindow OpenWorkspaceInNewWindow(string workspacePath)
+    {
+        if (WindowShowing(workspacePath) is { } existing)
+        {
+            existing.Activate();
+            return existing;
+        }
+        return NewWorkspaceWindow(workspacePath);
+    }
+
     private void OnActivated(ActivatedEventArgs e, WorkspaceWindow firstWindow)
     {
         if (e.Kind != ActivationKind.File) return;
@@ -359,8 +508,7 @@ public partial class App : Application
 
     private void HandleFilesInternal(string[] paths)
     {
-        var w = _desktop?.Windows.OfType<WorkspaceWindow>().FirstOrDefault()
-                ?? new WorkspaceWindow { DataContext = new WorkspaceViewModel() };
+        var w = WindowForForwardedFiles(paths) ?? NewWorkspaceWindow();
         if (!w.IsVisible) w.Show();
         // The user double-clicked a file in a file manager, so the window they want is THIS one — a
         // forwarded open that leaves circuitRF behind the file manager looks like nothing happened.
@@ -379,8 +527,11 @@ public partial class App : Application
     /// looked exactly like a broken file. The <c>.charm</c> work could not be built on top of a stub,
     /// so the stub is gone rather than worked around.</para>
     ///
-    /// <para>Only ONE workspace opens even if several are named: a workspace switch replaces the
-    /// contents of the window, so opening a second would silently discard the first.</para>
+    /// <para><b>Several workspaces now open one WINDOW EACH</b> (MW1 R-mw1-16). That used to be
+    /// destructive — a workspace switch replaced the window's contents, so the second would silently
+    /// discard the first — and is not any more. The count is capped, because someone multi-selecting
+    /// a folder should not get twelve windows; the rest are named in a message rather than dropped
+    /// silently.</para>
     /// </summary>
     private static void OpenFiles(WorkspaceViewModel vm, IReadOnlyList<string> paths)
     {
@@ -390,6 +541,7 @@ public partial class App : Application
         // double-clicked — the same "opened nothing" failure this dispatcher exists to have fixed,
         // reached by multi-selecting a .cws alongside a .csch.
         string? workspacePath = null;
+        var extraWorkspaces = new List<string>();
         var documents = new List<string>();
 
         foreach (string path in paths)
@@ -398,11 +550,12 @@ public partial class App : Application
 
             switch (Path.GetExtension(path).ToLowerInvariant())
             {
-                // Only ONE workspace opens even if several are named: a workspace switch replaces the
-                // contents of the window, so opening a second would silently discard the first.
+                // The FIRST workspace opens into this window; any others open into windows of their
+                // own (R-mw1-16), because that is no longer destructive.
                 case ".crfw":
                 case ".cws":
-                    workspacePath ??= path;
+                    if (workspacePath is null) workspacePath = path;
+                    else                       extraWorkspaces.Add(path);
                     break;
 
                 // The document types. Every one of these is claimed by the plist, the .wxs and the
@@ -425,6 +578,8 @@ public partial class App : Application
             }
         }
 
+        OpenExtraWorkspaceWindows(vm, extraWorkspaces);
+
         if (workspacePath is null)
         {
             foreach (string doc in documents)
@@ -433,6 +588,29 @@ public partial class App : Application
         }
 
         _ = OpenWorkspaceThenDocumentsAsync(vm, workspacePath, documents);
+    }
+
+    /// <summary>
+    /// The maximum number of EXTRA workspace windows one launch or one forwarded open may create
+    /// (R-mw1-16). Four is plenty; someone who multi-selected a folder of projects gets a message
+    /// naming the rest rather than a screen full of windows.
+    /// </summary>
+    private const int MaxExtraWorkspaceWindows = 4;
+
+    private static void OpenExtraWorkspaceWindows(WorkspaceViewModel vm, IReadOnlyList<string> workspaces)
+    {
+        if (workspaces.Count == 0) return;
+
+        foreach (string cws in workspaces.Take(MaxExtraWorkspaceWindows))
+            OpenWorkspaceInNewWindow(cws);
+
+        if (workspaces.Count <= MaxExtraWorkspaceWindows) return;
+
+        var skipped = workspaces.Skip(MaxExtraWorkspaceWindows)
+                                .Select(p => Path.GetFileName(Path.GetDirectoryName(p)) ?? p);
+        vm.Messages.Warning(
+            $"Opened {MaxExtraWorkspaceWindows + 1} workspaces; the rest were left closed: " +
+            string.Join(", ", skipped) + ".");
     }
 
     /// <summary>
@@ -573,11 +751,7 @@ public partial class App : Application
     private void BuildBgMenuWindow(IClassicDesktopStyleApplicationLifetime desktop)
     {
         var newItem = new NativeMenuItem { Header = "New Workspace", Gesture = new KeyGesture(Key.N, KeyModifiers.Meta) };
-        newItem.Click += (_, _) =>
-        {
-            var w = new WorkspaceWindow { DataContext = new WorkspaceViewModel() };
-            w.Show();
-        };
+        newItem.Click += (_, _) => NewWorkspaceWindow();
 
         var fileMenu = new NativeMenu();
         fileMenu.Items.Add(newItem);
@@ -627,6 +801,36 @@ public partial class App : Application
         if (_desktop is null) { Environment.Exit(0); return; }
         var windows = _desktop.Windows.OfType<WorkspaceWindow>().ToList();
         if (windows.Count == 0) { CloseAllFloatingWindows(); Environment.Exit(0); return; }
+
+        _ = QuitAsync(windows);
+    }
+
+    /// <summary>
+    /// Asks EVERY workspace window before closing ANY of them (MW1 R-mw1-18).
+    ///
+    /// <para><b>Two passes, not one.</b> Closing each window as its own prompt was answered meant
+    /// that cancelling the second window's prompt left the first one already gone — the user asked to
+    /// keep their work and lost a window doing it. With one window open the two passes are
+    /// indistinguishable, which is why this was never visible before.</para>
+    /// </summary>
+    private async Task QuitAsync(IReadOnlyList<WorkspaceWindow> windows)
+    {
+        foreach (var w in windows)
+        {
+            bool clear;
+            try { clear = await w.ConfirmCloseAsync(); }
+            catch { clear = false; }
+
+            if (clear) continue;
+
+            // Cancelled: nothing has been closed, and the quit is off. Every window is exactly as it
+            // was, including the ones that already answered — they are simply marked clear to close,
+            // which is harmless until they are actually asked to.
+            AbortQuit();
+            if (OperatingSystem.IsMacOS() && _bgMenuWindow is { IsVisible: true }) _bgMenuWindow.Hide();
+            return;
+        }
+
         foreach (var w in windows) w.Close();
     }
 

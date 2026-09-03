@@ -77,6 +77,9 @@ public partial class ExternalWorkerSettingsView : UserControl
         // the workspace was reopened; the user would have every reason to believe it had. Dropping
         // the resolved providers ends them. Turning it back ON drops them too, so a kit that was
         // refused a moment ago is re-resolved rather than remembered as unavailable.
-        try { ExternalDeviceRegistry.ResetResolved(); } catch { /* nothing here may fail Settings */ }
+        // The PROVIDERS, not the resolvers (MW1): this is a process-wide policy change, but taking
+        // the resolvers with it would leave every open workspace unable to resolve a device at all
+        // until it was reopened — silently, in whichever window is not in front.
+        try { ExternalDeviceRegistry.EndResolvedProviders(); } catch { /* nothing here may fail Settings */ }
     }
 }

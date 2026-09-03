@@ -1,5 +1,172 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MW1 — multiple workspace windows: what actually blocked it, and the audit (2026-09-03)
+
+`docs/sonnet-briefs/brief-multi-workspace-1-windows.md`, built on `-0-overview.md`. Two or more
+`WorkspaceWindow`s, each with its own workspace, panels and documents.
+
+### The shell was never the cost — four process-global registries were
+
+The overview's §1.1 finding held up exactly: `WorkspaceViewModel` is not a singleton and neither is
+anything hanging off it, so a second window was already constructible. What made it unusable is that
+opening a workspace called, on state shared by the whole process:
+
+| Registry | Was | Now |
+|---|---|---|
+| `PdkKitRegistry` | `Clear()` on every open | partitioned by workspace root; `ClearWorkspace(root)` |
+| `KitLayoutGenerators` | `Clear()` on every open | same, and the refresher is per workspace too |
+| `PCellRegistry` resolvers | `ClearResolvers()` | `RemoveResolver(theOneThisWorkspaceRegistered)` |
+| `ExternalDeviceRegistry` | `ResetResolved()` | `RemoveResolver(...)`, which ends only the providers THAT resolver produced |
+
+**The failure mode is why this was worth a brief.** Opening workspace B unmounted A's kits, layout
+generators and device workers; A kept rendering from its symbol cache until the next miss, at which
+point its kit parts drew as pin-less placeholders and its runs reported "provider not available" for
+kits that were, in fact, still referenced. Nothing said anything, in the window the user was not
+looking at.
+
+**Two different scope keys, deliberately.** The kit registries key by the workspace ROOT PATH, because
+their content is named by references written into user files (`pdk://kit/part`) that carry no
+machine-specific path. The two RESOLVER registries key by the resolver INSTANCE, because a workspace
+registers exactly one and holds it — no path has to be carried, and the instance cannot be stale.
+
+**`ResetResolved()` split into two.** `EndResolvedProviders()` ends the workers and KEEPS the
+resolvers; `ResetResolved()` still does both, for process exit. Settings ▸ "allow external device
+workers" now calls the former: it is a genuinely process-wide policy change, but taking the resolvers
+with it left every open workspace unable to resolve a device at all until it was reopened. That was
+already wrong with one window; with two it is wrong in the window that is not in front.
+
+### "On whose behalf?" — the walk-up, and what it costs
+
+R-mw1-5's rule is the one `brief-foreign-documents.md` R-fgn-3 already fixed for technology: a kit
+reference resolves against **the referencing document's own parent workspace**, found by walking up to
+the nearest ancestor `.cws`. `CellSymbolResolver.Resolve` derives it from `baseDir`; the three
+`ResolveCellDirOrRef` callers (a palette tile's glyph, a drag ghost, a retype) pass their window's
+workspace explicitly.
+
+**R-mw1-6, measured rather than assumed** (scratch harness, Release, a schematic four levels below its
+`.cws`, 400 kit instances per frame × 200 frames):
+
+```
+uncached walk-up : 5.202 ms per frame
+memoised         : 0.016 ms per frame      → 333x
+```
+
+5.2 ms is a third of a 16 ms frame, so the memo is **necessary**; 0.016 ms is noise, so it is also
+**sufficient** — nothing further was needed. It lives in `WorkspaceRootFinder.WorkspaceDirOf` and is
+dropped wherever `CellSymbolResolver.InvalidateAll()` already runs, plus on every workspace open,
+because a `.cws` appearing or disappearing changes the answer and nothing else would notice.
+
+**One residual compromise, stated rather than hidden.** `PdkKitRegistry.FindInAnyWorkspace` searches
+every mounted workspace, and is reached only when there is neither a `baseDir` nor a window — a preview
+on an unsaved scratch schematic. It is a NAMED method rather than a null argument so it reads as the
+compromise it is at the call site. Worst case is a same-named kit in another open workspace supplying a
+palette GLYPH; anything a design actually carries arrives with a `baseDir`.
+
+### R-mw1-7 — the static-state audit, in full
+
+*Workspace-scoped (fixed here):* the four above.
+
+*Path- or content-keyed, and therefore already safe across workspaces:* `CellSymbolResolver`'s symbol
+cache `(cellAbsDir, primary, mtime)`; `CellLayoutResolver`'s `_cache` and `_live` (absolute `.clay`
+path — and R-mw1-10 forbids the same file being open in two windows, which is what keeps `_live`
+unambiguous); `SpiceModelPeek` `(path, section, mtime, length)`; `BitmapCache` (absolute path);
+`LayerFillPaint` (layer + colour); `GeneratedCellStore._cellsWritten` (already keyed by workspace
+root); `TechnologyCache` (per view model, not static at all).
+
+*Genuinely process-wide and correct:* `ThemeService`, `AppPreferences`/`AppDataRoot`,
+`ExternalWorkerPolicy`, `PCellRegistry`'s built-in generator table, `ComponentTypeRegistry`,
+`BuiltInSymbols`, `PdkFormatRegistry`, `MatchEmbedding`'s computed defaults, `CrashReporter`,
+`DocLauncher`, the four `Updates` singletons, `MessageEntry._mode`.
+
+*Process-wide and left alone, but worth naming:* `LayoutEditorView`'s `_lastAcadVersion` /
+`_lastViewMode` / `_lastPathAsOutline` / `_lastFlattenSplines` — last-used export-dialog choices. They
+are shared between windows. That reads as a per-user convenience rather than per-workspace state, so it
+was left; it is recorded here so it is a decision and not an omission.
+
+**Two of the brief's §3.2 exemptions were right and one was wrong.** `SpiceModelPeek` is indeed
+`(path, mtime)`-keyed. `WBondSymbolProvider`'s cache is **not** path-keyed at all — it is a pure
+function of the reference plus the generator's content version and touches no filesystem, so it is
+workspace-independent by construction, which is a stronger reason than the brief gave. Both are no
+longer invalidated on a workspace open, which used to throw away another window's live cache for
+nothing.
+
+### Ownership of a float is a STAMP, not a heuristic
+
+`CrfHostWindow.OwningWorkspace` is set by the creating `CircuitRfDockFactory`, which is per view model.
+That is the whole of R-mw1-11, and it is what four separate things now read: the Window menu (own
+floats only, plus a new band listing the OTHER workspace windows — R-mw1-12), focus tracking (each view
+model used to track EVERY window in the process), the close prompt, and the macOS shared-menu attach.
+Position, z-order and title were all rejected: each is sometimes right, and every consequence of being
+wrong is silent.
+
+`HasAnyDirtyWork` needed no change — it reads only this view model's own document collections, so
+R-mw1-17 falls out. Recorded because it looked like work and was not.
+
+### The nine "find the workspace" lookups
+
+All nine went through `desktop.Windows.OfType<WorkspaceWindow>().FirstOrDefault()`, every one of them
+reached from a view whose own DataContext is a document. `Views/WorkspaceLocator.cs` is now the only
+place that question is answered: the caller's own shell, else the float's ownership stamp, else the
+most recently activated window, else the only one. `WorkspaceViewModel.ShellWindow()` is its sibling in
+the other direction and shares the implementation. A test asserts nothing under `src/Ui/Views` reaches
+for the first workspace window again.
+
+`App.axaml.cs`'s About-dialog owner deliberately keeps "any visible window" — About is not
+workspace-bound.
+
+### macOS menus — the minimum change, and it is a real one
+
+`WorkspaceWindow` now captures its OWN `NativeMenu` at `OnOpened`, and `RestoreCircuitRfMenuBar` reads
+that instead of the application-scope menu. The app-scope menu is a fallback for when no window is key,
+so with two shells it is whichever activated last — restoring from it would hand one window the other's
+menu, and a menu's commands bind through its own DataContext, so every File item would drive the wrong
+workspace. Setting the app-scope menu is now done deliberately on activation rather than left to a
+first-writer-wins race at `OnOpened` (R-mw1-13).
+
+The invariant that a window's `NativeMenu` instance is fixed for its lifetime is untouched: the same
+instance is captured and re-set, never rebuilt. **`macos-menu-bar-becomekeywindow`'s intermittent was
+not reproduced in either direction here** — it was not reproduced before this change either, so this is
+"no observed change", not "fixed". `CRF_MENU_DIAG` across a two-window session is still an unrun manual
+check.
+
+### Quit had a two-window bug that one window could never show
+
+`App.Quit` closed each workspace window as its own prompt was answered, so cancelling the SECOND
+window's prompt left the first already gone — the user asked to keep their work and lost a window doing
+it. It is two passes now: ask every window (`WorkspaceWindow.ConfirmCloseAsync`, factored out of
+`OnClosing`), and only then close them all.
+
+### Preferences: read-modify-write was a real race
+
+`Load()` returned a fresh deserialisation and `Save` wrote the whole file back, so two windows each
+changing one field lost one of the two edits — and Recent Workspaces is touched by every workspace open.
+There is now ONE in-process `AppPreferences` instance: `Load()` hands out a SNAPSHOT (so an incidental
+read-and-poke is not a silent global edit) and `Update` is the single write path, mutating the shared
+instance under a lock. `AppDataRoot.RedirectTo` drops the instance, because the cached copy belongs to
+whichever directory it was read from.
+
+Not a cross-process file lock, deliberately: two windows in one process is the case that matters, and
+inventing three-platform file locking buys nothing this needs. It was already latent — harmonicaRF and
+wBond share the same file as separate processes — and still is.
+
+### Two deviations from the brief, both deliberate
+
+- **`File ▸ Close Window` is spelled "Close Workspace Window".** File already has a "Close Window" that
+  closes the active DOCUMENT tab. Two items of the same name doing different things is a worse outcome
+  than the brief's exact wording.
+- **`Open Workspace in New Window…` sits between `Open Workspace…` and `Open Recent`**, which relaxes
+  the older "Open Workspace / Open Recent / Open must be contiguous" rule to "the Open band contains no
+  separator". The new item is another OPEN item, not a break in the band.
+
+### Deliberate omissions, so they do not quietly become permanent
+
+- **The set of open windows is not persisted** (R-mw1-19). There is no session-of-workspaces file;
+  adding one raises "what does the launch action mean then?", which this brief has no reason to answer.
+- **Documents still cannot be dragged between windows** (R-mw-1), and no panel is shared (R-mw-2).
+- **`CRF_MENU_DIAG` on a real two-window macOS session has not been run**, nor has the manual
+  two-kits-in-two-windows check §9 asks for. Both need a human at a screen.
+
+
 ## The ✕ on a floating Library palette did nothing — Dock draws that button inert (2026-09-02)
 
 Owner report: **the Library palette's floating window cannot be closed.** Also: the Properties inspector

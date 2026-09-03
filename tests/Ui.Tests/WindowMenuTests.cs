@@ -56,7 +56,7 @@ public sealed class WindowMenuTests
         var src = Read(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.WindowMenu.cs"));
 
         // The header derivation lives in ShellHeader(); assert it never reaches for the file stem.
-        var shell = src[src.IndexOf("private string ShellHeader()", System.StringComparison.Ordinal)..];
+        var shell = src[src.IndexOf("internal string ShellHeader()", System.StringComparison.Ordinal)..];
         shell = shell[..shell.IndexOf("\n    }", System.StringComparison.Ordinal)];
 
         Assert.Contains("GetDirectoryName", shell);
@@ -123,7 +123,7 @@ public sealed class WindowMenuTests
     public void WorkspaceEntry_CountsOnlyDockedDocuments_NotFloats()
     {
         var src = Read(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.WindowMenu.cs"));
-        var shell = src[src.IndexOf("private string ShellHeader()", System.StringComparison.Ordinal)..];
+        var shell = src[src.IndexOf("internal string ShellHeader()", System.StringComparison.Ordinal)..];
         shell = shell[..shell.IndexOf("\n    }", System.StringComparison.Ordinal)];
 
         // A torn-off document carries its own bullet on its own entry; counting it here as well would

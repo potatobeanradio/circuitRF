@@ -43,6 +43,15 @@ public static class ExternalDeviceRegistry
     private static readonly ConcurrentDictionary<string, IExternalDeviceProvider> _owned =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Which resolver produced each owned provider, so ONE workspace's resolver can be withdrawn
+    /// without ending providers another workspace is still using (MW1 R-mw1-4). Recorded at the one
+    /// point a provider is produced, rather than inferred later from the provider's name — two
+    /// workspaces may reference kits of the same name.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, IExternalProviderResolver> _ownedBy =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly List<IExternalProviderResolver> _resolvers = [];
     private static readonly Lock _resolverGate = new();
 
@@ -79,6 +88,7 @@ public static class ExternalDeviceRegistry
         }
 
         _owned.Clear();
+        _ownedBy.Clear();
         _providers.Clear();
         ClearResolvers();
     }
@@ -94,9 +104,26 @@ public static class ExternalDeviceRegistry
     /// </summary>
     public static void ResetResolved()
     {
+        EndResolvedProviders();
+        ClearResolvers();
+    }
+
+    /// <summary>
+    /// Ends every provider the registry started itself, leaving the RESOLVERS in place so the next
+    /// lookup produces a fresh one.
+    ///
+    /// <para>This is what a global policy change wants — "external workers are now allowed / no
+    /// longer allowed" applies to the whole process, but withdrawing the resolvers along with the
+    /// workers would leave every open workspace unable to resolve a device until it was reopened.
+    /// With one window that was merely obscure; with two it silently disables the window the user was
+    /// not looking at.</para>
+    /// </summary>
+    public static void EndResolvedProviders()
+    {
         foreach (var (name, provider) in _owned.ToArray())
         {
             _owned.TryRemove(name, out _);
+            _ownedBy.TryRemove(name, out _);
             _providers.TryRemove(name, out _);
 
             if (provider is IDisposable d)
@@ -104,8 +131,37 @@ public static class ExternalDeviceRegistry
                 try { d.Dispose(); } catch { /* teardown must not throw */ }
             }
         }
+    }
 
-        ClearResolvers();
+    /// <summary>
+    /// Withdraws ONE resolver and ends only the providers IT produced — what a workspace calls when
+    /// its window closes or it reloads its own kits (MW1 R-mw1-4).
+    ///
+    /// <para><b>One resolver, not all of them.</b> A workspace registers exactly one and holds the
+    /// instance, so the instance is the scope key and no workspace path has to be carried here. The
+    /// process-wide <see cref="ResetResolved"/> this replaces on that path meant opening a second
+    /// workspace ended the first one's workers and unregistered its resolver — its designs then
+    /// reported "provider not available" for kits that were, in fact, still mounted.</para>
+    /// </summary>
+    public static void RemoveResolver(IExternalProviderResolver? resolver)
+    {
+        if (resolver is null) return;
+
+        lock (_resolverGate) _resolvers.Remove(resolver);
+
+        foreach (var (name, owner) in _ownedBy.ToArray())
+        {
+            if (!ReferenceEquals(owner, resolver)) continue;
+
+            _ownedBy.TryRemove(name, out _);
+            _owned.TryRemove(name, out var provider);
+            _providers.TryRemove(name, out _);
+
+            if (provider is IDisposable d)
+            {
+                try { d.Dispose(); } catch { /* teardown must not throw */ }
+            }
+        }
     }
 
     public static IReadOnlyCollection<string> ProviderNames => _providers.Keys.ToArray();
@@ -176,7 +232,8 @@ public static class ExternalDeviceRegistry
                     return kept;
                 }
 
-                _owned[resolved.Name] = resolved;
+                _owned[resolved.Name]   = resolved;
+                _ownedBy[resolved.Name] = resolver;
                 return resolved;
             }
         }

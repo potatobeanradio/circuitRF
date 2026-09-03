@@ -85,13 +85,13 @@ public sealed class PdkPartInstallerTests : IDisposable
         Assert.Equal(1, outcome.SymbolsInstalled);
 
         string cellRef = item.Pdk!.CellDir!;
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
 
         // Virtual, not a path: the part is held in memory and nothing is written into the workspace.
         Assert.Equal(PdkKitRegistry.RefFor("SampleKit", "PART_A"), cellRef);
         Assert.False(Directory.Exists(Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName)));
 
-        var ccell = PdkKitRegistry.Find(cellRef)!.Ccell;
+        var ccell = PdkKitRegistry.Find(cellRef, null)!.Ccell;
         Assert.Equal(3, ccell.NumPorts);
 
         // It must resolve through the SAME funnel a hand-authored cell's reference goes through.
@@ -239,9 +239,9 @@ public sealed class PdkPartInstallerTests : IDisposable
         // A stable reference is what lets a placed instance survive a re-import.
         Assert.Equal(first.Items[0].Pdk!.CellDir, second.Items[0].Pdk!.CellDir);
 
-        PdkKitRegistry.SetKit(first.KitName,  first.Parts  ?? []);
-        PdkKitRegistry.SetKit(second.KitName, second.Parts ?? []);
-        Assert.Single(PdkKitRegistry.PartsOf("SampleKit"));
+        PdkKitRegistry.SetKit(null, first.KitName,  first.Parts  ?? []);
+        PdkKitRegistry.SetKit(null, second.KitName, second.Parts ?? []);
+        Assert.Single(PdkKitRegistry.PartsOf(null, "SampleKit"));
     }
 
     // ── Name safety ───────────────────────────────────────────────────────────
@@ -258,12 +258,12 @@ public sealed class PdkPartInstallerTests : IDisposable
             ReportWith(new PdkPart("../../odd", "Odd", SymbolArtwork: SymbolAsset("symbols/part.dsn"))));
 
         string cellRef = outcome.Items[0].Pdk!.CellDir!;
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
 
         Assert.True(PdkKitRegistry.TryParse(cellRef, out string kit, out string part));
         Assert.Equal("SampleKit", kit);
         Assert.Equal("../../odd", part);
-        Assert.NotNull(PdkKitRegistry.Find(cellRef));
+        Assert.NotNull(PdkKitRegistry.Find(cellRef, null));
 
         // Nothing on disk was touched, so there is nothing for a traversal to reach.
         Assert.Empty(Directory.GetFileSystemEntries(WorkspaceDir));

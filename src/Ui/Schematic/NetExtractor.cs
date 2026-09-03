@@ -420,10 +420,19 @@ public static class NetExtractor
     /// schematic that has never been saved — which is exactly the case the virtual form exists to
     /// allow.</para>
     /// </summary>
+    /// <summary>
+    /// The workspace whose kits this extraction resolves against (MW1 R-mw1-5) — the one the
+    /// schematic itself belongs to, found by the same ancestor-<c>.cws</c> walk-up technology uses.
+    /// Null for a scratch schematic that has never been saved, which is an ordinary state here.
+    /// </summary>
+    private static string? WorkspaceOf(SchematicEditModel model)
+        => WorkspaceRootFinder.WorkspaceDirOf(model.SchematicDirectory);
+
     private static CcellFile? CcellOf(SchematicEditModel model, EditableComponent comp)
     {
         if (comp.CellRef is null) return null;
-        if (PdkKitRegistry.IsKitRef(comp.CellRef)) return PdkKitRegistry.Find(comp.CellRef)?.Ccell;
+        if (PdkKitRegistry.IsKitRef(comp.CellRef))
+            return PdkKitRegistry.Find(comp.CellRef, WorkspaceOf(model))?.Ccell;
 
         return model.SchematicDirectory is null
             ? null
@@ -467,7 +476,7 @@ public static class NetExtractor
             return null;
         }
 
-        SayIfTheKitHasNoModelForThisPart(comp, ccell, conflicts);
+        SayIfTheKitHasNoModelForThisPart(comp, ccell, WorkspaceOf(model), conflicts);
 
         var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
                           .OrderBy(d => d.PortIndex)
@@ -543,9 +552,9 @@ public static class NetExtractor
     /// worse than failing — so the run still stops at elaboration, and this is what says why.</para>
     /// </summary>
     private static void SayIfTheKitHasNoModelForThisPart(
-        EditableComponent comp, CcellFile ccell, List<string> conflicts)
+        EditableComponent comp, CcellFile ccell, string? workspaceRoot, List<string> conflicts)
     {
-        var models = PdkKitRegistry.OsdiModelsOf(ccell.ExternalProvider);
+        var models = PdkKitRegistry.OsdiModelsOf(workspaceRoot, ccell.ExternalProvider);
         if (models.Count == 0) return;   // not a compiled-Verilog-A kit: this rule says nothing
 
         var declared = models.SelectMany(m => m.TypeIds).ToList();
@@ -1113,7 +1122,7 @@ public static class NetExtractor
         if (!string.IsNullOrWhiteSpace(ccell.ExternalProvider))
             BindNativeDeviceTypes(read.Library, ccell.ExternalProvider!, comp,
                                   read.ModelCards,
-                                  PdkKitRegistry.OsdiModelsOf(ccell.ExternalProvider),
+                                  PdkKitRegistry.OsdiModelsOf(WorkspaceOf(model), ccell.ExternalProvider),
                                   conflicts);
 
         // Copy the whole file's cells, not just the one named: the definition instantiates others

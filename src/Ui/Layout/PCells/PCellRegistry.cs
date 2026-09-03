@@ -53,12 +53,40 @@ public static class PCellRegistry
     }
 
     /// <summary>
-    /// Drops every resolver and everything they produced — called when the workspace they belong to
-    /// is left, and at process exit.
+    /// Drops ONE resolver and everything it produced — called when the workspace that registered it
+    /// is left.
+    ///
+    /// <para><b>One resolver, not all of them</b> (MW1 R-mw1-4). A workspace registers exactly one
+    /// and holds the instance, so the instance IS the scope key and no workspace path has to be
+    /// carried here. The process-wide <c>ClearResolvers</c> this replaces meant that opening a second
+    /// workspace unregistered the first one's generators, and its kit cells silently stopped
+    /// resolving — with nothing reported, in the window the user was not looking at.</para>
     ///
     /// <para><b>Nothing here disposes a resolver</b>: this registry did not create them and does not
     /// own their processes. The owner (a workspace) disposes its own, which is what actually ends
     /// the interpreters; forgetting that leaves a generator running with nothing to talk to.</para>
+    ///
+    /// <para>Everything already resolved is forgotten, not just this resolver's own answers: a cached
+    /// delegate records no resolver, and re-asking is cheap next to answering with one that has been
+    /// disposed.</para>
+    /// </summary>
+    public static void RemoveResolver(Wire.IPCellGeneratorResolver? resolver)
+    {
+        if (resolver is null) return;
+        lock (_resolverGate)
+        {
+            _resolvers.Remove(resolver);
+            _resolved.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Drops EVERY resolver. Process exit only — and the standalone shells' own exit handlers, which
+    /// have no workspace to scope it to.
+    ///
+    /// <para><b>Never on a workspace open or close</b> (MW1 R-mw1-4): with two windows that unmounts
+    /// the other workspace's generators. Use <see cref="RemoveResolver"/>, which the workspace can
+    /// scope by the instance it registered. A test asserts no workspace-lifetime path reaches this.</para>
     /// </summary>
     public static void ClearResolvers()
     {

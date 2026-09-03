@@ -36,8 +36,8 @@ public sealed class KitLayoutGeneratorRefreshTests : IDisposable
     /// <summary>The registry is process-wide; leaving a refresher installed would reach other tests.</summary>
     private static void Reset()
     {
-        KitLayoutGenerators.SetRefresher(null);
-        KitLayoutGenerators.Clear();
+        KitLayoutGenerators.SetRefresher(null, null);
+        KitLayoutGenerators.ResetAllForTests();
     }
 
     private static PaletteItem Part(string kit, string partId, string? generator) =>
@@ -60,21 +60,21 @@ public sealed class KitLayoutGeneratorRefreshTests : IDisposable
     [Fact]
     public void ALookupBeforeTheReadingHasLandedStillGetsTheAnswer()
     {
-        Assert.Null(KitLayoutGenerators.For("a-kit", "a_part"));   // nothing published yet
+        Assert.Null(KitLayoutGenerators.For(null, "a-kit", "a_part"));   // nothing published yet
 
         int asked = 0;
-        KitLayoutGenerators.SetRefresher(() =>
+        KitLayoutGenerators.SetRefresher(null, () =>
         {
             asked++;
-            KitLayoutGenerators.Publish([Part("a-kit", "a_part", "a_cell")]);
+            KitLayoutGenerators.Publish(null, [Part("a-kit", "a_part", "a_cell")]);
             return true;
         });
 
-        Assert.Equal("a_cell", KitLayoutGenerators.For("a-kit", "a_part"));
+        Assert.Equal("a_cell", KitLayoutGenerators.For(null, "a-kit", "a_part"));
         Assert.Equal(1, asked);
 
         // …and once it is published, the hook is not reached again.
-        Assert.Equal("a_cell", KitLayoutGenerators.For("a-kit", "a_part"));
+        Assert.Equal("a_cell", KitLayoutGenerators.For(null, "a-kit", "a_part"));
         Assert.Equal(1, asked);
     }
 
@@ -86,14 +86,14 @@ public sealed class KitLayoutGeneratorRefreshTests : IDisposable
     public void APartWithNoLayoutCellIsStillAMissAndTheHookIsAskedOnce()
     {
         int asked = 0;
-        KitLayoutGenerators.SetRefresher(() =>
+        KitLayoutGenerators.SetRefresher(null, () =>
         {
             asked++;
-            KitLayoutGenerators.Publish([Part("a-kit", "a_part", "a_cell")]);
+            KitLayoutGenerators.Publish(null, [Part("a-kit", "a_part", "a_cell")]);
             return true;
         });
 
-        Assert.Null(KitLayoutGenerators.For("a-kit", "model_only_part"));
+        Assert.Null(KitLayoutGenerators.For(null, "a-kit", "model_only_part"));
         Assert.Equal(1, asked);
     }
 
@@ -102,11 +102,11 @@ public sealed class KitLayoutGeneratorRefreshTests : IDisposable
     [Fact]
     public void AHookThatPublishesNothingOrThrowsIsJustAMiss()
     {
-        KitLayoutGenerators.SetRefresher(() => false);
-        Assert.Null(KitLayoutGenerators.For("a-kit", "a_part"));
+        KitLayoutGenerators.SetRefresher(null, () => false);
+        Assert.Null(KitLayoutGenerators.For(null, "a-kit", "a_part"));
 
-        KitLayoutGenerators.SetRefresher(() => throw new InvalidOperationException("no interpreter"));
-        Assert.Null(KitLayoutGenerators.For("a-kit", "a_part"));
+        KitLayoutGenerators.SetRefresher(null, () => throw new InvalidOperationException("no interpreter"));
+        Assert.Null(KitLayoutGenerators.For(null, "a-kit", "a_part"));
     }
 
     /// <summary>
@@ -117,19 +117,19 @@ public sealed class KitLayoutGeneratorRefreshTests : IDisposable
     public void TheHookIsNotReEnteredFromInsideItself()
     {
         int depth = 0, maxDepth = 0;
-        KitLayoutGenerators.SetRefresher(() =>
+        KitLayoutGenerators.SetRefresher(null, () =>
         {
             maxDepth = Math.Max(maxDepth, ++depth);
             try
             {
-                KitLayoutGenerators.For("a-kit", "another_part");   // would re-enter
-                KitLayoutGenerators.Publish([Part("a-kit", "a_part", "a_cell")]);
+                KitLayoutGenerators.For(null, "a-kit", "another_part");   // would re-enter
+                KitLayoutGenerators.Publish(null, [Part("a-kit", "a_part", "a_cell")]);
                 return true;
             }
             finally { depth--; }
         });
 
-        Assert.Equal("a_cell", KitLayoutGenerators.For("a-kit", "a_part"));
+        Assert.Equal("a_cell", KitLayoutGenerators.For(null, "a-kit", "a_part"));
         Assert.Equal(1, maxDepth);
     }
 
@@ -139,14 +139,14 @@ public sealed class KitLayoutGeneratorRefreshTests : IDisposable
     public void ClearDropsTheMappingAndKeepsTheHook()
     {
         int asked = 0;
-        KitLayoutGenerators.SetRefresher(() => { asked++; return false; });
+        KitLayoutGenerators.SetRefresher(null, () => { asked++; return false; });
 
-        KitLayoutGenerators.Publish([Part("a-kit", "a_part", "a_cell")]);
-        Assert.Equal("a_cell", KitLayoutGenerators.For("a-kit", "a_part"));
+        KitLayoutGenerators.Publish(null, [Part("a-kit", "a_part", "a_cell")]);
+        Assert.Equal("a_cell", KitLayoutGenerators.For(null, "a-kit", "a_part"));
         Assert.Equal(0, asked);
 
-        KitLayoutGenerators.Clear();
-        Assert.Null(KitLayoutGenerators.For("a-kit", "a_part"));
+        KitLayoutGenerators.ClearWorkspace(null);
+        Assert.Null(KitLayoutGenerators.For(null, "a-kit", "a_part"));
         Assert.Equal(1, asked);
     }
 }
@@ -209,8 +209,8 @@ public sealed class KitLayoutGeneratorRefreshWiringTests
     public void TheSynchronousFallbackIsInstalledAndDroppedWithTheWorkspace()
     {
         string body = BodyOf(Source(), "private void ResetPCellGenerators(");
-        Assert.Contains("KitLayoutGenerators.SetRefresher(RefreshPCellGeneratorsNow)", body, StringComparison.Ordinal);
-        Assert.Contains("KitLayoutGenerators.SetRefresher(null)", body, StringComparison.Ordinal);
+        Assert.Contains("KitLayoutGenerators.SetRefresher(workspaceRootDir, RefreshPCellGeneratorsNow)", body, StringComparison.Ordinal);
+        Assert.Contains("KitLayoutGenerators.SetRefresher(_mountedKitRoot, null)", body, StringComparison.Ordinal);
     }
 
     /// <summary>

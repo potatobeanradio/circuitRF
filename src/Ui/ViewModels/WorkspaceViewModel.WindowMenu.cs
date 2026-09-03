@@ -101,9 +101,14 @@ public partial class WorkspaceViewModel
         // 2/3. Floating windows, split document-first then tool. A closed window can linger in
         // desktop.Windows briefly, so PlatformImpl is checked (the same guard RaiseFloatingToolWindows
         // uses — a stale entry there once crashed Window.SortWindowsByZOrder).
+        //
+        // MY floats only (MW1 R-mw1-11). desktop.Windows is every float in the PROCESS, so window B
+        // would list window A's torn-off panels and offer to raise them as if they were its own.
+        // Ownership is the stamp the creating factory applied, never a guess from position or title.
         var floats = desktop.Windows
             .OfType<CrfHostWindow>()
             .Where(w => w.PlatformImpl is not null)
+            .Where(w => ReferenceEquals(w.OwningWorkspace, this))
             .ToList();
 
         foreach (var w in floats.Where(w => !w.FloatsAnyTool()))
@@ -127,6 +132,25 @@ public partial class WorkspaceViewModel
             entries.Add(new WindowMenuEntry(
                 ((ICrfMenuWindow)editors[i]).WindowMenuHeader, editors[i], SeparatorBefore: i == 0));
 
+        // 5. The OTHER workspace windows (MW1 R-mw1-12), below a separator of their own.
+        //
+        // This is what makes the Window menu the navigation surface for multi-window: every window
+        // can reach every other from its own menu, so the set is never something the user has to
+        // hunt for in the OS window list. Each is labelled by its workspace folder name with the
+        // same DirtyMark convention the rest of the menu uses — one spelling of "unsaved", not two.
+        var others = desktop.Windows
+            .OfType<Views.WorkspaceWindow>()
+            .Where(w => w.PlatformImpl is not null && !ReferenceEquals(w.DataContext, this))
+            .ToList();
+
+        for (int i = 0; i < others.Count; i++)
+        {
+            string header = others[i].DataContext is WorkspaceViewModel other
+                ? other.ShellHeader()
+                : "Workspace";
+            entries.Add(new WindowMenuEntry(header, others[i], SeparatorBefore: i == 0));
+        }
+
         return entries;
     }
 
@@ -141,7 +165,7 @@ public partial class WorkspaceViewModel
     /// dotfile, so <c>Path.GetFileNameWithoutExtension(".cws")</c> returns ".cws", not the workspace
     /// name. This trap is documented in src/Ui/CLAUDE.md; do not "simplify" it back.</para>
     /// </summary>
-    private string ShellHeader()
+    internal string ShellHeader()
     {
         var dir = CurrentWorkspacePath is null ? null : System.IO.Path.GetDirectoryName(CurrentWorkspacePath);
         var name = string.IsNullOrWhiteSpace(dir) ? "circuitRF" : System.IO.Path.GetFileName(dir);

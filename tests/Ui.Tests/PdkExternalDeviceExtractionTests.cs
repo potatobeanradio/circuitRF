@@ -30,7 +30,7 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
 
     public void Dispose()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -68,13 +68,13 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
                 : null));
 
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
         return outcome.Items[0].Pdk!.CellDir!;
     }
 
     /// <summary>The part's published interface, held in memory rather than in a <c>.ccell</c> on disk.</summary>
     private static CcellFile Installed(string cellRef)
-        => PdkKitRegistry.Find(cellRef)?.Ccell
+        => PdkKitRegistry.Find(cellRef, null)?.Ccell
            ?? throw new Xunit.Sdk.XunitException($"no kit part is loaded for '{cellRef}'");
 
     private SchematicEditModel ModelWithPart(string cellRef, out EditableComponent comp)
@@ -301,7 +301,7 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
             Parameters: pars));
 
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
         return outcome.Items[0].Pdk!.CellDir!;
     }
 }

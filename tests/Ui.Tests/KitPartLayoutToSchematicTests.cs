@@ -37,9 +37,9 @@ public sealed class KitPartLayoutToSchematicTests : IDisposable
         _root = Path.Combine(Path.GetTempPath(), "crf-l2s-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_root);
 
-        PdkKitRegistry.Clear();
-        PdkKitRegistry.SetKit(Kit, [MakePart()]);
-        KitLayoutGenerators.Publish([
+        PdkKitRegistry.ResetAllForTests();
+        PdkKitRegistry.SetKit(null, Kit, [MakePart()]);
+        KitLayoutGenerators.Publish(null, [
             new PaletteItem(SymbolKind.Generic, 0, Part, ComponentCategory.Other, [Part], false, null,
                 new PdkPartRef(Kit, Part, null, PdkKitRegistry.RefFor(Kit, Part), "", "a_model"),
                 Generator),
@@ -48,8 +48,8 @@ public sealed class KitPartLayoutToSchematicTests : IDisposable
 
     public void Dispose()
     {
-        KitLayoutGenerators.Clear();
-        PdkKitRegistry.Clear();
+        KitLayoutGenerators.ResetAllForTests();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -163,7 +163,7 @@ public sealed class KitPartLayoutToSchematicTests : IDisposable
     public void AKitThatIsNotLoaded_SaysSoRatherThanCreatingAnEmptyComponent()
     {
         string cellDir = WriteGeneratedCell("cell_a_3", new() { ["w"] = PCellValue.Text("3E-05") });
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
 
         var schematic = new SchematicEditModel { SchematicDirectory = _root };
         var result = LayoutToSchematicGenerator.Run(LayoutWith(cellDir), schematic, _root);

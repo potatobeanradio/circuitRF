@@ -30,13 +30,13 @@ public sealed class KitPartToLayoutTests : IDisposable
         _root = Path.Combine(Path.GetTempPath(), "crf-kit-layout-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_root);
 
-        PdkKitRegistry.Clear();
-        PdkKitRegistry.SetKit(Kit, [MakePart()]);
+        PdkKitRegistry.ResetAllForTests();
+        PdkKitRegistry.SetKit(_root, Kit, [MakePart()]);
     }
 
     public void Dispose()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -99,7 +99,7 @@ public sealed class KitPartToLayoutTests : IDisposable
     public void L2_AReferenceToAnUnloadedKit_SaysSo()
     {
         var model = ModelWithPlacedKitPart();
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
 
         var result = SchematicToLayoutGenerator.Run(
             model, new LayoutView(), _root, _root, _root, null, null, null);

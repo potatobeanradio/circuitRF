@@ -1394,14 +1394,15 @@ public class WBondRound5Tests
                         Read("src", "Ui", "Views", "WorkspaceWindow.axaml.cs"), StringComparison.Ordinal);
 
         var host = Read("src", "Ui", "ViewModels", "Dock", "CrfHostWindow.cs");
-        Assert.Contains("Views.WirePanelKeys.Attach(this, Views.WirePanelKeys.ResolveWorkspace);",
+        Assert.Contains("Views.WirePanelKeys.Attach(this, () => Views.WorkspaceLocator.For(this));",
                         host, StringComparison.Ordinal);
 
-        // A float has no view model of its own, so it resolves the workspace through the shell — and
-        // finding none (the standalone wBond app) is a no-op, not a crash.
+        // A float has no view model of its own, so it resolves the workspace through the shell that
+        // OWNS it (MW1 R-mw1-11/14) — not through whichever workspace window happens to be first in
+        // the process, which with two open is an arbitrary one. Finding none (the standalone wBond
+        // app) is still a no-op, not a crash.
         var keys = Read("src", "Ui", "Views", "WirePanelKeys.cs");
-        Assert.Contains("desktop.Windows.OfType<WorkspaceWindow>().FirstOrDefault()?.DataContext as WorkspaceViewModel",
-                        keys, StringComparison.Ordinal);
+        Assert.Contains("WorkspaceLocator.For(source)", keys, StringComparison.Ordinal);
         Assert.Contains("if (vm is null || !vm.WirePanelKeysApply) return false;", keys, StringComparison.Ordinal);
 
         // Tunnel on both, so it is seen whatever has focus WITHIN each window.

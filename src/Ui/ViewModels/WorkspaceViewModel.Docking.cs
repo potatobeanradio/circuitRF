@@ -891,10 +891,13 @@ public partial class WorkspaceViewModel
         return AvaloniaScreenSource.WorkingAreas(screens);
     }
 
-    private Window? ShellWindow() =>
-        Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-            ? desktop.Windows.OfType<Views.WorkspaceWindow>().FirstOrDefault()
-            : null;
+    /// <summary>
+    /// MY shell window — the one whose DataContext is this view model, never "the first workspace
+    /// window in the process" (MW1 R-mw1-14). It is the sibling of
+    /// <see cref="Views.WorkspaceLocator.For"/>, in the other direction, and shares its
+    /// implementation so the two cannot answer differently.
+    /// </summary>
+    private Window? ShellWindow() => Views.WorkspaceLocator.WindowFor(this);
 
     /// <summary>
     /// Snapshots the live arrangement. Returns null only when there is no root dock to read.

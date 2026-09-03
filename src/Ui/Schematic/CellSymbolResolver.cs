@@ -82,15 +82,25 @@ public static class CellSymbolResolver
     /// the three-state result.  On cache hit (same primary filename + mtime) returns immediately
     /// without touching the filesystem beyond the existence check.
     /// </summary>
-    public static CellSymbolResolution Resolve(string cellRef, string? baseDir)
+    /// <param name="workspaceRoot">
+    /// The workspace this resolution is being made on behalf of, when the caller knows it — a palette
+    /// tile or a drag ghost, which have no document to walk up from. Left null, the workspace is the
+    /// one <paramref name="baseDir"/> belongs to (MW1 R-mw1-5): the same ancestor-<c>.cws</c> walk-up
+    /// technology already uses, memoised in <see cref="WorkspaceRootFinder.WorkspaceDirOf"/>.
+    /// </param>
+    public static CellSymbolResolution Resolve(string cellRef, string? baseDir, string? workspaceRoot = null)
     {
         // 0. A kit part lives in memory, not on disk — checked FIRST, and never falling through to
         //    the path branch. Falling through would resolve "pdk://…" against baseDir, producing a
         //    NotFound that names a directory nobody ever expected to exist; the reference is not a
         //    path and must not be reported as a bad one. An unloaded kit is NotFound on purpose:
         //    that is the reported, repairable state, and it draws the same placeholder.
+        //
+        //    WHICH workspace's kits is the question multi-window added, and the reference cannot
+        //    answer it — it is written into user files and names no machine-specific path. The ASKER
+        //    answers instead: the referencing document's own parent workspace (R-mw1-5).
         if (PdkKitRegistry.IsKitRef(cellRef))
-            return PdkKitRegistry.Find(cellRef) is { } part
+            return KitPartFor(cellRef, baseDir, workspaceRoot) is { } part
                 ? new CellSymbolResolution { State = CellSymbolState.Resolved, Symbol = part.Symbol }
                 : CellSymbolResolution.NotFoundResult;
 
@@ -188,19 +198,19 @@ public static class CellSymbolResolver
     /// part's tile and its drag ghost both fell back to the placeholder glyph, so every part in an
     /// imported kit looked generic in the palette. Ask this instead of splitting by hand.</para>
     /// </summary>
-    public static CellSymbolResolution ResolveCellDirOrRef(string? cellDirOrRef)
+    public static CellSymbolResolution ResolveCellDirOrRef(string? cellDirOrRef, string? workspaceRoot = null)
     {
         if (string.IsNullOrEmpty(cellDirOrRef)) return CellSymbolResolution.NotFoundResult;
 
         // A virtual reference is not a path and must never be taken apart as one.
-        if (NeedsNoBaseDirectory(cellDirOrRef)) return Resolve(cellDirOrRef, null);
+        if (NeedsNoBaseDirectory(cellDirOrRef)) return Resolve(cellDirOrRef, null, workspaceRoot);
 
         try
         {
             string trimmed = cellDirOrRef.TrimEnd('/', '\\');
             string? parent = Path.GetDirectoryName(trimmed);
             if (string.IsNullOrEmpty(parent)) return CellSymbolResolution.NotFoundResult;
-            return Resolve(Path.GetFileName(trimmed), parent);
+            return Resolve(Path.GetFileName(trimmed), parent, workspaceRoot);
         }
         catch
         {
@@ -224,10 +234,10 @@ public static class CellSymbolResolver
     /// rather than per frame, and a stale parameter interface is a silently wrong instance. The
     /// symbol cache above exists because symbols are re-read on every render; this is not.</para>
     /// </summary>
-    public static CcellFile? ResolveCcell(string cellRef, string baseDir)
+    public static CcellFile? ResolveCcell(string cellRef, string baseDir, string? workspaceRoot = null)
     {
         if (PdkKitRegistry.IsKitRef(cellRef))
-            return PdkKitRegistry.Find(cellRef)?.Ccell;
+            return KitPartFor(cellRef, baseDir, workspaceRoot)?.Ccell;
 
         // A wBond is a built-in primitive whose SYMBOL happens to come from a file; it has no cell
         // and therefore no published parameter interface. Answered here rather than left to fall
@@ -270,5 +280,33 @@ public static class CellSymbolResolver
     public static void InvalidateAll()
     {
         lock (_lock) _cache.Clear();
+        // The workspace a path belongs to is memoised for the same reason the symbols are — it is
+        // asked per cell instance per render (R-mw1-6) — so it is dropped at the same moments. A
+        // .cws appearing or disappearing changes the answer and nothing else would notice.
+        WorkspaceRootFinder.InvalidateCache();
+    }
+
+    // ── Which workspace's kits (MW1 R-mw1-5) ──────────────────────────────────
+
+    /// <summary>
+    /// The kit part <paramref name="cellRef"/> names, resolved against the workspace the caller
+    /// named or — failing that — the one <paramref name="baseDir"/> belongs to.
+    ///
+    /// <para><b>When neither is available it falls back to every mounted workspace</b>, and that is a
+    /// deliberate, narrow compromise rather than an oversight. It is reached only by a preview that
+    /// has no document and no window behind it: an unsaved scratch schematic, or a palette tile whose
+    /// host did not supply its own workspace. The consequence is bounded — a kit reference names a
+    /// kit and a part, so the worst case is a same-named kit in another open workspace supplying the
+    /// GLYPH; anything a design actually carries reaches here with a baseDir.</para>
+    /// </summary>
+    private static PdkKitPart? KitPartFor(string cellRef, string? baseDir, string? workspaceRoot)
+    {
+        string? root = !string.IsNullOrWhiteSpace(workspaceRoot)
+            ? workspaceRoot
+            : WorkspaceRootFinder.WorkspaceDirOf(baseDir);
+
+        return root is null
+            ? PdkKitRegistry.FindInAnyWorkspace(cellRef)
+            : PdkKitRegistry.Find(cellRef, root);
     }
 }

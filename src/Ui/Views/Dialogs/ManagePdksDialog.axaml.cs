@@ -290,7 +290,7 @@ public partial class ManagePdksDialog : Window
             .ShowDialog<SaveChangesResult>(this);
         if (choice != SaveChangesResult.Save) return;
 
-        PdkReferenceManager.Remove(_ctx.Refs, s.Provider, _ctx.PlacedPartRefs);
+        PdkReferenceManager.Remove(_ctx.WorkspaceRootDir, _ctx.Refs, s.Provider, _ctx.PlacedPartRefs);
         _ctx.Save();
         _ctx.Loaded();
 

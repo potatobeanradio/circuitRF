@@ -276,7 +276,7 @@ public sealed class ExternalWorkerConsentTests
     /// </summary>
     [Fact]
     public void UncheckingTheBoxAlsoEndsWorkersAlreadyRunning()
-        => Assert.Contains("ExternalDeviceRegistry.ResetResolved()",
+        => Assert.Contains("ExternalDeviceRegistry.EndResolvedProviders()",
                            Read("src", "Ui", "Views", "Dialogs", "ExternalWorkerSettingsView.axaml.cs"),
                            StringComparison.Ordinal);
 

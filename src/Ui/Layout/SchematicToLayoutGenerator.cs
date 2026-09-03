@@ -352,7 +352,7 @@ public static class SchematicToLayoutGenerator
                 return null;
             }
 
-            if (PdkKitRegistry.Find(kitRef) is null)
+            if (PdkKitRegistry.Find(kitRef, workspaceRootDir) is null)
             {
                 resolveWarning = $"the kit \"{kitName}\" is not loaded in this workspace";
                 return null;
@@ -363,7 +363,7 @@ public static class SchematicToLayoutGenerator
             // cell independently, so the answer is not always the part id, and two derivations of it
             // are how a tile and a design come to disagree about a part's artwork.
             // See KitPaletteMerge for the rules and KitLayoutGenerators for why it is published.
-            string kitGenerator = KitLayoutGenerators.For(kitName, partId) ?? partId;
+            string kitGenerator = KitLayoutGenerators.For(workspaceRootDir, kitName, partId) ?? partId;
 
             if (!PCellRegistry.TryGet(kitGenerator, out _))
             {

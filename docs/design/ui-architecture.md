@@ -154,6 +154,70 @@ file format. That is the entire value of the firewall: **the simulator survives 
 
 ---
 
+## 5A. Per-window vs. per-process: what a second workspace window may and may not share
+
+**Added 2026-09-03 by MW1** (`docs/sonnet-briefs/brief-multi-workspace-1-windows.md`, R-mw1-4/R-mw1-7).
+This is the durable architectural fact that series produced, so it belongs here rather than in three
+briefs. The failure it exists to prevent is silent by nature: state that *looks* global is shared
+between two windows, and the window the user is not looking at degrades with nothing reported.
+
+### The rule
+
+**Anything whose CONTENT is named by a workspace is per workspace. Anything whose content is named by an
+absolute path, by its own value, or by the installation is per process.**
+
+Applying it gives three classes, and every static mutable field under `src/Ui`, `src/Design` and
+`src/Core` belongs to exactly one of them:
+
+| Class | Key | Lifetime | Examples |
+|---|---|---|---|
+| **Workspace-scoped** | the workspace root path, or the resolver instance the workspace registered | added on that workspace's open, removed when **its window closes** — never by another workspace opening | `PdkKitRegistry`, `KitLayoutGenerators`, `PCellRegistry`'s resolvers, `ExternalDeviceRegistry`'s resolvers |
+| **Path- or content-keyed** | an absolute path (+ mtime), or the value itself | process, safely | `CellSymbolResolver`'s symbols, `CellLayoutResolver`, `SpiceModelPeek`, `BitmapCache`, `GeneratedCellStore` |
+| **Process-wide and correct** | the installation | process | theme, `AppPreferences`, `ExternalWorkerPolicy`, built-in registries, crash/update singletons |
+
+**A registry in the first class must expose no process-wide clear that a workspace-lifetime path can
+reach.** That is the specific mistake: `Clear()` called on a workspace OPEN. `ClearWorkspace(root)` /
+`RemoveResolver(instance)` are the replacements; a process-wide clear survives only for process exit,
+and a test asserts no workspace-lifetime method reaches one.
+
+### Which workspace is a call being made on behalf of?
+
+**The document's own, found by walking up to the nearest ancestor `.cws`** — `WorkspaceRootFinder`, the
+same mechanism `brief-foreign-documents.md` R-fgn-3 already fixed for technology, memoised because it is
+asked per cell instance per render. Never "the currently open workspace", and never the first workspace
+window in the process: with two windows both are arbitrary.
+
+The same rule in the UI direction is `Views/WorkspaceLocator`: a control's own shell, else the workspace
+stamped on the floating window that hosts it, else the most recently activated one. **A float's owner is
+stamped by the creating dock factory** (which is per view model) and is never inferred from window
+position, z-order or title.
+
+### What is per window by construction, and therefore free
+
+`WorkspaceViewModel` is not a singleton, and the dock factory hangs off it — so every window already has
+its own Project Tree, Library, Properties, Analyses, Messages and DRC panels, its own dock arrangement,
+its own `View ▸ Reset Layout`, its own undo, its own edit sessions and its own `TechnologyCache`. Nothing
+is shared between windows, by design (R-mw-2). The DEFAULT layout a reset resets *to* stays one
+application preference.
+
+### The two refusals that keep this coherent
+
+- **A workspace is open in at most one window**; opening one already open activates that window. Two view
+  models over one `.cws` means two session registries over the same files — two undo stacks, two dirty
+  flags, last-save-wins.
+- **A document is open in at most one window**, for the same reason, and it is what will make external
+  cell references (MW2) safe: a cell referenced from another workspace must not become editable through
+  the window that merely references it.
+
+### Out of scope, permanently
+
+Documents do not dock across windows, no panel is shared between windows, and no analysis spans two
+workspaces. A document tab carries dirty tracking, undo routing, `.cws` session membership and Save-All
+participation, all of which resolve through the `WorkspaceViewModel` that owns its dock; moving the tab
+would move none of it.
+
+---
+
 ## 6. Acceptance (the architecture half of 6a)
 
 1. This note (`ui-architecture.md`) written and reviewed: the layering, the design-model-in/`DataSet`-out

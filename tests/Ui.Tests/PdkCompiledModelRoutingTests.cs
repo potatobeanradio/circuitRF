@@ -45,7 +45,7 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
     public void Dispose()
     {
         DeviceWorkerManifest.ToolsDirectory = _previousTools;
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -93,7 +93,7 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
     {
         DeviceWorkerManifest.ToolsDirectory = Path.GetDirectoryName(FixturePaths.Require(WorkerRel))!;
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
         return outcome;
     }
 
@@ -110,7 +110,7 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
     /// </summary>
     private static EditableComponent Place(string part = Part)
     {
-        var installed = PdkKitRegistry.Find(PdkKitRegistry.RefFor(Kit, part))
+        var installed = PdkKitRegistry.Find(PdkKitRegistry.RefFor(Kit, part), null)
                         ?? throw new Xunit.Sdk.XunitException($"'{part}' is not loaded");
 
         var comp = new EditableComponent
@@ -158,7 +158,7 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
         // The file's own name says nothing about what it implements — which is the whole reason the
         // module is asked for rather than derived.
         Assert.Contains(Module, model.TypeIds);
-        Assert.Equal(model.TypeIds, PdkKitRegistry.OsdiModelsOf(Kit).Single().TypeIds);
+        Assert.Equal(model.TypeIds, PdkKitRegistry.OsdiModelsOf(null, Kit).Single().TypeIds);
     }
 
     /// <summary>
@@ -177,7 +177,7 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
         var recorded = Install(report).Settings;
         Assert.NotNull(recorded);
 
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         var reopened = PdkPartInstaller.Install(report, recorded);
 
         Assert.Single(reopened.OsdiModels!);
@@ -382,8 +382,8 @@ public sealed class PdkCompiledModelRoutingTests : IDisposable
                                      Pins: [new KitSymbolPin("a", 0, 0), new KitSymbolPin("b", 500, 0)]));
 
         var outcome = PdkPartInstaller.Install(report);
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
-        Assert.Empty(PdkKitRegistry.OsdiModelsOf(Kit));
+        PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
+        Assert.Empty(PdkKitRegistry.OsdiModelsOf(null, Kit));
 
         var model = new SchematicEditModel { SchematicDirectory = Path.GetTempPath() };
         model.Components.Add(Place("FAMILY_v1"));

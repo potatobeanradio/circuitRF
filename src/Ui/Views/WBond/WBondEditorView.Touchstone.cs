@@ -80,12 +80,7 @@ public partial class WBondEditorView
     /// </summary>
     private IMessageSink ResolveMessages()
     {
-        var workspace = Avalonia.Application.Current?.ApplicationLifetime
-                is IClassicDesktopStyleApplicationLifetime desktop
-            ? desktop.Windows.OfType<Views.WorkspaceWindow>()
-                              .Select(w => w.DataContext as WorkspaceViewModel)
-                              .FirstOrDefault(v => v is not null)
-            : null;
+        var workspace = Views.WorkspaceLocator.For(this);
 
         return workspace?.Messages ?? new WBondStatusMessageSink(ShowStatus);
     }

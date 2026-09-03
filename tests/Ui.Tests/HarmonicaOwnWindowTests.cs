@@ -234,7 +234,9 @@ public sealed class HarmonicaOwnWindowTests
         var source = ReadRepoFile(Path.Combine("src", "Ui", "Views", "Harmonica", "HarmonicaView.axaml.cs"));
         var body   = MethodBody(source, "private ViewModels.WorkspaceViewModel? Workspace");
 
-        Assert.Contains("OfType<Views.WorkspaceWindow>()", body, System.StringComparison.Ordinal);
+        // Resolved through WorkspaceLocator since MW1 (R-mw1-14) — the workspace of THIS view's own
+        // window, rather than whichever workspace window happened to be first in the process.
+        Assert.Contains("WorkspaceLocator.For(this)", body, System.StringComparison.Ordinal);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

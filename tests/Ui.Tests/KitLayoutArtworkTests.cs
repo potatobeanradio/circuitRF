@@ -376,11 +376,11 @@ public sealed class KitLayoutArtworkTests
         var kits   = new Dictionary<string, string> { ["thing"] = "k" };
         var models = new Dictionary<string, string> { ["thing"] = "cap_thing_model" };
 
-        KitLayoutGenerators.Publish(KitPaletteMerge.Compose(parts, kits, models));
-        Assert.Equal("thing", KitLayoutGenerators.For("k", "cap_thing"));
-        Assert.Null(KitLayoutGenerators.For("k", "not_a_part"));
+        KitLayoutGenerators.Publish(null, KitPaletteMerge.Compose(parts, kits, models));
+        Assert.Equal("thing", KitLayoutGenerators.For(null, "k", "cap_thing"));
+        Assert.Null(KitLayoutGenerators.For(null, "k", "not_a_part"));
 
-        KitLayoutGenerators.Clear();
-        Assert.Null(KitLayoutGenerators.For("k", "cap_thing"));
+        KitLayoutGenerators.ResetAllForTests();
+        Assert.Null(KitLayoutGenerators.For(null, "k", "cap_thing"));
     }
 }

@@ -49,8 +49,8 @@ public sealed class KitPartLayoutParametersTests : IDisposable
         _root = Path.Combine(Path.GetTempPath(), "crf-kitparm-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_root);
 
-        PdkKitRegistry.Clear();
-        PdkKitRegistry.SetKit(Kit, [MakePart()]);
+        PdkKitRegistry.ResetAllForTests();
+        PdkKitRegistry.SetKit(_root, Kit, [MakePart()]);
 
         PCellRegistry.ClearResolvers();
         PCellRegistry.AddResolver(new DeclaringResolver(_seen));
@@ -58,7 +58,7 @@ public sealed class KitPartLayoutParametersTests : IDisposable
         // The palette's settled answer, exactly as WorkspaceViewModel publishes it: this kit's part
         // is drawn by this generator, whose id is deliberately NOT the part id (a kit names the two
         // independently — see KitPaletteMerge).
-        KitLayoutGenerators.Publish([
+        KitLayoutGenerators.Publish(_root, [
             new PaletteItem(SymbolKind.Generic, 0, Part, ComponentCategory.Other, [Part], false, null,
                 new PdkPartRef(Kit, Part, null, PdkKitRegistry.RefFor(Kit, Part), "", "a_model"),
                 Generator),
@@ -67,9 +67,9 @@ public sealed class KitPartLayoutParametersTests : IDisposable
 
     public void Dispose()
     {
-        KitLayoutGenerators.Clear();
+        KitLayoutGenerators.ResetAllForTests();
         PCellRegistry.ClearResolvers();
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 

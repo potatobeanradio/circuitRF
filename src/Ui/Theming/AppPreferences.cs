@@ -316,18 +316,69 @@ public static class AppPreferencesIo
     /// </summary>
     public static bool FileExists => File.Exists(PrefsPath);
 
+    /// <summary>
+    /// The one in-process copy of the preferences (MW1 R-mw1-8). Read from disk once, on first use,
+    /// and thereafter the authority: <see cref="Update"/> mutates it and writes the whole file back.
+    ///
+    /// <para><b>Why an instance and not a file lock.</b> Load → mutate one field → save loses the
+    /// other window's edit whenever two of them do it at once, and Recent Workspaces is touched by
+    /// every workspace open, so with two windows that stops being theoretical. Two windows in ONE
+    /// process is the case that matters here — inventing cross-process file locking that then has to
+    /// work on three platforms buys nothing this needs. (It was already latent: harmonicaRF and wBond
+    /// share this file, as separate processes.)</para>
+    /// </summary>
+    private static AppPreferences? _current;
+    private static readonly Lock _gate = new();
+
+    /// <summary>
+    /// A SNAPSHOT of the current preferences — safe to hand out and safe to mutate, because mutating
+    /// it changes nothing until it is written back through <see cref="Update"/>. Returning the shared
+    /// instance itself would make an incidental read-and-poke into a silent global edit.
+    /// </summary>
     public static AppPreferences Load()
     {
+        lock (_gate) return Copy(Shared());
+    }
+
+    /// <summary>The shared instance, read from disk on first use. Callers must hold <c>_gate</c>.</summary>
+    private static AppPreferences Shared()
+    {
+        if (_current is not null) return _current;
+
         try
         {
             if (File.Exists(PrefsPath))
             {
-                return Migrate(JsonSerializer.Deserialize<AppPreferences>(File.ReadAllText(PrefsPath), JsonOpts)
-                               ?? new AppPreferences());
+                _current = Migrate(JsonSerializer.Deserialize<AppPreferences>(File.ReadAllText(PrefsPath), JsonOpts)
+                                   ?? new AppPreferences());
+                return _current;
             }
         }
         catch { /* corrupt prefs — start fresh */ }
-        return new AppPreferences();
+
+        _current = new AppPreferences();
+        return _current;
+    }
+
+    private static AppPreferences Copy(AppPreferences source)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<AppPreferences>(
+                       JsonSerializer.Serialize(source, JsonOpts), JsonOpts)
+                   ?? new AppPreferences();
+        }
+        catch { return new AppPreferences(); }
+    }
+
+    /// <summary>
+    /// Forgets the in-memory copy, so the next read comes off disk again. For tests, and for anything
+    /// that redirects <see cref="AppDataRoot"/> mid-process — the cached instance belongs to whichever
+    /// directory it was read from.
+    /// </summary>
+    public static void InvalidateCache()
+    {
+        lock (_gate) _current = null;
     }
 
     /// <summary>
@@ -345,7 +396,35 @@ public static class AppPreferencesIo
         return prefs;
     }
 
+    /// <summary>
+    /// Replaces the preferences wholesale. Adopts <paramref name="prefs"/> as the in-process copy, so
+    /// a caller that saved a snapshot does not then read back the value it just overwrote.
+    /// </summary>
     public static void Save(AppPreferences prefs)
+    {
+        lock (_gate)
+        {
+            _current = prefs;
+            WriteLocked(prefs);
+        }
+    }
+
+    /// <summary>
+    /// Mutate → save in one step, against the ONE in-process copy, so partial writes never clobber
+    /// other fields — including a field another WINDOW changed a moment ago (MW1 R-mw1-8). This is
+    /// the single write path; everything that changes a preference goes through it.
+    /// </summary>
+    public static void Update(Action<AppPreferences> mutate)
+    {
+        lock (_gate)
+        {
+            var prefs = Shared();
+            mutate(prefs);
+            WriteLocked(prefs);
+        }
+    }
+
+    private static void WriteLocked(AppPreferences prefs)
     {
         try
         {
@@ -353,13 +432,5 @@ public static class AppPreferencesIo
             File.WriteAllText(PrefsPath, JsonSerializer.Serialize(prefs, JsonOpts));
         }
         catch { /* non-critical — preference loss is recoverable */ }
-    }
-
-    /// <summary>Load → mutate → save in one step so partial writes never clobber other fields.</summary>
-    public static void Update(Action<AppPreferences> mutate)
-    {
-        var prefs = Load();
-        mutate(prefs);
-        Save(prefs);
     }
 }

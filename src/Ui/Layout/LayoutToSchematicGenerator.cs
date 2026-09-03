@@ -93,6 +93,12 @@ public static class LayoutToSchematicGenerator
     {
         var lines = new List<SchematicToLayoutGenerator.ReportLine>();
         var noSymbol = new List<string>();
+
+        // Which workspace's kits this run resolves against (MW1 R-mw1-5): the one the documents
+        // themselves belong to, never "whichever workspace is in front". The schematic answers when
+        // it has been saved; the layout it was generated from answers for a scratch one.
+        string? wsRoot = WorkspaceRootFinder.WorkspaceDirOf(schematic.SchematicDirectory)
+                      ?? WorkspaceRootFinder.WorkspaceDirOf(layoutBaseDir);
         IUiCommand? chain = null;
         int created = 0, updated = 0, unchanged = 0, overwritten = 0;
 
@@ -162,7 +168,7 @@ public static class LayoutToSchematicGenerator
             // neither and every PDK component in a layout was silently passed over — no create, and
             // no push-back onto one already linked.
             bool builtIn = ReverseGeneratorMap.TryGetValue(origin.GeneratorId, out var kind);
-            string? kitRef = builtIn ? null : KitLayoutGenerators.PartRefFor(origin.GeneratorId);
+            string? kitRef = builtIn ? null : KitLayoutGenerators.PartRefFor(wsRoot, origin.GeneratorId);
             if (!builtIn && kitRef is null)
                 continue; // a foreign generator no part claims — nothing to name it after
 
@@ -174,7 +180,7 @@ public static class LayoutToSchematicGenerator
                 // A kit part cannot be created without its kit loaded: its symbol and its parameter
                 // interface both live in memory, in the kit, and a component referencing a kit that
                 // is not here would place as an unresolved box with no parameters at all.
-                if (kitRef is not null && PdkKitRegistry.Find(kitRef) is null)
+                if (kitRef is not null && PdkKitRegistry.Find(kitRef, wsRoot) is null)
                 {
                     PdkKitRegistry.TryParse(kitRef, out string kitName, out string partId);
                     lines.Add(new SchematicToLayoutGenerator.ReportLine(inst.CellRef,

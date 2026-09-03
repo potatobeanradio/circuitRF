@@ -120,6 +120,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // Exposed so WorkspaceWindow.axaml can bind DockControl.Factory — required for float/tear-off.
     public IFactory DockFactory => _factory;
 
+    /// <summary>
+    /// This window's own dock factory — and therefore its own panel instances (R-mw-2). Exposed so a
+    /// test can assert two workspaces share nothing; production code reaches the panels through the
+    /// named properties on it.
+    /// </summary>
+    internal CircuitRfDockFactory Factory => _factory;
+
     // ---- Infrastructure ------------------------------------------------------
 
     public IMessageSink Messages => _factory.MessagesTool
@@ -300,6 +307,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private string? CurrentWorkspaceRoot
         => CurrentWorkspacePath is null ? null : Path.GetDirectoryName(CurrentWorkspacePath);
 
+    /// <summary>
+    /// The workspace scope this window currently owns entries in, across the process-wide registries
+    /// (MW1 R-mw1-4). Recorded rather than re-derived because a workspace SWITCH has to withdraw the
+    /// scope it is leaving, and by the time that runs <see cref="CurrentWorkspacePath"/> already names
+    /// the one being opened — clearing that instead is how a window silently unmounts its own kits.
+    /// </summary>
+    private string? _mountedKitRoot;
+
+    /// <summary>The device-worker resolver this workspace registered, so it can withdraw exactly its
+    /// own — never every window's (MW1 R-mw1-4).</summary>
+    private IExternalProviderResolver? _deviceResolver;
+
     // Last-used parent directory for the New Workspace dialog (in-memory, not persisted).
     // Seeds the Location field so repeated New Workspace dialogs start at the same folder.
     private string _lastWorkspaceParentDir =
@@ -394,6 +413,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public WorkspaceViewModel()
     {
         _factory = new CircuitRfDockFactory();
+        // Before anything can be floated: every CrfHostWindow the factory creates is stamped with
+        // this view model, which is how a float is attributed to its own workspace window under
+        // multi-window (MW1 R-mw1-11).
+        _factory.Owner = this;
 
         var layout = _factory.CreateLayout();
         _factory.InitLayout(layout);
@@ -638,14 +661,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void ResetPCellGenerators(string? workspaceRootDir)
     {
-        CircuitRF.Ui.Layout.PCells.PCellRegistry.ClearResolvers();
-
         var previous = _pcellResolver;
         _pcellResolver = null;
+
+        // OURS, by instance — never every resolver in the process (MW1 R-mw1-4). A workspace
+        // registers exactly one and holds it, so the instance is the scope key and another window's
+        // generators are untouched.
+        CircuitRF.Ui.Layout.PCells.PCellRegistry.RemoveResolver(previous);
         try { previous?.Dispose(); } catch { /* teardown must not fail a workspace switch */ }
 
         _pcellTrust = null;
-        KitLayoutGenerators.SetRefresher(null);
+        KitLayoutGenerators.SetRefresher(_mountedKitRoot, null);
         if (string.IsNullOrWhiteSpace(workspaceRootDir)) { ReloadPCellGeneratorsCommand.NotifyCanExecuteChanged(); return; }
 
         try
@@ -678,7 +704,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             // Asked when a part is resolved against a map the background reading has not filled yet.
             // See KitLayoutGenerators.SetRefresher for why a lookup is allowed to trigger a reading.
-            KitLayoutGenerators.SetRefresher(RefreshPCellGeneratorsNow);
+            KitLayoutGenerators.SetRefresher(workspaceRootDir, RefreshPCellGeneratorsNow);
 
             RefreshPCellPaletteItems();
         }
@@ -1328,6 +1354,68 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SwitchToWorkspace(cwsPath);
     }
 
+    // ---- Multiple workspace windows (MW1 §1) ---------------------------------
+
+    /// <summary>
+    /// File ▸ New Window — a second workspace window, opening empty and ready for Open Workspace.
+    ///
+    /// <para>The launch ACTION is deliberately not run for it (R-mw1-2): opening the user's start-up
+    /// workspace into a window they asked to be empty is not what "New Window" means. The window
+    /// SHAPE preferences are applied, so it looks like every other window they open.</para>
+    /// </summary>
+    [RelayCommand]
+    private static void NewWindow() => App.NewWorkspaceWindow();
+
+    /// <summary>
+    /// File ▸ Open Workspace in New Window… — the common gesture ("I want to look at that project
+    /// TOO") in one step rather than two.
+    ///
+    /// <para>A workspace already open in another window ACTIVATES that window rather than opening a
+    /// second view of it (R-mw1-9): two view models over one <c>.cws</c> means two undo stacks and
+    /// two dirty flags over the same files, and last-save-wins.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenWorkspaceInNewWindow(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        IStorageFolder? startLocation = null;
+        try { startLocation = await window.StorageProvider.TryGetFolderFromPathAsync(_lastWorkspaceParentDir); }
+        catch { }
+
+        var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title                  = "Open Workspace in New Window",
+            AllowMultiple          = false,
+            SuggestedStartLocation = startLocation,
+        });
+
+        if (folders.Count == 0) return;
+        string cwsPath = Path.Combine(folders[0].Path.LocalPath, ".cws");
+
+        if (!File.Exists(cwsPath))
+        {
+            Messages.Error("That folder is not a circuitRF workspace (no .cws found).");
+            return;
+        }
+
+        App.OpenWorkspaceInNewWindow(cwsPath);
+    }
+
+    /// <summary>
+    /// File ▸ Close Workspace Window — closes THIS window, leaving any other workspace window open
+    /// and the application running (R-mw1-17: the close prompts for this window's own dirty work
+    /// only, which falls out of every document collection here belonging to this view model).
+    ///
+    /// <para><b>Named "Close Workspace Window", not "Close Window", deliberately.</b> MW1 §1 asks for
+    /// the latter, but File already has a "Close Window" that closes the active DOCUMENT tab — two
+    /// items of the same name doing different things is a worse outcome than the brief's exact
+    /// wording, so the new one says which window it means.</para>
+    /// </summary>
+    [RelayCommand]
+    private void CloseWorkspaceWindow() => Views.WorkspaceLocator.WindowFor(this)?.Close();
+
     [RelayCommand]
     private async Task SaveWorkspace(Window? owner)
     {
@@ -1796,6 +1884,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void SwitchToWorkspace(string cwsPath)
     {
+        // A workspace may be open in at most ONE window (MW1 R-mw1-9). Opening one that another
+        // window already has activates that window instead: two view models over one .cws means two
+        // independent edit-session registries over the same files — two undo stacks, two dirty flags,
+        // last-save-wins — and refusing that is both correct and cheaper than reconciling it.
+        if (App.WindowShowing(cwsPath) is { } already
+            && !ReferenceEquals(already.DataContext, this))
+        {
+            already.Activate();
+            Messages.Info(
+                $"'{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' is already open in another " +
+                "window, which has been brought to the front.");
+            return;
+        }
+
         var workspaceDir = Path.GetDirectoryName(cwsPath)!;
         _lastWorkspaceParentDir = Path.GetDirectoryName(workspaceDir) ?? _lastWorkspaceParentDir;
 
@@ -2087,24 +2189,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// torn-off document is never prompted for here either).
     /// </summary>
     [RelayCommand]
-    private async Task OpenSourceWorkspace(string? cwsPath)
+    private Task OpenSourceWorkspace(string? cwsPath)
     {
-        if (cwsPath is null) return;
-
-        if (HasAnyDirtyWork(includeFloated: false))
-        {
-            var window = ResolveOwner(null);
-            if (window is not null && !await PromptSaveBeforeClose(window, "opening a workspace", includeFloated: false))
-                return;
-        }
+        if (cwsPath is null) return Task.CompletedTask;
 
         if (!File.Exists(cwsPath))
         {
             Messages.Error($"Workspace '{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' was not found.");
-            return;
+            return Task.CompletedTask;
         }
 
-        SwitchToWorkspace(cwsPath);
+        // IN A NEW WINDOW (MW1 §1), not by replacing this one.
+        //
+        // This command exists precisely because the user wants to see where a foreign document came
+        // from WITHOUT losing what they were doing — and until multi-window existed it did the
+        // opposite, switching the window out from under them and prompting to save on the way.
+        // Nothing is closed, so there is nothing to prompt about; a workspace already open somewhere
+        // simply comes to the front (R-mw1-9).
+        App.OpenWorkspaceInNewWindow(cwsPath);
+        return Task.CompletedTask;
     }
 
     /// <summary>Close the current workspace and return to the no-workspace shell (Item 2).</summary>
@@ -4371,22 +4474,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void RestoreInstalledPdks()
     {
         _pdkPaletteItems.Clear();
-        PdkKitRegistry.Clear();     // kit references belong to the workspace that named them
-        KitLayoutGenerators.Clear();
+
+        // THIS workspace's kit references, not the process's (MW1 R-mw1-4). Kit references belong to
+        // the workspace that named them, which is why they are dropped here at all — but with a
+        // second window open, dropping every workspace's is what silently unmounted the other one's
+        // kits and left its placed parts drawing as pin-less placeholders with nothing reported.
+        PdkKitRegistry.ClearWorkspace(_mountedKitRoot);
+        KitLayoutGenerators.ClearWorkspace(_mountedKitRoot);
         _kitManifests.Clear();
-        // Generated wBond symbols are keyed by absolute path, so they are not workspace-scoped the
-        // way a kit reference is — but a stale entry would survive a workspace's files being edited
-        // outside circuitRF, and this is the one moment the whole session's assumptions are already
-        // being rebuilt.
-        WBondSymbolProvider.InvalidateAll();
-        // A peeked SPICE file is keyed by mtime, so an edit made OUTSIDE circuitRF is already picked
-        // up on the next read; this drops the entries for files the departing workspace named, which
-        // will not be asked for again.
-        SpiceModelPeek.InvalidateAll();
+
+        // The workspace a path belongs to is memoised; a .cws arriving or leaving changes the answer.
+        WorkspaceRootFinder.InvalidateCache();
 
         string? wsRoot = CurrentWorkspacePath is null
             ? null
             : Path.GetDirectoryName(CurrentWorkspacePath);
+
+        _mountedKitRoot = wsRoot;
 
         var broken = new List<string>();
 
@@ -4651,7 +4755,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _pdkPaletteItems, _pcellGeneratorKits, _pcellGeneratorModels, _pcellGeneratorParameters);
         // The same answer, published for Update-Layout-from-Schematic, so a part that places one view
         // from its tile places the other from the design.
-        KitLayoutGenerators.Publish(composed);
+        KitLayoutGenerators.Publish(CurrentWorkspaceRoot, composed);
         _factory.PaletteTool?.SetPdkParts(composed);
     }
 
@@ -4786,7 +4890,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var report  = read.Report!;
         var outcome = read.Outcome!;
 
-        PdkKitRegistry.SetKit(r.Provider, outcome.Parts ?? [], outcome.OsdiModels);
+        PdkKitRegistry.SetKit(CurrentWorkspaceRoot, r.Provider, outcome.Parts ?? [], outcome.OsdiModels);
 
         // From what the install SETTLED, never from what was recorded. They differ exactly when the
         // recorded settings were absent (or stale) and had to be derived — which is the case that
@@ -4899,9 +5003,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void RegisterKitProviderResolver(string? workspaceRootDir)
     {
-        // Ends any worker started for the workspace being left behind. Providers registered by the
-        // application itself (plug-in assemblies) are deliberately not touched.
-        ExternalDeviceRegistry.ResetResolved();
+        // Ends any worker THIS workspace started, and withdraws THIS workspace's resolver — by the
+        // instance it registered, so another window's kits keep resolving (MW1 R-mw1-4). Providers
+        // registered by the application itself (plug-in assemblies) are deliberately not touched.
+        ExternalDeviceRegistry.RemoveResolver(_deviceResolver);
+        _deviceResolver = null;
 
         if (string.IsNullOrWhiteSpace(workspaceRootDir)) return;
 
@@ -4910,7 +5016,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // From the settings the workspace recorded, not by searching folders — there is no
             // folder to search any more. A resolver rather than a registered provider, so opening a
             // workspace starts no worker processes and a kit the design never uses is never launched.
-            ExternalDeviceRegistry.AddResolver(new DeviceWorkerProviderResolver(_kitManifests));
+            _deviceResolver = new DeviceWorkerProviderResolver(_kitManifests);
+            ExternalDeviceRegistry.AddResolver(_deviceResolver);
         }
         catch (Exception ex)
         {
@@ -5004,7 +5111,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Using the report's here would leave every reference pointing at a kit nobody registered.
         string kit = outcome.KitName;
 
-        PdkKitRegistry.SetKit(kit, outcome.Parts ?? [], outcome.OsdiModels);
+        PdkKitRegistry.SetKit(wsRoot, kit, outcome.Parts ?? [], outcome.OsdiModels);
         _kitManifests.RemoveAll(k => string.Equals(k.Kit, kit, StringComparison.OrdinalIgnoreCase));
         if (PdkPartInstaller.ManifestFrom(outcome.Settings, report.RootPath, kit) is { } m)
             _kitManifests.Add((kit, m));
@@ -7916,9 +8023,59 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     private bool ActivateIfOpen(string absolutePath)
     {
-        if (!_openDocsByPath.TryGetValue(absolutePath, out var existing)) return false;
-        ActivateOpenDocument(existing);
-        return true;
+        if (_openDocsByPath.TryGetValue(absolutePath, out var existing))
+        {
+            ActivateOpenDocument(existing);
+            return true;
+        }
+        return ActivateIfOpenInAnotherWindow(absolutePath);
+    }
+
+    /// <summary>
+    /// MW1 R-mw1-10 — a file already open in ANOTHER workspace window is shown there rather than
+    /// opened a second time here.
+    ///
+    /// <para><b>The same rule opening an already-open document within one window has always
+    /// followed, extended across windows.</b> Two edit sessions over one file means two undo stacks
+    /// and two dirty flags, and whichever saves last wins — the same data-loss trap R-mw1-9 refuses
+    /// at the workspace level, at the file level. It is also what makes MW2's external references
+    /// safe: a cell referenced from another workspace must not become editable through the window
+    /// that merely references it.</para>
+    ///
+    /// <para>Comparison is by fully-resolved absolute path, case-insensitively — the rule
+    /// <c>TechnologyCache</c> already uses.</para>
+    /// </summary>
+    private bool ActivateIfOpenInAnotherWindow(string absolutePath)
+    {
+        string wanted;
+        try { wanted = Path.GetFullPath(absolutePath); } catch { return false; }
+
+        foreach (var window in Views.WorkspaceLocator.AllWindows())
+        {
+            if (window.DataContext is not WorkspaceViewModel other || ReferenceEquals(other, this)) continue;
+            if (other.FindOpenDocument(wanted) is not { } dockable) continue;
+
+            window.Activate();
+            other.ActivateOpenDocument(dockable);
+            Messages.Info(
+                $"'{Path.GetFileName(wanted)}' is already open in {other.ShellHeader().TrimStart('•', ' ')} — " +
+                "shown there rather than opened twice.");
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>The open document at this absolute path, or null. Read by the OTHER windows'
+    /// <see cref="ActivateIfOpenInAnotherWindow"/>, which is why it is not private.</summary>
+    internal IDockable? FindOpenDocument(string absolutePath)
+    {
+        foreach (var (path, dockable) in _openDocsByPath)
+        {
+            string resolved;
+            try { resolved = Path.GetFullPath(path); } catch { continue; }
+            if (string.Equals(resolved, absolutePath, StringComparison.OrdinalIgnoreCase)) return dockable;
+        }
+        return null;
     }
 
     /// <summary>
@@ -10994,14 +11151,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// the shell window — the harmonicaRF-takeover release path, and also a safe no-op to call
     /// whenever nothing was ever taken over (both null-checks below simply fail quietly).
     /// </summary>
-    private static void RestoreCircuitRfMenuBar()
+    private void RestoreCircuitRfMenuBar()
     {
-        if (Avalonia.Application.Current?.ApplicationLifetime
-                is not IClassicDesktopStyleApplicationLifetime desktop) return;
-        if (desktop.Windows.OfType<Views.WorkspaceWindow>().FirstOrDefault() is not { } shell) return;
-        if (Avalonia.Controls.NativeMenu.GetMenu(Avalonia.Application.Current) is not { } appMenu) return;
+        // MY shell, and MY shell's OWN menu (MW1 R-mw1-13). Taking the application-scope menu here
+        // was correct while there could only be one shell; with two, that menu is whichever one
+        // activated last, so this would hand one window the other's menu — and its commands bind
+        // through that menu's DataContext, so every File item would drive the wrong workspace.
+        if (Views.WorkspaceLocator.WindowFor(this) is not { } shell) return;
+        if (shell.OwnNativeMenu is not { } ownMenu) return;
 
-        Avalonia.Controls.NativeMenu.SetMenu(shell, appMenu);
+        Avalonia.Controls.NativeMenu.SetMenu(shell, ownMenu);
     }
 
     /// <summary>
@@ -11254,11 +11413,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (Avalonia.Application.Current?.ApplicationLifetime
                 is not IClassicDesktopStyleApplicationLifetime desktop) return;
 
-        var shellWindow = desktop.Windows.OfType<Views.WorkspaceWindow>().FirstOrDefault();
+        var shellWindow = Views.WorkspaceLocator.WindowFor(this);
 
         foreach (var window in desktop.Windows)
         {
             if (window is Views.SymbolEditorWindow) continue; // built-in-symbol preview, not a real document window
+            // MINE only (MW1 R-mw1-11). Every workspace view model runs this scan over the whole
+            // process's window list, so without the ownership stamp each would track — and hand its
+            // own menu to, and resolve its own focused document from — the OTHER window's floats.
+            if (window is Dock.CrfHostWindow float_ && !ReferenceEquals(float_.OwningWorkspace, this)) continue;
+            if (window is Views.WorkspaceWindow shell && !ReferenceEquals(shell.DataContext, this)) continue;
             if (_focusTrackedWindows.Contains(window)) continue;
             _focusTrackedWindows.Add(window);
 
@@ -12447,6 +12611,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // ask them to shut down. The ProcessExit backstop in App only clears references — it cannot
         // wait for a process to close its own files.
         ResetPCellGenerators(null);
+
+        // Everything THIS workspace put in the process-wide registries goes with the window
+        // (MW1 R-mw1-4): its kits, its layout-generator map, and the device workers its own resolver
+        // started. Another window's entries are untouched — which is the whole point of them being
+        // scoped, and is why this is a per-window unmount rather than a process-wide clear.
+        PdkKitRegistry.ClearWorkspace(_mountedKitRoot);
+        KitLayoutGenerators.ClearWorkspace(_mountedKitRoot);
+        ExternalDeviceRegistry.RemoveResolver(_deviceResolver);
+        _deviceResolver = null;
+        _mountedKitRoot = null;
 
         _recovery.ClearSession();
     }

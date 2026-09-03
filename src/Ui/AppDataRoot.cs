@@ -35,7 +35,13 @@ public static class AppDataRoot
     /// tool's entry point.
     /// </summary>
     public static void RedirectTo(string? directory)
-        => _override = directory is null ? null : Path.GetFullPath(directory);
+    {
+        _override = directory is null ? null : Path.GetFullPath(directory);
+        // The preferences are held as ONE in-process copy now (MW1 R-mw1-8), and that copy belongs to
+        // whichever directory it was read from — so moving the directory has to drop it, or the next
+        // read answers from the old location and the next write puts it in the new one.
+        Theming.AppPreferencesIo.InvalidateCache();
+    }
 
     /// <summary>True when <see cref="RedirectTo"/> has moved the state directory somewhere else.</summary>
     public static bool IsRedirected => _override is not null;

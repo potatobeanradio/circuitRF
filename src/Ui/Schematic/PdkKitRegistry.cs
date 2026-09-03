@@ -44,31 +44,31 @@ public static class PdkKitRegistry
     /// A relative path that happens not to resolve is indistinguishable from a typo, so every
     /// reachability check would have to guess which it was looking at and no repair flow could say
     /// anything useful. A reference that states its own kind cannot be mistaken for either.</para>
+    ///
+    /// <para><b>The reference carries no workspace, and that is deliberate</b> — it is written into
+    /// user files (docs/design/pdk-import.md), so it cannot name a machine-specific path. The
+    /// workspace comes from the ASKER instead: MW1 R-mw1-5, the same walk-up technology already
+    /// uses.</para>
     /// </summary>
     public const string Scheme = "pdk://";
 
-    private static readonly Dictionary<string, PdkKitPart> _parts =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Kits currently loaded, in the order they were added. Rendered, never interpreted.</summary>
-    private static readonly List<string> _kits = [];
-
     /// <summary>
-    /// The compiled Verilog-A artefacts found for each kit, keyed by kit name.
-    ///
-    /// <para><b>A kit-level fact, so it is held once per kit rather than copied onto every part.</b>
-    /// It is what turns a <c>.model</c> card's type into the file that implements it at extraction
-    /// time, and every part of one kit resolves against the same set.</para>
-    ///
-    /// <para><b>Held for the session and never written down, deliberately.</b> These artefacts are
-    /// the USER'S build output, not kit content: they can be rebuilt, moved or deleted without the
-    /// kit changing at all, so a recorded index is the one thing here that could go stale in silence.
-    /// Re-establishing it costs a directory walk and one worker <c>describe</c> per artefact —
-    /// measured at 73 ms for the four a kit's owner had built, against a 405 ms import of the
-    /// same kit — which is not a saving worth trading for an answer that can be wrong.</para>
+    /// Everything one workspace has mounted. Held per workspace rather than per process because a
+    /// second workspace window must not be able to unmount the first one's kits — which is exactly
+    /// what the single global dictionary this replaces did, silently, on every workspace open
+    /// (MW1 §1.2 / R-mw1-4).
     /// </summary>
-    private static readonly Dictionary<string, IReadOnlyList<OsdiModel>> _osdi =
-        new(StringComparer.OrdinalIgnoreCase);
+    private sealed class KitScope
+    {
+        public readonly Dictionary<string, PdkKitPart> Parts = new(StringComparer.OrdinalIgnoreCase);
+        public readonly List<string> Kits = [];
+        public readonly Dictionary<string, IReadOnlyList<OsdiModel>> Osdi = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static readonly Dictionary<string, KitScope> _scopes = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Scope keys in mount order, so an unscoped lookup answers deterministically.</summary>
+    private static readonly List<string> _scopeOrder = [];
 
     private static readonly Lock _gate = new();
 
@@ -103,27 +103,35 @@ public static class PdkKitRegistry
     // ── Contents ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Replaces everything held for one kit. Replacing rather than merging is what makes a re-import
-    /// or a repaired reference produce the kit as it is NOW, instead of the union of every version
-    /// of it seen this session.
+    /// Replaces everything held for one kit OF ONE WORKSPACE. Replacing rather than merging is what
+    /// makes a re-import or a repaired reference produce the kit as it is NOW, instead of the union
+    /// of every version of it seen this session.
     /// </summary>
+    /// <param name="workspaceRoot">
+    /// The workspace that mounted this kit — the directory holding its <c>.cws</c>. Two workspaces
+    /// may mount kits of the same name and they do not collide.
+    /// </param>
     /// <param name="osdiModels">
     /// The compiled Verilog-A artefacts found for this kit, if any. Replaced with the parts, for the
     /// same reason: a re-import must produce the kit as it is NOW.
     /// </param>
     public static void SetKit(
-        string kitName, IEnumerable<PdkKitPart> parts, IReadOnlyList<OsdiModel>? osdiModels = null)
+        string? workspaceRoot, string kitName, IEnumerable<PdkKitPart> parts,
+        IReadOnlyList<OsdiModel>? osdiModels = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kitName);
         ArgumentNullException.ThrowIfNull(parts);
 
+        string scopeKey = WorkspaceRootFinder.Normalize(workspaceRoot);
         var fresh = parts.ToList();
+
         lock (_gate)
         {
-            RemoveKitLocked(kitName);
-            foreach (var p in fresh) _parts[RefFor(kitName, p.PartId)] = p;
-            _kits.Add(kitName);
-            if (osdiModels is { Count: > 0 }) _osdi[kitName] = osdiModels;
+            var scope = ScopeLocked(scopeKey, create: true)!;
+            RemoveKitLocked(scope, kitName);
+            foreach (var p in fresh) scope.Parts[RefFor(kitName, p.PartId)] = p;
+            scope.Kits.Add(kitName);
+            if (osdiModels is { Count: > 0 }) scope.Osdi[kitName] = osdiModels;
         }
     }
 
@@ -132,92 +140,202 @@ public static class PdkKitRegistry
     /// kit, which has none — and also for a kit whose models the user has not compiled yet, which is
     /// why a device that finds no implementor must report rather than assume anything.
     /// </summary>
-    public static IReadOnlyList<OsdiModel> OsdiModelsOf(string? kitName)
+    public static IReadOnlyList<OsdiModel> OsdiModelsOf(string? workspaceRoot, string? kitName)
     {
         if (string.IsNullOrWhiteSpace(kitName)) return [];
-        lock (_gate) return _osdi.TryGetValue(kitName, out var hit) ? hit : [];
+        lock (_gate)
+        {
+            foreach (var scope in ScopesToSearchLocked(workspaceRoot))
+                if (scope.Osdi.TryGetValue(kitName, out var hit)) return hit;
+            return [];
+        }
     }
 
     /// <summary>
-    /// Drops one kit. Parts placed in a design keep their references and become unresolvable — which
-    /// is the reported, repairable state, not a loss: re-adding the kit resolves them again.
+    /// Drops one kit from one workspace. Parts placed in a design keep their references and become
+    /// unresolvable — which is the reported, repairable state, not a loss: re-adding the kit resolves
+    /// them again.
     /// </summary>
-    public static void RemoveKit(string kitName)
+    public static void RemoveKit(string? workspaceRoot, string kitName)
     {
-        lock (_gate) RemoveKitLocked(kitName);
+        string scopeKey = WorkspaceRootFinder.Normalize(workspaceRoot);
+        lock (_gate)
+        {
+            if (ScopeLocked(scopeKey, create: false) is { } scope) RemoveKitLocked(scope, kitName);
+        }
     }
 
     /// <summary>
-    /// Drops every kit. Called when a workspace is left, because kit references belong to the
-    /// workspace that named them — carrying one into the next workspace would resolve a part that
-    /// workspace never referenced.
+    /// Drops everything ONE workspace mounted — called when that workspace's window closes, or when
+    /// it is about to reload its own kits.
+    ///
+    /// <para><b>This replaces the old process-wide <c>Clear()</c>, and the difference is the whole
+    /// point of MW1 §3.</b> Clearing everything on a workspace open silently unmounted every OTHER
+    /// open workspace's kits, and the first symptom was their parts drawing as pin-less placeholders
+    /// with nothing reported. There is deliberately no way to clear every scope at once from
+    /// production code.</para>
     /// </summary>
-    public static void Clear()
+    public static void ClearWorkspace(string? workspaceRoot)
     {
-        lock (_gate) { _parts.Clear(); _kits.Clear(); _osdi.Clear(); }
+        string scopeKey = WorkspaceRootFinder.Normalize(workspaceRoot);
+        lock (_gate)
+        {
+            _scopes.Remove(scopeKey);
+            _scopeOrder.RemoveAll(k => string.Equals(k, scopeKey, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
-    /// <summary>The part this reference names, or null when its kit is not loaded.</summary>
-    public static PdkKitPart? Find(string? cellRef)
+    /// <summary>Test-only reset. Not reachable from production code, by design (MW1 §9.6).</summary>
+    internal static void ResetAllForTests()
+    {
+        lock (_gate) { _scopes.Clear(); _scopeOrder.Clear(); }
+    }
+
+    /// <summary>
+    /// The part this reference names within <paramref name="workspaceRoot"/>, or null when that
+    /// workspace has not mounted its kit.
+    /// </summary>
+    public static PdkKitPart? Find(string? cellRef, string? workspaceRoot)
     {
         if (!IsKitRef(cellRef)) return null;
-        lock (_gate) return _parts.GetValueOrDefault(cellRef!);
-    }
-
-    /// <summary>True when this kit is loaded — the distinction a broken reference rests on.</summary>
-    public static bool HasKit(string kitName)
-    {
-        lock (_gate) return _kits.Contains(kitName, StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Kits currently loaded.</summary>
-    public static IReadOnlyList<string> LoadedKits
-    {
-        get { lock (_gate) return [.. _kits]; }
-    }
-
-    /// <summary>Every part of one loaded kit, in registration order.</summary>
-    public static IReadOnlyList<PdkKitPart> PartsOf(string kitName)
-    {
         lock (_gate)
-            return [.. _parts.Where(kv => TryParse(kv.Key, out string k, out _)
-                                       && string.Equals(k, kitName, StringComparison.OrdinalIgnoreCase))
-                             .Select(kv => kv.Value)];
+        {
+            foreach (var scope in ScopesToSearchLocked(workspaceRoot))
+                if (scope.Parts.TryGetValue(cellRef!, out var hit)) return hit;
+            return null;
+        }
     }
 
     /// <summary>
-    /// The reference of the loaded part with this id, or null when no loaded kit has one.
+    /// The part this reference names in ANY open workspace — for the handful of callers that have no
+    /// document and no window to attribute the question to.
+    ///
+    /// <para><b>Named rather than reached by passing null</b>, so it reads as the compromise it is at
+    /// the call site. It is used for PREVIEW artwork only (a palette tile's glyph, a drag ghost);
+    /// everything that resolves a reference a design actually carries goes through
+    /// <see cref="Find(string?, string?)"/> with the referencing document's own workspace.</para>
+    /// </summary>
+    public static PdkKitPart? FindInAnyWorkspace(string? cellRef)
+        => Find(cellRef, workspaceRoot: null);
+
+    /// <summary>True when this workspace has mounted this kit — the distinction a broken reference
+    /// rests on.</summary>
+    public static bool HasKit(string? workspaceRoot, string kitName)
+    {
+        lock (_gate)
+        {
+            foreach (var scope in ScopesToSearchLocked(workspaceRoot))
+                if (scope.Kits.Contains(kitName, StringComparer.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+    }
+
+    /// <summary>Kits this workspace has mounted, in mount order.</summary>
+    public static IReadOnlyList<string> LoadedKits(string? workspaceRoot)
+    {
+        lock (_gate)
+        {
+            var all = new List<string>();
+            foreach (var scope in ScopesToSearchLocked(workspaceRoot)) all.AddRange(scope.Kits);
+            return all;
+        }
+    }
+
+    /// <summary>Every part of one kit this workspace has mounted, in registration order.</summary>
+    public static IReadOnlyList<PdkKitPart> PartsOf(string? workspaceRoot, string kitName)
+    {
+        lock (_gate)
+        {
+            foreach (var scope in ScopesToSearchLocked(workspaceRoot))
+            {
+                var hits = scope.Parts
+                    .Where(kv => TryParse(kv.Key, out string k, out _)
+                              && string.Equals(k, kitName, StringComparison.OrdinalIgnoreCase))
+                    .Select(kv => kv.Value)
+                    .ToList();
+                if (hits.Count > 0) return hits;
+            }
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// The reference of the mounted part with this id, or null when no kit this workspace mounted
+    /// has one.
     ///
     /// <para>Two kits offering a part of the same name is refused rather than resolved: the name does
     /// not identify one part, and guessing would swap in the wrong vendor's model. Same rule the
-    /// workspace's own cell lookup follows, for the same reason.</para>
+    /// workspace's own cell lookup follows, for the same reason. The refusal is judged WITHIN one
+    /// workspace — another workspace mounting a part of the same name is not an ambiguity, because
+    /// nothing here would ever have reached for it.</para>
     /// </summary>
-    public static string? FindRefByPartId(string partId)
+    public static string? FindRefByPartId(string? workspaceRoot, string partId)
     {
         if (string.IsNullOrWhiteSpace(partId)) return null;
 
         lock (_gate)
         {
-            string? found = null;
-            foreach (var key in _parts.Keys)
+            foreach (var scope in ScopesToSearchLocked(workspaceRoot))
             {
-                if (!TryParse(key, out _, out string id)) continue;
-                if (!string.Equals(id, partId, StringComparison.OrdinalIgnoreCase)) continue;
-                if (found is not null) return null;   // ambiguous — refuse rather than guess
-                found = key;
+                string? found = null;
+                foreach (var key in scope.Parts.Keys)
+                {
+                    if (!TryParse(key, out _, out string id)) continue;
+                    if (!string.Equals(id, partId, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (found is not null) { found = null; break; }   // ambiguous — refuse rather than guess
+                    found = key;
+                }
+                if (found is not null) return found;
             }
-            return found;
+            return null;
         }
     }
 
-    private static void RemoveKitLocked(string kitName)
+    /// <summary>Workspaces with at least one kit mounted, in mount order. For diagnostics.</summary>
+    public static IReadOnlyList<string> MountedWorkspaces
     {
-        var stale = _parts.Keys
+        get { lock (_gate) return [.. _scopeOrder]; }
+    }
+
+    // ── Scope plumbing ────────────────────────────────────────────────────────
+
+    private static KitScope? ScopeLocked(string scopeKey, bool create)
+    {
+        if (_scopes.TryGetValue(scopeKey, out var existing)) return existing;
+        if (!create) return null;
+
+        var fresh = new KitScope();
+        _scopes[scopeKey] = fresh;
+        _scopeOrder.Add(scopeKey);
+        return fresh;
+    }
+
+    /// <summary>
+    /// The scopes a lookup may consult: exactly one when the caller named a workspace, and every one
+    /// in mount order when it could not (see <see cref="FindInAnyWorkspace"/>).
+    /// </summary>
+    private static List<KitScope> ScopesToSearchLocked(string? workspaceRoot)
+    {
+        if (!string.IsNullOrWhiteSpace(workspaceRoot))
+        {
+            string key = WorkspaceRootFinder.Normalize(workspaceRoot);
+            return ScopeLocked(key, create: false) is { } one ? [one] : [];
+        }
+
+        var all = new List<KitScope>(_scopeOrder.Count);
+        foreach (string key in _scopeOrder)
+            if (_scopes.TryGetValue(key, out var scope)) all.Add(scope);
+        return all;
+    }
+
+    private static void RemoveKitLocked(KitScope scope, string kitName)
+    {
+        var stale = scope.Parts.Keys
             .Where(k => TryParse(k, out string kit, out _)
                      && string.Equals(kit, kitName, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        foreach (var k in stale) _parts.Remove(k);
-        _kits.RemoveAll(k => string.Equals(k, kitName, StringComparison.OrdinalIgnoreCase));
-        _osdi.Remove(kitName);
+        foreach (var k in stale) scope.Parts.Remove(k);
+        scope.Kits.RemoveAll(k => string.Equals(k, kitName, StringComparison.OrdinalIgnoreCase));
+        scope.Osdi.Remove(kitName);
     }
 }

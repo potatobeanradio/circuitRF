@@ -52,7 +52,7 @@ public sealed class PdkNeighbouringKitIsolationTests : IDisposable
     public void Dispose()
     {
         DeviceWorkerManifest.ToolsDirectory = _previousTools;
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 

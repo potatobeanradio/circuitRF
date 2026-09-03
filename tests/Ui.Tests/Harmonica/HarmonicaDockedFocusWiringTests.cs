@@ -73,22 +73,26 @@ public class HarmonicaDockedFocusWiringTests
         Assert.True(releaseIdx < grantIdx, "The old holder must be released before the new one is granted.");
     }
 
-    // The restore-on-blur path must read circuitRF's own NativeMenu back off Application.Current —
-    // the SAME instance WorkspaceWindow.OnOpened already captured there via
-    // AttachNativeMenuAtApplicationScope — never rebuild or cache a second reference, per the brief's
-    // own "must be the SAME reference WorkspaceWindow.axaml declares" requirement.
+    // The restore-on-blur path must read circuitRF's own NativeMenu back — the SAME instance
+    // WorkspaceWindow.axaml declares, never a rebuilt or second reference.
+    //
+    // Since MW1 (R-mw1-13) the source of that instance is the SHELL's own captured menu rather than
+    // the application-scope one. With two workspace windows the app-scope menu is whichever shell
+    // activated last, so restoring from it would hand one window the other's menu — and a menu's
+    // commands bind through its own DataContext, so every File item would then drive the wrong
+    // workspace. The requirement is unchanged; where the instance comes from is not.
     [Fact]
-    public void RestoreCircuitRfMenuBar_ReadsTheMenuBackOffApplicationCurrent_NeverRebuildsIt()
+    public void RestoreCircuitRfMenuBar_ReadsBackTheShellsOwnMenu_NeverRebuildsIt()
     {
         string src = WorkspaceViewModelSource();
         Assert.Contains(
-            "private static void RestoreCircuitRfMenuBar()",
+            "private void RestoreCircuitRfMenuBar()",
             src, System.StringComparison.Ordinal);
         Assert.Contains(
-            "Avalonia.Controls.NativeMenu.GetMenu(Avalonia.Application.Current) is not { } appMenu",
+            "shell.OwnNativeMenu is not { } ownMenu",
             src, System.StringComparison.Ordinal);
         Assert.Contains(
-            "Avalonia.Controls.NativeMenu.SetMenu(shell, appMenu);",
+            "Avalonia.Controls.NativeMenu.SetMenu(shell, ownMenu);",
             src, System.StringComparison.Ordinal);
     }
 

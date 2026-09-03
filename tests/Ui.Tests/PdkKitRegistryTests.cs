@@ -16,8 +16,8 @@ namespace CircuitRF.Ui.Tests;
 [Collection(PdkToolsDirectoryCollection.Name)]
 public sealed class PdkKitRegistryTests : IDisposable
 {
-    public PdkKitRegistryTests() => PdkKitRegistry.Clear();
-    public void Dispose()        => PdkKitRegistry.Clear();
+    public PdkKitRegistryTests() => PdkKitRegistry.ResetAllForTests();
+    public void Dispose()        => PdkKitRegistry.ResetAllForTests();
 
     private static PdkKitPart Part(string id, int pins = 2)
     {
@@ -77,12 +77,12 @@ public sealed class PdkKitRegistryTests : IDisposable
     [Fact]
     public void APartIsFoundByItsReference_AndNotByAnother()
     {
-        PdkKitRegistry.SetKit("SampleKit", [Part("PART_A"), Part("PART_B")]);
+        PdkKitRegistry.SetKit(null, "SampleKit", [Part("PART_A"), Part("PART_B")]);
 
-        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_A")));
-        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_B")));
-        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_C")));
-        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("OtherKit",  "PART_A")));
+        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_A"), null));
+        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_B"), null));
+        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_C"), null));
+        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("OtherKit",  "PART_A"), null));
     }
 
     /// <summary>
@@ -92,27 +92,27 @@ public sealed class PdkKitRegistryTests : IDisposable
     [Fact]
     public void ReloadingAKit_ReplacesItsParts_RatherThanMergingThem()
     {
-        PdkKitRegistry.SetKit("SampleKit", [Part("PART_A"), Part("PART_B")]);
-        PdkKitRegistry.SetKit("SampleKit", [Part("PART_B"), Part("PART_C")]);
+        PdkKitRegistry.SetKit(null, "SampleKit", [Part("PART_A"), Part("PART_B")]);
+        PdkKitRegistry.SetKit(null, "SampleKit", [Part("PART_B"), Part("PART_C")]);
 
-        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_A")));
-        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_C")));
-        Assert.Single(PdkKitRegistry.LoadedKits);
-        Assert.Equal(2, PdkKitRegistry.PartsOf("SampleKit").Count);
+        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_A"), null));
+        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("SampleKit", "PART_C"), null));
+        Assert.Single(PdkKitRegistry.LoadedKits(null));
+        Assert.Equal(2, PdkKitRegistry.PartsOf(null, "SampleKit").Count);
     }
 
     [Fact]
     public void RemovingOneKit_LeavesTheOthers()
     {
-        PdkKitRegistry.SetKit("KitOne", [Part("PART_A")]);
-        PdkKitRegistry.SetKit("KitTwo", [Part("PART_A")]);
+        PdkKitRegistry.SetKit(null, "KitOne", [Part("PART_A")]);
+        PdkKitRegistry.SetKit(null, "KitTwo", [Part("PART_A")]);
 
-        PdkKitRegistry.RemoveKit("KitOne");
+        PdkKitRegistry.RemoveKit(null, "KitOne");
 
-        Assert.False(PdkKitRegistry.HasKit("KitOne"));
-        Assert.True(PdkKitRegistry.HasKit("KitTwo"));
-        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("KitOne", "PART_A")));
-        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("KitTwo", "PART_A")));
+        Assert.False(PdkKitRegistry.HasKit(null, "KitOne"));
+        Assert.True(PdkKitRegistry.HasKit(null, "KitTwo"));
+        Assert.Null(PdkKitRegistry.Find(PdkKitRegistry.RefFor("KitOne", "PART_A"), null));
+        Assert.NotNull(PdkKitRegistry.Find(PdkKitRegistry.RefFor("KitTwo", "PART_A"), null));
     }
 
     // ── Resolution (R-pdk-6) ──────────────────────────────────────────────────
@@ -124,7 +124,7 @@ public sealed class PdkKitRegistryTests : IDisposable
     [Fact]
     public void AKitPart_ResolvesToItsSymbol_WithoutTouchingTheFilesystem()
     {
-        PdkKitRegistry.SetKit("SampleKit", [Part("PART_A", pins: 3)]);
+        PdkKitRegistry.SetKit(null, "SampleKit", [Part("PART_A", pins: 3)]);
 
         var res = CellSymbolResolver.Resolve(
             PdkKitRegistry.RefFor("SampleKit", "PART_A"), "/no/such/directory/anywhere");
@@ -150,7 +150,7 @@ public sealed class PdkKitRegistryTests : IDisposable
     [Fact]
     public void AKitPartsPublishedInterface_ResolvesFromMemoryToo()
     {
-        PdkKitRegistry.SetKit("SampleKit", [Part("PART_A", pins: 4)]);
+        PdkKitRegistry.SetKit(null, "SampleKit", [Part("PART_A", pins: 4)]);
 
         var cell = CellSymbolResolver.ResolveCcell(
             PdkKitRegistry.RefFor("SampleKit", "PART_A"), baseDir: "");

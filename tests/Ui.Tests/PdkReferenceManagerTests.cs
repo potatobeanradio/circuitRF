@@ -35,13 +35,13 @@ public sealed class PdkReferenceManagerTests : IDisposable
 
     public PdkReferenceManagerTests()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         Directory.CreateDirectory(WorkspaceDir);
     }
 
     public void Dispose()
     {
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -157,7 +157,7 @@ public sealed class PdkReferenceManagerTests : IDisposable
         Assert.Equal("SampleKit", r.Provider);
         Assert.Equal(DsnSymbolReader.TranslationVersion, r.TranslationVersion);
         Assert.NotNull(r.Settings);
-        Assert.Equal(2, PdkKitRegistry.PartsOf("SampleKit").Count);
+        Assert.Equal(2, PdkKitRegistry.PartsOf(null, "SampleKit").Count);
     }
 
     [Fact]
@@ -237,12 +237,12 @@ public sealed class PdkReferenceManagerTests : IDisposable
         // side effect of asking it.
         WriteKit(KitDir, "PART_A");
         var (refs, _) = Added(KitDir);
-        PdkKitRegistry.Clear();
+        PdkKitRegistry.ResetAllForTests();
 
         var status = Assert.Single(PdkReferenceManager.Describe(WorkspaceDir, refs));
 
         Assert.Equal(0, status.PartsLoaded);
-        Assert.Empty(PdkKitRegistry.LoadedKits);
+        Assert.Empty(PdkKitRegistry.LoadedKits(null));
     }
 
     // ── Validate ──────────────────────────────────────────────────────────────
@@ -326,15 +326,15 @@ public sealed class PdkReferenceManagerTests : IDisposable
         string moved = Path.Combine(_root, "elsewhere", "SampleKit");
         Directory.CreateDirectory(Path.GetDirectoryName(moved)!);
         Directory.Move(KitDir, moved);
-        PdkKitRegistry.Clear();
-        Assert.Null(PdkKitRegistry.Find(cellRef));
+        PdkKitRegistry.ResetAllForTests();
+        Assert.Null(PdkKitRegistry.Find(cellRef, null));
 
         var outcome = PdkReferenceManager.AddOrRepair(WorkspaceDir, refs, moved, out string? problem);
 
         Assert.Null(problem);
         Assert.Equal("SampleKit", outcome!.KitName);
         Assert.Single(refs);                                   // repaired, never a second entry
-        Assert.NotNull(PdkKitRegistry.Find(cellRef));           // the placed part resolves again
+        Assert.NotNull(PdkKitRegistry.Find(cellRef, null));           // the placed part resolves again
 
         // The caller needs these to put the kit back in the palette — the registry holds neither the
         // icon nor the search terms a palette entry carries.
@@ -362,11 +362,11 @@ public sealed class PdkReferenceManagerTests : IDisposable
         var (refs, _) = Added(KitDir);
         string cellRef = PdkKitRegistry.RefFor("SampleKit", "PART_A");
 
-        int affected = PdkReferenceManager.Remove(refs, "SampleKit", [cellRef]);
+        int affected = PdkReferenceManager.Remove(WorkspaceDir, refs, "SampleKit", [cellRef]);
 
         Assert.Equal(1, affected);
         Assert.Empty(refs);
-        Assert.False(PdkKitRegistry.HasKit("SampleKit"));
+        Assert.False(PdkKitRegistry.HasKit(WorkspaceDir, "SampleKit"));
     }
 
     [Fact]
@@ -377,12 +377,12 @@ public sealed class PdkReferenceManagerTests : IDisposable
         var (refs, _) = Added(KitDir);
         string cellRef = PdkKitRegistry.RefFor("SampleKit", "PART_A");
 
-        PdkReferenceManager.Remove(refs, "SampleKit", [cellRef]);
-        Assert.Null(PdkKitRegistry.Find(cellRef));
+        PdkReferenceManager.Remove(WorkspaceDir, refs, "SampleKit", [cellRef]);
+        Assert.Null(PdkKitRegistry.Find(cellRef, null));
 
         PdkReferenceManager.AddOrRepair(WorkspaceDir, refs, KitDir, out _);
 
-        Assert.NotNull(PdkKitRegistry.Find(cellRef));
+        Assert.NotNull(PdkKitRegistry.Find(cellRef, null));
     }
 
     // ── What .cws carries ─────────────────────────────────────────────────────

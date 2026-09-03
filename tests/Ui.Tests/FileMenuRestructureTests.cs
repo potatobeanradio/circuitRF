@@ -110,27 +110,32 @@ public class FileMenuRestructureTests
 
     private static readonly string[] ExpectedTopLevelHeadersInWindow =
     [
-        "_New", "New _Workspace…", "---",
-        "Open _Workspace…", "Open _Recent", "_Open", "---",
+        // MW1 §1: New Window sits directly under New Workspace…, and Open Workspace in New
+        // Window… directly under its own companion — the two gestures that create a SECOND
+        // workspace window, each beside the one-window form it mirrors.
+        "_New", "New _Workspace…", "New Win_dow", "---",
+        "Open _Workspace…", "Open Workspace in _New Window…", "Open _Recent", "_Open", "---",
         "{Binding SaveMenuHeader}", "Save Schematic _As…", "Save S_ymbol As…", "Save _Layout As…", "Save Workspace _As…", "---",
         // Sharing a workspace with someone on another machine (owner request, 2026-08-15) — placed
         // under Save Workspace As… behind its own separator, because it is a different KIND of
         // save: it writes one portable file, not the workspace itself.
         "_Archive Workspace…", "_Unarchive Workspace…", "---",
         "_Import", "_Export", "_Manage PDKs…", "---",
-        "Close _Window", "Close Wor_kspace", "---",
+        // "Close Workspace Window", not "Close Window": that name is already taken by the item
+        // above, which closes the active DOCUMENT tab (MW1 §1's own deviation, recorded there).
+        "Close _Window", "Close Wor_kspace", "Close Workspace Window", "---",
         "_Settings…", "---",
         "_Quit circuitRF",
     ];
 
     private static readonly string[] ExpectedTopLevelHeadersNative =
     [
-        "New", "New Workspace…", "---",
-        "Open Workspace…", "Open Recent", "Open", "---",
+        "New", "New Workspace…", "New Window", "---",
+        "Open Workspace…", "Open Workspace in New Window…", "Open Recent", "Open", "---",
         "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Workspace As…", "---",
         "Archive Workspace…", "Unarchive Workspace…", "---",
         "Import", "Export", "Manage PDKs…", "---",
-        "Close Window", "Close Workspace",
+        "Close Window", "Close Workspace", "Close Workspace Window",
     ];
 
     [Fact]
@@ -255,10 +260,14 @@ public class FileMenuRestructureTests
             var idxOpenWs   = IndexOfHeaderContaining(children, "Open Workspace");
             var idxRecent   = IndexOfHeaderContaining(children, "Open Recent");
             var idxOpen     = children.ToList().FindIndex(n => n.Header is "_Open" or "Open");
-            // The three must be contiguous, in this order, with nothing (least of all a separator)
-            // between them.
-            Assert.Equal(idxOpenWs + 1, idxRecent);
-            Assert.Equal(idxRecent + 1, idxOpen);
+
+            // The Open band runs unbroken from the first Open Workspace item to Open — no separator
+            // anywhere inside it. Open Workspace… now has a companion (…in New Window…, MW1 §1)
+            // sitting between it and Open Recent, which is another OPEN item, not a break in the
+            // band; Open Recent and Open stay adjacent.
+            Assert.True(idxOpenWs >= 0 && idxRecent > idxOpenWs && idxOpen == idxRecent + 1);
+            for (int i = idxOpenWs; i <= idxOpen; i++)
+                Assert.False(children[i].IsSeparator, "The Open band must contain no separator.");
         }
     }
 

@@ -94,8 +94,8 @@ public static class PdkReferenceManager
                         "The model-library folder is not there. Kits relying on it will not simulate."));
                 continue;
             }
-            int loaded = PdkKitRegistry.HasKit(r.Provider)
-                ? PdkKitRegistry.PartsOf(r.Provider).Count
+            int loaded = PdkKitRegistry.HasKit(workspaceRootDir, r.Provider)
+                ? PdkKitRegistry.PartsOf(workspaceRootDir, r.Provider).Count
                 : 0;
 
             if (!Directory.Exists(resolved))
@@ -322,7 +322,7 @@ public static class PdkReferenceManager
             Corners            = ToStoredCorners(outcome.CornerAxes),
         });
 
-        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
+        PdkKitRegistry.SetKit(workspaceRootDir, outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
         return outcome;
     }
 
@@ -346,13 +346,14 @@ public static class PdkReferenceManager
     /// adding the kit back resolves them again.
     /// </summary>
     /// <returns>How many placed parts this will leave unresolved.</returns>
-    public static int Remove(List<CwsPdkRef> refs, string provider, IEnumerable<string> placedPartRefs)
+    public static int Remove(
+        string workspaceRootDir, List<CwsPdkRef> refs, string provider, IEnumerable<string> placedPartRefs)
     {
         ArgumentNullException.ThrowIfNull(refs);
         ArgumentNullException.ThrowIfNull(placedPartRefs);
 
         refs.RemoveAll(r => string.Equals(r.Provider, provider, StringComparison.OrdinalIgnoreCase));
-        PdkKitRegistry.RemoveKit(provider);
+        PdkKitRegistry.RemoveKit(workspaceRootDir, provider);
 
         return placedPartRefs.Count(cr => PdkKitRegistry.TryParse(cr, out string kit, out _)
                                        && string.Equals(kit, provider, StringComparison.OrdinalIgnoreCase));

@@ -54,10 +54,9 @@ public partial class TornOffFileMenuView : UserControl
             return;
         }
 
-        var vm = desktop.Windows
-            .OfType<WorkspaceWindow>()
-            .Select(w => w.DataContext as ViewModels.WorkspaceViewModel)
-            .FirstOrDefault(v => v is not null);
+        // The workspace THIS torn-off menu belongs to (MW1 R-mw1-14) — a float carries its owner's
+        // stamp, so a File menu in a panel torn off window B never drives window A's workspace.
+        var vm = WorkspaceLocator.For(this);
 
         if (vm is null)
         {
