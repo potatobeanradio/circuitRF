@@ -1450,3 +1450,46 @@ point it has no reason to need. Group 2 where `VccsModel` is Group 1, frequency-
 `VdcModel` (a bias becomes a short away from DC; a transfer holds at every frequency), and
 referenceable by `C[n]` for the same reason a `Vdc` is.
 
+
+### A model that carries its own thermal RC was warned about on every run (2026-09-03)
+
+`ReportThermalNodes`'s ground-reference test is "the reference is zero while the ambient is not",
+which catches a thermal network wired to the electrical ground node instead of to a source holding
+the ambient — a several-percent error with no symptom. The reference it reads comes out of the LINEAR
+network, one solve with the nonlinear devices contributing nothing.
+
+That is exactly how a **self-contained** electrothermal model reads. Some compiled models carry their
+own `1/rth` and `ddt(cth·T)` on their thermal node and add `$temperature` to it themselves, so the
+node they solve for is the RISE above a thermal ground — correct, and the whole design of the model.
+Such a device contributes nothing to the linear stamp (its conductance lives in a Jacobian the linear
+system never sees), so its node reads as referenced to zero for exactly the reason it should. The
+warning fired on every correctly-modelled part of that kind, on every run — which is what stops the
+real warning being read.
+
+`MeasureThermalNodes` already had both halves of the answer; it was collapsing them into one number.
+It now also records **which side the path is on**: the device's own conductance is a real path while
+the network's is not. `ReportThermalNodes` skips the ground test for such a node and nothing else
+changes — a design that wires its own thermal network to ground still has a network path, and is
+still reported, which is what keeps the skip from being a blanket.
+
+The elaborator's half needed no change: `PinUnreferencedThermalNodes` already asks the device for a
+positive conductance on the node's own diagonal before adding an ambient source, and a self-contained
+model supplies one. That was verified rather than assumed — holding such a node at the ambient would
+make the model compute ambient + ambient + rise, which is finite, plausible and wrong.
+
+Measured end to end in `Engine.Tests/External/VerilogAConnectedTerminalsTests` against a compiled
+model of that shape (`tools/fake-osdi-model`'s `crf_therm`, which needs no kit), and at the fixture
+level in `ThermalNodeRobustnessTests` — where the previously-asserted warning is now asserted absent,
+with the mis-wired-network case beside it asserting it still fires.
+
+### Harmonic balance and the DC engine agree on an external device at zero drive (2026-09-03)
+
+Every static check on an external device compares the model's outputs with each other — a Jacobian
+against a finite difference of its own currents, a capacitance against one of its own charges — and
+all of them pass on a device whose `i` and `q` have been swapped, because both halves are then
+self-consistently wrong. The two engines are not self-consistent with each other: DC reads only `i`
+and `dg`, HB carries `q` and `dc` through its own frequency-domain assembly.
+`ExternalDeviceHbDcConsistencyTests` pins the two together at zero drive, with a driven case beside
+it so the comparison cannot be of a circuit the drive never reached. The two land 3.7e-5 V apart on a
+3.56 V node, which is the two solvers' own residual tolerances (a residual of e amperes is e × R
+volts) and four orders of magnitude clear of what a current/charge mix-up costs.

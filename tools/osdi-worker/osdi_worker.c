@@ -295,6 +295,27 @@ static const char *param_kind_word(uint32_t flags) {
     }
 }
 
+/* WHAT KIND OF QUANTITY A NODE CARRIES, read out of the model's own declaration.
+ *
+ * The ABI does not name a discipline, but it does carry the UNITS of both the node's potential and
+ * its residual, and those are unambiguous: Verilog-AMS's `thermal` discipline is kelvin against
+ * watts, `electrical` is volts against amps. So a temperature node is recognised from what the
+ * model itself says rather than from a name, a position, or a count.
+ *
+ * WHY IT MATTERS ON THIS SIDE. Everything circuitRF does about a thermal node — holding an
+ * unconnected thermal terminal at the ambient instead of leaving a floating node with no DC
+ * solution, catching a thermal network referenced to electrical ground, keeping a temperature out of
+ * the candidates when it works out which node an unwritten one follows — hangs off this one string.
+ * Emitting nothing meant every OSDI node was electrical and every one of those paths was dead code.
+ *
+ * THE RAW STRINGS GO OUT ALONGSIDE, deliberately. A discipline nobody anticipated then arrives as
+ * itself and is visible in the report, rather than being silently classified as electrical. */
+static const char *node_quantity_kind(const OsdiNode *n) {
+    if (n->units          && strcmp(n->units,          "K") == 0) return "thermal";
+    if (n->residual_units && strcmp(n->residual_units, "W") == 0) return "thermal";
+    return "electrical";
+}
+
 static void emit_describe(Sb *s) {
     sb_puts(s, "{\"types\":[");
     for (uint32_t t = 0; t < g_lib.num_descriptors; t++) {
@@ -307,7 +328,14 @@ static void emit_describe(Sb *s) {
         sb_puts(s, ",\"nonlinear\":true,\"linear\":false");
 
         /* Parameters. Op-vars are NOT offered: they are outputs, and presenting one as settable
-         * would put a writable box in the editor for a value the model computes. */
+         * would put a writable box in the editor for a value the model computes.
+         *
+         * They are read here and dropped, which means circuitRF surfaces NONE of them — a compact
+         * model computes tens of operating-point quantities (transconductances, capacitances,
+         * junction temperatures) that a designer would reasonably want to read back after a DC
+         * solve, and today there is nowhere for one to land. Offering them as read-back quantities
+         * is worthwhile and is a feature in its own right, not a line missing from this loop: it
+         * needs a place in the result model and a way to ask for them per operating point. */
         sb_puts(s, ",\"params\":[");
         bool first = true;
         for (uint32_t i = 0; i < d->num_params; i++) {
@@ -335,6 +363,11 @@ static void emit_describe(Sb *s) {
             sb_puts(s, "{\"index\":"); sb_int(s, (long)i);
             sb_puts(s, ",\"external\":"); sb_puts(s, i < d->num_terminals ? "true" : "false");
             sb_puts(s, ",\"label\":"); sb_json_str(s, d->nodes[i].name ? d->nodes[i].name : "");
+            sb_puts(s, ",\"quantityKind\":"); sb_json_str(s, node_quantity_kind(&d->nodes[i]));
+            sb_puts(s, ",\"units\":");
+            sb_json_str(s, d->nodes[i].units ? d->nodes[i].units : "");
+            sb_puts(s, ",\"residualUnits\":");
+            sb_json_str(s, d->nodes[i].residual_units ? d->nodes[i].residual_units : "");
             sb_puts(s, "}");
         }
         sb_puts(s, "]}");
@@ -356,14 +389,33 @@ static void emit_describe(Sb *s) {
  * so nothing here could catch it, and every synthetic test passed. A model that asks for a name
  * absent from this list falls back to its own default, which is why a short honest list is safe
  * and a null one is not. */
+/* `minr` is here because real compact models ask for it: the smallest resistance the host is willing
+ * to treat as a resistance rather than as a short. Both physics-based GaN families surveyed carry a
+ * 1 mOhm fallback of their own, so the value below is chosen to MATCH that fallback — this is
+ * exactness rather than a fix, and a model that finds the name now behaves the same way it did when
+ * it did not. */
 static char  *g_sim_names[] = {
-    "gmin", "imax", "imelt", "scale", "shrink", "tnom",
+    "gmin", "imax", "imelt", "minr", "scale", "shrink", "tnom",
     "simulatorVersion", "sourceScaleFactor", "iteration", NULL,
 };
 static double g_sim_vals[] = {
-    1e-12,  1.0,    1.0,     1.0,     1.0,      27.0,
+    1e-12,  1.0,    1.0,     1e-3,   1.0,     1.0,      27.0,
     1.0,               1.0,                 1.0,
 };
+
+/* NOT SUPPLIED, and each absence is a real limit rather than an oversight:
+ *
+ *  - `$strobe` and friends. This worker hosts no text output channel, so a model that strobes a
+ *    diagnostic loses it. Worth stating outright because a model typically strobes exactly the
+ *    misconfiguration a host is most likely to have created — an unconnected terminal, a parameter
+ *    outside its stated range — and that message goes nowhere.
+ *
+ *  - `$mfactor`. Multiplicity is not passed. A user scales by placing instances, or through the
+ *    model's own width/finger parameters, which is the same answer for every model that has them.
+ *
+ *  - `$limit` and the limiting functions. See the eval loop below: no limiting is installed, and
+ *    convergence is circuitRF's own continuation's problem. Recorded because a model that expects
+ *    host limiting converges DIFFERENTLY, not wrongly. */
 static char *g_sim_str_names[] = { NULL };
 static char *g_sim_str_vals[]  = { NULL };
 
@@ -441,6 +493,9 @@ static int cmd_defaults(const char *js, const char *js_end) {
         report_error("defaults: model setup reported errors"); return 0;
     }
     info.num_errors = 0;
+    /* Every terminal connected, deliberately: this probe exists to read PARAMETER defaults, and the
+     * fully-connected instance is the one whose defaults describe the device as declared. An
+     * instance's own connection count belongs to `create`, which is where it is stated. */
     d->setup_instance(NULL, inst, model, DEFAULTS_TEMPERATURE_K, d->num_terminals, &sim, &info);
     if (info.num_errors) {
         free(model); free(inst);
@@ -502,6 +557,36 @@ static int cmd_create(const char *js, const char *js_end) {
     for (uint32_t t = 0; t < g_lib.num_descriptors; t++)
         if (strcmp(descriptor_at(t)->name, type) == 0) { d = descriptor_at(t); break; }
     if (!d) { report_error("create: no such device type in this library"); return 0; }
+
+    /* HOW MANY TERMINALS THIS INSTANCE ACTUALLY CONNECTS, which is not the same number as how many
+     * the TYPE declares. OSDI hands it to setup_instance, and it is what `$port_connected` reads.
+     *
+     * Passing the declared count unconditionally — which is what this did — makes every terminal
+     * connected on every instance. A model that branches on `$port_connected` to decide whether to
+     * ground its own thermal node then takes the wrong branch: with self-heating off AND the
+     * terminal claimed connected, it writes no equation at all for that node, and the grounding
+     * contribution that would have held it sits unreachable. The node arrives at the host as an
+     * all-zero row, which is a solve that does not converge with nothing anywhere saying why.
+     *
+     * Absent, it still defaults to the declared count — an omission means "all of them", which is
+     * what every caller that never states it meant. Out of range is REFUSED rather than clamped:
+     * above the declared count is a caller describing a device this library does not have, and
+     * below two is not a device at all. */
+    uint32_t connected = d->num_terminals;
+    const char *ct = json_member(js, js_end, "connectedTerminals");
+    if (ct) {
+        double cv = 0.0;
+        if (!json_num(ct, js_end, &cv) || cv < 2.0 || cv > (double)d->num_terminals) {
+            Sb e = {0};
+            sb_puts(&e, "create: 'connectedTerminals' must be between 2 and the ");
+            sb_int(&e, (long)d->num_terminals);
+            sb_puts(&e, " terminals '"); sb_puts(&e, type);
+            sb_puts(&e, "' declares");
+            report_error(e.buf); free(e.buf);
+            return 0;
+        }
+        connected = (uint32_t)cv;
+    }
 
     int slot = -1;
     for (int i = 0; i < MAX_INSTANCES; i++) if (!g_inst[i].live) { slot = i; break; }
@@ -582,7 +667,7 @@ static int cmd_create(const char *js, const char *js_end) {
     if (info.num_errors) { free(model); free(inst); report_error("create: model setup reported errors"); return 0; }
 
     info.num_errors = 0;
-    d->setup_instance(NULL, inst, model, temperature, d->num_terminals, &sim, &info);
+    d->setup_instance(NULL, inst, model, temperature, connected, &sim, &info);
     if (info.num_errors) { free(model); free(inst); report_error("create: instance setup reported errors"); return 0; }
 
     g_inst[slot].live  = true;
@@ -672,8 +757,12 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
         info.prev_solve = sol;
         info.prev_state = NULL;
         info.next_state = NULL;
-        /* Limiting is deliberately NOT enabled. It is a Newton-damping device whose meaning is tied
-         * to a previous iterate, and it does not carry over to a frequency-domain solve. */
+        /* Limiting is deliberately NOT enabled — no `$limit`, and none of the limiting functions.
+         * It is a Newton-damping device whose meaning is tied to a previous iterate, and it does not
+         * carry over to a frequency-domain solve; convergence here is circuitRF's own continuation's
+         * problem. Recorded because a model written expecting host limiting converges DIFFERENTLY,
+         * not wrongly: it takes a different path to the same operating point, and on a hard bias it
+         * may need more of circuitRF's ramp than it would have needed of a limiter. */
         info.flags = CALC_RESIST_RESIDUAL | CALC_REACT_RESIDUAL |
                      CALC_RESIST_JACOBIAN | CALC_REACT_JACOBIAN |
                      CALC_OP | ANALYSIS_DC | ANALYSIS_STATIC;
@@ -704,6 +793,12 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
             if (!isfinite(I[i]) || !isfinite(Q[i])) finite = false;
         }
 
+        /* NOISE IS NOT LOADED, AND THAT IS NOT AN OVERSIGHT. circuitRF has no noise analysis — no
+         * noise engine exists and none is planned for v1 — and OSDI exposes a model's noise sources
+         * through a SEPARATE `load_noise` entry point that nothing here calls. A model's
+         * `white_noise`/`flicker_noise` contributions are therefore structurally absent rather than
+         * mishandled: they never enter any matrix, and no result carries a place they could have
+         * gone. Wiring `load_noise` up would be the smallest part of adding noise analysis. */
         if (d->load_jacobian_resist) d->load_jacobian_resist(ins->inst, ins->model);
         /* alpha = 1 gives the raw dQ/dV. A transient host passes an integration coefficient here;
          * circuitRF wants the capacitance itself and applies its own weighting. */

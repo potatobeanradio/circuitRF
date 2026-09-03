@@ -307,8 +307,12 @@ public static class ComponentModelFactory
 
     /// <summary>
     /// How many terminals the SYMBOL draws. circuitRF's own, not the model's: the schematic has to
-    /// know before anything has opened the file. Never forwarded — a model asked to accept a
-    /// parameter it never declared refuses, which would fail every device it serves.
+    /// know before anything has opened the file. Never forwarded AS A MODEL PARAMETER — a model
+    /// asked to accept a parameter it never declared refuses, which would fail every device it
+    /// serves — but it IS sent, under
+    /// <see cref="DeviceWorkerProvider.ReservedConnectedTerminalsKey"/>, as the count of terminals
+    /// this instance connects. That is what a model's <c>$port_connected</c> reads, and the number
+    /// the user drew is the honest answer to it.
     /// </summary>
     public const string VerilogAPinsParam = "Pins";
 
@@ -393,10 +397,62 @@ public static class ComponentModelFactory
             Temperature.ToKelvin(Temperature.ResolveDeviceC(parameters, ambientC))
                        .ToString("R", System.Globalization.CultureInfo.InvariantCulture);
 
+        // HOW MANY TERMINALS THIS INSTANCE CONNECTS, which is `Pins` and nothing else: the number
+        // the user drew on the symbol. It reaches the model as `$port_connected`, and a model that
+        // is told every terminal is connected when one was not takes the wrong branch — typically
+        // declining to ground its own thermal node because it has been assured the host wired it.
+        //
+        // Deliberately NOT defaulted to the model's own terminal count here. A missing or unreadable
+        // `Pins` sends nothing, and the provider's own "absent means all of them" rule then applies,
+        // which is exactly the behaviour every design had before this key existed.
+        int? statedPins = ResolvePinCount(parameters);
+        if (statedPins is int pins)
+            forwarded[DeviceWorkerProvider.ReservedConnectedTerminalsKey] =
+                pins.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        // ── What a compiled model may declare that circuitRF does not act on ──────────────────
+        //
+        // AGING / DEGRADATION PARAMETERS. A model that ships an aging parameter set gets them
+        // forwarded like any other parameter, and they do nothing: there is no aging analysis and no
+        // stress history to feed one. They are settable, they reach the model, and the model applies
+        // whatever it applies at t = 0. Nothing here filters them out — a filter would be a list of
+        // one vendor's parameter names, which is exactly what this path exists to avoid.
+        //
+        // MULTIPLICITY. `$mfactor` is not passed. circuitRF's own `m` multiplies a component's
+        // stamp, and handing the same number to the model as well would apply it twice. A user
+        // scales an external device by placing instances, or through the model's own width and
+        // finger parameters, which is the same answer for every model that has them.
+
         string label = parameters.TryGetValue("__instanceLabel", out var lv) && lv.Kind == ValueKind.String
                        ? lv.AsString() : typeId;
 
-        return new ExternalDeviceModel(provider.Create(typeId, forwarded), providerName, label);
+        return new ExternalDeviceModel(provider.Create(typeId, forwarded), providerName, label)
+               { ConnectedPinCount = statedPins };
+    }
+
+    /// <summary>
+    /// The instance's own terminal count, from <c>Pins</c> — or null when it says nothing readable.
+    ///
+    /// <para>Null rather than a fallback on purpose. The number matters enough that guessing it is
+    /// worse than not stating it: too low and the model grounds a terminal the user wired, too high
+    /// and it leaves one floating. A value nobody stated is better answered by the provider's own
+    /// "all of them" than by a count invented here.</para>
+    /// </summary>
+    private static int? ResolvePinCount(IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (ReservedKey(parameters.Keys, VerilogAPinsParam) is not { } key) return null;
+        if (!parameters.TryGetValue(key, out var v)) return null;
+
+        double raw = v.Kind == ValueKind.String
+                     ? (double.TryParse(v.AsString().Trim(),
+                                        System.Globalization.NumberStyles.Float,
+                                        System.Globalization.CultureInfo.InvariantCulture,
+                                        out double parsed) ? parsed : double.NaN)
+                     : v.AsReal();
+
+        if (!double.IsFinite(raw)) return null;
+        int pins = (int)Math.Round(raw);
+        return pins > 0 ? pins : null;
     }
 
     private const string ExternalDeviceProviderReservedPrefix = DeviceWorkerProvider.ReservedPrefix;

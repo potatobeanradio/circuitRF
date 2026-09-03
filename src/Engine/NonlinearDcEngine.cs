@@ -394,7 +394,18 @@ public sealed class NonlinearDcEngine
     /// <param name="ResistanceCPerW">
     /// The driving-point thermal resistance seen looking into the node: the rise it takes per watt.
     /// </param>
-    private readonly record struct ThermalMeasurement(double ReferenceC, double ResistanceCPerW);
+    /// <param name="DeviceReferenced">
+    /// The node's only thermal path is the DEVICE'S OWN: the model carries a real thermal
+    /// conductance on this node while the network around it carries none.
+    ///
+    /// <para>It is recorded because <see cref="ReferenceC"/> cannot describe such a node. That
+    /// number is read from the linear network, and a model's own thermal resistance is not in it —
+    /// so a node referenced entirely by its model reads as referenced to zero, which is exactly how
+    /// a network wrongly tied to electrical ground reads. The two are only distinguishable by which
+    /// side the path is on.</para>
+    /// </param>
+    private readonly record struct ThermalMeasurement(
+        double ReferenceC, double ResistanceCPerW, bool DeviceReferenced = false);
 
     /// <summary>
     /// Measures what the circuit does to each thermal node, from the linear network the components
@@ -459,7 +470,16 @@ public sealed class NonlinearDcEngine
                                ? 0.0
                                : 1.0 / (SafeReciprocal(network) + gOwn);
 
-                measured[row] = new ThermalMeasurement(x[row], total);
+                // WHICH SIDE THE PATH IS ON, kept separately from how good it is. A device that
+                // carries its own thermal resistance and a design that wired one produce the same
+                // total; what differs is that the first leaves nothing to read the node's reference
+                // from, because a Jacobian entry is not in the linear system this was solved out of.
+                // An infinite gOwn is the device REFUSING the point — nothing was learned there, so
+                // nothing is claimed.
+                bool networkPath = network <= ImplausibleThermalResistance;
+                bool devicePath  = double.IsFinite(gOwn) && gOwn > 1.0 / ImplausibleThermalResistance;
+
+                measured[row] = new ThermalMeasurement(x[row], total, devicePath && !networkPath);
             }
         }
         catch
@@ -564,6 +584,12 @@ public sealed class NonlinearDcEngine
     /// It is "the reference is zero WHILE the ambient is not". A design whose ambient really is 0 °C
     /// says so and is silent. And a node that has no usable reference at all is left to the
     /// resistance case above rather than being reported twice for one condition.</para>
+    ///
+    /// <para>Narrower still since: a node whose only thermal path is the DEVICE'S OWN is skipped
+    /// entirely. Some compiled electrothermal models carry their own RC and add the ambient
+    /// internally, so what they solve for is the rise above a thermal ground — correct by design,
+    /// and indistinguishable from a mis-wired network in the linear reference alone. Which side the
+    /// path is on is what separates them.</para>
     /// </summary>
     private void ReportThermalNodes(int size)
     {
@@ -595,6 +621,20 @@ public sealed class NonlinearDcEngine
                     $"the rest of the design uses.");
                 continue;   // no usable reference — the reading below would be meaningless
             }
+
+            // A NODE REFERENCED BY ITS OWN MODEL IS NOT A NETWORK TIED TO GROUND, however alike the
+            // two read here. Some compiled electrothermal models carry their own thermal RC and add
+            // the ambient to it themselves, so the node they solve for is the RISE, referenced to the
+            // thermal ground — which is correct, and is the whole design of the model. The reference
+            // read below comes out of the LINEAR network, where such a model contributes nothing, so
+            // it reads zero for exactly the reason it should.
+            //
+            // Warning here would fire on every correctly-modelled part of that kind, on every run,
+            // and a warning that fires when nothing is wrong is worse than no warning at all: it is
+            // what stops the real one being read. The check the design still needs is untouched — a
+            // design that wires its OWN thermal network to ground has a network path, and lands
+            // below.
+            if (m.DeviceReferenced) continue;
 
             if (Math.Abs(ambient) <= AmbientReferenceSlackC) continue;   // the ambient IS ground here
             if (Math.Abs(m.ReferenceC) > AmbientReferenceSlackC) continue;

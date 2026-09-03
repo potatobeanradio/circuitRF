@@ -61,6 +61,66 @@ assert "handle" in probe, probe
 send({"cmd":"destroy","handle":probe["handle"]}); recv()
 print("DEFAULTS leaks no instance slot: ok")
 
+# ── a node's DISCIPLINE, and a terminal the instance does not connect ─────────────
+#
+# Both facts live in `crf_therm` and nowhere else in this library. The units are the only thing
+# separating its node 2 from the two above it, and the terminal count is the only argument to
+# setup_instance any device here reads.
+th = next(t for t in d["types"] if t["typeId"] == "crf_therm")
+tn = {n["index"]: n for n in th["nodes"]}
+assert tn[2]["quantityKind"] == "thermal",    tn[2]
+assert tn[2]["units"] == "K" and tn[2]["residualUnits"] == "W", tn[2]
+assert tn[0]["quantityKind"] == "electrical", tn[0]
+# The raw strings ride alongside the classification, so a discipline nobody anticipated arrives as
+# itself rather than being silently reported as electrical.
+assert tn[0]["units"] == "V" and tn[0]["residualUnits"] == "A", tn[0]
+print("DESCRIBE node discipline: ok")
+
+def therm(sh, connected=None):
+    msg = {"cmd":"create","typeId":"crf_therm","params":{"g":0.01,"rth":50.0,"sh":sh},
+           "temperatureK":300.0}
+    if connected is not None: msg["connectedTerminals"] = connected
+    send(msg)
+    return recv()[0]
+
+def therm_eval(handle, v):
+    send({"cmd":"eval","handle":handle,"count":1}, struct.pack("<3d", *v))
+    j, vals = recv()
+    n = 3
+    base = 1
+    return vals[base:base+n], vals[base+2*n:base+2*n+n*n]
+
+# All three terminals connected (the default, and what every caller that says nothing means): the
+# model leaves its thermal node alone and the host must hold it.
+all_on = therm(sh=1)
+assert all_on["collapsed"] == [], all_on
+I, G = therm_eval(all_on["handle"], (1.0, 0.0, 20.0))
+#  I[T] = v2/rth - g*vab^2 = 20/50 - 0.01 = 0.39
+assert abs(I[2] - 0.39) < 1e-12, I
+assert abs(G[2*3+2] - 1.0/50.0) < 1e-12, G   # dI[T]/dV[T] = 1/rth
+
+# The SAME device told its thermal terminal is not connected grounds it itself — which is the branch
+# `$port_connected` exists for, and the one a host that always claims every terminal is connected
+# can never reach.
+two = therm(sh=1, connected=2)
+assert two["collapsed"] == [{"node": 2, "to": -1}], two
+I2, G2 = therm_eval(two["handle"], (1.0, 0.0, 20.0))
+assert I2[2] == 0.0, I2
+# ... and the electrical half is untouched, which is what says these are otherwise the same device.
+assert abs(I2[0] - I[0]) < 1e-15 and abs(I2[1] - I[1]) < 1e-15, (I, I2)
+print("CREATE connectedTerminals: ok")
+
+# Out of range is refused rather than clamped: above the declared count describes a device this
+# library does not have, and below two is not a device at all.
+for bad in (1, 4):
+    send({"cmd":"create","typeId":"crf_therm","params":{},"connectedTerminals":bad})
+    r,_ = recv()
+    assert "error" in r and "connectedTerminals" in r["error"], (bad, r)
+print("CREATE connectedTerminals refusal: ok")
+
+for h in (all_on["handle"], two["handle"]):
+    send({"cmd":"destroy","handle":h}); recv()
+
 send({"cmd":"create","typeId":"crf_rc",
       "params":{"g0":0.002,"c":1e-12,"tc":0.01,"tnom":300.0,"mult":1.0},
       "temperatureK":400.0})

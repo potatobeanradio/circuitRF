@@ -69,6 +69,20 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
     public int InternalNodeCount => Descriptor.InternalNodeCount;
     public int ExternalPinCount  => Descriptor.ExternalPinCount;
 
+    /// <summary>
+    /// How many of the type's terminals THIS INSTANCE connects, when the component stated it — the
+    /// number of pins the symbol drew. Null when nothing was stated, which means all of them.
+    ///
+    /// <para><b>It is the count of nets the design supplies, and the elaborator holds it to that.</b>
+    /// A model with five terminals placed as a four-pin part is an ordinary thing to want — it is
+    /// how a user says "I do not want a thermal pin on my schematic" — and the trailing terminals are
+    /// then unconnected: the model was told so at creation and has already decided what to do about
+    /// them, typically grounding them itself. What must NOT happen is a net count silently differing
+    /// from the terminal count with nobody having said which is right, so a stated count is required
+    /// to match the nets exactly and an unstated one still requires every terminal to be wired.</para>
+    /// </summary>
+    public int? ConnectedPinCount { get; init; }
+
     /// <summary>One port per node — see the class remarks for why this is the exact mapping.</summary>
     public override int       PortCount => Descriptor.NodeCount;
     public override ModelKind Kind      => ModelKind.Nonlinear;

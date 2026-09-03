@@ -602,11 +602,194 @@ static OsdiJacobianEntry fet_jacobian[] = {
     { { 2, 2 }, (uint32_t)offsetof(FetInst, jac_react[8]), JACOBIAN_ENTRY_RESIST | JACOBIAN_ENTRY_REACT },
 };
 
+/* ── device 4: "crf_therm" — a THERMAL node, and a connected-terminal branch ───
+ *
+ * WHY A FOURTH DEVICE. The three above are all electrical, so every node they declare carries volts
+ * against amps and nothing in this library could ever exercise the two facts a real electrothermal
+ * compact model turns on:
+ *
+ *   1. A node's DISCIPLINE, which the ABI states only through the units of its potential and its
+ *      residual — kelvin against watts for a temperature, volts against amps for a voltage. That
+ *      string is the whole of what a host has to classify a thermal pin from.
+ *   2. `$port_connected`, which a model reads to decide whether the host has actually wired a
+ *      terminal, and which reaches it as the terminal count passed to setup_instance.
+ *
+ * IT IS STILL NOT A MODEL. Closed form, as for the other three:
+ *
+ *   Nodes:  0 = A (terminal, V/A)   1 = B (terminal, V/A)   2 = T (terminal, K/W)
+ *
+ *     vab   = v0 - v1
+ *     p     = g * vab^2                       the power this device dissipates
+ *     live  = sh != 0 AND T is connected      whether the thermal path exists at all
+ *
+ *     I[A] = +g*vab      I[B] = -g*vab
+ *     I[T] = live ? (v2/rth - p) : 0
+ *
+ *     dI/dV = [ +g   -g    0        ]
+ *             [ -g   +g    0        ]
+ *             [ -2*g*vab  +2*g*vab  1/rth ]      (the last row all zero when not live)
+ *
+ * THE THREE-WAY BRANCH IS COPIED FROM THE MODEL SHAPE THAT MOTIVATED IT, and the middle case is the
+ * one that matters:
+ *
+ *   - T NOT connected            -> the model grounds its own thermal node, declared as a collapse.
+ *   - T connected, sh == 0       -> the model writes NO EQUATION for T. It has been told the host
+ *                                   wired that terminal, so holding it is the host's job.
+ *   - T connected, sh != 0       -> the ordinary electrothermal path.
+ *
+ * A host that always claims every terminal is connected can never reach the FIRST case, so a design
+ * that switched self-heating off and drew no thermal pin lands in the second: an all-zero row that
+ * nothing holds, which is a solve that does not converge with nothing anywhere saying why. That is
+ * exactly what this device exists to make visible.
+ */
+
+typedef struct {
+    double g;     /* model param, S    */
+    double rth;   /* model param, K/W  */
+} ThModel;
+
+typedef struct {
+    int32_t  sh;                /* instance param: self-heating on */
+
+    uint32_t node_mapping[3];
+    double  *jac_resist[7];
+    bool     collapsed[1];      /* [0] = T to ground, when the terminal is not connected */
+
+    double   resid_resist[3];
+
+    double   g_eff;
+    double   gth_eff;           /* 1/rth when the thermal path is live, 0 otherwise */
+    double   dissipates;        /* 1 when the thermal path is live, 0 otherwise */
+    double   vab;               /* held from eval, for the Jacobian's cross terms */
+} ThInst;
+
+static void *th_access(void *inst, void *model, uint32_t id, uint32_t flags) {
+    (void)flags;
+    ThModel *m = (ThModel *)model;
+    ThInst  *i = (ThInst *)inst;
+    switch (id) {
+        case 0: return m ? (void *)&m->g   : NULL;
+        case 1: return m ? (void *)&m->rth : NULL;
+        case 2: return i ? (void *)&i->sh  : NULL;
+        default: return NULL;
+    }
+}
+
+static void th_setup_model(void *handle, void *model, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)sim;
+    ThModel *m = (ThModel *)model;
+    if (m->g   == 0.0) m->g   = 0.01;
+    if (m->rth == 0.0) m->rth = 50.0;
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+}
+
+static void th_setup_instance(void *handle, void *inst, void *model, double temperature,
+                              uint32_t num_terminals, OsdiSimParas *sim, OsdiInitInfo *res) {
+    (void)handle; (void)temperature; (void)sim;
+    ThModel *m = (ThModel *)model;
+    ThInst  *i = (ThInst *)inst;
+
+    /* `$port_connected(T)`, in the form the ABI actually delivers it: the count of terminals the
+     * INSTANCE connects, which is not the count the type declares. Reading it is the whole point of
+     * this device — every other device in this library ignores the argument. */
+    bool t_connected = num_terminals >= 3;
+
+    i->collapsed[0] = !t_connected;
+    i->g_eff        = m->g;
+
+    bool live       = t_connected && i->sh != 0;
+    i->gth_eff      = live ? 1.0 / m->rth : 0.0;
+    i->dissipates   = live ? 1.0 : 0.0;
+
+    res->flags = 0; res->num_errors = 0; res->errors = NULL;
+}
+
+static uint32_t th_eval(void *handle, void *inst, const void *model, const OsdiSimInfo *info) {
+    (void)handle; (void)model;
+    ThInst *i = (ThInst *)inst;
+
+    double v0 = info->prev_solve[i->node_mapping[0]];
+    double v1 = info->prev_solve[i->node_mapping[1]];
+    double v2 = info->prev_solve[i->node_mapping[2]];
+
+    double vab = v0 - v1;
+    i->vab = vab;
+
+    double ig = i->g_eff * vab;
+    double p  = i->dissipates * i->g_eff * vab * vab;
+
+    i->resid_resist[0] =  ig;
+    i->resid_resist[1] = -ig;
+    i->resid_resist[2] =  i->gth_eff * v2 - p;
+    return 0;
+}
+
+/* Entries, in the order declared below:
+ * (0,0) (0,1) (1,0) (1,1) (2,2) (2,0) (2,1) */
+static void th_load_jacobian_resist(void *inst, void *model) {
+    (void)model;
+    ThInst *i = (ThInst *)inst;
+    double g = i->g_eff, dp = 2.0 * i->dissipates * i->g_eff * i->vab;
+    if (i->jac_resist[0]) *i->jac_resist[0] +=  g;
+    if (i->jac_resist[1]) *i->jac_resist[1] += -g;
+    if (i->jac_resist[2]) *i->jac_resist[2] += -g;
+    if (i->jac_resist[3]) *i->jac_resist[3] +=  g;
+    if (i->jac_resist[4]) *i->jac_resist[4] +=  i->gth_eff;
+    if (i->jac_resist[5]) *i->jac_resist[5] += -dp;
+    if (i->jac_resist[6]) *i->jac_resist[6] +=  dp;
+}
+
+static void th_load_residual_resist(void *inst, void *model, double *dst) {
+    (void)model;
+    ThInst *i = (ThInst *)inst;
+    for (uint32_t k = 0; k < 3; k++) dst[i->node_mapping[k]] += i->resid_resist[k];
+}
+
+static char *th_name_g[]   = { (char *)"g"   };
+static char *th_name_rth[] = { (char *)"rth" };
+static char *th_name_sh[]  = { (char *)"sh"  };
+
+static OsdiParamOpvar th_params[] = {
+    { th_name_g,   0, (char *)"conductance",         (char *)"S",   PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { th_name_rth, 0, (char *)"thermal resistance",  (char *)"K/W", PARA_TY_REAL | PARA_KIND_MODEL, 1 },
+    { th_name_sh,  0, (char *)"self-heating on",     (char *)"",    PARA_TY_INT  | PARA_KIND_INST,  1 },
+};
+
+/* THE UNITS ARE THE POINT of this table. "K" against "W" is how Verilog-AMS's `thermal` discipline
+ * reaches a host through this ABI, and it is the ONLY thing distinguishing node 2 from the two above
+ * it — same struct, same offsets, same everything else. A host that does not read them classifies a
+ * temperature as a voltage and every thermal-aware path it has goes quietly unused. */
+static OsdiNode th_nodes[] = {
+    { (char *)"A", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(ThInst, resid_resist[0]), UINT32_MAX, UINT32_MAX, UINT32_MAX, false },
+    { (char *)"B", (char *)"V", (char *)"A",
+      (uint32_t)offsetof(ThInst, resid_resist[1]), UINT32_MAX, UINT32_MAX, UINT32_MAX, false },
+    { (char *)"T", (char *)"K", (char *)"W",
+      (uint32_t)offsetof(ThInst, resid_resist[2]), UINT32_MAX, UINT32_MAX, UINT32_MAX, false },
+};
+
+static OsdiJacobianEntry th_jacobian[] = {
+    { { 0, 0 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 0, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 1, 0 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 1, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 2, 2 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 2, 0 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+    { { 2, 1 }, UINT32_MAX, JACOBIAN_ENTRY_RESIST },
+};
+
+/* An external TERMINAL collapsed to ground, which the other collapsing device does not exercise: its
+ * grounded node is internal. A model grounding one of its own terminals is what `$port_connected`
+ * being false is FOR — the host did not wire it, so the model holds it. */
+static OsdiNodePair th_collapsible[] = {
+    { 2, UINT32_MAX },   /* T to ground, when the terminal is not connected */
+};
+
 /* ── the exports the ABI is discovered through ───────────────────────────────── */
 
 uint32_t OSDI_VERSION_MAJOR = OSDI_VERSION_MAJOR_CURR;
 uint32_t OSDI_VERSION_MINOR = OSDI_VERSION_MINOR_CURR;
-uint32_t OSDI_NUM_DESCRIPTORS = 3;
+uint32_t OSDI_NUM_DESCRIPTORS = 4;
 uint32_t OSDI_DESCRIPTOR_SIZE = sizeof(OsdiDescriptor);
 
 OsdiDescriptor OSDI_DESCRIPTORS[] = {
@@ -761,6 +944,57 @@ OsdiDescriptor OSDI_DESCRIPTORS[] = {
         .load_spice_rhs_tran   = NULL,
         .load_jacobian_resist  = fet_load_jacobian_resist,
         .load_jacobian_react   = fet_load_jacobian_react,
+        .load_jacobian_tran    = NULL,
+    },
+    {
+        .name = (char *)"crf_therm",
+
+        .num_nodes     = 3,
+        .num_terminals = 3,
+        .nodes         = th_nodes,
+
+        .num_jacobian_entries = 7,
+        .jacobian_entries     = th_jacobian,
+
+        .num_collapsible  = 1,
+        .collapsible      = th_collapsible,
+        .collapsed_offset = (uint32_t)offsetof(ThInst, collapsed),
+
+        .noise_sources  = NULL,
+        .num_noise_src  = 0,
+
+        .num_params          = 3,   /* g, rth, sh */
+        .num_instance_params = 1,   /* sh */
+        .num_opvars          = 0,
+        .param_opvar         = th_params,
+
+        .node_mapping_offset        = (uint32_t)offsetof(ThInst, node_mapping),
+        .jacobian_ptr_resist_offset = (uint32_t)offsetof(ThInst, jac_resist),
+
+        .num_states    = 0,
+        .state_idx_off = 0,
+
+        .bound_step_offset = 0,
+
+        .instance_size = sizeof(ThInst),
+        .model_size    = sizeof(ThModel),
+
+        .access = th_access,
+
+        .setup_model    = th_setup_model,
+        .setup_instance = th_setup_instance,
+
+        .eval = th_eval,
+
+        .load_noise            = NULL,
+        .load_residual_resist  = th_load_residual_resist,
+        .load_residual_react   = NULL,
+        .load_limit_rhs_resist = NULL,
+        .load_limit_rhs_react  = NULL,
+        .load_spice_rhs_dc     = NULL,
+        .load_spice_rhs_tran   = NULL,
+        .load_jacobian_resist  = th_load_jacobian_resist,
+        .load_jacobian_react   = NULL,
         .load_jacobian_tran    = NULL,
     },
 };

@@ -512,11 +512,36 @@ public sealed class ThermalNodeRobustnessTests : IDisposable
         // And it is not called weakly referenced either. The driving-point resistance is solved from
         // the LINEAR system, and this device's own thermal resistance is not in it — it lives in a
         // Jacobian the linear stamp never sees. Measured from the network alone, a part that
-        // references its own thermal node perfectly well reads as having no path at all. (What IS
-        // reported here is the reference: this device's own resistance runs to its own zero, and the
-        // ambient is 25 °C — which is true, and is the warning the false one used to hide.)
+        // references its own thermal node perfectly well reads as having no path at all.
         Assert.DoesNotContain(nl.Warnings,
             w => w.Contains("reaches its reference", StringComparison.Ordinal));
+
+        // NOR IS IT CALLED A NETWORK TIED TO GROUND, which it also reads as and is not. This device
+        // carries its own thermal resistance to its own zero, so the node it solves for is the RISE
+        // — which is what a model that adds the ambient internally is designed to produce, and the
+        // shape both physics-based GaN families surveyed have. The reference below is read from the
+        // linear network, where such a device contributes nothing, so it reads zero for exactly the
+        // reason it should. Warning here fires on every correctly-modelled part of that kind, on
+        // every run, which is what stops the real warning being read.
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("referenced to", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ADeviceCarryingItsOwnThermalPath_DoesNotSilenceAMisWiredNetworkAroundIt()
+    {
+        // The other half, and what stops the skip above being a blanket. The skip is "the device is
+        // the ONLY thermal path here", not "the device has one" — a design that wired its own
+        // thermal network to ground has a network path, and the whole ambient is still missing from
+        // whatever that network references. Asserted with the same device, so the only difference
+        // between this and the case above is the resistor.
+        const double rth = 200.0;
+        string cnl = ReferencedNetlist(ambientC: 25.0, referenceC: null, rThermal: rth)
+                         .TrimEnd('\n') +
+                     $" Rth={rth.ToString("G17", CultureInfo.InvariantCulture)}\n";
+
+        var (r, nl) = Run(cnl);
+
+        Assert.True(r.Converged);
         Assert.Contains(nl.Warnings, w => w.Contains("referenced to", StringComparison.Ordinal));
     }
 

@@ -56,6 +56,21 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
     /// </summary>
     public const string ReservedTemperatureKey = ReservedPrefix + "temperatureK";
 
+    /// <summary>
+    /// How many of the type's declared terminals THIS INSTANCE connects — the number the component
+    /// stated, not the number the model declares.
+    ///
+    /// <para>A model reads it through <c>$port_connected</c> and branches on it, most often to
+    /// decide whether to ground a thermal terminal the schematic never drew. Told every terminal is
+    /// connected, such a model takes the other branch and writes no equation for that node at all:
+    /// an all-zero row that nothing holds, which is a solve that does not converge with nothing
+    /// anywhere saying why.</para>
+    ///
+    /// <para>Absent means "all of them", which is what every caller that has nothing to say means —
+    /// so a provider that never sees this key behaves exactly as it did.</para>
+    /// </summary>
+    public const string ReservedConnectedTerminalsKey = ReservedPrefix + "connectedTerminals";
+
     public static DeviceWorkerProvider Launch(
         string               name,
         string               executablePath,
@@ -145,6 +160,15 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
                 double.TryParse(tk, NumberStyles.Float, CultureInfo.InvariantCulture, out double kelvin) &&
                 kelvin > 0.0)
                 w.WriteNumber("temperatureK", kelvin);
+
+            // How many terminals this INSTANCE connects, when the component said. It rides beside
+            // the temperature and for the same reason: it is an argument to instance setup in the
+            // ABIs that take one, not a parameter of the model, and a model that happened to declare
+            // a parameter of the same name would otherwise receive it twice.
+            if (parameters.TryGetValue(ReservedConnectedTerminalsKey, out var ct) &&
+                int.TryParse(ct, NumberStyles.Integer, CultureInfo.InvariantCulture, out int connected) &&
+                connected > 0)
+                w.WriteNumber("connectedTerminals", connected);
 
             WriteParameters(w, descriptor, parameters);
         }))
@@ -283,8 +307,23 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
                 nodes.Add(new ExternalNodeDescriptor(
                     index,
                     External: ReadBool(n, "external", index < externals),
+                    // A NODE'S QUANTITY KIND IS READ HERE, not only from a probe. A probe measures
+                    // what a live instance does; a discipline is a property of the TYPE, and a
+                    // worker whose ABI declares it (units of "K" against "W" rather than "V" against
+                    // "A") can say so with nothing instantiated. Reading it only from the probe left
+                    // every node of every such worker electrical, and with it every thermal path
+                    // circuitRF has — the ambient hold on an unconnected thermal terminal, the
+                    // ground-reference check, the exclusion of a temperature from the candidates for
+                    // an unwritten node's master — was unreachable code.
+                    QuantityKind: ParseQuantityKind(ReadString(n, "quantityKind", "")),
+                    Label:        ReadString(n, "label", ""),
                     SlavedTo: ReadSlavedTo(n),
-                    CollapsedToGround: ReadBool(n, "collapsedToGround", false)));
+                    CollapsedToGround: ReadBool(n, "collapsedToGround", false),
+                    // The raw strings the provider used, carried uninterpreted beside the
+                    // classification above. A discipline circuitRF has no case for then arrives as
+                    // itself, visible in a diagnostic, rather than as a silent "electrical".
+                    Units:         ReadString(n, "units", ""),
+                    ResidualUnits: ReadString(n, "residualUnits", "")));
             }
         }
 
@@ -462,9 +501,13 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
             nodes.Add(new ExternalNodeDescriptor(
                 index,
                 External:     ReadBool(n, "external", original?.External ?? index < declared.ExternalPinCount),
-                QuantityKind: ReadString(n, "quantityKind", "") == "thermal"
-                                  ? NodeQuantityKind.Thermal
-                                  : NodeQuantityKind.Electrical,
+                // A probe refines; it does not repeal — the same rule the collapse report below
+                // follows. A worker whose DESCRIBE named this node's discipline and whose probe says
+                // nothing about it must keep what it declared, or the refinement would erase the
+                // very thing it was meant to add to.
+                QuantityKind: n.TryGetProperty("quantityKind", out _)
+                                  ? ParseQuantityKind(ReadString(n, "quantityKind", ""))
+                                  : original?.QuantityKind ?? NodeQuantityKind.Electrical,
                 Label:        original?.Label ?? "",
                 SlavedTo:     ReadSlavedTo(n) ?? original?.SlavedTo,
                 // A probe refines; it does not repeal. A worker whose collapse report came back at
@@ -475,7 +518,9 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
                 // because the host cannot measure it as well — at the all-zero point the solve starts
                 // from, a thermal pin's row is indistinguishable from an absent one, and away from it
                 // the host would be choosing a bias to interrogate the device at.
-                Degenerate: ReadBool(n, "degenerate", original?.Degenerate ?? false)));
+                Degenerate: ReadBool(n, "degenerate", original?.Degenerate ?? false),
+                Units:         ReadString(n, "units",         original?.Units         ?? ""),
+                ResidualUnits: ReadString(n, "residualUnits", original?.ResidualUnits ?? "")));
         }
 
         return nodes.Count == 0 ? declared : declared with { Nodes = nodes };
@@ -487,6 +532,16 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
     //  rather than throwing, because a worker that grows a field circuitRF has not heard of must
     //  keep working, and one that omits a field circuitRF wants is better reported by whatever
     //  fails downstream than by an unreadable parse error here.
+
+    /// <summary>
+    /// One reading of a provider's node-discipline word, shared by <c>describe</c> and <c>probe</c>
+    /// so the two can never disagree. Anything circuitRF has no case for is ELECTRICAL — the
+    /// conservative reading, since every thermal behaviour adds a source or a warning the design did
+    /// not ask for — and the provider's raw units ride alongside so the unknown word is still
+    /// visible rather than lost.
+    /// </summary>
+    private static NodeQuantityKind ParseQuantityKind(string word)
+        => word == "thermal" ? NodeQuantityKind.Thermal : NodeQuantityKind.Electrical;
 
     private static string ReadString(JsonElement element, string name, string fallback)
         => element.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String

@@ -261,15 +261,44 @@ the expression parser at position 0 — the same trap `SnP`'s `File=` hit). Rule
 plain number is stored as a number, so units and arithmetic still work for genuinely numeric values;
 everything else is stored verbatim, and the provider does its own conversion.
 
-### 5.1 The thermal network is the HOST's to build, and its reference is the ambient
+### 5.1 Who owns the thermal network — the model, or the design
 
-circuitRF assumes a compiled electrothermal model does **not** contain its own thermal RC, even when
-it declares thermal parameters. The model **consumes** a junction temperature and **produces** a
-dissipated power; the loop between them is closed outside it, by the circuit. A model's declared
-`RTH`/`CTH`/heatsink parameters are therefore treated as values for the host to READ when building
-that network, never as something the model applies itself. The temperature reaches the model either
-as an ordinary node voltage on a thermal pin or as a scalar the host supplies — which of the two is
-the provider's business, not circuitRF's.
+**There are two conventions in the wild, and circuitRF tells them apart by measurement.**
+
+**Convention A — the network is the DESIGN's to build.** The model **consumes** a junction
+temperature and **produces** a dissipated power; the loop between them is closed outside it, by the
+circuit. Its declared `RTH`/`CTH`/heatsink parameters are values for the host to READ when building
+that network, never something the model applies itself. The temperature reaches the model either as
+an ordinary node voltage on a thermal pin or as a scalar the host supplies — which of the two is the
+provider's business, not circuitRF's. Everything in the rest of this section is about this
+convention, and the two checks below exist for it.
+
+**Convention B — the model carries its own RC.** The model writes a conductance `1/rth` and a
+`ddt(cth·T)` on its own thermal node and adds the ambient to it internally, so what the node carries
+is the **rise**, referenced to the thermal ground. Both openly published physics-based GaN HEMT
+compact-model families surveyed in 2026-09 are built this way. Under this convention there is nothing
+for the design to build and nothing for circuitRF to add.
+
+**How circuitRF tells them apart.** By asking the device, at the all-zero point the solve's own bias
+ramp starts from, whether it puts a real **positive** conductance on that node's own diagonal — a
+model of convention A puts none there (its thermal row is empty, or carries only its self-heating
+feedback, which is negative), and one of convention B puts `1/rth`. The mechanism already existed for
+the open-pin case (`Elaborator.SelfReferencedThermalNodes`) and is the right one; nothing about it is
+specific to either family. Two consequences follow, and both are gated:
+
+- **`PinUnreferencedThermalNodes` skips a convention-B model**, even with the pin left open. Holding
+  that node at the ambient would make the model compute ambient + ambient + rise — finite, plausible,
+  and wrong with nothing to notice.
+- **`ReportThermalNodes` does not warn about one either.** Its ground-reference test is "the
+  reference is zero while the ambient is not", read from the LINEAR network — where a convention-B
+  model contributes nothing, so its node reads as referenced to zero for exactly the reason it
+  should. Skipping needs the path to be the device's ONLY one: a design that wires its own thermal
+  network to ground still has a network path, and is still reported.
+
+**A model's DISCIPLINE is what starts any of this**, and it is read from the units the model itself
+declares — kelvin against watts for a temperature, volts against amps for a voltage, which is how
+Verilog-AMS's `thermal` discipline reaches a host through OSDI. Until the worker reported it (2026-09)
+every OSDI node was classified electrical and every path in this section was unreachable code.
 
 **The network circuitRF expects a design to build** is a thermal resistance and capacitance in
 parallel, connected not to ground but to a **source holding the ambient temperature**. Dissipated
@@ -293,7 +322,7 @@ holds there IS the temperature that network references it to.
 
 **An unconnected thermal terminal is held at the ambient**, by
 `Elaborator.PinUnreferencedThermalNodes`, which adds the source the design did not. This is not a
-convenience. Under the reading above the model contributes no thermal path of its own, so a thermal
+convenience. Under convention A the model contributes no thermal path of its own, so a thermal
 pin connected to nothing is a floating node fed by a constant current source: it has no DC solution
 at any temperature, and the solve can only run out its whole continuation budget before saying so.
 The ambient with **no rise** is the reading that cannot be wrong invisibly — a design stating no
@@ -305,7 +334,8 @@ What counts as connected is "something OTHER than a thermal pin reaches this nod
 component would call a thermal net shared between two devices connected — each sees the other — and
 leave it exactly as singular as before.
 
-**And the device is asked, not assumed.** A provider is entitled to carry its own thermal resistance,
+**And the device is asked, not assumed** — this is convention B's test, stated once. A provider is
+entitled to carry its own thermal resistance,
 and one that does has already referenced the node: its Jacobian has a real entry there, the open pin
 is not floating, and the rise it solves for IS the answer the design wanted. Pinning that node would
 silently delete the device's self-heating. So the last question before anything is added is whether

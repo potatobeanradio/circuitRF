@@ -61,6 +61,13 @@ public sealed record ExternalParamDescriptor(
 /// whose first pin happens to be an interesting net would otherwise be read as grounding itself.
 /// The two are mutually exclusive; a provider reporting both for one node is a hard error at
 /// elaboration.</para>
+///
+/// <para><b>Units</b> and <b>ResidualUnits</b> are what the provider said this node's potential and
+/// its residual are measured in, verbatim and uninterpreted — "V"/"A" for an electrical node,
+/// "K"/"W" for a thermal one. They are carried alongside <b>QuantityKind</b> rather than replacing
+/// it: the kind is what circuitRF acts on, and the raw strings are what makes a discipline nobody
+/// anticipated VISIBLE in a diagnostic instead of arriving silently classified as electrical. Empty
+/// when the provider states nothing, so a reader never has to tell absent from blank.</para>
 /// </summary>
 public sealed record ExternalNodeDescriptor(
     int              Index,
@@ -69,7 +76,9 @@ public sealed record ExternalNodeDescriptor(
     string           Label             = "",
     int?             SlavedTo          = null,
     bool             CollapsedToGround = false,
-    bool             Degenerate        = false);
+    bool             Degenerate        = false,
+    string           Units             = "",
+    string           ResidualUnits     = "");
 
 /// <summary>
 /// Everything circuitRF knows about an externally-provided device type. All of it is learned at

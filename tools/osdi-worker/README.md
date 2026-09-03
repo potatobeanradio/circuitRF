@@ -87,6 +87,32 @@ not hand back is omitted rather than reported with an invented value, and a defa
 express (NaN, an infinity — both used as "nothing set" sentinels) is emitted as JSON `null`, which
 the host reads as "no default to show".
 
+**7. A node's DISCIPLINE is read from the units the model declares.** This ABI names no discipline,
+but `OsdiNode` carries the units of both the node's potential and its residual, and those are
+unambiguous: Verilog-AMS's `thermal` is `"K"` against `"W"` where `electrical` is `"V"` against
+`"A"`. `describe` emits `"quantityKind":"thermal"|"electrical"` per node, **with the raw strings
+alongside** (`units`, `residualUnits`) so a discipline nobody anticipated is visible rather than
+silently classified as electrical.
+
+It is answered at `describe`, not at `probe`: a discipline is a property of the TYPE and needs
+nothing instantiated, while `probe` answers per-instance ROLES. Emitting nothing here made every OSDI
+node electrical on circuitRF's side, and with it every thermal path the host has — the ambient hold
+on an unconnected thermal terminal, the ground-reference check, the exclusion of a temperature from
+the candidate masters for an unwritten node — was unreachable code with no symptom but a solve that
+would not converge.
+
+**8. How many terminals the INSTANCE connects is not how many the TYPE declares.** OSDI passes the
+first to `setup_instance`, and it is what a model's `$port_connected` reads. `create` takes an
+optional `"connectedTerminals"`; absent, it defaults to the declared count, so a caller with nothing
+to say behaves exactly as before. Out of range — above the declared count, or below two — is refused
+with a sentence rather than clamped.
+
+Passing the declared count unconditionally, which is what this did until 2026-09, makes every
+terminal connected on every instance and the "not connected" branch unreachable. A model that grounds
+its own thermal node there instead writes **no equation** for it, having been assured the host wired
+it, and the node arrives as an all-zero row. `crf_therm` in the test model is that branch, and
+`verify.py` drives both sides of it.
+
 ## Temperature
 
 OSDI's `setup_instance` takes a temperature as a **required argument**, so circuitRF states it in

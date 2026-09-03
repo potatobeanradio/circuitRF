@@ -167,6 +167,122 @@ public sealed class OsdiWorkerTests
         Assert.Equal(rf.Current[NodeB], rc.Current[NodeB], 12);
     }
 
+    // ── O10/O11 — a node's discipline, and a terminal the instance does not connect ──
+
+    private const string ThermType = "crf_therm";
+    private const int    ThA = 0, ThB = 1, ThT = 2;
+    private const double ThG = 0.01, ThRth = 50.0;
+
+    private static IExternalDeviceInstance CreateTherm(
+        DeviceWorkerProvider p, int selfHeating, int? connectedTerminals = null)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["g"]   = ThG.ToString("R"),
+            ["rth"] = ThRth.ToString("R"),
+            ["sh"]  = selfHeating.ToString(),
+        };
+        if (connectedTerminals is int c)
+            parameters[DeviceWorkerProvider.ReservedConnectedTerminalsKey] = c.ToString();
+        return p.Create(ThermType, parameters);
+    }
+
+    /// <summary>
+    /// The classification circuitRF's whole thermal apparatus hangs off, read where the model states
+    /// it: this ABI names no discipline, but it carries the UNITS of a node's potential and of its
+    /// residual, and kelvin against watts is a temperature exactly as volts against amps is a
+    /// voltage.
+    ///
+    /// <para><b>Answered at DESCRIBE, with nothing instantiated.</b> A discipline is a property of the
+    /// TYPE; only a node ROLE — collapsed, degenerate — needs a live instance. Reading it from a probe
+    /// alone left every node of every OSDI model electrical, and with it every thermal path circuitRF
+    /// has: the ambient hold on an open thermal terminal, the ground-reference check, the exclusion of
+    /// a temperature from the candidate masters for an unwritten node.</para>
+    ///
+    /// <para>The electrical nodes are asserted too, and they are what stops this passing vacuously —
+    /// a worker that called everything thermal would satisfy the first line alone.</para>
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void O10_ANodesDisciplineIsReadFromTheUnitsTheModelDeclares()
+    {
+        using var p = Launch();
+
+        var d     = Assert.Single(p.Describe(), t => t.TypeId == ThermType);
+        var nodes = d.Nodes.ToDictionary(n => n.Index);
+
+        Assert.Equal(NodeQuantityKind.Thermal,    nodes[ThT].QuantityKind);
+        Assert.Equal(NodeQuantityKind.Electrical, nodes[ThA].QuantityKind);
+        Assert.Equal(NodeQuantityKind.Electrical, nodes[ThB].QuantityKind);
+
+        // The raw strings ride alongside the classification, uninterpreted. A discipline circuitRF
+        // has no case for then arrives as ITSELF, visible in a diagnostic, instead of silently
+        // becoming electrical.
+        Assert.Equal(("K", "W"), (nodes[ThT].Units, nodes[ThT].ResidualUnits));
+        Assert.Equal(("V", "A"), (nodes[ThA].Units, nodes[ThA].ResidualUnits));
+    }
+
+    /// <summary>
+    /// <c>$port_connected</c>, end to end. The count of terminals an INSTANCE connects is not the
+    /// count the type declares, and OSDI hands the first to instance setup — where a model reads it
+    /// to decide whether the host has wired a terminal it would otherwise have to ground itself.
+    ///
+    /// <para><b>What made this worth fixing.</b> Passing the declared count unconditionally makes
+    /// every terminal connected on every instance, so the "not connected" branch is unreachable.
+    /// A model that grounds its own thermal node there instead writes NO equation for it — it has
+    /// been assured the host wired it — and the node arrives as an all-zero row: a solve that does
+    /// not converge, with nothing anywhere saying why.</para>
+    ///
+    /// <para>Both halves are asserted, because they are different claims. The default is what every
+    /// caller that says nothing gets, and it must stay "all of them".</para>
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void O11_ATerminalTheInstanceDoesNotConnect_ReachesTheModel()
+    {
+        using var p = Launch();
+
+        double[] v = [1.0, 0.0, 20.0];
+
+        using (var all = CreateTherm(p, selfHeating: 1))
+        {
+            // Nothing stated: every terminal connected, and the model leaves its thermal node for
+            // the host to hold.
+            Assert.Empty(all.Descriptor.GroundedNodes);
+
+            var r = all.Evaluate(v);
+            Assert.Equal(v[ThT] / ThRth - ThG * v[ThA] * v[ThA], r.Current[ThT], 12);
+            Assert.Equal(1.0 / ThRth, r.Conductance[ThT, ThT], 12);
+        }
+
+        using (var open = CreateTherm(p, selfHeating: 1, connectedTerminals: 2))
+        {
+            // The SAME device told its thermal terminal is not connected grounds it itself.
+            Assert.Equal(ThT, Assert.Single(open.Descriptor.GroundedNodes));
+
+            var r = open.Evaluate(v);
+            Assert.Equal(0.0, r.Current[ThT], 12);
+
+            // The electrical half is untouched, which is what says these are otherwise one device.
+            Assert.Equal(ThG * (v[ThA] - v[ThB]), r.Current[ThA], 12);
+        }
+    }
+
+    /// <summary>
+    /// Out of range is refused with a sentence, not clamped. Above the declared count describes a
+    /// device this library does not have; below two is not a device at all. Clamping either would
+    /// stand a model up against a connection pattern nobody asked for, which converges.
+    /// </summary>
+    [FixtureFact(WorkerRel, HowTo)]
+    public void O12_AnImpossibleTerminalCountIsRefused()
+    {
+        using var p = Launch();
+
+        foreach (int bad in new[] { 1, 4 })
+        {
+            var ex = Assert.Throws<ExternalDeviceException>(() => CreateTherm(p, 1, connectedTerminals: bad));
+            Assert.Contains("connectedTerminals", ex.Message, StringComparison.Ordinal);
+        }
+    }
+
     // ── O2 — currents, charges and BOTH Jacobians against closed form ─────────
 
     [FixtureFact(WorkerRel, HowTo)]

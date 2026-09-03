@@ -2334,3 +2334,60 @@ The reader's half is a spelling change (`TEMP` → `temp`, via the alias table) 
 normalisation applied to a `.param`/`.subckt` DECLARATION of that name — circuitRF's scopes are
 ordinal, so a file writing `.PARAM TEMP=40` and `{TEMP}` would otherwise declare one name and
 reference another.
+
+## An OSDI model's nodes were all electrical, and every terminal always connected (2026-09-03)
+
+Two defects in the OSDI worker, both of which present as silence rather than as an error, found while
+establishing whether circuitRF can run openly published physics-based GaN HEMT compact models
+(brief PM1). Both are fixed; the fixes are in `tools/osdi-worker/osdi_worker.c`,
+`DeviceWorkerProvider` and `ComponentModelFactory`'s VerilogA path.
+
+**The worker never reported a node's quantity kind, so every thermal path in the repository was
+unreachable code.** `DeviceWorkerProvider` reads `quantityKind` and classifies `"thermal"`; the
+worker's node emission wrote `index`, `external` and `label` and nothing else. Every OSDI node was
+therefore `NodeQuantityKind.Electrical`, and with it `Elaborator.PinUnreferencedThermalNodes`,
+`NonlinearDcEngine.ReportThermalNodes` and the thermal exclusion in `DeriveMasters`' candidate list
+never ran on a compiled model. Nothing failed: an unconnected thermal terminal was simply a floating
+node with no DC solution, which spends the whole continuation budget and reports a residual against a
+supply branch.
+
+The information was already in the descriptor and needed no new ABI: `OsdiNode` carries `units` and
+`residual_units`, and Verilog-AMS's `thermal` discipline is `"K"` against `"W"` where `electrical` is
+`"V"` against `"A"`. **The classification is read at `describe`, not at `probe`** — a discipline is a
+property of the TYPE and needs nothing instantiated, while a probe measures per-instance ROLES
+(collapsed, degenerate). The raw strings go out beside it (`units`, `residualUnits`, now on
+`ExternalNodeDescriptor`) so a discipline nobody anticipated is visible rather than silently
+electrical. `ProbeNodes` was also repealing what describe said: it read `quantityKind` with a bare
+`""` fallback, so a worker that declared a thermal node and probed without mentioning it had that
+node turned back into an electrical one. It now falls back to the declared kind — a probe refines, it
+does not repeal, which is the rule the collapse report beside it already followed.
+
+**`setup_instance` was always told every terminal is connected**, because `cmd_create` passed
+`d->num_terminals` unconditionally. That argument is what `$port_connected` reads. A compact model
+that branches on it to decide whether to ground its own thermal node then takes the wrong branch:
+with self-heating off AND the terminal claimed connected, it writes **no equation at all** for that
+node — the grounding contribution sits in an unreachable branch — and the node arrives as an all-zero
+row. `create` now accepts an optional `connectedTerminals`, defaulting to the declared count (absent
+means "all of them", so every existing caller is unchanged) and refusing a value above the declared
+count or below two rather than clamping.
+
+**The number is `Pins`, and it had to reach three places, not one.** `ComponentModelFactory`'s
+VerilogA path forwards it under `DeviceWorkerProvider.ReservedConnectedTerminalsKey` (never as a
+model parameter — a model asked to accept a name it never declared refuses). But
+`Elaborator.BuildExternalDeviceNodes` also refused a net count below the type's external pin count,
+and refused an external pin reported as collapsed to ground — so a five-terminal model placed as a
+four-pin part could not be built even once the model had agreed to ground its own node. Both rules
+now key on the STATED count instead of the declared one: terminals beyond it carry no user net, are
+minted like internal nodes (or take node 0 when the model grounded them), and cannot be the member a
+collapse group settles on. The count must still match the nets exactly — a net count quietly
+differing from a terminal count is the one outcome nothing downstream can notice.
+
+**`minr` was added to the `$simparam` table** (1 mΩ). Both surveyed families ask for it and both carry
+their own 1 mΩ fallback, so this is exactness rather than a fix, recorded so it is not re-discovered
+as a mystery.
+
+The gate needs no proprietary artefact: `tools/fake-osdi-model` gained a fourth device, `crf_therm`,
+whose node 2 is declared in K/W and whose `setup_instance` is the only one in that library that reads
+its terminal count. `OsdiWorkerTests` O10-O12, `verify.py`, and
+`Engine.Tests/External/VerilogAConnectedTerminalsTests` (the whole chain: component → worker →
+collapse report → elaboration → DC solve) hold it.

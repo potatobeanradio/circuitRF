@@ -1287,13 +1287,32 @@ public sealed class Elaborator
         ExternalDeviceModel model, int[] declaredNets, string childPath, ElaboratedNetlist netlist)
     {
         var d = model.Descriptor;
-        if (declaredNets.Length != d.ExternalPinCount)
+
+        // HOW MANY OF THE TYPE'S TERMINALS THIS INSTANCE CONNECTS. Usually all of them, and then this
+        // is the old rule unchanged. A component that STATED a smaller number — a five-terminal model
+        // placed as a four-pin part, which is the ordinary way to say "I do not want a thermal pin on
+        // my schematic" — connects the leading terminals and leaves the rest open. The model was told
+        // the same number when it was created, so it has already decided what to do about them:
+        // typically grounding its own thermal node, which arrives here as a collapse.
+        //
+        // The count still has to MATCH the nets exactly, whichever way it was arrived at. A net count
+        // quietly differing from a terminal count is the one outcome nothing downstream can notice.
+        int connected = model.ConnectedPinCount ?? d.ExternalPinCount;
+        if (connected > d.ExternalPinCount)
             throw new ExternalDeviceException(
                 $"ExtDevice '{childPath}' (type '{d.TypeId}') declares {d.ExternalPinCount} " +
-                $"external pins but {declaredNets.Length} nets were given.");
+                $"external pins, but this component states {connected}. A model cannot be placed " +
+                $"with more pins than it has.");
+        if (declaredNets.Length != connected)
+            throw new ExternalDeviceException(
+                connected == d.ExternalPinCount
+                ? $"ExtDevice '{childPath}' (type '{d.TypeId}') declares {d.ExternalPinCount} " +
+                  $"external pins but {declaredNets.Length} nets were given."
+                : $"ExtDevice '{childPath}' (type '{d.TypeId}') is placed with {connected} of the " +
+                  $"type's {d.ExternalPinCount} pins, but {declaredNets.Length} nets were given.");
 
         var nodeIndex = new int[d.NodeCount];
-        for (int k = 0; k < d.ExternalPinCount; k++) nodeIndex[k] = declaredNets[k];
+        for (int k = 0; k < connected; k++) nodeIndex[k] = declaredNets[k];
 
 
         // An EXTERNAL pin collapsed to ground is refused rather than interpreted. The user wired a
@@ -1308,7 +1327,11 @@ public sealed class Elaborator
                 throw new ExternalDeviceException(
                     $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is reported both " +
                     $"as grounded and as slaved to node {node.SlavedTo} — it cannot be both.");
-            if (node.Index < d.ExternalPinCount)
+            // Only a pin the user actually WIRED is a contradiction. A terminal beyond the stated
+            // connection count has no net on it, and a model grounding one is precisely the right
+            // answer to having been told it is not connected — it is what stops that node arriving as
+            // an all-zero row.
+            if (node.Index < connected)
                 throw new ExternalDeviceException(
                     $"ExtDevice '{childPath}' (type '{d.TypeId}'): external pin {node.Index} is reported " +
                     $"as collapsed to ground, but a pin the user wires cannot be grounded from inside " +
@@ -1416,7 +1439,10 @@ public sealed class Elaborator
         var settled = new Dictionary<int, int>();
         foreach (var (master, members) in groupOf)
         {
-            var externals = members.Where(m => m < d.ExternalPinCount).ToList();
+            // A terminal the user did not wire carries no net, so it cannot be the member whose index
+            // the group settles on — it has nothing to contribute and would drag the group onto a
+            // node the design never named.
+            var externals = members.Where(m => m < connected).ToList();
 
             // Two terminals collapsed together means the device shorts two of the user's nets. That
             // is a real statement, and circuitRF cannot carry it: stamping at one net silently drops
@@ -1430,8 +1456,11 @@ public sealed class Elaborator
             if (externals.Count > 0) settled[master] = nodeIndex[externals[0]];
         }
 
-        // Now mint, for internal nodes that genuinely still need an unknown of their own.
-        for (int k = d.ExternalPinCount; k < d.NodeCount; k++)
+        // Now mint, for nodes that genuinely still need an unknown of their own — the internal ones,
+        // and any TERMINAL beyond the stated connection count, which has no net of the user's and is
+        // otherwise indistinguishable from an internal node. An unconnected thermal terminal minted
+        // here is what PinUnreferencedThermalNodes then finds and holds at the ambient.
+        for (int k = connected; k < d.NodeCount; k++)
         {
             var declared = d.Nodes.FirstOrDefault(n => n.Index == k);
             if (declared?.SlavedTo is not null) continue;      // takes its group's index below
