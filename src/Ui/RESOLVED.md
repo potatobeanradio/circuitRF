@@ -1,5 +1,78 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The ✕ on a floating Library palette did nothing — Dock draws that button inert (2026-09-02)
+
+Owner report: **the Library palette's floating window cannot be closed.** Also: the Properties inspector
+does not behave that way, and the tab's **Close context-menu command does** close it.
+
+**Two wrong diagnoses were made from reading the code, and one traced click settled it.** Worth recording
+because the reasoning failed the same way twice: every code path *looked* uniform across panels, so the
+owner's Library-vs-Properties asymmetry was explained away instead of believed. It was real, and it was
+the whole clue — **the floated panel and the docked one do not share a close path.**
+
+**What the trace showed.** A temporary click log on the host window, three real clicks:
+
+```
+click  ContentPresenter#PART_ContentPresenter < Button#PART_CloseButton < StackPanel < DockPanel
+       < Grid#PART_Grip < Border#PART_Border < Grid < ToolChromeControl <
+```
+
+…and **no `CloseDockable` entry beside any of them.** Dock 12.0.0.2 draws `PART_CloseButton` on a
+FLOATING `ToolChromeControl` and never wires it to anything. It is the same defect already recorded one
+control over in `CircuitRfStyles.axaml`, where that chrome's Float / Dock / Dock-as-Tabbed-Document items
+were found to do nothing and the dead menu button was removed rather than repaired. The context menu is a different path, and a working one,
+which is why Close closed it.
+
+**The docked ✕ is dead too** — established only after shipping a float-only fix and being told so. Every
+"the other panel is fine, so that path must work" step in this investigation turned out to be an
+assumption dressed as a deduction; the owner's Properties-versus-Library observation was about which one
+they happened to have floated, not about two different code paths.
+
+**The fix.** `Views.ToolChromeCloseButton` watches the TUNNELLING `PointerPressed`/`PointerReleased`
+pair, matches that one button by walking up from the event source to a `ToolChromeControl`, and calls
+`WorkspaceViewModel.CloseToolPanel`. The click means what the panel toggle means — `RememberPanelHome`,
+then `HideFloatingPanel` for a float (which closes the whole window when the panel is all it holds;
+closing only the dockable leaves the empty window on screen, the 2026-08-17 report over again) or
+`DockPanelHiding.Hide` for a docked panel (closing it lets the emptied `ToolDock` collapse out of the
+tree, and the only way back is a full rebuild — the flash that file exists over).
+
+**It is registered per `TopLevel`, and the first attempt was not.** Scoping the interception to the
+float's host window looked right — the docked chrome was *assumed* to work — and the owner's next report
+was that the docked panel still ignored its ✕. The button is one control used on two surfaces, so the
+helper is shared by the shell and every float, exactly as `WirePanelKeys` had to be for the same reason.
+Requiring a `ToolChromeControl` ancestor is what keeps it off everything else: a DOCUMENT tab's close
+button lives under a `DocumentControl`, so documents keep Dock's own path and with it the dirty-save
+prompt.
+
+**Not `Button.Click`, and that cost a round.** The obvious handler — `Button.ClickEvent` on the host
+window — never ran: the button flashes under the press and the event does not arrive, so something
+between the two marks it handled. **The tunnel pair is the only route KNOWN to reach this window**, because
+it is the route the diagnostic click was traced along; everything else about that button is inference.
+Pressed does not mark the event handled, so the button keeps drawing its own press feedback — the one part
+of it that was ever working — and a release landing anywhere else cancels, as on a real button.
+
+**Found on the way, and fixed with it: the window's OWN close box was inert too.** `OnClosing` cancelled
+the platform close for any tool float and did nothing else, to stay out of Dock's crashing
+`CloseWindow` → recursive `CloseDockable` cascade. Avoiding that cascade never required refusing the
+close: `CloseFloatingWindow` detaches the window first (so `OnClosed` returns at its own null guard) and
+closes it with none of it. The close box now cancels the platform close and posts `CloseFloatedToolPanels`.
+
+Three things worth keeping:
+
+- **The guard asks "is this a DOCUMENT float?", not "does it hold a tool?"** A real close was traced
+  arriving with `tool=False` on a window titled `Window` — a host whose model layout no longer named the
+  panel it was showing. The old question sent exactly that window into the crashing cascade. The teardown
+  is correct for an empty window too: it detaches and closes it.
+- **The panels survive being closed.** `CircuitRfDockFactory` holds the tool instances for the session,
+  so the toolbar toggles, View ▸ Panels and the P/A keys bring back the panel the user had — same
+  rectangle, own state — through `RestorePanelToItsHome`.
+- **Order is load-bearing:** the rectangle comes from `CaptureDockLayout`, so a place must be recorded
+  *before* its window leaves the tree. Reversed, the panel returns as a fresh default-placed float.
+
+Gate: `tests/Ui.Tests/DockWindowBehaviourTests.cs` (seven tests). The interception itself is pinned by
+source scan — `CrfHostWindow` cannot be constructed without an Avalonia platform, and this project's
+tests may not call Avalonia at runtime.
+
 ## Technology ▾ ▸ Edit… opens the .ctech in a narrow pane beside the layout (2026-09-02)
 
 Owner request: the layout editor's Technology flyout should read **Edit…**, and the command should

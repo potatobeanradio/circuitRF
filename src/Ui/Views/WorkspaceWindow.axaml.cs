@@ -45,6 +45,10 @@ public partial class WorkspaceWindow : Window
         // Dock's teardown); document tear-offs still close normally.
         MainDockControl.HostWindowFactory = () => new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow();
         AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
+        // A DOCKED tool panel's ✕ is the same dead Dock button as a floated one's, and the first fix
+        // reached only the float (owner, 2026-09-02). Same helper, registered on this TopLevel too; no
+        // window fallback, because the shell must never close itself over an unidentifiable panel.
+        ToolChromeCloseButton.Attach(this, () => DataContext as WorkspaceViewModel);
         FitToScreen();
         // R-dock-14: bring the floating tool panels forward with the workspace. `Window` exposes no
         // OnActivated to override, so this is the event.

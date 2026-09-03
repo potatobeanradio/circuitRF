@@ -629,9 +629,11 @@ public partial class App : Application
     /// <summary>
     /// Force-closes every floating (torn-off) tool/document window still open across every
     /// WorkspaceWindow, so File->Quit actually terminates the app rather than leaving them running.
-    /// Tool floats have an inert OS close box (see CrfHostWindow) to avoid a Dock teardown crash;
-    /// CloseForLayoutRebuild bypasses that guard safely since the app is exiting, not rebuilding a
-    /// layout. Any dirty document content in a floated window was already offered a save/discard
+    /// A tool float's OS close box does not close the window synchronously (see CrfHostWindow: it
+    /// cancels the platform close and tears down on a later dispatcher pass, to stay out of Dock's
+    /// crashing cascade), which is no use to a shutdown that is about to call Environment.Exit —
+    /// CloseForLayoutRebuild is the same teardown, run now. Any dirty document content in a floated
+    /// window was already offered a save/discard
     /// prompt by the owning WorkspaceWindow's own OnClosing (HasAnyDirtyWork(includeFloated: true)),
     /// so nothing here is unsaved by the time this runs.
     /// </summary>
@@ -659,8 +661,8 @@ public partial class App : Application
         // Once File->Quit is in flight, finish the job the instant the last WorkspaceWindow has
         // closed (every dirty-save prompt for it AND any floated content it owns has already run) —
         // cross-platform, not just macOS: without this, a torn-off tool/document window (whose OS
-        // close box is deliberately inert, see CrfHostWindow) is never touched by anything else and
-        // the app never actually terminates.
+        // close box tears down on a LATER dispatcher pass, see CrfHostWindow) is never touched by
+        // anything else and the app never actually terminates.
         if (_isShuttingDown)
         {
             if (!anyOpen)

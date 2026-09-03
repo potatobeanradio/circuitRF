@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Dock.Model.Controls;
 using Dock.Model.Core;
@@ -107,6 +108,30 @@ public static class DockPanelHiding
             if (child is not null && HoldsOtherTools(child, tool)) return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Every <see cref="ITool"/> in <paramref name="layout"/>, outermost first.
+    ///
+    /// <para>For the one caller that has to act on a whole floating window rather than on one panel: its
+    /// OS close box, which takes every tool in the window with it and therefore has to write down where
+    /// each of them was before it goes.</para>
+    /// </summary>
+    public static IReadOnlyList<ITool> ToolsIn(IDockable? layout)
+    {
+        var found = new List<ITool>();
+        Collect(layout, found);
+        return found;
+    }
+
+    private static void Collect(IDockable? dockable, List<ITool> into)
+    {
+        if (dockable is null) return;
+        if (dockable is ITool tool) into.Add(tool);
+        if (dockable is not IDock { VisibleDockables: { } children }) return;
+
+        foreach (var child in children)
+            Collect(child, into);
     }
 
     /// <summary>Whether <paramref name="target"/> is still somewhere in the tree.</summary>

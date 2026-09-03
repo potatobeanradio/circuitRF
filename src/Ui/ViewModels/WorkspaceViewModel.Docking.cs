@@ -360,6 +360,115 @@ public partial class WorkspaceViewModel
         }
     }
 
+    /// <summary>
+    /// Closes a floating TOOL window because the user pressed its own close box.
+    ///
+    /// <para><b>The bug this fixes (owner, 2026-09-02): the Library palette's floating window could not be
+    /// closed.</b> <see cref="Dock.CrfHostWindow.OnClosing"/> cancelled the close outright for any window
+    /// holding a tool, because Dock's own close cascade (<c>HostWindow.OnClosed</c> →
+    /// <c>IFactory.CloseWindow</c> → a recursive <c>CloseDockable</c>) throws an unrecoverable
+    /// <see cref="NullReferenceException"/> on a tool teardown. Cancelling avoided the crash and left the
+    /// user with a window that ignored its own close box — the only way out was to drag the panel back
+    /// into the shell.</para>
+    ///
+    /// <para><b>Why the close box does not need that cascade at all.</b> It is the same operation the
+    /// panel toggle already performs on a floating panel, and has since 2026-08-17: write the window's
+    /// rectangle down (<see cref="RememberPanelHome"/>), then close the window through
+    /// <c>CloseFloatingWindow</c>, which detaches it before closing so Dock's cascade never starts. The
+    /// panels are not destroyed — the factory holds the instances for the session, so the toolbar toggle,
+    /// View ▸ Panels and the <c>P</c>/<c>A</c> keys all bring the same panel back, at the same rectangle,
+    /// with its own state intact.</para>
+    ///
+    /// <para>Every tool in the window is recorded, not just the front tab: the close box takes a shared
+    /// float's co-tenants with it, and each of them has to be able to come back on its own.</para>
+    /// </summary>
+    internal void CloseFloatingToolWindow(IDockWindow window)
+    {
+        try
+        {
+            // BEFORE the window leaves the tree — RememberPanelHome reads the live arrangement for the
+            // rectangle, and there is no rectangle to read once the window is detached.
+            foreach (var tool in DockPanelHiding.ToolsIn(window.Layout))
+                if (tool.Id is { Length: > 0 } id && DockPanelIds.All.Contains(id))
+                    RememberPanelHome(id, tool);
+
+            _factory.CloseFloatingWindow(_factory.CurrentRoot, window);
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not close the floating panel window: {ex.Message}");
+        }
+        finally
+        {
+            RaiseToolPanelVisibilityChanged();
+        }
+    }
+
+    /// <summary>
+    /// Closes ONE tool panel because the user pressed the ✕ in its own chrome — docked or floating.
+    ///
+    /// <para><b>Why the ✕ needs us at all</b> (owner, 2026-09-02, and it is the whole of the reported
+    /// bug): on a FLOATING tool chrome, Dock 12.0.0.2's <c>PART_CloseButton</c> does nothing. Traced
+    /// from a real click — the press reaches
+    /// <c>Button#PART_CloseButton &lt; StackPanel &lt; DockPanel &lt; Grid#PART_Grip &lt; …
+    /// &lt; ToolChromeControl</c> and <see cref="CircuitRfDockFactory.CloseDockable"/> is never
+    /// entered. It is the same defect already recorded one control over in
+    /// <c>CircuitRfStyles.axaml</c>, where that chrome's MENU items (Float / Dock / Dock as Tabbed
+    /// Document) were found to do nothing either and the dead button was removed. A DOCKED panel's ✕
+    /// is unaffected and always worked, which is exactly the asymmetry the owner saw between the
+    /// floated Library and the docked Properties inspector.</para>
+    ///
+    /// <para>So <see cref="Views.ToolChromeCloseButton"/> intercepts that click — on the shell and on
+    /// every float alike, since the first fix reached only the float and the docked panel went on
+    /// ignoring its own ✕ — and calls this. The behaviour
+    /// is deliberately the panel toggle's, not a bare <c>CloseDockable</c>: remember where the panel
+    /// was, then close the whole window when this panel is all it holds — closing just the dockable
+    /// leaves the empty floating window on screen, which is the 2026-08-17 report all over again.</para>
+    /// </summary>
+    /// <returns>
+    /// True when this actually closed something. False when the panel cannot be located in a floating
+    /// window — the caller then closes the host window itself, which is never wrong for a tool float and
+    /// is a great deal better than doing nothing because the bookkeeping was unavailable. That case is
+    /// real: a close was traced arriving on a host whose model layout no longer named the panel it was
+    /// showing.
+    /// </returns>
+    internal bool CloseToolPanel(ITool tool)
+    {
+        try
+        {
+            if (tool.Id is not { Length: > 0 } id) return false;
+            if (!_factory.TryFindTool(tool, out var parent, out var window) || parent is null) return false;
+
+            RememberPanelHome(id, tool);
+
+            // A FLOATING panel is put away by closing its window; a DOCKED one is HIDDEN in place. The
+            // asymmetry, and why closing a docked panel outright is the wrong move, is DockPanelHiding's
+            // whole subject — this is the same pair of branches ToggleToolPanelCore takes.
+            if (window is not null)
+            {
+                HideFloatingPanel(id, tool, window);
+                return true;
+            }
+
+            try { DockPanelHiding.Hide(_factory, tool); }
+            catch (Exception hideFailed)
+            {
+                Messages.Warning($"Could not hide the {tool.Title} panel: {hideFailed.Message}");
+                try { _factory.ForceCloseDockable(tool); } catch { /* reported above */ }
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not close the {tool.Title} panel: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            RaiseToolPanelVisibilityChanged();
+        }
+    }
+
     // ── Where a closed panel goes back to ─────────────────────────────────────
     //
     // Owner, 2026-08-17: pressing A hid the Array Inductance panel and pressing it again brought it back

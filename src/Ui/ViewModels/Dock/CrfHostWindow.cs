@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.Threading;
 using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
@@ -8,18 +9,25 @@ using Dock.Model.Core;
 namespace CircuitRF.Ui.ViewModels.Dock;
 
 /// <summary>
-/// Host window used for dock tear-offs. Subclasses Dock's <see cref="HostWindow"/> to (1)
-/// neutralize the OS close box for floating windows that contain a <b>Tool</b> (Properties,
-/// Analyses, Project Tree, Palette, Messages), and (2) give every tear-off window the SAME
+/// Host window used for dock tear-offs. Subclasses Dock's <see cref="HostWindow"/> to (1) close a
+/// floating window that contains a <b>Tool</b> (Properties, Analyses, Project Tree, Palette,
+/// Messages) our own way rather than the platform's, and (2) give every tear-off window the SAME
 /// window-level background <see cref="WorkspaceWindow"/> itself uses.
 ///
 /// Background (crash fix): closing a torn-off TOOL window drives Dock's FactoryBase.CloseDockable
 /// down a window-teardown path that dereferences an already-stripped floating RootDock and throws
 /// an unrecoverable NullReferenceException (confirmed by instrumentation). Document tear-off windows
 /// do not hit that path and close cleanly. Rather than patch the moving null inside the library's
-/// teardown, we prevent the crashing entry point: a tool float window's close box is inert -- the
-/// user re-docks the panel by dragging its tab back. Document float windows are unaffected and
-/// close normally.
+/// teardown, we never enter it: the OS close is cancelled, and the window is torn down instead by
+/// <see cref="CloseFloatedToolPanels"/> -- write each panel's place down, detach, close -- which is
+/// the same route the panel toggle has taken for a floating panel since 2026-08-17. Document float
+/// windows are unaffected and close normally.
+///
+/// <b>This used to make the close box INERT, and that was a bug in its own right</b> (owner,
+/// 2026-09-02: the Library palette's floating window could not be closed). Avoiding the crash never
+/// required refusing the close, only refusing the library's cascade. The panels survive the close --
+/// the factory holds the instances for the session -- so the toolbar toggles, View ▸ Panels and the
+/// P/A keys bring the same panel back at the same rectangle, with its own state intact.
 ///
 /// Background (§1, brief-housekeeping-tearoff-palette-repo.md): <c>WorkspaceWindow.axaml</c>
 /// explicitly sets <c>Background="{DynamicResource SystemChromeLowColor}"</c> on itself, but
@@ -32,8 +40,8 @@ namespace CircuitRF.Ui.ViewModels.Dock;
 /// </summary>
 public class CrfHostWindow : HostWindow
 {
-    // True only while CloseForLayoutRebuild is tearing this window down. The tool-float close guard
-    // below exists to neutralize the USER's close box, not to make the window immortal.
+    // True only while CloseForLayoutRebuild is tearing this window down, so the OnClosing hook below
+    // lets that close through instead of re-entering its own teardown.
     private bool _closingForLayoutRebuild;
 
     public CrfHostWindow()
@@ -45,6 +53,12 @@ public class CrfHostWindow : HostWindow
         // (owner, 2026-08-17). This is a second TopLevel, so it needs its own registration; the shortcut
         // itself, and why it is not solved by keeping focus in the shell, is in Views.WirePanelKeys.
         Views.WirePanelKeys.Attach(this, Views.WirePanelKeys.ResolveWorkspace);
+
+        // The ✕ on this float's tool chrome is inert in Dock 12.0.0.2 — see Views.ToolChromeCloseButton,
+        // which is shared with the shell because the docked chrome has exactly the same dead button. The
+        // fallback is this window: a floating tool window exists to hold panels, so closing it is what
+        // the ✕ means even when no single panel can be named.
+        Views.ToolChromeCloseButton.Attach(this, Views.WirePanelKeys.ResolveWorkspace, CloseFloatedToolPanels);
     }
 
     /// <summary>
@@ -160,14 +174,78 @@ public class CrfHostWindow : HostWindow
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        // If this floating window hosts any Tool, cancel the OS close. Re-dock by dragging.
-        if (!_closingForLayoutRebuild && FloatsAnyTool())
+        // Anything that is not a DOCUMENT float is closed OUR way, never the platform's: cancel this
+        // close and run the safe teardown on the next dispatcher pass. See CloseFloatedToolPanels.
+        //
+        // Asked as "no documents here" rather than "a tool is here" on purpose. A real close was traced
+        // arriving with `tool=False` on a window titled "Window" — a host whose model layout no longer
+        // named what it was showing — and the old question sent exactly that case into Dock's crashing
+        // cascade, which is the one place it must never go. The teardown below is correct for an empty
+        // window too: it detaches and closes it.
+        if (!_closingForLayoutRebuild && !FloatsAnyDocument())
         {
             e.Cancel = true;
+            Dispatcher.UIThread.Post(CloseFloatedToolPanels);
             return;
         }
 
         base.OnClosing(e);
+    }
+
+    /// <summary>True when the floated layout contains at least one <see cref="IDocument"/>.</summary>
+    internal bool FloatsAnyDocument()
+    {
+        var layout = Window?.Layout;
+        return layout is not null && ContainsDocument(layout);
+    }
+
+    private static bool ContainsDocument(IDockable dockable)
+    {
+        if (dockable is IDocument)
+            return true;
+
+        if (dockable is IDock { VisibleDockables: { } children })
+        {
+            foreach (var child in children)
+            {
+                if (child is not null && ContainsDocument(child))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Closes this tool float the way the panel toggle already closes one — record where each panel was,
+    /// detach the window, close it — so the close box works without ever entering Dock's crashing cascade.
+    ///
+    /// <para><b>Posted rather than run inside <see cref="OnClosing"/></b>: the teardown closes this same
+    /// window, and re-entering the platform's close handling from inside its own notification is a trap
+    /// worth not setting.</para>
+    ///
+    /// <para>The three fallbacks below are the three hosts this class serves. With a workspace — the
+    /// application — the workspace does it, because only it can remember where the panels go. Without one
+    /// (the standalone wBond and harmonicaRF binaries), the factory still knows how to deregister a
+    /// floating window. With neither, <see cref="CloseForLayoutRebuild"/> is the same detach-then-close
+    /// minus the bookkeeping.</para>
+    /// </summary>
+    private void CloseFloatedToolPanels()
+    {
+        var dockWindow = Window;
+        if (dockWindow is not null && Views.WirePanelKeys.ResolveWorkspace() is { } workspace)
+        {
+            workspace.CloseFloatingToolWindow(dockWindow);
+            return;
+        }
+
+        if (dockWindow?.Factory is CircuitRfDockFactory factory)
+        {
+            factory.CloseFloatingWindow(factory.CurrentRoot, dockWindow);
+            return;
+        }
+
+        CloseForLayoutRebuild();
     }
 
     /// <summary>

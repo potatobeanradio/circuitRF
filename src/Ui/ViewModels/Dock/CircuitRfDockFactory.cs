@@ -90,8 +90,8 @@ public class CircuitRfDockFactory : Factory
         // Required for tab tear-off: tells Dock what window type to create when a tab
         // is dragged outside the DockControl bounds.  DockControl.HostWindowFactory
         // is also set in WorkspaceWindow code-behind (belt-and-suspenders).
-        // CrfHostWindow neutralizes the OS close box for TOOL tear-offs (whose close path
-        // crashes Dock's teardown); document tear-offs still close normally.
+        // CrfHostWindow redirects the OS close box for TOOL tear-offs to its own teardown (Dock's
+        // own close path crashes for a tool); document tear-offs still close normally.
         DefaultHostWindowLocator = () => new CrfHostWindow();
     }
 

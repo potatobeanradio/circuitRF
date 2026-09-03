@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using CircuitRF.Ui.Docking;
@@ -558,6 +559,229 @@ public sealed class DockWindowBehaviourTests
 
     private static CircuitRF.Ui.ViewModels.SchematicViewModel NewSchematicViewModel() =>
         new(new CircuitRF.Ui.Schematic.SchematicEditModel());
+
+    // ── Reported bug: a floating TOOL window ignored its own close box ────────
+
+    /// <summary>
+    /// Owner report, 2026-09-02: the Library palette's floating window could not be closed.
+    ///
+    /// <para>Root cause: <c>CrfHostWindow.OnClosing</c> cancelled the close for ANY window holding a
+    /// tool — the guard that keeps Dock's crashing tool teardown from ever starting — and did nothing
+    /// else, so the close box was inert and the only way out was to drag the panel back. The guard is
+    /// still right about the cascade; it was wrong to make refusing the close the whole answer. It now
+    /// cancels the PLATFORM close and runs the teardown the panel toggle has used for a floating panel
+    /// since 2026-08-17.</para>
+    ///
+    /// <para>The report named the Library, but nothing here was ever Library-specific:
+    /// <c>FloatsAnyTool</c> is the only test the guard applied, so every tool float — Properties,
+    /// Analyses, Project Tree, Messages, the two wBond panels — behaved identically, and all of them
+    /// are fixed by the same change.</para>
+    /// </summary>
+    [Fact]
+    public void TheCloseBoxOfAToolFloat_TearsTheWindowDown_RatherThanBeingIgnored()
+    {
+        var src = ReadRepoFile("src/Ui/ViewModels/Dock/CrfHostWindow.cs");
+
+        var i = src.IndexOf("protected override void OnClosing(", StringComparison.Ordinal);
+        Assert.True(i > 0, "CrfHostWindow.OnClosing not found");
+        var onClosing = src[i..src.IndexOf("\n    /// <summary>", i, StringComparison.Ordinal)];
+
+        // The cancel stays — entering Dock's CloseWindow cascade for a tool is the crash this class
+        // exists to prevent — but it must now be followed by our own teardown.
+        Assert.Contains("e.Cancel = true;", onClosing);
+        Assert.Contains("Dispatcher.UIThread.Post(CloseFloatedToolPanels);", onClosing);
+
+        // Asked as "not a document float", never "holds a tool": a real close was traced arriving on a
+        // window whose model layout no longer named the panel it was showing, and the old question sent
+        // exactly that window into the crashing cascade.
+        Assert.Contains("!FloatsAnyDocument()", onClosing);
+        Assert.DoesNotContain("FloatsAnyTool()", onClosing);
+
+        var j = src.IndexOf("private void CloseFloatedToolPanels()", StringComparison.Ordinal);
+        Assert.True(j > 0, "CloseFloatedToolPanels not found");
+        var body = src[j..];
+
+        // The application route: the workspace, because only it remembers where a panel goes back to.
+        Assert.Contains("workspace.CloseFloatingToolWindow(dockWindow);", body);
+
+        // …and the standalone binaries, which have no workspace but do have the factory's own
+        // deregistering close.
+        Assert.Contains("factory.CloseFloatingWindow(factory.CurrentRoot, dockWindow);", body);
+    }
+
+    /// <summary>
+    /// Closing the window loses the panel unless its place is written down FIRST — the rectangle comes
+    /// from the live arrangement, and there is no live arrangement once the window is detached. Same
+    /// ordering the floating half of the panel toggle already depends on.
+    /// </summary>
+    [Fact]
+    public void ClosingAToolFloat_RecordsEveryPanelsPlace_BeforeTheWindowLeavesTheTree()
+    {
+        var src = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.Docking.cs");
+
+        var i = src.IndexOf("internal void CloseFloatingToolWindow(", StringComparison.Ordinal);
+        Assert.True(i > 0, "CloseFloatingToolWindow not found");
+        var body = src[i..src.IndexOf("\n    /// <summary>", i, StringComparison.Ordinal)];
+
+        var remembered = body.IndexOf("RememberPanelHome(id, tool);", StringComparison.Ordinal);
+        var closed     = body.IndexOf("_factory.CloseFloatingWindow(", StringComparison.Ordinal);
+
+        Assert.True(remembered > 0, "each panel's place must be recorded");
+        Assert.True(closed > remembered, "the window must be closed only after every place is recorded");
+
+        // Every tool in the window, not just the front tab: a shared float's co-tenants go with it.
+        Assert.Contains("DockPanelHiding.ToolsIn(window.Layout)", body);
+
+        // The toolbar's own toggles read the tree, so they have to be renotified once it changes.
+        Assert.Contains("RaiseToolPanelVisibilityChanged();", body);
+    }
+
+    /// <summary>
+    /// <c>ToolsIn</c> is what makes the close box's bookkeeping complete — it must find a panel however
+    /// deeply the float has been split, and must not report the docks holding them.
+    /// </summary>
+    [Fact]
+    public void ToolsIn_FindsEveryToolInANestedFloatLayout()
+    {
+        var palette    = new PaletteTool();
+        var properties = new PropertiesTool();
+
+        var f = new CircuitRfDockFactory();
+        var layout = new ProportionalDock
+        {
+            VisibleDockables = f.CreateList<IDockable>(
+                ToolDockWith(palette),
+                new ProportionalDock { VisibleDockables = f.CreateList<IDockable>(ToolDockWith(properties)) }),
+        };
+
+        var found = DockPanelHiding.ToolsIn(layout);
+
+        Assert.Equal(2, found.Count);
+        Assert.Contains(palette,    found);
+        Assert.Contains(properties, found);
+    }
+
+    /// <summary>
+    /// The teardown the close box now reaches, exercised on the real factory: the window leaves the
+    /// root and the panel leaves the tree, so the toolbar toggle reads it as closed and puts it back.
+    /// Headless-safe — a window built from a captured layout has no <c>Host</c>, which is exactly the
+    /// case <c>CloseFloatingWindow</c> documents itself as safe for.
+    /// </summary>
+    [Fact]
+    public void ClosingTheFloatingWindow_TakesThePanelOutOfTheTree()
+    {
+        var factory = new CircuitRfDockFactory();
+        var root = factory.CreateLayoutFromState(new CwsDockLayout
+        {
+            Panels = [new CwsDockPanel { Id = DockPanelIds.ProjectTree, Side = DockSide.Left, Active = true, Proportion = 1.0 }],
+            FloatingWindows =
+            [
+                new CwsFloatingWindow { X = 120, Y = 90, Width = 340, Height = 480, Panels = [DockPanelIds.Palette] },
+            ],
+        });
+
+        var palette = factory.ToolById(DockPanelIds.Palette)!;
+        Assert.True(factory.TryFindTool(palette, out _, out var window));
+        Assert.NotNull(window);
+
+        factory.CloseFloatingWindow(root, window!);
+
+        Assert.Empty(root.Windows!);
+        Assert.False(factory.TryFindTool(palette, out _, out _));
+    }
+
+    /// <summary>
+    /// The reported bug itself (owner, 2026-09-02): the ✕ on a FLOATING Library palette did nothing.
+    ///
+    /// <para>Traced from a real click, which is the only reason this is known rather than guessed —
+    /// the press reaches <c>Button#PART_CloseButton &lt; StackPanel &lt; DockPanel &lt; Grid#PART_Grip
+    /// &lt; Border#PART_Border &lt; Grid &lt; ToolChromeControl</c>, and
+    /// <c>CircuitRfDockFactory.CloseDockable</c> is never entered. Dock 12.0.0.2 draws that button on a
+    /// floating tool chrome and leaves it inert — the same defect already recorded one control over in
+    /// <c>CircuitRfStyles.axaml</c>, where the chrome's Float / Dock / Dock-as-Tabbed-Document items
+    /// were found to do nothing and the dead button was removed rather than repaired.</para>
+    ///
+    /// <para>A DOCKED panel's ✕ goes through Dock's own path and has always worked, which is the
+    /// asymmetry the owner saw between the floated Library and the docked Properties inspector — so the
+    /// interception lives on the FLOAT's host window and cannot reach the docked chrome.</para>
+    /// </summary>
+    [Fact]
+    public void TheCloseGlyphOnAToolChrome_IsActedOnByUs_BecauseDockLeavesItInert()
+    {
+        var src = ReadRepoFile("src/Ui/Views/ToolChromeCloseButton.cs");
+
+        // TUNNELLING pointer events, not Button.Click, and that is measured rather than preferred: a
+        // Click handler on the window never ran (the button flashed under the press and the event did
+        // not arrive), while the tunnel pair is the route the click was actually traced along.
+        Assert.Contains("PointerPressedEvent", src);
+        Assert.Contains("PointerReleasedEvent", src);
+        Assert.Contains("RoutingStrategies.Tunnel", src);
+        // The doc comment NAMES Button.ClickEvent — it records that it was tried and measured not to
+        // arrive, so nobody simplifies back to it. What must not exist is a REGISTRATION, which reads
+        // "…ClickEvent," as the first argument to AddHandler.
+        Assert.DoesNotContain("ClickEvent,", src);
+
+        // Only that one button, identified the way the trace identified it — and only under TOOL chrome,
+        // which is what keeps a document tab's own close button on Dock's path (and its save prompt).
+        Assert.Contains("PART_CloseButton", src);
+        Assert.Contains("ToolChromeControl chrome", src);
+
+        // A release somewhere other than the armed button cancels, as on any working button.
+        Assert.Contains("ReferenceEquals(ChromeOfCloseButton", src);
+        Assert.Contains("e.Handled = true;", src);
+
+        // …and it closes the PANEL through the workspace, with the caller's fallback when none is named.
+        Assert.Contains("workspace.CloseToolPanel(tool)", src);
+        Assert.Contains("unresolved?.Invoke();", src);
+    }
+
+    /// <summary>
+    /// The first fix reached only the FLOAT, so a docked panel went on ignoring its own ✕ (owner,
+    /// 2026-09-02, second report). The button is the same control on both surfaces, so the interception
+    /// is registered per <c>TopLevel</c> — the shell and every float — exactly as <c>WirePanelKeys</c>
+    /// had to be for the same reason.
+    /// </summary>
+    [Fact]
+    public void TheInterception_IsRegisteredOnTheShellAsWellAsEveryFloat()
+    {
+        Assert.Contains("ToolChromeCloseButton.Attach(this, () => DataContext as WorkspaceViewModel)",
+                        ReadRepoFile("src/Ui/Views/WorkspaceWindow.axaml.cs"));
+
+        // The float passes a fallback — closing its own window — because a tool float exists to hold
+        // panels. The shell passes none: it must never close itself over an unidentifiable panel.
+        Assert.Contains("ToolChromeCloseButton.Attach(this, Views.WirePanelKeys.ResolveWorkspace, CloseFloatedToolPanels)",
+                        ReadRepoFile("src/Ui/ViewModels/Dock/CrfHostWindow.cs"));
+    }
+
+    /// <summary>
+    /// The ✕ must mean what the panel toggle means, not a bare <c>CloseDockable</c>: remember the place,
+    /// then hide a docked panel where it stands, or close the WINDOW when a floated one is all it holds. Closing only the dockable leaves the empty
+    /// floating window on screen — the 2026-08-17 report, which <c>HideFloatingPanel</c> already solves.
+    /// </summary>
+    [Fact]
+    public void ClosingOneFloatingPanel_RemembersItsPlace_AndGoesThroughTheSameHideAsTheToggle()
+    {
+        var src = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.Docking.cs");
+
+        var i = src.IndexOf("internal bool CloseToolPanel(", StringComparison.Ordinal);
+        Assert.True(i > 0, "CloseToolPanel not found");
+        var body = src[i..src.IndexOf("\n    // ──", i, StringComparison.Ordinal)];
+
+        var remembered = body.IndexOf("RememberPanelHome(id, tool);", StringComparison.Ordinal);
+        var hidden     = body.IndexOf("HideFloatingPanel(id, tool, window);", StringComparison.Ordinal);
+
+        Assert.True(remembered > 0, "the panel's place must be recorded");
+        Assert.True(hidden > remembered, "the place must be recorded before the window goes");
+
+        // A DOCKED panel is HIDDEN in place, never closed: closing lets the emptied ToolDock collapse out
+        // of the tree, and the only way back is a full rebuild — the flash DockPanelHiding exists over.
+        Assert.Contains("DockPanelHiding.Hide(_factory, tool)", body);
+
+        // Not findable in the tree reports FALSE rather than doing nothing — the caller then closes the
+        // host window, which is never wrong for a tool float.
+        Assert.Contains("return false;", body);
+        Assert.Contains("RaiseToolPanelVisibilityChanged();", body);
+    }
 
     private static string ReadRepoFile(string relativePath)
     {
