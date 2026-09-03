@@ -609,6 +609,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         double   width     = -1,
         double   height    = -1)
     {
+        Gesture.Note("addPlot", $"{plotType} (now {Plots.Count + 1})");
         bool square = plotType is PlotType.Smith or PlotType.Polar;
 
         double w = width > 0 ? width : (square ? DefaultSquareSize : DefaultPlotWidth);
@@ -923,6 +924,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
     public void RemovePlot(PlotContainerViewModel container)
     {
+        Gesture.Note("removePlot", $"{container.PlotVM.Plot.PlotType} traces={container.PlotVM.Plot.Traces.Count}");
         UndoRedo.Do(new RemovePlotsCommand(new[] { container }, this));
     }
 

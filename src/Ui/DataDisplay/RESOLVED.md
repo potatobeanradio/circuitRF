@@ -1822,3 +1822,57 @@ something early in startup. `CrashReporter.MarkUiThread()` captures the id once 
 `OnFrameworkInitializationCompleted` — which runs there by definition — and `Note` compares integers.
 That also keeps `CrashReporter` free of any Avalonia reference.
 
+### Gesture breadcrumbs: the trail now records the click, not only the failure (2026-09-03)
+
+By round 6 a failing resolve records the cube, its buffer, the slice, the branch-selecting trace
+state, the group inventory, the stack, the faulting index pair and a replay. What no trail has ever
+carried is **what the user did**. One reported trail shows three identical failures five seconds
+apart — someone retrying something, with nothing anywhere to say what.
+
+`src/Ui/DataDisplay/Gesture.cs` writes one `dd: …` line per Data Display gesture:
+
+```
+[08:06:53.420 t10] source npy load: 2 cube(s), every one shape-consistent
+[08:06:53.421 t10] run: begin 'SP1' (601 work unit(s))
+[08:06:53.421 t10] run: end 'SP1'
+[08:06:53.423 t10] dd: addPlot — Smith (now 1)
+[08:06:53.456 t10] dd: row.matrix — SP1.S -> Z
+[08:06:53.458 t10] dd: row.matrix — SP1.Z -> S
+```
+
+**The important design point: buttons are not where the resolve's inputs live.** Instrumenting
+`RelayCommand`s alone would have missed the S → Z → S toggle that the FIRST report of this crash
+described (1.0.0-beta.6), because a trace card's matrix type, signal, group, source and transform are
+**combo-box property changes**, not commands. Those go through their `On…Changed` partials, which is
+also the only place they fire on an actual change rather than on every notification. The instrumented
+surface is exactly what a resolve reads:
+
+| where | gestures |
+|---|---|
+| `PlotInspectorViewModel` | `addTrace`/`addContourTrace`/`addSummaryTrace`/`autoFillSummary` (each naming the plot type, existing trace count and selected source — the add path branches on the first two), `plotType=…`, `closeInspector` |
+| `TraceRowViewModel` | `row.matrix`, `row.signal`, `row.group`, `row.source`, `row.transform`, `row.z0Override`, `row.remove` |
+| `AxisRoleRowViewModel` | `axis.role` → X / pinned[n] / family — these rewrite the `slice=` field every failure note prints |
+| `DataDisplayViewModel` | `addPlot`, `removePlot` |
+| `DataSourceLibraryViewModel` | `library.reloadChanged` (the post-run auto-refresh), `library.remove` |
+| `DataSourceEntryViewModel` | `source.reload`, `source.remove` |
+
+**What is deliberately NOT recorded**, and why: continuous gestures — marker drags, pan, wheel zoom —
+fire per frame, would drown the trail, and cannot change what a trace READS. Pure view toggles
+(contour fill/labels/colours, autoscale, export) are excluded for the same second reason.
+
+**No coalescing and no ring buffer**, both considered. A ring buffer flushed on failure would keep the
+trail clean but loses everything in exactly the deaths the session file exists for — a native fault or
+the OOM killer, where nothing gets to flush. Rate limiting would give the diagnostic state of its own
+that can be wrong. Every gesture here is a discrete click with no auto-repeat, so the simple thing is
+also the correct one.
+
+**Namespace trap, cost one build.** `Gesture` lives in `CircuitRF.Ui.DataDisplay`, NOT in a
+`CircuitRF.Ui.DataDisplay.Diagnostics` namespace however natural that reads. Every file under
+`CircuitRF.Ui.DataDisplay.ViewModels` refers to the reporter as `Diagnostics.CrashReporter`, and a
+nested `Diagnostics` under `DataDisplay` wins that lookup over `CircuitRF.Ui.Diagnostics` — so creating
+one breaks five unrelated files with a "CrashReporter does not exist in the namespace" that names the
+wrong namespace.
+
+Held by `GestureBreadcrumbTests` (3): the ordered plot sequence, the matrix toggle specifically
+(the not-a-command case), and the shape of every line — prefix, timestamp and thread tag.
+

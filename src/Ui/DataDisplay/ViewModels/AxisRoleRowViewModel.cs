@@ -101,15 +101,20 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
 
     // ---- Commands ---------------------------------------------------------
 
+    // These three rewrite the trace's SLICE — the `slice=[freq:KeepAsX, i:PinToIndex, j:PinToIndex]`
+    // field every failing resolve note prints. A trail that shows the slice but not the click that
+    // set it cannot say whether it was authored, restored from a .cdd, or carried over a re-run.
     [RelayCommand]
     private void SetX()
     {
+        Gesture.Note("axis.role", $"{AxisName} -> X");
         IsX = true;
     }
 
     [RelayCommand]
     private void SetPinned()
     {
+        Gesture.Note("axis.role", $"{AxisName} -> pinned[{PinIndex}]");
         IsX      = false;
         IsFamily = false;
     }
@@ -117,6 +122,7 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     [RelayCommand]
     private void SetFamily()
     {
+        Gesture.Note("axis.role", $"{AxisName} -> family");
         IsFamily = true;
     }
 

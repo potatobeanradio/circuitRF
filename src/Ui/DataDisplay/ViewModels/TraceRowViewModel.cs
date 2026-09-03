@@ -1086,6 +1086,7 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnSelectedSourceItemChanged(PickerSourceItem? value)
     {
         if (_suppressSourceCallback || value is null) return;
+        Gesture.Note("row.source", $"{Spec} -> '{value.DisplayText}'");
 
         if (value.IsAddFromFile)
         {
@@ -1253,6 +1254,7 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnSelectedGroupChanged(string? value)
     {
         if (_suppressDataCallback) return;
+        Gesture.Note("row.group", $"{Spec} -> '{value}'");
         _suppressDataCallback = true;
         FilterSignalsToGroup(value);
         _suppressDataCallback = false;
@@ -1314,6 +1316,7 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnSelectedSignalChanged(TraceDataItem? value)
     {
         if (_suppressDataCallback || value == null) return;
+        Gesture.Note("row.signal", $"{Spec} -> '{value.CubeName ?? value.Label}'");
 
         if (value.IsAbsent)
         {
@@ -1733,6 +1736,9 @@ public partial class TraceRowViewModel : ViewModelBase
 
     partial void OnMatrixTypeChanged(MatrixType value)
     {
+        // S -> Z and back is the gesture the FIRST report of this crash named (1.0.0-beta.6), and no
+        // trail has ever recorded it: it arrives as a combo-box property change, not a command.
+        Gesture.Note("row.matrix", $"{Spec} -> {value}");
         _trace.MatrixType = value;
 
         if (_trace.CubeName is { } cubeName)
@@ -1781,6 +1787,7 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnSelectedCubeTransformItemChanged(CubeTransformItem? value)
     {
         if (value is null) return;
+        Gesture.Note("row.transform", $"{Spec} -> {value.Transform}");
         _trace.Transform = value.Transform;
         _parent.RebuildAndNotify();
     }
@@ -2113,6 +2120,8 @@ public partial class TraceRowViewModel : ViewModelBase
 
     partial void OnZ0OverrideEnabledChanged(bool value)
     {
+        Gesture.Note("row.z0Override", $"{Spec} -> {(value ? "on" : "off")}");
+
         // The model flag is the single gate on every renormalization path (Trace.Z0OverrideEnabled)
         // — it must track the checkbox even when the change is a source-swap reset.
         _trace.Z0OverrideEnabled = value;
@@ -2415,7 +2424,7 @@ public partial class TraceRowViewModel : ViewModelBase
         _selectedTransformItem = TraceTransformItems
             .FirstOrDefault(t => t.Transform == trace.DisplayTransform);
 
-        RemoveCommand              = new RelayCommand(() => _parent.RemoveTrace(this));
+        RemoveCommand              = Gesture.Command("row.remove", () => Spec, () => _parent.RemoveTrace(this));
         ToggleSecondaryAxisCommand = new RelayCommand(() => UseSecondaryAxis = !UseSecondaryAxis);
         ToggleShowAllCommand       = new RelayCommand(() => ShowAll = !ShowAll);
 
@@ -3368,6 +3377,19 @@ public partial class TraceRowViewModel : ViewModelBase
 
     /// <summary>Human-readable parse/eval error for the spec hint; empty when valid.</summary>
     public string SpecError => _trace.ExpressionError ?? "";
+
+    /// <summary>
+    /// This row in one short token, for the crash trail. Never throws and never allocates on the
+    /// success path of anything — it is only ever called from a <see cref="Gesture"/> breadcrumb.
+    /// </summary>
+    internal string Spec
+    {
+        get
+        {
+            try { return _trace.CubeName ?? _trace.Expression ?? SpecShorthand; }
+            catch { return "(spec unreadable)"; }
+        }
+    }
 
     public bool HasSpecError => !string.IsNullOrEmpty(SpecError);
 

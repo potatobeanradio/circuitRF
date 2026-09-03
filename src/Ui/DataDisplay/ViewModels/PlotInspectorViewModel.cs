@@ -558,16 +558,19 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         RebuildTraces();
 
-        AddTraceCommand        = new RelayCommand(AddTrace,        () => CanAddTrace);
-        AddContourTraceCommand = new RelayCommand(AddContourTrace, () => CanAddContourTrace);
-        AddSummaryTraceCommand = new RelayCommand(AddSummaryTrace, () => CanAddSummaryTrace);
-        AutoFillSummaryCommand = new RelayCommand(AutoFillSummary, () => CanAutoFillSummary);
-        CloseCommand           = new RelayCommand(() => _closeAction());
+        // Every one of these is a breadcrumb (src/Ui/DataDisplay/Gesture.cs): "add a trace to a Smith
+        // plot after a run" is the reported gesture nobody has been able to reproduce, and until now a
+        // trail could show its FAILURE without showing the click.
+        AddTraceCommand        = Gesture.Command("addTrace",        Seeding, AddTrace,        () => CanAddTrace);
+        AddContourTraceCommand = Gesture.Command("addContourTrace", Seeding, AddContourTrace, () => CanAddContourTrace);
+        AddSummaryTraceCommand = Gesture.Command("addSummaryTrace", Seeding, AddSummaryTrace, () => CanAddSummaryTrace);
+        AutoFillSummaryCommand = Gesture.Command("autoFillSummary", Seeding, AutoFillSummary, () => CanAutoFillSummary);
+        CloseCommand           = Gesture.Command("closeInspector",  () => _closeAction());
 
-        SetPlotTypeRectCommand  = new RelayCommand(() => PlotType = PlotType.Rect);
-        SetPlotTypeSmithCommand = new RelayCommand(() => PlotType = PlotType.Smith);
-        SetPlotTypePolarCommand = new RelayCommand(() => PlotType = PlotType.Polar);
-        SetPlotTypeTableCommand = new RelayCommand(() => PlotType = PlotType.Table);
+        SetPlotTypeRectCommand  = Gesture.Command("plotType=Rect",  () => PlotType = PlotType.Rect);
+        SetPlotTypeSmithCommand = Gesture.Command("plotType=Smith", () => PlotType = PlotType.Smith);
+        SetPlotTypePolarCommand = Gesture.Command("plotType=Polar", () => PlotType = PlotType.Polar);
+        SetPlotTypeTableCommand = Gesture.Command("plotType=Table", () => PlotType = PlotType.Table);
 
         if (_library != null)
         {
@@ -1142,6 +1145,15 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (!string.IsNullOrEmpty(a.Label)) s += $"\"{a.Label}\"";
         return s;
     }
+
+    /// <summary>
+    /// What an "add a trace" click was working from: the plot it lands on, how many traces are
+    /// already there (the add path branches on it — clone the last, or seed from the source), and the
+    /// selected source. That triple is the reported gesture, and no trail has ever carried it.
+    /// </summary>
+    private string? Seeding()
+        => $"plot={_plot.PlotType} traces={_plot.Traces.Count} "
+         + $"src='{SafeFileName(_library?.SelectedDataSourceAbs)}'";
 
     private static string SafeFileName(string? path)
     {

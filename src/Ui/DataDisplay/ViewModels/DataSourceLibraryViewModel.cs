@@ -477,6 +477,10 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     public async Task ReloadChangedAsync(IReadOnlyCollection<string> changedAbsPaths)
     {
         if (changedAbsPaths.Count == 0) return;
+        // Not a click, but the same kind of fact: this is the post-run auto-refresh, and it replaces
+        // the DataSet every open trace resolves against. The reported trails show a run ending and
+        // resolves failing 76 ms later with nothing in between to connect them.
+        Gesture.Note("library.reloadChanged", $"{changedAbsPaths.Count} path(s)");
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in changedAbsPaths) set.Add(Path.GetFullPath(p));
 
@@ -531,6 +535,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Remove an entry from the library (does not delete the file).</summary>
     public void Remove(DataSourceEntryViewModel entry)
     {
+        Gesture.Note("library.remove", $"{Entries.Count} source(s) before");
         Entries.Remove(entry);
         UpdateDisplayNames();
         LibraryChanged?.Invoke(this, EventArgs.Empty);
