@@ -629,3 +629,48 @@ capacitance density, with the EM run covering the interconnect around it — the
 gets the plate overlap right out of the solve but puts every airbridge and crossover in the same run
 in nitride instead of air; or **splitting the run**, EM for the passive interconnect and lumped caps
 combined in the schematic.
+
+## Union was quadratic in the operand count, which made the Gerber importer's own advice unusable (2026-09-03)
+
+`LayoutBooleans.Combine` folded every boolean **linearly**: `acc = acc op operand[i]`, one full
+Clipper2 `BooleanOp` per operand against an accumulator that had already absorbed everything before it.
+For Intersection, Difference and Xor that shape is required — Difference is not commutative, so those
+operands must be applied in selection order. For **Union** the same shape is pure cost: operand N is
+clipped against a result carrying N-1 operands' worth of contours, so the total is quadratic.
+
+**This is not a theoretical complaint — the codebase routes users into it by name.** `GerberImport`
+tells anyone importing a vector-filled pour that their layer "arrived as N separate strokes ... use the
+editor's Merge action to turn them into one region before setting up EM ports". On an owner-supplied
+4-up RF panel that is **46,721 strokes on one copper layer**, and Union on it ran for **over forty
+minutes without finishing** (killed, not completed). The advice was not actionable on the exact file
+class that triggers it.
+
+Union is associative, so it is reduced as a **balanced tree** — `(A∪B)∪(C∪D)` rather than
+`((A∪B)∪C)∪D`. That is a change of ORDER, not of semantics, and every step stays a real pairwise
+`BooleanOp` between two already-resolved regions.
+
+| | 76,517 operands, 10 layers |
+|---|---|
+| linear fold | >45 min, never finished |
+| balanced tree | **9.8 s** |
+
+Result: 76,517 shapes collapse to 2,478 (top copper: 47,530 strokes → 190 polygons).
+
+### The obvious faster version is WRONG, and a test caught it
+
+The first attempt was the one-call form: concatenate every operand's `Paths64` into a single subject
+set and resolve it in one `BooleanOp(Union, all, empty, NonZero)` — which is exactly what `Repair`
+already does for one self-intersecting shape. It is 40 s, still a huge win, and it produces the wrong
+answer for any operand carrying a hole: **under NonZero a hole contour from one operand cancels another
+operand's fill where they overlap**, so a union that should have closed a hole punches one instead.
+`PcbImportTests.ACustomPad_IsOneUnionedRegion_IncludingEachFilledPrimitivesPen` failed immediately —
+one region came back as two. Union two resolved regions at a time; never a raw pile of contours.
+
+### Merging a hatched pour is the right move for the MODEL and does not make rendering faster
+
+Worth stating because the import message implies otherwise. The unioned panel renders **slower** than
+the unmerged one (240 ms vs 126 ms/frame at Zoom-to-Fit), because a hatched pour's union has a
+comb-shaped boundary: 2,478 shapes carrying **308,326 outer vertices plus 771,663 hole vertices**, one
+polygon of 12,335 vertices with 15 holes. The artwork really is that complicated; the strokes were
+hiding it in a form Skia happened to rasterize cheaply. Merge for editability and for a meshable
+conductor — which is what the import message actually claims — not for frame rate.

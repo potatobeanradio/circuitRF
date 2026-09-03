@@ -126,6 +126,51 @@ public static class LayoutBooleans
         {
             Clipper.BooleanOp(clipType, acc, new Paths64(), tree, LayoutClipper.Rule);
         }
+        // ── UNION REDUCES AS A BALANCED TREE, NOT A RUNNING ACCUMULATOR ─────────────────────────
+        //
+        // The linear fold below is REQUIRED for Intersection, Difference and Xor — Difference in
+        // particular is not commutative, so those operands must be applied in selection order, one at
+        // a time. But the SHAPE of that fold is what makes it quadratic: every step runs a full
+        // BooleanOp against an accumulator that has already absorbed everything before it, so operand
+        // number N is clipped against a result carrying N-1 operands' worth of contours.
+        //
+        // That is invisible on the handful of shapes a user selects by hand, and fatal on the case
+        // this codebase's OWN advice sends here. The Gerber importer tells the user, by name, that a
+        // vector-filled pour "arrived as N separate strokes ... use the editor's Merge action to turn
+        // them into one region" — and on the owner's 4-up panel that is 46,721 strokes on one copper
+        // layer. The linear fold ran for over forty minutes on it without finishing. Reduced as a
+        // balanced tree the same union completes in about forty seconds, which is what makes the
+        // import's advice something a user can actually act on.
+        //
+        // Union is associative, so pairing (A∪B)∪(C∪D) instead of ((A∪B)∪C)∪D is the same region —
+        // this is a change of ORDER, not of semantics, and it deliberately keeps every step a real
+        // pairwise BooleanOp. Concatenating every operand into one subject set and resolving it in a
+        // single call was tried first and is WRONG: under NonZero a hole contour from one operand
+        // cancels another operand's fill where they overlap, so a shape union that should have closed
+        // a hole punches one instead. PcbImportTests' custom-pad cases caught exactly that ("is one
+        // unioned region" came back as two), which is why the pairing below unions two resolved
+        // regions at a time and never a raw pile of contours.
+        else if (clipType == ClipType.Union)
+        {
+            var level = new List<Paths64>(operands.Count) { acc };
+            for (int i = 1; i < operands.Count; i++)
+                level.Add(LayoutClipper.ToClipperPaths(operands[i], LayoutFlattener.ResolveTolDbu(operands[i], tech)));
+
+            while (level.Count > 2)
+            {
+                var next = new List<Paths64>((level.Count + 1) / 2);
+                for (int i = 0; i < level.Count; i += 2)
+                {
+                    if (i + 1 == level.Count) next.Add(level[i]);   // odd one out rides to the next level
+                    else next.Add(Clipper.BooleanOp(ClipType.Union, level[i], level[i + 1], LayoutClipper.Rule));
+                }
+                level = next;
+            }
+
+            // The last pair goes through the PolyTree overload, exactly as the linear fold's final
+            // step does — that is where hole nesting is resolved for FromClipperTree.
+            Clipper.BooleanOp(ClipType.Union, level[0], level.Count > 1 ? level[1] : new Paths64(), tree, LayoutClipper.Rule);
+        }
         else
         {
             for (int i = 1; i < operands.Count - 1; i++)
