@@ -78,38 +78,76 @@ public static class FileReveal
 
         try
         {
-            if (OperatingSystem.IsMacOS())
+            var psi = BuildCommand(path, isFile,
+                OperatingSystem.IsMacOS()     ? Platform.MacOS
+                : OperatingSystem.IsWindows() ? Platform.Windows
+                : Platform.Other);
+            if (psi is not null) Process.Start(psi);
+        }
+        catch (Exception ex)
+        {
+            onError?.Invoke(ex);
+        }
+    }
+
+    /// <summary>Which argument form to build. A parameter rather than a query so it can be tested.</summary>
+    internal enum Platform { MacOS, Windows, Other }
+
+    /// <summary>
+    /// The launch for one path on one platform, or null when there is nothing to launch.
+    ///
+    /// <para><b>Windows selects a file through <c>Arguments</c>, not <c>ArgumentList</c>, and that is
+    /// not a relapse of the security fix above.</b> Explorer's command-line parser is not the standard
+    /// one: it needs <c>/select,"&lt;path&gt;"</c> — the switch bare, the path quoted. <c>ArgumentList</c>
+    /// cannot express that. .NET quotes an argument as a whole when it contains a space, so
+    /// <c>/select,C:\Users\First Last\x.log</c> is handed to Explorer as
+    /// <c>"/select,C:\Users\First Last\x.log"</c> — Explorer does not recognise a quoted switch,
+    /// treats the whole thing as a path, fails, and silently opens its DEFAULT folder instead. That is
+    /// the "Reveal opened the wrong directory" report (Windows, 2026-09-03); it cannot happen on a
+    /// path without spaces, which is why it looked intermittent, and never on macOS, where
+    /// <c>open -R</c> takes an ordinary argv.</para>
+    ///
+    /// <para>Building that string cannot be broken out of, because <b>a double quote is a RESERVED
+    /// character in a Windows path</b> (<c>&lt; &gt; : " / \ | ? *</c>) — there is no path that can
+    /// close ours. The 2026-08-25 finding is a UNIX one: there <c>"</c> is a legal filename character
+    /// and .NET parses a single argument string into argv itself, so those branches keep
+    /// <c>ArgumentList</c>. The rule is per-platform, and this is the whole of it.</para>
+    ///
+    /// <para>Only the <c>/select,</c> form needs it. A Windows DIRECTORY is passed as an ordinary
+    /// argument, where normal quoting is both correct and safe — which also keeps the raw-string form
+    /// away from a trailing separator, whose backslash would escape the closing quote.</para>
+    /// </summary>
+    internal static ProcessStartInfo? BuildCommand(string path, bool isFile, Platform platform)
+    {
+        switch (platform)
+        {
+            case Platform.MacOS:
             {
                 // -R selects a file; bare open opens a directory.
                 var psi = new ProcessStartInfo("open") { UseShellExecute = false };
                 if (isFile) psi.ArgumentList.Add("-R");
                 psi.ArgumentList.Add(path);
-                Process.Start(psi);
+                return psi;
             }
-            else if (OperatingSystem.IsWindows())
+
+            case Platform.Windows:
             {
-                // /select highlights a file; bare path opens a directory. Explorer wants
-                // `/select,<path>` as ONE argument, which is why this is not two.
                 var psi = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
-                psi.ArgumentList.Add(isFile ? $"/select,{path}" : path);
-                Process.Start(psi);
+                if (isFile) psi.Arguments = $"/select,\"{path}\"";
+                else        psi.ArgumentList.Add(path);
+                return psi;
             }
-            else
+
+            default:
             {
                 // Linux: xdg-open on the directory (it does not highlight), or on the containing
                 // directory for a file.
-                var target = isDir ? path : Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(target))
-                {
-                    var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
-                    psi.ArgumentList.Add(target);
-                    Process.Start(psi);
-                }
+                var target = isFile ? Path.GetDirectoryName(path) : path;
+                if (string.IsNullOrEmpty(target)) return null;
+                var psi = new ProcessStartInfo("xdg-open") { UseShellExecute = false };
+                psi.ArgumentList.Add(target);
+                return psi;
             }
-        }
-        catch (Exception ex)
-        {
-            onError?.Invoke(ex);
         }
     }
 }

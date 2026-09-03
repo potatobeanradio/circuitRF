@@ -4,10 +4,8 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Numerics;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -247,31 +245,19 @@ public partial class DataSourceEntryViewModel : ViewModelBase
 
     private void InitCommands(DataSourceLibraryViewModel library)
     {
-        RefreshCommand = new AsyncRelayCommand(() => library.ReloadAsync(this));
-        RemoveCommand  = new RelayCommand(() => library.Remove(this));
+        // A reload REPLACES the DataSet every open trace resolves against, and a remove takes it
+        // away — the two source-level events a trace's state can outlive.
+        RefreshCommand = new AsyncRelayCommand(() =>
+        {
+            Gesture.Note("source.reload", SafeName());
+            return library.ReloadAsync(this);
+        });
+        RemoveCommand  = Gesture.Command("source.remove", SafeName, () => library.Remove(this));
 
         RevealInExplorerCommand = new RelayCommand(() =>
         {
             if (_filePath is not string path || IsBroken) return;
-            try
-            {
-                // ArgumentList, never the single-string overload: on Unix .NET parses that string
-                // into argv itself, so a Touchstone file whose NAME contains a double quote closes
-                // ours and the rest becomes further arguments to `open` — which takes
-                // `-a <application>` (security review, 2026-08-25).
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                    Process.Start(new ProcessStartInfo("open", ["-R", path])
-                        { UseShellExecute = false });
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    // Explorer wants `/select,<path>` as ONE argument.
-                    Process.Start(new ProcessStartInfo("explorer.exe", [$"/select,{path}"])
-                        { UseShellExecute = false });
-                else
-                    Process.Start(new ProcessStartInfo("xdg-open",
-                        Path.GetDirectoryName(path) ?? "")
-                        { UseShellExecute = false });
-            }
-            catch { }
+            CircuitRF.Ui.FileReveal.Reveal(path);
         });
 
         CopyPathCommand = new AsyncRelayCommand(async () =>
@@ -341,6 +327,12 @@ public partial class DataSourceEntryViewModel : ViewModelBase
             Diagnostics.CrashReporter.Note($"source {where}: inventory unreadable ({ex.GetType().Name})");
         }
         return data;
+    }
+
+    /// <summary>The entry's file name for a breadcrumb — never its path, and never throws.</summary>
+    private string? SafeName()
+    {
+        try { return System.IO.Path.GetFileName(_filePath); } catch { return "(name unreadable)"; }
     }
 
     /// <summary>

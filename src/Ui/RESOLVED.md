@@ -16379,3 +16379,70 @@ Covered: `Filter` Response/Form, `Duplexer` Tx/Rx Response/Form, `Circulator` Di
 glyph follows the sweep.
 
 Gate: `tests/Ui.Tests/SystemBlockParameterPickerTests.cs`.
+
+## Reveal in Explorer opened the WRONG directory — `ArgumentList` cannot express `/select,` (2026-09-03)
+
+**Reported:** on Windows, Help ▸ Crash Reports… opened the wrong folder. Not reproducible on macOS.
+
+`explorer.exe`'s command-line parser is not the standard one. To select a file it needs
+`/select,"<path>"` — **the switch bare, the path quoted** — and `ProcessStartInfo.ArgumentList`
+cannot produce that shape. .NET quotes an argument *as a whole* when it contains a space, so
+`/select,C:\Users\First Last\x.log` reaches Explorer as `"/select,C:\Users\First Last\x.log"`.
+Explorer does not recognise a quoted switch, treats the whole thing as a path, fails to resolve it,
+and **silently falls back to its default folder**.
+
+Confirmed against the runtime's own `ProcessStartInfo.BuildArguments()` rather than argued:
+
+| argument handed to `ArgumentList` | command line .NET builds |
+|---|---|
+| `/select,C:\Users\rfuser\…\crash-1.log` | `/select,C:\Users\rfuser\…\crash-1.log` ✓ |
+| `/select,C:\Users\First Last\…\crash-1.log` | `"/select,C:\Users\First Last\…\crash-1.log"` ✗ |
+
+**So it depends on whether the user profile name contains a space** — which is why it looked
+intermittent and why nobody had caught it. macOS is unaffected because `open -R <path>` takes an
+ordinary argv with no command-line pasting at all, which is exactly the asymmetry the report
+described.
+
+### The fix is per-platform, and it is NOT a relapse of the 2026-08-25 security finding
+
+The Windows *file* branch now sets `Arguments` directly: `/select,"<path>"`. That looks like the
+single-string form the security review replaced — it is not, and the distinction is the whole rule:
+
+- **The 2026-08-25 finding is a UNIX one.** There `"` is a legal filename character, and .NET parses
+  a single argument string into `argv` itself, so a file whose NAME contains a quote closes ours and
+  the rest becomes further arguments to `open` (which takes `-a <application>`). Those branches keep
+  `ArgumentList`, unchanged.
+- **On Windows a double quote is a RESERVED path character** (`< > : " / \ | ? *`). No path can
+  contain one, so nothing can close ours. The raw string is injection-free there and only there.
+
+A Windows **directory** still goes through `ArgumentList` — no switch, so ordinary quoting is both
+correct and safe, and it keeps the raw-string form away from a trailing separator, whose backslash
+would escape the closing quote.
+
+### Four copies, one of them already documented as "the one implementation"
+
+`WorkspaceViewModel.RevealPathInFileManager`'s own doc comment said it was "extracted so every
+surface that offers Reveal goes through one implementation — the platform detection and the
+per-platform argument forms are exactly the sort of thing a second copy gets subtly wrong." There
+were **four** copies, and every one was wrong in a different way:
+
+| site | defect |
+|---|---|
+| `FileReveal.Reveal` | the quoted-switch bug above |
+| `WorkspaceViewModel.RevealPathInFileManager` (Help ▸ Crash Reports…) | same |
+| `DataSourceEntryViewModel.RevealInExplorerCommand` | same |
+| `ParameterEditorView.RevealFileAsync` | worse — it passed `/select,"<path>"` as one ArgumentList entry, so the inner quotes were themselves escaped (`"/select,\"…\""`), broken on **every** path, space or not |
+
+`FileReveal` is now the only implementation and the other three delegate to it. The argument-building
+is split out as `FileReveal.BuildCommand(path, isFile, Platform)` — a pure function taking the platform
+as a parameter — so all three platforms' forms are testable from any machine, which is what makes a
+Windows-only bug gateable at all. Held by `FileRevealArgumentTests` (6), including one that pins the
+OLD form's output through the runtime's own `BuildArguments` so the regression cannot come back
+silently.
+
+**Not the cause, checked anyway:** `CrashReporter.Dir` and the reports it writes agree
+(`AllReports()` globs `crash-*.log`, and `PromoteAbandonedSessions` renames `session-…` to
+`crash-….log`), and the no-reports branch of the menu uses `UseShellExecute = true` on the directory,
+which involves no command line and was always correct. So a user with no crash reports saw the right
+folder and a user with one — precisely the one who needed it — did not.
+

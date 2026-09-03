@@ -9474,36 +9474,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// argument forms are exactly the sort of thing a second copy gets subtly wrong.
     /// </summary>
     private void RevealPathInFileManager(string path)
-    {
-        try
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                // open -R reveals the specific file in Finder
-                Process.Start(new ProcessStartInfo("open", new[] { "-R", path })
-                    { UseShellExecute = false });
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                // /select, highlights the file in Explorer; works for both files and folders.
-                // ArgumentList form, matching every other launch site — `/select,<path>` is ONE
-                // argument, so it is added as one rather than assembled into a command line here.
-                Process.Start(new ProcessStartInfo("explorer", [$"/select,{path}"])
-                    { UseShellExecute = false });
-            }
-            else
-            {
-                // Linux: open the containing folder (xdg-open doesn't highlight)
-                var dir = Directory.Exists(path) ? path : (Path.GetDirectoryName(path) ?? path);
-                Process.Start(new ProcessStartInfo("xdg-open", dir)
-                    { UseShellExecute = false });
-            }
-        }
-        catch (Exception ex)
-        {
-            Messages.Error($"Reveal failed: {ex.Message}");
-        }
-    }
+        => FileReveal.Reveal(path, ex => Messages.Error($"Reveal failed: {ex.Message}"));
 
     // ── Known File actions ────────────────────────────────────────────────────
 

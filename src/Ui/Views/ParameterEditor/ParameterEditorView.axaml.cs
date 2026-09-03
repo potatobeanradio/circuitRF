@@ -172,15 +172,7 @@ public partial class ParameterEditorView : UserControl
     {
         try
         {
-            if (OperatingSystem.IsMacOS())
-                System.Diagnostics.Process.Start("open", ["-R", path]);
-            else if (OperatingSystem.IsWindows())
-                System.Diagnostics.Process.Start("explorer.exe", [$"/select,\"{path}\""]);
-            else
-            {
-                string? dir = System.IO.Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir)) System.Diagnostics.Process.Start("xdg-open", [dir]);
-            }
+            CircuitRF.Ui.FileReveal.Reveal(path);
         }
         catch (Exception)
         {
