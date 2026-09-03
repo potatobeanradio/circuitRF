@@ -54,6 +54,18 @@ public readonly struct LayoutRenderOptions
     /// See that constant for the measurement this exists because of.</summary>
     public double StrokeElisionPixelThreshold { get; init; }
 
+    /// <summary>On-screen WIDTH, in device pixels, at or under which a <see cref="PathShape"/> is drawn
+    /// as one widened fill instead of a fill plus an outline stroke — see
+    /// <see cref="LayoutRenderer.DefaultHairlineWidthDevicePixels"/> for what sets the value and why it
+    /// is a much smaller number than <see cref="StrokeElisionPixelThreshold"/>, which measures a
+    /// different thing (a compiled instance chunk's total extent). 0 (the default) means that constant;
+    /// a NEGATIVE value disables the tier outright, which is how a test pins the exact
+    /// fill-plus-outline output the tier has to match. Kept separate from
+    /// <see cref="StrokeElisionPixelThreshold"/> on purpose: the two tiers engage on different
+    /// quantities at different sizes, and a test that pins one must be able to leave the other
+    /// alone.</summary>
+    public double HairlineFillPixelThreshold { get; init; }
+
     /// <summary>Coverage at or above which a compiled instance chunk already on the stroke-elision
     /// tier stops drawing its primitives and contributes ONE rect to a per-layer batch. 0 (the default)
     /// means <see cref="LayoutRenderer.DefaultCoarseCoverageThreshold"/>; a NEGATIVE value disables the
@@ -906,6 +918,29 @@ public static partial class LayoutRenderer
     /// Skia hairline (which is exactly 1 device pixel) per owner feedback, 2026-07-26.</summary>
     private const double GeometryStrokeDevicePixels = 2.0;
 
+    /// <summary>
+    /// On-screen WIDTH, in device pixels, at or under which a <see cref="PathShape"/> stops being drawn
+    /// as fill-plus-outline and is drawn as one widened fill instead (see <c>DrawLayer</c>'s hairline
+    /// tier and <see cref="LayoutPathCache.GetOrBuildWidened"/>).
+    ///
+    /// <para><b>One pixel, and the value was measured rather than assumed — a bigger one is visibly
+    /// wrong.</b> The substitution is exact in FOOTPRINT at any width (fill-then-outline and
+    /// fill-at-Width-plus-the-pen cover the identical region), but not in ALPHA: the widened fill is
+    /// painted at the stroke's solid opacity throughout, where the real pair paints a solid rim around
+    /// an interior at the layer's own (usually partial) fill opacity. Below one device pixel that
+    /// interior cannot be resolved and the two are indistinguishable. Above it they are not, and the
+    /// error grows fast — swept on the owner's 4-up panel at Zoom-to-Fit, admitting the 10-mil traces
+    /// (1.03 px wide there) moved 41% of the board's pixels and dropped its mean red from 145 to 104,
+    /// which reads as copper flooding its own clearances. At 0.5 px the same sweep moves 2.8% of pixels
+    /// and the mean by 0.4% — antialiasing-level differences.</para>
+    ///
+    /// <para>This is deliberately NOT <see cref="DefaultStrokeElisionDevicePixels"/> (4.0), which
+    /// measures a different quantity — a compiled instance chunk's TOTAL extent, where a whole
+    /// primitive being four pixels across is what makes its interior sub-pixel. Here the shape is long
+    /// and the width alone is what is small, so the width alone is what may be tested.</para>
+    /// </summary>
+    internal const double DefaultHairlineWidthDevicePixels = 1.0;
+
     /// <summary>L2b render-culling query-rect margin, in device pixels — generously covers
     /// <see cref="GeometryStrokeDevicePixels"/>'s half-width (the stroke straddles the fill boundary)
     /// plus antialiasing softening, so a shape whose fill bbox sits just outside the viewport but whose
@@ -971,10 +1006,26 @@ public static partial class LayoutRenderer
         using var strokeBatch = new SKPath();
         using var aggregate = new SKPath();
 
+        // ── The stroke-elision tier's own aggregate (see ElideStrokeFor) ─────────────────────────
+        // Separate from `aggregate` because it is painted differently: the elided fill carries the
+        // STROKE's solid alpha, not the layer's (usually partial) fill alpha, and it is never fed to
+        // strokeBatch. That is not a new convention — it is the one the instance elision tier already
+        // states in LayoutRenderer.Instances.cs, for the same reason: at the few-device-pixel sizes
+        // this engages at the outline IS essentially the whole visible shape, so carrying the fill's
+        // partial opacity across would visibly dim geometry that reads solid today.
+        using var elided = new SKPath();
+
         double lodThreshold = opts.LodPixelThreshold > 0 ? opts.LodPixelThreshold : DefaultLodPixelThreshold;
         int mergeThreshold = opts.MergeShapeCountThreshold > 0 ? opts.MergeShapeCountThreshold : DefaultMergeShapeCountThreshold;
         bool layerMerges = opts.ForceMergeTier || shapes.Count > mergeThreshold;
         double devicePxPerDbu = scaleUm * ps.DbuToUm;
+
+        // A NEGATIVE threshold disables the tier outright — how a test pins the exact fill-plus-outline
+        // output this tier has to match.
+        double hairlineThreshold = opts.HairlineFillPixelThreshold != 0
+            ? opts.HairlineFillPixelThreshold : DefaultHairlineWidthDevicePixels;
+        long widenDbu = devicePxPerDbu > 0
+            ? (long)System.Math.Ceiling(GeometryStrokeDevicePixels / devicePxPerDbu) : 0;
 
         foreach (var (index, original) in shapes)
         {
@@ -1044,10 +1095,82 @@ public static partial class LayoutRenderer
                 continue;
             }
 
+            // ── Stroke elision for a HAIRLINE-WIDTH path ────────────────────────────────────────
+            //
+            // The LOD tier above catches a shape that is small in BOTH dimensions. It cannot catch the
+            // shape that actually dominates an imported PCB: a trace that is long (so its bbox is
+            // nowhere near sub-pixel) and, on screen, a small fraction of a pixel WIDE. That shape's
+            // 2-device-pixel outline is not describing its silhouette — it is forty times the width of
+            // the thing it outlines, so what the user sees IS the outline. Two consequences, and the
+            // second is the expensive one:
+            //
+            //   * every such shape's outline goes into strokeBatch, and Skia's stroker then walks
+            //     tens of thousands of sub-paths in one DrawPath. On the owner's 4-up panel — a 2014
+            //     Gerber whose copper pours are painted as 41,824 abutting one-mil raster scanlines —
+            //     that single stroke pass was ~235 ms of a ~292 ms frame, measured by removing it.
+            //   * a pour painted that way saturates to solid outline colour at full extent, hiding
+            //     the silkscreen and the traces underneath it.
+            //
+            // Filling the same centreline at Width + one stroke-width instead is not an approximation:
+            // a PathShape's fill IS its centreline stroked at Width, so fill-then-outline and
+            // fill-at-Width-plus-the-pen cover the identical region (see
+            // LayoutPathCache.GetOrBuildWidened). One filled path replaces a fill plus a stroker pass.
+            //
+            // The FOOTPRINT is exact at any width; the ALPHA is only indistinguishable below about one
+            // device pixel, which is what DefaultHairlineWidthDevicePixels is set from and why it is
+            // not the instance tier's 4.0 — read that constant before widening this gate.
+            //
+            // Scoped to PathShape deliberately. It is the only shape kind that HAS a width to be
+            // hairline in, and the only one this substitution is exact for — a thin polygon would need
+            // a real offset, and inventing an approximation for it here would be a different claim
+            // than the one this tier can actually make.
+            if (hairlineThreshold > 0 && widenDbu > 0 && shape is PathShape thinPath
+                && thinPath.Width * devicePxPerDbu < hairlineThreshold
+                && IsOpenCentreline(thinPath)
+                && opts.PathCache is { } elisionCache && !dragOverrides.ContainsKey(index))
+            {
+                var (widenedLocal, wRefX, wRefY) =
+                    elisionCache.GetOrBuildWidened(index, thinPath, widenDbu, ps.DbuToUm, counters);
+                if (widenedLocal is null || widenedLocal.IsEmpty) continue;
+                elided.AddPath(widenedLocal, ps.X(wRefX), ps.Y(wRefY));
+                counters.ShapesDrawn++;
+                continue;
+            }
+
             if (layerMerges)
             {
                 // Full geometry, same as the individual tier below — just added to the shared
                 // aggregate instead of drawn/composited on its own (R-L2c-2's "same mechanism").
+                //
+                // ── THE CACHE APPLIES HERE TOO, and leaving it out was the whole cost of a
+                // stroke-per-segment import ────────────────────────────────────────────────────
+                //
+                // R-L2c-3's own note said the cache "applies to the individual tier only", and while
+                // the merge tier existed purely as a full-extent LOD fallback that was harmless: at
+                // full extent nearly everything is sub-pixel and never reaches this branch at all.
+                // A Gerber written by a tool that strokes every trace segment separately breaks that
+                // assumption head on — 46,000 one-mil draws on a single copper layer, each one LONG
+                // (so never sub-pixel by bbox) and each one on a layer far past
+                // MergeShapeCountThreshold. Every frame rebuilt every outline: 219,556 SKPaths per
+                // frame on the owner's board, ~370 ms a frame, for geometry that had not changed
+                // since the file was opened.
+                //
+                // The cached path is in shape-LOCAL space, so it is added under the same
+                // (ps.X(refX), ps.Y(refY)) offset the individual tier applies via canvas.Translate —
+                // SKPath.AddPath's offset overload is the identical arithmetic, and it is already
+                // what strokeBatch below has always used for a cached path. The drag bypass is the
+                // same one the individual tier documents: a cache entry is keyed by INDEX and knows
+                // nothing of the translated preview clone, so a drag-previewed shape must build
+                // fresh or it paints at its pre-drag position.
+                if (opts.PathCache is { } mergeCache && !dragOverrides.ContainsKey(index))
+                {
+                    var (cachedLocal, mRefX, mRefY) = mergeCache.GetOrBuild(index, shape, ps.DbuToUm, counters, out _);
+                    if (cachedLocal.IsEmpty) continue;
+                    aggregate.AddPath(cachedLocal, ps.X(mRefX), ps.Y(mRefY));
+                    counters.ShapesDrawn++;
+                    continue;
+                }
+
                 using var mergedPath = BuildShapePath(shape, ps, counters);
                 if (mergedPath is null || mergedPath.IsEmpty) continue;
                 aggregate.AddPath(mergedPath);
@@ -1105,12 +1228,44 @@ public static partial class LayoutRenderer
             strokeBatch.AddPath(aggregate);
         }
 
+        // One fill for every hairline path on this layer, at the stroke's own solid alpha, and never
+        // fed to strokeBatch — the widened geometry already covers what the outline would have.
+        if (!elided.IsEmpty)
+        {
+            using var elidedPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(255) };
+            counters.DrawCalls++;
+            canvas.DrawPath(elided, elidedPaint);
+        }
+
         if (!strokeBatch.IsEmpty)
         {
             counters.DrawCalls++;
             canvas.DrawPath(strokeBatch, strokePaint);
         }
     }
+
+    /// <summary>
+    /// Whether a <see cref="PathShape"/>'s centreline starts and ends at different points — the gate on
+    /// the hairline tier, and it is about HOLES, not about tidiness.
+    ///
+    /// <para>An OPEN centreline strokes to a capsule: one contour, no interior. Any number of those can
+    /// be merged into a single batched path and filled once, because under the non-zero winding rule a
+    /// union of same-wound simple contours is exactly their union.</para>
+    ///
+    /// <para>A CLOSED centreline strokes to a RING — an outer contour plus a hole. Batched, the shared
+    /// path is filled NonZero, so contour ORIENTATION across independently built shapes starts to
+    /// matter and one shape's hole is cancelled by another's oppositely-wound contour. (Measured, not
+    /// assumed: one ring alone, two nested rings wound the same way, two coincident rings and three
+    /// nested rings are all fine — two NESTED rings of OPPOSITE winding are not, and a Gerber traces
+    /// each outline in whatever direction its source tool emitted.) That is not hypothetical. Every
+    /// board outline in the owner's panel is a closed 5-point path one mil wide (the largest is the
+    /// 194 x 115 mm panel border), and batching them turned each board into a solid black rectangle
+    /// covering everything inside it. A closed path therefore stays on the ordinary fill-plus-outline
+    /// route, where it is drawn on its own and its hole is safe. There are a handful of them per file
+    /// against tens of thousands of open segments, so nothing measurable is given up.</para>
+    /// </summary>
+    private static bool IsOpenCentreline(PathShape p) =>
+        p.Xy.Length >= 4 && (p.Xy[0] != p.Xy[^2] || p.Xy[1] != p.Xy[^1]);
 
     /// <summary>R-L2c-1's minimal rect — the shape's real (sub-pixel) bbox, clamped up to at least
     /// <see cref="MinimalRectDevicePixels"/> per side so it survives rasterization, centered on the

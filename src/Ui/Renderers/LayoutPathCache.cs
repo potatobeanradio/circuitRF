@@ -33,10 +33,31 @@ namespace CircuitRF.Ui.Renderers;
 /// </summary>
 public sealed class LayoutPathCache
 {
-    private sealed class Entry(SKPath localPath, long refX, long refY)
+    private sealed class Entry(SKPath? localPath, long refX, long refY)
     {
-        public readonly SKPath LocalPath = localPath;
+        /// <summary>The shape's own fill path, or null when only the widened one has been asked for.
+        /// Null is not a placeholder for "not cached yet" at the ENTRY level — the entry exists and its
+        /// reference point is fixed; it means this shape has so far only been drawn through the
+        /// hairline tier, which never touches the un-widened outline. Building it anyway cost ~42,000
+        /// unused <c>GetFillPath</c>+<c>Simplify</c> pairs on the first frame of an imported Gerber
+        /// panel, and held their native buffers for as long as the document stayed open.</summary>
+        public SKPath? LocalPath = localPath;
         public readonly long RefX = refX, RefY = refY;
+
+        /// <summary>The stroke-elision tier's widened outline for this shape, and the widening it was
+        /// built at (DBU). Mirrors <c>LayoutRenderer.CompiledChunk.Elided</c> exactly: the widening is
+        /// a device-pixel allowance expressed in DBU, so it is a function of ZOOM alone — which is
+        /// what makes caching it worthwhile. A pan holds zoom fixed, so every frame of the gesture
+        /// this exists to make smooth is a hit; only a zoom step rebuilds. Null until a frame actually
+        /// asks, so a document that never engages the tier pays nothing for it.</summary>
+        public SKPath? WidenedPath;
+        public long WidenedAtDbu = -1;
+
+        public void DisposeAll()
+        {
+            LocalPath?.Dispose();
+            WidenedPath?.Dispose();
+        }
     }
 
     private readonly Dictionary<int, LinkedListNode<(int Index, Entry Entry)>> _map = new();
@@ -59,30 +80,89 @@ public sealed class LayoutPathCache
     /// frame; a HIT allocates none); moves the entry to the front of the LRU list on either outcome.</summary>
     internal (SKPath LocalPath, long RefX, long RefY) GetOrBuild(int index, LayoutShape shape, double dbuToUm, LayoutFrameCounters? counters, out bool wasHit)
     {
-        if (_map.TryGetValue(index, out var node))
+        var entry = Touch(index, shape);
+        if (entry.LocalPath is { } cached)
         {
-            _lru.Remove(node);
-            _lru.AddFirst(node);
             HitCount++;
             wasHit = true;
-            return (node.Value.Entry.LocalPath, node.Value.Entry.RefX, node.Value.Entry.RefY);
+            return (cached, entry.RefX, entry.RefY);
         }
 
         MissCount++;
         wasHit = false;
 
-        var bb = LayoutGeometry.BboxOf(shape);
-        long refX = bb.IsEmpty ? 0 : bb.MinX;
-        long refY = bb.IsEmpty ? 0 : bb.MinY;
-        var localPs = new LayoutRenderer.PathSpace(refX, refY, dbuToUm);
-        var localPath = LayoutRenderer.BuildShapePath(shape, localPs, counters) ?? new SKPath();
+        var localPs = new LayoutRenderer.PathSpace(entry.RefX, entry.RefY, dbuToUm);
+        entry.LocalPath = LayoutRenderer.BuildShapePath(shape, localPs, counters) ?? new SKPath();
+        return (entry.LocalPath, entry.RefX, entry.RefY);
+    }
 
-        var newNode = new LinkedListNode<(int, Entry)>((index, new Entry(localPath, refX, refY)));
+    /// <summary>
+    /// The stroke-elision tier's widened outline for a <see cref="PathShape"/> whose on-screen width is
+    /// under a few device pixels — the same centreline stroked at <c>Width + widenDbu</c>, in the same
+    /// shape-LOCAL space (and against the same reference point) <see cref="GetOrBuild"/> uses, so both
+    /// are drawn under the identical translate.
+    ///
+    /// <para><b>Why a widened FILL is the exact substitution here, not an approximation.</b> A
+    /// <see cref="PathShape"/>'s fill IS its centreline stroked at <c>Width</c>; drawing that fill and
+    /// then outlining it with a pen of <c>w</c> device pixels covers precisely the same region as
+    /// filling the centreline stroked at <c>Width + w</c>. So one filled path replaces a fill plus an
+    /// outline pass with no geometric change — which is what makes this worth doing at all, given the
+    /// outline pass is what a stroke-per-segment Gerber makes ruinous (Skia's stroker runs over every
+    /// sub-path in the batch, and there can be tens of thousands of them on one copper layer).</para>
+    ///
+    /// <para>Keyed on <paramref name="widenDbu"/>: it is a device-pixel allowance converted to DBU, so
+    /// it changes with zoom and only with zoom. A pan is all hits; a zoom step rebuilds the working set
+    /// once. Returns null only if the shape has no buildable outline.</para>
+    /// </summary>
+    internal (SKPath? LocalPath, long RefX, long RefY) GetOrBuildWidened(
+        int index, PathShape shape, long widenDbu, double dbuToUm, LayoutFrameCounters? counters)
+    {
+        // Shares the entry — and therefore the reference point — with the un-widened path, so a frame
+        // that mixes the two tiers draws both under the same translate. It deliberately does NOT build
+        // the un-widened path: a shape reached only through the hairline tier never draws it.
+        var entry = Touch(index, shape);
+
+        if (entry.WidenedPath is not null && entry.WidenedAtDbu == widenDbu)
+        {
+            HitCount++;
+            return (entry.WidenedPath, entry.RefX, entry.RefY);
+        }
+
+        entry.WidenedPath?.Dispose();
+        var localPs = new LayoutRenderer.PathSpace(entry.RefX, entry.RefY, dbuToUm);
+
+        // A clone, never a mutation of the model's own shape: this runs on the render thread while the
+        // UI thread owns the document, and Width is user-editable state.
+        var widened = new PathShape
+        {
+            Layer = shape.Layer, Xy = shape.Xy, Edges = shape.Edges,
+            Width = shape.Width + widenDbu, End = shape.End, FlattenTolDbu = shape.FlattenTolDbu,
+        };
+        entry.WidenedPath = LayoutRenderer.BuildShapePath(widened, localPs, counters);
+        entry.WidenedAtDbu = widenDbu;
+        MissCount++;
+        return (entry.WidenedPath, entry.RefX, entry.RefY);
+    }
+
+    /// <summary>The entry for <paramref name="index"/>, created (with its shape-local reference point)
+    /// and moved to the front of the LRU. Neither path is built here — the caller builds the one it
+    /// actually needs.</summary>
+    private Entry Touch(int index, LayoutShape shape)
+    {
+        if (_map.TryGetValue(index, out var node))
+        {
+            _lru.Remove(node);
+            _lru.AddFirst(node);
+            return node.Value.Entry;
+        }
+
+        var bb = LayoutGeometry.BboxOf(shape);
+        var entry = new Entry(null, bb.IsEmpty ? 0 : bb.MinX, bb.IsEmpty ? 0 : bb.MinY);
+        var newNode = new LinkedListNode<(int, Entry)>((index, entry));
         _lru.AddFirst(newNode);
         _map[index] = newNode;
-
         EvictIfOverCapacity();
-        return (localPath, refX, refY);
+        return entry;
     }
 
     private void EvictIfOverCapacity()
@@ -92,7 +172,7 @@ public sealed class LayoutPathCache
             var last = _lru.Last!;
             _lru.RemoveLast();
             _map.Remove(last.Value.Index);
-            last.Value.Entry.LocalPath.Dispose();
+            last.Value.Entry.DisposeAll();
             EvictionCount++;
         }
     }
@@ -133,13 +213,13 @@ public sealed class LayoutPathCache
         if (!_map.TryGetValue(index, out var node)) return;
         _lru.Remove(node);
         _map.Remove(index);
-        node.Value.Entry.LocalPath.Dispose();
+        node.Value.Entry.DisposeAll();
     }
 
     public void Clear()
     {
         foreach (var node in _map.Values)
-            node.Value.Entry.LocalPath.Dispose();
+            node.Value.Entry.DisposeAll();
         _map.Clear();
         _lru.Clear();
     }

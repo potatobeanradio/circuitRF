@@ -16446,3 +16446,96 @@ silently.
 which involves no command line and was always correct. So a user with no crash reports saw the right
 folder and a user with one — precisely the one who needed it — did not.
 
+
+## An imported Gerber that strokes every trace segment: ~370 ms a frame, and the outline pass was most of it (2026-09-03)
+
+Owner report: a 2014 4-up RF panel imported from Gerber "is very slow to pan, zoom and snap" in the
+layout editor, while two other imported PCBs were only "moderately slow".
+
+**What the file is.** 76,923 shapes, of which 74,590 are `PathShape` and **73,281 of those have exactly
+two points**. That is not a bad import — it is what the artwork says. The source is a 2014 RS-274-X
+export from a PCB tool that emits `D02` (move) before **every** `D01` (draw), never two draws in a row,
+so a faithful stroke reader can only produce one shape per segment; and its copper pours are not
+regions at all but **vector fill** — 41,824 one-mil strokes on the top copper layer alone, laid on a one-mil
+hatch. `GerberImport` already detects this (`VectorFillStrokeThreshold`) and says so by name in the
+import messages.
+
+**Where the time went, measured rather than guessed** (1400x900, Zoom-to-Fit, CPU raster surface, so
+treat these as relative — the app itself renders through Avalonia's Skia GPU lease):
+
+| | ms/frame |
+|---|---|
+| as shipped | 369 |
+| merge tier routed through the path cache | 292 |
+| …and the hairline outline pass removed | **126** |
+
+Two separate defects, both invisible on any file authored in this editor:
+
+**1. The merge tier bypassed the path cache.** `LayoutPathCache` was wired into the individual
+per-shape tier only — R-L2c-3's own note says "applies HERE only" — and that was harmless while the
+merge tier was just a full-extent fallback, where nearly everything is sub-pixel and lands in the LOD
+branch instead. A stroke-per-segment import breaks that assumption exactly: 46,000 segments that are
+LONG (never sub-pixel by bbox) on a layer far past `MergeShapeCountThreshold`. Every frame rebuilt every
+outline — **219,556 `SKPath`s per frame**, `GetFillPath` plus `Simplify` each, for geometry that had not
+changed since the file was opened. The cached path is shape-local, so it drops into the aggregate under
+the same offset the individual tier already applies via `canvas.Translate`.
+
+**Sizing matters as much as the wiring:** the default capacity is 50,000 and this file draws 76,923
+shapes in one frame, so the LRU evicted the whole working set every frame and the fix reads as a no-op
+until the cache is big enough to hold what a frame actually touches.
+
+**2. The 2-device-pixel outline was the real cost, and on hairline geometry it is not describing
+anything.** Removing just the aggregate's contribution to the stroke batch took 292 ms to 57 ms. Skia's
+stroker walks every sub-path in the batch, and there were 46,000 of them. Worse, at Zoom-to-Fit a
+one-mil trace is **0.10 device pixels** wide, so a 2 px outline is twenty times the width of the thing
+it outlines: what the user sees IS the outline, and the pour saturates to solid outline colour and
+hides the silkscreen under it.
+
+The fix is a **hairline tier** in `DrawLayer`: a `PathShape` whose on-screen width is under
+`DefaultHairlineWidthDevicePixels` is drawn as ONE widened fill instead of a fill plus an outline pass.
+The substitution is exact in footprint, not an approximation — a `PathShape`'s fill IS its centreline
+stroked at `Width`, so fill-then-outline and fill-at-`Width`-plus-the-pen cover the identical region.
+Verified: an isolated hairline path renders **pixel-identical** before and after.
+
+### Three things that were got wrong on the way, all found by measurement
+
+- **The threshold is one device pixel, not the instance tier's four.** Reusing
+  `DefaultStrokeElisionDevicePixels` looked natural and is wrong, because the two constants measure
+  different quantities — there, a whole primitive's total extent; here, a width alone. The footprint is
+  exact at any width but the ALPHA is not: the widened fill is solid throughout, where the real pair
+  paints a solid rim around an interior at the layer's own fill opacity. At 4 px that admits the 10-mil
+  traces (1.03 px wide at fit) and **moves 41% of the board's pixels**, dropping mean red from 145 to
+  104 — copper flooding its own clearances. At 1 px the interior is unresolvable and the two are
+  indistinguishable: 2.0% of pixels differ, mean absolute channel error **0.16/255**.
+- **A CLOSED centreline must not be batched, and the reason is narrower than it first looks.** It
+  strokes to a RING — outer contour plus hole — and every board outline in the panel is a closed
+  5-point path one mil wide (the largest is the 194 x 115 mm panel border). Batching them turned **each
+  board into a solid black rectangle**, and on the fabrication-drawing layer alone 199 paths do this.
+  The first explanation written down here was "a batch loses holes", and it is **wrong** — a synthetic
+  ring, batched, keeps its hole. Bisecting the real layer and then sweeping fixtures gave the actual
+  rule: the batched path is filled NonZero, so contour ORIENTATION across independently built shapes
+  starts to matter, and one shape's hole is cancelled by another shape's oppositely-wound contour. One
+  ring alone, two nested rings wound the same way, two coincident rings and three nested rings all
+  render correctly; **two nested rings of opposite winding do not.** A Gerber traces each outline in
+  whatever direction the source tool emitted, so mixed winding is the normal case in an imported file.
+  `IsOpenCentreline` gates it — a handful of closed paths per file against tens of thousands of open
+  segments, so nothing measurable is given up.
+- **Dropping the aggregate stroke outright** (the first thing tried, and the biggest number — 292 to
+  57 ms) is not available: the LOD tier's minimal rects share that aggregate and depend on the stroke
+  to stay visible at all, which is R-L2c-1's "a dense cluster of sub-pixel shapes must still read as
+  filled, not empty". Hence a separate `elided` path with its own paint rather than a flag on the
+  existing one.
+
+### What did NOT change, and what is left
+
+Both other imported PCBs render **byte-identical** before and after (0.00% of pixels differ at every
+zoom) and are **no faster** — their geometry is regions, not hairline paths, so neither fix touches
+them. They sit at 20-27 ms/frame, and the cost there is Skia rasterizing ~90,000 polygon vertices of
+large-area antialiased fill plus their outline batch. Nothing here addresses that; the structural
+answer is the tiled raster cache the root `CLAUDE.md` still records as deferred (L2d), which turns a
+pan into a blit instead of a re-rasterization.
+
+The panel's residual 126 ms is the same thing plus the outline pass for the 4,219 traces WIDER than one
+pixel, which legitimately still stroke. Per-layer at fit: top copper 70 ms, bottom copper 44 ms, and the
+spatial-index query and per-layer grouping for all 76,923 shapes is only 7 ms of it — culling is not the
+problem, rasterization is.

@@ -63,7 +63,7 @@ public sealed class LayoutCanvas : Control
             }
 
             SetAndRaise(ViewModelProperty, ref _viewModel, value);
-            _pathCache = _viewModel is not null ? new LayoutPathCache() : null;
+            _pathCache = _viewModel is not null ? new LayoutPathCache(PathCacheCapacityFor(_viewModel.Model)) : null;
 
             if (_viewModel is not null)
             {
@@ -75,6 +75,26 @@ public sealed class LayoutCanvas : Control
             InvalidateVisual();
         }
     }
+
+    /// <summary>
+    /// The path cache has to hold what ONE FRAME touches, or it does nothing at all.
+    ///
+    /// <para>The cache is an LRU, and Zoom-to-Fit on a flat document touches every shape in it. So a
+    /// document larger than the capacity evicts its entire working set every frame and reports a 100%
+    /// miss rate — the cache is not merely less effective, it is inert, and the symptom is that fixing
+    /// anything ELSE about per-frame path construction appears to change nothing. The fixed 50,000
+    /// default was under an owner-supplied Gerber panel's 76,923 shapes, which is exactly the file that
+    /// made per-frame path building expensive in the first place (see src/Ui/RESOLVED.md).</para>
+    ///
+    /// <para>Capped rather than unbounded: an <c>SKPath</c> owns native Skia buffers and the tier that
+    /// widens hairline paths can hold a second one per entry, so this is real memory. Past the cap a
+    /// large document is back to LRU behaviour over a working set, which is the documented R-L2c-4
+    /// trade and correct — it just should not engage at ordinary PCB sizes.</para>
+    /// </summary>
+    private const int MaxPathCacheCapacity = 250_000;
+
+    private static int PathCacheCapacityFor(LayoutView model) =>
+        Math.Clamp(model.Shapes.Count + model.Shapes.Count / 4, 50_000, MaxPathCacheCapacity);
 
     private void OnModelChanged(object? sender, LayoutChangeInfo e)
     {
