@@ -1382,6 +1382,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        // SL4 R-sl4-2: someone else may already have it open, on a machine this one cannot see.
+        if (!await ConfirmConcurrentOpenAsync(cwsPath)) return;
+
         SwitchToWorkspace(cwsPath);
     }
 
@@ -1995,6 +1998,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _registry.Clear();
         _layoutRegistry.Clear();
         ResetTechCache();
+        // SL4 R-sl4-1: the outgoing workspace's advisory lock is dropped and the incoming one's taken,
+        // while the OLD path is still readable. A read-only workspace takes none and needs none.
+        MoveWorkspaceLock(CurrentWorkspacePath, cwsPath);
         CurrentWorkspacePath = cwsPath;
 
         // Honor Settings ▸ On Launch ▸ Window Layout for the clean-slate rebuild — a saved .cws
@@ -2256,6 +2262,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        // SL4 R-sl4-2. This command is the funnel every external open route goes through —
+        // OpenWorkspacePathAsync, and therefore a desktop double-click and the launch workspace —
+        // so the notice is asked once, here, rather than at each of them.
+        if (!await ConfirmConcurrentOpenAsync(cwsPath)) return;
+
         SwitchToWorkspace(cwsPath);
     }
 
@@ -2368,6 +2379,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         // Closing a workspace records its session too, so reopening it restores the same tabs.
         PersistOutgoingWorkspaceSession();
+        // SL4 R-sl4-1: and drops its advisory lock, while CurrentWorkspacePath still names it.
+        ReleaseWorkspaceLock();
 
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
@@ -8477,7 +8490,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return existing!;
         var (editModel, _, _) = SchematicPersistence.LoadFromFile(key);
         ReportUnknownComponents(editModel, key);
-        return RegisterSession(key, BuildSessionVm(editModel));
+
+        // SL3 R-sl3-9 — scanned BEFORE the session is built, because the scan is what sets the marks
+        // the first render reads, and reported here so each affected cell is said once per fresh
+        // load rather than once per re-open.
+        var interfaceChanges = ReportInterfaceChanges(editModel, key);
+
+        var vm = RegisterSession(key, BuildSessionVm(editModel));
+        vm.ApplyInterfaceChangeScan(interfaceChanges);
+        return vm;
     }
 
     /// <summary>
@@ -8497,6 +8518,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 $"— it is not recognized by this version of circuitRF and is shown as a placeholder.",
                 path);
         }
+    }
+
+    /// <summary>
+    /// SL3 R-sl3-9 — reports every CELL whose published interface has changed since the instances in
+    /// this schematic were placed against it. One line per cell, not per instance: forty instances of
+    /// one changed cell is one problem.
+    ///
+    /// <para>Called once, right after a fresh load, exactly where <see cref="ReportUnknownComponents"/>
+    /// is and for the same reason — a re-open of an already-registered session would repeat a warning
+    /// the user has already read. <b>It records nothing and changes no file</b> (R-sl3-10): it sets the
+    /// runtime mark the canvas and the Properties panel read, and says what changed.</para>
+    /// </summary>
+    private IReadOnlyList<CellInterfaceChange> ReportInterfaceChanges(SchematicEditModel model, string path)
+    {
+        var changes = CellInterfaceWatch.Scan(
+            model, WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(path)));
+        foreach (var change in changes) Messages.Warning(change.Message, path);
+        return changes;
     }
 
     /// <summary>
@@ -8586,6 +8625,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         int removedRatsnest = SchematicToLayoutGenerator.RemoveRatsnestShapes(model);
 
         var vm = RegisterLayoutSession(key, BuildLayoutSessionVm(model, key));
+
+        // SL3 R-sl3-9 — the layout half of ReportInterfaceChanges, in the same place and on the same
+        // terms: once per fresh load, one line per affected CELL, nothing written.
+        vm.ApplyInterfaceChangeScan(
+            CellInterfaceWatch.Scan(model, vm.InstanceBaseDir,
+                                    WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(key))),
+            change => Messages.Warning(change.Message, key));
         if (removedRatsnest > 0)
         {
             vm.IsDirty = true;
@@ -12815,6 +12861,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
             // R-L5g-7: quitting is a close too — leave a clean workspace on disk.
             DeleteGeneratedCellsFolder(CurrentWorkspacePath);
+            // SL4 R-sl4-1: and leave no advisory lock behind. A lock still there after a clean exit
+            // is exactly the stale file that would go on warning the next person about nobody.
+            ReleaseWorkspaceLock();
         }
 
         // Ends the workspace's generator interpreters deliberately, while there is still a chance to

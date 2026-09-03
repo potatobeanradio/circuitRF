@@ -66,6 +66,14 @@ public static class WorkspaceArchiveScanner
         // AtomicFile's in-flight temp ("<name>.crf-tmp-1234") — present only during a write.
         if (name.Contains(".crf-tmp", StringComparison.OrdinalIgnoreCase)) return true;
 
+        // circuitRF's own per-SESSION bookkeeping, dropped in a workspace root: SL4's advisory lock
+        // (".crf-open.json") and SL2's write probe (".crf-write-probe-…"). Neither describes the
+        // DESIGN, both are meaningless on the recipient's machine, and the lock carries a user name
+        // and a host name — so archiving one would put a colleague's account into a file sent
+        // outside the company, and would greet the recipient with a notice about a session that has
+        // nothing to do with them. Matched by prefix so the next one is covered before it exists.
+        if (name.StartsWith(".crf-", StringComparison.OrdinalIgnoreCase)) return true;
+
         return false;
     }
 

@@ -90,6 +90,20 @@ public sealed class CschComponent
     /// Explicitly detached port indices. Omitted (null) when empty — the common case.
     /// </summary>
     public List<int>? DetachedPorts { get; set; }
+
+    /// <summary>
+    /// The content hash of the referenced cell's published INTERFACE at the moment this component was
+    /// placed (SL3 R-sl3-4) — pins, port count and declared parameter names, reduced by
+    /// <see cref="CellInterfaceHash"/>. Written beside <see cref="CellRef"/> because that is the only
+    /// place the fact "this design was authored against THAT shape" can live.
+    ///
+    /// <para><b>Absent is not a warning</b> (R-sl3-5): every <c>.csch</c> written before this field
+    /// existed reads back null, which means <i>never recorded</i> and renders exactly as it did
+    /// before. <c>WhenWritingNull</c>, no <c>FormatVersion</c> bump — the established convention for
+    /// every optional field these formats have gained.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CellInterfaceHash { get; set; }
 }
 
 public sealed class CschParameter
@@ -421,6 +435,11 @@ public static class SchematicPersistence
             if (!c.ShowTypeLabel)    cc.ShowTypeLabel    = false;
             if (!c.ShowInstanceName) cc.ShowInstanceName = false;
             if (c.CellRef is not null) cc.CellRef = c.CellRef;
+            // SL3 R-sl3-10: SAVE never records, refreshes or clears this — it writes back exactly
+            // what was loaded. The recorded hash is the only evidence that the design was authored
+            // against a different interface, and a product that erases that evidence on save has
+            // implemented nothing. Accept (an explicit gesture) is the one thing that rewrites it.
+            if (c.CellInterfaceHash is not null) cc.CellInterfaceHash = c.CellInterfaceHash;
             if (c.DetachedPorts.Count > 0) cc.DetachedPorts = c.DetachedPorts.OrderBy(i => i).ToList();
             file.Components.Add(cc);
         }
@@ -502,6 +521,7 @@ public static class SchematicPersistence
             if (cc.ShowTypeLabel    is bool stl) c.ShowTypeLabel    = stl;
             if (cc.ShowInstanceName is bool sin) c.ShowInstanceName = sin;
             if (cc.CellRef is not null) c.CellRef = cc.CellRef;
+            if (cc.CellInterfaceHash is not null) c.CellInterfaceHash = cc.CellInterfaceHash;
             if (cc.DetachedPorts is not null)
                 foreach (var idx in cc.DetachedPorts) c.DetachedPorts.Add(idx);
             m.Components.Add(c);

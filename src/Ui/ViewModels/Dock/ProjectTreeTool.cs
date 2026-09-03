@@ -367,8 +367,12 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
 
     /// <summary>
     /// Re-scans the workspace folder and rebuilds the VM tree, preserving expanded paths.
-    /// Called by the Refresh button and on-focus re-entry in the view.
+    /// Called by the Refresh button and by every action that has just changed the tree on disk.
     /// No FileSystemWatcher — manual + on-focus only (FileSystemWatcher deferred per §9).
+    ///
+    /// <para>SL4 R-sl4-10: this is one of the three gestures that DOES walk the referenced
+    /// sub-trees. Pressing Refresh is the user asking for the library to be re-read; alt-tabbing back
+    /// to the window is not.</para>
     /// </summary>
     [RelayCommand]
     public void Refresh()
@@ -381,6 +385,13 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     /// The same refresh with the SCAN off the UI thread. Used by the on-focus re-entry, which is the
     /// frequent one and the one nothing waits on — an explicit Refresh keeps the synchronous
     /// <see cref="Refresh"/> so its many callers still see a finished tree when it returns.
+    ///
+    /// <para><b>SL4 R-sl4-10: this one does NOT walk the referenced sub-trees.</b> It fires on open,
+    /// on every alt-tab back and on every dialog close, and after SL1 that walk includes every folder
+    /// of a referenced library — ~2,800 filesystem round trips for a 200-cell one, measured, on a
+    /// share, for a tree that changes on someone else's schedule. The workspace's OWN folders are
+    /// still walked in full, every time: they are local almost always, they are what the user is
+    /// editing, and they are the reason this rescan exists.</para>
     /// </summary>
     public async Task RefreshAsync()
     {
@@ -390,7 +401,7 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         _scanInFlight = true;
         try
         {
-            var scanned = await Task.Run(model.ScanDetached).ConfigureAwait(true);
+            var scanned = await Task.Run(model.ScanDetachedReusingReferenced).ConfigureAwait(true);
 
             // The workspace can be closed or swapped while a scan is in flight; a result for a folder
             // nobody is looking at any more must not be installed over the one that is.
@@ -410,6 +421,19 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     }
 
     private bool _scanInFlight;
+
+    /// <summary>
+    /// SL4 R-sl4-10's third trigger: the user expanded a referenced library or workspace whose
+    /// contents have not been read yet, so read them now.
+    ///
+    /// <para>It is a full <see cref="Refresh"/> rather than a walk of that one sub-tree, because
+    /// walking one sub-tree and splicing it into a tree the rest of which was scanned at a different
+    /// moment is a second way to build the tree — and the reason a caching rule brought the empty
+    /// library back in the first place is that there was more than one way to build it. Refresh is
+    /// synchronous and already restores expansion by path, so the node the user just clicked comes
+    /// back open with its real contents in it.</para>
+    /// </summary>
+    public void WalkReferencedSubtrees() => Refresh();
 
     /// <summary>
     /// Signature of the node tree currently rendered — see <see cref="SignatureOf"/> for why this
@@ -574,7 +598,9 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     {
         if (_workspaceModel is null) return;
         RootItems.Clear();
-        var root = new ProjectTreeNodeViewModel(_workspaceModel.RootNode, FilterState, expandedPaths, _actions);
+        var root = new ProjectTreeNodeViewModel(
+            _workspaceModel.RootNode, FilterState, expandedPaths, _actions,
+            parent: null, onExpandUnreadReference: _ => WalkReferencedSubtrees());
         RootItems.Add(root);
         RestoreDirtyFlags(root);
         // Point the tree at the workspace root's children — the header already names the workspace,

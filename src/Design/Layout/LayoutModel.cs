@@ -651,6 +651,23 @@ public sealed class LayoutInstance
 
     /// <summary>docs/design/layout-view.md §9 R16 re-run idempotency. Unused until L5.</summary>
     public string? SchematicId { get; set; }
+
+    /// <summary>
+    /// The content hash of the referenced cell's published INTERFACE at the moment this instance was
+    /// placed (SL3 R-sl3-4) — pins, port count and declared parameter names, reduced by
+    /// <c>CellInterfaceHash</c>. Recorded beside <see cref="CellRef"/>, in the file that holds the
+    /// instance, because that is the only place the fact "this design was authored against THAT
+    /// shape" can live.
+    ///
+    /// <para><b>Absent is not a warning</b> (R-sl3-5). Every <c>.clay</c> written before this field
+    /// existed has no recorded hash, and so does every instance a user places by hand-editing a file.
+    /// Absent means <i>never recorded</i> and renders exactly as it did before — <c>WhenWritingNull</c>
+    /// and no <c>FormatVersion</c> bump, the same additive convention <see cref="RotDeg"/> beside it
+    /// already follows. A feature whose first act is to mark every existing design as suspect is a
+    /// feature that gets turned off.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CellInterfaceHash { get; set; }
 }
 
 /// <summary>

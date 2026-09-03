@@ -31,6 +31,14 @@ public sealed class WorkspaceModel
     }
 
     /// <summary>
+    /// SL4 R-sl4-10: the same scan with the REFERENCED sub-trees carried forward from the tree
+    /// currently installed rather than re-walked. The workspace's own folders are walked exactly as
+    /// always — this is only about not reading someone else's disk on every window activation.
+    /// </summary>
+    public ProjectTreeNode ScanDetachedReusingReferenced()
+        => WorkspaceScanner.Scan(WorkspaceRootDir, ReferencedSubtrees.Reuse, RootNode);
+
+    /// <summary>
     /// The same scan, WITHOUT installing the result — so it can run on a background thread and the
     /// caller can decide, back on the UI thread, whether the result is worth adopting.
     ///

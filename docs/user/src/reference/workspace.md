@@ -15,6 +15,8 @@ you close the application.
 <ol>
 <li><a href="#regions">The regions of the window</a></li>
 <li><a href="#workspace">What a workspace is</a></li>
+<li><a href="#other-workspaces">Using cells from another workspace</a></li>
+<li><a href="#shared">Sharing a workspace with other people</a></li>
 <li><a href="#documents">Documents and tabs</a></li>
 <li><a href="#panels">The tool panels</a></li>
 <li><a href="#docking">Moving, hiding and resetting the layout</a></li>
@@ -57,6 +59,90 @@ Two consequences worth knowing early:
   **File ▸ Archive Workspace…**, which additionally pulls in the things it references from outside
   the folder — libraries, technologies, optionally kits and results — and repoints the references at
   the copies, so the archive opens on a machine that has none of them.
+
+## Using cells from another workspace {#other-workspaces}
+
+A cell does not have to live in the workspace you are working in. Two commands bring one in, and they
+answer different questions.
+
+**File ▸ Reference Workspace…** points this workspace at another one and gives it a short **alias**.
+Its cells then appear in the Project panel under *Referenced Workspaces*, ready to place. Nothing is
+copied: the cells stay where they are, and when their owner edits one, your design picks up the change
+the next time it draws — no restart, and nothing to re-import.
+
+A referenced workspace is re-read when you open your workspace, when you expand its branch in the
+Project panel, and when you press **Refresh** there — not every time you switch back to the window. So
+if a colleague has just added a cell to the shared library, press Refresh to see it. This keeps the
+application responsive when the library is at the far end of a slow network link.
+
+**File ▸ Add Cell to Workspace…** takes a single cell from another project — as does dragging a cell
+from one workspace window onto another. Either way you are asked the same question:
+
+- **Copy the cell in.** You get your own independent copy. Later changes on the other side do not reach
+  you, and yours do not reach them. If the cell places cells of its own, you are asked whether those
+  come along as copies too or stay referenced where they are.
+- **Reference the cell where it is.** The other workspace is added to your referenced list, and the
+  cell is instanced from there. One master, many users. Its own sub-cells are always referenced with
+  it — a referenced cell is the other project's, all the way down.
+
+<div class="callout note">
+<span class="label">Which to choose</span>
+<p><strong>Reference</strong> when the cell belongs to somebody else and should stay theirs — a company
+standard-parts library on a network share, a colleague's verified amplifier block, a footprint set
+maintained by one person for the whole team. Everyone gets the librarian's corrections automatically,
+and nobody has a private copy that has quietly drifted.</p>
+<p><strong>Copy</strong> when you are about to change it, when you want the project to be
+self-contained, or when you are branching off a known-good design to try something. A copy is yours to
+break.</p>
+</div>
+
+**Referencing a cell needs both workspaces on the same [technology](stackup.html).** A cell drawn for a
+different stack-up would place and be silently wrong, so when the two disagree the Reference option is
+offered greyed out with the reason beside it, and Copy is what you are left with. (Adding the reference
+to the *workspace* is not blocked — it costs nothing until a cell is actually placed — but circuitRF
+warns you at that point.) You are also told before copying if the cell uses parts from a kit this
+workspace has not imported.
+
+Because a reference is written as *alias + cell name* rather than as a path, moving the shared library
+later is one edit in one place, not a hunt through every document that used it.
+
+## Sharing a workspace with other people {#shared}
+
+Put a workspace on a network share and several people can reach it at once. What that means depends on
+whether they can write to it.
+
+**A read-only share is the intended shape, and everything still works.** If the folder's permissions
+allow you to read but not write — the usual arrangement for a company library, where one librarian
+maintains the masters — circuitRF notices when you open it and says so once. Any number of people can
+have it open at the same time with nothing to arbitrate. You can browse it, open its schematics, push
+into a hierarchy, read a cell's parameters and reference its cells from your own designs. You can even
+edit a document to understand it. What you cannot do is save on top of it: **Save** is greyed out with
+the reason shown, and **Save As** puts your version into a workspace you own.
+
+**If two people open a *writable* workspace at the same time, circuitRF tells you.** The second person
+to open it sees a notice naming who has it open and on which machine, and chooses:
+
+- **Open read-only** — browse and read it without writing anything back. The safe answer, and the
+  default.
+- **Open anyway** — work normally, knowing that if you both save, the last save wins.
+- **Cancel** — leave it alone.
+
+<div class="callout note">
+<span class="label">It is a notice, not a lock</span>
+<p>circuitRF cannot reliably tell across a network share whether somebody is still in there, so it
+never blocks you — a lock it could not clear would be worse than the problem. A session that crashed
+on your own machine is recognised straight away and says nothing; one left behind on another machine
+is ignored after several hours.</p>
+<p>The thing genuinely at risk is not your schematics — those are separate files, and a clash is
+visible. It is the workspace's own settings: the panel arrangement, the open-document list and the
+list of referenced workspaces. Two people saving those overwrite each other silently, which is why
+the notice exists.</p>
+</div>
+
+**For a team, the arrangement that avoids the question entirely** is one shared library workspace,
+read-only to everyone but its maintainer, referenced by each engineer's own project. Everybody reads
+the same masters, nobody can damage them, and each person's own work lives in a workspace only they
+open.
 
 ## Documents and tabs {#documents}
 

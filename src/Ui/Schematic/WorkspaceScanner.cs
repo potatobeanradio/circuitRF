@@ -11,6 +11,29 @@ namespace CircuitRF.Ui.Schematic;
 //  Stable ordering: alphabetical (OrdinalIgnoreCase) within every level.
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// <summary>
+/// SL4 R-sl4-10 — whether one scan walks the REFERENCED sub-trees (a referenced library, a
+/// referenced workspace) or reuses what the last walk found.
+///
+/// <para>The workspace's own folders are always walked, on every scan, exactly as before: they are
+/// local almost always, they are the ones the user is editing, and they are the reason the on-focus
+/// rescan exists at all. A referenced library is neither — it changes on someone else's schedule,
+/// possibly at the far end of a wire, and the user's own gesture (expanding it, or pressing Refresh)
+/// is a better trigger for re-reading it than alt-tab is.</para>
+/// </summary>
+public enum ReferencedSubtrees
+{
+    /// <summary>Walk them. Workspace open, explicit Refresh, and first expansion.</summary>
+    Walk,
+
+    /// <summary>
+    /// Reuse the previous walk's contents for each referenced root, and render one that has never
+    /// been walked as <see cref="NodeKind.NotReadYet"/> rather than as empty (R-sl4-11). The
+    /// on-focus rescan.
+    /// </summary>
+    Reuse,
+}
+
 public static class WorkspaceScanner
 {
     private const string CwsFileName = ".cws";
@@ -22,9 +45,23 @@ public static class WorkspaceScanner
     /// <see cref="ProjectTreeNode"/> for the workspace.  Idempotent and cheap
     /// enough to call on every focus or Refresh command.
     /// </summary>
-    public static ProjectTreeNode Scan(string workspaceRootDir)
+    /// <param name="referenced">
+    /// SL4 R-sl4-10. <see cref="ReferencedSubtrees.Walk"/> (the default, and what every caller did
+    /// before SL4) reads the referenced libraries and workspaces from disk;
+    /// <see cref="ReferencedSubtrees.Reuse"/> takes their contents from <paramref name="previous"/>.
+    /// </param>
+    /// <param name="previous">
+    /// The tree currently on screen, whose referenced sub-trees <see cref="ReferencedSubtrees.Reuse"/>
+    /// carries forward. Ignored when walking. Null with Reuse means nothing has been read yet, which
+    /// renders as itself (R-sl4-11) rather than as an empty library.
+    /// </param>
+    public static ProjectTreeNode Scan(
+        string workspaceRootDir,
+        ReferencedSubtrees referenced = ReferencedSubtrees.Walk,
+        ProjectTreeNode? previous = null)
     {
         workspaceRootDir = Path.GetFullPath(workspaceRootDir);
+        var carried = referenced == ReferencedSubtrees.Reuse ? IndexReferencedRoots(previous) : null;
 
         var root = new ProjectTreeNode(
             NodeKind.Workspace,
@@ -60,7 +97,7 @@ public static class WorkspaceScanner
         {
             var libGroup = new ProjectTreeNode(NodeKind.LibrariesGroup, "Libraries", workspaceRootDir, "");
             foreach (string libRef in cws.LibraryRefs.OrderBy(r => r, StringComparer.OrdinalIgnoreCase))
-                libGroup.AddChild(ResolveLibrary(libRef, workspaceRootDir));
+                libGroup.AddChild(ResolveLibrary(libRef, workspaceRootDir, carried));
             root.AddChild(libGroup);
         }
 
@@ -73,7 +110,7 @@ public static class WorkspaceScanner
             var wsGroup = new ProjectTreeNode(
                 NodeKind.ReferencedWorkspacesGroup, "Referenced Workspaces", workspaceRootDir, "");
             foreach (var entry in refs.OrderBy(r => r.Alias, StringComparer.OrdinalIgnoreCase))
-                wsGroup.AddChild(ResolveReferencedWorkspace(entry, workspaceRootDir));
+                wsGroup.AddChild(ResolveReferencedWorkspace(entry, workspaceRootDir, carried));
             root.AddChild(wsGroup);
         }
 
@@ -279,7 +316,8 @@ public static class WorkspaceScanner
 
     // ── Library ───────────────────────────────────────────────────────────────
 
-    private static ProjectTreeNode ResolveLibrary(string libRef, string workspaceRoot)
+    private static ProjectTreeNode ResolveLibrary(
+        string libRef, string workspaceRoot, Dictionary<string, ProjectTreeNode>? carried)
     {
         string resolved = ResolveRef(libRef, workspaceRoot);
 
@@ -311,8 +349,14 @@ public static class WorkspaceScanner
         // two hundred parts is organised into folders on the first day, and until R-sl1-1 such a
         // library rendered EMPTY here while every reference into it still resolved — resolution is
         // path arithmetic and never consults the tree, so only the browsing was missing.
-        foreach (var child in BuildReferencedChildren(libDir, workspaceRoot))
-            libNode.AddChild(child);
+        //
+        // SL4 R-sl4-10: unless this scan is the on-focus one, in which case the walk is skipped and
+        // the last one's children are carried forward (R-sl4-11 — never an empty node).
+        if (carried is not null)
+            CarryForward(libNode, carried);
+        else
+            foreach (var child in BuildReferencedChildren(libDir, workspaceRoot))
+                libNode.AddChild(child);
 
         return libNode;
     }
@@ -324,7 +368,8 @@ public static class WorkspaceScanner
     /// workspace's root, so everything downstream — placement, Reveal, the properties header — sees
     /// where the cell really lives rather than a path inside this workspace.
     /// </summary>
-    private static ProjectTreeNode ResolveReferencedWorkspace(CwsWorkspaceRef entry, string workspaceRoot)
+    private static ProjectTreeNode ResolveReferencedWorkspace(
+        CwsWorkspaceRef entry, string workspaceRoot, Dictionary<string, ProjectTreeNode>? carried)
     {
         string? otherRoot = ExternalCellRef.WorkspaceRootForAlias(workspaceRoot, entry.Alias);
 
@@ -347,8 +392,14 @@ public static class WorkspaceScanner
         // a cell's own hierarchy, not about a second workspace's configuration. R-sl1-2 keeps that
         // standing decision verbatim and adds the depth rule to it: recurse through FOLDERS, never
         // through another .cws.
-        foreach (var child in BuildReferencedChildren(otherRoot, otherRoot))
-            node.AddChild(child);
+        //
+        // SL4 R-sl4-10, exactly as for a library above: the on-focus rescan carries the last walk's
+        // children forward instead of re-reading someone else's disk on every alt-tab.
+        if (carried is not null)
+            CarryForward(node, carried);
+        else
+            foreach (var child in BuildReferencedChildren(otherRoot, otherRoot))
+                node.AddChild(child);
 
         return node;
     }
@@ -400,6 +451,61 @@ public static class WorkspaceScanner
         return children;
     }
 
+    // ── Carrying a referenced sub-tree forward (SL4 R-sl4-10/-11) ─────────────
+
+    /// <summary>
+    /// Every <see cref="NodeKind.Library"/> and <see cref="NodeKind.ReferencedWorkspace"/> node in
+    /// the tree currently on screen, by absolute path — what an on-focus rescan carries forward
+    /// instead of re-walking. Null <paramref name="previous"/> gives an empty index, which is the
+    /// "nothing has been read yet" case R-sl4-11 renders honestly.
+    /// </summary>
+    private static Dictionary<string, ProjectTreeNode> IndexReferencedRoots(ProjectTreeNode? previous)
+    {
+        var index = new Dictionary<string, ProjectTreeNode>(StringComparer.OrdinalIgnoreCase);
+        if (previous is null) return index;
+
+        // Only the two GROUP nodes can hold them, so this is a two-level walk rather than a full one.
+        foreach (var group in previous.Children)
+        {
+            if (group.Kind is not (NodeKind.LibrariesGroup or NodeKind.ReferencedWorkspacesGroup))
+                continue;
+            foreach (var node in group.Children)
+                index[PathKey(node.AbsolutePath)] = node;
+        }
+        return index;
+    }
+
+    /// <summary>
+    /// Gives <paramref name="node"/> the children the last walk found for the same referenced root,
+    /// or the single <see cref="NodeKind.NotReadYet"/> placeholder when there was no last walk.
+    ///
+    /// <para><b>R-sl4-11 is the whole of this method.</b> A referenced sub-tree that has not been
+    /// walked must render as ITSELF — an empty library is the exact symptom SL1 exists to remove, and
+    /// it must not come back through a caching rule. Carrying the previous contents forward is honest
+    /// (it is what was there a moment ago, and re-reading it is one gesture away); a placeholder that
+    /// says nothing has been read yet is honest; rendering nothing at all is not.</para>
+    ///
+    /// <para>The previous walk's node objects are REUSED rather than copied. A
+    /// <see cref="ProjectTreeNode"/> is transient and immutable once built — nothing persists an Id,
+    /// and the view models are rebuilt from it every time — so sharing a sub-tree between two scan
+    /// results costs nothing and keeps the signature stable, which is what stops the tree flashing.
+    /// </para>
+    /// </summary>
+    private static void CarryForward(ProjectTreeNode node, Dictionary<string, ProjectTreeNode> carried)
+    {
+        if (carried.TryGetValue(PathKey(node.AbsolutePath), out var before) && before.Children.Count > 0)
+        {
+            foreach (var child in before.Children) node.AddChild(child);
+            return;
+        }
+
+        node.AddChild(new ProjectTreeNode(
+            NodeKind.NotReadYet,
+            name: "Not read yet — expand or Refresh to browse",
+            absolutePath: node.AbsolutePath,
+            relativePath: node.RelativePath));
+    }
+
     // ── Known File ────────────────────────────────────────────────────────────
 
     private static ProjectTreeNode BuildKnownFileNode(string kfRef, string workspaceRoot)
@@ -422,6 +528,11 @@ public static class WorkspaceScanner
     {
         var name = Path.GetFileName(path);
         return string.Equals(name, ".DS_Store", StringComparison.OrdinalIgnoreCase)
+            // SL4 R-sl4-1's advisory lock. This list is NOT "dotfiles in general" — it is an explicit
+            // set — so a file circuitRF itself drops in a workspace root has to be named here or it
+            // renders as a loose file node and travels into an archive. SL2's write probe learned
+            // this the same way.
+            || string.Equals(name, CircuitRF.Design.Workspace.WorkspaceLock.FileName, StringComparison.OrdinalIgnoreCase)
             || string.Equals(Path.GetExtension(path), ".source", StringComparison.OrdinalIgnoreCase);
     }
 

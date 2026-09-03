@@ -484,6 +484,10 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         IsEmptyState      = false;
         TypeDisplayName   = TypeDisplayNameFor(comp);
+        // SL3 R-sl3-9: the third surface. This is the instance's own Properties inspector, so it says
+        // what changed about the cell THIS instance references, and offers the one explicit gesture
+        // that accepts it (R-sl3-10).
+        InterfaceChangedNoticeText = _schematicVm?.InterfaceChangeFor(comp.CellRef)?.InstanceNotice ?? "";
         StagedInstanceName = comp.InstanceName;
         ShowTypeLabel     = comp.ShowTypeLabel;
         ShowInstanceName  = comp.ShowInstanceName;
@@ -1457,6 +1461,38 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             .Where(p => comp.Symbol != SymbolKind.SpiceModel
                         || !SpiceModelSymbolProvider.IsPanelParameter(p.Name))
             .ToList();
+    }
+
+    // ── SL3: the referenced cell's interface changed under this instance ──────
+
+    /// <summary>Non-empty when the cell this instance references no longer publishes the interface it
+    /// was placed against (SL3 R-sl3-9). Empty for every other component, which is the overwhelmingly
+    /// common case and renders exactly as it did before (R-sl3-5).</summary>
+    [ObservableProperty] private string _interfaceChangedNoticeText = "";
+
+    public bool HasInterfaceChanged => InterfaceChangedNoticeText.Length > 0;
+
+    partial void OnInterfaceChangedNoticeTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasInterfaceChanged));
+        AcceptNewInterfaceCommand.NotifyCanExecuteChanged();
+        AcceptNewInterfaceEverywhereCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>R-sl3-10 — accept for THIS instance. Never automatic; never on open or save.</summary>
+    [RelayCommand(CanExecute = nameof(HasInterfaceChanged))]
+    private void AcceptNewInterface() => AcceptInterface(everyInstance: false);
+
+    /// <summary>R-sl3-10 — accept for every instance of this cell in this document. Forty instances of
+    /// one changed cell is one problem, so it can be answered once.</summary>
+    [RelayCommand(CanExecute = nameof(HasInterfaceChanged))]
+    private void AcceptNewInterfaceEverywhere() => AcceptInterface(everyInstance: true);
+
+    private void AcceptInterface(bool everyInstance)
+    {
+        if (_schematicVm is null || _target is null) return;
+        _schematicVm.AcceptNewInterfaceFor([_target], everyInstance);
+        InterfaceChangedNoticeText = _schematicVm.InterfaceChangeFor(_target.CellRef)?.InstanceNotice ?? "";
     }
 
     private static bool ParamNameOrderEquals(IEnumerable<EditableParameter> a, IReadOnlyList<EditableParameter> b)

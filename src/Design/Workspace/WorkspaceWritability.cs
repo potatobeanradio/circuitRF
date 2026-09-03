@@ -65,6 +65,11 @@ public static class WorkspaceWritability
         string key = WorkspaceRootFinder.Normalize(directory);
         if (key.Length == 0) return true;
 
+        // SL4 R-sl4-2: a workspace the user CHOSE to open read-only, because someone else already had
+        // it open. Checked before the memo and before the probe, since the filesystem's answer is
+        // "yes, writable" and the whole point is that we are not going to.
+        if (IsUnderSessionReadOnlyRoot(key)) return false;
+
         lock (_memoGate)
             if (_memo.TryGetValue(key, out bool memo)) return memo;
 
@@ -121,6 +126,66 @@ public static class WorkspaceWritability
     public static void InvalidateCache()
     {
         lock (_memoGate) _memo.Clear();
+    }
+
+    // ── Opened read-only by CHOICE (SL4 R-sl4-2) ─────────────────────────────
+
+    private static readonly HashSet<string> _sessionReadOnlyRoots = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// SL4 R-sl4-2: marks the workspace at <paramref name="workspaceRootDir"/> — and every directory
+    /// beneath it — as read-only for this session, because the user answered "open read-only" to the
+    /// advisory notice that someone else already had it open.
+    ///
+    /// <para><b>This deliberately reuses SL2 rather than adding a second concept.</b> Everything a
+    /// read-only workspace does — Save disabled with a reason, the <c>.cws</c> write choke point
+    /// skipping silently, the provenance band, the generated-cell wipe not running, Save As on quit —
+    /// is already built and already tested, and "a workspace we have chosen not to write" and "a
+    /// workspace we cannot write" want identical behaviour from every one of those. A parallel flag
+    /// would be the one that is true in fourteen places.</para>
+    ///
+    /// <para>It is a PREFIX rule, not a set membership one: the question is asked about a document's
+    /// own directory far more often than about the root (R-sl2-4), and marking only the root would
+    /// leave every file inside it saveable.</para>
+    /// </summary>
+    public static void OpenReadOnlyThisSession(string? workspaceRootDir)
+    {
+        string key = WorkspaceRootFinder.Normalize(workspaceRootDir);
+        if (key.Length == 0) return;
+        lock (_memoGate) { _sessionReadOnlyRoots.Add(key); _memo.Clear(); }
+    }
+
+    /// <summary>Forgets a session read-only choice — the workspace is being closed or reopened, and
+    /// the answer to "open anyway?" is asked afresh each time it is opened.</summary>
+    public static void ClearSessionReadOnly(string? workspaceRootDir)
+    {
+        string key = WorkspaceRootFinder.Normalize(workspaceRootDir);
+        if (key.Length == 0) return;
+        lock (_memoGate) { _sessionReadOnlyRoots.Remove(key); _memo.Clear(); }
+    }
+
+    /// <summary>Forgets every session read-only choice. Test teardown, and a full reset.</summary>
+    public static void ClearAllSessionReadOnly()
+    {
+        lock (_memoGate) { _sessionReadOnlyRoots.Clear(); _memo.Clear(); }
+    }
+
+    private static bool IsUnderSessionReadOnlyRoot(string normalizedDir)
+    {
+        lock (_memoGate)
+        {
+            if (_sessionReadOnlyRoots.Count == 0) return false;
+            foreach (string root in _sessionReadOnlyRoots)
+            {
+                if (normalizedDir.Equals(root, StringComparison.OrdinalIgnoreCase)) return true;
+                if (normalizedDir.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                    && normalizedDir.Length > root.Length
+                    && (normalizedDir[root.Length] == Path.DirectorySeparatorChar
+                        || normalizedDir[root.Length] == Path.AltDirectorySeparatorChar))
+                    return true;
+            }
+            return false;
+        }
     }
 
     /// <summary>The probe file's name prefix. One place, because the sweep has to agree with the

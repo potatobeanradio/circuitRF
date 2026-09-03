@@ -130,15 +130,28 @@ public static class CellFolder
     ///   <item>Multiple files + .ccell names none → <see cref="PrimaryState.NoPrimary"/></item>
     /// </list>
     /// </summary>
-    public static PrimaryResolution ResolvePrimary(string cellFolder, ViewType viewType)
+    /// <param name="useStatCache">
+    /// SL4 R-sl4-7. False (the default) reads the filesystem every time, exactly as before SL4 — the
+    /// PROJECT TREE's own scan and the tree node view models pass this, because a user who has just
+    /// created a symbol and pressed Refresh must see it, and because §3's answer to the tree's cost
+    /// is R-sl4-10 (don't walk a referenced sub-tree on focus), not a cheaper stat.
+    ///
+    /// <para>True is <c>CellSymbolResolver.Resolve</c>, and only it: a positive answer may then be up
+    /// to <see cref="CellStat.Freshness"/> old, which is the one guarantee SL4 traded away and is
+    /// stated there in full. That is the path that runs once per referenced component per EDIT.</para>
+    /// </param>
+    public static PrimaryResolution ResolvePrimary(
+        string cellFolder, ViewType viewType, bool useStatCache = false)
     {
         string subFolder = SubFolderPath(cellFolder, viewType);
         string ext       = ViewExtension(viewType);
 
-        if (!Directory.Exists(subFolder))
+        // SL4 R-sl4-6: every filesystem call on the resolution path goes through CellStat, which is
+        // what makes the cost of a reference a COUNT — whether or not this caller caches.
+        if (!CellStat.DirectoryExists(subFolder, useStatCache))
             return new PrimaryResolution { State = PrimaryState.NoView };
 
-        var files = Directory.GetFiles(subFolder, $"*{ext}")
+        var files = CellStat.GetFiles(subFolder, $"*{ext}", useStatCache)
                              .Select(Path.GetFileName)
                              .Where(f => f is not null)
                              .Cast<string>()
@@ -153,7 +166,7 @@ public static class CellFolder
             return new PrimaryResolution { State = PrimaryState.SoleFile, ResolvedName = files[0] };
 
         // Multiple files — consult .ccell for the named primary.
-        string? namedPrimary = ReadNamedPrimary(cellFolder, viewType);
+        string? namedPrimary = ReadNamedPrimary(cellFolder, viewType, useStatCache);
 
         if (namedPrimary is not null)
         {
@@ -171,26 +184,11 @@ public static class CellFolder
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private static string? ReadNamedPrimary(string cellFolder, ViewType viewType)
-    {
-        string ccellPath = Path.Combine(cellFolder, CcellFileName);
-        if (!File.Exists(ccellPath))
-            return null;
-
-        try
-        {
-            var ccell = CellPersistence.LoadFromFile(ccellPath);
-            return viewType switch
-            {
-                ViewType.Schematic => ccell.PrimarySchematic,
-                ViewType.Symbol    => ccell.PrimarySymbol,
-                ViewType.Layout    => ccell.PrimaryLayout,
-                _                  => null,
-            };
-        }
-        catch (InvalidDataException)
-        {
-            return null;  // format mismatch or corrupt .ccell → treat as no primary named
-        }
-    }
+    /// <summary>
+    /// Step 4 of the resolution path — reached only when a view sub-folder holds more than one file.
+    /// SL4 moved the read itself into <see cref="CellStat.NamedPrimary"/>, for the same two reasons
+    /// the three stat calls above went there: it is counted, and a positive answer is bounded by T.
+    /// </summary>
+    private static string? ReadNamedPrimary(string cellFolder, ViewType viewType, bool useStatCache)
+        => CellStat.NamedPrimary(cellFolder, viewType, useStatCache);
 }

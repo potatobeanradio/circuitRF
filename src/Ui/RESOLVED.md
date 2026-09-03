@@ -1,5 +1,286 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## SL4 — concurrent users, and what a reference costs over a wire (2026-09-03)
+
+`brief-shared-library-4-concurrency-and-latency.md`, the last of the four-brief shared-library series
+(`brief-shared-library-0-overview.md` is the map). It is last on purpose: §2 is the only change in the
+series that trades away a property the product currently has, and §1 is the only one that can produce a
+false statement about another person.
+
+### The measurement, which is the brief's actual product
+
+**Counted, not timed** (R-sl4-6, and the repo's standing rule: a timing assertion measures the machine,
+flakes under parallel load and inverts under a debug build). A counting seam — `CellStat`, in
+`src/Design/Cells/` — wraps every filesystem call `CellSymbolResolver.Resolve` and
+`CellFolder.ResolvePrimary` make. Measured on a scratch harness, then kept, because §4's gate asserts on it.
+
+| Shape | Calls per component | One 40-component edit |
+|---|---|---|
+| One symbol in the cell (the ordinary case) | **4** | **160** |
+| Two symbols, `.ccell` names the primary | **6** | — |
+| The same edit repeated, cache OFF | 4 | 160 — **nothing amortises** |
+| The same edit repeated, cache ON, inside T | 0 | **0** |
+| Ten edits over five seconds, cache ON | — | **320**, against 1,600 |
+
+The four are `Directory.Exists` on the cell folder, `Directory.Exists` and `Directory.GetFiles` on its
+`symbol/`, and `File.GetLastWriteTimeUtc` on the primary — **all of them before the symbol cache can be
+consulted**, because the mtime IS the cache key. `EditableSchematic.BuildRenderModel` re-resolves every
+component on every model change, and `SchematicViewModel` wires that to `EditModel.Changed`, so the table's
+per-edit column is the real per-edit cost.
+
+**§5's stop-and-report condition was checked and is not met, and it was settled structurally rather than by
+another measurement.** `EditableSchematic` contains no `File.` or `Directory.` call of its own — grep it —
+and the whole of `EditModel.Changed` is `RebuildRenderModel`. The connectivity pass, the spatial index and
+the render touch no filesystem at all, and SL3's interface watch is explicitly off the render path. The
+resolver is therefore not merely the dominant per-edit filesystem cost; it is the entire one.
+
+### T = 2 seconds, and the one guarantee that was traded away
+
+Before SL4: *"a change on disk is seen at the next resolve"* — the property that makes the librarian's edit
+reach every user without a restart, and the one the whole workflow rests on. Now: **"seen within T of the
+next resolve"**, stated in one place (`CellStat.Freshness`) and in `workspace-and-project-tree.md` §4.
+
+**Two seconds rather than one.** The bound has to be shorter than the fastest way a person can OBSERVE the
+weakening — save a cell on the librarian's machine, then walk or alt-tab to a second machine and look at a
+design that places it — and that round trip is never under a few seconds. It sits at the top of the brief's
+one-to-two-second band because what the cache actually collapses is a burst: consecutive discrete edits are
+seconds apart, not milliseconds, so a one-second bound misses most of them while buying no guarantee anybody
+can perceive. It is a bound, not a schedule — nothing refreshes on a timer, and on a design nobody is
+touching the change is seen at exactly the same moment as before, because the first resolve after it is
+already more than T after the last one.
+
+### Two things the cache must not do, and one it nearly did
+
+- **A negative is never cached** (R-sl4-8). A cell folder that was not there, a `symbol/` with no `.csym` in
+  it, an mtime for a file that is not present — each is re-asked on the very next resolve. Caching "not
+  found" for even a second turns a share that blinked into a design full of Not-Found glyphs that persist
+  after the network has recovered, which reads as data loss and is not. Verified to CATCH that rather than
+  merely to state it: temporarily caching the `Directory.Exists` false turns
+  `ACellThatDidNotResolve_IsReAskedImmediately_NotAfterT` red, and caching the empty `GetFiles` turns
+  `ACellWhoseFirstSymbolHasJustBeenWritten_ResolvesImmediately` red.
+- **`CellSymbolResolver.ResolveCcell` is still uncached at any T** and must stay so — a stale parameter
+  interface is a silently wrong instance, and SL3's interface watch reads through it. What IS bounded by T
+  is the `.ccell`'s *named primary*, which is the "which file is primary" question, read through
+  `ResolvePrimary` and reached only for a cell holding more than one symbol.
+
+**The one it nearly did — caught by two pre-existing tests, and worth recording because the fix is a
+boundary rather than a value.** `CellFolder.ResolvePrimary` is shared by the resolver AND by the project
+tree's own scan (and by every cell node view model, which asks it three times). Caching inside it applied
+the reference-resolution bound to the TREE: `WorkspaceScannerTests.Rescan_ContradictionAppearsWhenPrimaryFileDeleted`
+and its restore twin both went red, and they were right to — a user who creates a symbol and presses Refresh
+must see it, and no bound justified over a network wire applies to a file the user themselves just wrote a
+millisecond ago. **Caching is now opt-in per call site** (`ResolvePrimary(..., useStatCache:)`, default
+false); only `CellSymbolResolver.Resolve` passes true. Both callers still COUNT, which is what §4's tree
+tests assert on. The tree's own cost has a different answer, and the brief says so: R-sl4-10, not a cheaper
+stat.
+
+Dropped by `WorkspaceRootFinder.InvalidateCache` alongside the walk-up, the alias table and SL2's writability
+probe (R-sl4-9 — the fourth memo on the one lifecycle), and by `CellSymbolResolver.Invalidate` for the single
+cell a Make-Primary rewrote: the freshness bound is about someone ELSE's edit arriving over a wire, never
+about a gesture the user just made themselves.
+
+### The tree: a referenced sub-tree is read on a gesture, not on alt-tab
+
+`ProjectTreeTool.RefreshAsync` is well built for a local disk — off the UI thread, `_scanInFlight` against a
+focus storm, and a 64-bit signature that skips the rebuild when nothing changed. But **the signature is
+computed from the scan's RESULT**, so the walk always happens: on open, on every window activation, and on
+every dialog close. After SL1 that walk includes every folder of the referenced library — SL1 measured ~2,800
+filesystem round trips for a 200-cell one.
+
+`WorkspaceScanner.Scan` now takes a `ReferencedSubtrees` mode. **`Walk` is the default and is what every
+caller did before**; the on-focus path is the only one that passes `Reuse`, and it carries the previous
+walk's children forward. Three gestures read a referenced sub-tree: workspace open, explicit Refresh, and the
+first expansion of an unread node. The workspace's **own** folders are walked on every scan, unchanged.
+
+**R-sl4-11 needed a real node, not just a rule.** A sub-tree with no previous walk — the case that arises
+when a reference is added to the `.cws` after this window opened — renders one `NodeKind.NotReadYet` child
+saying so. That is the message, and it is also the mechanism: **a TreeView draws no expander for a childless
+node**, so without a placeholder there would be nothing to expand and the third trigger could never fire. It
+is italic and carries no `WarningReason` — an unread library is an ordinary, expected state, and *an empty
+library is the exact symptom SL1 exists to remove; it must not come back through a caching rule.*
+
+The expansion trigger is threaded down the node view models as a delegate rather than added to `ITreeActions`:
+this is the tree re-reading itself, and every other member of that interface is an action on a document. It
+runs a full `Refresh` rather than splicing one sub-tree in, because a second way to build the tree is exactly
+how the empty library came back the first time; `CollectExpandedPaths` restores the node the user clicked,
+which is why the flag is set BEFORE the callback fires.
+
+### The advisory lock, and the failure it is bounded against
+
+`WorkspaceLock` (`src/Design/Workspace/`) writes `.crf-open.json` beside the `.cws` — user, host, pid, time —
+when the workspace is opened **and is writable**, and removes it on close. `SwitchToWorkspace`'s existing
+refusal is correct and entirely process-local (`App.WindowShowing` enumerates this process's windows); every
+consequence its comment names is equally true of two people on two machines. What is actually at stake is the
+`.cws` — dock layout, kit settings and **the alias table** — not the documents: a clobbered `.csch` is at
+least visible, and an alias that vanished from someone else's file is not a symptom anyone attributes
+correctly.
+
+- **The notice is suppressed for a session that cannot WRITE**, which is not in the brief and had to be
+  added: a read-only opener is not a party to last-writer-wins, and last-writer-wins is the only thing
+  the notice exists to bound. The shared library IS that case — read-only to everyone but the librarian
+  — so without this every engineer who opened it would get a modal saying the librarian is in there,
+  about a hazard they cannot cause, in front of the exact workflow the series was written to support.
+  Same test as R-sl4-1's "takes no lock": a session that cannot write neither writes a lock nor reads one.
+- **Both answers, always** (R-sl4-2, and R-sl-8 before it). The notice names who and where, says plainly that
+  circuitRF cannot tell whether they still have it open, and offers read-only, open-anyway and cancel. A test
+  asserts the words *locked*, *blocked*, *unavailable* and *denied* do not appear, because a lock this product
+  treated as authoritative becomes a stale file that locks out a team — a worse failure than the one being
+  prevented, and unfixable by anyone who does not know the file exists.
+- **"Open read-only" is SL2's state reached by choice**, via `WorkspaceWritability.OpenReadOnlyThisSession` —
+  a prefix rule over the workspace root, checked before the memo and before the probe. That was the whole
+  design decision here: a parallel flag would have had to be honoured at the `.cws` choke point, the Save
+  enablement, the quit prompt, the provenance band, the generated-cell wipe and the PCell refusal, and would
+  have been true in fourteen of them. It is asked afresh on every open and cleared when the workspace is left.
+- **Stale by two independent rules** (R-sl4-3), and a stale lock costs nobody a dialog — one Info line naming
+  which rule fired. Rule one is this host plus a dead pid; rule two is age, **8 hours**, hours not minutes
+  because an engineer leaves a workspace open over lunch and a threshold short enough to catch a crash is
+  short enough to declare a colleague's live session dead. A lock from ANOTHER host can only ever be stale by
+  age: that machine's pids say nothing here, and half of them are live on any busy machine. "Cannot tell
+  whether a process is running" reads as ALIVE, deliberately — declaring a live session dead is the direction
+  that produces a false statement about a person.
+- **No open file handle** (R-sl4-4). `CrashReporter` and the single-instance check both hold one on purpose
+  and are right to locally; those guarantees do not survive SMB, NFS or a dropped connection, and the failure
+  direction is a confident false statement about another person. Gated by opening, deleting and re-creating
+  the file while the lock is "held".
+- **The lock file had to be added to `IsHiddenTreeFile` by name.** That list is an explicit set — `.DS_Store`
+  and `*.source` — and **not dotfiles in general**, so without it the lock would render as a loose file at the
+  workspace root and travel into an archive. SL2's write probe fell into the same trap; this is the second
+  time, so it is worth stating as a rule: anything circuitRF drops in a workspace root is invisible only if
+  that method says so.
+- **Release removes only OUR lock.** One naming another host belongs to a session that is still running, and
+  deleting it because we closed a window would silently disarm the notice for the person who is actually in
+  there. A malformed lock file is no evidence at all and is ignored rather than treated as a refusal.
+- **It also had to be kept out of an ARCHIVE, which keeps a skip list of its own** rather than the tree's.
+  The lock carries a **user name and a host name**, so archiving one would put a colleague's account into a
+  file sent outside the company and would greet the recipient with a notice about a session that has nothing
+  to do with them. Matched by the `.crf-` prefix, which also closes the same pre-existing leak for **SL2's
+  write probe** — that note predicted an orphaned probe would travel into an archive, and it would have.
+
+**Did the advisory lock produce any false statement about another user during the work, in either direction?**
+Asked because R-sl4-2 exists to bound exactly that, and answered from observation rather than assumed absent.
+**In one direction, once, and it was a defect in the first attempt at the staleness rule rather than in the
+design.** Before rule one was scoped to this host, a lock written by a simulated `lab-99` was read as stale
+because pid 1234 was not running *here* — a confident "they have gone" about a session that had not. That is
+now `AStaleLock_IsDetectedByAge_AndAgeIsTheOnlyRuleForAnotherHost`, which drives a live-looking foreign lock
+past a `ProcessIsRunning` that answers false for everything. In the other direction — claiming somebody is in
+a workspace nobody is in — nothing was observed, and the cost is bounded by construction: it is one overridable
+notice, and both stale rules are heuristics precisely because being wrong here must never cost access.
+
+### Gate
+
+`tests/Ui.Tests/SharedLibraryConcurrencyTests.cs`, 23 tests, no timing assertions anywhere — counters
+(`CellStat.Calls`) for the structural properties, and injected clock/host/pid/writability seams for the rest.
+The freshness bound is tested by MOVING TIME, never by sleeping: a test that slept for T would take T, flake
+under full-suite load, and measure the machine. Two of the negative-caching tests were verified to go red
+against a deliberately broken rule rather than asserted from inspection. `dotnet test tests/Ui.Tests` and
+`tests/Firewall.Tests` both green.
+
+## SL3 — reporting a changed cell interface (2026-09-03)
+
+`brief-shared-library-3-interface-change.md`, the third of the four-brief shared-library series
+(`brief-shared-library-0-overview.md` is the map). **A report, not a version-control feature, not a
+locking feature, not an approval workflow.** It records one fact at placement and compares it at
+resolve. `workspace-and-project-tree.md` §4.3 is the design note; the field is in
+`project-file-formats.md`; the gate is `tests/Ui.Tests/CellInterfaceChangeTests.cs` (24 tests).
+
+### R-sl3-8 and R-sl3-3 cannot both be satisfied, and R-sl3-3 wins
+
+**This is the one place the built thing differs from the brief, and it is a direct conflict between two
+of the brief's own requirements.** R-sl3-8 asks the report to say *"`Amp`'s interface changed: 4 pins →
+5, pin `vg` moved"*, on the reasoning that "the comparison has both sides in hand at the moment it
+fires". It does not. R-sl3-3 says the HASH is stored and the interface is not — deliberately, and for a
+good reason: a stored signature would put a copy of the library's interface into every referencing file,
+which is the second source of truth every reference form in this codebase exists to avoid. A hash is not
+invertible, so **the old interface is exactly the thing that is not in hand.**
+
+What the report says instead is computed from what genuinely IS in hand — the new interface, and the
+instance's own carried state:
+
+- the interface as it is NOW: pins, `PortCount` (when it differs from the pin count), declared parameters;
+- every affected instance, by name, in document order;
+- **which of those instances' ports nothing currently meets** — the electrical consequence, which is what
+  R-sl3-8 itself calls the most useful part, taken from the connectivity pass that is already running
+  rather than recomputed;
+- which parameter names the instances carry that the cell no longer declares, and which the cell now
+  declares that they lack — the parameter half of the interface, recoverable because an instance's
+  parameter list was seeded from the cell's own declarations at placement.
+
+**One honest over-report remains in there.** "Not connected now" lists every unconnected port of an
+affected instance, including one that was never wired — without the old interface there is no way to say
+"*now*" precisely. It is bounded: it is only ever said about an instance already known to be affected, so
+it explains a change rather than detecting one.
+
+### The brief's exclusions held, and the parameter DEFAULT one is the interesting case
+
+R-sl3-2 excludes the drawing primitives, the parameter defaults, the cell's schematic and its layout
+view. All four are asserted rather than assumed (§6.3's four tests). **The defaults exclusion is the one
+the brief flags as most likely to be wrong, and on the fixtures here it is right** — an instance that
+overrides a parameter is unaffected, and one that does not is *meant* to follow the library, which is the
+whole point of a shared default. It has not been exercised against a real 200-cell library, so the
+question the owner should actually hear is narrower than the brief's: **is there a case where a librarian
+changes a default and expects existing designs to be told?** If so, the fix is a separate, quieter report
+— not a second field in the hash, which would make every default edit fire the *connections may be wrong*
+warning, and that would be a lie.
+
+### The fourth state is NOT a fourth `CellSymbolState`, and the reason is the render
+
+R-sl3-7 says `InterfaceChanged` "does not collapse into the other three". Read literally as "add a fourth
+enum member" it would have been wrong: every member of `CellSymbolState` puts the instance on a *draw a
+placeholder instead of the symbol* path (`SchematicRenderer`'s own if-chain branches on it before it
+reaches `DrawSymbol`), and here the placeholder is exactly the wrong render — R-sl3-1 says the librarian's
+new symbol is the truth and must draw. So it is a separate runtime mark
+(`EditableComponent.InterfaceChanged`, `[JsonIgnore]` by never being in `CschComponent` at all), copied
+into the render model, and the chrome is drawn *around* a correctly-rendered glyph. §4.2's "do not collapse
+these" argument is what forced the separation, not what was overcome by it.
+
+### Three things that would have silently erased the recorded hash
+
+The hash is the only evidence a design was authored against a different interface, so anything that drops
+it on an ordinary operation implements nothing while appearing to work. Three such paths existed:
+
+- **`LayoutGeometry.Clone`** — the ONE clone helper for every properties-panel edit, move drag and paste.
+  A move would have cleared the mark.
+- **`EditableComponent.Clone`** — the schematic equivalent, reached by copy/paste and by every command
+  that rebuilds a component.
+- **`LayoutFlatten`'s array expansion** — exploding an array is not a re-placement.
+
+Each carries the field now, each with a comment saying why. **`CrossWorkspaceCellCopy` deliberately does
+NOT recompute**: it rewrites references to point at a COPY of the same cell, whose interface is by
+construction identical, so the recorded statement is still true about the new target.
+
+**Re-pointing an instance at a DIFFERENT cell is the opposite case and does recompute** — a clone would
+otherwise carry forward a statement about a cell the instance no longer names. Both layout
+(`ChangeSelectedInstanceCellRef`) and schematic (`TryChangeToCellType`) do.
+
+### The cost, as a call count
+
+`CellInterfaceWatch.LastScanHashCount` is the measurement, deliberately a **count** rather than a time —
+per the owner's standing instruction that a timing test measures the machine. It is **one hash per
+instance carrying a recorded hash, and zero for a document that carries none** — which is every document
+written before SL3, so the feature costs literally nothing until something has been placed with it. A
+hash is one `CellSymbolResolver.Resolve` (cached, mtime-checked) plus one `ResolveCcell` (uncached by
+design — see its own doc comment) plus a SHA-256 over a few hundred bytes. It runs **at document open and
+on an explicit re-check, never per frame**; `BuildRenderModel` is asked once per scan and only when
+something actually changed, so an unaffected open pays for the hashes and nothing else.
+
+### Everything in the tree that stores a `CellRef` — R-sl3-6's list, and it is short
+
+Five sites produce a stored reference, all through `ExternalCellRef.MakeCellRef`, now wrapped by
+`PlacedCellRef` so the reference and its hash are produced together:
+`SchematicViewModel.CommitCellPlacementAsync`, `SchematicCanvas`'s placement ghost (a preview — stores
+nothing), `LayoutCanvas.RelativeCellRefForDrag` (feeding `TryPlaceNewInstance`, the ONE layout commit
+path), `InstanceCellPickerDialog`, and `CrossWorkspaceCellCopy`. Two more assign a `CellRef` at what is
+genuinely a placement and record there too: `TryChangeToCellType` (retyping a component's label into a
+cell name) and `ChangeSelectedInstanceCellRef`.
+
+**The rest do not need the field, and each for a stated reason.** The interchange importers
+(`GdsiiImport`, `DxfImport`, `PcbImport`) write their OWN cells in the same pass, so there is no
+pre-existing interface to have been placed against; the exporters (`GdsiiExport`, `DxfExport`) write a
+foreign format that has no such concept. `LayoutFragment`'s paste rebasing, `LayoutFlatten` and
+`GeneratedCellsLifecycle`'s rename all re-address the SAME cell, so the hash they carry stays true.
+`MatchFlattenService` and `WBondReferenceGeometry` create a cell and reference it in one step, where a
+recorded hash would be a statement about a cell nobody else has touched yet.
+
 ## SL2 — read-only workspaces: noticing before the work, not after (2026-09-03)
 
 `brief-shared-library-2-read-only-workspaces.md`, the second of the four-brief shared-library series

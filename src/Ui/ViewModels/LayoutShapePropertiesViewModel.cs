@@ -971,6 +971,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             var inst = _vm.EffectiveInstanceAt(indices[0]);
             var resolution = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
             ApplyExternalStatus(ExternalCellStatusResolver.Classify(inst.CellRef, _vm.InstanceBaseDir));
+            ApplyInterfaceChange(inst.CellRef);
             SelectionSummaryText = InstanceSummary(inst, resolution, ExternalSourceName);
             IsSelectedInstancePCell = resolution is
                 { State: CellLayoutState.Resolved, View.PCellOrigin: not null };
@@ -2059,6 +2060,42 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     [ObservableProperty] private string _externalRefRepairText = "";
 
     public bool HasExternalRef => !string.IsNullOrEmpty(ExternalRefNoticeText);
+
+    // ── SL3: the cell's interface changed under this instance ─────────────────
+
+    /// <summary>Non-empty when the selected instance's cell no longer publishes the interface it was
+    /// placed against (SL3 R-sl3-9). Rendered as a warning band, beside — never instead of — the
+    /// external-reference band above: an external cell whose interface changed carries both, and the
+    /// two say different things.</summary>
+    [ObservableProperty] private string _interfaceChangedNoticeText = "";
+
+    public bool HasInterfaceChanged => InterfaceChangedNoticeText.Length > 0;
+
+    partial void OnInterfaceChangedNoticeTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasInterfaceChanged));
+        AcceptNewInterfaceCommand.NotifyCanExecuteChanged();
+        AcceptNewInterfaceEverywhereCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>R-sl3-10 — one explicit gesture, for this instance.</summary>
+    [RelayCommand(CanExecute = nameof(HasInterfaceChanged))]
+    private void AcceptNewInterface()
+    {
+        _vm?.AcceptNewInterface(everyInstanceOfTheCell: false);
+        RefreshFromVm();
+    }
+
+    /// <summary>R-sl3-10 — the same gesture, for every instance of this cell in this document.</summary>
+    [RelayCommand(CanExecute = nameof(HasInterfaceChanged))]
+    private void AcceptNewInterfaceEverywhere()
+    {
+        _vm?.AcceptNewInterface(everyInstanceOfTheCell: true);
+        RefreshFromVm();
+    }
+
+    private void ApplyInterfaceChange(string? cellRef) =>
+        InterfaceChangedNoticeText = _vm?.InterfaceChangeFor(cellRef)?.InstanceNotice ?? "";
 
     private void ApplyExternalStatus(ExternalCellStatus status)
     {

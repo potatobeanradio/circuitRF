@@ -242,6 +242,11 @@ public static class LayoutGeometry
     {
         CellRef = inst.CellRef, X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
         Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY, SchematicId = inst.SchematicId,
+        // SL3 R-sl3-10: a clone carries the recorded interface hash. Every properties-panel edit,
+        // every move drag and every paste goes through here, so dropping it would quietly erase the
+        // evidence that this instance was authored against a different interface — and it would do so
+        // on an ordinary edit, which is exactly what R-sl3-10 says must never happen.
+        CellInterfaceHash = inst.CellInterfaceHash,
     };
 
     /// <summary>Translates an instance's origin by (dx, dy) — the instance analogue of the shape

@@ -82,6 +82,28 @@ The `.csch` contains:
   *of*, and the binding by which extraction's emitted nets/instances correspond. (Net *names* are owned by
   the extraction/label scheme, §5; `.csch` stores the labels, not a second naming authority.)
 
+**The recorded cell-interface hash** *(SL3, added 2026-09-03)*. A component that references a cell also
+records, beside its `CellRef`, a short content hash of the interface that cell published **at the moment
+the component was placed** — `CellInterfaceHash`, a `WhenWritingNull` string, with **no `FormatVersion`
+bump**, the same additive convention every other optional field in these formats follows. A
+`LayoutInstance` in a `.clay` carries the identical field beside its own `CellRef`.
+
+- **What the hash covers** (`CellInterfaceHash.Of`): the symbol's pins in `PortIndex` order (index, local
+  x, local y, name), the symbol's `PortCount`, and the parameter NAMES the `.ccell` declares, in
+  declaration order. **Not** the drawing primitives, **not** the parameter defaults, **not** the cell's
+  schematic or layout view — none of those can break a design that references the cell, and reporting a
+  change that cannot break anything trains the user to dismiss the report.
+- **The hash is stored, never the interface.** Writing the signature itself into every referencing
+  document would put a copy of the library's interface in every file that names it — a second source of
+  truth, which is what every reference form here exists to avoid. The cost is that a report can say what
+  the interface IS now and what this instance no longer fits, not what it used to be.
+- **Absent means "never recorded" and is never a warning.** Every file written before this field existed
+  reads back null, as does every instance placed by hand-editing a file, and both render exactly as they
+  did before.
+- **Written in one place, rewritten in one other.** `PlacedCellRef` produces it alongside the `CellRef`
+  itself; the explicit *Accept the new interface* gesture is the only thing that rewrites it. Open and
+  save never touch it — see `workspace-and-project-tree.md` §4.3.
+
 **What `.csch` does NOT contain:** the elaborated netlist, matrices, results, or anything the engine
 computes. It is purely the editable schematic. Results are `DataSet`s (Phase 5 export/import); the netlist is
 the derived `.cnl`/design model.

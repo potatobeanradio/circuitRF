@@ -200,6 +200,24 @@ rebuild is skipped when it matches. The **on-focus** rescan also runs **off the 
 is framework-free and touches only the filesystem. The explicit `Refresh` stays synchronous, because its
 callers expect a finished tree on return.
 
+**A REFERENCED sub-tree is exempt from the on-focus rescan** *(SL4 R-sl4-10, 2026-09-03)*. The signature above
+is computed **from the scan's result**, so the walk always happens — and after SL1 that walk includes every
+folder of a referenced library, measured at ~2,800 filesystem round trips for a 200-cell one. A referenced
+library or workspace is therefore walked on exactly **three** gestures — **workspace open, explicit Refresh,
+and the first expansion of an unread node** — and never on window activation. The workspace's **own** folders
+keep today's behaviour exactly, on every scan: they are local almost always, they are the ones the user is
+editing, and they are the reason the on-focus rescan exists. A referenced library is neither — it changes on
+someone else's schedule, possibly at the far end of a cable, and the user's own gesture is a better trigger
+than alt-tab.
+
+**A referenced sub-tree that has not been walked renders as ITSELF, never as empty** *(R-sl4-11)*. The
+on-focus scan carries the previous walk's contents forward; where there was no previous walk — a reference the
+librarian added to the `.cws` after this window opened — the node shows a single *"Not read yet — expand or
+Refresh to browse"* row. **An empty library is the exact symptom SL1 exists to remove, and it must not come
+back through a caching rule.** That placeholder is also the mechanism and not only the message: a TreeView
+draws no expander for a childless node, so without it there would be nothing to expand and the third trigger
+could never fire. It is italic but is **not** a warning — an unread library is an ordinary, expected state.
+
 *Not yet off-thread: the workspace OPEN itself* — see §9.
 
 ### 3.1 Structure shown
@@ -235,6 +253,8 @@ callers expect a finished tree on return.
   recursion itself is ~1% — about **3 calls per folder**; the cost is **~14 calls per CELL**
   (`BuildCellNode`'s three `ResolvePrimary` probes plus its own per-view listing and the `.ccell` read). Over
   a network that is what an alt-tab rescan pays, and it is SL4's problem, not the recursion's.
+  **Answered** *(SL4 R-sl4-10, 2026-09-03)*: an alt-tab rescan no longer pays it at all — see §3's
+  referenced-sub-tree rule above. The per-cell cost itself was deliberately not optimised.
 - **Empty view sub-folders show no disclosure triangle** (a cell with no symbols yet shows no `symbol/`
   expander). Don't render empty expanders.
 - **Attachments (§1.2.1) render as children of the view file they attach to**, not as siblings of it —
@@ -385,11 +405,42 @@ This is the load-bearing addition: how a placed schematic component resolves to 
   canvas such an instance falls back to the plain-rectangle stand-in, `project-file-formats.md`.)*
 - **Changing the primary symbol updates the schematic live.** When the user sets a different primary `.csym`
   (via Make Primary, §3.4), every schematic instance of that cell re-renders to the new symbol.
+- **How live is "live": within T = 2 seconds** *(SL4 R-sl4-7, 2026-09-03)*. `CellSymbolResolver.Resolve`
+  re-stats the `.csym` before it will take a symbol-cache hit, which is what makes the librarian's edit reach
+  every user without a restart — and it is **four filesystem round trips per referenced component**
+  (`Directory.Exists` on the cell folder, `Directory.Exists` + `Directory.GetFiles` on its `symbol/`, and the
+  primary's mtime; six when the folder holds more than one symbol, since the `.ccell` is then read too).
+  `BuildRenderModel` re-resolves every component on **every model change**, so a forty-component schematic
+  costs ~160 round trips per edit — free on a local disk, free on a LAN, and several seconds per
+  keystroke-scale edit over a VPN. Those four answers are therefore cached, **positively only, for T**, so a
+  burst of edits inside T costs nothing. The guarantee is stated in one place (`CellStat.Freshness`) and it is
+  the ONLY thing that changed: the mtime check is still the mechanism, and a stale mtime is a stale drawing,
+  so the resolution result is never cached for longer than the stat it rests on.
+  - **A NEGATIVE is never cached** *(R-sl4-8)*. A cell folder that was not there, a `symbol/` with no `.csym`
+    in it, an mtime for a file that is not present — each is re-asked on the very next resolve. Caching "not
+    found" for even a second turns a share that blinked, or a folder the librarian is half-way through
+    renaming, into a design full of Not-Found glyphs that persist after the network has recovered, which
+    reads as data loss and is not.
+  - **Only the reference-resolution path caches.** The project tree's own scan calls the same primacy helper
+    and reads the filesystem every time, because a user who has just created a symbol and pressed Refresh
+    must see it. The tree's cost has its own answer, in §3: don't walk a referenced sub-tree on focus.
+  - **T is bounded by the fastest way a person can observe the weakening** — save a cell on one machine, walk
+    or alt-tab to a second, look at a design that places it. That round trip is never under a few seconds.
+  - Dropped by `WorkspaceRootFinder.InvalidateCache` alongside the walk-up, the alias table and the
+    writability probe *(R-sl4-9)*, and by `CellSymbolResolver.Invalidate` for the one cell a Make-Primary
+    rewrote — so a gesture the user made themselves takes effect at once rather than within T.
 - **Primary-symbol change is a RISKY user operation (surfaced, not blocked).** Different `.csym` files in a
   cell may declare **different pin counts/positions**. When the primary changes, pins re-resolve from the new
   `.csym`, and **any wire that no longer meets a pin shows as unconnected** (the existing positional
   connectivity model handles this — no auto-rewiring; that is the deferred Option B, `symbol-editor.md` §6).
   The risk is made visible (dangling wires + re-rendered glyph), and the user accepts it.
+
+  **That bargain now has a MECHANISM behind it, and it needed one** *(§4.3, built 2026-09-03)*. "Made
+  visible" was true only when the person who changed the cell and the person who accepts the risk were the
+  same person in the same minute. Across an organisation they are different people weeks apart, and what
+  is "visible" is a wire that renders slightly differently on a page nobody re-reads. §4.3 records the
+  interface at placement and compares it at resolve, so the change is **stated** rather than left to be
+  noticed. **The bargain itself is unchanged** — nothing is blocked and nothing is auto-rewired.
 
 ### 4.1 Rename / move at the user's risk
 **Editing the cell/library filesystem directly *is* editing the cell/library definition.** If the user
@@ -463,6 +514,51 @@ response differs in each case.
 A cell that simply **lacks** a symbol (no `.csym`, and `.ccell` names none) while being authored is **none of
 these** — it is normal and silent (§3.4); it only becomes #1 if someone tries to place it, or #3 if `.ccell`
 names a primary that isn't there.
+
+**A fourth state sits beside these three and is NOT one of them** — see §4.3. `InterfaceChanged` is the case
+where the cell resolves, the primary symbol is present, and the glyph drawn is correct; nothing is missing at
+all. It must not be folded into `CellSymbolState`, because every member of that enum puts the instance on a
+*draw a placeholder instead* path, and here the placeholder would be the wrong render: the new symbol is the
+truth. It is carried as its own runtime mark and is why §4.2's own "do not collapse these" argument extends
+to four states rather than three.
+
+### 4.3 The interface-change report (SL3, built 2026-09-03)
+
+`brief-shared-library-3-interface-change.md`. **This is a report, not a version-control feature, not a
+locking feature, and not an approval workflow.** It records one fact at placement and compares it at
+resolve.
+
+- **What an instance depends on is the cell's INTERFACE, and nothing else** — the pins in `PortIndex`
+  order, the symbol's `PortCount`, and the parameter names the `.ccell` declares. Deliberately excluded:
+  the drawing primitives, the parameter *defaults*, the cell's schematic, and its layout view. None of
+  those can break a referencing design, and a report the user learns to dismiss costs more than it is
+  worth. The field itself is specified in `project-file-formats.md`.
+- **The remedy is a REPORT, never a refusal and never an automatic repair.** The librarian's new symbol is
+  the truth and must render; auto-rewiring is `symbol-editor.md` §6's deferred Option B and stays deferred.
+- **Three surfaces, all already built:** the Messages panel on open — **one line per affected CELL, not per
+  instance**, because forty instances of one changed cell is one problem; the instance's Properties
+  inspector; and the chrome marking §5C R51 already defines. **Never the rendered geometry** — R36 without
+  exception.
+- **The report names the newly-unconnected ports**, which is the electrical consequence and the reason the
+  feature exists, taken from the connectivity pass that is already running rather than recomputed.
+- **Accepting is one explicit, undoable gesture** — for the selected instances, or for every instance of
+  that cell in the document. It must not happen on open, on save, or as a side effect of any edit: the
+  recorded hash is the only evidence the design was authored against a different interface, and a product
+  that erases that evidence on open has implemented nothing.
+- **It applies to every cell reference, not only `ws://` ones.** The same failure exists for a cell in your
+  own workspace with a smaller blast radius, and a rule that fires only sometimes is a rule nobody learns.
+- **Version PINNING is deliberately not built** (R-sl-6): an alias points wherever the librarian says it
+  points, so `…/stdlib/v2.3/.cws` is a complete pinning story with no resolver, no manifest and no
+  "which version is newer" question — and two versions run side by side as two aliases.
+
+**Where the built thing differs from the brief.** R-sl3-8 asks the report to say *"4 pins → 5, pin `vg`
+moved"*. That cannot be said from a stored hash, and R-sl3-3 is the reason: only the hash is recorded, so
+the OLD interface is not in hand at the moment the comparison fires. The report therefore states the
+interface as it is NOW (pins, ports, declared parameters), names every affected instance, and — from what
+the instance itself carries — names the ports that are unconnected and the declared parameters that
+appeared or went away. Recording the signature instead would have satisfied the sentence at the cost of
+putting a copy of the library's interface into every referencing file, which R-sl3-3 rejects for good
+reason. Gate: `tests/Ui.Tests/CellInterfaceChangeTests.cs`.
 
 ---
 
@@ -848,6 +944,7 @@ to the three missing-symbol states, and for the same reason: the right user resp
 | State | Cause | Remedy offered |
 |---|---|---|
 | **Resolved (external)** | fine, but not from this workspace | none — marked only (R51) |
+| *(orthogonal)* **Interface changed** | the cell resolves and draws correctly, but no longer publishes the interface the instance was placed against (§4.3) | none — reported and marked; *Accept the new interface* when the design is right |
 | **Unresolved — workspace not open** | R49 | open that workspace in a new window |
 | **Broken** | the alias does not resolve; or an unowned cell carrying kit content (§5B.3) | Locate… / copy into this workspace |
 
@@ -855,6 +952,13 @@ to the three missing-symbol states, and for the same reason: the right user resp
 **chrome only, never the rendered geometry.** Seeing at a glance that a cell in your layout is not yours is
 the entire safety story for this feature — it is the difference between a reference and a trap. Name the
 source workspace where there is room (`Amp — [RfFrontEnd]`, R36's convention).
+
+**R51 also carries §4.3's interface-change mark, as a SECOND and separate surround** *(2026-09-03)*. The two
+say different things — "this cell is not yours" and "this cell changed shape underneath you" — and an
+instance in a shared library routinely carries both at once, so one mark cannot serve for both. The
+interface mark is drawn in the warning role, outside the external one, and obeys R36 for the stronger
+reason: there the geometry merely belongs to someone else, here it is *correct* and it is the wires around
+it that are in doubt.
 
 ### 5C.4 What must not silently break it
 
@@ -958,6 +1062,68 @@ Save Workspace As and the save-plan dialog's workspace step share one rule. The 
 has to be at the picker: `SavePlanExecutor` runs after a plan the user has *confirmed* and creates the
 workspace folder and its `.cws` before it creates any cell, so discovering the parent is unwritable inside
 the executor means a confirmed plan that cannot be carried out and a half-made workspace to clean up.
+
+---
+
+## 5E. Two people, one workspace *(added 2026-09-03)*
+
+**Status:** BUILT · `docs/sonnet-briefs/brief-shared-library-4-concurrency-and-latency.md` §1 · findings in
+`src/Ui/RESOLVED.md`, the mechanism in `src/Design/Workspace/WorkspaceLock.cs`.
+
+`SwitchToWorkspace` has always refused to open one workspace twice, and its own comment gives the reason
+exactly: two view models over one `.cws` means two independent edit-session registries over the same files —
+two undo stacks, two dirty flags, last-save-wins. That reasoning is entirely correct and entirely
+**process-local**: the check is `App.WindowShowing`, which enumerates this process's windows. Every
+consequence it names is equally true of two people on two machines, and none of it was detected there.
+
+**What is actually at stake is the `.cws`, not the documents.** A clobbered `.csch` is at least visible. Two
+users with one workspace open both write dock layout, open-document list, kit settings and **the alias table**
+on save; last writer wins, silently, and a referenced-workspace alias that vanished from someone else's file
+is not a symptom anyone attributes correctly.
+
+**R-sl4-A. An advisory lock file beside the `.cws`.** `.crf-open.json` — user, host, process id, time taken —
+written when the workspace is opened **and is writable**, removed on close. A read-only workspace takes none
+and needs none: nobody can write it, so there is nothing to lose to a race, and §5D's probe already answers
+that question. It is hidden from the project tree by name (that list is an explicit set, **not** dotfiles in
+general — the trap §5D's write probe fell into first).
+
+**R-sl4-B. It is advisory, and the wording says so. This is not negotiable for a convenience gain.** The
+notice names who and where — *"'stdlib' was opened by [a colleague] on lab-99 about 20 minutes ago…"* — states
+plainly that circuitRF cannot tell whether they still have it open, and offers **both** answers, always: open
+read-only, or open anyway. It never says locked, blocked, unavailable or denied, because it is none of those.
+**A lock this product treated as authoritative would become a stale file that locks out a team**, which is a
+worse failure than the one being prevented and is unfixable by anyone who does not know the file exists.
+
+**R-sl4-B2. A session that cannot WRITE is never shown the notice, and takes no lock.** Last-writer-wins
+is the only thing the notice bounds, and a read-only opener cannot be a writer. §5D's shared library is
+exactly that case, so without this rule every engineer opening the corporate library would be told the
+librarian is in there — a modal about a hazard they cannot cause, in front of the workflow this whole
+section exists to support. §5D's own open-time line already tells them the fact that does apply.
+
+**R-sl4-C. "Open read-only" is §5D's state, reached by choice rather than by permissions.** It routes through
+the same writability answer, so it inherits every behaviour R-sl2-C…-F already built and tested — the `.cws`
+write choke point skipping silently, Save disabled with its reason, Save As in its place, the provenance
+band. "A workspace we have chosen not to write" and "a workspace we cannot write" want identical behaviour
+from all of them, and a parallel flag would be the one that is true in fourteen places. The choice is
+per-open and per-workspace, and is asked afresh every time.
+
+**R-sl4-D. A stale lock is treated as stale, by two independent rules**, and costs nobody a dialog: it names
+**this** host and a process id that is not running (a crash), or it is older than a generous threshold —
+**hours, not minutes**, because an engineer leaves a workspace open over lunch and a threshold short enough to
+catch a crash promptly is short enough to declare a colleague's live session dead. A lock from another host
+can only ever be stale by the second rule; that machine's process ids say nothing here. Both rules are
+heuristics and both may be wrong, which is acceptable precisely because R-sl4-B makes the answer overridable
+either way — being wrong costs a notice, never access.
+
+**R-sl4-E. No open file handle.** `CrashReporter` holds one with `FileShare.Read` so an exclusive open by a
+probe proves ownership, and the single-instance check uses the same idiom. That is the right mechanism
+**locally**, and its guarantees do not survive SMB, NFS or a dropped connection — a handle-based lock over a
+share fails in the direction that produces a confident false statement about another person, which is the one
+direction this must not fail in. The file is written and closed.
+
+**R-sl4-F. Nothing merges.** Detect, report, let the user choose. Reconciling two `.cws` files or two `.csch`
+files is a different product. Release removes only a lock this process took — deleting someone else's because
+we happened to close a window would silently disarm the notice for the person who is actually in there.
 
 ---
 
@@ -1108,6 +1274,11 @@ cell-driven open (the deferred 4c-later items); 6–7 complete authoring + works
   workspaces open, an edit made in one window to a cell the other window references (§5C) is exactly the
   case a manual refresh is worst at. Not a blocker for §5B/§5C — the on-focus rescan fires when the user
   switches windows, which is the moment that matters — but the argument for a watcher is stronger now.
+  **It stays deliberately unbuilt for a shared library** *(SL4, 2026-09-03)*: watchers over SMB are
+  unreliable, `TechnologyCache` and `CellLayoutResolver` both already record why circuitRF does not use
+  them, and the mtime-on-resolve check — now bounded by §4's T — is the mechanism and is enough. §3's
+  referenced-subtree rule moves the tree the other way on purpose: a referenced library is read on the
+  user's own gesture, not on a watcher and not on alt-tab.
 - **§5B multiple open workspaces and §5C external cell references** — designed above, **not built**.
   Sequenced as `brief-multi-workspace-1-windows.md` → `-2-external-cell-refs.md` → `-3-workspace-dnd.md`;
   §5B ships alone and is independently useful, §5C depends on §5B.3's per-workspace kit scoping, and the

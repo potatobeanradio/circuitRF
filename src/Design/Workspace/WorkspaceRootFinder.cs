@@ -1,3 +1,5 @@
+using CircuitRF.Design.Cells;
+
 namespace CircuitRF.Design.Workspace;
 
 /// <summary>
@@ -93,6 +95,11 @@ public static class WorkspaceRootFinder
         // terms, and is dropped here rather than on a lifecycle of its own — a third memo that had
         // to be invalidated separately would be the one that went stale.
         WorkspaceWritability.InvalidateCache();
+        // SL4 R-sl4-9: the fourth, for the same reason. The stat answers a cell reference resolves
+        // through are bounded by CellStat.Freshness anyway, so this is not what keeps them honest —
+        // it is what makes an explicit gesture (a workspace opening, a Make-Primary, a symbol save)
+        // take effect at once instead of within T.
+        CellStat.InvalidateCache();
     }
 
     /// <summary>

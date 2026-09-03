@@ -5,6 +5,15 @@
              x:DataType="vm:ParameterEditorViewModel"
              Background="{DynamicResource SystemChromeLowColor}">
 
+    <UserControl.Styles>
+        <!-- SL3/MW2: the warning role for a notice band. Defined locally because a UserControl's
+             Classes.<name> binding needs a style in scope — without one the class attaches and paints
+             nothing, which is a notice the user never sees. -->
+        <Style Selector=":is(TextBlock).warn">
+            <Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
 
         <!-- Empty-state overlay: spans all rows, shown when IsEmptyState -->
@@ -17,10 +26,10 @@
                    FontSize="11"
                    Opacity="0.5"/>
 
-        <!-- ── Row 0: Header — type label + editable instance name ─────────── -->
-        <Grid Grid.Row="0"
-              IsVisible="{Binding IsNotEmptyState}"
-              ColumnDefinitions="Auto,*"
+        <!-- ── Row 0: Header — type label + editable instance name, and (SL3) the
+                 interface-changed notice directly beneath it ──────────────────── -->
+        <StackPanel Grid.Row="0" IsVisible="{Binding IsNotEmptyState}" Spacing="0">
+        <Grid ColumnDefinitions="Auto,*"
               Margin="6,6,6,4">
             <TextBlock Grid.Column="0"
                        Text="{Binding TypeDisplayName}"
@@ -36,6 +45,26 @@
                      LostFocus="OnInstanceNameLostFocus"
                      KeyDown="OnInstanceNameKeyDown"/>
         </Grid>
+
+        <!-- SL3 R-sl3-9/-10: the cell this instance references changed shape underneath it. The
+             glyph on the canvas is the librarian's new symbol and it is correct — what is marked is
+             that the design may no longer mean what it did. Accepting is one explicit gesture, and
+             never happens on open, on save, or as a side effect of any edit (R-sl3-10). -->
+        <Border IsVisible="{Binding HasInterfaceChanged}"
+                Margin="6,0,6,4" Padding="6,4" CornerRadius="3"
+                Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+            <StackPanel Spacing="4">
+                <TextBlock Text="{Binding InterfaceChangedNoticeText}" FontSize="11" TextWrapping="Wrap"
+                           Classes="warn"/>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Button Content="Accept new interface" FontSize="11" Padding="6,2"
+                            Command="{Binding AcceptNewInterfaceCommand}"/>
+                    <Button Content="…for every instance" FontSize="11" Padding="6,2"
+                            Command="{Binding AcceptNewInterfaceEverywhereCommand}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+        </StackPanel>
 
         <!-- ── Row 1: Label-visibility flags ──────────────────────────────── -->
         <StackPanel Grid.Row="1"

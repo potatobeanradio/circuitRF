@@ -13,6 +13,12 @@
             <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
             <Setter Property="BorderThickness" Value="1.5"/>
         </Style>
+        <!-- SL3/MW2: the warning role for a notice band. Defined locally because a UserControl's
+             Classes.<name> binding needs a style in scope — without one the class attaches and paints
+             nothing, which is a notice the user never sees. -->
+        <Style Selector=":is(TextBlock).warn">
+            <Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="*">
@@ -357,6 +363,27 @@
                                     <TextBlock Text="{Binding ExternalRefRepairText}" FontSize="11" TextWrapping="Wrap"
                                                IsVisible="{Binding ExternalRefIsProblem}"
                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- SL3 R-sl3-9/-10: the referenced cell's published interface changed
+                                 since this instance was placed. A separate band from the one above —
+                                 an external cell whose interface changed carries both, and they say
+                                 different things. Accepting is one explicit gesture and never
+                                 automatic (R-sl3-10): the recorded hash is the only evidence the
+                                 design was authored against a different shape. -->
+                            <Border IsVisible="{Binding HasInterfaceChanged}"
+                                    BorderThickness="0,0,0,0" CornerRadius="3" Padding="6,4" Margin="0,2,0,2"
+                                    Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{Binding InterfaceChangedNoticeText}" FontSize="11"
+                                               TextWrapping="Wrap" Classes="warn"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <Button Content="Accept new interface" FontSize="11" Padding="6,2"
+                                                Command="{Binding AcceptNewInterfaceCommand}"/>
+                                        <Button Content="…for every instance" FontSize="11" Padding="6,2"
+                                                Command="{Binding AcceptNewInterfaceEverywhereCommand}"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
 

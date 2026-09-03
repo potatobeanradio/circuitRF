@@ -319,6 +319,13 @@ public static class SchematicRenderer
             if (c.ExternalAlias is { Length: > 0 } alias && !isLod)
                 DrawExternalAliasTag(canvas, alias, c, cx, cy, panX, panY, zoom, textFont, instNamePaint);
 
+            // SL3 R-sl3-9 — the referenced cell's published interface changed since this instance was
+            // placed. CHROME ONLY, R36 without exception: the glyph above is the librarian's new
+            // symbol and it is the truth (R-sl3-1) — what is in doubt is whether the WIRES still mean
+            // what they did, and that is exactly what a surround around the instance says.
+            if (c.InterfaceChanged && !isLod)
+                DrawInterfaceChangedMark(canvas, c, panX, panY, zoom, textFont, warnStrokePaint);
+
             // DisableState overlay (drawn on top of body)
             if (c.DisableState != DisableState.None && !isLod)
                 DrawDisableOverlay(canvas, c, cx, cy, panX, panY, zoom, warnStrokePaint, warnFillPaint);
@@ -988,6 +995,37 @@ public static class SchematicRenderer
         float x = (float)((c.GlyphBbMinX + panX) * zoom);
         float y = (float)((c.GlyphBbMinY + panY) * zoom) - 3f;
         canvas.DrawText($"[{alias}]", x, y, SKTextAlign.Left, font, paint);
+    }
+
+    /// <summary>
+    /// The mark on an instance whose cell's interface changed since it was placed (SL3 R-sl3-9): a
+    /// dashed surround around the glyph's own bounding box, plus a short tag, both in the warning
+    /// paint. Drawn OUTSIDE the glyph BB so it can never be confused for part of the symbol, and
+    /// below-right so it does not collide with the <c>[alias]</c> tag above-left — an external cell
+    /// whose interface changed carries both, which is the ordinary case for a shared library.
+    /// </summary>
+    private static void DrawInterfaceChangedMark(
+        SKCanvas canvas, SchematicComponent c,
+        double panX, double panY, double zoom, SKFont font, SKPaint warnPaint)
+    {
+        float pad  = (float)(zoom * 40);
+        float left = (float)((c.GlyphBbMinX + panX) * zoom) - pad;
+        float top  = (float)((c.GlyphBbMinY + panY) * zoom) - pad;
+        float right  = (float)((c.GlyphBbMaxX + panX) * zoom) + pad;
+        float bottom = (float)((c.GlyphBbMaxY + panY) * zoom) + pad;
+
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true,
+            Style       = SKPaintStyle.Stroke,
+            StrokeWidth = warnPaint.StrokeWidth,
+            Color       = warnPaint.Color,
+            PathEffect  = SKPathEffect.CreateDash([(float)(zoom * 30), (float)(zoom * 20)], 0),
+        };
+        canvas.DrawRect(SKRect.Create(left, top, right - left, bottom - top), stroke);
+
+        using var textPaint = new SKPaint { IsAntialias = true, Color = warnPaint.Color };
+        canvas.DrawText("interface changed", right, bottom + font.Size, SKTextAlign.Right, font, textPaint);
     }
 
     private static void DrawCellRefNotFoundGlyph(

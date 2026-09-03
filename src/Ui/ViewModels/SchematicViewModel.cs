@@ -330,6 +330,77 @@ public sealed partial class SchematicViewModel : ObservableObject
     // restores both the geometry and the dot. No-op when there are no dots / no crossing changed.
     public void Execute(IUiCommand cmd) => _undoRedo.Execute(new DotRevalidationCommand(EditModel, cmd, _messageSink));
 
+    // ── SL3: a referenced cell's interface changed under this design ──────────
+
+    private IReadOnlyList<CellInterfaceChange> _interfaceChanges = [];
+
+    /// <summary>What changed, per affected CELL, at the last scan (SL3 R-sl3-9). The per-component
+    /// mark the canvas reads lives on <see cref="EditableComponent.InterfaceChanged"/>; this is what
+    /// the Properties panel explains and what <see cref="AcceptNewInterface"/> acts on.</summary>
+    public IReadOnlyList<CellInterfaceChange> InterfaceChanges => _interfaceChanges;
+
+    /// <summary>The change report covering <paramref name="cellRef"/>, or null when it is fine.</summary>
+    public CellInterfaceChange? InterfaceChangeFor(string? cellRef) =>
+        cellRef is null ? null
+            : _interfaceChanges.FirstOrDefault(c => string.Equals(c.CellRef, cellRef, StringComparison.Ordinal));
+
+    /// <summary>Re-runs the comparison against the cells as they are on disk right now, and refreshes
+    /// the render snapshot so the marks follow. <b>Records nothing</b> — see R-sl3-10.</summary>
+    public void RescanCellInterfaces()
+    {
+        _interfaceChanges = CellInterfaceWatch.Scan(EditModel, KitWorkspaceRoot);
+        EditModel.NotifyChanged();
+    }
+
+    /// <summary>Installs a scan the caller already ran — the open path, which scans BEFORE the session
+    /// exists so it can report each affected cell once, and must not pay for a second scan here.</summary>
+    internal void ApplyInterfaceChangeScan(IReadOnlyList<CellInterfaceChange> changes) =>
+        _interfaceChanges = changes;
+
+    /// <summary>
+    /// SL3 R-sl3-10 — <b>Accept the new interface</b> for the selected components, or
+    /// (<paramref name="everyInstanceOfTheCell"/>) for every instance of those cells in this document.
+    /// One explicit gesture, one undo entry, never automatic. Returns how many were accepted.
+    /// </summary>
+    public int AcceptNewInterface(bool everyInstanceOfTheCell)
+    {
+        var selected = Selection.GetSelectedComponentIds(EditModel)
+            .Select(EditModel.FindComponent)
+            .OfType<EditableComponent>()
+            .ToList();
+        return AcceptNewInterfaceFor(selected, everyInstanceOfTheCell);
+    }
+
+    /// <summary>The same gesture aimed at a named set of components — what the Properties inspector
+    /// calls, since it acts on the instance it is showing rather than on the canvas selection.</summary>
+    public int AcceptNewInterfaceFor(IReadOnlyList<EditableComponent> components, bool everyInstanceOfTheCell)
+    {
+        if (components.Count == 0) return 0;
+
+        IEnumerable<EditableComponent> targets = components;
+        if (everyInstanceOfTheCell)
+        {
+            var refs = components.Select(c => c.CellRef)
+                                 .Where(r => !string.IsNullOrEmpty(r))
+                                 .ToHashSet(StringComparer.Ordinal);
+            targets = EditModel.Components.Where(c => c.CellRef is { Length: > 0 } r && refs.Contains(r));
+        }
+
+        var edits = new List<(EditableComponent, string?, string?, bool)>();
+        foreach (var comp in targets)
+        {
+            if (comp.CellRef is not { Length: > 0 } cellRef) continue;
+            if (PlacedCellRef.HashFor(cellRef, EditModel.SchematicDirectory, KitWorkspaceRoot) is not { } now) continue;
+            if (string.Equals(comp.CellInterfaceHash, now, StringComparison.Ordinal) && !comp.InterfaceChanged) continue;
+            edits.Add((comp, comp.CellInterfaceHash, now, comp.InterfaceChanged));
+        }
+        if (edits.Count == 0) return 0;
+
+        Execute(new AcceptCellInterfaceCommand(EditModel, edits));
+        RescanCellInterfaces();
+        return edits.Count;
+    }
+
     // ── Render model rebuild ──────────────────────────────────────────────────
 
     /// <summary>
@@ -3356,6 +3427,11 @@ public sealed partial class SchematicViewModel : ObservableObject
             InstanceName = SchematicEditModel.NextAvailableName(EditModel.Components, "X"),
             Symbol       = SymbolKind.Generic, // placeholder; rendering uses CellRef when set
             CellRef      = cellRef,
+            // SL3 R-sl3-4/-6: the interface this component is being placed against. Recorded here,
+            // beside the reference itself, and produced by the one helper that produces both — a
+            // placement path that wrote the reference and forgot this would leave an instance that
+            // reads as "never recorded" forever, and nothing would ever report it.
+            CellInterfaceHash = PlacedCellRef.HashFor(cellRef, EditModel.SchematicDirectory, KitWorkspaceRoot),
             X = sx, Y = sy,
             Rotation     = rotation,
             ShowTypeLabel    = true,
@@ -3496,6 +3572,9 @@ public sealed partial class SchematicViewModel : ObservableObject
             InstanceName     = SchematicEditModel.NextAvailableName(remaining, "X"),
             Symbol           = SymbolKind.Generic,   // placeholder; rendering uses CellRef
             CellRef          = cellRef,
+            // Retyping into a cell instance IS a placement (R-sl3-6) — the user chose this cell now,
+            // and the interface they chose it against is the one recorded.
+            CellInterfaceHash = PlacedCellRef.HashFor(cellRef, EditModel.SchematicDirectory, KitWorkspaceRoot),
             X = comp.X, Y = comp.Y,
             Rotation         = comp.Rotation,
             MirrorX          = comp.MirrorX,

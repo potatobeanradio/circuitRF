@@ -124,14 +124,23 @@ public static class CellSymbolResolver
         if (ExternalCellRef.ResolveCellDir(cellRef, baseDir) is not { } cellAbsDir)
             return CellSymbolResolution.NotFoundResult;
 
-        if (!Directory.Exists(cellAbsDir))
+        // SL4 R-sl4-6/-7: the whole resolution path's filesystem access goes through CellStat — this
+        // call, ResolvePrimary's three, and the mtime below. See that type for the count this makes
+        // measurable and for the stated bound T the positive answers are cached within.
+        //
+        // THIS is the path that caches; the project tree's own scan calls the same helpers and does
+        // NOT (it passes the default), because a user who just created a symbol and pressed Refresh
+        // must see it. What is bounded by T is a CELL REFERENCE being re-resolved on every edit —
+        // four filesystem round trips per referenced component, measured — which over a link with
+        // tens of milliseconds of latency is a few hundred per keystroke-scale edit.
+        if (!CellStat.DirectoryExists(cellAbsDir, cache: true))
             return CellSymbolResolution.NotFoundResult;
 
         // 2. Determine primary symbol via CellFolder.ResolvePrimary (single primacy source).
         PrimaryResolution primary;
         try
         {
-            primary = CellFolder.ResolvePrimary(cellAbsDir, ViewType.Symbol);
+            primary = CellFolder.ResolvePrimary(cellAbsDir, ViewType.Symbol, useStatCache: true);
         }
         catch
         {
@@ -154,7 +163,7 @@ public static class CellSymbolResolver
 
         try
         {
-            var mtime = File.GetLastWriteTimeUtc(symPath);
+            var mtime = CellStat.LastWriteTimeUtc(symPath, cache: true);
             var key   = new CacheKey(cellAbsDir, primaryName);
 
             lock (_lock)
@@ -164,7 +173,11 @@ public static class CellSymbolResolver
             }
 
             var symbol = SymbolPersistence.LoadFromFile(symPath);
-            // Re-read mtime after load in case the file changed while loading.
+            // Re-read mtime after load in case the file changed while loading. Deliberately OUTSIDE
+            // CellStat: the whole point is to observe the file as it is right now, and a cached
+            // answer would hand back the stamp read a moment ago and defeat the check. It is reached
+            // only on a symbol-cache MISS, so it is not part of the per-edit steady state the count
+            // measures — a load is happening on this path anyway.
             var mtimeAfter = File.GetLastWriteTimeUtc(symPath);
 
             lock (_lock)
@@ -266,6 +279,10 @@ public static class CellSymbolResolver
     /// </summary>
     public static void Invalidate(string cellAbsDir)
     {
+        // SL4: the stat answers this cell's resolution rests on are dropped with it, so a
+        // Make-Primary is seen at once rather than within T. The user changed it themselves; the
+        // freshness bound is about someone ELSE's edit arriving over a wire.
+        CellStat.Invalidate(cellAbsDir);
         lock (_lock)
         {
             var toRemove = _cache.Keys

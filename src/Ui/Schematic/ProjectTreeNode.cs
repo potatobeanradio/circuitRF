@@ -83,6 +83,22 @@ public enum NodeKind
 
     /// <summary>Synthetic group node that contains all <see cref="ReferencedWorkspace"/> children.</summary>
     ReferencedWorkspacesGroup,
+
+    /// <summary>
+    /// SL4 R-sl4-11 — the single placeholder child of a referenced <see cref="Library"/> or
+    /// <see cref="ReferencedWorkspace"/> whose contents have not been walked yet.
+    ///
+    /// <para>It exists because <b>an empty library is the exact symptom SL1 was written to remove</b>,
+    /// and R-sl4-10's rule — a referenced sub-tree is walked on open, on Refresh and on first
+    /// expansion, but not on every window activation — could bring it back through a caching rule if
+    /// an unwalked node simply rendered with no children. A node that says nothing has been read yet
+    /// is honest; one that looks empty is a lie about someone else's disk.</para>
+    ///
+    /// <para>It is also the mechanism, not only the message: a TreeView draws no expander arrow for a
+    /// node with no children, so without a placeholder child there would be nothing for the user to
+    /// expand and the "first expansion" trigger could never fire.</para>
+    /// </summary>
+    NotReadYet,
 }
 
 /// <summary>

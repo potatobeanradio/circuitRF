@@ -107,6 +107,19 @@ public readonly struct LayoutRenderOptions
     public bool ShowPCellPins { get; init; }
 
     /// <summary>
+    /// SL3 R-sl3-9 — the cell references in this document whose published interface no longer matches
+    /// what the instances referencing them were placed against. Every instance carrying one of these
+    /// references is marked; the geometry itself is untouched (R36 without exception — the librarian's
+    /// new artwork is the truth and renders exactly as drawn).
+    ///
+    /// <para>A SET of references rather than a per-instance flag because <see cref="LayoutInstance"/>
+    /// is a persisted model with no runtime state, and because the answer is a property of the CELL:
+    /// forty instances of one changed cell are forty marks of one fact. Null — the case for every
+    /// export and one-shot render, which never sets this — marks nothing.</para>
+    /// </summary>
+    public IReadOnlySet<string>? InterfaceChangedCellRefs { get; init; }
+
+    /// <summary>
     /// docs/design/layout-view.md §9B / R-rul-1 — the per-document <b>Show Rulers</b> view toggle.
     /// Defaults to TRUE, unlike every other overlay flag here, because a ruler is DOCUMENT CONTENT
     /// rather than overlay state: it is in the <c>.clay</c>, it comes out in a slide, and an export

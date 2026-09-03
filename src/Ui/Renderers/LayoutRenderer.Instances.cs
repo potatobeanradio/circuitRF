@@ -664,6 +664,49 @@ public static partial class LayoutRenderer
             // exists to show the artwork exactly as its own tool does.
             if (ExternalCellRef.TryParse(inst.CellRef, out string extAlias, out _))
                 DrawExternalInstanceChrome(canvas, extAlias, overallBbox, ps, scaleUm, opts.Theme, counters);
+
+            // SL3 R-sl3-9 — the cell's published interface changed under this design. CHROME again,
+            // and for the stronger reason: here the geometry is not merely someone else's, it is
+            // CORRECT — the librarian's new artwork is the truth (R-sl3-1) and must render exactly as
+            // drawn. What is marked is that the design may no longer mean what it did.
+            if (opts.InterfaceChangedCellRefs is { Count: > 0 } changed
+                && inst.CellRef is { Length: > 0 } cr && changed.Contains(cr))
+                DrawInterfaceChangedChrome(canvas, overallBbox, ps, scaleUm, opts.Theme, counters);
+        }
+    }
+
+    /// <summary>The mark for an instance whose cell's interface changed since it was placed (SL3
+    /// R-sl3-9). A dashed surround in the WARNING role and a short tag, deliberately distinct from
+    /// <see cref="DrawExternalInstanceChrome"/>'s selection-coloured one beside it: the two say
+    /// different things and an instance can carry both at once.</summary>
+    private static void DrawInterfaceChangedChrome(
+        SKCanvas canvas, Bbox overallBbox, PathSpace ps, double scaleUm,
+        LayoutRenderTheme theme, LayoutFrameCounters counters)
+    {
+        var rect = NormalizedRect(ps.X(overallBbox.MinX), ps.Y(overallBbox.MinY),
+                                  ps.X(overallBbox.MaxX), ps.Y(overallBbox.MaxY));
+        float inset = DevicePixelsToPathSpace(scaleUm, 2.0);
+        rect.Inflate(inset, inset);
+
+        using var stroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
+            Color = theme.Warning,
+            PathEffect = SKPathEffect.CreateDash([6f, 3f], 0),
+        };
+        canvas.DrawRect(rect, stroke);
+        counters.DrawCalls++;
+
+        using var font = new SKFont(LayoutTextOutline.ResolveTypeface(LabelFontStyle.Regular),
+                                    Math.Max(1f, DevicePixelsToPathSpace(scaleUm, 10.0)));
+        using var textPaint = new SKPaint { IsAntialias = true, Color = theme.Warning };
+        const string label = "interface changed";
+        if (font.MeasureText(label) < rect.Width * 2f)
+        {
+            canvas.DrawText(label, rect.Right, rect.Bottom + DevicePixelsToPathSpace(scaleUm, 10.0),
+                            SKTextAlign.Right, font, textPaint);
+            counters.DrawCalls++;
         }
     }
 

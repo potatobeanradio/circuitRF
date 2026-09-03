@@ -275,7 +275,14 @@ public sealed partial class LayoutEditorViewModel
     {
         if (!CheckNotCyclic(cellRef)) return false;
         if (!CheckExternalTechnology(cellRef)) return false;
-        var instance = new LayoutInstance { CellRef = cellRef, X = x, Y = y, Mag = 1.0 };
+        var instance = new LayoutInstance
+        {
+            CellRef = cellRef, X = x, Y = y, Mag = 1.0,
+            // SL3 R-sl3-4/-6: the interface this instance is being placed against, recorded here
+            // because this is the ONE commit path for a brand-new instance. The two ghosts above are
+            // previews and record nothing — nothing is stored until this runs.
+            CellInterfaceHash = PlacedCellRef.HashFor(cellRef, InstanceBaseDir),
+        };
         Execute(new AddInstanceCommand(Model, instance));
         int newIndex = Model.Instances.Count - 1;
         SetInstanceSelection([newIndex]);
@@ -428,7 +435,90 @@ public sealed partial class LayoutEditorViewModel
         if (string.IsNullOrWhiteSpace(newCellRef)) return;
         if (!CheckNotCyclic(newCellRef)) return;
         if (!CheckExternalTechnology(newCellRef)) return;
-        ReplaceSelectedInstance(src => { var c = LayoutGeometry.Clone(src); c.CellRef = newCellRef; return c; });
+        // Re-pointing an instance at a different cell IS a placement: the user chose this cell, now,
+        // and the interface they chose it against is the one to record (R-sl3-4). Clone carries the
+        // OLD hash forward, which would be a statement about a cell this instance no longer names.
+        ReplaceSelectedInstance(src =>
+        {
+            var c = LayoutGeometry.Clone(src);
+            c.CellRef = newCellRef;
+            c.CellInterfaceHash = PlacedCellRef.HashFor(newCellRef, InstanceBaseDir);
+            return c;
+        });
+    }
+
+    // ── SL3: a referenced cell's interface changed under this design ────────────────────────────
+
+    private readonly HashSet<string> _interfaceChangedCellRefs = new(StringComparer.Ordinal);
+    private IReadOnlyList<CellInterfaceChange> _interfaceChanges = [];
+
+    /// <summary>The cell references in this document whose published interface no longer matches what
+    /// the instances referencing them were placed against (SL3 R-sl3-9). Read by the canvas, which
+    /// hands it to the renderer as chrome — never per-frame recomputation, because computing a hash
+    /// reads the cell's <c>.ccell</c> from disk.</summary>
+    public IReadOnlySet<string> InterfaceChangedCellRefs => _interfaceChangedCellRefs;
+
+    /// <summary>What changed, per affected cell — what the Properties panel explains and what
+    /// <see cref="AcceptNewInterface"/> acts on.</summary>
+    public IReadOnlyList<CellInterfaceChange> InterfaceChanges => _interfaceChanges;
+
+    /// <summary>The change report for the cell <paramref name="cellRef"/> names, or null when that
+    /// reference is fine.</summary>
+    public CellInterfaceChange? InterfaceChangeFor(string? cellRef) =>
+        cellRef is null ? null
+            : _interfaceChanges.FirstOrDefault(c => string.Equals(c.CellRef, cellRef, StringComparison.Ordinal));
+
+    /// <summary>Installs a scan's result and, optionally, reports each affected cell exactly once.
+    /// Called by the workspace at document open; also by <see cref="RescanCellInterfaces"/> after an
+    /// Accept, which passes no reporter because nothing new has happened to say.</summary>
+    internal void ApplyInterfaceChangeScan(
+        IReadOnlyList<CellInterfaceChange> changes, Action<CellInterfaceChange>? report = null)
+    {
+        _interfaceChanges = changes;
+        _interfaceChangedCellRefs.Clear();
+        foreach (var c in changes)
+        {
+            _interfaceChangedCellRefs.Add(c.CellRef);
+            report?.Invoke(c);
+        }
+    }
+
+    /// <summary>Re-runs the comparison against the cells as they are on disk right now.</summary>
+    public void RescanCellInterfaces() =>
+        ApplyInterfaceChangeScan(CellInterfaceWatch.Scan(Model, InstanceBaseDir, WorkspaceRootDir));
+
+    /// <summary>
+    /// SL3 R-sl3-10 — <b>Accept the new interface</b>: rewrites the recorded hash for the selected
+    /// instances, or (<paramref name="everyInstanceOfTheCell"/>) for every instance of that cell in
+    /// this document. One explicit gesture, one undo entry, and never automatic.
+    /// </summary>
+    public void AcceptNewInterface(bool everyInstanceOfTheCell)
+    {
+        var selected = SelectedInstanceIndices
+            .Where(i => i >= 0 && i < Model.Instances.Count)
+            .Select(i => Model.Instances[i])
+            .ToList();
+        if (selected.Count == 0) return;
+
+        IEnumerable<LayoutInstance> targets = selected;
+        if (everyInstanceOfTheCell)
+        {
+            var refs = selected.Select(i => i.CellRef).Where(r => !string.IsNullOrEmpty(r)).ToHashSet(StringComparer.Ordinal);
+            targets = Model.Instances.Where(i => i.CellRef is { Length: > 0 } r && refs.Contains(r));
+        }
+
+        var edits = new List<(LayoutInstance, string?, string?)>();
+        foreach (var inst in targets)
+        {
+            if (inst.CellRef is not { Length: > 0 } cellRef) continue;
+            if (PlacedCellRef.HashFor(cellRef, InstanceBaseDir, WorkspaceRootDir) is not { } now) continue;
+            if (string.Equals(inst.CellInterfaceHash, now, StringComparison.Ordinal)) continue;
+            edits.Add((inst, inst.CellInterfaceHash, now));
+        }
+        if (edits.Count == 0) return;
+
+        Execute(new AcceptCellInterfaceCommand(Model, edits));
+        RescanCellInterfaces();
     }
 
     // ── Missing-instance warning — once per distinct CellRef per load (R-L3a-1) ─────────────────

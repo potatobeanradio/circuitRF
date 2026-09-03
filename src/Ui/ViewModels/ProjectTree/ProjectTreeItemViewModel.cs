@@ -34,6 +34,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     private readonly ProjectTreeNodeViewModel? _parent;
     private readonly ITreeActions?          _actions;
 
+    /// <summary>SL4 R-sl4-10 — raised the first time an unwalked referenced sub-tree is expanded, so
+    /// the tool can read it. Threaded down the whole tree from the root rather than reached through
+    /// <see cref="ITreeActions"/>: this is the TREE re-reading itself, not an action on a document,
+    /// and every other member of that interface is the latter.</summary>
+    private readonly Action<ProjectTreeNodeViewModel>? _onExpandUnreadReference;
+
     // ── Identity / model data (read from the node — never re-derived here) ────
 
     public NodeKind  Kind          => _node.Kind;
@@ -76,7 +82,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     public bool IsWarning => WarningReason is not null;
     public bool IsBold    => IsPrimary;
-    public bool IsItalic  => IsWarning;
+    /// <summary>SL4 R-sl4-11: the "not read yet" placeholder is italic like a warning but is NOT one
+    /// — an unread library is an ordinary, expected state of the on-focus rescan, and colouring it as
+    /// a problem would teach users that the shared-library workflow is going wrong.</summary>
+    public bool IsItalic  => IsWarning || Kind == NodeKind.NotReadYet;
 
     /// <summary>Material icon glyph — combines Kind + IsTestBench + directory flag.</summary>
     public MaterialIconKind IconKind => (Kind, IsTestBench) switch
@@ -104,6 +113,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.KnownFilesGroup, _)     => MaterialIconKind.FolderOutline,
         (NodeKind.UserFolder,      _)     => MaterialIconKind.Folder,
         (NodeKind.OtherFile,       _)     => MaterialIconKind.FileOutline,
+        // SL4 R-sl4-11 — the unwalked referenced sub-tree's placeholder row.
+        (NodeKind.NotReadYet,      _)     => MaterialIconKind.DotsHorizontal,
         _                                 => MaterialIconKind.FileOutline,
     };
 
@@ -345,8 +356,26 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsExpanded
     {
         get => _isExpanded;
-        set { if (_isExpanded != value) { _isExpanded = value; OnPropertyChanged(); } }
+        set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            OnPropertyChanged();
+            // SL4 R-sl4-10: expanding a referenced sub-tree that has not been read yet IS the
+            // gesture that reads it. The flag is set first so the rescan's CollectExpandedPaths
+            // sees this node expanded and the freshly-walked contents come back already open —
+            // otherwise the user's click would appear to do nothing.
+            if (value && HoldsUnreadReference) _onExpandUnreadReference?.Invoke(this);
+        }
     }
+
+    /// <summary>
+    /// True for a referenced library or workspace whose contents have not been walked yet — the node
+    /// whose single child is the <see cref="NodeKind.NotReadYet"/> placeholder (R-sl4-11).
+    /// </summary>
+    public bool HoldsUnreadReference =>
+        Kind is NodeKind.Library or NodeKind.ReferencedWorkspace
+        && Children.Count == 1 && Children[0].Kind == NodeKind.NotReadYet;
 
     // True when the cell has a dirty (unsaved) editing session.
     // Set by WorkspaceViewModel when any session for this cell's .csch changes dirty state.
@@ -378,12 +407,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         ProjectTreeFilterState  filter,
         HashSet<string>?        expandedPaths = null,
         ITreeActions?           actions       = null,
-        ProjectTreeNodeViewModel? parent      = null)
+        ProjectTreeNodeViewModel? parent      = null,
+        Action<ProjectTreeNodeViewModel>? onExpandUnreadReference = null)
     {
         _node    = node;
         _filter  = filter;
         _actions = actions;
         _parent  = parent;
+        _onExpandUnreadReference = onExpandUnreadReference;
 
         // Workspace root is always expanded initially; other nodes restore from saved paths.
         _isExpanded = node.Kind == NodeKind.Workspace
@@ -402,7 +433,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         // Build child VMs recursively; each child applies the same filter state.
         Children = new ObservableCollection<ProjectTreeNodeViewModel>(
-            node.Children.Select(c => new ProjectTreeNodeViewModel(c, filter, expandedPaths, actions, parent: this)));
+            node.Children.Select(c => new ProjectTreeNodeViewModel(
+                c, filter, expandedPaths, actions, parent: this,
+                onExpandUnreadReference: onExpandUnreadReference)));
 
         // React to filter-state changes — ONLY at the root. ApplyFilter is already a full recursive
         // pass, and it has to be: the text filter (§3.3a) hands each node whether an ANCESTOR matched,
@@ -728,6 +761,11 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.KnownFilesGroup => f.KnownFiles,
             NodeKind.UserFolder      => f.WorkspaceFileSystem,
             NodeKind.OtherFile       => f.WorkspaceFileSystem,
+            // SL4 R-sl4-11: the "not read yet" placeholder rides its parent's own toggle. It IS the
+            // referenced branch as far as the filter is concerned, and a rule that could hide it
+            // would leave the branch rendering empty — the one thing the placeholder exists to
+            // prevent.
+            NodeKind.NotReadYet      => f.Libraries,
             _                        => true,
         };
 

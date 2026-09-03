@@ -1,5 +1,71 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## What a cell reference costs, counted — and an advisory lock that claims no authority (SL4, 2026-09-03)
+
+`brief-shared-library-4-concurrency-and-latency.md`. The `src/Ui` half of this — the measurement table, the
+tree's referenced-subtree rule, and the design decisions behind both — is in `src/Ui/RESOLVED.md`; this is
+what landed on the framework-free side.
+
+### `Cells/CellStat.cs` — the counting seam, and a cache that is opt-in per CALL SITE
+
+Every filesystem call on a cell reference's resolution path goes through one type, so its cost is a **number**
+(`CellStat.Calls`) rather than an intuition. That is the brief's own rule (R-sl4-6) and the repo's: a timing
+assertion measures the machine, flakes under parallel test load and inverts under a debug build; a call count
+describes the algorithm and reads the same everywhere. Measured: **4 calls per referenced component per edit**
+— `Directory.Exists` on the cell folder, `Directory.Exists` + `Directory.GetFiles` on its `symbol/`, and the
+primary's mtime, all before the symbol cache can be consulted, because the mtime IS its key — and 6 when the
+folder holds more than one symbol.
+
+Positive answers are then cached for **`CellStat.Freshness` = 2 s** (R-sl4-7), which is the one guarantee the
+shared-library series traded away and is stated on that field in full. **A negative is never cached**
+(R-sl4-8): a cell folder that was not there, a `symbol/` with no `.csym` in it, an mtime for a file that is
+not present. Caching "not found" for even a second turns a share that blinked into a design full of
+Not-Found glyphs that persist after the network recovers.
+
+**The trap, and it is a boundary rather than a value.** `CellFolder.ResolvePrimary` is shared by
+`CellSymbolResolver.Resolve` AND by the project tree's own scan (and by every cell node view model, three
+times each). Caching *inside* it silently applied a bound justified for a network wire to a file the user had
+just written themselves — `WorkspaceScannerTests.Rescan_ContradictionAppearsWhenPrimaryFileDeleted` and its
+restore twin caught it. `ResolvePrimary` therefore takes `useStatCache:` (default **false**, which is exactly
+the pre-SL4 behaviour) and only the reference resolver passes true. Both callers still COUNT — the counting
+seam and the caching policy are separate questions, and conflating them is what went wrong the first time.
+
+Dropped by `WorkspaceRootFinder.InvalidateCache`, which now clears four memos on one lifecycle: the walk-up,
+`ExternalCellRef`'s alias table, `WorkspaceWritability`'s probe and this. A memo with a lifecycle of its own
+is the one that goes stale.
+
+### `Workspace/WorkspaceLock.cs` — advisory, and it must read as advisory
+
+`.crf-open.json` beside the `.cws`: user, host, pid, time. Written when the workspace is opened **and is
+writable** (a read-only workspace takes none and needs none — nobody can write it), removed on close, and
+released only when it is ours.
+
+- **No open file handle** (R-sl4-4). `CrashReporter` holds one with `FileShare.Read` so an exclusive open by
+  a probe proves ownership, and the single-instance check uses the same idiom; both are right **locally**.
+  Those guarantees do not survive SMB, NFS or a dropped connection, and a handle-based lock over a share
+  fails in the direction that produces a confident false statement about another person.
+- **Two independent staleness rules, and the host scoping is load-bearing.** Rule one is *this host* plus a
+  pid that is not running; rule two is age, 8 hours. Scoping rule one to this host is not tidiness — a lock
+  from another machine, checked against local pids, reads as abandoned whenever that pid happens to be free
+  here, which is a confident "they have gone" about a session that has not. That is the exact false statement
+  R-sl4-2 exists to bound, and it was observed once during the work before the scoping was added.
+  "Cannot tell whether a process is running" reads as ALIVE, deliberately.
+- **A malformed lock file is no evidence at all**, and is ignored rather than treated as a refusal. Refusing
+  to open a workspace over an unreadable file is precisely the stale-file failure the design forbids.
+
+### `Workspace/WorkspaceWritability` — read-only by CHOICE reuses read-only by permission
+
+`OpenReadOnlyThisSession(root)` marks a workspace and everything beneath it unwritable for this session,
+checked before the memo and before the probe. It is a **prefix** rule, not set membership, because the
+question is asked about a document's own directory far more often than about the root (R-sl2-4) and marking
+only the root would leave every file inside it saveable.
+
+This deliberately reuses SL2 rather than adding a second concept. Everything a read-only workspace does — the
+`.cws` write choke point skipping silently, Save disabled with a reason, Save As on quit, the provenance
+band, the generated-cell wipe not running, the PCell refusal naming the workspace — is already built and
+already tested, and "a workspace we have chosen not to write" wants identical behaviour from every one of
+them. A parallel flag would have been the one that is true in fourteen places.
+
 ## Writability is DISCOVERED, and `.cws` writes now have a choke point (2026-09-03)
 
 `brief-shared-library-2-read-only-workspaces.md` R-sl2-1/-2/-3/-6. Two changes here; the behaviour that

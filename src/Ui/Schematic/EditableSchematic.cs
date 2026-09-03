@@ -501,6 +501,34 @@ public sealed class EditableComponent
     public string?        CellRef      { get; set; }
 
     /// <summary>
+    /// The content hash of the referenced cell's published INTERFACE at the moment this component was
+    /// placed (SL3 R-sl3-4) — pins, port count and declared parameter names. Null for a built-in, for
+    /// a reference placed before this existed, and for one whose cell did not resolve at placement;
+    /// <b>null is "never recorded" and is never a warning</b> (R-sl3-5).
+    ///
+    /// <para>Produced in exactly one place — <see cref="PlacedCellRef"/>, beside the one rule that
+    /// produces a <c>CellRef</c> (R-sl3-6) — and rewritten in exactly one other, the explicit
+    /// <b>Accept the new interface</b> gesture (R-sl3-10).</para>
+    /// </summary>
+    public string?        CellInterfaceHash { get; set; }
+
+    /// <summary>
+    /// RUNTIME ONLY, never persisted: this instance's cell resolves and draws fine, but its interface
+    /// no longer hashes to <see cref="CellInterfaceHash"/> (SL3 R-sl3-7).
+    ///
+    /// <para><b>Deliberately not a fourth <see cref="CellSymbolState"/>.</b> §4.2's three states are
+    /// three ways a symbol can be MISSING, and each of them replaces the drawn glyph. This is not one
+    /// of those: the cell resolves, the symbol is fine, the drawing is correct — and the design may
+    /// not mean what it did. Folding it into that enum would put it on the "draw a placeholder
+    /// instead" path, which is precisely the collapse §4.2 forbids and precisely the wrong render
+    /// (R-sl3-1: the librarian's new symbol is the truth and must render).</para>
+    ///
+    /// <para>Set by <see cref="CellInterfaceWatch"/> on open and after an explicit re-check — never
+    /// per frame, because computing the hash reads the <c>.ccell</c> from disk.</para>
+    /// </summary>
+    public bool InterfaceChanged { get; set; }
+
+    /// <summary>
     /// The reference this component's symbol is resolved from, or null for an ordinary built-in
     /// whose artwork is fixed. Fed to <see cref="CellSymbolResolver.Resolve"/>.
     ///
@@ -903,6 +931,7 @@ public sealed class EditableComponent
             CellRefState     = cellRefState,
             CellRefPrimitives = cellRefPrimitives,
             ExternalAlias    = ExternalCellRef.TryParse(CellRef, out string extAlias, out _) ? extAlias : null,
+            InterfaceChanged = InterfaceChanged,
             InstanceSymbol   = instanceSymbol,
         };
     }
@@ -963,6 +992,12 @@ public sealed class EditableComponent
             ShowTypeLabel    = ShowTypeLabel,
             ShowInstanceName = ShowInstanceName,
             CellRef          = CellRef,
+            // SL3 R-sl3-10: a clone carries the recorded interface hash, and it must. Copy/paste,
+            // Duplicate and every command that rebuilds a component go through here — dropping it
+            // would erase the evidence that the design was authored against a different interface,
+            // silently, on an ordinary edit. The clone still names the same cell, so the recorded
+            // statement is still about the right thing.
+            CellInterfaceHash = CellInterfaceHash,
         };
         foreach (var p in Parameters)    c.Parameters.Add(p.Clone());
         foreach (var o in LabelOffsets) c.LabelOffsets.Add(o);

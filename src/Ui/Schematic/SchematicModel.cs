@@ -656,6 +656,17 @@ public sealed class SchematicComponent
     /// which is exactly the fact a broken external reference most needs to state.</para>
     /// </summary>
     public string? ExternalAlias { get; init; }
+
+    /// <summary>
+    /// True when this instance's cell resolves and draws correctly, but its published interface no
+    /// longer matches the one the instance was placed against (SL3 R-sl3-7).
+    ///
+    /// <para>Carried here so the renderer can mark the CHROME — R36 without exception: the geometry
+    /// is the librarian's new symbol and it is the truth, so it renders exactly as drawn. Copied from
+    /// <see cref="EditableComponent.InterfaceChanged"/>, which <c>CellInterfaceWatch</c> sets on open
+    /// rather than per frame: the comparison reads the cell's <c>.ccell</c> from disk.</para>
+    /// </summary>
+    public bool InterfaceChanged { get; init; }
 }
 
 /// <summary>A wire segment (orthogonal polyline) with pre-computed world bounding box.</summary>

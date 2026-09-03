@@ -50,6 +50,7 @@ public static class LayoutFlatten
                     X = x, Y = y,
                     RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
                     Rows = 1, Cols = 1, PitchX = 0, PitchY = 0,
+                    CellInterfaceHash = inst.CellInterfaceHash,   // SL3: exploding an array is not a re-placement
                 });
             }
             return new OneLevelResult([], expanded, WasArray: true);
