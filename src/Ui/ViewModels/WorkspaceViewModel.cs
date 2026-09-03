@@ -404,6 +404,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
         ArchiveWorkspaceCommand.NotifyCanExecuteChanged();
         ReferenceWorkspaceCommand.NotifyCanExecuteChanged();
+        AddCellToWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ImportBoardCommand.NotifyCanExecuteChanged();

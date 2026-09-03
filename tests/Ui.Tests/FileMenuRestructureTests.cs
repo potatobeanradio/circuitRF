@@ -122,7 +122,9 @@ public class FileMenuRestructureTests
         // MW2 §2.1: Reference Workspace… is its own band above the archive pair. It is neither a
         // save nor a share — it is a change to what this workspace can REACH — and putting it beside
         // Archive would read as a third way of packaging one.
-        "_Reference Workspace…", "---",
+        // MW3: Add Cell to Workspace… sits directly above it, in the same band — the two are the same
+        // subject (what this workspace can reach), and the drag gesture's dialog offers both outcomes.
+        "Add _Cell to Workspace…", "_Reference Workspace…", "---",
         "_Archive Workspace…", "_Unarchive Workspace…", "---",
         "_Import", "_Export", "_Manage PDKs…", "---",
         // "Close Workspace Window", not "Close Window": that name is already taken by the item
@@ -137,7 +139,7 @@ public class FileMenuRestructureTests
         "New", "New Workspace…", "New Window", "---",
         "Open Workspace…", "Open Workspace in New Window…", "Open Recent", "Open", "---",
         "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Workspace As…", "---",
-        "Reference Workspace…", "---",
+        "Add Cell to Workspace…", "Reference Workspace…", "---",
         "Archive Workspace…", "Unarchive Workspace…", "---",
         "Import", "Export", "Manage PDKs…", "---",
         "Close Window", "Close Workspace", "Close Workspace Window",

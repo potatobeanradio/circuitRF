@@ -78,6 +78,32 @@ A nodal tree (there may be many libraries/cells/configs). Right-click an item fo
 in New Window**, **Delete**, and context-appropriate others. Double-click opens the item in the Content
 region (a schematic/symbol/data-display tab).
 
+#### 2.1.1 Dropping onto a Project Tree — including from another workspace window (MW3)
+
+The tree is one drop surface with one pair of handlers; `TreeDrop` (`src/Ui/Schematic/TreeDropIntent.cs`)
+holds the rule, and both drag-over and drop ask it, so the effect the cursor promises and the thing that
+happens cannot drift apart. Four outcomes:
+
+- **A cell dragged from ANOTHER workspace's tree** — the receiving window comes forward and asks whether to
+  **copy the cell in** or to **reference it where it is**. Under Copy, a nested choice says whether the
+  sub-cells are copied too or kept referenced in their own workspace; under Reference it is disabled,
+  because a referenced cell's sub-cells are *always* by reference and there is no third combination. The
+  last choice is pre-selected for the rest of the session and deliberately not remembered across launches.
+  **Reference is unavailable when the two workspaces resolve to different technologies** — a layout's whole
+  instance hierarchy is drawn with one layer table — and the dialog shows that refusal rather than letting
+  the mode be chosen and then fail. A **copy is a file operation and is not undoable**; a copied cell that
+  places parts from a kit the receiving workspace has not imported is warned about *before* the copy, since
+  a `pdk://` reference is not a path and is not rewritten.
+- **A cell dragged within its own workspace's tree** does nothing, exactly as it did before this existed.
+- **A loose file dragged from another tree** is copied into the folder it was dropped on (or the workspace
+  root), with a name prompt on collision. There is no Reference option for a file: a `.s2p`, `.npy` or
+  `.ctech` has no reference semantics in a `.cws`.
+- **A `.cws`** opens that workspace in a window of its own and is never copied. Everything else in an
+  ordinary OS file drop is bookmarked as a Known File, as before.
+
+`File ▸ Add Cell to Workspace…` is the same gesture reached by keyboard: it picks a cell folder and shows
+the identical prompt, for when the other project is not on screen to drag from.
+
 ### 2.2 Component Palette (first occupant of the Properties region)
 A ComboBox selects a standard component library (lumped components, sources, simulation directives, …); the
 palette below shows that library's components as **graphical depictions**. The user **drags components from

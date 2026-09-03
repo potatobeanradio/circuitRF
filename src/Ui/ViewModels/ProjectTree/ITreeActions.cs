@@ -158,6 +158,21 @@ public interface ITreeActions
     /// <summary>Rename the given cell folder, rewrite all workspace references, and optionally rename primaries.</summary>
     Task RenameCellAsync(ProjectTreeNodeViewModel cellNode);
 
+    // ── Cross-workspace drag-drop (MW3) ──────────────────────────────────────
+
+    /// <summary>
+    /// A cell belonging to ANOTHER workspace is being taken into this one — by drag-drop between two
+    /// Project Trees, or by File ▸ Add Cell to Workspace…. Prompts for copy-vs-reference (MW3 §1)
+    /// and carries out whichever was chosen.
+    /// </summary>
+    /// <param name="sourceCellDir">The cell folder, absolute — the drag payload already carries one.</param>
+    /// <param name="destFolderDir">The folder it was dropped on; null for the workspace root.</param>
+    Task AcceptCellFromOtherWorkspaceAsync(string sourceCellDir, string? destFolderDir);
+
+    /// <summary>A loose file dragged from another workspace's tree — copied in, never referenced
+    /// (R-mw3-11).</summary>
+    Task AcceptDroppedFileAsync(string sourceFile, string? destFolderDir);
+
     // ── Technology (.ctech) node actions (L0c) ────────────────────────────────
 
     /// <summary>Writes this .ctech node's workspace-relative path into .cws DefaultTechRef,

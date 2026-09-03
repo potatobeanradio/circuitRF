@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.AddCellToWorkspaceDialog"
+        Title="Add Cell to Workspace"
+        Width="460"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <StackPanel Margin="20,16,20,16" Spacing="0">
+
+        <TextBlock x:Name="HeaderText" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+        <!-- Copy -->
+        <RadioButton x:Name="CopyRadio" GroupName="Mode" FontSize="12" Margin="0,14,0,0"/>
+
+        <StackPanel x:Name="SubCellPanel" Margin="22,4,0,0" Spacing="2">
+            <TextBlock Text="Sub-cells:" FontSize="11" Opacity="0.75"/>
+            <RadioButton x:Name="SubCopyRadio" GroupName="SubCells" FontSize="11"
+                         Content="Copy them too" IsChecked="True"/>
+            <RadioButton x:Name="SubRefRadio" GroupName="SubCells" FontSize="11"/>
+            <TextBlock x:Name="SubRefRefusalText" FontSize="10" Opacity="0.7" TextWrapping="Wrap"
+                       Margin="20,0,0,0" IsVisible="False"/>
+        </StackPanel>
+
+        <!-- Reference -->
+        <RadioButton x:Name="ReferenceRadio" GroupName="Mode" FontSize="12" Margin="0,12,0,0"/>
+        <TextBlock x:Name="ReferenceNoteText" FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                   Margin="22,2,0,0"/>
+
+        <!-- The technology refusal, when Reference is unavailable (MW2 R-mw2-7) -->
+        <TextBlock x:Name="RefusalText" FontSize="11" TextWrapping="Wrap"
+                   Margin="22,4,0,0" IsVisible="False" Foreground="{DynamicResource CrfWarningBrush}"/>
+
+        <!-- The kit trap (R-mw3-8) -->
+        <TextBlock x:Name="KitWarningText" FontSize="11" TextWrapping="Wrap"
+                   Margin="0,14,0,0" IsVisible="False" Foreground="{DynamicResource CrfWarningBrush}"/>
+
+        <TextBlock x:Name="UndoNoteText" FontSize="10" Opacity="0.65" TextWrapping="Wrap"
+                   Margin="0,14,0,0"
+                   Text="A copy writes folders on disk and cannot be undone."/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="OK" Width="80" IsDefault="True" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+
+    </StackPanel>
+</Window>

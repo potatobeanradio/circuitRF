@@ -1,5 +1,124 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## MW3 — workspace-to-workspace drag and drop (2026-09-03)
+
+`docs/sonnet-briefs/brief-multi-workspace-3-workspace-dnd.md`, on top of MW1 and MW2. Drag a cell or a
+file from one workspace window's Project Tree onto another's, and the receiving window asks whether to
+copy it in or reference it where it is. The owner asked for the same gesture on the File menu, so
+**`File ▸ Add Cell to Workspace…`** sits directly above `Reference Workspace…` and runs exactly the same
+code with a folder picker in front of it — the menu exists because the other project is often not on
+screen to drag from, not because it is a different operation.
+
+### The wire needed nothing, and the drop decision was worth taking out of the view
+
+The brief's §2 held up exactly: the tree was already a drag source for cell nodes, the payload already
+carried an ABSOLUTE path (so a drop in another window knows precisely which cell in which workspace it
+came from), and it already travelled on the native pasteboard by deliberate design. Nothing was added to
+the payload.
+
+What did change is where the DECISION lives. `DragOver` and `Drop` used to answer the question
+separately, and R-mw3-3's "extend the existing handlers, do not add a second drop path" is exactly the
+warning against letting those two drift. Both now ask **`TreeDrop.ForPayload` / `ForDroppedPath`**
+(`src/Ui/Schematic/TreeDropIntent.cs`), so the effect the cursor promises and the thing that happens are
+one rule — and it is a rule a headless test can assert, which is what makes R-mw3-4's
+"a same-workspace drag still does nothing" a gate rather than a claim.
+
+**A loose file needed a payload of its own.** A `DataFormat.File` drop can have come from Finder, and the
+tree's existing answer for one is `AddKnownFile` — a bookmark, not a copy. A file dragged from another
+TREE is a different intent (R-mw3-11: copy it in) and the two are indistinguishable on the wire unless
+the gesture states its own kind, so `WorkspaceFileDragPayload` says it. **The `.npy` payload was
+deliberately left alone**: the Data Display reads that format, and giving a data file a second spelling
+for MW3's sake would have broken the drop it already serves — the tree's own reader accepts both instead.
+One gesture, two readers, rather than one reader and two gestures.
+
+### What a cross-workspace copy actually had to do
+
+`DuplicateCellAsync` was the right starting point and was not sufficient, for the reason R-mw3-7 gives:
+it copies within ONE workspace, where a sub-cell's relative `CellRef` still resolves from the copy's new
+sibling position. Across workspaces the base and the depth both change.
+`CrossWorkspaceCellCopy` **plans before it writes** — which folders arrive, which names already exist,
+which kits the destination lacks — because every one of those is something the dialog has to say out
+loud before the user commits to a file operation that cannot be undone.
+
+**Every rewrite goes through `ExternalCellRef.MakeCellRef`, and that is the whole design.** A copied
+reference is resolved against the SOURCE document's directory, and the resulting absolute folder is
+handed to the one production site MW2 already installed: it returns the alias form for a cell inside a
+referenced workspace and the ordinary relative path otherwise. So "copy the sub-cells too" and "keep them
+referenced" are not two rewriters — they are the same rewriter over two different copy maps. That also
+means **the alias has to be recorded in the destination `.cws` BEFORE the rewrite runs**, since
+`MakeCellRef` reads that table and would otherwise silently emit the raw `../../` form R-mw2-5 forbids
+producing. The plan reports `NeedsSourceAlias` so the caller can do it in the right order.
+
+**Where the sub-cells land.** A cell nested inside the copied cell's own folder follows it (so a renamed
+top does not leave its children behind at the old name); everything else keeps its offset from the top
+cell's own parent, which preserves the source's organisation and leaves most sibling references
+unchanged in spelling as well as in meaning. A cell reachable only upward through a `../..` falls back to
+a bare leaf name beside the top — a copy must never write outside the folder it was dropped on. The walk
+is **bounded by the source workspace**, the same bound `ExternalCellArchive` applies and for the same
+reason: a reference that leaves it is a chain nobody chose, and following it would copy a third project.
+
+**Collisions are asked about, folder by folder** (R-mw3-9), and renaming one re-points anything the plan
+had placed inside it. Nothing is auto-suffixed: `Amp_2` appearing in someone's project without their say
+is worse than a second dialog.
+
+### The kit trap is the one that had to be stated before the copy, not after
+
+A `pdk://` reference is not a path and is not rewritten, so a copied cell resolves in the destination
+**only if that workspace has imported the same kit** — MW1 R-mw1-5 scopes kit resolution to the
+referencing document's own workspace, and after a copy that is the destination. The plan asks
+`PdkKitRegistry.HasKit(destinationRoot, kit)` for every kit the copied tree places and the dialog names
+what is missing. Choosing "copy anyway" is supported and lands on `NotFound` — the existing reported,
+repairable state — rather than throwing; silently producing a cell full of pin-less placeholders is the
+outcome the warning exists to prevent.
+
+### The dialog
+
+One prompt, shown by the receiving window, with the sub-cell choice nested under Copy and disabled under
+Reference (R-mw3-1) — a referenced cell's sub-cells are always by reference, and offering the fourth
+combination would imply a mode that does not exist. The last choice is remembered **for the session**
+and pre-selected (R-mw3-2); it is deliberately not persisted, because a silently remembered "Reference"
+months later is a nasty surprise. The sub-cell row is hidden outright when the cell places nothing —
+an inert choice is noise.
+
+**Both MW2 gates are asked, and either refusal disables Reference**: the workspace-level one because this
+gesture CREATES the alias `File ▸ Reference Workspace…` would have refused to create, and the cell-level
+one because a `.clay` may deviate from its workspace default. A drag must not be a way around a refusal.
+When the source cell is in no workspace at all there is nothing to reference it THROUGH — a `ws://`
+reference names a workspace — so the dialog says that instead, and copying is the only offer.
+
+### §3's ordering, and what is not yet known about it
+
+R-mw3-5/-6 are honoured structurally: the drop handler classifies and returns, and the activation plus
+the modal are posted at `Background` priority so they run after the platform's drag loop has unwound.
+**No platform difference has been observed, because none has been observed at all** — this is the part
+§6 calls "the one that matters" and it is a manual check on a real two-window macOS session, which has
+not been run. Recorded as unverified rather than as passing.
+
+### Reported, as §7 asks
+
+- **Whether "keep sub-cells referenced" is worth having: on the fixtures reachable here it is
+  implementable and correct, and its value is not demonstrated.** It costs almost nothing to keep,
+  because it is the same rewriter over a one-entry copy map rather than a mode of its own — that is the
+  measurement that matters and it argues for keeping it. What has NOT been measured is a real hierarchy
+  where a user wants it: the case it serves is a shared sub-cell library that must stay single-sourced
+  while the top cell is forked, and no fixture here is that. If it is ever dropped, the dialog collapses
+  to one question and the copy engine loses one enum value and nothing else.
+- **A `.cem`, a `.wBond` link and a bitmap reference inside a copied cell are NOT rewritten.** Only
+  `.csch` and `.clay` `CellRef`s are — the same pair `CellUsageScanner` scans. A `.wBond` link and a
+  bitmap path are relative to the cell's own folder and therefore survive the copy unchanged, which is
+  why they need nothing; a `.cem` naming a layout outside the copied cell does not, and that is a gap
+  this brief did not reach and did not create.
+
+### Gate
+
+`tests/Ui.Tests/CrossWorkspaceDropTests.cs` (11). Two real workspaces on disk in every fixture, for MW2's
+reason: the feature IS the boundary between them. The dialog itself is not asserted — it is a `Window`,
+and what it decides arrives at the copy engine as an argument — but every rule it READS from is: which
+drops are offered at all, what a copy collides with, which kits are missing, and what the copied files
+say afterwards. `FileMenuRestructureTests`' two order gates were updated for the new item.
+
+---
+
 ## MW2 — referencing a cell in another workspace (2026-09-03)
 
 `docs/sonnet-briefs/brief-multi-workspace-2-external-cell-refs.md`, on top of MW1. The design note's

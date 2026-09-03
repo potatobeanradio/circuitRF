@@ -79,6 +79,7 @@
                         <NativeMenuItem Header="Save Layout As…"     Command="{Binding SaveLooseLayoutCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Save Workspace As…"  Command="{Binding SaveWorkspaceAsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
                         <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Add Cell to Workspace…" Command="{Binding AddCellToWorkspaceCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Reference Workspace…" Command="{Binding ReferenceWorkspaceCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Archive Workspace…"   Command="{Binding ArchiveWorkspaceCommand}"   CommandParameter="{Binding $parent[Window]}"/>
@@ -434,6 +435,12 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveEdit" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
+                <MenuItem Header="Add _Cell to Workspace…"
+                          Command="{Binding AddCellToWorkspaceCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Take a cell from another project into this one — copy it in, or reference it where it is. The same choice the drag-drop gesture offers.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderMoveOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <MenuItem Header="_Reference Workspace…"
                           Command="{Binding ReferenceWorkspaceCommand}"
                           CommandParameter="{Binding $parent[Window]}"

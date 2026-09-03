@@ -313,6 +313,24 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     /// </summary>
     public void AddKnownFile(string path) => _actions?.AddKnownFile(path);
 
+    // ── Cross-workspace drag-drop (MW3) ───────────────────────────────────────
+
+    /// <summary>This tree's own workspace root, or null when no workspace is open. The drop handler
+    /// compares it against the DRAGGED cell's owning workspace: a same-workspace drag did nothing
+    /// before this feature and must go on doing nothing (R-mw3-4).</summary>
+    public string? WorkspaceRootDir => _workspaceModel?.WorkspaceRootDir;
+
+    /// <summary>A cell from another workspace was dropped here — ask, then copy or reference it
+    /// (MW3 §1). <paramref name="destFolderDir"/> is the folder node it landed on, or null for the
+    /// workspace root.</summary>
+    public Task AcceptCellFromOtherWorkspaceAsync(string sourceCellDir, string? destFolderDir)
+        => _actions?.AcceptCellFromOtherWorkspaceAsync(sourceCellDir, destFolderDir) ?? Task.CompletedTask;
+
+    /// <summary>A loose file from another workspace's tree was dropped here — copy it in
+    /// (R-mw3-11). No Reference option: a file has no reference semantics in a <c>.cws</c>.</summary>
+    public Task AcceptDroppedFileAsync(string sourceFile, string? destFolderDir)
+        => _actions?.AcceptDroppedFileAsync(sourceFile, destFolderDir) ?? Task.CompletedTask;
+
     // ── Workspace wiring ──────────────────────────────────────────────────────
 
     /// <summary>

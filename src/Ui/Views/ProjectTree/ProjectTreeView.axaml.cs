@@ -229,10 +229,13 @@ public partial class ProjectTreeView : UserControl
         _lastPressVm   = vm;
         _lastPressTick = tick;
 
-        // Cell DnD source capture, and (R-dd-3) .npy file DnD source capture — dragging a data
-        // file from the tree onto a Data Display plot adds it as a dataset in one motion, the
-        // same idiom as palette→schematic/palette→layout drag-drop.
-        if (GetCellNodeFromSource(source) is null && GetNpyFileNodeFromSource(source) is null) return;
+        // Cell DnD source capture; (R-dd-3) .npy file DnD source capture — dragging a data file from
+        // the tree onto a Data Display plot adds it as a dataset in one motion, the same idiom as
+        // palette→schematic/palette→layout drag-drop; and (MW3 §5) any other loose file, which is
+        // draggable only so it can be dropped on ANOTHER workspace's tree.
+        if (GetCellNodeFromSource(source) is null
+         && GetNpyFileNodeFromSource(source) is null
+         && GetLooseFileNodeFromSource(source) is null) return;
         _cellPressArgs = e;
         _cellPressPos  = e.GetPosition(this);
     }
@@ -253,13 +256,18 @@ public partial class ProjectTreeView : UserControl
         var source    = _cellPressArgs.Source as Visual;
         var cellVm    = GetCellNodeFromSource(source);
         var npyVm     = cellVm is null ? GetNpyFileNodeFromSource(source) : null;
+        var fileVm    = cellVm is null && npyVm is null ? GetLooseFileNodeFromSource(source) : null;
         var savedArgs = _cellPressArgs;
         _cellPressArgs = null; // clear before await to prevent re-entry
-        if (cellVm is null && npyVm is null) return;
+        if (cellVm is null && npyVm is null && fileVm is null) return;
 
-        string serialized = cellVm is not null
-            ? new CellDragPayload(cellVm.AbsolutePath).Serialize()
-            : new NpyFileDragPayload(npyVm!.AbsolutePath).Serialize();
+        // The .npy payload stays what it was: the Data Display reads that format, and giving a data
+        // file a second spelling for the sake of MW3 would break the drop it already serves. The
+        // tree's own drop handler accepts BOTH file payloads instead — one gesture, two readers.
+        string serialized =
+            cellVm is not null ? new CellDragPayload(cellVm.AbsolutePath).Serialize()
+          : npyVm  is not null ? new NpyFileDragPayload(npyVm.AbsolutePath).Serialize()
+          :                      new WorkspaceFileDragPayload(fileVm!.AbsolutePath).Serialize();
 
         var transferItem = new DataTransferItem();
         transferItem.Set(DataFormat.Text, serialized);
@@ -328,11 +336,35 @@ public partial class ProjectTreeView : UserControl
         return null;
     }
 
+    // Walk upward to a loose FILE node — anything the tree shows that is a file and is not part of a
+    // cell's own views. Draggable only for MW3 §5: dropped on another workspace's tree it is copied
+    // in, and dropped on its own it does nothing, exactly as before.
+    private static ProjectTreeNodeViewModel? GetLooseFileNodeFromSource(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is TreeViewItem { DataContext: ProjectTreeNodeViewModel vm }
+                && vm.Kind is NodeKind.OtherFile or NodeKind.KnownFile or NodeKind.DataDisplayFile
+                           or NodeKind.TechFile or NodeKind.ColorThemeFile or NodeKind.EmSetupFile
+                           or NodeKind.WBondFile or NodeKind.HarmonicaFile
+                && File.Exists(vm.AbsolutePath))
+                return vm;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
     // ── Drag-drop receive (file drop onto tree) ──────────────────────────────
+
+    // MW3 R-mw3-3: ONE AllowDrop surface and ONE pair of handlers. The tree already answered
+    // DragDropEffects.None to anything that was not an OS file list; these two learn the
+    // cross-workspace payloads rather than adding a second drop path, because a second path is the
+    // one that gets missed when a third payload arrives.
 
     private void OnFileDragOver(object? sender, DragEventArgs e)
     {
-        if (HasDroppedPaths(e))
+        if (PayloadIntent(e).Action != TreeDropAction.None || HasDroppedPaths(e))
         { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
         else
             e.DragEffects = DragDropEffects.None;
@@ -341,9 +373,74 @@ public partial class ProjectTreeView : UserControl
     private void OnFileDrop(object? sender, DragEventArgs e)
     {
         if (DataContext is not ProjectTreeTool tool) return;
+
+        var intent = PayloadIntent(e);
+        if (intent.Action is TreeDropAction.Cell or TreeDropAction.File)
+        {
+            string? destFolder = DropFolderFromSource(e.Source as Visual);
+            RunAfterDragCompletes(intent.Action == TreeDropAction.Cell
+                ? () => tool.AcceptCellFromOtherWorkspaceAsync(intent.Path, destFolder)
+                : () => tool.AcceptDroppedFileAsync(intent.Path, destFolder));
+            return;
+        }
+
         foreach (var path in ExtractDroppedPaths(e))
+        {
+            var dropped = TreeDrop.ForDroppedPath(path);
+            if (dropped.Action == TreeDropAction.OpenWorkspace)
+            {
+                var cws = dropped.Path;
+                RunAfterDragCompletes(() =>
+                {
+                    ViewModels.WorkspaceViewModel.OpenDroppedWorkspace(cws);
+                    return Task.CompletedTask;
+                });
+                continue;
+            }
             tool.AddKnownFile(path);
+        }
     }
+
+    /// <summary>The shipped rule, asked identically by DragOver and Drop so the effect the cursor
+    /// promises and the thing that happens cannot drift apart. <see cref="TreeDrop"/> holds it.</summary>
+    private TreeDropIntent PayloadIntent(DragEventArgs e) =>
+        TreeDrop.ForPayload(TextPayloadOf(e), (DataContext as ProjectTreeTool)?.WorkspaceRootDir);
+
+    private static string? TextPayloadOf(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+            if (item.TryGetRaw(DataFormat.Text) is string s && s.Length > 0)
+                return s;
+        return null;
+    }
+
+    /// <summary>The folder a drop landed on: a folder node itself, a cell's PARENT (a cell folder
+    /// holds views, not cells), and a file's own directory. Null falls back to the workspace root,
+    /// and the receiving workspace clamps anything outside itself.</summary>
+    private static string? DropFolderFromSource(Visual? source)
+    {
+        if (GetAnyNodeFromSource(source) is not { } node) return null;
+        string path = node.AbsolutePath;
+
+        if (node.Kind == NodeKind.Cell) return Path.GetDirectoryName(path);
+        if (Directory.Exists(path))     return path;
+        if (File.Exists(path))          return Path.GetDirectoryName(path);
+        return null;
+    }
+
+    /// <summary>
+    /// R-mw3-5/-6: the target window is activated and the modal shown AFTER the drop handler has
+    /// returned and the platform's drag loop has unwound. Raising a window mid-drag on macOS puts a
+    /// newly-key window under the cursor and the drag can be delivered to the wrong control — the
+    /// same class of problem that had Dock's restack-on-drag disabled process-wide — and showing a
+    /// modal from inside the handler is how a drag-drop deadlock is written.
+    /// </summary>
+    private void RunAfterDragCompletes(Func<Task> action) =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+        {
+            (TopLevel.GetTopLevel(this) as Window)?.Activate();
+            await action();
+        }, Avalonia.Threading.DispatcherPriority.Background);
 
     // Returns true if the drag contains at least one valid file/directory path.
     private static bool HasDroppedPaths(DragEventArgs e)
