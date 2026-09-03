@@ -1,12 +1,14 @@
 # circuitRF — Workspace & Project Tree Design
 
-**Status:** Steps 1–7 done · project-tree arc complete · §5A added · **§1.2.1 attachments added 2026-08-17** ·
-**Date:** 2026-08-17 · **Phase:** 6g (post-symbol-editor)
+**Status:** Steps 1–7 done · project-tree arc complete · §5A added · §1.2.1 attachments added 2026-08-17 ·
+**§5B / §5C added 2026-09-03 (design only — not built)** ·
+**Date:** 2026-09-03 · **Phase:** 6g (post-symbol-editor)
 
 Specifies the **workspace model** (filesystem structure), the **Project Tree** (the tree view that reads it),
 the **cell reference model** (how a placed component resolves to a cell's primary symbol — the linkage that
 unblocks the deferred symbol-editor live-update and cell-driven open), **foreign documents** (§5A — files
-open from outside the current workspace), and the **cell-parameter editor**.
+open from outside the current workspace), **multiple open workspaces** (§5B) and **external cell
+references** (§5C), and the **cell-parameter editor**.
 Refines `project-file-formats.md` (which this updates for `.ccell`, the cell subfolder layout, and the
 filesystem-is-truth membership model). Companions: `symbol-editor.md` (the `.csym` consumer), `ui-design.md`
 §1/§2.2 (hierarchy, palette), `color-themes.md` (System.Warning role), `src/Ui/CLAUDE.md`.
@@ -203,7 +205,8 @@ callers expect a finished tree on return.
 ### 3.1 Structure shown
 - The **workspace** root, its **cells** (each disclosing `schematic/`/`symbol/`/`layout/` → their view files),
   its **arbitrary user folders** and the `.cdd`/`.ccolor`/other files within (surfaced by extension),
-  **referenced libraries** (each its own sub-tree of cells), and **Known Files** (§5).
+  **referenced libraries** (each its own sub-tree of cells), **referenced workspaces** (§5C — the same
+  sub-tree shape as a referenced library, read-only), and **Known Files** (§5).
 - **User folders render recursively, and a cell inside one renders as an ordinary cell node** (§1.1) — the
   same icon, the same context menu, the same double-click. Depth is not a special case anywhere in the tree.
 - **Empty view sub-folders show no disclosure triangle** (a cell with no symbols yet shows no `symbol/`
@@ -227,6 +230,8 @@ callers expect a finished tree on return.
   is disclosed.
 - **Broken references → System.Warning color + italics**, with a **tooltip giving the reason**:
   - a **referenced library** whose path cannot be resolved;
+  - a **referenced workspace** whose `.cws` cannot be resolved (§5C) — the same treatment, deliberately:
+    one broken-external-reference appearance, not two;
   - a **Known File** whose path cannot be resolved;
   - a **cell whose `.ccell` names a primary view that is missing** (the contradiction, §2) — tooltip e.g.
     *"Primary symbol reference broken: amp.csym not found."*
@@ -328,6 +333,19 @@ This is the load-bearing addition: how a placed schematic component resolves to 
 - **A placed component references its cell by RELATIVE PATH** (relative to the referencing `.csch`/workspace).
   This applies equally to a cell in the workspace and a cell from an **external referenced library** (the
   reference is **library-qualified** by virtue of the path resolving into that library's folder).
+- **A `CellRef` has four forms, and each states its own kind** *(taxonomy recorded 2026-09-03)*. A form
+  that announces itself cannot be mistaken for a mistyped path, which is what lets each have its own
+  repair flow rather than one "not found" that covers all of them:
+
+  | Form | Resolves against | Introduced by |
+  |---|---|---|
+  | `../../Amp` — a relative path | the referencing file's own folder | §4, the ordinary case |
+  | `pdk://<kit>/<part>` | the kit registry, scoped to the referencing document's own workspace | `pdk-import.md` |
+  | `wbond://…`, `spicemodel://…` | a symbol GENERATED from the file the reference names | `wbond.md`, `spice-models.md` |
+  | `ws://<alias>/<path>` | the alias table in the referencing document's own `.cws` | **§5C** |
+
+  **The last three are not paths and must never be reported as bad ones.** Falling through to path
+  resolution produces a "not found" naming a directory nobody ever expected to exist.
 - **Same-named cells in different libraries are allowed** — disambiguated because each resolves via its own
   relative path into its own library folder.
 - **Glyph/pin resolution chain (replaces the static `SymbolKind → BuiltInSymbols` path):**
@@ -370,6 +388,15 @@ a move would have to settle first, both of which folders make reachable for the 
 - **What else points at a cell** beyond `.csch`/`.clay` `CellRef`s — `.cws` entries, `.cdd` datasets, wBond
   links — each of which the rename path handles separately today.
 
+**§5C changes the first of those two, and forces the change rather than merely enabling it**
+*(recorded 2026-09-03; specified by `brief-multi-workspace-2-external-cell-refs.md` R-mw2-15)*. Once a
+`ws://Other/cells/Amp` reference can exist, the last-segment match is no longer a bounded risk between two
+same-named cells the user owns — it silently repoints a reference into a workspace the rename had no
+business touching. So the rewriter must resolve each `CellRef` (alias-expanded) and compare **absolute
+paths**, which `CellUsageScanner.FileReferencesTarget` already does correctly in the same file for the
+*counting* path. That closes the same-named-cells blocker above; **the path-prefix blocker is untouched**,
+so an in-tree move remains deferred for the reason that survives (§9).
+
 So: an in-tree move is a real feature with a real design, and until it is built, a moved cell reports itself
 the way any other Finder edit does — the referencing view shows "Not Found" until it is re-pointed (§4.2),
 which is exactly the visible failure §4.1 already promises. **An import's own cells never hit this**: their
@@ -409,6 +436,10 @@ The `.cws` records **configuration only — never membership** (membership is th
 - **Dock layout** (the panel/tab arrangement, restored on open).
 - **Referenced libraries** — relative-or-absolute paths to external library folders. Unresolvable →
   System.Warning + italics in the tree (§3.2).
+- **Referenced workspaces** *(§5C)* — `{ Alias, Path }` pairs naming another workspace's `.cws`. **This is
+  the ONLY place a cross-workspace path is written**; every `ws://` cell reference names the alias, never a
+  path, so relocating the other project is one edit here rather than a rewrite of every document that
+  referenced it. Unresolvable → System.Warning + italics, exactly as a broken library.
 - **Known Files** — an arbitrary list of paths to other files the user finds convenient to keep at hand while
   working (no semantic role; just convenient bookmarks). Unresolvable → System.Warning + italics, same as a
   broken library.
@@ -525,16 +556,203 @@ naming one.
 
 ### 5A.5 Foreignness is a runtime concept
 
-**R37. No cross-workspace path is ever persisted.** Foreignness exists only for the duration of a session;
-nothing in this section writes a reference to another workspace into `.cws`, `.ccell` or a view file.
+**R37. No cross-workspace path is ever persisted BY THIS SECTION.** Foreignness exists only for the duration
+of a session; nothing in §5A writes a reference to another workspace into `.cws`, `.ccell` or a view file.
+A document is foreign because of where it sits, and closing it ends the fact.
 
-This is deliberate groundwork. **Instancing cells from another workspace** — the "Add Library" feature — is a
-separate design whose central question is *a named library alias resolved through `.cws` versus a raw path
-recorded in every file*. Raw paths mean relocating a library breaks every document that referenced it. That
-decision deserves its own treatment, and answering it accidentally here would saddle the feature with a
-convention chosen for an unrelated problem. Note that cell references are currently **relative** to their
-containing file (§4), so cross-workspace instancing is a new mechanism rather than an extension of the
-existing one.
+R37 originally read *"no cross-workspace path is ever persisted"* full stop, and deferred **instancing cells
+from another workspace** as a separate design — naming its central question as *a named library alias
+resolved through `.cws` versus a raw path recorded in every file*, and warning that raw paths mean
+relocating the other project breaks every document that referenced it. **§5C answers that question**
+(alias, and the reasoning is there), so R37 is now scoped to §5A rather than global. The two remain
+different things and neither implies the other:
+
+| | **§5A foreign document** | **§5C external reference** |
+|---|---|---|
+| What it is | a file open from elsewhere | an instance pointing at a cell elsewhere |
+| Lifetime | the session | persisted in `.cws` + the view file |
+| User intent | "let me look at this" | "my design depends on this" |
+| Survives reopening the workspace | no (R35) | yes, by design |
+
+---
+
+---
+
+## 5B. Multiple open workspaces (one window each)
+
+**Status:** design · specified by `docs/sonnet-briefs/brief-multi-workspace-0-overview.md` and
+`-1-windows.md` · **not built** *(added 2026-09-03)*.
+
+More than one workspace open at once, each in its own window, so two designs can be viewed and inspected
+side by side. §5A already made the *file* case deliberate; this makes the *workspace* case deliberate.
+
+### 5B.1 The governing rule
+
+**R38. A workspace window owns a workspace, and everything a workspace means is scoped to that window.**
+Panels, dock arrangement, edit sessions, technology cache, undo, the Project Tree, `Reset Layout`. Nothing
+is shared between windows except the application itself.
+
+This is less of a change than it sounds: `WorkspaceViewModel` is not a singleton and neither is the dock
+factory it creates, so the panels, the technology cache and the session registries are **already**
+per-window. What is *not* already scoped is §5B.3.
+
+**R39. Documents do not dock across windows.** A document tab carries dirty tracking, undo routing, `.cws`
+session membership (§5) and Rename/Remove-Cell participation (§4.1), all of which resolve through the
+workspace that owns the dock. Moving the tab would move none of it, so the tab does not move. A user who
+wants a document from another workspace opens that workspace in its own window, or opens the file as a
+foreign document (§5A) — two routes that already exist.
+
+**R40. A workspace is open in at most one window, and a file has at most one edit session process-wide.**
+Two view models over one `.cws` means two undo stacks and two dirty flags over the same files, and
+last-save-wins. Opening one that is already open **activates that window** instead. This is what makes
+§5C's external references safe: a cell referenced from B and edited in A cannot also be edited through B.
+
+### 5B.2 What is per-window and what is per-process
+
+The durable architectural fact this section exists to record.
+
+| | Scope |
+|---|---|
+| Workspace, its documents, its `.cws` | **window** |
+| Dock arrangement, all tool panels, `Reset Layout` | **window** |
+| Technology cache, edit-session registries, undo | **window** |
+| Mounted kits, PCell generators, device-worker providers | **window** (§5B.3) |
+| Colour theme, application preferences, external-worker consent | **process** |
+| The default Window Layout that `Reset Layout` resets *to* | **process** — one place to choose a layout |
+| Path-and-mtime-keyed caches (symbols, SPICE peeks, generated wBond symbols) | **process, and correct** — the key already carries identity |
+
+### 5B.3 The part that is not already scoped
+
+**R41. A workspace's kits, PCell generators and device-worker providers belong to that workspace, and
+opening another one must not unmount them.** Four registries are process-global and are cleared wholesale
+on every workspace open — `PdkKitRegistry`, `KitLayoutGenerators`, `PCellRegistry`'s resolvers and
+`ExternalDeviceRegistry`'s resolvers. Under one window that is correct and invisible. Under two it means
+opening B silently unmounts A's kits, and the first symptom is A's kit parts drawing as pin-less
+placeholders (§4.2 state 2) with nothing reported — in the window the user is not looking at.
+
+**R42. A `pdk://` reference resolves against the referencing document's OWN parent workspace**, found by
+walking up to the nearest ancestor `.cws`. This is R32's mechanism, applied to a second kind of reference,
+and it is deliberately the same one: a document means what its own workspace says it means, whatever
+happens to be open. It is also what makes §5C's kit story fall out instead of needing a mechanism of its
+own.
+
+A cell with **no ancestor `.cws`** that contains a kit part is unresolvable and stays that way. Unlike a
+missing *technology* (R33, which prompts, because a `.ctech` can be chosen), a kit cannot be chosen — the
+reference *is* the identity. It renders as §4.2 state 2, which is the correct, repairable, honest answer.
+
+### 5B.4 What is deliberately not persisted
+
+**R43. The set of open windows is not recorded anywhere.** There is no session-of-workspaces file. Each
+window persists its own dock layout into its own `.cws` exactly as before, and a launch opens one window
+per the launch action. Recording the set would raise a question this design has no reason to answer — what
+the launch action means when three workspaces were open — and the answer would be guessed rather than
+designed.
+
+---
+
+## 5C. External cell references (instancing a cell from another workspace)
+
+**Status:** design · specified by `docs/sonnet-briefs/brief-multi-workspace-2-external-cell-refs.md` ·
+**not built** · supersedes the deferral in R37 *(added 2026-09-03)*.
+
+A design in workspace **B** instances a cell that lives in workspace **A**, by reference — A's cell stays
+the single copy, and B sees changes to it.
+
+### 5C.1 The reference form — an alias, not a path
+
+**R44. An external reference is an ALIAS resolved through the referencing document's own `.cws`.**
+
+```
+CellRef:   ws://RfFrontEnd/cells/Amp
+.cws:      ReferencedWorkspaces: [ { Alias: "RfFrontEnd", Path: "../rf-front-end/.cws" } ]
+```
+
+This answers R37's open question in the direction R37 leaned. The reasons, in the order they matter:
+
+1. **Relocating the other project is one `.cws` edit** rather than a rewrite of every document that
+   referenced it — R37's own stated objection to raw paths.
+2. **It states its own kind** (§4's taxonomy), so it can never be mistaken for a mistyped relative path,
+   and it gets its own repair flow. This is the same reasoning `pdk://` was given.
+3. **It names the workspace**, which is exactly what §5C.2's technology check and §5B.3's kit resolution
+   both need. A raw path would make them infer the workspace from a resolved path — an inference that
+   fails silently the moment the path is stale.
+4. **`.cws` already has the shape** — referenced libraries (§5) are the same kind of entry for a `.clib`
+   folder rather than a workspace. It remains *configuration, never membership*.
+5. **The Project Tree already draws it** — §3.1's library sub-tree, §3.2's System.Warning + italics for an
+   unresolvable one.
+
+**R45. The path after the alias is workspace-relative**, resolved under the target workspace's root the
+same way any workspace-relative path already is. One convention, not a second.
+
+**R46. A raw `../../Other/cells/Amp` `CellRef` is not blessed.** It resolves today by accident — nothing in
+§4's resolution constrains a relative path to the workspace — and it will go on resolving, because breaking
+it would help nobody. But circuitRF never *writes* one, and it is not a documented feature. Blessing it
+would create exactly the second convention R37 warned against.
+
+### 5C.2 Technology — the constraint that shapes the feature
+
+**R47. An external reference into a LAYOUT is permitted only when both workspaces resolve to the same
+`.ctech`.** Different technology → the reference is refused at creation, naming both technologies and both
+workspaces, and pointing at the two routes the user actually has: copy the cell instead, or `Change
+Technology…`.
+
+The reason is R32's, arriving through a third door. A layout's whole instance hierarchy is compiled against
+**one** technology and layers are matched by numeric key; both starter technologies use `(1,0)`–`(8,0)`, so
+A's Drill would silently become B's Substrate — right colours, right geometry, wrong meaning, nothing
+missing and no warning (`layout-view.md` §13).
+
+**Per-instance technology is an explicit non-goal**, not an oversight. Rendering a sub-hierarchy under a
+different layer table changes what a single layout view *means*, and makes DRC's answer ambiguous. It is a
+real feature and it is a different one.
+
+**Schematics carry no technology and are unaffected** — the constraint applies to layout views only.
+
+### 5C.3 Sub-cells, kits, and the three states
+
+**R48. A reference is to one cell; its sub-cells come along by reference, always.** There is no
+"reference this cell but copy its sub-cells" mode — it would produce a cell whose contents disagree with
+its source. Copy-versus-reference for sub-cells is a question the **copy** gesture asks, never this one.
+
+**R49. Kits inside a referenced cell resolve through R42**, which means the referenced cell's parts resolve
+when **its own** workspace is open — the window doing the referencing needs none of A's kits. A referenced
+cell whose workspace is not open has unresolved parts; that is repaired by opening it, and circuitRF does
+**not** offer to mount another workspace's kit without opening that workspace. Mounting a kit is a side
+effect nobody asked for, and it would make "which workspace is this part from" unanswerable.
+
+**R50. An external reference has three states, and they stay distinct** — the same discipline §4.2 applies
+to the three missing-symbol states, and for the same reason: the right user response differs.
+
+| State | Cause | Remedy offered |
+|---|---|---|
+| **Resolved (external)** | fine, but not from this workspace | none — marked only (R51) |
+| **Unresolved — workspace not open** | R49 | open that workspace in a new window |
+| **Broken** | the alias does not resolve; or an unowned cell carrying kit content (§5B.3) | Locate… / copy into this workspace |
+
+**R51. A resolved external reference is marked, not only a broken one**, and marking follows R36 exactly:
+**chrome only, never the rendered geometry.** Seeing at a glance that a cell in your layout is not yours is
+the entire safety story for this feature — it is the difference between a reference and a trap. Name the
+source workspace where there is room (`Amp — [RfFrontEnd]`, R36's convention).
+
+### 5C.4 What must not silently break it
+
+Three existing workspace operations reach a `CellRef` and none of them expects an external one. All three
+are part of building §5C, not follow-ups to it.
+
+- **Rename** — §4.1's last-segment rewriter must become an absolute-path comparison, or renaming a cell in
+  B repoints a `ws://` reference into A. §4.1 records this.
+- **Remove Cell** — `CellUsageScanner`'s reference count enumerates the current workspace only, so deleting
+  a cell another workspace references reports "no references." It must count every **open** workspace, and
+  must word its confirmation honestly: a referrer in a workspace that is not open cannot be found, so the
+  prompt says *"no other open workspace references this"*, never *"nothing references this."*
+- **Workspace archive** — a reference is recognised by whether the string resolves to a **file**, and a
+  `CellRef` names a **directory**, so external references are invisible to the archive scan and the
+  recipient gets an archive referencing nothing. The scan must list them and the writer must bring the
+  referenced cell along and repoint the alias.
+
+**R52. Headless behaves identically, including the refusals.** A `.cnl` run has no other open workspace, so
+R49's "not open" state cannot arise — an alias must resolve from the target workspace's own `.cws` on disk
+by the same rules, or the run refuses with a sentence naming the workspace and the kit. Elaborating a
+design with a silently unresolved device is the failure this whole section exists to prevent.
 
 ---
 
@@ -681,9 +899,22 @@ cell-driven open (the deferred 4c-later items); 6–7 complete authoring + works
   off-thread** (`WorkspaceScanner` is framework-free), while **the VM build is not** — node VMs create
   `ObservableCollection`s and the root subscribes to `ProjectTreeFilterState`, so moving it needs the
   subscription split out and performed on the UI thread after the tree lands.
-- **`FileSystemWatcher`** live tree refresh (v1 is manual + on-focus).
+- **`FileSystemWatcher`** live tree refresh (v1 is manual + on-focus). **§5B raises the stakes**: with two
+  workspaces open, an edit made in one window to a cell the other window references (§5C) is exactly the
+  case a manual refresh is worst at. Not a blocker for §5B/§5C — the on-focus rescan fires when the user
+  switches windows, which is the moment that matters — but the argument for a watcher is stronger now.
+- **§5B multiple open workspaces and §5C external cell references** — designed above, **not built**.
+  Sequenced as `brief-multi-workspace-1-windows.md` → `-2-external-cell-refs.md` → `-3-workspace-dnd.md`;
+  §5B ships alone and is independently useful, §5C depends on §5B.3's per-workspace kit scoping, and the
+  workspace-to-workspace drag-drop gesture depends on §5C's Reference outcome being real.
+- **In-tree cell MOVE** (§4.1) — still deferred, but for **one** remaining reason rather than two: §5C's
+  absolute-path rewriter closes the same-named-cells blocker; a move changes the path *prefix*, which the
+  rewriter still cannot express.
 - **Layout view** (`.clay`, `layout/`, New Layout) — folder exists, command greyed; v2.
 - **Rename-surviving cell references** / rename-fixes-references-from-tree — v1 is rename-at-risk (§4.1).
+- **Docking documents across workspace windows** — an explicit **non-goal**, not a deferral (R39).
+- **Per-instance technology** (a referenced cell rendered under its own layer table) — an explicit
+  **non-goal** for §5C (R47), and a real feature in its own right if it is ever wanted.
 - **Automatic instance-value migration on cell-parameter rename/remove** — v1 surfaces the consequence (§7).
 - **Registry → `.ccell`-loader mechanical migration** (§6) — sequenced with step 5.
 - **`.cdd` / unviewable-type open** — deferred until the owning viewer exists (§3.5).
