@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.GerberImportScopeDialog"
         Title="Import Gerber — One File, or the Folder?"
-        Width="480"
+        Width="540"
         SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
@@ -25,8 +25,8 @@
             <Button Content="This File Only" Width="110" FontSize="12" HorizontalContentAlignment="Center"
                     Click="OnThisFileClick"
                     ToolTip.Tip="Import the one file chosen: one layer, no drill data, no vias."/>
-            <Button Content="Whole Folder" Width="110" IsDefault="True" FontSize="12"
-                    HorizontalContentAlignment="Center" Click="OnWholeFolderClick"/>
+            <Button Content="Whole Folder" x:Name="WholeFolderButton" Width="110" IsDefault="True"
+                    FontSize="12" HorizontalContentAlignment="Center" Click="OnWholeFolderClick"/>
         </StackPanel>
 
     </Grid>

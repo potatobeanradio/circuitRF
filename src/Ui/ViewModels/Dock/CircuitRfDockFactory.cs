@@ -1012,6 +1012,49 @@ public class CircuitRfDockFactory : Factory
     }
 
     /// <summary>
+    /// Opens <paramref name="doc"/> in a NEW document pane immediately to the RIGHT of the pane that
+    /// holds <paramref name="beside"/>, taking <paramref name="proportion"/> of the two panes' shared
+    /// width. Returns false — leaving <paramref name="doc"/> exactly where it is — when the neighbour
+    /// is not in a document dock at all.
+    ///
+    /// <para>This is the same arrangement the user reaches by dragging a tab onto the right edge of
+    /// the document area, and it is built the same way, through Dock's own <c>SplitToDock</c>. Two
+    /// things that path does NOT do for us: <c>SplitToDock</c> only WRAPS, so the document has to be
+    /// taken out of its current strip first (the drag manager is what does that during a drag —
+    /// <c>SplitDocumentAreaLayoutTests</c> records it); and it hands both sides an even share, so the
+    /// proportions are set AFTER the call rather than on the dock passed in, where they are discarded.</para>
+    ///
+    /// <para>The new pane is <c>IsCollapsable</c>, for the reason a restored extra pane is: a pane that
+    /// outlives its last document leaves a dead region the user cannot dismiss.</para>
+    /// </summary>
+    public bool SplitDocumentRightOf(IDockable doc, IDockable beside, double proportion)
+    {
+        if (ReferenceEquals(doc, beside)) return false;
+        if (beside.Owner is not IDocumentDock host) return false;
+
+        var pane = new DocumentDock
+        {
+            Id               = $"DocumentsSide{++_sidePaneCount}",
+            Title            = "Documents",
+            IsCollapsable    = true,
+            VisibleDockables = CreateList<IDockable>(),
+        };
+
+        RemoveDockable(doc, collapse: false);
+        AddDockable(pane, doc);
+        SplitToDock(host, pane, DockOperation.Right);
+
+        pane.Proportion = proportion;
+        host.Proportion = 1.0 - proportion;
+
+        SetActiveDockable(doc);
+        SetFocusedDockable(pane, doc);
+        return true;
+    }
+
+    private int _sidePaneCount;
+
+    /// <summary>
     /// Closes a dockable immediately, bypassing the async dirty-save confirm hook.
     /// Used by Remove-to-Trash so the tab closes without a "Save before closing?" dialog
     /// (the file is going away — saving would be wrong).

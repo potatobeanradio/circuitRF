@@ -1693,9 +1693,14 @@ public partial class LayoutEditorView : UserControl
     // view's DataContext is the LayoutDocument, not the WorkspaceViewModel, so the command has to be
     // reached via the same desktop.Windows scan rather than a XAML binding.
     /// <summary>
-    /// Technology ▾ ▸ Edit — opens the resolved <c>.ctech</c> as a document. Same
-    /// WorkspaceViewModel resolution as OnOpenSourceWorkspaceClick below: this view's DataContext is
-    /// the LayoutDocument, so the workspace is reached by a desktop-windows scan, not a binding.
+    /// Technology ▾ ▸ Edit… — opens the resolved <c>.ctech</c> as a document, in its own pane to the
+    /// RIGHT of this layout (owner request, 2026-09-02). Same WorkspaceViewModel resolution as
+    /// OnOpenSourceWorkspaceClick below: this view's DataContext is the LayoutDocument, so the
+    /// workspace is reached by a desktop-windows scan, not a binding.
+    ///
+    /// <para>The LayoutDocument is handed over as the neighbour to split from, and this view's own
+    /// width as the space the two panes will divide — a dock pane is sized by PROPORTION, so the
+    /// width the request is stated in has to be measured against something.</para>
     /// </summary>
     private void OnEditTechnologyClick(object? sender, RoutedEventArgs e)
     {
@@ -1717,7 +1722,7 @@ public partial class LayoutEditorView : UserControl
             .OfType<WorkspaceWindow>()
             .Select(w => w.DataContext as ViewModels.WorkspaceViewModel)
             .FirstOrDefault(v => v is not null)
-            ?.OpenTechnologyDocument(techPath);
+            ?.OpenTechnologyDocumentBesideLayout(techPath, doc, Bounds.Width);
     }
 
     private void OnOpenSourceWorkspaceClick(object? sender, RoutedEventArgs e)

@@ -27,7 +27,14 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// </summary>
 public partial class GerberImportScopeDialog : Window
 {
-    public GerberImportScopeDialog() => InitializeComponent();
+    public GerberImportScopeDialog()
+    {
+        InitializeComponent();
+
+        // IsDefault alone makes Enter activate it; focus is what makes it LOOK like the default and
+        // what a Space press hits. Without this the focus lands on Cancel, first in tab order.
+        Opened += (_, _) => WholeFolderButton.Focus();
+    }
 
     public GerberImportScopeDialog(GerberImportEntry.FolderSurvey survey) : this()
         => MessageText.Text = survey.Question;

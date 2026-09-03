@@ -5504,6 +5504,60 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     public void OpenTechnologyDocument(string absolutePath) => OpenOrActivateTech(absolutePath);
 
+    /// <summary>
+    /// How wide the Technology ▾ ▸ Edit… pane opens, in logical units. Owner request, 2026-09-02: wide
+    /// enough for the layer table's <b>Name, Vis, Sel and Color</b> columns and no wider, so layers can
+    /// be toggled with the artwork still on screen beside them.
+    ///
+    /// <para>Those four columns are declared in <c>TechEditorView.axaml</c> as
+    /// <c>* (MinWidth 110), 30, 30, 48</c> with a 4-unit <c>ColumnSpacing</c> and a 4-unit margin each
+    /// side: 230 units at the Name column's floor, and the rest of this number is what makes Name
+    /// readable rather than merely present, and keeps the header row's Undo/Redo/Save from being
+    /// pushed off the right edge. <see cref="TechEditPaneColumnFloor"/> is the part that is arithmetic
+    /// and is pinned to the XAML by a test; this is the judgement on top of it.</para>
+    /// </summary>
+    public const double TechEditPaneWidth = 340;
+
+    /// <summary>The four columns' own width — see <see cref="TechEditPaneWidth"/>, which must not go
+    /// below it or the command stops delivering what it promises.</summary>
+    public const double TechEditPaneColumnFloor = 110 + 4 + 30 + 4 + 30 + 4 + 48 + 8;
+
+    /// <summary>
+    /// Technology ▾ ▸ Edit… — opens the <c>.ctech</c> in its OWN document pane, immediately right of
+    /// the pane holding the layout and only <see cref="TechEditPaneWidth"/> wide.
+    ///
+    /// <para><paramref name="layoutDocument"/> is the layout's own dockable and
+    /// <paramref name="availableWidth"/> the width it currently occupies — a pane's size is a
+    /// PROPORTION of its parent, so the pixel width the owner asked for can only be honoured against
+    /// a measured one.</para>
+    ///
+    /// <para><b>The split happens only when the technology lands in the same tab strip as the
+    /// layout.</b> A <c>.ctech</c> already open in a pane of its own, or in a torn-off window, is
+    /// where the user put it, and this command re-arranging it would be undoing their own work.</para>
+    /// </summary>
+    public void OpenTechnologyDocumentBesideLayout(
+        string absolutePath, IDockable layoutDocument, double availableWidth)
+    {
+        var strip = layoutDocument.Owner;
+        OpenOrActivateTech(absolutePath);
+
+        if (!_openDocsByPath.TryGetValue(absolutePath, out var tech)) return;
+        if (!ReferenceEquals(tech.Owner, strip)) return;
+
+        _factory.SplitDocumentRightOf(tech, layoutDocument, TechEditPaneProportion(availableWidth));
+    }
+
+    /// <summary>
+    /// <see cref="TechEditPaneWidth"/> as a share of the space the two panes will divide, clamped so a
+    /// very narrow window still leaves the layout half the room and a very wide one does not open a
+    /// sliver. Falls back to a plain share when the layout has not been measured (width 0 or NaN),
+    /// which is the case before its first layout pass.
+    /// </summary>
+    internal static double TechEditPaneProportion(double availableWidth)
+        => availableWidth > 0
+            ? Math.Clamp(TechEditPaneWidth / availableWidth, 0.15, 0.5)
+            : 0.3;
+
     /// <summary>The absolute <c>.ctech</c> path a given <c>.clay</c> resolves to, or null when it
     /// resolves to none. Exposed so the EM setup panel's "Edit technology…" link can reach the ONE
     /// editor for process data (R-em-12) instead of growing a second stackup editor.</summary>

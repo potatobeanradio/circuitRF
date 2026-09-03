@@ -1,5 +1,45 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Technology ▾ ▸ Edit… opens the .ctech in a narrow pane beside the layout (2026-09-02)
+
+Owner request: the layout editor's Technology flyout should read **Edit…**, and the command should
+open the `.ctech` **to the right of the `.clay` in the document area**, only as wide as the layer
+table's **Name / Vis / Sel / Color** columns — so layers can be toggled with the artwork still on
+screen beside them. `WorkspaceViewModel.OpenTechnologyDocumentBesideLayout` +
+`CircuitRfDockFactory.SplitDocumentRightOf`; gate `tests/Ui.Tests/TechEditPaneTests.cs`.
+
+Three things worth keeping:
+
+- **`SplitToDock` only WRAPS.** It does not take the dockable out of its current strip — during a drag
+  the drag manager has already done that — so a programmatic split must `RemoveDockable(doc,
+  collapse: false)` first or the document ends up in both places. `SplitDocumentAreaLayoutTests`
+  records the same trap for the restore path; this is the second caller to hit it.
+- **`SplitToDock` also DISCARDS the proportions on the dock handed to it**, resetting both sides to
+  `NaN` (an even share). The whole point of this command is an uneven split, so `Proportion` is set
+  on both panes AFTER the call. Setting it on the `DocumentDock` before passing it in looks right,
+  builds, and silently opens a half-width pane.
+- **A pane's size is a PROPORTION of its parent, so a request stated in pixels needs a measured
+  width.** The view hands over its own `Bounds.Width`; `TechEditPaneProportion` divides and clamps to
+  [0.15, 0.5] so a narrow window still leaves the layout half the room. `TechEditPaneColumnFloor` is
+  the part that is arithmetic — the four columns' declared widths plus their gaps, pinned to
+  `TechEditorView.axaml` by a test — and `TechEditPaneWidth` (340) is the judgement on top of it: the
+  floor puts the layer NAME column at its 110-unit minimum and leaves the header row's Undo/Redo/Save
+  hanging off the right edge.
+
+The new pane is `IsCollapsable`, for the same reason a restored extra pane is: one that outlives its
+last document leaves a dead region the user cannot dismiss. The arrangement is an ordinary split
+document area, so `DockLayoutCapture` already records it and it survives a reopen with no new schema.
+
+## Import Gerber scope dialog: the default button was clipped (2026-09-02)
+
+Owner-reported. Four buttons at 90 + 130 + 110 + 110 with 8-unit spacing and the grid's 20-unit
+margins need 504 units; the window was 480, so **Whole Folder** — the default, and the answer the
+dialog exists to steer people towards — was cut off at the right edge. Width is now 540.
+
+`IsDefault="True"` was already set and is not the whole of "make it the default": Enter activated it,
+but focus landed on **Cancel** as first in tab order, so it neither looked like the default nor took a
+Space press. `Opened += … WholeFolderButton.Focus()` in the code-behind is the other half.
+
 ## Gerber import review: seven defects the hand-authored fixtures could not see (2026-09-02)
 
 A review of the L4e-L4h Gerber/Excellon import series, run against **third-party production file sets
