@@ -1753,3 +1753,72 @@ also surfaces as `IndexOutOfRangeException`, or as a read that never returns.
 UI thread, and the field stack names the gather rather than a dictionary lookup. It is the removal of
 a hazard that would be indistinguishable from the reported one, on the exact object that report is
 about. Now under a lock, with the flag raised last.
+
+## Round 6: the probe answers, and the stale-`.npy` lead is dead (2026-09-03)
+
+Two trails from the round-5 instrumented build. The Data Display half is short, because the fields
+added in round 5 did their job and the answer is negative.
+
+- **`same=yes buf=601 expect=601`.** The cube the indexer received IS `ds["SP1.S"]`, and its backing
+  buffer is exactly the axes product. Everything after the probe — `ResolveNetworkParamCube` (inert
+  at `override=off`), the arg build, the clamp — is therefore excluded, not merely unsuspected.
+- **A run happened in-session, 76 ms before the failure.** `begin 'SP1'` / `end 'SP1'` at
+  07.34.56.101–.170, first `trace resolve FAILED` at .246, on the `.npy` that run had just written;
+  the same session also failed at 07.34.38.891, *before* the run, on the pre-existing file. Round 5's
+  leading theory — a corrupt `.npy` left by an earlier session, inferred from that report's empty
+  trail — is refuted. The fault is deterministic for this data and survives a rewrite by the current
+  binary.
+
+Where it goes next is in `src/RfCore/RESOLVED.md` (round 6): the gather is no longer recursive, and
+the note now reports the faulting index pair and whether the identical read fails twice. Nothing
+further is needed from this file's instrumentation — it has said everything a caller-side field can
+say about this read.
+
+### Widening the net: four diagnostics for paths this hunt had never instrumented (2026-09-03)
+
+Round 6 ended with "nothing in `DataCube` explains this and no further printing of its state can",
+which is a reason to instrument ELSEWHERE, not a reason to stop. Four additions, all invisible to the
+user and all free on the success path.
+
+**1. The probe now says WHICH read, and how many.** A resolve is not one slice: on a spectral source
+`ResolveFundamentalByX` slices `ToneFreqs` once per X point (601 times, for the reported run's axis
+length), and a family trace slices once per curve. **None of those recorded anything**, so a throw in
+any of them was reported under the main read's cube and arguments — a misattribution indistinguishable
+from the real thing. Every indexer call site now goes through `ResolveProbe.Reading(site, cube, args)`
+and the note carries `site=main slices=1`, or `site=tonefreqs[417] slices=418`.
+
+*This does not change the reading of the 2026-09-03 trails*, and checking that was the point: those
+are S-parameter sources, whose group holds no `ToneFreqs` cube, so `ResolveFundamentalByX` returns
+before slicing anything and the main read is the only one. The attribution there was sound. It was
+sound by luck of the source type, which is not a property worth relying on twice.
+
+**2. Object identity, on both sides of the boundary.** A run's group holds `S`, `Z` and `Y` at the
+same shape and the same strides, so every message either side has printed so far was equally
+consistent with all three. `DataCube`'s own gather message now carries `id=0x…` and the note carries
+the identity of the cube IT handed over, so "which cube threw" is answered rather than inferred. The
+gather message also names the buffer's real element type (`buffer Complex[601]`), which is the one
+cheap check for a type-punned array reference — a mechanism that does turn an in-range index into a
+fault, and one nothing had ruled out.
+
+**3. Every source is inventoried as it LOADS.** Four rounds asked the reporter for their `.npy`
+because nothing recorded what a source file contained — only what a trace happened to touch, after
+something had already gone wrong. All five `_data` assignments in `DataSourceEntryViewModel` now route
+through one `SetData`, which writes a single line: cube count, and each cube's declared shape against
+its real buffer length. `source npy load: 4 cube(s), every one shape-consistent` is as useful as the
+malformed answer — it is what lets the next report rule the file out with no file. Held by
+`TraceResolveContainmentTests.ALoadedSource_InventoriesItsCubes_WhetherOrNotAnythingIsWrong`.
+
+**4. Every trail note carries its thread.** `[07:34:56.246 t1]`, and `t7!ui` when the note did not
+come from the UI thread. A burst of identical failures is a different event depending on whether one
+thread produced it or several did, and no trail could say which. It also makes round 5's
+`EnsureNetworkParamCubesMaterialized` hardening *checkable*: nothing is known to touch `Data` off the
+UI thread, and a torn `Dictionary` read there is indistinguishable from an impossible index — so if it
+ever happens, the trail now says so instead of leaving it a hypothesis.
+
+**One trap worth recording.** The obvious implementation, `Dispatcher.UIThread.CheckAccess()`, is
+**not side-effect free**: the first read of that property CREATES the dispatcher, bound to whichever
+thread asked. A diagnostic that consulted it could bind the UI thread to a worker merely by noting
+something early in startup. `CrashReporter.MarkUiThread()` captures the id once from
+`OnFrameworkInitializationCompleted` — which runs there by definition — and `Note` compares integers.
+That also keeps `CrashReporter` free of any Avalonia reference.
+

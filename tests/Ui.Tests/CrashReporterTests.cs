@@ -411,6 +411,82 @@ public sealed class CrashReporterTests : IDisposable
         Assert.NotNull(dir);
         return dir!.FullName;
     }
+
+    // ── What the report says about how the code was RUN ──────────────────────
+
+    /// <summary>
+    /// The header describes the machine; these four lines describe the runtime's own configuration
+    /// and anything injected into the process to change it.
+    ///
+    /// <para>They exist for a specific dead end: a managed exception whose own arithmetic says it was
+    /// unreachable (<c>src/RfCore/RESOLVED.md</c>, six rounds). Once the application's state is
+    /// exhausted, the layer underneath is what is left — an injected CLR profiler rejitting methods,
+    /// a debugger, non-default codegen — and none of it appeared in any report so far. A header that
+    /// says "none / all default / no" narrows the field as usefully as one that names a module, which
+    /// is why the lines are written unconditionally rather than only when something is set.</para>
+    /// </summary>
+    [Fact]
+    public void TheHeader_RecordsHowTheProcessIsExecutingCode_NotOnlyWhatItRunsOn()
+    {
+        CrashReporter.Install("circuitRF");
+        CrashReporter.Note("anything, so the file exists");
+
+        string header = File.ReadAllText(Sessions().Single());
+
+        Assert.Contains("debugger    :", header);
+        Assert.Contains("profiler    :", header);
+        Assert.Contains("codegen env :", header);
+        Assert.Contains("gc          :", header);
+        Assert.Contains("modules     :", header);
+
+        // On this machine nothing is injected, so the negative answers must be stated rather than
+        // omitted — an absent line is indistinguishable from an old build.
+        Assert.Contains("profiler    : none", header);
+        Assert.Contains("codegen env : all default", header);
+
+        // Module NAMES only. A report is sent by a user; where their DLLs live is not ours to collect.
+        Assert.DoesNotContain(".dll" + Path.DirectorySeparatorChar, header);
+        Assert.DoesNotContain(AppContext.BaseDirectory, header);
+    }
+
+    [Fact]
+    public void EveryNote_CarriesItsThread_AndMarksTheOnesThatAreNotTheUiThread()
+    {
+        CrashReporter.Install("circuitRF");
+        CrashReporter.MarkUiThread();                 // the app does this from framework init
+        CrashReporter.Note("on the calling thread");
+
+        string onOther = "";
+        var th = new System.Threading.Thread(() =>
+        {
+            CrashReporter.Note("on a worker thread");
+            onOther = "ran";
+        });
+        th.Start();
+        th.Join();
+        Assert.Equal("ran", onOther);
+
+        string trail = File.ReadAllText(Sessions().Single());
+
+        // A burst of identical notes is a different event depending on whether one thread produced
+        // it or several did, and there was no way to tell from a trail until now.
+        Assert.Matches(@"\[\d\d:\d\d:\d\d\.\d\d\d t\d+", trail);
+
+        // The worker's note is marked, the UI thread's is not — which is the field being added: a
+        // resolve running off the UI thread reads DataSet group maps that are ordinary dictionaries.
+        var ids = System.Text.RegularExpressions.Regex
+            .Matches(trail, @"\] (?:on the calling thread|on a worker thread)")
+            .Count;
+        Assert.Equal(2, ids);
+        var tags = System.Text.RegularExpressions.Regex
+            .Matches(trail, @" (t\d+(?:!ui)?)\] on ")
+            .Select(m => m.Groups[1].Value)
+            .ToArray();
+        Assert.Equal(2, tags.Length);
+        Assert.NotEqual(tags[0], tags[1]);
+        Assert.DoesNotContain("!ui", tags[0]);
+        Assert.Contains("!ui", tags[1]);
+    }
 }
 
 /// <summary>

@@ -219,7 +219,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         Kind       = SourceKind.Touchstone;
         _snp       = snp;
         _filePath  = snp.FilePath;
-        _data      = snp.IsEmpty ? null : DataSetBuilder.FromSnp(snp);
+        _data      = SetData(snp.IsEmpty ? null : DataSetBuilder.FromSnp(snp), "touchstone load");
         _displayName = FileName ?? "";
         _alias       = DefaultAlias(FileName);
 
@@ -234,7 +234,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     {
         Kind       = kind;
         _filePath  = path;
-        _data      = data;
+        _data      = SetData(data, "npy load");
         _snp       = snp;
         _displayName = FileName ?? "";
         _alias       = DefaultAlias(FileName);
@@ -298,6 +298,52 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     // ---- In-place refresh (called by DataSourceLibraryViewModel) -----------
 
     /// <summary>
+    /// Every assignment of <see cref="_data"/> goes through here so that a source's cubes are
+    /// INVENTORIED once, as they enter, and the trail says so.
+    ///
+    /// <para><b>Why at the load and not at the read.</b> <c>DataCube.Slice</c> already refuses a cube
+    /// whose buffer and axes disagree, but it does that on the cube a trace happens to touch, in a
+    /// crash note, after something has gone wrong. The five-round field report
+    /// (<c>src/RfCore/RESOLVED.md</c>) has spent four rounds asking for the <c>.npy</c> behind it
+    /// precisely because nothing records what a source FILE contained. This does, in one line, for
+    /// every cube — declared shape against real buffer length — and it costs one multiply per cube on
+    /// a path that has just parsed a file off disk.</para>
+    ///
+    /// <para>The line is written whether or not anything is wrong. "4 cubes, all consistent" is the
+    /// answer that lets the next report rule the file out, which is worth as much as naming a bad one.</para>
+    /// </summary>
+    private static DataSet? SetData(DataSet? data, string where)
+    {
+        try
+        {
+            if (data is null) { Diagnostics.CrashReporter.Note($"source {where}: no DataSet (broken entry)"); return null; }
+
+            int cubes = 0;
+            var bad   = new System.Collections.Generic.List<string>();
+            foreach (string group in data.Groups)
+            {
+                foreach (var kv in data.CubesIn(group))
+                {
+                    cubes++;
+                    long expect = 1;
+                    foreach (var a in kv.Value.Axes) expect *= a.Length;
+                    if (kv.Value.BufferLength != expect)
+                        bad.Add($"{group}.{kv.Key} axes claim {expect}, buffer holds {kv.Value.BufferLength}");
+                }
+            }
+
+            Diagnostics.CrashReporter.Note(bad.Count == 0
+                ? $"source {where}: {cubes} cube(s), every one shape-consistent"
+                : $"source {where}: {cubes} cube(s), MALFORMED: {string.Join("; ", bad)}");
+        }
+        catch (Exception ex)
+        {
+            Diagnostics.CrashReporter.Note($"source {where}: inventory unreadable ({ex.GetType().Name})");
+        }
+        return data;
+    }
+
+    /// <summary>
     /// Refreshes a Touchstone entry in place after reload.
     /// The SNP instance identity is preserved so existing trace bindings survive.
     /// </summary>
@@ -306,7 +352,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         _snp!.FilePath = newPath;
         _snp.RefreshFrom(newSnp);
         _filePath = newPath;
-        _data = DataSetBuilder.FromSnp(_snp);
+        _data = SetData(DataSetBuilder.FromSnp(_snp), "touchstone reload");
         _networkParamCubesMaterialized = false;
         NotifyBrokenStateChanged();
         ClassifyZ0FromData();
@@ -321,7 +367,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     {
         var boundView = _networkView;                     // may be held by live derived traces
         _filePath = newPath;
-        _data     = data;
+        _data     = SetData(data, "npy reload");
         _networkView = null; _networkViewBuilt = false;   // rebuilt lazily against the new DataSet
         _networkParamCubesMaterialized = false;           // re-armed against the new DataSet
 
@@ -387,7 +433,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     internal void RefreshLoadpull(DataSet data, string newPath)
     {
         _filePath = newPath;
-        _data     = data;
+        _data     = SetData(data, "npy reload");
         _snp      = null;
         _networkParamCubesMaterialized = false;
         NotifyBrokenStateChanged();

@@ -124,6 +124,22 @@ public sealed class TraceResolveContainmentTests
             Assert.Contains("buf=1 expect=3", trail);
             Assert.Contains("same=yes", trail);      // still the object `shape=` describes
             Assert.Contains("args=[All, 0, 0]", trail);
+
+            // WHICH read, and how many the resolve had done. A resolve is not one slice: a spectral
+            // source slices ToneFreqs once per X point and a family trace once per curve, and until
+            // these two fields existed a throw in either was reported under the main read's cube and
+            // arguments.
+            Assert.Contains("site=main", trail);
+            Assert.Contains("slices=1", trail);
+
+            // Object identity. A run's group holds S, Z and Y at one shape, so a message naming a
+            // shape names a cube that could be any of the three; this is what pairs the throwing cube
+            // with the one the caller handed over. Exactly one appears here, from the note — this
+            // fixture's short buffer is refused by RequireShapeConsistent BEFORE the gather, so the
+            // gather's own half of the pair is gated in RfCore's DataCubeShapeIntegrityTests instead.
+            Assert.Contains("id=0x", trail);
+            Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(trail, "id=0x").Count);
+            Assert.Contains("Malformed cube", trail);
         }
         finally
         {
@@ -181,5 +197,54 @@ public sealed class TraceResolveContainmentTests
         Assert.Single(t.Points);                            // the one sample it genuinely has
         Assert.Equal("NaN", t.FormatCubeCell(1, PrecisionFormat.G, 4));
         Assert.Equal("NaN", t.FormatCubeCellForMarker(2, new Marker(t, 2e9, false, false, 1)));
+    }
+
+    // ── The source is inventoried as it loads, not only when a read fails ────
+
+    /// <summary>
+    /// Four rounds of the field report asked for the reporter's <c>.npy</c>, because nothing recorded
+    /// what a source FILE contained — only what a trace happened to touch, after something had
+    /// already gone wrong. Every load now writes one line: how many cubes, and each one's declared
+    /// shape against its real buffer length.
+    ///
+    /// <para>The clean answer matters as much as the dirty one. "4 cubes, every one shape-consistent"
+    /// is what lets the next report rule the file out without anyone sending it.</para>
+    /// </summary>
+    [Fact]
+    public void ALoadedSource_InventoriesItsCubes_WhetherOrNotAnythingIsWrong()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "crf-src-inv-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(root);
+        try
+        {
+            CrashReporter.ResetForTests();
+            AppDataRoot.RedirectTo(root);
+            CrashReporter.Install("circuitRF");
+
+            var lib = new DataSourceLibraryViewModel();
+
+            var good = new DataSet();
+            good.AddToGroup("SP1", "S", new DataCube(
+                new[] { new Axis("freq", new double[] { 1e9, 2e9, 3e9 }, "Hz"),
+                        new Axis("i", new double[] { 0 }), new Axis("j", new double[] { 0 }) },
+                new[] { new Complex(0.1, 0.2), new Complex(0.3, 0.4), new Complex(0.5, 0.6) }));
+            good.AddToGroup("SP1", "Z0", DataSetBuilder.BuildZ0Cube(new[] { new Complex(50, 0) }));
+            _ = new DataSourceEntryViewModel("/tmp/good.npy", good, null, lib);
+
+            _ = new DataSourceEntryViewModel("/tmp/bad.npy", CorruptedRunDataSet(), null, lib);
+
+            string trail = string.Join("\n", Directory
+                .GetFiles(Path.Combine(root, CrashReporter.DirName), "session-*.running")
+                .Select(File.ReadAllText));
+
+            Assert.Contains("source npy load: 2 cube(s), every one shape-consistent", trail);
+            Assert.Contains("MALFORMED: SP1.S axes claim 3, buffer holds 1", trail);
+        }
+        finally
+        {
+            CrashReporter.ResetForTests();
+            AppDataRoot.RedirectTo(null);
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
     }
 }

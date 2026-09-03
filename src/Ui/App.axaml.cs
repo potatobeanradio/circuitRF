@@ -40,6 +40,10 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // This runs on the UI thread by definition, which is the only place that fact can be captured
+        // without asking Avalonia for it — and asking has a side effect. See CrashReporter.MarkUiThread.
+        Diagnostics.CrashReporter.MarkUiThread();
+
         // Dragging ANY floating dock window must not restack the others.
         //
         // Dock's HostWindow.TryBeginWindowDrag calls WindowActivationHelper.ActivateAllWindows the

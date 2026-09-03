@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -122,11 +124,43 @@ public static class CrashReporter
     /// </summary>
     public static void Note(string message)
     {
-        string line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
+        // The thread is part of "what the application was doing". A burst of identical notes is a
+        // different event depending on whether one thread produced it or several did, and a note from
+        // OFF the UI thread on a path that is supposed to be UI-only is itself the finding — the Data
+        // Display's `DataSet` group maps are ordinary dictionaries, so a torn read there is
+        // indistinguishable from an impossible index (src/Ui/DataDisplay/RESOLVED.md, round 5).
+        string line = $"[{DateTime.Now:HH:mm:ss.fff} {ThreadTag()}] {message}";
         lock (_gate)
         {
             try { _writer?.WriteLine(line); } catch { /* diagnostics never throw */ }
         }
+    }
+
+    /// <summary>
+    /// Records the calling thread as the UI thread, so <see cref="Note"/> can mark notes that arrive
+    /// from anywhere else. Call it from the framework's own initialization, which by definition runs
+    /// there.
+    ///
+    /// <para><b>An id, deliberately, and not <c>Dispatcher.UIThread.CheckAccess()</c>.</b> Reading
+    /// that property is not free of side effects — the first access CREATES the dispatcher, bound to
+    /// whichever thread asked — so a diagnostic that consulted it could bind the UI thread to a worker
+    /// merely by noting something early. An integer captured once and compared is exact, costs
+    /// nothing, and keeps this file free of any Avalonia reference.</para>
+    /// </summary>
+    public static void MarkUiThread() => _uiThreadId = Environment.CurrentManagedThreadId;
+
+    private static int _uiThreadId;
+
+    /// <summary>
+    /// The current thread as one short token: <c>t7</c>, or <c>t7!ui</c> when it is not the UI thread.
+    /// The bang is deliberately ugly — it marks the case worth noticing in a wall of trail lines.
+    /// Before <see cref="MarkUiThread"/> has run there is no UI thread to be off, so an early note is
+    /// unannotated rather than wrongly flagged.
+    /// </summary>
+    private static string ThreadTag()
+    {
+        int id = Environment.CurrentManagedThreadId;
+        return _uiThreadId == 0 || id == _uiThreadId ? $"t{id}" : $"t{id}!ui";
     }
 
     /// <summary>
@@ -439,9 +473,95 @@ public static class CrashReporter
         }
         catch { /* not available everywhere */ }
         sb.AppendLine($"state dir   : {Dir}");
+        AppendExecutionEnvironment(sb);
         sb.AppendLine();
         sb.AppendLine("--- trail ---------------------------------------------------------");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// How this process's CODE IS BEING EXECUTED, as opposed to what it is executing on. Everything
+    /// above describes the machine; these lines describe the runtime's own configuration and anything
+    /// that has been injected into the process to alter it.
+    ///
+    /// <para><b>Why it is worth four lines.</b> A managed exception whose own arithmetic says it was
+    /// unreachable — an in-range array index that faulted anyway — has no explanation left in the
+    /// application's state, and five rounds of one field report have now spent them all
+    /// (<c>src/RfCore/RESOLVED.md</c>). What remains is the layer underneath: a CLR profiler injected
+    /// by endpoint-protection or APM software rejitting methods, a debugger attached, or non-default
+    /// codegen. Those are invisible in every report so far and free to record. A report that says
+    /// "no profiler, tiering default, no debugger" narrows the field just as usefully as one that
+    /// names an injected module.</para>
+    ///
+    /// <para>Names only, never paths: which DLLs are in the process is diagnostic, where they live on
+    /// the reporter's disk is not ours to collect.</para>
+    /// </summary>
+    private static void AppendExecutionEnvironment(StringBuilder sb)
+    {
+        try
+        {
+            sb.AppendLine($"debugger    : {(Debugger.IsAttached ? "ATTACHED" : "no")}");
+            sb.AppendLine($"gc          : {(System.Runtime.GCSettings.IsServerGC ? "server" : "workstation")}"
+                        + $", {System.Runtime.GCSettings.LatencyMode}");
+
+            // A CLR profiler can rewrite IL and force rejits, so its presence changes what "the same
+            // code" means. Both the modern and the legacy variable names, because injectors set either.
+            var prof = new List<string>();
+            foreach (string v in new[] { "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER",
+                                         "COR_ENABLE_PROFILING",     "COR_PROFILER" })
+                if (Environment.GetEnvironmentVariable(v) is { Length: > 0 } val)
+                    prof.Add($"{v}={val}");
+            sb.AppendLine($"profiler    : {(prof.Count == 0 ? "none" : string.Join(" ", prof))}");
+
+            // Only the knobs that change CODEGEN. Unset is the shipping configuration, and saying so
+            // explicitly is the point — it is what makes a set one stand out.
+            var jit = new List<string>();
+            foreach (string v in new[] { "DOTNET_TieredCompilation", "DOTNET_TieredPGO",
+                                         "DOTNET_TC_QuickJitForLoops", "DOTNET_ReadyToRun",
+                                         "DOTNET_JitMinOpts", "DOTNET_ZapDisable" })
+                if (Environment.GetEnvironmentVariable(v) is { Length: > 0 } val)
+                    jit.Add($"{v}={val}");
+            sb.AppendLine($"codegen env : {(jit.Count == 0 ? "all default" : string.Join(" ", jit))}");
+
+            AppendForeignModules(sb);
+        }
+        catch { /* best effort, like every other line here */ }
+    }
+
+    /// <summary>
+    /// Native modules loaded into the process from neither the operating system nor the application's
+    /// own directory — i.e. injected. Classified by path, reported by NAME.
+    /// </summary>
+    private static void AppendForeignModules(StringBuilder sb)
+    {
+        try
+        {
+            string appDir = AppContext.BaseDirectory;
+            string sys    = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            var foreign   = new List<string>();
+            int total     = 0;
+
+            foreach (ProcessModule m in Process.GetCurrentProcess().Modules)
+            {
+                total++;
+                string? dir = null;
+                try { dir = Path.GetDirectoryName(m.FileName); } catch { /* denied: treat as unknown */ }
+                bool ours =
+                    dir is not null &&
+                    ((appDir.Length > 0 && dir.StartsWith(appDir.TrimEnd(Path.DirectorySeparatorChar),
+                                                          StringComparison.OrdinalIgnoreCase))
+                     || (sys.Length > 0 && dir.StartsWith(sys, StringComparison.OrdinalIgnoreCase))
+                     || dir.StartsWith("/usr/", StringComparison.Ordinal)
+                     || dir.StartsWith("/System/", StringComparison.Ordinal));
+                if (!ours && foreign.Count < 12) foreign.Add(m.ModuleName);
+            }
+
+            sb.AppendLine($"modules     : {total} loaded, "
+                        + (foreign.Count == 0
+                            ? "none from outside the OS or the app directory"
+                            : $"from elsewhere: {string.Join(", ", foreign)}"));
+        }
+        catch { /* Modules is denied or unavailable on some hosts */ }
     }
 
     /// <summary>Full detail of an exception: type, message, stack, and every inner one.</summary>
@@ -487,9 +607,10 @@ public static class CrashReporter
             try { AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException; } catch { }
             try { TaskScheduler.UnobservedTaskException      -= OnUnobservedTaskException; } catch { }
             Close();
-            _installed = false;
-            _promoted  = false;
-            _dir       = null;
+            _installed  = false;
+            _promoted   = false;
+            _dir        = null;
+            _uiThreadId = 0;
             _pending.Clear();
         }
     }

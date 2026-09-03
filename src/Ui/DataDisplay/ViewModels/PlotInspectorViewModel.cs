@@ -1003,6 +1003,28 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         /// <summary>The positional slice arguments handed with it.</summary>
         public object[]? Args;
+
+        /// <summary>
+        /// WHICH indexer call site was reached last, and how many reads the resolve had performed.
+        ///
+        /// <para>A resolve is not one slice. The main read is followed, on a spectral source, by
+        /// <see cref="ResolveFundamentalByX"/> slicing <c>ToneFreqs</c> once per X point, and a family
+        /// trace slices once per curve — none of which were recorded, so a throw in any of them was
+        /// reported under the main read's cube and arguments. On an S-parameter source those later
+        /// paths do not run (there is no <c>ToneFreqs</c> cube), which is why the two 2026-09-03
+        /// trails are unambiguous; on an HB or loadpull source they do, and the note has to say so
+        /// rather than leave it to be inferred from the group inventory.</para>
+        /// </summary>
+        public string? Site;
+
+        /// <summary>Reads attempted, so a failure in a loop says which iteration.</summary>
+        public int Slices;
+
+        /// <summary>Records a read about to happen. Two field writes and an increment.</summary>
+        public void Reading(string site, DataCube cube, object[] args)
+        {
+            Site = site; Cube = cube; Args = args; Slices++;
+        }
     }
 
     /// <summary>
@@ -1053,6 +1075,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 sb.Append($" read=[{DescribeShape(rc)}] buf={rc.BufferLength} expect={expect}");
                 sb.Append($" same={(ds is not null && t.CubeName is { } cn && ds.Contains(cn)
                                      && ReferenceEquals(ds[cn], rc) ? "yes" : "no")}");
+                // The identity DataCube's own gather message also prints. S, Z and Y in one group
+                // share a shape, so this is the only field that says which cube actually threw.
+                sb.Append($" id=0x{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(rc):x8}");
+                sb.Append($" site={probe.Site ?? "(none)"} slices={probe.Slices}");
             }
             else sb.Append(" read=(no slice reached)");
         }
@@ -1283,8 +1309,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (cube.Rank == 0)
         {
             if (RejectVersusOnScalar(t)) return;
-            probe.Args = Array.Empty<object>();
-            var sr = cube[probe.Args];
+            probe.Reading("scalar-rank0", cube, Array.Empty<object>());
+            var sr = cube[probe.Args!];
             t.InvalidSpecText = null;
             t.ExpressionError = null;
             t.SetScalarCubeData(
@@ -1332,7 +1358,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (xDim < 0)
         {
             if (RejectVersusOnScalar(t)) return;
-            probe.Args = args;
+            probe.Reading("scalar-all-pinned", cube, args);
             var sr = cube[args];
             t.InvalidSpecText = null;
             t.ExpressionError = null;
@@ -1343,7 +1369,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             return;
         }
 
-        probe.Args = args;
+        probe.Reading("main", cube, args);
         var result = cube[args];
         if (!result.IsCube)
         {
@@ -1383,7 +1409,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         }
 
         var toneFreqs1 = GetToneFreqsCube(ds, t.CubeName);
-        t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length));
+        t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length, probe));
         t.SetCubeData(xAxis.Values, complexValues, realValues,
                       xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels);
         ApplyPinnedSpectral(t, ds);
@@ -1551,7 +1577,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
                     args[d] = s.IsNarrowedRange ? new Range(s.RangeStart, s.RangeEndExclusive) : Range.All;
                 else args[d] = Math.Clamp(s.Index, 0, Math.Max(0, ax.Length - 1));
             }
-            if (probe is not null) probe.Args = args;
+            probe?.Reading($"family[{k}]", cube, args);
             var res = cube[args];
             if (!res.IsCube || res.Cube!.Rank != 1) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
             var sliced = res.Cube!;
@@ -1715,7 +1741,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         t.SetPinnedAxisDisplay(map);
     }
 
-    private static double[]? ResolveFundamentalByX(DataCube? toneFreqs, AxisSlice[]? slice, int xAxisLength)
+    private static double[]? ResolveFundamentalByX(DataCube? toneFreqs, AxisSlice[]? slice,
+                                                   int xAxisLength, ResolveProbe? probe = null)
     {
         if (toneFreqs is null || slice is null) return null;
         var result = new double[xAxisLength];
@@ -1733,6 +1760,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 else
                     args[d] = Math.Clamp(found?.Index ?? 0, 0, Math.Max(0, toneFreqs.Axes[d].Length - 1));
             }
+            probe?.Reading($"tonefreqs[{xi}]", toneFreqs, args);
             var r = toneFreqs[args];
             result[xi] = r.IsReal ? r.RealValue!.Value : 0.0;
         }
