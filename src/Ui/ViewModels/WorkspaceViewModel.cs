@@ -3673,7 +3673,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     resolveLayerMapping: rows =>
                     {
                         var settled = Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "GDSII", techRes.Tech, rows))
                             .GetAwaiter().GetResult();
                         return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
                     });
@@ -3751,15 +3751,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         OpenOrActivateLayout(Path.Combine(layoutDir, primary.ResolvedName));
     }
 
-    /// <summary>Shows the shared L1g layer-mapping dialog (never a second reconciliation UI) for the
-    /// GDSII import path. Returns null (abort the whole import) when <paramref name="destTech"/> is
+    /// <summary>Shows the shared L1g layer-mapping dialog (never a second reconciliation UI) for any
+    /// import path. Returns null (abort the whole import) when <paramref name="destTech"/> is
     /// itself null and rows would otherwise have nowhere sensible to map to — but rows are still
-    /// accepted as-is (Keep-as-unknown) since there is truly no destination to reconcile against.</summary>
-    private async Task<IReadOnlyList<LayerMappingRow>?> ResolveGdsiiLayerMappingAsync(
-        Window owner, Technology? destTech, IReadOnlyList<LayerMappingRow> rows)
+    /// accepted as-is (Keep-as-unknown) since there is truly no destination to reconcile against.
+    /// <para><paramref name="format"/> is what the user is actually importing. FOUR importers share
+    /// this one bridge, and the dialog used to name GDSII in all four — so a user importing Gerber
+    /// was told, in the title and in the body, that they were mapping GDSII layers.</para></summary>
+    private async Task<IReadOnlyList<LayerMappingRow>?> ResolveImportLayerMappingAsync(
+        Window owner, string format, Technology? destTech, IReadOnlyList<LayerMappingRow> rows)
     {
         if (destTech is null) return rows;
-        var dialog = new LayerMappingDialog("Import GDSII — Layer Mapping", "GDSII", destTech, rows);
+        var dialog = new LayerMappingDialog($"Import {format} — Layer Mapping", format, destTech, rows);
         var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
         return result?.Rows;
     }
@@ -3808,7 +3811,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     resolveLayerMapping: rows =>
                     {
                         var settled = Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "DXF", techRes.Tech, rows))
                             .GetAwaiter().GetResult();
                         return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
                     });
@@ -3888,7 +3891,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     resolveLayerMapping: rows =>
                     {
                         var settled = Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Board", techRes.Tech, rows))
                             .GetAwaiter().GetResult();
                         return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
                     });
@@ -3993,12 +3996,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     resolveLayerMapping: rows =>
                     {
                         var settled = Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Gerber", techRes.Tech, rows))
                             .GetAwaiter().GetResult();
                         return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
                     },
-                    resolveDrillFormat: (fileName, inferred, crossCheck) => Dispatcher.UIThread
-                        .InvokeAsync(() => ResolveGerberDrillFormatAsync(window, fileName, inferred, crossCheck))
+                    resolveDrillFormat: (fileName, inferred, crossCheck, remaining) => Dispatcher.UIThread
+                        .InvokeAsync(() => ResolveGerberDrillFormatAsync(window, fileName, inferred, crossCheck, remaining))
                         .GetAwaiter().GetResult()));
         }
         catch (Exception ex)
@@ -4027,9 +4030,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private async Task<CircuitRF.Design.Layout.Interchange.GerberImport.DrillFormatChoice?> ResolveGerberDrillFormatAsync(
         Window owner, string fileName,
         CircuitRF.Design.Layout.Interchange.DrillFormatInference inferred,
-        CircuitRF.Design.Layout.Interchange.DrillExtentsCheck crossCheck)
+        CircuitRF.Design.Layout.Interchange.DrillExtentsCheck crossCheck,
+        int remainingFiles)
     {
-        var dialog = new CircuitRF.Ui.Views.Dialogs.GerberDrillFormatPromptDialog(fileName, inferred, crossCheck);
+        var dialog = new CircuitRF.Ui.Views.Dialogs.GerberDrillFormatPromptDialog(
+            fileName, inferred, crossCheck, remainingFiles);
         return await dialog.ShowDialog<CircuitRF.Design.Layout.Interchange.GerberImport.DrillFormatChoice?>(owner);
     }
 

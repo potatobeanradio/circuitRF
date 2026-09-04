@@ -4,9 +4,9 @@
         xmlns:lay="using:CircuitRF.Ui.Layout"
         x:Class="CircuitRF.Ui.Views.Dialogs.LayerMappingDialog"
         Title="Layer Mapping"
-        Width="620"
-        Height="480"
-        MinWidth="480"
+        Width="880"
+        Height="520"
+        MinWidth="700"
         MinHeight="320"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -19,7 +19,12 @@
         <Border Grid.Row="2"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                 BorderThickness="1" CornerRadius="4" Padding="0">
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <!-- The five columns' own MinWidths add up to 570 px before spacing, margins and the
+                 window's own 40, so the table needs ~660 to show its last column at all — and at the
+                 old 620 the "Map to" combo was simply off the right edge with the horizontal scroll
+                 bar DISABLED, so there was no way to reach it. Auto, so a user who shrinks the window
+                 can still scroll to it. -->
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
 
                 <!-- Header and rows declare IDENTICAL ColumnDefinitions (SharedSizeGroup) so columns
                      never drift — mirrors TechEditorView.axaml's layer-table pattern. -->

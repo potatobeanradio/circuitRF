@@ -101,6 +101,15 @@ public sealed class GerberReadResult
     public bool Composited { get; init; }
     public string? CompositeReason { get; init; }
 
+    /// <summary>The circular PADS a composited layer painted, which the compositing then unioned into
+    /// the copper around them — see <c>GerberReader.FlashesStillWhollyInCopper</c> for why they are
+    /// kept and what "wholly" rules out. Empty on a layer that was not composited, where the pads are
+    /// still in <see cref="Shapes"/> as themselves.
+    /// <para><b>These are EVIDENCE, not artwork.</b> Their copper is already in <see cref="Shapes"/>.
+    /// Anything that pairs a drill hit to one of these owes the layer a subtraction of the same disc,
+    /// or the board gains a pad it already had.</para></summary>
+    public IReadOnlyList<GerberImportedShape> CompositedFlashes { get; init; } = [];
+
     /// <summary>R-L4e-6: every unrecognized command, by name, once, with a count.</summary>
     public IReadOnlyDictionary<string, int> UnknownCommandCounts { get; init; } =
         new Dictionary<string, int>(StringComparer.Ordinal);

@@ -364,7 +364,7 @@ public static class LayoutConvert
             : Path.GetFileNameWithoutExtension(o.Input!);
 
         var r = GerberImport.Import(files, staging, importName, destTech, o.DbuPerMicron,
-            resolveDrillFormat: (fileName, inferred, crossCheck) => ResolveDrillFormat(o, fileName, inferred, crossCheck));
+            resolveDrillFormat: (fileName, inferred, crossCheck, _) => ResolveDrillFormat(o, fileName, inferred, crossCheck));
         Report(r.Messages);
         if (r.Cancelled) return Refused();
         if (r.CellDir is null) { Console.Error.WriteLine("The Gerber import produced no cell."); return null; }
@@ -387,8 +387,10 @@ public static class LayoutConvert
         bool anyOverride = o.DrillUnit is not null || o.DrillZeros is not null ||
                            o.DrillIntegerDigits is not null || o.DrillDecimalDigits is not null;
 
-        if (anyOverride) return new GerberImport.DrillFormatChoice(over);
-        if (o.AcceptInferredDrillFormat) return new GerberImport.DrillFormatChoice(null);
+        // A flag is a statement about the RUN, not about one file, so it settles every drill file in
+        // the set at once — which is also what stops the same refusal being printed once per file.
+        if (anyOverride) return new GerberImport.DrillFormatChoice(over, ApplyToAll: true);
+        if (o.AcceptInferredDrillFormat) return new GerberImport.DrillFormatChoice(null, ApplyToAll: true);
 
         Console.Error.WriteLine($"error: {fileName} does not state its coordinate format, and the inference had to guess.");
         Console.Error.WriteLine($"       Inferred: {inferred}");

@@ -46,6 +46,18 @@ public sealed class DrillPairingResult
     /// a second hole through it.</summary>
     public IReadOnlyList<GerberImportedShape> RemainingArtwork { get; init; } = [];
 
+    /// <summary>The COMPOSITED pads a via consumed, which the caller owes the layer a subtraction of.
+    /// A composited pad is not a shape that can be removed from <see cref="RemainingArtwork"/> — its
+    /// copper is inside a pour polygon — so the equivalent of consuming it is to cut the same disc out
+    /// of that pour. Each pad was verified to lie WHOLLY inside its layer's copper before it was
+    /// paired, which is what makes cutting it and putting the via's pad back exactly cancel: the copper
+    /// on the layer is unchanged and only its OWNERSHIP moves, from the pour to the via.</summary>
+    public IReadOnlyList<CircleShape> CarvedPads { get; init; } = [];
+
+    /// <summary>The composited pads no via claimed — threaded into the next drill file's pairing the
+    /// same way <see cref="RemainingArtwork"/> is, so two drill files cannot both claim one pad.</summary>
+    public IReadOnlyList<GerberImportedShape> RemainingCompositedPads { get; init; } = [];
+
     /// <summary>How many vias were DECLARED as such (a <c>ViaDrill</c> tool, or a <c>ViaPad</c> flash)
     /// rather than inferred from the geometry alone. The number R-L4f-10's completion note asks
     /// for.</summary>
@@ -129,12 +141,27 @@ public static class DrillViaPairing
     /// and a drill file written in different units, and orders of magnitude short of any pad pitch.</summary>
     public const int SnapMicrons = 1;
 
+    /// <param name="compositedCopperLayers">How many COPPER layers in the set had to be composited for
+    /// polarity — reported when a hole still finds no pad, so the diagnostic can name compositing as
+    /// the cause instead of accusing the set of being two different boards.</param>
+    /// <param name="compositedPads">The pads those layers painted before compositing swallowed them
+    /// (<see cref="GerberReadResult.CompositedFlashes"/>), each already verified to lie wholly inside
+    /// its layer's copper. They pair exactly as a surviving flash does; consuming one records a
+    /// <see cref="DrillPairingResult.CarvedPads"/> entry instead of removing an artwork shape.</param>
+    /// <param name="copperLayers">The set's COPPER layers. A via's pad is copper, and without this the
+    /// candidate ranking's last resort ("a flash on any layer at all") took whatever was at the hole —
+    /// on a real board the SOLDER MASK OPENING around each mounting hole, which turned six 4.6 mm mask
+    /// clearances into 4.6 mm copper pads sitting on a pour that has a deliberate hole there. Null or
+    /// empty means the caller could not say, and every layer stays eligible as before.</param>
     public static DrillPairingResult Pair(
         IReadOnlyList<GerberImportedShape> artwork,
         ExcellonReadResult drill,
         LayerKey? drillLayer,
         LayerKey? landingLayer = null,
-        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
+        int compositedCopperLayers = 0,
+        IReadOnlyList<GerberImportedShape>? compositedPads = null,
+        IReadOnlyCollection<LayerKey>? copperLayers = null)
     {
         if (drill.Refusal is not null)
             return new DrillPairingResult { Refusal = drill.Refusal };
@@ -155,16 +182,40 @@ public static class DrillViaPairing
         // because a through-hole pad exists on more than one copper layer at the same point; a grid
         // rather than the exact coordinate because a third-party set's two halves can disagree by a
         // few DBU (see Pair's own note). Nine buckets cover everything within one snap of a hit.
+        //
+        // The composited pads sit at the END of one shared index space, so PickFlash needs no second
+        // code path and its ranking (landing layer first, then nearest, then largest) applies to both
+        // kinds at once. An index at or above artwork.Count is a composited pad.
+        //
+        // ONLY pads on the layer the via will actually LAND on. Carving a pad out of one layer's pour
+        // while the via puts its pad back on another moves copper between layers — measured on a real
+        // six-layer board as 4.5 mm² vanishing from an inner plane and reappearing on the top, because
+        // a via whose top pad was missing paired with the inner one instead. A surviving discrete flash
+        // may still be taken from any layer, exactly as before: consuming one REMOVES that shape, so
+        // the same asymmetry is at least visible as a shape that left. A composited pad has no shape to
+        // remove, so it may only be claimed where cutting it and putting the via's pad back cancel.
+        var pads = (compositedPads ?? [])
+            .Where(p => landingLayer is not { } landing || p.Shape.Layer == landing)
+            .ToList();
+
+        var candidates = new List<GerberImportedShape>(artwork.Count + pads.Count);
+        candidates.AddRange(artwork);
+        candidates.AddRange(pads);
+
+        var copper = copperLayers is { Count: > 0 } ? new HashSet<LayerKey>(copperLayers) : null;
+
         var flashesAt = new Dictionary<(long X, long Y), List<int>>();
-        for (int i = 0; i < artwork.Count; i++)
+        for (int i = 0; i < candidates.Count; i++)
         {
-            if (artwork[i].Shape is not CircleShape c) continue;
+            if (candidates[i].Shape is not CircleShape c) continue;
+            if (copper is not null && !copper.Contains(c.Layer)) continue;   // a mask opening is not a pad
             var key = (Cell(c.Cx, snap), Cell(c.Cy, snap));
             if (!flashesAt.TryGetValue(key, out var list)) flashesAt[key] = list = [];
             list.Add(i);
         }
 
         var consumed = new HashSet<int>();
+        var carvedPads = new List<CircleShape>();
         var vias = new List<ViaShape>();
         var unpaired = new List<CircleShape>();
         var componentHoles = new List<CircleShape>();
@@ -185,7 +236,7 @@ public static class DrillViaPairing
                 continue;
             }
 
-            int flash = PickFlash(artwork, flashesAt, consumed, hit.X, hit.Y, landingLayer, barrel, snap);
+            int flash = PickFlash(candidates, flashesAt, consumed, hit.X, hit.Y, landingLayer, barrel, snap);
             if (flash < 0)
             {
                 if (declaredVia) declaredViaWithNoPad++;
@@ -193,12 +244,15 @@ public static class DrillViaPairing
                 continue;
             }
 
-            bool viaPad = string.Equals(artwork[flash].AperFunction, "ViaPad", StringComparison.OrdinalIgnoreCase);
+            bool viaPad = string.Equals(candidates[flash].AperFunction, "ViaPad", StringComparison.OrdinalIgnoreCase);
             if (declaredVia || viaPad) declared++;
             else { inferred++; indistinguishable++; }
 
-            var pad = (CircleShape)artwork[flash].Shape;
+            var pad = (CircleShape)candidates[flash].Shape;
             consumed.Add(flash);
+            // A composited pad has no shape to drop out of the artwork; the caller cuts the same disc
+            // out of the pour it was merged into instead.
+            if (flash >= artwork.Count) carvedPads.Add(pad);
             vias.Add(new ViaShape
             {
                 X = hit.X,
@@ -222,9 +276,20 @@ public static class DrillViaPairing
             });
 
         if (unpaired.Count > 0)
-            diagnostics.Add($"{unpaired.Count} drill hit(s) had no copper flash at the same coordinate and " +
-                            "were imported as plain holes on the drill layer. A large number here usually " +
-                            "means the drill file and the artwork do not belong to the same board.");
+            // The cause matters more than the count, and there are two of them. A board whose copper
+            // was composited has no discrete flashes AT ALL, so every hit is unpaired no matter how
+            // exactly the two files agree — telling that user their drill file belongs to another
+            // board is not a hedge, it is wrong, and it is the common case on any board with a pour.
+            diagnostics.Add(
+                compositedCopperLayers > 0
+                    ? $"{unpaired.Count} drill hit(s) were imported as plain holes on the drill layer " +
+                      $"rather than rejoined into vias: {compositedCopperLayers} copper layer(s) in this " +
+                      "set paint in clear polarity and had to be composited, which unions each pad into " +
+                      "the pour around it, so there is no separate pad left for a hole to pair with. The " +
+                      "holes and the copper are both correct; only the via OBJECTS could not be rebuilt."
+                    : $"{unpaired.Count} drill hit(s) had no copper flash at the same coordinate and " +
+                      "were imported as plain holes on the drill layer. A large number here usually " +
+                      "means the drill file and the artwork do not belong to the same board.");
         if (declaredViaWithNoPad > 0)
             diagnostics.Add($"{declaredViaWithNoPad} hole(s) whose tool declares itself a via drill have no " +
                             "pad in the artwork that was imported; they were kept as plain holes.");
@@ -247,6 +312,17 @@ public static class DrillViaPairing
             ComponentHoles = componentHoles,
             Slots = slots,
             RemainingArtwork = [.. artwork.Where((_, i) => !consumed.Contains(i))],
+            CarvedPads = carvedPads,
+            // Against the list that came IN: a pad this call filtered out (wrong landing layer) is
+            // still unclaimed and must survive for the next drill file, whose span may land on it.
+            RemainingCompositedPads =
+            [
+                .. (compositedPads ?? []).Where(p =>
+                {
+                    int at = pads.IndexOf(p);
+                    return at < 0 || !consumed.Contains(artwork.Count + at);
+                }),
+            ],
             DeclaredVias = declared,
             InferredVias = inferred,
             Diagnostics = diagnostics,
@@ -307,7 +383,7 @@ public static class DrillViaPairing
     /// lands on" is a statement the file made and proximity is only a tiebreak between copies of the
     /// same pad. Candidates further than <paramref name="snap"/> are not candidates at all.</para></summary>
     private static int PickFlash(
-        IReadOnlyList<GerberImportedShape> artwork, Dictionary<(long, long), List<int>> flashesAt,
+        IReadOnlyList<GerberImportedShape> flashes, Dictionary<(long, long), List<int>> flashesAt,
         HashSet<int> consumed, long x, long y, LayerKey? landingLayer, LayerKey barrel, long snap)
     {
         int best = -1;
@@ -321,7 +397,7 @@ public static class DrillViaPairing
             foreach (int i in candidates)
             {
                 if (consumed.Contains(i)) continue;
-                var c = (CircleShape)artwork[i].Shape;
+                var c = (CircleShape)flashes[i].Shape;
                 long dx = c.Cx - x, dy = c.Cy - y;
                 if (Math.Abs(dx) > snap || Math.Abs(dy) > snap) continue;
 

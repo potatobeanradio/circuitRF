@@ -641,6 +641,53 @@ public class GerberReaderTests
         Assert.Single(result.Shapes);
     }
 
+    // ── One %…% block, several commands ──────────────────────────────────────
+
+    [Fact]
+    public void SeveralCommandsInOneExtendedBlock_AreAllRead_NotOnlyTheFirst()
+    {
+        // The original RS-274X spelling, and what a real board's whole format declaration looks like:
+        // FS and MO in ONE block. Reading only the first segment lost the unit, and the file was then
+        // refused for declaring no %MO*% at all — with every layer of the set dropped.
+        var result = Read("%FSLAX45Y45*MOMM*%\n%ADD10C,.5*%\nD10*\nX100000Y200000D03*\nM02*\n");
+
+        Assert.Null(result.Refusal);
+        Assert.Equal(GerberUnit.Millimetres, result.Unit);
+        Assert.Equal(4, result.IntegerDigits);
+        Assert.Equal(5, result.DecimalDigits);
+
+        // 4:5 millimetre: X100000 is 1.00000 mm, Y200000 is 2.00000 mm.
+        var circle = Assert.IsType<CircleShape>(Assert.Single(result.Shapes).Shape);
+        Assert.Equal(1_000_000, circle.Cx);
+        Assert.Equal(2_000_000, circle.Cy);
+    }
+
+    [Fact]
+    public void AMacroInAMultiCommandBlock_StillTakesTheRestOfTheBlockAsItsBody()
+    {
+        // %AM is the one command whose own body is *-separated, so it must end the per-segment loop
+        // rather than have its primitives read as commands.
+        var result = Read("%FSLAX46Y46*MOMM*%\n%AMSQ*\n21,1,1000000,1000000,0,0,0*\n%\n" +
+                          "%ADD10SQ*%\nD10*\nX0Y0D03*\nM02*\n");
+
+        Assert.Null(result.Refusal);
+        Assert.Empty(result.UnknownCommandCounts);
+        Assert.Single(result.Shapes);
+    }
+
+    [Theory]
+    [InlineData("0", null)]
+    [InlineData("90", "%IR")]
+    public void ImageRotation_IsIdentityOrARefusalByName_NeverAnUnknownCommand(
+        string degrees, string? refusalFragment)
+    {
+        var result = Read($"%FSLAX46Y46*MOMM*%\n%IR{degrees}*%\n%ADD10C,0.100*%\nD10*\nX0Y0D03*\nM02*\n");
+
+        Assert.DoesNotContain(result.UnknownCommandCounts, kv => kv.Key.Contains("IR"));
+        if (refusalFragment is null) Assert.Null(result.Refusal);
+        else Assert.Contains(refusalFragment, result.Refusal!);
+    }
+
     // ── R-L4e-0: one more consumer of InterchangeStructure ───────────────────
 
     [Fact]

@@ -291,7 +291,7 @@ public class GerberImportEntryTests : IDisposable
 
         var result = GerberImportEntry.RunFolder(
             dir, Destination(), null, LayoutUnits.DefaultDbuPerMicron,
-            resolveDrillFormat: (fileName, inferred, check) =>
+            resolveDrillFormat: (fileName, inferred, check, _) =>
             {
                 seenFile = fileName;
                 seen = inferred;
@@ -328,7 +328,7 @@ public class GerberImportEntryTests : IDisposable
         int prompts = 0;
         var result = GerberImportEntry.RunFolder(
             dir, Destination(), null, LayoutUnits.DefaultDbuPerMicron,
-            resolveDrillFormat: (_, _, _) => { prompts++; return new GerberImport.DrillFormatChoice(null); });
+            resolveDrillFormat: (_, _, _, _) => { prompts++; return new GerberImport.DrillFormatChoice(null); });
 
         Assert.False(result.Cancelled);
         Assert.Equal(0, prompts);
@@ -345,11 +345,72 @@ public class GerberImportEntryTests : IDisposable
 
         var result = GerberImportEntry.RunFolder(
             dir, dest, null, LayoutUnits.DefaultDbuPerMicron,
-            resolveDrillFormat: (_, _, _) => null);
+            resolveDrillFormat: (_, _, _, _) => null);
 
         Assert.True(result.Cancelled);
         Assert.Null(result.CellDir);
         Assert.Empty(Directory.EnumerateFileSystemEntries(dest));
+    }
+
+    /// <summary>A set's drill files come out of one exporter in one format, so asking the same
+    /// question once per file is repetition rather than diligence — and the second dialog is the one a
+    /// user answers without reading. "Apply to all" answers the rest without asking.</summary>
+    [Fact]
+    public void AnApplyToAllAnswer_SettlesTheRemainingDrillFiles_WithoutAskingAgain()
+    {
+        var dir = Folder("headerless-pair");
+        Write(dir, "board.gtl", Artwork("Copper,L1,Top,Signal"));
+        Write(dir, "board.drl", HeaderlessDrill());
+        Write(dir, "board.rou", HeaderlessDrill());
+
+        int prompts = 0;
+        var result = GerberImportEntry.RunFolder(
+            dir, Destination(), null, LayoutUnits.DefaultDbuPerMicron,
+            resolveDrillFormat: (_, _, _, _) =>
+            {
+                prompts++;
+                return new GerberImport.DrillFormatChoice(null, ApplyToAll: true);
+            });
+
+        Assert.False(result.Cancelled);
+        Assert.Equal(1, prompts);
+    }
+
+    /// <summary>And without it, each file is still asked about separately — the box is an opt-in, not
+    /// a change to what happens when nobody ticks it.</summary>
+    [Fact]
+    public void WithoutApplyToAll_EachDrillFileIsStillAskedAbout()
+    {
+        var dir = Folder("headerless-pair-asked");
+        Write(dir, "board.gtl", Artwork("Copper,L1,Top,Signal"));
+        Write(dir, "board.drl", HeaderlessDrill());
+        Write(dir, "board.rou", HeaderlessDrill());
+
+        int prompts = 0;
+        var result = GerberImportEntry.RunFolder(
+            dir, Destination(), null, LayoutUnits.DefaultDbuPerMicron,
+            resolveDrillFormat: (_, _, _, _) => { prompts++; return new GerberImport.DrillFormatChoice(null); });
+
+        Assert.False(result.Cancelled);
+        Assert.Equal(2, prompts);
+    }
+
+    /// <summary>The prompt is told how many files it would otherwise ask about again, so it can offer
+    /// "apply to all" only when there is something to apply it to.</summary>
+    [Fact]
+    public void ThePromptIsToldHowManyDrillFilesRemain()
+    {
+        var dir = Folder("headerless-pair-count");
+        Write(dir, "board.gtl", Artwork("Copper,L1,Top,Signal"));
+        Write(dir, "board.drl", HeaderlessDrill());
+        Write(dir, "board.rou", HeaderlessDrill());
+
+        var remaining = new List<int>();
+        GerberImportEntry.RunFolder(
+            dir, Destination(), null, LayoutUnits.DefaultDbuPerMicron,
+            resolveDrillFormat: (_, _, _, n) => { remaining.Add(n); return new GerberImport.DrillFormatChoice(null); });
+
+        Assert.Equal([1, 0], remaining);
     }
 
     /// <summary>An override from the prompt is what the file is then RE-READ with — not a label
@@ -368,7 +429,7 @@ public class GerberImportEntryTests : IDisposable
             var r = GerberImportEntry.RunFolder(
                 Folder("headerless"), Destination(Guid.NewGuid().ToString("N")), null,
                 LayoutUnits.DefaultDbuPerMicron,
-                resolveDrillFormat: (_, _, _) => new GerberImport.DrillFormatChoice(overrides));
+                resolveDrillFormat: (_, _, _, _) => new GerberImport.DrillFormatChoice(overrides));
 
             // On the DRILL layer only — the copper flash is 0.4 mm whatever the drill file says, and
             // reading past it would measure the artwork rather than the answer under test.
@@ -492,7 +553,9 @@ public class GerberImportEntryTests : IDisposable
 
         Assert.Contains("GerberImportScopeDialog", method, StringComparison.Ordinal);
         Assert.Contains("ResolveGerberDrillFormatAsync", method, StringComparison.Ordinal);
-        Assert.Contains("ResolveGdsiiLayerMappingAsync", method, StringComparison.Ordinal);   // the shared one
+        // The SHARED bridge, and it must name Gerber: four importers call this one method, and it used
+        // to hard-code GDSII for all of them.
+        Assert.Contains("ResolveImportLayerMappingAsync(window, \"Gerber\"", method, StringComparison.Ordinal);
         Assert.DoesNotContain("FidelityDialog", method, StringComparison.Ordinal);
 
         // Everything else is Messages.

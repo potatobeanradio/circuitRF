@@ -32,10 +32,18 @@ public partial class GerberDrillFormatPromptDialog : Window
 
     public GerberDrillFormatPromptDialog() => InitializeComponent();
 
+    /// <param name="remainingFiles">How many further drill files this import would otherwise ask the
+    /// same question about. The "apply to all" box appears only when there IS something else to apply
+    /// it to — offering it for a lone drill file is a control that does nothing.</param>
     public GerberDrillFormatPromptDialog(
-        string fileName, DrillFormatInference inferred, DrillExtentsCheck crossCheck) : this()
+        string fileName, DrillFormatInference inferred, DrillExtentsCheck crossCheck,
+        int remainingFiles = 0) : this()
     {
         _inferred = inferred;
+        ApplyToAllBox.IsVisible = remainingFiles > 0;
+        if (remainingFiles > 0)
+            ApplyToAllBox.Content =
+                $"Apply this answer to the other {remainingFiles} drill file(s) in this set";
 
         MessageText.Text =
             $"\"{fileName}\" does not state its coordinate format, so circuitRF inferred one: " +
@@ -65,7 +73,8 @@ public partial class GerberDrillFormatPromptDialog : Window
 
     private void OnImportClick(object? sender, RoutedEventArgs e)
     {
-        if (_inferred is not { } inferred) { Close(new GerberImport.DrillFormatChoice(null)); return; }
+        bool applyToAll = ApplyToAllBox.IsChecked == true;
+        if (_inferred is not { } inferred) { Close(new GerberImport.DrillFormatChoice(null, applyToAll)); return; }
 
         var unit = InchRadio.IsChecked == true ? GerberUnit.Inches : GerberUnit.Millimetres;
         var zeros = TrailingRadio.IsChecked == true ? GerberZeroOmission.Trailing : GerberZeroOmission.Leading;
@@ -82,6 +91,6 @@ public partial class GerberDrillFormatPromptDialog : Window
             zeros == inferred.ZeroOmission ? null : zeros);
 
         bool changed = overrides != new DrillFormatOverride();
-        Close(new GerberImport.DrillFormatChoice(changed ? overrides : null));
+        Close(new GerberImport.DrillFormatChoice(changed ? overrides : null, applyToAll));
     }
 }

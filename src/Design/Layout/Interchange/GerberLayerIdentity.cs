@@ -266,7 +266,15 @@ public static class GerberLayerCascade
     /// leak into the repo, and root <c>CLAUDE.md</c> §"Commercial Vendor References" forbids it
     /// outright.</para>
     /// </summary>
-    private sealed record NamePattern(string[][] WordGroups, string LayerName, string Purpose, string? Side);
+    /// <param name="IndexAfter">The word a stack NUMBER is read from — "inner 2", "layer 3". When it
+    /// is set the row matches ONLY if a number actually follows that word, which is what keeps the
+    /// broad rows below from claiming every file whose name happens to contain the word.</param>
+    /// <param name="IndexOffset">Added to that number to get the inner-layer index, because the two
+    /// conventions differ by exactly this: "inner 2" is already the second INNER layer, while "layer 2"
+    /// counts the whole copper stack from the top and is therefore the FIRST inner layer.</param>
+    private sealed record NamePattern(
+        string[][] WordGroups, string LayerName, string Purpose, string? Side,
+        string? IndexAfter = null, int IndexOffset = 0, int MinIndex = 1);
 
     // The side words, once. Grouping them is not tidying: they were written out row by row and "bot"
     // was missing from every row while "bottom", "back", "top" and "front" were present, so a set
@@ -280,6 +288,10 @@ public static class GerberLayerCascade
     // tested before "top", and "paste" before "mask", because a paste file's name commonly says both.
     private static readonly NamePattern[] Patterns =
     [
+        // A drill DRAWING is a dimensioned fabrication sheet with a tool legend beside the board, not
+        // drill data — so it must not land on the layer the actual hits go to, where its legend table
+        // extends the drill layer far outside the board outline. Ahead of the plain "drill" row.
+        new([["drill"], ["drawing", "map", "legend", "chart"]], "Drill Map", UnidentifiedPurpose, null),
         new([["drill"]], "Drill", DrillPurpose, null),
         new([["paste"], TopWords], "Paste Top", UnidentifiedPurpose, "Top"),
         new([["paste"], BotWords], "Paste Bottom", UnidentifiedPurpose, "Bot"),
@@ -299,6 +311,18 @@ public static class GerberLayerCascade
         new([BotWords, ["layer"]], "Bottom Copper", ConductorPurpose, "Bot"),
         new([["copper"], ["inner"]], "Inner Copper", ConductorPurpose, "Inr"),
         new([["inner"], ["layer"]], "Inner Copper", ConductorPurpose, "Inr"),
+
+        // A NUMBERED MID LAYER — "layer 2", "layer 3" — is copper, and without this row a six-layer
+        // board imports as two copper layers and four unidentified drawing layers, which is not a
+        // labelling nuisance: only conductors enter the stackup and the copper order, so four sixths
+        // of the board silently leaves the part of the import the EM path reads.
+        //
+        // The row is LAST so every function row above it wins first (a "soldermask top" file says both
+        // "mask" and, often, "layer"), and it matches only when a NUMBER follows the word, so a name
+        // that merely contains "layer" is not read as copper. A set that numbers its mid layers this
+        // way names its outer ones "top layer" / "bottom layer" — both matched above — so "layer 2" is
+        // the second layer of the whole stack and hence the FIRST inner one, which is the -1.
+        new([["layer"]], "Inner Copper", ConductorPurpose, "Inr", IndexAfter: "layer", IndexOffset: -1, MinIndex: 2),
     ];
 
     private static GerberLayerIdentity? Heuristic(string filePath)
@@ -309,8 +333,17 @@ public static class GerberLayerCascade
         foreach (var pattern in Patterns)
         {
             if (!pattern.WordGroups.All(g => g.Any(w => ContainsWord(signature, w)))) continue;
-            int? index = pattern.Side == "Inr" ? InnerIndex(signature) : null;
-            string name = index is { } n ? $"Inner {n}" : pattern.LayerName;
+
+            int? index = pattern.Side == "Inr" ? NumberAfter(signature, pattern.IndexAfter ?? "inner") : null;
+            // A row that reads its index from the name matches ONLY when the name states one, at or
+            // above the row's own floor.
+            if (pattern.IndexAfter is not null)
+            {
+                if (index is not { } stated || stated < pattern.MinIndex) continue;
+                index = stated + pattern.IndexOffset;
+            }
+
+            string name = index is { } n && n >= 1 ? $"Inner {n}" : pattern.LayerName;
             return new GerberLayerIdentity(
                 filePath, extension, GerberLayerRung.Heuristic, name, null,
                 pattern.Purpose, pattern.Side, null, null);
@@ -396,11 +429,14 @@ public static class GerberLayerCascade
         signature.Contains(' ' + word + ' ', StringComparison.Ordinal) ||
         signature.Contains(word, StringComparison.Ordinal) && word.Length >= 4;
 
-    private static int? InnerIndex(string signature)
+    /// <summary>The number that follows <paramref name="word"/> in a name signature — the 2 of
+    /// "inner 2" or of "layer 2". A LETTER before the digits means the word was part of something else
+    /// and there is no number to read.</summary>
+    private static int? NumberAfter(string signature, string word)
     {
-        int at = signature.IndexOf("inner", StringComparison.Ordinal);
+        int at = signature.IndexOf(word, StringComparison.Ordinal);
         if (at < 0) return null;
-        int i = at + 5;
+        int i = at + word.Length;
         while (i < signature.Length && !char.IsAsciiDigit(signature[i]))
         {
             if (char.IsAsciiLetter(signature[i])) return null;

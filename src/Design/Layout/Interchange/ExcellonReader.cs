@@ -63,10 +63,13 @@ public readonly record struct DrillExtents(bool HasAny, long MinX, long MinY, lo
         HasAny && x >= MinX - margin && x <= MaxX + margin && y >= MinY - margin && y <= MaxY + margin;
 }
 
-/// <summary>§2 evidence source 5, and the strongest one available: hits that do not land inside the
-/// artwork's own bounding box mean the format inference is wrong. <see cref="Report"/> states the
-/// disagreement as a NUMBER rather than as a verdict, because "the format looks wrong" tells a user
-/// nothing they can act on and "the drill data is 25.4× the artwork" names the fix.</summary>
+/// <summary>§2 evidence source 5, and the strongest one available: drilled points that do not land
+/// inside the artwork's own bounding box mean the format inference is wrong. <see cref="Report"/>
+/// states the disagreement as a NUMBER rather than as a verdict, because "the format looks wrong"
+/// tells a user nothing they can act on and "the drill data is 25.4× the artwork" names the fix.
+/// <para><see cref="HitCount"/> counts hits AND routed-slot vertices — a rout file often has no plain
+/// hits at all, and counting only hits made the check agree with itself on exactly those files.</para>
+/// </summary>
 public sealed record DrillExtentsCheck(
     bool Agrees, int HitsOutside, int HitCount, double WidthRatio, double HeightRatio, string Report);
 
@@ -198,22 +201,38 @@ public sealed partial class ExcellonReader
         // disagreement — but the box is the artwork's own centreline extent, so a small margin keeps
         // a hole at the very edge of a board outline from reading as an error.
         long margin = Math.Max(artwork.Width, artwork.Height) / 100;
-        int outside = 0;
+        int outside = 0, points = 0;
         foreach (var hit in drill.Hits)
+        {
+            points++;
             if (!artwork.Contains(hit.X, hit.Y, margin)) outside++;
+        }
+
+        // ROUTED SLOT VERTICES COUNT TOO. A rout file commonly holds slots and NOTHING ELSE, and
+        // testing hits alone made this check pass vacuously on exactly those files — "0 of 0 hits fell
+        // outside" reads as agreement, so the wrong-format retry below it never ran and the slots
+        // landed off the board at ten times their real coordinates. A slot is drilled through the same
+        // copper a hole is, so it belongs inside the artwork by the same argument.
+        foreach (var slot in drill.Slots)
+            for (int i = 0; i + 1 < slot.Xy.Length; i += 2)
+            {
+                points++;
+                if (!artwork.Contains(slot.Xy[i], slot.Xy[i + 1], margin)) outside++;
+            }
 
         double wr = artwork.Width == 0 ? 1 : (double)drill.Extents.Width / artwork.Width;
         double hr = artwork.Height == 0 ? 1 : (double)drill.Extents.Height / artwork.Height;
         bool agrees = outside == 0;
 
+        string what = drill.Slots.Count > 0 ? "hit/slot points" : "hits";
         string report = agrees
-            ? $"Drill data agrees with the artwork: all {drill.Hits.Count} hits fall inside the artwork " +
+            ? $"Drill data agrees with the artwork: all {points} {what} fall inside the artwork " +
               $"extent, and the two spans differ by a factor of {wr:0.###} in X and {hr:0.###} in Y."
             : $"Drill data DISAGREES with the artwork under the {drill.Format} format: " +
-              $"{outside} of {drill.Hits.Count} hits fall outside the artwork extent, and the drill span " +
+              $"{outside} of {points} {what} fall outside the artwork extent, and the drill span " +
               $"is {wr:0.###}× the artwork's in X and {hr:0.###}× in Y. The format inference is wrong.";
 
-        return new DrillExtentsCheck(agrees, outside, drill.Hits.Count, wr, hr, report);
+        return new DrillExtentsCheck(agrees, outside, points, wr, hr, report);
     }
 
     // ── Refusals ──────────────────────────────────────────────────────────────
@@ -319,6 +338,11 @@ public sealed partial class ExcellonReader
     {
         var found = new DrillFormatDeclarations();
 
+        // Evidence source 6: the shape of the coordinate words themselves — see
+        // DrillFormatDeclarations.CoordinateDigitWidth for why both of these are needed.
+        int minWidth = int.MaxValue, maxWidth = 0, coordinateWords = 0;
+        bool anyLeadingZero = false;
+
         foreach (string raw in text.Split('\n'))
         {
             string line = raw.Trim().TrimEnd('\r');
@@ -363,9 +387,24 @@ public sealed partial class ExcellonReader
                     case 'X' or 'Y' when value.Contains('.', StringComparison.Ordinal):
                         found.DecimalCoordinates = true;
                         break;
+                    case 'X' or 'Y':
+                    {
+                        string digits = value.TrimStart('+', '-');
+                        if (digits.Length == 0 || !digits.All(char.IsAsciiDigit)) break;
+                        coordinateWords++;
+                        minWidth = Math.Min(minWidth, digits.Length);
+                        maxWidth = Math.Max(maxWidth, digits.Length);
+                        if (digits[0] == '0' && digits.Length > 1) anyLeadingZero = true;
+                        break;
+                    }
                 }
             }
         }
+
+        // Four words is the floor at which "they are all the same width" stops being a coincidence a
+        // two-hole file could produce by accident.
+        if (!found.DecimalCoordinates && coordinateWords >= 4 && minWidth == maxWidth && anyLeadingZero)
+            found.CoordinateDigitWidth = maxWidth;
 
         return found;
     }

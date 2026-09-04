@@ -18373,3 +18373,32 @@ Gates: `tests/Ui.Tests/SettingsDialogHelpAndTooltipsTests.cs` (10 tests), plus t
 — `DocsFactoryTests` renders all four `settings-*` figures in both variants, and
 `EveryDeepLinkDocLauncherCanEmitResolvesInTheGeneratedHtml` now covers `reference/settings.html`
 because it is in `DocAnchors.WholePages`.
+
+## The shared layer-mapping dialog named the wrong format, and hid its own last column (2026-09-04)
+
+Both reported by a user importing Gerber; both are older than that path.
+
+**It said GDSII to everyone.** `ResolveGdsiiLayerMappingAsync` was written for the GDSII importer and
+then reused by three more — DXF, board and Gerber — with the format name still hard-coded, so a user
+importing Gerber read "Import GDSII — Layer Mapping" in the title bar, again as the dialog's own
+heading, and a third time in its body ("Moving from 'GDSII' to …", because the importers pass the
+FORMAT as the source-technology name). It is `ResolveImportLayerMappingAsync(window, format, …)` now
+and each of the four call sites names its own. `LayerMappingDialogSourceTests` holds all four,
+because the next importer to reuse this bridge will copy whichever call site it lands next to.
+
+**The "Map to" column was off the right edge, with no way to reach it.** The five columns' own
+`MinWidth`s add up to 570 px before column spacing (32), the table's margins (16), the border and the
+window's own 40 — about 660 — and the window opened at `Width="620"`. Worse than merely tight:
+`HorizontalScrollBarVisibility="Disabled"` meant the column could not be scrolled to either, so the
+combo that is the entire point of the dialog was unreachable. Now 880 wide, `MinWidth` 700, and the
+scroll bar is `Auto` so shrinking the window still reaches it. The test asserts the relationship
+between the declared column minima and the window width rather than the two numbers, so adding a
+sixth column cannot silently re-create the bug.
+
+**Verified by rendering, not by reading the XAML.** `LayerMappingDialog` cannot be constructed in
+this test suite (no Avalonia runtime API), so the check was a throwaway harness in the scratchpad:
+`AppBuilder.Configure<App>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions {
+UseHeadlessDrawing = false })`, `SetupWithoutStarting()`, show the dialog, `CaptureRenderedFrame()`.
+That renders a real frame with the app's own styles and needs no display — `screencapture` is not
+available to this session, and a headless frame is a better artifact anyway. Worth remembering for
+the next dialog-layout question.

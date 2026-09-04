@@ -132,20 +132,32 @@ public sealed partial class GerberReader
 
     // ── Extended (%…%) commands ───────────────────────────────────────────────
 
+    /// <summary>ONE <c>%…%</c> BLOCK MAY HOLD SEVERAL COMMANDS, each ended by its own <c>*</c> — the
+    /// original RS-274X spelling, and still what several exporters emit. <c>%FSLAX45Y45*MOMM*%</c> is
+    /// the whole of a real board's format declaration, and reading only the first segment loses the
+    /// unit, which then reads as "this file declares no %MO*%" and refuses the entire file. The one
+    /// command that legitimately consumes the remaining segments is <c>%AM</c>, whose primitives ARE
+    /// <c>*</c>-separated blocks; it therefore ends the loop.</summary>
     private void ExtendedCommand(string body)
     {
         var segments = body.Split('*');
-        string head = Strip(segments[0]);
-        if (head.Length < 2) { Count(_unknown, "empty % command"); return; }
-        string code = head[..2];
-        string rest = head[2..];
+        for (int s = 0; s < segments.Length && _refusal is null; s++)
+        {
+            string head = Strip(segments[s]);
+            if (head.Length == 0) continue;              // the empty tail after the block's final '*'
+            if (head.Length < 2) { Count(_unknown, "empty % command"); continue; }
+            if (head[..2] == "AM") { ParseMacro(head[2..], segments[s..]); return; }
+            OneExtendedCommand(head[..2], head[2..]);
+        }
+    }
 
+    private void OneExtendedCommand(string code, string rest)
+    {
         switch (code)
         {
             case "FS": ParseFormatSpec(rest); return;
             case "MO": ParseMode(rest); return;
             case "AD": ParseApertureDefine(rest); return;
-            case "AM": ParseMacro(rest, segments); return;
 
             case "LP":
                 FlushStroke();
@@ -165,6 +177,12 @@ public sealed partial class GerberReader
                                "whole image against a bounding frame the file does not supply. circuitRF " +
                                "cannot read it correctly, so nothing was imported.";
                 return;
+
+            // %IR<degrees> — image rotation, the deprecated whole-image transform. %IR0*% is the
+            // identity and is what a file that emits the command at all almost always carries, so
+            // counting it as unrecognized put one noise line on every file of a real board's set while
+            // saying nothing. A non-zero rotation gets the same treatment as its siblings below.
+            case "IR": RefuseUnlessIdentity(rest, "IR", "%IR*% (image rotation)", static r => IsNumber(r, 0)); return;
 
             case "MI": RefuseUnlessIdentity(rest, "MI", "%MI*% (mirror image)", static r => AbNumbersAllZero(r)); return;
             case "SF": RefuseUnlessIdentity(rest, "SF", "%SF*% (scale factor)", static r => AbNumbersAllOne(r)); return;

@@ -8,7 +8,7 @@
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
 
         <TextBlock Grid.Row="0" x:Name="MessageText" FontSize="12" TextWrapping="Wrap"/>
 
@@ -47,7 +47,14 @@
             </StackPanel>
         </StackPanel>
 
-        <StackPanel Grid.Row="5"
+        <!-- One exporter writes a set's drill files in one format, so the second and third dialogs ask
+             a question the user has already answered. -->
+        <CheckBox Grid.Row="5" x:Name="ApplyToAllBox" Margin="0,12,0,0" FontSize="11"
+                  IsVisible="False"
+                  Content="Apply this answer to the other drill files in this set"
+                  ToolTip.Tip="Do not ask again for the remaining drill files."/>
+
+        <StackPanel Grid.Row="6"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Spacing="8"

@@ -291,6 +291,198 @@ public class GerberImportTests : IDisposable
     }
 
     /// <summary>
+    /// A six-layer set that names its outer copper "Top Layer"/"Bottom Layer" and numbers the ones
+    /// between them "Layer 2".."Layer 5". Without the numbered-mid-layer row this imported as TWO
+    /// copper layers and four unidentified drawing layers — and only conductors reach the stackup and
+    /// the copper order, so two thirds of the board quietly left the part of the import the EM path
+    /// reads. "Layer 2" counts the whole stack from the top, so it is the FIRST inner layer.
+    /// </summary>
+    [Fact]
+    public void ANumberedMidLayer_IsReadAsInnerCopper_AndOrderedByItsNumber()
+    {
+        var dir = Folder("numbered-layers");
+        Write(dir, "artwork_top_layer.art", Artwork());
+        Write(dir, "artwork_layer_2.art", Artwork(xMm: 2.0));
+        Write(dir, "artwork_layer_3.art", Artwork(xMm: 3.0));
+        Write(dir, "artwork_bottom_layer.art", Artwork(xMm: 4.0));
+
+        var result = Import(dir, _root, "numbered_layers_import");
+
+        Assert.Equal(
+            ["Bottom Copper", "Inner 1", "Inner 2", "Top Copper"],
+            result.Layers.Select(l => l.LayerName).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Contains(result.Messages, m =>
+            m.Contains("top to bottom, is: Top Copper, Inner 1, Inner 2, Bottom Copper",
+                       StringComparison.Ordinal));
+    }
+
+    /// <summary>The other half of that row: it matches only when a NUMBER follows the word, so a name
+    /// that merely contains "layer" is not silently promoted to copper.</summary>
+    [Fact]
+    public void AnUnnumberedLayerInAName_IsNotReadAsCopper()
+    {
+        var dir = Folder("unnumbered-layer");
+        Write(dir, "board_mask_layer.art", Artwork());
+
+        var result = Import(dir, _root, "unnumbered_layer_import");
+
+        Assert.DoesNotContain(result.Messages, m =>
+            m.Contains("copper layer(s)", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A pour painted with %LPC composites the whole layer, which unions every pad into the copper
+    /// around it — so there is no discrete flash left for a drill hit to pair with, however exactly
+    /// the two files agree. Telling that user their drill file belongs to a different board is not a
+    /// hedge, it is wrong, and it is the common case on any real board with a ground pour.
+    /// </summary>
+    [Fact]
+    public void WhenCopperWasComposited_TheUnpairedHolesAreExplainedByThat_NotByAMismatchedDrillFile()
+    {
+        var dir = Folder("composited-copper");
+        Write(dir, "board.gtl",
+            MmHeader + "%TF.FileFunction,Copper,L1,Top,Signal*%\nG01*\n" +
+            "%LPD*%\nG36*\nX0Y0D02*\nX10000000Y0D01*\nX10000000Y10000000D01*\nX0Y10000000D01*\nX0Y0D01*\nG37*\n" +
+            "%LPC*%\nG36*\nX2000000Y2000000D02*\nX2000000Y3000000D01*\nX3000000Y3000000D01*\n" +
+            "X3000000Y2000000D01*\nX2000000Y2000000D01*\nG37*\n%LPD*%\nM02*\n");
+        Write(dir, "board.drl", Drill(xMm: 5.0, yMm: 5.0));
+
+        var result = Import(dir, _root, "composited_copper_import");
+
+        Assert.Contains(result.Messages, m =>
+            m.Contains("had to be composited", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Messages, m =>
+            m.Contains("do not belong to the same board", StringComparison.Ordinal));
+    }
+
+    // ── Vias carved back out of a composited pour ────────────────────────────────────────────────
+
+    /// <summary>A pour with a via pad in it and a clearance elsewhere, so the layer composites: 10 mm
+    /// of copper, a 0.8 mm pad flashed at (5,5), and a clear square well away from both.</summary>
+    private static string PourWithPad(string fileFunction, double padXMm = 5.0, double padYMm = 5.0) =>
+        MmHeader + $"%TF.FileFunction,{fileFunction}*%\nG01*\n" +
+        "%LPD*%\nG36*\nX0Y0D02*\nX10000000Y0D01*\nX10000000Y10000000D01*\nX0Y10000000D01*\nX0Y0D01*\nG37*\n" +
+        "%LPC*%\nG36*\nX8000000Y8000000D02*\nX8000000Y9000000D01*\nX9000000Y9000000D01*\n" +
+        "X9000000Y8000000D01*\nX8000000Y8000000D01*\nG37*\n" +
+        $"%LPD*%\n%ADD10C,0.800*%\nD10*\nX{(long)Math.Round(padXMm * 1_000_000)}Y{(long)Math.Round(padYMm * 1_000_000)}D03*\n" +
+        "M02*\n";
+
+    /// <summary>
+    /// THE PAYOFF: a pad that compositing merged into the pour still pairs with its hole, so a real
+    /// board's vias are rebuilt instead of every hole coming back as a bare circle. Before this, a
+    /// board with a ground pour reconstructed ZERO vias — and <c>ViaShape</c> on a via-bound layer is
+    /// what the planar extractor reads as a via, so the board simulated with none in it.
+    /// </summary>
+    [Fact]
+    public void APadCompositedIntoAPour_StillPairsWithItsHole_AndBecomesAVia()
+    {
+        var dir = Folder("carve-via");
+        Write(dir, "board.gtl", PourWithPad("Copper,L1,Top,Signal"));
+        Write(dir, "board.drl", Drill(xMm: 5.0, yMm: 5.0));
+
+        var result = Import(dir, _root, "carve_via_import");
+
+        var via = Assert.Single(LoadCell(result).Shapes.OfType<ViaShape>());
+        Assert.Equal(5_000_000, via.X);
+        Assert.Equal(5_000_000, via.Y);
+        Assert.Equal(800_000, via.PadSize);      // the pad's REAL size, recovered from the flash
+        Assert.Equal(300_000, via.DrillSize);
+        Assert.Contains(result.Messages, m => m.Contains("cut back out of the pour", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// AND THE COPPER IS UNCHANGED. That is what makes the carve safe rather than a re-drawing of the
+    /// board: the pad was verified to lie wholly inside the pour before it was claimed, so cutting the
+    /// disc out and letting the via put the same disc back cancel exactly. Measured as AREA, against
+    /// the identical artwork imported with no drill file at all.
+    /// </summary>
+    [Fact]
+    public void CarvingAViaOutOfAPour_LeavesTheLayersCopperUnchanged()
+    {
+        var withDrill = Folder("carve-area-drill");
+        Write(withDrill, "board.gtl", PourWithPad("Copper,L1,Top,Signal"));
+        Write(withDrill, "board.drl", Drill(xMm: 5.0, yMm: 5.0));
+
+        var noDrill = Folder("carve-area-plain");
+        Write(noDrill, "board.gtl", PourWithPad("Copper,L1,Top,Signal"));
+
+        double before = CopperArea(LoadCell(Import(noDrill, _root, "carve_area_plain_import")));
+        var after = LoadCell(Import(withDrill, _root, "carve_area_drill_import"));
+
+        double carvedCopper = CopperArea(after);
+        double padArea = after.Shapes.OfType<ViaShape>()
+            .Sum(v => Math.PI * (v.PadSize / 2.0) * (v.PadSize / 2.0));
+
+        // The pad disc is FLATTENED to a polygon when it is cut out, so the two differ by the
+        // inscribed-polygon deficit of one 0.8 mm circle and nothing else.
+        Assert.True(carvedCopper < before, "the pour did not lose the pad it gave to the via");
+        Assert.Equal(before, carvedCopper + padArea, before * 1e-3);
+    }
+
+    /// <summary>A SOLDER MASK OPENING IS NOT A VIA PAD. The candidate ranking's last resort was "a
+    /// flash on any layer at all", which on a real board took the mask clearance around each mounting
+    /// hole and turned six 4.6 mm openings into 4.6 mm copper pads — sitting on a pour that has a
+    /// deliberate hole exactly there.</summary>
+    [Fact]
+    public void AMaskOpeningAtAHole_IsNotTakenAsTheViaPad()
+    {
+        var dir = Folder("mask-not-pad");
+        // Copper nowhere near the hole; the only flash at (5,5) is the mask opening.
+        Write(dir, "board.gtl", Artwork("Copper,L1,Top,Signal", xMm: 1.0, yMm: 1.0));
+        Write(dir, "board.gts", Artwork("Soldermask,Top", xMm: 5.0, yMm: 5.0));
+        Write(dir, "board.drl", Drill(xMm: 5.0, yMm: 5.0));
+
+        var cell = LoadCell(Import(dir, _root, "mask_not_pad_import"));
+
+        Assert.Empty(cell.Shapes.OfType<ViaShape>());
+        Assert.Single(cell.Shapes.OfType<CircleShape>().Where(c => c.Cx == 5_000_000 && c.R == 150_000));
+    }
+
+    /// <summary>Total filled area of every conductor-ish shape in the cell, vias excluded — the vias
+    /// are added back separately by the caller, which is the whole point of the comparison.</summary>
+    private static double CopperArea(LayoutView view)
+    {
+        double total = 0;
+        foreach (var shape in view.Shapes)
+            switch (shape)
+            {
+                case ViaShape: break;
+                case CircleShape c: total += Math.PI * c.R * (double)c.R; break;
+                case RectShape r: total += Math.Abs((r.X2 - r.X1) * (double)(r.Y2 - r.Y1)); break;
+                case PolygonShape p:
+                    total += RingArea(p.Xy);
+                    foreach (var hole in p.Holes ?? []) total -= RingArea(hole);
+                    break;
+            }
+        return total;
+    }
+
+    private static double RingArea(long[] xy)
+    {
+        double a = 0;
+        for (int i = 0; i + 1 < xy.Length; i += 2)
+        {
+            int j = (i + 2) % xy.Length;
+            a += (double)xy[i] * xy[j + 1] - (double)xy[j] * xy[i + 1];
+        }
+        return Math.Abs(a) / 2;
+    }
+
+    /// <summary>A drill DRAWING is a dimensioned fabrication sheet whose tool legend sits beside the
+    /// board, not drill data — putting it on the layer the hits go to dragged that layer's extent far
+    /// outside the board outline.</summary>
+    [Fact]
+    public void ADrillDrawing_DoesNotLandOnTheDrillLayer()
+    {
+        var dir = Folder("drill-drawing");
+        Write(dir, "artwork_drill_drawing.art", Artwork());
+
+        var result = Import(dir, _root, "drill_drawing_import");
+
+        Assert.Equal("Drill Map", Assert.Single(result.Layers).LayerName);
+    }
+
+    /// <summary>
     /// The measurement R-L4g's completion note asks for, pinned as a test: on one full eleven-file
     /// board the generic rung-3 table names <b>9 of 11</b> layers exactly as the declared attributes
     /// do, and the two it does not are the inner copper layers — where it gets the SIDE and the ORDER
@@ -809,7 +1001,7 @@ public class GerberImportTests : IDisposable
 
         bool asked = false;
         var result = Import(dir, _root, "drillformat_declared_import",
-            drillFormat: (_, _, _) => { asked = true; return new GerberImport.DrillFormatChoice(null); });
+            drillFormat: (_, _, _, _) => { asked = true; return new GerberImport.DrillFormatChoice(null); });
 
         Assert.False(asked);
         Assert.False(result.Cancelled);
@@ -824,7 +1016,7 @@ public class GerberImportTests : IDisposable
         Write(dir, "board.drl", "M48\nT1C0.300\n%\nG90\nT1\nX0010000Y0010000\nM30\n");
 
         var before = Directory.GetDirectories(_root);
-        var result = Import(dir, _root, "drillformat_guess_import", drillFormat: (_, _, _) => null);
+        var result = Import(dir, _root, "drillformat_guess_import", drillFormat: (_, _, _, _) => null);
 
         Assert.True(result.Cancelled);
         Assert.Equal(before, Directory.GetDirectories(_root));

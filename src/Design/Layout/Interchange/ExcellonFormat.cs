@@ -41,6 +41,10 @@ public enum DrillFormatEvidence
     /// with no header is as unambiguous — a tool of 0.0138 is inches and a tool of 0.35 is
     /// millimetres.</summary>
     ToolDiameters,
+    /// <summary>Every coordinate word in the file is the SAME width and some of them carry leading
+    /// zeros — so the coordinates are written at their full field width, and that width IS the digit
+    /// format's total. See <see cref="DrillFormatDeclarations.CoordinateDigitWidth"/>.</summary>
+    CoordinateWidth,
     /// <summary>Every coordinate in the file carries a literal decimal point, so there is no digit
     /// count and no suppression question to answer (R-L4f-2's third form — what a modern export
     /// writes, and what circuitRF's own <see cref="ExcellonWriter"/> writes).</summary>
@@ -91,6 +95,12 @@ public sealed class DrillFormatInference
         (!DecimalCoordinates && (DigitsEvidence == DrillFormatEvidence.Defaulted ||
                                  ZeroOmissionEvidence == DrillFormatEvidence.Defaulted));
 
+    /// <summary>The number of digits one coordinate word occupies under this format. A file whose
+    /// words are all exactly this wide has nothing suppressed, which is why
+    /// <see cref="DrillFormatEvidence.CoordinateWidth"/> settles the suppression question as well as
+    /// the digit split.</summary>
+    public int CoordinateWidth => IntegerDigits + DecimalDigits;
+
     public override string ToString() =>
         $"{(Unit == GerberUnit.Inches ? "inch" : "mm")} {IntegerDigits}:{DecimalDigits} " +
         (DecimalCoordinates ? "decimal-point coordinates" :
@@ -112,6 +122,24 @@ public sealed class DrillFormatDeclarations
     /// <summary>Every tool diameter as it was WRITTEN (the decimal text), in file order. The unit
     /// inference reads these and nothing else.</summary>
     public List<string> ToolDiameterTexts { get; } = [];
+
+    /// <summary>
+    /// The width, in digits, that EVERY coordinate word in the file occupies — null unless the file
+    /// actually writes them all at one width AND at least one of them carries a leading zero.
+    ///
+    /// <para>Both conditions are needed and neither alone would do. Constant width on its own can
+    /// happen by luck on a small board whose coordinates all have the same magnitude; a leading zero
+    /// on its own says only that this one word was padded. Together they are close to proof that the
+    /// file suppresses NOTHING and writes each coordinate at its full field width — because a
+    /// leading-zero-suppressed file cannot produce a leading zero at all, and a trailing-suppressed
+    /// one cannot produce a constant width.</para>
+    ///
+    /// <para>That matters because the width IS the format: 7 digits of millimetre is 3:4, and reading
+    /// it as the classic 3:3 default puts every hole ten times too far out. One real routing file does
+    /// exactly this, and it is the case the tool-diameter and hit-extent evidence both miss — a rout
+    /// file has no plain hits for the artwork cross-check to test.</para>
+    /// </summary>
+    public int? CoordinateDigitWidth { get; set; }
 }
 
 public static class ExcellonFormat
@@ -181,6 +209,19 @@ public static class ExcellonFormat
             digitsEvidence = DrillFormatEvidence.DecimalCoordinates;
             evidence.Add("Digit format: not needed — every coordinate carries a literal decimal point.");
         }
+        else if (found.CoordinateDigitWidth is { } width && width > DefaultIntegers(unit))
+        {
+            // The integer half keeps the unit's conventional width — 3 covers 999 mm and 2 covers
+            // 99 inch, and no board needs more — so the measured total settles the decimals. That
+            // reproduces every format in circulation from the width alone: 6 digits of mm is 3:3 and
+            // 7 is 3:4; 6 of inch is 2:4 and 7 is 2:5.
+            integerDigits = DefaultIntegers(unit);
+            decimalDigits = width - integerDigits;
+            digitsEvidence = DrillFormatEvidence.CoordinateWidth;
+            evidence.Add($"Digit format: {integerDigits}:{decimalDigits} — INFERRED from the file's own " +
+                         $"coordinates: every one of them is {width} digits wide and some carry leading " +
+                         "zeros, so nothing is suppressed and that width is the whole format.");
+        }
         else
         {
             integerDigits = DefaultIntegers(unit);
@@ -204,6 +245,17 @@ public static class ExcellonFormat
             zero = GerberZeroOmission.Leading;
             zeroEvidence = DrillFormatEvidence.DecimalCoordinates;
             evidence.Add("Zero suppression: not applicable — every coordinate carries a literal decimal point.");
+        }
+        else if (digitsEvidence == DrillFormatEvidence.CoordinateWidth && found.ZeroOmission is null)
+        {
+            // Nothing is suppressed, so the question has no answer to get wrong: a word already at the
+            // full width parses to the same integer under either convention (ParseCoordinateWord pads
+            // only up to that width). Recorded as settled rather than defaulted, which is what keeps
+            // the import from raising a prompt about a file that left nothing open.
+            zero = GerberZeroOmission.Leading;
+            zeroEvidence = DrillFormatEvidence.CoordinateWidth;
+            evidence.Add("Zero suppression: none — every coordinate is written at its full width, so " +
+                         "neither convention changes what the numbers mean.");
         }
         else if (found.ZeroOmission is { } fz)
         {
@@ -277,6 +329,7 @@ public static class ExcellonFormat
         DrillFormatEvidence.UnitsKeyword => "its INCH/METRIC line",
         DrillFormatEvidence.UnitGCode => "M71/M72",
         DrillFormatEvidence.ToolDiameters => "its tool table",
+        DrillFormatEvidence.CoordinateWidth => "the width of its own coordinate words",
         DrillFormatEvidence.DecimalCoordinates => "decimal-point coordinates",
         DrillFormatEvidence.Override => "a caller override",
         _ => "nothing — defaulted",

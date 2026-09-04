@@ -844,6 +844,74 @@ public class ExcellonReaderTests : IDisposable
         Assert.Contains("T1C0.500000", drilledWrong, StringComparison.Ordinal);
     }
 
+    // ── A rout file: no hits, and a width the file never states ───────────────────────────────────
+
+    /// <summary>Four routed slots and NOT ONE plain hit — the shape a real routing file comes in. Its
+    /// coordinates are 7 digits of millimetre, which is 3:4, and the file says so only by writing them
+    /// all at that width with their leading zeros intact.</summary>
+    private const string SlotsOnly_SevenDigitMillimetres = """
+        M48
+        METRIC
+        T01C.6
+        %
+        G90
+        T01
+        G00X0014999Y0031820
+        M15
+        G01X0027001Y0031820
+        M16
+        G00X0014999Y0023180
+        M15
+        G01X0027001Y0023180
+        M16
+        M30
+        """;
+
+    [Fact]
+    public void CoordinatesAllOneWidthWithLeadingZeros_SettleTheDigitFormat_WithNoPromptNeeded()
+    {
+        var result = Read(SlotsOnly_SevenDigitMillimetres);
+
+        // 3:4, not the classic 3:3 default — which would have read Y0031820 as 31.820 mm as against
+        // its real 3.1820, putting every slot ten times too far out.
+        Assert.Equal(3, result.Format.IntegerDigits);
+        Assert.Equal(4, result.Format.DecimalDigits);
+        Assert.Equal(DrillFormatEvidence.CoordinateWidth, result.Format.DigitsEvidence);
+        Assert.Equal(DrillFormatEvidence.CoordinateWidth, result.Format.ZeroOmissionEvidence);
+
+        // Nothing was left open, so nothing needs asking.
+        Assert.False(result.Format.RequiredAGuess);
+        Assert.Equal(2, result.Slots.Count);
+        Assert.Equal(1_499_900, result.Slots[0].Xy[0]);
+    }
+
+    [Fact]
+    public void SuppressedCoordinates_AreLeftToTheDefault_BecauseTheirWidthProvesNothing()
+    {
+        // Leading zeros genuinely suppressed: the widths vary and none of them carries a leading zero,
+        // so the width says nothing about the field and the default has to stand.
+        var result = Read("M48\nMETRIC,LZ\nT1C0.30\n%\nG90\nT1\nX1000Y1000\nX90000Y1000\nX90000Y90000\nM30\n");
+
+        Assert.NotEqual(DrillFormatEvidence.CoordinateWidth, result.Format.DigitsEvidence);
+    }
+
+    [Fact]
+    public void TheExtentsCrossCheck_TestsSlotVerticesToo_SoARoutFileIsNotVacuouslyAgreedWith()
+    {
+        var artwork = new DrillExtents(true, 0, 0, 10_000_000, 10_000_000);   // a 10 mm square
+
+        // Read at ten times the true scale. Counting HITS alone, this file has none, so the check used
+        // to report "all 0 hits fall inside" and agree with a board off by an order of magnitude.
+        var wrong = Read(SlotsOnly_SevenDigitMillimetres,
+                         new DrillFormatOverride(IntegerDigits: 3, DecimalDigits: 3));
+        var check = ExcellonReader.CrossCheckExtents(wrong, artwork);
+
+        Assert.Empty(wrong.Hits);
+        Assert.False(check.Agrees);
+        Assert.Equal(4, check.HitsOutside);
+        Assert.Equal(4, check.HitCount);
+    }
+
     // ── Gate 14: an unpaired hit survives a re-export as a hole ────────────────────────────────────
 
     [Fact]

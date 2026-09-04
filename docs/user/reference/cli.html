@@ -751,19 +751,19 @@ that, and <code>--to</code> is <strong>required</strong> when the output is a fo
 </tr>
 <tr>
 <td><code>--drill-units &lt;mm or inch&gt;</code></td>
-<td>Excellon coordinate units, when the file does not say.</td>
+<td>Excellon coordinate units, when the file does not say. Applies to <strong>every</strong> drill file in the set.</td>
 </tr>
 <tr>
 <td><code>--drill-format &lt;int&gt;:&lt;dec&gt;</code></td>
-<td>Excellon digit counts, e.g. <code>2:4</code>.</td>
+<td>Excellon digit counts, e.g. <code>2:4</code>. Applies to every drill file in the set.</td>
 </tr>
 <tr>
 <td><code>--drill-zeros &lt;leading or trailing&gt;</code></td>
-<td>Excellon zero suppression.</td>
+<td>Excellon zero suppression. Applies to every drill file in the set.</td>
 </tr>
 <tr>
 <td><code>--accept-inferred-drill-format</code></td>
-<td>Proceed on the inference rather than refusing.</td>
+<td>Take each drill file's own inference rather than refusing.</td>
 </tr>
 </tbody>
 </table>
@@ -796,7 +796,7 @@ the names come back.</p>
 <h3 id="convert-refusals">When it refuses</h3>
 <div class="callout note">
 <span class="label">A drill file that does not state its format is a refusal, not a guess</span>
-<p>Most Excellon files do not say whether their coordinates are inches or millimetres, or whether
+<p>Many Excellon files do not say whether their coordinates are inches or millimetres, or whether
 leading or trailing zeros are suppressed — and leading versus trailing differ by <em>four orders of
 magnitude</em> on identical text. The GUI asks you. There is nobody to ask here, so the conversion
 stops, prints what it inferred and the evidence behind it — including whether the holes land inside
@@ -804,6 +804,17 @@ the artwork's own outline — and names the flags that answer it. Accept the inf
 <code>--accept-inferred-drill-format</code>, or state it outright with <code>--drill-units</code>,
 <code>--drill-format</code> and <code>--drill-zeros</code>.</p>
 </div>
+<p><strong>A <code>--drill-*</code> flag settles the whole set, not the first file.</strong> A drill flag is a statement about
+the run — one exporter wrote the <code>.drl</code> and the <code>.rou</code> next to it in one format — so it applies to
+every drill file the conversion reads, and the refusal is printed once rather than once per file.
+<code>--accept-inferred-drill-format</code> works the same way, with one difference worth knowing: it accepts
+<strong>each file's own</strong> inference rather than forcing the first file's format onto the rest.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert fab/ -o board.kicad_pcb --drill-units mm --drill-format 3:4 --drill-zeros leading</code></pre>
+<p>Reach for the flags less often than you might expect: a file that writes every coordinate at its full
+width — same number of digits throughout, leading zeros intact — states its own format by doing so,
+and the conversion reads it off the coordinates and says as much. The flags are for the files that
+leave a genuine question, and the note printed for every drill file names which parts of its format
+were <strong>declared</strong>, which were <strong>inferred</strong>, and from what.</p>
 <p>It also stops, rather than guessing, when a design instantiates cells drawn against a <em>different</em>
 technology and the layer mapping needs confirming; when coordinates overflow GDSII's 32-bit range; and
 when the source holds several cells and none of them is an unambiguous top. Every refusal exits <code>1</code>

@@ -268,6 +268,7 @@ public sealed partial class GerberReader
         bool anyClear = _objects.Exists(o => o.Clear);
         List<GerberImportedShape> shapes;
         string? compositeReason = null;
+        IReadOnlyList<GerberImportedShape> compositedFlashes = [];
 
         if (!anyClear)
         {
@@ -282,13 +283,16 @@ public sealed partial class GerberReader
         }
         else
         {
-            shapes = [.. Composite().Select(s => new GerberImportedShape(s, null, null, null))];
+            shapes = [.. Composite(out var copper).Select(s => new GerberImportedShape(s, null, null, null))];
+            compositedFlashes = FlashesStillWhollyInCopper(copper);
             compositeReason =
                 $"This layer paints {_objects.Count(o => o.Clear)} clear (%LPC*%) object(s), which " +
                 "LayoutShape cannot represent directly, so the whole layer was composited through " +
                 "Clipper in paint order. Its individual shape identities and per-object net names are " +
                 "gone; the geometry is exact.";
-            _diagnostics.Add(compositeReason);
+            // Deliberately NOT also a diagnostic: it already leaves here as CompositeReason, and the
+            // orchestrator prints both lists, so adding it twice printed it twice — once per composited
+            // layer, which on a six-layer board is six duplicate paragraphs in the import log.
         }
 
         return new GerberReadResult
@@ -310,6 +314,7 @@ public sealed partial class GerberReader
             StepRepeatFactor = _stepRepeatFactor,
             Composited = anyClear,
             CompositeReason = compositeReason,
+            CompositedFlashes = compositedFlashes,
             UnknownCommandCounts = _unknown,
             SkippedConstructCounts = _skipped,
             Diagnostics = _diagnostics,
@@ -320,7 +325,7 @@ public sealed partial class GerberReader
     /// ORDER. Consecutive same-polarity objects are batched into one boolean per polarity switch — the
     /// result is identical and a vector-filled layer does not turn into tens of thousands of Clipper
     /// calls.</summary>
-    private IReadOnlyList<LayoutShape> Composite()
+    private IReadOnlyList<LayoutShape> Composite(out Paths64 copper)
     {
         var accumulated = new Paths64();
         int i = 0;
@@ -341,6 +346,89 @@ public sealed partial class GerberReader
 
         var tree = new PolyTree64();
         Clipper.BooleanOp(ClipType.Union, accumulated, new Paths64(), tree, LayoutClipper.Rule);
+        copper = accumulated;
         return LayoutClipper.FromClipperTree(tree, default, null);
+    }
+
+    // ── The pads compositing merged away, kept as pairing evidence ────────────
+
+    /// <summary>
+    /// THE CIRCULAR PADS THIS LAYER PAINTED, WHICH COMPOSITING UNIONED INTO THE COPPER AROUND THEM.
+    ///
+    /// <para>A drill hit and a copper flash at the same point are a via, and the pairing that rebuilds
+    /// one needs a pad to measure. On a composited layer there is no pad left to find — a pour swallows
+    /// every pad in it — so on any real board with a ground plane EVERY hole came back as an unpaired
+    /// hole, which is not a labelling problem: <c>ViaShape</c> on a via-bound layer is what the planar
+    /// extractor reads as a via, so the board simulated with no vias in it at all.</para>
+    ///
+    /// <para>The pads are not gone, though: compositing is the last thing this reader does, and until
+    /// then every flash is still a separate painted object. That is what this returns. It is EVIDENCE,
+    /// not artwork — the shapes in <see cref="GerberReadResult.Shapes"/> already contain this copper,
+    /// and anything that pairs against one of these must remove it from there rather than adding it
+    /// twice.</para>
+    ///
+    /// <para><b>Only pads that survived compositing WHOLE.</b> A dark flash a later clear object ate —
+    /// an antipad on a plane layer is exactly this — is not a pad any more, and pairing a hole to it
+    /// would put copper back where the artwork deliberately removed it. Tested at the centre and eight
+    /// points around the rim rather than by a full boolean per flash, which is the same answer for any
+    /// pad whose clearance is not a sliver and is affordable at one board's worth of flashes.</para>
+    /// </summary>
+    private List<GerberImportedShape> FlashesStillWhollyInCopper(Paths64 copper)
+    {
+        var result = new List<GerberImportedShape>();
+        if (copper.Count == 0) return result;
+
+        // Bounding box and orientation per path, once: the winding test below is asked up to nine
+        // times per flash and the great majority of paths are nowhere near any given pad.
+        var boxes = new (Path64 Path, long MinX, long MinY, long MaxX, long MaxY, int Wind)[copper.Count];
+        for (int i = 0; i < copper.Count; i++)
+        {
+            var path = copper[i];
+            long minX = long.MaxValue, minY = long.MaxValue, maxX = long.MinValue, maxY = long.MinValue;
+            foreach (var pt in path)
+            {
+                if (pt.X < minX) minX = pt.X;
+                if (pt.X > maxX) maxX = pt.X;
+                if (pt.Y < minY) minY = pt.Y;
+                if (pt.Y > maxY) maxY = pt.Y;
+            }
+            boxes[i] = (path, minX, minY, maxX, maxY, Clipper.IsPositive(path) ? 1 : -1);
+        }
+
+        foreach (var obj in _objects)
+        {
+            if (obj.Clear || obj.Shape is not CircleShape c || c.R <= 0) continue;
+            if (!InCopper(boxes, c.Cx, c.Cy)) continue;
+
+            bool whole = true;
+            for (int k = 0; k < 8 && whole; k++)
+            {
+                double a = k * Math.PI / 4;
+                whole = InCopper(boxes,
+                    c.Cx + (long)Math.Round(c.R * Math.Cos(a)),
+                    c.Cy + (long)Math.Round(c.R * Math.Sin(a)));
+            }
+            if (!whole) continue;
+
+            result.Add(new GerberImportedShape(c, obj.Function, obj.Component, obj.Pin));
+        }
+        return result;
+    }
+
+    /// <summary>The NonZero winding test the compositing itself uses: a union's outer contours are
+    /// positive and its holes negative, so a point is in copper when the two do not cancel. A point on
+    /// a contour counts as in — a pad rim that grazes the clearance around it is still a whole pad.</summary>
+    private static bool InCopper(
+        (Path64 Path, long MinX, long MinY, long MaxX, long MaxY, int Wind)[] boxes, long x, long y)
+    {
+        var pt = new Point64(x, y);
+        int winding = 0;
+        foreach (var (path, minX, minY, maxX, maxY, wind) in boxes)
+        {
+            if (x < minX || x > maxX || y < minY || y > maxY) continue;
+            if (Clipper.PointInPolygon(pt, path) == PointInPolygonResult.IsOutside) continue;
+            winding += wind;
+        }
+        return winding != 0;
     }
 }

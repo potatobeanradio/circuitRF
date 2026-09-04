@@ -870,3 +870,184 @@ comb-shaped boundary: 2,478 shapes carrying **308,326 outer vertices plus 771,66
 polygon of 12,335 vertices with 15 holes. The artwork really is that complicated; the strokes were
 hiding it in a form Skia happened to rasterize cheaply. Merge for editability and for a meshable
 conductor — which is what the import message actually claims — not for frame rate.
+
+## Gerber import: a six-layer board that imported as nothing (2026-09-04)
+
+A user's real board came back with **every artwork layer refused** and only the drill data through —
+`"This Gerber file declares no %MO*% unit (and no G70/G71)"`, once per file, twenty times. Six
+separate defects, found from that one file set. The first is the blocker; the rest were sitting
+behind it.
+
+### 1. One `%…%` block may hold SEVERAL commands, and only the first was read
+
+```
+%FSLAX45Y45*MOMM*%
+%IR0*IPPOS*OFA0.00000B0.00000*MIA0B0*SFA1.00000B1.00000*%
+```
+
+This is the original RS-274X spelling — commands separated by `*` inside one `%…%` — and it is still
+what several exporters emit. `ExtendedCommand` split the body on `*` and then used `segments[0]` and
+nothing else, so `FS` was read and `MO` was silently dropped. The refusal that followed was accurate
+about its own state and useless about the cause: the file DOES declare its unit, on the same line.
+
+The loop now runs every segment. **`%AM` is the one command that legitimately consumes the rest of
+the block** — its primitives are themselves `*`-separated — so it ends the loop rather than being
+one of the iterations.
+
+### 2. `%IR` was an unrecognized command
+
+`%IR0*%` is the identity, and a file that emits the command at all almost always carries the
+identity. Counting it as unknown put one noise line on every file of a real set while saying nothing.
+It now joins `%MI`/`%SF`/`%AS`/`%LM`/`%LR`/`%LS`: identity accepted silently, non-identity refused by
+name.
+
+### 3. A numbered mid layer was not read as copper at all
+
+The set names its outer copper "Top Layer"/"Bottom Layer" — both already in the rung-3 table — and
+the four between them "Layer 2".."Layer 5", which matched nothing. **That is not a labelling
+nuisance: only conductors enter the stackup and the copper order**, so four sixths of the board
+quietly left the part of the import the EM path reads, and the run reported "2 of 2 copper layers".
+
+The new row is the last in the table, so every function row wins first, and it matches only when a
+NUMBER follows the word — a name that merely contains "layer" is not promoted to copper. **"Layer 2"
+counts the whole stack from the top and is therefore the FIRST inner layer**, which is where the -1
+comes from; "inner 2" already counts only the mid layers and keeps its number. Both spellings now go
+through one `NumberAfter` helper with a per-row offset.
+
+Guessed inner layers also needed an ordering tiebreak. They all share one `SideRank`, so they fell
+back to file NAME — which orders "Inner 10" before "Inner 2". It is deliberately **not** a
+`CopperIndex`: the number came from a file name, and the import's report must go on calling that
+stack order a guess.
+
+### 4. A drill DRAWING landed on the drill layer
+
+`..._Drill_Drawing.art` matched the plain `drill` row. It is a dimensioned fabrication sheet whose
+tool legend sits beside the board, so the drill layer's extent ran from -37.5 mm to 222 mm on a
+111.8 mm board. A `drill` + `drawing|map|legend|chart` row now takes it first, as "Drill Map".
+
+### 5. A ROUT FILE HAS NO HITS, so the artwork cross-check agreed with itself
+
+The strongest evidence available for a drill file's format is whether its holes land inside the
+artwork — and `CrossCheckExtents` counted `Hits` only. A rout file commonly holds routed SLOTS and
+not one plain hit, so it reported "all 0 hits fall inside the artwork extent", `Agrees` came back
+true, and the wrong-format retry below it never ran. The file's four slots landed at Y 231..318 mm on
+a 55 mm board and nothing said so. Slot vertices are now counted the same way — a slot is cut through
+the same copper a hole is.
+
+### 6. The width of the coordinate words IS the digit format, and nothing was reading it
+
+The same file: `METRIC`, no format statement, coordinates like `X0056999Y0318200`. Defaulted to the
+classic metric 3:3 that is **six** digits, its seven-digit words were read ten times too large.
+
+There is a new evidence rung for this, `DrillFormatEvidence.CoordinateWidth`, and it needs BOTH of
+two conditions — neither alone would do:
+
+* **every coordinate word is the same width** — which a trailing-suppressed file cannot produce;
+* **at least one of them carries a leading zero** — which a leading-suppressed file cannot produce.
+
+Together they are close to proof that the file suppresses nothing and writes each coordinate at its
+full field width, and that width is then the whole format: the integer half keeps the unit's
+conventional size (3 covers 999 mm, 2 covers 99 inch, no board needs more) and the measured total
+settles the decimals. That reproduces every format in circulation from the width alone — 6 digits of
+mm is 3:3 and 7 is 3:4; 6 of inch is 2:4 and 7 is 2:5.
+
+It settles the SUPPRESSION question too, because a word already at the full width parses to the same
+integer under either convention (`ParseCoordinateWord` pads only up to that width). Recorded as
+settled rather than defaulted, which is what stops the import raising a prompt about a file that left
+nothing open. Four coordinate words is the floor at which "they are all the same width" stops being a
+coincidence a two-hole file could produce by accident.
+
+### The drill-format prompt asked the same question once per file
+
+Reported separately by the same user. A set's drill files come out of one exporter in one format, so
+the second dialog is the one a user answers without reading. `DrillFormatChoice` gained
+`ApplyToAll`, the prompt is told how many files remain so the checkbox appears only when there is
+something to apply it to, and **a CLI `--drill-*` flag now sets it implicitly** — a flag is a
+statement about the run, not about one file, which also stops the same refusal printing once per
+file. A null `Override` carried this way accepts each later file's OWN inference rather than forcing
+this file's format onto it: the user confirmed an inference, and only what they actually CHANGED is
+worth propagating.
+
+### Two smaller things the same log exposed
+
+* The composite-polarity paragraph was added to BOTH `CompositeReason` and `Diagnostics`, and the
+  orchestrator prints both lists — six duplicate paragraphs on a six-layer board.
+* The minted `StackupKind.Via` entry named no span, so the technology validator reported "spans an
+  unknown conductor layer" twice per drill file. It now names the topmost and bottommost conductor
+  entries **when the stackup has any**. A set with no job file has no conductor entries to name, and
+  inventing two would be a substrate invented under another name — that import already says, in
+  words, that the technology is incomplete.
+
+### Verified against the file set, not only against the tests
+
+All 20 artwork files import (3,284 shapes, 6 copper layers). Every copper layer's extent is
+0.30..111.50 × 0.30..54.71 mm inside a board outline of 0..111.80 × 0..55.00, and the routed slots
+moved from Y 231..318 mm onto the board at 23.18..31.82 mm. Nothing from that set is committed: it
+names a vendor, a customer and a real filesystem path in its own header comments, and every fixture
+here stays hand-authored.
+
+## Vias carved back out of a composited pour (2026-09-04)
+
+The follow-on the note above left open. On the six-layer board every copper layer paints in clear
+polarity, so every layer was composited — and compositing unions each via pad into the pour around
+it. Pairing looks for a discrete `CircleShape` flash, found none, and returned **zero vias from 1,555
+holes**. That is not a labelling problem: `ViaShape` on a via-bound layer is what `PlanarExtractor`
+reads as a via (L9d/D5), so the board simulated with no vias in it at all.
+
+### The pads were never gone — the reader just threw them away
+
+Compositing is the LAST thing `GerberReader` does. Until then every flash is still a separate painted
+object, so the pad's real diameter is sitting right there. `GerberReadResult.CompositedFlashes` now
+carries them, and pairing treats them exactly as it treats a surviving flash. Nothing is invented: the
+pad size is the file's own aperture, not a drill diameter plus an assumed annular ring.
+
+They are EVIDENCE, not artwork — their copper is already inside the pour in `Shapes`. So claiming one
+obliges the caller to cut the same disc back out, which is what `GerberImport.CarveClaimedPads` does.
+
+### The invariant that makes it safe
+
+**Carve + via pad = the copper that was there.** A pad is offered only if it survived compositing
+WHOLE — tested at its centre and eight points around the rim, against the NonZero winding of the
+composited paths. A dark flash a later clear object ate (an antipad on a plane layer is exactly this)
+is not a pad any more, and pairing a hole to one would put copper back where the artwork deliberately
+removed it.
+
+Measured on the real board, per layer, against the identical artwork imported with no drill file:
+five layers conserve to **0.00e+00** and the top to **4.2e-05** relative. That residual is the
+measurement's own: the carve subtracts a FLATTENED disc while the check adds back exact πr², and for
+the ~111-segment circles `CircleTolDbu` produces the inscribed-polygon deficit is 5.3e-4 per pad
+against 5.8e-4 observed. `CarvingAViaOutOfAPour_LeavesTheLayersCopperUnchanged` pins it.
+
+### Two cross-layer leaks the area measurement found, both older than this work
+
+Neither was visible before, because nothing had ever compared the copper in to the copper out.
+
+- **A pad claimed on one layer, a via landing on another.** `LandingLayer` is `landingLayer ??
+  pad.Layer`, and `PickFlash` will take a flash on ANY layer when the landing layer has none — so a
+  via whose top pad was missing paired with the INNER one, and 4.5 mm² left an inner plane and
+  reappeared on the top. A composited pad may now only be claimed where the carve and the via's pad
+  cancel, i.e. on the layer the via actually lands on. A surviving discrete flash may still come from
+  anywhere, as before: consuming one removes that shape, so the asymmetry is at least visible.
+- **A SOLDER MASK OPENING IS NOT A VIA PAD.** The ranking's last resort is "a flash on any layer at
+  all", which on this board took the mask clearance around each mounting hole — six 4.6 mm openings
+  became 4.6 mm COPPER pads, sitting on a pour that has a deliberate hole exactly there, ~100 mm² of
+  copper that is not on the board. `Pair` now takes the set's copper layers and no other layer's
+  flash can be a pad. Null or empty means the caller could not say and every layer stays eligible,
+  so no existing caller changes behaviour.
+
+Result on the board: **1,475 vias** from 1,555 hits, 80 unpaired — the mounting and tooling holes,
+which genuinely have no copper pad.
+
+### Cost notes
+
+One boolean per LAYER, not one per pad: a pour here carries hundreds of thousands of vertices and a
+difference per pad would be a thousand passes over all of it. The carve is restricted to the
+composited shapes BY REFERENCE rather than by layer, because two files can land on one layer and a
+boolean over everything on it would re-polygonise a neighbour's untouched artwork into the pour.
+
+**The nine-point containment test was the part worth being suspicious of** — ~1,500 pads × 9 points
+against a pour of tens of thousands of vertices is the shape of something that quietly costs seconds
+per layer. Measured instead of assumed, in Release, warm, per file: the WHOLE read of the heaviest
+copper layer — compositing included, which dominates it — is **304 ms**, and all six copper layers
+together are **978 ms** of a ~13 s board import. The bounding-box prefilter is what makes it a
+non-issue; without one it would not be. Do not remove it.

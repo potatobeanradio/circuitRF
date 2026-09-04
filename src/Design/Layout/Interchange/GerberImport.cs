@@ -17,6 +17,8 @@
 // the shared layer dialog, and L4f's drill-format resolution. L4h is where a human is involved.
 
 
+using Clipper2Lib;
+
 using CircuitRF.Design.Cells;
 
 namespace CircuitRF.Design.Layout.Interchange;
@@ -27,13 +29,22 @@ public static class GerberImport
     /// callback CANCELS the whole import (R-L4h-6); a non-null one with a null
     /// <see cref="Override"/> accepts the inference as it stands. Two states, said once, rather than a
     /// nullable-of-nullable nobody can read at the call site.</summary>
-    public sealed record DrillFormatChoice(DrillFormatOverride? Override);
+    /// <param name="ApplyToAll">Answer every REMAINING drill file the same way without asking again.
+    /// A set's drill files come out of one exporter in one format, so being asked the same question
+    /// once per file is repetition, not diligence — and the second dialog is the one a user answers
+    /// without reading. A null <see cref="Override"/> carried this way accepts each later file's OWN
+    /// inference rather than forcing this file's format onto it: the user confirmed the inference, and
+    /// only what they actually CHANGED is worth propagating.</param>
+    public sealed record DrillFormatChoice(DrillFormatOverride? Override, bool ApplyToAll = false);
 
     /// <summary>L4f's format resolution, as L4h will implement it: the file, what was inferred, and
     /// the cross-check against the artwork's own extent — the strongest single piece of evidence
     /// available, and free here because this is the only place that holds both readers' output.</summary>
+    /// <param name="remainingFiles">How many further drill files would be asked this same question if
+    /// the answer is not marked <see cref="DrillFormatChoice.ApplyToAll"/> — so the prompt can offer
+    /// "apply to all" only when there is something to apply it to.</param>
     public delegate DrillFormatChoice? ResolveDrillFormat(
-        string fileName, DrillFormatInference inferred, DrillExtentsCheck crossCheck);
+        string fileName, DrillFormatInference inferred, DrillExtentsCheck crossCheck, int remainingFiles);
 
     /// <summary>One artwork file's row of R-L4g-15's per-layer summary.</summary>
     public sealed record LayerReport(
@@ -198,8 +209,10 @@ public static class GerberImport
 
         var drills = new List<(GerberFileClass File, ExcellonReadResult Read, GerberLayerIdentity Identity)>();
         var drillNames = new List<string>();
-        foreach (var file in drillFiles)
+        DrillFormatChoice? standingFormat = null;   // set once the user says "apply to all"
+        for (int drillIndex = 0; drillIndex < drillFiles.Count; drillIndex++)
         {
+            var file = drillFiles[drillIndex];
             ExcellonReadResult read;
             try
             {
@@ -252,7 +265,7 @@ public static class GerberImport
                     }
                     catch (IOException) { break; }
 
-                    if (retry.Refusal is not null || retry.Hits.Count == 0) continue;
+                    if (retry.Refusal is not null || (retry.Hits.Count == 0 && retry.Slots.Count == 0)) continue;
                     var retryCheck = ExcellonReader.CrossCheckExtents(retry, artworkExtent);
                     if (!retryCheck.Agrees) continue;
 
@@ -267,13 +280,25 @@ public static class GerberImport
                 }
             }
 
-            if (read.Format.RequiredAGuess && resolveDrillFormat is not null)
+            if (read.Format.RequiredAGuess && (resolveDrillFormat is not null || standingFormat is not null))
             {
-                var choice = resolveDrillFormat(file.FileName, read.Format, crossCheck);
+                var choice = standingFormat
+                             ?? resolveDrillFormat!(file.FileName, read.Format, crossCheck,
+                                                    drillFiles.Count - drillIndex - 1);
                 if (choice is null)
                 {
                     messages.Add("The drill format was not settled, so nothing was imported.");
                     return Nothing(messages, drillCandidates);
+                }
+                if (choice.ApplyToAll && standingFormat is null)
+                {
+                    standingFormat = choice;
+                    messages.Add(
+                        choice.Override is null
+                            ? $"{file.FileName}: the inferred drill format was accepted for this file and " +
+                              "every remaining drill file in the set, each read as its own inference."
+                            : $"{file.FileName}: the drill format stated here was applied to every " +
+                              "remaining drill file in the set as well.");
                 }
                 if (choice.Override is { } overrides)
                 {
@@ -332,6 +357,7 @@ public static class GerberImport
         var guessedOrder = conductors.Where(c => c.CopperIndex is null).ToList();
         var copperTopToBottom = conductors
             .OrderBy(c => c.CopperIndex ?? SideRank(c.Side))
+            .ThenBy(InnerRank)                                  // "Inner 2" before "Inner 10"
             .ThenBy(c => c.FileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -388,11 +414,19 @@ public static class GerberImport
 
         var reconciled = LayoutFragment.ApplyReconciliation(allShapes, sourceLayers, choices);
         var artwork = new List<GerberImportedShape>(allShapes.Count);
+        // Which of those shapes came out of a COMPOSITED read, by reference — the only shapes a via
+        // pad may be carved out of. Two files can land on one layer, so "everything on this layer" is
+        // not the same set and would re-polygonise a neighbour's untouched artwork.
+        var compositedShapes = new HashSet<LayoutShape>(ReferenceEqualityComparer.Instance);
         {
             int at = 0;
             foreach (var (_, read) in reads)
                 foreach (var imported in read.Shapes)
-                    artwork.Add(imported with { Shape = reconciled.Shapes[at++] });
+                {
+                    var shape = reconciled.Shapes[at++];
+                    artwork.Add(imported with { Shape = shape });
+                    if (read.Composited) compositedShapes.Add(shape);
+                }
         }
 
         // The FINAL key each file's layer landed on — what the new technology must define, and what a
@@ -422,15 +456,37 @@ public static class GerberImport
 
         // ── 8. Vias (R-L4f) ─────────────────────────────────────────────────────────────────────
         var copperKeys = copperTopToBottom.Select(c => finalKeyByFile[c.FilePath]).ToList();
+        var copperPaths = copperTopToBottom.Select(c => c.FilePath).ToHashSet(StringComparer.Ordinal);
+        int compositedCopper = reads.Count(r => r.Read.Composited && copperPaths.Contains(r.File.Path));
         IReadOnlyList<GerberImportedShape> remaining = artwork;
         var drillShapes = new List<LayoutShape>();
         int vias = 0, declaredVias = 0, unpairedHoles = 0, componentHoles = 0, slots = 0, tools = 0, hits = 0;
+
+        // The pads a composited COPPER layer painted before its pour swallowed them, on the layer key
+        // that file actually landed on. Copper only: a hole through a solder mask is not a via, and
+        // offering mask openings as pads would pair holes to them wherever the copper was composited
+        // away. Every pad is already inside the copper in `remaining`, so anything that claims one owes
+        // that layer the same disc back — which is what CarveClaimedPads below does.
+        IReadOnlyList<GerberImportedShape> compositedPads =
+        [
+            .. reads
+                .Where(r => r.Read.CompositedFlashes.Count > 0 && copperPaths.Contains(r.File.Path))
+                .SelectMany(r => r.Read.CompositedFlashes.Select(f =>
+                {
+                    var onLayer = (CircleShape)LayoutGeometry.Clone(f.Shape);
+                    onLayer.Layer = finalKeyByFile[r.File.Path];
+                    return f with { Shape = onLayer };
+                })),
+        ];
+        var carved = new List<CircleShape>();
 
         foreach (var (file, read, identity) in drills)
         {
             var drillKey = finalKeyByFile[identity.FilePath];
             var span = DrillViaPairing.MapSpan(read.Span, drillKey, copperKeys);
-            var paired = DrillViaPairing.Pair(remaining, read, span.Barrel, span.Landing, destDbuPerMicron);
+            var paired = DrillViaPairing.Pair(
+                remaining, read, span.Barrel, span.Landing, destDbuPerMicron, compositedCopper,
+                compositedPads, copperKeys);
 
             if (paired.Refusal is { } refusal)
             {
@@ -440,6 +496,8 @@ public static class GerberImport
 
             drillShapes.AddRange(paired.AllShapes);
             remaining = paired.RemainingArtwork;
+            compositedPads = paired.RemainingCompositedPads;
+            carved.AddRange(paired.CarvedPads);
             vias += paired.Vias.Count;
             declaredVias += paired.DeclaredVias;
             unpairedHoles += paired.UnpairedHoles.Count;
@@ -455,6 +513,18 @@ public static class GerberImport
                 messages.Add($"{file.FileName}: at least one tool diameter did not land on a whole DBU and was rounded.");
         }
 
+        if (carved.Count > 0)
+        {
+            int before = remaining.Count;
+            remaining = CarveClaimedPads(remaining, carved, compositedShapes, destDbuPerMicron);
+            messages.Add(
+                $"{carved.Count:N0} via pad(s) were cut back out of the pour they had been composited " +
+                "into, so the copper is not counted twice — each one is now the pad of a via object " +
+                "instead of part of the surrounding copper. The layer's copper is unchanged: every pad " +
+                "cut lay wholly inside it, and the via puts the same disc back." +
+                (remaining.Count != before ? $" ({before:N0} → {remaining.Count:N0} artwork shape(s).)" : ""));
+        }
+
         // ── 9. The technology this import mints (R-L4g-8, R-L4g-9) ──────────────────────────────
         var tech = BuildTechnology(importName, allIdentities, copperTopToBottom, finalKeyByFile, destTech, sourceLayers);
 
@@ -467,6 +537,14 @@ public static class GerberImport
         // StackupKind.Via entry is what marks the drawing layer it landed on as one — it carries no
         // substrate value and nothing simulates it, so it is added in both branches of R-L4g-9. Without
         // it a bare, unpaired hole re-exports as copper on the drill layer instead of as a drill hit.
+        //
+        // Its SPAN is named from the stackup's own conductor entries when there are any. A through
+        // hole goes from the topmost conductor to the bottommost, which is what the drill files here
+        // are read as (no set declared a span), and naming it is what stops the technology validator
+        // reporting a via that spans nothing on every import that HAS a job file. A set without one
+        // has no conductor entries to name, and inventing two would be a substrate invented under
+        // another name — that import already says, in words, that the technology is incomplete.
+        var conductorEntries = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
         foreach (var (_, _, identity) in drills)
             tech.Stackup.Layers.Add(new StackupLayer
             {
@@ -474,6 +552,8 @@ public static class GerberImport
                 Name = identity.LayerName,
                 DrawingLayers = [finalKeyByFile[identity.FilePath]],
                 Fill = ViaFillKind.Plated,
+                SpanFromLayer = conductorEntries.Count > 0 ? conductorEntries[0].Name : null,
+                SpanToLayer = conductorEntries.Count > 0 ? conductorEntries[^1].Name : null,
             });
 
         // ── 10. Write (R-L4g-13) — nothing is created before this point ─────────────────────────
@@ -660,6 +740,92 @@ public static class GerberImport
 
     /// <summary>Top first, bottom last, everything unranked in between — the ONLY ordering available to
     /// a set that declares none, and the reason R-L4g-10 insists such a set says so by name.</summary>
+    /// <summary>
+    /// Cuts the pads a via claimed out of the composited copper they were merged into.
+    ///
+    /// <para>Restricted to <paramref name="compositedShapes"/> BY REFERENCE, not by layer: two files
+    /// can land on one layer, and a boolean over everything on that layer would re-polygonise a
+    /// neighbour's untouched artwork into the pour — a silent change to shapes nothing asked about.
+    /// Only the polygons that compositing itself produced are rebuilt.</para>
+    ///
+    /// <para>One boolean per LAYER, not one per pad. A board of this shape has a thousand-odd vias and
+    /// a pour carrying hundreds of thousands of vertices; a difference per pad would be a thousand
+    /// passes over all of it.</para>
+    /// </summary>
+    private static IReadOnlyList<GerberImportedShape> CarveClaimedPads(
+        IReadOnlyList<GerberImportedShape> artwork,
+        IReadOnlyList<CircleShape> pads,
+        HashSet<LayoutShape> compositedShapes,
+        int dbuPerMicron)
+    {
+        var padsByLayer = pads.GroupBy(p => p.Layer).ToDictionary(g => g.Key, g => g.ToList());
+        var result = new List<GerberImportedShape?>(artwork.Count);
+        var rebuilt = new Dictionary<LayerKey, List<GerberImportedShape>>();
+        var slotAt = new Dictionary<LayerKey, int>();
+
+        // Everything untouched keeps its place and its identity; each carved layer's shapes come out
+        // and its rebuilt ones go back in where the FIRST of them stood, so the layer's artwork does
+        // not migrate to the end of the cell.
+        foreach (var imported in artwork)
+        {
+            if (!compositedShapes.Contains(imported.Shape) ||
+                !padsByLayer.ContainsKey(imported.Shape.Layer))
+            {
+                result.Add(imported);
+                continue;
+            }
+
+            var layer = imported.Shape.Layer;
+            if (!rebuilt.TryGetValue(layer, out var replacement))
+            {
+                rebuilt[layer] = replacement = [];
+                slotAt[layer] = result.Count;
+                result.Add(null);
+            }
+            replacement.Add(imported);
+        }
+
+        // Descending, so splicing one layer cannot move another layer's slot out from under it.
+        foreach (var layer in rebuilt.Keys.OrderByDescending(k => slotAt[k]))
+        {
+            var group = rebuilt[layer];
+
+            var copper = new Paths64();
+            foreach (var imported in group)
+                copper.AddRange(LayoutClipper.ToClipperPaths(imported.Shape, GerberPrimitives.CircleTolDbu));
+
+            var discs = new Paths64();
+            foreach (var pad in padsByLayer[layer])
+                discs.AddRange(LayoutClipper.ToClipperPaths(pad, GerberPrimitives.CircleTolDbu));
+
+            var tree = new PolyTree64();
+            Clipper.BooleanOp(ClipType.Difference,
+                              Clipper.Union(copper, LayoutClipper.Rule),
+                              Clipper.Union(discs, LayoutClipper.Rule), tree, LayoutClipper.Rule);
+
+            var carvedShapes = LayoutClipper.FromClipperTree(tree, layer, group[0].Shape.Net);
+            result.RemoveAt(slotAt[layer]);
+            result.InsertRange(slotAt[layer],
+                carvedShapes.Select(sh => (GerberImportedShape?)new GerberImportedShape(sh, null, null, null)));
+        }
+
+        return [.. result.Where(r => r is not null).Select(r => r!)];
+    }
+
+    /// <summary>Where a guessed inner layer sits among the other guessed inner layers. Every one of
+    /// them shares a single <see cref="SideRank"/>, so without this they fall back to file name — which
+    /// orders "Inner 10" before "Inner 2" whenever the names are what distinguishes them. It is NOT a
+    /// <c>CopperIndex</c>: the number came from a file NAME, and the import's own report must go on
+    /// calling this stack order a guess.</summary>
+    private static int InnerRank(GerberLayerIdentity identity)
+    {
+        const string prefix = "Inner ";
+        return identity.LayerName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               int.TryParse(identity.LayerName.AsSpan(prefix.Length), out int n)
+            ? n
+            : int.MaxValue;
+    }
+
     private static int SideRank(string? side) => side switch
     {
         "Top" => 0,
