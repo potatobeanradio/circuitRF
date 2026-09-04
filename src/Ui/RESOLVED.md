@@ -1,5 +1,85 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The drill map rendered differently at every zoom step (2026-09-04)
+
+Owner report, on an imported 6-layer board's `.clay`: the Drill Map layer's drill chart rendered
+differently at different zoom levels. Losing the outlines on zooming out was fine and approved of;
+what was not was that further out some shapes kept a stroke while others lost it, parts of the
+geometry standing in for text dropped out, the whole thing looked like a boolean OR had been applied,
+and further out again the table cells came out filled. Every other layer in the same file looked right
+at every zoom.
+
+Two independent defects, both in `LayoutRenderer.DrawLayer`. Diagnosed against the owner's own file
+with a scratch harness rendering a 14-step zoom ladder at 1600x1000 and diffing each frame against a
+no-LOD reference — pixel counts and frame times below are from it.
+
+### 1. The merge tier is a boolean OR, and a closed path is a ring
+
+`IsOpenCentreline` already states the theorem and already refuses to batch a closed centreline in the
+hairline ELISION aggregate: a closed centreline strokes to a RING whose winding is whatever the
+authoring tool emitted, `NormalizeOuterWinding` covers Polygon/Curve and deliberately not Path, and
+two such rings cancel under NonZero once they are contours of one path. **The R-L2c-2 merge tier
+builds exactly such a path and had never been given the same guard.**
+
+Drill Map is 2,261 shapes — the only layer in the file past `MergeShapeCountThreshold` (2,000), which
+is what confined the whole report to one layer. **The trigger is the CULLED count, so it is
+zoom-dependent**: merging engaged below ~1.5x zoom-to-fit and not above it, which is exactly the
+reported shape of the bug — correct close in, wrong further out. Merged, every table cell filled solid and the entire FIGURE column of
+drill symbols disappeared — 130,616 differing pixels, geometry deleted at the one zoom where a drill
+chart is read.
+
+**The obvious wider fix is wrong, and testing it is what settled this.** The natural suspicion is that
+any shape carrying a HOLE cannot batch. Excluding the layer's 1,564 hole-carrying drill-symbol
+polygons and nothing else left the corruption fully intact (145,393 differing pixels, slightly worse
+than unfixed); excluding the 117 closed paths and nothing else removed it (14,228, all of which is the
+merge tier's own intended overlap compositing). A hole is safe because `AddHoleRings` winds it against
+an outer ring `NormalizeOuterWinding` has already made consistent, so +1/-1 still cancels inside one
+merged path — and where a neighbour's material really does overlap that hole, filling it is the union
+and is correct. A synthetic oracle (a square annulus plus a bar crossing its hole, drawn top-level and
+again through a placed cell) agrees. Unnormalized winding is the entire defect; `IsRingGeometry` is
+therefore only `PathShape` + `!IsOpenCentreline`, and is performance-neutral (35.4 ms against 33.8 ms
+on the full-extent frame).
+
+### 2. A LOD substitution must not be BRIGHTER than what the frame decided
+
+`CanAffordOutlines` is deliberately one categorical answer for the whole frame, on the stated grounds
+that a per-shape answer reads as the renderer malfunctioning. Three per-shape escape hatches hung
+off it and quietly took that back — the `mustOutline` visibility floor (asked as a bbox dimension for
+one shape kind and a `PathShape.Width` for another) and the hairline elision tier (a third threshold
+again), **all three painting SOLID while their neighbours kept a 35%-alpha fill and no outline.**
+
+A drill chart is stroke artwork: 100 um glyph strokes and 200 um table rules whose fill is a hairline
+and whose outline is the entire visible shape. So the split landed inside one table. Measured on the
+owner's file, zooming out: at 2.5x the whole chart is uniformly dim; at 2x the 100 um glyphs drop under
+one device pixel, elide, and turn solid while the 200 um rules stay dim; at 1.5x the rules' degenerate
+bbox trips the floor and THEY turn solid instead. Same table, three different renderings, none of them
+a decision anyone made.
+
+Fixed by one rule: **a substitution reproduces what the frame's own outline decision would have
+produced, never something brighter.** Outlining, that is fill + a solid outline, so solid is right and
+nothing changes (verified: pixel-identical wherever `drawOutlines` is true). Not outlining, that is a
+fill and nothing else, so the substitution is drawn at the fill's own alpha (`substituteAlpha`). The
+layer then steps between its two states as one surface.
+
+### Not fixed, and worth knowing
+
+- **The same merge exists in compiled INSTANCE geometry and this fix does not reach it.**
+  `CompileCell` folds every primitive in a chunk into one `chunk.Geometry` with no winding guard. The
+  owner's workspace already has this board placed as a 10x10 array, and its Drill Map layer renders as
+  a solid slab of layer colour with the chart gone entirely — worse than the top-level case, and not
+  zoom-dependent. Fixing it means a per-chunk list of individually-drawn ring paths, which also has to
+  answer to the elision and coarse-collapse tiers; deliberately left alone rather than folded into
+  this change.
+- **The outline budget is far more conservative than the measurement supports on a file like this.**
+  `CanAffordOutlines` scales the whole document's STORED vertex count by viewport area and ignores
+  where the viewport is (on purpose — the alternative trades shape-popping for pan-popping). 91% of
+  this file's vertices are drill symbols scattered over the board, none of them on screen when the
+  chart is being read, so from 2.5x to 8x zoom outlines are refused on frames where outlining the
+  whole visible layer measures 9.5 ms. Counting DECIMATED vertices instead is not the fix: they rise
+  with zoom (105,943 at full extent, 396,596 at 10x) while the on-screen count falls, so the estimate
+  would invert. The error is positional, and nothing viewport-independent can remove it.
+
+
 ## TM2 — moves across a shared library: the forwarding record (2026-09-04)
 
 `brief-tree-move-2-moves-across-a-shared-library.md`. TM1 repairs every referrer it can reach — this

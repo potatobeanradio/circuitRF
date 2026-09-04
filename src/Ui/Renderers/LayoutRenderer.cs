@@ -1031,6 +1031,12 @@ public static partial class LayoutRenderer
     // SAME batched path too, with their real geometry (still built once, just not drawn/composited
     // individually) — gate 6 requires both triggers route through the identical aggregate, and they do
     // by construction: there is exactly one `aggregate` SKPath per layer, filled once, below.
+    //
+    // With ONE exception, and it is a correctness bound rather than a tuning choice: a CLOSED PathShape
+    // strokes to a ring whose winding nothing normalizes, and two such rings cancel each other under
+    // NonZero once they are contours of one path. See IsRingGeometry — it is the guard IsOpenCentreline
+    // already applies to the elision aggregate, which this tier had never been given. A sub-pixel closed
+    // path still aggregates, because what it contributes is a minimal RECT and not its own geometry.
 
     /// <summary>Default LOD engagement threshold, device pixels — §5.3 item 3's own starting guess,
     /// confirmed (not just assumed) by the LOD-only measurement in the L2c completion note before the
@@ -1084,12 +1090,40 @@ public static partial class LayoutRenderer
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
 
+        // ── The alpha every LOD SUBSTITUTION paints at, and why it is not always solid ───────────
+        //
+        // Owner report, 2026-09-04, on an imported board's drill chart: zooming out, some shapes kept
+        // a stroke and others did not, and parts of the geometry standing in for text dropped out.
+        // Every one of those shapes was being drawn correctly by its own tier. The fault was that the
+        // tiers did not AGREE on how bright the answer should be.
+        //
+        // A drill chart is stroke artwork — 100 um glyph strokes and 200 um table rules whose FILL is
+        // a hairline at the layer's (usually partial) fill opacity, and whose OUTLINE is what the
+        // viewer actually reads. So when the frame drops outlines, two substitution tiers step in to
+        // keep such geometry visible: the hairline widened fill, and the `mustOutline` visibility
+        // floor. Both painted SOLID. Their neighbours — the same table's rules, one zoom octave away
+        // from the same threshold — kept a 35%-alpha fill and no outline. One table, two brightnesses,
+        // and which half a shape landed in moved with the zoom.
+        //
+        // The rule that removes it: A SUBSTITUTION REPRODUCES WHAT THE FRAME'S OWN OUTLINE DECISION
+        // WOULD HAVE PRODUCED, never something brighter. Outlining, that is fill + a solid outline, so
+        // solid is right and this is exactly the behaviour these tiers already had. NOT outlining,
+        // that is a fill and nothing else — so the substitution is drawn at the fill's own alpha. The
+        // layer then steps between its two states as ONE surface, which is the property the frame-wide
+        // decision exists to give (LayoutRenderDetail.CanAffordOutlines) and which a per-shape escape
+        // hatch painted in a different colour quietly took back.
+        byte fillAlpha = (byte)System.Math.Clamp(System.Math.Round(def.FillOpacity * 255.0), 0, 255);
+        byte substituteAlpha = drawOutlines ? (byte)255 : fillAlpha;
+
         using var fillPaint = LayerFillPaint.Create(def, fillPattern, color, scaleUm, counters);
         using var strokePaint = new SKPaint
         {
             IsAntialias = true, Style = SKPaintStyle.Stroke,
             StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
-            Color = color.WithAlpha(255),
+            // When the frame IS outlining this paint draws the frame's outlines and is solid, as it
+            // has always been. When it is not, the only thing left in strokeBatch is the visibility
+            // floor's rescue, which is a substitution — see substituteAlpha.
+            Color = color.WithAlpha(substituteAlpha),
         };
         using var strokeBatch = new SKPath();
         using var aggregate = new SKPath();
@@ -1113,12 +1147,15 @@ public static partial class LayoutRenderer
         // degenerate on-screen bbox) is the shape being invisible without it.
 
         // ── The stroke-elision tier's own aggregate (see ElideStrokeFor) ─────────────────────────
-        // Separate from `aggregate` because it is painted differently: the elided fill carries the
-        // STROKE's solid alpha, not the layer's (usually partial) fill alpha, and it is never fed to
-        // strokeBatch. That is not a new convention — it is the one the instance elision tier already
-        // states in LayoutRenderer.Instances.cs, for the same reason: at the few-device-pixel sizes
-        // this engages at the outline IS essentially the whole visible shape, so carrying the fill's
-        // partial opacity across would visibly dim geometry that reads solid today.
+        // Separate from `aggregate` because it is painted differently: the elided fill carries
+        // `substituteAlpha` — the alpha of whatever the frame's own outline decision would have
+        // produced — and it is never fed to strokeBatch. When the frame outlines, that is the
+        // STROKE's solid alpha, the convention the instance elision tier states in
+        // LayoutRenderer.Instances.cs for the same reason: at the few-device-pixel sizes this engages
+        // at, the outline IS essentially the whole visible shape, so carrying the fill's partial
+        // opacity across would visibly dim geometry that reads solid today. When the frame does NOT
+        // outline there is no solid outline to stand in for, and matching it anyway is what made one
+        // drill chart render half bright and half ghosted — see `substituteAlpha`.
         using var elided = new SKPath();
 
         double lodThreshold = opts.LodPixelThreshold > 0 ? opts.LodPixelThreshold : DefaultLodPixelThreshold;
@@ -1268,7 +1305,7 @@ public static partial class LayoutRenderer
                 continue;
             }
 
-            if (layerMerges)
+            if (layerMerges && !IsRingGeometry(shape))
             {
                 // Full geometry, same as the individual tier below — just added to the shared
                 // aggregate instead of drawn/composited on its own (R-L2c-2's "same mechanism").
@@ -1368,7 +1405,7 @@ public static partial class LayoutRenderer
         // fed to strokeBatch — the widened geometry already covers what the outline would have.
         if (!elided.IsEmpty)
         {
-            using var elidedPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(255) };
+            using var elidedPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(substituteAlpha) };
             counters.DrawCalls++;
             canvas.DrawPath(elided, elidedPaint);
         }
@@ -1379,6 +1416,41 @@ public static partial class LayoutRenderer
             canvas.DrawPath(strokeBatch, strokePaint);
         }
     }
+
+    /// <summary>
+    /// Whether this shape may NOT be merged into a batched path it shares with other shapes.
+    ///
+    /// <para><b>This is <see cref="IsOpenCentreline"/>'s theorem, applied to the tier that had not been
+    /// told about it.</b> That method already refuses to batch a CLOSED centreline in the hairline
+    /// elision aggregate, because a closed centreline strokes to a RING whose winding is whatever the
+    /// authoring tool emitted — <see cref="NormalizeOuterWinding"/> covers Polygon and Curve and
+    /// deliberately does not cover Path, which has no outer-ring vertex list to take a signed area from.
+    /// Two independently-built rings of opposite winding then cancel under Skia's default NonZero rule
+    /// once they are contours of ONE path. The merge tier builds exactly such a path and was never given
+    /// the same guard.</para>
+    ///
+    /// <para><b>Found on an imported board's drill chart</b> — the owner described it as looking like a
+    /// boolean OR, with the table cells coming out filled (2026-09-04). That layer is 2,261 shapes, so it
+    /// is past <see cref="DefaultMergeShapeCountThreshold"/> and merges whenever enough of it is on screen at
+    /// once — i.e. when zoomed OUT and not when zoomed in, which is why one file looked right up close
+    /// and wrong from further away. 117 of its paths are closed centrelines: the chart's own border and
+    /// every cell rule. Merged with the rest, every table cell filled solid and the entire FIGURE column
+    /// of drill symbols DISAPPEARED. Not a detail loss — geometry deleted, at the one zoom where a drill
+    /// chart is meant to be read.</para>
+    ///
+    /// <para><b>Only closed paths, and that is measured rather than reasoned.</b> The obvious wider
+    /// suspicion — that any shape carrying a HOLE is unsafe to batch — is wrong, and testing it was what
+    /// settled the fix: excluding the layer's 1,564 hole-carrying drill-symbol polygons and nothing else
+    /// left the corruption fully intact (145,393 differing pixels against 130,616 unfixed), while
+    /// excluding the 117 closed paths and nothing else removed it. A hole is safe precisely because
+    /// <see cref="AddHoleRings"/> winds it against an OUTER ring that
+    /// <see cref="NormalizeOuterWinding"/> has already made consistent, so the +1/-1 still cancels inside
+    /// one merged path; and where a neighbour's material genuinely overlaps that hole, filling it is the
+    /// union and is correct. Winding that nothing normalizes is the whole defect. The narrow rule is also
+    /// the free one: it is performance-neutral (34.6 ms against 33.8 ms on that board's full-extent
+    /// frame), where excluding the polygons too would change how same-layer overlap reads.</para>
+    /// </summary>
+    private static bool IsRingGeometry(LayoutShape shape) => shape is PathShape t && !IsOpenCentreline(t);
 
     /// <summary>
     /// Whether a <see cref="PathShape"/>'s centreline starts and ends at different points — the gate on
