@@ -1,5 +1,62 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A Windows auto-update needed two launches, and the design said it needed none (2026-09-04)
+
+Owner-reported: after an auto-update on Windows, circuitRF has to be launched twice before the new
+version actually runs. macOS never showed it.
+
+**The two install shapes were never symmetric, and the asymmetry was in the wrong place.** A macOS
+update exchanges the bundle and then `execv`s the new executable, so the launch that applies the
+update IS the new version. The versioned-pointer layout (Windows and Linux) only wrote `current` and
+carried on:
+
+```
+launch N     stub reads current -> app-1.0.0 -> starts it
+             UpdateStartup.RunBeforeUi flips current to app-2.0.0
+             ...and this session keeps running app-1.0.0        <- the user's "it didn't update"
+launch N+1   stub reads current -> app-2.0.0                    <- the update appears
+```
+
+**The design's own justification for that was simply false**, and it is worth naming because it is
+what stopped anyone looking: §3 said the flip needed no re-exec because "the stub has not started the
+app yet". The stub has. It resolves `current` first and starts the app; the flip is made by the app
+the stub already started, one step too late for its own launch. `UpdateSwap`'s class comment, the
+`PointerFlipped` doc and all three `Program.Main`s repeated the claim, so every place that could have
+contradicted it agreed with it instead.
+
+**Fix: a pointer flip hands over the same way a bundle swap does.** `FlipPointer` now returns
+`NewExecutable` — `UpdateSwap.VersionedExecutable`, built exactly as the stub builds it from the
+pointer, so the successor is the very process the next launch would have produced — and
+`UpdateStartup.HandOverTo` becomes it. Two mechanisms, one policy:
+
+- **macOS and Linux** — `execv`, unchanged. Keeps the pid, the process clock and the parent's handle,
+  so nothing outside the process notices.
+- **Windows** — no `execv` exists, so the successor is started and this process exits. The stub sees
+  its child finish and exits with it, leaving the new version parentless for that one launch. That is
+  the only visible difference, and it costs one launch per update.
+
+**The rollback path had the identical defect and got the identical fix.** `Revert` in the versioned
+layout flipped `current` back and let the failing version carry on running — the exact thing the macOS
+half execs to avoid. It now hands back the restored executable too.
+
+**This is not the "Relaunch" button R-AU-48 refuses to grow.** The hand-over is in `Main`, before
+Avalonia: no window, no open workspace, nothing unsaved. The user asked for this launch and gets the
+version the Message Panel told them they would get.
+
+**The crash reporter is told first, on both mechanisms.** `HandOffToExec` closes the session file, so
+the successor sweeping the report directory two seconds later does not find an orphan and announce
+that circuitRF "did not shut down cleanly". A hand-over that fails re-arms it and the session carries
+on as the old version — which is precisely the old behaviour, so the failure mode of the fix is the
+bug it replaces rather than anything worse.
+
+**Gates.** `UpdateSwapTests.APointerFlip_HandsBackTheExecutableToBecome` (and the rollback twin) pin
+the result; `TheFlippingLaunch_HandsOverRatherThanCarryingOnAsTheOldVersion` pins the wiring, because
+an executable nobody acts on is inert and "the pointer model needs no re-exec" is the belief that has
+to stay dead.
+
+**Not verified on Windows by me** — this box is macOS, where the changed path (`PointerFlipped`) is
+unreachable by construction. The Linux half of it runs the same code through `execv`.
+
 ## Where a technology's validation problems are SHOWN — a tab that can fix them, and one line in the Messages panel (2026-09-04)
 
 Companion to `src/Design/RESOLVED.md`'s entry on the same owner report, which covers reducing the

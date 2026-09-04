@@ -566,6 +566,100 @@ public class UpdateSwapTests : IDisposable
         Assert.Equal("app-1.0", r.PreviousDirectoryName);
     }
 
+    /// <summary>
+    /// <b>The bug that made a Windows update take two launches</b> (owner-reported, 2026-09-04).
+    ///
+    /// <para>The stub resolves <c>current</c> and starts the app; the flip is then made BY that app,
+    /// one step too late for its own launch. So a flip that hands nothing back leaves the user
+    /// running the old version after doing exactly what the Message Panel asked, and needing a second
+    /// launch to see the update. macOS never showed it because a bundle swap execs.</para>
+    ///
+    /// <para>The executable handed back is the one the stub itself would have built from the flipped
+    /// pointer, which is what makes the hand-over produce the same process a launch earlier rather
+    /// than a different one.</para>
+    /// </summary>
+    [Fact]
+    public void APointerFlip_HandsBackTheExecutableToBecome()
+    {
+        string root = Dir("install");
+        Dir("install", "app-1.0.0");
+        Dir("install", "app-2.0.0");
+        File.WriteAllText(Path.Combine(root, UpdateInstallSite.CurrentPointerName), "app-1.0.0");
+
+        var site = new InstallSite(root, InstallShape.VersionedPointer, true, root);
+        var state = new UpdateState { StagedVersion = "2.0.0", StagedPath = "app-2.0.0" };
+
+        SwapResult r = UpdateSwap.ApplyAtLaunch(site, state, Dir("updates"), "app-1.0.0");
+
+        Assert.Equal(SwapOutcome.PointerFlipped, r.Outcome);
+        Assert.NotNull(r.NewExecutable);
+
+        // Built the way the stub builds it: <root>\<what current now names>\<app>.exe.
+        string expected = Path.Combine(root, UpdateSwap.ReadCurrent(root)!,
+                                       OperatingSystem.IsWindows() ? UpdateApp.Name + ".exe" : UpdateApp.Name);
+        Assert.Equal(expected, r.NewExecutable);
+        Assert.Equal(UpdateSwap.VersionedExecutable(root, "app-2.0.0"), r.NewExecutable);
+
+        // And it is the NEW version's, not this session's — the whole point.
+        Assert.DoesNotContain("app-1.0.0", r.NewExecutable!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The same asymmetry on the rollback path: flipping <c>current</c> back leaves THIS process
+    /// running the version that does not work, so the restored executable is handed back for the
+    /// caller to become — exactly what the macOS half has always done.
+    /// </summary>
+    [Fact]
+    public void ARollbackInThePointerLayout_HandsBackTheRestoredExecutable()
+    {
+        string root = Dir("install");
+        Dir("install", "app-1.0.0");
+        Dir("install", "app-2.0.0");
+        File.WriteAllText(Path.Combine(root, UpdateInstallSite.CurrentPointerName), "app-2.0.0");
+
+        var site = new InstallSite(root, InstallShape.VersionedPointer, true, root);
+        var state = new UpdateState
+        {
+            PendingVersion  = "2.0.0",
+            PendingPath     = "app-2.0.0",
+            PreviousVersion = "1.0.0",
+            PreviousPath    = "app-1.0.0",
+            LaunchAttempts  = UpdateSwap.MaxFailedStartups,
+        };
+
+        SwapResult r = UpdateSwap.ApplyAtLaunch(site, state, Dir("updates"), "app-2.0.0");
+
+        Assert.Equal(SwapOutcome.RolledBack, r.Outcome);
+        Assert.Equal("app-1.0.0", UpdateSwap.ReadCurrent(root));
+        Assert.Equal(UpdateSwap.VersionedExecutable(root, "app-1.0.0"), r.NewExecutable);
+    }
+
+    /// <summary>
+    /// The wiring half, because the result carrying an executable is inert unless the caller acts on
+    /// it — and "the pointer flip needs no re-exec" is precisely the belief that has to stay dead.
+    /// </summary>
+    [Fact]
+    public void TheFlippingLaunch_HandsOverRatherThanCarryingOnAsTheOldVersion()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "circuitRF.slnx"))) dir = dir.Parent;
+        Assert.NotNull(dir);
+
+        string startup = File.ReadAllText(
+            Path.Combine(dir!.FullName, "src", "Ui", "Updates", "UpdateStartup.cs"));
+
+        int from = startup.IndexOf("case SwapOutcome.PointerFlipped:", StringComparison.Ordinal);
+        int to   = startup.IndexOf("case SwapOutcome.BundleSwapped:", StringComparison.Ordinal);
+        Assert.True(from > 0 && to > from, "the PointerFlipped case is no longer where this test looks");
+
+        string body = startup[from..to];
+        Assert.Contains("HandOverTo(result.NewExecutable", body);
+
+        // Windows has no execv, so the hand-over cannot be an exec alone.
+        Assert.Contains("Process.Start", startup);
+        Assert.Contains("Environment.Exit(0)", startup);
+    }
+
     [Fact]
     public void OneFailedStartup_DoesNotRevert()
     {

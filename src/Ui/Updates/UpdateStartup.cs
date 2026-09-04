@@ -87,11 +87,12 @@ public static class UpdateStartup
                             + "again; a crash report may have been written.";
                     });
 
-                    // macOS exchanged the bundle back under this process's feet, so it must not carry
-                    // on as the version that does not work. The pointer layout needs no re-exec: the
-                    // stub reads `current` at the start of the NEXT launch.
+                    // This process IS the version that does not work — macOS exchanged the bundle back
+                    // under its feet, and the pointer layout flipped `current` back after the stub had
+                    // already read it. Either way it must not carry on as that version, so it hands
+                    // over to the restored one.
                     if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
-                        ExecReplacingThisProcess(result.NewExecutable, args);
+                        HandOverTo(result.NewExecutable, args);
                     return;
 
                 case SwapOutcome.SwapAlreadyApplied:
@@ -110,17 +111,33 @@ public static class UpdateStartup
                     return;
 
                 case SwapOutcome.PointerFlipped:
-                    // The flip is for the NEXT launch. This session keeps running the OLD tree, so it
-                    // records what to go back to and raises nothing — counting an attempt here is what
-                    // used to make rollback inert.
+                    // The flip is for the NEXT launch, and this session is still the OLD tree — the
+                    // stub resolved `current` before this process existed. So it records what to go
+                    // back to and raises no attempt counter (counting one here is what used to make
+                    // rollback inert), and then HANDS OVER to the version it just pointed at.
+                    //
+                    // Without that hand-over the update only appears at the launch AFTER this one:
+                    // the user relaunched exactly as the Message Panel asked, still got the old
+                    // version, and had to launch a SECOND time (owner-reported on Windows,
+                    // 2026-09-04). macOS never showed it because a bundle swap execs. The design's
+                    // claim that "the stub has not started the app yet, so there is nothing to
+                    // re-exec" was simply false — the swap is made by the app the stub already
+                    // started, not by the stub.
                     RecordSwap(state, result.Detail, result.PreviousDirectoryName, AppVersion.Display);
+
+                    if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
+                        HandOverTo(result.NewExecutable, args);
+
+                    // Only reached if the hand-over failed. `current` is flipped and the record is
+                    // durable, so this session finishes as the old version and the next launch is the
+                    // new one — which is exactly the behaviour this case used to have unconditionally.
                     return;
 
                 case SwapOutcome.BundleSwapped:
                     RecordSwap(state, result.Detail, previousDirectoryName: null,
                                previousVersion: AppVersion.Display);
                     if (result.NewExecutable is not null && File.Exists(result.NewExecutable))
-                        ExecReplacingThisProcess(result.NewExecutable, args);
+                        HandOverTo(result.NewExecutable, args);
                     // Only reached if execv failed; the swap already happened, so carrying on runs
                     // the OLD process image against the NEW tree for this session only. Harmless,
                     // and better than refusing to start.
@@ -137,23 +154,66 @@ public static class UpdateStartup
     }
 
     /// <summary>
-    /// <c>execv</c>s <paramref name="executable"/>, closing this session's crash-report file first.
+    /// Makes <paramref name="executable"/> this launch, closing this session's crash-report file
+    /// first. Returns only if the hand-over did not happen; on every other path this process is gone.
     ///
     /// <para><b>The close is the point.</b> An exec keeps the pid and discards the runtime, so
     /// <c>ProcessExit</c> never fires and the crash reporter never learns the session ended — it
     /// simply stops existing mid-session. The replacement image starts two seconds later, sweeps the
     /// report directory, finds that session file owned by nobody, and announces to the user that
     /// circuitRF "did not shut down cleanly last time". It shut down perfectly; it updated. Telling
-    /// the reporter BEFORE the exec is what makes an update look like the clean handoff it is.</para>
+    /// the reporter BEFORE the hand-over is what makes an update look like the clean handoff it is.
+    /// A hand-over that then fails re-arms the reporter rather than leaving this session blind for
+    /// the rest of its run.</para>
     ///
-    /// <para><c>execv</c> returns only on failure, and this session then carries on running — so the
-    /// reporter is re-armed on that path rather than left blind for the rest of the run.</para>
+    /// <para><b>Two mechanisms, because Windows has no <c>execv</c>.</b> Where there is one it is
+    /// used: it keeps the pid, the process clock and the parent's handle on this process, so nothing
+    /// outside notices the swap at all. On Windows the successor is STARTED and this process exits,
+    /// which the stub sees as its child finishing — so the stub exits too and the new version runs
+    /// with no parent. That is the one visible difference, it lasts for one launch per update, and
+    /// the process itself is byte-for-byte the one the stub would have created from the flipped
+    /// pointer a launch later.</para>
+    ///
+    /// <para><b>Nothing is at risk in either.</b> This runs in <c>Main</c> before Avalonia, so there
+    /// is no window, no open workspace and nothing unsaved — which is why it is not the "Relaunch"
+    /// button §10 refuses to grow, even though it relaunches.</para>
     /// </summary>
-    private static void ExecReplacingThisProcess(string executable, string[] args)
+    private static void HandOverTo(string executable, string[] args)
     {
         Diagnostics.CrashReporter.HandOffToExec();
+
+        // Returns only on failure; on success this process has already become the new one.
         UpdateSwap.ExecReplace(executable, args);
+
+        if (StartSuccessor(executable, args)) Environment.Exit(0);
+
         Diagnostics.CrashReporter.ResumeAfterExec();
+    }
+
+    /// <summary>
+    /// Starts <paramref name="executable"/> as an ordinary child and reports whether it began. Used
+    /// only where <c>execv</c> does not exist, and deliberately not redirecting anything: the child
+    /// must outlive this process, so it is given the same console, environment and arguments it would
+    /// have been given by the stub.
+    /// </summary>
+    private static bool StartSuccessor(string executable, string[] args)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(executable)
+            {
+                UseShellExecute  = false,
+                WorkingDirectory = Path.GetDirectoryName(executable) ?? string.Empty,
+            };
+            foreach (string a in args) psi.ArgumentList.Add(a);
+
+            return System.Diagnostics.Process.Start(psi) is not null;
+        }
+        catch (Exception)
+        {
+            // A launch that cannot start its successor still has a working old version to be.
+            return false;
+        }
     }
 
     /// <summary>

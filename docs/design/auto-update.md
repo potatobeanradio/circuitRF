@@ -166,18 +166,33 @@ This is exactly what Sparkle does, so the approach is well-trodden rather than n
         |
    5. NOTIFY     one Message Panel line, Info level (§10).
         |
-   6. SWAP       at the NEXT launch, in Program.Main, BEFORE Avalonia initialises.
+   6. SWAP       at the NEXT launch, in Program.Main, BEFORE Avalonia initialises — and that
+                 same launch then becomes the new version, on every platform.
                  Win/Linux: write `current.tmp` and rename it over `current` — never a
-                            truncating write (§13.2) — and the stub has not started the app
-                            yet, so there is nothing to re-exec.
+                            truncating write (§13.2) — then hand over to the version just
+                            pointed at: execv() on Linux, start-it-and-exit on Windows.
                  macOS:     atomic bundle swap, then execv() the new executable.
 ```
 
 **Why the swap happens at launch and not at quit.** Quitting looks tempting but needs a detached helper
 process to act after the app is gone, and it loses the race against a force-quit or a crash. Doing it in
 `Main` before any framework is initialised means no helper, no race, and the app tree is *provably* not in
-use. On Windows and Linux the stub model removes even the re-exec: the swap is one text file or one
-symlink, flipped before the real process starts.
+use.
+
+**The swapping launch must then BECOME the new version, in every layout.** This paragraph used to say the
+stub model removed even the re-exec — that the pointer was "flipped before the real process starts". It is
+not: the stub resolves `current` and starts the app, and the flip is made by that app, one step too late
+for its own launch. The user relaunched exactly as the Message Panel asked, got the old version, and had
+to launch a second time (owner-reported on Windows, 2026-09-04; macOS never showed it, because a bundle
+swap execs). So a pointer flip hands over the same way a bundle swap does — `execv` on Linux, and on
+Windows, which has no `execv`, by starting the successor and exiting. That is the one place the two
+mechanisms differ: the Windows stub sees its child finish and exits with it, so the new version runs
+parentless for that one launch. It is otherwise byte-for-byte the process the stub would have created a
+launch later.
+
+**This is not the "Relaunch" button §10 refuses to grow.** It runs in `Main` before Avalonia, with no
+window open and nothing unsaved — the user asked for this launch, and gets the version they were told
+they would get.
 
 **Never swap mid-session.** A self-contained .NET app does not load every assembly eagerly and Avalonia
 resolves some resources lazily; replacing the tree underneath a running process is a class of bug that

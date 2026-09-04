@@ -11,7 +11,11 @@ public enum SwapOutcome
     /// <summary>Nothing was staged. The overwhelmingly common case, and it costs one file check.</summary>
     Nothing,
 
-    /// <summary>The pointer was re-written. The stub has not started anything, so there is nothing to re-exec.</summary>
+    /// <summary>
+    /// The pointer was re-written. <b>The caller must now start the new version and leave</b>: the
+    /// stub read <c>current</c> before this process began, so the flip alone takes effect only at the
+    /// launch AFTER this one — which is what made an update need two launches to appear.
+    /// </summary>
     PointerFlipped,
 
     /// <summary>The bundle was exchanged. The caller must now <c>execv</c> the new executable.</summary>
@@ -56,8 +60,14 @@ public sealed record SwapResult(SwapOutcome Outcome, string? NewExecutable, bool
 /// <para><b>Why launch and not quit.</b> Quitting looks tempting but needs a detached helper process
 /// to act after the app is gone, and it loses the race against a force-quit or a crash. Doing it in
 /// <c>Main</c> before any framework is up means no helper, no race, and the app tree is
-/// <i>provably</i> not in use. On Windows and Linux the stub model removes even the re-exec: the
-/// swap is one text file or one symlink, flipped before the real process starts.</para>
+/// <i>provably</i> not in use.</para>
+///
+/// <para><b>Every shape then hands over to the version it just installed</b>, and the versioned
+/// layout is no exception — the stub resolved <c>current</c> before this process started, so a flip
+/// on its own would not be seen until the launch after this one. What differs between the shapes is
+/// only the mechanism (<c>execv</c>, or start-and-exit where there is none), never whether it
+/// happens; the claim that the pointer model needs no re-exec is what made an update take two
+/// launches on Windows.</para>
 ///
 /// <para><b>Never mid-session.</b> A self-contained .NET app does not load every assembly eagerly
 /// and Avalonia resolves some resources lazily; replacing the tree underneath a running process is
@@ -188,7 +198,8 @@ public static class UpdateSwap
         try
         {
             WriteCurrent(site.Root, versionDir);
-            return new SwapResult(SwapOutcome.PointerFlipped, null, true, versionDir)
+            return new SwapResult(SwapOutcome.PointerFlipped, VersionedExecutable(site.Root, versionDir),
+                                  true, versionDir)
             {
                 PreviousDirectoryName = runningDirectoryName,
             };
@@ -225,6 +236,15 @@ public static class UpdateSwap
         else
             AtomicFile.WriteAllTextAtomic(pointer, versionDirectoryName);
     }
+
+    /// <summary>
+    /// The application executable inside an <c>app-&lt;ver&gt;</c> directory — exactly the path the
+    /// stub itself would build from <c>current</c>, so relaunching into it produces the very process
+    /// the next launch would have produced.
+    /// </summary>
+    public static string VersionedExecutable(string root, string versionDirectoryName)
+        => Path.Combine(root, versionDirectoryName,
+                        OperatingSystem.IsWindows() ? UpdateApp.Name + ".exe" : UpdateApp.Name);
 
     /// <summary>Reads <c>current</c>, whichever form it takes. Null when it is missing or unreadable.</summary>
     public static string? ReadCurrent(string root)
@@ -447,11 +467,13 @@ public static class UpdateSwap
 
                 WriteCurrent(site.Root, previousDir);
 
-                // Nothing is re-executed here: the stub reads `current` at the START of a launch, so
-                // this process is still the failing version and simply finishes its own session. The
-                // next launch is the restored one, and the notice is persisted so it survives a
-                // crash in between — which is the likely way this session ends.
-                return new SwapResult(SwapOutcome.RolledBack, null, true, state.PendingVersion ?? previousDir);
+                // The stub reads `current` at the START of a launch, so flipping it back leaves THIS
+                // process still running the version that does not work. It must not carry on as it —
+                // the same reason the macOS half execs — so the restored executable is handed back
+                // and the caller relaunches into it. The notice is persisted either way, because a
+                // crash is the likely way this session would otherwise end.
+                return new SwapResult(SwapOutcome.RolledBack, VersionedExecutable(site.Root, previousDir),
+                                      true, state.PendingVersion ?? previousDir);
             }
 
             string previousBundle = Path.Combine(updatesRoot, "previous");

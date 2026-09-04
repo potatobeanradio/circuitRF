@@ -29,10 +29,10 @@ internal sealed class ProgramWBond
         Diagnostics.CrashReporter.Install("wBond");
 
         // BEFORE Avalonia, and before anything opens a file: reclaim update debris, revert a
-        // version that has failed to start twice, and apply a staged update. On macOS an applied
-        // update execv()s the new executable and this call does not return; on Windows and Linux
-        // the pointer is flipped before the stub has started anything, so there is nothing to
-        // re-exec. Never mid-session, for the reasons in docs/design/auto-update.md §3.
+        // version that has failed to start twice, and apply a staged update. An applied update
+        // hands this launch over to the new version and this call does not return — by execv() on
+        // macOS and Linux, and by starting it and exiting on Windows, which has no execv. Never
+        // mid-session, for the reasons in docs/design/auto-update.md §3.
         Updates.UpdateStartup.RunBeforeUi(args);
 
         // The consent gate for external device workers, installed BEFORE anything can resolve a
