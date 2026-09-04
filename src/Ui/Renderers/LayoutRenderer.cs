@@ -2100,10 +2100,57 @@ public static partial class LayoutRenderer
         if (outline.Simplify(simplified))
         {
             outline.Dispose();
-            return simplified;
+            return AsWinding(simplified, counters);
         }
         simplified.Dispose();
         return outline;   // degenerate input (e.g. zero-width / duplicate-point) — fall back rather than dropping the trace
+    }
+
+    /// <summary>
+    /// Re-winds a simplified outline so its own fill rule is <c>Winding</c> — which is what makes it
+    /// safe to fold into a BATCHED path.
+    ///
+    /// <para><b>SkPathOps always answers in even-odd.</b> <c>Simplify</c> returns non-overlapping
+    /// contours and stamps the result <see cref="SKPathFillType.EvenOdd"/> (measured, not assumed:
+    /// every one of the 1,072 <c>PathShape</c> outlines on the board in the note below comes back
+    /// EvenOdd). Drawn on its own that is exactly right, and the individual tier has always been
+    /// correct. But <c>SKPath.AddPath</c> copies CONTOURS and not the fill rule — the destination
+    /// keeps its own, and every aggregate in this renderer is a default <c>Winding</c> path
+    /// (<c>DrawLayer</c>'s merge, elision and stroke batches; <c>CompileCell</c>'s
+    /// <c>chunk.Geometry</c>). An even-odd hole whose two contours happen to be wound the SAME way
+    /// then reads +2 rather than 0 under the non-zero rule and FILLS.</para>
+    ///
+    /// <para><b>Which shapes have such a hole, and why the closed-centreline guard does not cover
+    /// them.</b> <see cref="IsRingGeometry"/> keeps a CLOSED centreline out of a batch because it
+    /// strokes to a ring. An OPEN centreline that touches itself strokes to a ring just as much — and
+    /// that is not an exotic case, it is how a CAM tool writes a letter: the stroke runs up the stem
+    /// of a P, round the bowl and back onto the stem, so the bowl's counter is a hole in an
+    /// otherwise-open path. Owner report, 2026-09-04: on an imported board's drill map the P, R, 4
+    /// and 9 came out solid through a PLACEMENT of the cell while the same artwork drawn top-level was
+    /// correct, and so did the mirrored B on the bottom assembly layer. Measured on that file, holes
+    /// lost to a non-zero aggregate: 33 paths on Drill Map, 34 on Assembly Bottom, 23 on Silk Bottom,
+    /// 7 on Assembly Top. Instance-ONLY is the giveaway rather than a second bug —
+    /// <c>CompileCell</c> always merges, where the top-level merge tier waits for
+    /// <see cref="DefaultMergeShapeCountThreshold"/> candidates to be on screen.</para>
+    ///
+    /// <para><b>Fixed at the source rather than at each aggregate.</b> Skia's own <c>AsWinding</c>
+    /// reverses whichever contours the nesting requires and leaves the geometry otherwise untouched,
+    /// so one call here makes the path correct under EITHER rule and every batching tier — present
+    /// and future — inherits it. Excluding these shapes from batching instead would be the wrong
+    /// trade: it cannot be decided from the shape (only the built outline knows whether it has a
+    /// hole), and it would drop hundreds of a board's paths out of the merge tier that exists to
+    /// carry them. A refusal falls back to the simplified path, i.e. exactly today's behaviour.</para>
+    /// </summary>
+    private static SKPath AsWinding(SKPath simplified, LayoutFrameCounters? counters)
+    {
+        if (simplified.FillType != SKPathFillType.EvenOdd) return simplified;
+
+        var winding = simplified.ToWinding();
+        if (winding is null) return simplified;
+
+        if (counters is not null) counters.PathsConstructed++;
+        simplified.Dispose();
+        return winding;
     }
 
     /// <summary>Extends the first/last vertex of a centerline outward by <c>width/2</c> along the

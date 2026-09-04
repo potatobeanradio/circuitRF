@@ -422,6 +422,85 @@ folder** (`CellHierarchy.LayoutBaseDirOf`), not the workspace the top-level view
 wrong and the cell silently renders as the broken-instance placeholder, which reads as lost geometry.
 
 
+## A letter's counter filled in through a placement, and the fill rule was the reason (2026-09-04)
+
+Owner report: on the drill map of an imported board placed as an instance, the **P, R, 4 and 9** came
+out solid — filled where the same artwork drawn as a flat file is open — and so did the mirrored **B**
+on `GERB_41_Assembly_Bottom`. Reported against the commit that gave `CompileCell` its ring guard,
+because that is the commit that made these visible: until it landed the whole placement was a boolean
+OR and there was nothing legible to notice a filled counter in.
+
+### SkPathOps always answers in even-odd, and `AddPath` does not carry a fill rule
+
+`BuildPathOutline` ends with `SKPath.Simplify`, which returns non-overlapping contours and stamps the
+result `EvenOdd`. **Every** `PathShape` outline on the owner's board comes back that way — measured,
+1,072 of 1,072. Drawn on its own that is exactly right and the individual tier has always been correct.
+
+`SKPath.AddPath` copies CONTOURS and not the fill rule. Every aggregate in this renderer is a default
+`Winding` path — `DrawLayer`'s merge, elision and stroke batches, and `CompileCell`'s `chunk.Geometry`.
+An even-odd hole whose two contours happen to be wound the same way therefore reads +2 rather than 0
+under the non-zero rule, and fills.
+
+### `IsRingGeometry` could never have covered it
+
+That guard asks whether a `PathShape`'s CENTRELINE is closed. An OPEN centreline that touches itself
+strokes to a ring just as much — and that is not an exotic case, it is **how a CAM tool writes a
+letter**: one stroke runs up the stem of a P, round the bowl and back onto the stem, so the bowl's
+counter is a hole in an otherwise-open path. That is also exactly why the reported set is P, R, 4, 9, B
+and not D, O, 0: the round letters ARE closed centrelines, so the ring guard had already rescued them,
+and the owner was looking at a chart where the 0s were right and the 9 next to them was solid.
+
+Counted on the owner's file — paths whose hole is lost when their contours are folded into a non-zero
+aggregate:
+
+| layer | paths | holes lost |
+|:--|--:|--:|
+| 18 Drill Map | 659 | 33 |
+| 21 Assembly Bottom | 189 | 34 |
+| 6 Silk Bottom | 115 | 23 |
+| 20 Assembly Top | 143 | 7 |
+| 5 Silk Top | 50 | 2 |
+
+**Instance-only is a symptom of WHEN each tier batches, not of two defects.** `CompileCell` always
+merges; `DrawLayer`'s merge tier waits for `MergeShapeCountThreshold` candidates to be on screen. The
+Drill Map layer is 2,261 shapes, so the flat file shows the same thing once enough of it is in view —
+the owner simply had not been looking at it zoomed out that far.
+
+### Fixed at the source, not at each aggregate
+
+`LayoutRenderer.AsWinding` runs Skia's own `AsWinding` (`SKPath.ToWinding`) on the simplified outline.
+It reverses whichever contours the nesting requires and leaves the geometry otherwise untouched, so the
+path is correct under EITHER rule and every batching tier — present and future — inherits it. A refusal
+falls through to the simplified path, i.e. exactly the previous behaviour.
+
+Excluding these shapes from batching instead, the way `IsRingGeometry` does, was rejected on two
+counts: it cannot be decided from the SHAPE (only the built outline knows whether it has a hole), and
+it would drop hundreds of a board's paths out of the tier that exists to carry them.
+
+**It costs nothing measurable.** Release harness on the owner's 10x10 array (1600x1000, the whole
+array in view down to a single board):
+
+| | before | after |
+|:--|--:|--:|
+| compile frame, whole array | 532-544 ms | 536-540 ms |
+| steady-state frame | 1.3-5.1 ms | 1.3-5.1 ms |
+| top level, cold path cache | 15.3-15.4 ms | 15.1-15.8 ms |
+| top level, steady state | 3.4-5.7 ms | 3.4-5.6 ms |
+
+`AsWinding` runs once per outline, behind `LayoutPathCache` at top level and behind the compiled-cell
+cache in a placement, and it is cheap next to the `Simplify` that already precedes it.
+
+Gate: `tests/Ui.Tests/LayoutOutlineFillRuleTests.cs` — the defect at its source (an outline must fill
+the same folded into a non-zero aggregate), then the same glyph through the instance tier, through the
+top-level merge tier, and against the placement-renders-what-the-cell-renders oracle. All four were
+mutation-checked and go red with the `AsWinding` call removed.
+
+`IsRingGeometry` is now redundant for correctness — an `AsWinding` outline is safe in a non-zero
+aggregate whatever its centreline does. It is deliberately left in place: it costs a handful of draw
+calls per cell, and removing a guard because a second one now also covers the case is how the first
+one comes back.
+
+
 ## TM2 — moves across a shared library: the forwarding record (2026-09-04)
 
 `brief-tree-move-2-moves-across-a-shared-library.md`. TM1 repairs every referrer it can reach — this
