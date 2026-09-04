@@ -336,6 +336,30 @@ public static class ComponentModelFactory
     public const string VerilogAOpVarsParam = "OpVars";
 
     /// <summary>
+    /// True for a parameter name circuitRF itself owns on a VerilogA component — the ones it
+    /// CONSUMES and never forwards to the model.
+    ///
+    /// <para><b>One predicate, because the list was copied and one copy went stale.</b> When
+    /// <see cref="VerilogAOpVarsParam"/> joined the seeded set (2026-09-03) three of the four places
+    /// that enumerate these names gained it and the fourth did not, so the parameter editor told
+    /// every freshly placed compiled model that circuitRF's own switch was "not declared by this
+    /// model" and "will be refused at Run" — a sentence that was false in both halves, since the
+    /// forwarding filter below is exactly what stops it ever reaching a model. Anything asking "is
+    /// this one of ours?" asks here.</para>
+    ///
+    /// <para><b>Case-insensitive</b>, matching the forwarding filter it defines. A model that
+    /// declared a lowercase <c>file</c> or <c>opvars</c> would already have been swallowed by that
+    /// filter, so treating the name as ours everywhere is the reading that keeps the dialog and the
+    /// run agreeing about it rather than the one that makes them differ.</para>
+    /// </summary>
+    public static bool IsVerilogAHostParameter(string? name)
+        => name is not null
+           && (name.Equals(VerilogAFileParam,   StringComparison.OrdinalIgnoreCase)
+            || name.Equals(VerilogAModelParam,  StringComparison.OrdinalIgnoreCase)
+            || name.Equals(VerilogAPinsParam,   StringComparison.OrdinalIgnoreCase)
+            || name.Equals(VerilogAOpVarsParam, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
     /// A compiled compact model a user placed on a schematic and pointed at their own file.
     ///
     /// <para><b>The difference from <c>ExtDevice</c> is who supplies the model.</b> That one names a
@@ -398,10 +422,7 @@ public static class ComponentModelFactory
             // `__`-prefixed names are circuitRF's own plumbing and are not part of "everything
             // else"; forwarding one asks the model to accept a name it never declared.
             if (key.StartsWith(ExternalDeviceProviderReservedPrefix, StringComparison.Ordinal)) continue;
-            if (key.Equals(VerilogAFileParam,   StringComparison.OrdinalIgnoreCase) ||
-                key.Equals(VerilogAModelParam,  StringComparison.OrdinalIgnoreCase) ||
-                key.Equals(VerilogAPinsParam,   StringComparison.OrdinalIgnoreCase) ||
-                key.Equals(VerilogAOpVarsParam, StringComparison.OrdinalIgnoreCase)) continue;
+            if (IsVerilogAHostParameter(key)) continue;
             // Temperature is not a model parameter — it rides as its own reserved field below.
             if (key.Equals(Temperature.AbsoluteParamName, StringComparison.Ordinal) ||
                 key.Equals(Temperature.DeltaParamName,    StringComparison.Ordinal)) continue;

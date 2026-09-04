@@ -1,5 +1,39 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## circuitRF's own switch was reported as a name the model would refuse (2026-09-04)
+
+**Symptom:** placing a compiled Verilog-A model showed "Not declared by this model: OpVars — these
+will be refused at Run" in the Component Parameters dialog. Owner-reported from Windows, with the
+observation that macOS had never shown it.
+
+**Nothing platform-specific, and both halves of the sentence were false.** `OpVars` is circuitRF's
+own operating-point read-back switch, added the day before (2026-09-03). It is never forwarded to a
+model — `ComponentModelFactory`'s forwarding filter drops it by name — so nothing downstream could
+refuse it, and no model declares it because no model is ever asked to.
+
+**macOS looked innocent only because of WHEN.** Absent means on, so a component placed before
+2026-09-03 carries no `OpVars` parameter and there was nothing to flag. A component placed after it
+is seeded with one. The macOS session predated the parameter; the Windows one did not. **A report
+that names two platforms is not automatically about the platforms** — here the variable that actually
+separated the two runs was the age of the component.
+
+**The list of circuitRF's own VerilogA parameter names existed in four places and three of them
+gained the new entry.** `ComponentModelFactory`'s forwarding filter, `ComponentTypeRegistry`'s
+removability rule and the parameter editor's own row-hiding all list four names;
+`FlagUndeclaredParameters` listed three. There is now one predicate,
+`ComponentModelFactory.IsVerilogAHostParameter`, and the three rules ask it.
+
+**The gate is written for the FIFTH such parameter, not for this bug.**
+`VerilogAModelIntrospectionTests.EverySeededVerilogAParameter_IsOneCircuitRfOwns` asserts that the
+seeded set and the predicate are the same set, so adding a name to one and not the other fails there
+rather than in a dialog. Its companion asserts the predicate does not sweep up a model's own
+lowercase parameter names, which is the way a rule like this becomes safe and useless.
+
+**One deliberate widening:** the predicate is case-insensitive, matching the forwarding filter it now
+defines. The removability rule was case-SENSITIVE before, so a name differing only in case was
+offered for deletion while the editor's row-hiding (already case-insensitive) had removed its row.
+Both readings are now the same one.
+
 ## A Windows auto-update needed two launches, and the design said it needed none (2026-09-04)
 
 Owner-reported: after an auto-update on Windows, circuitRF has to be launched twice before the new

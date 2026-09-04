@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using CircuitRF.Core.Devices;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
 using Xunit;
@@ -418,5 +419,53 @@ public sealed class VerilogAModelIntrospectionTests
                                          .ToArray();
 
         Assert.Equal(["File", "Model", "Pins", "OpVars"], names);
+    }
+
+    /// <summary>
+    /// <b>Every parameter a placed component starts with is one circuitRF owns, and every rule that
+    /// enumerates them has to agree.</b>
+    ///
+    /// <para>Reported 2026-09-04, one day after <c>OpVars</c> was added: a freshly placed compiled
+    /// model announced "Not declared by this model: OpVars — these will be refused at Run". Both
+    /// halves were false. <c>OpVars</c> is circuitRF's own read-back switch, the factory's forwarding
+    /// filter is precisely what stops it ever reaching a model, and so nothing could refuse it. The
+    /// list of these names existed in four places; three gained the new one and the parameter
+    /// editor's copy did not.</para>
+    ///
+    /// <para>This is the gate for the fifth such parameter rather than for that one bug: it asserts
+    /// the seeded set and the predicate are the same set, so adding a name in one place and not the
+    /// other fails here instead of in a dialog.</para>
+    /// </summary>
+    [Fact]
+    public void EverySeededVerilogAParameter_IsOneCircuitRfOwns()
+    {
+        foreach (var p in ComponentTypeRegistry.DefaultParameters(SymbolKind.VerilogA, 2))
+        {
+            Assert.True(ComponentModelFactory.IsVerilogAHostParameter(p.Name),
+                $"'{p.Name}' is seeded onto every placed VerilogA component but is not one of "
+                + "circuitRF's own names, so the parameter editor will report it as undeclared by "
+                + "the model and claim it will be refused at Run. Add it to "
+                + "ComponentModelFactory.IsVerilogAHostParameter.");
+
+            // The same fact from the other side: a name circuitRF owns is never forwarded, and a
+            // name that is never forwarded cannot be refused by anything downstream.
+            Assert.False(ComponentTypeRegistry.IsRemovableParameter(SymbolKind.VerilogA, p.Name),
+                $"'{p.Name}' is structural but the editor offers to delete it.");
+        }
+    }
+
+    /// <summary>
+    /// And the model's OWN parameters are not swept up by that predicate — the case that would make
+    /// the rule above safe and useless. A compact model's names are lowercase and its own.
+    /// </summary>
+    [Theory]
+    [InlineData("l")]
+    [InlineData("w")]
+    [InlineData("nf")]
+    [InlineData("rth0")]
+    public void AModelsOwnParameter_IsNotMistakenForOneOfCircuitRfs(string name)
+    {
+        Assert.False(ComponentModelFactory.IsVerilogAHostParameter(name));
+        Assert.True(ComponentTypeRegistry.IsRemovableParameter(SymbolKind.VerilogA, name));
     }
 }

@@ -901,9 +901,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         var unknown = _target.Parameters
             .Select(p => p.Name)
             .Where(n => !string.IsNullOrWhiteSpace(n))
-            // circuitRF's own three, plus the reserved temperature pair — none is forwarded to the
-            // model, so none of them being undeclared means anything.
-            .Where(n => n is not ("File" or "Model" or "Pins"))
+            // circuitRF's own, plus the reserved temperature pair — none is forwarded to the model,
+            // so none of them being undeclared means anything. Asked of the factory rather than
+            // listed here: this copy of the list is the one that went stale when `OpVars` was added,
+            // and the note then accused circuitRF's own switch of being a name the model would
+            // refuse.
+            .Where(n => !ComponentModelFactory.IsVerilogAHostParameter(n))
             .Where(n => !n.Equals(Temperature.AbsoluteParamName, StringComparison.Ordinal)
                      && !n.Equals(Temperature.DeltaParamName,    StringComparison.Ordinal))
             .Where(n => !declaredNames.Contains(n))

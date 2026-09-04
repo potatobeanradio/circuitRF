@@ -845,7 +845,9 @@ public static class ComponentTypeRegistry
 
         return kind switch
         {
-            SymbolKind.VerilogA => parameterName is not ("File" or "Model" or "Pins" or "OpVars"),
+            // Asked of the factory, which owns the list — see ComponentModelFactory
+            // .IsVerilogAHostParameter for why there is one predicate and not four copies of it.
+            SymbolKind.VerilogA => !ComponentModelFactory.IsVerilogAHostParameter(parameterName),
 
             // SDD: every visible row is a user-authored equation or a named constant — SddName and
             // SddPortCount are minted at elaboration and never stored, NumPorts is not shown. Each is
