@@ -133,9 +133,11 @@ machine with no model toolchain — the same bargain `tools/fake-model-lib` stri
 worker's ABI. **It is not a model.** Every device has a closed-form answer written in its comment, so
 a test asserts against arithmetic rather than against another implementation.
 
-The real producers of `.osdi` files are Verilog-A compilers under GPL-3.0. circuitRF never links,
-bundles or invokes one: a user compiles their own models with their own toolchain, exactly as they
-would for any other simulator, and this worker loads the result.
+The real producers of `.osdi` files are Verilog-A compilers under GPL-3.0. **circuitRF never links,
+bundles or ships one.** A user installs a compiler of their own choosing; circuitRF may then RUN it —
+as a separate program, at arm's length — to build a `.va` the user pointed a component at, and this
+worker loads the result. Compiling by hand and pointing at the `.osdi` works exactly as before and
+involves no compiler on circuitRF's side at all.
 
 ## Licensing — why circuitRF stays MIT
 
@@ -146,9 +148,17 @@ the same arm's-length posture as building circuitRF with `gcc`:
 |---|---|---|
 | this worker, and all of circuitRF | MIT | this repository |
 | `osdi.h` | MPL-2.0 | its own file here, unmodified — file-scoped copyleft, touches nothing else |
-| the Verilog-A compiler | GPL-3.0 | **the user's machine.** Never invoked by circuitRF, never shipped |
+| the Verilog-A compiler | GPL-3.0 | **the user's machine.** Never linked, bundled or shipped; run as a separate process when the user asks for a `.va` to be built |
 | a kit's `.va` sources | the kit's own (Apache-2.0 for open kits) | **the user's kit.** Never vendored |
 | the compiled `.osdi` | a build output of the two above | **the user's machine.** Never committed |
+
+**On running the compiler at all** (added when `circuitrf` learned to accept a `.va` directly, brief
+PM2 P1). Starting a separately-installed program, passing it the user's own file and reading the file
+it writes is *use*, not derivation: no GPL code is compiled into circuitRF, linked against it, or
+distributed with it, and removing the compiler from the machine leaves circuitRF working — it simply
+refuses to build source and still loads any `.osdi`. This is the identical relationship every build
+system has with `gcc`, and `THIRD-PARTY-NOTICES.md` gains no entry because nothing third-party ships.
+Discovery, invocation and caching are `src/Core/Devices/External/VerilogACompiler.cs`.
 
 The worker `dlopen`s a file the user built. That is a runtime load of the user's own artifact, which
 is why the validation tests locate models through an environment variable and skip without one — the

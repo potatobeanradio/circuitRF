@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RfCore;
 using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands;
@@ -704,6 +705,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         {
             VerilogAFileNote = "";
             VerilogAUnknownParamsNote = "";
+            VerilogAThermalNote = "";
+            VerilogACompileNote = "";
             return;
         }
 
@@ -713,6 +716,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // mtime, so this is one launch per distinct file rather than one per model change.
         var declared = VerilogAModelIntrospection.Describe(file, out string? error);
         VerilogAFileNote = file.Trim().Length == 0 || error is null ? "" : error;
+
+        // What the compile step said, when the chosen file was Verilog-A SOURCE. Shown separately
+        // from the error note: it is ordinary progress, not a problem, and it answers the two
+        // questions a user has after pointing at a `.va` — which compiler ran, and whether anything
+        // was actually rebuilt.
+        VerilogACompileNote = VerilogAModelIntrospection.LastCompileNote;
 
         var modelRow = Rows.FirstOrDefault(r => r.Name.Equals(ComponentModelFactory.VerilogAModelParam, StringComparison.Ordinal));
         // Offered whenever the file declares more than one: with exactly one there is nothing to
@@ -732,10 +741,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (selectedOrNull is not { } selected)
         {
             VerilogAUnknownParamsNote = "";
+            VerilogAThermalNote = "";
             return;
         }
 
         FlagUndeclaredParameters();
+        NoteOmittedThermalTerminal(selected);
 
         string desiredModel = declared.Count == 1 ? selected.TypeId : modelValue;
         string desiredPins  = selected.PinCount.ToString(CultureInfo.InvariantCulture);
@@ -808,6 +819,72 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             : $"Not declared by this model: {string.Join(", ", unknown)} — these will be refused at Run.";
     }
 
+    /// <summary>
+    /// Says so when this component deliberately leaves a THERMAL terminal off.
+    ///
+    /// <para><b>Because it is the ordinary configuration, not a mistake.</b> A five-terminal model
+    /// with self-heating is routinely placed as a four-pin part: the model is told only four
+    /// terminals are connected, reads that through <c>$port_connected</c>, and grounds its own
+    /// thermal node internally. Without a word here that reads as a symbol drawn with one lead too
+    /// few — and the user's fix would be to add the pin, which floats the thermal node and leaves
+    /// the DC solve with no solution at all.</para>
+    ///
+    /// <para><b>Scoped to exactly one omitted terminal, and only when that terminal is thermal.</b>
+    /// Two missing pins, or one missing ELECTRICAL pin, is not this case and gets no reassurance —
+    /// saying "that is fine" about a genuine mis-wiring is worse than saying nothing.</para>
+    ///
+    /// <para>Only expressible since the worker began reporting a node's discipline; before that
+    /// every OSDI node was read as electrical and there was no thermal terminal to recognise.</para>
+    /// </summary>
+    private void NoteOmittedThermalTerminal(VerilogAModelInfo selected)
+        => VerilogAThermalNote = _target is null
+            ? "" : OmittedThermalTerminalNote(_target.PortCount, selected);
+
+    /// <summary>
+    /// The note itself, as a pure function of the drawn pin count and what the model declares —
+    /// separated from the view-model so it can be asserted BY TEXT rather than through a dialog.
+    /// Empty when this is not the case described above.
+    /// </summary>
+    public static string OmittedThermalTerminalNote(int statedPins, VerilogAModelInfo selected)
+    {
+        ArgumentNullException.ThrowIfNull(selected);
+
+        if (statedPins != selected.PinCount - 1) return "";
+
+        // The omitted terminal is the one past the end of what was drawn — the model declares them
+        // in order and `Pins` connects a prefix of that order.
+        int omitted = selected.PinCount - 1;
+        if (!selected.ThermalTerminals.Contains(omitted)) return "";
+
+        string name = omitted < selected.TerminalLabels.Count
+                      && !string.IsNullOrWhiteSpace(selected.TerminalLabels[omitted])
+                    ? $"'{selected.TerminalLabels[omitted].Trim()}'"
+                    : $"terminal {omitted + 1}";
+
+        return $"This model declares {selected.PinCount} terminals and {statedPins} are drawn: the "
+             + $"thermal terminal {name} is left unconnected, and the model handles its own "
+             + "self-heating internally. That is the ordinary way to place this part. Draw the extra "
+             + "pin only if you intend to build the thermal network yourself.";
+    }
+
+    /// <summary>Non-empty when the chosen file was Verilog-A SOURCE and circuitRF either compiled it
+    /// or reused an existing build. Ordinary progress, not a problem — rendered like the thermal
+    /// note rather than in the warning brush.</summary>
+    [ObservableProperty] private string _verilogACompileNote = "";
+
+    public bool HasVerilogACompileNote => VerilogACompileNote.Length > 0;
+    partial void OnVerilogACompileNoteChanged(string value)
+        => OnPropertyChanged(nameof(HasVerilogACompileNote));
+
+    /// <summary>Non-empty when a thermal terminal is deliberately left off — see
+    /// <see cref="NoteOmittedThermalTerminal"/>. Shown in its own right, NOT as a warning: it
+    /// confirms a correct configuration rather than reporting a problem.</summary>
+    [ObservableProperty] private string _verilogAThermalNote = "";
+
+    public bool HasVerilogAThermalNote => VerilogAThermalNote.Length > 0;
+    partial void OnVerilogAThermalNoteChanged(string value)
+        => OnPropertyChanged(nameof(HasVerilogAThermalNote));
+
     /// <summary>Non-empty when the component carries parameter names the chosen model does not
     /// declare. The worker refuses an unknown name at Run, by name — saying so here means it is seen
     /// while it can still be corrected rather than at the end of a simulation.</summary>
@@ -874,6 +951,97 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         });
 
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
+
+    // ── VerilogA: loading a whole fitted parameter set from a file ────────────
+
+    /// <summary>Supplied by the view: picks a parameter-set file, or null on cancel. Null in
+    /// contexts with no UI, which is what keeps this view-model headless-testable.</summary>
+    public Func<Task<string?>>? PickParameterSetFileAsync { get; set; }
+
+    /// <summary>
+    /// Loads a fitted parameter set written in Verilog-A declaration syntax
+    /// (<c>parameter real vxo = 1.3e7;</c>) onto this component.
+    ///
+    /// <para><b>Why this is worth a button.</b> Both published physics-based model families ship
+    /// their fitted sets in that form rather than as SPICE model cards, and without a reader one set
+    /// is 50-200 individual picker gestures per placed device.</para>
+    ///
+    /// <para><b>Only names the model DECLARES are written, and the rest are REPORTED.</b> A set
+    /// written for a different version of the same family is the common case, not the exotic one,
+    /// and a silent drop is a wrong answer that converges — the device runs, on the model's own
+    /// defaults for everything that went missing, and looks perfectly healthy.</para>
+    ///
+    /// <para>One <see cref="SetParametersCommand"/>, so a whole set is a single undo entry rather
+    /// than two hundred.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadModelParameters()
+    {
+        if (_target is null || _schematicVm is null || PickParameterSetFileAsync is null) return;
+        if (_target.Symbol != SymbolKind.VerilogA) return;
+
+        var declared = DeclaredModelParameters();
+        if (declared.Count == 0)
+        {
+            VerilogAFileNote = "Choose a model file first — a parameter set can only be matched "
+                             + "against the parameters a model declares.";
+            return;
+        }
+
+        string? path = await PickParameterSetFileAsync();
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        var parsed = VerilogAParameterSetReader.ParseFile(path, out string? readError);
+        if (readError is not null)
+        {
+            VerilogAFileNote = $"'{path}' could not be read: {readError}";
+            return;
+        }
+        if (parsed.Count == 0)
+        {
+            VerilogAFileNote = $"'{Path.GetFileName(path)}' declares no parameters. This reads "
+                             + "Verilog-A parameter declarations — 'parameter real vxo = 1.3e7;'.";
+            return;
+        }
+
+        var set = VerilogAParameterSetReader.MatchToModel(
+            parsed, [.. declared.Select(d => d.Name)]);
+
+        if (set.Applied.Count == 0)
+        {
+            VerilogAFileNote = VerilogAParameterSetReader.DescribeOutcome(set, Path.GetFileName(path));
+            return;
+        }
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        foreach (var a in set.Applied)
+        {
+            var existing = updated.FirstOrDefault(p => p.Name.Equals(a.Name, StringComparison.Ordinal));
+            if (existing is not null)
+            {
+                // An overwrite, not a duplicate row: loading a set onto a component that already
+                // carries some of its names is re-fitting it, which is the ordinary reason to do it
+                // twice.
+                existing.Expression = a.ValueText;
+                continue;
+            }
+
+            updated.Add(new EditableParameter
+            {
+                Name            = a.Name,
+                Expression      = a.ValueText,
+                Unit            = "",   // the model's units are its own text, not one of circuitRF's
+                Dimension       = UnitDimension.None,
+                ShowOnSchematic = false,   // a fitted set is hundreds of names; none belong on the page
+            });
+        }
+
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+
+        // Said whether or not anything was dropped: "loaded 137 parameters" is the confirmation, and
+        // the dropped names ride on the same sentence precisely so they cannot be missed.
+        VerilogAFileNote = VerilogAParameterSetReader.DescribeOutcome(set, Path.GetFileName(path));
     }
 
     private static string ParamValue(EditableComponent comp, string name)

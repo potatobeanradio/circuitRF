@@ -289,6 +289,30 @@ public sealed class AppPreferences
     [JsonPropertyName("external_device_workers")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ExternalDeviceWorkers { get; set; }
+
+    /// <summary>
+    /// The Verilog-A compiler circuitRF runs to build a <c>.va</c> into the compiled model it can
+    /// load. Null — the default — means "look on PATH", which is what a machine with a compiler
+    /// installed normally wants and needs no configuration at all.
+    ///
+    /// <para><b>Per USER and not per workspace (owner, 2026-09-03).</b> It is a property of the
+    /// MACHINE, exactly like the Python interpreter the PCell path already locates: a design that
+    /// travels to someone else must not pin their toolchain to the author's, and a path that is
+    /// right here is meaningless there. Same reasoning as <see cref="EmMaxCores"/> and
+    /// <see cref="HarmonicaKitFolders"/>.</para>
+    ///
+    /// <para><b>An explicitly named compiler OUTRANKS PATH</b> — see
+    /// <c>VerilogACompilerDiscovery.Find</c>. A preference that lost to PATH would be inert on
+    /// exactly the machine that needed it: one with a compiler already on PATH that is the wrong
+    /// version or the wrong build.</para>
+    ///
+    /// <para>circuitRF ships no compiler and links to none; it starts the one named here as a
+    /// separate process, which is the same arm's-length arrangement as building circuitRF with a C
+    /// compiler.</para>
+    /// </summary>
+    [JsonPropertyName("veriloga_compiler")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? VerilogACompiler { get; set; }
 }
 
 public static class AppPreferencesIo

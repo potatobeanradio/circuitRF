@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Compiled Verilog-A Models</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/veriloga.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Verilog-A</p>
+
+  <h1>Compiled Verilog-A Models</h1>
+  <p class="lede">Running a compact model you supply — a published physics-based transistor model, or one you wrote — from Verilog-A source or from a compiled artefact, with no kit and nothing to install inside circuitRF.</p>
+
+<nav class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#what">What this component is for</a></li>
+      <li><a href="#compiler">The compiler, and why it is yours</a></li>
+      <li><a href="#walkthrough">A worked example, end to end</a></li>
+      <li><a href="#terminals">Terminals, <code>Pins</code>, and the thermal one</a></li>
+      <li><a href="#parameters">Loading a fitted parameter set</a></li>
+      <li><a href="#rebuild">When circuitRF rebuilds, and where the artefact goes</a></li>
+      <li><a href="#limits">What is not supported</a></li>
+    </ol>
+  </nav>
+<h2 id="what">What this component is for</h2>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 122.18L84.94 27.83Q84.94 27.64 84.96 27.45Q84.97 27.26 85.01 27.08Q85.05 26.89 85.1 26.71Q85.16 26.53 85.23 26.36Q85.3 26.19 85.39 26.02Q85.48 25.86 85.58 25.7Q85.69 25.54 85.81 25.4Q85.92 25.25 86.06 25.12Q86.19 24.99 86.34 24.87Q86.48 24.75 86.64 24.64Q86.79 24.54 86.96 24.45Q87.13 24.36 87.3 24.29Q87.47 24.22 87.65 24.16Q87.83 24.11 88.02 24.07Q88.2 24.04 88.39 24.02Q88.57 24 88.76 24L151.24 24Q151.43 24 151.61 24.02Q151.8 24.04 151.98 24.07Q152.17 24.11 152.35 24.16Q152.53 24.22 152.7 24.29Q152.88 24.36 153.04 24.45Q153.21 24.54 153.36 24.64Q153.52 24.75 153.66 24.87Q153.81 24.99 153.94 25.12Q154.07 25.25 154.19 25.4Q154.31 25.54 154.42 25.7Q154.52 25.86 154.61 26.02Q154.7 26.19 154.77 26.36Q154.84 26.53 154.9 26.71Q154.95 26.89 154.99 27.08Q155.03 27.26 155.04 27.45Q155.06 27.64 155.06 27.83L155.06 122.18Q155.06 122.36 155.04 122.55Q155.03 122.74 154.99 122.92Q154.95 123.11 154.9 123.29Q154.84 123.47 154.77 123.64Q154.7 123.81 154.61 123.98Q154.52 124.14 154.42 124.3Q154.31 124.46 154.19 124.6Q154.07 124.75 153.94 124.88Q153.81 125.01 153.66 125.13Q153.52 125.25 153.36 125.36Q153.21 125.46 153.04 125.55Q152.88 125.64 152.7 125.71Q152.53 125.78 152.35 125.84Q152.17 125.89 151.98 125.93Q151.8 125.96 151.61 125.98Q151.43 126 151.24 126L88.76 126Q88.57 126 88.39 125.98Q88.2 125.96 88.02 125.93Q87.83 125.89 87.65 125.84Q87.47 125.78 87.3 125.71Q87.13 125.64 86.96 125.55Q86.79 125.46 86.64 125.36Q86.48 125.25 86.34 125.13Q86.19 125.01 86.06 124.88Q85.92 124.75 85.81 124.6Q85.69 124.46 85.58 124.3Q85.48 124.14 85.39 123.98Q85.3 123.81 85.23 123.64Q85.16 123.47 85.1 123.29Q85.05 123.11 85.01 122.92Q84.97 122.74 84.96 122.55Q84.94 122.36 84.94 122.18Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 43.13L56.25 43.13" /><text fill="#2D14C3" transform="translate(91.44 43.13)" font-size="5.74" font-family="IBM Plex Sans" x="-1.72" y="2.15">
+			1
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 106.88L56.25 106.88" /><text fill="#2D14C3" transform="translate(91.44 106.88)" font-size="5.74" font-family="IBM Plex Sans" x="-1.72" y="2.15">
+			2
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M155.06 75L183.75 75" /><text fill="#2D14C3" transform="translate(148.56 75)" font-size="5.74" font-family="IBM Plex Sans" x="-1.72" y="2.15">
+			3
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="53.25" y="40.13" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="53.25" y="103.88" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="180.75" y="72" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="90.46, 100.04, 108.41, 114.3, 118.43, 122.83, 131.28, 139.45" y="172.32">
+			VerilogA
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 122.18L84.94 27.83Q84.94 27.64 84.96 27.45Q84.97 27.26 85.01 27.08Q85.05 26.89 85.1 26.71Q85.16 26.53 85.23 26.36Q85.3 26.19 85.39 26.02Q85.48 25.86 85.58 25.7Q85.69 25.54 85.81 25.4Q85.92 25.25 86.06 25.12Q86.19 24.99 86.34 24.87Q86.48 24.75 86.64 24.64Q86.79 24.54 86.96 24.45Q87.13 24.36 87.3 24.29Q87.47 24.22 87.65 24.16Q87.83 24.11 88.02 24.07Q88.2 24.04 88.39 24.02Q88.57 24 88.76 24L151.24 24Q151.43 24 151.61 24.02Q151.8 24.04 151.98 24.07Q152.17 24.11 152.35 24.16Q152.53 24.22 152.7 24.29Q152.88 24.36 153.04 24.45Q153.21 24.54 153.36 24.64Q153.52 24.75 153.66 24.87Q153.81 24.99 153.94 25.12Q154.07 25.25 154.19 25.4Q154.31 25.54 154.42 25.7Q154.52 25.86 154.61 26.02Q154.7 26.19 154.77 26.36Q154.84 26.53 154.9 26.71Q154.95 26.89 154.99 27.08Q155.03 27.26 155.04 27.45Q155.06 27.64 155.06 27.83L155.06 122.18Q155.06 122.36 155.04 122.55Q155.03 122.74 154.99 122.92Q154.95 123.11 154.9 123.29Q154.84 123.47 154.77 123.64Q154.7 123.81 154.61 123.98Q154.52 124.14 154.42 124.3Q154.31 124.46 154.19 124.6Q154.07 124.75 153.94 124.88Q153.81 125.01 153.66 125.13Q153.52 125.25 153.36 125.36Q153.21 125.46 153.04 125.55Q152.88 125.64 152.7 125.71Q152.53 125.78 152.35 125.84Q152.17 125.89 151.98 125.93Q151.8 125.96 151.61 125.98Q151.43 126 151.24 126L88.76 126Q88.57 126 88.39 125.98Q88.2 125.96 88.02 125.93Q87.83 125.89 87.65 125.84Q87.47 125.78 87.3 125.71Q87.13 125.64 86.96 125.55Q86.79 125.46 86.64 125.36Q86.48 125.25 86.34 125.13Q86.19 125.01 86.06 124.88Q85.92 124.75 85.81 124.6Q85.69 124.46 85.58 124.3Q85.48 124.14 85.39 123.98Q85.3 123.81 85.23 123.64Q85.16 123.47 85.1 123.29Q85.05 123.11 85.01 122.92Q84.97 122.74 84.96 122.55Q84.94 122.36 84.94 122.18Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 43.13L56.25 43.13" /><text fill="#9684FA" transform="translate(91.44 43.13)" font-size="5.74" font-family="IBM Plex Sans" x="-1.72" y="2.15">
+			1
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M84.94 106.88L56.25 106.88" /><text fill="#9684FA" transform="translate(91.44 106.88)" font-size="5.74" font-family="IBM Plex Sans" x="-1.72" y="2.15">
+			2
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M155.06 75L183.75 75" /><text fill="#9684FA" transform="translate(148.56 75)" font-size="5.74" font-family="IBM Plex Sans" x="-1.72" y="2.15">
+			3
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="53.25" y="40.13" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="53.25" y="103.88" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="180.75" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="90.46, 100.04, 108.41, 114.3, 118.43, 122.83, 131.28, 139.45" y="172.32">
+			VerilogA
+	</text></svg></span>
+</span><figcaption>VerilogA</figcaption></figure>
+<p>The <strong>VerilogA</strong> component runs a compact model <strong>you</strong> supply. It needs no kit, no manifest and
+nothing installed into circuitRF — you point it at a file and place it.</p>
+<p>That is the path to take when the device you need is a published physics-based compact model. Those
+are distributed as Verilog-A source: a few thousand lines of <code>analog</code> equations, a manual, and one
+or more fitted parameter sets. What this page buys you is the whole of that route — source in, a
+placed five-terminal device out, running DC, S-parameters and harmonic balance like any other
+component.</p>
+<div class="callout note">
+<span class="label">Two file types, one component</span>
+<p>The <code>File</code> parameter takes either <b>Verilog-A source</b> (<code>.va</code>,
+<code>.vams</code>) or an <b>already-compiled model</b> (<code>.osdi</code>). Source is compiled once,
+by the compiler on your machine, and reused. If you already have a compiled artefact, point at it and
+no compiler is involved at all.</p>
+</div>
+<h2 id="compiler">The compiler, and why it is yours</h2>
+<p>circuitRF does not contain a Verilog-A compiler and never will. The established compilers for this
+model format are GPL-3.0; circuitRF is MIT, and bundling or linking one would change that. So
+circuitRF does what a build system does with a C compiler: it <strong>runs a compiler you installed</strong>, as a
+separate program, and loads the file that comes out. Nothing is linked and nothing is redistributed.</p>
+<p><strong>Install one of your choosing</strong>, then either put it on <code>PATH</code> — in which case there is nothing to
+configure — or name it explicitly:</p>
+<blockquote>
+<p><strong>Settings ▸ Security &amp; Permissions ▸ Verilog-A Compiler</strong></p>
+</blockquote>
+<p>Leave the box blank to use whatever is on <code>PATH</code>. Fill it in when you have more than one, or when
+yours lives somewhere <code>PATH</code> does not reach. <strong>A compiler you name wins over <code>PATH</code></strong> — that is the
+whole point of naming one. Press <strong>Test</strong> and circuitRF will run it and report what it says it is,
+which is the fastest way to confirm the setting before you need it.</p>
+<p>For a headless run — a script, CI, a batch job — set <code>CRF_VERILOGA_COMPILER</code> to the compiler's path.
+It outranks <code>PATH</code> and leaves nobody's settings file touched.</p>
+<p>If no compiler can be found, circuitRF says so at the moment you choose the file, names what to
+install and where to point it, and changes nothing else. The <code>.osdi</code> route keeps working.</p>
+<h2 id="walkthrough">A worked example, end to end</h2>
+<p>This is the whole path for a model you have just downloaded. It assumes only that you have the
+model's source and one of its parameter sets — which is what a model family actually ships.</p>
+<ol class="steps">
+  <li><b>Put the source where you want it.</b> Keep the family's own folder layout intact: models of
+    this size <code>`include</code> parameter and macro files beside the source, and circuitRF passes
+    the source's own directory to the compiler as an include path so those resolve exactly as they do
+    when you build by hand.</li>
+  <li><b>Place a VerilogA component.</b> It is in the palette under <b>Devices</b> — search for
+    "Verilog-A", "OSDI" or "compact model".</li>
+  <li><b>Set <code>File</code>.</b> Click <i>Browse…</i> beside the <code>File</code> row and choose
+    the <code>.va</code>. circuitRF compiles it — once, taking a few seconds for a model of this size
+    — and then reads it. <b>The parameter editor tells you underneath which compiler ran, where
+    the artefact was written, and whether anything was actually rebuilt</b>; on every later visit
+    it will say the source has not changed.
+    <p>If the compiler refuses, you get <b>its own diagnostics, verbatim</b>: file, line and column,
+    exactly as it printed them. That is deliberate — the line number is the whole value of a compiler
+    error, and a paraphrase would be worse than the error.</p></li>
+  <li><b>Check <code>Model</code>.</b> A file usually declares one module and circuitRF fills this in
+    for you. When it declares several, the row becomes a picker — choose the one you want.</li>
+  <li><b>Check <code>Pins</code>.</b> circuitRF fills this in from the model's own terminal count and
+    then locks it, because the model has stated it. See <a href="#terminals">below</a> for the one
+    case where you deliberately set it lower.</li>
+  <li><b>Load the parameter set</b> — <i>Load Parameters…</i> at the foot of the parameter editor. See
+    <a href="#parameters">below</a>.</li>
+  <li><b>Wire it and run.</b> From here it is an ordinary nonlinear component. Attach a
+    <b>DC</b> analysis to sweep a bias point, <b>S-parameters</b> to get small-signal behaviour about
+    that point, and <b>harmonic balance</b> for large-signal power, gain and efficiency. Everything in
+    <a href="simulations.html">Simulations</a> applies unchanged, and so does
+    <a href="harmonicarf.html">harmonicaRF</a> — a compiled model is a valid DUT there too.</li>
+</ol>
+<div class="callout tip">
+<span class="label">Start at DC</span>
+<p>Run a DC sweep before anything else. A compact model that is mis-parameterised, or whose thermal
+terminal is wired the wrong way, shows it as a bias point that will not converge — and that is far
+easier to read at DC than in the middle of a harmonic-balance sweep.</p>
+</div>
+<h2 id="terminals">Terminals, <code>Pins</code>, and the thermal one</h2>
+<p>The symbol is a <strong>plain box</strong>, deliberately. circuitRF does not know what your model is — it could be
+a transistor, a diode or a whole subcircuit — so drawing a transistor glyph would assert something
+the file has not said.</p>
+<p>The <strong>leads are named by the model</strong>. Once circuitRF has read the file, each lead is labelled with the
+model's own name for that terminal — <code>d</code>, <code>g</code>, <code>s</code>, <code>b</code>, <code>dt</code> — rather than <code>1..5</code>. On a five-terminal
+part with five identical leads, numbers are the single largest source of mis-wiring, and the model has
+already told circuitRF which is which. A lead the model does not name falls back to its number, on its
+own; you may see a mix.</p>
+<h3 id="the-thermal-terminal">The thermal terminal</h3>
+<p>Many physics-based models expose a <strong>thermal terminal</strong>: a node whose &quot;voltage&quot; is a temperature and
+whose &quot;current&quot; is a power. You have two honest choices, and circuitRF supports both.</p>
+<table class="param-table"><thead><tr><th>What you draw</th><th>What the model does</th><th>When to use it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>Pins</code> = the model's full count, thermal terminal <b>wired</b></td>
+        <td>Reads the temperature you impose on that node</td>
+        <td>You are building the thermal network yourself — a resistance and capacitance from that node
+          to an ambient source that sets the baseplate temperature.</td>
+      </tr>
+      <tr>
+        <td><code>Pins</code> = one <b>less</b>, thermal terminal omitted</td>
+        <td>Sees that the terminal is unconnected and grounds it internally</td>
+        <td>The ordinary case. The model handles its own self-heating and you draw a four-pin part.</td>
+      </tr>
+    </tbody>
+    <caption>circuitRF tells the model how many terminals you connected; that is what the model's own
+      <code>$port_connected</code> reads.</caption>
+  </table>
+<p>When you set <code>Pins</code> one below the model's count and the omitted terminal is thermal, <strong>the parameter
+editor says so</strong> — that a thermal terminal is deliberately left off and the model is handling its own
+self-heating. It is not a warning. It is there because a symbol with one lead fewer than the model
+declares otherwise reads as a mistake, and &quot;fixing&quot; it is the one thing you must not do:</p>
+<div class="callout warning">
+<span class="label">Never leave a thermal terminal drawn but unwired</span>
+<p>A thermal node with a pin on it and no thermal network attached is a <b>floating node with no DC
+solution</b>. It does not fail quickly or clearly — it spends the whole continuation budget and then
+reports a residual. Either omit the pin (and let the model ground it) or attach a real thermal
+network. There is no third option.</p>
+</div>
+<h2 id="parameters">Loading a fitted parameter set</h2>
+<p>A fitted parameter set for a model of this size is 50 to 200 numbers. Both of the ways to get them in
+are at the foot of the parameter editor:</p>
+<ul>
+<li><strong>Add Parameter…</strong> — a searchable list of everything the model declares, with the model's own
+units, descriptions and defaults. Adds one, seeded at the model's own default. Use it to change a
+handful of values.</li>
+<li><strong>Load Parameters…</strong> — reads a whole fitted set from a file. Use it for anything larger.</li>
+</ul>
+<p><strong>Load Parameters…</strong> reads sets written as <strong>Verilog-A parameter declarations</strong>, which is the form
+these families actually ship:</p>
+<pre><code class="language-verilog">parameter real vxo   = 1.3e7;    // saturation velocity
+parameter real beta  = 1.8;
+parameter integer nf = 4;
+</code></pre>
+<p>Comments are ignored (including one containing a semicolon), <code>from […]</code> and <code>exclude</code> ranges are
+ignored, and both <code>1.3e7</code> and engineering notation like <code>2.4p</code> are read as written. The whole load is
+<strong>one undo step</strong>.</p>
+<p>Two behaviours worth knowing:</p>
+<ul>
+<li><strong>Case is aligned to the model's own spelling.</strong> A set written <code>vxo</code> reaches a model that declares
+<code>VXO</code>. The match is case-insensitive only — a genuine typo is <em>not</em> quietly turned into something
+the model accepts; it is reported by name.</li>
+<li><strong>Names the model does not declare are reported, never dropped in silence.</strong> circuitRF tells you
+exactly which ones did not land. This is the common case, not the exotic one: a set written for a
+different version of the same family will have names that have since been renamed or removed, and a
+silent drop would leave the device running on the model's own defaults for all of them and looking
+perfectly healthy.</li>
+</ul>
+<div class="callout note">
+<span class="label">Absent means "the model's default"</span>
+<p>circuitRF only writes the parameters your set actually assigns. A parameter that is not on the
+component is not sent to the model at all, which already means <i>use your own default</i>. That is
+why the whole declared list is never materialised as rows: freezing today's defaults into the design
+would mean recompiling with a changed default silently had no effect.</p>
+</div>
+<h2 id="rebuild">When circuitRF rebuilds, and where the artefact goes</h2>
+<p><strong>A simulation of an unedited model compiles nothing.</strong> The compiled artefact is cached, and the
+cache key is:</p>
+<ul>
+<li>the <strong>content</strong> of the source — not its path and not its timestamp, so re-saving a file without
+changing a character costs nothing;</li>
+<li>the content of <strong>every file it <code>`include</code>s</strong>, so editing a parameter or macro file beside the
+source does rebuild — hashing only the top file would hand you a stale artefact that runs and looks
+correct;</li>
+<li>the <strong>compiler's own identity</strong>, so upgrading your compiler rebuilds even though your source has not
+changed by a byte.</li>
+</ul>
+<p>Change any of those and you pay exactly one recompile. Change none of them and the compiler is not
+asked to build anything, however many times you run.</p>
+<p>Artefacts are written to circuitRF's own per-user cache — <strong>not</strong> beside your source. A model family
+is often installed as a read-only tree, and writing build output into someone else's delivery is
+wrong even where it would succeed. The parameter editor names the exact path each time it reads the
+file, so a rebuild
+you were not expecting is visible rather than mysterious.</p>
+<h2 id="limits">What is not supported</h2>
+<ul>
+<li><strong>No noise analysis</strong> from a compiled model.</li>
+<li><strong>No operating-point variable read-back.</strong> These models compute dozens of internal quantities
+(<code>gm</code>, <code>ids</code>, junction temperatures). circuitRF's worker already recognises them and deliberately
+keeps them out of the settable parameter list, but there is not yet a way to plot one.</li>
+<li><strong>Aging and degradation parameters</strong> are forwarded to the model like any other parameter and then
+do nothing — there is no aging analysis and no stress history to drive one.</li>
+<li><strong>Verilog-AMS digital constructs</strong> are the compiler's business, not circuitRF's. If your compiler
+builds the file, circuitRF will run it.</li>
+</ul>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) which circuitRF builds once with the compiler installed on this machine and reuses until the source changes. Choosing one fills in Model and Pins below.</td></tr>
+<tr><td>Model</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Which device type inside that file to place. A file usually declares one, and then this can be left blank; when it declares several, pick the one you want.</td></tr>
+<tr><td>Pins</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many terminals the symbol draws. It is the model&#39;s own terminal count, filled in from the file — change it only if you are drawing before choosing one.</td></tr>
+</tbody></table>
+
+<nav class="page-nav">
+  <a class="prev" href="nonlinear-capacitor.html"><span class="dir">Previous</span><span class="name">The Nonlinear Capacitor &amp; the C–V Editor</span></a>
+  <a class="next" href="match.html"><span class="dir">Next</span><span class="name">The Match Component</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

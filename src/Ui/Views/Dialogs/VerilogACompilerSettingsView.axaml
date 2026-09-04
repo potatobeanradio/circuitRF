@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CircuitRF.Ui.Views.Dialogs.VerilogACompilerSettingsView">
+
+  <!--
+    The Verilog-A compiler, for a component pointed at `.va` source rather than a compiled `.osdi`.
+
+    BLANK IS THE DEFAULT and means "look on PATH", so a machine with a compiler installed needs
+    nothing here. This row exists for the machine that has two, or has one somewhere PATH does not
+    reach. A named compiler outranks PATH — see VerilogACompilerDiscovery.Find.
+
+    circuitRF ships no compiler and links to none. It starts the one named here as a separate
+    process — the same arm's-length arrangement as building circuitRF with a C compiler — and stays
+    MIT. That is why this belongs on the Security & Permissions tab at all: it names a program
+    circuitRF is permitted to RUN, which is the question that tab answers.
+
+    Its own control, and LAST on that tab (owner, 2026-09-03), hosted by circuitRF's SettingsView and
+    by harmonicaRF's own dialog — which does not use SettingsView at all. Same one-control-two-hosts
+    arrangement as ExternalWorkerSettingsView and UpdateSettingsView beside it: without it a user who
+    has only harmonicaRF installed could never name a compiler, and harmonicaRF's Set DUT takes a
+    model file like everything else.
+  -->
+
+  <StackPanel Spacing="0">
+    <TextBlock Text="Verilog-A Compiler" FontSize="11" FontWeight="SemiBold"
+               Opacity="0.55" Margin="0,0,0,6" Name="SectionHeader"/>
+
+    <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto">
+      <TextBox   Grid.Row="0" Grid.Column="0" Name="CompilerBox" FontSize="12"
+                 Watermark="Leave blank to use the compiler on PATH"
+                 LostFocus="OnCompilerCommitted"/>
+      <Button    Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11"
+                 Padding="8,3" Margin="6,0,0,0" Click="OnBrowseForCompiler"/>
+      <Button    Grid.Row="0" Grid.Column="2" Content="Test" FontSize="11"
+                 Padding="8,3" Margin="6,0,0,0" Click="OnTestCompiler"
+                 ToolTip.Tip="Run it and report what it says it is"/>
+
+      <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" FontSize="11"
+                 Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
+                 Text="circuitRF loads COMPILED models (.osdi). Point a component at Verilog-A source (.va) instead and circuitRF builds it once with the compiler named here, caching the result until the source changes. circuitRF ships no compiler and includes none — install one of your choosing. This setting is shared by circuitRF, harmonicaRF and wBond."/>
+
+      <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" FontSize="11"
+                 Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
+                 Name="CompilerStatusText" IsVisible="False" Text=""/>
+    </Grid>
+  </StackPanel>
+</UserControl>

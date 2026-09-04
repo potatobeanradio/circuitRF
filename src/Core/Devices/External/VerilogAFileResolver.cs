@@ -18,6 +18,13 @@ namespace CircuitRF.Core.Devices.External;
 /// work on a fresh install with no workspace, no kit and no configuration — so this resolver is
 /// always in the chain and survives <c>ClearResolvers</c>, which exists to drop the resolvers
 /// belonging to a workspace that is going away. This one belongs to no workspace.</para>
+///
+/// <para><b>Verilog-A SOURCE is accepted here and compiled first</b>
+/// (<see cref="VerilogASourceCompiler"/>), which is why the compile step lives behind this one seam
+/// rather than in the parameter dialog: everything that reaches a placed model — the dialog reading
+/// its terminals, elaboration, <c>Cli hb</c>, harmonicaRF's Set DUT — composes a provider name and
+/// arrives here. Putting it anywhere else would give a <c>.va</c> that works in the GUI and fails
+/// headless.</para>
 /// </summary>
 public sealed class VerilogAFileResolver : IExternalProviderResolver
 {
@@ -37,7 +44,17 @@ public sealed class VerilogAFileResolver : IExternalProviderResolver
             ? providerName[Prefix.Length..]
             : null;
 
-    public string Describe => "a compiled model file named directly by a placed component";
+    public string Describe => "a model file named directly by a placed component";
+
+    /// <summary>
+    /// Told which compiler ran and where the artefact went, once per compile or cache hit.
+    ///
+    /// <para>Reported rather than silent because the two questions a user has here are "did it
+    /// actually rebuild" and "which compiler did it use" — and a cache that answers invisibly is
+    /// indistinguishable from one that is stale. The host routes it to the Messages panel; a
+    /// headless process leaves it unset and nothing is printed.</para>
+    /// </summary>
+    public static Action<string>? CompileNote { get; set; }
 
     public IExternalDeviceProvider? Resolve(string name)
     {
@@ -48,9 +65,19 @@ public sealed class VerilogAFileResolver : IExternalProviderResolver
         // and the name is a file path, so the useful message is that the file is not there.
         if (!File.Exists(modelFile))
             throw new ExternalDeviceException(
-                $"The compiled model file '{modelFile}' does not exist. Point the component's model " +
-                "file at a compiled model, or compile one from your Verilog-A source with your own " +
-                "compiler — circuitRF does not build them.");
+                $"The model file '{modelFile}' does not exist. Point the component's model file at " +
+                "a compiled model ('.osdi'), or at Verilog-A source ('.va', '.vams') for circuitRF " +
+                "to compile with the Verilog-A compiler installed on this machine.");
+
+        // Source is compiled to an artefact first; a `.osdi` is already one and is loaded as-is.
+        // Compiling is CACHED on the source's own content plus the compiler's identity, so this is
+        // one compile per edit and NOT one per simulation — the second Run of an unedited model
+        // finds the artefact already built and starts the worker straight on it.
+        if (VerilogASourceCompiler.IsSourceFile(modelFile))
+        {
+            modelFile = VerilogASourceCompiler.Compile(modelFile, out string note);
+            CompileNote?.Invoke(note);
+        }
 
         // Resolved in circuitRF's own tools folder — the same rule a kit uses to name a helper
         // circuitRF ships without knowing where it was installed.

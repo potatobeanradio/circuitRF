@@ -1335,11 +1335,20 @@ circle's edge on the connection grid. The ✕ is kept, and it is the whole of th
 
 {{symbol: verilog-a}}
 
-A compiled Verilog-A model **you** supply: point it at a compiled model file and circuitRF runs it. No
-kit, no manifest, nothing to install. It is variadic — the model decides how many terminals it has, so
-`Pins` sets how many the symbol draws. The body is deliberately generic and the terminal numbers are
-drawn on it, because circuitRF does not know what the model *is*: drawing a transistor glyph would
-assert something the file has not said.
+A compact model **you** supply: point it at Verilog-A source (`.va`, `.vams`) or an already-compiled
+model (`.osdi`) and circuitRF runs it. No kit, no manifest, nothing to install. It is variadic — the
+model decides how many terminals it has, so `Pins` sets how many the symbol draws. The body is
+deliberately generic, because circuitRF does not know what the model *is*: drawing a transistor glyph
+would assert something the file has not said. The **leads are named by the model** once the file has
+been read, and numbered before that.
+
+<div class="callout note">
+<span class="label">This component has its own chapter</span>
+<p>Installing a compiler and pointing circuitRF at it, the source-to-simulation walkthrough, loading a
+fitted parameter set, the thermal terminal and when to leave it off, and exactly when circuitRF
+rebuilds, are in <b><a href="veriloga.html">Compiled Verilog-A Models</a></b>. The entry here is the
+glyph, the pins and the parameter table.</p>
+</div>
 
 {{table: components/VerilogA}}
 

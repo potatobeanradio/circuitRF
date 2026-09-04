@@ -985,11 +985,22 @@ public static class BuiltInSymbols
     /// <summary>
     /// A plain box with a lead to each terminal. Deliberately generic: circuitRF does not know what
     /// the user's model IS — it could be a transistor, a diode, a whole subcircuit — so drawing a
-    /// transistor glyph would assert something untrue on the schematic. The terminal NUMBERS are
-    /// drawn instead, because with a generic body they are the only thing telling a user which lead
-    /// is which.
+    /// transistor glyph would assert something untrue on the schematic.
+    ///
+    /// <para><b>The leads are named by the MODEL where the model has said what they are</b>, and
+    /// numbered otherwise. On a five-terminal part — drain, gate, source, bulk, thermal — numbers
+    /// are the largest single source of mis-wiring, and the model has already declared each
+    /// terminal's own name; drawing <c>1..5</c> over it withholds something circuitRF was told.</para>
+    ///
+    /// <para><b>This changes what the leads are CALLED, not what the part claims to be.</b> The body
+    /// stays the generic box for exactly the reason above — naming a terminal <c>g</c> repeats the
+    /// model's own word for it, where drawing a transistor would be circuitRF asserting a device
+    /// class nobody stated.</para>
     /// </summary>
-    private static Symbol BuildVerilogASymbol(int n)
+    /// <param name="labels">The model's own terminal names, or null/short/blank entries where it
+    /// named none — each lead falls back to its number independently, so a model that names three of
+    /// five terminals draws three names and two numbers rather than five numbers.</param>
+    private static Symbol BuildVerilogASymbol(int n, IReadOnlyList<string>? labels = null)
     {
         var ports = SymbolPortDefs.GenerateGenericDevicePorts(n);
 
@@ -1000,21 +1011,48 @@ public static class BuiltInSymbols
 
         var prims = new List<SymbolPrimitive> { RRect(0, cy, halfW * 2, halfH * 2, 12) };
 
-        foreach (var (name, lx, ly) in ports)
+        for (int i = 0; i < ports.Length; i++)
         {
+            var (name, lx, ly) = ports[i];
             bool onLeft = lx < 0;
             prims.Add(L(onLeft ? -halfW : halfW, ly, lx, ly));
 
-            // The terminal numbers this symbol's own contract promises: with a deliberately generic
-            // body they are the ONLY thing telling a user which lead is which. They were described
-            // and never drawn.
-            prims.Add(Txt(name, onLeft ? -halfW + 15 : halfW - 15, ly,
+            // With a deliberately generic body this text is the ONLY thing telling a user which lead
+            // is which — the model's own word for the terminal where it gave one, its number where
+            // it did not.
+            string text = labels is not null && i < labels.Count
+                          && !string.IsNullOrWhiteSpace(labels[i])
+                        ? labels[i].Trim()
+                        : name;
+
+            prims.Add(Txt(text, onLeft ? -halfW + 15 : halfW - 15, ly,
                 fontSize: SddPortLabelFontSize,
                 align: onLeft ? SymbolTextAlign.Left : SymbolTextAlign.Right,
                 vAlign: SymbolTextVAlign.Middle));
         }
 
         return Sym(prims, SymbolKind.VerilogA, n);
+    }
+
+    /// <summary>
+    /// The VerilogA box drawn with a model's own terminal names.
+    ///
+    /// <para><b>Not cached here, unlike the numbered form.</b> That one is keyed on the terminal
+    /// count alone and there are a handful of counts; this varies with the label list too, and the
+    /// caller — <c>EditableSchematic.InstanceGlyph</c> — already rebuilds a glyph only when a
+    /// parameter changes. GEOMETRY IS IDENTICAL to the numbered form's: same pin coordinates, same
+    /// body, so nothing downstream that positions a wire or hit-tests a lead can disagree with it.</para>
+    /// </summary>
+    public static Symbol PrimitivesForVerilogA(int portCount, IReadOnlyList<string>? labels)
+    {
+        int n = portCount > 0 ? portCount : 2;
+
+        // Nothing named: hand back the cached numbered symbol rather than building a second identical
+        // one, which is the state every component placed before a file was chosen is in.
+        if (labels is null || labels.Count == 0 || labels.All(string.IsNullOrWhiteSpace))
+            return Primitives(SymbolKind.VerilogA, n);
+
+        return BuildVerilogASymbol(n, labels);
     }
 
     /// <summary>

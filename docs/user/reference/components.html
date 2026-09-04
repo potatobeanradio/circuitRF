@@ -2576,15 +2576,23 @@ circle's edge on the connection grid. The ✕ is kept, and it is the whole of th
 			VerilogA
 	</text></svg></span>
 </span><figcaption>VerilogA</figcaption></figure>
-<p>A compiled Verilog-A model <strong>you</strong> supply: point it at a compiled model file and circuitRF runs it. No
-kit, no manifest, nothing to install. It is variadic — the model decides how many terminals it has, so
-<code>Pins</code> sets how many the symbol draws. The body is deliberately generic and the terminal numbers are
-drawn on it, because circuitRF does not know what the model <em>is</em>: drawing a transistor glyph would
-assert something the file has not said.</p>
+<p>A compact model <strong>you</strong> supply: point it at Verilog-A source (<code>.va</code>, <code>.vams</code>) or an already-compiled
+model (<code>.osdi</code>) and circuitRF runs it. No kit, no manifest, nothing to install. It is variadic — the
+model decides how many terminals it has, so <code>Pins</code> sets how many the symbol draws. The body is
+deliberately generic, because circuitRF does not know what the model <em>is</em>: drawing a transistor glyph
+would assert something the file has not said. The <strong>leads are named by the model</strong> once the file has
+been read, and numbered before that.</p>
+<div class="callout note">
+<span class="label">This component has its own chapter</span>
+<p>Installing a compiler and pointing circuitRF at it, the source-to-simulation walkthrough, loading a
+fitted parameter set, the thermal terminal and when to leave it off, and exactly when circuitRF
+rebuilds, are in <b><a href="veriloga.html">Compiled Verilog-A Models</a></b>. The entry here is the
+glyph, the pins and the parameter table.</p>
+</div>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The compiled model (.osdi) to load. circuitRF runs a model you built — it does not compile Verilog-A itself. Choosing one fills in Model and Pins below.</td></tr>
+<tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) which circuitRF builds once with the compiler installed on this machine and reuses until the source changes. Choosing one fills in Model and Pins below.</td></tr>
 <tr><td>Model</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Which device type inside that file to place. A file usually declares one, and then this can be left blank; when it declares several, pick the one you want.</td></tr>
 <tr><td>Pins</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many terminals the symbol draws. It is the model&#39;s own terminal count, filled in from the file — change it only if you are drawing before choosing one.</td></tr>
 </tbody></table>

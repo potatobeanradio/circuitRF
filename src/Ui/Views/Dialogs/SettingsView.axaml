@@ -131,6 +131,13 @@
                              and write the same two AppPreferences properties; neither owns them. -->
                         <dlg:UpdateSettingsView Margin="0,24,0,0"/>
 
+                        <!-- The Verilog-A compiler, LAST on this tab (owner, 2026-09-03). It belongs
+                             here at all because it names a program circuitRF is permitted to RUN,
+                             which is the question this tab answers — but it is the one control here
+                             that most users never touch (blank means "use PATH"), so it sits below
+                             the two that govern what runs without being asked. -->
+                        <dlg:VerilogACompilerSettingsView Margin="0,24,0,0"/>
+
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

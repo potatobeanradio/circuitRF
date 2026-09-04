@@ -698,8 +698,24 @@ public sealed class EditableComponent
         SymbolKind.Switch     => BuiltInSymbols.PrimitivesForSwitch(SwitchGlyphState()),
         SymbolKind.SwitchD    => BuiltInSymbols.PrimitivesForSwitchD(SwitchDGlyphThrow()),
         SymbolKind.Filter     => BuiltInSymbols.PrimitivesForFilter(FilterGlyphForm()),
+        // The model's own terminal names where the file has been read, numbers otherwise. The
+        // lookup is a dictionary probe and NOTHING else — see
+        // VerilogAModelIntrospection.CachedTerminalLabels for why this path may not describe a file
+        // itself (it would put a worker launch inside a glyph rebuild). Geometry is identical either
+        // way, so a component that has not been described yet is drawn exactly as it always was.
+        SymbolKind.VerilogA   => BuiltInSymbols.PrimitivesForVerilogA(
+            PortCount,
+            VerilogAModelIntrospection.CachedTerminalLabels(
+                ParamText(CircuitRF.Core.Devices.ComponentModelFactory.VerilogAFileParam),
+                ParamText(CircuitRF.Core.Devices.ComponentModelFactory.VerilogAModelParam))),
         _ => null,
     };
+
+    /// <summary>One parameter's expression as written, trimmed, or "" when the component has no such
+    /// parameter.</summary>
+    private string ParamText(string name)
+        => Parameters.FirstOrDefault(p => p.Name.Equals(name, StringComparison.Ordinal))
+                     ?.Expression?.Trim() ?? "";
 
     /// <summary>
     /// The parameters this component renders as schematic labels, in display order — the single

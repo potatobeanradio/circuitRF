@@ -17678,3 +17678,74 @@ The panel's residual 126 ms is the same thing plus the outline pass for the 4,21
 pixel, which legitimately still stroke. Per-layer at fit: top copper 70 ms, bottom copper 44 ms, and the
 spatial-index query and per-layer grouping for all 76,923 shapes is only 7 ms of it — culling is not the
 problem, rasterization is.
+
+## A compiled model's leads were numbered, and a deliberate four-pin placement read as a mistake (2026-09-03)
+
+Brief PM2 P3.
+
+**The leads are named by the MODEL where the model has said what they are.** `BuildVerilogASymbol`
+drew `1..5`, deliberately — circuitRF does not know what a user's model is, and a transistor glyph
+would assert something untrue. But the worker has reported each node's own `label` since it was
+written, and `ExternalDeviceDescriptor.Label` has always carried it: on a five-terminal part with five
+identical leads, numbers are the largest single source of mis-wiring, and drawing them over `d g s b
+dt` withholds something circuitRF was told. **This changes what the leads are CALLED, not what the
+part claims to be** — the body stays the generic box for exactly the original reason.
+
+**Each lead falls back independently.** A model that names three of five terminals draws three names
+and two numbers, not five numbers and not three names plus two blanks.
+
+**The invariant everything downstream rests on: labelling changes the TEXT and nothing else.**
+Identical pin coordinates, identical port indices, identical body. Connectivity is by port INDEX
+(`PortDefsOf` → `PortIndex = slot`) and geometry is by coordinate, so a labelled symbol that moved a
+pin would silently re-wire a placed component — and a schematic drawn before the file was read would
+connect differently from the same schematic after it. `VerilogATerminalLabelTests` asserts this
+directly rather than trusting it.
+
+**The render path may NOT describe a file, and that is why labels appear only once it has been read.**
+`EditableSchematic.InstanceGlyph` runs on every glyph rebuild.
+`VerilogAModelIntrospection.Describe` launches a worker process on a cache miss, so calling it there
+would put a process start inside a redraw. `CachedTerminalLabels` is therefore a pure dictionary probe
+against a second cache keyed on the component's own `File`/`Model` STRINGS — deliberately not on the
+file's mtime, which would put a file stat on the same path. Nothing renders wrongly in the meantime: a
+numbered lead is what the symbol has always drawn, and opening the component's parameters is what
+fills the cache.
+
+**An omitted THERMAL terminal is now explained, and only that case is.** Setting `Pins` one below the
+model's declared count is the ordinary way to place a self-heating part: the model reads
+`$port_connected`, sees the terminal is unconnected and grounds it itself. Without a word in the
+dialog that reads as a symbol drawn with one lead too few — and the user's fix would be to add the
+pin, which floats the thermal node and leaves the DC solve with **no solution at all** (PM1 measured
+6,210 iterations and no convergence). It is rendered at 0.7 opacity and NOT in the warning brush,
+because it confirms a correct configuration; colouring it as a problem would invite the very "fix"
+that breaks it.
+
+Scoped to exactly one omitted terminal that is exactly thermal. Two missing pins, or one missing
+ELECTRICAL pin, gets nothing — saying "that is fine" about a genuine mis-wiring is worse than saying
+nothing. Only expressible at all since the worker began reporting a node's discipline (PM1 P1); before
+that every OSDI node read as electrical and there was no thermal terminal to recognise.
+
+`OmittedThermalTerminalNote` is a public static taking `(statedPins, VerilogAModelInfo)` rather than a
+private method reading `_target`, so the brief's "asserted by text, not by screenshot" gate is a plain
+unit test.
+
+## A second family of nondeterministic DocGen figures: the harmonicaRF instrument (2026-09-03)
+
+Found while regenerating `docs/user` for the Verilog-A chapter, and recorded because it makes
+`tools/DocGen/check-docs-current.sh` report changes nobody made.
+
+`harmonica-instrument{,-dark}.svg` and `harmonica-readout-strip{,-dark}.svg` (and therefore
+`reference/harmonicarf.html`, ~240 lines of it) embed a **live measurement** in their captured text —
+`"40 HB solves · 61 fps"` on one run, `"889 HB solves · 37 fps"` on the next. Two identical runs on
+one machine differ, because the figure captures the instrument panel's own readout after however many
+frames it managed in the time it was given.
+
+**This is distinct from the known 7.2°-rotation flake** in `reference/schematic-editor.html`'s
+`analysis-editor-hb-dark` chevron (`matrix(0.9933 0.1157 …)` vs `translate(113 365)`), which is a
+different figure and a different cause. Both must be reverted rather than committed, and neither is
+id churn — a `\d+`-based classifier calls them both real changes, and in the strict sense they are;
+they are just not changes anyone made.
+
+Neither is fixed here — the fix is for the capture to freeze the counter and frame rate, which is
+DocGen's business rather than this brief's. Until then: after any `dotnet run --project tools/DocGen`,
+`git checkout --` these five paths unless the harmonicaRF instrument or the HB analysis editor was
+actually what you changed.

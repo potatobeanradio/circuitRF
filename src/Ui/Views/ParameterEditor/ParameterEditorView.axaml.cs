@@ -42,6 +42,7 @@ public partial class ParameterEditorView : UserControl
             vm.PickSpiceFileAsync     = PickSpiceFileAsync;
             vm.PickModelFileAsync     = PickModelFileAsync;
             vm.PickModelParameterAsync = PickModelParameterAsync;
+            vm.PickParameterSetFileAsync = PickParameterSetFileAsync;
             vm.PickSddEquationAsync   = PickSddEquationAsync;
             vm.RevealFileAsync        = RevealFileAsync;
             vm.OpenCvEditorDialogAsync = OpenCvEditorDialogAsync;
@@ -156,6 +157,14 @@ public partial class ParameterEditorView : UserControl
                 new FilePickerFileType("Compiled Verilog-A model (*.osdi)")
                 {
                     Patterns = ["*.osdi", "*.OSDI"],
+                },
+                // SOURCE. A user who has downloaded a model family has source, a manual and a
+                // parameter file, and no artefact — so this is the file they actually have.
+                // circuitRF compiles it once, with the compiler installed on this machine, and
+                // caches the result on the source's own content.
+                new FilePickerFileType("Verilog-A source (*.va, *.vams)")
+                {
+                    Patterns = ["*.va", "*.vams", "*.VA", "*.VAMS"],
                 },
                 new FilePickerFileType("Model library (*.so, *.dll, *.dylib)")
                 {
@@ -306,6 +315,37 @@ public partial class ParameterEditorView : UserControl
         if (TopLevel.GetTopLevel(this) is not Window owner) return null;
         var dlg = new ModelParameterPickerDialog(modelName, declared, alreadyPresent);
         return await dlg.ShowDialog<CircuitRF.Ui.Schematic.VerilogAParameterInfo?>(owner);
+    }
+
+    /// <summary>
+    /// Picks a fitted parameter set to load onto a compiled model.
+    ///
+    /// <para>The filter names the extensions these sets actually arrive under — a model family ships
+    /// its fitted parameters as an includable Verilog-A fragment, so <c>.va</c>/<c>.vams</c> and a
+    /// plain <c>.txt</c>/<c>.inc</c> are all in use for the same content. Everything is offered as
+    /// well, because the extension is convention rather than format.</para>
+    /// </summary>
+    private async Task<string?> PickParameterSetFileAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Load Model Parameters",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Verilog-A parameter set")
+                {
+                    Patterns = ["*.va", "*.vams", "*.inc", "*.txt",
+                                "*.VA", "*.VAMS", "*.INC", "*.TXT"],
+                },
+                FilePickerFileTypes.All,
+            ],
+        });
+
+        return files.Count == 1 ? files[0].TryGetLocalPath() : null;
     }
 
     /// <summary>Shows the slots this SDD can still use and returns the chosen one, or null.</summary>

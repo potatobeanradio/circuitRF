@@ -38,6 +38,7 @@ reference/dynamic-symbols.html     | Components whose symbol changes with their 
 reference/symbol-editor.html       | Drawing and editing a symbol.
 reference/sdd.html                 | The Symbolically-Defined Device: writing a nonlinear model as equations.
 reference/nonlinear-capacitor.html | C(V) as a Taylor series, and the C–V Editor that fits one.
+reference/veriloga.html            | Running a compact model you supply, from Verilog-A source or a compiled artefact.
 reference/match.html               | Direct synthesis of a bandpass matching network that absorbs both terminations.
 
 == Simulate

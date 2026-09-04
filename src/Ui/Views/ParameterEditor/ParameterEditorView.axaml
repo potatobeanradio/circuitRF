@@ -805,6 +805,28 @@
                    TextWrapping="Wrap"
                    Margin="6,2,6,0"/>
 
+        <!-- What the compile step said, when the File is Verilog-A source. Ordinary progress, so
+             it is rendered like the thermal note rather than in the warning brush. -->
+        <TextBlock Grid.Row="3"
+                   Text="{Binding VerilogACompileNote}"
+                   IsVisible="{Binding HasVerilogACompileNote}"
+                   Opacity="0.7"
+                   FontSize="11"
+                   TextWrapping="Wrap"
+                   Margin="6,2,6,0"/>
+
+        <!-- A thermal terminal deliberately left off. NOT the warning brush: this confirms the
+             ordinary configuration for a self-heating part, and colouring it as a problem would
+             invite the user to "fix" it by adding the pin — which floats the thermal node and
+             leaves the DC solve with no solution at all. -->
+        <TextBlock Grid.Row="3"
+                   Text="{Binding VerilogAThermalNote}"
+                   IsVisible="{Binding HasVerilogAThermalNote}"
+                   Opacity="0.7"
+                   FontSize="11"
+                   TextWrapping="Wrap"
+                   Margin="6,2,6,0"/>
+
         <!-- ── Row 4: Footer — +/- group buttons + Help + optional Close ───── -->
         <StackPanel Grid.Row="4"
                     IsVisible="{Binding IsNotEmptyState}"
@@ -846,6 +868,16 @@
                     IsVisible="{Binding ShowAddModelParameter}"
                     ToolTip.Tip="Choose one of the parameters this compiled model declares"
                     Command="{Binding AddModelParameterCommand}"/>
+            <!-- A whole FITTED SET at once. Both published physics-based model families ship their
+                 sets as Verilog-A parameter declarations rather than as SPICE model cards, and
+                 without this one set is 50-200 gestures through the picker beside it. Names the
+                 model does not declare are reported, never dropped in silence. -->
+            <Button Content="Load Parameters…"
+                    FontSize="11"
+                    Padding="8,3"
+                    IsVisible="{Binding ShowAddModelParameter}"
+                    ToolTip.Tip="Load a fitted parameter set written as Verilog-A parameter declarations"
+                    Command="{Binding LoadModelParametersCommand}"/>
             <Button Content="Edit CV..."
                     FontSize="11"
                     Padding="8,3"

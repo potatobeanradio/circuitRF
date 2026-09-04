@@ -873,8 +873,9 @@ public static class ComponentTypeRegistry
          : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
-            "File"  => "The compiled model (.osdi) to load. circuitRF runs a model you built — it does "
-                     + "not compile Verilog-A itself. Choosing one fills in Model and Pins below.",
+            "File"  => "The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) "
+                     + "which circuitRF builds once with the compiler installed on this machine and "
+                     + "reuses until the source changes. Choosing one fills in Model and Pins below.",
             "Model" => "Which device type inside that file to place. A file usually declares one, and "
                      + "then this can be left blank; when it declares several, pick the one you want.",
             "Pins"  => "How many terminals the symbol draws. It is the model's own terminal count, "

@@ -2391,3 +2391,98 @@ whose node 2 is declared in K/W and whose `setup_instance` is the only one in th
 its terminal count. `OsdiWorkerTests` O10-O12, `verify.py`, and
 `Engine.Tests/External/VerilogAConnectedTerminalsTests` (the whole chain: component → worker →
 collapse report → elaboration → DC solve) hold it.
+
+## circuitRF accepts Verilog-A source and runs the user's own compiler (2026-09-03)
+
+Brief PM2 P1, built after an explicit yes from the owner. The half of the owner's original question
+that PM1 did not answer was *"is it as simple as pointing a Verilog-A component at a `.va` file?"* —
+and until now the answer was no: the component took a *compiled* `.osdi`, so a user who had just
+downloaded a model family had source, a manual and a parameter file, and no artefact. The first
+"click" was leaving the application.
+
+**The compile lives behind `VerilogAFileResolver.Resolve` and nowhere else.** That is the one seam
+every consumer already passes through — the parameter dialog reading a model's terminals,
+elaboration, `Cli hb`, harmonicaRF's Set DUT — because all of them compose a provider name and land
+there. Putting it in the parameter dialog would have produced a `.va` that works in the GUI and fails
+headless, which is exactly the failure `docs/design/cli.md` exists to prevent.
+
+**The cache key is the source's CONTENT, and it has to include the includes.** Keyed on
+`SHA256(compiler identity ‖ every file's name and bytes)`, so:
+
+- an unedited model compiles **nothing** on the second and every later run — the owner's own question,
+  and the property the whole cache exists for;
+- re-saving a file without changing a character costs nothing, because the key is not the timestamp;
+- editing a `` `include ``d parameter or macro file **does** rebuild. Both surveyed families keep their
+  fitted sets and macros in files beside the source, so hashing only the top file would serve a stale
+  artefact after a parameter edit — one that runs, converges and looks healthy. Over-hashing costs a
+  needless recompile; under-hashing costs a wrong answer, and the scanner deliberately errs the first
+  way (a conditional include it cannot evaluate is followed anyway).
+- upgrading the compiler rebuilds, which is why the compiler's `--version` banner is in the key.
+
+**A cache HIT still probes the compiler**, because its identity is half the key. That is one
+`--version` per provider resolve — not per simulation — and it is not a rebuild. It is called out
+because the obvious test ("delete the compiler and prove the cache answers") fails for this reason and
+would otherwise read as a bug; `VerilogACompileTests` uses a compiler that identifies itself and
+refuses to *compile* instead, which measures the right thing.
+
+**An explicitly named compiler outranks PATH — the brief said the reverse and the reverse is wrong.**
+PM2 P1 specifies "PATH first, then a user-set preference". A preference that loses to PATH is inert on
+exactly the machine that needs it: one that already has a compiler on PATH which is the wrong version
+or the wrong build. The zero-configuration case is preserved either way (a blank preference means "use
+PATH"), so nothing is lost by the correction. Order is preference → `CRF_VERILOGA_COMPILER` → PATH,
+and a NAMED compiler that does not work is reported rather than silently fallen back from — the
+artefact the user gets must be the one they asked for.
+
+**`VerilogACompilerDiscovery.CandidateCommands` is the only place in circuitRF that names a compiler**
+(owner's call, 2026-09-03; `docs/PRD.md` already named it twice). It is a settable list so an unusual
+toolchain needs no code change and a test can point the whole mechanism at a stub. Every user-facing
+string — dialog, refusal, doc page — says "a Verilog-A compiler" and names no product.
+
+**Compiler diagnostics pass through verbatim.** The line and column are the whole value of a compiler
+error; circuitRF says only which source and which compiler and then gets out of the way. A failed
+compile also deletes any partial artefact, or the cache would adopt it as a successful build of that
+source and never rebuild.
+
+**Artefacts go to a per-user cache, never beside the source** — a model family is routinely installed
+read-only, and writing build output into someone else's delivery is wrong even where it succeeds. The
+path is reported on every compile and every cache hit, because a user who recompiles and sees no
+change needs to know where the artefact went.
+
+**The licence position is unchanged, and `tools/osdi-worker/README.md` was corrected rather than left
+contradicting the code.** It had stated twice — including in the licence table — that circuitRF
+"never invokes" a Verilog-A compiler. Starting a separately-installed program, handing it the user's
+own file and reading what it writes is use, not derivation: nothing GPL is compiled in, linked
+against or distributed, and removing the compiler leaves circuitRF working (it refuses to build
+source and still loads any `.osdi`). `THIRD-PARTY-NOTICES.md` gains no entry.
+
+**Two seams into `src/Ui`, both filled by a module initializer** (`VerilogACompilerInstaller`, the
+`LayoutTextOutline.TypefaceSource` pattern): the preference is `AppPreferences.VerilogACompiler` and
+the cache directory follows `AppDataRoot`, so a tool that redirects per-user state — the docs factory,
+a test — moves the compiled models with it instead of writing into the real user's cache. Unset, Core
+falls back to the environment variable, PATH and the platform's own `LocalApplicationData`, which is
+what `circuitrf hb` runs on.
+
+## A fitted parameter set is a file, and there was no way to load one (2026-09-03)
+
+Brief PM2 P2. Both surveyed model families ship their fitted sets as **Verilog-A parameter
+declarations** (`parameter real vxo = 1.3e7;  // comment`), not as SPICE `.model` cards. Without a
+reader, one set was 50-200 individual picker gestures per placed device.
+
+`VerilogAParameterSetReader` is deliberately **not** part of `SpiceModelCardTranslation`: that reads a
+different dialect for a different purpose, and teaching one reader both grammars plus a mode flag
+gives two things that drift.
+
+**Unknown names are reported, never dropped.** A set written for a different version of the same
+family is the common case, and a silent drop is a wrong answer that *converges* — the device runs on
+the model's own defaults for everything that went missing and looks perfectly healthy.
+
+**Only names the set actually assigns are written.** A parameter absent from the component is not
+forwarded, which already means "use the model's own default"; materialising the whole declared list
+would freeze today's defaults into the design and stop a recompile from changing one.
+
+Traps the gate holds: a comment containing a semicolon must not truncate the declaration (comments are
+blanked before matching, not scanned around); `from [...]`/`exclude` ranges are stripped from the
+value rather than read as part of it; values are carried as TEXT, never parsed to a double and
+re-rendered, so `1.3e7` and `2.4p` both survive as written; case is aligned through
+`OsdiModelDiscovery.AlignParameterCase`, which respells only on a case-insensitive match — so a
+genuine typo is refused by name rather than quietly becoming something the model accepts.

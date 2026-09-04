@@ -41,6 +41,11 @@ public static class AppDataRoot
         // whichever directory it was read from — so moving the directory has to drop it, or the next
         // read answers from the old location and the next write puts it in the new one.
         Theming.AppPreferencesIo.InvalidateCache();
+        // The compiled-model cache is per-user state like the rest and was resolved against the OLD
+        // directory. It is a path held in CircuitRF.Core rather than computed on each use, so moving
+        // the root has to move it too — otherwise a redirected process writes its build output into
+        // the real user's cache, which is exactly what redirecting exists to prevent.
+        Schematic.VerilogACompilerInstaller.RefreshCacheDirectory();
     }
 
     /// <summary>True when <see cref="RedirectTo"/> has moved the state directory somewhere else.</summary>

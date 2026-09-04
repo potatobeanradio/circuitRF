@@ -40,6 +40,7 @@
           <StackPanel Margin="4" Spacing="0">
             <dlg:ExternalWorkerSettingsView x:Name="WorkersTab"/>
             <dlg:UpdateSettingsView x:Name="UpdatesTab" Margin="0,24,0,0"/>
+            <dlg:VerilogACompilerSettingsView x:Name="CompilerTab" Margin="0,24,0,0"/>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
