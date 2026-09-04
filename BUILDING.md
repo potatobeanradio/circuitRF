@@ -109,22 +109,30 @@ tools/macos-vmhost/ensure-built.sh --with-image --arch x86_64   # ...and the oth
 ```
 ```powershell
 tools\senior-worker\ensure-built.cmd                      # Windows
+tools\osdi-worker\build.cmd                               # Windows, both architectures
 ```
 
 zig is not the only route:
 
 | Platform | Alternatives to zig | Also needed |
 |---|---|---|
-| Windows | x86-64 MSYS2/MinGW `gcc`, or Docker/Podman plus a `bash` | |
+| Windows | x86-64 MSYS2/MinGW `gcc`, or Docker/Podman plus a `bash` | for the OSDI worker, zig only — see the second note below |
 | macOS | Docker/Podman | Xcode command line tools, and a network for the VM image |
 | Linux | host `gcc` (x86-64), or Docker/Podman | |
 
-Two things worth knowing before they surprise you:
+Some things worth knowing before they surprise you:
 
-- **The Windows worker is built for x86-64 even on an ARM machine, deliberately.** It exists to load
-  vendor model libraries, those ship as x64, and a process holds exactly one instruction set —
-  Windows runs the pair under its own translation. A native ARM worker would start and then fail to
-  load a single model, so a `gcc` that builds for arm64 is refused rather than used.
+- **The Windows *device* worker is built for x86-64 even on an ARM machine, deliberately.** It
+  exists to load vendor model libraries, those ship as x64, and a process holds exactly one
+  instruction set — Windows runs the pair under its own translation. A native ARM worker would start
+  and then fail to load a single model, so a `gcc` that builds for arm64 is refused rather than used.
+- **The Windows *OSDI* worker is built for BOTH, and that is the same rule reaching a different
+  answer.** It loads a model the user compiled themselves, so its architecture must match *that
+  file's* — and an arm64 Windows machine routinely runs a translated x64 Verilog-A compiler, whose
+  output is x64. Neither architecture can be assumed, so `osdi-worker-x64.exe` and
+  `osdi-worker-arm64.exe` both ship in every Windows package and circuitRF reads the model's own PE
+  header to pick. **This is why zig is named on its own for Windows below:** a single-target compiler
+  builds only the architecture it runs on, which is half of what ships.
 - **There is no 64-bit ARM Linux build of the worker.** `build-linux.sh arm64` says so and packages
   without it; everything else in that package is unaffected.
 - **The macOS VM image is per-architecture and costs ~330 MB the first time for each.** Packaging

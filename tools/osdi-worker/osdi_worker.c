@@ -18,7 +18,6 @@
  * or "tidied" version is a silent corruption, not a style choice.
  */
 
-#include <dlfcn.h>
 #include <errno.h>
 #include <math.h>
 #include <stdbool.h>
@@ -26,7 +25,72 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+
+/* ââ the two things this program needs from its operating system âââââââââââââââââââ
+ *
+ * A DYNAMIC LOADER, and two pipe endpoints it can move exact byte counts through. Those are spelled
+ * differently on Windows and nothing else in this file is platform-dependent, so the difference is
+ * confined to this block rather than repeated at the call sites.
+ *
+ * ON WINDOWS STDIN AND STDOUT MUST BE PUT INTO BINARY MODE, and that is not tidiness. The frame
+ * header is four raw bytes of a uint32 and the payload is raw doubles, so the C runtime's default
+ * TEXT translation would expand every 0x0A on the way out and treat a 0x1A as end-of-file on the
+ * way in. A length field whose low byte is 0x0A is entirely ordinary â ten is a small number â
+ * which is the kind of corruption that appears as a desynchronised stream on some later call and
+ * never on the first one.
+ */
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#  include <fcntl.h>
+#  include <io.h>
+typedef int crf_ssize_t;
+
+/* LOAD_WITH_ALTERED_SEARCH_PATH puts the model's OWN directory first when its dependent DLLs are
+ * resolved, which is what a kit shipping a runtime beside its model needs. It applies only to an
+ * absolute path, and circuitRF always passes one. */
+static void *dl_open(const char *path) {
+    return (void *)LoadLibraryExA(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+}
+static void *dl_sym(void *h, const char *name) {
+    return (void *)(uintptr_t)GetProcAddress((HMODULE)h, name);
+}
+/* Rendered into a static buffer so the two call sites read exactly as they do against dlerror(). */
+static const char *dl_error(void) {
+    static char buf[512];
+    DWORD e = GetLastError();
+    DWORD n = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                             NULL, e, 0, buf, (DWORD)sizeof buf - 1u, NULL);
+    while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = '\0';
+    if (n == 0) snprintf(buf, sizeof buf, "error %lu", (unsigned long)e);
+    return buf;
+}
+static crf_ssize_t io_read(void *p, size_t n)        { return _read(_fileno(stdin), p, (unsigned)n); }
+static crf_ssize_t io_write(const void *p, size_t n) { return _write(_fileno(stdout), p, (unsigned)n); }
+static void io_use_binary_streams(void) {
+    _setmode(_fileno(stdin),  _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+}
+#  ifdef _MSC_VER
+#    define strdup _strdup
+#  endif
+#else
+#  include <dlfcn.h>
+#  include <unistd.h>
+typedef ssize_t crf_ssize_t;
+
+static void *dl_open(const char *path)             { return dlopen(path, RTLD_NOW | RTLD_LOCAL); }
+static void *dl_sym(void *h, const char *name)     { return dlsym(h, name); }
+static const char *dl_error(void)                  { const char *e = dlerror(); return e ? e : "unknown error"; }
+static crf_ssize_t io_read(void *p, size_t n)        { return read(STDIN_FILENO, p, n); }
+static crf_ssize_t io_write(const void *p, size_t n) { return write(STDOUT_FILENO, p, n); }
+static void io_use_binary_streams(void)            { /* a pipe here is already exactly its bytes */ }
+#endif
 
 #include "osdi.h"
 
@@ -50,7 +114,7 @@ static int errno_is_intr(void) { return errno == EINTR; }
 static int read_exact(void *dst, size_t n) {
     unsigned char *p = (unsigned char *)dst;
     while (n > 0) {
-        ssize_t r = read(STDIN_FILENO, p, n);
+        crf_ssize_t r = io_read(p, n);
         if (r == 0) return 0;               /* clean end of stream: circuitRF went away */
         if (r < 0) { if (errno_is_intr()) continue; return -1; }
         p += (size_t)r; n -= (size_t)r;
@@ -61,7 +125,7 @@ static int read_exact(void *dst, size_t n) {
 static int write_exact(const void *src, size_t n) {
     const unsigned char *p = (const unsigned char *)src;
     while (n > 0) {
-        ssize_t w = write(STDOUT_FILENO, p, n);
+        crf_ssize_t w = io_write(p, n);
         if (w <= 0) { if (w < 0 && errno_is_intr()) continue; return -1; }
         p += (size_t)w; n -= (size_t)w;
     }
@@ -243,13 +307,13 @@ static const OsdiDescriptor *descriptor_at(uint32_t i) {
 }
 
 static int load_library(const char *path) {
-    g_lib.handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-    if (!g_lib.handle) { fprintf(stderr, "osdi-worker: dlopen failed: %s\n", dlerror()); return -1; }
+    g_lib.handle = dl_open(path);
+    if (!g_lib.handle) { fprintf(stderr, "osdi-worker: dlopen failed: %s\n", dl_error()); return -1; }
 
-    uint32_t *maj = (uint32_t *)dlsym(g_lib.handle, "OSDI_VERSION_MAJOR");
-    uint32_t *min = (uint32_t *)dlsym(g_lib.handle, "OSDI_VERSION_MINOR");
-    uint32_t *num = (uint32_t *)dlsym(g_lib.handle, "OSDI_NUM_DESCRIPTORS");
-    void     *des = dlsym(g_lib.handle, "OSDI_DESCRIPTORS");
+    uint32_t *maj = (uint32_t *)dl_sym(g_lib.handle, "OSDI_VERSION_MAJOR");
+    uint32_t *min = (uint32_t *)dl_sym(g_lib.handle, "OSDI_VERSION_MINOR");
+    uint32_t *num = (uint32_t *)dl_sym(g_lib.handle, "OSDI_NUM_DESCRIPTORS");
+    void     *des = dl_sym(g_lib.handle, "OSDI_DESCRIPTORS");
     if (!maj || !min || !num || !des) {
         fprintf(stderr, "osdi-worker: '%s' does not export the OSDI entry points "
                         "(OSDI_VERSION_MAJOR/MINOR, OSDI_NUM_DESCRIPTORS, OSDI_DESCRIPTORS).\n", path);
@@ -263,7 +327,7 @@ static int load_library(const char *path) {
      * sizeof(OsdiDescriptor) — which is exactly what lets a 0.4 library be driven by a header
      * built for 0.3, since 0.4 only appends. Without it we must use our own size, which is
      * correct only when the major/minor match what this header was generated for. */
-    size_t *dsz = (size_t *)dlsym(g_lib.handle, "OSDI_DESCRIPTOR_SIZE");
+    size_t *dsz = (size_t *)dl_sym(g_lib.handle, "OSDI_DESCRIPTOR_SIZE");
     if (dsz) g_lib.descriptor_size = *dsz;
     else     g_lib.descriptor_size = sizeof(OsdiDescriptor);
 
@@ -981,6 +1045,9 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
 /* ── command loop ─────────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv) {
+    /* Before the first byte moves either way: see the platform block at the top of this file. */
+    io_use_binary_streams();
+
     if (argc < 2) {
         fprintf(stderr, "usage: %s <library.osdi>\n", argv[0]);
         return 2;

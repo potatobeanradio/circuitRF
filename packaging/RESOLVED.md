@@ -5,6 +5,64 @@ symptom first, because that is what the next person will have in front of them.
 
 ---
 
+## A compiled Verilog-A model could never be evaluated on Windows, and the message blamed a compiler (2026-09-04)
+
+**Symptom:** on a packaged Windows arm64 install (beta.10, auto-updated from GitHub), the Component
+Parameters dialog refused a compiled Verilog-A model with "circuitRF's own model-hosting helper
+('osdi-worker') was not found beside the application ... It is built from tools/osdi-worker and needs
+a C compiler". Owner-reported, alongside a reasonable guess that it was an arm64 problem.
+
+**It was not an arm64 problem, and it was not a missing compiler.** There was no Windows build of the
+OSDI worker at all, on any architecture. `src/Ui/CircuitRF.Ui.csproj`'s `EnsureDeviceWorker` target
+ran `tools/osdi-worker/build.sh` under `Condition="'$(OS)' != 'Windows_NT'"` and there was no `.cmd`
+counterpart beside it, unlike `senior-worker`, which has had one all along. So a Windows machine ran
+no OSDI build step of any kind however many compilers were installed on it — and
+`build-windows.ps1`, which refuses to package without `senior_worker.exe`, was never asked about this
+one. **Every Windows installer circuitRF has released shipped without it.**
+
+**The message was the second defect, and it is the one that cost the report.** It stated a cause
+("needs a C compiler") that was false on the platform it was being read on, and stated it as settled
+fact — so the only action it suggested was one that could not have worked. It has been replaced by
+two sentences composed from what is actually on disk at the moment of the refusal: nothing beside the
+application (naming the running build, e.g. `Windows x64 build on arm64`), or workers present for
+some other architecture than the model's. **The second one retires itself.** It is produced by
+comparing files, not by a written-down claim about which platforms are supported, so the day a worker
+for that architecture ships beside the application the sentence stops appearing with nothing to
+remember to delete. `tests/Core.Tests/Devices/External/OsdiWorkerArchitectureTests.cs` asserts exactly
+that transition.
+
+**Windows ships BOTH architectures of this worker, which is the opposite of `senior-worker`'s rule
+and follows from the same premise.** The match that matters is worker-to-MODEL, never
+worker-to-circuitRF: the worker is a separate process, Windows runs either kind, and what constrains
+it is that it `LoadLibrary`s the model into itself. `senior-worker` hosts vendor binaries that only
+ever ship as x64, so its architecture is known and fixed. This one hosts the user's own build output
+— and an arm64 Windows machine routinely runs a translated x64 Verilog-A compiler, whose `.osdi`
+files are x64 — so neither can be assumed and both are shipped. `VerilogAFileResolver` reads the
+model's PE machine word and picks; `PeImports.MachineOf` is the reader, reusing the PE parser the
+worker-stub work already put there.
+
+**Three smaller things fell out of it, all on the same Windows path:**
+
+- **`DeviceWorkerManifest.ResolveCommand` never tried the executable suffix.** A kit's
+  `device-provider.json` names the helper by bare command — the documented, gated form — so on
+  Windows it resolved nothing, fell through to the system path, found nothing there either, and
+  reported a missing program. It now tries `<command>` and `<command>.exe`.
+- **The framed pipe needed `_setmode(_O_BINARY)` on both ends.** The header is four raw bytes of a
+  `uint32` and the payload is raw doubles, so the CRT's default text translation would rewrite every
+  0x0A on the way out and stop at a 0x1A on the way in. A length field whose low byte is 0x0A is
+  entirely ordinary, so this would have presented as a desynchronised stream on some later call and
+  never on the first.
+- **The argument loop in a `.cmd` cannot chain with `&`.** `if COND a & b` runs `b`
+  unconditionally in cmd, so an arg loop written that way consumes arguments in pairs whether they
+  matched or not. `senior-worker/ensure-built.cmd` has that shape and gets away with it because
+  `--dest <dir>` is its only real call; the new script is parenthesised instead.
+
+**Gates:** `PackagingScriptTests.EveryHelper_IsBuiltOnWindowsToo` (a build step conditioned ON
+Windows must exist for every helper that has a Windows script) and
+`BothWindowsOsdiWorkers_ArePublishedAndDemandedByPackaging` (both architectures published by the
+`.csproj` and demanded by `build-windows.ps1`, since building only ever warns and a release must
+not).
+
 ## The Desktop shortcut the .msi lays down draws the generic Windows icon (2026-09-02)
 
 **Symptom:** install the packaged Windows build from the `.msi`; the shortcut placed on the Desktop

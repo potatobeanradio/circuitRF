@@ -589,12 +589,19 @@ public sealed class DeviceWorkerManifest
         if (command.Contains(Path.DirectorySeparatorChar) || command.Contains('/')) return command;
         if (string.IsNullOrEmpty(ToolsDirectory)) return command;
 
-        try
+        // The executable suffix as well as the bare name, because a kit names the helper the same
+        // way on every platform and circuitRF ships it as `.exe` on one of them. Without this a
+        // Windows install resolves nothing, falls through to the system path, finds nothing there
+        // either, and reports a missing program the user never installed and could not have.
+        foreach (string spelling in new[] { command, command + ".exe" })
         {
-            string candidate = Path.GetFullPath(Path.Combine(ToolsDirectory, command));
-            if (File.Exists(candidate)) return candidate;
+            try
+            {
+                string candidate = Path.GetFullPath(Path.Combine(ToolsDirectory, spelling));
+                if (File.Exists(candidate)) return candidate;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException) { /* leave it as written */ }
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException) { /* leave it as written */ }
 
         return command;
     }

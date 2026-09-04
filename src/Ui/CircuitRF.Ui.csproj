@@ -402,6 +402,16 @@
           Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\senior-worker\ensure-built.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;"
           ContinueOnError="WarnAndContinue"
           StandardOutputImportance="high" />
+    <!--
+      ...and the OSDI worker on Windows, which until 2026-09 had no Windows build at ALL. The
+      condition above this one is `!= Windows_NT`, so a Windows machine ran no OSDI build step of
+      any kind, on either architecture - and the resulting installers shipped without it. Placing a
+      compiled Verilog-A model on a schematic then refused, naming a helper the user had no way to
+      obtain, on every Windows build circuitRF has ever released.
+    -->
+    <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\osdi-worker\build.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;"
+          ContinueOnError="true" StandardOutputImportance="low" />
   </Target>
 
   <!--
@@ -425,8 +435,16 @@
       <_CrfHelperProgram Include="$(OutDir)senior_worker" />
       <_CrfHelperProgram Include="$(OutDir)senior_worker.exe" />
       <_CrfHelperProgram Include="$(OutDir)crf-model-host.dll" />
-      <!-- the OSDI worker -->
+      <!--
+        the OSDI worker: the POSIX build, and Windows' PAIR - one per architecture, plus the flat
+        copy the bare-command route uses. Both Windows architectures ship because this worker's
+        architecture must match THE MODEL'S, not circuitRF's: an arm64 Windows machine commonly runs
+        a translated x64 Verilog-A compiler, whose .osdi files are x64.
+      -->
       <_CrfHelperProgram Include="$(OutDir)osdi-worker" />
+      <_CrfHelperProgram Include="$(OutDir)osdi-worker.exe" />
+      <_CrfHelperProgram Include="$(OutDir)osdi-worker-x64.exe" />
+      <_CrfHelperProgram Include="$(OutDir)osdi-worker-arm64.exe" />
       <!-- the macOS VM host, with the kernel and initramfs it looks for beside itself -->
       <_CrfHelperProgram Include="$(OutDir)crf-vmhost" />
       <_CrfHelperProgram Include="$(OutDir)crf-linux-kernel" />

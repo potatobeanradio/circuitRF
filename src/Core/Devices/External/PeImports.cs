@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace CircuitRF.Core.Devices.External;
 
 /// <summary>
@@ -197,6 +199,52 @@ public static class PeImports
         offset = 0;
         return false;
     }
+
+    // ── which machine a PE was built for ─────────────────────────────────────
+
+    /// <summary>
+    /// The processor architecture <paramref name="image"/> was built for, or null when it is not a
+    /// readable PE at all (a Mach-O, an ELF, a text file, a truncated download).
+    ///
+    /// <para><b>Why a caller wants this.</b> A worker that loads a library into its own process must
+    /// be built for the same architecture, because a process holds exactly one instruction set. On
+    /// Windows that is not a formality: an arm64 machine routinely runs a translated x64 toolchain,
+    /// so the model a user just compiled there is x64 while the machine is not. Reading the answer
+    /// out of the file is the only way to be right in both directions; assuming either the machine's
+    /// architecture or circuitRF's own produces a load that fails with the operating system's own
+    /// wording about a bad image, which names nothing a user can act on.</para>
+    ///
+    /// <para>Only the COFF header is consulted, so a prefix of the file is enough — see
+    /// <see cref="HeaderPrefixBytes"/>. Null for a machine value this build has no name for, which
+    /// is a clear answer and not a failure to look: the caller then has no architecture to match on
+    /// and should fall back rather than refuse.</para>
+    /// </summary>
+    public static Architecture? MachineOf(ReadOnlySpan<byte> image)
+    {
+        if (!TryU16(image, 0, out ushort mz) || mz != 0x5A4D) return null;           // "MZ"
+        if (!TryU32(image, 0x3C, out uint peOffset)) return null;
+        if (peOffset > int.MaxValue - 8) return null;
+
+        int coff = (int)peOffset;
+        if (!TryU32(image, coff, out uint sig) || sig != 0x0000_4550) return null;   // "PE\0\0"
+        if (!TryU16(image, coff + 4, out ushort machine)) return null;
+
+        return machine switch
+        {
+            0x8664 => Architecture.X64,
+            0xAA64 => Architecture.Arm64,
+            0x014C => Architecture.X86,
+            0x01C4 => Architecture.Arm,
+            _      => null,
+        };
+    }
+
+    /// <summary>
+    /// How much of a file <see cref="MachineOf"/> needs. The COFF header sits at the offset written
+    /// at 0x3C, and a linker puts that within the first page; a value past this is refused rather
+    /// than chased, so identifying an architecture never reads a hundred-megabyte model library.
+    /// </summary>
+    public const int HeaderPrefixBytes = 4096;
 
     // ── bounds-checked primitives ────────────────────────────────────────────
 

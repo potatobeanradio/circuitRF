@@ -3,48 +3,68 @@
         x:Class="CircuitRF.Ui.Views.Dialogs.AboutWindow"
         Title="About circuitRF"
         Width="400"
-        Height="340"
+        Height="364"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
+    <!--
+        EVERY LINE HERE IS A SelectableTextBlock, not a TextBlock, and that is the whole point of the
+        control: the things a user comes to this dialog for are the version and the build, and both
+        exist to be pasted into a bug report. A plain TextBlock renders them and refuses to give them
+        up, which leaves retyping a version string by eye as the only route.
+
+        HorizontalAlignment is set on each one deliberately. CircuitRfStyles gives SelectableTextBlock
+        a Left default (Avalonia's own is Stretch, which mis-sizes it in a StackPanel), and a local
+        value is what overrides a style setter - so a centred line here has to say so.
+    -->
     <StackPanel Margin="32,28,32,24" Spacing="0">
 
         <!-- App name -->
-        <TextBlock Text="circuitRF"
-                   FontSize="28"
-                   FontWeight="Bold"
-                   HorizontalAlignment="Center"/>
+        <SelectableTextBlock Text="circuitRF"
+                             FontSize="28"
+                             FontWeight="Bold"
+                             HorizontalAlignment="Center"/>
 
-        <!-- Version — set from AppVersion (the repo-root VERSION file) in the code-behind. -->
-        <TextBlock x:Name="VersionText"
-                   Text="Version"
-                   FontSize="12"
-                   HorizontalAlignment="Center"
-                   Opacity="0.6"
-                   Margin="0,4,0,16"/>
+        <!-- Version - set from AppVersion (the repo-root VERSION file) in the code-behind. -->
+        <SelectableTextBlock x:Name="VersionText"
+                             Text="Version"
+                             FontSize="12"
+                             HorizontalAlignment="Center"
+                             Opacity="0.6"
+                             Margin="0,4,0,0"/>
+
+        <!-- Which BUILD - platform and architecture, from AppVersion.Platform. Deliberately quiet:
+             it answers a question only some users ever ask, and it must not compete with the
+             version above it. -->
+        <SelectableTextBlock x:Name="PlatformText"
+                             Text="Platform"
+                             FontSize="11"
+                             HorizontalAlignment="Center"
+                             Opacity="0.45"
+                             Margin="0,2,0,16"/>
 
         <!-- Description -->
-        <TextBlock Text="Lightweight RF Circuit and EM Simulator"
-                   FontSize="14"
-                   FontWeight="SemiBold"
-                   HorizontalAlignment="Center"
-                   TextWrapping="Wrap"
-                   TextAlignment="Center"/>
+        <SelectableTextBlock Text="Lightweight RF Circuit and EM Simulator"
+                             FontSize="14"
+                             FontWeight="SemiBold"
+                             HorizontalAlignment="Center"
+                             TextWrapping="Wrap"
+                             TextAlignment="Center"/>
 
-        <TextBlock Text="S-parameters, harmonic balance, loadpull, EM MoM."
-                   FontSize="12"
-                   HorizontalAlignment="Center"
-                   Opacity="0.7"
-                   TextWrapping="Wrap"
-                   TextAlignment="Center"
-                   Margin="0,4,0,4"/>
+        <SelectableTextBlock Text="S-parameters, harmonic balance, loadpull, EM MoM."
+                             FontSize="12"
+                             HorizontalAlignment="Center"
+                             Opacity="0.7"
+                             TextWrapping="Wrap"
+                             TextAlignment="Center"
+                             Margin="0,4,0,4"/>
 
-        <TextBlock Text="Open source. Built with .NET 10 and Avalonia."
-                   FontSize="12"
-                   HorizontalAlignment="Center"
-                   Opacity="0.7"
-                   Margin="0,2,0,24"/>
+        <SelectableTextBlock Text="Open source. Built with .NET 10 and Avalonia."
+                             FontSize="12"
+                             HorizontalAlignment="Center"
+                             Opacity="0.7"
+                             Margin="0,2,0,24"/>
 
         <!-- Action row -->
         <StackPanel Orientation="Horizontal"

@@ -191,9 +191,36 @@ question above: **this path needs no VM on macOS.**
   existing manifest already resolves (bare command against circuitRF's tools folder, relative
   argument against the manifest's own folder). `dotnet build` copies the worker beside the
   application. Gated by `O7`, which stands up a kit folder as an import leaves one.
-- **Only the host platform builds.** No cross-compilation, no Windows split, no VM entry. Unlike the
-  other worker this may not need one: a user compiles `.osdi` files natively, so there may be no
-  foreign binary to bridge. Worth confirming before building any of that.
+- ~~Only the host platform builds.~~ **DONE (2026-09), and it was not a small omission.** There was
+  no Windows build of this worker at ALL, on any architecture: `CircuitRF.Ui.csproj` conditioned the
+  OSDI build step `'$(OS)' != 'Windows_NT'` and there was no `.cmd` counterpart to run instead. Every
+  Windows installer circuitRF has released therefore shipped without it, and placing a compiled
+  Verilog-A model refused naming a helper the user had no way to obtain. `build.cmd` is the
+  counterpart; `PackagingScriptTests.EveryHelper_IsBuiltOnWindowsToo` is the gate.
+
+  **Windows ships BOTH architectures, and that follows from what this worker does rather than from
+  what circuitRF is.** It `LoadLibrary`s a model *the user compiled*, and a process holds one
+  instruction set — so the match that matters is worker-to-MODEL. circuitRF's own architecture never
+  enters into it; the worker is a separate process, and Windows runs either kind. An arm64 Windows
+  machine commonly runs a translated x64 Verilog-A compiler, and that compiler emits x64 `.osdi`
+  files, so neither architecture can be assumed. `osdi-worker-x64.exe` and `osdi-worker-arm64.exe`
+  both ship, plus a flat `osdi-worker.exe` copy for the bare-command route a kit's
+  `device-provider.json` uses, and `VerilogAFileResolver` reads the model's own PE machine word to
+  choose. **This is the opposite conclusion to `senior-worker`'s x64-always rule, from the same
+  premise:** there the model is a vendor's binary that only ships as x64, so the architecture is
+  known; here it is the user's build output, so it is read.
+
+  The C source needed a port and it is confined to one block at the top: `LoadLibraryEx`/
+  `GetProcAddress` for the loader, `_read`/`_write` for the framed pipe, and `_setmode(_O_BINARY)`
+  on both ends of it — that last one is not tidiness. The frame header is four raw bytes of a
+  `uint32` and the payload is raw doubles, so text translation would rewrite every 0x0A going out
+  and stop at a 0x1A coming in. A length whose low byte is 0x0A is entirely ordinary, which is what
+  makes that failure appear on some later call and never on the first.
+
+  Nothing branches on the operating system in the resolver. A Mach-O or an ELF does not begin `MZ`,
+  so off Windows the model reports no architecture, nothing is matched on, and the first candidate is
+  taken exactly as before — the rule is a fact about the FILES, which is what keeps the one code path
+  in use everywhere it is tested.
 - ~~Untested against a real `.osdi`.~~ **DONE (2026-08-03)** — driven against real compact models
   compiled from an openly-licensed kit's own Verilog-A. Read correctly: a 4-terminal resistor with
   a thermal node (129 parameters, 4 internal nodes) and an industrial MOSFET (809 parameters, 9

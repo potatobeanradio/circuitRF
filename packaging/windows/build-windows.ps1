@@ -312,6 +312,48 @@ To package deliberately without it: set CRF_ALLOW_NO_DEVICE_WORKER=1
     }
 
 
+    # == The OSDI worker ===========================================================
+    #
+    # The program that evaluates a compiled Verilog-A model a user placed on a schematic. A separate
+    # helper from the one above, with a separate history: it had NO Windows build at all until
+    # 2026-09, so every Windows installer circuitRF has released shipped without it, and placing a
+    # compiled model refused naming a helper the user had no way to obtain.
+    #
+    # BOTH ARCHITECTURES, on every Windows package, and that is not a copy of the arch loop above.
+    # This worker LoadLibrary()s the user's own compiled model, so it must match THE MODEL'S
+    # architecture, not circuitRF's - and an arm64 Windows machine routinely runs a translated x64
+    # Verilog-A compiler, whose output is x64. Shipping one of the pair leaves the other's users with
+    # a helper that cannot load anything they can compile.
+    #
+    # Set CRF_ALLOW_NO_DEVICE_WORKER=1 to package without it on purpose; it covers both helpers.
+
+    $osdiFiles = @('osdi-worker-x64.exe', 'osdi-worker-arm64.exe')
+    $osdiMissing = $osdiFiles | Where-Object { -not (Test-Path (Join-Path $publish $_)) }
+
+    if ($osdiMissing) {
+        $what = $osdiMissing -join ', '
+        if ($env:CRF_ALLOW_NO_DEVICE_WORKER -eq '1') {
+            Write-Host "WARNING: packaging without the OSDI worker ($what). Compiled Verilog-A models will not run."
+        } else {
+            Write-Host "Missing from the publish tree: $what"
+            throw @'
+The OSDI worker is missing from the publish tree.
+
+circuitRF builds it during 'dotnet build' (tools\osdi-worker\build.cmd), but only warns when no C
+compiler is present. Install zig and run this script again:
+
+    zig      (winget install zig.zig)
+
+zig is named on its own here rather than as one of several: it targets both x86-64 and arm64 from
+either kind of machine, and both are needed. A single-target compiler (an MSYS2/MinGW gcc, a clang
+without cross targets) builds only the architecture it runs on, which is half of what ships.
+
+To package deliberately without it: set CRF_ALLOW_NO_DEVICE_WORKER=1
+'@
+        }
+    }
+
+
     foreach ($Scope in $archScopes) {
 
         $perUser = ($Scope -eq 'perUser')

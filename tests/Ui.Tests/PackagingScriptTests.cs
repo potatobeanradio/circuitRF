@@ -65,6 +65,78 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>Every platform that can build a helper must actually RUN its build step.</b>
+    ///
+    /// <para>Reported from Windows arm64, 2026-09: placing a compiled Verilog-A model refused,
+    /// naming a helper the user had no way to obtain. It was not an architecture problem. The OSDI
+    /// worker's build step was conditioned <c>'$(OS)' != 'Windows_NT'</c> and had no Windows
+    /// counterpart at all, so a Windows machine ran no OSDI build of any kind — and every Windows
+    /// installer circuitRF has released shipped without it, on both architectures.</para>
+    ///
+    /// <para>The failure was silent in the way this file already guards against twice over: the
+    /// application builds, installs, opens a kit and describes it correctly, and only refuses at the
+    /// moment a compiled model is asked to evaluate. So the invariant is asserted structurally — for
+    /// each helper, a build step conditioned on Windows and one conditioned off it.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("senior-worker", "ensure-built.sh", "ensure-built.cmd")]
+    [InlineData("osdi-worker",   "build.sh",        "build.cmd")]
+    public void EveryHelper_IsBuiltOnWindowsToo(string tool, string posixScript, string windowsScript)
+    {
+        Assert.True(File.Exists(RepoFile("tools", tool, posixScript)),   $"{tool}/{posixScript} is missing.");
+        Assert.True(File.Exists(RepoFile("tools", tool, windowsScript)), $"{tool}/{windowsScript} is missing.");
+
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+
+        var execs = Regex.Matches(project, @"<Exec[\s\S]*?/>")
+                         .Select(m => m.Value)
+                         .Where(e => e.Contains(windowsScript, StringComparison.Ordinal))
+                         .ToList();
+
+        Assert.True(execs.Count > 0,
+            $"{tool}/{windowsScript} exists but the .csproj never runs it, so a Windows build "
+            + "produces no helper and every Windows installer ships without one.");
+
+        // Conditioned ON Windows, not merely present: the defect was an OSDI step that existed and
+        // was excluded, which reads as covered until someone checks which way the condition points.
+        Assert.Contains(execs, e =>
+            e.Contains("IsOSPlatform('Windows')", StringComparison.Ordinal)
+            || e.Contains("'$(OS)' == 'Windows_NT'", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// <b>Both Windows architectures of the OSDI worker ship, and packaging checks for both.</b>
+    ///
+    /// <para>Not a copy of the arch loop that builds the installers. This worker loads the user's own
+    /// compiled model into its own process, so it must match THE MODEL'S architecture rather than
+    /// circuitRF's — and an arm64 Windows machine routinely runs a translated x64 Verilog-A compiler,
+    /// whose output is x64. Shipping one of the pair leaves the other's users with a helper that
+    /// cannot load anything they can compile, and they find out at Run.</para>
+    /// </summary>
+    [Fact]
+    public void BothWindowsOsdiWorkers_ArePublishedAndDemandedByPackaging()
+    {
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+        string script  = File.ReadAllText(RepoFile("packaging", "windows", "build-windows.ps1"));
+        string build   = File.ReadAllText(RepoFile("tools", "osdi-worker", "build.cmd"));
+
+        foreach (string product in new[] { "osdi-worker-x64.exe", "osdi-worker-arm64.exe" })
+        {
+            Assert.True(build.Contains(product.Replace(".exe", string.Empty), StringComparison.Ordinal)
+                        || build.Contains("osdi-worker-%2.exe", StringComparison.Ordinal),
+                        $"tools/osdi-worker/build.cmd never produces '{product}'.");
+
+            Assert.True(project.Contains($"$(OutDir){product}\"", StringComparison.Ordinal),
+                        $"'{product}' is built beside the assemblies but never published, so no "
+                        + "installer contains it. Add it to CrfPublishHelperPrograms.");
+
+            Assert.True(script.Contains(product, StringComparison.Ordinal),
+                        $"packaging/windows/build-windows.ps1 does not check for '{product}'. "
+                        + "Building only warns when a compiler is missing; a RELEASE must not.");
+        }
+    }
+
+    /// <summary>
     /// <b>Every <c>.ps1</c> in <c>packaging/</c> must be pure ASCII.</b>
     ///
     /// <para>Windows PowerShell 5.1 — still the default <c>powershell.exe</c> on every Windows box —
