@@ -44,6 +44,25 @@ public partial class WorkspaceViewModel
             return;
         }
 
+        // ── R-tm2-15: the safety net is laid BEFORE the move, or the move does not happen ──
+        // A move whose forwarding record was lost is worse than a move that did not happen: the first
+        // breaks every design that references the cell, quietly, on somebody else's machine; the
+        // second is a message the librarian reads immediately. This is the ONE place in the feature
+        // where refusing is correct, and it is the opposite of R-tm2-1 on purpose — R-tm2-1 refuses
+        // to block the ORGANISING; this refuses to complete a move whose safety net could not be laid.
+        //
+        // The probe is a real write (R-sl2-1's rule), because a share ACL, a POSIX mode and a
+        // read-only mount are all invisible to File.GetAttributes. It runs before anything is closed
+        // or moved, so a refusal costs the user nothing but the gesture.
+        if (!MoveRedirects.CanRecord(workspaceRoot, out string? recordError))
+        {
+            Messages.Warning(
+                $"'{Path.GetFileName(intent.SourcePath)}' was not moved: its forwarding record could "
+              + $"not be written to {MoveRedirects.FileName} ({recordError}). Without that record, any "
+              + "project referencing this cell that is not open here would silently fail to find it.");
+            return;
+        }
+
         string oldPath = intent.SourcePath;
         string newPath = intent.DestPath;
         string name    = Path.GetFileName(oldPath);
@@ -133,8 +152,13 @@ public partial class WorkspaceViewModel
     }
 
     /// <summary>
-    /// Appends the forwarding record. A failure here is reported and nothing more: the move has
-    /// already happened, and a move that succeeded is not undone by a log that did not.
+    /// Appends the forwarding record, after the move.
+    ///
+    /// <para>Whether one COULD be written was settled before the move by
+    /// <see cref="MoveRedirects.CanRecord"/> (R-tm2-15), which is what makes gate 9's "the library is
+    /// left untouched" true. A failure that still happens here — the share dropped in the interval —
+    /// is reported and nothing more: the move has already happened, and a move that succeeded is not
+    /// undone by a log that did not.</para>
     /// </summary>
     private void RecordMoveRedirect(string workspaceRoot, string oldPath, string newPath)
     {

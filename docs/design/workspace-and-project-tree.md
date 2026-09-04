@@ -613,6 +613,57 @@ appeared or went away. Recording the signature instead would have satisfied the 
 putting a copy of the library's interface into every referencing file, which R-sl3-3 rejects for good
 reason. Gate: `tests/Ui.Tests/CellInterfaceChangeTests.cs`.
 
+### 4.4 The moved-cell forwarding record (TM2, built 2026-09-04)
+
+`brief-tree-move-2-moves-across-a-shared-library.md`. **§4.1's rewrite repairs every referrer it can
+reach; this is what the ones it cannot reach get.** A librarian tidying a shared library drags `Amp`
+into `rf/`; forty designs across the organisation reference that cell, in workspaces this process does
+not have open, cannot write into, and in general cannot see. Before TM2 those designs broke — silently,
+later, on someone else's machine.
+
+- **The mover leaves a forwarding record; nothing chases the referrers.** A network scan for workspaces
+  that reference this cell is unbounded, slow, and wrong on its own terms — the workspace that matters
+  may be on a laptop that is closed. The mover always has write access to the root of the thing it is
+  moving, so the record can always be written exactly when the move can happen, and nothing else needs
+  write access to anything. The file is `.cmoves`; its format and resolution order are §5.1.
+- **The move is REFUSED when the record cannot be written** *(R-tm2-15)*, and this is the one place in
+  the feature where refusing is correct. A move whose forwarding record was lost is worse than a move
+  that did not happen: the first breaks forty designs quietly, the second is a message the librarian
+  reads immediately. It is deliberately the opposite of the rule above it — organising the library is
+  the librarian's job and is never blocked; what is blocked is completing a move whose safety net could
+  not be laid. The probe is a real write, for SL2 R-sl2-1's reason.
+- **`Moved` is reported and never silently absorbed.** The cell resolves, the symbol is right and the
+  drawing is right — **and the file on disk says something that is no longer true.** Resolving quietly
+  would let a workspace drift arbitrarily far from its stored references with the `.cmoves` chain as the
+  only thing holding it together.
+- **Three surfaces, the same three §4.3 uses and no others:** the Messages panel on open — **one line
+  per moved CELL, not per instance**; the instance's Properties inspector; and the §5C R51 chrome. Never
+  the rendered geometry (R36 without exception).
+- **It is NOT a warning colour** *(R-tm2-14)*. This is an expected, correct state that happens to be
+  worth mentioning, and colouring it like breakage teaches users to ignore the colour that also marks
+  real breakage. The Messages line is posted at **Info**; the canvas tag is in the ordinary
+  instance-name paint, and the layout tag in the neutral chrome-text role. `NotFound` stays the warning.
+- **Adopting the new location is one explicit, undoable gesture** — *Update references*, for the
+  selected instances or for every instance of that cell in the document. Never on open, never on save,
+  never as a side effect of an edit: the stored reference is the only evidence that the design was
+  authored against a different library layout, and erasing it on open implements nothing. The new
+  spelling comes from `ExternalCellRef.MakeCellRef`, so a `ws://` reference stays a `ws://` reference
+  and a library-relative one stays relative.
+- **Not covered, stated so it is not re-litigated** *(R-tm2-16)*: a reference that was already broken
+  before this shipped. There is no record for a move made in a file manager last year and there cannot
+  be; those get §4.2's `NotFound`, which is what they get today.
+
+**Where the built thing differs from the brief.** R-tm2-11 asks for `Moved` as a fifth
+`CellSymbolState`, on the grounds that SL3 R-sl3-7 made the identical argument for `InterfaceChanged`.
+The argument holds and is honoured; the MECHANISM does not, and SL3 is the evidence. §4.2's states are
+three ways a symbol can be **missing**, and every one of them replaces the drawn glyph — so SL3 shipped
+`InterfaceChanged` as a runtime flag beside the enum rather than inside it, with that reasoning written
+into `EditableSchematic.cs`. A fifth member here would put a perfectly good symbol on the
+draw-a-placeholder path at a dozen `State == Resolved` call sites, contradicting R-tm2-12's own "not the
+rendered geometry". `Moved` is therefore carried on `CellSymbolResolution.Redirect` and
+`EditableComponent.MovedRedirect` — distinct, never collapsed into `Resolved`, and off the render path.
+Gate: `tests/Ui.Tests/TreeMoveRedirectTests.cs`.
+
 ---
 
 ## 5. `.cws` contents (refines `project-file-formats.md`)
@@ -659,6 +710,72 @@ The `.cws` records **configuration only — never membership** (membership is th
   restores as arranged.
 
 (The old `.cws` "member files list" is **removed** — membership is read from the folder structure.)
+
+### 5.1 `.cmoves` — the forwarding record (TM2, 2026-09-04)
+
+A second file at the root, beside the `.cws`. JSON, one flat **append-only** list:
+
+```json
+{ "FormatVersion": 1,
+  "Moves": [
+    { "From": "Amp",    "To": "rf/Amp",    "When": "2026-09-03T14:02:11Z" },
+    { "From": "rf/Amp", "To": "rf/pa/Amp", "When": "2026-11-20T09:41:00Z" }
+  ] }
+```
+
+Paths are **root-relative, forward-slash**, the convention `WorkspaceRefs.ToStoredRef` normalises to.
+
+- **A separate file rather than a `.cws` section, for one decisive reason:** a referenced LIBRARY need
+  not be a workspace and often has no `.cws` at all — `WorkspaceScanner.ResolveLibrary` accepts a bare
+  directory, and `.clib` is a manifest nothing in the tree parses. A redirect that only worked for
+  libraries that happen to be workspaces would work in testing and fail in the field.
+- **It is in `WorkspaceScanner.IsHiddenTreeFile` by name.** That predicate is an explicit opt-in set and
+  **not a dotfile rule** — its own doc comment says so, and `.cws-lock` had to be added to it for exactly
+  this reason. Left out, `.cmoves` renders as a row in every workspace and every library sub-tree and
+  travels into every archive.
+- **Append-only, never pruned automatically** *(R-tm2-6)*. A design authored three years ago is exactly
+  the one that needs the record. One line per move, ever, read once per root. Pruning is a librarian's
+  explicit act and is honest about what it costs: it breaks every reference older than the entries
+  removed.
+- **It records FOLDER moves, not just cell moves** *(R-tm2-7)*, as the `From`/`To` of the moved root. A
+  reference into a cell inside a moved folder resolves by longest-prefix match, which is what keeps a
+  fifty-cell reorganisation from writing fifty records.
+- **Written with an atomic replace**, so a `.cmoves` is never observed half-written.
+
+**Resolution order, and it is not negotiable** *(R-tm2-8)*. It lives in
+`ExternalCellRef.ResolveCellDir` and nowhere else — that type's own rule is that a call site which
+splits the reference forms itself is a call site that will be missed, and a second resolution rule for
+moved cells would be that mistake with a new name. Putting it there is also why **`src/Cli` gets this
+for free**: a headless `convert` or `em` a year later resolves a moved reference with no code of its own.
+
+1. resolve the reference exactly as before;
+2. **if the folder EXISTS, that is the answer — done, and no record is read;**
+3. only then, find the workspace-or-library root above the resolved path, read its `.cmoves`,
+   longest-prefix-match the root-relative remainder, and retry.
+
+Step 2 before step 3 is what makes the mechanism safe when a **new** cell is later created at the old
+path: the new cell wins, the redirect never fires, and the reference means what it says. A redirect
+consulted first would silently reroute a live reference to a different cell. A reference that resolves to
+nothing after step 3 comes back spelling the path the user wrote, so `NotFound` still names the place the
+file names.
+
+- **Redirects chain, with a hop cap and a cycle guard** *(R-tm2-9)*. `Amp → rf/Amp → rf/pa/Amp` resolves
+  in one call; eight hops is the cap and the visited set is the second, independent stop, so a `.cmoves`
+  hand-edited into a cycle produces `NotFound` rather than a hang. A prefix match must land on a
+  separator, or a record for `cells/Amp` would capture `cells/AmpX`.
+- **The root walk-up is `MoveRedirects.RootAbove`, NOT `WorkspaceRootFinder.WorkspaceDirOf`.** The latter
+  walks up for a `.cws` and answers null for a bare-directory library, which is the case the whole
+  mechanism is about. It walks up for a `.cmoves` instead and **stops at the first `.cws` it meets,
+  inclusive** — that directory is a workspace root, and a root above it owns a different tree and cannot
+  have recorded a move of this cell. That is also what bounds the walk.
+- **Both answers are memoised beside the alias table** *(R-tm2-10)* — which root owns a path, and what
+  that root's `.cmoves` says — and dropped by `WorkspaceRootFinder.InvalidateCache`, which SL2 R-sl2-3
+  already establishes as the one place the per-root memos live and are dropped together. A memo with a
+  lifecycle of its own is the one that goes stale.
+- **It costs the common path nothing** *(gate 8, measured)*. The existence question step 2 asks is the
+  same question `CellSymbolResolver` asked immediately afterwards, through the same `CellStat` cache — so
+  it is one call in both worlds rather than two. A design with no moved references re-resolves at **0**
+  filesystem calls warm and **4** cold, unchanged from before TM2.
 
 ---
 

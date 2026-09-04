@@ -521,6 +521,77 @@ public sealed partial class LayoutEditorViewModel
         RescanCellInterfaces();
     }
 
+    // ── TM2: a referenced cell moved, and this file still spells the old place ──────────────────
+
+    private readonly HashSet<string> _movedCellRefs = new(StringComparer.Ordinal);
+    private IReadOnlyList<MovedCellReport> _movedCells = [];
+
+    /// <summary>The cell references in this document that resolve only through a forwarding record
+    /// (TM2 R-tm2-12). Read by the canvas and handed to the renderer as chrome — never per-frame
+    /// recomputation.</summary>
+    public IReadOnlySet<string> MovedCellRefs => _movedCellRefs;
+
+    /// <summary>Where each moved cell went — what the Properties panel explains and what
+    /// <see cref="UpdateReferences"/> acts on.</summary>
+    public IReadOnlyList<MovedCellReport> MovedCells => _movedCells;
+
+    /// <summary>The move report for the cell <paramref name="cellRef"/> names, or null when that
+    /// reference is not stale.</summary>
+    public MovedCellReport? MovedCellFor(string? cellRef) =>
+        cellRef is null ? null
+            : _movedCells.FirstOrDefault(c => string.Equals(c.CellRef, cellRef, StringComparison.Ordinal));
+
+    /// <summary>Installs a scan's result and, optionally, reports each moved cell exactly once.
+    /// Mirrors <see cref="ApplyInterfaceChangeScan"/> and is called from the same places.</summary>
+    internal void ApplyMovedCellScan(
+        IReadOnlyList<MovedCellReport> reports, Action<MovedCellReport>? report = null)
+    {
+        _movedCells = reports;
+        _movedCellRefs.Clear();
+        foreach (var r in reports)
+        {
+            _movedCellRefs.Add(r.CellRef);
+            report?.Invoke(r);
+        }
+    }
+
+    /// <summary>Re-runs the scan against the records as they are on disk right now.</summary>
+    public void RescanMovedCells() =>
+        ApplyMovedCellScan(CellMoveWatch.Scan(Model, InstanceBaseDir, WorkspaceRootDir));
+
+    /// <summary>
+    /// TM2 R-tm2-13 — <b>Update references</b>: rewrites the stored reference for the selected
+    /// instances, or (<paramref name="everyInstanceOfTheCell"/>) for every instance of that cell in
+    /// this document. One explicit gesture, one undo entry, and never automatic.
+    /// </summary>
+    public void UpdateReferences(bool everyInstanceOfTheCell)
+    {
+        var selected = SelectedInstanceIndices
+            .Where(i => i >= 0 && i < Model.Instances.Count)
+            .Select(i => Model.Instances[i])
+            .ToList();
+        if (selected.Count == 0) return;
+
+        IEnumerable<LayoutInstance> targets = selected;
+        if (everyInstanceOfTheCell)
+        {
+            var refs = selected.Select(i => i.CellRef).Where(r => !string.IsNullOrEmpty(r)).ToHashSet(StringComparer.Ordinal);
+            targets = Model.Instances.Where(i => i.CellRef is { Length: > 0 } r && refs.Contains(r));
+        }
+
+        var edits = new List<(LayoutInstance, string?, string)>();
+        foreach (var inst in targets)
+        {
+            if (inst.CellRef is not { Length: > 0 } cellRef) continue;
+            if (MovedCellFor(cellRef) is not { NewCellRef: { Length: > 0 } next }) continue;
+            edits.Add((inst, inst.CellRef, next));
+        }
+        if (edits.Count == 0) return;
+
+        Execute(new UpdateCellReferenceCommand(Model, edits));
+        RescanMovedCells();
+    }
+
     // ── Missing-instance warning — once per distinct CellRef per load (R-L3a-1) ─────────────────
     // Mirrors LayoutEditorViewModel.ReportUnknownLayers exactly.
 

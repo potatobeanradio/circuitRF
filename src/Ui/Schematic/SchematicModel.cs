@@ -667,6 +667,16 @@ public sealed class SchematicComponent
     /// rather than per frame: the comparison reads the cell's <c>.ccell</c> from disk.</para>
     /// </summary>
     public bool InterfaceChanged { get; init; }
+
+    /// <summary>
+    /// TM2 R-tm2-12 — this instance's stored reference names a place the cell has moved out of, and
+    /// it resolved through the forwarding record. Chrome only, and deliberately NOT in the warning
+    /// paint (R-tm2-14): an expected, correct state that happens to be worth mentioning must not be
+    /// coloured like a problem, or users learn to ignore the colour that also marks real breakage.
+    /// Set from <see cref="EditableComponent.MovedRedirect"/>, which <c>CellMoveWatch</c> fills in on
+    /// open — never per frame.
+    /// </summary>
+    public bool MovedThroughRedirect { get; init; }
 }
 
 /// <summary>A wire segment (orthogonal polyline) with pre-computed world bounding box.</summary>

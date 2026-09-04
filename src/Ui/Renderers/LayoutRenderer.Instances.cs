@@ -672,7 +672,41 @@ public static partial class LayoutRenderer
             if (opts.InterfaceChangedCellRefs is { Count: > 0 } changed
                 && inst.CellRef is { Length: > 0 } cr && changed.Contains(cr))
                 DrawInterfaceChangedChrome(canvas, overallBbox, ps, scaleUm, opts.Theme, counters);
+
+            // TM2 R-tm2-12 — the cell is somewhere else now and this file still spells the old place.
+            // A TAG, in the ordinary text role: R-tm2-14 is explicit that a reference which resolves
+            // through a redirect is not a warning colour.
+            if (opts.MovedCellRefs is { Count: > 0 } moved
+                && inst.CellRef is { Length: > 0 } mr && moved.Contains(mr))
+                DrawMovedChrome(canvas, overallBbox, ps, scaleUm, opts.Theme, counters);
         }
+    }
+
+    /// <summary>
+    /// The mark for an instance whose cell has MOVED since it was placed (TM2 R-tm2-12): a short tag
+    /// below-left, in the neutral chrome-text role rather than the warning one (R-tm2-14). No surround —
+    /// the surrounds beside it mean "someone else's" and "may not mean what it did", and a third
+    /// dashed box would say neither of those clearly.
+    /// </summary>
+    private static void DrawMovedChrome(
+        SKCanvas canvas, Bbox overallBbox, PathSpace ps, double scaleUm,
+        LayoutRenderTheme theme, LayoutFrameCounters counters)
+    {
+        var rect = NormalizedRect(ps.X(overallBbox.MinX), ps.Y(overallBbox.MinY),
+                                  ps.X(overallBbox.MaxX), ps.Y(overallBbox.MaxY));
+
+        using var font = new SKFont(LayoutTextOutline.ResolveTypeface(LabelFontStyle.Regular),
+                                    Math.Max(1f, DevicePixelsToPathSpace(scaleUm, 10.0)));
+        // RulerText is the theme's neutral chrome-text role — not Warning, which is the
+        // interface-changed tag beside this one, and not Selection, which is the [alias] tag's
+        // "someone else's cell" meaning. Neither of those is what a redirect means (R-tm2-14).
+        using var textPaint = new SKPaint { IsAntialias = true, Color = theme.RulerText };
+        const string label = "moved";
+        if (font.MeasureText(label) >= rect.Width * 2f) return;
+
+        canvas.DrawText(label, rect.Left, rect.Bottom + DevicePixelsToPathSpace(scaleUm, 10.0),
+                        SKTextAlign.Left, font, textPaint);
+        counters.DrawCalls++;
     }
 
     /// <summary>The mark for an instance whose cell's interface changed since it was placed (SL3

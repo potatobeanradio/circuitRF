@@ -8496,8 +8496,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // load rather than once per re-open.
         var interfaceChanges = ReportInterfaceChanges(editModel, key);
 
+        // TM2 R-tm2-12 — the same moment, the same shape, one line per moved CELL. Reported at INFO,
+        // not Warning (R-tm2-14): the cell resolves and the drawing is right, and colouring that like
+        // breakage teaches users to ignore the colour that marks real breakage.
+        var movedCells = ReportMovedCells(editModel, key);
+
         var vm = RegisterSession(key, BuildSessionVm(editModel));
         vm.ApplyInterfaceChangeScan(interfaceChanges);
+        vm.ApplyMovedCellScan(movedCells);
         return vm;
     }
 
@@ -8536,6 +8542,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             model, WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(path)));
         foreach (var change in changes) Messages.Warning(change.Message, path);
         return changes;
+    }
+
+    /// <summary>
+    /// TM2 R-tm2-12 — reports every CELL this schematic reaches only through a forwarding record.
+    /// One line per cell, not per instance, and at <b>Info</b>: the reference resolves, the symbol is
+    /// right and the drawing is right; what is stale is the spelling in the file, and R-tm2-14 is
+    /// explicit that this must not be a warning colour.
+    ///
+    /// <para>Beside <see cref="ReportInterfaceChanges"/> and called from the same place for the same
+    /// reason. <b>It rewrites nothing</b> (R-tm2-13): it sets the runtime mark and says where the cell
+    /// went, and adopting the new location stays one explicit gesture.</para>
+    /// </summary>
+    private IReadOnlyList<MovedCellReport> ReportMovedCells(SchematicEditModel model, string path)
+    {
+        var reports = CellMoveWatch.Scan(
+            model, WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(path)));
+        foreach (var report in reports) Messages.Info(report.Message, path);
+        return reports;
     }
 
     /// <summary>
@@ -8632,6 +8656,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             CellInterfaceWatch.Scan(model, vm.InstanceBaseDir,
                                     WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(key))),
             change => Messages.Warning(change.Message, key));
+
+        // TM2 R-tm2-12 — the layout half of ReportMovedCells, in the same place and on the same
+        // terms: once per fresh load, one line per moved CELL, at Info, nothing written.
+        vm.ApplyMovedCellScan(
+            CellMoveWatch.Scan(model, vm.InstanceBaseDir,
+                               WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(key))),
+            report => Messages.Info(report.Message, key));
         if (removedRatsnest > 0)
         {
             vm.IsDirty = true;

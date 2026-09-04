@@ -1,5 +1,59 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## The moved-cell forwarding record, and why the redirect lives in `ExternalCellRef` (TM2, 2026-09-04)
+
+`brief-tree-move-2-moves-across-a-shared-library.md`. The `src/Ui` half — the report, the three surfaces,
+the adoption gesture and the measurement — is in `src/Ui/RESOLVED.md`; this is what landed on the
+framework-free side, and it is the half that makes `circuitrf convert` and `circuitrf em` resolve a
+moved reference with no code of their own.
+
+### `Workspace/MoveRedirects.cs` — reading the record, not just writing it
+
+TM1 already wrote `.cmoves`. TM2 adds `Resolve` (longest-prefix match, chained, hop-capped and
+cycle-guarded), `RootAbove` (which root owns a reference) and `CanRecord` (whether the safety net can be
+laid at all), plus an atomic replace on `Append` and a memo on both read paths.
+
+**`RootAbove` cannot be `WorkspaceRootFinder.WorkspaceDirOf`, although R-tm2-8 says it can.** That helper
+walks up for a `.cws` and answers null for a bare-directory library — and a bare-directory library is the
+case the whole feature is about (`WorkspaceScanner.ResolveLibrary` accepts one; it is R-tm2-5's decisive
+reason for `.cmoves` being a file of its own rather than a `.cws` section). Using it would have produced
+something that passed every test written against a workspace and did nothing in the field. `RootAbove`
+walks up for a **`.cmoves`** and **stops at the first `.cws`, inclusive**: that directory is a workspace
+root, and a root above it owns a different tree and cannot have recorded a move of this cell. That stop is
+also what bounds the walk on a path with no project above it.
+
+**`CanRecord` is a real write, not an attribute read** — SL2 R-sl2-1's rule, because a share ACL, a POSIX
+mode and a read-only mount are all invisible to `File.GetAttributes`. It additionally opens an existing
+`.cmoves` for write, which is the case a create-a-probe-file test misses entirely: the DIRECTORY is
+writable and the FILE is not, so the probe says yes and the record is then lost. It leaves nothing behind
+— in particular no empty `.cmoves` for a move that is refused for some other reason.
+
+**`WorkspaceLock` is NOT the instrument R-tm2-15 asks for**, and §8 predicted this. It is advisory by
+design — `Take` *overwrites* a lock someone else holds, and its own doc comment says treating it as
+authoritative would produce a stale file that locks out a team — and it is per-workspace, with no notion
+of a library root that is not a workspace. Gating a write on it would be reading it as the thing it
+refuses to be.
+
+### `Workspace/ExternalCellRef.cs` — the one resolution point, now with two extra jobs
+
+The redirect goes in `ResolveCellDir` and nowhere else. That is this type's own standing rule — a call
+site that splits the reference forms itself is a call site that will be missed — and it is what gives the
+CLI the behaviour for free. **Checked rather than assumed:** every stored-reference resolution site in the
+repo does route through it, including `CellLayoutResolver`, `PcbExport`, `GdsiiExport` and `DxfExport` on
+this side. The list is in `src/Ui/RESOLVED.md`.
+
+**The order is existence-then-redirect, and the existence answer is now RETURNED.** `ResolveCellDir` has
+to ask `Directory.Exists` for R-tm2-8's step 2, and `CellSymbolResolver` was asking the identical question
+three lines later — so the four-argument overload hands the answer back rather than letting the caller
+re-ask. Asking twice cost a **fifth** filesystem round trip per referenced component per edit in the
+uncached world, which is exactly the number SL4 R-sl4-6's gate pins, exactly so it cannot drift up one
+call at a time. It went red, which is the gate doing its job. With the cache on, both the old and the new
+code cost 4 cold and 0 warm.
+
+`MoveRedirects.Resolve`'s own existence checks go through `CellStat` too, so a redirect's cost is counted
+rather than invisible — and safely, since `CellStat` never caches a negative and a dead-end rung of a
+chain must be re-asked.
+
 ## What a cell reference costs, counted — and an advisory lock that claims no authority (SL4, 2026-09-03)
 
 `brief-shared-library-4-concurrency-and-latency.md`. The `src/Ui` half of this — the measurement table, the

@@ -552,6 +552,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         // what changed about the cell THIS instance references, and offers the one explicit gesture
         // that accepts it (R-sl3-10).
         InterfaceChangedNoticeText = _schematicVm?.InterfaceChangeFor(comp.CellRef)?.InstanceNotice ?? "";
+        // TM2 R-tm2-12: the second of SL3's three surfaces, reused rather than added to. It says where
+        // the cell went, and offers the one explicit gesture that adopts it (R-tm2-13).
+        MovedNoticeText            = _schematicVm?.MovedCellFor(comp.CellRef)?.InstanceNotice ?? "";
         StagedInstanceName = comp.InstanceName;
         ShowTypeLabel     = comp.ShowTypeLabel;
         ShowInstanceName  = comp.ShowInstanceName;
@@ -1745,6 +1748,37 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (_schematicVm is null || _target is null) return;
         _schematicVm.AcceptNewInterfaceFor([_target], everyInstance);
         InterfaceChangedNoticeText = _schematicVm.InterfaceChangeFor(_target.CellRef)?.InstanceNotice ?? "";
+    }
+
+    // ── TM2: the referenced cell MOVED, and this instance still spells the old place ──
+
+    /// <summary>Non-empty when this instance's reference only resolved through a forwarding record
+    /// (TM2 R-tm2-12). Empty for every other component, which is the overwhelmingly common case and
+    /// renders exactly as it did before.</summary>
+    [ObservableProperty] private string _movedNoticeText = "";
+
+    public bool HasMovedCell => MovedNoticeText.Length > 0;
+
+    partial void OnMovedNoticeTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasMovedCell));
+        UpdateReferencesCommand.NotifyCanExecuteChanged();
+        UpdateReferencesEverywhereCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>R-tm2-13 — adopt for THIS instance. Never automatic; never on open or save.</summary>
+    [RelayCommand(CanExecute = nameof(HasMovedCell))]
+    private void UpdateReferences() => AdoptMove(everyInstance: false);
+
+    /// <summary>R-tm2-13 — adopt for every instance of this cell in this document.</summary>
+    [RelayCommand(CanExecute = nameof(HasMovedCell))]
+    private void UpdateReferencesEverywhere() => AdoptMove(everyInstance: true);
+
+    private void AdoptMove(bool everyInstance)
+    {
+        if (_schematicVm is null || _target is null) return;
+        _schematicVm.UpdateReferencesFor([_target], everyInstance);
+        MovedNoticeText = _schematicVm.MovedCellFor(_target.CellRef)?.InstanceNotice ?? "";
     }
 
     private static bool ParamNameOrderEquals(IEnumerable<EditableParameter> a, IReadOnlyList<EditableParameter> b)

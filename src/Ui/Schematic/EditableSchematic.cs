@@ -529,6 +529,22 @@ public sealed class EditableComponent
     public bool InterfaceChanged { get; set; }
 
     /// <summary>
+    /// RUNTIME ONLY, never persisted: this instance's <see cref="CellRef"/> spells a place the cell is
+    /// no longer in, and it resolved through the owning root's <c>.cmoves</c> forwarding record
+    /// (TM2 R-tm2-11). Null is the ordinary case.
+    ///
+    /// <para><b>Not a fifth <c>CellSymbolState</c></b>, for the reason that enum's own note gives and
+    /// for the reason <see cref="InterfaceChanged"/> is not a fourth one: the cell resolves, the
+    /// symbol is right, the drawing is right, and what is stale is only the stored spelling. Marking
+    /// it in the enum would put it on the draw-a-placeholder path.</para>
+    ///
+    /// <para>Set by <see cref="CellMoveWatch"/> on open and after an explicit re-check. Cleared by
+    /// the explicit <b>Update references</b> gesture, which is the only thing that rewrites the
+    /// stored reference (R-tm2-13).</para>
+    /// </summary>
+    public MoveRedirectHit? MovedRedirect { get; set; }
+
+    /// <summary>
     /// The reference this component's symbol is resolved from, or null for an ordinary built-in
     /// whose artwork is fixed. Fed to <see cref="CellSymbolResolver.Resolve"/>.
     ///
@@ -948,6 +964,7 @@ public sealed class EditableComponent
             CellRefPrimitives = cellRefPrimitives,
             ExternalAlias    = ExternalCellRef.TryParse(CellRef, out string extAlias, out _) ? extAlias : null,
             InterfaceChanged = InterfaceChanged,
+            MovedThroughRedirect = MovedRedirect is not null,
             InstanceSymbol   = instanceSymbol,
         };
     }

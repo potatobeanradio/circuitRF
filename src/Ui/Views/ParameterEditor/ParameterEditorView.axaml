@@ -64,6 +64,25 @@
                 </StackPanel>
             </StackPanel>
         </Border>
+
+        <!-- TM2 R-tm2-12/-13/-14: the cell this instance references has MOVED, and the reference
+             resolved through the owning root's .cmoves forwarding record. Deliberately NOT the "warn"
+             class the band above uses — an expected, correct state that happens to be worth
+             mentioning must not be coloured like a problem, or users learn to ignore the colour that
+             also marks real breakage. Adopting is one explicit gesture and never automatic. -->
+        <Border IsVisible="{Binding HasMovedCell}"
+                Margin="6,0,6,4" Padding="6,4" CornerRadius="3"
+                Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+            <StackPanel Spacing="4">
+                <TextBlock Text="{Binding MovedNoticeText}" FontSize="11" TextWrapping="Wrap"/>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Button Content="Update references" FontSize="11" Padding="6,2"
+                            Command="{Binding UpdateReferencesCommand}"/>
+                    <Button Content="…for every instance" FontSize="11" Padding="6,2"
+                            Command="{Binding UpdateReferencesEverywhereCommand}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
         </StackPanel>
 
         <!-- ── Row 1: Label-visibility flags ──────────────────────────────── -->

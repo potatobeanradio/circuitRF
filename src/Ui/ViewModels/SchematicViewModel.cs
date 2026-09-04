@@ -401,6 +401,76 @@ public sealed partial class SchematicViewModel : ObservableObject
         return edits.Count;
     }
 
+    // ── TM2: a referenced cell moved, and this file still spells the old place ──
+
+    private IReadOnlyList<MovedCellReport> _movedCells = [];
+
+    /// <summary>Which cells resolved only through a forwarding record, per affected CELL
+    /// (TM2 R-tm2-12). The per-component mark the canvas reads lives on
+    /// <see cref="EditableComponent.MovedRedirect"/>; this is what the Properties panel explains and
+    /// what <see cref="UpdateReferences"/> acts on.</summary>
+    public IReadOnlyList<MovedCellReport> MovedCells => _movedCells;
+
+    /// <summary>The move report covering <paramref name="cellRef"/>, or null when it is not stale.</summary>
+    public MovedCellReport? MovedCellFor(string? cellRef) =>
+        cellRef is null ? null
+            : _movedCells.FirstOrDefault(c => string.Equals(c.CellRef, cellRef, StringComparison.Ordinal));
+
+    /// <summary>Re-runs the scan against the records as they are on disk right now, and refreshes the
+    /// render snapshot so the marks follow. <b>Rewrites nothing</b> — see R-tm2-13.</summary>
+    public void RescanMovedCells()
+    {
+        _movedCells = CellMoveWatch.Scan(EditModel, KitWorkspaceRoot);
+        EditModel.NotifyChanged();
+    }
+
+    /// <summary>Installs a scan the caller already ran — the open path, which scans BEFORE the session
+    /// exists so it can report each moved cell once, and must not pay for a second scan here.</summary>
+    internal void ApplyMovedCellScan(IReadOnlyList<MovedCellReport> reports) => _movedCells = reports;
+
+    /// <summary>
+    /// TM2 R-tm2-13 — <b>Update references</b> for the selected components, or
+    /// (<paramref name="everyInstanceOfTheCell"/>) for every instance of those cells in this document.
+    /// One explicit gesture, one undo entry, never automatic. Returns how many were rewritten.
+    /// </summary>
+    public int UpdateReferences(bool everyInstanceOfTheCell)
+    {
+        var selected = Selection.GetSelectedComponentIds(EditModel)
+            .Select(EditModel.FindComponent)
+            .OfType<EditableComponent>()
+            .ToList();
+        return UpdateReferencesFor(selected, everyInstanceOfTheCell);
+    }
+
+    /// <summary>The same gesture aimed at a named set of components — what the Properties inspector
+    /// calls, since it acts on the instance it is showing rather than on the canvas selection.</summary>
+    public int UpdateReferencesFor(IReadOnlyList<EditableComponent> components, bool everyInstanceOfTheCell)
+    {
+        if (components.Count == 0) return 0;
+
+        IEnumerable<EditableComponent> targets = components;
+        if (everyInstanceOfTheCell)
+        {
+            var refs = components.Select(c => c.CellRef)
+                                 .Where(r => !string.IsNullOrEmpty(r))
+                                 .ToHashSet(StringComparer.Ordinal);
+            targets = EditModel.Components.Where(c => c.CellRef is { Length: > 0 } r && refs.Contains(r));
+        }
+
+        var edits = new List<(EditableComponent, string?, string, MoveRedirectHit?)>();
+        foreach (var comp in targets)
+        {
+            if (comp.CellRef is not { Length: > 0 } cellRef) continue;
+            if (MovedCellFor(cellRef) is not { NewCellRef: { Length: > 0 } next }) continue;
+            edits.Add((comp, comp.CellRef, next, comp.MovedRedirect));
+        }
+        if (edits.Count == 0) return 0;
+
+        Execute(new UpdateCellReferenceCommand(EditModel, edits));
+        RescanMovedCells();
+        return edits.Count;
+    }
+
     // ── Render model rebuild ──────────────────────────────────────────────────
 
     /// <summary>

@@ -128,6 +128,24 @@ To keep the format family coherent, name the siblings now (full specs when their
   order is workspace dir → user themes → `/Assets/Color`. Full spec in `color-themes.md`. (Themes everything
   eventually; schematic first.)
 
+- **`.cmoves` — the move forwarding record** *(TM2, added 2026-09-04)*. A second no-stem file at the root
+  of a workspace **or of a bare-directory library**, holding one append-only list of
+  `{ From, To, When }` — root-relative, forward-slash — written by every Project-Tree move and read only
+  when a cell reference resolves to nothing. It is a **repair aid, not configuration**, which is why it is
+  not a `.cws` section: a referenced library need not be a workspace and often has no `.cws` at all, and a
+  redirect that only worked for libraries that happen to be workspaces would work in testing and fail in
+  the field. Format and resolution order in `workspace-and-project-tree.md` §5.1; the state it produces is
+  §4.4. Read by `MoveRedirects` (`src/Design/Workspace/`), so a headless `circuitrf convert` or `em` gets
+  it too.
+- **`.crf-open.json` — the advisory open-workspace marker** *(SL4)*. Also at the root, also no stem: who
+  has this workspace open, on which host, since when. Explicitly **advisory** and never authoritative — a
+  lock this product treated as authoritative would become a stale file that locks out a team.
+
+Both of those, like `.cws` itself, are **hidden from the Project Tree by name** in
+`WorkspaceScanner.IsHiddenTreeFile`. That predicate is an explicit opt-in set and **not a dotfile rule**;
+anything new at a workspace root must be added to it or it renders as a loose file and travels into every
+archive.
+
 (These share the no-Avalonia-in-the-model rule. `.csch`, `.csym`, and `.cdd` are view configs; `.ccolor` is
 cross-cutting presentation; the workspace ties them together.)
 

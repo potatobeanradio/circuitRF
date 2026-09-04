@@ -387,6 +387,26 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- TM2 R-tm2-12/-13/-14: the cell has MOVED and this instance still
+                                 spells the old place. A third band, and deliberately NOT in the
+                                 "warn" class: a reference that resolves through a redirect is an
+                                 expected, correct state, and colouring it like breakage teaches
+                                 users to ignore the colour that marks real breakage. -->
+                            <Border IsVisible="{Binding HasMovedCell}"
+                                    BorderThickness="0,0,0,0" CornerRadius="3" Padding="6,4" Margin="0,2,0,2"
+                                    Background="{DynamicResource SystemControlBackgroundListLowBrush}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{Binding MovedNoticeText}" FontSize="11"
+                                               TextWrapping="Wrap"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <Button Content="Update references" FontSize="11" Padding="6,2"
+                                                Command="{Binding UpdateReferencesCommand}"/>
+                                        <Button Content="…for every instance" FontSize="11" Padding="6,2"
+                                                Command="{Binding UpdateReferencesEverywhereCommand}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
                                 <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>

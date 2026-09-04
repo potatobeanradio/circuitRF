@@ -23,6 +23,7 @@ namespace CircuitRF.Ui.Tests;
 //  machine, flakes under parallel load, and inverts under a debug build.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class SharedLibraryConcurrencyTests : IDisposable
 {
     private readonly string _root;

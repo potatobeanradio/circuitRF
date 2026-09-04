@@ -17,7 +17,19 @@ namespace CircuitRF.Ui.Schematic;
 //  Invalidated by Make-Primary and Symbol Editor save paths.
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// <summary>Three-state result of resolving a cell reference to its primary symbol.</summary>
+/// <summary>
+/// Three-state result of resolving a cell reference to its primary symbol.
+///
+/// <para><b>Why TM2's <c>Moved</c> is NOT a fourth member here</b> (R-tm2-11, and see
+/// <c>src/Ui/RESOLVED.md</c>). These three are three ways a symbol can be MISSING, and every one of
+/// them replaces the drawn glyph. A reference that resolved through a forwarding record is not one of
+/// those: the cell resolves, the symbol is right, the drawing is right, and only the stored spelling
+/// is stale. Adding it here would put it on the "draw a placeholder instead" path at a dozen
+/// <c>State == Resolved</c> call sites, which is precisely what R-tm2-12 forbids ("not the rendered
+/// geometry — R36 holds without exception"). It travels on
+/// <see cref="CellSymbolResolution.Redirect"/> instead — the same shape SL3 shipped
+/// <c>InterfaceChanged</c> in, for the same reason and after making the same argument.</para>
+/// </summary>
 public enum CellSymbolState
 {
     /// <summary>Cell resolves and primary .csym loaded; Symbol carries the primitives + pins.</summary>
@@ -37,6 +49,18 @@ public sealed class CellSymbolResolution
     public CellSymbolState State  { get; init; }
     /// <summary>Non-null when State == Resolved.</summary>
     public Symbol?         Symbol { get; init; }
+
+    /// <summary>
+    /// Non-null when this reference only resolved because the owning root's <c>.cmoves</c> said where
+    /// the cell went (TM2 R-tm2-11). It is carried BESIDE the state, not folded into it — see
+    /// <see cref="CellSymbolState"/>'s own note on why <c>Moved</c> is not a fifth member.
+    /// </summary>
+    public MoveRedirectHit? Redirect { get; init; }
+
+    /// <summary>The same result with a redirect attached. Used by <see cref="CellSymbolResolver"/>'s
+    /// early returns, which hand back the shared singletons.</summary>
+    public CellSymbolResolution With(MoveRedirectHit? redirect) =>
+        redirect is null ? this : new CellSymbolResolution { State = State, Symbol = Symbol, Redirect = redirect };
 }
 
 /// <summary>
@@ -121,20 +145,31 @@ public static class CellSymbolResolver
         //    reference is resolved through the referencing workspace's alias table instead (MW2
         //    R-mw2-2); an alias the workspace does not declare, or one whose target has moved, comes
         //    back null and lands on the same reported, repairable NotFound.
-        if (ExternalCellRef.ResolveCellDir(cellRef, baseDir) is not { } cellAbsDir)
+        // TM2 R-tm2-8: a reference that resolves to nothing is retried through the owning root's
+        // .cmoves, INSIDE ResolveCellDir. What comes back here is the folder it finally named, plus
+        // the record that named it — which every state below carries, because a cell that moved and
+        // then lost its primary symbol still needs to say where it went.
+        if (ExternalCellRef.ResolveCellDir(cellRef, baseDir, out var redirect, out bool folderExists)
+                is not { } cellAbsDir)
             return CellSymbolResolution.NotFoundResult;
 
-        // SL4 R-sl4-6/-7: the whole resolution path's filesystem access goes through CellStat — this
-        // call, ResolvePrimary's three, and the mtime below. See that type for the count this makes
-        // measurable and for the stated bound T the positive answers are cached within.
+        // SL4 R-sl4-6/-7: the whole resolution path's filesystem access goes through CellStat —
+        // ResolveCellDir's existence check above, ResolvePrimary's three, and the mtime below. See
+        // that type for the count this makes measurable and for the stated bound T the positive
+        // answers are cached within.
         //
         // THIS is the path that caches; the project tree's own scan calls the same helpers and does
         // NOT (it passes the default), because a user who just created a symbol and pressed Refresh
         // must see it. What is bounded by T is a CELL REFERENCE being re-resolved on every edit —
         // four filesystem round trips per referenced component, measured — which over a link with
         // tens of milliseconds of latency is a few hundred per keystroke-scale edit.
-        if (!CellStat.DirectoryExists(cellAbsDir, cache: true))
-            return CellSymbolResolution.NotFoundResult;
+        //
+        // TM2: the existence answer is TAKEN from ResolveCellDir rather than asked again. That step
+        // has to ask it anyway (R-tm2-8's step 2 is what makes the redirect safe), and asking twice
+        // would be a fifth round trip per component per edit in the uncached world — which is the
+        // number R-sl4-6's gate pins exactly, on purpose, so it cannot drift up one call at a time.
+        if (!folderExists)
+            return CellSymbolResolution.NotFoundResult.With(redirect);
 
         // 2. Determine primary symbol via CellFolder.ResolvePrimary (single primacy source).
         PrimaryResolution primary;
@@ -144,16 +179,16 @@ public static class CellSymbolResolver
         }
         catch
         {
-            return CellSymbolResolution.PrimaryMissingResult;
+            return CellSymbolResolution.PrimaryMissingResult.With(redirect);
         }
 
         switch (primary.State)
         {
             case PrimaryState.MissingNamedPrimary:
-                return CellSymbolResolution.PrimaryMissingResult;
+                return CellSymbolResolution.PrimaryMissingResult.With(redirect);
             case PrimaryState.NoView:
             case PrimaryState.NoPrimary:
-                return CellSymbolResolution.PrimaryMissingResult;
+                return CellSymbolResolution.PrimaryMissingResult.With(redirect);
         }
 
         // 3. Load symbol (with cache check on mtime).
@@ -169,7 +204,8 @@ public static class CellSymbolResolver
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out var cached) && cached.SymMtime == mtime)
-                    return new CellSymbolResolution { State = CellSymbolState.Resolved, Symbol = cached.Symbol };
+                    return new CellSymbolResolution
+                        { State = CellSymbolState.Resolved, Symbol = cached.Symbol, Redirect = redirect };
             }
 
             var symbol = SymbolPersistence.LoadFromFile(symPath);
@@ -185,11 +221,12 @@ public static class CellSymbolResolver
                 _cache[key] = new CacheEntry(mtimeAfter, symbol);
             }
 
-            return new CellSymbolResolution { State = CellSymbolState.Resolved, Symbol = symbol };
+            return new CellSymbolResolution
+                { State = CellSymbolState.Resolved, Symbol = symbol, Redirect = redirect };
         }
         catch
         {
-            return CellSymbolResolution.PrimaryMissingResult;
+            return CellSymbolResolution.PrimaryMissingResult.With(redirect);
         }
     }
 

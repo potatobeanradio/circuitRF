@@ -1,3 +1,5 @@
+using CircuitRF.Design.Cells;
+
 namespace CircuitRF.Design.Workspace;
 
 /// <summary>
@@ -72,19 +74,80 @@ public static class ExternalCellRef
     /// <summary>
     /// The absolute cell folder <paramref name="cellRef"/> names, for EITHER form — null when it
     /// cannot be worked out at all (no base directory for a relative reference, an alias the
-    /// referencing workspace does not declare, a malformed path). <b>Existence is not checked
-    /// here</b>: a reference that resolves to a folder which is not there is <c>NotFound</c>, the
-    /// existing reported and repairable state, and the callers already distinguish the two.
+    /// referencing workspace does not declare, a malformed path).
+    ///
+    /// <para><b>A reference that resolves to nothing is retried through the owning root's
+    /// <c>.cmoves</c></b> (TM2 R-tm2-8). A reference that still resolves to nothing after that comes
+    /// back spelling the path the user actually wrote, so <c>NotFound</c> names the place the file
+    /// names — the existing reported and repairable state, unchanged.</para>
     /// </summary>
     public static string? ResolveCellDir(string? cellRef, string? baseDir)
+        => ResolveCellDir(cellRef, baseDir, out _);
+
+    /// <summary>
+    /// The same answer, and — when it was reached through a forwarding record — WHICH record
+    /// (TM2 R-tm2-11). The cell resolves, the symbol is right and the drawing is right; what the
+    /// caller needs on top of that is that <b>the file on disk says something that is no longer
+    /// true</b>, which is not something resolution may swallow.
+    ///
+    /// <para><b>The order is not negotiable</b> (R-tm2-8): resolve as before; if the folder EXISTS
+    /// that is the answer and no record is read; only then consult <c>.cmoves</c>. Existence before
+    /// redirect is what makes the mechanism safe when a NEW cell is later created at the old path —
+    /// the new cell wins, the redirect never fires, and the reference means what it says.</para>
+    ///
+    /// <para><b>The redirect lives here and nowhere else</b>, which is why <c>src/Cli</c> gets it for
+    /// free: this type's own rule is that a call site which splits the reference forms itself is a
+    /// call site that will be missed, and a second resolution rule for moved cells would be exactly
+    /// that mistake with a new name.</para>
+    /// </summary>
+    public static string? ResolveCellDir(string? cellRef, string? baseDir, out MoveRedirectHit? redirect)
+        => ResolveCellDir(cellRef, baseDir, out redirect, out _);
+
+    /// <summary>
+    /// The same answer again, and whether the folder it names is THERE.
+    ///
+    /// <para><b>This exists so the existence question is asked once per resolution rather than
+    /// twice.</b> Step 2 of the order above has to ask it, and every caller that cares was asking it
+    /// again immediately afterwards — so handing the answer back is what keeps TM2 free on the common
+    /// path rather than one round trip per referenced component per edit dearer (SL4 R-sl4-6's
+    /// measurement, which is a gate). A caller that does not care keeps the shorter overload.</para>
+    ///
+    /// <para>True whenever the returned folder exists — including when it was reached THROUGH a
+    /// forwarding record, since a redirect only ever accepts a candidate that is actually there.</para>
+    /// </summary>
+    public static string? ResolveCellDir(
+        string? cellRef, string? baseDir, out MoveRedirectHit? redirect, out bool folderExists)
     {
+        redirect = null;
+        folderExists = false;
         if (string.IsNullOrEmpty(cellRef)) return null;
 
-        if (IsExternalRef(cellRef)) return ResolveExternal(cellRef!, baseDir);
+        string? direct;
+        if (IsExternalRef(cellRef))
+        {
+            direct = ResolveExternal(cellRef!, baseDir);
+        }
+        else
+        {
+            if (baseDir is null) return null;
+            try { direct = Path.GetFullPath(Path.Combine(baseDir, cellRef)); }
+            catch { return null; }
+        }
 
-        if (baseDir is null) return null;
-        try { return Path.GetFullPath(Path.Combine(baseDir, cellRef)); }
-        catch { return null; }
+        if (direct is null) return null;
+
+        // Step 2. The common path, and the ONLY filesystem question this adds — asked through
+        // CellStat so it is counted like every other one the resolution path makes, and cached on the
+        // same terms, which is what keeps the caller's own existence check a cache hit rather than a
+        // second round trip (SL4 R-sl4-6/-7, and TM2 gate 8).
+        if (CellStat.DirectoryExists(direct, cache: true)) { folderExists = true; return direct; }
+
+        // Step 3, and only now.
+        if (MoveRedirects.Resolve(direct) is not { } hit) return direct;
+
+        redirect     = hit;
+        folderExists = true;
+        return hit.ResolvedDir;
     }
 
     /// <summary>
@@ -253,5 +316,10 @@ public static class ExternalCellRef
     public static void InvalidateCache()
     {
         lock (_memoGate) _aliasMemo.Clear();
+        // TM2 R-tm2-10: the forwarding records a moved reference resolves through, and the walk-up
+        // that finds the root holding them, are memoised on exactly the same terms and dropped here
+        // rather than on a lifecycle of their own — a third memo that had to be invalidated
+        // separately would be the one that went stale.
+        MoveRedirects.InvalidateCache();
     }
 }

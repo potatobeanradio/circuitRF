@@ -120,6 +120,17 @@ public readonly struct LayoutRenderOptions
     public IReadOnlySet<string>? InterfaceChangedCellRefs { get; init; }
 
     /// <summary>
+    /// TM2 R-tm2-12 — the cell references in this document that resolve only through a forwarding
+    /// record. A SET for the same reason as <see cref="InterfaceChangedCellRefs"/> above, and marked
+    /// on exactly the same terms: chrome around the placement, never a tint on the geometry.
+    ///
+    /// <para><b>In the neutral chrome-text role, not the warning one</b> (R-tm2-14). This is an expected,
+    /// correct state — the artwork is right and the design behaves as it did — and colouring it like
+    /// breakage would teach users to ignore the colour that marks real breakage.</para>
+    /// </summary>
+    public IReadOnlySet<string>? MovedCellRefs { get; init; }
+
+    /// <summary>
     /// docs/design/layout-view.md §9B / R-rul-1 — the per-document <b>Show Rulers</b> view toggle.
     /// Defaults to TRUE, unlike every other overlay flag here, because a ruler is DOCUMENT CONTENT
     /// rather than overlay state: it is in the <c>.clay</c>, it comes out in a slide, and an export

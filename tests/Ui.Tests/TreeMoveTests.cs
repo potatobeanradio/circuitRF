@@ -19,6 +19,7 @@ namespace CircuitRF.Ui.Tests;
 //  cell and has no concept of the ones stored inside it.
 // ──────────────────────────────────────────────────────────────────────────────
 
+[Collection(CellStatGlobalsCollection.Name)]
 public sealed class TreeMoveTests : IDisposable
 {
     private readonly string _root;

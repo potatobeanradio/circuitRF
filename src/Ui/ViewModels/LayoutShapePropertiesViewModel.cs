@@ -2094,8 +2094,46 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
-    private void ApplyInterfaceChange(string? cellRef) =>
+    private void ApplyInterfaceChange(string? cellRef)
+    {
         InterfaceChangedNoticeText = _vm?.InterfaceChangeFor(cellRef)?.InstanceNotice ?? "";
+        // TM2 R-tm2-12: the same surface, a separate band. An instance can carry all three at once —
+        // "someone else's cell", "its shape changed" and "it is somewhere else now" are three
+        // different facts with three different repairs.
+        MovedNoticeText            = _vm?.MovedCellFor(cellRef)?.InstanceNotice ?? "";
+    }
+
+    // ── TM2: the cell MOVED, and this instance still spells the old place ─────
+
+    /// <summary>Non-empty when the selected instance's reference only resolved through a forwarding
+    /// record (TM2 R-tm2-12). Rendered as an ORDINARY band, not a warning one (R-tm2-14): the
+    /// artwork is correct and the design behaves as it did.</summary>
+    [ObservableProperty] private string _movedNoticeText = "";
+
+    public bool HasMovedCell => MovedNoticeText.Length > 0;
+
+    partial void OnMovedNoticeTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasMovedCell));
+        UpdateReferencesCommand.NotifyCanExecuteChanged();
+        UpdateReferencesEverywhereCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>R-tm2-13 — one explicit gesture, for this instance.</summary>
+    [RelayCommand(CanExecute = nameof(HasMovedCell))]
+    private void UpdateReferences()
+    {
+        _vm?.UpdateReferences(everyInstanceOfTheCell: false);
+        RefreshFromVm();
+    }
+
+    /// <summary>R-tm2-13 — the same gesture, for every instance of this cell in this document.</summary>
+    [RelayCommand(CanExecute = nameof(HasMovedCell))]
+    private void UpdateReferencesEverywhere()
+    {
+        _vm?.UpdateReferences(everyInstanceOfTheCell: true);
+        RefreshFromVm();
+    }
 
     private void ApplyExternalStatus(ExternalCellStatus status)
     {

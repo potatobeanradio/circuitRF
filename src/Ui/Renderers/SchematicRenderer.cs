@@ -326,6 +326,13 @@ public static class SchematicRenderer
             if (c.InterfaceChanged && !isLod)
                 DrawInterfaceChangedMark(canvas, c, panX, panY, zoom, textFont, warnStrokePaint);
 
+            // TM2 R-tm2-12/-14 — the reference resolved through a forwarding record: the cell is
+            // somewhere else now and this file still spells the old place. A TAG and nothing more, in
+            // the ordinary instance-name paint rather than the warning one, because everything about
+            // what is drawn here is correct. R36 holds: the geometry is untouched.
+            if (c.MovedThroughRedirect && !isLod)
+                DrawMovedMark(canvas, c, panX, panY, zoom, textFont, instNamePaint);
+
             // DisableState overlay (drawn on top of body)
             if (c.DisableState != DisableState.None && !isLod)
                 DrawDisableOverlay(canvas, c, cx, cy, panX, panY, zoom, warnStrokePaint, warnFillPaint);
@@ -1026,6 +1033,28 @@ public static class SchematicRenderer
 
         using var textPaint = new SKPaint { IsAntialias = true, Color = warnPaint.Color };
         canvas.DrawText("interface changed", right, bottom + font.Size, SKTextAlign.Right, font, textPaint);
+    }
+
+    /// <summary>
+    /// The mark on an instance whose cell has MOVED since it was placed (TM2 R-tm2-12): a short tag
+    /// under the glyph, in the ordinary instance-name paint.
+    ///
+    /// <para><b>Deliberately not the dashed warning surround
+    /// <see cref="DrawInterfaceChangedMark"/> draws.</b> R-tm2-14: a reference that resolves through a
+    /// redirect is not a warning colour — an expected, correct state that happens to be worth
+    /// mentioning must not look like the state that means something is broken, or users learn to
+    /// ignore the colour that also marks real breakage. <c>NotFound</c> stays the warning.</para>
+    ///
+    /// <para>Drawn below-LEFT, so it collides with neither the <c>[alias]</c> tag above-left nor the
+    /// interface-changed tag below-right — a shared-library cell can carry all three at once.</para>
+    /// </summary>
+    private static void DrawMovedMark(
+        SKCanvas canvas, SchematicComponent c,
+        double panX, double panY, double zoom, SKFont font, SKPaint paint)
+    {
+        float left   = (float)((c.GlyphBbMinX + panX) * zoom);
+        float bottom = (float)((c.GlyphBbMaxY + panY) * zoom);
+        canvas.DrawText("moved", left, bottom + font.Size, SKTextAlign.Left, font, paint);
     }
 
     private static void DrawCellRefNotFoundGlyph(

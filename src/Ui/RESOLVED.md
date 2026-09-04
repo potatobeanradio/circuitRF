@@ -1,5 +1,154 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## TM2 — moves across a shared library: the forwarding record (2026-09-04)
+
+`brief-tree-move-2-moves-across-a-shared-library.md`. TM1 repairs every referrer it can reach — this
+workspace plus every other one open in this process. TM2 is what the ones it cannot reach get: a
+librarian drags `Amp` into `rf/`, and the forty designs in workspaces nobody here has open resolve
+through a record the mover left behind, are told about it, and adopt it on one explicit gesture.
+
+Built: `MoveRedirects.Resolve`/`RootAbove`/`CanRecord` (`src/Design/Workspace/`), the redirect step in
+`ExternalCellRef.ResolveCellDir`, `CellSymbolResolution.Redirect`, `CellMoveWatch` (+ the two
+`UpdateCellReferenceCommand`s), the three surfaces, and TM1's move refusal. Gate:
+`tests/Ui.Tests/TreeMoveRedirectTests.cs`, 16 tests, 419 ms.
+
+### `Moved` is NOT a fifth `CellSymbolState`, and SL3 is the evidence
+
+R-tm2-11 asks for one, on the stated grounds that *"SL3 R-sl3-7 made the identical argument for
+`InterfaceChanged`"*. The **argument** is right and is honoured — the state is distinct and never
+collapses into `Resolved`. The **mechanism** is not, and the reason is that R-tm2-11's premise about
+what SL3 shipped is wrong: R-sl3-7 also called `InterfaceChanged` a *"fourth state"*, and it was
+deliberately built as a runtime flag beside the enum rather than a member of it, with the reasoning
+written into `EditableSchematic.cs:519`.
+
+That reasoning applies here unchanged and is decisive. `CellSymbolState`'s three members are three ways
+a symbol can be **missing**, and every one of them replaces the drawn glyph. Counted rather than
+estimated: **12 call sites** across the renderer, the two canvases, the palette glyph, `EditableSchematic`
+(×3), `SchematicViewModel`, `ExternalCellStatus`, `CellInterfaceHash` and
+`LayoutToSchematicGenerator` branch on `State == Resolved` or `is { State: Resolved, Symbol: … }`. A
+fifth member makes every one of them render a placeholder for a symbol that is completely correct —
+which is precisely what R-tm2-12 forbids two paragraphs later (*"Not the rendered geometry — R36 holds
+without exception"*). The two requirements cannot both be met by an enum member.
+
+So the redirect travels on `CellSymbolResolution.Redirect` and `EditableComponent.MovedRedirect`. This
+also buys something an enum member could not: a cell that moved **and then lost its primary symbol**
+reports both, because `PrimaryMissing.With(redirect)` still says where it went.
+
+### Every stored-reference resolution site does go through `ResolveCellDir`
+
+§9 asked, because a site that did not would be a latent MW2 bug as well as a hole here. It was checked
+by grepping every caller: `CellSymbolResolver` (×2), `CellUsageScanner`, `ExternalCellStatus`,
+`SchematicHierarchy`, `HierarchyResolver`, `CrossWorkspaceCellCopy` (×4), `ExternalCellArchive` (×2),
+`MoveRefRegistry`, `LayoutHierarchyResolver`, `SchematicToLayoutGenerator`,
+`LayoutEditorViewModel.Instances`, and — on the far side, which is what makes the CLI free —
+`CellLayoutResolver`, `PcbExport`, `GdsiiExport` (×2), `DxfExport` (×2). **The doc comment's claim
+holds.** The one apparent exception is `CellSymbolResolver.ResolveCellDirOrRef`, which is not a
+counter-example: it resolves what a palette tile and a drag payload carry — an ABSOLUTE cell folder or a
+virtual reference — never a stored reference, and it explicitly refuses a `ws://` one.
+
+### Gate 8: the redirect costs the common path nothing, and here are both numbers
+
+The measurement R-tm2-8's step 2 has to earn, in `CellStat.Calls` (`Gate8_...`):
+
+| | Before TM2 | After TM2 |
+|---|---|---|
+| Cold — first resolve of a reference | 4 | **4** |
+| Warm — 20 re-resolves inside `CellStat.Freshness` | 0 | **0** |
+
+Unchanged, and not by luck. `ResolveCellDir` now asks `Directory.Exists` — but it asks it through
+`CellStat` with `cache: true`, which is **the same question `CellSymbolResolver.Resolve` asked three
+lines later through the same cache**. So it is one round trip in both worlds rather than two, and the
+`.cmoves` read and the root walk-up are behind it and never reached on a design with no moved
+references. No cache was added; §8's "stop and report the measurement rather than adding a cache" was
+not triggered.
+
+### The root walk-up cannot be `WorkspaceRootFinder`, which R-tm2-8 assumes it can
+
+R-tm2-8 step 3 says to find the owning root with `WorkspaceRootFinder`. That helper walks up for a
+**`.cws`** and returns null for a bare-directory library — and a bare-directory library is the exact case
+the brief opens with (`WorkspaceScanner.ResolveLibrary` accepts one; R-tm2-5 gives that as the decisive
+reason `.cmoves` is a file of its own). Using it would have produced a mechanism that passed every test
+written against a workspace and did nothing in the field.
+
+`MoveRedirects.RootAbove` walks up for a **`.cmoves`** instead, and **stops at the first `.cws` it meets,
+inclusive**: that directory is a workspace root, and a root above it owns a different tree and cannot
+have recorded a move of this cell. That stop is also what bounds the walk on a path with no project
+above it at all. Pinned by `RootAbove_FindsALibraryThatIsNotAWorkspace_AndStopsAtAWorkspaceRoot`, which
+asserts `WorkspaceRootFinder.WorkspaceDirOf` answers null on the same path.
+
+### `WorkspaceLock` does not cover R-tm2-15, and §8 predicted it would not
+
+R-tm2-15 says `.cmoves` is written *"under the same advisory lock SL4 defines for `.cws`"*. `WorkspaceLock`
+**is** in the tree, and it is the wrong instrument, for two independent reasons:
+
+- **It is not a mutex and must not become one.** `Take` *overwrites* a lock somebody else holds, by
+  design and with the reasoning recorded on it; it returns false only when the root is unwritable. Its
+  own doc comment states it is advisory and that treating it as authoritative would produce a stale file
+  that locks out a team. Gating a write on it would be reading it as the thing it refuses to be.
+- **It is per-WORKSPACE.** It writes `.crf-open.json` beside a `.cws` and has no notion of a library root
+  that is not a workspace — the same gap §8 anticipated.
+
+So R-tm2-15 is implemented as `MoveRedirects.CanRecord`: attempt a real write at the root (SL2 R-sl2-1's
+rule — a share ACL, a POSIX mode and a read-only mount are all invisible to `File.GetAttributes`), open
+an existing `.cmoves` for write to catch the case where the DIRECTORY is writable and the FILE is not,
+and refuse the move when either fails. `Append` itself writes through a temp file and an atomic replace.
+The refusal runs **before** anything is closed or moved, so gate 9's *"the library is left untouched"* is
+literal and a refusal costs the user nothing but the gesture. **The probe leaves nothing behind** — in
+particular it does not create an empty `.cmoves` for a move that is then refused for some other reason,
+which is asserted rather than assumed.
+
+This also changes a TM1 behaviour deliberately: TM1's `RecordMoveRedirect` treats a failed append as
+report-and-continue (*"a move that succeeded is not undone by a log that did not"*), which was right when
+nothing read the record. It stays, as the handler for a share that drops in the interval — but the
+question *"could a record be written at all"* is now answered before the move, and answered by refusing.
+
+### `From`/`To` on a hit name the CELL, not the record
+
+A folder move writes one record (`passives` → `smd/passives`) covering fifty cells. `MoveRedirectHit`
+reports the **reference's** own old and new root-relative paths (`passives/R0402` → `smd/passives/R0402`),
+not the record's. Otherwise every one of the fifty Messages lines would say a folder moved when the user
+asked about a cell.
+
+### Gate 7 could not be built as written, and the substitution is a finding
+
+The brief's gate 7 is *"`circuitrf sparam` on a netlist whose cell reference only resolves through
+`.cmoves`"*. **`sparam` takes a `.cnl`, which is a flat netlist and carries no cell reference of any
+kind** — there is nothing there for a redirect to repair, and the CLI has no `.csch` entry point. The
+gate as literally written is not expressible.
+
+The verbs that DO resolve a stored `CellRef` headlessly are `convert` (through
+`GdsiiExport`/`DxfExport`/`PcbExport`) and `em` (through `CellLayoutResolver`), so the gate drives
+`circuitrf convert` on a `.clay` placing a library cell that then moves, and asserts the GDSII is
+**byte-identical** before and after — a far stronger claim than an exit code, which would pass just as
+happily on an export that silently dropped the placement. It carries its own control: with the
+`.cmoves` deleted the same export differs, so the equality is evidence the record did the work rather
+than evidence the placement never mattered.
+
+`GdsiiWriter` **does** stamp `DateTime.UtcNow`, into every `BGNLIB` and `BGNSTR` — which the first
+version of this test did not account for and which passed anyway, because both runs happened inside one
+second. The comparison zeroes exactly those two record payloads and nothing else, the same bargain
+`EmCliVerbTests` strikes with the `.sNp` provenance line. Worth recording as a trap: a
+timestamp-sensitive byte comparison passes for as long as the code is fast, and starts failing later
+for reasons that have nothing to do with the change in front of you.
+
+### An exact-count test over a process-global needs a collection, and now has one
+
+TM2's gate clears `CellStat` and the resolver memos repeatedly, and xUnit runs distinct test classes in
+parallel — so it turned SL4's two `CellStat.Calls` assertions red, intermittently and depending on which
+filter was used. The counter is still the right instrument (R-sl4-6's argument is unaffected, and an
+exact number rather than an upper bound is deliberate); what it cannot survive is a second class
+resolving references at the same moment. `CellStatGlobalsCollection` now holds
+`SharedLibraryConcurrencyTests`, `TreeMoveTests` and `TreeMoveRedirectTests` — same collection, so they
+serialise against each other and against nothing else. The hazard pre-existed TM2 (`TreeMoveTests`
+already called `InvalidateAll` in its constructor); TM2 is what made it reproduce.
+
+### `.cmoves` records loose FILE moves too, and that is harmless
+
+TM1 moves files as well as folders, so a `.cmoves` can hold `notes.txt → docs/notes.txt`. The redirect
+path only ever asks about a cell FOLDER and only ever accepts a candidate that `Directory.Exists`, so a
+file record can never satisfy a cell lookup. Left in rather than filtered out: the record describes the
+move, and a future consumer that resolves a stored file path will want it.
+
 ## TM1 — moving cells and files inside the Project Tree (2026-09-03)
 
 `brief-tree-move-1-moving-within-a-workspace.md`. MW3 built the drag gesture on this tree and the drop
