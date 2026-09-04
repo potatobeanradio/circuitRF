@@ -127,7 +127,10 @@ say what the path **buys** — not that a simpler alternative exists.
 ## 3. What this does not do
 
 - No bundled compiler, no vendored model source, no committed `.osdi`.
-- No noise analysis and no op-var read-back (both noted in PM1 §3 P3 as documented omissions).
+- No noise analysis. **Op-var read-back was built separately by PM3**
+  (`project-brief-physics-model-opvar-readback.md`, 2026-09-03) and is no longer an omission; it
+  adds the parameter editor's "Report operating-point variables" checkbox, which is the only part of
+  it that touches this brief's surface.
 - No change to the kit/PDK path — this is the *user supplies one file* path.
 - No parallel component species. Everything here is the existing `SymbolKind.VerilogA`.
 

@@ -19,6 +19,23 @@ public readonly record struct ExternalDeviceEvaluation(
     double[,] Capacitance);
 
 /// <summary>
+/// A model's own operating-point variables over a set of evaluation points.
+///
+/// <para><paramref name="Names"/> is what the provider can actually hand back — which is not the
+/// same as what the descriptor declares. A string-valued op-var has nowhere to land in a
+/// single-kind numeric cube, and a quantity the provider will not read out is an omission rather
+/// than a zero, so the names travel with the values instead of the caller being asked to line a
+/// fixed-length array up against the declaration and guess which slot went missing.</para>
+///
+/// <para><paramref name="Values"/> has one row per evaluation point, each row in
+/// <paramref name="Names"/> order. The names are stated once because they cannot change between
+/// points of one call.</para>
+/// </summary>
+public sealed record ExternalOperatingPoint(
+    IReadOnlyList<string>   Names,
+    IReadOnlyList<double[]> Values);
+
+/// <summary>
 /// A live instance of an external device type, created with a fixed set of parameter values.
 /// Instances are created once at elaboration and evaluated many times during a solve.
 /// </summary>
@@ -47,6 +64,35 @@ public interface IExternalDeviceInstance : IDisposable
         for (int i = 0; i < nodeVoltages.Count; i++) results[i] = Evaluate(nodeVoltages[i]);
         return results;
     }
+
+    /// <summary>
+    /// The model's own operating-point variables <b>as they stand</b> — the values it computed for
+    /// whichever bias it last evaluated — or null when this provider offers none.
+    ///
+    /// <para><b>It performs no evaluation, and that is the contract, not an implementation
+    /// detail.</b> A read-back is a value the model wrote during a load; only the CALLER knows
+    /// which of the many biases it has asked about is the converged one. A read that evaluated on
+    /// the caller's behalf would hide that question rather than answer it, and a read positioned
+    /// one call too early returns a perfectly plausible number for the previous point.</para>
+    ///
+    /// <para>Keyed by the model's own spelling. Names are opaque: rendered, never interpreted.</para>
+    /// </summary>
+    IReadOnlyDictionary<string, double>? ReadOperatingPoint() => null;
+
+    /// <summary>
+    /// Evaluate every supplied point and capture the operating-point variables <b>at each one</b>,
+    /// in a single round trip — or null when this provider offers none.
+    ///
+    /// <para><b>This exists because <see cref="ReadOperatingPoint"/> cannot serve harmonic
+    /// balance.</b> HB hands over a whole time grid in one call, and afterwards the instance holds
+    /// only the last sample; recovering the rest one read at a time would be one round trip per
+    /// sample, which is precisely the cost <see cref="EvaluateBatch"/> exists to avoid. So the
+    /// values are captured inside the provider's own per-point loop, at the point they describe.</para>
+    ///
+    /// <para>Like <see cref="EvaluateBatch"/>, this leaves the instance evaluated at the LAST
+    /// supplied point.</para>
+    /// </summary>
+    ExternalOperatingPoint? EvaluateOperatingPoint(IReadOnlyList<IReadOnlyList<double>> nodeVoltages) => null;
 }
 
 /// <summary>

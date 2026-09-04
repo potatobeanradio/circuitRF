@@ -337,13 +337,18 @@ public sealed class VerilogAModelIntrospectionTests
 
     // ── The registry's own defaults still say what the symbol needs ───────────
 
+    /// <summary>
+    /// Exactly what a placed component starts with, in order. <c>File</c>, <c>Model</c> and
+    /// <c>Pins</c> are the three the dialog fills in from the chosen model; <c>OpVars</c> is the
+    /// read-back switch (PM3, 2026-09-03), which nothing fills in because it is already right.
+    /// </summary>
     [Fact]
-    public void APlacedVerilogA_StartsWithTheThreeParametersTheDialogFillsIn()
+    public void APlacedVerilogA_StartsWithTheParametersTheDialogFillsIn_PlusTheReadBackSwitch()
     {
         var names = ComponentTypeRegistry.DefaultParameters(SymbolKind.VerilogA, 2)
                                          .Select(p => p.Name)
                                          .ToArray();
 
-        Assert.Equal(["File", "Model", "Pins"], names);
+        Assert.Equal(["File", "Model", "Pins", "OpVars"], names);
     }
 }

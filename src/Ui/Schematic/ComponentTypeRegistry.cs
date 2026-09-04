@@ -833,8 +833,9 @@ public static class ComponentTypeRegistry
     /// separate rather than one being bent to cover both.</para>
     ///
     /// <para>Scoped to VerilogA today, and to parameters the model itself declares: <c>File</c>,
-    /// <c>Model</c> and <c>Pins</c> are circuitRF's own and structural — the symbol cannot draw
-    /// without <c>Pins</c> — so they are not removable. Widening this to another component type is
+    /// <c>Model</c>, <c>Pins</c> and <c>OpVars</c> are circuitRF's own and structural — the symbol
+    /// cannot draw without <c>Pins</c>, and <c>OpVars</c> is a setting with its own control rather
+    /// than a value — so they are not removable. Widening this to another component type is
     /// a matter of adding it here, but only where a parameter is genuinely independent of its
     /// neighbours.</para>
     /// </summary>
@@ -844,7 +845,7 @@ public static class ComponentTypeRegistry
 
         return kind switch
         {
-            SymbolKind.VerilogA => parameterName is not ("File" or "Model" or "Pins"),
+            SymbolKind.VerilogA => parameterName is not ("File" or "Model" or "Pins" or "OpVars"),
 
             // SDD: every visible row is a user-authored equation or a named constant — SddName and
             // SddPortCount are minted at elaboration and never stored, NumPorts is not shown. Each is
@@ -880,6 +881,10 @@ public static class ComponentTypeRegistry
                      + "then this can be left blank; when it declares several, pick the one you want.",
             "Pins"  => "How many terminals the symbol draws. It is the model's own terminal count, "
                      + "filled in from the file — change it only if you are drawing before choosing one.",
+            "OpVars" => "Whether this instance publishes the operating-point variables its model "
+                      + "computes — transconductances, capacitances, node temperatures. On by "
+                      + "default; turn it off on devices you are not studying to keep a swept "
+                      + "result small.",
             _       => "",
         };
 
@@ -1546,11 +1551,19 @@ public static class ComponentTypeRegistry
             //
             // `Pins` is circuitRF's, not the model's: the symbol has to know how many terminals to
             // draw before anything has read the file. Set it to what the model declares.
+            //
+            // `OpVars` is circuitRF's too, and it is seeded TRUE. A compiled model computes tens of
+            // internal quantities and publishing them is the useful default — a read-back nobody
+            // switched on is a read-back nobody finds. The switch exists for the other direction: a
+            // design full of such devices, swept over a few hundred points, carries thousands of
+            // result names, and a user studying one device can stop paying for the rest. Absent means
+            // true as well, so a schematic saved before this existed behaves identically.
             case SymbolKind.VerilogA:
                 return [
-                    new("File",  "",  "", true,  UnitDimension.None),
-                    new("Model", "",  "", false, UnitDimension.None),
-                    new("Pins",  "2", "", false, UnitDimension.None),
+                    new("File",   "",     "", true,  UnitDimension.None),
+                    new("Model",  "",     "", false, UnitDimension.None),
+                    new("Pins",   "2",    "", false, UnitDimension.None),
+                    new("OpVars", "true", "", false, UnitDimension.None),
                 ];
 
             // wBond: `Design` CARRIES the wires (WBondEmbedding) — it does not name a file. A .wBond

@@ -2486,3 +2486,69 @@ value rather than read as part of it; values are carried as TEXT, never parsed t
 re-rendered, so `1.3e7` and `2.4p` both survive as written; case is aligned through
 `OsdiModelDiscovery.AlignParameterCase`, which respells only on a case-insensitive match — so a
 genuine typo is refused by name rather than quietly becoming something the model accepts.
+
+## PM3 — reading a compact model's operating-point variables back (2026-09-03)
+
+`project-brief-physics-model-opvar-readback.md`. The design-layer and provider-seam half; the result
+model is in `src/Engine/RESOLVED.md`, the switch's control in `src/Ui/RESOLVED.md`.
+
+### The brief's own "skip inverted" is a different RANGE, not a flipped flag
+
+`emit_describe` and `cmd_defaults` both carried `if ((p->flags & KIND_MASK) == KIND_OPVAR) continue;`
+inside a `for (i = 0; i < d->num_params; i++)` loop — and **that skip had never fired.** This ABI lays
+`param_opvar[]` out as `num_params` entries followed by `num_opvars` entries, so the parameter loop
+never reaches an op-var at all; the guard is belt-and-braces. Building the op-var list by "inverting
+the skip" therefore yields an empty list. It is a second loop over `[num_params, num_params +
+num_opvars)`. The kind is still checked there, because the entry's own flags are the statement and the
+ordering is only a convention — the test model's own `rc_access` comment makes the same point.
+
+### Two read paths, and neither can do the other's job
+
+- **`{"cmd":"opvars","handle":n}`** reads the instance's storage as it stands. No evaluation, no
+  allocation: it touches a handle the host already owns, so `MAX_INSTANCES` is untouched and there is
+  no slot to leak. This is what a DC operating point wants.
+- **`eval` with `"opvars":true`** appends a per-point block to the reply payload. This is the only
+  shape harmonic balance can use: HB hands over a whole time grid in one call, and after the batch the
+  instance holds nothing but the last sample. Recovering the rest through the first command would be
+  one round trip per sample — precisely the cost the batched transport exists to avoid.
+
+Both go through one C helper (`opvar_walk`), used three ways: to count, to name, to read.
+
+### The reply NAMES what it carries, rather than one slot per declared op-var
+
+Two kinds of quantity drop out of a read-back, and each has to be visible as an absence rather than as
+a hole in a positional array:
+
+- A **string** op-var has nowhere to land — a `DataCube` is single-kind Real or Complex. It is
+  declared in `describe` **with its type** and omitted from every read. Declared-and-unreadable is a
+  different thing from absent, and the descriptor still says so.
+- An op-var `access` returns NULL for is an **omission, not a zero** — the rule `cmd_defaults` already
+  follows, for the reason a zero the model never computed reads exactly like one it did.
+
+`access` is a pure address computation on the instance struct, so the emitted set is fixed for the
+life of an instance. That is what lets `eval` announce the names once and use a fixed per-point
+stride.
+
+### `ExternalDeviceDescriptor.OpVars` is a property over a nullable positional parameter
+
+`IReadOnlyList<ExternalOpVarDescriptor>? OpVars = null` in the primary constructor, with
+`public IReadOnlyList<ExternalOpVarDescriptor> OpVars { get; init; } = OpVars ?? [];` shadowing it.
+Additive: every existing construction site and every other provider compiles unchanged and reports
+none. There is deliberately **no third state** — "declares none" and "does not speak this protocol"
+are the same thing to every caller, and inventing a distinction would put a question in front of code
+that has no use for the answer.
+
+### The per-instance switch defaults ON, and only an explicit "no" clears it
+
+`ComponentModelFactory.VerilogAOpVarsParam` (`"OpVars"`), never forwarded to the model —
+circuitRF's own, like `File`/`Model`/`Pins`. Absent, blank or unreadable is ON: a read-back that has
+to be switched on is one nobody discovers, and silently dropping a result on the strength of a typo is
+worse than publishing one nobody asked for. `ExternalDeviceModel.ReportsOperatingPoint` folds the
+switch together with "the model declares any", so no caller can check one and forget the other — and
+an instance switched off is never asked, which removes the round trip and not only the cube.
+
+**The `ExtDevice` (kit) path deliberately has no such switch.** Not an oversight and not symmetry
+waiting to be restored: that path forwards every non-`__` parameter verbatim, so claiming the bare
+name `OpVars` there would silently shadow a kit model that happens to declare one. A `__`-prefixed
+key would be available, and would need somewhere in the kit palette to set it — a different question.
+A kit part therefore always reports what its model computes.

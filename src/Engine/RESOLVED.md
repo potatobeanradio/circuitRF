@@ -1493,3 +1493,61 @@ and `dg`, HB carries `q` and `dc` through its own frequency-domain assembly.
 it so the comparison cannot be of a circuit the drive never reached. The two land 3.7e-5 V apart on a
 3.56 V node, which is the two solvers' own residual tolerances (a residual of e amperes is e × R
 volts) and four orders of magnitude clear of what a current/charge mix-up costs.
+
+## PM3 — an operating-point variable is a WAVEFORM in harmonic balance (2026-09-03)
+
+`project-brief-physics-model-opvar-readback.md`. The provider seam is in `src/Core/RESOLVED.md`.
+
+### The whole feature is a question of position in time, not of arithmetic
+
+A compact model writes its op-var storage during a **load**. So a read describes whichever bias was
+evaluated last, and a read taken one call too late returns a perfectly plausible number belonging to a
+different operating point. Nothing objects: the residual is fine, the plot is smooth, and under a
+parametric sweep it is an off-by-one along the sweep axis.
+
+That is why `NonlinearDcEngine` collects inside the solve's own scope
+(`CollectOperatingPointVars(x)`, called from `SolveDirect`/`SolveRamped` at the converged `x`) rather
+than in `DcResultPacker`, and why the evaluation at that bias is **deliberate rather than inherited**.
+The last thing a solve does happens to leave most devices at `x` already — but "happens to" is not a
+property anything holds shut.
+
+Only a CONVERGED point collects. Under `IfNecessary` a failed direct attempt is routinely followed by
+the ramp, so collecting there would spend a round trip per device on an answer about to be discarded —
+and a read-back for a bias the solve never reached is worse than none.
+
+### D1 was answered "per sample in HB", which the brief itself listed as a phase of its own
+
+The owner chose option 3 over the recommended DC-only. It is the right shape and it is not a comment:
+a transconductance at 30 dBm swings between pinch-off and full channel once per RF cycle, and no
+single number describes it. `HbOpVars` captures per sample and transforms to the analysis' own
+spectral axis — `HbFft.Forward` at one tone, `HbNewton2D.ForwardConv2D` at two, `HbApft.Analyze` at
+T — so `OP` is `[opvar, spectral]` **Complex**, exactly like `V` and `INl`. Harmonic 0 is the cycle
+average, which is what a designer means by "gm at this drive".
+
+**It is a second evaluation, not a hook in the Newton loop, and that is deliberate.** The Newton pass
+does not know which iteration is its last, so capturing there means asking the provider for op-vars on
+every iteration and discarding all but one set — the cost paid per iteration instead of per point. One
+pass at the converged voltages is one round trip per device per HB point and is unambiguously at the
+answer. (`ComputeDevicePortCurrents`'s own `useLastPass` shortcut is not available here for the same
+reason it exists: it reuses a buffer, and there is no op-var buffer to reuse.)
+
+### ONE cube on a labelled axis, never one cube per quantity
+
+`OP` + `__OpVars`, matching `I` on `branch`. A physics-based model declares tens of quantities, so a
+handful of devices is hundreds of names; as separate cubes that is a `DataSet` nobody can navigate and
+a picker with no structure to group by. Labels are `"<InstancePath>.<opVarName>"` and are sorted
+**ordinally**, so a picker's rows do not move between two runs of the same design.
+
+### `DC1.OP(...)` joined the V/INl/I accessor branch rather than getting one of its own
+
+It IS that shape: one labelled axis, optionally a spectral axis, optionally sweep axes in front. The
+only change in `Evaluator.EvalQualifiedAccessor` is a third `axisName` arm (`"opvar"`), which also
+gets the existing refuse-by-name-with-the-available-list behaviour for free. **Qualified only** (D2,
+the owner's choice): there is no unqualified `OP(...)`, so a testbench running two analyses never has
+to be guessed about.
+
+### Values are the model's own, per device, UNMULTIPLIED
+
+A device multiplier scales what the netlist stamps, not what the model computed. A `gm` read back
+from a part placed with `m=4` is one finger's, because that is the number the model wrote and
+circuitRF has no basis for deciding which of a model's own quantities are extensive.

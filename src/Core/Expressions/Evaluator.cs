@@ -301,10 +301,24 @@ public sealed class Evaluator
 
         // ── V(nodeName,…) / INl(nodeName,…) — node-indexed ─────────────────
         // ── I(branchName,…) — branch-indexed (unified I cube, branch axis) ───
-        if (accessorName is "V" or "INl" or "I")
+        // ── OP(name,…)     — a compact model's own operating-point variable ──
+        //
+        // OP joins this branch rather than getting one of its own because it IS this shape: one
+        // labelled axis, optionally a spectral axis, optionally sweep axes in front. The label is
+        // "<InstancePath>.<opVarName>" — the model's own spelling for the quantity, on circuitRF's
+        // own address for the instance — and it is matched whole, never split on the dot.
+        //
+        // QUALIFIED ONLY, deliberately: DC1.OP("X1.gm"). There is no unqualified spelling, so a
+        // testbench that runs two analyses never has to be guessed about.
+        if (accessorName is "V" or "INl" or "I" or "OP")
         {
             var cube = ds[accessorName];
-            string axisName = accessorName == "I" ? "branch" : "node";
+            string axisName = accessorName switch
+            {
+                "I"  => "branch",
+                "OP" => "opvar",
+                _    => "node",
+            };
             var nameVal = EvalExpr(cl.Args[0], scope);
             string label = nameVal.Kind == ValueKind.String
                 ? nameVal.AsString()

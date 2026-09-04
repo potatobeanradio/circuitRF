@@ -17749,3 +17749,37 @@ Neither is fixed here — the fix is for the capture to freeze the counter and f
 DocGen's business rather than this brief's. Until then: after any `dotnet run --project tools/DocGen`,
 `git checkout --` these five paths unless the harmonicaRF instrument or the HB analysis editor was
 actually what you changed.
+
+## PM3 — the operating-point read-back switch, and a third label axis (2026-09-03)
+
+`project-brief-physics-model-opvar-readback.md`. The engine half is in `src/Engine/RESOLVED.md`.
+
+### `opvar` had to be added to FOUR places, not the one the brief names
+
+The brief describes the picker's axis→provenance mapping as "a two-line switch, so a third axis family
+is a third line" (`TraceRowViewModel:2937`). True, and insufficient: `node` and `branch` are also
+written into three separate **"a label axis is not an X candidate"** rules —
+`TraceRowViewModel.DefaultXAxis`, and the two no-X fallbacks in the axis-role builder and the slice
+rebuild — plus `PlotInspectorViewModel.IsStructuralAxis`. Miss them and a DC `OP` cube (rank 1, one
+axis, all labels) makes `opvar` the X axis, drawing one line through a transconductance, a capacitance
+and a temperature as though they shared a unit. Gated by `VerilogAOpVarSwitchTests`.
+
+### The checkbox is a panel control, and the generic row is suppressed
+
+`OpVars` is seeded `"true"` in `ComponentTypeRegistry.DefaultParameters(VerilogA)` and rendered by the
+VerilogA panel in `ParameterEditorView.axaml`, not as a parameter row — a two-state setting in a text
+box is a box where "maybe" can be typed. Same arrangement as SnP's `RefNode`, and the row is skipped
+in the builder for the same reason, so the one fact is not offered in two places that could disagree.
+
+**`ApplySnpParam` was not reusable for it.** That helper only edits a parameter that already exists
+(`if (param is not null)`), which is right for SnP, whose panel parameters are all seeded. A schematic
+saved before `OpVars` existed carries none — and its absence is a legitimate state meaning "on" — so
+unticking the box on one of those must ADD the parameter rather than silently do nothing.
+`SetOrAddParameter` is that, and it is the only difference between the two panels' write paths.
+
+### The reading of an unreadable value is duplicated on purpose, and must stay in step
+
+`ParameterEditorViewModel.RefreshVerilogAPanel` and `ComponentModelFactory.ResolveOpVarReadBack` both
+implement "only an explicit `0`/`false`/`no`/`off` clears it". They are deliberately the same rule in
+two layers rather than one shared helper across the UI firewall — but if either changes, the box and
+the run start disagreeing about what a typo means.

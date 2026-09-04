@@ -2595,6 +2595,7 @@ glyph, the pins and the parameter table.</p>
 <tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) which circuitRF builds once with the compiler installed on this machine and reuses until the source changes. Choosing one fills in Model and Pins below.</td></tr>
 <tr><td>Model</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Which device type inside that file to place. A file usually declares one, and then this can be left blank; when it declares several, pick the one you want.</td></tr>
 <tr><td>Pins</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many terminals the symbol draws. It is the model&#39;s own terminal count, filled in from the file — change it only if you are drawing before choosing one.</td></tr>
+<tr><td>OpVars</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>Whether this instance publishes the operating-point variables its model computes — transconductances, capacitances, node temperatures. On by default; turn it off on devices you are not studying to keep a swept result small.</td></tr>
 </tbody></table>
 <h2 id="system-level-blocks">System-level blocks</h2>
 <p>The blocks a <strong>system block diagram</strong> is drawn out of: the level above a transistor, where a signal

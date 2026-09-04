@@ -703,6 +703,17 @@
                     </Grid>
                 </StackPanel>
 
+                <!-- VerilogA panel: the one setting on a compiled model that is circuitRF's own
+                     rather than the model author's, and that has two states rather than a value. -->
+                <StackPanel IsVisible="{Binding IsVerilogA}"
+                            Margin="6,4"
+                            Spacing="8">
+                    <CheckBox IsChecked="{Binding VerilogAOpVars}"
+                              Content="Report operating-point variables"
+                              FontSize="11"
+                              ToolTip.Tip="Publish the quantities this model computes at each operating point — transconductances, capacitances, node temperatures — as an OP result. On by default; turn it off on devices you are not studying to keep a swept result small."/>
+                </StackPanel>
+
                 <!-- SnP custom panel: file picker + layout controls -->
                 <StackPanel IsVisible="{Binding IsSnp}"
                             Margin="6,4"

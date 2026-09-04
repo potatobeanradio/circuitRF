@@ -71,6 +71,7 @@ src/Core/Devices/ComponentModelFactory.cs|{typeName}: '{kv.Key}' was given the c
 src/Core/Devices/ComponentModelFactory.cs|{typeName}: this component cannot carry a passive intermod. A nonlinearity here is 
 src/Core/Devices/External/DeviceWorkerInstance.cs|'{Descriptor.TypeId}' has {n} nodes, but evaluation point {k} supplied {v.Count} voltages.
 src/Core/Devices/External/DeviceWorkerInstance.cs|'{Descriptor.TypeId}' returned {data.Length} values for {count} evaluation points; 
+src/Core/Devices/External/DeviceWorkerInstance.cs|'{Descriptor.TypeId}' named {names.Length} operating-point variables and sent 
 src/Core/Devices/External/DeviceWorkerInstance.cs|Asked '{Descriptor.TypeId}' for {count} points of {n} nodes and was answered with 
 src/Core/Devices/External/DeviceWorkerProtocol.cs|Every frame must carry a control-plane object.
 src/Core/Devices/External/DeviceWorkerProtocol.cs|The device worker announced an implausible frame ({jsonLen} + {binLen} bytes). 

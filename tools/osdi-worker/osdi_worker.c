@@ -327,15 +327,9 @@ static void emit_describe(Sb *s) {
         sb_puts(s, ",\"internalNodeCount\":"); sb_int(s, (long)(d->num_nodes - d->num_terminals));
         sb_puts(s, ",\"nonlinear\":true,\"linear\":false");
 
-        /* Parameters. Op-vars are NOT offered: they are outputs, and presenting one as settable
-         * would put a writable box in the editor for a value the model computes.
-         *
-         * They are read here and dropped, which means circuitRF surfaces NONE of them — a compact
-         * model computes tens of operating-point quantities (transconductances, capacitances,
-         * junction temperatures) that a designer would reasonably want to read back after a DC
-         * solve, and today there is nowhere for one to land. Offering them as read-back quantities
-         * is worthwhile and is a feature in its own right, not a line missing from this loop: it
-         * needs a place in the result model and a way to ask for them per operating point. */
+        /* Parameters. Op-vars are NOT offered here: they are outputs, and presenting one as
+         * settable would put a writable box in the editor for a value the model computes. They get
+         * their own list below, so a quantity appears in exactly one of the two. */
         sb_puts(s, ",\"params\":[");
         bool first = true;
         for (uint32_t i = 0; i < d->num_params; i++) {
@@ -350,6 +344,39 @@ static void emit_describe(Sb *s) {
              * so they cost nothing to report — and a compact model declares hundreds of parameters,
              * which is unreadable without them. Emitted as "" when the model states nothing, so the
              * host never has to distinguish absent from empty. */
+            sb_puts(s, ",\"units\":");       sb_json_str(s, p->units       ? p->units       : "");
+            sb_puts(s, ",\"description\":"); sb_json_str(s, p->description ? p->description : "");
+            sb_puts(s, "}");
+        }
+        sb_puts(s, "]");
+
+        /* Op-vars — what the model COMPUTES, as against what it is told.
+         *
+         * THE LOOP IS A DIFFERENT RANGE, not the same one with a flag flipped. This ABI lays
+         * `param_opvar` out as num_params entries followed by num_opvars entries, so the parameter
+         * loop above never reaches an op-var at all and its KIND_OPVAR skip is belt-and-braces. The
+         * kind is still checked here rather than assumed from the position, for the same reason
+         * `rc_access` in the test model does not depend on the segregation: the entry's own flags
+         * are the statement, the ordering is a convention.
+         *
+         * The metadata costs nothing. Name, units and description already sit in the descriptor —
+         * the same argument that put them on the parameters — and a model declaring dozens of these
+         * is unreadable without them.
+         *
+         * `type` rides along because it decides whether a quantity can be READ BACK at all: an int
+         * is a real once it is a number in a cube, and a STRING has nowhere to land in a
+         * single-kind DataCube. A string op-var is therefore announced here, with its type, and
+         * then omitted from `opvars` — declared and unreadable, rather than silently absent. */
+        sb_puts(s, ",\"opvars\":[");
+        first = true;
+        for (uint32_t i = 0; i < d->num_opvars; i++) {
+            const OsdiParamOpvar *p = &d->param_opvar[d->num_params + i];
+            if ((p->flags & KIND_MASK) != KIND_OPVAR) continue;
+            if (!p->name || !p->name[0]) continue;
+            if (!first) sb_puts(s, ",");
+            first = false;
+            sb_puts(s, "{\"name\":"); sb_json_str(s, p->name[0]);
+            sb_puts(s, ",\"type\":");        sb_json_str(s, param_kind_word(p->flags));
             sb_puts(s, ",\"units\":");       sb_json_str(s, p->units       ? p->units       : "");
             sb_puts(s, ",\"description\":"); sb_json_str(s, p->description ? p->description : "");
             sb_puts(s, "}");
@@ -711,6 +738,106 @@ static int cmd_create(const char *js, const char *js_end) {
     return 0;
 }
 
+/* ── operating-point variables ─────────────────────────────────────────────── */
+
+/* ONE WALK, USED THREE WAYS: to count, to name, and to read.
+ *
+ * A read-back is not a computation this worker performs. It is a DEREFERENCE, positioned correctly
+ * in time: the model writes its op-var storage during a load, so what is here describes whichever
+ * bias was evaluated last. Getting the position wrong yields a plausible number from the PREVIOUS
+ * point, which is a wrong answer that converges.
+ *
+ * WHY THE REPLY NAMES WHAT IT CARRIES rather than shipping one slot per declared op-var. Two kinds
+ * of quantity drop out, and each must be visible as an absence rather than as a hole in a
+ * positional array:
+ *
+ *   - A STRING op-var has nowhere to land. circuitRF's result cubes are single-kind Real or
+ *     Complex, so a string cannot be a value in one. `describe` announces it WITH its type and it
+ *     stops there — declared and unreadable, which is a different thing from absent.
+ *   - An op-var `access` will not hand back is an OMISSION, not a zero. Same rule `cmd_defaults`
+ *     already follows, and for the same reason: a zero the model never computed reads exactly like
+ *     one it did.
+ *
+ * `access` is a pure address computation on the instance struct, so the emitted set is the same on
+ * every call for a given instance — which is what lets `eval` announce the names once and then use
+ * a fixed per-point stride.
+ *
+ * Pass `names` to append JSON strings (comma-separated, caller supplies the brackets), `vals` to
+ * fill values, either or both NULL to just count. Returns how many were emitted. */
+static uint32_t opvar_walk(const OsdiDescriptor *d, void *inst, Sb *names, double *vals) {
+    uint32_t emitted = 0;
+    for (uint32_t i = 0; i < d->num_opvars; i++) {
+        uint32_t id = d->num_params + i;
+        const OsdiParamOpvar *p = &d->param_opvar[id];
+        if ((p->flags & KIND_MASK) != KIND_OPVAR) continue;
+        if (!p->name || !p->name[0]) continue;
+        if ((p->flags & PARA_TY_MASK) == PARA_TY_STR) continue;   /* nowhere to land — see above */
+
+        void *src = d->access(inst, NULL, id, ACCESS_FLAG_READ | ACCESS_FLAG_INSTANCE);
+        if (!src) continue;                                       /* omission, not a zero */
+
+        if (names) {
+            if (emitted) sb_puts(names, ",");
+            sb_json_str(names, p->name[0]);
+        }
+        if (vals)
+            vals[emitted] = ((p->flags & PARA_TY_MASK) == PARA_TY_INT)
+                          ? (double)*(int32_t *)src
+                          : *(double *)src;
+        emitted++;
+    }
+    return emitted;
+}
+
+/* Reads the op-vars of an instance the host ALREADY OWNS, at the bias it last evaluated.
+ *
+ * IT ALLOCATES NOTHING AND EVALUATES NOTHING, and both halves of that are the point. Unlike
+ * `defaults`, which stands a probe model up and tears it down, this touches an existing handle — so
+ * MAX_INSTANCES is not involved and there is no slot to leak. And it does not evaluate, because the
+ * HOST is the only party that knows which point is the converged one; evaluating here would hide
+ * the ordering question rather than answer it.
+ *
+ * A READ WITH NO PRIOR EVAL IS DEFINED: it reports the instance as `setup_instance` left it. That is
+ * an honest answer to "what does the model say now" — a quantity the setup writes comes back
+ * written, one only a load writes comes back at its zero-initialised value — and it is a real state
+ * a host can reach, so it answers rather than refusing. */
+static int cmd_opvars(const char *js, const char *js_end) {
+    double hv = -1;
+    json_num(json_member(js, js_end, "handle"), js_end, &hv);
+    int h = (int)hv;
+
+    if (h < 0 || h >= MAX_INSTANCES || !g_inst[h].live) {
+        report_error("opvars: no such instance"); return 0;
+    }
+
+    Instance *ins = &g_inst[h];
+    uint32_t n = opvar_walk(ins->d, ins->inst, NULL, NULL);
+
+    double *vals = (double *)calloc(n ? n : 1, sizeof(double));
+    if (!vals) { report_error("opvars: out of memory"); return 0; }
+
+    Sb s = {0};
+    sb_puts(&s, "{\"names\":[");
+    opvar_walk(ins->d, ins->inst, &s, vals);
+    sb_puts(&s, "]}");
+
+    write_frame(s.buf, vals, n);
+    free(s.buf);
+    free(vals);
+    return 0;
+}
+
+/* Whether a command asked for op-vars alongside whatever else it does. Absent means no: the two
+ * other workers circuitRF ships host different ABIs and will never carry op-vars at all, so asking
+ * is something the host does ONLY when `describe` declared some. */
+static bool json_flag(const char *js, const char *js_end, const char *key) {
+    const char *v = json_member(js, js_end, key);
+    if (!v) return false;
+    if (*v == 't') return true;               /* true */
+    double d = 0.0;
+    return json_num(v, js_end, &d) && d != 0.0;
+}
+
 /* ── eval ─────────────────────────────────────────────────────────────────── */
 
 static int cmd_eval(const char *js, const char *js_end, const double *in, size_t in_count) {
@@ -727,7 +854,21 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
 
     if (in_count != count * n) { report_error("eval: voltage payload does not match count x nodes"); return 0; }
 
-    size_t per_point = 2u * n + 2u * (size_t)n * n;
+    /* OP-VARS PER POINT, WHEN ASKED — and this is the only way a per-sample read-back can exist.
+     *
+     * The standalone `opvars` command reads the instance's storage, which holds whichever bias was
+     * evaluated LAST. That is exactly right for a DC operating point and useless for harmonic
+     * balance, where the host hands over a whole time grid in one call: after the batch only the
+     * final sample survives, and recovering the rest would mean one round trip per sample, which is
+     * the cost this transport exists to avoid.
+     *
+     * So the values are captured HERE, inside the per-point loop, at the point they describe. The
+     * names are announced once in the reply rather than per point — `access` is a pure address
+     * computation, so the emitted set is fixed for the life of an instance and the stride with it. */
+    bool     want_op = json_flag(js, js_end, "opvars");
+    uint32_t n_op    = want_op ? opvar_walk(d, ins->inst, NULL, NULL) : 0u;
+
+    size_t per_point = 2u * n + 2u * (size_t)n * n + n_op;
     size_t out_count = count + count * per_point;
     double *out = (double *)calloc(out_count ? out_count : 1, sizeof(double));
     double *sol = (double *)calloc(n ? n : 1, sizeof(double));
@@ -813,12 +954,24 @@ static int cmd_eval(const char *js, const char *js_end, const double *in, size_t
             if (!isfinite(jr[e]) || !isfinite(jx[e])) finite = false;
         }
 
+        /* After the loads, so this reads the storage the model has just written for THIS point.
+         * A point the model refused took the `continue` above and leaves its block at the
+         * calloc'd zero — the status word already says the point failed, and inventing an
+         * operating point for a bias the model would not evaluate would be worse than saying
+         * nothing. */
+        if (n_op) opvar_walk(d, ins->inst, NULL, C + (size_t)n * n);
+
         out[k] = finite ? 1.0 : 0.0;
     }
 
     Sb s = {0};
     sb_puts(&s, "{\"count\":"); sb_int(&s, (long)count);
     sb_puts(&s, ",\"pinCount\":"); sb_int(&s, (long)n);
+    if (want_op) {
+        sb_puts(&s, ",\"opvarNames\":[");
+        opvar_walk(d, ins->inst, &s, NULL);
+        sb_puts(&s, "]");
+    }
     sb_puts(&s, "}");
     write_frame(s.buf, out, out_count);
     free(s.buf); free(out); free(sol); free(jr); free(jx);
@@ -872,6 +1025,8 @@ int main(int argc, char **argv) {
             cmd_create(js, js_end);
         } else if (strcmp(cmd, "eval") == 0) {
             cmd_eval(js, js_end, payload, payload_count);
+        } else if (strcmp(cmd, "opvars") == 0) {
+            cmd_opvars(js, js_end);
         } else if (strcmp(cmd, "destroy") == 0) {
             double hv = -1; json_num(json_member(js, js_end, "handle"), js_end, &hv);
             int h = (int)hv;

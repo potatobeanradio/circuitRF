@@ -17,6 +17,10 @@ namespace CircuitRF.Engine;
 ///   "__ProbeBranches"  provenance: probe-named subset of the branch axis (branch-picker filter).
 ///   "__LabeledNodes"   provenance: user-named nets (node-picker filter). "__"-prefixed ⇒
 ///                      StackSweepAxis passes it through sweep-invariantly.
+///   "OP"               Real, axis [opvar] — a compact model's own operating-point variables at
+///                      this solution (Labels = "&lt;InstancePath&gt;.&lt;opVarName&gt;"). Absent
+///                      when no device reported any.
+///   "__OpVars"         provenance for the opvar axis, so the picker can group and filter.
 /// A standalone DC run yields scalars per node/probe (an operating-point table); wrapping DC in a
 /// ParametricSweep prepends the sweep axes via StackSweepAxis → a plottable [sweep…, node] V cube
 /// and [sweep…, branch] I cube.
@@ -51,6 +55,35 @@ public static class DcResultPacker
             var pIdx = Enumerable.Range(0, bNames.Length).Select(i => (double)i).ToArray();
             ds.Add("__ProbeBranches", new DataCube(
                 [new Axis("probe", pIdx, "", bNames)], new double[bNames.Length]));
+        }
+
+        // ── Operating-point variables ─────────────────────────────────────────
+        //
+        // ONE CUBE ON A LABELLED AXIS, matching "I" on `branch` — deliberately not one cube per
+        // quantity. A physics-based compact model declares tens of these, so a handful of devices is
+        // hundreds of names: as separate cubes that is a DataSet nobody can navigate and a picker
+        // with no structure to group by. On one axis it is the shape every other picker already
+        // knows how to filter.
+        //
+        // Values are the model's own, per device and unmultiplied — see DcResult.OperatingPointVars.
+        if (dc.OperatingPointVars.Count > 0)
+        {
+            // Ordinal, so the axis order is stable across runs and across platforms; a picker whose
+            // rows move between two runs of the same design is unusable.
+            var opNames = dc.OperatingPointVars.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray();
+            var opIdx   = new double[opNames.Length];
+            var opVals  = new double[opNames.Length];
+            for (int i = 0; i < opNames.Length; i++)
+            {
+                opIdx [i] = i;
+                opVals[i] = dc.OperatingPointVars[opNames[i]];
+            }
+
+            // No unit on the axis: these are the model's own quantities and no two of them share
+            // one. Each carries its own unit on the descriptor, where a reader can see it.
+            ds.Add("OP", new DataCube([new Axis("opvar", opIdx, "", opNames)], opVals));
+            ds.Add("__OpVars", new DataCube(
+                [new Axis("opvar", opIdx, "", opNames)], new double[opNames.Length]));
         }
 
         var labeled = nodeNames.Where(nm => nl.Nodes.LabeledNames.Contains(nm)).Distinct().ToArray();

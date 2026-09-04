@@ -2936,6 +2936,11 @@ public partial class TraceRowViewModel : ViewModelBase
         {
             if (ax.Name == "node")   { filterAxisName = "node";   provenanceCube = "__LabeledNodes";  break; }
             if (ax.Name == "branch") { filterAxisName = "branch"; provenanceCube = "__ProbeBranches"; break; }
+            // A compact model's operating-point variables. A third axis family on the same footing
+            // as the other two — which is exactly why the OP cube is ONE cube on a labelled axis
+            // rather than one cube per quantity: a model declaring tens of them across a handful of
+            // devices would otherwise be hundreds of entries in the signal list with no grouping.
+            if (ax.Name == "opvar")  { filterAxisName = "opvar";  provenanceCube = "__OpVars";        break; }
         }
 
         HashSet<string>? labeledSet = null;
@@ -3048,7 +3053,7 @@ public partial class TraceRowViewModel : ViewModelBase
         if (!AxisRoles.Any(r => r.IsX))
         {
             var fallback = AxisRoles.FirstOrDefault(r =>
-                !r.IsFamily && r.AxisName is not "node" and not "branch");
+                !r.IsFamily && r.AxisName is not "node" and not "branch" and not "opvar");
             fallback?.SetIsXSilent(true);
         }
     }
@@ -3101,7 +3106,8 @@ public partial class TraceRowViewModel : ViewModelBase
         if (!hasX && slice.Length > 0)
         {
             int fb = Array.FindIndex(slice, s =>
-                s.Role != AxisRole.FamilyIterate && s.AxisName is not "node" and not "branch");
+                s.Role != AxisRole.FamilyIterate &&
+                s.AxisName is not "node" and not "branch" and not "opvar");
             if (fb >= 0)
             {
                 slice[fb] = new AxisSlice(slice[fb].AxisName, AxisRole.KeepAsX, 0);
@@ -3123,15 +3129,18 @@ public partial class TraceRowViewModel : ViewModelBase
 
     /// <summary>
     /// Index of the default X axis for a cube: the "freq" axis when present (S/Y/Z parameter cubes and
-    /// any freq-swept cube), else the first non-label (node/branch) axis. Returns -1 when only label
-    /// axes exist (→ no X → scalar, valid for no-sweep DC).
+    /// any freq-swept cube), else the first non-label (node/branch/opvar) axis. Returns -1 when only
+    /// label axes exist (→ no X → scalar, valid for no-sweep DC).
     /// </summary>
     internal static int DefaultXAxis(RfCore.Data.DataCube cube)
     {
         for (int d = 0; d < cube.Rank; d++)
             if (cube.Axes[d].Name == "freq") return d;
         for (int d = 0; d < cube.Rank; d++)
-            if (cube.Axes[d].Name is not "node" and not "branch") return d;
+            // `opvar` joins node/branch as a LABEL axis, not a plottable one: its entries are
+            // different quantities (a transconductance beside a capacitance beside a temperature),
+            // so plotting along it draws one line through numbers that share no unit.
+            if (cube.Axes[d].Name is not "node" and not "branch" and not "opvar") return d;
         return -1;
     }
 

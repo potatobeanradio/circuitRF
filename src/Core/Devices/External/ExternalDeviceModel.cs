@@ -152,6 +152,76 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
         return results;
     }
 
+    // ── operating-point read-back ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Quantities this model COMPUTES and will report at an operating point — a transconductance, a
+    /// junction capacitance, a node temperature. Empty for a device that declares none, which is
+    /// also what a provider that does not speak the protocol says.
+    /// </summary>
+    public IReadOnlyList<ExternalOpVarDescriptor> OpVars => Descriptor.OpVars;
+
+    /// <summary>
+    /// Whether THIS INSTANCE should have its operating-point variables read back and published.
+    /// Defaults to true — a read-back that has to be switched on is one nobody discovers.
+    ///
+    /// <para><b>It is a per-instance switch because the cost is per instance.</b> A physics-based
+    /// model declares tens of quantities; a design holding a dozen of them, swept over a few hundred
+    /// bias points, publishes a result axis of thousands of names that a user who only wanted the
+    /// one <c>gm</c> curve now has to carry around. Turning it off on the devices that are not being
+    /// studied keeps the result small without turning it off for the whole run.</para>
+    ///
+    /// <para><b>Turning it off removes the round trip as well as the cube.</b> A device switched off
+    /// is never asked, so this is the answer to what a read-back costs a user who never plots one —
+    /// they pay it by default, and they can stop paying it per part.</para>
+    /// </summary>
+    public bool ReportOperatingPoint { get; init; } = true;
+
+    /// <summary>
+    /// Whether this instance will actually produce a read-back: it was left switched on AND the
+    /// model declares something to report. Every caller wants both halves, so they are asked
+    /// together rather than each caller remembering to check the second.
+    /// </summary>
+    public bool ReportsOperatingPoint => ReportOperatingPoint && Descriptor.OpVars.Count > 0;
+
+    /// <summary>
+    /// Evaluate at one bias and read the model's own operating-point variables THERE.
+    ///
+    /// <para><b>The evaluation is the point, not a side effect.</b> A read-back is a value the model
+    /// wrote during its last load, so the whole correctness of one is a question of position in
+    /// time: read it a call too late and it describes the previous bias, which is a plausible
+    /// number and a wrong answer. The caller is the only party that knows which bias is the
+    /// converged one, so it states it here rather than asking the provider to guess.</para>
+    ///
+    /// <para>Null for a device that declares no op-vars, and for every provider that does not offer
+    /// them. Keys are the model's own spellings — opaque, rendered, never interpreted.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, double>? ReadOperatingPointAt(IReadOnlyList<double> nodeVoltages)
+    {
+        if (!ReportsOperatingPoint) return null;
+
+        return Guarded(() =>
+        {
+            _instance.Evaluate(nodeVoltages);
+            return _instance.ReadOperatingPoint();
+        });
+    }
+
+    /// <summary>
+    /// Evaluate a whole set of biases and capture the operating-point variables at EVERY one, in a
+    /// single round trip.
+    ///
+    /// <para>This is what a large-signal read-back needs. At a harmonic-balance point an op-var is
+    /// not a number, it is a waveform — one value per time sample — and after a batch the provider's
+    /// instance holds only the last sample. Reading them one at a time would be one round trip per
+    /// sample, which is the cost batching exists to avoid.</para>
+    /// </summary>
+    public ExternalOperatingPoint? ReadOperatingPointOver(IReadOnlyList<IReadOnlyList<double>> nodeVoltages)
+    {
+        if (!ReportsOperatingPoint) return null;
+        return Guarded(() => _instance.EvaluateOperatingPoint(nodeVoltages));
+    }
+
     /// <summary>
     /// Runs one provider call, attaching this instance's label to whatever comes back.
     ///

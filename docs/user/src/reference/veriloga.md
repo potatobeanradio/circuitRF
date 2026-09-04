@@ -200,6 +200,54 @@ why the whole declared list is never materialised as rows: freezing today's defa
 would mean recompiling with a changed default silently had no effect.</p>
 </div>
 
+## Reading back what the model computed {#opvars}
+
+A compact model computes far more than the currents it hands the solver. Transconductances, junction
+capacitances, an overdrive voltage, a junction temperature — a physics-based model declares tens of
+them, and they are the numbers a designer actually reasons about. Verilog-A calls them **operating
+point variables**; circuitRF reads them back after every solve and publishes them as a result cube
+named **`OP`**.
+
+They are never parameters. A parameter is something you tell the model; an operating-point variable
+is something it tells you, and it does not appear in the parameter editor for the same reason a
+voltmeter has no dial.
+
+### What you get, and where
+
+At a **DC** operating point each one is a number, on a labelled axis whose entries are
+`<instance>.<name>` — `X1.gm`, `X1.cgs`, `X1.tj`. Wrapped in a parametric sweep it becomes a curve
+per quantity, one point per bias, in the Data Display's signal list beside `V` and `I`.
+
+At a **harmonic-balance** point each one is a *waveform*, because that is what it is: a
+transconductance at 30 dBm of drive swings between pinch-off and full channel once per RF cycle, and
+no single number describes it. So `OP` there is a spectrum on the same harmonic axis `V` and `I`
+use — harmonic 0 is the cycle average, which is what "gm at this drive" usually means, and the
+higher entries say how hard the quantity is being swung.
+
+In a measurement, name one through the analysis it came from:
+
+```
+measure gm_mS = DC1.OP("X1.gm") * 1000
+measure gm_avg = HB1.OP("X1.gm", 0)
+```
+
+A name the model does not declare is refused, by name, with the available ones listed — it is never
+quietly dropped.
+
+<div class="callout note">
+<span class="label">Turning it off per device</span>
+<p>The parameter editor's <b>Report operating-point variables</b> checkbox is on by default. A model
+declaring forty quantities, on a design holding a dozen such devices, swept over a few hundred bias
+points, is a result carrying thousands of names — so turn it off on the devices you are not
+studying. Off costs nothing at all: the device is not asked, so neither the round trip nor the cube
+happens.</p>
+</div>
+
+**Two kinds of quantity are declared and not plotted.** A model may declare an op-var as an integer
+or as a string. An integer arrives as an ordinary number. A **string** cannot: a result cube holds
+numbers of one kind, and there is nowhere in one to put a word. Such a quantity is still reported as
+declared, so you can see that it exists; it simply never appears in `OP`.
+
 ## When circuitRF rebuilds, and where the artefact goes {#rebuild}
 
 **A simulation of an unedited model compiles nothing.** The compiled artefact is cached, and the
@@ -225,9 +273,6 @@ you were not expecting is visible rather than mysterious.
 ## What is not supported {#limits}
 
 - **No noise analysis** from a compiled model.
-- **No operating-point variable read-back.** These models compute dozens of internal quantities
-  (`gm`, `ids`, junction temperatures). circuitRF's worker already recognises them and deliberately
-  keeps them out of the settable parameter list, but there is not yet a way to plot one.
 - **Aging and degradation parameters** are forwarded to the model like any other parameter and then
   do nothing — there is no aging analysis and no stress history to drive one.
 - **Verilog-AMS digital constructs** are the compiler's business, not circuitRF's. If your compiler

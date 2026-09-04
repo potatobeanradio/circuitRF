@@ -64,6 +64,20 @@ public sealed class SquareLawFetProvider : IExternalDeviceProvider
             new ExternalNodeDescriptor(Thermal,   External: true,  NodeQuantityKind.Thermal,    "thermal"),
             new ExternalNodeDescriptor(GateInt,   External: false, NodeQuantityKind.Electrical, "gateInt"),
             new ExternalNodeDescriptor(SourceInt, External: false, NodeQuantityKind.Electrical, "sourceInt"),
+        ],
+        OpVars:
+        [
+            // Every one of these has a CLOSED FORM in Channel() below, which is what makes a
+            // read-back checkable against arithmetic instead of against itself. `Region` is an int
+            // and `Regime` a string, so the two non-real cases are exercised too: an int is a real
+            // once it is a number in a cube, and a string has nowhere to land in one and must be
+            // DECLARED here and absent from every read-back.
+            new ExternalOpVarDescriptor("Id",     ExternalParamKind.Double, "A",    "drain current"),
+            new ExternalOpVarDescriptor("Gm",     ExternalParamKind.Double, "S",    "transconductance"),
+            new ExternalOpVarDescriptor("Gds",    ExternalParamKind.Double, "S",    "output conductance"),
+            new ExternalOpVarDescriptor("Tj",     ExternalParamKind.Double, "degC", "junction temperature"),
+            new ExternalOpVarDescriptor("Region", ExternalParamKind.Int,    "",     "0 = cut off, 1 = on"),
+            new ExternalOpVarDescriptor("Regime", ExternalParamKind.String, "",     "the region, in words"),
         ]);
 
     public IReadOnlyList<ExternalDeviceDescriptor> Describe() => [TypeDescriptor];
@@ -78,6 +92,21 @@ public sealed class SquareLawFetProvider : IExternalDeviceProvider
     /// </summary>
     public int Created { get; private set; }
     public int Live    { get; private set; }
+
+    /// <summary>
+    /// How many evaluation POINTS this provider has been asked for, across every instance.
+    ///
+    /// <para>Counted because the structural property a read-back has to keep is a count, not a
+    /// duration: one evaluation per device per converged point. A timing test would measure the
+    /// machine; this measures the thing that would actually regress — a read-back accidentally
+    /// wired into the Newton loop rather than taken once at the answer.</para>
+    /// </summary>
+    public int PointsEvaluated { get; private set; }
+
+    /// <summary>Round trips spent on the standalone operating-point read, across every instance.</summary>
+    public int OperatingPointReads { get; private set; }
+
+    public void ResetCounters() { PointsEvaluated = 0; OperatingPointReads = 0; }
 
     public IExternalDeviceInstance Create(string typeId, IReadOnlyDictionary<string, string> parameters)
     {
@@ -147,9 +176,22 @@ public sealed class SquareLawFetProvider : IExternalDeviceProvider
             double vg = v[Gate], vd = v[Drain], vs = v[Source];
             double t  = v[Thermal], vgi = v[GateInt], vsi = v[SourceInt];
 
+            owner.PointsEvaluated++;
+
             double vgsInt = vgi - vsi;
             double vdsInt = vd  - vsi;
             var (id, gm, gds, gT) = Channel(_p, vgsInt, vdsInt, t);
+
+            // Written during the LOAD, exactly as a compiled model writes its own — which is what
+            // makes the whole of a read-back a question of position in time.
+            _last = new Dictionary<string, double>(StringComparer.Ordinal)
+            {
+                ["Id"]     = id,
+                ["Gm"]     = gm,
+                ["Gds"]    = gds,
+                ["Tj"]     = t,
+                ["Region"] = id > 0.0 ? 1.0 : 0.0,
+            };
 
             double gG = 1.0 / _p.Rg, gS = 1.0 / _p.Rs, gTh = 1.0 / _p.Rth;
             double power = id * vdsInt;
@@ -190,6 +232,33 @@ public sealed class SquareLawFetProvider : IExternalDeviceProvider
 
             return new ExternalDeviceEvaluation(i, new double[NodeCount], g, new double[NodeCount, NodeCount]);
         }
+
+        /// <summary>
+        /// The op-vars of the LAST bias this instance evaluated — a read, never an evaluation, so it
+        /// carries the same timing hazard a real provider's does: read a call too late and it
+        /// describes the previous point.
+        /// </summary>
+        public IReadOnlyDictionary<string, double>? ReadOperatingPoint()
+        {
+            owner.OperatingPointReads++;
+            // The string-valued `Regime` is declared and is NOT here: a single-kind numeric cube has
+            // nowhere to put it. Its absence is the property under test, not an omission.
+            return _last;
+        }
+
+        public ExternalOperatingPoint? EvaluateOperatingPoint(IReadOnlyList<IReadOnlyList<double>> nodeVoltages)
+        {
+            var names = new[] { "Id", "Gm", "Gds", "Tj", "Region" };
+            var rows  = new double[nodeVoltages.Count][];
+            for (int k = 0; k < nodeVoltages.Count; k++)
+            {
+                Evaluate(nodeVoltages[k]);
+                rows[k] = [.. names.Select(n => _last![n])];
+            }
+            return new ExternalOperatingPoint(names, rows);
+        }
+
+        private Dictionary<string, double>? _last;
 
         private bool _disposed;
 

@@ -339,7 +339,12 @@ public static class HbNewton2D
     /// same divisor (N₁N₂ at the global DC bin, else N₁N₂/2), but WITHOUT folding out the k₂=0
     /// negative-k₁ conjugates — those are needed for the Jacobian's difference/sum lookups.
     /// </summary>
-    private static Complex[,] ForwardConv2D(double[,] x, int N1, int N2)
+    /// <summary>
+    /// Internal rather than private so <see cref="HbOpVars"/> can put an operating-point waveform on
+    /// the same mixing lattice by the same transform — a second copy of this would be a second thing
+    /// to keep in step with the grid's conventions.
+    /// </summary>
+    internal static Complex[,] ForwardConv2D(double[,] x, int N1, int N2)
     {
         int kMax2 = N2 / 2;
         var partial = new Complex[N1, kMax2 + 1];

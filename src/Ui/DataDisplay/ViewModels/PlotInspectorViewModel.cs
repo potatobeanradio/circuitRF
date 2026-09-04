@@ -452,7 +452,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// preferred X when a cube has one.</para>
     /// </summary>
     private static bool IsStructuralAxis(string name) =>
-        name is "node" or "branch" or "harmonic" or "tone" or "port" or "probe" or "mixIndex" or "i" or "j";
+        name is "node" or "branch" or "harmonic" or "tone" or "port" or "probe" or "mixIndex"
+             or "opvar" or "i" or "j";
 
     /// <summary>
     /// The slice a seeded cube trace opens with. <see cref="TraceRowViewModel.BuildDefaultSlice"/>'s

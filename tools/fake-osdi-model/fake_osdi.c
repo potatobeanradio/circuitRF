@@ -428,6 +428,21 @@ typedef struct {
     /* Cached per-eval derivatives, handed to the Jacobian loaders. */
     double   d_gm, d_gds, d_ggs;
     double   d_cgs, d_cgd;
+
+    /* OP-VARS - what the model computes, as against what it is told.
+     *
+     * Every one has a CLOSED FORM written in this device's header comment, so a read-back can be
+     * checked against arithmetic rather than against itself. That is why they are on this device
+     * and not only on the RC above, whose single op-var is a passthrough of the temperature the
+     * host stated and so cannot gate a feature about transconductances.
+     *
+     * All three types the ABI allows are represented, deliberately: a real, an int, and a string.
+     * The string is the interesting one - it is declared, it appears in `describe` with its type,
+     * and it must NOT appear in a read-back, because a result cube is single-kind numeric and a
+     * string has nowhere to land in one. */
+    double   op_id, op_gm, op_gds, op_vov;
+    int32_t  op_region;         /* 0 = cut off, 1 = triode-ish, 2 = saturated */
+    char    *op_regime;         /* the same fact as a word; never read back */
 } FetInst;
 
 static void *fet_access(void *inst, void *model, uint32_t id, uint32_t flags) {
@@ -444,6 +459,15 @@ static void *fet_access(void *inst, void *model, uint32_t id, uint32_t flags) {
         case 6: return m ? (void *)&m->cgd    : NULL;
         case 7: return m ? (void *)&m->ggs    : NULL;
         case 8: return i ? (void *)&i->mult   : NULL;
+        /* Op-vars start at num_params, which is the layout this ABI declares. They are instance
+         * state by definition - a model parameter cannot depend on the bias - so every one of them
+         * needs `inst` and none of them needs `model`. */
+        case  9: return i ? (void *)&i->op_id     : NULL;
+        case 10: return i ? (void *)&i->op_gm     : NULL;
+        case 11: return i ? (void *)&i->op_gds    : NULL;
+        case 12: return i ? (void *)&i->op_vov    : NULL;
+        case 13: return i ? (void *)&i->op_region : NULL;
+        case 14: return i ? (void *)&i->op_regime : NULL;
         default: return NULL;
     }
 }
@@ -513,6 +537,17 @@ static uint32_t fet_eval(void *handle, void *inst, const void *model, const Osdi
     i->d_ggs = mu * m->ggs;
     i->d_cgs = mu * m->cgs;
     i->d_cgd = mu * m->cgd;
+
+    /* THE OP-VARS ARE WRITTEN HERE, IN THE LOAD, and that is what makes their timing the whole
+     * design of the read-back: this storage describes the bias of the LAST eval and nothing else.
+     * They carry the multiplier, like the residual and the Jacobian do, so a read-back describes
+     * the device as placed rather than one finger of it. */
+    i->op_id     = mu * id;
+    i->op_gm     = mu * gm;
+    i->op_gds    = mu * gds;
+    i->op_vov    = vov;                       /* intensive: not scaled by mult */
+    i->op_region = (vov <= 0.5 * m->delta) ? 0 : (sat < 0.9 ? 1 : 2);
+    i->op_regime = (char *)(i->op_region == 0 ? "off" : i->op_region == 1 ? "linear" : "saturated");
     return 0;
 }
 
@@ -563,6 +598,13 @@ static char *fet_name_cgd[]    = { (char *)"cgd"    };
 static char *fet_name_ggs[]    = { (char *)"ggs"    };
 static char *fet_name_mult[]   = { (char *)"mult"   };
 
+static char *fet_name_id[]     = { (char *)"id"     };
+static char *fet_name_gm[]     = { (char *)"gm"     };
+static char *fet_name_gds[]    = { (char *)"gds"    };
+static char *fet_name_vov[]    = { (char *)"vov"    };
+static char *fet_name_region[] = { (char *)"region" };
+static char *fet_name_regime[] = { (char *)"regime" };
+
 static OsdiParamOpvar fet_params[] = {
     { fet_name_beta,   0, (char *)"transconductance parameter", (char *)"A/V^2", PARA_TY_REAL | PARA_KIND_MODEL, 1 },
     { fet_name_vth,    0, (char *)"threshold voltage",          (char *)"V",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
@@ -573,6 +615,17 @@ static OsdiParamOpvar fet_params[] = {
     { fet_name_cgd,    0, (char *)"gate-drain capacitance",     (char *)"F",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
     { fet_name_ggs,    0, (char *)"gate conductance",           (char *)"S",     PARA_TY_REAL | PARA_KIND_MODEL, 1 },
     { fet_name_mult,   0, (char *)"multiplier",                 (char *)"",      PARA_TY_REAL | PARA_KIND_INST,  1 },
+
+    /* Op-vars follow the parameters - the layout this ABI declares. num_params says where the
+     * boundary is, and each entry's own flags say what it is. */
+    { fet_name_id,     0, (char *)"drain current",              (char *)"A",     PARA_TY_REAL | PARA_KIND_OPVAR, 1 },
+    { fet_name_gm,     0, (char *)"transconductance",           (char *)"S",     PARA_TY_REAL | PARA_KIND_OPVAR, 1 },
+    { fet_name_gds,    0, (char *)"output conductance",         (char *)"S",     PARA_TY_REAL | PARA_KIND_OPVAR, 1 },
+    { fet_name_vov,    0, (char *)"overdrive voltage",          (char *)"V",     PARA_TY_REAL | PARA_KIND_OPVAR, 1 },
+    { fet_name_region, 0, (char *)"operating region",           (char *)"",      PARA_TY_INT  | PARA_KIND_OPVAR, 1 },
+    /* Declared, reported by `describe`, and NEVER read back: a string has nowhere to land in a
+     * single-kind numeric result cube. Present precisely so that the absence is exercised. */
+    { fet_name_regime, 0, (char *)"operating region, in words", (char *)"",      PARA_TY_STR  | PARA_KIND_OPVAR, 1 },
 };
 
 static OsdiNode fet_nodes[] = {
@@ -914,7 +967,7 @@ OsdiDescriptor OSDI_DESCRIPTORS[] = {
 
         .num_params          = 9,   /* beta, vth, lambda, alpha, delta, cgs, cgd, ggs, mult */
         .num_instance_params = 1,   /* mult */
-        .num_opvars          = 0,
+        .num_opvars          = 6,   /* id, gm, gds, vov, region, regime */
         .param_opvar         = fet_params,
 
         .node_mapping_offset        = (uint32_t)offsetof(FetInst, node_mapping),

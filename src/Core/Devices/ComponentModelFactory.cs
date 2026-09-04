@@ -287,6 +287,12 @@ public static class ComponentModelFactory
         string label = parameters.TryGetValue("__instanceLabel", out var lv) && lv.Kind == ValueKind.String
                        ? lv.AsString() : typeId;
 
+        // NO OP-VAR SWITCH HERE, deliberately. A kit part reports whatever its model computes, always
+        // — the VerilogA path's `OpVars` checkbox is not repeated on this one, because there is no
+        // reserved spelling available for it: everything not `__`-prefixed is forwarded verbatim, so
+        // claiming the bare name `OpVars` would silently shadow a kit model that happens to declare a
+        // parameter of that name. A `__`-prefixed key would work and needs a UI to set it, which is a
+        // kit-palette question rather than this one.
         var instance = provider.Create(typeId, forwarded);
         if (instance.Descriptor.NodeCount != descriptor.NodeCount)
             throw new ExternalDeviceException(
@@ -315,6 +321,19 @@ public static class ComponentModelFactory
     /// the user drew is the honest answer to it.
     /// </summary>
     public const string VerilogAPinsParam = "Pins";
+
+    /// <summary>
+    /// Whether this instance publishes its model's operating-point variables. circuitRF's own
+    /// parameter, never forwarded — the model has no say in whether the host reads it back.
+    ///
+    /// <para><b>Absent means ON.</b> A read-back nobody switched on is a read-back nobody finds, and
+    /// the whole point of the feature is that a designer can ask a compiled model what it computed
+    /// without first knowing that they had to enable it. The switch exists for the other direction:
+    /// a model declares tens of quantities, so a design full of them swept over a few hundred points
+    /// carries thousands of result names, and a user studying one device should be able to stop
+    /// paying for the rest. Off removes the worker round trip too, not only the cube.</para>
+    /// </summary>
+    public const string VerilogAOpVarsParam = "OpVars";
 
     /// <summary>
     /// A compiled compact model a user placed on a schematic and pointed at their own file.
@@ -379,9 +398,10 @@ public static class ComponentModelFactory
             // `__`-prefixed names are circuitRF's own plumbing and are not part of "everything
             // else"; forwarding one asks the model to accept a name it never declared.
             if (key.StartsWith(ExternalDeviceProviderReservedPrefix, StringComparison.Ordinal)) continue;
-            if (key.Equals(VerilogAFileParam,  StringComparison.OrdinalIgnoreCase) ||
-                key.Equals(VerilogAModelParam, StringComparison.OrdinalIgnoreCase) ||
-                key.Equals(VerilogAPinsParam,  StringComparison.OrdinalIgnoreCase)) continue;
+            if (key.Equals(VerilogAFileParam,   StringComparison.OrdinalIgnoreCase) ||
+                key.Equals(VerilogAModelParam,  StringComparison.OrdinalIgnoreCase) ||
+                key.Equals(VerilogAPinsParam,   StringComparison.OrdinalIgnoreCase) ||
+                key.Equals(VerilogAOpVarsParam, StringComparison.OrdinalIgnoreCase)) continue;
             // Temperature is not a model parameter — it rides as its own reserved field below.
             if (key.Equals(Temperature.AbsoluteParamName, StringComparison.Ordinal) ||
                 key.Equals(Temperature.DeltaParamName,    StringComparison.Ordinal)) continue;
@@ -427,7 +447,35 @@ public static class ComponentModelFactory
                        ? lv.AsString() : typeId;
 
         return new ExternalDeviceModel(provider.Create(typeId, forwarded), providerName, label)
-               { ConnectedPinCount = statedPins };
+               { ConnectedPinCount    = statedPins,
+                 ReportOperatingPoint = ResolveOpVarReadBack(parameters) };
+    }
+
+    /// <summary>
+    /// The instance's operating-point read-back switch. Absent, blank or unreadable is ON — see
+    /// <see cref="VerilogAOpVarsParam"/> for why the default is that way round.
+    ///
+    /// <para>Only an explicit and recognisable "no" turns it off. A value nobody can read is not
+    /// evidence that the user wanted less output, and silently dropping a result on the strength of
+    /// a typo is the failure this ordering avoids.</para>
+    /// </summary>
+    private static bool ResolveOpVarReadBack(IReadOnlyDictionary<string, Value> parameters)
+    {
+        foreach (var (key, val) in parameters)
+        {
+            if (!key.Equals(VerilogAOpVarsParam, StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (val.Kind == ValueKind.Bool) return val.AsBool();
+            if (val.Kind == ValueKind.Real) return val.AsReal() != 0.0;
+            if (val.Kind != ValueKind.String) return true;
+
+            string s = val.AsString().Trim();
+            return !(s.Equals("0",     StringComparison.Ordinal)          ||
+                     s.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+                     s.Equals("no",    StringComparison.OrdinalIgnoreCase) ||
+                     s.Equals("off",   StringComparison.OrdinalIgnoreCase));
+        }
+        return true;
     }
 
     /// <summary>

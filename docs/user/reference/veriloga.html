@@ -211,6 +211,42 @@ component is not sent to the model at all, which already means <i>use your own d
 why the whole declared list is never materialised as rows: freezing today's defaults into the design
 would mean recompiling with a changed default silently had no effect.</p>
 </div>
+<h2 id="opvars">Reading back what the model computed</h2>
+<p>A compact model computes far more than the currents it hands the solver. Transconductances, junction
+capacitances, an overdrive voltage, a junction temperature — a physics-based model declares tens of
+them, and they are the numbers a designer actually reasons about. Verilog-A calls them <strong>operating
+point variables</strong>; circuitRF reads them back after every solve and publishes them as a result cube
+named <strong><code>OP</code></strong>.</p>
+<p>They are never parameters. A parameter is something you tell the model; an operating-point variable
+is something it tells you, and it does not appear in the parameter editor for the same reason a
+voltmeter has no dial.</p>
+<h3 id="what-you-get-and-where">What you get, and where</h3>
+<p>At a <strong>DC</strong> operating point each one is a number, on a labelled axis whose entries are
+<code>&lt;instance&gt;.&lt;name&gt;</code> — <code>X1.gm</code>, <code>X1.cgs</code>, <code>X1.tj</code>. Wrapped in a parametric sweep it becomes a curve
+per quantity, one point per bias, in the Data Display's signal list beside <code>V</code> and <code>I</code>.</p>
+<p>At a <strong>harmonic-balance</strong> point each one is a <em>waveform</em>, because that is what it is: a
+transconductance at 30 dBm of drive swings between pinch-off and full channel once per RF cycle, and
+no single number describes it. So <code>OP</code> there is a spectrum on the same harmonic axis <code>V</code> and <code>I</code>
+use — harmonic 0 is the cycle average, which is what &quot;gm at this drive&quot; usually means, and the
+higher entries say how hard the quantity is being swung.</p>
+<p>In a measurement, name one through the analysis it came from:</p>
+<pre><code>measure gm_mS = DC1.OP(&quot;X1.gm&quot;) * 1000
+measure gm_avg = HB1.OP(&quot;X1.gm&quot;, 0)
+</code></pre>
+<p>A name the model does not declare is refused, by name, with the available ones listed — it is never
+quietly dropped.</p>
+<div class="callout note">
+<span class="label">Turning it off per device</span>
+<p>The parameter editor's <b>Report operating-point variables</b> checkbox is on by default. A model
+declaring forty quantities, on a design holding a dozen such devices, swept over a few hundred bias
+points, is a result carrying thousands of names — so turn it off on the devices you are not
+studying. Off costs nothing at all: the device is not asked, so neither the round trip nor the cube
+happens.</p>
+</div>
+<p><strong>Two kinds of quantity are declared and not plotted.</strong> A model may declare an op-var as an integer
+or as a string. An integer arrives as an ordinary number. A <strong>string</strong> cannot: a result cube holds
+numbers of one kind, and there is nowhere in one to put a word. Such a quantity is still reported as
+declared, so you can see that it exists; it simply never appears in <code>OP</code>.</p>
 <h2 id="rebuild">When circuitRF rebuilds, and where the artefact goes</h2>
 <p><strong>A simulation of an unedited model compiles nothing.</strong> The compiled artefact is cached, and the
 cache key is:</p>
@@ -233,9 +269,6 @@ you were not expecting is visible rather than mysterious.</p>
 <h2 id="limits">What is not supported</h2>
 <ul>
 <li><strong>No noise analysis</strong> from a compiled model.</li>
-<li><strong>No operating-point variable read-back.</strong> These models compute dozens of internal quantities
-(<code>gm</code>, <code>ids</code>, junction temperatures). circuitRF's worker already recognises them and deliberately
-keeps them out of the settable parameter list, but there is not yet a way to plot one.</li>
 <li><strong>Aging and degradation parameters</strong> are forwarded to the model like any other parameter and then
 do nothing — there is no aging analysis and no stress history to drive one.</li>
 <li><strong>Verilog-AMS digital constructs</strong> are the compiler's business, not circuitRF's. If your compiler
@@ -247,6 +280,7 @@ builds the file, circuitRF will run it.</li>
 <tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) which circuitRF builds once with the compiler installed on this machine and reuses until the source changes. Choosing one fills in Model and Pins below.</td></tr>
 <tr><td>Model</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Which device type inside that file to place. A file usually declares one, and then this can be left blank; when it declares several, pick the one you want.</td></tr>
 <tr><td>Pins</td><td><code>2</code></td><td>&mdash;</td><td>&mdash;</td><td>How many terminals the symbol draws. It is the model&#39;s own terminal count, filled in from the file — change it only if you are drawing before choosing one.</td></tr>
+<tr><td>OpVars</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>Whether this instance publishes the operating-point variables its model computes — transconductances, capacitances, node temperatures. On by default; turn it off on devices you are not studying to keep a swept result small.</td></tr>
 </tbody></table>
 
 <nav class="page-nav">

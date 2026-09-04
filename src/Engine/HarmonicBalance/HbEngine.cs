@@ -654,9 +654,15 @@ public sealed class HbEngine
             probeCurrents[ec.InstancePath] = spec;
         }
 
+        // Operating-point read-back, at the converged spectrum and nowhere else. One evaluation per
+        // reporting external device over the whole time grid, so a model's own quantities come back
+        // as waveforms on the same harmonic axis V and INl already use. Empty — and free — for a
+        // design with no compiled model, or one whose devices have the read-back switched off.
+        var opVars = HbOpVars.CollectSingleTone(V, N, K, gridN, _netlist, ifNodes);
+
         var ds = BuildSingleToneDataSet(
             Vfull, INlfull, namesFull, f0, K, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
-            _netlist.Nodes.LabeledNames, probeCurrents);
+            _netlist.Nodes.LabeledNames, probeCurrents, opVars);
 
         // V holds the converged interface spectrum [N, K+1]; expose it so a parametric sweep can
         // warm-start the next point (continuation — §11). Only propagate a converged seed.
@@ -967,9 +973,11 @@ public sealed class HbEngine
             probeCurrents[ec.InstancePath] = spec;
         }
 
+        var opVars2 = HbOpVars.CollectTwoTone(V, grid, N, N1, N2, _netlist, ifNodes);
+
         var ds2 = BuildTwoToneDataSet(
             Vfull, INlfull, namesFull, grid, f1, f2, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
-            _netlist.Nodes.LabeledNames, probeCurrents);
+            _netlist.Nodes.LabeledNames, probeCurrents, opVars2);
 
         // V holds the converged interface spectrum [N, M]; expose it so a parametric sweep can
         // warm-start the next point (§11 — the chain is shape-agnostic, so it works at any tone count).
@@ -1235,9 +1243,11 @@ public sealed class HbEngine
             probeCurrents[ec.InstancePath] = spec;
         }
 
+        var opVarsNd = HbOpVars.CollectMultiTone(V, apft, N, _netlist, ifNodes);
+
         var dsNd = BuildMultiToneDataSet(
             Vfull, INlfull, namesFull, lattice, f, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
-            _netlist.Nodes.LabeledNames, probeCurrents);
+            _netlist.Nodes.LabeledNames, probeCurrents, opVarsNd);
 
         return (dsNd, solveResult.Converged, V, trace);
     }
@@ -1776,6 +1786,46 @@ public sealed class HbEngine
     /// Node axis carries Labels = nodeNames for V("n_drain", …) lookups.
     /// Harmonic axis values = {0, f0, 2f0, …, K·f0} Hz.
     /// </summary>
+    /// <summary>
+    /// Adds the <c>OP</c> cube and its provenance twin to a harmonic-balance DataSet.
+    ///
+    /// <para><b>One cube on a labelled axis</b>, matching <c>V</c> on <c>node</c> and <c>I</c> on
+    /// <c>branch</c> — not one cube per quantity. A compact model declares tens of these, so a
+    /// handful of devices is hundreds of names; as separate cubes that is a DataSet nobody can
+    /// navigate and a picker with no structure to group by.</para>
+    ///
+    /// <para><b>Complex, on the same spectral axis as everything else here</b>, because at a
+    /// large-signal point an op-var is a waveform: k=0 is the cycle average — the number a designer
+    /// means by "gm at this drive" — and the rest say how hard the quantity is being swung.</para>
+    ///
+    /// <para>Nothing is added when no device reported one, so a design with no compiled model gets
+    /// exactly the DataSet it always did.</para>
+    /// </summary>
+    private static void AddOpVarCubes(
+        DataSet ds, Dictionary<string, Complex[]> opVars, Axis spectralAxis, int spectralLength)
+    {
+        if (opVars.Count == 0) return;
+
+        // Ordinal, so the axis order is stable across runs and across platforms; a picker whose rows
+        // move between two runs of the same design is unusable.
+        var names = opVars.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray();
+        var idx   = new double[names.Length];
+        var data  = new Complex[names.Length * spectralLength];
+
+        for (int i = 0; i < names.Length; i++)
+        {
+            idx[i] = i;
+            var spec = opVars[names[i]];
+            for (int k = 0; k < spectralLength; k++)
+                data[i * spectralLength + k] = k < spec.Length ? spec[k] : Complex.Zero;
+        }
+
+        var opAxis = new Axis("opvar", idx, "", names);
+        ds.Add("OP", new DataCube([opAxis, spectralAxis], data));
+        ds.Add("__OpVars", new DataCube(
+            [new Axis("opvar", idx, "", names)], new double[names.Length]));
+    }
+
     private static DataSet BuildSingleToneDataSet(
         Complex[,]  V,
         Complex[,]  iNl,
@@ -1785,7 +1835,8 @@ public sealed class HbEngine
         PointOutcome outcome,
         Dictionary<string, List<Complex[]>> portCurrents,
         HashSet<string>?    labeledNames = null,
-        Dictionary<string, Complex[]>? probeCurrents = null)
+        Dictionary<string, Complex[]>? probeCurrents = null,
+        Dictionary<string, Complex[]>? opVars = null)
     {
         int N  = V.GetLength(0);
         int K1 = K + 1;
@@ -1830,6 +1881,8 @@ public sealed class HbEngine
                     new double[labeled.Length]));
             }
         }
+
+        AddOpVarCubes(ds, opVars ?? [], harmAxis, K1);
 
         // Unified I [branch, harmonic] cube: probes first (labeled), then device ports.
         {
@@ -1896,7 +1949,8 @@ public sealed class HbEngine
         PointOutcome outcome,
         Dictionary<string, List<Complex[]>> portCurrentsByBranch,
         HashSet<string>?    labeledNames = null,
-        Dictionary<string, Complex[]>? probeCurrents = null)
+        Dictionary<string, Complex[]>? probeCurrents = null,
+        Dictionary<string, Complex[]>? opVars = null)
     {
         int N = V.GetLength(0);
         int M = grid.MixCount;
@@ -1949,6 +2003,8 @@ public sealed class HbEngine
                     new double[labeled.Length]));
             }
         }
+
+        AddOpVarCubes(ds, opVars ?? [], mixAxis, M);
 
         // Unified I [branch, mixIndex] cube: IProbe currents first (labeled, back-solved over the
         // mixing lattice), then device-port currents. Mirrors BuildSingleToneDataSet.
@@ -2014,7 +2070,8 @@ public sealed class HbEngine
         PointOutcome outcome,
         Dictionary<string, List<Complex[]>> portCurrentsByBranch,
         HashSet<string>?    labeledNames = null,
-        Dictionary<string, Complex[]>? probeCurrents = null)
+        Dictionary<string, Complex[]>? probeCurrents = null,
+        Dictionary<string, Complex[]>? opVars = null)
     {
         int N = V.GetLength(0);
         int M = lattice.MixCount;
@@ -2069,6 +2126,8 @@ public sealed class HbEngine
                     new double[labeled.Length]));
             }
         }
+
+        AddOpVarCubes(ds, opVars ?? [], mixAxis, M);
 
         // Unified I [branch, mixIndex] cube: IProbe currents first (labeled, back-solved over the
         // lattice), then device-port currents. Mirrors BuildTwoToneDataSet / BuildSingleToneDataSet.

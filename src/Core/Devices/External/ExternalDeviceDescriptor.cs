@@ -37,6 +37,27 @@ public sealed record ExternalParamDescriptor(
     string            Description = "");
 
 /// <summary>
+/// One quantity a device type COMPUTES, as against one it is told — a transconductance, a junction
+/// capacitance, a node temperature. Names are opaque to circuitRF exactly as parameter names are:
+/// rendered, never interpreted, never hardcoded.
+///
+/// <para><b>An op-var is never a parameter, and the two lists never overlap.</b> That property is
+/// the entire reason this is read-<i>back</i> and not a second kind of parameter: offering an output
+/// as settable would put a writable box in the editor for a value the model writes.</para>
+///
+/// <para><b><paramref name="Kind"/> decides whether the quantity can be read back at all.</b> An
+/// integer is a real once it is a number in a cube. A <see cref="ExternalParamKind.String"/> op-var
+/// has nowhere to land — a <c>DataCube</c> is single-kind Real or Complex — so it is declared here,
+/// with its type, and then omitted from every read-back. Declared and unreadable is a different
+/// thing from absent, and a reader can tell which this is.</para>
+/// </summary>
+public sealed record ExternalOpVarDescriptor(
+    string            Name,
+    ExternalParamKind Kind        = ExternalParamKind.Double,
+    string            Units       = "",
+    string            Description = "");
+
+/// <summary>
 /// One node of a device type. <paramref name="External"/> nodes bind to nets the user names in the
 /// netlist; internal nodes are allocated by the elaborator and are invisible in the design layer.
 ///
@@ -94,8 +115,16 @@ public sealed record ExternalDeviceDescriptor(
     IReadOnlyList<ExternalParamDescriptor>   Parameters,
     IReadOnlyList<ExternalNodeDescriptor>    Nodes,
     bool                                     SupportsNonlinear = true,
-    bool                                     SupportsLinear    = false)
+    bool                                     SupportsLinear    = false,
+    IReadOnlyList<ExternalOpVarDescriptor>?  OpVars            = null)
 {
+    /// <summary>
+    /// Quantities this device type computes and will report at an operating point. Empty for a
+    /// provider that declares none, and for every provider that does not speak the protocol at all
+    /// — the two are the same thing to a caller, which is why there is no third state.
+    /// </summary>
+    public IReadOnlyList<ExternalOpVarDescriptor> OpVars { get; init; } = OpVars ?? [];
+
     /// <summary>Total node count the device occupies in the global matrix.</summary>
     public int NodeCount => ExternalPinCount + InternalNodeCount;
 

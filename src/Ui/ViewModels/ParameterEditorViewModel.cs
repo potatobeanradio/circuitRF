@@ -145,6 +145,69 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             await OpenCvEditorDialogAsync();
     }
 
+    // ── VerilogA panel ────────────────────────────────────────────────────────
+
+    public bool IsVerilogA => _target?.Symbol == SymbolKind.VerilogA;
+
+    /// <summary>
+    /// Whether this instance publishes the operating-point variables its model computes.
+    ///
+    /// <para><b>A control rather than a text row</b>, because it is a setting with two states and
+    /// no expression can usefully be written in it. It sits in the VerilogA panel for the same
+    /// reason the SnP panel owns <c>RefNode</c>, and the generic row for <c>OpVars</c> is skipped so
+    /// the same fact is not offered twice in two places that could disagree.</para>
+    ///
+    /// <para><b>Absent means on</b>, so a schematic saved before this parameter existed shows the
+    /// box ticked and behaves exactly as it did.</para>
+    /// </summary>
+    [ObservableProperty] private bool _verilogAOpVars = true;
+
+    partial void OnVerilogAOpVarsChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        if (_target.Symbol != SymbolKind.VerilogA) return;
+        SetOrAddParameter(ComponentModelFactory.VerilogAOpVarsParam, newValue ? "true" : "false");
+    }
+
+    private void RefreshVerilogAPanel()
+    {
+        if (_target?.Symbol != SymbolKind.VerilogA) return;
+
+        string raw = (_target.Parameters
+                             .FirstOrDefault(p => p.Name.Equals(ComponentModelFactory.VerilogAOpVarsParam,
+                                                                StringComparison.OrdinalIgnoreCase))
+                             ?.Expression ?? "").Trim();
+
+        // Only an explicit, recognisable "no" clears it — the same reading the factory applies, so
+        // the box and the run never disagree about what an unreadable value means.
+        bool on = !(raw.Equals("0",     StringComparison.Ordinal)           ||
+                    raw.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+                    raw.Equals("no",    StringComparison.OrdinalIgnoreCase) ||
+                    raw.Equals("off",   StringComparison.OrdinalIgnoreCase));
+
+        _isRefreshing = true;
+        VerilogAOpVars = on;
+        _isRefreshing = false;
+    }
+
+    /// <summary>
+    /// Writes a parameter, ADDING it when the component does not carry one — which
+    /// <see cref="ApplySnpParam"/> deliberately does not do.
+    ///
+    /// <para>It is needed here because a schematic saved before <c>OpVars</c> existed has no such
+    /// parameter, and its absence is a legitimate state meaning "on". Unticking the box on one of
+    /// those must record the choice rather than silently do nothing.</para>
+    /// </summary>
+    private void SetOrAddParameter(string name, string value)
+    {
+        var updated = _target!.Parameters.Select(p => p.Clone()).ToList();
+        var existing = updated.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null) existing.Expression = value;
+        else updated.Add(new EditableParameter { Name = name, Expression = value, ShowOnSchematic = false });
+
+        _schematicVm!.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+    }
+
     // ── SnP panel ─────────────────────────────────────────────────────────────
 
     public bool IsSnp => _target?.Symbol == SymbolKind.Snp;
@@ -524,6 +587,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 // the reasoning. A name the registry does not declare still gets its row.
                 if (comp.Symbol == SymbolKind.Match && IsMatchPanelParameter(param.Name)) continue;
 
+                // A VerilogA's own panel owns `OpVars`: it is a two-state setting, not a value, and
+                // a text row for it would be a box where "maybe" can be typed. Offered in one place
+                // so the two cannot disagree.
+                if (comp.Symbol == SymbolKind.VerilogA &&
+                    param.Name.Equals(ComponentModelFactory.VerilogAOpVarsParam,
+                                      StringComparison.OrdinalIgnoreCase)) continue;
+
                 // A SpiceModel's own panel owns File, Name, PinConfig and Pitch — the file it runs
                 // and how the box is drawn. What is left as a generic row is exactly the chosen
                 // .subckt's declared parameters, which is what a row is FOR.
@@ -569,6 +639,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(IsSpiceModel));
         OnPropertyChanged(nameof(IsWBond));
+        OnPropertyChanged(nameof(IsVerilogA));
         OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(ShowAddModelParameter));
         OnPropertyChanged(nameof(AllowsAddParameter));
@@ -579,6 +650,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (comp.Symbol == SymbolKind.SpiceModel) RefreshSpiceModelProperties();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
         RefreshMatchProperties();
+        RefreshVerilogAPanel();
         SyncVerilogAFromModelFile();
     }
 
@@ -1419,6 +1491,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             row.RefreshFromModel();
         _isRefreshing = false;
         if (_target.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+        if (_target.Symbol == SymbolKind.VerilogA) RefreshVerilogAPanel();
         // The Match panel is a READOUT of the design, so it has to follow every change to it —
         // including the ones the Designer window makes, and including an undo of one.
         if (_target.Symbol == SymbolKind.Match) RefreshMatchProperties();

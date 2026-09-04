@@ -298,6 +298,28 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
             }
         }
 
+        // OP-VARS: what the type COMPUTES. A separate list from `params`, never the same quantity in
+        // both — an output offered as settable would be a writable box for a value the model writes.
+        // A provider that says nothing here declares none, which is also what every provider that
+        // does not speak this part of the protocol says. There is no third state, and none is wanted.
+        var opVars = new List<ExternalOpVarDescriptor>();
+        if (element.TryGetProperty("opvars", out var ops) && ops.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var o in ops.EnumerateArray())
+            {
+                string oname = ReadString(o, "name", "");
+                if (oname.Length == 0) continue;
+                opVars.Add(new ExternalOpVarDescriptor(
+                    oname,
+                    // "type" rather than "kind": it says what the quantity IS, not how it would be
+                    // entered — nothing enters an op-var. The spelling is the provider's own and the
+                    // parse is shared, because the values are the same three words.
+                    ParseParamKind(ReadString(o, "type", "")),
+                    Units:       ReadString(o, "units", ""),
+                    Description: ReadString(o, "description", "")));
+            }
+        }
+
         var nodes = new List<ExternalNodeDescriptor>();
         if (element.TryGetProperty("nodes", out var ns) && ns.ValueKind == JsonValueKind.Array)
         {
@@ -341,7 +363,8 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
             parameters,
             nodes,
             SupportsNonlinear: ReadBool(element, "nonlinear", true),
-            SupportsLinear:    ReadBool(element, "linear",    false));
+            SupportsLinear:    ReadBool(element, "linear",    false),
+            OpVars:            opVars);
     }
 
     /// <summary>

@@ -68,6 +68,85 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
         if (count == 0) return [];
 
         int n = _nodeCount;
+        var request = BuildRequest(nodeVoltages, count, n);
+
+        using var reply = _channel.Send(w =>
+        {
+            w.WriteString("cmd", "eval");
+            w.WriteNumber("handle", _handle);
+            w.WriteNumber("count", count);
+        }, request);
+
+        return Decode(reply, count, n, out _);
+    }
+
+    /// <summary>
+    /// The model's operating-point variables at the bias it last evaluated — a read, never an
+    /// evaluation. See <see cref="IExternalDeviceInstance.ReadOperatingPoint"/> for why the
+    /// distinction is the whole design.
+    ///
+    /// <para><b>Only asked when the descriptor declared some.</b> circuitRF's other two workers host
+    /// different ABIs and will never implement this command; an unknown command is an error to
+    /// them, so probing blind would turn a working simulation into a refusal on two providers that
+    /// were never in scope. Null here means "nothing to show", never a failure a caller must
+    /// handle.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, double>? ReadOperatingPoint()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (Descriptor.OpVars.Count == 0) return null;
+
+        using var reply = _channel.Send(w =>
+        {
+            w.WriteString("cmd", "opvars");
+            w.WriteNumber("handle", _handle);
+        });
+
+        string[] names  = ReadNames(reply, "names");
+        var      values = reply.Payload.Span;
+
+        if (values.Length != names.Length)
+            throw new ExternalDeviceException(
+                $"'{Descriptor.TypeId}' named {names.Length} operating-point variables and sent " +
+                $"{values.Length} values.");
+
+        var map = new Dictionary<string, double>(names.Length, StringComparer.Ordinal);
+        for (int i = 0; i < names.Length; i++) map[names[i]] = values[i];
+        return map;
+    }
+
+    /// <summary>
+    /// Evaluate the whole batch and capture the operating-point variables at every point, in one
+    /// round trip — the only shape harmonic balance can use, since after a batch the instance holds
+    /// nothing but the last sample.
+    /// </summary>
+    public ExternalOperatingPoint? EvaluateOperatingPoint(IReadOnlyList<IReadOnlyList<double>> nodeVoltages)
+    {
+        ArgumentNullException.ThrowIfNull(nodeVoltages);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (Descriptor.OpVars.Count == 0) return null;
+
+        int count = nodeVoltages.Count;
+        if (count == 0) return new ExternalOperatingPoint([], []);
+
+        int n = _nodeCount;
+        var request = BuildRequest(nodeVoltages, count, n);
+
+        using var reply = _channel.Send(w =>
+        {
+            w.WriteString("cmd", "eval");
+            w.WriteNumber("handle", _handle);
+            w.WriteNumber("count", count);
+            w.WriteBoolean("opvars", true);
+        }, request);
+
+        Decode(reply, count, n, out var opVars);
+        return opVars;
+    }
+
+    private double[] BuildRequest(IReadOnlyList<IReadOnlyList<double>> nodeVoltages, int count, int n)
+    {
         var request = new double[(long)count * n <= int.MaxValue ? count * n : throw TooLarge(count, n)];
 
         for (int k = 0; k < count; k++)
@@ -79,15 +158,18 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
 
             for (int i = 0; i < n; i++) request[k * n + i] = v[i];
         }
+        return request;
+    }
 
-        using var reply = _channel.Send(w =>
-        {
-            w.WriteString("cmd", "eval");
-            w.WriteNumber("handle", _handle);
-            w.WriteNumber("count", count);
-        }, request);
+    private static string[] ReadNames(DeviceWorkerReply reply, string property)
+    {
+        if (!reply.Root.TryGetProperty(property, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
 
-        return Decode(reply, count, n);
+        var names = new List<string>();
+        foreach (var e in arr.EnumerateArray())
+            if (e.ValueKind == JsonValueKind.String) names.Add(e.GetString() ?? "");
+        return [.. names];
     }
 
     /// <summary>
@@ -122,9 +204,16 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
             : withOutput + Environment.NewLine + Environment.NewLine + diagnosis;
     }
 
-    private IReadOnlyList<ExternalDeviceEvaluation> Decode(DeviceWorkerReply reply, int count, int n)
+    private IReadOnlyList<ExternalDeviceEvaluation> Decode(
+        DeviceWorkerReply reply, int count, int n, out ExternalOperatingPoint? opVars)
     {
-        int perPoint = 2 * n + 2 * n * n;
+        // The op-var block, when one was asked for, rides at the END of each point's own block, and
+        // the worker names what it carries rather than sending one slot per declared quantity — a
+        // string-valued op-var has nowhere to land, and one the model will not read out is an
+        // omission rather than a zero. So the stride comes from the reply, not from the descriptor.
+        string[] opNames = ReadNames(reply, "opvarNames");
+
+        int perPoint = 2 * n + 2 * n * n + opNames.Length;
         int expected = count + count * perPoint;
 
         // The worker states the shape it sent. Checking it here means a mismatched worker build is
@@ -159,6 +248,7 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
                 $"the model is valid over, and a file the model needs and could not open."));
 
         var results = new ExternalDeviceEvaluation[count];
+        var opRows  = opNames.Length > 0 ? new double[count][] : null;
 
         for (int k = 0; k < count; k++)
         {
@@ -180,10 +270,19 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
             for (int i = 0; i < n; i++)
                 for (int j = 0; j < n; j++)
                     cap[i, j] = data[at + i * n + j];
+            at += n * n;
+
+            if (opRows is not null)
+            {
+                var row = new double[opNames.Length];
+                data.Slice(at, opNames.Length).CopyTo(row);
+                opRows[k] = row;
+            }
 
             results[k] = new ExternalDeviceEvaluation(current, charge, g, cap);
         }
 
+        opVars = opRows is null ? null : new ExternalOperatingPoint(opNames, opRows);
         return results;
     }
 

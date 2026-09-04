@@ -101,10 +101,31 @@ public sealed class NonlinearDcEngine
         /// </summary>
         public IReadOnlyDictionary<int, string> BranchOwners { get; }
 
+        /// <summary>
+        /// The operating-point variables every external device reported AT THIS SOLUTION, keyed
+        /// <c>"&lt;InstancePath&gt;.&lt;opVarName&gt;"</c> — a transconductance, a junction
+        /// capacitance, a node temperature, whatever the model chose to compute. Empty when the
+        /// circuit holds no external device, or none that declares any.
+        ///
+        /// <para><b>The values are read inside the solve's own scope, at the converged point, and
+        /// that is the whole correctness argument.</b> A compact model writes these during a load,
+        /// so a read describes whichever bias was evaluated last: taken after anything else has
+        /// touched the device — the next sweep point, a small-signal linearisation — it would be a
+        /// perfectly plausible number belonging to a different operating point. Under a parametric
+        /// sweep that becomes an off-by-one along the sweep axis, which no residual objects to.</para>
+        ///
+        /// <para><b>Values are the model's own, per device, unmultiplied.</b> A device multiplier
+        /// scales what the netlist stamps, not what the model computed; a <c>gm</c> read back from a
+        /// part placed with <c>m=4</c> is the one finger's, because that is the number the model
+        /// wrote and circuitRF has no basis for deciding which op-vars are extensive.</para>
+        /// </summary>
+        public IReadOnlyDictionary<string, double> OperatingPointVars { get; }
+
         internal DcResult(double[] v, bool converged, int iters, double residual,
             ConvergenceTrace trace, IReadOnlyDictionary<string, double> probeCurrents,
             double[]? residualPerUnknown = null,
-            IReadOnlyDictionary<int, string>? branchOwners = null)
+            IReadOnlyDictionary<int, string>? branchOwners = null,
+            IReadOnlyDictionary<string, double>? operatingPointVars = null)
         {
             NodeVoltages       = v;
             Converged          = converged;
@@ -114,6 +135,7 @@ public sealed class NonlinearDcEngine
             ProbeCurrents      = probeCurrents;
             ResidualPerUnknown = residualPerUnknown ?? [];
             BranchOwners       = branchOwners ?? new Dictionary<int, string>();
+            OperatingPointVars = operatingPointVars ?? new Dictionary<string, double>();
         }
     }
 
@@ -798,6 +820,73 @@ public sealed class NonlinearDcEngine
         return map;
     }
 
+    /// <summary>
+    /// Asks every external device what it computed at this solution, and labels each answer with the
+    /// instance it came from.
+    ///
+    /// <para><b>Called from inside the solve, at the converged x, and not from the packer.</b> A
+    /// compact model writes its operating-point variables during a LOAD, so what a read hands back
+    /// describes whichever bias was evaluated last — which makes the whole of a read-back a question
+    /// of position in time rather than of arithmetic. Read one step later, after the next sweep
+    /// point has re-elaborated or a linearisation has probed the device at another bias, and every
+    /// number is plausible and belongs to a different operating point. That is the failure this
+    /// placement exists to make impossible.</para>
+    ///
+    /// <para><b>The evaluation is deliberate, not a side effect of asking.</b> The last thing a solve
+    /// does happens to leave most devices at x already — but "happens to" is not a property anything
+    /// holds shut, so the bias is stated here rather than inherited.</para>
+    ///
+    /// <para><b>Everyone pays for it, including the user who never plots one.</b> That is one worker
+    /// round trip per external device per converged DC point, which is small beside the solve that
+    /// produced the point and is not zero. The alternative — a per-run switch — makes a result
+    /// present or absent depending on a setting, which is the single thing the Data Display's picker
+    /// is worst at explaining. Revisit if it is ever MEASURED to matter; not before.</para>
+    ///
+    /// <para>A device that declares no op-vars is not asked at all, so a circuit with none adds no
+    /// round trips and no cubes.</para>
+    /// </summary>
+    private Dictionary<string, double> CollectOperatingPointVars(double[] x)
+    {
+        var map = new Dictionary<string, double>(StringComparer.Ordinal);
+
+        foreach (var ec in _nl.Components)
+        {
+            // Declares some AND was left switched on: an instance whose read-back the user turned
+            // off is never asked, so switching it off removes the round trip and not just the cube.
+            if (ec.Model is not ExternalDeviceModel ed || !ed.ReportsOperatingPoint) continue;
+
+            // Same port→node mapping the residual uses: port p spans Nodes[2p] and Nodes[2p+1], and
+            // an external device's ports are laid out one per node against ground.
+            int portCount = ed.PortCount;
+            var portV     = new double[portCount];
+            for (int p = 0; p < portCount; p++)
+            {
+                int np = ec.Nodes.Length > 2 * p     ? ec.Nodes[2 * p]     : 0;
+                int nm = ec.Nodes.Length > 2 * p + 1 ? ec.Nodes[2 * p + 1] : 0;
+                portV[p] = NodeV(x, np) - NodeV(x, nm);
+            }
+
+            IReadOnlyDictionary<string, double>? vals;
+            try
+            {
+                vals = ed.ReadOperatingPointAt(portV);
+            }
+            catch (ExternalDeviceException)
+            {
+                // A read-back is a diagnostic, never the answer. A provider that will not report one
+                // — an older worker, a model that refuses this bias on a second look — must not turn
+                // a converged operating point into a failed run.
+                continue;
+            }
+            if (vals is null) continue;
+
+            foreach (var (name, value) in vals)
+                map[$"{ec.InstancePath}.{name}"] = value;
+        }
+
+        return map;
+    }
+
     private DcResult Solve()
         => _settings.DcBiasStepping switch
         {
@@ -839,7 +928,12 @@ public sealed class NonlinearDcEngine
             throw new NonlinearDcNotConvergedException(iters, finalRes);
 
         CaptureControlBias(xNew);   // seed SDD.ControlBias for a downstream S-param linearization
-        return new DcResult(nodeV, converged, iters, finalRes, trace, ExtractProbeCurrents(xNew));
+        // Only for a point that HAS an operating point. A failed direct attempt is routinely
+        // followed by the ramp under IfNecessary, so collecting here would spend a round trip per
+        // device on an answer that is about to be thrown away — and reporting a read-back for a
+        // bias the solve did not reach is worse than reporting none.
+        return new DcResult(nodeV, converged, iters, finalRes, trace, ExtractProbeCurrents(xNew),
+                            operatingPointVars: converged ? CollectOperatingPointVars(xNew) : null);
     }
 
     /// <summary>
@@ -912,9 +1006,12 @@ public sealed class NonlinearDcEngine
         double[] fFinal  = SafeResidualVector(x, 1.0) ?? [];
         double   finalRes = fFinal.Length > 0 ? L2(fFinal) : double.PositiveInfinity;
 
+        bool converged = finalRes < _settings.NonlinearAbsTol;
+
         CaptureControlBias(x);   // seed SDD.ControlBias for a downstream S-param linearization
-        return new DcResult(nodeV, finalRes < _settings.NonlinearAbsTol, totalIters, finalRes, trace,
-                            ExtractProbeCurrents(x), fFinal, _branchOwners);
+        return new DcResult(nodeV, converged, totalIters, finalRes, trace,
+                            ExtractProbeCurrents(x), fFinal, _branchOwners,
+                            converged ? CollectOperatingPointVars(x) : null);
     }
 
     /// <summary>
