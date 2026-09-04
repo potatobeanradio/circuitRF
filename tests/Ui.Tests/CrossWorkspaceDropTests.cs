@@ -167,12 +167,15 @@ public sealed class CrossWorkspaceDropTests : IDisposable
         BuildSharedTechFixture();
         CreateCell(_wsB, "Board");
 
-        // Dragging a cell within one workspace's tree did nothing before MW3 and must go on doing
-        // nothing — otherwise the ordinary in-workspace drag starts asking a question.
+        // R-mw3-4 said this drop did NOTHING, and MW3 deliberately left it inert because the
+        // reference repointing a move needs did not exist yet. TM1 built that, so the same payload
+        // now means Move — never the copy-or-reference question, which is what R-mw3-4 was actually
+        // protecting against and is still asserted below.
         var intent = TreeDrop.ForPayload(
             new CellDragPayload(Path.Combine(_wsB, "Board")).Serialize(), _wsB);
 
-        Assert.Equal(TreeDropAction.None, intent.Action);
+        Assert.Equal(TreeDropAction.Move, intent.Action);
+        Assert.NotEqual(TreeDropAction.Cell, intent.Action);
     }
 
     [Fact]
@@ -192,8 +195,9 @@ public sealed class CrossWorkspaceDropTests : IDisposable
         Assert.Equal(TreeDropAction.File,
             TreeDrop.ForPayload(new NpyFileDragPayload(loose).Serialize(), _wsB).Action);
 
-        // …and dropped on its OWN tree it is inert, exactly as before.
-        Assert.Equal(TreeDropAction.None,
+        // …and dropped on its OWN tree it is a TM1 move rather than MW3's copy — see
+        // R_mw3_4_SameWorkspaceDrag_IsRefused for why that supersedes only half of R-mw3-4.
+        Assert.Equal(TreeDropAction.Move,
             TreeDrop.ForPayload(new NpyFileDragPayload(loose).Serialize(), _wsA).Action);
     }
 

@@ -455,39 +455,92 @@ attached to that `.clay`, repointing the schematics linked to it.** The wirebond
 attachment is by shared stem (§1.2.1), so renaming the artwork alone detaches the wires. Finder-edits
 remain at-risk by design; the tree operation is the one that is not.
 
-**MOVING a cell between folders has no tree operation and is deliberately still a Finder-level, at-your-own-
-risk action** *(decided 2026-08-25, with folders)*. Rename's repair does **not** extend to it, and the reason
-is specific rather than a matter of effort: `CellUsageScanner.RewriteCellReferences` matches and rewrites the
-**last path segment** of a stored `CellRef` — the cell NAME — because that is what a rename changes. A move
-changes the path **prefix** and leaves the name alone, which that rewriter cannot express. Two further things
-a move would have to settle first, both of which folders make reachable for the first time:
-- **Same-named cells in two folders.** A name-keyed rewriter cannot tell `parts/R0402` from `board/R0402`.
-- **What else points at a cell** beyond `.csch`/`.clay` `CellRef`s — `.cws` entries, `.cdd` datasets, wBond
-  links — each of which the rename path handles separately today.
+**MOVING a cell, a folder or a loose file from within the TREE also repairs itself** *(TM1, built
+2026-09-03; `brief-tree-move-1-moving-within-a-workspace.md`)*. Drag it onto a folder — or onto a cell,
+which targets that cell's parent — and it moves, with every reference the move invalidates repointed.
+The history below is kept because the reason it was deferred is the reason the implementation has the
+shape it does.
 
-**§5C changed the first of those two, and forced the change rather than merely enabling it**
-*(built 2026-09-03; `brief-multi-workspace-2-external-cell-refs.md` R-mw2-15)*. Once a
-`ws://Other/cells/Amp` reference can exist, the last-segment match stops being a bounded risk between two
-same-named cells the user owns — it silently repoints a reference into a workspace the rename had no
-business touching, and the reference it produces is not merely wrong but malformed: on a platform whose
-separator is `/`, `Path.GetDirectoryName("ws://A/Amp")` collapses the scheme to `ws:/A`, so the rewrite
-yields `ws:/A/Preamp`, which resolves to nothing and reads like a typo the user made.
+*(What stood here until TM1: a move was a Finder-level, at-your-own-risk action, deferred with a
+specific reason rather than for want of effort —* `CellUsageScanner.RewriteCellReferences` *matches and
+rewrites the **last path segment** of a stored* `CellRef`*, because that is what a rename changes; a
+move changes the path **prefix** and leaves the name alone, which that rewriter cannot express. Two
+further blockers were named: same-named cells in two folders, and the fields beyond* `.csch`*/*`.clay`
+`CellRef`*s that also point at a cell. §5C closed the first — see the paragraphs below, which are
+unchanged and still describe how* `RewriteCellReferences` *works today for RENAME. TM1 closed the
+other two.)*
 
-**`RewriteCellReferences` now takes the renamed cell's absolute path, not its name**, resolves each stored
-`CellRef` (alias-expanded) against the file that holds it, and compares absolute paths — the rule
-`CellUsageScanner`'s *counting* path already used correctly in the same file. It is called after
-`Directory.Move`, so the old folder no longer exists; that is fine and is the point, since a stored
-reference still SPELLS the old name and path arithmetic needs no filesystem. It also takes the other OPEN
-workspaces, so a reference that genuinely names the renamed cell from another workspace is repaired in the
-same pass rather than left dangling.
+**A rename changes ONE set of references; a move changes TWO** *(R-tm1-1 — the whole engineering
+content of the feature)*. A rename keeps the cell in its parent folder, so its **depth** is unchanged
+and every reference stored **inside** the cell — `../../lib/Rload`, `../Other/x.wBond` — still resolves
+afterwards with no edit at all. A move changes the depth, so both directions break:
 
-**That closes the same-named-cells blocker above; the path-prefix blocker is untouched**, so an in-tree
-move remains deferred for the reason that survives (§9).
+- **inbound** — every reference from elsewhere *into* the moved subtree, and
+- **outbound** — every relative reference stored *inside* the moved subtree pointing anywhere outside it.
 
-So: an in-tree move is a real feature with a real design, and until it is built, a moved cell reports itself
-the way any other Finder edit does — the referencing view shows "Not Found" until it is re-pointed (§4.2),
-which is exactly the visible failure §4.1 already promises. **An import's own cells never hit this**: their
-`CellRef`s are written at import time, relative to wherever the import folder is (§1.1a).
+**An implementation that handles only the inbound half is a move that silently guts the cell it just
+tidied away.** That is why a move is NOT an extension of the rename rewriter but a separate one —
+`WorkspaceMove`, whose whole content is one map:
+
+```
+Relocate(abs) = abs is inside oldRoot ? newRoot + abs.Substring(oldRoot.Length) : abs
+```
+
+For every registered reference in every reachable file: resolve it to an absolute path **before** the
+directory moves, and re-store it afterwards as `Store(Relocate(target), Relocate(base))`. A referrer
+and a target that moved together produce an unchanged string and no write; everything else falls out.
+There is deliberately no second rewriter — a second one is where the two halves drift apart. And the
+ordering is the OPPOSITE of `RewriteCellReferences`'s (which runs *after* `Directory.Move` precisely
+because a stale reference still spells the old path): resolution needs the filesystem and the memoised
+alias table, so it happens first.
+
+**What a move must NOT do is rewrite a reference that did not move** *(R-tm1-6)*. A slot whose resolved
+target did not move AND whose base did not move is left **byte for byte** alone — not re-derived to an
+equivalent spelling. Matching is on resolved absolute paths, never last segments and never a
+string-prefix match on the stored spelling: a prefix rewriter gets `cells/AmpX` wrong when `cells/Amp`
+moves, and both halves of that are gated.
+
+**`CellRef` is not the only path-shaped field, and a move breaks all of them equally**, so the rewrite
+is driven by ONE registry of (file predicate, JSON location, base-directory rule) — `MoveRefRegistry`.
+A format that is not registered is not rewritten, which is the point: the alternative is a rewrite per
+call site, which is how the table acquires a row nobody rewrites, and the symptom of a missed row is a
+dangling reference in a file the user did not touch — which reads as data loss, not as a missing
+feature. The bases genuinely differ (a `CellRef` is document-relative; an SnP `File` is
+workspace-root-relative; a `.cem`'s `LayoutRef` is root-relative with the `.cem`'s own directory as the
+no-workspace fallback), so each row names the shared producer it routes through.
+
+**A cell's own insides do not move** *(R-tm1-8)* — the drag never starts for `schematic/`, `symbol/`,
+`layout/` or the view files in them. That is the owner's rule and it is also structural: `CellFolder`
+resolves those folders **by name** and the `.ccell` names primaries within them, so a cell whose views
+have been rearranged is not a cell with a different shape, it is a cell that no longer resolves.
+
+**The destination is shown as a ROW highlight, never an insertion caret** *(R-tm1-12)*. This tree is
+sorted, not user-ordered — `FilteredChildren` is rebuilt by the scanner on every refresh — so a caret
+between two rows would promise an ordering the tree cannot keep, and the first thing the user would do
+after dropping is watch the row jump elsewhere. The highlighted row is the one that will actually
+receive the drop, which for a hover over a cell is that cell's **parent**: an indicator that highlights
+what is under the cursor rather than what will receive the drop teaches a rule that is false. The drag
+effect is `Move` inside one workspace and `Copy` across two, which is free platform-native cursor
+feedback on all three operating systems.
+
+**A rewrite failure is REPORTED, never rolled back** *(R-tm1-16)* — Rename's shipped bargain, and the
+right one: a partial rewrite leaves references that a re-run repairs, whereas an attempted rollback
+moves the folder back underneath references that were already updated. **There is no in-app undo**
+*(R-tm1-19)*, exactly as there is none for Rename or Remove Cell; the success message names both the
+old and the new location, because that sentence is what lets a user put it back.
+
+**Every move also appends a forwarding record to `.cmoves` at the workspace root** *(R-tm1-20; the
+format and its consumer are TM2)*. The rewrite reaches this workspace plus every other workspace open
+in this process, and `CellUsageScanner`'s own doc comment already names the limit: a referrer in a
+workspace nobody has open cannot be found. Within one workspace that limit is invisible; it stops being
+invisible the moment another project references this one through `ws://alias/…`, because that remainder
+is **this** workspace's relative spelling and the move just invalidated it, in a file on someone else's
+disk. The record is written **unconditionally**, including inside a workspace nobody shares — a
+workspace that is private today is referenced next month, and a redirect that was never written cannot
+be reconstructed.
+
+Editing the cell/library filesystem **in Finder/Explorer** remains at-risk by design; the tree
+operations are the ones that are not.
 
 ### 4.2 The three missing-symbol states (keep distinct — do NOT collapse into one path)
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -36,8 +37,18 @@ public partial class ProjectTreeView : UserControl
         InitializeComponent();
 
         DragDrop.SetAllowDrop(this, true);
-        AddHandler(DragDrop.DragOverEvent, OnFileDragOver);
-        AddHandler(DragDrop.DropEvent,     OnFileDrop);
+        AddHandler(DragDrop.DragOverEvent,  OnFileDragOver);
+        // DragENTER matters as much as DragOver here. When the resolved drag target changes — which
+        // it does constantly, since every control in the tree area now accepts drops — Avalonia
+        // raises DragLeave on the old target and DragEnter on the new one, and NO DragOver until the
+        // pointer moves again. Handling only DragOver therefore left the highlight cleared by the
+        // leave with nothing to restore it, for as long as the cursor sat still.
+        AddHandler(DragDrop.DragEnterEvent, OnFileDragOver);
+        AddHandler(DragDrop.DropEvent,      OnFileDrop);
+        // Without this the highlight survives a drag that wandered off the panel, so the tree goes
+        // on claiming a destination for a gesture that is over. See OnDragLeave for why it cannot
+        // simply clear.
+        AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
 
         // Drag source: cell nodes in the tree. Subscribe on TheTreeView so only
         // drags originating from within the tree are candidates.
@@ -235,7 +246,8 @@ public partial class ProjectTreeView : UserControl
         // draggable only so it can be dropped on ANOTHER workspace's tree.
         if (GetCellNodeFromSource(source) is null
          && GetNpyFileNodeFromSource(source) is null
-         && GetLooseFileNodeFromSource(source) is null) return;
+         && GetLooseFileNodeFromSource(source) is null
+         && GetFolderNodeFromSource(source) is null) return;
         _cellPressArgs = e;
         _cellPressPos  = e.GetPosition(this);
     }
@@ -257,23 +269,33 @@ public partial class ProjectTreeView : UserControl
         var cellVm    = GetCellNodeFromSource(source);
         var npyVm     = cellVm is null ? GetNpyFileNodeFromSource(source) : null;
         var fileVm    = cellVm is null && npyVm is null ? GetLooseFileNodeFromSource(source) : null;
+        // TM1 R-tm1-7 — a user FOLDER is draggable only now that a drop inside its own workspace
+        // does something. It carries no cross-workspace meaning and gets no other payload.
+        var folderVm  = cellVm is null && npyVm is null && fileVm is null
+                      ? GetFolderNodeFromSource(source) : null;
         var savedArgs = _cellPressArgs;
         _cellPressArgs = null; // clear before await to prevent re-entry
-        if (cellVm is null && npyVm is null && fileVm is null) return;
+        if (cellVm is null && npyVm is null && fileVm is null && folderVm is null) return;
 
         // The .npy payload stays what it was: the Data Display reads that format, and giving a data
         // file a second spelling for the sake of MW3 would break the drop it already serves. The
         // tree's own drop handler accepts BOTH file payloads instead — one gesture, two readers.
         string serialized =
-            cellVm is not null ? new CellDragPayload(cellVm.AbsolutePath).Serialize()
-          : npyVm  is not null ? new NpyFileDragPayload(npyVm.AbsolutePath).Serialize()
-          :                      new WorkspaceFileDragPayload(fileVm!.AbsolutePath).Serialize();
+            cellVm   is not null ? new CellDragPayload(cellVm.AbsolutePath).Serialize()
+          : npyVm    is not null ? new NpyFileDragPayload(npyVm.AbsolutePath).Serialize()
+          : fileVm   is not null ? new WorkspaceFileDragPayload(fileVm.AbsolutePath).Serialize()
+          :                        new FolderDragPayload(folderVm!.AbsolutePath).Serialize();
 
         var transferItem = new DataTransferItem();
         transferItem.Set(DataFormat.Text, serialized);
         var transfer = new DataTransfer();
         transfer.Add(transferItem);
-        await DragDrop.DoDragDropAsync(savedArgs, transfer, DragDropEffects.Copy);
+        // Copy AND Move. `allowedEffects` is a MASK, not a default: the platform intersects it with
+        // whatever the drop target answers, so a target asking for Move against a Copy-only source
+        // resolves to None — no cursor badge and no drop delivered, with nothing logged anywhere.
+        // TM1's in-workspace move is the first target here to answer anything but Copy.
+        await DragDrop.DoDragDropAsync(
+            savedArgs, transfer, DragDropEffects.Copy | DragDropEffects.Move);
     }
 
     private void OnTreePointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -355,6 +377,24 @@ public partial class ProjectTreeView : UserControl
         return null;
     }
 
+    // Walk upward to a user FOLDER node (TM1 R-tm1-7). NodeKind.UserFolder only: the workspace root,
+    // a cell, a cell's view sub-folder and every synthetic group node are all excluded by
+    // TreeMove.IsMovable, which is the ONE place that list is written down.
+    private static ProjectTreeNodeViewModel? GetFolderNodeFromSource(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is TreeViewItem { DataContext: ProjectTreeNodeViewModel vm }
+                && vm.Kind == NodeKind.UserFolder
+                && TreeMove.IsMovable(vm.Kind)
+                && Directory.Exists(vm.AbsolutePath))
+                return vm;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
     // ── Drag-drop receive (file drop onto tree) ──────────────────────────────
 
     // MW3 R-mw3-3: ONE AllowDrop surface and ONE pair of handlers. The tree already answered
@@ -364,20 +404,136 @@ public partial class ProjectTreeView : UserControl
 
     private void OnFileDragOver(object? sender, DragEventArgs e)
     {
-        if (PayloadIntent(e).Action != TreeDropAction.None || HasDroppedPaths(e))
+        _dragLeaveGeneration++;   // the drag is still here — cancel any pending clear (OnDragLeave)
+
+        var intent = PayloadIntent(e);
+
+        // TM1 R-tm1-14: a move inside one workspace says Move, and a copy across two says Copy.
+        // That is free platform-native feedback — the cursor badge, on all three operating systems —
+        // and it is the difference the user most needs to see.
+        if (intent.Action == TreeDropAction.Move)
+        {
+            var move = MoveIntentFor(intent.Path, e);
+            ShowDropTarget(move.Permitted ? move.DestFolder : null);
+            e.DragEffects = move.Permitted ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled     = true;
+            return;
+        }
+
+        ShowDropTarget(null);
+        if (intent.Action != TreeDropAction.None || HasDroppedPaths(e))
         { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
         else
             e.DragEffects = DragDropEffects.None;
+    }
+
+    /// <summary>The move rule, asked identically by <see cref="OnFileDragOver"/> and
+    /// <see cref="OnFileDrop"/> so the cursor and the outcome are one decision (TM1 §8 gate 7 asserts
+    /// it directly, not through this view).</summary>
+    private TreeMoveIntent MoveIntentFor(string sourcePath, DragEventArgs e)
+    {
+        var tool = DataContext as ProjectTreeTool;
+        return TreeMove.For(
+            sourcePath, TreeMove.ClassifyForMove(sourcePath),
+            DropFolderFor(e), tool?.WorkspaceRootDir);
+    }
+
+    /// <summary>
+    /// The destination folder for a drag at its current position — the row the cursor is on, put
+    /// through <see cref="FolderOf"/>. Both handlers ask through here.
+    ///
+    /// <para><b><c>e.Source</c> is not the row and cannot be.</b> A drag event is raised against the
+    /// element carrying <c>AllowDrop</c>, which here is this whole <c>UserControl</c> — the single
+    /// drop surface R-mw3-3 requires. Every drop then resolves to the workspace root: a
+    /// cross-workspace copy still lands, in the wrong folder, and a MOVE of a root-level cell reads
+    /// as "already there", which shows no highlight, no cursor badge and does nothing at all. It is
+    /// kept only as a last resort.</para>
+    /// </summary>
+    private string? DropFolderFor(DragEventArgs e)
+        => FolderOf(RowAt(e) ?? GetAnyNodeFromSource(e.Source as Visual));
+
+    /// <summary>
+    /// The row a drag is over, found by its VERTICAL position alone.
+    ///
+    /// <para><b>A hit test at the cursor is the obvious implementation and it flickers</b>
+    /// (owner-reported, 2026-09-03: the destination highlight flashed while moving the cursor
+    /// horizontally). §3.1 gives this tree horizontal scrolling, so a row is only as WIDE as its own
+    /// label — past the end of the text there is no row under the pointer at all, and the hit lands
+    /// on an ancestor or on nothing. The answer alternated between the right folder and the
+    /// workspace root as the cursor moved in x, on a row that never changed. A row is picked by y
+    /// because that is what actually identifies it.</para>
+    ///
+    /// <para><b>The deepest match wins, and "deepest" is the greatest top.</b> A
+    /// <c>TreeViewItem</c>'s bounds INCLUDE its expanded children, so every ancestor of a row also
+    /// spans that row's y. The row itself is the last one to start above the cursor.</para>
+    /// </summary>
+    private ProjectTreeNodeViewModel? RowAt(DragEventArgs e)
+    {
+        double y;
+        try   { y = e.GetPosition(TheTreeView).Y; }
+        catch { return null; }
+
+        ProjectTreeNodeViewModel? best = null;
+        double bestTop = double.NegativeInfinity;
+
+        foreach (var item in TheTreeView.GetVisualDescendants().OfType<TreeViewItem>())
+        {
+            if (item.DataContext is not ProjectTreeNodeViewModel vm) continue;
+            if (item.TransformToVisual(TheTreeView) is not { } toTree) continue;
+
+            double top = toTree.Transform(new Point(0, 0)).Y;
+            if (y < top || y >= top + item.Bounds.Height) continue;
+
+            if (top > bestTop) { bestTop = top; best = vm; }
+        }
+
+        return best;
+    }
+
+    private void ShowDropTarget(string? folder)
+    {
+        if (DataContext is ProjectTreeTool tool) tool.DropTargetFolder = folder;
+    }
+
+    private int _dragLeaveGeneration;
+
+    /// <summary>
+    /// Clears the drop highlight when a drag really leaves this panel.
+    ///
+    /// <para><b>A DragLeave is not proof the drag has gone anywhere</b> (owner-reported flashing
+    /// highlight, 2026-09-03). Avalonia raises one whenever the resolved drag TARGET changes,
+    /// including to nothing at all — and a hit test finds nothing wherever this panel has no
+    /// hit-testable surface. The AXAML side of that is fixed, but a handler that clears the moment it
+    /// is told to is one unhit pixel away from flashing again, so it does not: the clear is POSTED,
+    /// and the next <see cref="OnFileDragOver"/> cancels it. A real leave is a leave with no
+    /// drag-over behind it, and that is what this waits to find out.</para>
+    /// </summary>
+    private void OnDragLeave(object? sender, RoutedEventArgs e)
+    {
+        int generation = ++_dragLeaveGeneration;
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => { if (generation == _dragLeaveGeneration) ShowDropTarget(null); },
+            Avalonia.Threading.DispatcherPriority.Background);
     }
 
     private void OnFileDrop(object? sender, DragEventArgs e)
     {
         if (DataContext is not ProjectTreeTool tool) return;
 
+        ShowDropTarget(null);
+
         var intent = PayloadIntent(e);
+        if (intent.Action == TreeDropAction.Move)
+        {
+            string? destFolder = DropFolderFor(e);
+            string  source     = intent.Path;
+            RunAfterDragCompletes(() => tool.MoveInsideWorkspaceAsync(source, destFolder));
+            return;
+        }
+
         if (intent.Action is TreeDropAction.Cell or TreeDropAction.File)
         {
-            string? destFolder = DropFolderFromSource(e.Source as Visual);
+            string? destFolder = DropFolderFor(e);
             RunAfterDragCompletes(intent.Action == TreeDropAction.Cell
                 ? () => tool.AcceptCellFromOtherWorkspaceAsync(intent.Path, destFolder)
                 : () => tool.AcceptDroppedFileAsync(intent.Path, destFolder));
@@ -414,12 +570,13 @@ public partial class ProjectTreeView : UserControl
         return null;
     }
 
-    /// <summary>The folder a drop landed on: a folder node itself, a cell's PARENT (a cell folder
-    /// holds views, not cells), and a file's own directory. Null falls back to the workspace root,
-    /// and the receiving workspace clamps anything outside itself.</summary>
-    private static string? DropFolderFromSource(Visual? source)
+    /// <summary>The folder a drop landed on. Null falls back to the workspace root, and the
+    /// receiving workspace clamps anything outside itself.</summary>
+    /// <summary>The rule itself: a folder node is itself, a CELL node is its parent (a cell folder
+    /// holds views, not cells), a file is its own directory.</summary>
+    private static string? FolderOf(ProjectTreeNodeViewModel? node)
     {
-        if (GetAnyNodeFromSource(source) is not { } node) return null;
+        if (node is null) return null;
         string path = node.AbsolutePath;
 
         if (node.Kind == NodeKind.Cell) return Path.GetDirectoryName(path);

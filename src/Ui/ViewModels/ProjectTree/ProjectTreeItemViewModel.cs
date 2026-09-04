@@ -386,6 +386,25 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         set { if (_isDirty != value) { _isDirty = value; OnPropertyChanged(); } }
     }
 
+    /// <summary>
+    /// TM1 R-tm1-12/-13 — true while a move-drop hovering over the tree would land HERE.
+    ///
+    /// <para><b>A row highlight, deliberately not an insertion caret.</b> The tree is SORTED, not
+    /// user-ordered — <see cref="FilteredChildren"/> is rebuilt by the scanner on every refresh — so
+    /// a caret between two rows would promise an ordering the tree cannot keep, and the first thing
+    /// the user would do after dropping is watch the row jump elsewhere. A row highlight promises
+    /// exactly what the operation delivers: <i>this folder</i>.</para>
+    ///
+    /// <para>Set only on the row that will actually RECEIVE the drop, which for a hover over a cell
+    /// is that cell's parent — see <c>ProjectTreeTool.DropTargetFolder</c>.</para>
+    /// </summary>
+    private bool _isDropTarget;
+    public bool IsDropTarget
+    {
+        get => _isDropTarget;
+        set { if (_isDropTarget != value) { _isDropTarget = value; OnPropertyChanged(); } }
+    }
+
     // All children (unfiltered) — used for expand-state collection before refresh.
     public ObservableCollection<ProjectTreeNodeViewModel> Children { get; }
 

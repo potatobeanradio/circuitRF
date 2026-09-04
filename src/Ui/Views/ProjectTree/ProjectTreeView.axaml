@@ -8,6 +8,36 @@
              Background="{DynamicResource SystemChromeLowColor}">
 
     <UserControl.Styles>
+        <!-- AllowDrop on EVERY control in this panel, not just on the panel itself (owner-reported
+             flashing highlight, 2026-09-03). Read from the SHIPPING assembly, not inferred —
+             Avalonia 12.0.0's DragDropDevice.GetTarget is:
+
+                 var el = (root.RootElement?.InputHitTest(local) as Visual)
+                            ?.GetSelfAndVisualAncestors()?.OfType<Interactive>()?.FirstOrDefault();
+                 if (el != null && DragDrop.GetAllowDrop(el)) return el;
+                 return null;
+
+             It takes the element the hit test RETURNS — the deepest hit-testable one — and requires
+             AllowDrop on THAT element. There is no walk up looking for one. So with AllowDrop only on
+             this UserControl, the target was null over every inner control the cursor happened to be
+             on, most obviously a row's own label TextBlock. And a null target does not merely fail to
+             raise DragOver: DragDropDevice raises DragLeave on the previous target and DragEnter on
+             the new one. That is precisely the reported flash — crossing on and off a row's text.
+
+             The selector is deliberately UNSCOPED rather than `#TreeScroll :is(Control)`: Avalonia's
+             descendant selector walks the LOGICAL parent chain (DescendantSelector.Evaluate), which a
+             TreeViewItem's own template Border is not on — and that Border is exactly what the hit
+             test returns over the indent and padding of a row. A style in this control's Styles
+             already applies to its whole visual subtree, template parts included, so scope needs no
+             selector.
+
+             This is NOT a second drop path: R-mw3-3 is about one pair of HANDLERS, and there still is
+             exactly one — every one of these events bubbles to OnFileDragOver / OnFileDrop on this
+             control, which remain the only place a drop is decided. -->
+        <Style Selector=":is(Control)">
+            <Setter Property="DragDrop.AllowDrop" Value="True"/>
+        </Style>
+
         <Style Selector="Button.pt-link">
             <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -150,7 +180,17 @@
         </Grid>
 
         <!-- Tree area -->
-        <Grid Grid.Row="1">
+        <!-- Background="Transparent" on BOTH of these is load-bearing, not cosmetic (owner-reported
+             flashing highlight, 2026-09-03). Avalonia resolves a drag's target by hit-testing and
+             then walking up for AllowDrop; a hit test that finds NOTHING resolves to no target at
+             all, which raises DragLeave and raises no DragOver. §3.1's horizontal scrolling makes
+             every row only as WIDE as its own label, and this UserControl's own Background is a
+             `System*Color` key — a Color on a Brush property, which CircuitRfResources.axaml already
+             records as something that may silently produce no brush and therefore no hit-testable
+             surface. So the area past a row's text belonged to nothing, and the highlight was cleared
+             and restored as the cursor crossed the end of the label. Transparent is a literal brush
+             and cannot fail to resolve. -->
+        <Grid Grid.Row="1" Background="Transparent">
 
             <!-- No-workspace placeholder with recent workspaces list (Item 1) -->
             <StackPanel IsVisible="{Binding !HasWorkspace}" Margin="8,6" Spacing="4">
@@ -214,6 +254,7 @@
                  would be a silent no-op and Page Up/Down would still need a click inside first.
                  IsTabStop=false keeps it out of the tab order — same pairing TechEditorView uses. -->
             <ScrollViewer x:Name="TreeScroll"
+                          Background="Transparent"
                           Focusable="True" IsTabStop="False"
                           HorizontalScrollBarVisibility="Auto"
                           IsVisible="{Binding HasWorkspace}">
@@ -237,6 +278,32 @@
                         <Style Selector="TreeViewItem" x:DataType="ptvm:ProjectTreeNodeViewModel">
                             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                         </Style>
+                        <!-- TM1 R-tm1-12: the folder a move-drop will land in, highlighted as a ROW.
+                             Deliberately not an insertion caret between two rows: this tree is sorted,
+                             not user-ordered — FilteredChildren is rebuilt by the scanner on every
+                             refresh — so a caret would promise a position the tree cannot keep, and
+                             the first thing the user would do after dropping is watch the row jump
+                             elsewhere. Applied to the item template's OWN root (below), not to a
+                             template part of the Fluent TreeViewItem: a guessed part name fails
+                             silently, styling nothing and reporting nothing. -->
+                        <Style Selector="Grid.pt-row">
+                            <!-- Transparent so the WHOLE row is hit-testable (the context menu and the
+                                 drag source both need that), and set HERE rather than as an attribute
+                                 on the Grid: a locally-set value outranks every style setter in
+                                 Avalonia, so a local Background="Transparent" would make the
+                                 highlight below inert — styled, matched, and never painted. -->
+                            <Setter Property="Background" Value="Transparent"/>
+                            <!-- The drop highlight IS this row's background, so making the highlight
+                                 thicker means making the row taller (owner, 2026-09-03). Applied
+                                 ALWAYS rather than only while a drag is in flight: a row that grew on
+                                 hover would re-lay-out the tree under the cursor mid-drag and move
+                                 the target the user is aiming at. -->
+                            <Setter Property="MinHeight" Value="22"/>
+                        </Style>
+                        <!-- Declared after .pt-row so it wins when both match. -->
+                        <Style Selector="Grid.pt-row.pt-droptarget">
+                            <Setter Property="Background" Value="{DynamicResource CrfDropTargetBrush}"/>
+                        </Style>
                         <!-- Bold for primary view files (§3.2) -->
                         <Style Selector="TextBlock.pt-bold">
                             <Setter Property="FontWeight" Value="Bold"/>
@@ -258,12 +325,15 @@
                              the bound collection is empty). -->
                         <TreeDataTemplate x:DataType="ptvm:ProjectTreeNodeViewModel"
                                           ItemsSource="{Binding FilteredChildren}">
-                            <Grid ColumnDefinitions="Auto,Auto,*" Background="Transparent">
+                            <Grid ColumnDefinitions="Auto,Auto,*"
+                                  Classes="pt-row"
+                                  Classes.pt-droptarget="{Binding IsDropTarget}">
                                 <!-- Per-kind icon (NodeKind + IsTestBench → MaterialIconKind) -->
                                 <mi:MaterialIcon Grid.Column="0"
                                                 Kind="{Binding IconKind}"
                                                 Width="14" Height="14"
                                                 Margin="0,0,4,0"
+                                                VerticalAlignment="Center"
                                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
                                 <!-- Dirty bullet: any node with unsaved work — a cell with a dirty session, or a
@@ -282,6 +352,7 @@
                                                   Kind="CheckCircleOutline"
                                                   Width="11" Height="11"
                                                   Margin="0,0,2,0"
+                                                  VerticalAlignment="Center"
                                                   Foreground="{DynamicResource SystemAccentColor}"
                                                   ToolTip.Tip="Workspace default technology"
                                                   IsVisible="{Binding IsWorkspaceDefaultTech}"/>
@@ -291,6 +362,7 @@
                                 <TextBlock Grid.Column="2"
                                            Text="{Binding Name}"
                                            FontSize="12"
+                                           VerticalAlignment="Center"
                                            Classes.pt-bold="{Binding IsBold}"
                                            Classes.pt-italic="{Binding IsItalic}"
                                            Classes.pt-warning="{Binding IsWarning}">

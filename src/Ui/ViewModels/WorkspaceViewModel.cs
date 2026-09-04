@@ -10435,11 +10435,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // folder without leaving the application, which is what turned "organise a 50-cell board import"
     // into a file-manager task.
     //
-    // Deliberately create-only: MOVING an existing cell into a folder would have to rewrite every
-    // CellRef pointing at it, and CellUsageScanner.RewriteCellReferences today matches and rewrites
-    // the last path SEGMENT (it was built for Rename), not a path prefix. Moving is therefore done in
-    // the file manager for now, where the tree's existing broken-reference warning is what reports a
-    // ref that no longer resolves — rather than an in-app move that rewrites references silently.
+    // MOVING an existing cell or folder is TM1 and now ships — see
+    // WorkspaceViewModel.TreeMove.cs and WorkspaceMove. It is not an extension of
+    // CellUsageScanner.RewriteCellReferences (a last-path-SEGMENT rewriter built for Rename) but a
+    // separate one-map rewrite over MoveRefRegistry, because a move changes BOTH the references
+    // into the moved subtree and the ones stored inside it.
 
     /// <inheritdoc/>
     public Task NewFolderAsync(ProjectTreeNodeViewModel parentNode)

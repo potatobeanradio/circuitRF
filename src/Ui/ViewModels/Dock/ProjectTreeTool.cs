@@ -203,7 +203,10 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     public ProjectTreeTool()
     {
         Id    = "ProjectTree";
-        Title = "Project";   // static — never updated per workspace
+        // The pane is titled "Workspace", not "Project" (owner, 2026-09-03): the two words named
+        // the same thing and the difference was a question users had to ask. The Id stays
+        // "ProjectTree" — it is the dock persistence key, not a label.
+        Title = "Workspace";   // static — never updated per workspace
         _activationFocus.Follow(this);
     }
 
@@ -330,6 +333,49 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     /// (R-mw3-11). No Reference option: a file has no reference semantics in a <c>.cws</c>.</summary>
     public Task AcceptDroppedFileAsync(string sourceFile, string? destFolderDir)
         => _actions?.AcceptDroppedFileAsync(sourceFile, destFolderDir) ?? Task.CompletedTask;
+
+    // ── In-workspace move (TM1) ───────────────────────────────────────────────
+
+    /// <summary>Something from this tree's own workspace was dropped on a folder in it — move it
+    /// there and repoint what the move breaks.</summary>
+    public Task MoveInsideWorkspaceAsync(string sourcePath, string? destFolderDir)
+        => _actions?.MoveInsideWorkspaceAsync(sourcePath, destFolderDir) ?? Task.CompletedTask;
+
+    /// <summary>
+    /// The row a move-drop would land in, as an absolute folder path — or null when the drag is not
+    /// over a folder that will accept it.
+    ///
+    /// <para><b>It is the row that will RECEIVE the drop, which for a hover over a cell is that
+    /// cell's PARENT</b> (R-tm1-13). An indicator that highlights what is under the cursor rather
+    /// than what will receive the drop is worse than none, because it teaches a rule that is
+    /// false.</para>
+    ///
+    /// <para>Set from <c>DragOver</c> and cleared on leave and on drop. One property rather than an
+    /// adorner layer: the nodes bind their own <c>IsDropTarget</c> from it, in the same shape as the
+    /// existing warning/bold styles.</para>
+    /// </summary>
+    public string? DropTargetFolder
+    {
+        get => _dropTargetFolder;
+        set
+        {
+            if (string.Equals(_dropTargetFolder, value, StringComparison.Ordinal)) return;
+            _dropTargetFolder = value;
+            ApplyDropTarget(RootItems, value);
+        }
+    }
+    private string? _dropTargetFolder;
+
+    private static void ApplyDropTarget(IEnumerable<ProjectTreeNodeViewModel> nodes, string? folder)
+    {
+        foreach (var node in nodes)
+        {
+            node.IsDropTarget = folder is not null
+                && string.Equals(node.AbsolutePath, folder, StringComparison.OrdinalIgnoreCase)
+                && node.Kind is NodeKind.Workspace or NodeKind.UserFolder;
+            ApplyDropTarget(node.Children, folder);
+        }
+    }
 
     // ── Workspace wiring ──────────────────────────────────────────────────────
 

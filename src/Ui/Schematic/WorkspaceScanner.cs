@@ -533,6 +533,11 @@ public static class WorkspaceScanner
             // renders as a loose file node and travels into an archive. SL2's write probe learned
             // this the same way.
             || string.Equals(name, CircuitRF.Design.Workspace.WorkspaceLock.FileName, StringComparison.OrdinalIgnoreCase)
+            // TM1 R-tm1-20 / TM2 — the forwarding record a move leaves at a workspace or library
+            // root. Same argument as the lock file above: this predicate is an explicit set, not a
+            // dotfile rule, so a file circuitRF itself drops has to be named here or it renders as a
+            // loose file node in every tree and travels into every archive.
+            || string.Equals(name, CircuitRF.Design.Workspace.MoveRedirects.FileName, StringComparison.OrdinalIgnoreCase)
             || string.Equals(Path.GetExtension(path), ".source", StringComparison.OrdinalIgnoreCase);
     }
 

@@ -173,6 +173,21 @@ public interface ITreeActions
     /// (R-mw3-11).</summary>
     Task AcceptDroppedFileAsync(string sourceFile, string? destFolderDir);
 
+    // ── In-workspace move (TM1) ───────────────────────────────────────────────
+
+    /// <summary>
+    /// A cell, folder or loose file from THIS workspace's own tree was dropped on a folder in it —
+    /// move it there, and repoint every reference the move invalidates in BOTH directions (into the
+    /// moved subtree, and out of it).
+    ///
+    /// <para>There is no in-app undo, exactly as there is none for
+    /// <see cref="RemoveCellAsync"/> or <see cref="RenameCellAsync"/>; the success message names the
+    /// old and the new location so the move can be reversed by re-dragging it.</para>
+    /// </summary>
+    /// <param name="sourcePath">The cell folder, user folder or file, absolute.</param>
+    /// <param name="destFolderDir">The folder it was dropped on; null for the workspace root.</param>
+    Task MoveInsideWorkspaceAsync(string sourcePath, string? destFolderDir);
+
     // ── Technology (.ctech) node actions (L0c) ────────────────────────────────
 
     /// <summary>Writes this .ctech node's workspace-relative path into .cws DefaultTechRef,

@@ -150,7 +150,7 @@
                         <NativeMenuItem Header="Panels">
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
-                                    <NativeMenuItem Header="Project Tree" Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree"/>
+                                    <NativeMenuItem Header="Workspace" Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree"/>
                                     <NativeMenuItem Header="Library"      Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette"/>
                                     <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
                                     <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
@@ -613,7 +613,7 @@
                 <!-- Reopen a closed tool panel. Without these, closing one strands it until
                      Reset Layout, which also discards every other panel placement. -->
                 <MenuItem Header="_Panels">
-                    <MenuItem Header="Project _Tree"
+                    <MenuItem Header="_Workspace"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree">
                         <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>

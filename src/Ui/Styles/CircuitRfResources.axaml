@@ -40,6 +40,14 @@
         <SolidColorBrush x:Key="CrfForeignBandBrush" Color="#33E8A33D"/>
         <SolidColorBrush x:Key="CrfForeignAccentBrush" Color="#E8A33D"/>
 
+        <!-- TM1 R-tm1-12: the Project Tree row a move-drop would land in. Follows the active accent
+             so it reads as "this is where it goes" rather than as a state, and is held at 0.3 opacity
+             because the row's own LABEL sits on top of it — an opaque accent fill would hide the name
+             of the folder the highlight exists to name. A Brush, not a System*Color key, for the
+             reason CrfTileBorderBrush above already records: a Color assigned to a Brush property may
+             silently fail to render. -->
+        <SolidColorBrush x:Key="CrfDropTargetBrush" Color="{DynamicResource SystemAccentColor}" Opacity="0.3"/>
+
 <!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>

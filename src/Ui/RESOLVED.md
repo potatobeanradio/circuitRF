@@ -1,5 +1,253 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## TM1 — moving cells and files inside the Project Tree (2026-09-03)
+
+`brief-tree-move-1-moving-within-a-workspace.md`. MW3 built the drag gesture on this tree and the drop
+plumbing it needs; this adds the one drop MW3 deliberately made inert — a drop inside the tree the drag
+started in. The gesture was an afternoon. **The reference repointing is the feature**, and everything
+below is about that.
+
+### Gate 2 (outbound) is a real gate — measured, not assumed
+
+The brief asked to report whether gate 2 fails against a naive extension of the Rename rewriter. It was
+built correctly from the start, so the question was answered by **breaking it on purpose**: making
+`WorkspaceMove.Apply` skip every file whose own path moved — i.e. the inbound half only, which is all a
+Rename-derived rewriter can express — turns **three** tests red:
+
+- `Gate2_Outbound_MovedCellsOwnReferenceStillResolves`
+- `Gate6_CschBitmapPathFollowsTheSchematicThatMoves`
+- `Gate6_ClayTechRefFollowsTheLayoutThatMoves`
+
+So R-tm1-1's assumption was right, and the outbound half is not a corner case: it is *most* of what a
+moved cell stores. A cell that references another cell, carries a bitmap and names a technology loses
+all three of those to an inbound-only rewriter, silently.
+
+**The prefix bug gate 4 exists for is also real.** Changing `Relocate`'s containment test from
+`abs.StartsWith(oldRoot + separator)` to `abs.StartsWith(oldRoot)` — the classic one-character
+omission — turns **eight** tests red, `Gate4_APrefixSharingSiblingIsUntouchedByteForByte` among them:
+with `cells/Amp` moving, `cells/AmpX` is inside the moved subtree as far as that test is concerned.
+
+### The §3 registry as BUILT, and where it differs from the brief
+
+`MoveRefRegistry.Sites` — 17 rows, each `(file predicate, JSON location, base-dir rule, resolve,
+store)`. Every row routes through the shared producer that owns its rule rather than doing its own
+`Path.Combine`, because **getting a base wrong does not throw — it silently repoints a reference at a
+file that is not there**.
+
+| Row | File | Base | Producer it routes through |
+|---|---|---|---|
+| `csch/CellRef` | `.csch` | document dir | `ExternalCellRef.MakeCellRef` / `ResolveCellDir` |
+| `csch/ImagePath` | `.csch` | document dir | plain |
+| `csch/wBondLink` | `.csch` | document dir | plain (`WBondPlacement.ResolveLinkedPath`'s rule) |
+| `csch/ModelFile` | `.csch` | **workspace root** | `SnpPathPolicy.ToStored` / `Resolve` |
+| `clay/CellRef` | `.clay` | document dir | `ExternalCellRef` |
+| `clay/ImagePathRef` | `.clay` | document dir | plain |
+| `clay/TechRef` | `.clay` | document dir | plain (`TechnologyResolver`'s rule) |
+| `cem/LayoutRef` | `.cem` | **workspace root**, `.cem` dir fallback | `EmSetupResolver`'s rule |
+| `wBond/AssemblyRef` | `.wBond` | document dir | `WasmResolver`'s rule |
+| `cws/LibraryRefs`, `KnownFiles`, `DefaultTechRef`, `DefaultAssemblyRef`, `ActiveDocumentPath`, `PdkRefs[].Path`, `ReferencedWorkspaces[].Path`, `OpenDocuments[].Path`, `DockLayout` | `.cws` | workspace root | `WorkspaceRefs.ToStoredRef`'s rule |
+
+**Four differences from the brief's own table, and each is a finding:**
+
+1. **`.wBond`'s own `AssemblyRef` is a row the brief did not list.** A `.wBond` may name an assembly
+   rule file of its own, relative to its own directory — exactly as a `.clay` names a `TechRef`
+   (`WasmResolver.Resolve`). It is in the table now.
+2. **The `.cws` dock-layout block carries the open-document paths a SECOND time** — `DocumentOrder`,
+   `ActiveDocument`, every torn-off window's `Documents`/`Active`, and the recursive `DocumentRegion`
+   split tree. The brief named "dock-layout document paths" in one row beside the open-document list;
+   in practice it is five locations, one of them recursive, and leaving any of them out makes a moved
+   cell's schematic reopen as a missing file on the next workspace open — which looks like the move
+   lost it.
+3. **The `File` parameter is FOUR component kinds with TWO different bases**, and the brief listed the
+   SnP and SPICE-model cases as separate rows with different rules. Measured: SnP, SpiceModel **and**
+   VerilogA all resolve through `SnpPathPolicy` (the same rule `Elaborator.ResolveSnpFilePath` applies
+   at Run), so they are ONE row; only wBond's link is schematic-relative. They share the parameter
+   NAME and differ by four orders of directory, so the component's own `Symbol` is the discriminator
+   and there is no defensible default.
+4. **The `.wBond` embedded-geometry `CellRef` row is not needed — that geometry is already immune**,
+   for the same reason the brief gives for `.cdd`. `WBondGeometryEmbedding` writes a self-contained
+   bundle whose cells are unpacked into a scratch directory by `Unpack`, and the instances resolve
+   against THAT, never against the workspace. Confirmed by reading `Embed`/`Unpack` rather than
+   assumed.
+
+**A pre-existing defect noticed while confirming (4), NOT fixed here and out of TM1's scope:**
+`WBondGeometryEmbedding.Key` falls back to the bare folder name for a cell that is not under the
+`.wBond`'s own base directory (the relative path starts with `..`), but the serialized ROOT layout
+still spells that instance's `CellRef` as `../../lib/Foo`. After `Unpack` that resolves outside the
+scratch directory and finds nothing, while the bundle holds the cell under the key `Foo`. An embedded
+`.wBond` referencing a cell ABOVE its own folder therefore loses that geometry on the receiving
+machine. Worth its own look.
+
+### Two store rules, not one, and the difference is silent
+
+`PlainStore` keeps a `../..` chain; `RootStore` stores ABSOLUTE when the relative would climb out of
+the base. That is not stylistic — `WorkspaceRefs.ToStoredRef` and `EmSetupResolver.MakeLayoutRef` both
+make that choice and both state the reason: a relative chain out of a workspace breaks the moment the
+workspace itself moves, which is the thing those fields exist to survive. Document-relative fields
+(`clay/TechRef`, `csch/ImagePath`, `wBond/AssemblyRef`) legitimately use `../..` chains today and keep
+`PlainStore`.
+
+**A stored value carrying a `${NAME}` site token is never resolved and never re-stored.** It names a
+location outside the workspace by construction, so it cannot have moved — and resolving it to re-store
+it would silently replace the token with one machine's expansion of it, which is the opposite of what
+SL1's token is for.
+
+### Never touching what did not move is a rule, not a consequence
+
+`Apply` skips a slot whose resolved target did not move **and** whose base did not move — it does not
+re-derive the value and compare. Both are needed: re-deriving would renormalise a hand-authored `./x`
+or a Windows-authored `\` into a different spelling, and gate 4 asserts **byte-for-byte** equality on
+the referrer that was not involved. `Gate6_SnpFileParameterIsRelativeToTheROOT_SoAMovedSchematicDoesNotTouchIt`
+is the pointed case: the schematic moved, but its SnP reference is relative to the workspace root,
+which did not — so the correct answer is to leave the file alone entirely.
+
+### The drop indicator is on the item template, not on a TreeViewItem part
+
+`Grid.pt-droptarget` on the `TreeDataTemplate`'s own root, driven by `ProjectTreeNodeViewModel.IsDropTarget`
+from one `ProjectTreeTool.DropTargetFolder` property. A `/template/ Border#PART_LayoutRoot` selector
+against the Fluent `TreeViewItem` was written first and backed out: **a guessed template-part name
+fails silently**, styling nothing and reporting nothing, and this repo has already paid for that once
+(see the `Expander.corners /template/` note in `HISTORY.md`). The item template's own root is ours and
+cannot be wrong.
+
+The fill is a new `CrfDropTargetBrush` — the active accent at 0.3 opacity — and it is a
+**`SolidColorBrush` resource, not a `System*Color` key**, for the reason `CrfTileBorderBrush`'s own
+comment in `CircuitRfResources.axaml` already records: a `Color` assigned to a Brush property may
+silently fail to render. The opacity is load-bearing rather than decorative — the row's own LABEL sits
+on top of the fill, and an opaque accent would hide the name of the folder the highlight exists to
+name.
+
+### Owner-reported the same day: no indicator and no drop — THREE defects, all in the view
+
+The workspace it was tested against has every cell at the ROOT beside one ordinary folder, which is
+what made all three fail together and silently. None was reachable by the headless gate, because each
+lives in the AXAML or in Avalonia's own event routing.
+
+1. **The drag source declared `DragDropEffects.Copy` only** (`DoDragDropAsync`'s third argument),
+   inherited from MW3, where Copy was the only outcome. **`allowedEffects` is a MASK, not a default**:
+   the platform intersects it with whatever the drop target answers, so R-tm1-14's
+   `e.DragEffects = Move` resolved to None — no cursor badge, and `performDragOperation` never called.
+   Nothing is logged for this anywhere. It is now `Copy | Move`.
+
+2. **`e.Source` on a drag event is the element carrying `AllowDrop`, which here is the whole panel** —
+   R-mw3-3's single drop surface — not the row under the cursor. So the destination folder resolved to
+   null → the workspace root → `AlreadyThere` for every root-level cell, which by design says nothing
+   at all. Both handlers now hit-test `TheTreeView` at the pointer position and fall back to
+   `e.Source`. **This was latent in MW3 too**: a cross-workspace copy still landed, just always in the
+   workspace root rather than the folder it was dropped on, which is a wrong answer that looks like a
+   right one.
+
+3. **A locally-set value outranks every style setter in Avalonia**, so `Background="Transparent"` as an
+   attribute on the item template's Grid made the `Grid.pt-droptarget` highlight inert — matched,
+   styled, and never painted. Both values now come from styles (`.pt-row`, then `.pt-row.pt-droptarget`
+   declared after it so it wins when both match). The transparent fill is still what makes the whole
+   row hit-testable for the context menu and the drag source.
+
+`Regression_ANullDestinationMeansTheRoot_WhichForARootLevelCellIsAlreadyThere` pins (2) as a rule —
+the only one of the three expressible below the view.
+
+### The flashing highlight: two wrong diagnoses, then the decompiler
+
+Owner-reported twice, and narrowed by them to *"the cursor moving on/off the text portion of the
+destination row"* — which is the sentence that eventually identified it. **Both of my first two
+explanations were wrong**, and both were arrived at by reasoning about the symptom instead of reading
+the code that raises the event.
+
+**The actual mechanism, read out of the shipping `Avalonia.Base.dll` (12.0.0) with `ilspycmd`:**
+
+```csharp
+private static Interactive? GetTarget(IInputRoot root, Point local)
+{
+    Interactive el = (root.RootElement?.InputHitTest(local) as Visual)
+        ?.GetSelfAndVisualAncestors()?.OfType<Interactive>()?.FirstOrDefault();
+    if (el != null && DragDrop.GetAllowDrop(el)) return el;
+    return null;
+}
+```
+
+**`DragDrop.AllowDrop` must be on the element the hit test RETURNS** — the deepest hit-testable one.
+There is no walk up looking for an ancestor that has it. `AllowDrop` was on the `ProjectTreeView`
+alone (R-mw3-3's single drop surface), so the target resolved to **null** over every inner control the
+cursor happened to be on — a row's label `TextBlock` most visibly of all.
+
+And a null target does not merely fail to raise `DragOver`. `DragDropDevice.DragOver` is:
+
+```csharp
+if (target == _lastTarget) return RaiseDragEvent(target, ..., DragDrop.DragOverEvent, ...);
+if (_lastTarget != null)   RaiseDragEvent(_lastTarget, ..., DragDrop.DragLeaveEvent, ...);
+return RaiseDragEvent(target, ..., DragDrop.DragEnterEvent, ...);
+```
+
+so a target CHANGE raises `DragLeave` on the old one and `DragEnter` — **never `DragOver`** — on the
+new. Crossing the edge of a row's text therefore fired a leave, cleared the highlight, and raised only
+an enter, which nothing was listening for. That is the flash, exactly.
+
+**Three changes, and all three are needed:**
+
+- **`Style Selector=":is(Control)"` setting `DragDrop.AllowDrop`**, in this control's `Styles`.
+  Deliberately UNSCOPED rather than `#TreeScroll :is(Control)`: Avalonia's descendant selector walks
+  the **logical** parent chain (`DescendantSelector.Evaluate`), which a `TreeViewItem`'s own template
+  `Border` is not on — and that Border is what the hit test returns over a row's indent and padding.
+  A style in a control's `Styles` already applies to its whole visual subtree, template parts
+  included, so the scope needs no selector at all.
+- **`DragEnterEvent` is handled by the same handler as `DragOverEvent`.** Per the code above, a target
+  change raises no `DragOver`, so handling only `DragOver` leaves the highlight cleared by the leave
+  with nothing to restore it for as long as the cursor sits still.
+- **`DragLeave` clears on a POST, cancelled by the next enter/over.** A real leave is one with no
+  drag-over behind it. Without this, any future unhit pixel flashes again.
+
+**The two wrong diagnoses, recorded because each looked right:** first, that `e.Source` was the panel
+rather than the row — TRUE and worth fixing (see (2) above), but not the cause of the flash; second,
+that a row is only as WIDE as its label under §3.1's horizontal scrolling so the hit found nothing past
+the text — true as far as it goes, and it produced `RowAt` (below), which is a genuine improvement and
+still did not stop the flashing. **Neither was tested against the thing that raises the event.** One
+`ilspycmd` invocation against the assembly already on disk settled it in a single step, and should have
+been the first move rather than the fourth.
+
+**`RowAt` is kept**, because it is right for its own reason: a row is identified by its Y. It scans the
+realised `TreeViewItem`s and takes the one whose vertical span contains the cursor — the DEEPEST such,
+which is the one with the greatest top, because a `TreeViewItem`'s bounds include its expanded children
+and so every ancestor of a row also spans that row's y. That is what makes the destination stable while
+the pointer moves along a row rather than depending on where the label happens to end.
+
+**Superseded note (kept because the reasoning recurs):**
+
+**(2)'s first fix was a hit test at the cursor, and it FLICKERED** — owner-reported the same day, and
+confirmed by them as happening exactly when the cursor crossed on and off the row's TEXT. §3.1 gives
+this tree horizontal scrolling, so a row is only as WIDE as its own label: past the end of the text
+there is no row under the pointer at all, and the hit lands on an ancestor or on nothing. The
+destination alternated between the right folder and the workspace root while the row never changed.
+**A row is identified by its Y**, so `RowAt` scans the realised `TreeViewItem`s and takes the one whose
+vertical span contains the cursor — the DEEPEST such, which is the one with the greatest top, because a
+`TreeViewItem`'s bounds include its expanded children and so every ancestor of a row also spans that
+row's y.
+
+**The highlight band was also made taller** (owner). It IS the row's background, so that means a taller
+ROW — `MinHeight` on `.pt-row`, applied always rather than only while a drag is in flight: a row that
+grew on hover would re-lay-out the tree under the cursor mid-drag and move the very target the user is
+aiming at. The row's icon and label are centred to match.
+
+### What the tests found in MW3
+
+Two `CrossWorkspaceDropTests` asserted `TreeDropAction.None` for a same-workspace payload — R-mw3-4,
+which TM1 supersedes by half. They now assert `Move`, and `R_mw3_4_SameWorkspaceDrag_IsRefused` keeps
+its second assertion (`NotEqual(TreeDropAction.Cell)`), because what R-mw3-4 was actually protecting
+against is the ordinary in-workspace drag starting to ask the copy-or-reference question. It still
+does not.
+
+### Scope notes
+
+- **R-tm1-17 (reopen after the move) stayed in**, and did not need more than the brief's budget
+  allowed: `OpenDocumentByPath` already dispatches every file kind by extension, so the whole of it is
+  `Relocate` applied to each closed document's key, plus one directory case for the cell placeholder.
+- **§9's "stop and report" did not trigger.** Every path-bearing field routes through a shared
+  producer already; there are no unshared producers to report.
+- The walk is over **every file under each scan root**, not only cell folders as
+  `CellUsageScanner`'s is: a `.cem`, a `.wBond` or a bookmarked `.s2p` lives wherever the user put it.
+  A nested directory holding its own `.cws` is skipped — that is someone else's disk, reached as its
+  own scan root or not at all.
+
+
 ## SL4 — concurrent users, and what a reference costs over a wire (2026-09-03)
 
 `brief-shared-library-4-concurrency-and-latency.md`, the last of the four-brief shared-library series

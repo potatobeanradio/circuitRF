@@ -19,6 +19,13 @@ public enum TreeDropAction
 
     /// <summary>An ordinary OS file drop: bookmark it, which is what the tree did before MW3.</summary>
     KnownFile,
+
+    /// <summary>
+    /// A cell, folder or loose file from THIS workspace's own tree: move it into the folder it was
+    /// dropped on (TM1). This is the drop MW3 deliberately left inert — see
+    /// <see cref="TreeDrop.ForPayload"/>.
+    /// </summary>
+    Move,
 }
 
 /// <summary>The action and the path it applies to.</summary>
@@ -39,28 +46,48 @@ public static class TreeDrop
     /// What one of circuitRF's own tree payloads means when dropped on the tree of
     /// <paramref name="receivingWorkspaceRoot"/>.
     ///
-    /// <para><b>R-mw3-4: a SAME-workspace drag returns <see cref="TreeDropAction.None"/>.</b>
-    /// Dragging a cell within one workspace's tree did nothing before this feature and must go on
-    /// doing nothing. The comparison is the ordinary workspace-containment test, taken against the
-    /// RECEIVING tree's root — the payload already carries an absolute path, so the drop knows
-    /// precisely which cell in which workspace it came from and nothing had to be added to the
-    /// wire.</para>
+    /// <para><b>MW3's R-mw3-4 said a SAME-workspace drag returns
+    /// <see cref="TreeDropAction.None"/>; TM1 supersedes that half and nothing else.</b> It now
+    /// returns <see cref="TreeDropAction.Move"/> — the drop MW3 deliberately made inert, because the
+    /// reference repointing a move needs did not exist yet. The cross-workspace half is unchanged:
+    /// the comparison is still the ordinary workspace-containment test taken against the RECEIVING
+    /// tree's root, and the payload still carries an absolute path so the drop knows precisely which
+    /// cell in which workspace it came from with nothing added to the wire.</para>
+    ///
+    /// <para><b>Whether the move is ALLOWED is a separate question, asked by <see cref="TreeMove"/>
+    /// against the destination row</b> — which this method does not see. The two are deliberately not
+    /// merged: this one says what the payload MEANS, and that one says whether it may land there,
+    /// with its own sentence per refusal.</para>
     /// </summary>
     public static TreeDropIntent ForPayload(string? text, string? receivingWorkspaceRoot)
     {
         if (text is null || receivingWorkspaceRoot is null) return TreeDropIntent.None;
 
         if (CellDragPayload.TryParse(text, out var cell))
-            return Foreign(cell.CellAbsPath, receivingWorkspaceRoot, TreeDropAction.Cell);
+            return Sort(cell.CellAbsPath, receivingWorkspaceRoot, TreeDropAction.Cell);
 
         if (WorkspaceFileDragPayload.TryParse(text, out var file))
-            return Foreign(file.FileAbsPath, receivingWorkspaceRoot, TreeDropAction.File);
+            return Sort(file.FileAbsPath, receivingWorkspaceRoot, TreeDropAction.File);
+
+        // A folder has no cross-workspace meaning at all — TM1 is the only thing that can be done
+        // with one, so it is a Move or it is nothing.
+        if (FolderDragPayload.TryParse(text, out var folder))
+        {
+            try
+            {
+                string abs = Path.GetFullPath(folder.FolderAbsPath);
+                return WorkspaceRootFinder.IsOutside(abs, receivingWorkspaceRoot)
+                    ? TreeDropIntent.None
+                    : new TreeDropIntent(TreeDropAction.Move, abs);
+            }
+            catch { return TreeDropIntent.None; }
+        }
 
         // The Data Display's own payload, arriving on a tree instead. A data file is still a file,
         // and giving it a second spelling for MW3's sake would have broken the drop it already
         // serves — so this reader accepts both rather than the drag source emitting both.
         if (NpyFileDragPayload.TryParse(text, out var npy))
-            return Foreign(npy.AbsolutePath, receivingWorkspaceRoot, TreeDropAction.File);
+            return Sort(npy.AbsolutePath, receivingWorkspaceRoot, TreeDropAction.File);
 
         return TreeDropIntent.None;
     }
@@ -81,13 +108,16 @@ public static class TreeDrop
         return new TreeDropIntent(isCws ? TreeDropAction.OpenWorkspace : TreeDropAction.KnownFile, path);
     }
 
-    private static TreeDropIntent Foreign(string path, string receivingRoot, TreeDropAction action)
+    /// <summary>Outside the receiving workspace, it is <paramref name="foreignAction"/> — MW3's
+    /// copy-or-reference. Inside, it is TM1's move.</summary>
+    private static TreeDropIntent Sort(string path, string receivingRoot, TreeDropAction foreignAction)
     {
         try
         {
-            return WorkspaceRootFinder.IsOutside(Path.GetFullPath(path), receivingRoot)
-                ? new TreeDropIntent(action, Path.GetFullPath(path))
-                : TreeDropIntent.None;
+            string abs = Path.GetFullPath(path);
+            return new TreeDropIntent(
+                WorkspaceRootFinder.IsOutside(abs, receivingRoot) ? foreignAction : TreeDropAction.Move,
+                abs);
         }
         catch { return TreeDropIntent.None; }
     }
