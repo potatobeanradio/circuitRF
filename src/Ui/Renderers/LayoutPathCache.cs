@@ -44,6 +44,14 @@ public sealed class LayoutPathCache
         public SKPath? LocalPath = localPath;
         public readonly long RefX = refX, RefY = refY;
 
+        /// <summary>The vertex-decimation tolerance <see cref="LocalPath"/> was built at
+        /// (<see cref="LayoutRenderDetail"/>), or -1 while nothing is built. Mirrors
+        /// <see cref="WidenedAtDbu"/>'s contract exactly, and for the same reason: the tolerance is a
+        /// function of ZOOM alone, so a pan is all hits and only a zoom OCTAVE rebuilds. Without it a
+        /// cached path outlives the zoom level it was thinned for — which shows up as a shape that
+        /// stays coarse after zooming in, the one failure mode a decimation tier can have.</summary>
+        public long LocalDetailDbu = -1;
+
         /// <summary>The stroke-elision tier's widened outline for this shape, and the widening it was
         /// built at (DBU). Mirrors <c>LayoutRenderer.CompiledChunk.Elided</c> exactly: the widening is
         /// a device-pixel allowance expressed in DBU, so it is a function of ZOOM alone — which is
@@ -52,6 +60,7 @@ public sealed class LayoutPathCache
         /// asks, so a document that never engages the tier pays nothing for it.</summary>
         public SKPath? WidenedPath;
         public long WidenedAtDbu = -1;
+        public long WidenedDetailDbu = -1;
 
         public void DisposeAll()
         {
@@ -78,10 +87,10 @@ public sealed class LayoutPathCache
     /// and caches on a miss (incrementing <paramref name="counters"/>'s <c>PathsConstructed</c> exactly
     /// as a fresh, uncached build would — a cache MISS still allocates real <c>SKPath</c> objects this
     /// frame; a HIT allocates none); moves the entry to the front of the LRU list on either outcome.</summary>
-    internal (SKPath LocalPath, long RefX, long RefY) GetOrBuild(int index, LayoutShape shape, double dbuToUm, LayoutFrameCounters? counters, out bool wasHit)
+    internal (SKPath LocalPath, long RefX, long RefY) GetOrBuild(int index, LayoutShape shape, double dbuToUm, long detailDbu, LayoutFrameCounters? counters, out bool wasHit)
     {
         var entry = Touch(index, shape);
-        if (entry.LocalPath is { } cached)
+        if (entry.LocalPath is { } cached && entry.LocalDetailDbu == detailDbu)
         {
             HitCount++;
             wasHit = true;
@@ -91,8 +100,10 @@ public sealed class LayoutPathCache
         MissCount++;
         wasHit = false;
 
+        entry.LocalPath?.Dispose();
         var localPs = new LayoutRenderer.PathSpace(entry.RefX, entry.RefY, dbuToUm);
-        entry.LocalPath = LayoutRenderer.BuildShapePath(shape, localPs, counters) ?? new SKPath();
+        entry.LocalPath = LayoutRenderer.BuildShapePath(shape, localPs, counters, detailDbu) ?? new SKPath();
+        entry.LocalDetailDbu = detailDbu;
         return (entry.LocalPath, entry.RefX, entry.RefY);
     }
 
@@ -115,14 +126,14 @@ public sealed class LayoutPathCache
     /// once. Returns null only if the shape has no buildable outline.</para>
     /// </summary>
     internal (SKPath? LocalPath, long RefX, long RefY) GetOrBuildWidened(
-        int index, PathShape shape, long widenDbu, double dbuToUm, LayoutFrameCounters? counters)
+        int index, PathShape shape, long widenDbu, double dbuToUm, long detailDbu, LayoutFrameCounters? counters)
     {
         // Shares the entry — and therefore the reference point — with the un-widened path, so a frame
         // that mixes the two tiers draws both under the same translate. It deliberately does NOT build
         // the un-widened path: a shape reached only through the hairline tier never draws it.
         var entry = Touch(index, shape);
 
-        if (entry.WidenedPath is not null && entry.WidenedAtDbu == widenDbu)
+        if (entry.WidenedPath is not null && entry.WidenedAtDbu == widenDbu && entry.WidenedDetailDbu == detailDbu)
         {
             HitCount++;
             return (entry.WidenedPath, entry.RefX, entry.RefY);
@@ -138,8 +149,9 @@ public sealed class LayoutPathCache
             Layer = shape.Layer, Xy = shape.Xy, Edges = shape.Edges,
             Width = shape.Width + widenDbu, End = shape.End, FlattenTolDbu = shape.FlattenTolDbu,
         };
-        entry.WidenedPath = LayoutRenderer.BuildShapePath(widened, localPs, counters);
+        entry.WidenedPath = LayoutRenderer.BuildShapePath(widened, localPs, counters, detailDbu);
         entry.WidenedAtDbu = widenDbu;
+        entry.WidenedDetailDbu = detailDbu;
         MissCount++;
         return (entry.WidenedPath, entry.RefX, entry.RefY);
     }

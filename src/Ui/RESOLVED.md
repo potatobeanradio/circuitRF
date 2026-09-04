@@ -18481,3 +18481,220 @@ Gates: `tests/Ui.Tests/GerberImportProgressTests.cs` (9 tests — monotone count
 total, per-file labels, a null control behaving identically, an already-cancelled token creating
 nothing, a mid-run cancel stopping early and creating nothing, and the four row-rendering cases).
 Counters only; no wall-clock assertion.
+
+## Panning that board was 4 fps, and the outline was 90% of it (2026-09-04)
+
+Follow-up to the entry above, same board. Owner: panning and zooming an imported Gerber with every
+layer visible is slow with the whole design in view, and since nothing is legible at that zoom
+anyway, could it draw less. Measured first, Release, scratch harness, warm path cache,
+1600x1000, whole board in view:
+
+| | median frame |
+|---|---|
+| before | **248 ms (4 fps)** |
+| after | **14 ms (71 fps)** |
+
+**The file is 3,284 shapes and 764,110 vertices.** Shape count is not the problem and never was — the
+existing LOD tiers all key off how BIG a shape is (sub-pixel bbox, hairline width, crowded layer) and
+every one of them is structurally blind to this board, whose cost is 1,928 polygons carrying 99.4% of
+those vertices. They are composited copper pours and drill symbols: arcs flattened at the file's own
+~8.8 um chord, which is the right tolerance to STORE and roughly 100x what any zoom can draw. `sample`
+put >99% of the main thread inside one Skia path routine, so this was never managed-side overhead.
+
+**The outline was 227 ms of the 248.** Removing just the per-layer `strokeBatch` pass — one measurement,
+by gating that one `DrawPath` — took the frame to 22.5 ms. Filling all 764k vertices is 22 ms; STROKING
+the same geometry is 227 ms. That single fact is the whole finding: Skia's stroker is ~10x its filler
+per edge, and the layer's outline path is a copy of every shape on the layer.
+
+**And that outline is also why the board reads as one saturated smear.** At full extent a constant-1.5-device-pixel
+opaque outline around shapes that are a fraction of a pixel apart is not describing edges, it is
+painting solid saturated colour over every layer beneath it. Dropping it does not degrade the picture
+there — it is the first time the traces, pours and outline are separately visible. Cost and legibility
+pointed the same way, which is not usually how this goes.
+
+### What changed — `src/Ui/Renderers/LayoutRenderDetail.cs`, two decisions at two scales
+
+- **Per shape: the path is built decimated.** A stored vertex within the tolerance of the last kept
+  one is dropped. Bounded error by construction — every surviving vertex is a stored vertex (nothing
+  is interpolated), every dropped one was inside the tolerance. Default `DetailPixelThreshold` is
+  **0.5 device pixels**, set from what is invisible rather than from what is fastest, because unlike
+  every other tier this one engages at every zoom. Invisible, so per shape is fine.
+- **Per frame: whether to outline at all.** Categorical and therefore uniform — see the section below
+  for why that is not a detail of the implementation but the whole point.
+
+### The outline decision is ONE per frame — the first build got this wrong
+
+The first build decided the outline **per shape**, from whether that shape's own geometry had been
+decimated. Owner, same day: with a single layer showing, zooming in and out gave different shapes
+their outline at different zoom levels, and the editor looked like it was malfunctioning.
+
+It was not — each shape's vertex density crossed the threshold at its own zoom, and every individual
+decision was defensible. **That is exactly the point, and it is the durable lesson here.** An outline
+is not a per-shape property the way a fill colour is; it is a visual language the whole view speaks or
+does not. A per-shape answer to a categorical question is indistinguishable from the renderer flaking
+out, however well each answer is justified. Vertex DECIMATION stays per shape — it is bounded by half
+a pixel and nobody can see it — but the outline had to become uniform.
+
+`LayoutRenderDetail.CanAffordOutlines` now returns ONE bool for the whole frame:
+
+- **It deliberately ignores WHERE the viewport is.** The honest measure of the outline pass's cost is
+  the vertex count actually on screen — and using it trades per-shape popping for per-PAN popping,
+  which is the same complaint from the user's side. So the estimate is a function of the visible
+  LAYERS and the ZOOM only: how much geometry the visible layers hold, scaled by the fraction of the
+  design the viewport covers. Panning cannot change it. It is an estimate and is allowed to be:
+  being slightly wrong sets a threshold an octave early or late, and neither outcome flickers.
+- **The owner's own rule falls out rather than being written.** With one or two layers showing the
+  visible total never reaches the budget, so outlines are on at every zoom — there is no
+  layer-count special case anywhere in the code.
+- **A concentration correction, measured not picked.** The board's copper occupies 2,795 mm² of a
+  32,500 mm² drawing, the rest being the two drill charts and the space between them. Estimated as if
+  the geometry were spread evenly, a 4x viewport — which covers a sixteenth of the extent but lands
+  squarely ON the board and sees nearly all of it — came out at 48,000 vertices when it was showing
+  closer to 700,000, and the frame that turned outlines back on cost 45 ms. Assuming the geometry
+  occupies about an eighth of the extent fixes it and only ever makes a ZOOMED-IN frame more
+  conservative: at full extent the fraction clamps to 1 and the estimate is exact, so the budget
+  means precisely "how much geometry may be outlined with the whole design in view".
+
+Measured on that board, 1600x1000, every frame pan-invariant:
+
+| visible layers | full extent | x2 | x4 | x8 | x16 |
+|---|---|---|---|---|---|
+| Top Copper only | 4.3 ms, outlined | 5.1 | 2.6 | 2.4 | 0.1 — **outlined at every zoom** |
+| Top + Bottom | 6.4 ms, outlined | 8.0 | 4.3 | 3.7 | 0.1 — outlined at every zoom |
+| all 20 | 19.7 ms, no outline | 11.1 | 6.4 | 3.3 | 0.1 — **one flip, at x16** |
+
+**Four traps, each found by a measurement rather than by reading:**
+
+1. **The last vertex must always be kept.** A closed contour is an implicitly-closed vertex list, so
+   dropping a trailing vertex that sits near its predecessor moves the closing edge. Every round glyph
+   on the board's drill chart — D, O, 0, ':', the closed ones and only those — vanished from the frame.
+2. **The outline does two jobs and only one of them is a level-of-detail choice.** On a shape whose
+   fill the viewer can see it is silhouette; on a shape whose fill is thinner than a pixel it IS the
+   shape, and dropping it does not reduce detail, it DELETES geometry. So a **visibility floor** runs
+   underneath the frame-wide decision and is never subject to it: a sub-pixel WIDTH (which covers the
+   hairline glyphs, including the closed ones that cannot go through the widened-fill tier) or a
+   degenerate on-screen bbox (which covers a sliver, having no width field to ask).
+3. **A sub-pixel shape is under that floor BY DEFINITION, and forgetting it cost the punctuation.**
+   The LOD tier's minimal rect is filled at the layer's partial opacity; it is the opaque pass that
+   makes it read at all. With the frame not outlining, every decimal point and colon on the drill
+   charts went with it and `0.2` rendered as `0 2`. Sub-pixel shapes now render identically whatever
+   the frame decided — a gate asserts exactly that, pixel for pixel.
+4. **"Any vertex dropped" was far too eager** — the per-shape rule's own failure, kept here because
+   it is the same shape of mistake. Clipper leaves near-coincident vertices wherever contours were
+   composited, so a 20,000-vertex pour with two redundant points lost its outline at EVERY zoom.
+
+**The tolerance is bucketed DOWN to a power of two** (`ToleranceDbu`), the same trick `ComputeOrigin`
+uses on the path-space anchor and for the same reason: a decimated path is cached, and a tolerance
+taken straight from the zoom rebuilds every contour on every frame of a zoom gesture. Bucketed, a zoom
+crosses an entire octave between rebuilds and the tolerance stays inside [half, one] x the budget.
+`LayoutPathCache` keys `LocalPath` on it exactly as it already keys `WidenedPath` on the widening —
+without that a path cached for the far view outlives the zoom it was thinned for, which is the one
+failure mode this tier can have (a shape that stays coarse after zooming in).
+
+**Contours of 16 vertices or fewer are never touched, reference-identical.** A hard floor, not a knob:
+below it the walk costs more than it saves, and it means every ordinary authored primitive is bit-for-bit
+what it was, so the tier can only engage on machine-generated geometry. That is also why the whole
+11,508-test `Ui.Tests` suite passed unchanged.
+
+**Exports opt out** (`DetailPixelThreshold = -1` in `LayoutClipboard.ExportOptions`, `WBondGraphicExport`,
+`WBondClipboardWriter`) — a PDF or SVG page has no device pixels to budget against, and a pasted bitmap
+may be rescaled away from the size it was rendered at.
+
+**Fewer objects meaning more detail falls out; it is not a separate rule.** The decision is per shape and
+per zoom, so a file whose geometry the screen can actually resolve is never decimated and never loses
+an outline, at any zoom, however many layers are on. There is no shape-count or layer-count heuristic
+anywhere in this, and there does not need to be.
+
+**Verified against exact rendering, not eyeballed.** Pixel diff, decimated vs `DetailPixelThreshold = -1`,
+on the real board (a control run of exact-vs-exact is 0.00%, so the renderer is deterministic and the
+numbers mean something): full extent 4.1% of pixels differ, board fit 19.9%, board x4 1.2%, x16 0.07%
+(mean delta 3/255), x256 0.04%. Monotone in zoom, which is the contract.
+
+### …and then the same scheme for PLACED CELLS
+
+Owner: apply the whole scheme to instances, expecting it to be no more than wiring. Half right, and
+the measurement says which half. The imported board PLACED as a cell — identical
+geometry to the flat case, one instance — cost **226 ms a frame against the flat version's 18 ms**, and
+a 3x3 panel of it **2.17 seconds**. Three things were missing, in ascending order of difficulty:
+
+| | | |
+|---|---|---|
+| the frame-wide outline decision never reached `DrawInstances` | genuinely wiring | 226 → 161 ms |
+| the outline BUDGET could not see instance geometry at all | a cached per-cell census | correctness, not speed |
+| the decimation tolerance never reached `CompileCell` | the compile cache had to be re-keyed | 161 → **43.5 ms** |
+
+Measured after, 1600x1000: one placement **226 → 43.5 ms** at full extent, **127 → 10.2 ms** at 4x,
+**46 → 4.7 ms** at 8x; the 3x3 panel **2168 → 204 ms** at full extent and **201 → 13.7 ms** at 8x. One
+placement showing a single copper layer is 2.7 ms and outlined at every zoom, same as the flat case.
+
+**The budget was blind exactly where it mattered most.** `CanAffordOutlines` counted `view.Shapes`, and
+a schematic-generated layout has NO top-level shapes — every piece of its geometry is in a placed cell.
+It therefore counted zero, always "afforded" outlines, and the one design shape where that answer is
+most expensive is the one where the question was never really asked. A cell's per-layer vertex census is
+now memoised per resolved `LayoutView` in a `ConditionalWeakTable`, keyed and invalidated exactly like
+the compiled geometry beside it, and `InvalidateCompiledGeometry` clears both — two caches over one cell
+that can disagree is a bug shape this repo has already paid for.
+
+**The variant ring is an immutable array swapped wholesale, never a list mutated in place** — the
+discipline `CompiledChunk.Elided` right beside it already states, and the first build of the ring broke
+it: `ICustomDrawOperation.Render` runs off the UI thread and a compiled cell is shared by every
+placement on every canvas, so reordering a shared `List` for recency on a cache READ is two canvases
+writing one collection. A read now takes one reference and sees a complete snapshot. That is also why
+reads do not reorder for recency at all: with three slots and changes only at zoom octaves,
+most-recently-COMPILED order covers a gesture in both directions on its own.
+
+**The compile cache keeps a RING of three tolerances, not one slot.** A decimated compile depends on
+zoom, so the tolerance joins the key. One slot would recompile the whole cell every time a gesture
+crossed an octave in EITHER direction, so the zoom-out half would pay again for work it had just thrown
+away; unbounded would hold a full compiled copy per octave ever visited. Measured over an 80-frame
+zoom in and back out over the placed board: median 12.3 ms, worst 67.1 ms, five frames over 50 ms and
+none over 100 — against a former steady state of 226 ms on *every* frame. Tolerance 0 is an ordinary
+entry, so an export and a test pin the geometry they always did.
+
+**A nested cell is compiled at its OWN tolerance**, the parent's divided by that placement's linear
+scale — passing the parent's number down would over-thin a magnified child and under-thin a shrunken
+one. Same reason the top-level tolerance is computed from `subDbuToUm * placementScale * scaleUm`
+rather than from the parent's units.
+
+**The visibility floor is per CHUNK here, because a chunk is the smallest thing this tier can address.**
+`CompiledChunk.FloorExtent` is `MaxExtent`'s mirror image — the smallest feature in the chunk, a path's
+WIDTH or any other primitive's short bbox side — and a chunk holding anything under a device pixel keeps
+its outline whatever the frame decided. Conservative by construction: one thin primitive keeps the
+outline for its ~64 neighbours too, which costs a little of the saving and cannot cost any geometry.
+
+**The ordering bug, which only instances can reach.** The outline decision reads the spatial index's
+EXTENT to work out how much of the design is on screen — and it was the INSTANCE query that put the
+placements into that index, which ran *after* the layer loop. So the first frame of a document whose
+geometry is all in placed cells asked before anything had answered, got "empty", and decided differently
+from every frame after it: a visible flicker on open. The query is now gathered above the decision;
+drawing order is untouched. `LayoutInstanceCoarseTierTests` could not get two identical renders of one
+viewport, which is how it surfaced.
+
+*(A rabbit hole worth naming: that test then appeared to survive the fix. It had not — `dotnet build
+-c Release` does not update the Debug output `dotnet test --no-build` runs against, so the "still
+failing" run was measuring the old assembly.)*
+
+**The census walk takes `CollectionsMarshal.AsSpan(view.Shapes)`, never a `foreach` over the list** —
+the same rule `LayoutRenderer.Draw`'s candidate walk already states, and the first build of the
+frame-wide decision broke it. It runs on the render thread while the UI thread owns the document, so a
+plain enumeration throws `Collection was modified` the first time an edit lands mid-frame, on a thread
+with nothing to catch it. `LayoutRenderThreadSafetyTests` drives exactly that race and caught it under
+full-solution load.
+
+**`LayoutSpatialIndex.Extent`** is new and is why the frame decision costs nothing: the R-tree root
+already maintains the bounds of everything indexed, so "how much of this design is on screen" is O(1)
+to ask. The census walk behind it stops the moment the budget is exceeded, so its cost is bounded by
+the budget rather than by the size of the document.
+
+Gate: `tests/Ui.Tests/LayoutRenderDetailTests.cs`, 22 tests, 487 ms — structure only (which vertices
+survive, whether the frame outlines, that the answer does not move as the viewport pans across a
+deliberately lopsided design, that the flip is monotone in zoom, that both halves of the visibility
+floor survive a frame that is not outlining, that a placed cell is counted and decimated, that its
+first frame looks like its second, and — via `PathsConstructed`, a counter rather than a clock — that
+zooming back out reuses the compile it already paid for). No wall-clock assertion anywhere.
+
+**One test-authoring trap, recorded because it was mine and it looked like a product bug:** the
+"decimation gets out of the way when zoomed in" gate first failed on a ring of 2,048 vertices. The code
+was right. Decimation compares CHEBYSHEV distance, so on a circle the tightest spacing is not the arc
+step but its 45-degree projection, arc/sqrt(2) — a tolerance between the two thins the ring on its
+diagonal runs and only there. Pick such a fixture's zoom by arithmetic, not by eye.

@@ -39,6 +39,24 @@ public readonly struct LayoutRenderOptions
     /// see <see cref="LayoutRenderer.DrawLayer"/> for why.</b></summary>
     public double LodPixelThreshold { get; init; }
 
+    /// <summary>Vertex-decimation budget, in device pixels — a stored vertex that lands within this
+    /// distance of the previously kept one is dropped from the path built this frame. 0 (the default)
+    /// means <see cref="LayoutRenderer.DefaultDetailPixelThreshold"/>; a NEGATIVE value disables the
+    /// tier outright, which is how an export pins exact stored geometry and how a test pins the
+    /// undecimated output the tier has to match. See <see cref="LayoutRenderDetail"/> for what this
+    /// catches that the size-based tiers structurally cannot, and for the measurement behind the
+    /// default.</summary>
+    public double DetailPixelThreshold { get; init; }
+
+    /// <summary>How many vertices of visible-layer geometry this frame may be estimated to be showing
+    /// before it stops outlining its shapes — ONE decision for the whole frame, see
+    /// <see cref="LayoutRenderDetail.CanAffordOutlines"/>. 0 (the default) means
+    /// <see cref="LayoutRenderer.DefaultOutlineVertexBudget"/>; a NEGATIVE value means "always
+    /// outline", which is what an export wants and how a test pins the fully-outlined output.
+    /// <see cref="DetailPixelThreshold"/> being negative implies this too — that one knob turns the
+    /// whole level-of-detail system off.</summary>
+    public long OutlineVertexBudget { get; init; }
+
     /// <summary>L2c §2 (R-L2c-2) — the OTHER trigger for the same batched-fill mechanism: a layer whose
     /// VISIBLE (candidate) shape count exceeds this switches every shape on it into the batched path,
     /// same as a sub-pixel shape would individually. 0 means "use <see cref="LayoutRenderer.
@@ -569,22 +587,44 @@ public static partial class LayoutRenderer
                 // shape (a schematic-generated layout has no top-level shapes at all).
                 var conductorAt = LayoutPortDirection.LookupFor(view, tech, opts.BaseDir ?? "");
 
-                foreach (var (def, shapes) in resolved)
-                {
-                    if (!def.Visible) continue;
-                    counters.LayersVisited++;
-                    DrawLayer(canvas, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, counters,
-                              tech?.FindFillPattern(def.FillPattern), view.DbuPerMicron);
-                }
-
                 // L3a — instances (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md). Culled the
                 // same way shapes are: the combined spatial-index query already excludes off-screen
                 // placements (R-L3a §4 "culling and LOD apply to instances too").
+                //
+                // ── QUERIED HERE, ABOVE THE LAYER LOOP, AND THE ORDER IS LOAD-BEARING ────────────
+                // This call is what puts the instance entries into the spatial index, and the outline
+                // decision below reads that index's EXTENT to work out how much of the design is on
+                // screen. Queried after the layers, as it was, the very first frame of a document
+                // whose geometry is all in placed cells (a schematic-generated layout has no top-level
+                // shapes at all) asked the extent before anything had put the instances in it, got
+                // "empty", and decided differently from every frame after — a one-frame flicker on
+                // open, and the reason LayoutInstanceCoarseTierTests could not get two identical
+                // renders of one viewport. Drawing order is untouched: this gathers, DrawInstances
+                // below still paints after every layer.
                 Bbox InstanceBboxFor(LayoutInstance inst) => CellHierarchy.InstanceBbox(inst, opts.BaseDir ?? "");
                 var instanceCandidates = view.SpatialIndex.QueryIntersecting(
                     view.Shapes, view.Instances, InstanceBboxFor, CellLayoutResolver.Generation, viewportRect);
                 counters.InstancesExamined = instanceCandidates.Count(e => e.Kind == SpatialEntryKind.Instance);
                 var instanceDragOverrides = opts.Overlay?.InstanceDragOverrides ?? EmptyInstanceDragOverrides;
+
+                // ONE outline decision for the whole frame — never per layer, never per shape. See
+                // LayoutRenderDetail.CanAffordOutlines for why, and for why it deliberately does not
+                // depend on where the viewport is.
+                bool drawOutlines =
+                    opts.DetailPixelThreshold < 0 || opts.OutlineVertexBudget < 0 ||
+                    LayoutRenderDetail.CanAffordOutlines(
+                        view, tech, vp,
+                        opts.OutlineVertexBudget > 0 ? opts.OutlineVertexBudget : DefaultOutlineVertexBudget,
+                        opts.BaseDir ?? "");
+
+                foreach (var (def, shapes) in resolved)
+                {
+                    if (!def.Visible) continue;
+                    counters.LayersVisited++;
+                    DrawLayer(canvas, def, shapes, conductorAt, ps, dragOverrides, scaleUm, opts, counters,
+                              tech?.FindFillPattern(def.FillPattern), view.DbuPerMicron, drawOutlines);
+                }
+
                 if (counters.InstancesExamined > 0)
                 {
                     // The same margin-expanded viewport the spatial-index query above used, in PATH
@@ -596,7 +636,7 @@ public static partial class LayoutRenderer
                         ps.X(vp.VisibleMinX - marginDbu), ps.Y(vp.VisibleMinY - marginDbu),
                         ps.X(vp.VisibleMaxX + marginDbu), ps.Y(vp.VisibleMaxY + marginDbu));
                     DrawInstances(canvas, view, tech, instanceCandidates, instanceDragOverrides, opts, ps,
-                                  scaleUm, visiblePathRect, counters, missingCellRefs);
+                                  scaleUm, visiblePathRect, counters, missingCellRefs, drawOutlines);
                 }
 
                 // L8b D5 — the plan-view surface mesh. Drawn INSIDE the path-space transform (it is
@@ -1012,11 +1052,35 @@ public static partial class LayoutRenderer
     /// see the L2c completion note for the measured full-extent numbers this value was chosen against.</summary>
     internal const int DefaultMergeShapeCountThreshold = 2_000;
 
+    /// <summary>Default vertex-decimation budget, device pixels. Half a pixel: the largest value at
+    /// which the decimated raster is indistinguishable from the exact one (a dropped vertex can move
+    /// an edge by at most the tolerance, and half a pixel is inside the antialiased edge itself),
+    /// and already most of the available saving — on the board measured in
+    /// <see cref="LayoutRenderDetail"/>, 244 ms a frame becomes 45 ms here and only 32 ms at a full
+    /// pixel. Set from what is safe rather than from what is fastest, because unlike every other tier
+    /// this one engages at EVERY zoom level, including the ones where the user is inspecting
+    /// geometry.</summary>
+    internal const double DefaultDetailPixelThreshold = 0.5;
+
+    /// <summary>Default frame-wide outline budget, in vertices of visible-layer geometry estimated to
+    /// be on screen. Calibrated on the imported board in <see cref="LayoutRenderDetail"/>: the outline
+    /// pass runs at roughly ten times the fill pass per edge, and this is the count at which it stops
+    /// fitting in a frame. Two consequences worth stating because they are the behaviour users see —
+    /// a single copper layer of that board is ~33,000 vertices, so it is outlined at every zoom
+    /// including the whole-design view; all twenty layers together are ~764,000, so they are not until
+    /// the viewport has closed in far enough that the estimate falls under this.</summary>
+    internal const long DefaultOutlineVertexBudget = 120_000;
+
+    /// <summary>On-screen size, in device pixels, below which a shape's fill cannot carry it on its own
+    /// and its outline is kept regardless of the frame's outline decision. One pixel: the width at
+    /// which a fill stops being a shape and becomes antialiasing.</summary>
+    private const double MinVisibleFillDevicePixels = 1.0;
+
     private static void DrawLayer(SKCanvas canvas, LayerDef def, List<(int Index, LayoutShape Shape)> shapes,
         LayoutPortDirection.ConductorLookup? conductorAt,
         PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm,
         LayoutRenderOptions opts, LayoutFrameCounters counters, FillPattern? fillPattern = null,
-        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
+        int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron, bool drawOutlines = true)
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
 
@@ -1029,6 +1093,24 @@ public static partial class LayoutRenderer
         };
         using var strokeBatch = new SKPath();
         using var aggregate = new SKPath();
+
+        // ── What still gets an outline when the frame says "no outlines" ─────────────────────────
+        //
+        // The outline does two different jobs, and only ONE of them is a level-of-detail choice.
+        //
+        // On a shape the viewer can see the FILL of, it is silhouette — it says where one shape stops
+        // and the next begins. That is information only while the silhouette can be resolved, and on a
+        // board seen whole it is the opposite of information: a constant-width opaque outline around
+        // shapes a fraction of a pixel apart paints solid colour over every layer beneath. That job is
+        // what `drawOutlines` governs, for the entire frame at once.
+        //
+        // On a shape whose fill is thinner than a pixel the outline IS the shape, and dropping it does
+        // not reduce detail, it DELETES geometry. Measured, not assumed: dropping every outline made
+        // each round glyph on the imported board's drill chart — D, O, 0, ':' and no others —
+        // disappear, because those are hairline-width CLOSED paths whose fill is a ring nothing can
+        // see. So a visibility floor runs underneath the frame-wide decision and is never subject to
+        // it. It cannot flicker on its own account either: what it keys on (a sub-pixel width, a
+        // degenerate on-screen bbox) is the shape being invisible without it.
 
         // ── The stroke-elision tier's own aggregate (see ElideStrokeFor) ─────────────────────────
         // Separate from `aggregate` because it is painted differently: the elided fill carries the
@@ -1043,6 +1125,14 @@ public static partial class LayoutRenderer
         int mergeThreshold = opts.MergeShapeCountThreshold > 0 ? opts.MergeShapeCountThreshold : DefaultMergeShapeCountThreshold;
         bool layerMerges = opts.ForceMergeTier || shapes.Count > mergeThreshold;
         double devicePxPerDbu = scaleUm * ps.DbuToUm;
+
+        // The frame's decimation tolerance (LayoutRenderDetail). Bucketed to a zoom octave so a
+        // continuous zoom rebuilds the cached paths once per octave rather than once per frame.
+        long detailDbu = opts.DetailPixelThreshold < 0
+            ? 0
+            : LayoutRenderDetail.ToleranceDbu(
+                opts.DetailPixelThreshold > 0 ? opts.DetailPixelThreshold : DefaultDetailPixelThreshold,
+                devicePxPerDbu);
 
         // A NEGATIVE threshold disables the tier outright — how a test pins the exact fill-plus-outline
         // output this tier has to match.
@@ -1115,9 +1205,26 @@ public static partial class LayoutRenderer
             if (System.Math.Max(screenW, screenH) < lodThreshold)
             {
                 AddMinimalRect(aggregate, bb, ps, scaleUm);
+
+                // A sub-pixel shape is under the visibility floor BY DEFINITION — that is what
+                // sub-pixel means — so it keeps the opaque pass whatever the frame decided. When the
+                // frame IS outlining, `aggregate` reaches strokeBatch whole and this would only add
+                // the same rect twice. Getting this wrong is not subtle once you look for it: every
+                // decimal point and colon on the imported board's drill charts is a shape of exactly
+                // this kind, and without the second pass "0.2" renders as "0 2".
+                if (!drawOutlines) AddMinimalRect(strokeBatch, bb, ps, scaleUm);
                 counters.ShapesDrawn++;
                 continue;
             }
+
+            // The visibility floor described at `strokeBatch`'s declaration: this shape has nothing
+            // the viewer could see if its outline went away, so the frame-wide decision does not
+            // reach it. A sub-pixel WIDTH covers the hairline paths (including the closed ones, which
+            // cannot go through the widened-fill tier below); a sub-pixel bbox dimension covers a
+            // sliver or a degenerate contour, which has no width field to ask.
+            bool mustOutline =
+                System.Math.Min(screenW, screenH) < MinVisibleFillDevicePixels
+                || (shape is PathShape floorPath && floorPath.Width * devicePxPerDbu < MinVisibleFillDevicePixels);
 
             // ── Stroke elision for a HAIRLINE-WIDTH path ────────────────────────────────────────
             //
@@ -1154,7 +1261,7 @@ public static partial class LayoutRenderer
                 && opts.PathCache is { } elisionCache && !dragOverrides.ContainsKey(index))
             {
                 var (widenedLocal, wRefX, wRefY) =
-                    elisionCache.GetOrBuildWidened(index, thinPath, widenDbu, ps.DbuToUm, counters);
+                    elisionCache.GetOrBuildWidened(index, thinPath, widenDbu, ps.DbuToUm, detailDbu, counters);
                 if (widenedLocal is null || widenedLocal.IsEmpty) continue;
                 elided.AddPath(widenedLocal, ps.X(wRefX), ps.Y(wRefY));
                 counters.ShapesDrawn++;
@@ -1188,16 +1295,21 @@ public static partial class LayoutRenderer
                 // fresh or it paints at its pre-drag position.
                 if (opts.PathCache is { } mergeCache && !dragOverrides.ContainsKey(index))
                 {
-                    var (cachedLocal, mRefX, mRefY) = mergeCache.GetOrBuild(index, shape, ps.DbuToUm, counters, out _);
+                    var (cachedLocal, mRefX, mRefY) = mergeCache.GetOrBuild(index, shape, ps.DbuToUm, detailDbu, counters, out _);
                     if (cachedLocal.IsEmpty) continue;
                     aggregate.AddPath(cachedLocal, ps.X(mRefX), ps.Y(mRefY));
+                    // `aggregate` reaches strokeBatch as a whole when the frame outlines; when it does
+                    // not, a shape under the visibility floor still has to.
+                    if (!drawOutlines && mustOutline)
+                        strokeBatch.AddPath(cachedLocal, ps.X(mRefX), ps.Y(mRefY));
                     counters.ShapesDrawn++;
                     continue;
                 }
 
-                using var mergedPath = BuildShapePath(shape, ps, counters);
+                using var mergedPath = BuildShapePath(shape, ps, counters, detailDbu);
                 if (mergedPath is null || mergedPath.IsEmpty) continue;
                 aggregate.AddPath(mergedPath);
+                if (!drawOutlines && mustOutline) strokeBatch.AddPath(mergedPath);
                 counters.ShapesDrawn++;
                 continue;
             }
@@ -1221,7 +1333,7 @@ public static partial class LayoutRenderer
             // existing "drags never touch a cache" rule already applied to the L2b spatial index.
             if (opts.PathCache is { } cache && !dragOverrides.ContainsKey(index))
             {
-                var (localPath, refX, refY) = cache.GetOrBuild(index, shape, ps.DbuToUm, counters, out _);
+                var (localPath, refX, refY) = cache.GetOrBuild(index, shape, ps.DbuToUm, detailDbu, counters, out _);
                 if (localPath.IsEmpty) continue;
 
                 float dx = ps.X(refX), dy = ps.Y(refY);
@@ -1231,17 +1343,17 @@ public static partial class LayoutRenderer
                 canvas.Translate(dx, dy);
                 canvas.DrawPath(localPath, fillPaint);
                 canvas.Restore();
-                strokeBatch.AddPath(localPath, dx, dy);
+                if (drawOutlines || mustOutline) strokeBatch.AddPath(localPath, dx, dy);
             }
             else
             {
-                using var shapePath = BuildShapePath(shape, ps, counters);
+                using var shapePath = BuildShapePath(shape, ps, counters, detailDbu);
                 if (shapePath is null || shapePath.IsEmpty) continue;
 
                 counters.ShapesDrawn++;
                 counters.DrawCalls++;
                 canvas.DrawPath(shapePath, fillPaint);
-                strokeBatch.AddPath(shapePath);
+                if (drawOutlines || mustOutline) strokeBatch.AddPath(shapePath);
             }
         }
 
@@ -1249,7 +1361,7 @@ public static partial class LayoutRenderer
         {
             counters.DrawCalls++;
             canvas.DrawPath(aggregate, fillPaint);
-            strokeBatch.AddPath(aggregate);
+            if (drawOutlines) strokeBatch.AddPath(aggregate);
         }
 
         // One fill for every hairline path on this layer, at the stroke's own solid alpha, and never
@@ -1593,12 +1705,17 @@ public static partial class LayoutRenderer
     /// <summary>Internal (not private) so <see cref="LayoutPathCache"/> can build a shape's path in
     /// LOCAL space (a <see cref="PathSpace"/> whose origin is the shape's own bbox min, not the
     /// per-frame one) — see that type's doc comment for why (R-L2c-3).</summary>
-    internal static SKPath? BuildShapePath(LayoutShape shape, PathSpace ps, LayoutFrameCounters? counters = null)
+    /// <param name="detailDbu">Vertex-decimation tolerance for this frame (<see cref="LayoutRenderDetail"/>),
+    /// or 0 for exact stored geometry. Applies only to the polyline shape kinds — a Rect, Circle,
+    /// RoundedRect or Via has no vertex list to thin, and a vertex list carrying per-edge ARC data
+    /// (<c>Edges</c>) is left alone, because dropping a vertex there would drop the bulge that
+    /// belongs to it and silently refit a different curve.</param>
+    internal static SKPath? BuildShapePath(LayoutShape shape, PathSpace ps, LayoutFrameCounters? counters = null, long detailDbu = 0)
     {
         // Path (a trace) needs its own outline construction (centerline -> GetFillPath), not the
         // generic per-shape builder below.
         if (shape is PathShape trace)
-            return BuildPathOutline(trace, ps, counters);
+            return BuildPathOutline(trace, ps, counters, detailDbu);
 
         var path = new SKPath();
         if (counters is not null) counters.PathsConstructed++;
@@ -1609,9 +1726,12 @@ public static partial class LayoutRenderer
                 break;
 
             case PolygonShape p:
-                AddPolygonPath(path, p.Xy, ps);
-                AddHoleRings(path, p.Xy, p.Holes, ps);
+            {
+                var xy = LayoutRenderDetail.Decimate(p.Xy, detailDbu, minKeep: 3);
+                AddPolygonPath(path, xy, ps);
+                AddHoleRings(path, xy, LayoutRenderDetail.DecimateRings(p.Holes, detailDbu), ps);
                 break;
+            }
 
             case RoundedRectShape rr:
             {
@@ -1626,9 +1746,14 @@ public static partial class LayoutRenderer
                 break;
 
             case CurveShape curve:
-                AddEdgeListPath(path, curve.Xy, curve.Edges, closed: true, ps);
-                AddHoleRings(path, curve.Xy, curve.Holes, ps);
+            {
+                // Only a curve with no per-edge arc data may be thinned — see the detailDbu param doc.
+                long curveTol = curve.Edges is null ? detailDbu : 0;
+                var cxy = LayoutRenderDetail.Decimate(curve.Xy, curveTol, minKeep: 3);
+                AddEdgeListPath(path, cxy, curve.Edges, closed: true, ps);
+                AddHoleRings(path, cxy, LayoutRenderDetail.DecimateRings(curve.Holes, curveTol), ps);
                 break;
+            }
 
             case ViaShape via:
                 // docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1: render as an ANNULUS, pad
@@ -1842,12 +1967,14 @@ public static partial class LayoutRenderer
     /// more expensive than plain path construction; fine at L1 scale (paths rebuild every frame anyway),
     /// but it must ride along with L2's per-shape path cache rather than recompute every frame.
     /// </summary>
-    internal static SKPath? BuildPathOutline(PathShape trace, PathSpace ps, LayoutFrameCounters? counters = null)
+    internal static SKPath? BuildPathOutline(PathShape trace, PathSpace ps, LayoutFrameCounters? counters = null, long detailDbu = 0)
     {
         int n = trace.Xy.Length / 2;
         if (n < 2) return null;
 
         var xy = trace.End == PathEndStyle.Extended ? ExtendedCenterline(trace.Xy, trace.Width) : trace.Xy;
+        if (trace.Edges is null)
+            xy = LayoutRenderDetail.Decimate(xy, detailDbu, minKeep: 2);
 
         using var centerline = new SKPath();
         if (counters is not null) counters.PathsConstructed++;

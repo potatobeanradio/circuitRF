@@ -323,6 +323,11 @@ public static class LayoutClipboard
         Theme = ctx.Theme,
         ShowGrid = false,
         Overlay = null,
+        // An export carries the stored geometry, not the screen's view of it. The interactive
+        // decimation tier (LayoutRenderDetail) is keyed to DEVICE pixels, which a PDF/SVG page does
+        // not have and a pasted bitmap may be rescaled away from — so it is off here, exactly as
+        // ShowGrid and Overlay are.
+        DetailPixelThreshold = -1,
         TransparentBackground = ctx.Transparent,
         BaseDir = ctx.BaseDir,
         ShowPlanarMesh = ctx.PlanarMesh is not null,

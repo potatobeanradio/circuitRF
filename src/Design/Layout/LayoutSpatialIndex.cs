@@ -90,6 +90,15 @@ public sealed class LayoutSpatialIndex
 
     private bool IsBuilt => _root is not null && _syncedCount >= 0;
 
+    /// <summary>The bounding box of everything currently indexed, or <see cref="Bbox.Empty"/> before
+    /// the first build. The R-tree root already maintains it, so this is O(1) and costs nothing to
+    /// ask — which is the point: a renderer needs "how much of this design is on screen" every frame,
+    /// and walking every shape to answer it would defeat the purpose.</summary>
+    public Bbox Extent
+    {
+        get { lock (_gate) return _root?.Bounds ?? Bbox.Empty; }
+    }
+
     // ── Public API — shapes (L2b, unchanged) ─────────────────────────────────────────────────────
 
     /// <summary>Called from <see cref="LayoutView.NotifyChanged"/> — the proactive maintenance hook.

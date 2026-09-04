@@ -62,6 +62,7 @@ internal static class WBondGraphicExport
             Theme = layoutTheme,
             ShowGrid = false,             // an export is artwork, not an editing surface
             Overlay = null,               // no selection, no handles, no ghosts
+            DetailPixelThreshold = -1,    // exact stored geometry — see LayoutClipboard.ExportOptions
             TransparentBackground = true, // the destination document supplies the background
             BaseDir = instanceBaseDir,
         };

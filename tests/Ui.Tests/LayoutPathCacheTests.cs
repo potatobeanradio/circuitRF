@@ -104,7 +104,7 @@ public class LayoutPathCacheTests
     {
         var cache = new LayoutPathCache();
         var shape = new RectShape { Layer = LayerA, X1 = 0, Y1 = 0, X2 = 1000, Y2 = 1000 };
-        cache.GetOrBuild(0, shape, 0.001, null, out _);
+        cache.GetOrBuild(0, shape, 0.001, 0, null, out _);
         Assert.Equal(1, cache.Count);
 
         cache.Apply(LayoutChangeInfo.Full);
@@ -116,7 +116,7 @@ public class LayoutPathCacheTests
     {
         var cache = new LayoutPathCache();
         for (int i = 0; i < 5; i++)
-            cache.GetOrBuild(i, new RectShape { Layer = LayerA, X1 = i, Y1 = 0, X2 = i + 1, Y2 = 1 }, 0.001, null, out _);
+            cache.GetOrBuild(i, new RectShape { Layer = LayerA, X1 = i, Y1 = 0, X2 = i + 1, Y2 = 1 }, 0.001, 0, null, out _);
         Assert.Equal(5, cache.Count);
 
         cache.Apply(LayoutChangeInfo.RemovedTrailing(3, 2)); // removes indices 3,4
@@ -125,7 +125,7 @@ public class LayoutPathCacheTests
         // Indices 0-2 must still be cache HITS; a fresh GetOrBuild for either must not increment MissCount.
         int missesBefore = cache.MissCount;
         for (int i = 0; i < 3; i++)
-            cache.GetOrBuild(i, new RectShape { Layer = LayerA, X1 = i, Y1 = 0, X2 = i + 1, Y2 = 1 }, 0.001, null, out bool wasHit);
+            cache.GetOrBuild(i, new RectShape { Layer = LayerA, X1 = i, Y1 = 0, X2 = i + 1, Y2 = 1 }, 0.001, 0, null, out bool wasHit);
         Assert.Equal(missesBefore, cache.MissCount);
     }
 
@@ -134,21 +134,21 @@ public class LayoutPathCacheTests
     {
         var cache = new LayoutPathCache();
         for (int i = 0; i < 5; i++)
-            cache.GetOrBuild(i, new RectShape { Layer = LayerA, X1 = i, Y1 = 0, X2 = i + 1, Y2 = 1 }, 0.001, null, out _);
+            cache.GetOrBuild(i, new RectShape { Layer = LayerA, X1 = i, Y1 = 0, X2 = i + 1, Y2 = 1 }, 0.001, 0, null, out _);
 
         cache.Apply(LayoutChangeInfo.Updated([1, 3]));
         Assert.Equal(3, cache.Count);
 
         int missesBefore = cache.MissCount;
-        cache.GetOrBuild(1, new RectShape { Layer = LayerA, X1 = 1, Y1 = 0, X2 = 2, Y2 = 1 }, 0.001, null, out bool wasHit1);
+        cache.GetOrBuild(1, new RectShape { Layer = LayerA, X1 = 1, Y1 = 0, X2 = 2, Y2 = 1 }, 0.001, 0, null, out bool wasHit1);
         Assert.False(wasHit1);
-        cache.GetOrBuild(3, new RectShape { Layer = LayerA, X1 = 3, Y1 = 0, X2 = 4, Y2 = 1 }, 0.001, null, out bool wasHit3);
+        cache.GetOrBuild(3, new RectShape { Layer = LayerA, X1 = 3, Y1 = 0, X2 = 4, Y2 = 1 }, 0.001, 0, null, out bool wasHit3);
         Assert.False(wasHit3);
         Assert.Equal(missesBefore + 2, cache.MissCount);
 
         // Untouched indices (0, 2, 4) are still hits.
         int missesAfter = cache.MissCount;
-        cache.GetOrBuild(0, new RectShape { Layer = LayerA, X1 = 0, Y1 = 0, X2 = 1, Y2 = 1 }, 0.001, null, out bool wasHit0);
+        cache.GetOrBuild(0, new RectShape { Layer = LayerA, X1 = 0, Y1 = 0, X2 = 1, Y2 = 1 }, 0.001, 0, null, out bool wasHit0);
         Assert.True(wasHit0);
         Assert.Equal(missesAfter, cache.MissCount);
     }
@@ -157,13 +157,13 @@ public class LayoutPathCacheTests
     public void Apply_Appended_NeedsNoEviction_NewIndicesSimplyMissOnFirstDraw()
     {
         var cache = new LayoutPathCache();
-        cache.GetOrBuild(0, new RectShape { Layer = LayerA, X1 = 0, Y1 = 0, X2 = 1, Y2 = 1 }, 0.001, null, out _);
+        cache.GetOrBuild(0, new RectShape { Layer = LayerA, X1 = 0, Y1 = 0, X2 = 1, Y2 = 1 }, 0.001, 0, null, out _);
         int countBefore = cache.Count;
 
         cache.Apply(LayoutChangeInfo.Appended(1, 3)); // indices 1,2,3 are new — nothing to evict
 
         Assert.Equal(countBefore, cache.Count); // untouched
-        cache.GetOrBuild(1, new RectShape { Layer = LayerA, X1 = 1, Y1 = 0, X2 = 2, Y2 = 1 }, 0.001, null, out bool wasHit);
+        cache.GetOrBuild(1, new RectShape { Layer = LayerA, X1 = 1, Y1 = 0, X2 = 2, Y2 = 1 }, 0.001, 0, null, out bool wasHit);
         Assert.False(wasHit); // genuinely new — correctly a miss, not a stale hit
     }
 

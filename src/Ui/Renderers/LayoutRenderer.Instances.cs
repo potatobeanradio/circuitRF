@@ -73,6 +73,20 @@ public static partial class LayoutRenderer
         /// tiny cluster keeps the whole chunk on the exact tier rather than silently coarsening it.</summary>
         public float MaxExtent;
 
+        /// <summary>SMALLEST feature size in this chunk, cell-local path space — a path's WIDTH, or any
+        /// other primitive's short bbox side. <see cref="MaxExtent"/>'s mirror image, and it answers the
+        /// mirror-image question: <see cref="MaxExtent"/> decides whether the chunk is small enough to
+        /// coarsen, this decides whether anything in it is too thin to survive losing its outline.
+        ///
+        /// <para>The frame-wide outline decision (<c>LayoutRenderDetail.CanAffordOutlines</c>) is a
+        /// level-of-detail choice and must never delete geometry, so a chunk holding anything under a
+        /// device pixel keeps its outline whatever the frame decided — the same visibility floor
+        /// <c>DrawLayer</c> applies per shape one level up, applied per chunk here because a chunk is
+        /// the smallest thing this tier can address. Conservative by construction: one thin primitive
+        /// keeps the outline for its ~<see cref="TargetPrimitivesPerChunk"/> neighbours too, which
+        /// costs a little of the saving and cannot cost any geometry.</para></summary>
+        public float FloorExtent = float.MaxValue;
+
         /// <summary>The stroke-elision tier's grown-bounds path, and the grow amount it was built at.
         /// The grow amount is half a DEVICE pixel expressed in path space, so it is a function of zoom
         /// ALONE — which is precisely why caching it is worth the memory: a pan holds zoom fixed, so
@@ -157,10 +171,69 @@ public static partial class LayoutRenderer
         public readonly List<SKRect> BrokenPlaceholders = [];
     }
 
+    /// <summary>
+    /// One cell's compiled variants, one per vertex-decimation tolerance it has been asked for
+    /// (<see cref="LayoutRenderDetail"/>). A cell used to have exactly one compile, because the
+    /// geometry it produced did not depend on the zoom; a decimated compile does, so the tolerance
+    /// joins the key.
+    ///
+    /// <para><b>Kept as a small ring rather than one slot or an unbounded map.</b> One slot would
+    /// recompile the whole cell every time a zoom gesture crossed an octave in EITHER direction, which
+    /// on an imported board placed as a cell is tens of milliseconds each way — the zoom-out half of a
+    /// gesture would pay for work it had just thrown away. Unbounded would hold a full compiled copy
+    /// of a large cell for every octave the user ever visited. Three covers a gesture's worth of
+    /// octaves in both directions, which is what a pan-then-zoom-back actually touches.</para>
+    ///
+    /// <para>Tolerance 0 — no decimation — is an ordinary entry here, so an export and a test pin
+    /// exactly the geometry they always did.</para>
+    /// </summary>
+    private sealed class CompiledVariants
+    {
+        private const int Keep = 3;
+
+        /// <summary><b>An immutable array swapped wholesale, never a list mutated in place</b> — the
+        /// same discipline (and the same reason) as <see cref="CompiledChunk.Elided"/> just above.
+        /// <c>ICustomDrawOperation.Render</c> runs off the UI thread and a compiled cell is shared by
+        /// every placement on every canvas, so two canvases can be reading this while a third writes.
+        /// A reader takes one reference and sees a complete snapshot; a writer publishes a complete
+        /// new one with a single assignment. Two threads racing a miss both compile and one wins,
+        /// which is wasted work on a zoom step and never a torn read.
+        ///
+        /// <para>That is also why a read does NOT reorder for recency, which is what would need
+        /// mutation: with three slots and changes only at zoom octaves, plain most-recently-COMPILED
+        /// order covers a gesture's worth of octaves in both directions on its own.</para></summary>
+        private (long Tol, CompiledCellGeometry Geometry)[] _slots = [];
+
+        public bool TryGet(long tol, out CompiledCellGeometry geometry)
+        {
+            var slots = _slots;
+            foreach (var slot in slots)
+                if (slot.Tol == tol)
+                {
+                    geometry = slot.Geometry;
+                    return true;
+                }
+            geometry = null!;
+            return false;
+        }
+
+        public void Put(long tol, CompiledCellGeometry geometry)
+        {
+            var old = _slots;
+            var next = new List<(long, CompiledCellGeometry)>(Keep) { (tol, geometry) };
+            foreach (var slot in old)
+            {
+                if (next.Count >= Keep) break;
+                if (slot.Tol != tol) next.Add(slot);
+            }
+            _slots = next.ToArray();
+        }
+    }
+
     /// <summary>Compiled-cell cache, keyed by LayoutView REFERENCE — see the file header for why this
     /// piggybacks on <see cref="CellLayoutResolver"/>'s own cache lifecycle instead of maintaining a
     /// second, separately-invalidated cache.</summary>
-    private static readonly ConditionalWeakTable<LayoutView, CompiledCellGeometry> _cellCompileCache = new();
+    private static readonly ConditionalWeakTable<LayoutView, CompiledVariants> _cellCompileCache = new();
 
     /// <summary>
     /// Evicts <paramref name="view"/>'s compiled geometry, if any — brief-L3b-hierarchy-navigation.md
@@ -171,7 +244,14 @@ public static partial class LayoutRenderer
     /// via <see cref="ConditionalWeakTable{TKey,TValue}"/> just going stale/unreachable. Safe to call
     /// with a view that was never compiled (no-op).
     /// </summary>
-    internal static void InvalidateCompiledGeometry(LayoutView view) => _cellCompileCache.Remove(view);
+    internal static void InvalidateCompiledGeometry(LayoutView view)
+    {
+        _cellCompileCache.Remove(view);
+        // The frame-wide outline budget's per-cell vertex census is keyed the same way and must go
+        // with it — two caches over one cell that can disagree is the shape of bug this codebase has
+        // already paid for elsewhere.
+        LayoutRenderDetail.Invalidate(view);
+    }
 
     /// <summary>Target primitives per compiled chunk (L2e stage 1). Small enough that a zoomed-in
     /// viewport lands on a handful of chunks rather than a slab of the cell; large enough that a
@@ -227,12 +307,18 @@ public static partial class LayoutRenderer
         public CompiledChunk? Child { get; init; }
         public SKMatrix Matrix { get; init; }
         public float MaxExtent { get; init; }
+        public float FloorExtent { get; init; }
     }
 
+    /// <param name="detailDbu">Vertex-decimation tolerance in THIS cell's own DBU, or 0 for exact
+    /// geometry. Converted by the caller, because the conversion needs the placement's magnification:
+    /// a device pixel is worth fewer cell-local DBU inside a 10x instance than outside one, and
+    /// compiling the cell at the parent's tolerance would leave a magnified cell visibly coarse.</param>
     private static CompiledCellGeometry CompileCell(LayoutView subView, Technology? tech, string subBaseDir,
-        HashSet<string> visiting, int depth, LayoutFrameCounters? counters)
+        HashSet<string> visiting, int depth, LayoutFrameCounters? counters, long detailDbu = 0)
     {
-        if (_cellCompileCache.TryGetValue(subView, out var cached)) return cached;
+        var variants = _cellCompileCache.GetValue(subView, static _ => new CompiledVariants());
+        if (variants.TryGet(detailDbu, out var cached)) return cached;
 
         var compiled = new CompiledCellGeometry();
         double dbuToUm = 1.0 / Math.Max(1, subView.DbuPerMicron);
@@ -255,9 +341,16 @@ public static partial class LayoutRenderer
             var bb = LayoutGeometry.BboxOf(shape);
             if (bb.IsEmpty) continue;
             var rect = NormalizedRect(localPs.X(bb.MinX), localPs.Y(bb.MinY), localPs.X(bb.MaxX), localPs.Y(bb.MaxY));
+            // A PathShape's own Width is its thinness — its bbox says nothing about it, since a
+            // hairline trace can run the length of the cell. Every other kind is as thin as its short
+            // bbox side.
+            float floor = shape is PathShape pw
+                ? (float)localPs.Len(pw.Width)
+                : Math.Min(rect.Width, rect.Height);
             ItemsFor(shape.Layer).Add(new CompileItem
             {
                 Bounds = rect, Shape = shape, MaxExtent = Math.Max(rect.Width, rect.Height),
+                FloorExtent = floor,
             });
         }
 
@@ -276,10 +369,19 @@ public static partial class LayoutRenderer
             }
 
             visiting.Add(step.ResolvedCellDir!);
-            var child = CompileCell(step.SubView!, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!), visiting, depth + 1, counters);
+            // A nested cell is compiled at ITS OWN tolerance: the child's geometry is scaled by this
+            // placement's linear factor on the way into the parent, so a device pixel is worth
+            // 1/scale of the parent's tolerance down there. Passing the parent's own number would
+            // over-thin a magnified child and under-thin a shrunken one.
+            var (na, nb, nc, nd) = LayoutInstanceTransform.PathSpaceLinearCoefficients(nested);
+            double nestedScale = Math.Sqrt(Math.Abs(na * nd - nb * nc));
+            long childDetail = detailDbu > 0 && nestedScale > 0
+                ? Math.Max(1, (long)(detailDbu / nestedScale))
+                : 0;
+            var child = CompileCell(step.SubView!, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!), visiting, depth + 1, counters, childDetail);
             visiting.Remove(step.ResolvedCellDir!);
 
-            var (a, b, c, d) = LayoutInstanceTransform.PathSpaceLinearCoefficients(nested);
+            double a = na, b = nb, c = nc, d = nd;
             int rows = Math.Max(1, nested.Rows), cols = Math.Max(1, nested.Cols);
             for (int r = 0; r < rows; r++)
             for (int col = 0; col < cols; col++)
@@ -300,6 +402,7 @@ public static partial class LayoutRenderer
                         Child = childChunk,
                         Matrix = m,
                         MaxExtent = childChunk.MaxExtent * childScale,
+                        FloorExtent = childChunk.FloorExtent * childScale,
                     });
 
                 foreach (var rect in child.BrokenPlaceholders)
@@ -312,10 +415,10 @@ public static partial class LayoutRenderer
         {
             var cl = new CompiledLayerGeometry { Key = key };
             compiled.Layers.Add(cl);
-            BuildChunks(cl, list, localPs, counters);
+            BuildChunks(cl, list, localPs, counters, detailDbu);
         }
 
-        _cellCompileCache.AddOrUpdate(subView, compiled);
+        variants.Put(detailDbu, compiled);
         return compiled;
     }
 
@@ -332,7 +435,7 @@ public static partial class LayoutRenderer
     /// it draws — culling against them can never drop visible geometry, which is what makes stage 1
     /// pixel-identical to the unchunked path it replaces.</summary>
     private static void BuildChunks(CompiledLayerGeometry cl, List<CompileItem> list, PathSpace localPs,
-                                    LayoutFrameCounters? counters)
+                                    LayoutFrameCounters? counters, long detailDbu)
     {
         if (list.Count == 0) return;
 
@@ -363,10 +466,11 @@ public static partial class LayoutRenderer
             {
                 chunk.Bounds.Union(it.Bounds);
                 if (it.MaxExtent > chunk.MaxExtent) chunk.MaxExtent = it.MaxExtent;
+                if (it.FloorExtent < chunk.FloorExtent) chunk.FloorExtent = it.FloorExtent;
 
                 if (it.Shape is { } shape)
                 {
-                    using var path = BuildShapePath(shape, localPs, counters);
+                    using var path = BuildShapePath(shape, localPs, counters, detailDbu);
                     if (path is null || path.IsEmpty) continue;
                     chunk.Geometry.AddPath(path);
                     prims.Add(it.Bounds);
@@ -440,7 +544,7 @@ public static partial class LayoutRenderer
     private static void DrawInstances(SKCanvas canvas, LayoutView view, Technology? tech,
         IReadOnlyList<LayoutSpatialEntry> candidates, IReadOnlyDictionary<int, LayoutInstance> dragOverrides,
         LayoutRenderOptions opts, PathSpace ps, double scaleUm, SKRect visiblePathRect,
-        LayoutFrameCounters counters, HashSet<string> missingCellRefs)
+        LayoutFrameCounters counters, HashSet<string> missingCellRefs, bool drawOutlines = true)
     {
         string baseDir = opts.BaseDir ?? "";
         double lodThreshold = opts.LodPixelThreshold > 0 ? opts.LodPixelThreshold : DefaultLodPixelThreshold;
@@ -491,13 +595,26 @@ public static partial class LayoutRenderer
                 continue;
             }
 
-            visiting.Add(step.ResolvedCellDir!);
-            var compiled = CompileCell(subView, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, counters);
-            visiting.Remove(step.ResolvedCellDir!);
-
             var (a, b, c, d) = LayoutInstanceTransform.PathSpaceLinearCoefficients(inst);
             int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
             float placementScale = (float)Math.Sqrt(Math.Abs(a * d - b * c));
+
+            // The decimation tolerance in THIS CELL'S own DBU. A cell-local DBU is worth
+            // (its own dbuToUm) x (this placement's linear scale) x (device px per micron) on screen,
+            // which is the same chain the elision tier below already walks for a feature size — so the
+            // cell is thinned against what the SCREEN can show, not against the parent's units. Two
+            // placements of one cell at different magnifications therefore ask for different
+            // tolerances, which the variant cache keeps separately rather than fighting over one slot.
+            double subDbuToUm = 1.0 / Math.Max(1, subView.DbuPerMicron);
+            long cellDetailDbu = opts.DetailPixelThreshold < 0
+                ? 0
+                : LayoutRenderDetail.ToleranceDbu(
+                    opts.DetailPixelThreshold > 0 ? opts.DetailPixelThreshold : DefaultDetailPixelThreshold,
+                    subDbuToUm * placementScale * scaleUm);
+
+            visiting.Add(step.ResolvedCellDir!);
+            var compiled = CompileCell(subView, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, counters, cellDetailDbu);
+            visiting.Remove(step.ResolvedCellDir!);
 
             // Resolved once per candidate instance, reused across every placement (R-L3a-3's "N matrix
             // draws" — not N paint allocations). Magnification is baked into the stroke width HERE
@@ -623,8 +740,21 @@ public static partial class LayoutRenderer
                             }
 
                             canvas.DrawPath(chunk.Geometry, fillPaint);
-                            canvas.DrawPath(chunk.Geometry, strokePaint);
-                            counters.DrawCalls += 2;
+                            counters.DrawCalls++;
+
+                            // The frame-wide outline decision reaches instance geometry too — it is the
+                            // same constant-device-pixel stroke over the same kind of geometry, and on
+                            // an imported board PLACED as a cell it is the same overwhelming majority
+                            // of the frame (measured: 226 ms for one placement of the board in
+                            // LayoutRenderDetail's note, against 18 ms for the identical geometry drawn
+                            // as top-level shapes, which had already had this applied). The floor below
+                            // it is per CHUNK rather than per shape — see CompiledChunk.FloorExtent.
+                            if (drawOutlines
+                                || chunk.FloorExtent * placementScale * scaleUm < MinVisibleFillDevicePixels)
+                            {
+                                canvas.DrawPath(chunk.Geometry, strokePaint);
+                                counters.DrawCalls++;
+                            }
                         }
                     }
                     if (brokenFillPaint is not null && brokenStrokePaint is not null)
