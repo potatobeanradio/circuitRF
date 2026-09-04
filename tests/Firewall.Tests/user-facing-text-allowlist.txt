@@ -125,9 +125,11 @@ src/Core/Elaboration/Elaborator.cs|Cell '{inst.Reference}' not found in librarie
 src/Core/Elaboration/Elaborator.cs|Chain '{inst.InstanceName}': expected 4 nets (port1 +,− then port2 +,−); 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}') declares {d.ExternalPinCount} 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): external pin {node.Index} is reported 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): node {cur} is slaved to 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is reported both 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is slaved to 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): pins 
+src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): the collapse chain from node {start} 
 src/Core/Elaboration/Elaborator.cs|ExtDevice '{childPath}' (type '{d.TypeId}'): the model writes no equation for 
 src/Core/Elaboration/Elaborator.cs|Failed to create model for primitive '{inst.Reference}' at '{childPath}'
 src/Core/Elaboration/Elaborator.cs|SDD '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); 

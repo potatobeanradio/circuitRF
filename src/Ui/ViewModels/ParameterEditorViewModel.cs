@@ -778,7 +778,6 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             VerilogAFileNote = "";
             VerilogAUnknownParamsNote = "";
             VerilogAThermalNote = "";
-            VerilogACompileNote = "";
             return;
         }
 
@@ -789,19 +788,38 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         var declared = VerilogAModelIntrospection.Describe(file, out string? error);
         VerilogAFileNote = file.Trim().Length == 0 || error is null ? "" : error;
 
-        // What the compile step said, when the chosen file was Verilog-A SOURCE. Shown separately
-        // from the error note: it is ordinary progress, not a problem, and it answers the two
-        // questions a user has after pointing at a `.va` — which compiler ran, and whether anything
-        // was actually rebuilt.
-        VerilogACompileNote = VerilogAModelIntrospection.LastCompileNote;
+        // What the compile step said, when the chosen file was Verilog-A SOURCE. It goes to the
+        // MESSAGES PANEL, not into this dialog: it is ordinary progress rather than a problem with
+        // the component, it can run to several lines naming a compiler path and an artefact path,
+        // and the dialog has no room reserved for it. Posted through the owning schematic's own
+        // sink, so it lands in the window the user is working in.
+        //
+        // Describe clears the note on entry, so this is one post per compile — a cache hit says
+        // nothing, and re-opening the dialog on an unchanged file stays silent.
+        if (VerilogAModelIntrospection.LastCompileNote is { Length: > 0 } compileNote)
+            _schematicVm.MessageSink?.Info(compileNote, file.Trim().Length == 0 ? null : file.Trim());
 
         var modelRow = Rows.FirstOrDefault(r => r.Name.Equals(ComponentModelFactory.VerilogAModelParam, StringComparison.Ordinal));
-        // Offered whenever the file declares more than one: with exactly one there is nothing to
-        // choose between, and a one-entry picker is a control that cannot do anything.
-        modelRow?.SetRuntimeChoices(declared.Count > 1 ? [.. declared.Select(m => m.TypeId)] : []);
+        // Offered whenever the file declares ANYTHING, one type included. A one-entry picker was
+        // previously suppressed as a control that cannot do anything, which was true of the control
+        // and false of the dialog: with the choices hidden, the row was a bare text box holding a
+        // name the user had never typed, and nothing on screen said it had come from the file or
+        // that it was the only thing the file offered. The combo box IS that statement.
+        modelRow?.SetRuntimeChoices([.. declared.Select(m => m.TypeId)]);
 
         string modelValue = ParamValue(_target, ComponentModelFactory.VerilogAModelParam);
-        var selectedOrNull = VerilogAModelIntrospection.Select(declared, modelValue);
+
+        // What the component would run as: its own Model when that names a type this file actually
+        // declares, and otherwise the file's default. "Otherwise" covers BOTH a component that has
+        // never been set and one whose File was just re-pointed at a different model — in the second
+        // case the old name is not a choice the user is still making, it is a leftover that Run
+        // refuses by name.
+        var fallback = VerilogAModelIntrospection.Default(declared);
+        string effectiveModel =
+            VerilogAModelIntrospection.Select(declared, modelValue) is not null ? modelValue
+            : fallback?.TypeId ?? modelValue;
+
+        var selectedOrNull = VerilogAModelIntrospection.Select(declared, effectiveModel);
 
         // Pins stops taking edits the moment a model is settled: the terminal count is the model's
         // own statement about itself, so typing a different one only draws a symbol with leads the
@@ -820,11 +838,13 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         FlagUndeclaredParameters();
         NoteOmittedThermalTerminal(selected);
 
-        string desiredModel = declared.Count == 1 ? selected.TypeId : modelValue;
+        // Written onto the component rather than merely shown, because a blank Model is not a
+        // neutral state: CreateVerilogAModel refuses one outright the moment a file declares more
+        // than one type. Leaving it blank stores a component that cannot run.
+        string desiredModel = selected.TypeId;
         string desiredPins  = selected.PinCount.ToString(CultureInfo.InvariantCulture);
 
-        bool modelDiffers = declared.Count == 1 &&
-                            !modelValue.Equals(desiredModel, StringComparison.Ordinal);
+        bool modelDiffers = !modelValue.Equals(desiredModel, StringComparison.Ordinal);
         bool pinsDiffers  = !ParamValue(_target, ComponentModelFactory.VerilogAPinsParam)
                                 .Equals(desiredPins, StringComparison.Ordinal);
         if (!modelDiffers && !pinsDiffers) return;
@@ -938,15 +958,6 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
              + "self-heating internally. That is the ordinary way to place this part. Draw the extra "
              + "pin only if you intend to build the thermal network yourself.";
     }
-
-    /// <summary>Non-empty when the chosen file was Verilog-A SOURCE and circuitRF either compiled it
-    /// or reused an existing build. Ordinary progress, not a problem — rendered like the thermal
-    /// note rather than in the warning brush.</summary>
-    [ObservableProperty] private string _verilogACompileNote = "";
-
-    public bool HasVerilogACompileNote => VerilogACompileNote.Length > 0;
-    partial void OnVerilogACompileNoteChanged(string value)
-        => OnPropertyChanged(nameof(HasVerilogACompileNote));
 
     /// <summary>Non-empty when a thermal terminal is deliberately left off — see
     /// <see cref="NoteOmittedThermalTerminal"/>. Shown in its own right, NOT as a warning: it

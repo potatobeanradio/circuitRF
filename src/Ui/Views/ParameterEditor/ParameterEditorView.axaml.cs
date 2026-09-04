@@ -152,16 +152,22 @@ public partial class ParameterEditorView : UserControl
             AllowMultiple = false,
             FileTypeFilter =
             [
-                // A COMPILED Verilog-A model, which is what a user places directly. Offered first
-                // because it is the one they can pick without owning a kit.
+                // BOTH forms in the DEFAULT filter, because a picker opens on its first entry and
+                // this parameter accepts either. Splitting them left source-only below the fold: a
+                // user who had just downloaded a model family opened the picker onto their own `.va`
+                // and saw it greyed out, which reads as "circuitRF cannot take this file" rather
+                // than "switch the dropdown". Both are first-class inputs — a compiled artefact is
+                // loaded as-is, and source is compiled once and cached on its own content — so
+                // neither belongs behind the other.
+                new FilePickerFileType("Verilog-A model (*.va, *.vams, *.osdi)")
+                {
+                    Patterns = ["*.va", "*.vams", "*.osdi", "*.VA", "*.VAMS", "*.OSDI"],
+                },
+                // The two narrowing entries, for a folder holding both forms of the same model.
                 new FilePickerFileType("Compiled Verilog-A model (*.osdi)")
                 {
                     Patterns = ["*.osdi", "*.OSDI"],
                 },
-                // SOURCE. A user who has downloaded a model family has source, a manual and a
-                // parameter file, and no artefact — so this is the file they actually have.
-                // circuitRF compiles it once, with the compiler installed on this machine, and
-                // caches the result on the source's own content.
                 new FilePickerFileType("Verilog-A source (*.va, *.vams)")
                 {
                     Patterns = ["*.va", "*.vams", "*.VA", "*.VAMS"],

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CircuitRF.Core.Devices.External;
 
 namespace CircuitRF.Ui.Schematic;
@@ -91,6 +92,11 @@ public static class VerilogAModelIntrospection
     public static IReadOnlyList<VerilogAModelInfo> Describe(string? modelFilePath, out string? error)
     {
         error = null;
+        // Cleared FIRST, so the note always describes THIS call and not some earlier file's. Its
+        // reader posts it to the Messages panel, and a note left standing across a cache hit would
+        // be re-posted on every parameter edit — the same line, over and over, about a compile that
+        // did not happen.
+        LastCompileNote = "";
         if (string.IsNullOrWhiteSpace(modelFilePath)) return [];
 
         string path;
@@ -118,11 +124,11 @@ public static class VerilogAModelIntrospection
         try
         {
             // Catch what the compile step had to say, if this file was Verilog-A SOURCE. The note
-            // names the compiler that ran and where the artefact went, and it is shown in the
-            // parameter dialog rather than posted to the Messages panel: there is no process-global
-            // message sink, and inventing one would post into whichever window registered last —
-            // the multi-window defect MW1 exists to have fixed. The dialog is also simply where the
-            // user is standing at the moment they choose the file.
+            // names the compiler that ran and where the artefact went, and its reader posts it to
+            // the Messages panel — through the OWNING SCHEMATIC's sink, not a process-global one.
+            // That distinction is the whole reason this is a return value rather than a call: a
+            // static sink would post into whichever window registered last, which is the
+            // multi-window defect MW1 exists to have fixed.
             string? note = null;
             VerilogAFileResolver.CompileNote = n => note = n;
 
@@ -157,7 +163,7 @@ public static class VerilogAModelIntrospection
         }
 
         lock (_cache) _cache[(path, ticks)] = result;
-        RememberLabels(modelFilePath, result);
+        RememberLabels(modelFilePath, path, ticks, result);
         return result;
     }
 
@@ -191,25 +197,133 @@ public static class VerilogAModelIntrospection
     /// <para>That is why the symbol falls back to numbers rather than blocking: labels appear once
     /// the file has been read, which is what opening the component's parameters does. Nothing
     /// renders wrongly in the meantime — a numbered lead is what the symbol has always drawn.</para>
+    ///
+    /// <para><b>It is backed by a file, because a process-lifetime cache meant the labels were lost
+    /// on every restart.</b> A user who closed circuitRF and reopened the workspace found their
+    /// model drawn with numbers again, and the only way back was to open each component's parameters
+    /// — a step that reads as "the design forgot something". The backing store is
+    /// <see cref="StoreFileName"/> under the per-user cache directory: derived data, disposable, and
+    /// rebuilt by the next describe if deleted.</para>
+    ///
+    /// <para><b>The mtime rule is kept, and still costs nothing per probe.</b> Each stored entry
+    /// carries the file's resolved path and last-write ticks, and they are checked ONCE when the
+    /// store is loaded — an entry whose file has since been edited, recompiled or removed is dropped
+    /// there. A probe stays a dictionary lookup, which is the constraint this whole class exists
+    /// under.</para>
     /// </summary>
     private static readonly Dictionary<(string File, string Model), IReadOnlyList<string>> _labels =
         new();
 
-    private static void RememberLabels(string? modelFilePath, IReadOnlyList<VerilogAModelInfo> models)
+    /// <summary>One remembered set of terminal names, as it is written to disk.</summary>
+    /// <param name="File">The component's <c>File</c> parameter EXACTLY as it carries it, which is
+    /// the half of the probe key — a component looks itself up by what it holds, not by a resolved
+    /// path it never sees.</param>
+    /// <param name="Model">The component's <c>Model</c> value, or "" for the single-type case.</param>
+    /// <param name="Path">The resolved absolute path, kept only so the entry can be validated.</param>
+    /// <param name="Ticks">That file's last-write time when the labels were read from it.</param>
+    /// <param name="Labels">The model's own terminal names, in declaration order.</param>
+    private sealed record LabelEntry(string File, string Model, string Path, long Ticks, string[] Labels);
+
+    /// <summary>The store's file name, inside the per-user <c>cache</c> directory.</summary>
+    private const string StoreFileName = "verilog-a-terminal-labels.json";
+
+    /// <summary>The entries behind <see cref="_labels"/>, kept so the store can be rewritten whole.</summary>
+    private static readonly Dictionary<(string File, string Model), LabelEntry> _store = new();
+
+    /// <summary>Whether the store has been read this session. Guarded by <see cref="_labels"/>.</summary>
+    private static bool _storeLoaded;
+
+    private static string StorePath => Path.Combine(AppDataRoot.SubDir("cache"), StoreFileName);
+
+    /// <summary>
+    /// Reads the store once, dropping every entry whose file has changed or gone. Caller holds the
+    /// <see cref="_labels"/> lock.
+    ///
+    /// <para><b>Never throws.</b> A cache that cannot be read is a cache miss — the labels are
+    /// re-derived by the next describe, which is exactly what happened before the store existed.</para>
+    /// </summary>
+    private static void LoadStoreLocked()
+    {
+        if (_storeLoaded) return;
+        _storeLoaded = true;   // set FIRST: a failed read must not be retried on every glyph rebuild
+
+        try
+        {
+            string path = StorePath;
+            if (!File.Exists(path)) return;
+
+            var entries = JsonSerializer.Deserialize<LabelEntry[]>(File.ReadAllText(path));
+            if (entries is null) return;
+
+            foreach (var e in entries)
+            {
+                if (e.Labels.Length == 0) continue;
+                // The one place the mtime is checked. An entry for a model that has since been
+                // edited or recompiled describes terminals that may no longer exist.
+                if (!File.Exists(e.Path)) continue;
+                if (File.GetLastWriteTimeUtc(e.Path).Ticks != e.Ticks) continue;
+
+                _labels[(e.File, e.Model)] = e.Labels;
+                _store[(e.File, e.Model)]  = e;
+            }
+        }
+        catch (Exception)
+        {
+            // Unreadable, half-written, or from a future shape of this record. Start empty.
+        }
+    }
+
+    /// <summary>Writes the store out. Best effort — see <see cref="LoadStoreLocked"/>.</summary>
+    private static void SaveStoreLocked()
+    {
+        try
+        {
+            string path = StorePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(_store.Values.ToArray()));
+        }
+        catch (Exception)
+        {
+            // A read-only or missing cache directory costs the restart-survival and nothing else.
+        }
+    }
+
+    /// <summary>
+    /// Records one file's terminal names, in memory and in the backing store.
+    ///
+    /// <para><b>Internal rather than private for the test seam</b>: a real <c>.osdi</c> cannot be
+    /// stood up in the UI test project (it needs a compiled artefact and the model-hosting worker),
+    /// so the store's round trip is exercised through the same entry point <see cref="Describe"/>
+    /// uses rather than through a reimplementation of it.</para>
+    /// </summary>
+    internal static void RememberLabels(
+        string? modelFilePath, string resolvedPath, long ticks, IReadOnlyList<VerilogAModelInfo> models)
     {
         string file = modelFilePath?.Trim() ?? "";
         if (file.Length == 0) return;
 
         lock (_labels)
         {
+            LoadStoreLocked();
+
+            bool changed = false;
+            void Remember(string model, IReadOnlyList<string> labels)
+            {
+                _labels[(file, model)] = labels;
+                _store[(file, model)]  = new LabelEntry(file, model, resolvedPath, ticks, [.. labels]);
+                changed = true;
+            }
+
             foreach (var m in models)
             {
                 if (m.TerminalLabels.Count == 0) continue;
-                _labels[(file, m.TypeId)] = m.TerminalLabels;
+                Remember(m.TypeId, m.TerminalLabels);
                 // Also under the blank model name, which is what a component carries when the file
                 // declares exactly one type and nothing had to be chosen — by far the common case.
-                if (models.Count == 1) _labels[(file, "")] = m.TerminalLabels;
+                if (models.Count == 1) Remember("", m.TerminalLabels);
             }
+
+            if (changed) SaveStoreLocked();
         }
     }
 
@@ -223,25 +337,59 @@ public static class VerilogAModelIntrospection
         if (file.Length == 0) return null;
 
         lock (_labels)
+        {
+            LoadStoreLocked();
             return _labels.TryGetValue((file, modelValue?.Trim() ?? ""), out var hit) ? hit : null;
+        }
     }
 
     /// <summary>
-    /// What the last <see cref="Describe"/> had to say about COMPILING, or "" when the file was
-    /// already a compiled artefact and no compiler was involved.
+    /// What the last <see cref="Describe"/> had to say about COMPILING, or "" when no compiler ran
+    /// on that call — the file was already a compiled artefact, or the answer came from the cache.
     ///
     /// <para>Reported rather than left silent because the two questions a user has here are "did it
     /// actually rebuild" and "which compiler did it use" — and a cache that answers invisibly is
     /// indistinguishable from one that is stale.</para>
+    ///
+    /// <para><b>Valid only for the call that just returned.</b> Every <see cref="Describe"/> clears
+    /// it on entry, which is what lets a caller post it exactly once per compile rather than on
+    /// every refresh that re-describes the same file.</para>
     /// </summary>
     public static string LastCompileNote { get; private set; } = "";
 
     /// <summary>Drops the remembered labels. For tests, which stand up different models under one
-    /// path.</summary>
+    /// path.
+    ///
+    /// <para>It marks the backing store as ALREADY READ rather than reloading it. A test that
+    /// rebuilds a model under a path it has used before must see nothing; re-reading the file here
+    /// would hand it the previous model's terminals, which is the exact staleness this method is
+    /// called to remove.</para>
+    /// </summary>
     public static void ForgetCachedLabels()
     {
-        lock (_labels) _labels.Clear();
-        lock (_cache)  _cache.Clear();
+        lock (_labels)
+        {
+            _labels.Clear();
+            _store.Clear();
+            _storeLoaded = true;
+        }
+        lock (_cache) _cache.Clear();
+    }
+
+    /// <summary>
+    /// Forgets which store was read, so the next lookup reads the one at the CURRENT per-user
+    /// directory. Called when that directory moves — see <see cref="AppDataRoot.RedirectTo"/>, for
+    /// the same reason the compiled-model cache is refreshed there: a redirected process must not
+    /// answer from, or write into, the real user's cache.
+    /// </summary>
+    public static void RefreshLabelStore()
+    {
+        lock (_labels)
+        {
+            _labels.Clear();
+            _store.Clear();
+            _storeLoaded = false;
+        }
     }
 
     /// <summary>
@@ -295,6 +443,45 @@ public static class VerilogAModelIntrospection
     /// one, or the only one when the value is blank. Null when the value names nothing declared —
     /// the same rule the factory applies at Run, so the dialog cannot promise a device Run refuses.
     /// </summary>
+    /// <summary>
+    /// Which of the declared types to offer as the DEFAULT when the component names none — the
+    /// "highest level" model in the file. Null only for an empty set.
+    ///
+    /// <para><b>Ranked by external terminal count, tie-broken by declared parameter count.</b> A
+    /// model family ships its variants in one file, and the fuller formulation is the one carrying
+    /// the extra terminals: a substrate node, a self-heating node, or both. On the published
+    /// families this picks the variant a user means by "the model" — the 5-terminal
+    /// substrate-plus-thermal bipolar over the 3-terminal reduced one, and the surface-potential
+    /// MOSFET over the junction diode that ships beside it to model its own drain junction.</para>
+    ///
+    /// <para><b>It is a DEFAULT, not a determination.</b> Every declared type stays on the picker;
+    /// this only decides which one a component starts on instead of starting on nothing. That is
+    /// worth doing because "nothing" is not a neutral state — <c>CreateVerilogAModel</c> refuses a
+    /// blank <c>Model</c> outright once a file declares more than one type, so a component left
+    /// unset is a component that fails at Run.</para>
+    ///
+    /// <para>The final tie-break is the type name, so a file declaring two equally-ranked variants
+    /// defaults to the same one on every machine rather than to whatever order the artefact happened
+    /// to enumerate in.</para>
+    ///
+    /// <para><b>Why terminal count rather than the module hierarchy.</b> The intuitive rule — prefer
+    /// the module that INSTANTIATES others in the same file — has no signal to read here. An
+    /// <c>ExternalDeviceDescriptor</c> carries nodes and parameters and no sub-instances, and the
+    /// hierarchy is gone before this code sees anything: the compiler rejects a structural instance
+    /// in Verilog-A source outright (verified directly against the shipped compiler — a module
+    /// instantiated inside another fails to parse, with or without a parameter override, and no
+    /// artefact is produced at all). So a file whose modules call each other never reaches this
+    /// method; what does reach it is a family shipping several INDEPENDENT variants side by side,
+    /// and there "highest level" is the one carrying the extra terminals.</para>
+    /// </summary>
+    public static VerilogAModelInfo? Default(IReadOnlyList<VerilogAModelInfo> declared)
+        => declared.Count == 0
+            ? null
+            : declared.OrderByDescending(m => m.PinCount)
+                      .ThenByDescending(m => m.ParameterCount)
+                      .ThenBy(m => m.TypeId, StringComparer.Ordinal)
+                      .First();
+
     public static VerilogAModelInfo? Select(IReadOnlyList<VerilogAModelInfo> declared, string? modelValue)
     {
         if (declared.Count == 0) return null;

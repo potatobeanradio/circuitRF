@@ -17783,3 +17783,104 @@ unticking the box on one of those must ADD the parameter rather than silently do
 implement "only an explicit `0`/`false`/`no`/`off` clears it". They are deliberately the same rule in
 two layers rather than one shared helper across the UI firewall — but if either changes, the box and
 the run start disagreeing about what a typo means.
+
+## VerilogA component: picking a file, choosing a model, and where progress is said (2026-09-03)
+
+Four defects reported together while placing a published GaN HEMT model from downloaded source.
+
+### The picker's DEFAULT filter hid the file the user actually had
+
+`PickModelFileAsync` listed `.osdi` first and `.va`/`.vams` second. **A file picker opens on its first
+filter**, so a user who had downloaded a model family — source, a manual and a parameter file, no
+artefact — opened the dialog onto their own `.va` and saw it greyed out. That reads as "circuitRF
+cannot take this file", not "switch the dropdown", and the second entry was never reached.
+
+Both forms now share one first entry (`*.va, *.vams, *.osdi`); the two narrow entries remain below for
+a folder holding both builds of the same model. Neither form is subordinate — a compiled artefact is
+loaded as-is, and source is compiled once and cached on its own content.
+
+### The compile note painted over the other notes, and did not belong in the dialog
+
+Two separate faults on the same lines.
+
+**The overlap was a Grid row with four children.** `ParameterEditorView.axaml` gave the file note, the
+undeclared-parameter note, the compile note and the thermal note `Grid.Row="3"` *each*. They are
+siblings, so they were laid out at the same origin and painted over one another — and more than one
+visible at once is the COMMON case, since a file note and a thermal note both arise from the single
+act of choosing a file. **A Grid row stacks nothing by itself.** They are now one `StackPanel`.
+
+**The compile note was in the wrong place entirely.** It is ordinary progress, not a problem with the
+component, and it runs to several lines naming a compiler path and an artefact path. It now posts to
+the Messages panel through **`_schematicVm.MessageSink`** — the OWNING schematic's sink, not a
+process-global one, which is the objection the old code recorded and which never applied to a sink
+reached through the view model. A static sink would post into whichever window registered last (MW1).
+
+**`LastCompileNote` had to become call-scoped for this.** `Describe` sets it only on a cache MISS, so
+a note left standing was re-posted on every parameter edit, about a compile that did not happen — and
+was previously a note about a *different file*. It is now cleared on entry to every `Describe`, which
+also fixes the stale-note display the dialog had all along.
+
+### `Model` was a bare text box, and blank is not a neutral state
+
+`SetRuntimeChoices` was called only when the file declared MORE than one type, on the reasoning that a
+one-entry picker is a control that cannot do anything. True of the control, false of the dialog: with
+the choices hidden the row was a text box holding a name the user never typed, with nothing on screen
+saying it came from the file or that it was the only thing offered. The combo box IS that statement,
+so it is now offered whenever the file declares anything.
+
+The default is `VerilogAModelIntrospection.Default` — **most external terminals, tie-broken by
+declared parameter count, then by name** — and it is WRITTEN onto the component rather than merely
+shown, because `CreateVerilogAModel` refuses a blank `Model` outright once a file declares more than
+one type. It also now replaces a `Model` naming a type the file does not declare, which is what a
+component carries after its `File` is re-pointed at a different model.
+
+**Ranking by module HIERARCHY was asked for and cannot be done.** An `ExternalDeviceDescriptor`
+carries nodes and parameters, never sub-instances — and the hierarchy is gone long before that:
+**the compiler rejects a structural module instance in Verilog-A source outright.** Verified directly
+rather than assumed: a module instantiated inside another fails to parse, with or without a parameter
+override, and no artefact is produced at all. So a file whose modules call each other never reaches
+the ranking; what does reach it is a family shipping independent variants side by side, where the
+fuller formulation is the one carrying the extra terminals (a substrate node, a self-heating node, or
+both). Every published model file checked declares **exactly one module**, so the default is usually
+the only candidate.
+
+Gates: `tests/Ui.Tests/VerilogAPickerAndNoteLayoutTests.cs` (the picker's first filter, the note's
+absence from the dialog, the single row-3 child) and the `Default` ranking cases in
+`VerilogAModelIntrospectionTests.cs`.
+
+### Terminal names reverted to numbers after a restart (2026-09-03)
+
+The owner quit circuitRF, reopened the workspace, and their VerilogA model was drawn with `1`..`5`
+again instead of `d`, `g`, `s`, `b`, `dt`. Nothing was wrong with the design or the model file.
+
+`VerilogAModelIntrospection._labels` was a **process-lifetime dictionary**. It is populated only by
+`Describe`, and the symbol may not call `Describe` itself — that would put a worker launch inside a
+glyph rebuild — so after a restart nothing had read the file and every lookup missed. The only way
+back was to open each component's parameters, which is what `Describe`s it. The class documented this
+as an acceptable fallback ("labels appear once the file has been read"); across a restart it is not
+one, because the user has to re-do it for every component, every session.
+
+**Fixed by writing the labels down**, in `cache/verilog-a-terminal-labels.json` under the per-user
+directory — derived data, disposable, rebuilt by the next describe if deleted. Warming the cache at
+document-open was the other candidate and is worse: it launches a worker per distinct file on the way
+in, and the first describe of a `.va` can be a full compile (measured at ~10 min for a large model),
+so a design would open into minutes of invisible work.
+
+**The mtime rule is kept and still costs nothing per probe.** `_labels` is deliberately not keyed on
+mtime because the symbol probes it on every glyph rebuild. Each STORED entry carries the resolved
+path and last-write ticks, and they are checked once when the store is loaded: an entry whose file has
+been edited, recompiled or removed is dropped there. A probe is still a dictionary lookup.
+
+Two things that had to be got right rather than assumed:
+
+- **`ForgetCachedLabels` marks the store as already read instead of reloading it.** Its callers are
+  tests standing up a DIFFERENT model under one path; re-reading would hand back the previous model's
+  terminals, which is the exact staleness the call exists to remove. `RefreshLabelStore` is the
+  separate operation that does allow a reload, and is what simulates a restart.
+- **`AppDataRoot.RedirectTo` drops it**, for the same reason it refreshes the compiled-model cache: a
+  redirected process (the docs factory) must neither answer from the real user's store nor write into
+  it.
+
+Gate: `tests/Ui.Tests/VerilogATerminalLabelPersistenceTests.cs` — survival across a simulated restart,
+both the named and the blank-model key, the edited-file and deleted-file invalidations, an unreadable
+store degrading to a miss, and the redirect.

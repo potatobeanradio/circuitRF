@@ -798,45 +798,43 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- A compiled model file that could not be read, said at the moment it is chosen rather
-             than at Run — the parameters are left exactly as typed. -->
-        <TextBlock Grid.Row="3"
-                   Text="{Binding VerilogAFileNote}"
-                   IsVisible="{Binding HasVerilogAFileNote}"
-                   Foreground="{DynamicResource CrfWarningBrush}"
-                   FontSize="11"
-                   TextWrapping="Wrap"
-                   Margin="6,2,6,0"/>
+        <!-- ── Row 3: the VerilogA notes ────────────────────────────────────
+             A STACKPANEL, not three children of one grid row. As siblings in row 3 they were all
+             laid out at the same origin and PAINTED OVER EACH OTHER whenever more than one was
+             visible at once — which is the common case, since a file note and a thermal note arise
+             from the same act of choosing a file. A Grid row stacks nothing by itself. -->
+        <StackPanel Grid.Row="3" Spacing="0">
 
-        <TextBlock Grid.Row="3"
-                   Text="{Binding VerilogAUnknownParamsNote}"
-                   IsVisible="{Binding HasVerilogAUnknownParamsNote}"
-                   Foreground="{DynamicResource CrfWarningBrush}"
-                   FontSize="11"
-                   TextWrapping="Wrap"
-                   Margin="6,2,6,0"/>
+            <!-- A compiled model file that could not be read, said at the moment it is chosen rather
+                 than at Run — the parameters are left exactly as typed. -->
+            <TextBlock Text="{Binding VerilogAFileNote}"
+                       IsVisible="{Binding HasVerilogAFileNote}"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="6,2,6,0"/>
 
-        <!-- What the compile step said, when the File is Verilog-A source. Ordinary progress, so
-             it is rendered like the thermal note rather than in the warning brush. -->
-        <TextBlock Grid.Row="3"
-                   Text="{Binding VerilogACompileNote}"
-                   IsVisible="{Binding HasVerilogACompileNote}"
-                   Opacity="0.7"
-                   FontSize="11"
-                   TextWrapping="Wrap"
-                   Margin="6,2,6,0"/>
+            <TextBlock Text="{Binding VerilogAUnknownParamsNote}"
+                       IsVisible="{Binding HasVerilogAUnknownParamsNote}"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="6,2,6,0"/>
 
-        <!-- A thermal terminal deliberately left off. NOT the warning brush: this confirms the
-             ordinary configuration for a self-heating part, and colouring it as a problem would
-             invite the user to "fix" it by adding the pin — which floats the thermal node and
-             leaves the DC solve with no solution at all. -->
-        <TextBlock Grid.Row="3"
-                   Text="{Binding VerilogAThermalNote}"
-                   IsVisible="{Binding HasVerilogAThermalNote}"
-                   Opacity="0.7"
-                   FontSize="11"
-                   TextWrapping="Wrap"
-                   Margin="6,2,6,0"/>
+            <!-- What the compile step said, when the File is Verilog-A source, is NOT here: it goes
+                 to the Messages panel. See ParameterEditorViewModel.SyncVerilogAFromModelFile. -->
+
+            <!-- A thermal terminal deliberately left off. NOT the warning brush: this confirms the
+                 ordinary configuration for a self-heating part, and colouring it as a problem would
+                 invite the user to "fix" it by adding the pin — which floats the thermal node and
+                 leaves the DC solve with no solution at all. -->
+            <TextBlock Text="{Binding VerilogAThermalNote}"
+                       IsVisible="{Binding HasVerilogAThermalNote}"
+                       Opacity="0.7"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="6,2,6,0"/>
+        </StackPanel>
 
         <!-- ── Row 4: Footer — +/- group buttons + Help + optional Close ───── -->
         <StackPanel Grid.Row="4"

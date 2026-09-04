@@ -2552,3 +2552,79 @@ waiting to be restored: that path forwards every non-`__` parameter verbatim, so
 name `OpVars` there would silently shadow a kit model that happens to declare one. A `__`-prefixed
 key would be available, and would need somewhere in the kit palette to set it — a different question.
 A kit part therefore always reports what its model computes.
+
+## Node-collapse CHAINS are ordinary, and refusing them stopped a real model dead (2026-09-03)
+
+`Elaborator` refused any descriptor in which a slaved node's master was itself slaved:
+
+> ExtDevice 'X1' (type '<gan-hemt>'): node 0 is slaved to node 13, which is itself slaved — chains are
+> not supported.
+
+A published GaN HEMT model reports exactly that shape — its drain TERMINAL follows an internal node
+which itself follows another — so the model could not be elaborated at all.
+
+**A chain is not a malformed descriptor.** A model reports its collapses PAIRWISE and nothing obliges
+it to name the same end of the group each time; "A follows B" and "B follows C" in one descriptor is
+three nodes and one unknown. Reading only the first link is what makes it look impossible: it would
+give A the index of B, which is itself not the index the group settles on.
+
+Each slaved node is now resolved to the END of its chain and the whole chain becomes one group, so the
+existing **external-pin-always-wins** rule is unchanged — it simply sees the complete membership. That
+rule is what matters here: the chain in this model contains the drain terminal, and settling the group
+on an internal index would leave the device solving happily while disconnected from the user's net,
+with nothing on screen saying so.
+
+**A CYCLE is still refused**, and had to be distinguished explicitly: with every member following
+another member there is no node to settle on and the walk never terminates. The walk is bounded by the
+node count — a chain can visit each node at most once, so one extra step means it has re-entered a
+node it already left. Link bounds are checked inside the walk as well as at the head, since an
+intermediate link is otherwise validated only when the loop happens to reach that node.
+
+**Verified against the reported model, not only synthetically.** The user's own `netlist.cnl`
+elaborates and runs: a six-node chain resolves onto the drain net, one genuine internal unknown is
+minted, and `Cli sparam` writes its `.s2p`.
+
+*A separate, unrelated observation from that same run:* the test schematic leaves the model's BULK
+terminal on a net of its own that nothing else touches, so the S-parameter assembly reports it as an
+all-zero row and gmin regularizes it. That is a floating pin in the design, not a defect here.
+
+Gate: the four chain cases in `tests/Engine.Tests/External/SlavedNodeAllocationTests.cs`.
+
+## A dead worker was cached forever, and reported as a plumbing failure (2026-09-03)
+
+The owner placed a VerilogA component, worked for ten minutes, placed a second one pointing at a
+different `.va`, and got:
+
+> The device worker … the connection failed (Pipe is broken.) The worker process has exited.
+
+**`ExternalDeviceRegistry.Find` returned any cached provider without checking it still worked**
+(`if (_providers.TryGetValue(name, out var existing)) return existing;`). A provider backed by a
+separate PROCESS outlives none of that process's failures — once the worker exits its pipes are gone
+— so the registry handed the same corpse out on every later call, for the rest of the session. There
+is no recovering a worker: the fix is to start another, which nothing did.
+
+`IExternalDeviceProvider.IsUsable` is the signal, defaulted to `true` so no existing implementor
+changes; `DeviceWorkerProvider` answers it from the transport's liveness. `Find` now replaces a dead
+provider and resolves a fresh one, so a run that would have failed simply starts a new worker.
+
+**Only a provider the registry PRODUCED is replaced.** One the host registered is left exactly where
+it is and returned as before, dead or not: the registry knows no resolver that could rebuild it, so
+dropping it would turn "unusable" into "not registered at all" — a worse report, and one the host
+cannot act on. `_owned` is what distinguishes them, and it already existed.
+
+The dead provider is removed from every map BEFORE it is disposed, so a caller racing this one cannot
+pick it back out while it is being torn down.
+
+**What did NOT reproduce, and is worth recording so it is not re-investigated:** two components
+pointing at two different `.va` files in one session. Provider names are `VerilogA|<absolute path>`,
+so a second file gets its own provider and its own worker; driven headlessly through `Cli elab`, both
+elaborate cleanly. The failure is a worker that DIED, not one that was wrongly shared.
+
+**Still open, deliberately: a worker for a file nothing references any more stays alive.** Re-pointing
+a component's `File` from A to B leaves A's worker running until the workspace closes or the
+application exits (`ResolvedWorkerTeardownTests` covers those two). Ending it needs to know that no
+open design in ANY window still refers to it — which is why `_ownedBy` exists — so it is a lifetime
+design change rather than part of this fix. After this change a leftover worker is no longer harmful,
+only idle: a dead one is replaced automatically instead of blocking the run.
+
+Gate: `tests/Core.Tests/Devices/External/DeadProviderRestartTests.cs`.

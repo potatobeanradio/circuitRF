@@ -30,6 +30,13 @@ public sealed class DeviceWorkerProvider : IExternalDeviceProvider, IDisposable
     private IReadOnlyList<ExternalDeviceDescriptor>? _described;
     private bool _disposed;
 
+    /// <summary>
+    /// False once the worker process has exited (or this provider has been disposed). The registry
+    /// checks it before handing this provider out again — see
+    /// <see cref="IExternalDeviceProvider.IsUsable"/>.
+    /// </summary>
+    public bool IsUsable => !_disposed && _channel.IsAlive;
+
     public DeviceWorkerProvider(string name, IDeviceWorkerTransport transport)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

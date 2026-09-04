@@ -200,10 +200,47 @@ public static class ExternalDeviceRegistry
     /// this way is kept, so the cost of producing one — starting a process, reading a kit — is paid
     /// once rather than once per device.
     /// </summary>
+    /// <summary>
+    /// Forgets a provider whose external resource has died, and ends what is left of it.
+    ///
+    /// <para>Removed from every map BEFORE it is disposed, so a caller racing this one cannot pick
+    /// the dead provider back out of the registry while it is being torn down.</para>
+    /// </summary>
+    private static void DropDeadProvider(string name, IExternalDeviceProvider dead)
+    {
+        _providers.TryRemove(name, out _);
+        _owned.TryRemove(name, out _);
+        _ownedBy.TryRemove(name, out _);
+
+        if (dead is IDisposable d)
+        {
+            try { d.Dispose(); } catch { /* it is already dead; teardown must not throw */ }
+        }
+    }
+
     public static IExternalDeviceProvider? Find(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
-        if (_providers.TryGetValue(name, out var existing)) return existing;
+
+        if (_providers.TryGetValue(name, out var existing))
+        {
+            // A LIVE provider is the answer. A dead one is not: a provider backed by a worker
+            // process stops working the moment that process exits, and this cache would otherwise
+            // hand the same corpse out forever. The user saw that as "the connection failed (Pipe is
+            // broken.) The worker process has exited." on a component they had only just placed —
+            // a plumbing failure reported for something entirely recoverable, since the worker just
+            // needs starting again.
+            if (existing.IsUsable) return existing;
+
+            // Only a provider the registry PRODUCED is replaced here, because only then does it know
+            // which resolver to rebuild it from, and only then does it own the disposal. One the host
+            // registered is the host's to manage; it is left exactly where it is and returned as
+            // before, so nothing silently loses a provider it put there itself.
+            if (!_owned.ContainsKey(name)) return existing;
+
+            DropDeadProvider(name, existing);
+            // and fall through to resolve a replacement
+        }
 
         if (_resolving) return null;    // a resolver asked for the name it is resolving
 

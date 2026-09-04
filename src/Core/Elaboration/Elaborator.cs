@@ -1412,6 +1412,41 @@ public sealed class Elaborator
         // measured on a real model, four nodes collapse onto one internal bulk node and the fourth
         // is the bulk TERMINAL. Assigning as they are encountered would copy the internal index into
         // the first three before the terminal is reached.
+        // CHAINS ARE ORDINARY. A model reports its collapses pairwise, and nothing obliges it to
+        // name the same end of the group each time: "A follows B" and "B follows C" in one
+        // descriptor is three nodes and one unknown, not an error. A published GaN HEMT model does
+        // exactly this — its drain TERMINAL follows an internal node that itself follows another —
+        // and refusing the shape stopped the model elaborating at all.
+        //
+        // Reading only the first link is what makes a chain look impossible: it would give A the
+        // index of B, which is itself not the index the group settles on. So each slaved node is
+        // resolved to the END of its chain, and the whole chain becomes one group. The
+        // external-pin-wins rule below is then unchanged — it just sees the complete membership.
+        var slavedTo = new Dictionary<int, int>();
+        foreach (var node in d.Nodes)
+            if (node.SlavedTo is int m) slavedTo[node.Index] = m;
+
+        int RootOf(int start)
+        {
+            int cur = start;
+            // Bounded by the node count: a chain can visit each node at most once, so one extra
+            // step means it has re-entered a node it already left. That is a cycle, and there is no
+            // representative to settle on — every member is waiting for another member.
+            for (int step = 0; step <= d.NodeCount; step++)
+            {
+                if (!slavedTo.TryGetValue(cur, out int next)) return cur;
+                if (next < 0 || next >= d.NodeCount || next == cur)
+                    throw new ExternalDeviceException(
+                        $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {cur} is slaved to " +
+                        $"node {next}, which is not a valid other node of this device.");
+                cur = next;
+            }
+            throw new ExternalDeviceException(
+                $"ExtDevice '{childPath}' (type '{d.TypeId}'): the collapse chain from node {start} " +
+                "never reaches a node of its own — the model reports a cycle, each node in it " +
+                "following the next. One of them has to be the node the others collapse onto.");
+        }
+
         var groupOf = new Dictionary<int, List<int>>();
         foreach (var node in d.Nodes)
         {
@@ -1420,13 +1455,10 @@ public sealed class Elaborator
                 throw new ExternalDeviceException(
                     $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is slaved to " +
                     $"node {master}, which is not a valid other node of this device.");
-            if (d.Nodes.First(n => n.Index == master).SlavedTo is not null)
-                throw new ExternalDeviceException(
-                    $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is slaved to " +
-                    $"node {master}, which is itself slaved — chains are not supported.");
 
-            if (!groupOf.TryGetValue(master, out var members))
-                groupOf[master] = members = [master];
+            int root = RootOf(master);
+            if (!groupOf.TryGetValue(root, out var members))
+                groupOf[root] = members = [root];
             members.Add(node.Index);
         }
 

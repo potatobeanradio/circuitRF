@@ -31,6 +31,12 @@ public sealed class DeviceWorkerChannel(IDeviceWorkerTransport transport) : IDis
     public string Origin => transport.Origin;
 
     /// <summary>
+    /// Whether the worker process is still running. A worker that has exited cannot be revived —
+    /// its pipes are gone — so a caller holding one has to replace it rather than retry on it.
+    /// </summary>
+    public bool IsAlive => !_disposed && transport.IsAlive;
+
+    /// <summary>
     /// What the worker last wrote to its own error stream. Surfaced so a caller decoding a REPLY can
     /// attach it too: a worker reports a point it could not evaluate in-band and perfectly normally,
     /// and its log is then the only thing that says which of the several possible reasons it was.

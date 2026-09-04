@@ -105,6 +105,22 @@ public interface IExternalDeviceProvider
     /// <summary>Name this provider was registered under. Opaque; rendered, never interpreted.</summary>
     string Name { get; }
 
+    /// <summary>
+    /// Whether this provider can still serve requests. Default true — a provider with no external
+    /// resources is always usable, and this exists for the ones that have them.
+    ///
+    /// <para><b>What it is for.</b> A provider backed by a separate PROCESS outlives none of that
+    /// process's failures: once the worker exits, its pipes are gone and every later call fails
+    /// with a broken pipe. The registry hands out cached providers, so without this it would keep
+    /// handing out a dead one forever, and the user would be told the plumbing failed for something
+    /// that is entirely recoverable — the worker simply needs starting again.</para>
+    ///
+    /// <para>It answers "is this one still good", never "can one be made"; deciding to build a
+    /// replacement is the registry's job, because only the registry knows which resolver produced
+    /// this provider in the first place.</para>
+    /// </summary>
+    bool IsUsable => true;
+
     /// <summary>Every device type this provider exposes.</summary>
     IReadOnlyList<ExternalDeviceDescriptor> Describe();
 

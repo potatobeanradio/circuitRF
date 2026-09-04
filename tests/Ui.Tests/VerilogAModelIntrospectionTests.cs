@@ -132,6 +132,74 @@ public sealed class VerilogAModelIntrospectionTests
     public void SelectingFromAnEmptyDeclarationSetIsNull_NotAnException()
         => Assert.Null(VerilogAModelIntrospection.Select([], "anything"));
 
+    // ── Which model a file DEFAULTS to ────────────────────────────────────────
+    //
+    // Select stays strict: blank means "nothing named". Default is the separate question of what to
+    // OFFER when nothing is named, and the dialog writes its answer onto the component rather than
+    // leaving Model blank — CreateVerilogAModel refuses a blank Model outright once a file declares
+    // more than one type, so an unset component is one that fails at Run.
+
+    [Fact]
+    public void TheDefaultIsTheModelWithTheMostTerminals()
+    {
+        // A family ships its variants side by side and the fuller formulation carries the extra
+        // terminals — a substrate node, a self-heating node, or both.
+        var declared = new[]
+        {
+            new VerilogAModelInfo("REDUCED_VA",  3, 700),
+            new VerilogAModelInfo("FULL_VA",     4, 700),
+            new VerilogAModelInfo("FULL_T_VA",   5, 700),
+            new VerilogAModelInfo("JUNCTION_VA", 2, 120),
+        };
+
+        Assert.Equal("FULL_T_VA", VerilogAModelIntrospection.Default(declared)!.TypeId);
+    }
+
+    [Fact]
+    public void EqualTerminalCounts_AreBrokenByTheDeclaredParameterCount()
+    {
+        var declared = new[]
+        {
+            new VerilogAModelInfo("PLAIN_VA", 4, 809),
+            new VerilogAModelInfo("NQS_VA",   4, 812),
+        };
+
+        Assert.Equal("NQS_VA", VerilogAModelIntrospection.Default(declared)!.TypeId);
+    }
+
+    [Fact]
+    public void AFullyTiedRankIsBrokenByName_SoTheDefaultIsTheSameOnEveryMachine()
+    {
+        // Otherwise the default would follow whatever order the artefact happened to enumerate in,
+        // and two machines opening the same design would fill in different devices.
+        var forward = new[]
+        {
+            new VerilogAModelInfo("BBB_VA", 4, 700),
+            new VerilogAModelInfo("AAA_VA", 4, 700),
+        };
+        var reversed = new[]
+        {
+            new VerilogAModelInfo("AAA_VA", 4, 700),
+            new VerilogAModelInfo("BBB_VA", 4, 700),
+        };
+
+        Assert.Equal("AAA_VA", VerilogAModelIntrospection.Default(forward)!.TypeId);
+        Assert.Equal("AAA_VA", VerilogAModelIntrospection.Default(reversed)!.TypeId);
+    }
+
+    [Fact]
+    public void ASingleDeclaredModelIsItsOwnDefault()
+    {
+        // The common case by far: every published model file checked declares exactly one module.
+        var declared = new[] { new VerilogAModelInfo("MODELA_VA", 4, 809) };
+
+        Assert.Equal("MODELA_VA", VerilogAModelIntrospection.Default(declared)!.TypeId);
+    }
+
+    [Fact]
+    public void AnEmptyDeclarationSetHasNoDefault()
+        => Assert.Null(VerilogAModelIntrospection.Default([]));
+
     // ── What the dialog says about the three parameters ───────────────────────
 
     [Fact]

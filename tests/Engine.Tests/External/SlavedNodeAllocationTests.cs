@@ -252,6 +252,135 @@ public sealed class SlavedNodeAllocationTests : IDisposable
         }
     }
 
+    // ── Collapse CHAINS ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Five nodes in a CHAIN: the external pin 0 follows internal node 3, which itself follows
+    /// internal node 2. One group of three, and the pin is the member carrying the user's net.
+    ///
+    /// <para>This is the shape a published GaN HEMT model reports — its drain terminal follows an
+    /// internal node that follows another — and reading only the first link cannot resolve it: pin 0
+    /// would take node 3's index, which is not the index the group settles on.</para>
+    /// </summary>
+    private sealed class ChainedProvider(string name, bool cyclic = false) : IExternalDeviceProvider
+    {
+        public const string TypeName = "Chained";
+        public const int    PinA = 0, PinB = 1, Root = 2, Mid = 3, Free = 4, NodeCount = 5;
+
+        public string Name { get; } = name;
+
+        private readonly ExternalDeviceDescriptor _descriptor = new(
+            TypeId: TypeName, DisplayName: "Chain-collapsing device (synthetic)",
+            ExternalPinCount: 2, InternalNodeCount: 3, Parameters: [],
+            Nodes:
+            [
+                // PinA -> Mid -> Root. Declared with the chain's HEAD first, so an implementation
+                // that resolves in declaration order meets the unresolved link before the link that
+                // would resolve it.
+                new ExternalNodeDescriptor(PinA, External: true,  NodeQuantityKind.Electrical, "a",
+                                           SlavedTo: cyclic ? Mid : Mid),
+                new ExternalNodeDescriptor(PinB, External: true,  NodeQuantityKind.Electrical, "b"),
+                new ExternalNodeDescriptor(Root, External: false, NodeQuantityKind.Electrical, "root",
+                                           SlavedTo: cyclic ? Mid : null),
+                new ExternalNodeDescriptor(Mid,  External: false, NodeQuantityKind.Electrical, "mid",
+                                           SlavedTo: Root),
+                new ExternalNodeDescriptor(Free, External: false, NodeQuantityKind.Electrical, "free"),
+            ]);
+
+        public IReadOnlyList<ExternalDeviceDescriptor> Describe() => [_descriptor];
+
+        public IExternalDeviceInstance Create(string typeId, IReadOnlyDictionary<string, string> p)
+            => new Instance(_descriptor);
+
+        private sealed class Instance(ExternalDeviceDescriptor descriptor) : IExternalDeviceInstance
+        {
+            public ExternalDeviceDescriptor Descriptor { get; } = descriptor;
+
+            public ExternalDeviceEvaluation Evaluate(IReadOnlyList<double> v)
+            {
+                var i = new double[NodeCount];
+                var g = new double[NodeCount, NodeCount];
+                const double gd = 0.01;
+                i[Root] = gd * (v[Root] - v[PinB]);
+                i[PinB] = gd * (v[PinB] - v[Root]);
+                g[Root, Root] =  gd; g[Root, PinB] = -gd;
+                g[PinB, PinB] =  gd; g[PinB, Root] = -gd;
+                i[Free]       = 0.001 * v[Free];
+                g[Free, Free] = 0.001;
+                return new ExternalDeviceEvaluation(i, new double[NodeCount], g, new double[NodeCount, NodeCount]);
+            }
+
+            public void Dispose() { }
+        }
+    }
+
+    private static ElaboratedNetlist ElaborateChained(bool cyclic = false)
+    {
+        ExternalDeviceRegistry.Clear();
+        ExternalDeviceRegistry.Register(new ChainedProvider(Provider, cyclic));
+
+        var (lib, tb) = new CnlReader().Read(
+            "Term:T1  a  0  Num=1 Z=50 Ohm\n" +
+            "Term:T2  b  0  Num=2 Z=50 Ohm\n" +
+            $"ExtDevice:X1  a  b  Provider={Provider} Type={ChainedProvider.TypeName}\n");
+        return new Elaborator(lib).Elaborate(tb);
+    }
+
+    [Fact]
+    public void ACollapseChain_ResolvesToOneGroup_RatherThanBeingRefused()
+    {
+        // The refusal this replaces stopped a published GaN HEMT model elaborating at all: "node 0
+        // is slaved to node 13, which is itself slaved — chains are not supported."
+        var nl = ElaborateChained();
+        var ec = nl.Components.Single(c => c.Model is ExternalDeviceModel);
+
+        int pinA = ec.Nodes[2 * ChainedProvider.PinA];
+        int mid  = ec.Nodes[2 * ChainedProvider.Mid];
+        int root = ec.Nodes[2 * ChainedProvider.Root];
+
+        // All three are ONE unknown — that is what a chain of collapses means.
+        Assert.Equal(pinA, mid);
+        Assert.Equal(pinA, root);
+    }
+
+    [Fact]
+    public void AChainContainingAPin_SettlesOnTheUsersNet_NotAnInternalIndex()
+    {
+        // The whole point of the external-pin-wins rule, which a chain must not defeat: give the
+        // group an internal index and the device solves happily, disconnected from net "a", with
+        // nothing on screen saying so.
+        var nl = ElaborateChained();
+        var ec = nl.Components.Single(c => c.Model is ExternalDeviceModel);
+
+        int expected = nl.Nodes.GetOrAssign("a");
+        Assert.Equal(expected, ec.Nodes[2 * ChainedProvider.PinA]);
+        Assert.Equal(expected, ec.Nodes[2 * ChainedProvider.Mid]);
+        Assert.Equal(expected, ec.Nodes[2 * ChainedProvider.Root]);
+
+        // And the node that follows nothing still gets an unknown of its own.
+        Assert.NotEqual(expected, ec.Nodes[2 * ChainedProvider.Free]);
+    }
+
+    [Fact]
+    public void AChainedDeviceIsNotSingular()
+    {
+        var nl = ElaborateChained();
+        SParameterEngine.Run(nl, [1e9, 2e9]);
+
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("singular", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("zero row", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ACycleOfCollapses_IsStillRefused()
+    {
+        // Allowing chains must not quietly allow a cycle: with every member following another
+        // member there is no node for the group to settle on, and following the links never
+        // terminates.
+        var ex = Assert.Throws<ExternalDeviceException>(() => ElaborateChained(cyclic: true));
+        Assert.Contains("cycle", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheSParameterAssemblyIsNotSingular()
     {
