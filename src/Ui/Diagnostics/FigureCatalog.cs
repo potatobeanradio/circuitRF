@@ -233,6 +233,37 @@ public static class FigureCatalog
             "The same panel with a layout resolved: the kernel the registry chose and why, the "
           + "resolved ports, the mesh report and the technology's stackup."),
 
+        // ── Settings, one figure per tab ──────────────────────────────────────────
+        // 720x506 is the dialog's OWN declared size (720x540) less the synthetic title bar, so a
+        // reader is looking at the window their own build opens rather than a re-proportioned one.
+        // The tab strip is in every figure: it is how the page's four sections are told apart.
+
+        new("settings-general", DocSettingsFixtures.General,
+            DocSettingsFixtures.Width, DocSettingsFixtures.Height,
+            WindowFrame.Titled("circuitRF Settings"),
+            "Settings, General: what circuitRF does on launch, how a copied picture is coloured, "
+          + "whether an export is design-rule checked first, and how the Messages panel stamps its "
+          + "lines. Help at the leading edge of the footer opens this chapter."),
+
+        new("settings-security", DocSettingsFixtures.Security,
+            DocSettingsFixtures.Width, DocSettingsFixtures.Height,
+            WindowFrame.Titled("circuitRF Settings"),
+            "Settings, Security and Permissions: everything that decides what circuitRF is allowed "
+          + "to run or to fetch - a kit's artwork scripts, a kit's device worker, automatic updates, "
+          + "and the Verilog-A compiler. Each control carries its explanation as a tooltip."),
+
+        new("settings-color-theme", DocSettingsFixtures.ColorTheme,
+            DocSettingsFixtures.Width, DocSettingsFixtures.Height,
+            WindowFrame.Titled("circuitRF Settings"),
+            "Settings, Color Theme: every colour role the application paints with, edited one at a "
+          + "time in RGBA or hex, separately for the light and the dark variant."),
+
+        new("settings-wirebonds", DocSettingsFixtures.Wirebonds,
+            DocSettingsFixtures.Width, DocSettingsFixtures.Height,
+            WindowFrame.Titled("circuitRF Settings"),
+            "Settings, Wirebonds: the defaults a newly drawn wire is created with, and the built-in "
+          + "assembly rule for how close two wires may pass."),
+
         new("cv-editor", DocCvFixtures.Editor, 620, 500,
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),

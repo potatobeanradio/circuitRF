@@ -50,7 +50,7 @@ public static class DocAnchors
     public static readonly IReadOnlyList<string> WholePages =
         ["index.html", "reference/components.html", "reference/nonlinear-capacitor.html",
          "reference/em-setup.html", "reference/harmonicarf.html", "reference/wbond.html",
-         "reference/match.html"];
+         "reference/match.html", "reference/settings.html"];
 
     /// <summary>Every destination the application can navigate to, deduplicated.</summary>
     public static IReadOnlyList<Link> All()

@@ -23,6 +23,7 @@ new-user-guide/index.html   | Libraries, cells, test benches and analyses, expla
 == Core concepts
 reference/index.html            | The Reference Guide contents, and the in-app Help anchor scheme.
 reference/workspace.html        | The workspace window: documents, tool panels, docking, and the folder behind it all.
+reference/settings.html         | The Settings dialog, tab by tab: launch, permissions, colour theme and wirebond defaults.
 reference/units.html            | DBU, display units, the snap grid, and how to type a value with an SI prefix.
 reference/expressions.html      | Variables, cell parameters, functions and conditionals — one expression language.
 reference/grid.html             | The schematic grid, wires, and how connectivity is decided.

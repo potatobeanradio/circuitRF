@@ -51,6 +51,16 @@ public partial class SettingsView : Window
         Loaded += OnLoaded;
     }
 
+    /// <summary>
+    /// Populate every tab exactly as opening the dialog does.
+    ///
+    /// <para>For the User-Docs factory only. It captures this dialog's CONTENT hosted inside its own
+    /// window (a Window cannot live inside another Window), so this window is never shown and its
+    /// <c>Loaded</c> never fires — without this the figure would be a dialog of empty combo boxes and
+    /// unticked checkboxes, which is a picture of nothing the application ever does.</para>
+    /// </summary>
+    internal void PopulateForCapture() => OnLoaded(this, new RoutedEventArgs());
+
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
         LoadGeneralPrefs();
@@ -567,6 +577,19 @@ public partial class SettingsView : Window
             SaveThemeButton.Content = $"Save failed: {ex.Message[..Math.Min(40, ex.Message.Length)]}";
         }
     }
+
+    // ── Help ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Opens the Settings chapter of the User Documentation — every tab of this dialog, control by
+    /// control. It is the other half of the tooltip pass: the short sentence lives on the control,
+    /// and the paragraph that used to sit under it lives on that page.
+    /// </summary>
+    private void OnHelpClick(object? sender, RoutedEventArgs e)
+        => DocLauncher.Open(SettingsDocPage);
+
+    /// <summary>The page this dialog's Help button opens. Held by <c>DocAnchors.WholePages</c>.</summary>
+    internal const string SettingsDocPage = "reference/settings.html";
 
     // ── Revert ───────────────────────────────────────────────────────────────
 

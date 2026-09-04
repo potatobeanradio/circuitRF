@@ -115,7 +115,7 @@
       "Index": 10,
       "Slot": 12,
       "Id": "",
-      "Tooltip": "Fit All  (Ctrl\u002B0)",
+      "Tooltip": "Fit All  (F, Ctrl\u002B0)",
       "Icon": "FitToPageOutline",
       "Command": "RelayCommand",
       "Kind": "button"

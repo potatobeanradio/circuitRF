@@ -57,6 +57,7 @@ you.</p>
                                               (#rectangular #smith #polar #table)
        Nonlinear-C / C-V Editor Help      ->  reference/nonlinear-capacitor.html
        EM Setup panel Help                ->  reference/em-setup.html
+       Settings dialog "Help"             ->  reference/settings.html
      The list the application can emit lives in src/Ui/Diagnostics/DocAnchors.cs, and the generator
      fails if any of it does not resolve. Do not hand-maintain the correspondence.
      ===================================================================== -->

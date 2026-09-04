@@ -18327,3 +18327,49 @@ resolves through is memoised on the same terms.
 
 Gate: `tests/Ui.Tests/ReferencedWorkspaceContextMenuTests.cs` (10 tests) and three added methods in
 `RecentWorkspaceContextMenuTests`.
+
+## Settings: helper text became tooltips, and the dialog got a Help button (2026-09-03)
+
+Four standing paragraphs on **Security & Permissions** — the device-worker consent, automatic
+updates, release notes, and the Verilog-A compiler — made that tab read as prose with controls in
+it. Each moved onto its own control as a `ToolTip.Tip`; the long form moved to a new User
+Documentation chapter the dialog now links to.
+
+Three things worth knowing before touching this again:
+
+- **A paragraph tooltip must be a `TextBlock`, not a string.** Avalonia hands a bare `ToolTip.Tip`
+  string to a ContentPresenter that does not wrap, so a 400-character tip renders as one line running
+  off the screen edge. The repo idiom (`LayoutRulerPropertiesView`) is
+  `<ToolTip.Tip><TextBlock TextWrapping="Wrap" MaxWidth="…" Text="…"/></ToolTip.Tip>`, and
+  `SettingsDialogHelpAndTooltipsTests` now holds every one of them to it.
+- **The text was MOVED, not deleted, and one existing test depended on that.**
+  `UpdateSettingsWiringTests.TheHelpTextNamesAllThreeApplications` greps the `.axaml` for
+  "circuitRF", "harmonicaRF" and "wBond" — it keeps passing only because a tooltip lives in the same
+  file. Deleting the sentence instead of relocating it would have failed there, which is the right
+  place for it to fail.
+- **`Revert` moved to the trailing group.** Help at the leading edge is the convention on all three
+  platforms, and Revert throws the colour edits away — a destructive button in the corner where a
+  reader reaches for documentation is the wrong pairing. It leads the trailing group: Revert, Cancel,
+  Close.
+
+**The figures needed a seam.** `SettingsView` populates every tab from `Loaded`, and the docs factory
+captures a dialog's CONTENT hosted inside its own window — so this window is never shown and `Loaded`
+never fires. Without a way in, the four new figures would have been a dialog of empty combo boxes and
+unticked checkboxes, silently: nothing errors, the capture just shows an unpopulated dialog.
+`SettingsView.PopulateForCapture` is that seam and has no other caller. The values in the figures are
+first-launch defaults because `tools/DocGen` redirects `AppDataRoot` before anything reads a
+preference — the same mechanism that keeps the workspace capture off the generating machine's
+settings.
+
+**Noticed while generating, not fixed:** the Color Theme tab's RGBA and hex boxes declare
+`FontFamily="Courier New,Consolas,monospace"` and circuitRF ships **none** of those, so Skia
+substitutes a platform font and bakes its name into the SVG. The generator's own font pass redirects
+it to DejaVu Sans, so the figure is correct and the `NoEmittedFigureNamesAFontCircuitRfDoesNotShip`
+gate stays green — but the application is asking for a typeface it does not carry, and on a machine
+with no monospace of those names the boxes render in whatever the platform picks. `pdk-import-report`
+has the same shape for a different reason. Fixing it means naming a shipped face.
+
+Gates: `tests/Ui.Tests/SettingsDialogHelpAndTooltipsTests.cs` (10 tests), plus the docs factory's own
+— `DocsFactoryTests` renders all four `settings-*` figures in both variants, and
+`EveryDeepLinkDocLauncherCanEmitResolvesInTheGeneratedHtml` now covers `reference/settings.html`
+because it is in `DocAnchors.WholePages`.

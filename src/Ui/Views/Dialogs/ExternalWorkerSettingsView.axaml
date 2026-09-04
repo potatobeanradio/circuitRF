@@ -10,7 +10,7 @@
     of the two applications that resolves kit providers.
 
     ONE preferences.json serves all three applications (AppDataRoot is a single directory), so this
-    governs circuitRF, harmonicaRF and wBond together. The help text says so.
+    governs circuitRF, harmonicaRF and wBond together. The checkbox's tooltip says so.
 
     DEFAULT ON. Every kit installed before this checkbox existed evaluates its devices through a
     worker; shipping it off would break those workspaces silently at the next Run.
@@ -20,17 +20,18 @@
     <TextBlock Text="External Device Workers" FontSize="11" FontWeight="SemiBold"
                Opacity="0.55" Margin="0,0,0,6" Name="SectionHeader"/>
 
-    <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto">
+    <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto">
       <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
                  Name="AllowWorkersCheck"
                  Content="Allow kits to run their own device workers" FontSize="12"
-                 IsCheckedChanged="OnAllowWorkersChanged"/>
+                 IsCheckedChanged="OnAllowWorkersChanged">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="A kit can ship its own program for evaluating its device models, and circuitRF starts it when a design first uses one of that kit's parts. Turning this off means those parts cannot be simulated; everything else in the design is unaffected. This setting is shared by circuitRF, harmonicaRF and wBond."/>
+        </ToolTip.Tip>
+      </CheckBox>
 
       <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
-                 Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
-                 Text="A kit can ship its own program for evaluating its device models, and circuitRF starts it when a design first uses one of that kit's parts. Turning this off means those parts cannot be simulated; everything else in the design is unaffected. This setting is shared by circuitRF, harmonicaRF and wBond."/>
-
-      <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
                  Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
                  Name="WorkerOverrideText" IsVisible="False" Text=""/>
     </Grid>

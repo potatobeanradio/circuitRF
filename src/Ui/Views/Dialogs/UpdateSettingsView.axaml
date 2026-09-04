@@ -12,7 +12,7 @@
     handlers live here rather than being written twice.
 
     ONE preferences.json serves all three applications (AppDataRoot is a single directory), so this
-    checkbox governs circuitRF, harmonicaRF and wBond together. The help text says so, because the
+    checkbox governs circuitRF, harmonicaRF and wBond together. Its tooltip says so, because the
     scope of a checkbox should not be a surprise.
   -->
 
@@ -20,41 +20,50 @@
     <TextBlock Text="Updates" FontSize="11" FontWeight="SemiBold"
                Opacity="0.55" Margin="0,0,0,6" Name="SectionHeader"/>
 
-    <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+    <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
       <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
                  Name="AutoUpdateCheck"
                  Content="Automatic updates" FontSize="12"
-                 IsCheckedChanged="OnAutoUpdateChanged"/>
-      <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
-                 Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
-                 Text="Downloads new versions in the background and installs them the next time the application is relaunched. This setting is shared by circuitRF, harmonicaRF and wBond."/>
+                 IsCheckedChanged="OnAutoUpdateChanged">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="Downloads new versions in the background and installs them the next time the application is relaunched. This setting is shared by circuitRF, harmonicaRF and wBond."/>
+        </ToolTip.Tip>
+      </CheckBox>
 
       <!-- A sub-item, and disabled while automatic updates are off. -->
-      <CheckBox  Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+      <CheckBox  Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                  Name="IncludeBetasCheck"
                  Content="Include beta releases" FontSize="12"
                  Margin="20,8,0,0"
-                 IsCheckedChanged="OnIncludeBetasChanged"/>
+                 IsCheckedChanged="OnIncludeBetasChanged">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="Includes pre-release builds when looking for a new version. Turning it off discards a staged beta; a staged stable version is left alone."/>
+        </ToolTip.Tip>
+      </CheckBox>
 
       <!-- NOT a sub-item of "Automatic updates", and deliberately not disabled with it: a version
            installed by hand is still a new version, and its notes are still what the user wants to
            read. It governs the dialog only, never whether a version is recorded as seen. -->
-      <CheckBox  Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2"
+      <CheckBox  Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                  Name="ReleaseNotesCheck"
                  Content="Show release notes after an update" FontSize="12"
                  Margin="0,10,0,0"
-                 IsCheckedChanged="OnShowReleaseNotesChanged"/>
-      <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
-                 Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
-                 Text="Opens the release notes once, the first time a newly installed version is launched. Never on a new installation, and never twice for the same version."/>
+                 IsCheckedChanged="OnShowReleaseNotesChanged">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="Opens the release notes once, the first time a newly installed version is launched. Never on a new installation, and never twice for the same version."/>
+        </ToolTip.Tip>
+      </CheckBox>
 
       <!-- Costs nothing, and it is the first thing anyone looks at when wondering whether the
            feature is working at all. Read from the updater's state file; never written here. -->
-      <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
+      <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
                  Opacity="0.55" Margin="0,10,0,0"
                  Name="LastCheckedText" Text="Last checked: never"/>
 
-      <TextBlock Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
+      <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11"
                  Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
                  Name="UpdateOverrideText" IsVisible="False" Text=""/>
     </Grid>

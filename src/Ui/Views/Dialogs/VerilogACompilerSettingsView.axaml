@@ -25,21 +25,23 @@
     <TextBlock Text="Verilog-A Compiler" FontSize="11" FontWeight="SemiBold"
                Opacity="0.55" Margin="0,0,0,6" Name="SectionHeader"/>
 
-    <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto">
+    <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto">
       <TextBox   Grid.Row="0" Grid.Column="0" Name="CompilerBox" FontSize="12"
                  Watermark="Leave blank to use the compiler on PATH"
-                 LostFocus="OnCompilerCommitted"/>
+                 LostFocus="OnCompilerCommitted">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="circuitRF loads COMPILED models (.osdi). Point a component at Verilog-A source (.va) instead and circuitRF builds it once with the compiler named here, caching the result until the source changes. circuitRF ships no compiler and includes none — install one of your choosing. This setting is shared by circuitRF, harmonicaRF and wBond."/>
+        </ToolTip.Tip>
+      </TextBox>
       <Button    Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11"
-                 Padding="8,3" Margin="6,0,0,0" Click="OnBrowseForCompiler"/>
+                 Padding="8,3" Margin="6,0,0,0" Click="OnBrowseForCompiler"
+                 ToolTip.Tip="Pick the compiler executable from disk"/>
       <Button    Grid.Row="0" Grid.Column="2" Content="Test" FontSize="11"
                  Padding="8,3" Margin="6,0,0,0" Click="OnTestCompiler"
                  ToolTip.Tip="Run it and report what it says it is"/>
 
       <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" FontSize="11"
-                 Opacity="0.6" TextWrapping="Wrap" Margin="0,4,0,0"
-                 Text="circuitRF loads COMPILED models (.osdi). Point a component at Verilog-A source (.va) instead and circuitRF builds it once with the compiler named here, caching the result until the source changes. circuitRF ships no compiler and includes none — install one of your choosing. This setting is shared by circuitRF, harmonicaRF and wBond."/>
-
-      <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" FontSize="11"
                  Opacity="0.75" TextWrapping="Wrap" Margin="0,6,0,0"
                  Name="CompilerStatusText" IsVisible="False" Text=""/>
     </Grid>
