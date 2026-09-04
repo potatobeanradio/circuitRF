@@ -221,13 +221,8 @@ layer then steps between its two states as one surface.
 
 ### Not fixed, and worth knowing
 
-- **The same merge exists in compiled INSTANCE geometry and this fix does not reach it.**
-  `CompileCell` folds every primitive in a chunk into one `chunk.Geometry` with no winding guard. The
-  owner's workspace already has this board placed as a 10x10 array, and its Drill Map layer renders as
-  a solid slab of layer colour with the chart gone entirely — worse than the top-level case, and not
-  zoom-dependent. Fixing it means a per-chunk list of individually-drawn ring paths, which also has to
-  answer to the elision and coarse-collapse tiers; deliberately left alone rather than folded into
-  this change.
+- ~~**The same merge exists in compiled INSTANCE geometry and this fix does not reach it.**~~
+  **Done — see the section immediately below.** Left undone here on purpose, and reported the same day.
 - **The outline budget is far more conservative than the measurement supports on a file like this.**
   `CanAffordOutlines` scales the whole document's STORED vertex count by viewport area and ignores
   where the viewport is (on purpose — the alternative trades shape-popping for pan-popping). 91% of
@@ -236,6 +231,114 @@ layer then steps between its two states as one surface.
   whole visible layer measures 9.5 ms. Counting DECIMATED vertices instead is not the fix: they rise
   with zoom (105,943 at full extent, 396,596 at 10x) while the on-screen count falls, so the estimate
   would invert. The error is positional, and nothing viewport-independent can remove it.
+
+
+## The instance half of the drill map, and the alpha rule it had also never been given (2026-09-04)
+
+Follow-up to the section above, closing the first of its two "not fixed" items. Owner report: layout
+INSTANCE rendering did not appear to have the drill-map fix in it, and a boolean-OR still showed on the
+drill-hole geometry at some zoom levels. Both halves of that fix were top-level only.
+
+Diagnosed against the owner's own workspace — a 10x10 array of a 3,284-shape imported board — with a
+scratch harness whose oracle is the strongest one available here: **a placement of a cell must render
+what the cell itself renders.** The same board's shapes are drawn once as top-level geometry and once
+through a placement at the identical viewport, and the two frames are compared pixel by pixel.
+
+### 1. `CompileCell` had no winding guard
+
+`DrawLayer` got `IsRingGeometry` for the R-L2c-2 merge tier. `CompileCell` folds every primitive of a
+chunk into one `chunk.Geometry` for exactly the same reason and never got it, so a closed `PathShape`'s
+ring cancelled against its neighbours under NonZero.
+
+**Worse than the top-level case, and it does not vary with zoom** — a compiled chunk always merges,
+where the top-level tier only merges past `MergeShapeCountThreshold` and a culled count.
+
+Measured on the owner's board, placement against top-level, every LOD tier off so the only variable is
+how the two paths BUILD geometry (pixels the placement adds that the top-level frame does not draw):
+
+| zoom | unguarded | guarded |
+|-----:|----------:|--------:|
+|   1x |    81,376 |     102 |
+|   2x |   172,073 |     656 |
+|   3x |   107,035 |     483 |
+|   8x |     4,695 |      10 |
+
+At 2x that is a placement painting **49% more lit pixels than the artwork has** — the flood the report
+called a boolean OR. With the guard, agreement is ≤0.4% at every zoom on the default option set too,
+which is anti-aliasing along shared edges and draw order.
+
+**Ring paths are kept per chunk (`CompiledChunk.Rings`) and drawn individually, and only the exact
+tier pays for it.** The elision tier substitutes a grown bbox per primitive and the coarse tier a
+bounds rect per chunk, so a ring's contribution there is a RECT and not its own geometry — the same
+reasoning that lets a sub-pixel closed path stay in the top-level merge aggregate. Its bounds therefore
+go into `PrimitiveBounds` like any other primitive's, leaving both tiers, their coverage arithmetic and
+the culling bounds untouched. **A nested cell's rings stay individual all the way up**, because merging
+them in the PARENT reintroduces one level higher exactly the cancellation they were kept out of below.
+
+### 2. A substitution must not be brighter — the instance tier had the same defect
+
+The second half of the same commit, applied here for the same reason: the per-chunk visibility floor
+and the elision/coarse paints all painted SOLID while ordinary chunks kept the layer's partial fill
+alpha, so with outlines off one layer rendered in two brightnesses. `substituteAlpha` is now the
+frame's own outline decision, exactly as in `DrawLayer`. Where the frame outlines, nothing changes.
+
+### 3. The coarse tier's coverage number is an area sum, and an area sum double-counts overlap
+
+Reported separately once the first two were in: zooming OUT of the array showed **extra rectangles in
+the instance that the same artwork does not show at top level**. It is the L2f coarse tier, and it is
+its own defect rather than more of the merge one.
+
+`CompiledChunk.CoverageAt` sums the primitives' AREAS and divides by the chunk's bounds area. Its own
+doc states the justification honestly — a REGULAR field on a uniform pitch, where "the grown geometry
+has at least as much area as the box holding it" really is the condition for its union to BE that box.
+**An area sum double-counts overlap**, so on content whose primitives overlap heavily or pile into one
+corner — an imported board's copper is both — it reads at or above 1 while most of the chunk is empty.
+That chunk then collapses to its bounds and paints the emptiness solid.
+
+Measured, placement against top-level at the same viewport, pixels the placement adds that the
+top-level frame does not draw:
+
+| board width | before | after | with the tier off |
+|------------:|-------:|------:|------------------:|
+|      240 px |  3,220 |    12 |                12 |
+|      115 px |    686 |    14 |                14 |
+|       58 px |    145 |     4 |                 4 |
+
+Visually that was the board's own U-shaped notch and the gap below its drill chart filled in as solid
+blocks. Disabling the elision tier instead changed none of it — the bisect is unambiguous.
+
+**The fix is a second gate, not a different number**: an 8x8 per-chunk occupancy bitmap (one `ulong`,
+built once at compile time) of which cells of the bounds any primitive's bbox TOUCHES, and a collapse
+now also requires every cell to be touched. Being fully occupied is a **necessary** condition for the
+grown union to fill the bounds, so the extra gate can only refuse a collapse, never permit a wrong one
+— an untouched cell is by definition a region no primitive reaches. Asking it of the UNGROWN bboxes is
+the conservative side of the same inequality (growth only adds), which costs a little of the tier's
+saving and no geometry; that is the stance `FloorExtent` already takes one field above.
+
+**The tier it was built for is untouched**, and that is asserted rather than assumed: a 200x200 field
+of 0.42 um squares on a 1.26 um pitch still batches to exactly ONE draw call, because every cell of an
+8x8 grid over a ~256-primitive chunk holds several of them.
+
+### What this did NOT turn out to be
+
+- **Hole-carrying polygons are still safe merged, now verified on the file rather than argued.** With
+  outlines held constant, the merge tier deletes ZERO pixels of the Drill Map's 1,564 hole-carrying
+  drill symbols at every zoom on the 14-step ladder. The earlier section's reasoning stands.
+- **`NormalizeOuterWinding` reads the shape's STORED vertex list while the path is built from the
+  DECIMATED one** — a genuine inconsistency, and the obvious suspect for a zoom-dependent winding
+  flip, since the tolerance is a function of zoom. It was measured and **is not reachable in
+  practice**: the signed area's SIGN survives decimation for simple polygons (swept over glyph-stroke
+  outlines — spiral, circular and zig-zag thin bands — at every tolerance octave, no flip), and only
+  self-intersecting scribbles flip it. Left alone rather than "fixed" on suspicion; if it is ever
+  touched, normalize on the list the path was actually built from.
+
+Gates: `tests/Ui.Tests/LayoutInstanceRingGeometryTests.cs` for 1 and 2, and two new tests in
+`tests/Ui.Tests/LayoutInstanceCoarseTierTests.cs` for 3 (the piled-into-one-corner chunk, and the
+uniform field that must still collapse to one draw call). Each test was mutation-checked — the guard
+and the alpha rule were each disabled in turn and the relevant tests confirmed to go red. Note the
+fixture trap that cost a round: **a NESTED `CellRef` resolves against the referring cell's own layout
+folder** (`CellHierarchy.LayoutBaseDirOf`), not the workspace the top-level view resolves in; get it
+wrong and the cell silently renders as the broken-instance placeholder, which reads as lost geometry.
 
 
 ## TM2 — moves across a shared library: the forwarding record (2026-09-04)

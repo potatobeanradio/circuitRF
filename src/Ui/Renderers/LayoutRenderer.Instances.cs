@@ -67,6 +67,28 @@ public static partial class LayoutRenderer
     {
         public SKRect Bounds;
         public readonly SKPath Geometry = new();
+
+        /// <summary>The primitives in this chunk that may NOT share <see cref="Geometry"/>, each kept as
+        /// its own path and drawn on its own — see <see cref="IsRingGeometry"/> for the theorem and
+        /// <c>src/Ui/RESOLVED.md</c>, "The drill map rendered differently at every zoom step", for the
+        /// board it was found on.
+        ///
+        /// <para>A closed <see cref="PathShape"/> centreline strokes to a RING whose winding is whatever
+        /// the authoring tool emitted, and <see cref="Geometry"/> is filled NonZero, so two such rings
+        /// folded into it cancel — geometry DELETED, not coarsened. <c>DrawLayer</c> was given this guard
+        /// for the top-level merge tier; <see cref="CompileCell"/> folds every primitive of a chunk into
+        /// one path for exactly the same reason and had never been given it, so a PLACEMENT of the same
+        /// imported board rendered as a solid slab with its drill chart gone entirely — worse than the
+        /// top-level case, because a compiled chunk always merges and so it did not even vary with zoom.
+        ///
+        /// <para>Only the EXACT-geometry tier pays for this. The elision and coarse tiers substitute a
+        /// grown bbox per primitive and a bounds rect per chunk respectively, and a ring's contribution
+        /// there is a RECT rather than its own geometry — the same reasoning that lets a sub-pixel closed
+        /// path stay in the top-level merge aggregate. Its bounds therefore go into
+        /// <see cref="PrimitiveBounds"/> exactly as any other primitive's do, so both of those tiers,
+        /// their coverage arithmetic and the culling bounds are all unchanged.</para></summary>
+        public SKPath[] Rings = [];
+
         public SKRect[] PrimitiveBounds = [];
         /// <summary>Largest single-primitive extent in this chunk, in cell-local path space (microns) —
         /// what the stroke-elision decision is taken against, so one oversized primitive in an otherwise
@@ -112,6 +134,38 @@ public static partial class LayoutRenderer
         public double AreaSum, SemiPerimeterSum;
 
         public double BoundsArea;
+
+        /// <summary>An <see cref="OccupancyGrid"/> x <see cref="OccupancyGrid"/> bitmap of which cells of
+        /// <see cref="Bounds"/> any primitive's bbox TOUCHES — the second half of the coarse tier's gate,
+        /// and the half that keeps it honest on content it was not designed for.
+        ///
+        /// <para><b>Why <see cref="CoverageAt"/> is not enough on its own.</b> That number is a SUM OF
+        /// AREAS divided by the bounds area, and its stated justification is a REGULAR field on a uniform
+        /// pitch — a via array, which is what the tier was built for — where "the grown geometry has at
+        /// least as much area as the box holding it" really does mean the union IS that box. An area sum
+        /// DOUBLE-COUNTS overlap, so on content whose primitives overlap heavily or pile into one corner
+        /// of a chunk (an imported board's copper is both) it reads at or above 1 while most of the
+        /// chunk is empty. The chunk then collapses to a solid rect painted over that emptiness.</para>
+        ///
+        /// <para><b>Owner report, 2026-09-04:</b> zooming out of a layout holding an instance array
+        /// showed extra rectangles the same artwork does not show at top level. Measured on that board,
+        /// a placement 240 device pixels wide painted 3,220 pixels the top-level frame does not — 29%
+        /// over — and the board's own notch and the gap below its drill chart were filled solid. With
+        /// the coarse tier off it is 12 pixels; the elision tier accounts for none of it.</para>
+        ///
+        /// <para><b>Fully occupied is a NECESSARY condition for "the grown union fills the bounds", so
+        /// adding it can only refuse a collapse, never permit a wrong one.</b> An untouched cell is a
+        /// region of the chunk no primitive reaches at all, and collapsing paints it. Asking it of the
+        /// UNGROWN bboxes is deliberately the conservative side of the same inequality: growth can only
+        /// add, so a chunk refused here might have filled its bounds once grown, and that costs a little
+        /// of the tier's saving and no geometry — the stance <see cref="FloorExtent"/> already takes.
+        /// The dense uniform field the tier exists for still collapses: every cell of an 8x8 grid over a
+        /// chunk of ~<see cref="TargetPrimitivesPerChunk"/> evenly-spread vias holds several of
+        /// them.</para></summary>
+        public ulong Occupancy;
+
+        /// <summary>Whether every cell of <see cref="Occupancy"/> is touched — see that field.</summary>
+        public bool PrimitivesReachEveryCell => Occupancy == ulong.MaxValue;
 
         /// <summary>What fraction of <see cref="Bounds"/> this chunk's primitives cover once each is
         /// grown by <paramref name="grow"/> on every side — the elision tier's own geometry, measured
@@ -298,6 +352,14 @@ public static partial class LayoutRenderer
     /// unchunked path spent. Chosen by that arithmetic, not tuned: the win here is asymptotic (culling
     /// that did not exist at all), so the exact constant is not a cliff.</summary>
     private const int TargetPrimitivesPerChunk = 256;
+
+    /// <summary>Side of the per-chunk occupancy grid the coarse tier's second gate is taken against
+    /// (<see cref="CompiledChunk.Occupancy"/>). 8 because 8x8 is exactly one <c>ulong</c> — no
+    /// allocation per chunk — and because at the sizes this tier engages at a whole chunk is a few tens
+    /// of device pixels, so one cell is already down at the scale where an untouched cell is invisible
+    /// anyway. Finer would refuse more collapses for no visible gain; coarser starts to miss the notch
+    /// this gate exists to catch.</summary>
+    private const int OccupancyGrid = 8;
 
     /// <summary>Default on-screen size, in device pixels, at or under which a chunk drops its per-primitive
     /// hairline outline and draws as one solid grown fill (L2e stage 2). Set where the outline stops
@@ -518,6 +580,7 @@ public static partial class LayoutRenderer
             if (bucket is null) continue;
             var chunk = new CompiledChunk { Bounds = bucket[0].Bounds };
             var prims = new List<SKRect>(bucket.Count);
+            List<SKPath>? rings = null;
 
             foreach (var it in bucket)
             {
@@ -527,20 +590,32 @@ public static partial class LayoutRenderer
 
                 if (it.Shape is { } shape)
                 {
-                    using var path = BuildShapePath(shape, localPs, counters, detailDbu);
-                    if (path is null || path.IsEmpty) continue;
-                    chunk.Geometry.AddPath(path);
+                    var path = BuildShapePath(shape, localPs, counters, detailDbu);
+                    if (path is null || path.IsEmpty) { path?.Dispose(); continue; }
+                    // Ring geometry is kept whole and drawn on its own — folding it into the shared
+                    // NonZero-filled aggregate is what deleted a drill chart. See CompiledChunk.Rings.
+                    if (IsRingGeometry(shape)) (rings ??= []).Add(path);
+                    else { chunk.Geometry.AddPath(path); path.Dispose(); }
                     prims.Add(it.Bounds);
                 }
                 else if (it.Child is { } child)
                 {
                     var m = it.Matrix;
                     chunk.Geometry.AddPath(child.Geometry, in m);
+                    // A nested cell's rings stay individual all the way up: merging them HERE would
+                    // reintroduce, one level higher, exactly the cancellation they were kept out of.
+                    foreach (var ring in child.Rings)
+                    {
+                        var placed = new SKPath(ring);
+                        placed.Transform(m);
+                        (rings ??= []).Add(placed);
+                    }
                     foreach (var pb in child.PrimitiveBounds) prims.Add(m.MapRect(pb));
                 }
             }
 
-            if (chunk.Geometry.IsEmpty) continue;
+            if (chunk.Geometry.IsEmpty && rings is null) continue;
+            if (rings is not null) chunk.Rings = rings.ToArray();
             chunk.PrimitiveBounds = prims.ToArray();
             double areaSum = 0, semiSum = 0;
             foreach (var pb in chunk.PrimitiveBounds)
@@ -552,9 +627,37 @@ public static partial class LayoutRenderer
             chunk.AreaSum = areaSum;
             chunk.SemiPerimeterSum = semiSum;
             chunk.BoundsArea = (double)chunk.Bounds.Width * chunk.Bounds.Height;
+            chunk.Occupancy = OccupancyOf(chunk.Bounds, chunk.PrimitiveBounds);
             cl.Chunks.Add(chunk);
         }
     }
+
+    /// <summary>Which cells of an <see cref="OccupancyGrid"/>-square grid over <paramref name="bounds"/>
+    /// any rect in <paramref name="prims"/> touches, as a bitmask — see
+    /// <see cref="CompiledChunk.Occupancy"/> for what the coarse tier does with it. Computed once per
+    /// chunk at compile time, O(primitives), no allocation.</summary>
+    private static ulong OccupancyOf(SKRect bounds, SKRect[] prims)
+    {
+        if (prims.Length == 0) return 0;
+        // A degenerate side means every primitive is on one line: there is no area to be wrong about,
+        // and the tier's own BoundsArea gate already refuses such a chunk.
+        double w = bounds.Width, h = bounds.Height;
+        if (!(w > 0) || !(h > 0)) return 0;
+
+        ulong mask = 0;
+        foreach (var p in prims)
+        {
+            int x0 = CellIndex(p.Left, bounds.Left, w), x1 = CellIndex(p.Right, bounds.Left, w);
+            int y0 = CellIndex(p.Top, bounds.Top, h), y1 = CellIndex(p.Bottom, bounds.Top, h);
+            for (int gy = y0; gy <= y1; gy++)
+                for (int gx = x0; gx <= x1; gx++)
+                    mask |= 1UL << (gy * OccupancyGrid + gx);
+        }
+        return mask;
+    }
+
+    private static int CellIndex(float v, float origin, double span) =>
+        Math.Clamp((int)((v - origin) / span * OccupancyGrid), 0, OccupancyGrid - 1);
 
     // ── The raster tier ───────────────────────────────────────────────────────────────────────────
     //
@@ -702,8 +805,12 @@ public static partial class LayoutRenderer
 
         foreach (var chunk in layer.Chunks)
         {
+            // Both gates, and the second is not redundant: CoverageAt is an area SUM and double-counts
+            // overlap, so it reads >= 1 on a chunk whose material piles into one corner. See
+            // CompiledChunk.Occupancy — a cell no primitive reaches is emptiness a collapse would paint.
             if (chunk.MaxExtent < elisionExtent && chunk.PrimitiveBounds.Length > 0
-                && chunk.CoverageAt(grow) >= coarseCoverage)
+                && chunk.CoverageAt(grow) >= coarseCoverage
+                && chunk.PrimitivesReachEveryCell)
             {
                 // Grown by the same half-stroke the elision tier grows its own rects by, so the
                 // collapsed block ends exactly where the elided one would have.
@@ -822,6 +929,14 @@ public static partial class LayoutRenderer
                     ? found : FallbackPalette.For(layer.Key);
                 if (!def.Visible) continue;
                 var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
+                // The same rule DrawLayer states one level up: A SUBSTITUTION REPRODUCES WHAT THE
+                // FRAME'S OWN OUTLINE DECISION WOULD HAVE PRODUCED, never something brighter. When the
+                // frame outlines, a substitution stands in for a fill PLUS a solid outline and solid is
+                // right (unchanged, and the pixel tests that pin it stay pixel-identical). When it does
+                // not, there is no solid outline to stand in for, and painting one anyway is what made a
+                // single drill chart render half bright and half ghosted.
+                byte fillAlpha = (byte)Math.Clamp(Math.Round(def.FillOpacity * 255.0), 0, 255);
+                byte substituteAlpha = drawOutlines ? (byte)255 : fillAlpha;
                 visualKey.Add(layer.Key);
                 visualKey.Add(def.Color.R); visualKey.Add(def.Color.G); visualKey.Add(def.Color.B);
                 visualKey.Add(def.FillOpacity);
@@ -837,13 +952,17 @@ public static partial class LayoutRenderer
                     {
                         IsAntialias = true, Style = SKPaintStyle.Stroke,
                         StrokeWidth = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels),
-                        Color = color.WithAlpha(255),
+                        // When the frame IS outlining, this paint draws the frame's outlines and is
+                        // solid, as it always has been. When it is not, the only thing left using it is
+                        // the per-chunk visibility floor's rescue, which is a substitution.
+                        Color = color.WithAlpha(substituteAlpha),
                     },
-                    // The stroke-elision tier's paint — the STROKE's solid alpha, not the fill's. At the
-                    // few-device-pixel sizes it engages at, the outline is essentially the whole visible
-                    // shape and the fill interior is sub-pixel, so carrying the fill's own (often
-                    // partial) opacity across would visibly dim a dense field that today reads solid.
-                    new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(255) }));
+                    // The elision and coarse tiers' paint. When the frame outlines, that is the STROKE's
+                    // solid alpha: at the few-device-pixel sizes they engage at the outline is
+                    // essentially the whole visible shape and the fill interior is sub-pixel, so
+                    // carrying the fill's own (often partial) opacity across would visibly dim a dense
+                    // field that today reads solid. When the frame does not outline, see substituteAlpha.
+                    new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(substituteAlpha) }));
             }
 
             using var brokenFillPaint = compiled.BrokenPlaceholders.Count > 0
@@ -922,8 +1041,20 @@ public static partial class LayoutRenderer
                             continue;
                         }
 
-                        target.DrawPath(chunk.Geometry, fillPaint);
-                        sink.DrawCalls++;
+                        if (!chunk.Geometry.IsEmpty)
+                        {
+                            target.DrawPath(chunk.Geometry, fillPaint);
+                            sink.DrawCalls++;
+                        }
+
+                        // Ring geometry, one draw call each — it may not share the chunk's aggregate
+                        // (CompiledChunk.Rings). There are a handful of these per cell against tens of
+                        // thousands of ordinary primitives, and only on the exact tier.
+                        foreach (var ring in chunk.Rings)
+                        {
+                            target.DrawPath(ring, fillPaint);
+                            sink.DrawCalls++;
+                        }
 
                         // The frame-wide outline decision reaches instance geometry too — it is the
                         // same constant-device-pixel stroke over the same kind of geometry, and on
@@ -935,8 +1066,16 @@ public static partial class LayoutRenderer
                         if (drawOutlines
                             || chunk.FloorExtent * placementScale * scaleUm < MinVisibleFillDevicePixels)
                         {
-                            target.DrawPath(chunk.Geometry, strokePaint);
-                            sink.DrawCalls++;
+                            if (!chunk.Geometry.IsEmpty)
+                            {
+                                target.DrawPath(chunk.Geometry, strokePaint);
+                                sink.DrawCalls++;
+                            }
+                            foreach (var ring in chunk.Rings)
+                            {
+                                target.DrawPath(ring, strokePaint);
+                                sink.DrawCalls++;
+                            }
                         }
                     }
                 }

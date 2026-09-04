@@ -277,4 +277,60 @@ public sealed class LayoutInstanceCoarseTierTests : IDisposable
 
         Assert.Equal(withoutTier, withTier);
     }
+
+    // ── The coverage number is an AREA SUM, and an area sum double-counts overlap ───────────────
+
+    [Fact]
+    public void CoarseTier_OnAChunkWhoseMaterialPilesIntoOneCorner_LeavesTheRestEmpty()
+    {
+        // Owner report, 2026-09-04: zooming out of a layout holding an instance array showed extra
+        // rectangles that the same artwork does not show at top level — the placed board's own notch
+        // and the gap below its drill chart came out filled solid.
+        //
+        // CoverageAt sums the primitives' AREAS and divides by the bounds area. Its justification is
+        // stated for a REGULAR field on a uniform pitch, where that ratio really does decide whether
+        // neighbours touch. Overlap breaks it: 250 squares stacked on top of each other in one corner
+        // have 1.4x the bounding box's area between them and cover a sixtieth of it. The old gate
+        // collapsed such a chunk to its bounds and painted the empty five-sixths solid.
+        //
+        // This fixture is that arrangement, minimally: a cluster small enough to sit in one corner,
+        // one far primitive to stretch the bounds, and 251 primitives in total so the compile puts
+        // them all in ONE chunk (gridN = ceil(sqrt(251/256)) = 1).
+        var cellDir = CreateCell("Piled", v =>
+        {
+            for (int i = 0; i < 250; i++)
+            {
+                long x = (i % 10) * 1_500, y = (i / 10) * 600;
+                v.Shapes.Add(new RectShape { Layer = LayerA, X1 = x, Y1 = y, X2 = x + 15_000, Y2 = y + 15_000 });
+            }
+            v.Shapes.Add(new RectShape { Layer = LayerA, X1 = 185_000, Y1 = 185_000, X2 = 200_000, Y2 = 200_000 });
+        });
+        var tech = MakeTech();
+        var top = PlaceInstance(cellDir);
+
+        // 200,000 DBU across 40 device pixels: every primitive is 3 px, inside the elision tier, so
+        // the coarse tier is genuinely being asked and only its coverage gate can answer no.
+        var vp = new LayoutViewport(0, 0, 40.0 / 200_000, 400, 400);
+
+        Render(top, tech, vp, _workspaceDir, out var withTier);
+        Render(top, tech, vp, _workspaceDir, out var withoutTier, coarse: TierOff);
+
+        // The tier may not invent material. Anything it does here it must also do with the tier off.
+        Assert.Equal(withoutTier, withTier);
+    }
+
+    [Fact]
+    public void CoarseTier_StillCollapsesAUniformFieldWhoseGrownPrimitivesTouch()
+    {
+        // The other side of the same gate, stated so a future tightening cannot quietly disable the
+        // tier outright: the dense uniform field it exists for must still batch to ONE draw call.
+        // Every cell of the per-chunk occupancy grid holds several primitives there.
+        var cellDir = CreateCell("Dense2", v => AddField(v, 200, pitch: 1260, size: 420));
+        var tech = MakeTech();
+        var top = PlaceInstance(cellDir);
+        var vp = new LayoutViewport(0, 0, 400.0 / 252_000, 400, 400);
+
+        var withTier = Render(top, tech, vp, _workspaceDir, out _);
+        Assert.Equal(1, withTier.DrawCalls);
+    }
 }
