@@ -70,6 +70,58 @@ public static class CellUsageScanner
         return new CellUsage(count, others ?? []);
     }
 
+    /// <summary>
+    /// Counts cells in <paramref name="workspaceRootDir"/> that place at least one cell through the
+    /// workspace alias <paramref name="alias"/> — what "removing this reference breaks N cells" is
+    /// asking, before the alias is taken out of the <c>.cws</c>.
+    ///
+    /// <para>Matched on the reference's SPELLING, not on what it resolves to, and that is the
+    /// difference from <see cref="CountReferencingCells"/>: the alias is exactly what is about to
+    /// stop resolving, so the question is which documents name it — including the ones whose target
+    /// is already missing, which are the documents a removal is most likely to be aimed at.</para>
+    /// </summary>
+    public static int CountCellsUsingWorkspaceAlias(string workspaceRootDir, string alias)
+    {
+        if (string.IsNullOrWhiteSpace(alias)) return 0;
+
+        var count = 0;
+        foreach (var cellDir in EnumerateCellFolders(workspaceRootDir))
+            if (CellUsesAlias(cellDir, alias))
+                count++;
+        return count;
+    }
+
+    private static bool CellUsesAlias(string cellDir, string alias)
+    {
+        foreach (var kind in ScannedKinds)
+        {
+            var subDir = CellFolder.SubFolderPath(cellDir, kind.ViewType);
+            if (!Directory.Exists(subDir)) continue;
+
+            foreach (var filePath in Directory.EnumerateFiles(subDir, kind.FilePattern))
+            {
+                try
+                {
+                    var array = JsonNode.Parse(File.ReadAllText(filePath))?[kind.ArrayPropertyName]?.AsArray();
+                    if (array is null) continue;
+
+                    foreach (var item in array)
+                    {
+                        if (item?["CellRef"]?.GetValue<string?>() is not { } cellRef) continue;
+                        if (ExternalCellRef.TryParse(cellRef, out string a, out _)
+                            && string.Equals(a, alias, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                }
+                catch
+                {
+                    // Unreadable/malformed file — skip, exactly as the counter above does.
+                }
+            }
+        }
+        return false;
+    }
+
     private static int CountIn(string workspaceRootDir, string normalizedTargetCellDir)
     {
         var count = 0;

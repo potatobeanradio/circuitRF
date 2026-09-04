@@ -97,6 +97,31 @@ public interface ITreeActions
     /// <summary>Remove a cell folder (moves to Trash). Big warning incl. workspace usage count; no in-app undo.</summary>
     Task RemoveCellAsync(ProjectTreeNodeViewModel cellNode);
 
+    /// <summary>
+    /// The <c>.cws</c> of the workspace this node's files actually live in, when that is a DIFFERENT
+    /// workspace from the one open in this window — a cell under a Referenced Workspace sub-tree, a
+    /// library cell that happens to sit inside someone else's workspace, or the Referenced Workspace
+    /// row itself (whose path IS that other workspace's root). Null for everything that belongs here,
+    /// and for a path with no ancestor workspace at all.
+    ///
+    /// <para>Answered by the walk-up rather than by the node's position in the tree, so it says where
+    /// the cell IS rather than how it was reached, and it is memoised
+    /// (<c>WorkspaceRootFinder.WorkspaceDirOf</c>) because a context-menu visibility binding asks it
+    /// per node.</para>
+    /// </summary>
+    string? ForeignWorkspaceCwsFor(ProjectTreeNodeViewModel node);
+
+    /// <summary>
+    /// Removes one Referenced Workspace entry from this workspace's own <c>.cws</c> — the way OUT of
+    /// File ▸ Reference Workspace…, which until now had none: an alias could be created and never
+    /// taken away except by hand-editing the file.
+    ///
+    /// <para>Reference-only, exactly like <c>RemoveKnownFile</c>: nothing is deleted, in either
+    /// workspace. What it does break is any cell here that places a cell through the alias, so the
+    /// confirmation counts those first.</para>
+    /// </summary>
+    Task RemoveWorkspaceReferenceAsync(ProjectTreeNodeViewModel referencedWorkspaceNode);
+
     /// <summary>True when this node has unsaved work (drives the "Save" context item's visibility).</summary>
     bool IsNodeDirty(ProjectTreeNodeViewModel node);
 
@@ -110,6 +135,14 @@ public interface ITreeActions
 
     /// <summary>Open the workspace at <paramref name="cwsPath"/> (same as clicking Open Recent).</summary>
     void OpenWorkspacePath(string cwsPath);
+
+    /// <summary>
+    /// Open the workspace at <paramref name="cwsPath"/> in a window of its own, leaving this window
+    /// exactly as it is — the same thing File ▸ Open Workspace in New Window… does once its picker
+    /// has produced a path, so a workspace already open somewhere simply comes to the front rather
+    /// than being opened twice (R-mw1-9).
+    /// </summary>
+    void OpenWorkspacePathInNewWindow(string cwsPath);
 
     /// <summary>Clear all recent workspaces.</summary>
     void ClearRecentWorkspaces();

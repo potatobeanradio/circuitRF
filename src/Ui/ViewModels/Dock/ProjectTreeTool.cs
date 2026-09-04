@@ -105,6 +105,12 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
         public IRelayCommand<string>? OpenCommand { get; init; }
 
         /// <summary>
+        /// Opens this workspace in a SECOND window, leaving the current one alone — carried on the
+        /// entry for the same popup-tree reason as the others.
+        /// </summary>
+        public IRelayCommand<string>? OpenInNewWindowCommand { get; init; }
+
+        /// <summary>
         /// Forgets this entry — same popup-tree constraint as the two above, so it is carried here
         /// rather than reached for. The workspace is not touched.
         /// </summary>
@@ -124,6 +130,7 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
                     RevealLabel   = RevealLabel,
                     RevealCommand = RevealRecentCommand,
                     OpenCommand   = OpenRecentCommand,
+                    OpenInNewWindowCommand = OpenRecentInNewWindowCommand,
                     RemoveCommand = RemoveRecentCommand,
                 });
         OnPropertyChanged(nameof(HasRecentWorkspaces));
@@ -131,6 +138,13 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
 
     [RelayCommand]
     private void OpenRecent(string path) => _actions?.OpenWorkspacePath(path);
+
+    /// <summary>
+    /// Opens a recent workspace in a window of its own — the recent list's counterpart to
+    /// File ▸ Open Workspace in New Window…, without the picker, since the row already names the path.
+    /// </summary>
+    [RelayCommand]
+    private void OpenRecentInNewWindow(string path) => _actions?.OpenWorkspacePathInNewWindow(path);
 
     /// <summary>
     /// Shows a recent workspace in the platform's file manager without opening it.

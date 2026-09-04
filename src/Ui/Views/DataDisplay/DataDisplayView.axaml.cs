@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -46,6 +47,40 @@ public partial class DataDisplayView : UserControl
     private void FocusDeferred() =>
         Avalonia.Threading.Dispatcher.UIThread.Post(
             () => Focus(), Avalonia.Threading.DispatcherPriority.Background);
+
+    // ── F — Fit All ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Bare <c>F</c> fits every plot to the canvas — the same keystroke the schematic, symbol and
+    /// layout editors have always used, and the same command the toolbar's Fit All button runs.
+    /// </summary>
+    /// <remarks>
+    /// Handled here rather than as a <c>UserControl.KeyBindings</c> entry, for the reason every
+    /// bare-letter gesture has to answer: a <c>TextBox</c> does not mark <c>KeyDown</c> handled for
+    /// an ordinary character — it consumes <c>TextInput</c> instead — so a document-level <c>F</c>
+    /// binding would re-fit the plots every time someone typed an "f" into the tab-rename box, an
+    /// axis label, a marker name or an axis limit. The existing bare bindings above (Delete, Home,
+    /// End, Page Up/Down) are safe only because a focused <c>TextBox</c> handles those itself.
+    ///
+    /// <para>Guarded the way <c>MatchDesignerWindow</c> and <c>WirePanelKeys</c> guard theirs, and
+    /// widened to the same three control types <c>WirePanelKeys</c> uses, since the display's
+    /// inspector carries combo boxes as well as text fields.</para>
+    /// </remarks>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Handled || e.Key != Key.F || e.KeyModifiers != KeyModifiers.None) return;
+        if (IsTypingInAField(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement())) return;
+        if (DataContext is not DataDisplayDocument doc) return;
+
+        var cmd = doc.ViewModel.Window.FitAllCommand;
+        if (!cmd.CanExecute(null)) return;
+        cmd.Execute(null);
+        e.Handled = true;
+    }
+
+    private static bool IsTypingInAField(IInputElement? focused) =>
+        focused is TextBox or AutoCompleteBox or ComboBox { IsEditable: true };
 
     private void OnAttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
     {

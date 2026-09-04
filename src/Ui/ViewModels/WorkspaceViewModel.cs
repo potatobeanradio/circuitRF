@@ -9509,6 +9509,73 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         => CellDirOfView(viewFilePath) is { } c
            && string.Equals(c, cellDir, StringComparison.OrdinalIgnoreCase);
 
+    // ── ITreeActions: the workspace a foreign cell belongs to ────────────────
+
+    /// <inheritdoc/>
+    public string? ForeignWorkspaceCwsFor(ProjectTreeNodeViewModel node)
+    {
+        // The walk-up starts at the cell FOLDER, which is what a Cell node's path already is.
+        string? otherRoot = WorkspaceRootFinder.WorkspaceDirOf(node.AbsolutePath);
+        if (otherRoot is null) return null;
+
+        // Belongs to this window's own workspace — there is nothing to open.
+        if (CurrentWorkspaceRoot is { } mine
+            && string.Equals(WorkspaceRootFinder.Normalize(mine), otherRoot, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        string cws = Path.Combine(otherRoot, ".cws");
+        return File.Exists(cws) ? cws : null;
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveWorkspaceReferenceAsync(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null) return;
+        if (node.Kind != NodeKind.ReferencedWorkspace) return;
+
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        string myRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        string alias  = node.Name;   // the alias IS the node's name (WorkspaceScanner)
+
+        // Counted by ALIAS rather than by resolved target: the alias is what stops resolving, and an
+        // entry whose workspace has already moved away is exactly the one a user comes here to remove.
+        int usedIn = CellUsageScanner.CountCellsUsingWorkspaceAlias(myRoot, alias);
+
+        var msg = $"Remove the reference to workspace \"{alias}\"?\n\n"
+                + "Nothing is deleted — the other workspace and its cells stay exactly where they are. "
+                + "This workspace simply stops listing it.";
+        if (usedIn == 1)
+            msg += $"\n\n\u26a0 1 cell here places a cell through \"{alias}\". That reference will no longer resolve.";
+        else if (usedIn > 1)
+            msg += $"\n\n\u26a0 {usedIn} cells here place cells through \"{alias}\". Those references will no longer resolve.";
+
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            msg,
+            saveLabel:     "Remove Reference",
+            dontSaveLabel: null,
+            cancelLabel:   "Cancel",
+            title:         "Remove Workspace Reference");
+        await dlg.ShowDialog(window);
+        if (dlg.Result != SaveChangesResult.Save) return;
+
+        CwsFile cws;
+        try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+        catch (Exception ex) { Messages.Error($"Could not read this workspace's .cws: {ex.Message}"); return; }
+
+        int removed = cws.ReferencedWorkspaces?.RemoveAll(
+            r => string.Equals(r.Alias, alias, StringComparison.OrdinalIgnoreCase)) ?? 0;
+        if (removed == 0) { Messages.Warning($"No workspace reference named \"{alias}\" is recorded here."); return; }
+
+        WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+
+        // The alias table a ws:// reference resolves through is memoised, and this rewrite changes it.
+        WorkspaceRootFinder.InvalidateCache();
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Info($"Workspace reference \"{alias}\" removed (nothing was deleted).");
+    }
+
     // ── ITreeActions: dirty detection + per-node save ─────────────────────────
 
     /// <inheritdoc/>
@@ -9684,6 +9751,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <inheritdoc/>
     public void OpenWorkspacePath(string cwsPath) => _ = OpenWorkspacePathAsync(cwsPath);
+
+    /// <inheritdoc/>
+    public void OpenWorkspacePathInNewWindow(string cwsPath)
+    {
+        // Nothing here is closed or switched, so there is no dirty-work prompt and no missing-path
+        // pruning to do: this window keeps what it has. The one check that still matters is that the
+        // path is real, since App would otherwise open a window onto a workspace that is not there.
+        // Same shape as OpenSourceWorkspace, which is the other "open it beside this one" route.
+        if (!File.Exists(cwsPath))
+        {
+            Messages.Error($"Workspace '{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' was not found.");
+            return;
+        }
+
+        App.OpenWorkspaceInNewWindow(cwsPath);
+    }
 
     /// <summary>
     /// The awaitable form of <see cref="OpenWorkspacePath"/>, for the one caller that has to know

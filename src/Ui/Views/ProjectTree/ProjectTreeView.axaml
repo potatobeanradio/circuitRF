@@ -219,6 +219,12 @@
                                         <MenuItem Header="Open Workspace"
                                                   Command="{Binding OpenCommand}"
                                                   CommandParameter="{Binding Path}"/>
+                                        <!-- Beside it, not instead of it: this one leaves the current
+                                             window alone and opens a second one (R-mw1-9 activates the
+                                             window that already has it rather than opening it twice). -->
+                                        <MenuItem Header="Open Workspace in New Window…"
+                                                  Command="{Binding OpenInNewWindowCommand}"
+                                                  CommandParameter="{Binding Path}"/>
                                         <MenuItem Header="{Binding RevealLabel}"
                                                   Command="{Binding RevealCommand}"
                                                   CommandParameter="{Binding Path}"/>
@@ -553,6 +559,25 @@
                                                   Command="{Binding RemoveFileCommand}"
                                                   IsVisible="{Binding IsRemovableFile}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
+                                        <!-- The way out of File ▸ Reference Workspace… — grouped with the
+                                             other removes, and reference-only like the Known File one:
+                                             nothing is deleted in either workspace. -->
+                                        <MenuItem Header="Remove Workspace Reference"
+                                                  Command="{Binding RemoveWorkspaceReferenceCommand}"
+                                                  IsVisible="{Binding IsReferencedWorkspace}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="LinkVariantOff" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
+                                        <!-- A cell that lives in ANOTHER workspace, and the Referenced
+                                             Workspace row itself — directly above Reveal, since the two
+                                             answer the same question ("where does this actually come
+                                             from?") and this one answers it in the app. -->
+                                        <MenuItem Header="Open Referenced Workspace in New Window"
+                                                  Command="{Binding OpenReferencedWorkspaceCommand}"
+                                                  IsVisible="{Binding CanOpenReferencedWorkspace}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderNetworkOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
                                         <!-- All revealable nodes — above Remove Cell so it groups with the other removes -->

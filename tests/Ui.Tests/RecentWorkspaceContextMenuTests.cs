@@ -161,4 +161,74 @@ public class RecentWorkspaceContextMenuTests
         Assert.DoesNotContain("Directory.Delete", body2, StringComparison.Ordinal);
         Assert.DoesNotContain("File.Delete", body2, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// <b>Open Workspace in New Window…</b> (owner, 2026-09-03) sits directly below Open Workspace —
+    /// the same verb, differing only in where the workspace lands, so the two read as a pair.
+    /// </summary>
+    [Fact]
+    public void TheRecentListMenu_OffersOpenInNewWindowBelowOpenWorkspace()
+    {
+        var xaml = Read("src", "Ui", "Views", "ProjectTree", "ProjectTreeView.axaml");
+
+        int list = xaml.IndexOf("ItemsSource=\"{Binding RecentWorkspaces}\"", StringComparison.Ordinal);
+        Assert.True(list >= 0);
+        var template = xaml[list..xaml.IndexOf("</ItemsControl>", list, StringComparison.Ordinal)];
+
+        int open      = template.IndexOf("Header=\"Open Workspace\"", StringComparison.Ordinal);
+        int newWindow = template.IndexOf("Header=\"Open Workspace in New Window\u2026\"", StringComparison.Ordinal);
+        int reveal    = template.IndexOf("Header=\"{Binding RevealLabel}\"", StringComparison.Ordinal);
+
+        Assert.True(newWindow >= 0, "the recent-list menu should offer Open Workspace in New Window");
+        Assert.True(open < newWindow && newWindow < reveal,
+                    "order is Open Workspace, then Open Workspace in New Window, then Reveal");
+    }
+
+    /// <summary>
+    /// Same popup-tree constraint as every other item on this menu: the ENTRY carries the command and
+    /// is actually given it when the list is built, or the item is greyed out and does nothing.
+    /// </summary>
+    [Fact]
+    public void TheOpenInNewWindowItem_BindsTheEntrysOwnCommand_AndTheEntryCarriesIt()
+    {
+        var xaml = Read("src", "Ui", "Views", "ProjectTree", "ProjectTreeView.axaml");
+
+        int at = xaml.IndexOf("Header=\"Open Workspace in New Window\u2026\"", StringComparison.Ordinal);
+        Assert.True(at >= 0);
+        var item = xaml[at..xaml.IndexOf("/>", at, StringComparison.Ordinal)];
+
+        Assert.Contains("Command=\"{Binding OpenInNewWindowCommand}\"", item, StringComparison.Ordinal);
+        Assert.Contains("CommandParameter=\"{Binding Path}\"", item, StringComparison.Ordinal);
+        Assert.DoesNotContain("$parent", item, StringComparison.Ordinal);
+
+        var code = Read("src", "Ui", "ViewModels", "Dock", "ProjectTreeTool.cs");
+        int start = code.IndexOf("private void RefreshRecent()", StringComparison.Ordinal);
+        int stop  = code.IndexOf("private void OpenRecent(", StringComparison.Ordinal);
+        Assert.True(start >= 0 && stop > start);
+        Assert.Contains("OpenInNewWindowCommand = OpenRecentInNewWindowCommand,",
+                        code[start..stop], StringComparison.Ordinal);
+
+        Assert.Contains("private void OpenRecentInNewWindow(string path) => _actions?.OpenWorkspacePathInNewWindow(path);",
+                        code, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Opening in a new window leaves THIS window alone: no dirty-work prompt, nothing closed, and no
+    /// switch — the whole point of the item. It goes through the same App entry point File ▸ Open
+    /// Workspace in New Window… uses, so a workspace already open somewhere is activated rather than
+    /// opened twice (R-mw1-9).
+    /// </summary>
+    [Fact]
+    public void OpeningInANewWindow_SwitchesNothingInThisOne()
+    {
+        var ws = Read("src", "Ui", "ViewModels", "WorkspaceViewModel.cs");
+        int at = ws.IndexOf("public void OpenWorkspacePathInNewWindow(", StringComparison.Ordinal);
+        Assert.True(at >= 0);
+        var body = ws[at..ws.IndexOf("The awaitable form of", at, StringComparison.Ordinal)];
+
+        Assert.Contains("App.OpenWorkspaceInNewWindow(cwsPath);", body, StringComparison.Ordinal);
+        Assert.Contains("File.Exists(cwsPath)", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("SwitchToWorkspace", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("PromptSaveBeforeClose", body, StringComparison.Ordinal);
+    }
 }

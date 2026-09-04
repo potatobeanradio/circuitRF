@@ -145,7 +145,7 @@
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.FitAllCommand}"
-                        ToolTip.Tip="Fit All  (Ctrl+0)"
+                        ToolTip.Tip="Fit All  (F, Ctrl+0)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
                 </Button>

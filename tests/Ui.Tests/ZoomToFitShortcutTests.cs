@@ -96,4 +96,57 @@ public class ZoomToFitShortcutTests
         Assert.DoesNotContain("ToolTip.Tip=\"Zoom to Fit\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ToolTip.Tip=\"Zoom to Fit  (F)\"", xaml, StringComparison.Ordinal);
     }
+
+    // ── The Data Display's own F (owner, 2026-09-03) ──────────────────────────
+
+    /// <summary>
+    /// The Data Display fits every plot on F, running the same command its toolbar button runs — the
+    /// gesture the schematic and layout editors already have, under the name this document uses for
+    /// it ("Fit All").
+    /// </summary>
+    [Fact]
+    public void TheDataDisplay_FitsAllOnF()
+    {
+        var code = CodeOf("src", "Ui", "Views", "DataDisplay", "DataDisplayView.axaml.cs");
+
+        Assert.Matches(@"e\.Key\s*!=\s*Key\.F\b", code);
+        Assert.Contains("FitAllCommand", code, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// …and it is a handler, not a <c>KeyBinding</c>. That is the whole difficulty of a bare-letter
+    /// gesture here: a <c>TextBox</c> does not mark <c>KeyDown</c> handled for an ordinary character,
+    /// so a document-level <c>F</c> binding would re-fit the plots every time someone typed an "f"
+    /// into the tab-rename box, an axis label or a marker name. The other bare bindings on this menu
+    /// (Delete, Home, End, Page Up/Down) are safe only because a focused TextBox answers those itself.
+    /// </summary>
+    [Fact]
+    public void TheDataDisplaysF_IsNotAKeyBinding_AndStandsDownWhileTypingInAField()
+    {
+        var xaml = Read("src", "Ui", "Views", "DataDisplay", "DataDisplayView.axaml");
+        Assert.DoesNotContain("Gesture=\"F\"", xaml, StringComparison.Ordinal);
+
+        var code = CodeOf("src", "Ui", "Views", "DataDisplay", "DataDisplayView.axaml.cs");
+        int key = code.IndexOf("Key.F", StringComparison.Ordinal);
+        Assert.True(key >= 0);
+
+        // The guard sits between claiming the key and running the command.
+        int guard = code.IndexOf("IsTypingInAField", key, StringComparison.Ordinal);
+        int run   = code.IndexOf("FitAllCommand", key, StringComparison.Ordinal);
+        Assert.True(guard >= 0 && guard < run, "the typing guard runs before Fit All does");
+
+        // The same three control types the other single-letter shortcuts stand down for.
+        Assert.Contains("TextBox or AutoCompleteBox or ComboBox { IsEditable: true }", code,
+                        StringComparison.Ordinal);
+    }
+
+    /// <summary>The button says so, beside the shortcut it already advertised.</summary>
+    [Fact]
+    public void TheDataDisplaysFitAllButton_AdvertisesTheKey()
+    {
+        var xaml = Read("src", "Ui", "Views", "DataDisplay", "DataDisplayView.axaml");
+
+        Assert.DoesNotContain("ToolTip.Tip=\"Fit All  (Ctrl+0)\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"Fit All  (F, Ctrl+0)\"", xaml, StringComparison.Ordinal);
+    }
 }

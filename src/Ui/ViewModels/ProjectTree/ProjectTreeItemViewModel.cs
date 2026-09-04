@@ -255,6 +255,30 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.KnownFile
                                           or NodeKind.OtherFile;
 
+    /// <summary>
+    /// Drives the "Open Referenced Workspace in New Window" item, on the two rows that name another
+    /// workspace: a CELL that lives in one — reached through a Referenced Workspace sub-tree, or a
+    /// library cell that happens to sit inside someone else's workspace — and the REFERENCED
+    /// WORKSPACE row itself, which is the row a user looking for the whole project reaches for first.
+    ///
+    /// <para>An UNRESOLVED reference is excluded: its node carries the reason it could not be found
+    /// instead of a real path, and the walk-up from a path that is not there can land on some
+    /// ancestor workspace that has nothing to do with it.</para>
+    /// </summary>
+    public bool CanOpenReferencedWorkspace =>
+        (IsCell || (Kind == NodeKind.ReferencedWorkspace && !IsWarning))
+        && ForeignWorkspaceCws is not null;
+
+    /// <summary>
+    /// The Referenced Workspaces row for one alias. Offered even when the reference is BROKEN — an
+    /// entry pointing at a workspace that has moved away is the one a user most wants to be rid of,
+    /// so the removal is gated on the node kind alone and never on the reference resolving.
+    /// </summary>
+    public bool IsReferencedWorkspace => Kind == NodeKind.ReferencedWorkspace;
+
+    /// <summary>The other workspace's <c>.cws</c>, or null when this cell belongs to the open one.</summary>
+    private string? ForeignWorkspaceCws => _actions?.ForeignWorkspaceCwsFor(this);
+
     /// <summary>Platform-correct label for the Reveal menu item.</summary>
     public string RevealLabel =>
         RuntimeInformation.IsOSPlatform(OSPlatform.OSX)     ? "Reveal in Finder"
@@ -271,6 +295,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>Reveal in OS file manager.</summary>
     public IRelayCommand RevealCommand { get; }
+
+    /// <summary>Opens the workspace a foreign cell belongs to, in a window of its own.</summary>
+    public IRelayCommand OpenReferencedWorkspaceCommand { get; }
+
+    /// <summary>Removes this Referenced Workspace entry from the open workspace's own <c>.cws</c>.</summary>
+    public IAsyncRelayCommand RemoveWorkspaceReferenceCommand { get; }
 
     /// <summary>New Cell on workspace/library nodes.</summary>
     public IAsyncRelayCommand NewCellCommand { get; }
@@ -488,6 +518,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         RevealCommand = new RelayCommand(
             () => _actions?.Reveal(this),
             () => _actions is not null && CanReveal);
+
+        OpenReferencedWorkspaceCommand = new RelayCommand(
+            () => { if (ForeignWorkspaceCws is { } cws) _actions?.OpenWorkspacePathInNewWindow(cws); },
+            () => CanOpenReferencedWorkspace);
+
+        RemoveWorkspaceReferenceCommand = new AsyncRelayCommand(
+            () => _actions?.RemoveWorkspaceReferenceAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsReferencedWorkspace);
 
         NewCellCommand = new AsyncRelayCommand(
             () => _actions?.NewCellAsync(this) ?? Task.CompletedTask,

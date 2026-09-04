@@ -18281,3 +18281,49 @@ Two things that had to be got right rather than assumed:
 Gate: `tests/Ui.Tests/VerilogATerminalLabelPersistenceTests.cs` — survival across a simulated restart,
 both the named and the blank-model key, the edited-file and deleted-file invalidations, an unreadable
 store degrading to a miss, and the redirect.
+
+## Project-tree and Data Display context items (2026-09-03)
+
+Four owner requests in one pass: `F` fits the Data Display, the recent-workspaces list can open into a
+new window, a cell (or reference row) that belongs to another workspace can open that workspace, and a
+workspace reference can be removed.
+
+### A bare-letter shortcut in the Data Display cannot be a `KeyBinding`
+
+The document already carries a dozen `UserControl.KeyBindings`, several of them bare (`Delete`,
+`Home`, `End`, `PageUp`/`PageDown`), so `F` looked like a one-line addition to that list. It is not:
+**a `TextBox` does not mark `KeyDown` handled for an ordinary character** — text arrives through
+`TextInput` — so a document-level `F` binding fires while the user is typing an "f" into the tab-rename
+box, an axis label, a marker name or an axis limit. The existing bare bindings are safe only because a
+focused `TextBox` answers those keys itself.
+
+Handled in `DataDisplayView.OnKeyDown` instead, standing down when focus is in a
+`TextBox`/`AutoCompleteBox`/editable `ComboBox` — the guard `MatchDesignerWindow` and `WirePanelKeys`
+already use, and the same reason `LayoutCanvas` gates its own `F` on `IsTypingLabel`. Gate:
+`ZoomToFitShortcutTests` (three added methods, including that no `Gesture="F"` appears in the AXAML).
+
+### "Belongs to another workspace" is answered by the walk-up, not by tree position
+
+`ForeignWorkspaceCwsFor` asks `WorkspaceRootFinder.WorkspaceDirOf` for the node's own ancestor `.cws`
+and compares it with the open one, so it says where a cell IS rather than how it was reached: a library
+cell that happens to sit inside someone else's workspace qualifies, and a cell reached through a
+reference but sitting inside this workspace does not. The walk is memoised, which is what makes it
+affordable as a context-menu visibility binding. An UNRESOLVED reference row is excluded — its path is
+not there and the walk-up from it can land on an unrelated ancestor workspace — but it can still be
+REMOVED, which is the state a removal is most often aimed at.
+
+### There was no way to un-reference a workspace
+
+`File ▸ Reference Workspace…` (MW2) and MW3's drag-drop both write an alias into the workspace's own
+`.cws`; nothing removed one. Neither do the referenced LIBRARIES have a removal, but they were not
+what was asked about. `RemoveWorkspaceReferenceAsync` follows the Known File precedent exactly —
+reference-only, nothing deleted in either workspace — and confirms with a count first.
+
+That count is by ALIAS SPELLING (`CellUsageScanner.CountCellsUsingWorkspaceAlias`), not by resolved
+target like `CountReferencingCells`: the alias is precisely what stops resolving, so the question is
+which documents name it, and a reference whose target has already moved away still counts. The removal
+drops `WorkspaceRootFinder.InvalidateCache()` afterwards because the alias table a `ws://` reference
+resolves through is memoised on the same terms.
+
+Gate: `tests/Ui.Tests/ReferencedWorkspaceContextMenuTests.cs` (10 tests) and three added methods in
+`RecentWorkspaceContextMenuTests`.
