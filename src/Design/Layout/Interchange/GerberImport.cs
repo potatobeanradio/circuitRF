@@ -920,6 +920,17 @@ public static class GerberImport
         _ => int.MaxValue / 2,
     };
 
+    /// <summary>The extensions that identify exactly ONE file in this set — the only ones that can
+    /// serve as a per-layer <c>GerberSuffix</c> alias. See <see cref="BuildSourceLayers"/>'s own note
+    /// on the amendment to R-L4g-7 for why a shared extension is worse than no alias at all.</summary>
+    private static HashSet<string> AliasableExtensions(IReadOnlyList<GerberLayerIdentity> identities)
+        => identities
+            .Where(i => i.Extension is { Length: > 0 })
+            .GroupBy(i => i.Extension!, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() == 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// The synthetic "source layers" <see cref="LayoutLayerMapping.Propose"/> expects — one per FILE,
     /// which is the unit of layer identity in this format.
@@ -929,11 +940,24 @@ public static class GerberImport
     /// collides with nothing in the destination technology.</para>
     ///
     /// <para><b>R-L4g-7: the source extension is recorded as the minted layer's
-    /// <c>GerberSuffix</c>, unconditionally</b> — including on a donated layer that already carried a
-    /// different one. This is not decoration. Without it a re-export names its files from a synthetic
-    /// fallback suffix instead of the names the import read, and L4h's byte-identity gate cannot pass;
-    /// L4d measured the equivalent omission on a real board and every layer landed on a general drawing
-    /// layer, turning tracks into graphics.</para>
+    /// <c>GerberSuffix</c></b> — including on a donated layer that already carried a different one.
+    /// This is not decoration. Without it a re-export names its files from a synthetic fallback suffix
+    /// instead of the names the import read, and L4h's byte-identity gate cannot pass; L4d measured the
+    /// equivalent omission on a real board and every layer landed on a general drawing layer, turning
+    /// tracks into graphics.</para>
+    ///
+    /// <para><b>…but only when the extension identifies ONE file in the set</b> — the one amendment to
+    /// R-L4g-7's "unconditionally", and it is a correctness fix rather than a tidying. A
+    /// <c>GerberSuffix</c> is a layer ALIAS: <c>GerberLayerIdentity.SuffixOwner</c> (rung 2 of the
+    /// identification cascade) resolves an extension to the FIRST layer claiming it, and
+    /// <c>GerberExport</c> writes <c>&lt;cell&gt;.&lt;suffix&gt;</c>. A board written as twenty
+    /// <c>.art</c> files — an ordinary convention, where the layer is named by the file's STEM and the
+    /// extension says only "artwork" — therefore minted twenty layers all claiming "art": the export
+    /// had to disambiguate every one of them anyway, a re-import would have collapsed all twenty onto
+    /// the first, and <c>TechValidation</c> reported the collision. Leaving it unset costs nothing the
+    /// extension was ever able to buy, and the export's own <c>G{layer}_{datatype}</c> fallback is at
+    /// least unique. A set of distinct extensions (<c>.gtl</c>/<c>.gbl</c>/…) is untouched, which is
+    /// what L4h's round trip runs on.</para>
     /// </summary>
     private static (List<LayerDef> SourceLayers, Dictionary<string, LayerKey> KeyByFile) BuildSourceLayers(
         IReadOnlyList<GerberLayerIdentity> identities,
@@ -941,6 +965,8 @@ public static class GerberImport
         Technology? destTech,
         List<string> messages)
     {
+        var uniqueExtensions = AliasableExtensions(identities);
+
         var sourceLayers = new List<LayerDef>(identities.Count);
         var keyByFile = new Dictionary<string, LayerKey>(StringComparer.Ordinal);
         var used = new HashSet<LayerKey>(destTech?.Layers.Select(l => l.Key) ?? []);
@@ -995,7 +1021,9 @@ public static class GerberImport
                     donor?.Interchange?.GdsiiLayer,
                     donor?.Interchange?.GdsiiDatatype,
                     donor?.Interchange?.DxfLayerName,
-                    identity.Extension is { Length: > 0 } ext ? ext : donor?.Interchange?.GerberSuffix,
+                    identity.Extension is { Length: > 0 } ext && uniqueExtensions.Contains(ext)
+                        ? ext
+                        : donor?.Interchange?.GerberSuffix,
                     identity.FileFunction ?? donor?.Interchange?.GerberFileFunction,
                     donor?.Interchange?.PcbLayerName),
             });
@@ -1030,6 +1058,7 @@ public static class GerberImport
     {
         var tech = new Technology { Name = name };
         var seen = new HashSet<LayerKey>();
+        var aliasable = AliasableExtensions(identities);
 
         foreach (var identity in identities)
         {
@@ -1053,9 +1082,13 @@ public static class GerberImport
                 Selectable = true,
                 Purpose = identity.Purpose,
                 FillPattern = donor?.FillPattern,
-                // The source extension, always — see BuildSourceLayers' own note on R-L4g-7.
+                // The source extension — see BuildSourceLayers' own note on R-L4g-7, including why an
+                // extension shared by several files in the set is NOT recorded as an alias. Reached
+                // only when reconciliation remapped this file onto a key no source layer carries.
                 Interchange = source?.Interchange ?? new InterchangeMapping(
-                    null, null, null, identity.Extension, identity.FileFunction),
+                    null, null, null,
+                    identity.Extension is { Length: > 0 } ext && aliasable.Contains(ext) ? ext : null,
+                    identity.FileFunction),
             });
         }
 

@@ -1,5 +1,86 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Where a technology's validation problems are SHOWN — a tab that can fix them, and one line in the Messages panel (2026-09-04)
+
+Companion to `src/Design/RESOLVED.md`'s entry on the same owner report, which covers reducing the
+problems at their source. This half is about the two surfaces that were repeating them.
+
+**The Technology editor's banner is scoped to the visible tab.** `TechValidation.Analyze` attributes
+every problem to the tab whose fields would fix it (`TechProblemArea`), and the banner lists
+`ActiveTabIssues` — this tab's only. A Gerber suffix collision has nothing to say to someone editing
+the layer table, and reciting the whole set over all four tabs on every open is what made it an
+eye-sore rather than a report.
+
+**Nothing is hidden by that: the other tabs carry the count in their own headers** ("Interchange (2)").
+The showing tab drops its own count, because the banner directly beneath it is already saying the same
+thing in full.
+
+**`HasValidationIssues` still means "is anything wrong, anywhere".** The banner's visibility asks the
+new `HasActiveTabIssues` instead. This split is not cosmetic — a test asserting "deleting a referenced
+layer surfaces a validation message" caught the conflation immediately when the one property tried to
+mean both, since the problem it raises is a Stackup one and the editor opens on Layers.
+
+**The Messages panel gets ONE line per technology, said once.** `WorkspaceViewModel.PostTechDiagnostics`
+now splits the two things a `TechResolution` can carry, using the split the resolution already makes:
+
+- **`Tech` is null** → the file could not be read at all (missing, corrupt, a newer `FormatVersion`).
+  Nothing else reports that and it is actionable now, so it is posted in full, every time.
+- **`Tech` is non-null with diagnostics** → the file loaded and is internally inconsistent. That is a
+  standing property of a file the user edits in the Technology editor, which shows every one of them
+  on the tab that owns it. Rolled up to a count, and posted once per path.
+
+**Why "once" matters more than it sounds.** `ResolveTechFor` runs on every layout open, on every
+workspace-default change, and — through `OnTechnologyChanged` — after every committed edit in an open
+`.ctech` editor, once per open layout resolving against that file. A board carrying twenty-odd
+problems therefore put twenty-odd warnings in the panel *per layout, per keystroke-commit*, which
+buries whatever the user was actually reading.
+
+**The dedupe lasts as long as the problems do, and is deliberately NOT cleared on every change to the
+file.** A resolution that comes back clean forgets the path, so a technology that was fixed and later
+broken again is reported again; clearing it on `TechnologyChanged` instead would have restored the
+per-keystroke posting, since an open editor raises one change per committed edit — and that editor is
+already showing the live result three feet away.
+
+Import Technology's own post-import listing was rolled up the same way and for the same reason: the
+editor it opens on the line above is the place with room for two dozen problems.
+
+### Three follow-ups on the banner itself, all owner-reported, all silent failures
+
+**It is docked BELOW the tabs, not above them.** Docked to the Top it sat between the title bar and
+the tab header strip, so a banner that is now *per-tab* moved the header row every time it appeared or
+vanished — clicking along Layers → Stackup → DRC Rules → Interchange made the very row being clicked
+jump up and down under the pointer. Declared BEFORE the `TabControl` in the `DockPanel`, because a
+`DockPanel` gives its remaining space to its LAST child: the banner reserves its strip and the
+`TabControl` fills what is left.
+
+**The tab-header counts no longer depend on which tab is showing** — same defect, other axis. Dropping
+the count from the selected tab was mildly tidier (the banner below already lists those problems), but
+it changed that header's WIDTH on every click, sliding the headers to its right sideways under the
+pointer. A constant tab strip is worth more than the duplication is worth removing.
+
+**`TextWrapping="Wrap"` was set and could never fire.** The row was a horizontal `StackPanel`, and a
+`StackPanel` measures its children with UNBOUNDED width on its own axis — so a long message (a suffix
+collision names several layers) ran off the right edge with no way to read the rest of it. This is the
+whole class of bug worth naming: the markup *looks* correct and does nothing. Now a
+`Grid ColumnDefinitions="Auto,*"`, whose starred column is what gives the wrap a width to happen at,
+with `HorizontalScrollBarVisibility="Disabled"` set EXPLICITLY on the scroller so it cannot re-introduce
+an unbounded measure.
+
+**The messages are a `SelectableTextBlock`.** They name layers, suffixes and aliases the user then goes
+and searches for, and they could not be copied.
+
+*On verifying AXAML:* this repo has no headless Avalonia render harness, so the banner's markup is held
+by a SOURCE SCAN (the idiom `TechEditorLayerColumnLayoutTests` already uses). That is not the only
+check, though — `AvaloniaUseCompiledBindingsByDefault` means the XAML compiler runs at BUILD time and
+fails on an unresolvable type or binding path. Confirmed directly rather than assumed: substituting a
+nonexistent control into this template fails `dotnet build` with `AVLN2000`, so a green build is real
+evidence about the markup and not a passthrough.
+
+Gate: `tests/Ui.Tests/TechValidationNoiseTests.cs` — the banner/tab-header test, plus three source
+scans pinning the dock edge, the non-StackPanel row (with its wrap and disabled horizontal scrolling),
+and the selectable text.
+
+
 ## Layout editor misc round: corner-radius grips, draw-tool snap, hole centres, the tech pane's zoom, the paste page, the technology picker (2026-09-04)
 
 Six owner reports against the layout editor, unrelated to each other except that all six are the same

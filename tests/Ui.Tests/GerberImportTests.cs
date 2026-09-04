@@ -643,6 +643,49 @@ public class GerberImportTests : IDisposable
             tech.Layers.Select(l => l.Interchange?.GerberSuffix ?? "").OrderBy(s => s, StringComparer.Ordinal));
     }
 
+    [Fact]
+    public void AnExtensionSeveralFilesShare_IsNotRecordedAsAGerberSuffixAtAll()
+    {
+        // Owner report: a board written as twenty `.art` files imported as twenty layers all claiming
+        // the suffix "art", and the Technology editor opened onto nineteen collision warnings.
+        //
+        // A GerberSuffix is a layer ALIAS, and a shared extension cannot be one: GerberExport writes
+        // "<cell>.<suffix>" and had to disambiguate every file after the first, and rung 2 of
+        // GerberLayerIdentity's cascade (SuffixOwner) resolves an extension to the FIRST layer
+        // claiming it, so a RE-import would have landed all twenty files on one layer. Recording it
+        // bought nothing and cost both directions of the round trip.
+        var dir = Folder("shared-extension");
+        Write(dir, "GERB_01_Top_Layer.art", Artwork("Copper,L1,Top,Signal"));
+        Write(dir, "GERB_06_Bottom_Layer.art", Artwork("Copper,L2,Bot,Signal", xMm: 2.0));
+        Write(dir, "GERB_28_Board_Outline.art", Artwork("Profile,NP", xMm: 3.0));
+
+        var result = Import(dir, _root, "shared_ext_import");
+        var tech = TechPersistence.LoadFromFile(result.TechPath!);
+
+        Assert.All(tech.Layers, l => Assert.Null(l.Interchange?.GerberSuffix));
+        // ...and the technology therefore opens clean of alias collisions.
+        Assert.DoesNotContain(TechValidation.Validate(tech), m => m.Contains("Gerber suffix"));
+    }
+
+    [Fact]
+    public void AMixedSet_KeepsTheSuffixOfTheExtensionThatIdentifiesOneFile()
+    {
+        // The rule is per-extension, not per-set: the file whose extension is its own keeps the alias
+        // that works, and only the shared one is dropped. (A real board is exactly this shape — many
+        // .art artwork files beside one .rou drill file.)
+        var dir = Folder("mixed-extension");
+        Write(dir, "top.art", Artwork("Copper,L1,Top,Signal"));
+        Write(dir, "bottom.art", Artwork("Copper,L2,Bot,Signal", xMm: 2.0));
+        Write(dir, "holes.rou", Drill());
+
+        var result = Import(dir, _root, "mixed_ext_import");
+        var tech = TechPersistence.LoadFromFile(result.TechPath!);
+
+        Assert.Equal(
+            ["rou"],
+            tech.Layers.Select(l => l.Interchange?.GerberSuffix).Where(s => s is { Length: > 0 }));
+    }
+
     // -- Gate 10: a NEW technology, and the workspace's own is untouched ---------------------------
 
     [Fact]

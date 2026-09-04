@@ -40,8 +40,65 @@ public sealed partial class TechEditorViewModel : ObservableObject
 
     [ObservableProperty] private bool _isDirty;
 
-    [ObservableProperty] private IReadOnlyList<string> _validationIssues = [];
-    public bool HasValidationIssues => ValidationIssues.Count > 0;
+    /// <summary>Every problem the technology has, whichever tab owns it. The banner does NOT bind to
+    /// this — see <see cref="ActiveTabIssues"/>.</summary>
+    [ObservableProperty] private IReadOnlyList<TechProblem> _validationProblems = [];
+
+    /// <summary>Every problem's message, in order — what a caller outside the editor asks for.</summary>
+    public IReadOnlyList<string> ValidationIssues => [.. ValidationProblems.Select(p => p.Message)];
+
+    /// <summary>
+    /// Which tab is showing (0 Layers, 1 Stackup, 2 DRC Rules, 3 Interchange), bound to the
+    /// TabControl's own SelectedIndex.
+    ///
+    /// <para>The validation banner shows <see cref="ActiveTabIssues"/> — this tab's problems only. A
+    /// technology imported from a Gerber set can carry a couple of dozen problems, essentially all of
+    /// them about interchange aliases, and a banner that recites them over the layer table every time
+    /// the file is opened is noise at exactly the moment the user is doing something else. Nothing is
+    /// hidden: <see cref="LayersTabHeader"/> and its three siblings carry the count of what is on the
+    /// tabs that are not showing.</para>
+    /// </summary>
+    [ObservableProperty] private int _selectedTabIndex;
+
+    /// <summary>The problems the CURRENTLY SHOWING tab owns — what the banner lists.</summary>
+    public IReadOnlyList<string> ActiveTabIssues =>
+        [.. ValidationProblems.Where(p => p.Area == AreaOfTab(SelectedTabIndex)).Select(p => p.Message)];
+
+    /// <summary>Whether the technology has ANY problem, on any tab — the plain "is something wrong"
+    /// question. The banner asks <see cref="HasActiveTabIssues"/> instead.</summary>
+    public bool HasValidationIssues => ValidationProblems.Count > 0;
+
+    /// <summary>Whether the tab currently showing has problems — what makes the banner visible.</summary>
+    public bool HasActiveTabIssues => ActiveTabIssues.Count > 0;
+
+    public string LayersTabHeader      => TabHeader("Layers",    TechProblemArea.Layers);
+    public string StackupTabHeader     => TabHeader("Stackup",   TechProblemArea.Stackup);
+    public string DrcTabHeader         => TabHeader("DRC Rules", TechProblemArea.Drc);
+    public string InterchangeTabHeader => TabHeader("Interchange", TechProblemArea.Interchange);
+
+    private static TechProblemArea AreaOfTab(int index) => index switch
+    {
+        1 => TechProblemArea.Stackup,
+        2 => TechProblemArea.Drc,
+        3 => TechProblemArea.Interchange,
+        _ => TechProblemArea.Layers,
+    };
+
+    /// <summary>
+    /// "Interchange (2)" whenever that tab has problems, plain "Interchange" when it has none.
+    ///
+    /// <para><b>The count does NOT depend on which tab is showing</b>, and that costs a little
+    /// redundancy on purpose. Dropping it from the selected tab — mildly tidier, since the banner
+    /// below is already listing those problems in full — changed the header's WIDTH on every click,
+    /// which slid the headers to its right sideways under the pointer that had just clicked one.
+    /// Same defect as the banner moving the header row vertically, on the other axis. A tab strip
+    /// whose labels are constant is worth more than the duplication is worth removing.</para>
+    /// </summary>
+    private string TabHeader(string title, TechProblemArea area)
+    {
+        int n = ValidationProblems.Count(p => p.Area == area);
+        return n > 0 ? $"{title} ({n})" : title;
+    }
 
     public ObservableCollection<LayerRowViewModel>        Layers        { get; } = [];
     public ObservableCollection<StackupLayerRowViewModel> StackupLayers { get; } = [];
@@ -358,10 +415,29 @@ public sealed partial class TechEditorViewModel : ObservableObject
         Revalidate();
     }
 
-    private void Revalidate() => ValidationIssues = TechValidation.Validate(Working);
+    private void Revalidate() => ValidationProblems = TechValidation.Analyze(Working);
 
-    partial void OnValidationIssuesChanged(IReadOnlyList<string> value)
-        => OnPropertyChanged(nameof(HasValidationIssues));
+    partial void OnValidationProblemsChanged(IReadOnlyList<TechProblem> value) => RaiseValidationViews();
+
+    /// <summary>Changing tab changes only what the banner shows — the headers now read the same
+    /// whichever tab is selected, so they are deliberately not re-raised here.</summary>
+    partial void OnSelectedTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(ActiveTabIssues));
+        OnPropertyChanged(nameof(HasActiveTabIssues));
+    }
+
+    private void RaiseValidationViews()
+    {
+        OnPropertyChanged(nameof(ValidationIssues));
+        OnPropertyChanged(nameof(ActiveTabIssues));
+        OnPropertyChanged(nameof(HasValidationIssues));
+        OnPropertyChanged(nameof(HasActiveTabIssues));
+        OnPropertyChanged(nameof(LayersTabHeader));
+        OnPropertyChanged(nameof(StackupTabHeader));
+        OnPropertyChanged(nameof(DrcTabHeader));
+        OnPropertyChanged(nameof(InterchangeTabHeader));
+    }
 
     // ── Layer table ────────────────────────────────────────────────────────────
 

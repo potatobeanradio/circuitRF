@@ -940,6 +940,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _techCache.TechnologyChanged += OnTechnologyChanged;
         _wasmCache = new WasmCache();
         _assemblyRulesAsked.Clear();
+        _techProblemsReported.Clear();
 
         // Drop any not-yet-flushed live-tech update targeting the OLD cache — every workspace-reset
         // path closes open documents first, but this guards the (rare) case of a reset landing in
@@ -992,7 +993,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (choice.Path is not null)
             {
                 var loaded = TechnologyResolver.LoadDirect(choice.Path, TechResolutionSource.WorkspaceDefault, _techCache);
-                foreach (var d in loaded.Diagnostics) Messages.Warning(d);
+                PostTechDiagnostics(loaded);
                 return loaded;
             }
             return new TechResolution(choice.StarterTech, null, TechResolutionSource.None, []);
@@ -1005,8 +1006,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var (resolution, ownCwsPath) = TechnologyResolver.ResolveForDocument(
             techRef, normalizedClayPath, CurrentWorkspacePath, _techCache);
 
-        foreach (var diagnostic in resolution.Diagnostics)
-            Messages.Warning(diagnostic);
+        PostTechDiagnostics(resolution);
 
         // R-fgn-4: a materialized document with NO ancestor workspace at all (never a scratch one —
         // those legitimately fall back to the current workspace above) and no explicit TechRef of its
@@ -1020,6 +1020,57 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         return resolution;
     }
+
+    /// <summary>
+    /// What a technology resolution has to say, in the Messages panel.
+    ///
+    /// <para><b>A load FAILURE is said in full, every time; a technology's own validation problems are
+    /// rolled up to one line and said once per file.</b> The two are different kinds of thing and the
+    /// resolution already separates them: a null <see cref="TechResolution.Tech"/> means the file could
+    /// not be read at all — nothing else will report that, and it is actionable now. A non-null one
+    /// carrying diagnostics means the file loaded and is internally inconsistent, which is a standing
+    /// property of a file the user edits in the Technology editor; that editor shows every one of them,
+    /// on the tab that owns it.</para>
+    ///
+    /// <para>Repeating them here was a flood rather than a report. This runs on every layout open, on
+    /// every workspace default change, and — through <c>OnTechnologyChanged</c> — after every committed
+    /// edit in an open <c>.ctech</c> editor, once per open layout resolving against that file. A board
+    /// imported from Gerber carrying twenty-odd problems put twenty-odd warnings in the panel per
+    /// layout per keystroke-commit, which buries the messages someone was actually reading.</para>
+    ///
+    /// <para>The dedupe lasts as long as the problems do: a resolution that comes back CLEAN forgets
+    /// the path, so a technology that was fixed and later broken again is reported again. It is
+    /// deliberately not cleared on every change to the file — an open <c>.ctech</c> editor raises one
+    /// change per committed edit, and the editor itself is already showing the live result.</para>
+    /// </summary>
+    private void PostTechDiagnostics(TechResolution resolution)
+    {
+        if (resolution.Diagnostics.Count == 0)
+        {
+            if (resolution.ResolvedPath is { } clean) _techProblemsReported.Remove(clean);
+            return;
+        }
+
+        if (resolution.Tech is null)
+        {
+            foreach (var diagnostic in resolution.Diagnostics) Messages.Warning(diagnostic);
+            return;
+        }
+
+        string path = resolution.ResolvedPath ?? "";
+        if (!_techProblemsReported.Add(path)) return;
+
+        int n = resolution.Diagnostics.Count;
+        Messages.Warning(
+            $"Technology \"{resolution.Tech.Name}\" has {n} issue{(n == 1 ? "" : "s")} — open it in the " +
+            "Technology editor to see them, listed on the tab that owns each one.",
+            resolution.ResolvedPath);
+    }
+
+    /// <summary>Technology files whose validation problems have already been summarized in the Messages
+    /// panel. Keyed by absolute path; a path is forgotten when that technology next resolves clean, and
+    /// the whole set is dropped on a workspace reset.</summary>
+    private readonly HashSet<string> _techProblemsReported = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Fire-and-forget: shows the R-fgn-4 prompt at most once per document per session
     /// (guarded by <see cref="_sessionTechOverrides"/>/<see cref="_pendingOrphanTechPrompts"/>), and
@@ -6050,9 +6101,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             foreach (var note in result.Notes) Messages.Warning($"Import Technology — {note}");
 
             // The editor's own validation is the last word on whether the result is usable, so it is
-            // run here rather than left for the user to discover on the Stackup tab.
-            foreach (var problem in TechValidation.Validate(tech))
-                Messages.Warning($"Import Technology — {problem}");
+            // run here rather than left for the user to discover on the Stackup tab — but as ONE line
+            // naming the count, for the same reason PostTechDiagnostics does: the editor opened just
+            // above lists every problem on the tab that owns it, and an imported technology can carry
+            // a couple of dozen.
+            int problems = TechValidation.Validate(tech).Count;
+            if (problems > 0)
+                Messages.Warning(
+                    $"Import Technology — the imported technology has {problems} " +
+                    $"issue{(problems == 1 ? "" : "s")}; they are listed in the Technology editor, on " +
+                    "the tab that owns each one.", techPath);
         }
         catch (Exception ex)
         {

@@ -192,24 +192,56 @@
             </Grid>
         </Border>
 
-        <!-- ── Validation banner — live, never blocks Save ─────────────────── -->
-        <Border DockPanel.Dock="Top"
-                IsVisible="{Binding ViewModel.HasValidationIssues}"
+        <!-- ── Validation banner — live, never blocks Save, and SCOPED TO THE VISIBLE TAB ────
+             It lists ActiveTabIssues, not every problem the technology has. An imported board's
+             technology routinely carries a couple of dozen, nearly all of them interchange-alias
+             clashes that mean nothing to someone editing the layer table, and reciting them over
+             every tab on every open is the eye-sore this replaced. The counts on the other tab
+             headers are what keeps this a filter rather than a hiding place.
+
+             DOCKED TO THE BOTTOM, BELOW THE TABS, and that placement is load-bearing rather than
+             stylistic. Above the TabControl it sat between the title bar and the tab header strip,
+             so appearing and disappearing MOVED THE HEADERS — and since the banner is now per-tab,
+             clicking along Layers → Stackup → DRC Rules → Interchange made the very row being
+             clicked jump up and down under the pointer. Below the content, the headers never move
+             and only the bottom edge of the editor changes. Declared BEFORE the TabControl because
+             a DockPanel gives its remaining space to the last child: this reserves its strip, the
+             TabControl fills what is left. -->
+        <Border DockPanel.Dock="Bottom"
+                IsVisible="{Binding ViewModel.HasActiveTabIssues}"
                 Background="{DynamicResource SystemChromeMediumLowColor}"
                 BorderBrush="{DynamicResource CrfWarningBrush}"
-                BorderThickness="0,0,0,1"
+                BorderThickness="0,1,0,0"
                 Padding="8,6"
                 MaxHeight="120">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding ViewModel.ValidationIssues}">
+            <!-- HorizontalScrollBarVisibility is Disabled EXPLICITLY, so the row below is measured
+                 against the banner's real width and the text has something to wrap at. -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding ViewModel.ActiveTabIssues}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="x:String">
-                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
-                                <mi:MaterialIcon Kind="AlertCircleOutline" Width="12" Height="12"
+                            <!-- A GRID, not the horizontal StackPanel this was: a StackPanel measures
+                                 its children with UNBOUNDED width on its own axis, so `TextWrapping`
+                                 was set and could never fire — a long message (a suffix collision
+                                 names several layers) simply ran off the right edge with no way to
+                                 read the rest of it. The starred second column is what gives the
+                                 wrap a width to happen at.
+
+                                 SelectableTextBlock so the message can be COPIED — these name layers
+                                 and values the user then goes and searches for. The icon aligns Top
+                                 rather than Center so it stays beside the FIRST line of a message
+                                 that now runs to several. -->
+                            <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                                <mi:MaterialIcon Grid.Column="0" Kind="AlertCircleOutline"
+                                                 Width="12" Height="12" Margin="0,2,6,0"
+                                                 VerticalAlignment="Top"
                                                  Foreground="{DynamicResource CrfWarningBrush}"/>
-                                <TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource CrfWarningBrush}"/>
-                            </StackPanel>
+                                <SelectableTextBlock Grid.Column="1" Text="{Binding}" FontSize="11"
+                                                     TextWrapping="Wrap"
+                                                     HorizontalAlignment="Stretch"
+                                                     VerticalAlignment="Top"
+                                                     Foreground="{DynamicResource CrfWarningBrush}"/>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -217,7 +249,7 @@
         </Border>
 
         <!-- ── Sections ─────────────────────────────────────────────────────── -->
-        <TabControl x:Name="SectionTabs">
+        <TabControl x:Name="SectionTabs" SelectedIndex="{Binding ViewModel.SelectedTabIndex, Mode=TwoWay}">
 
             <!-- TabControl's DEFAULT ItemsPanel is a WrapPanel (Avalonia.Controls.TabControl:
                  DefaultPanel = new FuncTemplate<Panel>(() => new WrapPanel())) — that is why the four
@@ -241,7 +273,7 @@
             </TabControl.Styles>
 
             <!-- Layer table ────────────────────────────────────────────────── -->
-            <TabItem Header="Layers">
+            <TabItem Header="{Binding ViewModel.LayersTabHeader}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="4" Margin="6,4">
                         <Button Content="＋ Add Layer" Command="{Binding ViewModel.AddLayerCommand}" FontSize="11" Padding="8,3"/>
@@ -431,7 +463,7 @@
             </TabItem>
 
             <!-- Stackup ────────────────────────────────────────────────────── -->
-            <TabItem Header="Stackup">
+            <TabItem Header="{Binding ViewModel.StackupTabHeader}">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,Auto,Auto" Margin="6,6">
                         <TextBlock Grid.Column="0" Text="Top:" VerticalAlignment="Center" FontSize="11" Margin="0,0,4,0"/>
@@ -662,7 +694,7 @@
             </TabItem>
 
             <!-- DRC rules ──────────────────────────────────────────────────── -->
-            <TabItem Header="DRC Rules">
+            <TabItem Header="{Binding ViewModel.DrcTabHeader}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="4" Margin="6,4">
                         <Button Content="＋ Add Rule" Command="{Binding ViewModel.AddDrcRuleCommand}" FontSize="11" Padding="8,3"/>
@@ -834,7 +866,7 @@
             </TabItem>
 
             <!-- Interchange mappings (docs/design/layout-view.md §2.4 R7a) ───── -->
-            <TabItem Header="Interchange">
+            <TabItem Header="{Binding ViewModel.InterchangeTabHeader}">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Margin="6,6,6,0" FontSize="10" TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemBaseMediumColor}"

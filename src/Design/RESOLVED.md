@@ -1,5 +1,75 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## A technology imported from Gerber greeted the user with 22 validation messages describing 2 facts (2026-09-04)
+
+Owner report: opening a `.ctech` imported from a real 21-file Gerber set filled the Technology
+editor's banner with a wall of warnings, and the Messages panel with the same wall on every workspace
+load. Measured on the reported file: **22 messages, 2 facts.** Three separate causes, in the order
+they were found.
+
+### 1. Every layer claimed the Gerber suffix "art", and that is not a cosmetic clash
+
+The board was written as twenty `.art` files (`GERB_01_Top_Layer.art`, `GERB_02_Layer_2.art`, …) — an
+ordinary convention where the extension means "artwork" and the STEM says which layer. R-L4g-7 records
+the source extension as the minted layer's `GerberSuffix` *unconditionally*, so all twenty claimed
+"art", and the pairwise collision check reported that nineteen times.
+
+**A `GerberSuffix` is a layer ALIAS, and a shared extension cannot be one.** The nineteen warnings were
+the small half of it; the alias was already broken in both directions:
+
+- `GerberExport.Write` names each file `<cell>.<suffix>` and disambiguates a repeat as
+  `<cell>.<suffix>_<layer>_<datatype>` — so the very names R-L4g-7 exists to preserve were not
+  preserved for nineteen of the twenty layers anyway.
+- `GerberLayerIdentity.SuffixOwner` (rung 2 of the identification cascade) is a `FirstOrDefault` over
+  the destination technology's layers. **A re-import of that same set against that technology would
+  have identified all twenty files as "Top Copper"** — every one of them then falling into
+  `BuildSourceLayers`' "resolved to the same technology layer as an earlier file" branch.
+
+Fixed at the source: `GerberImport.AliasableExtensions` records the extension only for an extension
+that identifies exactly ONE file in the set. Everything else is left unset, where the export's own
+`G{layer}_{datatype}` fallback is at least unique. The rule is per-extension, not per-set — a real
+board of many `.art` files beside one `.rou` drill file keeps the `.rou` alias, which is what the
+reported file's re-import now produces. A set of distinct extensions (`.gtl`/`.gbl`/…) is untouched,
+which is what L4h's byte-identity round trip runs on, and R-L4g-7's own gate
+(`EachImportedLayerCarriesItsSourceExtensionAsItsGerberSuffix`) is unchanged.
+
+### 2. The via reported three problems, none of which could be answered
+
+A Gerber set with no job file carries **no stackup information anywhere in the files**, so the import
+mints a `StackupKind.Via` entry (the drill layer must be marked as one) into a stackup with no
+conductor entries at all. `TechValidation` then reported the span-from end, the span-to end, and
+`Fill = Plated` with no wall thickness — three messages, all of them unfixable until conductors exist,
+and none of them naming the reason they cannot be fixed.
+
+The import is right not to invent a substrate (its own comment says so, and that stands). The
+validator now says the one true thing — the stackup names a via but no conductor layers — and skips
+the three checks that condition makes unanswerable. **Scoped to that condition only:** a technology
+that HAS conductors and names the wrong one is a typo and is still caught per end.
+
+### 3. One message per shared alias, not one per additional claimant
+
+`ValidateInterchange` reported collisions pairwise: first-vs-second, first-vs-third, … Now it groups
+by the shared VALUE and reports it once, naming up to three layers and counting the rest
+(`20 layers ("Top Copper", "Inner 1", "Inner 2" and 17 more) share the Gerber suffix "art"`). A PAIR —
+the case someone actually mistyped — still names both, which is what the existing gate asserts.
+
+### `Validate` grew a sibling, and kept its own shape
+
+`TechValidation.Analyze` returns `TechProblem(Area, Message)`, attributing each problem to the editor
+tab whose fields would fix it. `Validate` is now a projection to the messages alone, unchanged in
+signature — the ~30 existing call sites and tests were not touched. What the editor does with the area
+is in `src/Ui/RESOLVED.md`.
+
+### Measured
+
+The reported file, before: **22**. After: **2** (one Stackup, one Interchange; none on Layers). A
+fresh import of the same folder: **1** — the stackup one, which is a true statement about what a
+Gerber set without a job file can carry.
+
+Gates: `tests/Ui.Tests/TechValidationNoiseTests.cs` (all three collapses, plus the two scope limits),
+and two additions to `tests/Ui.Tests/GerberImportTests.cs` for the shared-extension rule.
+
+
 ## `CellHierarchy.InstanceBbox` takes an optional layer filter, and a filtered answer is never cached (2026-09-04)
 
 Added for the clipboard's graphic export, which sizes its page from what will be PAINTED and therefore
