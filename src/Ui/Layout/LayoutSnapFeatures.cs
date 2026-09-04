@@ -496,13 +496,13 @@ public sealed class LayoutSnapFeatureIndex
             case PolygonShape p:
                 AddRingFeatures(sink, p.Layer, p.Xy, null, closed: true, ownerIndex);
                 if (p.Holes is { } holes)
-                    foreach (var h in holes) AddRingFeatures(sink, p.Layer, h, null, closed: true, ownerIndex);
+                    foreach (var h in holes) AddHoleFeatures(sink, p.Layer, h, ownerIndex);
                 AddBboxCentroid(sink, p.Layer, p.Xy, ownerIndex);
                 break;
             case CurveShape curve:
                 AddRingFeatures(sink, curve.Layer, curve.Xy, curve.Edges, closed: true, ownerIndex);
                 if (curve.Holes is { } choles)
-                    foreach (var h in choles) AddRingFeatures(sink, curve.Layer, h, null, closed: true, ownerIndex);
+                    foreach (var h in choles) AddHoleFeatures(sink, curve.Layer, h, ownerIndex);
                 AddBboxCentroid(sink, curve.Layer, curve.Xy, ownerIndex);
                 break;
             case PathShape path:
@@ -520,6 +520,33 @@ public sealed class LayoutSnapFeatureIndex
             // LabelShape, BitmapShape: not real geometry — no snap features, mirrors LayoutHandles.Build's
             // own "not geometry-reshape targets" exclusion for the same two kinds.
         }
+    }
+
+    /// <summary>
+    /// An inner ring's own features — its vertices/edge midpoints, as before, PLUS its CENTRE
+    /// (owner request, 2026-09-04: "snap to the centre of a hole").
+    ///
+    /// <para>A drilled hole in a pour, a mounting hole, an annular ring's clearance — the thing worth
+    /// aiming at is the axis, and until now only the flattened arc's vertices were offered, which is
+    /// the one point on a round hole nobody wants. The outer ring already gets exactly this treatment
+    /// (<see cref="AddBboxCentroid"/>), so a hole getting one is the rule applying evenly rather than
+    /// a new kind of feature: same <see cref="SnapFeatureKind.Centroid"/> kind, same circle glyph,
+    /// same rank against a corner or a pin.</para>
+    ///
+    /// <para><b>It costs one feature per RING, not per vertex</b> — a Gerber pour with 228 holes and
+    /// ~21,772 hole vertices gains 228 entries, well under a percent of what its rings already
+    /// contribute, and the index is built once per cell and cached by reference. The query itself is
+    /// unaffected: centroids are their own kind with their own grid, so a hole centre is examined only
+    /// when the cursor is near one.</para>
+    ///
+    /// <para>The BBOX centre, matching <see cref="AddBboxCentroid"/> — for a circular hole (every
+    /// drilled one) that IS the axis, and for an irregular cutout it is the same answer the outer ring
+    /// would give, so the two can never disagree about what "centre" means.</para>
+    /// </summary>
+    private static void AddHoleFeatures(FeatureSink sink, LayerKey layer, long[] ring, int ownerIndex)
+    {
+        AddRingFeatures(sink, layer, ring, null, closed: true, ownerIndex);
+        AddBboxCentroid(sink, layer, ring, ownerIndex);
     }
 
     private static void AddBoxFeatures(FeatureSink sink, LayerKey layer, long x1, long y1, long x2, long y2, int ownerIndex)

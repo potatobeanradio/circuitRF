@@ -20,9 +20,17 @@ public sealed record ChangeTechnologyResult(string? AbsoluteTechPath, bool Adopt
 /// "Change Technology…" picker — the entry point for Gap 1 (docs/sonnet-briefs/brief-L1g-technology-retarget.md
 /// §0: "there is no UI to change a layout's technology"). Offers <b>(Workspace default)</b> as an
 /// explicit, always-selectable option (§4 — L0c's convention, not something only reachable by never
-/// having chosen), every <c>.ctech</c> in the workspace's <c>tech/</c> folder, and <b>Browse…</b> for
-/// one outside the workspace. The unit-adoption checkbox defaults OFF — silently overwriting a user's
-/// working unit mid-retarget would be exactly the kind of helpfulness that erodes trust (§4 point 3).
+/// having chosen), every <c>.ctech</c> <b>anywhere in the workspace</b>, and <b>Browse…</b> for one
+/// outside it. The unit-adoption checkbox defaults OFF — silently overwriting a user's working unit
+/// mid-retarget would be exactly the kind of helpfulness that erodes trust (§4 point 3).
+///
+/// <para><b>The list was the workspace's <c>tech/</c> folder alone</b> until 2026-09-04 (owner report:
+/// the picker does not offer all the workspace's technologies). <c>tech/</c> is where the workspace
+/// TEMPLATE puts one and where a new one is written, but nothing stops a technology living beside the
+/// cell it belongs to, arriving inside an imported cell folder, or being unpacked from an archive —
+/// and a technology the user can see in the Project Tree but not choose here reads as the picker being
+/// broken. Browse… could reach them, which is precisely the tell: the file was in the workspace all
+/// along and the dialog was sending the user out to the filesystem to find it.</para>
 /// </summary>
 public partial class ChangeTechnologyDialog : Window
 {
@@ -38,11 +46,8 @@ public partial class ChangeTechnologyDialog : Window
         CurrentText.Text = $"Current: {vm.TechSummaryText}";
 
         var items = new List<TechChoiceItem> { new("(Workspace default)", null) };
-        if (vm.WorkspaceTechDir is { } techDir && Directory.Exists(techDir))
-        {
-            foreach (var path in Directory.GetFiles(techDir, "*.ctech").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
-                items.Add(new TechChoiceItem(TryReadTechName(path) ?? Path.GetFileNameWithoutExtension(path), path));
-        }
+        foreach (var choice in WorkspaceTechnologyChoices.Enumerate(vm.WorkspaceRootDir, vm.WorkspaceTechDir))
+            items.Add(new TechChoiceItem(choice.Label, choice.AbsolutePath));
 
         ChoiceList.ItemsSource = items;
         ChoiceList.SelectedIndex = 0;
@@ -50,19 +55,6 @@ public partial class ChangeTechnologyDialog : Window
         BrowseButton.Click += async (_, _) => await OnBrowseAsync();
         OkButton.Click      += (_, _) => Close(BuildResult());
         CancelButton.Click  += (_, _) => Close(null);
-    }
-
-    private static string? TryReadTechName(string path)
-    {
-        try
-        {
-            var tech = TechPersistence.LoadFromFile(path);
-            return tech.Name is { Length: > 0 } n ? n : null;
-        }
-        catch
-        {
-            return null; // corrupt/unreadable — fall back to the filename stem, never throw here
-        }
     }
 
     private async Task OnBrowseAsync()

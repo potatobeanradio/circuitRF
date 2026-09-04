@@ -36,6 +36,68 @@ public class LayoutSnapFeaturesTests
         Assert.True(Has(near, SnapFeatureKind.Centroid, 5000, 10_000));
     }
 
+    // Owner question, 2026-09-04: can a HOLE's centre be snapped to? It can — and it costs one extra
+    // feature per RING, not per vertex, so a pour with 228 holes gains 228 entries against the ~21,772
+    // hole vertices its rings already contribute. The centre is where a drilled hole's axis is; the
+    // flattened arc's vertices, which were all that was offered before, are the one part of a round
+    // hole nobody aims at.
+    [Fact]
+    public void PolygonHole_ContributesItsOwnCentre_NotOnlyItsRingVertices()
+    {
+        var model = FreshModel();
+        model.Shapes.Add(new PolygonShape
+        {
+            Layer = new LayerKey(1, 0),
+            Xy    = [0, 0, 100_000, 0, 100_000, 100_000, 0, 100_000],
+            Holes = [[40_000, 40_000, 60_000, 40_000, 60_000, 60_000, 40_000, 60_000]],
+        });
+
+        var idx = LayoutSnapFeatureIndex.Get(model, null);
+        var counters = new SnapQueryCounters();
+        var near = idx.QueryNear(50_000, 50_000, 5_000, ref counters);
+
+        Assert.True(Has(near, SnapFeatureKind.Centroid, 50_000, 50_000),
+                    "the hole's own centre must be snappable");
+    }
+
+    [Fact]
+    public void CurveHole_ContributesItsOwnCentre_TheSameWay()
+    {
+        var model = FreshModel();
+        model.Shapes.Add(new CurveShape
+        {
+            Layer = new LayerKey(1, 0),
+            Xy    = [0, 0, 100_000, 0, 100_000, 100_000, 0, 100_000],
+            Holes = [[10_000, 10_000, 30_000, 10_000, 30_000, 30_000, 10_000, 30_000]],
+        });
+
+        var idx = LayoutSnapFeatureIndex.Get(model, null);
+        var counters = new SnapQueryCounters();
+        var near = idx.QueryNear(20_000, 20_000, 5_000, ref counters);
+
+        Assert.True(Has(near, SnapFeatureKind.Centroid, 20_000, 20_000));
+    }
+
+    // The hole's ring features are unchanged — the centre is an ADDITION, not a replacement.
+    [Fact]
+    public void PolygonHole_StillContributesItsRingCornersAndMidpoints()
+    {
+        var model = FreshModel();
+        model.Shapes.Add(new PolygonShape
+        {
+            Layer = new LayerKey(1, 0),
+            Xy    = [0, 0, 100_000, 0, 100_000, 100_000, 0, 100_000],
+            Holes = [[40_000, 40_000, 60_000, 40_000, 60_000, 60_000, 40_000, 60_000]],
+        });
+
+        var idx = LayoutSnapFeatureIndex.Get(model, null);
+        var counters = new SnapQueryCounters();
+        var near = idx.QueryNear(45_000, 40_000, 15_000, ref counters);
+
+        Assert.True(Has(near, SnapFeatureKind.CornerEndpoint, 40_000, 40_000));
+        Assert.True(Has(near, SnapFeatureKind.Midpoint, 50_000, 40_000));
+    }
+
     [Fact]
     public void Circle_ProducesOnlyCentroid_NoCornersOrMidpoints()
     {

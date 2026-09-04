@@ -179,9 +179,12 @@ public static class LayoutClipboard
     {
         var bbox = Bbox.Empty;
         var conductorAt = LayoutPortDirection.LookupFor(ctx.Payload.Shapes);
+        var visible = LayerVisibilityOf(ctx.Tech);
 
         foreach (var s in ctx.Payload.Shapes)
         {
+            if (!visible(s.Layer)) continue;
+
             bbox = bbox.Union(LayoutGeometry.BboxOf(s));
 
             if (s is not LabelShape label) continue;
@@ -203,7 +206,7 @@ public static class LayoutClipboard
 
         foreach (var inst in ctx.Payload.Instances)
         {
-            var ib = CellHierarchy.InstanceBbox(inst, ctx.BaseDir);
+            var ib = CellHierarchy.InstanceBbox(inst, ctx.BaseDir, visible);
             if (!ib.IsEmpty) bbox = bbox.Union(ib);
         }
 
@@ -256,6 +259,31 @@ public static class LayoutClipboard
         double worldH = bbox.MaxY - bbox.MinY;
         if (worldW < 1 || worldH < 1) return null;
         return (worldW, worldH, bbox.MinX, bbox.MinY);
+    }
+
+    /// <summary>
+    /// Which layers the page is allowed to be sized by — <c>LayerDef.Visible</c>, the same flag
+    /// <c>LayoutRenderer.Draw</c> gates each layer on.
+    ///
+    /// <para>Owner report, 2026-09-04: two shapes far apart on two layers, one layer hidden, pasted
+    /// into Keynote as a mostly-empty page with the visible shape too small to read. The page was
+    /// sized from the hidden shape as well, which nothing then painted — the export measured the
+    /// SELECTION where the renderer draws the VISIBLE selection, and the two disagreed by however far
+    /// apart the layers' geometry happened to be. The copy itself is unchanged: the JSON payload still
+    /// carries every selected shape, so a paste back into a layout is unaffected — this decides only
+    /// how big the picture is.</para>
+    ///
+    /// <para>With no technology (or on a layer the technology does not define) the renderer falls back
+    /// to <c>FallbackPalette</c> and paints, so the answer is "visible" — the filter can only ever
+    /// remove a layer that was explicitly turned off.</para>
+    /// </summary>
+    private static Func<LayerKey, bool> LayerVisibilityOf(Technology? tech)
+    {
+        if (tech is null) return static _ => true;
+
+        var map = new Dictionary<LayerKey, bool>();
+        foreach (var l in tech.Layers) map[l.Key] = l.Visible;
+        return key => !map.TryGetValue(key, out bool v) || v;
     }
 
     /// <summary>Widens an axis with no extent to an eighth of the other, so a flat selection still

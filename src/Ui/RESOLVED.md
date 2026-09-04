@@ -1,5 +1,86 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Layout editor misc round: corner-radius grips, draw-tool snap, hole centres, the tech pane's zoom, the paste page, the technology picker (2026-09-04)
+
+Six owner reports against the layout editor, unrelated to each other except that all six are the same
+shape of gap — a rule that was applied in one place and not in the four others it also describes.
+
+**A corner-radius grip in every corner, and the right-hand pair drags the other way.**
+`LayoutHandles.BuildRoundedRectHandles` emitted one `CornerRadius` handle, at `(X1 + R, Y2)`. It now
+emits four, one per corner, and `LayoutHandle.Index` carries the CORNER index (the same 0..3 order
+`BuildRectCorners`/`ResizeRoundedRectCorner` use) rather than a placeholder 0. The radius is a single
+shape-wide field, so all four write the same value — the index exists to say which direction grows it.
+Each grip sits R along the horizontal edge measured FROM ITS OWN corner, so the right-hand pair is at
+`X2 - R` and its drag reads `x2 - px`, not `px - x1`. Without that half, a rightward drag on a
+right-hand grip would shrink the radius while the grip fled the cursor at twice the speed. At R = 0 all
+four sit exactly on their corner's Vertex handle, which wins the tie (same priority tier, vertices
+added first) — unchanged from when there was one grip.
+
+**The drawing tools never asked for geometry snap.** Reported as "the geometry snap does not show when
+creating a new primitive" — arm the Circle tool with snap on, and there is no snapping and no glyph.
+It was not a snap failure. `UpdateSnapMarker` is the ONLY method that both resolves a candidate and
+populates `Overlay.SnapMarker`, and it was reached from the Select, Ruler, Port and Instance paths
+only; every draw point went through `LayoutSnapping.SnapPoint`/`ConstrainAndSnap`, which are GRID snap
+alone. `LayoutEditorViewModel.SnapDrawPoint` is now the drawing tools' equivalent of the ruler's own
+`SnapRulerPoint`, with the same precedence (**a real candidate outranks the angle constraint**), and
+the hover path runs the query with nothing being drawn yet so the glyph is visible BEFORE the first
+click — which is the whole affordance; by the time it appears after the click the point is placed.
+
+*The half that would have been missed:* `OnPointerReleased` re-derived the second point of a two-point
+drag with grid snap alone, so a rect whose ghost sat on the geometry committed to the grid. It takes
+the same tolerance as every other pointer entry point now (0 falls back to the last query's), and
+`LayoutCanvas` passes it.
+
+**Hole centres are snappable, and they cost one feature per RING.** Owner question rather than a bug.
+`AddHoleFeatures` adds the inner ring's bbox centre alongside the vertices/midpoints it already
+contributed — the same treatment the outer ring gets, so the two cannot disagree about what "centre"
+means, and for a drilled (circular) hole the bbox centre IS the axis. The cost question is worth
+recording because the answer is not obvious from the size of the geometry: a Gerber pour with 228 holes
+and ~21,772 hole vertices gains **228** entries. Centroids are their own kind with their own grid
+(`LayoutSnapFeatureIndex`), so query cost is unchanged unless the cursor is actually near one.
+
+**Opening the technology pane changed the layout's zoom.** Technology > Edit... splits the document
+row, which re-realises the layout view — and `LayoutCanvas`'s `ViewModel` setter armed
+`_needsInitialFit` unconditionally on every bind, so the next layout pass zoomed to fit a document that
+had been mid-session. Closing the `.ctech` re-merges the row and did it again. Pan/zoom is canvas-owned
+state and a canvas does not survive a dock rebuild, so the memory had to move to something that does:
+`LayoutEditorViewModel.LastViewport`, written from `RaiseViewportChanged` (the one funnel every pan/zoom
+path already goes through) and read on bind. A non-null value suppresses the fit; null still fits, so a
+document being shown for the first time is unchanged. The same fix covers every other cause of a
+re-realise — a tear-off, a dock reset, a panel toggle that re-splits the row.
+
+**The pasted vector graphic was sized by layers nothing painted.** Two shapes on two layers, far apart,
+one layer hidden: the page spanned both, so the visible shape arrived in Keynote/PowerPoint too small
+to read, and the further apart the layers happened to be the worse it got. `LayoutRenderer.Draw` skips a
+layer on `LayerDef.Visible`; `LayoutClipboard.ComputeSelectionBounds` did not, so the export MEASURED
+the selection where it DREW the visible selection. Both now read the same flag. `CellHierarchy`
+.`InstanceBbox` takes an optional per-layer filter for the instance half — null (every interactive
+caller: the spatial index, hit-testing, the LOD decision) measures everything, because those cull
+against where geometry IS rather than against what is painted. **A supplied filter bypasses the
+`ShapesBbox` memo**, which is keyed on the view alone: caching a filtered answer there would hand a
+hidden-layer-less bbox to the spatial index. The JSON payload is deliberately untouched — a paste back
+into a layout still carries every selected shape; only the picture's size changed. An UNDEFINED layer
+still counts, because `FallbackPalette` paints it.
+
+**Change Technology... listed one folder.** It enumerated the workspace's `tech/` folder,
+non-recursively. A technology can equally live beside the cell it belongs to, arrive inside an imported
+cell folder, or come out of an archive — and Browse... could always reach those, which is the tell that
+the file was in the workspace all along and the dialog was sending the user out to the filesystem to
+find it. `WorkspaceTechnologyChoices` (split out of the dialog so the RULE is testable without standing
+up a window) walks the whole workspace root, `tech/` first, then alphabetical. **Any label that is not
+unique gains its workspace-relative folder** — widening the search is exactly what makes two rows named
+the same thing possible, and a picker with two identical rows is not merely wordy, it is unmakeable.
+
+Gates: `LayoutHandlesTests`/`LayoutHandleGesturesTests` (four grips, and each drag direction),
+`LayoutDrawToolSnapTests` (glyph on hover per tool, the placed point per tool, and the grid fallback
+when nothing is in range), `LayoutSnapFeaturesTests` (hole centre added, ring features unchanged),
+`LayoutClipboardVisibilityTests` (page sized by the visible shape alone; both-visible, no-technology
+and undefined-layer all still span everything), `WorkspaceTechnologyChoicesTests` (found anywhere,
+`tech/` first, duplicates disambiguated, unreadable file falls back to its filename),
+`LayoutCanvasViewportPersistenceTests` (the view-model half directly; the canvas half scanned, since
+this project stands up no headless Avalonia app).
+
+
 ## The whole UI crawled while a 10x10 array of an imported board was open (2026-09-04)
 
 Owner report, three parts: opening a `.clay` holding a 10x10 instance array of a complex board made

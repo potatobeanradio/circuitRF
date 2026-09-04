@@ -69,9 +69,30 @@ public sealed class LayoutCanvas : Control
             {
                 _viewModel.PropertyChanged += OnVmPropertyChanged;
                 _viewModel.Model.Changed   += OnModelChanged;   // Model itself never changes post-construction
-                _needsInitialFit = true;
+
+                // A document that has already BEEN on screen keeps the pan/zoom it was left at; only a
+                // document being shown for the first time gets the initial fit.
+                //
+                // Owner report, 2026-09-04: opening (and closing) Technology > Edit... changed the
+                // layout's zoom. Splitting the document pane re-realises the layout view, which
+                // re-binds this property — and re-binding unconditionally re-armed the initial fit, so
+                // the next layout pass silently zoomed to fit. Nothing about the layout had changed;
+                // the canvas had simply forgotten it was mid-session. Pan/zoom is canvas-owned state
+                // (see CurrentViewport), and a canvas does not outlive a dock rebuild, so the memory
+                // has to live on the VIEW MODEL, which does. The same fix covers every other cause of
+                // a re-realise: a tear-off, a dock reset, a panel toggle that re-splits the row.
+                if (_viewModel.LastViewport is { } vp)
+                {
+                    _panX = vp.PanX; _panY = vp.PanY; _zoom = vp.Zoom;
+                    _needsInitialFit = false;
+                }
+                else
+                {
+                    _needsInitialFit = true;
+                }
             }
             UpdateCursor();
+            if (_viewModel?.LastViewport is not null) RaiseViewportChanged();   // rulers/readout follow the restored view
             InvalidateVisual();
         }
     }
@@ -527,6 +548,10 @@ public sealed class LayoutCanvas : Control
 
     private void RaiseViewportChanged()
     {
+        // Remembered on the view model rather than here — see the ViewModel setter for why the canvas
+        // is the wrong place to hold it. Every pan/zoom path already funnels through this one method.
+        if (_viewModel is not null) _viewModel.LastViewport = CurrentViewport;
+
         ViewportChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
     }
@@ -1508,7 +1533,7 @@ public sealed class LayoutCanvas : Control
         // press it declined, and one left open would go on translating wires under the next gesture.
         _canvasOverlay?.CommitCompanionMove();
         _viewModel?.CommitCompanionMove();
-        _viewModel?.OnPointerReleased(wx, wy, e.KeyModifiers);
+        _viewModel?.OnPointerReleased(wx, wy, e.KeyModifiers, SnapTolDbu());
         InvalidateVisual();
     }
 

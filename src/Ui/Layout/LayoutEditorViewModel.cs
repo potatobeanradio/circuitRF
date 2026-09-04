@@ -699,6 +699,22 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (value != Tool.Select) { WireDrawArmed = false; WireRotateArmed = false; }
     }
 
+    /// <summary>
+    /// The pan/zoom this document was last displayed at, or null if it has never been on screen.
+    ///
+    /// <para>Pan/zoom is canvas-owned state (<c>LayoutCanvas.CurrentViewport</c>) and the canvas does
+    /// not outlive a dock rebuild — but this view model does, so it is where the memory has to live.
+    /// <c>LayoutCanvas</c> writes it on every viewport change and reads it when a view model is bound;
+    /// a non-null value suppresses the fit-on-bind that would otherwise re-frame a document merely
+    /// because its view was re-realised. Owner report, 2026-09-04: opening or closing the
+    /// Technology &gt; Edit... pane changed the layout's zoom, because splitting the document row
+    /// re-realises the layout view.</para>
+    ///
+    /// <para>Deliberately NOT persisted to the <c>.clay</c> and NOT an <c>[ObservableProperty]</c>:
+    /// it is session-only view state, not document content, and nothing binds to it.</para>
+    /// </summary>
+    internal LayoutViewport? LastViewport { get; set; }
+
     private static bool IsTwoPointDragTool(Tool t) => t is Tool.Rect or Tool.RoundedRect or Tool.Circle;
     private static bool IsMultiPointTool(Tool t)   => t is Tool.Polygon or Tool.Path;
 
@@ -1385,10 +1401,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 return LayoutShapeEditing.SetRadius(c, snappedR);
             }
 
+            // The grip sits R along the horizontal edge measured from ITS OWN corner
+            // (LayoutHandles.BuildRoundedRectHandles), so the two RIGHT-hand corners (indices 1 and 2)
+            // read the distance inward from X2 — a leftward drag grows the radius there, exactly
+            // mirroring the leftward pair. Owner, 2026-09-04: the left and right grips' drag direction
+            // should be swapped, which is what "the grip follows the cursor" means once the grip is on
+            // the right-hand side.
             case HandleDragKind.CornerRadius when original is RoundedRectShape rr:
             {
-                long x1 = Math.Min(rr.X1, rr.X2);
-                long rawR = px - x1;
+                long x1 = Math.Min(rr.X1, rr.X2), x2 = Math.Max(rr.X1, rr.X2);
+                long rawR = _handleDragIndex is 1 or 2 ? x2 - px : px - x1;
                 long snappedR = LayoutSnapping.SnapValue(rawR, Model.SnapDbu, suspendSnap);
                 return LayoutShapeEditing.SetCornerRadius(rr, snappedR);
             }
@@ -2818,11 +2840,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // §9B.5: two clicks, and the tool stays armed after a commit.
         if (ActiveTool == Tool.Ruler) { HandleRulerToolPress(wx, wy, mods, Math.Max(snapTolDbu, 0)); return; }
 
-        const bool suspend = false;   // R-dup-2: Alt arms a duplicate drag; it no longer suspends snap.
-
         if (IsTwoPointDragTool(ActiveTool))
         {
-            var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+            var (sx, sy) = SnapDrawPoint(wx, wy, mods, snapTolDbu, from: null);
             _isDrawingTwoPoint = true;
             _drawP1X = sx; _drawP1Y = sy;
             _drawP2X = sx; _drawP2Y = sy;
@@ -2839,9 +2859,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             if (clickCount >= 2) { FinishMultiPointDraw(); return; }
 
-            (long X, long Y) pt = _drawPoints.Count == 0
-                ? LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend)
-                : LayoutSnapping.ConstrainAndSnap(_drawPoints[^1].X, _drawPoints[^1].Y, wx, wy, Model.AngleMode, Model.SnapDbu, suspend);
+            (long X, long Y) pt = SnapDrawPoint(wx, wy, mods, snapTolDbu,
+                                                from: _drawPoints.Count == 0 ? null : _drawPoints[^1]);
 
             _drawPoints.Add(pt);
             _drawCurX = pt.X; _drawCurY = pt.Y;
@@ -2851,7 +2870,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (ActiveTool == Tool.Label)
         {
-            var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+            var (sx, sy) = SnapDrawPoint(wx, wy, mods, snapTolDbu, from: null);
             _isTypingLabel = true;
             _labelAnchorX  = sx;
             _labelAnchorY  = sy;
@@ -2909,12 +2928,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
-        const bool suspend = false;   // R-dup-2
-
         if (_isDrawingTwoPoint)
         {
             if (!leftDown) { CancelDrawOp(); return; }
-            var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+            var (sx, sy) = SnapDrawPoint(wx, wy, mods, snapTolDbu, from: null);
             _drawP2X = sx; _drawP2Y = sy;
             _drawP2RawX = (long)Math.Round(wx); _drawP2RawY = (long)Math.Round(wy);
             RebuildOverlay();
@@ -2923,18 +2940,71 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (_drawPoints.Count > 0)
         {
-            var pt = LayoutSnapping.ConstrainAndSnap(_drawPoints[^1].X, _drawPoints[^1].Y, wx, wy, Model.AngleMode, Model.SnapDbu, suspend);
+            var pt = SnapDrawPoint(wx, wy, mods, snapTolDbu, from: _drawPoints[^1]);
             _drawCurX = pt.X; _drawCurY = pt.Y;
+            RebuildOverlay();
+            return;
+        }
+
+        // A drawing tool is armed but nothing has been started yet. The query still has to run, or the
+        // marker only appears AFTER the first click — which is the half of the owner's report that
+        // reads as "there is no snapping": the glyph that says WHERE the click will land is the whole
+        // affordance, and by the time it shows up the point is already placed.
+        if (IsDrawToolWantingSnap(ActiveTool))
+        {
+            UpdateSnapMarker((long)Math.Round(wx), (long)Math.Round(wy), mods,
+                             Math.Max(snapTolDbu, 0), Math.Max(pixelDbu, 0));
             RebuildOverlay();
         }
     }
 
-    public void OnPointerReleased(double wx, double wy, KeyModifiers mods)
+    /// <summary>The drawing tools whose points go through <see cref="SnapDrawPoint"/>, and which
+    /// therefore want a live marker while merely hovering. Via/Port/Instance/Ruler are NOT here —
+    /// each already runs its own query from its own placement path.</summary>
+    private static bool IsDrawToolWantingSnap(Tool t) =>
+        IsTwoPointDragTool(t) || IsMultiPointTool(t) || t == Tool.Label;
+
+    /// <summary>
+    /// The snap stack for a point a DRAWING tool is about to place — the same one a ruler endpoint
+    /// gets (<c>SnapRulerPoint</c>, R-rul-9/R-rul-10), and for the same reason: a new primitive whose
+    /// corner lands 3 DBU short of the corner it was aimed at is wrong in a way nobody notices.
+    ///
+    /// <para>Owner report, 2026-09-04: arming the Circle tool with geometry snap ON produced no
+    /// snapping and no glyphs. It was not a snap failure — the drawing tools never asked. Every draw
+    /// point went through <see cref="LayoutSnapping.SnapPoint"/>, which is GRID snap alone, and
+    /// <c>UpdateSnapMarker</c> — the only thing that populates the marker AND the only thing that
+    /// resolves a candidate — was reached from the Select, Ruler, Port and Instance paths only.</para>
+    ///
+    /// <para><b>Geometry snap outranks the angle constraint</b>, exactly as it does for a ruler: a
+    /// snapped point is a stronger statement of intent than a held modifier. <paramref name="from"/>
+    /// is the previous point of a multi-point run (null for the first point, and for the two-point
+    /// tools, which have no angle constraint of their own) — unlike the ruler this passes the
+    /// DOCUMENT's own <see cref="LayoutView.AngleMode"/>, since here the constraint is about the
+    /// artwork being authored rather than about a measurement taken across it.</para>
+    /// </summary>
+    private (long X, long Y) SnapDrawPoint(double wx, double wy, KeyModifiers mods, long snapTolDbu,
+                                           (long X, long Y)? from)
+    {
+        UpdateSnapMarker((long)Math.Round(wx), (long)Math.Round(wy), mods, Math.Max(snapTolDbu, 0), 1);
+        if (_snapCandidateIsRealTarget && _currentSnapCandidate is { } target) return (target.X, target.Y);
+
+        // R-dup-2: Alt arms a duplicate drag; it no longer suspends snap.
+        return from is { } first
+            ? LayoutSnapping.ConstrainAndSnap(first.X, first.Y, wx, wy, Model.AngleMode, Model.SnapDbu, suspendSnap: false)
+            : LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend: false);
+    }
+
+    /// <summary><paramref name="snapTolDbu"/> is geometry snap's own tolerance in DBU, as everywhere
+    /// else. 0 (the default) falls back to whatever the last query ran at — the release lands on the
+    /// same point the last MOVE was previewing, so re-deriving it with grid snap alone would quietly
+    /// throw away a snap the user had already been shown (which is what committed a rect corner to the
+    /// grid while its ghost sat on the geometry).</summary>
+    public void OnPointerReleased(double wx, double wy, KeyModifiers mods, long snapTolDbu = 0)
     {
         if (ActiveTool == Tool.Select) { HandleSelectRelease(wx, wy); return; }
 
         if (!_isDrawingTwoPoint) return;
-        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend: false);   // R-dup-2
+        var (sx, sy) = SnapDrawPoint(wx, wy, mods, snapTolDbu > 0 ? snapTolDbu : _snapQueryLastTolDbu, from: null);
         _drawP2X = sx; _drawP2Y = sy;
         _drawP2RawX = (long)Math.Round(wx); _drawP2RawY = (long)Math.Round(wy);
         FinishTwoPointDraw();

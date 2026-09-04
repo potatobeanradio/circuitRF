@@ -1,5 +1,26 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## `CellHierarchy.InstanceBbox` takes an optional layer filter, and a filtered answer is never cached (2026-09-04)
+
+Added for the clipboard's graphic export, which sizes its page from what will be PAINTED and therefore
+must not be sized by a layer the user turned off (owner report; the full account is in
+`src/Ui/RESOLVED.md`'s layout-editor misc-round entry).
+
+**Null is the default and means "measure everything", which is what every interactive caller wants.**
+The spatial index, hit-testing and the renderer's LOD decision all cull against where geometry IS, not
+against what is currently painted — a hidden layer's shapes still occupy their coordinates, and a
+picking query that pretended otherwise would be wrong in a way that only shows up when a layer is
+toggled. An EXPORT is the one caller with the opposite need.
+
+**A supplied filter bypasses the `ShapesBbox` memo.** That cache is a `ConditionalWeakTable` keyed on
+the `LayoutView` REFERENCE alone — it has no room for "which layers were asked about" — so storing a
+filtered result would hand a hidden-layer-less bbox to the spatial index the next time anything asked
+without a filter, and the geometry would simply stop being pickable. The filtered path unions directly
+and stores nothing. It is O(shapes) rather than O(1), which is why the parameter exists at all instead
+of being unconditional: the memo is there because a generated cell can hold a six-figure via field and
+`InstanceBbox` is called per placement, per frame.
+
+
 ## `LayoutPersistence.LoadFromFile` is interruptible, and the hooks are on the shape loop (2026-09-04)
 
 An overload takes a `CancellationToken` and an `Action<int,int>` progress callback, for the caller

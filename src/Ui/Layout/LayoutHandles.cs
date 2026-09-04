@@ -11,8 +11,9 @@ public enum LayoutHandleKind { Vertex, EdgeMidpoint, Bulge, CubicControl, Radius
 /// index for <see cref="LayoutHandleKind.Vertex"/> (or corner index 0..3 for <c>Rect</c>/<c>RoundedRect</c>,
 /// order (X1,Y1)→(X2,Y1)→(X2,Y2)→(X1,Y2)); edge index for <see cref="LayoutHandleKind.EdgeMidpoint"/>/
 /// <see cref="LayoutHandleKind.Bulge"/>/<see cref="LayoutHandleKind.CubicControl"/> (edge i runs from
-/// vertex i to vertex i+1, wrapping for a closed shape); unused (0) for <see cref="LayoutHandleKind.Radius"/>/
-/// <see cref="LayoutHandleKind.CornerRadius"/>. <see cref="SubIndex"/> is only meaningful for
+/// vertex i to vertex i+1, wrapping for a closed shape); unused (0) for <see cref="LayoutHandleKind.Radius"/>;
+/// the CORNER index (same 0..3 order) for <see cref="LayoutHandleKind.CornerRadius"/>, which a
+/// <c>RoundedRect</c> carries one of per corner. <see cref="SubIndex"/> is only meaningful for
 /// <see cref="LayoutHandleKind.CubicControl"/> (0 = C1, 1 = C2).
 /// </summary>
 public readonly record struct LayoutHandle(LayoutHandleKind Kind, long X, long Y, int Index, int SubIndex = 0);
@@ -60,11 +61,35 @@ public static class LayoutHandles
         return list;
     }
 
+    /// <summary>
+    /// A corner-radius grip in EVERY corner, not only the top-left one (owner request, 2026-09-04).
+    /// The radius is a single shape-wide field, so all four drag the SAME value — what four grips buy
+    /// is that the control is wherever the corner being looked at is, rather than always across the
+    /// shape from it.
+    ///
+    /// <para><b><see cref="LayoutHandle.Index"/> is the CORNER index</b>, the same 0..3 order
+    /// <see cref="BuildRectCorners"/> and <see cref="LayoutShapeEditing.ResizeRoundedRectCorner"/> use
+    /// — (X1,Y1)→(X2,Y1)→(X2,Y2)→(X1,Y2). It is what tells the drag which way is "bigger": each grip
+    /// sits R along the horizontal edge measured FROM ITS OWN corner, so on the right-hand pair it
+    /// walks INWARD as R grows and the drag must read x2−px, not px−x1. Without that the two right
+    /// grips would run away from the cursor at twice the speed and shrink the radius that a rightward
+    /// drag grows on the left — see <c>BuildHandleDragPreview</c>'s CornerRadius case.</para>
+    ///
+    /// <para>At R = 0 all four coincide with their corner's own Vertex handle, which wins the tie
+    /// (same priority tier, and vertices are added first — <see cref="LayoutHandleHitTest"/>). That is
+    /// unchanged from when there was one grip: a rounded rect with square corners is resized by its
+    /// corners, and the radius is typed into the toolbar field.</para>
+    /// </summary>
     private static IReadOnlyList<LayoutHandle> BuildRoundedRectHandles(RoundedRectShape rr)
     {
         var list = new List<LayoutHandle>(BuildRectCorners(rr.X1, rr.Y1, rr.X2, rr.Y2));
         list.AddRange(BuildAxisAlignedEdgeMidpoints(rr.X1, rr.Y1, rr.X2, rr.Y2));
-        list.Add(new LayoutHandle(LayoutHandleKind.CornerRadius, rr.X1 + rr.CornerRadius, rr.Y2, 0));
+
+        long r = rr.CornerRadius;
+        list.Add(new LayoutHandle(LayoutHandleKind.CornerRadius, rr.X1 + r, rr.Y1, 0));
+        list.Add(new LayoutHandle(LayoutHandleKind.CornerRadius, rr.X2 - r, rr.Y1, 1));
+        list.Add(new LayoutHandle(LayoutHandleKind.CornerRadius, rr.X2 - r, rr.Y2, 2));
+        list.Add(new LayoutHandle(LayoutHandleKind.CornerRadius, rr.X1 + r, rr.Y2, 3));
         return list;
     }
 

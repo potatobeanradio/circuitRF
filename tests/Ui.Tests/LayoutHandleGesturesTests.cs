@@ -564,6 +564,63 @@ public class LayoutHandleGesturesTests
         Assert.Equal(1000, result.CornerRadius); // untouched by an edge drag
     }
 
+    // ── Corner radius: a grip per corner, and the right-hand pair drags the other way ──────────
+    //
+    // Owner request, 2026-09-04. The radius is one shape-wide field, so all four grips write the same
+    // value — what differs is which direction GROWS it. A grip is at R from its own corner, so on the
+    // left pair R = px - X1 and on the right pair R = X2 - px; getting that wrong makes a rightward
+    // drag on the right-hand grip shrink the radius while the grip flees the cursor at 2x.
+
+    [Fact]
+    public void CornerRadiusGrip_OnTheLeft_GrowsWithARightwardDrag()
+    {
+        var model = FreshModel(1000);
+        model.Shapes.Add(new RoundedRectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10_000, Y2 = 10_000, CornerRadius = 1000 });
+        var vm = SelectVm(model);
+        Click(vm, 5000, 5000);
+
+        // Bottom-left grip (corner 0) sits at (X1 + R, Y1) = (1000, 0).
+        vm.OnPointerPressed(1000, 0, KeyModifiers.None, 1, 40);
+        vm.OnPointerMoved(3000, 0, true, KeyModifiers.None, 40);
+        vm.OnPointerReleased(3000, 0, KeyModifiers.None);
+
+        Assert.Equal(3000, ((RoundedRectShape)model.Shapes[0]).CornerRadius);
+    }
+
+    [Fact]
+    public void CornerRadiusGrip_OnTheRight_GrowsWithALeftwardDrag()
+    {
+        var model = FreshModel(1000);
+        model.Shapes.Add(new RoundedRectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10_000, Y2 = 10_000, CornerRadius = 1000 });
+        var vm = SelectVm(model);
+        Click(vm, 5000, 5000);
+
+        // Bottom-right grip (corner 1) sits at (X2 - R, Y1) = (9000, 0). Dragging it LEFT to 7000
+        // means "the rounding now reaches 3000 in from this corner" — the mirror of the case above,
+        // and the grip lands exactly under the cursor rather than running from it.
+        vm.OnPointerPressed(9000, 0, KeyModifiers.None, 1, 40);
+        vm.OnPointerMoved(7000, 0, true, KeyModifiers.None, 40);
+        vm.OnPointerReleased(7000, 0, KeyModifiers.None);
+
+        Assert.Equal(3000, ((RoundedRectShape)model.Shapes[0]).CornerRadius);
+    }
+
+    [Fact]
+    public void CornerRadiusGrip_OnTheTopRight_AlsoMirrors()
+    {
+        var model = FreshModel(1000);
+        model.Shapes.Add(new RoundedRectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10_000, Y2 = 10_000, CornerRadius = 1000 });
+        var vm = SelectVm(model);
+        Click(vm, 5000, 5000);
+
+        // Top-right grip (corner 2) at (X2 - R, Y2) = (9000, 10000).
+        vm.OnPointerPressed(9000, 10_000, KeyModifiers.None, 1, 40);
+        vm.OnPointerMoved(6000, 10_000, true, KeyModifiers.None, 40);
+        vm.OnPointerReleased(6000, 10_000, KeyModifiers.None);
+
+        Assert.Equal(4000, ((RoundedRectShape)model.Shapes[0]).CornerRadius);
+    }
+
     // ── "Delete Vertex" context menu (owner follow-up: an explicit alternative to the invisible
     // click-to-pick-then-press-Delete gesture) ─────────────────────────────────────────────────────
 

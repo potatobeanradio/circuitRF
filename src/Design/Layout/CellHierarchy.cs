@@ -117,7 +117,13 @@ public static class CellHierarchy
     /// no-array-replication note on <see cref="PlaceholderBbox"/> for the outer-instance-itself-broken
     /// case, which is what <see cref="InstanceBbox"/> actually hits first for a directly-broken ref).
     /// </summary>
-    public static Bbox InstanceBbox(LayoutInstance inst, string baseDir)
+    /// <param name="layerVisible">Optional per-layer filter. Null (the default, and every interactive
+    /// caller) measures every layer, which is what the spatial index, hit-testing and the renderer's
+    /// LOD decision all need — they cull against where the geometry IS, not against what is currently
+    /// painted. A graphics EXPORT is the opposite case and passes one: a page sized to a layer the
+    /// viewer turned off is a page mostly full of nothing (owner report, 2026-09-04). Supplying a
+    /// filter bypasses the <see cref="ShapesBbox"/> memo, which is keyed on the view alone.</param>
+    public static Bbox InstanceBbox(LayoutInstance inst, string baseDir, Func<LayerKey, bool>? layerVisible = null)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var step = ResolveForWalk(inst, baseDir, visiting, 0);
@@ -125,7 +131,7 @@ public static class CellHierarchy
             return ArrayExpand(PlaceholderBbox(inst), inst);
 
         visiting.Add(step.ResolvedCellDir!);
-        var localBbox = CellBboxRecursive(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1);
+        var localBbox = CellBboxRecursive(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, layerVisible);
         visiting.Remove(step.ResolvedCellDir!);
 
         if (localBbox.IsEmpty) return ArrayExpand(PlaceholderBbox(inst), inst);
@@ -156,9 +162,10 @@ public static class CellHierarchy
     /// <summary>Own shapes' bbox, unioned with every instance's (recursive) transformed bbox — the
     /// "effective bbox of a resolved cell" used both at the top level (via <see cref="InstanceBbox"/>)
     /// and recursively for nested instances.</summary>
-    private static Bbox CellBboxRecursive(LayoutView view, string viewBaseDir, HashSet<string> visiting, int depth)
+    private static Bbox CellBboxRecursive(LayoutView view, string viewBaseDir, HashSet<string> visiting, int depth,
+                                          Func<LayerKey, bool>? layerVisible = null)
     {
-        var bb = ShapesBbox(view);
+        var bb = ShapesBbox(view, layerVisible);
 
         foreach (var nested in view.Instances)
         {
@@ -170,7 +177,8 @@ public static class CellHierarchy
             }
 
             visiting.Add(step.ResolvedCellDir!);
-            var nestedLocal = CellBboxRecursive(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visiting, depth + 1);
+            var nestedLocal = CellBboxRecursive(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visiting, depth + 1,
+                                                layerVisible);
             visiting.Remove(step.ResolvedCellDir!);
 
             if (nestedLocal.IsEmpty) continue;
@@ -205,8 +213,19 @@ public static class CellHierarchy
     /// </summary>
     public static void InvalidateShapesBbox(LayoutView view) => _shapesBboxCache.Remove(view);
 
-    private static Bbox ShapesBbox(LayoutView view)
+    private static Bbox ShapesBbox(LayoutView view, Func<LayerKey, bool>? layerVisible = null)
     {
+        // A filtered answer is not the view's bbox and must never be stored as one — the memo is keyed
+        // on the view alone, so caching a filtered result here would hand a hidden-layer-less bbox to
+        // the spatial index and to hit-testing.
+        if (layerVisible is not null)
+        {
+            var filtered = Bbox.Empty;
+            foreach (var shape in view.Shapes)
+                if (layerVisible(shape.Layer)) filtered = filtered.Union(LayoutGeometry.BboxOf(shape));
+            return filtered;
+        }
+
         if (_shapesBboxCache.TryGetValue(view, out var hit)) return hit.Value;
 
         var bb = Bbox.Empty;
