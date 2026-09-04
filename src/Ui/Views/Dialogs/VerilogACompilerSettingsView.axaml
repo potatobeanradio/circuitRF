@@ -27,7 +27,7 @@
 
     <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto">
       <TextBox   Grid.Row="0" Grid.Column="0" Name="CompilerBox" FontSize="12"
-                 Watermark="Leave blank to use the compiler on PATH"
+                 PlaceholderText="Leave blank to use the compiler on PATH"
                  LostFocus="OnCompilerCommitted">
         <ToolTip.Tip>
           <TextBlock TextWrapping="Wrap" MaxWidth="360"
