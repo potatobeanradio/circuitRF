@@ -1385,7 +1385,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // SL4 R-sl4-2: someone else may already have it open, on a machine this one cannot see.
         if (!await ConfirmConcurrentOpenAsync(cwsPath)) return;
 
-        SwitchToWorkspace(cwsPath);
+        await SwitchToWorkspace(cwsPath);
     }
 
     // ---- Multiple workspace windows (MW1 §1) ---------------------------------
@@ -1619,7 +1619,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
 
         _lastWorkspaceParentDir = destination;
-        SwitchToWorkspace(extracted.CwsPath);
+        await SwitchToWorkspace(extracted.CwsPath);
     }
 
     // silent = true suppresses the "Saved: …" message (used on debounce tick + clean exit).
@@ -1917,6 +1917,47 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // generator — a flood describing a single fact the open message has already stated once.
         if (WorkspaceWritability.IsReadOnly(Path.GetDirectoryName(cwsPath))) return;
 
+        RunGeneratedCellRegeneration(cwsPath, skipPaths);
+    }
+
+    /// <summary>
+    /// <see cref="RegenerateAllGeneratedCells"/> with the pass itself moved OFF the UI thread, for the
+    /// workspace open — where it is the largest thing standing between the user and a window.
+    ///
+    /// <para>Measured at 663 ms on the owner's workspace (2026-09-04), and it is not incidental:
+    /// <see cref="GeneratedCellsLifecycle.RegenerateAll"/> READS EVERY <c>.clay</c> UNDER THE
+    /// WORKSPACE to find the PCell snapshots in them, so a workspace holding one 27 MB imported board
+    /// pays that board's whole read here as well as at the open. It is framework-free by design and
+    /// touches nothing thread-affine, so the only thing that has to come back is what it wants to
+    /// say — buffered and posted here rather than from the working thread.</para>
+    ///
+    /// <para><b>Awaited, never fire-and-forget.</b> The whole point of the pass is to warm the
+    /// generated-cell cache BEFORE any layout referencing it opens; started and not waited for, a
+    /// restored layout would race it and render placeholders for cells that were about to exist.</para>
+    /// </summary>
+    private async Task RegenerateAllGeneratedCellsAsync(string cwsPath, IReadOnlySet<string>? skipPaths = null)
+    {
+        if (WorkspaceWritability.IsReadOnly(Path.GetDirectoryName(cwsPath))) return;
+
+        var buffered = new List<string>();
+        try
+        {
+            await Task.Run(() => RunGeneratedCellRegeneration(cwsPath, skipPaths, buffered.Add));
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not refresh generated cells: {ex.Message}");
+            return;
+        }
+
+        foreach (var line in buffered) Messages.Warning(line);
+    }
+
+    /// <summary>The pass itself. <paramref name="collect"/> null posts straight to Messages (the
+    /// UI-thread callers); non-null buffers for a caller that is on a background thread and cannot.</summary>
+    private void RunGeneratedCellRegeneration(string cwsPath, IReadOnlySet<string>? skipPaths,
+                                              Action<string>? collect = null)
+    {
         var techCache = new Dictionary<string, Technology?>(StringComparer.OrdinalIgnoreCase);
         Technology? ResolveTech(string? techIdentity)
         {
@@ -1932,22 +1973,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Reported, not swallowed: a generator that will not run is exactly what an author needs
         // told, and one message per distinct reason is the difference between a report and a flood.
         var said = new HashSet<string>(StringComparer.Ordinal);
-        void Report(string m) { if (said.Add(m)) Messages.Warning(m); }
+        void Report(string m) { if (said.Add(m)) { if (collect is null) Messages.Warning(m); else collect(m); } }
 
         var outcome = GeneratedCellsLifecycle.RegenerateAll(
             Path.GetDirectoryName(cwsPath)!, ResolveTech, Report, skipPaths);
 
         // Silent when nothing moved, which is every ordinary open.
         if (outcome.InstancesRepointed > 0)
-            Messages.Info($"{Plural(outcome.InstancesRepointed, "placed cell")} moved to newly generated " +
-                          $"artwork after a generator change ({Plural(outcome.LayoutsRewritten, "layout")} updated).");
+            Report($"{Plural(outcome.InstancesRepointed, "placed cell")} moved to newly generated " +
+                   $"artwork after a generator change ({Plural(outcome.LayoutsRewritten, "layout")} updated).");
 
         // Also silent on an ordinary open, because nothing has gone stale on one. Said when it does
         // happen so that a generator or technology edit, which is what leaves the old cells behind,
         // reads as one event rather than as artwork quietly changing.
         if (outcome.CellsPruned > 0)
-            Messages.Info($"{Plural(outcome.CellsPruned, "generated cell")} no layout still uses " +
-                          $"{(outcome.CellsPruned == 1 ? "was" : "were")} removed from the cache.");
+            Report($"{Plural(outcome.CellsPruned, "generated cell")} no layout still uses " +
+                   $"{(outcome.CellsPruned == 1 ? "was" : "were")} removed from the cache.");
     }
 
     /// <summary>
@@ -1956,7 +1997,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Clears open docs, installs a fresh Dock layout, re-wires tools, restores theme,
     /// tree state, and the persisted open-document list.
     /// </summary>
-    private void SwitchToWorkspace(string cwsPath)
+    private async Task SwitchToWorkspace(string cwsPath)
     {
         // A workspace may be open in at most ONE window (MW1 R-mw1-9). Opening one that another
         // window already has activates that window instead: two view models over one .cws means two
@@ -2047,7 +2088,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // R-L5g-7/8: clean start even after a crash, then warm the cache back up before any layout
         // actually opens below — see this file's "Generated-cell lifecycle" section for the full story.
         DeleteGeneratedCellsFolder(cwsPath);
-        RegenerateAllGeneratedCells(cwsPath);
+        await RegenerateAllGeneratedCellsAsync(cwsPath);
 
         // The dock arrangement is PARSED here but applied after the documents are open, so the
         // rebuilt shell re-hosts the populated DocumentDock rather than an empty one. Its document
@@ -2055,11 +2096,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // cws.OpenDocuments stays authoritative for MEMBERSHIP.
         var dockLayoutRead = ReadDockLayout(cws);
 
-        RestoreOpenDocuments(cws, workspaceDir, dockLayoutRead.Layout);
-
+        // The workspace's own lines are posted BEFORE the documents are restored, and the ordering is
+        // load-bearing now rather than cosmetic: Messages.Clear() wipes the region, and the restore
+        // below can post a live progress row that would then be cleared out from under a user who is
+        // watching it. It also reads correctly — the workspace IS open at this point, and the
+        // documents are being restored INTO it.
         PushRecent(cwsPath);
         Messages.Clear();
         Messages.Info("Opened", cwsPath);
+
+        await RestoreOpenDocumentsAsync(cws, workspaceDir, dockLayoutRead.Layout);
         // SL2 R-sl2-11: an unwritable workspace OPENS — it is never refused — and says so once, here,
         // where it reads as part of the open rather than as an interruption later.
         ReportWorkspaceReadOnlyIfNeeded(cwsPath);
@@ -2079,11 +2125,114 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Removes the welcome stub first (so the restored tabs are the only content).
     /// No-op when <see cref="CwsFile.OpenDocuments"/> is null or empty.
     /// </summary>
-    private void RestoreOpenDocuments(CwsFile cws, string workspaceDir, Docking.CwsDockLayout? dockLayout = null)
+    /// <summary>
+    /// Reads every <c>.clay</c> the restore is about to open, on a background thread, behind one
+    /// cancellable progress row that appears only if the whole set takes long enough to be worth
+    /// mentioning (<see cref="WorkspaceOpenProgressAppearsAfterMs"/> — the owner's "only if opening is
+    /// anticipated to take more than 2 seconds or so", answered by MEASURING rather than by guessing
+    /// up front, which is not knowable: see <see cref="LayoutPersistence.LoadFromFile(string,
+    /// CancellationToken, Action{int, int})"/>).
+    ///
+    /// <para>Sequential, not parallel. These reads are allocation-heavy — a 27 MB board is ~154 MB of
+    /// managed heap — and running several at once multiplies the peak without shortening the wait the
+    /// user is actually watching, which is dominated by one big file rather than by many small ones.
+    /// Sequential also lets the row name the file it is on.</para>
+    ///
+    /// <para>A file that fails to read is simply absent from the result, and the ordinary open path
+    /// below re-reads it and reports the failure in its own words — one error message per document,
+    /// from the code that already owns that wording. Cancelling stops the remaining reads; every
+    /// document still opens, each paying its own read on the UI thread as it always did, because
+    /// "stop waiting" must not silently become "lose my tabs".</para>
+    /// </summary>
+    private async Task<Dictionary<string, LayoutView>> PreloadRestoredLayoutsAsync(
+        IReadOnlyList<CwsOpenDocument> docs, string workspaceDir)
+    {
+        var result = new Dictionary<string, LayoutView>(StringComparer.OrdinalIgnoreCase);
+
+        var paths = new List<string>();
+        foreach (var entry in docs)
+        {
+            if (!string.Equals(entry.Kind, "layout", StringComparison.OrdinalIgnoreCase)) continue;
+            var abs = Path.IsPathRooted(entry.Path)
+                ? entry.Path
+                : Path.GetFullPath(Path.Combine(workspaceDir, entry.Path));
+            if (File.Exists(abs)) paths.Add(abs);
+        }
+        if (paths.Count == 0) return result;
+
+        using var cts = new CancellationTokenSource();
+        var cancellation = new RunCancellation("opening the workspace's layouts", cts.Cancel);
+        var row = new DeferredProgressRow(Messages, "Opening workspace",
+                                          TimeSpan.FromMilliseconds(WorkspaceOpenProgressAppearsAfterMs), cancellation);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+
+        try
+        {
+            for (int i = 0; i < paths.Count; i++)
+            {
+                if (cts.IsCancellationRequested) break;
+                string path = paths[i];
+                string name = Path.GetFileName(path);
+                string counter = paths.Count > 1 ? $"{i + 1} / {paths.Count}  {name}" : name;
+                row.Report($"Opening workspace — reading layouts", counter,
+                           paths.Count > 1 ? (double)i / paths.Count : null, indeterminate: paths.Count == 1);
+
+                try
+                {
+                    result[path] = await Task.Run(() => LayoutPersistence.LoadFromFile(
+                        path, cts.Token,
+                        (loaded, total) => row.Report(
+                            "Opening workspace — reading layouts",
+                            paths.Count > 1
+                                ? $"{i + 1} / {paths.Count}  {name}  ({loaded:N0} / {total:N0} shapes)"
+                                : $"{name}  {loaded:N0} / {total:N0} shapes",
+                            total > 0 ? (i + (double)loaded / total) / paths.Count : null)),
+                        cts.Token);
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception)
+                {
+                    // Left out of the dictionary on purpose — see the summary above.
+                }
+            }
+        }
+        finally { cancellation.Finish(); }
+
+        if (cts.IsCancellationRequested)
+            row.Finish(MessageLevel.Info,
+                $"Stopped reading ahead — the remaining layout(s) will be read as each tab opens.");
+        else
+            row.Finish(MessageLevel.Success,
+                $"Read {result.Count:N0} of {paths.Count:N0} layout(s) in {timer.Elapsed.TotalSeconds:F1} s.");
+
+        return result;
+    }
+
+    /// <summary>How long a workspace's layout pre-read must still be running before its progress row
+    /// appears. Longer than a single document's, per the owner's "only if opening is anticipated to
+    /// take more than 2 seconds or so": a workspace open has visible work of its own (the dock rebuild,
+    /// the project tree) so a brief pause already looks like something happening, and a bar that
+    /// flashes up on every ordinary open would be noise.</summary>
+    private const int WorkspaceOpenProgressAppearsAfterMs = 1000;
+
+    private async Task RestoreOpenDocumentsAsync(CwsFile cws, string workspaceDir, Docking.CwsDockLayout? dockLayout = null)
     {
         if (cws.OpenDocuments is not { Count: > 0 } docs) return;
 
         _factory.RemoveWelcomeStub();
+
+        // ── The layouts are READ first, off the UI thread ─────────────────────────────────────────
+        //
+        // Owner report, 2026-09-04: a workspace whose .cws restores a large .clay showed no docked
+        // windows at all and no indication that anything was happening. That was this loop — every
+        // open below is UI-thread work by necessity (documents, the dock, the tree), and the one part
+        // of it that is NOT is the file read, which on a 27 MB imported board measured 1.24 s of dead
+        // window with nothing on screen yet to explain it.
+        //
+        // Read them all up front rather than one before each open, for two reasons: the restore order
+        // below decides the TAB order and must stay exactly as it was, and one progress row over the
+        // whole set is what the user actually wants to see — not a row per document.
+        var preloaded = await PreloadRestoredLayoutsAsync(docs, workspaceDir);
 
         // R-dock-2 — the layout records ARRANGEMENT, the open list records MEMBERSHIP, and when the
         // two disagree the open list wins. Opening in the reconciled order is what actually produces
@@ -2119,7 +2268,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     OpenOrActivateDataDisplay(absPath);
                     break;
                 case "layout" when File.Exists(absPath):
-                    OpenOrActivateLayout(absPath);
+                    // Already in memory, so this open is the ordinary synchronous one and the tab
+                    // order the loop is establishing is unaffected. A null means the read failed or
+                    // was cancelled, and OpenOrActivateLayout reports it in its own words.
+                    preloaded.TryGetValue(absPath, out var preloadedLayout);
+                    OpenOrActivateLayout(absPath, preloadedLayout);
                     break;
                 case "tech" when File.Exists(absPath):
                     OpenOrActivateTech(absPath);
@@ -2267,7 +2420,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // so the notice is asked once, here, rather than at each of them.
         if (!await ConfirmConcurrentOpenAsync(cwsPath)) return;
 
-        SwitchToWorkspace(cwsPath);
+        await SwitchToWorkspace(cwsPath);
     }
 
     /// <summary>
@@ -3617,7 +3770,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (result.Count == 0) return;
 
-        OpenOrActivateLayout(result[0].Path.LocalPath);
+        await OpenOrActivateLayoutAsync(result[0].Path.LocalPath);
     }
 
     // ── Import GDSII Library (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md §8) ──────────────
@@ -3744,7 +3897,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// this is a defensive no-op path, not a case expected to fire).</summary>
     private void OpenPrimaryLayoutIfResolvable(string cellDir)
     {
-        if (ResolvePrimaryLayoutPath(cellDir) is { } path) OpenOrActivateLayout(path);
+        if (ResolvePrimaryLayoutPath(cellDir) is { } path) _ = OpenOrActivateLayoutAsync(path);
     }
 
     /// <summary>
@@ -4247,7 +4400,88 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <param name="preloaded">A model already read from <paramref name="absolutePath"/> on another
     /// thread, or null to read it here. Only ever an optimisation — a session already in the registry
     /// wins over it, exactly as it wins over a fresh read.</param>
-    private void OpenOrActivateLayout(string absolutePath, LayoutView? preloaded = null)
+    /// <summary>
+    /// Opens a <c>.clay</c>, reading it OFF the UI thread with a cancellable progress row.
+    ///
+    /// <para><b>The read had to move (owner report, 2026-09-04).</b> A workspace whose <c>.cws</c>
+    /// restores a 27 MB imported board opened with no window and no indication of anything happening,
+    /// because the read ran inline on the UI thread. The cost is not proportional to how big the file
+    /// looks either — see <see cref="LayoutPersistence.LoadFromFile(string, CancellationToken,
+    /// Action{int, int})"/> for where it actually goes, and why that is also the only place a Cancel
+    /// can land promptly.</para>
+    ///
+    /// <para><b>Only the READ moves.</b> Everything after it — the session registry, the interface
+    /// and moved-cell scans, the document, the dock — is view-model and dock state and stays on the
+    /// UI thread, exactly as <see cref="OpenPrimaryLayoutIfResolvableAsync"/> already had it. This
+    /// hands <see cref="OpenOrActivateLayout"/> a model that is already in memory rather than making
+    /// any of that concurrent.</para>
+    ///
+    /// <para>A session already open for this path is not re-read at all, so pushing into a cell and
+    /// opening its own tab stays instantaneous.</para>
+    /// </summary>
+    internal async Task OpenOrActivateLayoutAsync(string absolutePath)
+    {
+        if (ActivateIfOpen(absolutePath)) return;
+
+        // Already in memory (open elsewhere, or pushed into) — there is nothing to read and nothing
+        // to report on.
+        if (_layoutRegistry.TryGet(Path.GetFullPath(absolutePath), out _))
+        {
+            OpenOrActivateLayout(absolutePath);
+            return;
+        }
+
+        string name = Path.GetFileName(absolutePath);
+        using var cts = new CancellationTokenSource();
+        var cancellation = new RunCancellation($"opening '{name}'", cts.Cancel);
+        var row = new DeferredProgressRow(Messages, $"Opening '{name}'",
+                                          TimeSpan.FromMilliseconds(LayoutOpenProgressAppearsAfterMs), cancellation);
+
+        LayoutView model;
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            row.Report($"Opening '{name}'", "reading", indeterminate: true);
+            model = await Task.Run(() => LayoutPersistence.LoadFromFile(
+                Path.GetFullPath(absolutePath), cts.Token,
+                (loaded, total) => row.Report(
+                    $"Opening '{name}'", $"{loaded:N0} / {total:N0} shapes",
+                    total > 0 ? (double)loaded / total : null)),
+                cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            cancellation.Finish();
+            if (!row.Finish(MessageLevel.Info, $"Opening '{name}' cancelled — nothing was opened."))
+                Messages.Info($"Opening '{name}' cancelled — nothing was opened.");
+            return;
+        }
+        catch (Exception ex)
+        {
+            cancellation.Finish();
+            if (!row.Finish(MessageLevel.Error, $"Failed to open layout: {ex.Message}"))
+                Messages.Error($"Failed to open layout: {ex.Message}");
+            return;
+        }
+        finally { cancellation.Finish(); }
+
+        // The row settles BEFORE the document is built, so its bar is not left animating through the
+        // dock work that follows — and so the "Opened" line the ordinary path posts lands underneath
+        // it rather than above (the Messages panel scrolls to its newest row on every change).
+        bool reported = row.Finish(MessageLevel.Success,
+            $"Opened '{name}' — {model.Shapes.Count:N0} shape(s) in {timer.Elapsed.TotalSeconds:F1} s.");
+
+        OpenOrActivateLayout(absolutePath, model, alreadyReported: reported);
+    }
+
+    /// <summary>How long a <c>.clay</c> read must still be running before its progress row appears.
+    /// Short, because by the time a read is noticeable at all the user is already waiting on a window
+    /// that looks idle — but not zero, since the overwhelming majority of opens are instantaneous and
+    /// a row per open would bury the Messages panel. See <see cref="DeferredProgressRow"/>.</summary>
+    private const int LayoutOpenProgressAppearsAfterMs = 350;
+
+    private void OpenOrActivateLayout(string absolutePath, LayoutView? preloaded = null,
+                                      bool alreadyReported = false)
     {
         if (ActivateIfOpen(absolutePath)) return;
 
@@ -4275,7 +4509,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             HookLayoutCellDirty(doc);
-            Messages.Info("Opened", absolutePath);
+            // Suppressed when the deferred progress row has already settled into its own "Opened"
+            // line — one open, one line.
+            if (!alreadyReported) Messages.Info("Opened", absolutePath);
         }
         catch (Exception ex)
         {
@@ -6684,6 +6920,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (hasMesh && !anyOpen)
         {
+            // Deliberately the SYNCHRONOUS open, and the only remaining one: the loop below pushes
+            // the mesh into the document this call opens, so it has to exist by the time this line
+            // returns. Reached only when the layout is NOT already open, which on the mesh workflow
+            // is the rare case — the usual one is the layout on screen with the .cem beside it.
             OpenOrActivateLayout(source.AbsolutePath);
             Messages.Info("Opened the layout to show the mesh", source.AbsolutePath);
         }
@@ -8056,7 +8296,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         var path = Path.Combine(CellFolder.SubFolderPath(cellDir, viewType), pr.ResolvedName);
         if (viewType == ViewType.Schematic)    OpenOrActivateSchematic(path);
-        else if (viewType == ViewType.Layout)  OpenOrActivateLayout(path);
+        else if (viewType == ViewType.Layout)  _ = OpenOrActivateLayoutAsync(path);
         else                                    OpenOrActivateSymbol(path);
     }
 
@@ -8094,7 +8334,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // WB40 — a wirebond cell's wires live in a `.wBond` beside its `.clay` and are attached by
             // stem inside BuildLayoutSessionVm, the one funnel every layout open goes through. So the
             // overlay arrives with the artwork here too, and there is nothing extra to do for it.
-            case ".clay":  OpenOrActivateLayout(abs);      return true;
+            case ".clay":  _ = OpenOrActivateLayoutAsync(abs); return true;
             case ".csym":  OpenOrActivateSymbol(abs);      return true;
             // A `.cdd` may reference data sources relative to a workspace it is not being opened in.
             // Deliberately not guarded against: the display opens and the traces it cannot resolve
@@ -8135,7 +8375,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 var ext = Path.GetExtension(node.AbsolutePath).ToLowerInvariant();
                 if (ext == ".csym")  { OpenOrActivateSymbol(node.AbsolutePath);    return; }
                 if (ext == ".csch")  { OpenOrActivateSchematic(node.AbsolutePath); return; }
-                if (ext == ".clay")  { OpenOrActivateLayout(node.AbsolutePath);    return; }
+                if (ext == ".clay")  { _ = OpenOrActivateLayoutAsync(node.AbsolutePath); return; }
                 // other view-file types → deferred no-op
                 return;
 
@@ -8969,7 +9209,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         var path = LayoutHierarchyResolver.ResolvePrimaryPath(instance, fromDoc.ActiveViewModel);
         if (path is null) return;
-        OpenOrActivateLayout(path);
+        _ = OpenOrActivateLayoutAsync(path);
     }
 
     /// <inheritdoc/>

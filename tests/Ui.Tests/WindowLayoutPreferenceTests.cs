@@ -189,7 +189,7 @@ public sealed class WindowLayoutPreferenceTests
     /// </summary>
     [Theory]
     [InlineData("private async Task NewWorkspace")]
-    [InlineData("private void SwitchToWorkspace")]
+    [InlineData("private async Task SwitchToWorkspace")]
     [InlineData("private void ResetToBlankShell")]
     public void CleanSlateRebuilds_HonorTheConfiguredWindowLayout(string methodSignature)
     {

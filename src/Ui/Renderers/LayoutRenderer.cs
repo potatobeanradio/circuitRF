@@ -64,6 +64,16 @@ public readonly struct LayoutRenderOptions
     /// measurement behind the chosen value.</summary>
     public int MergeShapeCountThreshold { get; init; }
 
+    /// <summary>Longest on-screen side, in device pixels, at or under which a placement of a resolved
+    /// instance is drawn by blitting a cached raster of its cell instead of re-drawing the cell's
+    /// geometry. 0 (the default) means <see cref="LayoutRenderer.DefaultInstanceRasterMaxDevicePixels"/>;
+    /// a NEGATIVE value disables the tier outright, which is how an export pins exact vector geometry
+    /// and how a test pins the per-chunk output this tier has to match.
+    /// <para>See the tier's own note above <see cref="LayoutRenderer.DefaultInstanceRasterMaxDevicePixels"/>
+    /// for the measurement it exists because of, and for why the three size-based tiers structurally
+    /// could not reach it.</para></summary>
+    public double InstanceRasterMaxDevicePixels { get; init; }
+
     /// <summary>Stroke-elision engagement size, in device pixels — a compiled instance chunk whose
     /// largest primitive is smaller than this on screen draws as one solid grown fill instead of a
     /// fill pass plus a per-primitive outline pass. 0 (the default) means
@@ -338,7 +348,12 @@ public readonly record struct LayoutRenderResult(
     /// shape — see <see cref="LayerFillPaint"/>. Surfaced because the difference between those two is
     /// invisible in the rendered image and shows up only as a frame time on a file too big to
     /// bisect.</summary>
-    int FillPaintsBuilt = 0);
+    int FillPaintsBuilt = 0,
+    /// <summary>How many cells this frame RASTERIZED for the raster tier (see
+    /// <see cref="LayoutRenderer.DefaultInstanceRasterMaxDevicePixels"/>). Deliberately separate from
+    /// <see cref="DrawCalls"/>, which stays "what this frame issued to the canvas" — one blit per
+    /// placement. Zero on a frame that hit the cache, which is every frame of a pan.</summary>
+    int InstanceRastersBuilt = 0);
 
 /// <summary>Plain-field, no-dictionary per-frame work counters (L2a) — threaded through the private
 /// draw helpers below by reference. A class (not a struct) so passing it around never copies; fields
@@ -354,6 +369,12 @@ internal sealed class LayoutFrameCounters
     public int InstancesExamined;
     public int InstancesDrawn;
     public int FillPaintsBuilt;
+
+    /// <summary>Cells rasterized this frame by the raster tier. Kept apart from
+    /// <see cref="DrawCalls"/> deliberately: a build is amortized over every placement it serves and
+    /// every later frame at the same zoom, while DrawCalls answers "what did this frame issue to the
+    /// canvas" — one blit per placement. Zero on a frame that hit the cache, which is what a pan is.</summary>
+    public int InstanceRastersBuilt;
 }
 
 /// <summary>
@@ -762,7 +783,8 @@ public static partial class LayoutRenderer
                 InstancesExamined: counters.InstancesExamined,
                 InstancesDrawn: counters.InstancesDrawn,
                 MissingInstanceCellRefs: missingCellRefs.Count == 0 ? [] : missingCellRefs.ToArray(),
-                FillPaintsBuilt: counters.FillPaintsBuilt);
+                FillPaintsBuilt: counters.FillPaintsBuilt,
+                InstanceRastersBuilt: counters.InstanceRastersBuilt);
         }
         finally
         {

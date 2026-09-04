@@ -169,7 +169,45 @@ public static partial class LayoutRenderer
     {
         public readonly List<CompiledLayerGeometry> Layers = [];
         public readonly List<SKRect> BrokenPlaceholders = [];
+
+        /// <summary>Union of every chunk's bounds on every layer, plus every broken-instance
+        /// placeholder — the cell's whole footprint in its own local path space. Computed once at the
+        /// end of a compile because the raster tier needs a rect to size a surface from, and the
+        /// per-layer chunk bounds it is a union of are already there.</summary>
+        public SKRect Bounds;
+
+        /// <summary>Total primitives across every chunk of every layer. The raster tier's cost gate
+        /// reads this: rasterizing is only cheaper than redrawing when there is real geometry to
+        /// redraw, and a handful of rectangles is not.</summary>
+        public int PrimitiveCount;
+
+        /// <summary>The raster tier's single-slot cache — see <see cref="RasterSnapshot"/>.
+        ///
+        /// <para>Published as ONE immutable snapshot and swapped by a single reference assignment,
+        /// never mutated in place, for exactly the reason <see cref="CompiledChunk.Elided"/> is: this
+        /// is read from <c>ICustomDrawOperation.Render</c> on the render thread and a compiled cell is
+        /// shared by every placement on every canvas. A reader takes one reference and sees a complete
+        /// snapshot; two threads racing a miss both build and one wins, which is a wasted surface on a
+        /// zoom step and never a torn read.</para></summary>
+        public RasterSnapshot? Raster;
     }
+
+    /// <summary>
+    /// One cell rasterized once at one device scale, for the tier that blits it per placement instead
+    /// of re-drawing its geometry per placement (see <see cref="DefaultInstanceRasterMaxDevicePixels"/>
+    /// for what this exists because of).
+    ///
+    /// <para><paramref name="Scale"/> is device pixels per cell-local path unit and <paramref
+    /// name="VisualKey"/> hashes everything else the pixels depend on (which layers are visible, their
+    /// colours and fill patterns, the decimation tolerance the cell was compiled at, and whether the
+    /// frame is outlining). Both are compared before a hit, so a theme change, a layer hidden, a zoom
+    /// step or a re-compile at a different tolerance all miss rather than blit stale pixels.</para>
+    ///
+    /// <para><paramref name="Source"/> is the cell-local rect the image covers — the cell's own bounds
+    /// grown by the half-stroke overhang, since a hairline centred on the boundary paints outside
+    /// it.</para>
+    /// </summary>
+    private sealed record RasterSnapshot(float Scale, int VisualKey, SKImage Image, SKRect Source);
 
     /// <summary>
     /// One cell's compiled variants, one per vertex-decimation tolerance it has been asked for
@@ -418,6 +456,25 @@ public static partial class LayoutRenderer
             BuildChunks(cl, list, localPs, counters, detailDbu);
         }
 
+        // ── Pass 3 — the whole-cell footprint and primitive census the raster tier reads ───────────
+        // Free here (a union over chunk bounds that pass 2 has just computed) and not derivable later
+        // without walking every chunk again on every frame.
+        bool anyBounds = false;
+        var footprint = SKRect.Empty;
+        void Grow(SKRect r)
+        {
+            if (!anyBounds) { footprint = r; anyBounds = true; }
+            else footprint.Union(r);
+        }
+        foreach (var layer in compiled.Layers)
+            foreach (var chunk in layer.Chunks)
+            {
+                Grow(chunk.Bounds);
+                compiled.PrimitiveCount += chunk.PrimitiveBounds.Length;
+            }
+        foreach (var rect in compiled.BrokenPlaceholders) Grow(rect);
+        compiled.Bounds = anyBounds ? footprint : SKRect.Empty;
+
         variants.Put(detailDbu, compiled);
         return compiled;
     }
@@ -497,6 +554,131 @@ public static partial class LayoutRenderer
             chunk.BoundsArea = (double)chunk.Bounds.Width * chunk.Bounds.Height;
             cl.Chunks.Add(chunk);
         }
+    }
+
+    // ── The raster tier ───────────────────────────────────────────────────────────────────────────
+    //
+    // WHAT IT EXISTS BECAUSE OF (owner report, 2026-09-04). A 10x10 array of an imported two-layer
+    // board — 3,284 shapes, 673,345 vertices, 615,473 of them on one layer — rendered at Zoom-to-Fit
+    // at 1,870 ms PER FRAME, and the first frame of it took 36.7 s in the running application. At that
+    // frame rate everything else in the window redraws at the layout canvas's rate too (one compositor
+    // per application), which is what "the Project Tree expander almost stops and the Messages panel is
+    // unusable" actually was. Memory was never the problem: the whole session measured 234 MB.
+    //
+    // WHY THE EXISTING TIERS COULD NOT REACH IT. Chunk culling, stroke elision and the coarse tier are
+    // all keyed on a chunk's LARGEST PRIMITIVE being a few device pixels — they were built for a dense
+    // field of tiny identical primitives (a MIM capacitor's 24,964 vias) and they work. A PCB is the
+    // opposite shape of content: a few thousand LARGE polygons, hundreds of vertices each, any one of
+    // which spans a good fraction of the board. Its chunks never come under the elision threshold at
+    // any zoom where the board is still visible, so every placement handed Skia the cell's whole
+    // geometry. Measured: one placement 86 device pixels wide still cost 27 ms.
+    //
+    // THE FIX IS ORTHOGONAL TO ALL THREE, which is why it is a tier of its own rather than a tuning of
+    // theirs: when a cell is small on screen, what it costs should be set by the PIXELS it occupies and
+    // not by the geometry behind them. Rasterize the cell once at the placement's exact device scale
+    // and blit that image per placement. Exact by construction for an array, because every placement of
+    // one instance shares one scale and one rotation, and the difference between them is a translation.
+    //
+    // GATED ON THE COST ACTUALLY BEING SAVED, never applied speculatively:
+    //   * more than one placement is on screen — with one, rasterizing is the same work plus a surface;
+    //   * the placement is at or under InstanceRasterMaxDevicePixels on its longest side, so the image
+    //     is never upscaled and never large;
+    //   * the cell carries at least MinInstanceRasterPrimitives primitives, so a cheap cell keeps the
+    //     exact geometry path it has always had (and every small-array pixel test with it).
+
+    /// <summary>Longest on-screen side, in device pixels, at or under which a placement is drawn from a
+    /// cached raster of its cell instead of from the cell's geometry. 1,024 caps one cached image at
+    /// 4 MB and is comfortably past the size at which a cell stops being a recognisable thing on screen
+    /// and becomes a component footprint; above it, per-chunk culling has real work to do again because
+    /// only part of the cell is on screen.</summary>
+    internal const double DefaultInstanceRasterMaxDevicePixels = 1024.0;
+
+    /// <summary>Primitive count at or above which a cell is worth rasterizing. Below it the geometry
+    /// path is already a handful of draw calls and an offscreen surface costs more than it saves — and
+    /// keeping small cells on the exact path is also what stops this tier from perturbing the
+    /// pixel-comparison tests that render two- and three-cell arrays.</summary>
+    private const int MinInstanceRasterPrimitives = 256;
+
+    /// <summary>Linear sampling with no mipmap. The image is blitted at the scale it was rasterized at,
+    /// under a translation and at most a 90-degree rotation or mirror, so sampling never actually
+    /// resamples — this is what Skia does at 1:1, spelled out rather than left to a default that has
+    /// changed between SkiaSharp versions.</summary>
+    private static readonly SKSamplingOptions InstanceRasterSampling = new(SKFilterMode.Linear, SKMipmapMode.None);
+
+    /// <summary>
+    /// The raster tier's cache lookup and, on a miss, its build. Returns null when the tier does not
+    /// apply, in which case the caller draws the cell's geometry exactly as it always has — every
+    /// refusal path here is a fall-through to correct-and-slower, never to wrong.
+    /// </summary>
+    /// <param name="scale">Device pixels per cell-local path unit.</param>
+    /// <param name="drawCell">The caller's own cell-drawing closure, run into the offscreen surface so
+    /// the blitted pixels and the geometry path can never be two different definitions of the cell.</param>
+    private static RasterSnapshot? TryBuildInstanceRaster(
+        CompiledCellGeometry compiled, int visiblePlacements, float scale, int visualKey,
+        double maxDevicePixelsOption, float grow,
+        Action<SKCanvas, SKRect?, LayoutFrameCounters> drawCell, LayoutFrameCounters counters)
+    {
+        double maxDevicePixels = maxDevicePixelsOption switch
+        {
+            < 0 => 0,                                   // the tier is switched off (tests, exports)
+            0   => DefaultInstanceRasterMaxDevicePixels,
+            _   => maxDevicePixelsOption,
+        };
+        if (maxDevicePixels <= 0) return null;
+        if (visiblePlacements < 2) return null;
+        if (compiled.PrimitiveCount < MinInstanceRasterPrimitives) return null;
+        if (compiled.Bounds.IsEmpty || scale <= 0 || !float.IsFinite(scale)) return null;
+
+        // The cell's own bounds grown by the half-stroke overhang: a hairline centred on the boundary
+        // paints outside it, and an image cropped to the bare bounds would clip that half pixel off
+        // every placement. The same `grow` the elision and coarse tiers are keyed by, for the same
+        // reason — it IS the overhang.
+        var source = new SKRect(compiled.Bounds.Left - grow, compiled.Bounds.Top - grow,
+                                compiled.Bounds.Right + grow, compiled.Bounds.Bottom + grow);
+
+        double wPx = source.Width * scale, hPx = source.Height * scale;
+        if (!(wPx > 0) || !(hPx > 0)) return null;
+        if (Math.Max(wPx, hPx) > maxDevicePixels) return null;
+
+        var hit = compiled.Raster;
+        if (hit is not null && hit.Scale == scale && hit.VisualKey == visualKey) return hit;
+
+        int w = Math.Max(1, (int)Math.Ceiling(wPx));
+        int h = Math.Max(1, (int)Math.Ceiling(hPx));
+
+        SKSurface? surface = null;
+        try
+        {
+            surface = SKSurface.Create(new SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul));
+            if (surface is null) return null;               // out of memory: fall through to geometry
+
+            var c = surface.Canvas;
+            c.Clear(SKColors.Transparent);
+            // Cell-local path space -> this surface's pixels, at exactly the scale the placement would
+            // have drawn at. Every device-pixel-denominated decision inside drawCell (stroke widths,
+            // the elision and coarse thresholds) therefore resolves the same way it would have on the
+            // real canvas, which is what makes the substitution a cache rather than a second look.
+            c.Scale(scale);
+            c.Translate(-source.Left, -source.Top);
+            // Into a counter of its OWN, never the frame's. DrawCalls answers "what did this frame
+            // issue to the canvas", and one blit per placement IS that answer; the build behind it is
+            // amortized over every placement and every later frame at this zoom, so folding it into
+            // the same number would make one counter mean two things. The renderer already keeps
+            // "built" and "drawn" apart this way for paths and paints.
+            drawCell(c, null, new LayoutFrameCounters());   // no culling: the whole cell, for every placement
+            counters.InstanceRastersBuilt++;
+
+            var snapshot = new RasterSnapshot(scale, visualKey, surface.Snapshot(), source);
+            compiled.Raster = snapshot;                     // single reference assignment — see the field
+            return snapshot;
+        }
+        catch (Exception)
+        {
+            // A surface this small failing is not a situation worth a message, and there is a correct
+            // slower path one line away.
+            return null;
+        }
+        finally { surface?.Dispose(); }
     }
 
     /// <summary>Splits one compiled layer's chunks at <paramref name="grow"/> into the ones the coarse
@@ -623,12 +805,27 @@ public static partial class LayoutRenderer
             // by Mag to still land on GeometryStrokeDevicePixels device pixels.
             var layerVisuals = new List<(CompiledLayerGeometry Layer, SKPaint FillPaint, SKPaint StrokePaint, SKPaint ElidedPaint)>();
             double strokeScale = scaleUm * Math.Max(Math.Abs(inst.Mag), 1e-9);
+
+            // Everything the rasterized pixels depend on EXCEPT the scale, which the snapshot carries
+            // separately. Accumulated here rather than recomputed later so a layer hidden, a colour
+            // edited, a stipple changed or a re-compile at a different tolerance is a raster MISS
+            // instead of a stale blit — the failure mode a cache keyed on scale alone would have.
+            var visualKey = new HashCode();
+            visualKey.Add(cellDetailDbu);
+            visualKey.Add(drawOutlines);
+            visualKey.Add(elisionThreshold);
+            visualKey.Add(coarseCoverage);
+            visualKey.Add(opts.Theme.Warning.ToString());
             foreach (var layer in compiled.Layers)
             {
                 LayerDef def = layerMap is not null && layerMap.TryGetValue(layer.Key, out var found)
                     ? found : FallbackPalette.For(layer.Key);
                 if (!def.Visible) continue;
                 var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
+                visualKey.Add(layer.Key);
+                visualKey.Add(def.Color.R); visualKey.Add(def.Color.G); visualKey.Add(def.Color.B);
+                visualKey.Add(def.FillOpacity);
+                visualKey.Add(def.FillPattern);
                 layerVisuals.Add((
                     layer,
                     // The instance's own magnification is folded in, exactly as it is for the stroke
@@ -655,8 +852,110 @@ public static partial class LayoutRenderer
                 ? new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels), Color = opts.Theme.Warning, PathEffect = SKPathEffect.CreateDash([6f, 4f], 0) }
                 : null;
 
+            float chunkGrow = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels) / 2f;
+
+            // ── The whole cell, in its own local path space ───────────────────────────────────────
+            // Lifted out of the placement loop so the raster tier below can run the IDENTICAL code
+            // into an offscreen surface: a blit that came from a different drawing path would be a
+            // second definition of what a cell looks like, and the two would drift.
+            //
+            // `localVisible` is the viewport mapped back into cell-local space, or null when there is
+            // nothing to cull against (an un-invertible placement matrix, or the raster pass, which
+            // draws the cell whole precisely so that every placement can share it).
+            void DrawCellGeometry(SKCanvas target, SKRect? localVisible, LayoutFrameCounters sink)
+            {
+                bool culls = localVisible.HasValue;
+                var visible = localVisible ?? default;
+                foreach (var (layer, fillPaint, strokePaint, elidedPaint) in layerVisuals)
+                {
+                    // L2f — the coarse tier. Every chunk whose grown geometry already fills its own
+                    // bounds (see DefaultCoarseCoverageThreshold) is drawn as ONE rect, and all of
+                    // them together as ONE path per layer rather than one draw call per chunk: at
+                    // the zoom levels this engages at a whole 500um cell is a hundred device pixels
+                    // wide, so per-chunk culling has nothing left to save and per-chunk draw CALLS
+                    // become the cost that is left. The split is cached on the layer, keyed by the
+                    // same grow amount the elision tier's own per-chunk cache is keyed by, so a pan
+                    // — where this matters — never rebuilds it and a zoom step rebuilds it once.
+                    var coarse = layer.Coarse;
+                    if (coarseCoverage > 0 && (coarse is null || coarse.Grow != chunkGrow))
+                        layer.Coarse = coarse = BuildCoarse(layer, chunkGrow, elisionThreshold, coarseCoverage);
+
+                    IReadOnlyList<CompiledChunk> drawIndividually = layer.Chunks;
+                    if (coarseCoverage > 0 && coarse is not null)
+                    {
+                        drawIndividually = coarse.Rest;
+                        if (coarse.Collapsed is not null
+                            && (!culls || visible.IntersectsWith(coarse.CollapsedBounds)))
+                        {
+                            target.DrawPath(coarse.Collapsed, elidedPaint);
+                            sink.DrawCalls++;
+                        }
+                    }
+
+                    foreach (var chunk in drawIndividually)
+                    {
+                        if (culls && !visible.IntersectsWith(chunk.Bounds)) continue;
+
+                        // L2e stage 2 — a chunk whose largest primitive lands under a few device
+                        // pixels draws as ONE solid fill of its primitives' bounding rects, grown by
+                        // half the stroke width it would otherwise have been given, instead of a
+                        // fill pass plus a stroke pass over the real geometry. Stroking is where the
+                        // time actually went: tessellating an outline for ~100k segments measured
+                        // 82 ms against the fill's 20 ms on the 24,964-via MIM cap, for an outline
+                        // drawn on a 2.1-pixel square. The grown bbox covers the same pixels the
+                        // stroke would have, and at this size a primitive and its bbox are
+                        // indistinguishable — the same equivalence AddMinimalRect already trades on.
+                        if (chunk.MaxExtent * placementScale * scaleUm < elisionThreshold
+                            && chunk.PrimitiveBounds.Length > 0)
+                        {
+                            float grow = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels) / 2f;
+                            var elided = chunk.Elided;
+                            if (elided is null || elided.Grow != grow)
+                            {
+                                var built = new SKPath();
+                                foreach (var pb in chunk.PrimitiveBounds)
+                                    built.AddRect(new SKRect(pb.Left - grow, pb.Top - grow, pb.Right + grow, pb.Bottom + grow));
+                                chunk.Elided = elided = new ElidedGeometry(grow, built);
+                            }
+                            target.DrawPath(elided.Path, elidedPaint);
+                            sink.DrawCalls++;
+                            continue;
+                        }
+
+                        target.DrawPath(chunk.Geometry, fillPaint);
+                        sink.DrawCalls++;
+
+                        // The frame-wide outline decision reaches instance geometry too — it is the
+                        // same constant-device-pixel stroke over the same kind of geometry, and on
+                        // an imported board PLACED as a cell it is the same overwhelming majority
+                        // of the frame (measured: 226 ms for one placement of the board in
+                        // LayoutRenderDetail's note, against 18 ms for the identical geometry drawn
+                        // as top-level shapes, which had already had this applied). The floor below
+                        // it is per CHUNK rather than per shape — see CompiledChunk.FloorExtent.
+                        if (drawOutlines
+                            || chunk.FloorExtent * placementScale * scaleUm < MinVisibleFillDevicePixels)
+                        {
+                            target.DrawPath(chunk.Geometry, strokePaint);
+                            sink.DrawCalls++;
+                        }
+                    }
+                }
+                if (brokenFillPaint is not null && brokenStrokePaint is not null)
+                    foreach (var rect in compiled.BrokenPlaceholders)
+                    {
+                        target.DrawRect(rect, brokenFillPaint);
+                        target.DrawRect(rect, brokenStrokePaint);
+                        sink.DrawCalls += 2;
+                    }
+            }
+
             try
             {
+                // ── Which placements are on screen, and is the raster tier worth it? ─────────────
+                // Counted BEFORE anything is drawn because that count is the whole of the decision:
+                // rasterizing pays for itself only when the same pixels are wanted more than once.
+                var placements = new List<(SKMatrix M, SKRect? LocalVisible)>(rows * cols);
+                int visiblePlacements = 0;
                 for (int r = 0; r < rows; r++)
                 for (int col = 0; col < cols; col++)
                 {
@@ -677,93 +976,36 @@ public static partial class LayoutRenderer
                     // must not SKIP the placement either, since Mag is user-editable and a zero is a
                     // transient state during a text edit; an un-invertible matrix simply keeps every
                     // chunk, and Skia's own clip discards the result.
-                    bool culls = m.TryInvert(out var inverse);
-                    var localVisible = culls ? inverse.MapRect(visiblePathRect) : default;
+                    SKRect? localVisible = m.TryInvert(out var inverse) ? inverse.MapRect(visiblePathRect) : null;
+                    placements.Add((m, localVisible));
+                    if (localVisible is not { } lv || compiled.Bounds.IsEmpty || lv.IntersectsWith(compiled.Bounds))
+                        visiblePlacements++;
+                }
 
+                // DetailPixelThreshold below zero is this renderer's established "the whole
+                // level-of-detail system is off" knob, and every export path already sets it — an
+                // export must emit the cell's vector geometry into its PDF/SVG canvas, never a
+                // bitmap of it. Honoured HERE rather than left to each caller to remember a second
+                // flag, which is how the two would eventually disagree.
+                double rasterMax = opts.DetailPixelThreshold < 0 ? -1 : opts.InstanceRasterMaxDevicePixels;
+                var raster = TryBuildInstanceRaster(
+                    compiled, visiblePlacements, (float)strokeScale, visualKey.ToHashCode(),
+                    rasterMax, chunkGrow, DrawCellGeometry, counters);
+
+                foreach (var (m, localVisible) in placements)
+                {
                     canvas.Save();
                     canvas.Concat(in m);
-                    float chunkGrow = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels) / 2f;
-                    foreach (var (layer, fillPaint, strokePaint, elidedPaint) in layerVisuals)
+                    if (raster is not null)
                     {
-                        // L2f — the coarse tier. Every chunk whose grown geometry already fills its own
-                        // bounds (see DefaultCoarseCoverageThreshold) is drawn as ONE rect, and all of
-                        // them together as ONE path per layer rather than one draw call per chunk: at
-                        // the zoom levels this engages at a whole 500um cell is a hundred device pixels
-                        // wide, so per-chunk culling has nothing left to save and per-chunk draw CALLS
-                        // become the cost that is left. The split is cached on the layer, keyed by the
-                        // same grow amount the elision tier's own per-chunk cache is keyed by, so a pan
-                        // — where this matters — never rebuilds it and a zoom step rebuilds it once.
-                        var coarse = layer.Coarse;
-                        if (coarseCoverage > 0 && (coarse is null || coarse.Grow != chunkGrow))
-                            layer.Coarse = coarse = BuildCoarse(layer, chunkGrow, elisionThreshold, coarseCoverage);
-
-                        IReadOnlyList<CompiledChunk> drawIndividually = layer.Chunks;
-                        if (coarseCoverage > 0 && coarse is not null)
-                        {
-                            drawIndividually = coarse.Rest;
-                            if (coarse.Collapsed is not null
-                                && (!culls || localVisible.IntersectsWith(coarse.CollapsedBounds)))
-                            {
-                                canvas.DrawPath(coarse.Collapsed, elidedPaint);
-                                counters.DrawCalls++;
-                            }
-                        }
-
-                        foreach (var chunk in drawIndividually)
-                        {
-                            if (culls && !localVisible.IntersectsWith(chunk.Bounds)) continue;
-
-                            // L2e stage 2 — a chunk whose largest primitive lands under a few device
-                            // pixels draws as ONE solid fill of its primitives' bounding rects, grown by
-                            // half the stroke width it would otherwise have been given, instead of a
-                            // fill pass plus a stroke pass over the real geometry. Stroking is where the
-                            // time actually went: tessellating an outline for ~100k segments measured
-                            // 82 ms against the fill's 20 ms on the 24,964-via MIM cap, for an outline
-                            // drawn on a 2.1-pixel square. The grown bbox covers the same pixels the
-                            // stroke would have, and at this size a primitive and its bbox are
-                            // indistinguishable — the same equivalence AddMinimalRect already trades on.
-                            if (chunk.MaxExtent * placementScale * scaleUm < elisionThreshold
-                                && chunk.PrimitiveBounds.Length > 0)
-                            {
-                                float grow = DevicePixelsToPathSpace(strokeScale, GeometryStrokeDevicePixels) / 2f;
-                                var elided = chunk.Elided;
-                                if (elided is null || elided.Grow != grow)
-                                {
-                                    var built = new SKPath();
-                                    foreach (var pb in chunk.PrimitiveBounds)
-                                        built.AddRect(new SKRect(pb.Left - grow, pb.Top - grow, pb.Right + grow, pb.Bottom + grow));
-                                    chunk.Elided = elided = new ElidedGeometry(grow, built);
-                                }
-                                canvas.DrawPath(elided.Path, elidedPaint);
-                                counters.DrawCalls++;
-                                continue;
-                            }
-
-                            canvas.DrawPath(chunk.Geometry, fillPaint);
-                            counters.DrawCalls++;
-
-                            // The frame-wide outline decision reaches instance geometry too — it is the
-                            // same constant-device-pixel stroke over the same kind of geometry, and on
-                            // an imported board PLACED as a cell it is the same overwhelming majority
-                            // of the frame (measured: 226 ms for one placement of the board in
-                            // LayoutRenderDetail's note, against 18 ms for the identical geometry drawn
-                            // as top-level shapes, which had already had this applied). The floor below
-                            // it is per CHUNK rather than per shape — see CompiledChunk.FloorExtent.
-                            if (drawOutlines
-                                || chunk.FloorExtent * placementScale * scaleUm < MinVisibleFillDevicePixels)
-                            {
-                                canvas.DrawPath(chunk.Geometry, strokePaint);
-                                counters.DrawCalls++;
-                            }
-                        }
+                        // One blit per placement in place of the cell's whole geometry. The image was
+                        // rasterized at exactly this placement's device scale, so the only transform
+                        // Skia applies here is the placement's own translation, 90-degree rotation and
+                        // mirror — all of which map pixel centres onto pixel centres.
+                        canvas.DrawImage(raster.Image, raster.Source, InstanceRasterSampling);
+                        counters.DrawCalls++;
                     }
-                    if (brokenFillPaint is not null && brokenStrokePaint is not null)
-                        foreach (var rect in compiled.BrokenPlaceholders)
-                        {
-                            canvas.DrawRect(rect, brokenFillPaint);
-                            canvas.DrawRect(rect, brokenStrokePaint);
-                            counters.DrawCalls += 2;
-                        }
+                    else DrawCellGeometry(canvas, localVisible, counters);
                     canvas.Restore();
                     counters.InstancesDrawn++;
                 }

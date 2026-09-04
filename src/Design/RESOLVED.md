@@ -1,5 +1,30 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
+## `LayoutPersistence.LoadFromFile` is interruptible, and the hooks are on the shape loop (2026-09-04)
+
+An overload takes a `CancellationToken` and an `Action<int,int>` progress callback, for the caller
+that has moved the read onto a background thread and owes the user a progress row and a Cancel (see
+`src/Ui/RESOLVED.md`'s "The whole UI crawled…" entry for what asked for it).
+
+**Both hooks land on the SHAPE LOOP, and the placement is the finding.** Reading a layout is not
+proportional to how big the file looks: `LayoutClipper.EnsureValidHoles` runs over every shape, and on
+a Gerber-imported board — thousands of composited pours, each with hundreds of holes — that is seconds
+to tens of seconds, against a JSON parse measured in hundreds of milliseconds. So the loop is both the
+only place a cancel can land promptly and the only phase with an honest denominator; the parse ahead of
+it is one indeterminate step.
+
+Every 256 shapes, not every shape: at these counts a callback and a token read per shape would cost
+more than the normalization they are reporting on, and a progress bar cannot show more than a few
+dozen steps anyway.
+
+**Cancelling throws rather than returning a half-built view.** A partially loaded layout is
+indistinguishable from a corrupt one to everything downstream, and this is a document the user is
+waiting to see — not a partial result worth salvaging.
+
+`Deserialize(string)` and the parameterless `LoadFromFile(string)` are unchanged in behaviour; the
+version check moved into a private `ParseFile` so the interruptible path could put a cancellation point
+between the parse and the shape loop without a second copy of that rule.
+
 ## The moved-cell forwarding record, and why the redirect lives in `ExternalCellRef` (TM2, 2026-09-04)
 
 `brief-tree-move-2-moves-across-a-shared-library.md`. The `src/Ui` half — the report, the three surfaces,

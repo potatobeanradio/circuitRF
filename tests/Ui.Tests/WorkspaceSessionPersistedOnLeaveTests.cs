@@ -126,7 +126,7 @@ public sealed class WorkspaceSessionPersistedOnLeaveTests : IDisposable
         var src = RepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs"));
 
         var writer  = MethodBody(src, "WriteWorkspaceFile");
-        var restore = MethodBody(src, "RestoreOpenDocuments");
+        var restore = MethodBody(src, "RestoreOpenDocumentsAsync");
 
         // A kind the writer emits but the restorer has no case for is a silently-dropped tab — the
         // same class of bug as not writing it at all, just one step later.

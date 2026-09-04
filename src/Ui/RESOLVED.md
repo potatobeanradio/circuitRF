@@ -1,5 +1,163 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## The whole UI crawled while a 10x10 array of an imported board was open (2026-09-04)
+
+Owner report, three parts: opening a `.clay` holding a 10x10 instance array of a complex board made
+the Project Tree expander almost stop and the Messages panel unusable to scroll, and closing the
+document or quitting took far too long; opening a `.clay` should not run on the UI thread and should
+report progress with a Cancel; and opening a workspace whose `.cws` already lists a large `.clay`
+showed no docked windows and no indication of anything happening.
+
+**It was not memory** — the question was asked explicitly, and the whole session measured 234 MB
+working set (154 MB of it the board's own managed heap). It was frame time, and the numbers are the
+whole story. Measured in the running application on the owner's own file:
+
+| | before | after |
+|---|---|---|
+| first frame of the array | **36,676 ms** | 72 ms |
+| steady-state frame at Zoom-to-Fit | **1,500 ms** | 1.5 ms |
+| workspace open, longest UI-thread block | 1,256 ms | 469 ms |
+
+### Why one slow canvas stops the whole window
+
+An application has ONE compositor. Anything that repaints while a layout frame is in flight waits for
+it, so at 1.5 s a frame the tree expander, the Messages scroll and the shutdown all ran at well under
+one frame a second — which is exactly what "the UI slows down to a crawl" was. And the layout canvas
+does not have to be the thing being interacted with: a probe posting a message every 250 ms produced
+16 layout frames every 2 s, so ordinary activity elsewhere in the window repaints it.
+
+**So "UI responsiveness must be independent of the documents loaded" is not reachable by decoupling
+the panels from each other** — there is nothing to decouple. It is reachable by bounding the frame,
+which is what the tier below does.
+
+### The three existing LOD tiers structurally could not reach this content
+
+Chunk culling, stroke elision and the coarse tier (L2e/L2f) all key on a chunk's LARGEST PRIMITIVE
+being a few device pixels. That is the right question for the content they were built for — a MIM
+capacitor's 24,964 vias, a dense field of tiny identical primitives — and they work on it.
+
+A PCB is the opposite shape of content: 3,284 shapes, 673,345 vertices, 615,473 of them on ONE layer,
+averaging 205 vertices per shape, and any one polygon spans a good fraction of the board. Its chunks
+never come under the elision threshold at any zoom where the board is still visible, so every
+placement handed Skia the cell's entire geometry. **Measured: one placement 86 device pixels wide
+still cost 27 ms.** 100 of them is the 1,871 ms.
+
+### The raster tier (`LayoutRenderer.Instances.cs`)
+
+A fourth tier, orthogonal to the other three rather than a tuning of them: when a cell is small on
+screen, what it costs should be set by the PIXELS it occupies, not by the geometry behind them.
+Rasterize the cell once at the placement's exact device scale, blit it per placement. Exact for an
+array by construction — every placement of one instance shares one scale and one rotation, and the
+difference between them is a translation.
+
+Gated on the cost actually being saved, never applied speculatively: more than one placement visible
+(with one, rasterizing is the same work plus a surface); the placement at or under 1,024 device pixels
+on its longest side (so the image is never upscaled, never over 4 MB, and above it per-chunk culling
+has real work to do again); and at least 256 primitives in the cell (below that the geometry path is
+already a handful of draw calls — and it is also what keeps every small-array pixel-comparison test in
+this suite on the exact path).
+
+**It falls to `DetailPixelThreshold < 0`, this renderer's established "the whole LOD system is off"
+knob, rather than to a flag of its own.** Every export path already sets it, and an export writes the
+cell's vector geometry into a PDF or SVG canvas and must never write a bitmap of it. One knob, not two
+that can disagree.
+
+**The cache key carries every layer's colour, opacity, fill pattern and visibility**, not just the
+scale. The snapshot lives on the compiled cell, which outlives any one frame and is shared by every
+canvas, so keyed on scale alone it would blit yesterday's colours after a technology edit or a theme
+switch. Two tests drive exactly that.
+
+**`InstanceRastersBuilt` is a counter of its own, and `DrawCalls` stays "what this frame issued to the
+canvas".** The first build folded the offscreen pass into `DrawCalls`, which made the number mean two
+things and made the one assertion worth writing — one more placement costs one more draw call —
+impossible to state. The renderer already keeps "built" and "drawn" apart for paths and paints.
+
+*What it costs, stated rather than hidden:* at Zoom-to-Fit 4.45% of pixels differ from the
+exact-geometry render (mean |Δ| 16/channel), because each blit lands at a fractional device offset so
+antialiased edges inside the cell resolve up to a pixel differently. Side by side the two are
+indistinguishable, and at any zoom where the tier disengages the frames are byte-identical. The gate
+therefore compares the painted FOOTPRINT — a wrong scale, origin or dropped layer all break it — not
+pixel equality.
+
+*Left alone, deliberately:* a SINGLE placement of a dense board is unchanged at ~60 ms/frame at its
+own Zoom-to-Fit (97 ms drawn as top-level shapes). Rasterizing for one placement is the same work plus
+a surface, and it would rebuild on every frame of a zoom gesture. That case wants the whole-canvas
+tiled raster cache (L2d), which is still deferred.
+
+### Opening a `.clay` off the UI thread
+
+`LayoutPersistence.LoadFromFile` gained an overload taking a `CancellationToken` and an
+`Action<int,int>` progress callback. **Both land on the SHAPE LOOP, and that is deliberate**:
+`LayoutClipper.EnsureValidHoles` runs over every shape and on a Gerber-imported board is seconds to
+tens of seconds, against a JSON parse measured in hundreds of milliseconds — so the loop is both the
+only place a cancel can land promptly and the only phase with an honest denominator. Every 256 shapes,
+not every shape: at these counts a callback and a token read per shape would cost more than the
+normalization they report on. Cancelling throws rather than returning a half-built view, since a
+partially loaded layout is indistinguishable from a corrupt one to everything downstream.
+
+Only the READ moves. The session registry, the interface and moved-cell scans, the document and the
+dock are all view-model and dock state and stay on the UI thread — the same split
+`OpenPrimaryLayoutIfResolvableAsync` already had.
+
+### `DeferredProgressRow` — a row that appears only if the work proves slow
+
+The owner asked for a bar on the workspace open "only if opening is anticipated to take more than 2
+seconds or so". **That cannot be anticipated**: the cost is not proportional to file size (see the
+shape loop above). So it is MEASURED instead — the row is posted only if the work is still running
+after a delay (350 ms for one document, 1,000 ms for a workspace, which has visible work of its own so
+a brief pause already looks like something happening). Progress reported before the row exists is
+retained and applied when it appears, so a bar that shows up two seconds in shows up already at the
+right place rather than at zero. `Finish` returns whether the row ever appeared, so the caller knows
+whether it still owes the user an ordinary "Opened" line — one open, one line, and an instantaneous
+open looks exactly as it did before.
+
+### Two ordering facts, both load-bearing
+
+**`Messages.Clear()` moved BEFORE the document restore.** It used to run after, which would now wipe a
+live progress row out from under a user watching it. It also reads correctly: the workspace IS open at
+that point and the documents restore into it.
+
+**The workspace's layouts are pre-read BEFORE the restore loop, not one before each open.** The loop's
+order establishes the TAB order and had to stay exactly as it was, and one row over the whole set is
+what a user wants to see rather than a row per document. Sequential, not parallel: these reads are
+allocation-heavy (a 27 MB board is ~154 MB of managed heap) and running several at once multiplies the
+peak without shortening a wait dominated by one big file. A file that fails to read is simply absent
+from the result and the ordinary open path re-reads it and reports the failure in its own words;
+cancelling stops the read-ahead but every document still opens, because "stop waiting" must not
+silently become "lose my tabs".
+
+### `RegenerateAllGeneratedCells` was the rest of the workspace-open block
+
+663 ms on the UI thread, before anything was on screen, and not incidental:
+`GeneratedCellsLifecycle.RegenerateAll` READS EVERY `.clay` UNDER THE WORKSPACE to find the PCell
+snapshots in them, so a workspace holding one 27 MB board pays that board's whole read here as well as
+at the open. It is framework-free by design and touches nothing thread-affine, so only its messages
+had to come back — buffered and posted on the UI thread. **Awaited, never fire-and-forget**: the pass
+exists to warm the generated-cell cache BEFORE any layout referencing it opens, and a restored layout
+that raced it would render placeholders for cells that were about to exist.
+
+What is left on the UI thread is the dock rebuild and the document views, which are Avalonia control
+construction and cannot move.
+
+### Every route that opens one of these must reach the async entry point
+
+Held by `tests/Ui.Tests/AsyncDocumentOpenRoutingTests.cs`, source-scanned for the same reason the
+`.plist`/`.wxs`/mime parity tests are: a call site quietly left on the synchronous overload still
+opens the document, just with the window frozen, so no behavioural test would notice. All four
+operating-system arrival paths (argv, the macOS Apple Event, the Windows named pipe, the Linux socket)
+funnel through `App.OpenFiles`, which routes a `.cws` through the awaited workspace open and
+everything else through `OpenDocumentByPath` — so an OS double-click on either type gets the async
+path.
+
+**Two synchronous call sites are deliberate and are named in that test rather than left to be
+rediscovered:** the EM mesh push writes into the document the open returns, and Generate Layout reads
+its view model back on the next line. Both are reached only when the layout is not already open.
+
+Gates: `tests/Ui.Tests/LayoutInstanceRasterTierTests.cs` (10 tests, 206 ms — engagement, the
+one-draw-call-per-added-placement scaling law, the three cases where it must NOT engage, the export
+path, and two stale-cache drives) and `AsyncDocumentOpenRoutingTests.cs` (4). Full solution green:
+17,496 tests.
+
 ## The drill map rendered differently at every zoom step (2026-09-04)
 
 Owner report, on an imported 6-layer board's `.clay`: the Drill Map layer's drill chart rendered

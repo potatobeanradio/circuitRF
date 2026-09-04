@@ -125,7 +125,13 @@ public static class LayoutPersistence
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
-    public static LayoutView Deserialize(string json)
+    public static LayoutView Deserialize(string json) => FromFileModel(ParseFile(json), default, null);
+
+    /// <summary>JSON text to the on-disk file model, version check included — split out of
+    /// <see cref="Deserialize"/> so the interruptible overload of <see cref="LoadFromFile(string,
+    /// CancellationToken, Action{int, int})"/> can put a cancellation point between the parse and the
+    /// shape loop without a second copy of the version rule.</summary>
+    private static ClayFile ParseFile(string json)
     {
         var file = JsonSerializer.Deserialize<ClayFile>(json, JsonOpts)
             ?? throw new InvalidDataException("Failed to deserialize .clay file.");
@@ -135,12 +141,38 @@ public static class LayoutPersistence
                 $".clay format_version {file.FormatVersion} is newer than " +
                 $"expected {CurrentFormatVersion}. Update the application.");
 
-        return FromFileModel(file);
+        return file;
     }
 
-    public static LayoutView LoadFromFile(string path)
+    public static LayoutView LoadFromFile(string path) => LoadFromFile(path, default, null);
+
+    /// <summary>
+    /// <see cref="LoadFromFile(string)"/>, reported on and interruptible — for the caller that has
+    /// moved this read onto a background thread and owes the user a progress row and a Cancel.
+    ///
+    /// <para><b>Both hooks land on the SHAPE LOOP, and that is where the time is.</b> Reading a
+    /// layout is not proportional to how big the file looks: <see cref="LayoutClipper.EnsureValidHoles"/>
+    /// runs over every shape, and on a Gerber-imported board — thousands of composited pours, each
+    /// with hundreds of holes — that is seconds to tens of seconds, against a JSON parse measured in
+    /// hundreds of milliseconds. So the loop is both the only place a cancel can land promptly and the
+    /// only phase with an honest denominator; the parse ahead of it is one indeterminate step.</para>
+    ///
+    /// <para>Cancelling throws <see cref="OperationCanceledException"/> rather than returning a
+    /// half-built view — a partially loaded layout is indistinguishable from a corrupt one to
+    /// everything downstream, and this is a document the user is waiting to see, not a partial result
+    /// worth salvaging.</para>
+    /// </summary>
+    /// <param name="onShapesLoaded">Called as (loaded, total) at intervals during the shape loop, on
+    /// the loading thread. Deliberately not per shape: at a few hundred thousand shapes the callback
+    /// would cost more than the work it reports on.</param>
+    public static LayoutView LoadFromFile(string path, CancellationToken cancellation,
+                                          Action<int, int>? onShapesLoaded)
     {
-        var view = Deserialize(GzipTextFile.ReadAllTextAutoGzip(path));
+        string text = GzipTextFile.ReadAllTextAutoGzip(path);
+        cancellation.ThrowIfCancellationRequested();
+        var file = ParseFile(text);
+        cancellation.ThrowIfCancellationRequested();
+        var view = FromFileModel(file, cancellation, onShapesLoaded);
         ResolveRelativeBitmapPaths(view, Path.GetDirectoryName(Path.GetFullPath(path)));
         return view;
     }
@@ -206,7 +238,8 @@ public static class LayoutPersistence
         Instances     = [.. view.Instances],
     };
 
-    private static LayoutView FromFileModel(ClayFile file)
+    private static LayoutView FromFileModel(ClayFile file, CancellationToken cancellation,
+                                            Action<int, int>? onShapesLoaded)
     {
         var view = new LayoutView
         {
@@ -231,6 +264,11 @@ public static class LayoutPersistence
                     kv.Value.GeneratorId, new Dictionary<string, PCellValue>(kv.Value.Parameters),
                     kv.Value.TechIdentity, kv.Value.SignalLayerNameOverride, kv.Value.GroundLayerNameOverride);
 
+        // Every ReportEvery shapes rather than every shape: at these counts a callback and a token
+        // read per shape would cost more than the normalization they are reporting on, and a progress
+        // bar cannot show more than a few dozen steps anyway.
+        const int ReportEvery = 256;
+        int total = file.Shapes.Count, loaded = 0;
         foreach (var shape in file.Shapes)
         {
             PadEdgesIfShort(shape);
@@ -239,7 +277,12 @@ public static class LayoutPersistence
             // overwhelming common case (no holes, or holes already valid).
             foreach (var normalized in LayoutClipper.EnsureValidHoles(shape))
                 view.Shapes.Add(normalized);
+
+            if (++loaded % ReportEvery != 0) continue;
+            cancellation.ThrowIfCancellationRequested();
+            onShapesLoaded?.Invoke(loaded, total);
         }
+        onShapesLoaded?.Invoke(total, total);
         view.Instances.AddRange(file.Instances);
         if (file.Pins is not null) view.Pins.AddRange(file.Pins);
         if (file.DrcWaivers is not null) view.DrcWaivers.AddRange(file.DrcWaivers);
