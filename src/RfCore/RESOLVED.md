@@ -292,3 +292,53 @@ the plan says where — or says the replay succeeded, which localises the fault 
 `DOTNET_TieredCompilation=0` becomes worthwhile. The artifact request stands and is now cheap to
 satisfy: the trail names the workspace folder, and a run rewrites `Sparam1.npy` in it, so the
 reporter can produce the file on demand.
+
+### Follow-up (2026-09-04, round 7): the first trail that does not fail — and the last untouched layer names itself
+
+One trail from 1.0.0-beta.10, from the round-3 reporter's own machine (16 cores, 64 GB, Windows
+x64, packaged Release, a period-separated locale). **Nothing in it failed.** No `=== FATAL ===`
+block, no `trace resolve FAILED:` line, no gather message of any kind, across 57 breadcrumbs and
+roughly four and a half minutes of Data Display work. It is a copy of the live `session-*.running`
+file rather than a promoted report, which is itself the finding: the session was still alive when it
+was taken.
+
+**This is a non-reproduction, not a fix.** The bug was never on-demand — round 4 records a failure
+33 s after launch with no analysis in the session at all — so one clean run is a strong negative and
+no more. What makes it worth recording is that the session did exercise the recipe rather than
+merely avoid it; the gesture breadcrumbs are what let anyone say so, and the Data Display half of
+this round is in `src/Ui/DataDisplay/RESOLVED.md`.
+
+**There is now a mechanism by which it could genuinely be gone, and it was not built as a fix.**
+Round 6's rewrite of `GatherComplex`/`GatherReal` from self-tail-recursion to a planned flat walk
+shipped in this build. It was done for readable stacks and for the `Array.Copy` fast path, and the
+round-6 note says outright that no state-based explanation was left. But it replaced the exact
+instruction sequence the beta.9 stack named, at a site where the index arithmetic was proven in range
+and the fault appeared only on x64 Release on one machine. If the fault lived in the generated code
+rather than in the cube, that rewrite ends it accidentally — and an accidental fix is
+indistinguishable from a non-reproduction until the next report or the reporter's `.npy` arrives.
+
+**The one new fact, and it is the layer this file said was left.** Round 6 closed with "the replay
+succeeded" localising the fault outside `DataCube`, to environment or codegen on that machine. The
+execution-environment header added for exactly that purpose (`CrashReporter.AppendExecutionEnvironment`)
+reports on this run:
+
+    debugger    : no
+    gc          : workstation, Interactive
+    profiler    : none
+    codegen env : all default
+    modules     : 27 loaded, from elsewhere: PGHook.dll
+
+Four of those five clear the field: no attached debugger, no CLR profiler rewriting IL, no codegen
+environment variable set, stock GC. The fifth does not. `PGHook.dll` is a native module loaded from
+neither Windows nor the application directory — an injected API-hooking library, the shape that
+endpoint-protection and monitoring agents use. **No report before beta.10 could have shown it**, and
+it is the only remaining candidate for an in-range index that faults: a hooking layer is the one
+thing in the list that alters the code that actually runs.
+
+It is a lead, not a diagnosis. It is *not* evidence the module is at fault — nothing correlates it
+with a failure, because this session had none. What it does is give the next report a variable to
+compare against, and it is the reason the environment header stays.
+
+**Unchanged, and still the shortest route:** the reporter's `Sparam1.npy`. The trail names the
+workspace folder and every run rewrites the file in it, so it can be produced on demand. With the
+file this is a repro that runs here instead of a wait for the next trail.

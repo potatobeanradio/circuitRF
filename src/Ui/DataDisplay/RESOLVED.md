@@ -1876,3 +1876,69 @@ wrong namespace.
 Held by `GestureBreadcrumbTests` (3): the ordered plot sequence, the matrix toggle specifically
 (the not-a-command case), and the shape of every line — prefix, timestamp and thread tag.
 
+
+## Round 7: the first trail with no failure in it, and what the breadcrumbs let it prove (2026-09-04)
+
+One trail from 1.0.0-beta.10 — the first build carrying the gesture breadcrumbs, the source
+inventory, the thread tags and the execution-environment header all at once. **It contains no
+failure.** The `DataCube` half of this round is in `src/RfCore/RESOLVED.md`; this file records what
+the Data Display instrumentation was able to say, because that is the part that is new.
+
+### Absence of the line is now a real measurement, not a gap
+
+`SetCubeDataFrom` wraps `SetCubeDataFromCore`, and every unforeseen exception writes exactly one
+`trace resolve FAILED:` note before marking the trace `<invalid>`. So in this build there is no such
+thing as a silent `<invalid>` from this defect: **a trail with no `trace resolve FAILED:` line in it
+is a session in which no trace resolve threw.** That was not true before beta.7, and it is what turns
+"the user did not report a problem" into a recorded negative.
+
+The three markers that would have to be present are all absent — no `=== FATAL ===` block, no
+`trace resolve FAILED:`, no gather message — over 57 breadcrumbs.
+
+### And the session exercised the recipe rather than avoiding it
+
+This is what the breadcrumbs bought, and it is the whole reason they exist. Every earlier round had
+to take the reporter's word for what had been done, or infer it from a failure. Here the trail says
+it directly, and every item below is a line in the file:
+
+- **A real analysis in-session.** `run: 'Sparam1.csch' planned — 1 analysis, 601 work unit(s)`,
+  `S-param 'SP1': 601 pts, 0,1–3 GHz`, `begin`/`end 'SP1'` at `08.31.20.884`–`.986`. Round 6
+  established the fault is deterministic for freshly written data, so a run had to happen for the
+  session to count.
+- **The 13–20 s post-run window** that round 4 pinned as when the first failure lands. The run left
+  the engine at `08.31.20.987`; gestures run from `08.31.30.522` through `08.31.44.353`, straight
+  across it.
+- **The original beta.6 gesture, eight times.** `row.matrix — SP1.S -> Z`, `-> Y`, and back —
+  including the `SP1.Z` and `SP1.Y` resolves that round 4 found fail alongside `SP1.S`. This is
+  precisely the combo-box property change that instrumenting `RelayCommand`s alone would have missed,
+  which is why `TraceRowViewModel`'s `On…Changed` partials are on the instrumented surface.
+- **The multi-plot condition.** `addPlot — Smith (now 5)` through `(now 8)`, then four full
+  `row.remove — SP1.S` → `addTrace — plot=Smith traces=0` → `closeInspector` cycles against them.
+  The first field report was specifically about adding a trace to a *second* Smith plot.
+- **The source ruled out with no source file.** `source npy load: 2 cube(s), every one
+  shape-consistent` on the initial load, and `source npy reload: 2 cube(s), every one
+  shape-consistent` on the post-run auto-refresh (`library.reloadChanged — 1 path(s)`). Four rounds
+  asked the reporter for the `.npy` because nothing recorded what a source contained; this is the
+  answer arriving without it.
+- **One thread throughout.** Every Data Display note is `t2`; only the engine's own `begin`/`end`
+  lines are `t15!ui`. Round 5's `EnsureNetworkParamCubesMaterialized` hardening was explicitly
+  hardening-not-diagnosis on the grounds that nothing is known to touch `Data` off the UI thread —
+  this is the first trail that checks that claim instead of asserting it.
+
+### What this does and does not settle
+
+It does not close the report. The failure was never on-demand, and one clean session against a bug
+that has appeared in five separate trails is a strong negative, not a proof. The status is
+**unreproduced in 1.0.0-beta.10**, not fixed.
+
+What it does settle is that the instrumentation is finished. Six rounds were spent adding fields
+because each report could not say something; this one answers the source, the gesture, the thread,
+the timing and the environment without a single follow-up question to the reporter. There is nothing
+further worth adding to this file's diagnostics, and — per the owner, 2026-09-04 — **none of it comes
+out**. It costs nothing on the success path (`ResolveProbe` records two field references and formats
+only when something throws; a gesture note is one line per human click, and there is no auto-repeat),
+and it already earns its keep on questions other than this one: the source inventory and the foreign-
+module line both answered here what earlier rounds had to go back to the reporter for.
+
+The candidate mechanism for the failure having genuinely gone, and the one new environmental fact the
+beta.10 header exposes, are both in `src/RfCore/RESOLVED.md` under round 7.
